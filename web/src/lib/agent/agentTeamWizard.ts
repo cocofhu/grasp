@@ -49,7 +49,7 @@ export const TEAM_ENGINEER_COUNT = 4
 
 export type TeamWizardDraft = {
   step: number
-  projectName: string
+  teamName: string
   prefix: string
   pmName: string
   background: string
@@ -83,7 +83,7 @@ export function artifactStorePreset(): WizardMCP {
 export function freshTeamDraft(): TeamWizardDraft {
   return {
     step: 0,
-    projectName: '',
+    teamName: '',
     prefix: '',
     pmName: '',
     background: '',
@@ -104,13 +104,13 @@ export function freshTeamDraft(): TeamWizardDraft {
 }
 
 export function syncDerivedNames(d: TeamWizardDraft) {
-  const base = (d.prefixTouched ? d.prefix : d.projectName).trim() || d.projectName.trim()
-  if (!d.prefixTouched) d.prefix = d.projectName.trim()
+  const base = (d.prefixTouched ? d.prefix : d.teamName).trim() || d.teamName.trim()
+  if (!d.prefixTouched) d.prefix = d.teamName.trim()
   if (!d.pmTouched) d.pmName = base ? `${base}项目经理` : ''
 }
 
 export function validateTeamBasics(d: TeamWizardDraft, existingNames: string[]): string {
-  if (!d.projectName.trim()) return 'projectRequired'
+  if (!d.teamName.trim()) return 'teamNameRequired'
   if (!d.prefix.trim()) return 'prefixRequired'
   if (!d.background.trim()) return 'backgroundRequired'
   const code = validateAgentName(d.pmName)
@@ -205,7 +205,7 @@ export function assembleTeamBootstrapPayload(d: TeamWizardDraft): TeamBootstrapP
     d.authMode === 'customConfig' && customParsed.ok && customParsed.normalized
       ? customParsed.normalized
       : undefined
-  // Capture API Key for project/shared layer before stripping Token keys from agent env.
+  // Capture API Key for the workspace shared layer before stripping Token keys from agent env.
   const rawEnv = kvToRec(w.env)
   const apiKey =
     !customConfig && primaryKey ? rawEnv[primaryKey]?.trim() || undefined : undefined

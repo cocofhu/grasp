@@ -60,7 +60,6 @@ import { useRequirementDrafts } from './useRequirementDrafts'
 const draft = (id: string, over: Partial<RequirementDraft> = {}): RequirementDraft =>
   ({
     id,
-    projectId: 'proj-1',
     title: `Draft ${id}`,
     bodyMarkdown: '# body',
     status: 'open',
@@ -78,9 +77,8 @@ const D1 = draft('d1')
 const D2 = draft('d2', { title: 'Child', parentId: 'd1', startAt: '', dueAt: '' })
 const M1 = draft('m1', { kind: 'milestone', dueAt: '2026-02-01', startAt: '' })
 
-async function withDrafts(projectId = 'proj-1') {
+async function withDrafts() {
   let detail!: ReturnType<typeof useRequirementDrafts>
-  const props = { projectId }
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -88,7 +86,7 @@ async function withDrafts(projectId = 'proj-1') {
   })
   const Comp = defineComponent({
     setup() {
-      detail = useRequirementDrafts(props)
+      detail = useRequirementDrafts()
       return () => null
     },
   })
@@ -97,7 +95,7 @@ async function withDrafts(projectId = 'proj-1') {
   app.mount(document.createElement('div'))
   await flushPromises()
   await nextTick()
-  return { detail, app, props }
+  return { detail, app }
 }
 
 describe('useRequirementDrafts actions coverage', () => {
@@ -106,11 +104,11 @@ describe('useRequirementDrafts actions coverage', () => {
     for (const fn of Object.values(mocks)) fn.mockReset()
     mocks.listRequirementDrafts.mockResolvedValue({ items: [D1, D2, M1] })
     mocks.createRequirementDraft.mockResolvedValue(draft('new'))
-    mocks.updateRequirementDraft.mockImplementation(async (_p, id, body) =>
+    mocks.updateRequirementDraft.mockImplementation(async (id, body) =>
       draft(id, { title: body.title, bodyMarkdown: body.bodyMarkdown }),
     )
     mocks.patchRequirementDraftStatus.mockResolvedValue(draft('d1', { status: 'done' }))
-    mocks.patchRequirementDraftSchedule.mockImplementation(async (_p, id, body) =>
+    mocks.patchRequirementDraftSchedule.mockImplementation(async (id, body) =>
       draft(id, body),
     )
     mocks.deleteRequirementDraft.mockResolvedValue({ status: 'deleted' })
@@ -184,7 +182,7 @@ describe('useRequirementDrafts actions coverage', () => {
     detail.newModalDueAt.value = '2026-03-01'
     mocks.createRequirementDraft.mockResolvedValueOnce(M1)
     await detail.onConfirmCreate()
-    expect(mocks.createRequirementDraft).toHaveBeenCalledWith('proj-1', {
+    expect(mocks.createRequirementDraft).toHaveBeenCalledWith({
       kind: 'milestone',
       dueAt: '2026-03-01',
     })
@@ -228,7 +226,7 @@ describe('useRequirementDrafts actions coverage', () => {
     detail.editTitle.value = '  Renamed  '
     detail.editBody.value = 'new body'
     await detail.onSave()
-    expect(mocks.updateRequirementDraft).toHaveBeenCalledWith('proj-1', 'd1', {
+    expect(mocks.updateRequirementDraft).toHaveBeenCalledWith('d1', {
       title: 'Renamed',
       bodyMarkdown: 'new body',
     })
@@ -301,7 +299,7 @@ describe('useRequirementDrafts actions coverage', () => {
     const { detail, app } = await withDrafts()
     detail.selectDraft('d1')
     await detail.onToggleStatus()
-    expect(mocks.patchRequirementDraftStatus).toHaveBeenCalledWith('proj-1', 'd1', 'done')
+    expect(mocks.patchRequirementDraftStatus).toHaveBeenCalledWith('d1', 'done')
     expect(mocks.toastSuccess).toHaveBeenCalled()
 
     mocks.patchRequirementDraftStatus.mockResolvedValueOnce(draft('d1', { status: 'open' }))

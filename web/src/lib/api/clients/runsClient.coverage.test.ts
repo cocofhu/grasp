@@ -24,7 +24,6 @@ describe('runsClient request coverage', () => {
       status: 'running',
       tag: 'nightly',
       wf: 'wf 1',
-      projectId: 'p1',
       page: 2,
       pageSize: 25,
       sort: 'priority',
@@ -50,7 +49,7 @@ describe('runsClient request coverage', () => {
     await runsClient.getRun('r1')
     await runsClient.runArtifacts('r1')
     await runsClient.inboxContext('r1', 'node / 1', 3, { signal })
-    await runsClient.listProjectRunTags('project / 1')
+    await runsClient.listRunTags()
     await runsClient.startRun('wf1', { topic: 'x' }, 'manual', 'high', ['tag'], {
       signal,
       env: [{ key: 'K', value: 'V' }],

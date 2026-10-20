@@ -12,7 +12,6 @@ import {
 
 function d(partial: Partial<RequirementDraft> & { id: string }): RequirementDraft {
   return normalizeDraft({
-    projectId: 'p',
     title: partial.title || partial.id,
     bodyMarkdown: '',
     status: 'open',
@@ -31,7 +30,6 @@ describe('requirementDraftSchedule', () => {
   it('normalizes empty kind and single-day bar range', () => {
     const row = normalizeDraft({
       id: 'rd-1',
-      projectId: 'p',
       title: 'x',
       bodyMarkdown: '',
       status: 'open',

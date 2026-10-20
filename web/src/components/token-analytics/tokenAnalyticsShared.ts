@@ -2,7 +2,7 @@ import type { GlobalTokenStatsParams } from '@/lib/api/clients/statsClient'
 import type { TokenStatsWindow } from '@/lib/shared/types'
 import { clientTimezoneParams } from '@/components/token-analytics/tokenStatsShared'
 
-/** Categorical palette for project/model/workflow series (distinct hues, purple first). */
+/** Categorical palette for model/workflow series (distinct hues, purple first). */
 export const TOKEN_CHART_PALETTE = [
   '#5b4dff',
   '#22a6b3',

@@ -131,7 +131,7 @@ export function isClarifyStillStarting(
 /**
  * Whether the deep-linked approve/gate is still waiting for a human (parked).
  * Used to pin `?run=&node=` after boot when the filtered list omits the row
- * (cross-project / wf / tag mismatch) — only leave once the node left pending.
+ * (wf / tag mismatch) — only leave once the node left pending.
  */
 export function isClarifyAwaitingHuman(
   run: Pick<Run, 'status'> & { nodeRuns?: Run['nodeRuns']; nodes?: Run['nodes'] },

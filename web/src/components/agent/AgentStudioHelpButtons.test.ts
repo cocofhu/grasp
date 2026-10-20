@@ -28,7 +28,6 @@ function expectOutlineHelpButton(wrapper: ReturnType<typeof mount>, selector: st
 
 const baseDraft: AgentStudioDraft = {
   name: 'test-agent',
-  projectId: '',
   env: [],
   mcp: [],
   files: [],

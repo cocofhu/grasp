@@ -1,7 +1,7 @@
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 /**
- * P0 Run→QQ NotifyPolicy UI acceptance (mock API harness via project-detail).
+ * P0 Run→QQ NotifyPolicy UI acceptance (mock API harness via workspace settings).
  * Temporary verification for test gate; covers tab + inline override + no-channel.
  */
 import { test, expect } from '@playwright/test'
@@ -13,9 +13,8 @@ import fs from 'node:fs'
 const shotDir = path.join('/tmp', 'notify-ui-shots')
 fs.mkdirSync(shotDir, { recursive: true })
 
-const MOCK_PROJECT = {
-  id: 'proj-1',
-  name: 'Demo Project',
+const MOCK_WORKSPACE = {
+  name: 'Demo Workspace',
   description: 'Notify UI e2e',
   variables: [],
   notifyPolicy: {
@@ -74,7 +73,7 @@ async function setupNotifyHarness(
   opts: { hasChannel?: boolean } = {},
 ) {
   const hasChannel = opts.hasChannel ?? false
-  let savedProjectPolicy: unknown = null
+  let savedWorkspacePolicy: unknown = null
   let lastWorkflowSave: unknown = null
   const workflows = structuredClone(MOCK_WORKFLOWS)
 
@@ -108,8 +107,8 @@ async function setupNotifyHarness(
     const method = route.request().method()
     if (method === 'GET') {
       const body = {
-        ...MOCK_PROJECT,
-        notifyPolicy: savedProjectPolicy || MOCK_PROJECT.notifyPolicy,
+        ...MOCK_WORKSPACE,
+        notifyPolicy: savedWorkspacePolicy || MOCK_WORKSPACE.notifyPolicy,
       }
       await route.fulfill({
         status: 200,
@@ -120,13 +119,13 @@ async function setupNotifyHarness(
     }
     if (method === 'PUT' || method === 'PATCH') {
       const payload = route.request().postDataJSON() as { notifyPolicy?: unknown }
-      if (payload?.notifyPolicy) savedProjectPolicy = payload.notifyPolicy
+      if (payload?.notifyPolicy) savedWorkspacePolicy = payload.notifyPolicy
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          ...MOCK_PROJECT,
-          notifyPolicy: savedProjectPolicy || MOCK_PROJECT.notifyPolicy,
+          ...MOCK_WORKSPACE,
+          notifyPolicy: savedWorkspacePolicy || MOCK_WORKSPACE.notifyPolicy,
         }),
       })
       return
@@ -222,7 +221,7 @@ async function setupNotifyHarness(
   await page.goto('/workspace-config.html?view=/settings/notification-policy')
 
   return {
-    getSavedProjectPolicy: () => savedProjectPolicy,
+    getSavedWorkspacePolicy: () => savedWorkspacePolicy,
     getLastWorkflowSave: () => lastWorkflowSave,
   }
 }
@@ -232,7 +231,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     const harness = await setupNotifyHarness(page, { hasChannel: false })
 
     await expect(page.getByTestId('workspace-tool-notificationPolicy')).toBeVisible()
-    await expect(page.getByTestId('project-notify-panel')).toBeVisible()
+    await expect(page.getByTestId('workspace-notify-panel')).toBeVisible()
     await expect(page.getByTestId('notify-no-channel-hint')).toBeVisible()
     await expect(page.getByTestId('notify-go-channel')).toBeVisible()
     await expect(page.getByTestId('notify-master-toggle')).toHaveAttribute('aria-checked', 'true')
@@ -252,7 +251,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     await page.getByTestId('notify-master-toggle').click()
     await expect(page.getByTestId('notify-master-toggle')).toHaveAttribute('aria-checked', 'false')
     await page.getByTestId('notify-save').click()
-    await expect.poll(() => harness.getSavedProjectPolicy()).toEqual({
+    await expect.poll(() => harness.getSavedWorkspacePolicy()).toEqual({
       enabled: false,
       defaultEvents: ['waiting_human', 'failed'],
       waitingHumanTemplate: '',
@@ -275,12 +274,12 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
 
     // Fill default skeleton → preview stays equivalent but mode becomes custom
     await page.getByTestId('notify-tpl-fill-default').click()
-    await expect(page.getByTestId('notify-tpl-input')).toHaveValue(/\{project\}/)
+    await expect(page.getByTestId('notify-tpl-input')).toHaveValue(/\{workspace\}/)
     await expect(page.getByTestId('notify-preview-mode')).toContainText('自定义模板渲染')
 
     // Custom shorter template + save
     await page.getByTestId('notify-tpl-input').fill(
-      '【Grasp】{title}\n📦 {project} / {workflow}\nRun {run_id} · {node}\n👉 {link}',
+      '【Grasp】{title}\n📦 {workspace} / {workflow}\nRun {run_id} · {node}\n👉 {link}',
     )
     await expect(page.getByTestId('notify-preview-body')).toContainText('📦 grasp-demo / gate-main')
     await page.getByTestId('notify-ph-run_id').click()
@@ -288,7 +287,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
 
     await page.getByTestId('notify-save').click()
     await expect.poll(() => {
-      const p = harness.getSavedProjectPolicy() as {
+      const p = harness.getSavedWorkspacePolicy() as {
         waitingHumanTemplate?: string
         failedTemplate?: string
       } | null
@@ -312,7 +311,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     await page.getByTestId('notify-master-toggle').click()
     await page.getByTestId('notify-save').click()
     await expect.poll(() => {
-      const p = harness.getSavedProjectPolicy() as {
+      const p = harness.getSavedWorkspacePolicy() as {
         enabled?: boolean
         waitingHumanTemplate?: string
         failedTemplate?: string

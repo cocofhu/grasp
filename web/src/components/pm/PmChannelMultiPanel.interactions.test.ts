@@ -4,7 +4,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { Project } from '@/lib/shared/types'
+import type { Workspace } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
   listChannels: vi.fn(), getWorkspace: vi.fn(), receipts: vi.fn(), threads: vi.fn(),
@@ -14,16 +14,16 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return { ...actual, api: { ...actual.api,
-    listProjectChannels: mocks.listChannels, getWorkspace: mocks.getWorkspace,
-    listProjectNotifyReceipts: mocks.receipts, listPmThreads: mocks.threads,
-    createProjectChannel: mocks.create, updateProjectChannel: mocks.update,
-    deleteProjectChannelById: mocks.del, updateWorkspace: mocks.updateWorkspace,
+    listChannels: mocks.listChannels, getWorkspace: mocks.getWorkspace,
+    listNotifyReceipts: mocks.receipts, listPmThreads: mocks.threads,
+    createChannel: mocks.create, updateChannel: mocks.update,
+    deleteChannel: mocks.del, updateWorkspace: mocks.updateWorkspace,
   } }
 })
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 import PmChannelMultiPanel from './PmChannelMultiPanel.vue'
 
-const project = { id: 'p1', name: 'P', description: '', variables: [], notifyPolicy: { enabled: true, channelIds: ['c1'] } } as Project
+const workspace = { name: 'P', description: '', variables: [], notifyPolicy: { enabled: true, channelIds: ['c1'] } } as Workspace
 const channels: any[] = [
   { id: 'c1', type: 'qq', name: 'QQ', appId: 'a1', enabled: true, isPrimary: true, agentName: 'agent1', appSecretSet: true, connectionState: 'connected', connectionDetail: 'healthy', config: { sandbox: true, intents: 3 }, enabledMcps: ['pm-progress'], cronDeliver: true, cronDeliverTarget: 'guild:1' },
   { id: 'c2', type: 'feishu', name: 'Feishu', appId: 'a2', enabled: false, isPrimary: false, agentName: 'agent2', connectionState: 'auth_failed', config: { region: 'lark' } },
@@ -32,7 +32,7 @@ const channels: any[] = [
 function mountPanel() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(PmChannelMultiPanel, {
-    props: { projectId: 'p1', project, pmLeaderAgent: 'agent1' },
+    props: { workspace, pmLeaderAgent: 'agent1' },
     attachTo: document.body,
     global: { plugins: [i18n], stubs: {
       Icon: true,
@@ -46,11 +46,11 @@ describe('PmChannelMultiPanel interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks(); vi.stubGlobal('confirm', vi.fn(() => true))
     mocks.listChannels.mockResolvedValue({ items: channels, freeAgents: ['agent1', 'agent2'], secretsKeyConfigured: false })
-    mocks.getWorkspace.mockResolvedValue(project)
+    mocks.getWorkspace.mockResolvedValue(workspace)
     mocks.receipts.mockResolvedValue({ items: [{ runId: 'r1', kind: 'failed', status: 'error', error: 'boom', createdAt: '' }] })
     mocks.threads.mockResolvedValue({ items: [] })
     mocks.create.mockResolvedValue({}); mocks.update.mockResolvedValue({}); mocks.del.mockResolvedValue({})
-    mocks.updateWorkspace.mockResolvedValue({ ...project, notifyPolicy: { enabled: true, channelIds: ['c2'] } })
+    mocks.updateWorkspace.mockResolvedValue({ ...workspace, notifyPolicy: { enabled: true, channelIds: ['c2'] } })
   })
 
   it('renders all connection variants, edits types and builds provider inputs', async () => {
@@ -88,7 +88,7 @@ describe('PmChannelMultiPanel interactions', () => {
     expect(mocks.create).toHaveBeenCalled()
     vm.openEdit(channels[0]); vm.chAgent = 'agent2'
     await vm.saveChannel()
-    expect(mocks.update).toHaveBeenCalledWith('p1', 'c1', expect.objectContaining({ syncPmLeader: true }))
+    expect(mocks.update).toHaveBeenCalledWith('c1', expect.objectContaining({ syncPmLeader: true }))
     vm.openAdd(); vm.chName = 'Bad'; vm.chAgent = 'agent1'; vm.chAppId = 'x'; vm.chAppSecret = 's'
     mocks.create.mockRejectedValueOnce(new Error('save failed'))
     await vm.saveChannel()
@@ -130,13 +130,13 @@ describe('PmChannelMultiPanel interactions', () => {
     expect(mocks.del).not.toHaveBeenCalled()
     vm.deleteNewPrimaryId = 'c2'
     await vm.confirmDeletePrimary()
-    expect(mocks.del).toHaveBeenCalledWith('p1', 'c1', expect.objectContaining({ newPrimaryId: 'c2' }))
+    expect(mocks.del).toHaveBeenCalledWith('c1', expect.objectContaining({ newPrimaryId: 'c2' }))
     vm.askDelete(channels[1])
     await flushPromises()
-    expect(mocks.del).toHaveBeenCalledWith('p1', 'c2', { confirmNoPrimary: false })
+    expect(mocks.del).toHaveBeenCalledWith('c2', { confirmNoPrimary: false })
     vm.tab = 'notify'; vm.toggleNotify('c1'); vm.toggleNotify('c2')
     await vm.saveNotifyTargets()
-    expect(w.emitted('project-updated')).toBeTruthy()
+    expect(w.emitted('workspace-updated')).toBeTruthy()
     mocks.updateWorkspace.mockRejectedValueOnce(new Error('notify failed'))
     await vm.saveNotifyTargets()
     expect(mocks.error).toHaveBeenCalledWith('notify failed')
@@ -222,7 +222,7 @@ describe('PmChannelMultiPanel interactions', () => {
     for (const sw of w.findAll('button[role="switch"]')) await sw.trigger('click')
     await w.get('[data-testid="channel-save"]').trigger('click')
     await flushPromises()
-    expect(mocks.update).toHaveBeenCalledWith('p1', 'c2', expect.objectContaining({
+    expect(mocks.update).toHaveBeenCalledWith('c2', expect.objectContaining({
       name: 'Edited',
       agentName: 'agent1',
       enabled: true,

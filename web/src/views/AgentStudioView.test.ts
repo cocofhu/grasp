@@ -15,12 +15,11 @@ import type { Agent } from '@/lib/api/api'
 
 const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
-  listProjects: vi.fn(),
   saveAgent: vi.fn(),
   renameAgent: vi.fn(),
-  listProjectRunTags: vi.fn(),
-  createProjectSharedAgentTest: vi.fn(),
-  exportProjectAgents: vi.fn(),
+  listRunTags: vi.fn(),
+  createSharedAgentTest: vi.fn(),
+  exportWorkspaceAgents: vi.fn(),
 }))
 
 const breakpointMocks = vi.hoisted(() => {
@@ -36,20 +35,19 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listAgents: mocks.listAgents,
-      listProjects: mocks.listProjects,
       saveAgent: mocks.saveAgent,
       renameAgent: mocks.renameAgent,
-      listProjectRunTags: mocks.listProjectRunTags,
-      createProjectSharedAgentTest: mocks.createProjectSharedAgentTest,
-      exportProjectAgents: mocks.exportProjectAgents,
+      listRunTags: mocks.listRunTags,
+      createSharedAgentTest: mocks.createSharedAgentTest,
+      exportWorkspaceAgents: mocks.exportWorkspaceAgents,
     },
   }
 })
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { ref, computed } = await import('vue')
-  const workspace = ref({ id: 'proj-default', name: 'Default' })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: computed(() => workspace.value.id), ensureLoaded: vi.fn(async () => workspace.value), reload: vi.fn(async () => workspace.value) }) }
+  const { ref } = await import('vue')
+  const workspace = ref({ name: 'Default', description: '', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, ensureLoaded: vi.fn(async () => workspace.value), reload: vi.fn(async () => workspace.value) }) }
 })
 
 vi.mock('@/lib/composables/useBreakpoint', () => ({
@@ -71,7 +69,6 @@ const CodeEditorStub = defineComponent({
 function agent(region?: string): Agent {
   return {
     name: 'legacy',
-    projectId: 'proj-default',
     acpBackend: 'codebuddy',
     files: [],
     mcp: [],
@@ -85,7 +82,6 @@ async function createStudioRouter(query: Record<string, string> = {}) {
     history: createMemoryHistory(),
     routes: [
       { path: '/agents', component: { render: () => h('div') } },
-      { path: '/projects/:id', name: 'project-detail', component: { render: () => h('div') } },
     ],
   })
   await router.push({ path: '/agents', query })
@@ -125,7 +121,7 @@ async function mountStudio(query: Record<string, string> = {}) {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentProjectSidebar: true,
+          AgentSidebar: true,
           AgentDataPanel: true,
         },
       },
@@ -137,10 +133,9 @@ beforeEach(() => {
   removeStudioToasts()
   vi.clearAllMocks()
   breakpointMocks.isMobile.value = false
-  mocks.listProjects.mockResolvedValue([{ id: 'proj-default', name: 'Default' }])
-  mocks.listProjectRunTags.mockResolvedValue({ tags: [] })
+  mocks.listRunTags.mockResolvedValue({ tags: [] })
   mocks.saveAgent.mockImplementation(async (payload: Agent) => payload)
-  mocks.createProjectSharedAgentTest.mockResolvedValue({ id: 1 })
+  mocks.createSharedAgentTest.mockResolvedValue({ id: 1 })
 })
 
 afterEach(() => {
@@ -444,7 +439,7 @@ describe('AgentStudio MCP config help', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -576,7 +571,7 @@ describe('AgentStudio rename entry migration', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: SidebarStub,
+            AgentSidebar: SidebarStub,
             AgentDataPanel: true,
           },
         },
@@ -773,7 +768,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -960,7 +955,7 @@ describe('AgentStudio mobile core path', () => {
   it('deep-links to chat test with current agent profile (g2.2)', async () => {
     mocks.listAgents.mockResolvedValue([
       { ...agentWithFiles(), name: 'alpha' },
-      { ...agentWithFiles(), name: 'beta', projectId: 'proj-default' },
+      { ...agentWithFiles(), name: 'beta' },
     ])
     const i18n = createI18n({
       legacy: false,
@@ -980,13 +975,13 @@ describe('AgentStudio mobile core path', () => {
             MarkdownSplitEditor: true,
             ExplorerContextMenu: true,
             AgentChatTester: {
-              props: ['profile', 'homeProjectId', 'createTest'],
+              props: ['profile', 'createTest'],
               template:
-                '<div data-testid="studio-chat-tester-stub">{{ profile }}|{{ homeProjectId }}</div>',
+                '<div data-testid="studio-chat-tester-stub">{{ profile }}|{{ typeof createTest }}</div>',
             },
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -996,7 +991,7 @@ describe('AgentStudio mobile core path', () => {
 
     expect(wrapper.find('[data-testid="studio-chat-test"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="studio-chat-tester-stub"]').text()).toBe(
-      'alpha|proj-default',
+      'alpha|function',
     )
     // Switching left Agent remounts tester via :key="activeName" (s3).
     const viewSrc = readFileSync(fileURLToPath(import.meta.url).replace(/\.test\.ts$/, '.vue'), 'utf8')
@@ -1025,7 +1020,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1062,7 +1057,7 @@ describe('AgentStudio mobile core path', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1074,28 +1069,22 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('shows switch entry and opens the project sheet tree', async () => {
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-default', name: '默认项目' },
-      { id: 'proj-2', name: '第二项目' },
-    ])
+  it('shows switch entry and opens the sidebar sheet tree', async () => {
     mocks.listAgents.mockResolvedValue([
       { ...agentWithFiles(), name: 'alpha' },
-      { ...agentWithFiles(), name: 'beta', projectId: 'proj-2' },
+      { ...agentWithFiles(), name: 'beta' },
     ])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    const switchBtn = wrapper.get('[data-test="project-switch"]')
+    const switchBtn = wrapper.get('[data-test="sidebar-switch"]')
     expect(switchBtn.text()).toContain('切换')
     await switchBtn.trigger('click')
     await flushPromises()
 
-    const sheet = document.querySelector('[data-test="project-sheet"]')
+    const sheet = document.querySelector('[data-test="sidebar-sheet"]')
     expect(sheet).toBeTruthy()
     expect(sheet!.textContent).toContain('Agent')
-    expect(sheet!.textContent).not.toContain('默认项目')
-    expect(sheet!.textContent).not.toContain('第二项目')
     expect(sheet!.querySelector('[data-resource-key="alpha"]')).toBeTruthy()
     expect(sheet!.querySelector('[data-resource-key="beta"]')).toBeTruthy()
     wrapper.unmount()
@@ -1103,7 +1092,7 @@ describe('AgentStudio mobile core path', () => {
 
   function sheetAgent(name: string) {
     return document.querySelector(
-      `[data-test="project-sheet"] [data-resource-key="${name}"]`,
+      `[data-test="sidebar-sheet"] [data-resource-key="${name}"]`,
     ) as HTMLElement
   }
 
@@ -1120,14 +1109,14 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('alpha')
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
     const betaBtn = sheetAgent('beta')
     expect(betaBtn).toBeTruthy()
     betaBtn.click()
     await flushPromises()
 
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     wrapper.unmount()
@@ -1146,7 +1135,7 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
     const betaBtn = sheetAgent('beta')
     betaBtn.click()
@@ -1155,12 +1144,12 @@ describe('AgentStudio mobile core path', () => {
     expect(wrapper.text()).toContain('保存并切换')
     expect(wrapper.text()).toContain('丢弃并切换')
     expect(wrapper.text()).toContain('取消')
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeTruthy()
 
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
 
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeTruthy()
     expect(wrapper.text()).toContain('未保存')
     expect(wrapper.text()).toContain('alpha')
     wrapper.unmount()
@@ -1183,7 +1172,7 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
     const betaBtn = sheetAgent('beta')
     betaBtn.click()
@@ -1193,7 +1182,7 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
 
     expect(mocks.saveAgent).toHaveBeenCalled()
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     expect(wrapper.text()).not.toContain('未保存')
@@ -1217,7 +1206,7 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('未保存')
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
     const betaBtn = sheetAgent('beta')
     betaBtn.click()
@@ -1227,20 +1216,20 @@ describe('AgentStudio mobile core path', () => {
     await flushPromises()
 
     expect(mocks.saveAgent).not.toHaveBeenCalled()
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeNull()
     expect(wrapper.text()).toContain('beta')
     expect(wrapper.text()).toContain('README.md')
     wrapper.unmount()
   })
 
-  it('project sheet manage opens existing agent manage modal', async () => {
+  it('sidebar sheet manage opens existing agent manage modal', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
-    const manageBtn = document.querySelector('[data-test="project-sheet-manage"]') as HTMLButtonElement
+    const manageBtn = document.querySelector('[data-test="sidebar-sheet-manage"]') as HTMLButtonElement
     expect(manageBtn).toBeTruthy()
     manageBtn.click()
     await flushPromises()
@@ -1284,37 +1273,37 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('closes project sheet when breakpoint flips to desktop', async () => {
+  it('closes sidebar sheet when breakpoint flips to desktop', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeTruthy()
 
     breakpointMocks.isMobile.value = false
     await nextTick()
     await flushPromises()
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeNull()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeNull()
     wrapper.unmount()
   })
 
-  it('keeps switch and exposes import/new via project sheet header', async () => {
+  it('keeps switch and exposes import/new via sidebar sheet header', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
-    expect(wrapper.find('[data-test="project-switch"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="sidebar-switch"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="agent-studio-action-row"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('配置可复用的 Agent')
     expect(wrapper.text()).not.toContain('复制进沙箱')
 
-    await wrapper.get('[data-test="project-switch"]').trigger('click')
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
-    expect(document.querySelector('[data-test="project-sheet"]')).toBeTruthy()
-    expect(document.querySelector('[data-test="project-sheet-import"]')).toBeTruthy()
-    expect(document.querySelector('[data-test="project-sheet-create-agent"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet-import"]')).toBeTruthy()
+    expect(document.querySelector('[data-test="sidebar-sheet-create-agent"]')).toBeTruthy()
     wrapper.unmount()
   })
 })
@@ -1365,7 +1354,7 @@ describe('AgentStudio mobile chrome', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -1385,7 +1374,7 @@ describe('AgentStudio mobile chrome', () => {
     expect(wrapper.find('[data-test="studio-name-row-top"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="studio-name-row-bottom"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="agent-name"]').text()).toContain('Grasp代办助手')
-    expect(wrapper.get('[data-test="project-switch"]').classes().join(' ')).toMatch(/min-h-11/)
+    expect(wrapper.get('[data-test="sidebar-switch"]').classes().join(' ')).toMatch(/min-h-11/)
     expect(wrapper.get('[data-test="studio-export"]').classes().join(' ')).toMatch(/min-h-11/)
     expect(wrapper.find('[data-test="studio-save"]').exists()).toBe(false)
     expect(wrapper.findAll('button').filter((b) => b.text() === '已保存').length).toBe(0)
@@ -1516,7 +1505,7 @@ describe('AgentStudio desktop chrome unchanged', () => {
 
     expect(wrapper.find('[data-test="studio-name-row-top"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="studio-name-row-bottom"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="project-switch"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="sidebar-switch"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="file-row-more"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="tab-fade-right"]').exists()).toBe(false)
     const save = wrapper.get('[data-test="studio-save"]')
@@ -1555,7 +1544,7 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentProjectSidebar: {
+          AgentSidebar: {
             template:
               '<div data-test="sidebar">' +
               '<button data-testid="agent-tree-import" aria-label="Import">Import</button>' +
@@ -1588,7 +1577,7 @@ describe('AgentStudio copy removal (subtitle + toolbar)', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentProjectSidebar: {
+          AgentSidebar: {
             template:
               '<div data-test="sidebar">' +
               '<button data-testid="agent-tree-import" aria-label="导入">导入</button>' +
@@ -1665,7 +1654,7 @@ describe('AgentStudio remaining hints', () => {
           AgentChatTester: true,
           AgentGitGuide: true,
           AgentCreateWizard: true,
-          AgentProjectSidebar: SidebarStub,
+          AgentSidebar: SidebarStub,
           AgentDataPanel: true,
         },
       },
@@ -1733,7 +1722,7 @@ describe('AgentStudio env credential help', () => {
           AgentChatTester: true,
           AgentGitGuide: GitGuideHelpStub,
           AgentCreateWizard: true,
-          AgentProjectSidebar: true,
+          AgentSidebar: true,
           AgentDataPanel: true,
         },
       },
@@ -1809,12 +1798,12 @@ describe('AgentStudio env credential help', () => {
 
   it('opens Git credential help when run-tags rejects (404 noise)', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
-    mocks.listProjectRunTags.mockRejectedValue(new Error('not found'))
+    mocks.listRunTags.mockRejectedValue(new Error('not found'))
     const wrapper = await mountStudioWithHelp()
     await flushPromises()
     await openEnvTab(wrapper)
 
-    void mocks.listProjectRunTags('proj-28d13430').catch(() => {})
+    void mocks.listRunTags().catch(() => {})
     await wrapper.get('[data-test="git-help-emit"]').trigger('click')
     await flushPromises()
 
@@ -1825,7 +1814,7 @@ describe('AgentStudio env credential help', () => {
   })
 })
 
-describe('AgentStudio project tree actions', () => {
+describe('AgentStudio sidebar actions', () => {
   const ModalStub = defineComponent({
     props: { open: Boolean, title: String },
     emits: ['close'],
@@ -1833,18 +1822,17 @@ describe('AgentStudio project tree actions', () => {
   })
   const SidebarStub = defineComponent({
     props: { nodes: Array, activeKey: String },
-    emits: ['create-agent', 'import', 'export-project', 'import-project', 'select'],
+    emits: ['create-agent', 'import', 'export-workspace', 'select'],
     template:
-      '<div data-test="sidebar" :data-active-key="activeKey" :data-projects="nodes.map((n) => n.id).join(\',\')">' +
-      '<button data-test="create-in-p2" @click="$emit(\'create-agent\', \'proj-2\')">create</button>' +
+      '<div data-test="sidebar" :data-active-key="activeKey" :data-nodes="nodes.map((n) => n.id).join(\',\')">' +
+      '<button data-test="header-create" @click="$emit(\'create-agent\')">create</button>' +
       '<button data-test="header-import" @click="$emit(\'import\')">import</button>' +
-      '<button data-test="export-p1" @click="$emit(\'export-project\', \'proj-default\')">export</button>' +
-      '<button data-test="import-p2" @click="$emit(\'import-project\', \'proj-2\')">import p2</button>' +
+      '<button data-test="header-export" @click="$emit(\'export-workspace\')">export</button>' +
       '</div>',
   })
   const WizardStub = defineComponent({
-    props: { open: Boolean, projectId: String, projects: Array },
-    template: '<div v-if="open" data-test="create-wizard" :data-project-id="projectId" />',
+    props: { open: Boolean, existingNames: Array },
+    template: '<div v-if="open" data-test="create-wizard" :data-existing-names="existingNames.join(\',\')" />',
   })
 
   async function mountTreeStudio() {
@@ -1869,7 +1857,7 @@ describe('AgentStudio project tree actions', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: WizardStub,
-            AgentProjectSidebar: SidebarStub,
+            AgentSidebar: SidebarStub,
             AgentDataPanel: true,
           },
         },
@@ -1878,27 +1866,24 @@ describe('AgentStudio project tree actions', () => {
   }
 
   beforeEach(() => {
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-default', name: '默认项目' },
-      { id: 'proj-2', name: '第二项目' },
-    ])
     mocks.listAgents.mockResolvedValue([agent('public')])
   })
 
-  it('feeds the sidebar project nodes and the active agent key', async () => {
+  it('feeds the sidebar agent nodes and the active agent key', async () => {
     const wrapper = await mountTreeStudio()
     await flushPromises()
     const sidebar = wrapper.get('[data-test="sidebar"]')
-    expect(sidebar.attributes('data-projects')).toBe('legacy')
+    expect(sidebar.attributes('data-nodes')).toBe('legacy')
     expect(sidebar.attributes('data-active-key')).toBe('legacy')
   })
 
-  it('project row create opens the wizard prefilled with that project', async () => {
+  it('sidebar create opens the wizard with the existing agent names', async () => {
     const wrapper = await mountTreeStudio()
     await flushPromises()
-    await wrapper.get('[data-test="create-in-p2"]').trigger('click')
+    expect(wrapper.find('[data-test="create-wizard"]').exists()).toBe(false)
+    await wrapper.get('[data-test="header-create"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="create-wizard"]').attributes('data-project-id')).toBe('proj-default')
+    expect(wrapper.get('[data-test="create-wizard"]').attributes('data-existing-names')).toBe('legacy')
   })
 
   it('opens the file picker directly for workspace import', async () => {
@@ -1909,20 +1894,20 @@ describe('AgentStudio project tree actions', () => {
     await wrapper.get('[data-test="header-import"]').trigger('click')
     await flushPromises()
     expect(click).toHaveBeenCalledTimes(1)
-    expect(wrapper.find('[data-test="import-project-select"]').exists()).toBe(false)
   })
 
-  it('exports a project bundle after the secrets warning', async () => {
-    mocks.exportProjectAgents.mockResolvedValue({ blob: new Blob(['zip']), filename: '默认项目-agents.zip' })
+  it('exports a workspace bundle after the secrets warning', async () => {
+    mocks.exportWorkspaceAgents.mockResolvedValue({ blob: new Blob(['zip']), filename: 'workspace-agents.zip' })
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:x'), revokeObjectURL: vi.fn() }))
     const wrapper = await mountTreeStudio()
     await flushPromises()
-    await wrapper.get('[data-test="export-p1"]').trigger('click')
+    await wrapper.get('[data-test="header-export"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('导出工作区将带走密钥')
+    expect(mocks.exportWorkspaceAgents).not.toHaveBeenCalled()
     await wrapper.findAll('button').find((b) => b.text() === '确认并下载')!.trigger('click')
     await flushPromises()
-    expect(mocks.exportProjectAgents).toHaveBeenCalledWith('proj-default')
+    expect(mocks.exportWorkspaceAgents).toHaveBeenCalledWith()
     vi.unstubAllGlobals()
   })
 })
@@ -1975,7 +1960,7 @@ describe('AgentStudioView loading / four-state', () => {
     const router = await createStudioRouter()
     const wrapper = trackMount(
       mount(AgentStudioView, {
-        props: { projectId: 'proj-1', embedded: true },
+        props: { embedded: true },
         global: {
           plugins: [i18n, router],
           stubs: {
@@ -1988,7 +1973,7 @@ describe('AgentStudioView loading / four-state', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentProjectSidebar: true,
+            AgentSidebar: true,
             AgentDataPanel: true,
           },
         },
@@ -2013,7 +1998,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     )
     const src = viewSrc + '\n' + orchestrationSrc
     for (const panel of [
-      'AgentProjectSidebar',
+      'AgentSidebar',
       'AgentFilesPanel',
       'AgentMcpPanel',
       'AgentEnvPanel',
@@ -2039,7 +2024,7 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     expect(src).toMatch(/'test' as const/)
     expect(viewSrc).toContain('AgentChatTester')
     expect(viewSrc).toMatch(/data-testid="studio-chat-test"/)
-    expect(viewSrc).toMatch(/createStudioChatTest|createProjectSharedAgentTest/)
+    expect(viewSrc).toMatch(/createStudioChatTest|createSharedAgentTest/)
     expect(viewSrc).toMatch(/tab !== 'data' && tab !== 'test'/)
   })
 

@@ -102,7 +102,7 @@ let abortCtrl: AbortController | null = null
 
 async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; total: number }> {
   // Align with GatesInbox loadList: use the live URL filter set (plan g2.2).
-  // Do not hard-code project/wf/tag — read whatever is currently in the query.
+  // Do not hard-code wf/tag — read whatever is currently in the query.
   // Page through the whole total: the desktop sidebar is the only entry now.
   const filters = readPeekFiltersFromLocation()
   return listAllPendingGates({
@@ -112,7 +112,7 @@ async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; to
   })
 }
 
-/** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */
+/** URL `?wf=&tag=` — same source of truth as the inbox page filters. */
 function readPeekFiltersFromLocation(): {
   wf?: string
   tag?: string

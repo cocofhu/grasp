@@ -1,17 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
-import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
-import { api, type ProjectCredentialItem } from '@/lib/api/api'
-import { kindById, kindOfItem, type CredentialKindId } from '@/lib/project/credentialKinds'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import { api, type CredentialItem } from '@/lib/api/api'
+import { kindById, kindOfItem, type CredentialKindId } from '@/lib/workspace/credentialKinds'
 import { useToast } from '@/lib/composables/useToast'
 
 const props = defineProps<{
-  projectId: string
   kind: CredentialKindId
   selectedId?: string
-  items?: ProjectCredentialItem[]
+  items?: CredentialItem[]
   title?: string
   hint?: string
 }>()
@@ -22,7 +21,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 const toast = useToast()
-const remoteItems = ref<ProjectCredentialItem[]>([])
+const remoteItems = ref<CredentialItem[]>([])
 
 const kindDef = computed(() => kindById(props.kind))
 const source = computed(() => (props.items === undefined ? remoteItems.value : props.items))
@@ -36,17 +35,17 @@ const rows = computed(() =>
   ),
 )
 
-function vendorOf(item: ProjectCredentialItem): string {
+function vendorOf(item: CredentialItem): string {
   const value = item.metadata?.provider
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function modelOf(item: ProjectCredentialItem): string {
+function modelOf(item: CredentialItem): string {
   const value = item.metadata?.model
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function subtitle(item: ProjectCredentialItem): string {
+function subtitle(item: CredentialItem): string {
   if (props.kind === 'opencode') {
     const vendor = vendorOf(item)
     const model = modelOf(item)
@@ -54,16 +53,16 @@ function subtitle(item: ProjectCredentialItem): string {
       return t('pages.agentStudio.openCode.credentialVendorModel', { vendor, model })
     }
   }
-  return t(`pages.projectDetail.projectCredentials.kinds.${props.kind}`)
+  return t(`pages.workspace.credentials.kinds.${props.kind}`)
 }
 
 async function loadRemote() {
-  if (props.items !== undefined || !props.projectId) {
+  if (props.items !== undefined) {
     remoteItems.value = []
     return
   }
   try {
-    const response = await api.getProjectCredentials(props.projectId)
+    const response = await api.listCredentials()
     remoteItems.value = response.items || []
   } catch (e: unknown) {
     remoteItems.value = []
@@ -84,21 +83,14 @@ function clear() {
 onMounted(() => {
   void loadRemote()
 })
-
-watch(
-  () => props.projectId,
-  () => {
-    void loadRemote()
-  },
-)
 </script>
 
 <template>
   <div class="mt-3" data-testid="credential-alias-picker" :data-kind="kind">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <div class="text-[12px] font-medium text-txt2">{{ title || t('pages.projectDetail.projectCredentials.pickTitle') }}</div>
-        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ hint || t('pages.projectDetail.projectCredentials.pickHint') }}</p>
+        <div class="text-[12px] font-medium text-txt2">{{ title || t('pages.workspace.credentials.pickTitle') }}</div>
+        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ hint || t('pages.workspace.credentials.pickHint') }}</p>
       </div>
       <AppButton
         v-if="selectedId"
@@ -107,16 +99,15 @@ watch(
         data-testid="credential-alias-clear"
         @click="clear"
       >
-        {{ t('pages.projectDetail.projectCredentials.pickClear') }}
+        {{ t('pages.workspace.credentials.pickClear') }}
       </AppButton>
     </div>
-    <p v-if="!projectId" class="mb-0 mt-2 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.credentialNeedProject') }}</p>
     <div
-      v-else-if="!rows.length"
+      v-if="!rows.length"
       class="mt-2 py-3 text-[12px] text-txt3"
       data-testid="credential-alias-empty"
     >
-      {{ t('pages.projectDetail.projectCredentials.pickEmpty') }}
+      {{ t('pages.workspace.credentials.pickEmpty') }}
     </div>
     <div v-else class="mt-2 divide-y divide-line/60">
       <button

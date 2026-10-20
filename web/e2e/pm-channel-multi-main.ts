@@ -7,19 +7,18 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { setTheme } from '../src/lib/shared/theme'
 import PmChannelMultiPanel from '../src/components/pm/PmChannelMultiPanel.vue'
-import type { Project } from '../src/lib/shared/types'
+import type { Workspace } from '../src/lib/shared/types'
 
 installIdleScrollbar()
 
-const project = ref<Project>({
-  id: 'proj-e2e',
+const workspace = ref<Workspace>({
   name: 'E2E Multi Channel',
   notifyPolicy: {
     enabled: true,
     defaultEvents: ['waiting_human', 'failed'],
     channelIds: ['chn-primary'],
   },
-} as Project)
+} as Workspace)
 
 async function bootstrap() {
   await initLocale()
@@ -38,11 +37,10 @@ async function bootstrap() {
         h('div', { class: 'mx-auto max-w-3xl', 'data-testid': 'pm-channel-multi-root' }, [
           h('h1', { class: 'mb-4 text-lg font-semibold' }, '渠道接入 (QQ) · 多 Channel'),
           h(PmChannelMultiPanel, {
-            projectId: 'proj-e2e',
-            project: project.value,
+            workspace: workspace.value,
             pmLeaderAgent: 'agent-primary',
-            'onProject-updated': (p: Project) => {
-              project.value = p
+            'onWorkspace-updated': (next: Workspace) => {
+              workspace.value = next
             },
           }),
         ])

@@ -8,12 +8,12 @@ import pages from '@/locales/zh-CN/pages.json'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 
 const mocks = vi.hoisted(() => ({
-  getProjectCredentials: vi.fn(),
+  listCredentials: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, getProjectCredentials: mocks.getProjectCredentials } }
+  return { ...actual, api: { ...actual.api, listCredentials: mocks.listCredentials } }
 })
 
 function mountPanel(draft: Record<string, unknown>) {
@@ -26,7 +26,6 @@ function mountPanel(draft: Record<string, unknown>) {
     props: {
       draft,
       agentName: 'e2e-agent',
-      projects: [{ id: 'p1', name: '演示' }],
     },
     global: {
       plugins: [i18n],
@@ -38,7 +37,6 @@ function mountPanel(draft: Record<string, unknown>) {
 function draftFor(overrides: Record<string, unknown> = {}) {
   return reactive({
     name: 'e2e-agent',
-    projectId: 'p1',
     acpBackend: 'cursor',
     aiCredentialId: '',
     openCodeCredentialId: '',
@@ -60,7 +58,7 @@ function pickerText(wrapper: ReturnType<typeof mountPanel>, kind: string): strin
 
 describe('AgentMetaPanel credential hints', () => {
   beforeEach(() => {
-    mocks.getProjectCredentials.mockResolvedValue({ items: [] })
+    mocks.listCredentials.mockResolvedValue({ items: [] })
   })
 
   it('uses the shared fallback only on the coding credential picker', async () => {

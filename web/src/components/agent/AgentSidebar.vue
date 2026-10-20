@@ -3,15 +3,14 @@ import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type CSSProper
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ResourceList, { type ResourceListItem } from '@/components/ui/ResourceList.vue'
-const props = defineProps<{ nodes: ResourceListItem[]; activeKey: string; collapsed: boolean; hideCreateTeam?: boolean; workspaceId: string }>()
+const props = defineProps<{ nodes: ResourceListItem[]; activeKey: string; collapsed: boolean; hideCreateTeam?: boolean }>()
 const emit = defineEmits<{
   (e: 'select', key: string): void
   (e: 'open-manage', agentName?: string): void
   (e: 'import'): void
-  (e: 'create-agent', projectId?: string): void
+  (e: 'create-agent'): void
   (e: 'create-team'): void
-  (e: 'export-project', projectId: string): void
-  (e: 'import-project', projectId: string): void
+  (e: 'export-workspace'): void
   (e: 'toggle-collapsed'): void
 }>()
 const { t } = useI18n()
@@ -109,7 +108,7 @@ function runMoreAction(action: 'manage' | 'import' | 'export' | 'team') {
   void closeMore()
   if (action === 'manage') emit('open-manage')
   else if (action === 'import') emit('import')
-  else if (action === 'export') emit('export-project', props.workspaceId)
+  else if (action === 'export') emit('export-workspace')
   else emit('create-team')
 }
 
@@ -119,7 +118,7 @@ function onContext(event: MouseEvent, name: string) {
   context.value = { name, x: event.clientX, y: event.clientY }
 }
 
-watch([() => props.collapsed, () => props.workspaceId], () => {
+watch(() => props.collapsed, () => {
   void closeMore()
   context.value = null
 })

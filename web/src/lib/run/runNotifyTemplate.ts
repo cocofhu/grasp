@@ -1,5 +1,5 @@
 /**
- * Run→QQ notify message templates (project-level).
+ * Run→QQ notify message templates (workspace-level).
  * Placeholder keys and default/fallback rendering must stay aligned with
  * server/internal/services/run_notify.go (ReplaceRunNotifyPlaceholders /
  * FormatRunNotifyMessage / RenderRunNotifyMessage).
@@ -8,7 +8,7 @@
 export type RunNotifyKind = 'waiting_human' | 'failed' | 'completed'
 
 export const RUN_NOTIFY_PLACEHOLDERS = [
-  '{project}',
+  '{workspace}',
   '{workflow}',
   '{run_id}',
   '{node}',
@@ -19,7 +19,7 @@ export const RUN_NOTIFY_PLACEHOLDERS = [
 export type RunNotifyPlaceholder = (typeof RUN_NOTIFY_PLACEHOLDERS)[number]
 
 export interface RunNotifyPreviewContext {
-  project: string
+  workspace: string
   workflow: string
   runId: string
   node: string
@@ -28,7 +28,7 @@ export interface RunNotifyPreviewContext {
 
 /** Fake sample used by the notify Tab live preview (not a real push). */
 export const RUN_NOTIFY_PREVIEW_FAKE: RunNotifyPreviewContext = {
-  project: 'grasp-demo',
+  workspace: 'grasp-demo',
   workflow: 'gate-main',
   runId: 'run-4c9100d0',
   node: '人工门禁',
@@ -53,7 +53,7 @@ export function runNotifyTitle(kind: RunNotifyKind): string {
 export function defaultEditableRunNotifyTemplate(_kind: RunNotifyKind): string {
   return [
     '【Grasp】{title}',
-    '项目：{project}',
+    '工作区：{workspace}',
     '工作流：{workflow}',
     'Run：{run_id}',
     '节点：{node}',
@@ -65,7 +65,7 @@ export function defaultEditableRunNotifyTemplate(_kind: RunNotifyKind): string {
 export function replaceRunNotifyPlaceholders(
   tmpl: string,
   ctx: {
-    project: string
+    workspace: string
     workflow: string
     runId: string
     node: string
@@ -74,8 +74,8 @@ export function replaceRunNotifyPlaceholders(
   },
 ): string {
   return tmpl
-    .split('{project}')
-    .join(ctx.project)
+    .split('{workspace}')
+    .join(ctx.workspace)
     .split('{workflow}')
     .join(ctx.workflow)
     .split('{run_id}')
@@ -96,11 +96,11 @@ export function formatDefaultRunNotifyMessage(
   ctx: RunNotifyPreviewContext,
 ): string {
   const title = runNotifyTitle(kind)
-  const project = ctx.project.trim() || '—'
+  const workspace = ctx.workspace.trim() || '—'
   const workflow = ctx.workflow.trim() || '—'
   const lines = [
     `【Grasp】${title}`,
-    `项目：${project}`,
+    `工作区：${workspace}`,
     `工作流：${workflow}`,
     `Run：${ctx.runId}`,
   ]
@@ -125,7 +125,7 @@ export function renderRunNotifyMessage(
     return formatDefaultRunNotifyMessage(kind, ctx)
   }
   return replaceRunNotifyPlaceholders(String(template), {
-    project: ctx.project.trim() || '—',
+    workspace: ctx.workspace.trim() || '—',
     workflow: ctx.workflow.trim() || '—',
     runId: ctx.runId,
     node: ctx.node.trim(), // custom path: no line delete

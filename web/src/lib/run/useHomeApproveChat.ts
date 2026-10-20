@@ -5,7 +5,6 @@ import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   clarifyFirstNodeId,
   isClarifyFirstWorkflow,
@@ -84,7 +83,6 @@ export function useHomeApproveChat() {
 
   const workflows = ref<Workflow[]>([])
   const workflowsLoaded = ref(false)
-  const { workspaceId, ensureLoaded: loadWorkspace } = useWorkspaceContext()
   const agentsByName = ref<Map<string, Agent>>(new Map())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -136,7 +134,6 @@ export function useHomeApproveChat() {
     ),
   )
   const selected = computed(() => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null)
-  const projectId = workspaceId
   const launchTitle = computed(() => runTitleFromDraft(pendingText.value, pendingImages.value))
   /** Opening message carried through the launch modal's own startRun call. */
   const launchFirstMessage = computed(() => ({
@@ -198,7 +195,7 @@ export function useHomeApproveChat() {
     try {
       draft.value = stored.text
       attach.attachments.value = stored.attachments.map((im) => ({ ...im }))
-      // A project compose link supplies explicit context even when IDB resolves
+      // A compose link supplies explicit context even when IDB resolves
       // after workflows load. Restore content without replacing that selection.
       if (stored.pipelineId) {
         const list = homeWorkflows.value
@@ -257,11 +254,9 @@ export function useHomeApproveChat() {
     loading.value = true
     loadError.value = null
     try {
-      // Load the visible workflow catalog and workspace metadata together.
       // Agents supply the caps that decide which workflows open with a clarify Agent.
-      const [list, , agents] = await Promise.all([
+      const [list, agents] = await Promise.all([
         api.listWorkflows({ signal: ac.signal }),
-        loadWorkspace(),
         api.listAgents().catch(() => [] as Agent[]),
       ])
       if (ac.signal.aborted) return
@@ -321,13 +316,13 @@ export function useHomeApproveChat() {
       workflows.value = workflows.value.map((item) =>
         item.id === wf.id ? { ...item, ...saved, showOnHome: false } : item,
       )
-      toast.success(t('pages.projectDetail.homeVisibility.updated'))
+      toast.success(t('pages.workspace.homeVisibility.updated'))
     } catch (e: any) {
       workflows.value = previousWorkflows
       selectedId.value = previousSelectedId
       preferredDraftWorkflowId = previousSelectedId
       writeLastWorkflowId(previousSelectedId)
-      toast.error(String(e?.message || e) || t('pages.projectDetail.homeVisibility.updateFailed'))
+      toast.error(String(e?.message || e) || t('pages.workspace.homeVisibility.updateFailed'))
     } finally {
       hidingWorkflowId.value = null
     }
@@ -347,9 +342,7 @@ export function useHomeApproveChat() {
     launchOpen.value = false
   }
 
-  function goGates(runId: string, _wf: Workflow | null, nodeId?: string) {
-    // Align inbox filters to the workflow being started (plan g1.1). Use the
-    // workflow object's projectId only — never a hard-coded project name/UUID.
+  function goGates(runId: string, nodeId?: string) {
     const query: Record<string, string> = { run: runId }
     if (nodeId) query.node = nodeId
     return router.push({ path: '/gates', query })
@@ -363,7 +356,7 @@ export function useHomeApproveChat() {
   async function afterStart(runId: string, text: string, images: ClarifyImage[], wf: Workflow | null) {
     const knownNodeId = wf ? clarifyFirstNodeId(wf, agentsByName.value) || '' : ''
     setHomeApproveHandoff({ runId, nodeId: knownNodeId, text, images })
-    await goGates(runId, wf, knownNodeId || undefined)
+    await goGates(runId, knownNodeId || undefined)
   }
 
   async function send() {
@@ -453,7 +446,6 @@ export function useHomeApproveChat() {
   })
 
   return {
-    projectId,
     homeWorkflows,
     unpublishedHomeWorkflows,
     selected,

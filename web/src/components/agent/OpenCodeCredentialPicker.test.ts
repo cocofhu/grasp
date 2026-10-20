@@ -20,10 +20,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/api', () => ({
   api: {
-    getProjectCredentials: mocks.get,
-    createProjectCredential: mocks.create,
-    putProjectCredential: mocks.put,
-    deleteProjectCredential: mocks.del,
+    listCredentials: mocks.get,
+    createCredential: mocks.create,
+    putCredential: mocks.put,
+    deleteCredential: mocks.del,
     openCodeProviders: mocks.providers,
     openCodeModels: mocks.models,
   },
@@ -60,7 +60,7 @@ describe('OpenCodeCredentialPicker', () => {
   })
 
   it('lets meta pick one row and hides replace and clear', async () => {
-    const wrapper = mountPicker({ mode: 'select', projectId: 'p1', selectedId: 'a' })
+    const wrapper = mountPicker({ mode: 'select', selectedId: 'a' })
     await flushPromises()
     expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="opencode-credential-replace-a"]').exists()).toBe(false)
@@ -79,7 +79,7 @@ describe('OpenCodeCredentialPicker', () => {
   })
 
   it('saves a new key in place and selects it without echoing the secret', async () => {
-    const wrapper = mountPicker({ mode: 'select', projectId: 'p1', selectedId: '' })
+    const wrapper = mountPicker({ mode: 'select', selectedId: '' })
     await flushPromises()
     expect(wrapper.find('[data-testid="opencode-credential-empty"]').exists()).toBe(false)
 
@@ -95,7 +95,7 @@ describe('OpenCodeCredentialPicker', () => {
     await wrapper.get('[data-testid="opencode-credential-form"]').trigger('submit')
     await flushPromises()
 
-    expect(mocks.create).toHaveBeenCalledWith('p1', expect.objectContaining({
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
       type: 'ai',
       provider: 'opencode',
       name: '新密钥',
@@ -115,7 +115,7 @@ describe('OpenCodeCredentialPicker', () => {
         { ...rowB, id: 'disabled', name: '已停用', enabled: false },
       ],
     })
-    const wrapper = mountPicker({ mode: 'select', projectId: 'p1', selectedId: '' })
+    const wrapper = mountPicker({ mode: 'select', selectedId: '' })
     await flushPromises()
     expect(wrapper.find('[data-testid="opencode-credential-row-a"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="opencode-credential-row-revoked"]').exists()).toBe(false)
@@ -123,12 +123,13 @@ describe('OpenCodeCredentialPicker', () => {
     wrapper.unmount()
   })
 
-  it('disables add until a project is chosen', async () => {
-    const wrapper = mountPicker({ mode: 'select', projectId: '' })
+  it('lets an empty workspace add its first key right away', async () => {
+    mocks.get.mockResolvedValue({ items: [] })
+    const wrapper = mountPicker({ mode: 'select' })
     await flushPromises()
-    expect(wrapper.find('[data-testid="opencode-credential-need-project"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="opencode-credential-add"]').attributes('disabled')).toBeDefined()
+    expect(mocks.get).toHaveBeenCalledWith()
     expect(wrapper.find('[data-testid="opencode-credential-empty"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="opencode-credential-add"]').attributes('disabled')).toBeUndefined()
     wrapper.unmount()
   })
 })

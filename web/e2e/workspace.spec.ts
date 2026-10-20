@@ -17,7 +17,7 @@ test('settings keeps the app rail and a centered document without search', async
   expect(navBox!.width).toBe(304)
   expect(formBox!.width).toBeLessThanOrEqual(860)
   expect(Math.abs(formBox!.x + formBox!.width / 2 - (mainBox!.x + mainWidth / 2))).toBeLessThan(2)
-  const field = page.locator('#project-meta-name')
+  const field = page.locator('#workspace-meta-name')
   await field.fill('清晰的设置布局')
   await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('清晰的设置布局')
@@ -131,7 +131,7 @@ test('an unavailable historical Agent keeps the conversation readable without a 
   await expect(page.locator('textarea')).toHaveCount(0)
 })
 
-test('complete compact workflow directory has no project level or sidebar search', async ({ page }) => {
+test('complete compact workflow directory has no sidebar search', async ({ page }) => {
   await page.goto('/workspace.html')
   const sidebar = page.getByTestId('sidebar-workflows')
   await expect(sidebar.getByTestId('sidebar-workflow')).toHaveCount(12)
@@ -142,7 +142,6 @@ test('complete compact workflow directory has no project level or sidebar search
   await expect(sidebar.getByTestId('sidebar-workflow').first()).toContainText('代码审查')
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
   expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(true)
-  expect(calls.some((call: any) => call.path.startsWith('/api/projects'))).toBe(false)
 })
 
 test('manual directory runs load head details and keep publishedSnapshot unset', async ({ page }) => {
@@ -162,8 +161,8 @@ test('settings lists workspace tools and independent configuration pages', async
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
   for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/shared-agent', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
   await expect(page.locator('.settings-group-heading')).toHaveText(['工作区工具', '执行配置', '平台配置'])
-  await expect(page.getByTestId('project-meta-delete')).toHaveCount(0)
-  await page.locator('#project-meta-name').fill('共享研发工作区')
+  await expect(page.getByTestId('workspace-meta-delete')).toHaveCount(0)
+  await page.locator('#workspace-meta-name').fill('共享研发工作区')
   await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(async () => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('共享研发工作区')
 })

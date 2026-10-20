@@ -11,23 +11,15 @@ import { WIZARD_STEPS } from '@/lib/agent/agentCreateWizard'
 
 const createAgent = vi.fn(async (payload: unknown) => payload)
 /** Concurrent noise: run-tags 404 must not break git help (g3/g4). */
-const listProjectRunTags = vi.fn(async (_projectId: string) => {
+const listRunTags = vi.fn(async () => {
   throw Object.assign(new Error('not found'), { status: 404 })
 })
-const getProjectSharedAgentConfig = vi.fn(async (_projectId?: string) => ({
-  projectId: '',
+const getSharedAgentConfig = vi.fn(async () => ({
   env: {},
   files: [],
   mcp: [],
   layout: {},
 }))
-vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { ref } = await import('vue')
-  const workspace = ref({ id: 'p1', name: '工作区', variables: [] })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
-})
-
-
 vi.mock('@/lib/api/api', () => ({
   api: {
     createAgent: (payload: unknown) => createAgent(payload),
@@ -43,16 +35,14 @@ vi.mock('@/lib/api/api', () => ({
         { id: 'implement', embedName: 'ImplementAgent', roleLabelZh: '实现工程师', summary: '实现' },
       ],
     }),
-    listProjectRunTags: (projectId: string) => listProjectRunTags(projectId),
-    getProjectSharedAgentConfig: (projectId: string) => getProjectSharedAgentConfig(projectId),
+    listRunTags: () => listRunTags(),
+    getSharedAgentConfig: () => getSharedAgentConfig(),
     openCodeProviders: async () => ({ providers: [] }),
     openCodeModels: async () => ({ models: [] }),
   },
 }))
 
-const PROJECTS = [{ id: 'p1', name: 'P1' }]
-
-function mountWizard(locale: 'zh-CN' | 'en' = 'zh-CN', projectId?: string) {
+function mountWizard(locale: 'zh-CN' | 'en' = 'zh-CN') {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -63,7 +53,7 @@ function mountWizard(locale: 'zh-CN' | 'en' = 'zh-CN', projectId?: string) {
   })
   return mount(AgentCreateWizard, {
     attachTo: document.body,
-    props: { open: true, existingNames: [], projects: PROJECTS, projectId },
+    props: { open: true, existingNames: [] },
     global: { plugins: [i18n] },
   })
 }
@@ -107,10 +97,9 @@ describe('AgentCreateWizard 5-step IA', () => {
     wrapper.unmount()
   })
 
-  it('uses the workspace without presenting a project selector', async () => {
-    const wrapper = mountWizard('zh-CN', 'p1')
+  it('leaves basics once a valid name is entered', async () => {
+    const wrapper = mountWizard()
     await flushPromises()
-    expect(document.body.querySelector('[data-testid="wizard-project-select"]')).toBeNull()
     fillName('workspace-agent')
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
@@ -260,8 +249,8 @@ describe('AgentCreateWizard 5-step IA', () => {
     wrapper.unmount()
   })
 
-  it('opens Git credential help even when listProjectRunTags would 404', async () => {
-    listProjectRunTags.mockRejectedValue(new Error('not found'))
+  it('opens Git credential help even when listRunTags would 404', async () => {
+    listRunTags.mockRejectedValue(new Error('not found'))
     const unhandled: unknown[] = []
     const onUnhandled = (reason: unknown) => {
       unhandled.push(reason)
@@ -279,7 +268,7 @@ describe('AgentCreateWizard 5-step IA', () => {
     await wrapper.vm.$nextTick()
 
     // Simulate concurrent TagFilter-style call while user opens help
-    void listProjectRunTags('proj-28d13430').catch(() => {})
+    void listRunTags().catch(() => {})
     const helpLink = document.body.querySelector('[data-test="git-help-link"]') as HTMLButtonElement
     helpLink.click()
     await wrapper.vm.$nextTick()
@@ -325,7 +314,7 @@ describe('AgentCreateWizard 5-step IA', () => {
     })
     const wrapper = mount(AgentCreateWizard, {
       attachTo: document.body,
-      props: { open: true, existingNames: [], projects: PROJECTS },
+      props: { open: true, existingNames: [] },
       global: { plugins: [i18n], stubs: { Teleport: false } },
     })
     await flushPromises()

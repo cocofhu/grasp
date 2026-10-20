@@ -27,7 +27,6 @@ const MOCK_STATS = {
     cacheWriteTokens: 200,
     workflowTotal: 7000,
     pmTotal: 2000,
-    projectCount: 1,
     runCount: 3,
     modelCount: 1,
     studioTotal: 0,
@@ -54,17 +53,9 @@ const MOCK_STATS = {
   ],
   weekHour: Array.from({ length: 7 }, (_, d) => Array.from({ length: 24 }, (_, h) => (d < 5 && h >= 9 && h <= 19 ? (h * 37 + d * 11) % 400 : 0))),
   tree: [
-    {
-      key: 'p1',
-      name: 'Demo',
-      kind: 'project',
-      value: 7000,
-      children: [
-        { key: 'w1', name: 'wf', kind: 'workflow', value: 5000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 5000 }] },
-        { key: '_pm', name: 'PM', kind: 'pm', value: 2000 },
-      ],
-    },
-    { key: 'p2', name: 'Docs', kind: 'project', value: 2000, children: [{ key: 'w2', name: 'review', kind: 'workflow', value: 2000 }] },
+    { key: 'w1', name: 'wf', kind: 'workflow', value: 5000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 5000 }] },
+    { key: 'w2', name: 'review', kind: 'workflow', value: 2000 },
+    { key: '_pm', name: 'PM', kind: 'pm', value: 2000 },
   ],
   unpricedModels: ['m2'],
   trend: [
@@ -87,10 +78,6 @@ const MOCK_STATS = {
     cacheReadTokens: 800,
     cacheWriteTokens: 200,
   },
-  projects: [
-    { projectId: 'p1', name: 'Demo', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, cost: 3.2, runCount: 2 },
-    { projectId: 'p2', name: 'Docs', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
-  ],
   modelRanking: [
     { modelKey: 'm1', name: 'Model', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, cost: 4.56 },
     { modelKey: 'm2', name: 'Model Mini', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
@@ -100,23 +87,20 @@ const MOCK_STATS = {
     { workflowId: 'w1', name: 'wf', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, kind: 'workflow' },
     { workflowId: 'w2', name: 'review', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0, kind: 'workflow' },
   ],
-  heatmap: { rows: ['Model'], cols: ['Demo'], grid: [[9000]] },
+  heatmap: { rows: ['Model'], cols: ['wf'], grid: [[9000]] },
   topRuns: [
     {
       runId: 'r1',
       title: 'Run',
-      projectId: 'p1',
-      projectName: 'Demo',
       workflowName: 'wf',
       modelKey: 'm1',
       modelName: 'Model',
       total: 9000,
     },
   ],
-  projectTrends: [],
   modelTrends: [],
   filterOptions: {
-    projects: [{ key: 'p1', name: 'Demo' }],
+    workflows: [{ key: 'w1', name: 'wf' }],
     models: [{ key: 'm1', name: 'Model' }],
   },
 }
@@ -133,8 +117,6 @@ const MOCK_EVENTS = {
       source: 'workflow',
       phase: 'production',
       status: 'ok',
-      projectId: 'p1',
-      projectName: 'Demo',
       runId: 'r1',
       runTitle: 'Run',
       nodeType: 'agent',
@@ -203,7 +185,7 @@ window.fetch = async (input: RequestInfo | URL) => {
   if (url.includes('/workflows')) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
-  if (new URL(url, location.origin).pathname === '/api/workspace') return new Response(JSON.stringify({ id: 'workspace', name: '工作区', variables: [] }), { headers: { 'Content-Type': 'application/json' } })
+  if (new URL(url, location.origin).pathname === '/api/workspace') return new Response(JSON.stringify({ name: '工作区', variables: [] }), { headers: { 'Content-Type': 'application/json' } })
   return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 

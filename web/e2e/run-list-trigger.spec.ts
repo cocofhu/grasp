@@ -42,17 +42,6 @@ async function mockApis(page: import('@playwright/test').Page) {
     }
     await route.continue()
   })
-  await page.route('**/api/projects**', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [], total: 0 }),
-      })
-      return
-    }
-    await route.continue()
-  })
   await page.route('**/api/runs**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -92,12 +81,12 @@ test.describe('RunListView 触发列统一展示', () => {
     await gotoRunList(page, 'zh')
     await expect(triggerCell(page, '标准 manual')).toHaveText('手动')
     await expect(triggerCell(page, '标准 api')).toHaveText('API')
-    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('项目管理 MCP')
+    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('工作区助手 MCP')
     await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
     await expect(triggerCell(page, '未映射-自由串')).toHaveText('qq:cron-timezone-bug')
     const triggerTexts = await page.locator('table tbody tr td:nth-child(3)').allTextContents()
     expect(triggerTexts).toEqual(
-      expect.arrayContaining(['手动', 'API', '项目管理 MCP', 'channel', 'qq:cron-timezone-bug']),
+      expect.arrayContaining(['手动', 'API', '工作区助手 MCP', 'channel', 'qq:cron-timezone-bug']),
     )
   })
 
@@ -105,7 +94,7 @@ test.describe('RunListView 触发列统一展示', () => {
     await gotoRunList(page, 'en')
     await expect(triggerCell(page, '标准 manual')).toHaveText('Manual')
     await expect(triggerCell(page, '标准 api')).toHaveText('API')
-    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('Project Management MCP')
+    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('Workspace assistant MCP')
     await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
   })
 })

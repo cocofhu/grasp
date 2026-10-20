@@ -5,10 +5,9 @@ import { test, expect } from '@playwright/test'
 test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onboarding'
 
-const MOCK_PROJECT = {
-  id: 'proj-1',
-  name: 'Demo Project',
-  description: 'Project for e2e',
+const MOCK_WORKSPACE = {
+  name: 'Demo Workspace',
+  description: 'Workspace for e2e',
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -20,14 +19,14 @@ const MOCK_PROJECT = {
  */
 async function gotoExternalMcpPanel(page: import('@playwright/test').Page) {
   await page.setViewportSize({ width: 1280, height: 800 })
-  await seedOnboardingDismissed(page, 'proj-1')
+  await seedOnboardingDismissed(page)
 
   await routeApi(page, '**/api/workspace', async (route) => {
     if (route.request().method() === 'GET' || route.request().method() === 'PUT') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PROJECT),
+        body: JSON.stringify(MOCK_WORKSPACE),
       })
       return
     }
@@ -60,7 +59,7 @@ async function gotoExternalMcpPanel(page: import('@playwright/test').Page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{ name: 'demo-agent', projectId: 'proj-1' }]),
+        body: JSON.stringify([{ name: 'demo-agent' }]),
       })
       return
     }
@@ -142,7 +141,7 @@ test.describe('工作区外部 MCP 面板（无引导遮罩）', () => {
   test('总开关、保存、创钥与密钥行可见 (g3.1/g3.2)', async ({ page }) => {
     await gotoExternalMcpPanel(page)
 
-    await expect(page.getByTestId('project-external-mcp-panel')).toBeVisible()
+    await expect(page.getByTestId('workspace-external-mcp-panel')).toBeVisible()
     await expect(page.getByTestId('external-mcp-enabled')).toBeVisible()
     await expect(page.getByTestId('external-mcp-save')).toBeVisible()
     await expect(page.getByTestId('external-mcp-create-key')).toBeVisible()
@@ -166,7 +165,7 @@ test.describe('工作区外部 MCP 面板（无引导遮罩）', () => {
     await dialog.getByRole('button', { name: '创建密钥', exact: true }).click()
     await expect(dialog).toContainText('cf_proj_plaintext_once')
     await dialog.getByRole('button', { name: '关闭', exact: true }).click()
-    await expect(page.getByTestId('project-external-mcp-panel')).not.toContainText('cf_proj_plaintext_once')
+    await expect(page.getByTestId('workspace-external-mcp-panel')).not.toContainText('cf_proj_plaintext_once')
   })
 
 })

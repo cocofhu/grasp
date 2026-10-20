@@ -12,7 +12,7 @@
       "addViaAgentStudio": "在 Agent Studio 添加",
       "notRunScoped": "非运行级全局注入",
       "scopeRun": "scope: run",
-      "scopeProject": "作用域：工作区 / 助手会话",
+      "scopeWorkspace": "作用域：工作区 / 助手会话",
       "entryPathLabel": "使用入口：",
       "entryPath": "设置 → 助手设置",
       "entryPathExternal": "设置 → 外部 MCP",
@@ -381,8 +381,8 @@
       "overview": "列出当前工作区的全部 Agent 成员（self 为当前助手，other 为其他成员），并对同工作区任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
       "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
       "tools": {
-        "pm_list_project_agents": {
-          "signature": "pm_list_project_agents()",
+        "pm_list_workspace_agents": {
+          "signature": "pm_list_workspace_agents()",
           "desc": "列出同工作区 Agent 成员"
         },
         "pm_list_agent_templates": {
@@ -450,13 +450,6 @@
           "desc": "创建 open 需求草稿；缺省标题为「未命名需求」"
         }
       }
-    },
-    "externalProjectMcp": {
-      "name": "external-workspace-mcp",
-      "desc": "工作区级外部 MCP · Bearer 工作区 API Key · 独立于内部助手",
-      "overview": "在设置 → 外部 MCP 开启总开关、勾选能力包并创建工作区 API Key 后，外部 AI（Cursor/Claude 等）可通过 HTTP MCP 调用与内部助手同名的五包工具面。默认关闭；未授权或包未启用时拒绝 list/call。",
-      "convention": "配置入口：设置 → 外部 MCP。写范围：pm-workflow-write（工作流/Run/门禁）、pm-agent-fs（工作区 Agent 与 workspace FS）、pm-prd-manager（仅创建草稿）；pm-progress 与 pm-workflow-read 为只读。不含助手绑定、人类协作者或 Run 沙箱内文件。",
-      "entryPath": "设置 → 外部 MCP"
     }
   }
 }

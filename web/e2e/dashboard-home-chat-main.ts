@@ -4,9 +4,9 @@ import { createMemoryHistory, createRouter, RouterView, useRoute } from 'vue-rou
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
+import { useAuth } from '../src/lib/composables/useAuth'
 import ToastHost from '../src/components/ui/ToastHost.vue'
 import DashboardView from '../src/views/DashboardView.vue'
-const PROJECT_CONTEXT_STORAGE_KEY = 'grasp.project-context' // obsolete selection must not affect workspace
 import { takeHomeApproveHandoff } from '../src/lib/run/homeApproveHandoff'
 
 installIdleScrollbar()
@@ -14,13 +14,7 @@ installIdleScrollbar()
 async function bootstrap() {
   await initLocale()
   await setLocale('zh-CN')
-
-  const params = new URLSearchParams(window.location.search)
-  if (params.get('memory') === '1') {
-    localStorage.setItem(PROJECT_CONTEXT_STORAGE_KEY, params.get('projectId') || 'proj-1')
-  } else {
-    localStorage.removeItem(PROJECT_CONTEXT_STORAGE_KEY)
-  }
+  useAuth().setUser({ username: 'home-preview', isAdmin: true, expiresAt: '2099-01-01T00:00:00Z' })
 
   const router = createRouter({
     history: createMemoryHistory(),
@@ -47,10 +41,6 @@ async function bootstrap() {
         component: {
           render: () => h('div', { 'data-testid': 'run-detail-page' }, 'run detail'),
         },
-      },
-      {
-        path: '/projects',
-        component: { render: () => h('div', { 'data-testid': 'projects-page' }, 'projects') },
       },
       {
         path: '/workflows/:id/edit',

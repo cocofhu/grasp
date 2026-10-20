@@ -38,7 +38,6 @@ function withSetup<T>(fn: () => T): T {
 
 const baseWf = (over: Partial<Workflow> = {}): Workflow => ({
   id: 'wf-1',
-  projectId: 'p1',
   name: '夜间回归',
   description: '',
   status: 'draft',

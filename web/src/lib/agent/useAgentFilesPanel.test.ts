@@ -9,7 +9,6 @@ import { useAgentFilesPanel } from './useAgentFilesPanel'
 
 const baseDraft = (): AgentStudioDraft => ({
   name: 'agent-a',
-  projectId: 'proj-1',
   acpBackend: 'cursor',
   files: [
     { path: 'README.md', content: '# hello' },

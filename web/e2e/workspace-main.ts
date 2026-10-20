@@ -20,8 +20,8 @@ const settingsItems = [
 ].map(([key, value, min, max]) => ({ key, value, min, max, label: key, source: key === 'sandbox_memory_mb' ? 'env' : 'db', locked: key === 'sandbox_memory_mb' }))
 const brand = { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' }
 const names = ['产品研发', '代码审查', '自动化回归', '需求澄清', '数据分析', '发布检查', '文档维护', '安全扫描', '问题排查', 'API 集成', '体验优化', '周报汇总']
-const workspace: any = { id: 'workspace-original', name: '工作区', description: '团队共用的工作流与执行配置', variables: [{ name: 'ENVIRONMENT', type: 'select', value: 'staging', options: 'staging,production', desc: '默认部署环境', secret: false, ask: false, required: false, editable: true }], unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager', notifyPolicy: { enabled: false, defaultEvents: ['waiting_human', 'failed'], channelIds: [] } }
-const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, projectId: workspace.id, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, notifyPolicy: { mode: 'inherit', events: [] }, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
+const workspace: any = { name: '工作区', description: '团队共用的工作流与执行配置', variables: [{ name: 'ENVIRONMENT', type: 'select', value: 'staging', options: 'staging,production', desc: '默认部署环境', secret: false, ask: false, required: false, editable: true }], unknownModelDisplayName: '', pmLeaderEnabled: true, pmLeaderAgent: 'manager', notifyPolicy: { enabled: false, defaultEvents: ['waiting_human', 'failed'], channelIds: [] } }
+const workflows: any[] = names.map((name, index) => ({ id: `wf-${index + 1}`, name, description: ['从需求到交付，协调研发、测试与评审。', '检查变更质量，保留可追踪的评审结论。', '运行关键测试，汇总结果与后续行动。'][index % 3], status: index % 4 === 1 ? 'draft' : 'published', version: 3, publishedVersion: index % 4 === 1 ? 2 : 3, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}T10:00:00Z`, needsRepo: false, showOnHome: index < 3, notifyPolicy: { mode: 'inherit', events: [] }, nodes: [{ id: 'input', type: 'input', label: '输入', config: { variables: [] } }, { id: 'end', type: 'end', label: '完成', config: {} }], edges: [{ id: 'e1', source: 'input', target: 'end' }] }))
 for (const workflow of workflows) workflow.publishedSnapshot = { version: workflow.publishedVersion, name: workflow.name, description: workflow.description, nodes: workflow.nodes, edges: workflow.edges }
 const titles = ['优化工作流审批交互', '修复回归测试中的不稳定用例', '补充 API 接口说明', '检查发布前配置', '整理产品需求与验收条件', '更新周报与执行记录']
 const runs = titles.map((title, index) => ({ id: `run-${index + 1}`, workflowId: workflows[index].id, workflowName: workflows[index].name, title, status: index === 0 ? 'running' : index === 1 ? 'waiting_human' : 'completed', trigger: 'manual', startedAt: '2026-10-20T09:00:00Z', durationSec: 320, progress: index > 1 ? 100 : 45, currentNodeLabel: '执行', nodeRuns: {}, artifacts: [] }))
@@ -45,10 +45,10 @@ function artifactContent(file: any) {
 }
 let artifactTreeAttempts = 0
 const requirementDrafts: any[] = params.get('drafts') === 'filled' ? [
-  { id: 'launch', projectId: workspace.id, title: '支付体验改进', bodyMarkdown: '# 目标\n\n减少支付流程中的阻塞。', status: 'open', kind: 'requirement', startAt: '2026-10-15', dueAt: '2026-10-28', progress: 45, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'release', projectId: workspace.id, title: '十月版本交付', bodyMarkdown: '# 验收目标\n\n完成支付体验改进，确保回归通过。', status: 'open', kind: 'milestone', startAt: '', dueAt: '2026-10-30', progress: 0, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'payment', projectId: workspace.id, title: '优化支付失败重试体验', bodyMarkdown: '# 支付失败重试\n\n保留订单状态，并为用户提供明确的重试入口。\n\n## 验收条件\n\n- 支付失败时说明原因\n- 重试后恢复订单流程', status: 'open', kind: 'requirement', startAt: '2026-10-18', dueAt: '2026-10-25', progress: 45, parentId: 'launch', createdAt: '2026-10-14T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
-  { id: 'docs', projectId: workspace.id, title: '补充集成说明与示例', bodyMarkdown: '# 集成文档\n\n整理配置示例与常见问题。', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: '2026-10-16T09:00:00Z', updatedAt: '2026-10-19T09:00:00Z' },
+  { id: 'launch', title: '支付体验改进', bodyMarkdown: '# 目标\n\n减少支付流程中的阻塞。', status: 'open', kind: 'requirement', startAt: '2026-10-15', dueAt: '2026-10-28', progress: 45, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
+  { id: 'release', title: '十月版本交付', bodyMarkdown: '# 验收目标\n\n完成支付体验改进，确保回归通过。', status: 'open', kind: 'milestone', startAt: '', dueAt: '2026-10-30', progress: 0, parentId: null, createdAt: '2026-10-12T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
+  { id: 'payment', title: '优化支付失败重试体验', bodyMarkdown: '# 支付失败重试\n\n保留订单状态，并为用户提供明确的重试入口。\n\n## 验收条件\n\n- 支付失败时说明原因\n- 重试后恢复订单流程', status: 'open', kind: 'requirement', startAt: '2026-10-18', dueAt: '2026-10-25', progress: 45, parentId: 'launch', createdAt: '2026-10-14T09:00:00Z', updatedAt: '2026-10-20T09:00:00Z' },
+  { id: 'docs', title: '补充集成说明与示例', bodyMarkdown: '# 集成文档\n\n整理配置示例与常见问题。', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: '2026-10-16T09:00:00Z', updatedAt: '2026-10-19T09:00:00Z' },
 ] : []
 const calls: { path: string; method: string; body?: any }[] = []
 const pmThreads: any[] = ['history', 'active-history', 'orphan', 'unavailable-thread', 'conversation'].includes(assistantMode) ? [{ id: 'past-conversation', title: '本周研发进展', agentAvailable: assistantMode !== 'unavailable-thread' }] : []
@@ -79,7 +79,7 @@ window.fetch = async (input, init) => {
   else if (/^\/runs\/[^/]+$/.test(path)) { const id = path.split('/')[2]; data = { ...(runs.find(run => run.id === id) || runs[0]), id, artifacts: artifactFiles.filter(file => file.runId === id) } }
   else if (path === '/artifacts/tree') {
     if (params.get('artifacts') === 'fail' && artifactTreeAttempts++ === 0) return new Response(JSON.stringify({ error: 'unavailable' }), { status: 503, headers: { 'content-type': 'application/json' } })
-    data = artifactFiles.length ? [{ projectId: workspace.id, projectName: workspace.name, count: artifactFiles.length, sessionCount: artifactFiles.filter(file => !file.workflowId).length, workflows: workflows.slice(0, 2).map(workflow => ({ workflowId: workflow.id, workflowName: workflow.name, count: artifactFiles.filter(file => file.workflowId === workflow.id).length })).filter(workflow => workflow.count) }] : []
+    data = { count: artifactFiles.length, sessionCount: artifactFiles.filter(file => !file.workflowId).length, workflows: workflows.slice(0, 2).map(workflow => ({ workflowId: workflow.id, workflowName: workflow.name, count: artifactFiles.filter(file => file.workflowId === workflow.id).length })).filter(workflow => workflow.count) }
   }
   else if (path === '/artifacts') {
     const query = (url.searchParams.get('q') || '').toLocaleLowerCase()
@@ -90,10 +90,10 @@ window.fetch = async (input, init) => {
   else if (/^\/artifacts\/[^/]+\/content$/.test(path)) { const file = artifactFiles.find(file => file.id === path.split('/')[2]); data = { ...file, content: artifactContent(file) } }
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
   else if (path === '/gates') data = { items: [], total: 0, page: 1, pageSize: 20 }
-  else if (path === '/agents') data = [{ name: 'manager', projectId: workspace.id, description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
+  else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
   else if (path === '/workspace/requirement-drafts') {
     if (method === 'POST') {
-      data = { id: `new-draft-${requirementDrafts.length + 1}`, projectId: workspace.id, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }
+      data = { id: `new-draft-${requirementDrafts.length + 1}`, title: '未命名草稿', bodyMarkdown: '', status: 'open', kind: 'requirement', startAt: '', dueAt: '', progress: 0, parentId: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), ...body }
       requirementDrafts.unshift(data)
     } else {
       const status = url.searchParams.get('status') || 'all'
@@ -119,7 +119,7 @@ window.fetch = async (input, init) => {
   else if (path === '/workspace/external-mcp') data = { enabled: false, enabledPacks: [], mcpBaseUrl: `${location.origin}/mcp/workspace` }
   else if (path.endsWith('/keys')) data = []
   else if (path === '/workspace/credentials') data = { items: [] }
-  else if (path === '/workspace/shared-agent-config') data = { projectId: workspace.id, env: {}, mcp: [], files: [], acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace' }
+  else if (path === '/workspace/shared-agent-config') data = { env: {}, mcp: [], files: [], acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace' }
   else if (path === '/workspace/run-tags') data = { tags: ['研发', '测试', '发布'] }
   else if (path === '/settings') {
     if (method !== 'GET') {

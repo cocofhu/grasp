@@ -45,7 +45,6 @@ import RequirementDraftsPanel from './RequirementDraftsPanel.vue'
 
 const draftOpen = {
   id: 'rd-1',
-  projectId: 'proj-a',
   title: '支付失败重试',
   bodyMarkdown: '## 要点',
   status: 'open' as const,
@@ -90,7 +89,6 @@ function mountPanel() {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(RequirementDraftsPanel, {
-    props: { projectId: 'proj-a' },
     attachTo: document.body,
     global: {
       plugins: [i18n],
@@ -193,7 +191,7 @@ describe('RequirementDraftsPanel', () => {
     await flushPromises()
     vi.useFakeTimers()
     try {
-      apiMocks.listRequirementDrafts.mockImplementation(async (_id, opts) => ({
+      apiMocks.listRequirementDrafts.mockImplementation(async (opts) => ({
         items: opts?.q ? [] : [draftOpen],
       }))
       await w.get('[data-testid="requirement-drafts-filter-done"]').trigger('click')
@@ -206,7 +204,7 @@ describe('RequirementDraftsPanel', () => {
       expect(w.get('[data-testid="requirement-drafts-filter-done"]').attributes('aria-pressed')).toBe('true')
       expect(w.find('[data-testid="requirement-drafts-empty-new"]').exists()).toBe(false)
       expect(w.find('[data-testid="requirement-drafts-clear-filters"]').exists()).toBe(true)
-      expect(apiMocks.listRequirementDrafts).toHaveBeenCalledWith('proj-a', { status: 'done', q: 'not found' })
+      expect(apiMocks.listRequirementDrafts).toHaveBeenCalledWith({ status: 'done', q: 'not found' })
       expect(w.find('.rd-gantt-header').exists()).toBe(false)
       await w.get('[data-testid="requirement-drafts-clear-filters"]').trigger('click')
       await flushPromises()
@@ -242,7 +240,7 @@ describe('RequirementDraftsPanel', () => {
     await w.get('[data-testid="requirement-drafts-body"]').setValue('# Local draft')
     vi.useFakeTimers()
     try {
-      apiMocks.listRequirementDrafts.mockImplementation(async (_id, opts) => ({
+      apiMocks.listRequirementDrafts.mockImplementation(async (opts) => ({
         items: opts?.q ? [] : [draftOpen],
       }))
       await w.get('[data-testid="requirement-drafts-search"]').setValue('not found')
@@ -343,7 +341,7 @@ describe('RequirementDraftsPanel', () => {
   it('loads open drafts by default and shows master-detail in edit view', async () => {
     const w = mountPanel()
     await flushPromises()
-    expect(apiMocks.listRequirementDrafts).toHaveBeenCalledWith('proj-a', {
+    expect(apiMocks.listRequirementDrafts).toHaveBeenCalledWith({
       status: 'open',
       q: undefined,
     })
@@ -450,7 +448,7 @@ describe('RequirementDraftsPanel', () => {
     await w.get('[data-testid="requirement-drafts-schedule-due"]').setValue('2026-07-01')
     await w.get('[data-testid="requirement-drafts-schedule-due"]').trigger('change')
     await flushPromises()
-    expect(apiMocks.patchRequirementDraftSchedule).toHaveBeenCalledWith('proj-a', 'rd-1', {
+    expect(apiMocks.patchRequirementDraftSchedule).toHaveBeenCalledWith('rd-1', {
       dueAt: '2026-07-01',
     })
     // Fields revert to server values; inline error must remain visible (not cleared by revert).
@@ -551,7 +549,7 @@ describe('RequirementDraftsPanel', () => {
     await nextTick()
     await w.get('[data-testid="requirement-drafts-new-confirm"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.createRequirementDraft).toHaveBeenCalledWith('proj-a', { kind: 'requirement' })
+    expect(apiMocks.createRequirementDraft).toHaveBeenCalledWith({ kind: 'requirement' })
     expect(w.get('[data-testid="requirement-drafts-title"]').element).toHaveProperty(
       'value',
       '未命名需求',
@@ -650,7 +648,7 @@ describe('RequirementDraftsPanel', () => {
     expect(w.get('[data-testid="requirement-drafts-dirty-chip"]').text()).toContain('未保存')
     await w.get('[data-testid="requirement-drafts-toggle-status"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.patchRequirementDraftStatus).toHaveBeenCalledWith('proj-a', 'rd-1', 'done')
+    expect(apiMocks.patchRequirementDraftStatus).toHaveBeenCalledWith('rd-1', 'done')
     expect(w.find('[data-testid="requirement-drafts-empty-detail"]').exists()).toBe(false)
     expect(w.get('[data-testid="requirement-drafts-title"]').element).toHaveProperty('value', '仍未保存')
     expect(w.find('[data-testid="requirement-drafts-dirty-chip"]').exists()).toBe(true)
@@ -704,7 +702,7 @@ describe('RequirementDraftsPanel', () => {
       ctrlKey: true,
     })
     await flushPromises()
-    expect(apiMocks.updateRequirementDraft).toHaveBeenCalledWith('proj-a', 'rd-1', {
+    expect(apiMocks.updateRequirementDraft).toHaveBeenCalledWith('rd-1', {
       title: '快捷键保存',
       bodyMarkdown: '## 要点',
     })

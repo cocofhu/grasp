@@ -8,7 +8,7 @@ import AppSwitch from '../ui/AppSwitch.vue'
 import OutputSourcesEditor from './OutputSourcesEditor.vue'
 import AgentPicker from './inspector/AgentPicker.vue'
 import ModelPicker from './inspector/ModelPicker.vue'
-import type { ProjectCredentialItem } from '@/lib/api/api'
+import type { CredentialItem } from '@/lib/api/api'
 import GoalEditor, { type TemplateToken } from './inspector/GoalEditor.vue'
 import VariablesField from './inspector/VariablesField.vue'
 import { syncHumanGateFormDefaults } from '@/data/nodeRegistry'
@@ -28,9 +28,8 @@ const props = defineProps<{
   agents: CanvasAgent[]
   agentsLoaded?: boolean
   focusGoalTick?: number
-  projectId?: string
-  /** Project credentials for the model picker; null while loading. */
-  credentials?: ProjectCredentialItem[] | null
+  /** Workspace credentials for the model picker; null while loading. */
+  credentials?: CredentialItem[] | null
 }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'delete'): void }>()
 
@@ -276,7 +275,6 @@ const hue = computed(() => {
             v-model:model-id="modelId"
             :agent="agent"
             :credentials="credentials ?? null"
-            :project-id="projectId"
           />
         </section>
 

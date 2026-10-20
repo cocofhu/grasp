@@ -2,13 +2,11 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
-import type { ProjectCredentialItem } from '@/lib/api/api'
+import type { CredentialItem } from '@/lib/api/api'
 import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 const props = defineProps<{ draft: AgentStudioDraft }>()
 const { t } = useI18n()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
-const credentials = ref<ProjectCredentialItem[]>([])
+const credentials = ref<CredentialItem[]>([])
 const error = ref('')
 const keys = computed(() => [...new Set([...Object.keys(props.draft.credentialBindings || {}), ...credentials.value.map((credential) => credential.envKey || '').filter(Boolean)])].sort())
 function selection(key: string): string {
@@ -23,7 +21,7 @@ function change(key: string, value: string) {
 }
 async function load() {
   error.value = ''
-  try { await ensureLoaded(); credentials.value = (await api.getProjectCredentials(workspaceId.value)).items || [] }
+  try { credentials.value = (await api.listCredentials()).items || [] }
   catch (cause: any) { error.value = String(cause?.message || cause) }
 }
 onMounted(() => { void load() })

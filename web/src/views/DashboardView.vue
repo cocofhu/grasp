@@ -23,7 +23,6 @@ const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = u
 const router = useRouter()
 const { t, tm } = useI18n()
 const {
-  projectId,
   homeWorkflows,
   unpublishedHomeWorkflows,
   selected,
@@ -204,7 +203,7 @@ function onComposerBlur() {
   composerFocused.value = false
 }
 
-function goProjects() {
+function goWorkflows() {
   void router.push('/workflows')
 }
 
@@ -747,10 +746,10 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-              data-testid="home-go-projects"
-              @click="goProjects"
+              data-testid="home-go-workflows"
+              @click="goWorkflows"
             >
-              {{ t('pages.dashboard.goProjects') }}
+              {{ t('pages.dashboard.goWorkflows') }}
             </button>
           </template>
         </div>
@@ -935,7 +934,6 @@ onBeforeUnmount(() => {
     <RunLaunchModal
       :open="launchOpen"
       :workflow-id="launchTarget?.id || ''"
-      :project-id="projectId"
       :workflow-name="launchTarget?.name || ''"
       :fields="runFields"
       :run-inputs="runInputs"

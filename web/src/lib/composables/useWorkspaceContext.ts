@@ -1,14 +1,14 @@
-import { computed, effectScope, ref, watch } from 'vue'
+import { effectScope, ref, watch } from 'vue'
 import { api } from '@/lib/api/api'
-import type { Project } from '@/lib/shared/types'
+import type { Workspace } from '@/lib/shared/types'
 import { useAuth } from './useAuth'
 
-const workspace = ref<Project | null>(null)
+const workspace = ref<Workspace | null>(null)
 const loading = ref(false)
 const error = ref('')
 let generation = 0
 let controller: AbortController | null = null
-let pending: Promise<Project | null> | null = null
+let pending: Promise<Workspace | null> | null = null
 let watching = false
 
 function reset() {
@@ -21,7 +21,7 @@ function reset() {
   error.value = ''
 }
 
-function ensureLoaded(): Promise<Project | null> {
+function ensureLoaded(): Promise<Workspace | null> {
   const { ready, user } = useAuth()
   if (!ready.value || !user.value) return Promise.resolve(null)
   if (workspace.value) return Promise.resolve(workspace.value)
@@ -32,7 +32,7 @@ function ensureLoaded(): Promise<Project | null> {
   error.value = ''
   pending = api.getWorkspace({ signal: controller.signal }).then((result) => {
     if (current !== generation) return null
-    if (!result?.id) throw new Error('The workspace could not be loaded')
+    if (typeof result?.name !== 'string') throw new Error('The workspace could not be loaded')
     workspace.value = result
     return result
   }).catch((cause: unknown) => {
@@ -61,7 +61,6 @@ export function useWorkspaceContext() {
   }
   return {
     workspace,
-    workspaceId: computed(() => workspace.value?.id || ''),
     loading,
     error,
     ensureLoaded,

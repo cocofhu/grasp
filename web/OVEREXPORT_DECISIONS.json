@@ -244,12 +244,6 @@
       "reason": "tags-internal pattern"
     },
     {
-      "symbol": "PROJECT_CONTEXT_ALL",
-      "file": "composables/useProjectContext.ts",
-      "decision": "converge",
-      "reason": "composable-internal sentinel"
-    },
-    {
       "symbol": "DASHBOARD_COLUMNS",
       "file": "run/useRunBoard.ts",
       "decision": "converge",

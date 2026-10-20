@@ -53,7 +53,7 @@ test('source chooser supports Escape, empty search and session sources', async (
   await dialog.locator('[data-resource-key="session"]').click()
   await expect(page.getByTestId('artifact-list-row')).toHaveCount(2)
   await expect(page.getByTestId('artifacts-breadcrumb')).toContainText('Agent 会话产物')
-  await page.getByTestId('artifacts-crumb-project').click()
+  await page.getByTestId('artifacts-crumb-root').click()
   await expect(page.getByTestId('artifact-list-row')).toHaveCount(24)
 })
 

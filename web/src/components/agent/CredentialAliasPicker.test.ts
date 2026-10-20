@@ -32,7 +32,7 @@ const items = [
 function mountPicker(selectedId = '') {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
   return mount(CredentialAliasPicker, {
-    props: { projectId: 'p1', kind: 'cursor', selectedId, items },
+    props: { kind: 'cursor', selectedId, items },
     global: { plugins: [i18n], stubs: { Icon: true } },
   })
 }
@@ -63,7 +63,6 @@ describe('CredentialAliasPicker', () => {
     const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
     const wrapper = mount(CredentialAliasPicker, {
       props: {
-        projectId: 'p1',
         kind: 'cursor',
         items,
         hint: '未选择时使用种类匹配的共享通用授权',

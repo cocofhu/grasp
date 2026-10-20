@@ -23,8 +23,8 @@ const zh = merged(zhFiles)
 /** English values that intentionally contain Chinese: the bilingual language picker, a brand name, a literal agents must write. */
 const CJK_ALLOWED = new Set([
   'shell.langSelect',
-  'pages.projectDetail.pm.channel.badgeFeishu',
-  'pages.projectDetail.pm.channelBadgeFeishu',
+  'pages.workspace.pm.channel.badgeFeishu',
+  'pages.workspace.pm.channelBadgeFeishu',
   'mcp.artifactStore.tools.set_plan.desc',
 ])
 

@@ -864,7 +864,7 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(w.find('[data-testid="public-gate-loading"]').exists()).toBe(true)
     expect(w.get('[data-testid="public-gate-loading"]').attributes('role')).toBe('status')
-    expect(w.get('[data-testid="public-gate-root"]').text()).not.toMatch(/run-|projectId|TokenA/)
+    expect(w.get('[data-testid="public-gate-root"]').text()).not.toMatch(/run-|TokenA/)
 
     history.replaceState(null, '', `#t=${tokenB}`)
     await (w.vm as unknown as { loadPreview: () => Promise<void> }).loadPreview()
@@ -922,13 +922,13 @@ describe('PublicGateApprovalView workbench', () => {
 
   it('sandboxes preview and decision errors without rendering internal messages', async () => {
     window.location.hash = `#t=${'aa'.repeat(32)}`
-    mocks.preview.mockRejectedValue(new Error('internal stack /api/runs/run-123 projectId=p1'))
+    mocks.preview.mockRejectedValue(new Error('internal stack /api/runs/run-123 token=abc'))
     const w = mountView()
     await flushPromises()
     expect(w.get('[data-testid="public-gate-network-error"]').text()).toContain('网络错误')
     expect(w.text()).not.toContain('internal stack')
     expect(w.text()).not.toContain('run-123')
-    expect(w.text()).not.toContain('projectId')
+    expect(w.text()).not.toContain('token=abc')
     expect(w.find('[data-testid="public-gate-invalid"]').exists()).toBe(false)
 
     mocks.preview.mockResolvedValue({

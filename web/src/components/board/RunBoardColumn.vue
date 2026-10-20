@@ -18,7 +18,7 @@ const props = withDefaults(
     fill?: boolean
     /**
      * When true, column header is a focusable control that emits activate-header
-     * (project full board only; Dashboard leaves this off).
+     * (full board only; Dashboard leaves this off).
      */
     headerActivatable?: boolean
     /** Status key emitted with activate-header when headerActivatable. */

@@ -139,9 +139,9 @@ describe('Pagination', () => {
       pageSize: 10,
       total: 50,
       pageSizeOptions: [5, 10, 20],
-      pageSizeTestId: 'project-audit-page-size',
+      pageSizeTestId: 'workspace-audit-page-size',
     })
-    const size = wrapper.find('[data-testid="project-audit-page-size"]')
+    const size = wrapper.find('[data-testid="workspace-audit-page-size"]')
     expect(size.exists()).toBe(true)
     const select = wrapper.find('select')
     const options = select.findAll('option').map((o) => o.element.value)
@@ -209,9 +209,9 @@ describe('Pagination', () => {
   it('forwards summary test id', () => {
     const wrapper = mountPager({
       total: 50,
-      summaryTestId: 'project-audit-pager-info',
+      summaryTestId: 'workspace-audit-pager-info',
     })
-    expect(wrapper.find('[data-testid="project-audit-pager-info"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-audit-pager-info"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

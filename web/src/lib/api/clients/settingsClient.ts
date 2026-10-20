@@ -24,7 +24,6 @@ export const settingsClient = {
     page?: number
     pageSize?: number
     wf?: string
-    projectId?: string
     tag?: string
     signal?: AbortSignal
   }) => {
@@ -32,7 +31,6 @@ export const settingsClient = {
     if (params?.page != null) qs.set('page', String(params.page))
     if (params?.pageSize != null) qs.set('pageSize', String(params.pageSize))
     if (params?.wf) qs.set('wf', params.wf)
-
     if (params?.tag) qs.set('tag', params.tag)
     const q = qs.toString()
     const path = q ? `/gates?${q}` : '/gates'
@@ -57,25 +55,25 @@ export const settingsClient = {
       body: JSON.stringify(patch),
     }),
   // multi-channel QQ APIs (primary + secondary)
-  listProjectNotifyReceipts: (_workspaceId: string) =>
+  listNotifyReceipts: () =>
     req<{ items: NotifyDeliveryReceipt[] }>(
       `/workspace/notify-receipts`,
     ),
-  listProjectChannels: (_workspaceId: string) =>
+  listChannels: () =>
     req<{ items: ChannelConfig[]; secretsKeyConfigured?: boolean; freeAgents?: string[] }>(
       `/workspace/channels`,
     ),
-  createProjectChannel: (projectId: string, body: ChannelConfigInput) =>
+  createChannel: (body: ChannelConfigInput) =>
     req<ChannelConfig>(`/workspace/channels`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  updateProjectChannel: (projectId: string, channelId: string, body: ChannelConfigInput) =>
+  updateChannel: (channelId: string, body: ChannelConfigInput) =>
     req<ChannelConfig>(
       `/workspace/channels/${encodeURIComponent(channelId)}`,
       { method: 'PUT', body: JSON.stringify(body) },
     ),
-  deleteProjectChannelById: (projectId: string, channelId: string, body?: ChannelDeleteOpts) =>
+  deleteChannel: (channelId: string, body?: ChannelDeleteOpts) =>
     req<{ status: string }>(
       `/workspace/channels/${encodeURIComponent(channelId)}`,
       {

@@ -12,7 +12,7 @@ import NewWorkflowMenu from '@/components/workflow/NewWorkflowMenu.vue'
 import CopyWorkflowModal from '@/components/workflow/CopyWorkflowModal.vue'
 import ExportVersionModal from '@/components/workflow/ExportVersionModal.vue'
 import WorkspacePage from '@/components/shell/WorkspacePage.vue'
-import { useWorkflows } from '@/lib/project/useWorkflows'
+import { useWorkflows } from '@/lib/workspace/useWorkflows'
 const {
   workflows,
   search,
@@ -80,18 +80,18 @@ const {
 } = useWorkflows()
 const expandedNotifyId = ref<string | null>(null)
 const notifyModes = computed(() => [
-  { value: 'off', label: t('pages.projectDetail.notify.modeOff') },
-  { value: 'inherit', label: t('pages.projectDetail.notify.modeInherit') },
-  { value: 'custom', label: t('pages.projectDetail.notify.modeCustom') },
+  { value: 'off', label: t('pages.workspace.notify.modeOff') },
+  { value: 'inherit', label: t('pages.workspace.notify.modeInherit') },
+  { value: 'custom', label: t('pages.workspace.notify.modeCustom') },
 ])
 const notifyModesWithDefaults = computed(() => notifyModes.value.map(mode => mode.value === 'inherit' ? { ...mode, label: t('pages.workflowList.notifyInheritDefaults') } : mode))
 function notifyModesFor(workflow: Workflow) {
   return workflow.defaults?.notifyPolicy ? notifyModesWithDefaults.value : notifyModes.value
 }
 const notifyEvents = [
-  { value: 'waiting_human', labelKey: 'pages.projectDetail.notify.segWaitingHuman' },
-  { value: 'failed', labelKey: 'pages.projectDetail.notify.segFailed' },
-  { value: 'completed', labelKey: 'pages.projectDetail.notify.segCompleted' },
+  { value: 'waiting_human', labelKey: 'pages.workspace.notify.segWaitingHuman' },
+  { value: 'failed', labelKey: 'pages.workspace.notify.segFailed' },
+  { value: 'completed', labelKey: 'pages.workspace.notify.segCompleted' },
 ] as const
 
 function onNotifyModeChange(workflow: Workflow, mode: string) {
@@ -145,11 +145,11 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
       <colgroup><col /><col class="workflow-col-status" /><col class="workflow-col-notify" /><col class="workflow-col-home" /><col class="workflow-col-updated" /><col class="workflow-col-actions" /></colgroup>
       <thead>
         <tr>
-          <th>{{ t('pages.projectDetail.colName') }}</th>
-          <th>{{ t('pages.projectDetail.colStatus') }}</th>
-          <th>{{ t('pages.projectDetail.notify.colPolicy') }}</th>
-          <th class="text-center">{{ t('pages.projectDetail.homeVisibility.col') }}</th>
-          <th>{{ t('pages.projectDetail.colUpdated') }}</th>
+          <th>{{ t('pages.workspace.colName') }}</th>
+          <th>{{ t('pages.workspace.colStatus') }}</th>
+          <th>{{ t('pages.workspace.notify.colPolicy') }}</th>
+          <th class="text-center">{{ t('pages.workspace.homeVisibility.col') }}</th>
+          <th>{{ t('pages.workspace.colUpdated') }}</th>
           <th class="text-right">{{ t('common.table.actions') }}</th>
         </tr>
       </thead>
@@ -168,7 +168,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
                 :model-value="wfNotifyMode(w)"
                 :options="notifyModesFor(w)"
                 :disabled="savingNotifyWfId === w.id"
-                :aria-label="`${w.name} · ${t('pages.projectDetail.notify.colPolicy')}`"
+                :aria-label="`${w.name} · ${t('pages.workspace.notify.colPolicy')}`"
                 variant="ghost"
                 size="sm"
                 class="workflow-notify-select"
@@ -187,8 +187,8 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
             </fieldset>
           </td>
           <td class="workflow-home-cell" :data-testid="isMobile ? 'wf-home-visibility-inline' : 'wf-home-visibility-cell'" @click.stop>
-            <span class="workflow-mobile-label">{{ t('pages.projectDetail.homeVisibility.col') }}</span>
-            <AppSwitch :model-value="!!w.showOnHome" :disabled="savingHomeWfId === w.id" :aria-label="t('pages.projectDetail.homeVisibility.label')" class="workflow-home-switch" data-testid="wf-home-visibility-switch" @update:model-value="toggleWorkflowShowOnHome(w, $event)" />
+            <span class="workflow-mobile-label">{{ t('pages.workspace.homeVisibility.col') }}</span>
+            <AppSwitch :model-value="!!w.showOnHome" :disabled="savingHomeWfId === w.id" :aria-label="t('pages.workspace.homeVisibility.label')" class="workflow-home-switch" data-testid="wf-home-visibility-switch" @update:model-value="toggleWorkflowShowOnHome(w, $event)" />
             <span v-if="savingHomeWfId === w.id" class="sr-only" role="status" data-testid="wf-home-visibility-saving">{{ t('common.buttons.saving') }}</span>
           </td>
           <td class="workflow-updated-cell"><time :datetime="w.updatedAt" :title="fmtTime(w.updatedAt)">{{ w.updatedAt ? fmtTime(w.updatedAt).slice(5, 10) : '—' }}</time></td>
@@ -221,7 +221,6 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
       v-if="runTarget"
       :open="!!runTarget"
       :workflow-id="runTarget.id"
-      :project-id="runTarget.projectId"
       :workflow-name="runTarget.name"
       :fields="runFields"
       :run-inputs="runInputs"
@@ -259,17 +258,17 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 
     <AppModal
       :open="baselineModalOpen"
-      :title="t('pages.projectDetail.newWorkflow.modalTitle')"
+      :title="t('pages.workspace.newWorkflow.modalTitle')"
       close-on-esc
       :close-on-backdrop="!creatingBaseline"
       @close="closeBaselineModal"
     >
       <p class="mb-3 text-[13px] leading-relaxed text-txt2">
-        {{ t('pages.projectDetail.newWorkflow.modalHint') }}
+        {{ t('pages.workspace.newWorkflow.modalHint') }}
       </p>
       <div class="mb-4">
         <label class="label" for="baseline-workflow-name">
-          {{ t('pages.projectDetail.newWorkflow.nameLabel') }}
+          {{ t('pages.workspace.newWorkflow.nameLabel') }}
         </label>
         <input
           id="baseline-workflow-name"
@@ -277,7 +276,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
           class="input"
           autocomplete="off"
           data-testid="baseline-workflow-name"
-          :placeholder="t('pages.projectDetail.newWorkflow.namePlaceholder')"
+          :placeholder="t('pages.workspace.newWorkflow.namePlaceholder')"
         />
       </div>
       <ReposEditor
@@ -304,7 +303,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
           data-testid="create-baseline-workflow"
           @click="createFromBaseline"
         >
-          {{ creatingBaseline ? t('pages.projectDetail.newWorkflow.creating') : t('pages.projectDetail.newWorkflow.create') }}
+          {{ creatingBaseline ? t('pages.workspace.newWorkflow.creating') : t('pages.workspace.newWorkflow.create') }}
         </AppButton>
       </template>
     </AppModal>

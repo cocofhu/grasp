@@ -6,16 +6,16 @@ import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { ChannelConfig } from '@/lib/api/api'
-import type { Project } from '@/lib/shared/types'
+import type { Workspace } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
-  listProjectChannels: vi.fn(),
+  listChannels: vi.fn(),
   getWorkspace: vi.fn(),
-  listProjectNotifyReceipts: vi.fn(),
+  listNotifyReceipts: vi.fn(),
   listPmThreads: vi.fn(),
-  createProjectChannel: vi.fn(),
-  updateProjectChannel: vi.fn(),
-  deleteProjectChannelById: vi.fn(),
+  createChannel: vi.fn(),
+  updateChannel: vi.fn(),
+  deleteChannel: vi.fn(),
   updateWorkspace: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -27,13 +27,13 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectChannels: mocks.listProjectChannels,
+      listChannels: mocks.listChannels,
       getWorkspace: mocks.getWorkspace,
-      listProjectNotifyReceipts: mocks.listProjectNotifyReceipts,
+      listNotifyReceipts: mocks.listNotifyReceipts,
       listPmThreads: mocks.listPmThreads,
-      createProjectChannel: mocks.createProjectChannel,
-      updateProjectChannel: mocks.updateProjectChannel,
-      deleteProjectChannelById: mocks.deleteProjectChannelById,
+      createChannel: mocks.createChannel,
+      updateChannel: mocks.updateChannel,
+      deleteChannel: mocks.deleteChannel,
       updateWorkspace: mocks.updateWorkspace,
     },
   }
@@ -50,17 +50,16 @@ vi.mock('@/lib/composables/useToast', () => ({
 
 import { usePmChannelMulti } from './usePmChannelMulti'
 
-const baseProject = (over: Partial<Project> = {}): Project =>
+const baseWorkspace = (over: Partial<Workspace> = {}): Workspace =>
   ({
-    id: 'proj-a',
-    name: 'Project A',
+    name: 'Workspace A',
     description: '',
     variables: [],
     createdAt: '2026-01-01T00:00:00Z',
     updatedAt: '2026-01-01T00:00:00Z',
     notifyPolicy: { channelIds: ['ch-1'] },
     ...over,
-  }) as unknown as Project
+  }) as unknown as Workspace
 
 const primary = (over: Partial<ChannelConfig> = {}): ChannelConfig =>
   ({
@@ -101,8 +100,7 @@ function withPmChannelMulti(over: Record<string, unknown> = {}) {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   const props = reactive({
-    projectId: 'proj-a',
-    project: baseProject(),
+    workspace: baseWorkspace(),
     pmLeaderAgent: 'pm-leader',
     ...over,
   })
@@ -121,13 +119,13 @@ function withPmChannelMulti(over: Record<string, unknown> = {}) {
 describe('usePmChannelMulti CRUD', () => {
   beforeEach(() => {
     for (const fn of Object.values(mocks)) (fn as ReturnType<typeof vi.fn>).mockReset()
-    mocks.listProjectChannels.mockResolvedValue({
+    mocks.listChannels.mockResolvedValue({
       items: [primary(), secondary()],
       freeAgents: ['pm-leader', 'agent-b'],
       secretsKeyConfigured: true,
     })
-    mocks.getWorkspace.mockResolvedValue(baseProject())
-    mocks.listProjectNotifyReceipts.mockResolvedValue({
+    mocks.getWorkspace.mockResolvedValue(baseWorkspace())
+    mocks.listNotifyReceipts.mockResolvedValue({
       items: [{ runId: 'run-1', kind: 'waiting_human', status: 'ok', createdAt: '2026-01-01T00:00:00Z' }],
     })
     mocks.listPmThreads.mockResolvedValue({
@@ -139,11 +137,11 @@ describe('usePmChannelMulti CRUD', () => {
         { userId: 'feishu:room:3', title: '房间', updatedAt: '2026-01-03T00:00:00Z' },
       ],
     })
-    mocks.createProjectChannel.mockResolvedValue({ id: 'ch-3' })
-    mocks.updateProjectChannel.mockResolvedValue({ id: 'ch-1' })
-    mocks.deleteProjectChannelById.mockResolvedValue({ status: 'ok' })
-    mocks.updateWorkspace.mockImplementation(async (patch: Partial<Project>) => ({
-      ...baseProject(),
+    mocks.createChannel.mockResolvedValue({ id: 'ch-3' })
+    mocks.updateChannel.mockResolvedValue({ id: 'ch-1' })
+    mocks.deleteChannel.mockResolvedValue({ status: 'ok' })
+    mocks.updateWorkspace.mockImplementation(async (patch: Partial<Workspace>) => ({
+      ...baseWorkspace(),
       ...patch,
     }))
   })
@@ -153,7 +151,7 @@ describe('usePmChannelMulti CRUD', () => {
   })
 
   it('reports a failed load through the toast', async () => {
-    mocks.listProjectChannels.mockRejectedValue(new Error('channels down'))
+    mocks.listChannels.mockRejectedValue(new Error('channels down'))
     const { panel, app } = withPmChannelMulti()
     await flushPromises()
     expect(panel.loading.value).toBe(false)
@@ -163,7 +161,7 @@ describe('usePmChannelMulti CRUD', () => {
 
   it('falls back to prop notify ids and tolerates missing receipts', async () => {
     mocks.getWorkspace.mockRejectedValue(new Error('offline'))
-    mocks.listProjectNotifyReceipts.mockRejectedValue(new Error('offline'))
+    mocks.listNotifyReceipts.mockRejectedValue(new Error('offline'))
     const { panel, app } = withPmChannelMulti()
     await flushPromises()
     expect(panel.notifySelected.value).toEqual(['ch-1'])
@@ -171,8 +169,8 @@ describe('usePmChannelMulti CRUD', () => {
     app.unmount()
 
     // Neither source has a policy → empty selection.
-    mocks.getWorkspace.mockResolvedValue(baseProject({ notifyPolicy: undefined }))
-    const bare = withPmChannelMulti({ project: baseProject({ notifyPolicy: undefined }) })
+    mocks.getWorkspace.mockResolvedValue(baseWorkspace({ notifyPolicy: undefined }))
+    const bare = withPmChannelMulti({ workspace: baseWorkspace({ notifyPolicy: undefined }) })
     await flushPromises()
     expect(bare.panel.notifySelected.value).toEqual([])
     bare.app.unmount()
@@ -254,7 +252,7 @@ describe('usePmChannelMulti CRUD', () => {
   })
 
   it('blocks the add form without a free agent', async () => {
-    mocks.listProjectChannels.mockResolvedValue({ items: [], freeAgents: [], secretsKeyConfigured: false })
+    mocks.listChannels.mockResolvedValue({ items: [], freeAgents: [], secretsKeyConfigured: false })
     const { panel, app } = withPmChannelMulti()
     await flushPromises()
     expect(panel.hasPrimary.value).toBe(false)
@@ -271,30 +269,30 @@ describe('usePmChannelMulti CRUD', () => {
 
     panel.chName.value = '  '
     await panel.saveChannel()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
 
     panel.chName.value = '新通道'
     panel.chAgent.value = ' '
     await panel.saveChannel()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
 
     panel.chAgent.value = 'agent-b'
     panel.chAppId.value = ''
     await panel.saveChannel()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
     panel.setChannelType('wecom')
     await panel.saveChannel()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
 
     panel.chAppId.value = 'bot-1'
     panel.chAppSecret.value = ' '
     await panel.saveChannel()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
 
     panel.chAppSecret.value = 's3cret'
     await panel.saveChannel()
     await flushPromises()
-    expect(mocks.createProjectChannel).toHaveBeenCalledWith('proj-a', expect.objectContaining({
+    expect(mocks.createChannel).toHaveBeenCalledWith(expect.objectContaining({
       type: 'wecom',
       name: '新通道',
       agentName: 'agent-b',
@@ -353,9 +351,7 @@ describe('usePmChannelMulti CRUD', () => {
     await panel.saveChannel()
     await flushPromises()
     expect(confirm).toHaveBeenCalled()
-    expect(mocks.updateProjectChannel).toHaveBeenCalledWith(
-      'proj-a',
-      'ch-1',
+    expect(mocks.updateChannel).toHaveBeenCalledWith('ch-1',
       expect.objectContaining({ syncPmLeader: true }),
     )
 
@@ -365,9 +361,7 @@ describe('usePmChannelMulti CRUD', () => {
     panel.chAgent.value = 'agent-b'
     await panel.saveChannel()
     await flushPromises()
-    expect(mocks.updateProjectChannel).toHaveBeenLastCalledWith(
-      'proj-a',
-      'ch-1',
+    expect(mocks.updateChannel).toHaveBeenLastCalledWith('ch-1',
       expect.not.objectContaining({ syncPmLeader: true }),
     )
 
@@ -386,7 +380,7 @@ describe('usePmChannelMulti CRUD', () => {
     await flushPromises()
     expect(confirm).not.toHaveBeenCalled()
 
-    mocks.updateProjectChannel.mockRejectedValueOnce(new Error('appId in use'))
+    mocks.updateChannel.mockRejectedValueOnce(new Error('appId in use'))
     panel.openEdit(secondary())
     await panel.saveChannel()
     expect(panel.saveError.value).toBe('appId in use')
@@ -395,11 +389,11 @@ describe('usePmChannelMulti CRUD', () => {
     // Neither new nor editing → no write at all.
     panel.isNew.value = false
     panel.editingId.value = null
-    mocks.updateProjectChannel.mockClear()
-    mocks.createProjectChannel.mockClear()
+    mocks.updateChannel.mockClear()
+    mocks.createChannel.mockClear()
     await panel.saveChannel()
-    expect(mocks.updateProjectChannel).not.toHaveBeenCalled()
-    expect(mocks.createProjectChannel).not.toHaveBeenCalled()
+    expect(mocks.updateChannel).not.toHaveBeenCalled()
+    expect(mocks.createChannel).not.toHaveBeenCalled()
 
     app.unmount()
   })
@@ -410,12 +404,12 @@ describe('usePmChannelMulti CRUD', () => {
     await flushPromises()
 
     panel.askDelete(secondary())
-    expect(mocks.deleteProjectChannelById).not.toHaveBeenCalled()
+    expect(mocks.deleteChannel).not.toHaveBeenCalled()
 
     confirm.mockReturnValue(true)
     panel.askDelete(secondary())
     await flushPromises()
-    expect(mocks.deleteProjectChannelById).toHaveBeenCalledWith('proj-a', 'ch-2', {
+    expect(mocks.deleteChannel).toHaveBeenCalledWith('ch-2', {
       confirmNoPrimary: false,
     })
 
@@ -425,7 +419,7 @@ describe('usePmChannelMulti CRUD', () => {
     await flushPromises()
     expect(panel.tab.value).toBe('list')
 
-    mocks.deleteProjectChannelById.mockRejectedValueOnce(new Error('delete failed'))
+    mocks.deleteChannel.mockRejectedValueOnce(new Error('delete failed'))
     await panel.doDelete(secondary(), {})
     expect(mocks.toastError).toHaveBeenCalledWith('delete failed')
     expect(panel.saving.value).toBe(false)
@@ -444,13 +438,13 @@ describe('usePmChannelMulti CRUD', () => {
 
     panel.deleteNewPrimaryId.value = ''
     await panel.confirmDeletePrimary()
-    expect(mocks.deleteProjectChannelById).not.toHaveBeenCalled()
+    expect(mocks.deleteChannel).not.toHaveBeenCalled()
     expect(panel.deleteOpen.value).toBe(true)
 
     panel.deleteNewPrimaryId.value = 'ch-2'
     await panel.confirmDeletePrimary()
     await flushPromises()
-    expect(mocks.deleteProjectChannelById).toHaveBeenCalledWith('proj-a', 'ch-1', {
+    expect(mocks.deleteChannel).toHaveBeenCalledWith('ch-1', {
       newPrimaryId: 'ch-2',
       syncPmLeader: true,
     })
@@ -458,7 +452,7 @@ describe('usePmChannelMulti CRUD', () => {
     expect(panel.deleteTarget.value).toBeNull()
 
     // Last channel: no promotion available, confirm running without a primary.
-    mocks.listProjectChannels.mockResolvedValue({
+    mocks.listChannels.mockResolvedValue({
       items: [primary()],
       freeAgents: ['pm-leader'],
       secretsKeyConfigured: true,
@@ -468,7 +462,7 @@ describe('usePmChannelMulti CRUD', () => {
     expect(panel.deleteMode.value).toBe('none')
     await panel.confirmDeletePrimary()
     await flushPromises()
-    expect(mocks.deleteProjectChannelById).toHaveBeenLastCalledWith('proj-a', 'ch-1', {
+    expect(mocks.deleteChannel).toHaveBeenLastCalledWith('ch-1', {
       confirmNoPrimary: true,
     })
 
@@ -622,7 +616,7 @@ describe('usePmChannelMulti CRUD', () => {
     app.unmount()
   })
 
-  it('saves the project notify targets', async () => {
+  it('saves the workspace notify targets', async () => {
     const { panel, app, emit } = withPmChannelMulti()
     await flushPromises()
 
@@ -632,36 +626,26 @@ describe('usePmChannelMulti CRUD', () => {
     expect(panel.notifySelected.value).toEqual(['ch-2'])
 
     mocks.updateWorkspace.mockResolvedValueOnce(
-      baseProject({ notifyPolicy: { enabled: true, defaultEvents: ['failed'], channelIds: ['ch-2'] } }),
+      baseWorkspace({ notifyPolicy: { enabled: true, defaultEvents: ['failed'], channelIds: ['ch-2'] } }),
     )
     await panel.saveNotifyTargets()
     expect(mocks.updateWorkspace).toHaveBeenCalledWith({
       notifyPolicy: expect.objectContaining({ channelIds: ['ch-2'] }),
     })
-    expect(emit).toHaveBeenCalledWith('project-updated', expect.objectContaining({ id: 'proj-a' }))
+    expect(emit).toHaveBeenCalledWith('workspace-updated', expect.objectContaining({
+      name: 'Workspace A',
+      notifyPolicy: expect.objectContaining({ channelIds: ['ch-2'] }),
+    }))
     expect(panel.notifySelected.value).toEqual(['ch-2'])
     expect(panel.notifySaving.value).toBe(false)
 
-    mocks.updateWorkspace.mockResolvedValueOnce(baseProject({ notifyPolicy: undefined }))
+    mocks.updateWorkspace.mockResolvedValueOnce(baseWorkspace({ notifyPolicy: undefined }))
     await panel.saveNotifyTargets()
     expect(panel.notifySelected.value).toEqual([])
 
     mocks.updateWorkspace.mockRejectedValueOnce(new Error('notify failed'))
     await panel.saveNotifyTargets()
     expect(mocks.toastError).toHaveBeenCalledWith('notify failed')
-
-    app.unmount()
-  })
-
-  it('reloads when the bound project changes', async () => {
-    const { panel, app, props } = withPmChannelMulti()
-    await flushPromises()
-    expect(mocks.listProjectChannels).toHaveBeenCalledTimes(1)
-
-    props.projectId = 'proj-b'
-    await flushPromises()
-    expect(mocks.listProjectChannels).toHaveBeenLastCalledWith('proj-b')
-    expect(panel.recentTargetsLoaded.value).toBe(false)
 
     app.unmount()
   })

@@ -8,7 +8,6 @@ export type { AgentCapabilities }
 /** The subset of an Agent the canvas needs. */
 export interface CanvasAgent {
   name: string
-  projectId?: string
   capabilities?: AgentCapabilities | null
   acpBackend?: string
   openCodeCredentialId?: string

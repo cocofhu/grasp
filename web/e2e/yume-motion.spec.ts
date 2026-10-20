@@ -7,7 +7,7 @@ async function mockLists(page: Page) {
       await route.continue()
       return
     }
-    const list = /\/(?:workflows|projects|agents)$/.test(path)
+    const list = /\/(?:workflows|agents)$/.test(path)
     await route.fulfill({ json: list ? [] : { items: [], total: 0 } })
   })
 }

@@ -91,7 +91,6 @@ const sampleRun = (): Run =>
 
 const sampleWorkflow = (): Workflow => ({
   id: 'wf-1',
-  projectId: 'proj-1',
   name: '夜间回归',
   description: '',
   status: 'published',
@@ -181,7 +180,7 @@ describe('useRunDetail', () => {
 
     mocks.getRun.mockResolvedValue(sampleRun())
     mocks.getWorkflow.mockResolvedValue(sampleWorkflow())
-    mocks.getWorkspace.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
+    mocks.getWorkspace.mockResolvedValue({ unknownModelDisplayName: '未知模型' })
     mocks.runArtifacts.mockResolvedValue([])
     mocks.nodeEvents.mockResolvedValue({ events: [], nextCursor: '', hasMore: false })
     mocks.nodeSandboxLog.mockResolvedValue({ content: 'boot log', live: false, found: true })
@@ -265,11 +264,11 @@ describe('useRunDetail', () => {
   })
 
   it('keeps unknown model alias stable during soft refresh while getWorkspace is pending', async () => {
-    let resolveProject: ((value: { id: string; unknownModelDisplayName: string }) => void) | null = null
+    let resolveWorkspace: ((value: { unknownModelDisplayName: string }) => void) | null = null
     mocks.getWorkspace.mockImplementation(
       () =>
         new Promise((resolve) => {
-          resolveProject = resolve
+          resolveWorkspace = resolve
         }),
     )
 
@@ -278,7 +277,7 @@ describe('useRunDetail', () => {
     await nextTick()
 
     // First load: alias resolves to Auto.
-    resolveProject!({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
+    resolveWorkspace!({ unknownModelDisplayName: 'Auto' })
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
     expect(mocks.getWorkspace).toHaveBeenCalledTimes(1)
@@ -288,14 +287,14 @@ describe('useRunDetail', () => {
     mocks.getWorkspace.mockImplementation(
       () =>
         new Promise((resolve) => {
-          resolveProject = resolve
+          resolveWorkspace = resolve
         }),
     )
     await detail.loadRun(false)
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
     expect(mocks.getWorkspace).not.toHaveBeenCalled()
 
-    resolveProject!({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
+    resolveWorkspace!({ unknownModelDisplayName: 'Auto' })
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
     expect(mocks.getWorkspace).not.toHaveBeenCalled()
@@ -303,10 +302,10 @@ describe('useRunDetail', () => {
     app.unmount()
   })
 
-  it('reloads unknown model alias when projectId changes on hard refresh', async () => {
+  it('reloads unknown model alias when navigating to another run', async () => {
     mocks.getWorkspace
-      .mockResolvedValueOnce({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
-      .mockResolvedValueOnce({ id: 'proj-2', unknownModelDisplayName: 'gpt-5' })
+      .mockResolvedValueOnce({ unknownModelDisplayName: 'Auto' })
+      .mockResolvedValueOnce({ unknownModelDisplayName: 'gpt-5' })
 
     const { detail, app, router } = await withRunDetail()
     await flushPromises()
@@ -320,7 +319,6 @@ describe('useRunDetail', () => {
     mocks.getWorkflow.mockResolvedValue({
       ...sampleWorkflow(),
       id: 'wf-2',
-      projectId: 'proj-2',
     })
 
     await router.push('/runs/run-2')
@@ -333,8 +331,8 @@ describe('useRunDetail', () => {
     app.unmount()
   })
 
-  it('retains last successful alias when getWorkspace fails after project switch on hard refresh', async () => {
-    mocks.getWorkspace.mockResolvedValueOnce({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
+  it('retains last successful alias when getWorkspace fails after navigating to another run', async () => {
+    mocks.getWorkspace.mockResolvedValueOnce({ unknownModelDisplayName: 'Auto' })
 
     const { detail, app, router } = await withRunDetail()
     await flushPromises()
@@ -348,7 +346,6 @@ describe('useRunDetail', () => {
     mocks.getWorkflow.mockResolvedValue({
       ...sampleWorkflow(),
       id: 'wf-2',
-      projectId: 'proj-2',
     })
     mocks.getWorkspace.mockRejectedValueOnce(new Error('network down'))
 
@@ -356,10 +353,10 @@ describe('useRunDetail', () => {
     await flushPromises()
     await nextTick()
 
-    // Hard refresh to new project failed to load alias → empty until success.
+    // Hard refresh to another run failed to load alias → empty until success.
     expect(detail.unknownModelDisplayName.value).toBe('')
 
-    mocks.getWorkspace.mockResolvedValueOnce({ id: 'proj-2', unknownModelDisplayName: 'gpt-5' })
+    mocks.getWorkspace.mockResolvedValueOnce({ unknownModelDisplayName: 'gpt-5' })
     await detail.loadRun(false)
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('gpt-5')

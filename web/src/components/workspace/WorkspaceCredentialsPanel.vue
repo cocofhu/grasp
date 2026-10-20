@@ -6,8 +6,8 @@ import AppModal from '@/components/ui/AppModal.vue'
 import Icon from '@/components/ui/Icon.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
-import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
-import { api, type ProjectCredentialItem } from '@/lib/api/api'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import { api, type CredentialItem } from '@/lib/api/api'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import {
@@ -17,7 +17,7 @@ import {
   kindById,
   kindOfItem,
   type CredentialKindId,
-} from '@/lib/project/credentialKinds'
+} from '@/lib/workspace/credentialKinds'
 import {
   DEFAULT_OPENCODE_PROVIDER,
   openCodeCustomBaseRequired,
@@ -25,14 +25,13 @@ import {
   type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
 
-const props = defineProps<{ projectId: string }>()
 
 const { t } = useI18n()
 const toast = useToast()
 
 const loading = ref(true)
 const loadError = ref('')
-const items = ref<ProjectCredentialItem[]>([])
+const items = ref<CredentialItem[]>([])
 const drafts = reactive<Record<string, string>>({})
 const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
@@ -67,11 +66,11 @@ const modelForm = reactive({
 })
 
 const credentialTypeKeys = {
-  ai: 'pages.projectDetail.projectCredentials.typeAi',
-  git: 'pages.projectDetail.projectCredentials.typeGit',
-  ssh: 'pages.projectDetail.projectCredentials.typeSsh',
-  mcp: 'pages.projectDetail.projectCredentials.typeMcp',
-  custom: 'pages.projectDetail.projectCredentials.typeCustom',
+  ai: 'pages.workspace.credentials.typeAi',
+  git: 'pages.workspace.credentials.typeGit',
+  ssh: 'pages.workspace.credentials.typeSsh',
+  mcp: 'pages.workspace.credentials.typeMcp',
+  custom: 'pages.workspace.credentials.typeCustom',
 } as const
 const selectedKind = computed(() => (createKind.value ? kindById(createKind.value) : undefined))
 const modelBaseRequired = computed(() => openCodeCustomBaseRequired(modelForm.provider, modelForm.baseUrl))
@@ -86,7 +85,7 @@ const secretReady = computed(() => {
 
 type CredentialGroup = 'ai' | 'git' | 'ssh' | 'other'
 
-function groupFor(item: ProjectCredentialItem): CredentialGroup {
+function groupFor(item: CredentialItem): CredentialGroup {
   const kind = (item.type || '').toLowerCase()
   if (kind === 'ai') return 'ai'
   if (kind === 'git') return 'git'
@@ -110,8 +109,8 @@ const orderedItems = computed(() =>
 const configuredCount = computed(() => orderedItems.value.filter((item) => item.configured).length)
 const apiKeyCount = computed(() => orderedItems.value.filter((item) => groupFor(item) === 'ai').length)
 const credentialGroups = computed(() => {
-  const buckets = new Map<string, ProjectCredentialItem[]>()
-  const other: ProjectCredentialItem[] = []
+  const buckets = new Map<string, CredentialItem[]>()
+  const other: CredentialItem[] = []
   for (const item of orderedItems.value) {
     const kind = kindOfItem(item)
     if (!kind) {
@@ -120,7 +119,7 @@ const credentialGroups = computed(() => {
     }
     buckets.set(kind.id, [...(buckets.get(kind.id) || []), item])
   }
-  const groups: { id: CredentialKindId | 'other'; items: ProjectCredentialItem[] }[] = CREDENTIAL_KINDS
+  const groups: { id: CredentialKindId | 'other'; items: CredentialItem[] }[] = CREDENTIAL_KINDS
     .filter((kind) => (buckets.get(kind.id) || []).length > 0)
     .map((kind) => ({ id: kind.id, items: buckets.get(kind.id) || [] }))
   if (other.length) groups.push({ id: 'other', items: other })
@@ -128,54 +127,54 @@ const credentialGroups = computed(() => {
 })
 
 function groupTitle(group: string): string {
-  if (group === 'other') return t('pages.projectDetail.projectCredentials.groups.other.title')
-  return t(`pages.projectDetail.projectCredentials.kinds.${group}`)
+  if (group === 'other') return t('pages.workspace.credentials.groups.other.title')
+  return t(`pages.workspace.credentials.kinds.${group}`)
 }
 
-function itemLabel(item: ProjectCredentialItem): string {
+function itemLabel(item: CredentialItem): string {
   return item.name || item.provider || item.id
 }
 
-function isOpenCodeModelCredential(item: ProjectCredentialItem): boolean {
+function isOpenCodeModelCredential(item: CredentialItem): boolean {
   return (
     (item.type || '').toLowerCase() === 'ai' &&
     (item.provider || '').toLowerCase() === 'opencode' &&
-    (!item.source || item.source === 'project')
+    (!item.source || item.source === 'workspace')
   )
 }
 
-function isCodexLogin(item: ProjectCredentialItem): boolean {
+function isCodexLogin(item: CredentialItem): boolean {
   const provider = (item.provider || '').toLowerCase()
   const key = (item.envKey || '').toUpperCase()
   return provider === 'codex' || key === 'GRASP_CODEX_AUTH_JSON'
 }
 
-function isMultiline(item: ProjectCredentialItem): boolean {
+function isMultiline(item: CredentialItem): boolean {
   const key = `${item.type || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
   return isCodexLogin(item) || key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
 }
 
-function configuredText(item: ProjectCredentialItem): string {
-  return item.configured ? t('pages.projectDetail.projectCredentials.configured') : t('pages.projectDetail.projectCredentials.notConfigured')
+function configuredText(item: CredentialItem): string {
+  return item.configured ? t('pages.workspace.credentials.configured') : t('pages.workspace.credentials.notConfigured')
 }
 
-function typeLabel(item: ProjectCredentialItem): string {
+function typeLabel(item: CredentialItem): string {
   const kind = kindOfItem(item)
-  if (kind) return t(`pages.projectDetail.projectCredentials.kinds.${kind.id}`)
+  if (kind) return t(`pages.workspace.credentials.kinds.${kind.id}`)
   const key = (item.type || 'custom') as keyof typeof credentialTypeKeys
   return t(credentialTypeKeys[key] || credentialTypeKeys.custom)
 }
 
-function vendorOf(item: ProjectCredentialItem): string {
+function vendorOf(item: CredentialItem): string {
   const value = item.metadata?.provider
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function isProjectEditable(item: ProjectCredentialItem): boolean {
-  return !item.source || item.source === 'project'
+function isWorkspaceEditable(item: CredentialItem): boolean {
+  return !item.source || item.source === 'workspace'
 }
 
-function updateItems(next: ProjectCredentialItem) {
+function updateItems(next: CredentialItem) {
   const i = items.value.findIndex((item) => item.id === next.id)
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
@@ -183,20 +182,20 @@ function updateItems(next: ProjectCredentialItem) {
   editing[next.id] = false
 }
 
-function setItems(next: ProjectCredentialItem[]) {
+function setItems(next: CredentialItem[]) {
   items.value = next
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(editing)) delete editing[key]
   for (const item of next) drafts[item.id] = ''
 }
 
-function startEdit(item: ProjectCredentialItem) {
-  if (!isProjectEditable(item)) return
+function startEdit(item: CredentialItem) {
+  if (!isWorkspaceEditable(item)) return
   drafts[item.id] = ''
   editing[item.id] = true
 }
 
-function cancelEdit(item: ProjectCredentialItem) {
+function cancelEdit(item: CredentialItem) {
   drafts[item.id] = ''
   editing[item.id] = false
 }
@@ -289,11 +288,11 @@ function goBack() {
 
 function secretLabel(kindId: CredentialKindId): string {
   const kind = kindById(kindId)
-  if (!kind) return t('pages.projectDetail.projectCredentials.value')
-  if (kind.secret === 'loginFile') return t('pages.projectDetail.projectCredentials.secretLoginFile')
-  if (kind.id === 'ssh_key') return t('pages.projectDetail.projectCredentials.secretPrivateKey')
-  if (kind.id === 'ssh_hosts') return t('pages.projectDetail.projectCredentials.secretKnownHosts')
-  return t('pages.projectDetail.projectCredentials.secretApiKey')
+  if (!kind) return t('pages.workspace.credentials.value')
+  if (kind.secret === 'loginFile') return t('pages.workspace.credentials.secretLoginFile')
+  if (kind.id === 'ssh_key') return t('pages.workspace.credentials.secretPrivateKey')
+  if (kind.id === 'ssh_hosts') return t('pages.workspace.credentials.secretKnownHosts')
+  return t('pages.workspace.credentials.secretApiKey')
 }
 
 async function create() {
@@ -301,12 +300,12 @@ async function create() {
   const kind = selectedKind.value
   const alias = createAlias.value.trim()
   if (!kind || !aliasKey(alias)) {
-    aliasError.value = t('pages.projectDetail.projectCredentials.aliasRequired')
+    aliasError.value = t('pages.workspace.credentials.aliasRequired')
     return
   }
   const taken = conflictingAlias(items.value, kind, alias)
   if (taken) {
-    aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: taken })
+    aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: taken })
     return
   }
   createAttempted.value = true
@@ -314,7 +313,7 @@ async function create() {
   aliasError.value = ''
   creating.value = true
   try {
-    const created = await api.createProjectCredential(props.projectId, {
+    const created = await api.createCredential({
       type: kind.type,
       provider: kind.provider,
       name: alias,
@@ -333,11 +332,11 @@ async function create() {
     })
     updateItems(created)
     showCreate.value = false
-    toast.success(t('pages.projectDetail.projectCredentials.saved'))
+    toast.success(t('pages.workspace.credentials.saved'))
   } catch (e: unknown) {
     const err = e as { code?: string; alias?: string; message?: string }
     if (err.code === 'alias_taken') {
-      aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: err.alias || alias })
+      aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: err.alias || alias })
       return
     }
     toast.error(String(err.message || e))
@@ -350,7 +349,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await api.getProjectCredentials(props.projectId)
+    const response = await api.listCredentials()
     setItems(response.items)
   } catch (e: unknown) {
     loadError.value = String((e as { message?: string })?.message || e)
@@ -360,12 +359,12 @@ async function load() {
   }
 }
 
-async function save(item: ProjectCredentialItem) {
+async function save(item: CredentialItem) {
   const value = drafts[item.id] || ''
   if (!value.trim() || saving[item.id]) return
   saving[item.id] = true
   try {
-    const saved = await api.putProjectCredential(props.projectId, item.id, {
+    const saved = await api.putCredential(item.id, {
       type: item.type,
       name: item.name,
       target: item.target,
@@ -378,7 +377,7 @@ async function save(item: ProjectCredentialItem) {
       enabled: item.enabled,
     })
     updateItems(saved)
-    toast.success(t('pages.projectDetail.projectCredentials.saved'))
+    toast.success(t('pages.workspace.credentials.saved'))
   } catch (e: unknown) {
     toast.error(String((e as { message?: string })?.message || e))
   } finally {
@@ -386,13 +385,13 @@ async function save(item: ProjectCredentialItem) {
   }
 }
 
-async function clear(item: ProjectCredentialItem) {
+async function clear(item: CredentialItem) {
   if (clearing[item.id] || !item.configured) return
   clearing[item.id] = true
   try {
-    await api.deleteProjectCredential(props.projectId, item.id)
+    await api.deleteCredential(item.id)
     updateItems({ ...item, configured: false, masked: '', revokedAt: undefined })
-    toast.success(t('pages.projectDetail.projectCredentials.cleared'))
+    toast.success(t('pages.workspace.credentials.cleared'))
   } catch (e: unknown) {
     toast.error(String((e as { message?: string })?.message || e))
   } finally {
@@ -403,13 +402,6 @@ async function clear(item: ProjectCredentialItem) {
 function retry() {
   void load()
 }
-
-watch(
-  () => props.projectId,
-  () => {
-    void load()
-  },
-)
 
 onMounted(() => {
   void load()
@@ -431,7 +423,7 @@ watch(showCreate, (open) => {
 <template>
   <div
     class="flex min-h-0 flex-1 flex-col overflow-hidden"
-    data-testid="project-credentials-panel"
+    data-testid="workspace-credentials-panel"
   >
     <div v-if="loading" class="flex flex-1 items-center justify-center text-[13px] text-txt3">
       {{ t('common.loading.inProgress') }}
@@ -450,8 +442,8 @@ watch(showCreate, (open) => {
               <Icon name="lock" :size="16" aria-hidden="true" />
             </span>
             <div>
-              <p class="m-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-2">{{ t('pages.projectDetail.projectCredentials.eyebrow') }}</p>
-              <h2 class="m-0 mt-0.5 text-lg font-semibold text-txt">{{ t('pages.projectDetail.projectCredentials.title') }}</h2>
+              <p class="m-0 text-[11px] font-semibold uppercase tracking-[0.14em] text-accent-2">{{ t('pages.workspace.credentials.eyebrow') }}</p>
+              <h2 class="m-0 mt-0.5 text-lg font-semibold text-txt">{{ t('pages.workspace.credentials.title') }}</h2>
             </div>
           </div>
         </div>
@@ -460,29 +452,29 @@ watch(showCreate, (open) => {
           size="md"
           icon="plus"
           class="shrink-0 self-start sm:mt-1"
-          data-testid="project-credential-create"
+          data-testid="workspace-credential-create"
           @click="openCreate"
         >
-          {{ t('pages.projectDetail.projectCredentials.create') }}
+          {{ t('pages.workspace.credentials.create') }}
         </AppButton>
       </header>
 
       <div v-if="!orderedItems.length" class="flex flex-1 items-center justify-center px-6 py-12 text-center text-[13px] text-txt3">
-        {{ t('pages.projectDetail.projectCredentials.empty') }}
+        {{ t('pages.workspace.credentials.empty') }}
       </div>
       <div v-else class="scroll-area min-h-0 flex-1 overflow-y-auto py-5">
         <div class="w-full space-y-6">
-          <div class="grid grid-cols-3 gap-4 border-b border-line/60 pb-5" data-testid="project-credentials-summary">
+          <div class="grid grid-cols-3 gap-4 border-b border-line/60 pb-5" data-testid="workspace-credentials-summary">
             <div class="min-w-0">
-              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.projectDetail.projectCredentials.summary.total') }}</p>
+              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.workspace.credentials.summary.total') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-txt">{{ orderedItems.length }}</p>
             </div>
             <div class="min-w-0">
-              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.projectDetail.projectCredentials.summary.configured') }}</p>
+              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.workspace.credentials.summary.configured') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-ok">{{ configuredCount }}<span class="ml-1 text-xs font-normal text-txt3">/ {{ orderedItems.length }}</span></p>
             </div>
             <div class="min-w-0">
-              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-accent-2">{{ t('pages.projectDetail.projectCredentials.summary.apiKeys') }}</p>
+              <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-accent-2">{{ t('pages.workspace.credentials.summary.apiKeys') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-txt">{{ apiKeyCount }}</p>
             </div>
           </div>
@@ -490,7 +482,7 @@ watch(showCreate, (open) => {
           <section
             v-for="group in credentialGroups"
             :key="group.id"
-            :data-testid="`project-credential-group-${group.id}`"
+            :data-testid="`workspace-credential-group-${group.id}`"
           >
             <div class="mb-3 flex items-end justify-between gap-3 border-b border-line pb-2">
               <h3 class="m-0 min-w-0 text-sm font-semibold text-txt">{{ groupTitle(group.id) }}</h3>
@@ -503,7 +495,6 @@ watch(showCreate, (open) => {
             >
               <OpenCodeCredentialPicker
                 mode="manage"
-                :project-id="projectId"
                 :items="items"
                 @add="openCreate"
                 @changed="load"
@@ -515,7 +506,7 @@ watch(showCreate, (open) => {
                 <article
                   v-if="!isOpenCodeModelCredential(item)"
                   class="min-w-0 py-4"
-                  data-testid="project-credential-row"
+                  data-testid="workspace-credential-row"
                   :data-credential-kind="kindOfItem(item)?.id || 'other'"
                 >
                   <div class="flex min-w-0 items-start gap-3">
@@ -526,28 +517,28 @@ watch(showCreate, (open) => {
                       :configured="item.configured"
                     />
                     <div class="min-w-0 flex-1">
-                      <div class="flex min-w-0 flex-wrap items-start justify-between gap-3" data-testid="project-credential-headline">
+                      <div class="flex min-w-0 flex-wrap items-start justify-between gap-3" data-testid="workspace-credential-headline">
                         <div class="min-w-0">
-                          <h4 class="m-0 break-words text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="project-credential-alias">{{ itemLabel(item) }}</h4>
-                          <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3" data-testid="project-credential-kind">{{ typeLabel(item) }}</p>
+                          <h4 class="m-0 break-words text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
+                          <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
                         </div>
-                        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2" data-testid="project-credential-actions">
+                        <div class="flex shrink-0 flex-wrap items-center justify-end gap-2" data-testid="workspace-credential-actions">
                           <span
                             class="shrink-0 rounded-full border px-2 py-0.5 text-[11px]"
                             :class="item.configured ? 'border-ok/40 bg-ok/10 text-ok' : 'border-line text-txt3'"
-                            data-testid="project-credential-status"
+                            data-testid="workspace-credential-status"
                           >
                             {{ configuredText(item) }}
                           </span>
-                          <template v-if="isProjectEditable(item) && !editing[item.id]">
+                          <template v-if="isWorkspaceEditable(item) && !editing[item.id]">
                             <AppButton
                               v-if="item.configured"
                               size="sm"
                               variant="primary"
-                              :data-testid="`project-credential-edit-${item.id}`"
+                              :data-testid="`workspace-credential-edit-${item.id}`"
                               @click="startEdit(item)"
                             >
-                              {{ t('pages.projectDetail.projectCredentials.edit') }}
+                              {{ t('pages.workspace.credentials.edit') }}
                             </AppButton>
                             <AppButton
                               v-if="item.configured"
@@ -555,57 +546,57 @@ watch(showCreate, (open) => {
                               variant="danger"
                               :disabled="!!clearing[item.id]"
                               :loading="!!clearing[item.id]"
-                              :data-testid="`project-credential-clear-${item.id}`"
+                              :data-testid="`workspace-credential-clear-${item.id}`"
                               @click="clear(item)"
                             >
-                              {{ t('pages.projectDetail.projectCredentials.clear') }}
+                              {{ t('pages.workspace.credentials.clear') }}
                             </AppButton>
                             <AppButton
                               v-else
                               size="sm"
                               variant="primary"
-                              :data-testid="`project-credential-fill-${item.id}`"
+                              :data-testid="`workspace-credential-fill-${item.id}`"
                               @click="startEdit(item)"
                             >
-                              {{ t('pages.projectDetail.projectCredentials.fillIn') }}
+                              {{ t('pages.workspace.credentials.fillIn') }}
                             </AppButton>
                           </template>
                           <AppButton
-                            v-else-if="isProjectEditable(item) && item.configured"
+                            v-else-if="isWorkspaceEditable(item) && item.configured"
                             size="sm"
                             variant="danger"
                             :disabled="!!clearing[item.id]"
                             :loading="!!clearing[item.id]"
-                            :data-testid="`project-credential-clear-${item.id}`"
+                            :data-testid="`workspace-credential-clear-${item.id}`"
                             @click="clear(item)"
                           >
-                            {{ t('pages.projectDetail.projectCredentials.clear') }}
+                            {{ t('pages.workspace.credentials.clear') }}
                           </AppButton>
                         </div>
                       </div>
                       <p
                         v-if="item.configured && item.masked"
                         class="m-0 mt-1.5 truncate font-mono text-[12px] leading-5 text-txt2"
-                        data-testid="project-credential-masked"
+                        data-testid="workspace-credential-masked"
                       >{{ item.masked }}</p>
                     </div>
                   </div>
 
-                  <p v-if="!isProjectEditable(item)" class="mt-3 text-[11px] leading-5 text-txt3">
-                    {{ t('pages.projectDetail.projectCredentials.managedByAdapter', { source: item.source }) }}
+                  <p v-if="!isWorkspaceEditable(item)" class="mt-3 text-[11px] leading-5 text-txt3">
+                    {{ t('pages.workspace.credentials.managedByAdapter', { source: item.source }) }}
                   </p>
                   <div
                     v-else-if="editing[item.id]"
                     class="mt-3 flex min-w-0 items-start gap-2"
-                    :data-testid="`project-credential-editor-${item.id}`"
+                    :data-testid="`workspace-credential-editor-${item.id}`"
                   >
                     <textarea
                       v-if="isMultiline(item)"
                       v-model="drafts[item.id]"
                       :rows="isCodexLogin(item) ? 8 : 2"
                       class="min-h-[68px] min-w-0 flex-1 resize-y rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent focus:ring-2 focus:ring-accent/15"
-                      :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
-                      :data-testid="`project-credential-input-${item.id}`"
+                      :placeholder="item.configured ? t('pages.workspace.credentials.replacePlaceholder') : t('pages.workspace.credentials.valuePlaceholder')"
+                      :data-testid="`workspace-credential-input-${item.id}`"
                       autocomplete="off"
                       style="-webkit-text-security: disc;"
                     />
@@ -614,8 +605,8 @@ watch(showCreate, (open) => {
                       v-model="drafts[item.id]"
                       type="password"
                       class="min-w-0 flex-1 rounded-lg border border-line bg-surface px-3 py-2 font-mono text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent focus:ring-2 focus:ring-accent/15"
-                      :placeholder="item.configured ? t('pages.projectDetail.projectCredentials.replacePlaceholder') : t('pages.projectDetail.projectCredentials.valuePlaceholder')"
-                      :data-testid="`project-credential-input-${item.id}`"
+                      :placeholder="item.configured ? t('pages.workspace.credentials.replacePlaceholder') : t('pages.workspace.credentials.valuePlaceholder')"
+                      :data-testid="`workspace-credential-input-${item.id}`"
                       autocomplete="new-password"
                     />
                     <div class="flex shrink-0 gap-2">
@@ -624,16 +615,16 @@ watch(showCreate, (open) => {
                         variant="primary"
                         :disabled="!drafts[item.id]?.trim() || !!saving[item.id]"
                         :loading="!!saving[item.id]"
-                        :data-testid="`project-credential-save-${item.id}`"
+                        :data-testid="`workspace-credential-save-${item.id}`"
                         @click="save(item)"
                       >
-                        {{ t('pages.projectDetail.projectCredentials.save') }}
+                        {{ t('pages.workspace.credentials.save') }}
                       </AppButton>
                       <AppButton
                         size="sm"
                         variant="ghost"
                         :disabled="!!saving[item.id]"
-                        :data-testid="`project-credential-cancel-${item.id}`"
+                        :data-testid="`workspace-credential-cancel-${item.id}`"
                         @click="cancelEdit(item)"
                       >
                         {{ t('common.buttons.cancel') }}
@@ -641,7 +632,7 @@ watch(showCreate, (open) => {
                     </div>
                   </div>
                   <p v-if="item.updatedAt" class="m-0 mt-2 text-[10px] text-txt3">
-                    {{ t('pages.projectDetail.projectCredentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
+                    {{ t('pages.workspace.credentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
                   </p>
                 </article>
               </template>
@@ -653,14 +644,14 @@ watch(showCreate, (open) => {
 
     <AppModal
       :open="showCreate"
-      :title="t('pages.projectDetail.projectCredentials.createTitle')"
+      :title="t('pages.workspace.credentials.createTitle')"
       :width="640"
       :close-on-esc="!creating"
       @close="!creating && (showCreate = false)"
     >
       <div
         class="credential-step-shell"
-        data-testid="project-credential-create-form"
+        data-testid="workspace-credential-create-form"
         :data-credential-step="createStep"
         :data-step-motion="stepMotion"
         :data-step-locked="stepLock ? 'true' : 'false'"
@@ -671,7 +662,7 @@ watch(showCreate, (open) => {
           @enter="() => { void measurePane().then(observePane) }"
         >
           <div v-if="createStep === 1" key="kind" ref="stepPane" class="credential-step-pane">
-            <p class="m-0 text-[12px] leading-5 text-txt3">{{ t('pages.projectDetail.projectCredentials.stepKindHint') }}</p>
+            <p class="m-0 text-[12px] leading-5 text-txt3">{{ t('pages.workspace.credentials.stepKindHint') }}</p>
             <div class="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
               <button
                 v-for="kind in CREDENTIAL_KINDS"
@@ -684,22 +675,22 @@ watch(showCreate, (open) => {
                 @click="selectKind(kind.id)"
               >
                 <CredentialProviderLogo :provider="kind.logoProvider" :icon="kind.icon" match="provider" :selected="createKind === kind.id" />
-                <span class="min-w-0 truncate text-[13px] font-semibold text-txt">{{ t(`pages.projectDetail.projectCredentials.kinds.${kind.id}`) }}</span>
+                <span class="min-w-0 truncate text-[13px] font-semibold text-txt">{{ t(`pages.workspace.credentials.kinds.${kind.id}`) }}</span>
               </button>
             </div>
           </div>
           <div v-else key="secret" ref="stepPane" class="credential-step-pane space-y-4">
             <label class="block">
-              <span class="label">{{ t('pages.projectDetail.projectCredentials.alias') }}</span>
+              <span class="label">{{ t('pages.workspace.credentials.alias') }}</span>
               <input
                 v-model="createAlias"
                 class="input w-full"
-                data-testid="project-credential-create-alias"
+                data-testid="workspace-credential-create-alias"
                 autocomplete="off"
-                :placeholder="t('pages.projectDetail.projectCredentials.aliasPlaceholder')"
+                :placeholder="t('pages.workspace.credentials.aliasPlaceholder')"
                 @input="aliasError = ''"
               />
-              <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="project-credential-alias-error">{{ aliasError }}</p>
+              <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="workspace-credential-alias-error">{{ aliasError }}</p>
             </label>
             <OpenCodeProviderFields
               v-if="selectedKind?.secret === 'model'"
@@ -716,9 +707,9 @@ watch(showCreate, (open) => {
             />
             <label class="block">
               <span class="label flex items-center justify-between gap-2">
-                <span>{{ selectedKind ? secretLabel(selectedKind.id) : t('pages.projectDetail.projectCredentials.value') }}</span>
-                <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="project-credential-secret-toggle" @click="revealSecret = !revealSecret">
-                  {{ revealSecret ? t('pages.projectDetail.projectCredentials.hideSecret') : t('pages.projectDetail.projectCredentials.showSecret') }}
+                <span>{{ selectedKind ? secretLabel(selectedKind.id) : t('pages.workspace.credentials.value') }}</span>
+                <button type="button" class="text-[11px] font-medium text-accent-2" data-testid="workspace-credential-secret-toggle" @click="revealSecret = !revealSecret">
+                  {{ revealSecret ? t('pages.workspace.credentials.hideSecret') : t('pages.workspace.credentials.showSecret') }}
                 </button>
               </span>
               <textarea
@@ -726,9 +717,9 @@ watch(showCreate, (open) => {
                 v-model="createSecret"
                 rows="6"
                 class="input min-h-[120px] w-full resize-y font-mono"
-                data-testid="project-credential-create-value"
+                data-testid="workspace-credential-create-value"
                 autocomplete="off"
-                :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
                 :class="revealSecret ? undefined : 'credential-secret-mask'"
               />
               <input
@@ -736,9 +727,9 @@ watch(showCreate, (open) => {
                 v-model="createSecret"
                 :type="revealSecret ? 'text' : 'password'"
                 class="input w-full font-mono"
-                data-testid="project-credential-create-value"
+                data-testid="workspace-credential-create-value"
                 autocomplete="new-password"
-                :placeholder="t('pages.projectDetail.projectCredentials.valuePlaceholder')"
+                :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
               />
             </label>
           </div>
@@ -750,29 +741,29 @@ watch(showCreate, (open) => {
           v-if="createStep === 1"
           variant="primary"
           :disabled="stepLock || !createKind"
-          data-testid="project-credential-create-next"
+          data-testid="workspace-credential-create-next"
           @click="goNext"
         >
-          {{ t('pages.projectDetail.projectCredentials.next') }}
+          {{ t('pages.workspace.credentials.next') }}
         </AppButton>
         <AppButton
           v-if="createStep === 2"
           variant="ghost"
           :disabled="creating || stepLock"
-          data-testid="project-credential-create-back"
+          data-testid="workspace-credential-create-back"
           @click="goBack"
         >
-          {{ t('pages.projectDetail.projectCredentials.back') }}
+          {{ t('pages.workspace.credentials.back') }}
         </AppButton>
         <AppButton
           v-if="createStep === 2"
           variant="primary"
           :disabled="creating || stepLock || !createAlias.trim() || !secretReady"
           :loading="creating"
-          data-testid="project-credential-create-submit"
+          data-testid="workspace-credential-create-submit"
           @click="create"
         >
-          {{ t('pages.projectDetail.projectCredentials.create') }}
+          {{ t('pages.workspace.credentials.create') }}
         </AppButton>
       </template>
     </AppModal>

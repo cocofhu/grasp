@@ -8,38 +8,38 @@ import nav from '@/locales/zh-CN/nav.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspace: ref<any>({ id: 'kept-id', name: 'Studio' }), workspaceId: ref('kept-id'), getPmLeader: vi.fn(), reload: vi.fn(), requestLeave: vi.fn(), dirty: ref(false) }
+  return { workspace: ref<any>({ name: 'Studio' }), getPmLeader: vi.fn(), reload: vi.fn(), requestLeave: vi.fn(), dirty: ref(false) }
 })
 vi.mock('@/lib/api/api', () => ({ api: { getPmLeader: mocks.getPmLeader } }))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, workspaceId: mocks.workspaceId, reload: mocks.reload }) }))
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, reload: mocks.reload }) }))
 import WorkspaceToolView from './WorkspaceToolView.vue'
-const panel = (name: string) => defineComponent({ name, props: ['projectId', 'project', 'binding'], emits: ['open-settings', 'changed', 'updated', 'project-updated'], setup(props, { emit }) {
-  return () => h('div', { 'data-panel': name, 'data-workspace': props.projectId, 'data-project-name': props.project?.name, 'data-binding': props.binding?.agentConfigRef }, [
+const panel = (name: string) => defineComponent({ name, props: ['workspace', 'binding'], emits: ['open-settings', 'changed', 'updated', 'workspace-updated'], setup(props, { emit }) {
+  return () => h('div', { 'data-panel': name, 'data-workspace-name': props.workspace?.name, 'data-binding': props.binding?.agentConfigRef }, [
     h('button', { onClick: () => emit('open-settings') }, 'settings'),
     h('button', { 'data-emit': 'changed', onClick: () => emit('changed') }, 'changed'),
-    h('button', { 'data-emit': 'updated', onClick: () => emit('updated', { id: 'kept-id', name: 'Renamed' }) }, 'updated'),
+    h('button', { 'data-emit': 'updated', onClick: () => emit('updated', { name: 'Renamed' }) }, 'updated'),
   ])
 } })
 async function setup(path: string) {
   const specs = [['/board', 'board'], ['/requirements', 'requirements'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/notification-policy', 'notificationPolicy'], ['/settings/schedules', 'schedules'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp'], ['/settings/shared-agent', 'sharedAgent']] as const
   const router = createRouter({ history: createMemoryHistory(), routes: specs.map(([route, tool]) => ({ path: route, component: WorkspaceToolView, meta: { workspaceTool: tool, workspaceTitle: `nav.${tool}` } })) })
   await router.push(path)
-  const drafts = defineComponent({ props: ['projectId'], setup(_props, { expose }) { expose({ get isDirty() { return mocks.dirty.value }, requestLeave: mocks.requestLeave }); return () => h('div', { 'data-panel': 'drafts' }) } })
+  const drafts = defineComponent({ setup(_props, { expose }) { expose({ get isDirty() { return mocks.dirty.value }, requestLeave: mocks.requestLeave }); return () => h('div', { 'data-panel': 'drafts' }) } })
   const stubs: Record<string, any> = { WorkspacePage: { template: '<section class="h-full min-h-0 flex flex-col"><slot name="actions"/><slot/></section>' }, RequirementDraftsPanel: drafts }
-  for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'PmCronJobsPanel', 'ProjectNotifyPanel', 'ProjectExternalMcpPanel', 'ProjectSharedAgentPanel', 'ProjectCredentialsPanel', 'ProjectAuditPanel']) stubs[name] = panel(name)
+  for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'PmCronJobsPanel', 'WorkspaceNotifyPanel', 'WorkspaceExternalMcpPanel', 'WorkspaceSharedAgentPanel', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': nav } })
   const wrapper = mount({ render: () => h(RouterView) }, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs } })
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.dirty.value = false; mocks.workspace.value = { id: 'kept-id', name: 'Studio' }; mocks.getPmLeader.mockResolvedValue({ enabled: true, agentConfigRef: 'manager' }); mocks.requestLeave.mockResolvedValue(false) })
+beforeEach(() => { vi.clearAllMocks(); mocks.dirty.value = false; mocks.workspace.value = { name: 'Studio' }; mocks.getPmLeader.mockResolvedValue({ enabled: true, agentConfigRef: 'manager' }); mocks.requestLeave.mockResolvedValue(false) })
 describe('every workspace tool page', () => {
   it.each([
     ['/board', 'BoardView', 'workspace'], ['/requirements', 'drafts', 'workspace'], ['/assistant', 'PmLeaderChat', 'workspace'],
     ['/settings/assistant', 'PmSettingsPanel', 'settings'], ['/settings/schedules', 'PmCronJobsPanel', 'workspace'],
-    ['/settings/notification-policy', 'ProjectNotifyPanel', 'settings'], ['/settings/external-mcp', 'ProjectExternalMcpPanel', 'settings'],
-    ['/settings/shared-agent', 'ProjectSharedAgentPanel', 'workspace'], ['/settings/credentials', 'ProjectCredentialsPanel', 'workspace'],
-    ['/settings/audit', 'ProjectAuditPanel', 'workspace'],
+    ['/settings/notification-policy', 'WorkspaceNotifyPanel', 'settings'], ['/settings/external-mcp', 'WorkspaceExternalMcpPanel', 'settings'],
+    ['/settings/shared-agent', 'WorkspaceSharedAgentPanel', 'workspace'], ['/settings/credentials', 'WorkspaceCredentialsPanel', 'workspace'],
+    ['/settings/audit', 'WorkspaceAuditPanel', 'workspace'],
   ])('%s renders only %s in the %s layout', async (path, component, layout) => {
     const { wrapper } = await setup(path)
     expect(wrapper.findAll('[data-panel]').map((node) => node.attributes('data-panel'))).toEqual([component])
@@ -52,9 +52,9 @@ describe('every workspace tool page', () => {
     const { wrapper } = await setup('/assistant')
     expect(wrapper.get('[data-panel="PmLeaderChat"]').attributes('data-binding')).toBe('manager')
     wrapper.unmount()
-    for (const [path, component] of [['/settings/assistant', 'PmSettingsPanel'], ['/settings/notification-policy', 'ProjectNotifyPanel']]) {
+    for (const [path, component] of [['/settings/assistant', 'PmSettingsPanel'], ['/settings/notification-policy', 'WorkspaceNotifyPanel']]) {
       const { wrapper } = await setup(path)
-      expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-project-name')).toBe('Studio')
+      expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace-name')).toBe('Studio')
       wrapper.unmount()
     }
   })
@@ -94,15 +94,15 @@ describe('every workspace tool page', () => {
     expect(mocks.reload).toHaveBeenCalledTimes(1)
     settings.wrapper.unmount()
     const notify = await setup('/settings/notification-policy')
-    await notify.wrapper.get('[data-panel="ProjectNotifyPanel"] [data-emit="updated"]').trigger('click')
+    await notify.wrapper.get('[data-panel="WorkspaceNotifyPanel"] [data-emit="updated"]').trigger('click')
     expect(mocks.workspace.value.name).toBe('Renamed')
     notify.wrapper.unmount()
   })
 })
 describe('independent workspace tools', () => {
-  it.each([['/board', 'BoardView'], ['/settings/credentials', 'ProjectCredentialsPanel'], ['/settings/audit', 'ProjectAuditPanel'], ['/settings/schedules', 'PmCronJobsPanel']])('mounts %s directly with the preserved internal ID', async (path, component) => {
+  it.each([['/board', 'BoardView'], ['/settings/credentials', 'WorkspaceCredentialsPanel'], ['/settings/audit', 'WorkspaceAuditPanel'], ['/settings/schedules', 'PmCronJobsPanel']])('mounts %s directly without workspace props', async (path, component) => {
     const { wrapper } = await setup(path)
-    expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace')).toBe('kept-id')
+    expect(wrapper.get(`[data-panel="${component}"]`).attributes('data-workspace-name')).toBeUndefined()
     expect(wrapper.get('[data-testid^="workspace-tool-"]').classes()).toEqual(expect.arrayContaining(['min-h-0', 'flex-1']))
     wrapper.unmount()
   })
@@ -119,7 +119,7 @@ describe('independent workspace tools', () => {
   })
   it('keeps PM conversation and its configuration reachable as separate pages', async () => {
     const { wrapper, router } = await setup('/assistant')
-    expect(mocks.getPmLeader).toHaveBeenCalledWith('kept-id')
+    expect(mocks.getPmLeader).toHaveBeenCalledWith()
     expect(wrapper.find('[data-panel="PmLeaderChat"]').exists()).toBe(true)
     await wrapper.get('[data-panel="PmLeaderChat"] button').trigger('click')
     await flushPromises()

@@ -11,9 +11,9 @@ const toastSuccess = vi.fn()
 const toastError = vi.fn()
 
 const apiMocks = vi.hoisted(() => ({
-  listProjectCronJobs: vi.fn(),
-  patchProjectCronJob: vi.fn(),
-  deleteProjectCronJob: vi.fn(),
+  listCronJobs: vi.fn(),
+  patchCronJob: vi.fn(),
+  deleteCronJob: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -22,9 +22,9 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectCronJobs: apiMocks.listProjectCronJobs,
-      patchProjectCronJob: apiMocks.patchProjectCronJob,
-      deleteProjectCronJob: apiMocks.deleteProjectCronJob,
+      listCronJobs: apiMocks.listCronJobs,
+      patchCronJob: apiMocks.patchCronJob,
+      deleteCronJob: apiMocks.deleteCronJob,
     },
   }
 })
@@ -36,7 +36,6 @@ vi.mock('@/lib/composables/useToast', () => ({
 const SAMPLE_JOB = {
   id: 'cron-1',
   agentName: 'agent-a',
-  projectId: 'proj-1',
   threadId: 'th-1',
   name: '每日汇报',
   prompt: '汇报',
@@ -55,7 +54,6 @@ function mountPanel() {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(PmCronJobsPanel, {
-    props: { projectId: 'proj-1' },
     global: {
       plugins: [i18n],
       stubs: {
@@ -72,18 +70,18 @@ describe('PmCronJobsPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     const job = { ...SAMPLE_JOB, deliverToChannel: false }
-    apiMocks.listProjectCronJobs.mockResolvedValue({ items: [job] })
-    apiMocks.patchProjectCronJob.mockResolvedValue({ ...job, deliverToChannel: true })
-    apiMocks.deleteProjectCronJob.mockResolvedValue({ status: 'deleted' })
+    apiMocks.listCronJobs.mockResolvedValue({ items: [job] })
+    apiMocks.patchCronJob.mockResolvedValue({ ...job, deliverToChannel: true })
+    apiMocks.deleteCronJob.mockResolvedValue({ status: 'deleted' })
     useAuth().clearUser()
   })
 
-  it('loads project cron jobs on mount', async () => {
+  it('loads workspace cron jobs on mount', async () => {
     useAuth().setUser({ username: 'admin', expiresAt: 't', isAdmin: true })
     const w = mountPanel()
     await flushPromises()
-    expect(apiMocks.listProjectCronJobs).toHaveBeenCalledWith('proj-1')
-    expect(w.find('[data-testid="project-cron-jobs-panel"]').exists()).toBe(true)
+    expect(apiMocks.listCronJobs).toHaveBeenCalledWith()
+    expect(w.find('[data-testid="workspace-cron-jobs-panel"]').exists()).toBe(true)
     expect(w.text()).toContain('每日汇报')
     expect(w.text()).toContain('agent-a')
     expect(w.text()).toContain('cron: 0 9 * * *')
@@ -103,7 +101,7 @@ describe('PmCronJobsPanel', () => {
     expect(w.find('.bg-amber-500\\/10').exists()).toBe(false)
     await toggle.trigger('click')
     await flushPromises()
-    expect(apiMocks.patchProjectCronJob).toHaveBeenCalledWith('proj-1', 'cron-1', {
+    expect(apiMocks.patchCronJob).toHaveBeenCalledWith('cron-1', {
       deliverToChannel: true,
     })
   })
@@ -112,9 +110,9 @@ describe('PmCronJobsPanel', () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
     const jobA = { ...SAMPLE_JOB, id: 'cron-1', name: '任务一', deliverToChannel: false }
     const jobB = { ...SAMPLE_JOB, id: 'cron-2', name: '任务二', deliverToChannel: false }
-    apiMocks.listProjectCronJobs.mockResolvedValue({ items: [jobA, jobB] })
+    apiMocks.listCronJobs.mockResolvedValue({ items: [jobA, jobB] })
     let releaseA!: (v: unknown) => void
-    apiMocks.patchProjectCronJob.mockImplementation((_pid: string, id: string) => {
+    apiMocks.patchCronJob.mockImplementation((id: string) => {
       if (id === 'cron-1') return new Promise((resolve) => { releaseA = resolve })
       return Promise.resolve({ ...jobB, deliverToChannel: true })
     })
@@ -128,8 +126,8 @@ describe('PmCronJobsPanel', () => {
     expect((toggles[1].element as HTMLButtonElement).disabled).toBe(false)
     await toggles[1].trigger('click')
     await flushPromises()
-    expect(apiMocks.patchProjectCronJob).toHaveBeenCalledWith('proj-1', 'cron-1', { deliverToChannel: true })
-    expect(apiMocks.patchProjectCronJob).toHaveBeenCalledWith('proj-1', 'cron-2', { deliverToChannel: true })
+    expect(apiMocks.patchCronJob).toHaveBeenCalledWith('cron-1', { deliverToChannel: true })
+    expect(apiMocks.patchCronJob).toHaveBeenCalledWith('cron-2', { deliverToChannel: true })
     releaseA!({ ...jobA, deliverToChannel: true })
     await flushPromises()
   })
@@ -142,7 +140,7 @@ describe('PmCronJobsPanel', () => {
     expect((toggle.element as HTMLButtonElement).disabled).toBe(false)
     await toggle.trigger('click')
     await flushPromises()
-    expect(apiMocks.patchProjectCronJob).toHaveBeenCalledWith('proj-1', 'cron-1', {
+    expect(apiMocks.patchCronJob).toHaveBeenCalledWith('cron-1', {
       deliverToChannel: true,
     })
   })
@@ -152,15 +150,15 @@ describe('PmCronJobsPanel', () => {
     const w = mountPanel()
     await flushPromises()
     vi.spyOn(window, 'confirm').mockReturnValue(false)
-    await w.get('[data-testid="project-cron-delete"]').trigger('click')
+    await w.get('[data-testid="workspace-cron-delete"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.deleteProjectCronJob).not.toHaveBeenCalled()
+    expect(apiMocks.deleteCronJob).not.toHaveBeenCalled()
     expect(w.text()).toContain('每日汇报')
   })
 
   it('confirm delete calls API, refreshes list, and toasts success', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    apiMocks.listProjectCronJobs
+    apiMocks.listCronJobs
       .mockResolvedValueOnce({ items: [{ ...SAMPLE_JOB }] })
       .mockResolvedValueOnce({ items: [] })
     const w = mountPanel()
@@ -168,11 +166,11 @@ describe('PmCronJobsPanel', () => {
     expect(w.text()).toContain('每日汇报')
 
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await w.get('[data-testid="project-cron-delete"]').trigger('click')
+    await w.get('[data-testid="workspace-cron-delete"]').trigger('click')
     await flushPromises()
 
-    expect(apiMocks.deleteProjectCronJob).toHaveBeenCalledWith('proj-1', 'cron-1')
-    expect(apiMocks.listProjectCronJobs).toHaveBeenCalledTimes(2)
+    expect(apiMocks.deleteCronJob).toHaveBeenCalledWith('cron-1')
+    expect(apiMocks.listCronJobs).toHaveBeenCalledTimes(2)
     expect(toastSuccess).toHaveBeenCalled()
     expect(toastError).not.toHaveBeenCalled()
     expect(w.text()).not.toContain('每日汇报')
@@ -181,8 +179,8 @@ describe('PmCronJobsPanel', () => {
   it('shows table skeleton before rows arrive', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
     let release!: (v: unknown) => void
-    apiMocks.listProjectCronJobs.mockReset()
-    apiMocks.listProjectCronJobs.mockReturnValue(new Promise((resolve) => { release = resolve }))
+    apiMocks.listCronJobs.mockReset()
+    apiMocks.listCronJobs.mockReturnValue(new Promise((resolve) => { release = resolve }))
     const w = mountPanel()
     await flushPromises()
     expect(w.find('[data-testid="cron-table-skeleton"]').exists()).toBe(true)
@@ -195,25 +193,25 @@ describe('PmCronJobsPanel', () => {
 
   it('delete keeps old row visible until reload finishes and shows deleting pending', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    apiMocks.listProjectCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
+    apiMocks.listCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
     let releaseDel!: () => void
-    apiMocks.deleteProjectCronJob.mockReturnValue(new Promise<void>((resolve) => { releaseDel = resolve }))
+    apiMocks.deleteCronJob.mockReturnValue(new Promise<void>((resolve) => { releaseDel = resolve }))
     const w = mountPanel()
     await flushPromises()
     vi.spyOn(window, 'confirm').mockReturnValue(true)
-    await w.get('[data-testid="project-cron-delete"]').trigger('click')
+    await w.get('[data-testid="workspace-cron-delete"]').trigger('click')
     await flushPromises()
-    expect(w.get('[data-testid="project-cron-delete"]').text()).toBe('删除中…')
-    expect((w.get('[data-testid="project-cron-delete"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.get('[data-testid="workspace-cron-delete"]').text()).toBe('删除中…')
+    expect((w.get('[data-testid="workspace-cron-delete"]').element as HTMLButtonElement).disabled).toBe(true)
     expect(w.text()).toContain('每日汇报')
     releaseDel!()
-    apiMocks.listProjectCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
+    apiMocks.listCronJobs.mockResolvedValue({ items: [{ ...SAMPLE_JOB }] })
     await flushPromises()
   })
 
   it('failure is distinct from empty', async () => {
     useAuth().setUser({ username: 'u', expiresAt: 't', isAdmin: false })
-    apiMocks.listProjectCronJobs.mockRejectedValue(Object.assign(new Error('down'), { status: 500 }))
+    apiMocks.listCronJobs.mockRejectedValue(Object.assign(new Error('down'), { status: 500 }))
     const w = mountPanel()
     await flushPromises()
     expect(w.find('[data-testid="cron-failed"]').exists()).toBe(true)

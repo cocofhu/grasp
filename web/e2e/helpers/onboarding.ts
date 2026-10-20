@@ -1,9 +1,7 @@
 import type { Page } from '@playwright/test'
 
-/** localStorage key read by shouldAutoOpenOnboarding. */
-export function onboardingDismissStorageKey(projectId: string): string {
-  return `grasp-onboarding-suppress:${projectId}`
-}
+/** localStorage key read by isOnboardingSuppressed. */
+export const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
 
 /**
  * Seed dismiss flag before navigation so stubs without the default workflow do
@@ -11,19 +9,14 @@ export function onboardingDismissStorageKey(projectId: string): string {
  * unrelated e2e suites. This storage key is the only hard suppression left —
  * the wizard's own "later" button closes it for the current view only.
  */
-export async function seedOnboardingDismissed(
-  page: Page,
-  projectId = 'proj-1',
-): Promise<void> {
-  await page.addInitScript((pids: string[]) => {
+export async function seedOnboardingDismissed(page: Page): Promise<void> {
+  await page.addInitScript((key: string) => {
     try {
-      for (const pid of pids) {
-        localStorage.setItem(`grasp-onboarding-suppress:${pid}`, '1')
-      }
+      localStorage.setItem(key, '1')
     } catch {
       /* ignore */
     }
-  }, [projectId, 'proj-default'])
+  }, ONBOARDING_SUPPRESS_KEY)
 }
 
 /**

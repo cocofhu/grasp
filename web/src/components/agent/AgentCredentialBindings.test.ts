@@ -8,11 +8,10 @@ import common from '@/locales/zh-CN/common.json'
 import { toDraft } from '@/lib/agent/agentStudioDraft'
 import AgentCredentialBindings from './AgentCredentialBindings.vue'
 const mocks = vi.hoisted(() => ({ credentials: vi.fn() }))
-vi.mock('@/lib/api/api', () => ({ api: { getProjectCredentials: mocks.credentials } }))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: { value: 'ws' }, ensureLoaded: async () => ({ id: 'ws' }) }) }))
+vi.mock('@/lib/api/api', () => ({ api: { listCredentials: mocks.credentials } }))
 beforeEach(() => mocks.credentials.mockResolvedValue({ items: [{ id: 'cred-1', envKey: 'OPENAI_API_KEY', name: 'Primary' }] }))
 function setup(bindings?: Record<string, string | null>) {
-  const draft = reactive(toDraft({ name: 'Agent', projectId: 'ws', acpBackend: '', files: [], mcp: [], env: {}, layout: {}, credentialBindings: bindings }))
+  const draft = reactive(toDraft({ name: 'Agent', acpBackend: '', files: [], mcp: [], env: {}, layout: {}, credentialBindings: bindings }))
   const wrapper = mount(AgentCredentialBindings, { props: { draft }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })], stubs: { RouterLink: true } } })
   return { draft, wrapper }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -13,7 +13,6 @@ import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import type { AgentCronJob } from '@/lib/shared/types'
 
 const SKELETON_ROWS = 5
-const props = defineProps<{ projectId: string }>()
 const { t } = useI18n()
 const toast = useToast()
 const cronSeq = createListRequestSeq()
@@ -39,7 +38,7 @@ async function load() {
   loadFailed.value = false
   loadDenied.value = false
   try {
-    const res = await api.listProjectCronJobs(props.projectId)
+    const res = await api.listCronJobs()
     if (!cronSeq.isCurrentSeq(localSeq)) return
     items.value = res.items || []
   } catch (e: unknown) {
@@ -71,7 +70,7 @@ async function onDeliverToggle(job: AgentCronJob, checked: boolean) {
   job.deliverToChannel = checked
   togglingIds.value = [...togglingIds.value, job.id]
   try {
-    const updated = await api.patchProjectCronJob(props.projectId, job.id, {
+    const updated = await api.patchCronJob(job.id, {
       deliverToChannel: checked,
     })
     const idx = items.value.findIndex((j) => j.id === job.id)
@@ -85,12 +84,12 @@ async function onDeliverToggle(job: AgentCronJob, checked: boolean) {
 }
 
 async function removeJob(id: string) {
-  if (!confirm(t('pages.projectDetail.cron.deleteConfirm'))) return
+  if (!confirm(t('pages.workspace.cron.deleteConfirm'))) return
   deletingId.value = id
   try {
-    await api.deleteProjectCronJob(props.projectId, id)
+    await api.deleteCronJob(id)
     await load()
-    toast.success(t('pages.projectDetail.cron.deleted'))
+    toast.success(t('pages.workspace.cron.deleted'))
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
@@ -98,23 +97,13 @@ async function removeJob(id: string) {
   }
 }
 
-watch(
-  () => props.projectId,
-  () => {
-    items.value = []
-    hasInitialLoaded.value = false
-    loadFailed.value = false
-    loadDenied.value = false
-    void load()
-  },
-)
 onMounted(() => void load())
 </script>
 
 <template>
   <div
     class="flex min-h-[420px] flex-col gap-4"
-    data-testid="project-cron-jobs-panel"
+    data-testid="workspace-cron-jobs-panel"
     :aria-busy="loading ? 'true' : 'false'"
   >
     <div
@@ -136,15 +125,15 @@ onMounted(() => void load())
         <table class="cron-table w-full min-w-[1380px] text-left text-sm">
           <thead class="bg-elevated text-xs text-txt3">
             <tr>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colAgent') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colStatus') }}</th>
-              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colActions') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colName') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colAgent') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colSchedule') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colEnabled') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colDeliver') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colNextRun') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colLastRun') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colStatus') }}</th>
+              <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colActions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -186,24 +175,24 @@ onMounted(() => void load())
 
       <EmptyState
         v-else-if="!items.length"
-        :title="t('pages.projectDetail.cron.emptyTitle')"
-        :desc="t('pages.projectDetail.cron.emptyDesc')"
+        :title="t('pages.workspace.cron.emptyTitle')"
+        :desc="t('pages.workspace.cron.emptyDesc')"
       />
       <div v-else class="overflow-hidden border-y border-line/60">
         <div class="scroll-area overflow-x-auto">
           <table class="cron-table w-full min-w-[1380px] text-left text-sm" data-testid="cron-table">
             <thead class="bg-elevated text-xs text-txt3">
               <tr>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colAgent') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colSchedule') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colEnabled') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colDeliver') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colNextRun') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastRun') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colStatus') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colLastError') }}</th>
-                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colActions') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colName') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colAgent') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colSchedule') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colEnabled') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colDeliver') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colNextRun') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colLastRun') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colStatus') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colLastError') }}</th>
+                <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.workspace.cron.colActions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -215,22 +204,22 @@ onMounted(() => void load())
                 <td class="px-3 py-2.5 font-mono text-xs text-txt2">{{ scheduleLabel(job) }}</td>
                 <td class="px-3 py-2.5">
                   <span class="text-txt2">
-                    {{ job.enabled ? t('pages.projectDetail.cron.enabledYes') : t('pages.projectDetail.cron.enabledNo') }}
+                    {{ job.enabled ? t('pages.workspace.cron.enabledYes') : t('pages.workspace.cron.enabledNo') }}
                   </span>
                 </td>
                 <td class="px-3 py-2.5">
                   <label
                     class="inline-flex items-center gap-2"
-                    :title="t('pages.projectDetail.cron.deliverHint')"
+                    :title="t('pages.workspace.cron.deliverHint')"
                   >
                     <AppSwitch
                       data-testid="cron-deliver-toggle"
                       :model-value="job.deliverToChannel"
                       :disabled="togglingIds.includes(job.id) || deletingId === job.id"
-                      :aria-label="t('pages.projectDetail.cron.deliverLabel')"
+                      :aria-label="t('pages.workspace.cron.deliverLabel')"
                       @update:model-value="onDeliverToggle(job, $event)"
                     />
-                    <span class="text-xs text-txt3 whitespace-nowrap">{{ t('pages.projectDetail.cron.deliverLabel') }}</span>
+                    <span class="text-xs text-txt3 whitespace-nowrap">{{ t('pages.workspace.cron.deliverLabel') }}</span>
                   </label>
                 </td>
                 <td class="px-3 py-2.5 text-txt3">{{ job.nextRunAt ? fmtTime(job.nextRunAt) : '—' }}</td>
@@ -246,7 +235,7 @@ onMounted(() => void load())
                   <button
                     type="button"
                     class="whitespace-nowrap text-[11px] text-err disabled:cursor-not-allowed disabled:opacity-40"
-                    data-testid="project-cron-delete"
+                    data-testid="workspace-cron-delete"
                     :disabled="deletingId === job.id || togglingIds.includes(job.id)"
                     @click="removeJob(job.id)"
                   >

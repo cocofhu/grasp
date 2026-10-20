@@ -59,18 +59,15 @@ export interface PublishedWorkflowSnapshot {
 
 export interface WorkflowDefaults {
   inheritWorkspace: boolean
-  variables: ProjectVariable[]
-  notifyPolicy?: ProjectNotifyPolicy
+  variables: WorkspaceVariable[]
+  notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
 }
 
 export interface Workflow {
   id: string
-  projectId?: string
   name: string
   description: string
-  /** Client-only display name resolved from Project.id (home cards/select). */
-  projectName?: string
   /** Computed by the server: published when publishedVersion is the latest version. */
   status: 'draft' | 'published'
   /** Latest saved version (every content-changing save appends one). */
@@ -94,8 +91,8 @@ export interface Workflow {
   variables?: WorkflowGraph['variables']
 }
 
-/** Project-level Run→IM notification defaults. */
-export interface ProjectNotifyPolicy {
+/** Workspace-level Run→IM notification defaults. */
+export interface WorkspaceNotifyPolicy {
   enabled?: boolean
   defaultEvents?: string[]
   /** Explicit 0~N channel fan-out targets (may include primary). Empty = no deliver. */
@@ -114,15 +111,15 @@ export interface WorkflowNotifyPolicy {
   events?: string[]
 }
 
-/** One project sandbox OS environment variable (secret values masked as **** on read). */
-export interface ProjectEnvEntry {
+/** One sandbox OS environment variable (secret values masked as **** on read). */
+export interface SandboxEnvEntry {
   key: string
   value: string
   secret?: boolean
 }
 
-/** Project-level workflow variable (vars.*); secret values masked on read. */
-export interface ProjectVariable {
+/** Workspace-level workflow variable (vars.*); secret values masked on read. */
+export interface WorkspaceVariable {
   name: string
   type: string
   value?: any
@@ -134,11 +131,10 @@ export interface ProjectVariable {
   secret?: boolean
 }
 
-export interface Project {
-  id: string
+export interface Workspace {
   name: string
   description: string
-  variables: ProjectVariable[]
+  variables: WorkspaceVariable[]
   workflowCount?: number
   /**
    * Sum of workflow StateRun.Usage + post-feature PM ChatMessage.Usage.
@@ -156,15 +152,14 @@ export interface Project {
    * Empty/omitted → show the default label. Does not change persisted keys.
    */
   unknownModelDisplayName?: string
-  notifyPolicy?: ProjectNotifyPolicy
+  notifyPolicy?: WorkspaceNotifyPolicy
   createdAt?: string
   updatedAt?: string
 }
 
-/** One project-scoped append-only audit event (masked payload). */
-export interface ProjectAuditEvent {
+/** One append-only audit event (masked payload). */
+export interface AuditEvent {
   id: string
-  projectId: string
   occurredAt: string
   actor: string
   unattributable: boolean
@@ -181,30 +176,30 @@ export interface ProjectAuditEvent {
   payload?: Record<string, unknown>
 }
 
-export interface ProjectAuditFacetRun {
+export interface AuditFacetRun {
   runId: string
   label: string
   sub?: string
 }
 
-export interface ProjectAuditFacetNode {
+export interface AuditFacetNode {
   nodeId: string
   label: string
 }
 
-export interface ProjectAuditFacetResource {
+export interface AuditFacetResource {
   resourceType: string
   resourceId: string
   resource: string
 }
 
-export interface ProjectAuditFacets {
-  runs: ProjectAuditFacetRun[]
-  nodes: ProjectAuditFacetNode[]
-  resources: ProjectAuditFacetResource[]
+export interface AuditFacets {
+  runs: AuditFacetRun[]
+  nodes: AuditFacetNode[]
+  resources: AuditFacetResource[]
 }
 
-export interface ProjectAuditStats {
+export interface AuditStats {
   total: number
   mcp: number
   fail: number
@@ -290,7 +285,6 @@ export interface GlobalTokenStatsKPI {
   studioTotal?: number
   /** Usage from failed/cancelled calls. */
   failedTotal?: number
-  projectCount: number
   runCount: number
   threadCount?: number
   modelCount: number
@@ -306,25 +300,9 @@ export interface GlobalTokenStatsKPI {
   unpricedTotal?: number
 }
 
-export interface GlobalTokenStatsProjectRow {
-  projectId: string
-  name: string
-  total: number
-  inputTokens: number
-  outputTokens: number
-  cacheReadTokens?: number
-  cacheWriteTokens?: number
-  cost?: number
-  runCount?: number
-  deleted?: boolean
-  deltaPct?: number | null
-}
-
 export interface GlobalTokenStatsRunRow {
   runId: string
   title: string
-  projectId: string
-  projectName: string
   workflowId?: string
   workflowName: string
   modelKey: string
@@ -353,17 +331,11 @@ export interface GlobalTokenStatsNamedBucket {
   other?: boolean
 }
 
-export interface GlobalTokenStatsHeatmap {
-  rows: string[]
-  cols: string[]
-  grid: number[][]
-}
-
-/** Project → workflow/PM/Studio → node type usage tree. */
+/** Workflow/PM/Studio → node type usage tree. */
 export interface GlobalTokenStatsTreeNode {
   key: string
   name: string
-  kind: 'project' | 'workflow' | 'pm' | 'studio' | 'nodeType' | string
+  kind: 'workflow' | 'pm' | 'studio' | 'nodeType' | string
   value: number
   cost?: number
   children?: GlobalTokenStatsTreeNode[]
@@ -396,23 +368,19 @@ export interface GlobalTokenStats {
   trend: TokenStatsBucket[]
   prevTrend: TokenStatsBucket[]
   composition: TokenStatsComposition
-  projects: GlobalTokenStatsProjectRow[]
   modelRanking: TokenStatsModel[]
   nodeTypes: GlobalTokenStatsNamedBucket[]
   sources?: GlobalTokenStatsNamedBucket[]
   statuses?: GlobalTokenStatsNamedBucket[]
   phases?: GlobalTokenStatsNamedBucket[]
   workflows: TokenStatsWorkflow[]
-  heatmap: GlobalTokenStatsHeatmap
   /** [weekday Mon=0..Sun=6][hour 0..23] in the requested timezone. */
   weekHour?: number[][]
   tree?: GlobalTokenStatsTreeNode[]
   topRuns: GlobalTokenStatsRunRow[]
-  projectTrends: GlobalTokenStatsSeries[]
   modelTrends: GlobalTokenStatsSeries[]
   unpricedModels?: string[]
   filterOptions: {
-    projects: GlobalTokenStatsFilterOption[]
     models: GlobalTokenStatsFilterOption[]
     workflows?: GlobalTokenStatsFilterOption[]
     nodeTypes?: GlobalTokenStatsFilterOption[]
@@ -426,8 +394,6 @@ export interface TokenUsageEventRow {
   source: TokenLedgerSource | string
   phase?: string
   status: TokenLedgerStatus | string
-  projectId?: string
-  projectName?: string
   workflowId?: string
   workflowName?: string
   runId?: string
@@ -480,9 +446,8 @@ export interface PmLeaderBinding {
   aclNote: string
 }
 
-export interface ProjectMemoryItem {
+export interface MemoryItem {
   id: string
-  projectId: string
   agentName?: string
   title: string
   content: string
@@ -492,12 +457,11 @@ export interface ProjectMemoryItem {
   updatedAt: string
 }
 
-/** Project-scoped requirement draft (「需求草稿」); status open|done. */
+/** Workspace-scoped requirement draft (「需求草稿」); status open|done. */
 export type RequirementDraftKind = 'requirement' | 'milestone'
 
 export interface RequirementDraft {
   id: string
-  projectId: string
   title: string
   bodyMarkdown: string
   status: 'open' | 'done'
@@ -540,7 +504,6 @@ export interface RequirementDraftCreateBody {
 export interface AgentCronJob {
   id: string
   agentName: string
-  projectId: string
   threadId: string
   name: string
   prompt: string
@@ -573,7 +536,6 @@ export interface AttachedContext {
 
 export interface ChatThread {
   id: string
-  projectId: string
   userId: string
   title: string
   /** Channel thread with no source=channel inbound. */
@@ -809,17 +771,15 @@ export interface Artifact {
   content?: string
 }
 
-/** One workflow bucket under a project in GET /api/artifacts/tree. */
+/** One workflow bucket in GET /api/artifacts/tree. */
 export interface ArtifactTreeWorkflow {
   workflowId: string
   workflowName: string
   count: number
 }
 
-/** One project bucket of GET /api/artifacts/tree (only projects owning artifacts). */
-export interface ArtifactTreeProject {
-  projectId: string
-  projectName: string
+/** GET /api/artifacts/tree payload. */
+export interface ArtifactTree {
   count: number
   /** Workflow-less artifacts (Agent sessions). */
   sessionCount: number
@@ -1085,7 +1045,7 @@ export interface Run {
   priority?: 'high' | 'normal' | 'low'
   tags?: string[]
   /** Immutable StartRun sandbox env snapshot (secrets masked as ****). */
-  sandboxEnv?: ProjectEnvEntry[]
+  sandboxEnv?: SandboxEnvEntry[]
   attempt?: number
   // The graph snapshot this run executed (pinned at start). Lets the run detail
   // canvas render against exactly what ran, independent of later edits/deletion

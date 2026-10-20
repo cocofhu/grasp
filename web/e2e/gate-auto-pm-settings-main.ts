@@ -25,7 +25,7 @@ async function bootstrap() {
     render: () =>
       h('div', { class: 'mx-auto max-w-2xl', 'data-testid': 'gate-auto-settings-root' }, [
         h('h1', { class: 'mb-4 text-lg font-semibold' }, 'PM Leader 设置 · 门禁自动唤起'),
-        h(PmSettingsPanel, { projectId: 'proj-e2e' }),
+        h(PmSettingsPanel),
       ]),
   })
     .use(createPinia())

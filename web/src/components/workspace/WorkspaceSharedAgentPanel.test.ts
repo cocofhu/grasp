@@ -4,13 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import ProjectSharedAgentPanel from './ProjectSharedAgentPanel.vue'
+import WorkspaceSharedAgentPanel from './WorkspaceSharedAgentPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
-  getProjectSharedAgentConfig: vi.fn(),
+  getSharedAgentConfig: vi.fn(),
   listAgents: vi.fn(),
-  putProjectSharedAgentConfig: vi.fn(),
-  createProjectSharedAgentTest: vi.fn(),
+  putSharedAgentConfig: vi.fn(),
+  createSharedAgentTest: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -19,17 +19,16 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      getProjectSharedAgentConfig: apiMocks.getProjectSharedAgentConfig,
+      getSharedAgentConfig: apiMocks.getSharedAgentConfig,
       listAgents: apiMocks.listAgents,
-      putProjectSharedAgentConfig: apiMocks.putProjectSharedAgentConfig,
-      createProjectSharedAgentTest: apiMocks.createProjectSharedAgentTest,
+      putSharedAgentConfig: apiMocks.putSharedAgentConfig,
+      createSharedAgentTest: apiMocks.createSharedAgentTest,
     },
   }
 })
 
 const sharedCfg = {
   acpBackend: 'cursor',
-  projectId: 'proj-a',
   gitCredentialType: '',
   files: [],
   mcp: [],
@@ -37,14 +36,13 @@ const sharedCfg = {
   layout: {},
 }
 
-function mountPanel(projectId = 'proj-a') {
+function mountPanel() {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
-  return mount(ProjectSharedAgentPanel, {
-    props: { projectId },
+  return mount(WorkspaceSharedAgentPanel, {
     global: {
       plugins: [i18n],
       stubs: {
@@ -53,7 +51,7 @@ function mountPanel(projectId = 'proj-a') {
         AgentMcpPanel: true,
         AgentEnvPanel: true,
         AgentChatTester: {
-          props: ['profile', 'homeProjectId', 'createTest'],
+          props: ['profile', 'createTest'],
           template: '<div data-testid="shared-agent-chat-tester">{{ profile }}</div>',
         },
       },
@@ -61,11 +59,11 @@ function mountPanel(projectId = 'proj-a') {
   })
 }
 
-describe('ProjectSharedAgentPanel without chat test (g2.1)', () => {
+describe('WorkspaceSharedAgentPanel without chat test (g2.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.getProjectSharedAgentConfig.mockResolvedValue(sharedCfg)
-    apiMocks.listAgents.mockResolvedValue([{ name: 'mine', projectId: 'proj-a' }])
+    apiMocks.getSharedAgentConfig.mockResolvedValue(sharedCfg)
+    apiMocks.listAgents.mockResolvedValue([{ name: 'mine' }])
   })
 
   it('keeps config subtabs and removes dialogue-test entry', async () => {

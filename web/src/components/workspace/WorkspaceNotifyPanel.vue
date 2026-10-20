@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
-import type { Project, ProjectNotifyPolicy } from '@/lib/shared/types'
+import type { Workspace, WorkspaceNotifyPolicy } from '@/lib/shared/types'
 import {
   RUN_NOTIFY_PLACEHOLDERS,
   defaultEditableRunNotifyTemplate,
@@ -17,12 +17,11 @@ import SettingsSection from '@/components/settings/SettingsSection.vue'
 import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 const props = defineProps<{
-  projectId: string
-  project: Project
+  workspace: Workspace
 }>()
 
 const emit = defineEmits<{
-  updated: [project: Project]
+  updated: [workspace: Workspace]
   openChannelSettings: []
 }>()
 
@@ -43,7 +42,7 @@ const channelError = ref<string | null>(null)
 const saving = ref(false)
 const tplInput = ref<HTMLTextAreaElement | null>(null)
 
-function policyFromProject(p: Project): ProjectNotifyPolicy {
+function policyFromWorkspace(p: Workspace): WorkspaceNotifyPolicy {
   const raw = p.notifyPolicy
   return {
     enabled: raw?.enabled !== false,
@@ -56,8 +55,8 @@ function policyFromProject(p: Project): ProjectNotifyPolicy {
   }
 }
 
-function syncFromProject() {
-  const p = policyFromProject(props.project)
+function syncFromWorkspace() {
+  const p = policyFromWorkspace(props.workspace)
   enabled.value = p.enabled !== false
   const ev = new Set(p.defaultEvents || [])
   waitingHuman.value = ev.has('waiting_human')
@@ -72,14 +71,14 @@ async function loadChannel() {
   loadingChannel.value = true
   channelError.value = null
   try {
-    const ids = Array.isArray(props.project.notifyPolicy?.channelIds)
-      ? props.project.notifyPolicy!.channelIds!.filter(Boolean)
+    const ids = Array.isArray(props.workspace.notifyPolicy?.channelIds)
+      ? props.workspace.notifyPolicy!.channelIds!.filter(Boolean)
       : []
     if (!ids.length) {
       hasChannel.value = false
       return
     }
-    const res = await api.listProjectChannels(props.projectId)
+    const res = await api.listChannels()
     const byId = new Map((res.items || []).map((c) => [c.id, c]))
     hasChannel.value = ids.some((id) => {
       const ch = byId.get(id)
@@ -90,15 +89,15 @@ async function loadChannel() {
     channelError.value =
       err instanceof Error && err.message
         ? err.message
-        : String(t('pages.projectDetail.notify.loadChannelFailed'))
+        : String(t('pages.workspace.notify.loadChannelFailed'))
   } finally {
     loadingChannel.value = false
   }
 }
 
 watch(
-  () => props.project,
-  () => syncFromProject(),
+  () => props.workspace,
+  () => syncFromWorkspace(),
   { immediate: true },
 )
 
@@ -109,9 +108,9 @@ onMounted(() => {
 const statusLabel = computed(() => {
   if (loadingChannel.value) return t('common.loading.inProgress')
   if (channelError.value) return t('common.loading.failed')
-  if (!enabled.value) return t('pages.projectDetail.notify.statusOff')
-  if (!hasChannel.value) return t('pages.projectDetail.notify.statusNoChannel')
-  return t('pages.projectDetail.notify.statusOn')
+  if (!enabled.value) return t('pages.workspace.notify.statusOff')
+  if (!hasChannel.value) return t('pages.workspace.notify.statusNoChannel')
+  return t('pages.workspace.notify.statusOn')
 })
 
 const controlsDisabled = computed(() => loadingChannel.value || !!channelError.value || saving.value)
@@ -136,8 +135,8 @@ const previewText = computed(() =>
 const previewModeLabel = computed(() => {
   const empty = !String(currentTemplate.value || '').trim()
   return empty
-    ? t('pages.projectDetail.notify.previewDefault')
-    : t('pages.projectDetail.notify.previewCustom')
+    ? t('pages.workspace.notify.previewDefault')
+    : t('pages.workspace.notify.previewCustom')
 })
 
 const previewIsDefault = computed(() => !String(currentTemplate.value || '').trim())
@@ -150,7 +149,7 @@ async function save() {
     if (failed.value) defaultEvents.push('failed')
     if (completed.value) defaultEvents.push('completed')
     // Always round-trip templates so enabled/events-only saves cannot wipe them.
-    const notifyPolicy: ProjectNotifyPolicy = {
+    const notifyPolicy: WorkspaceNotifyPolicy = {
       enabled: enabled.value,
       defaultEvents,
       waitingHumanTemplate: waitingHumanTemplate.value,
@@ -159,7 +158,7 @@ async function save() {
     }
     const updated = await api.updateWorkspace({ notifyPolicy })
     emit('updated', updated)
-    toast.success(t('pages.projectDetail.notify.saved'))
+    toast.success(t('pages.workspace.notify.saved'))
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
@@ -198,7 +197,7 @@ function goChannelSettings() {
 </script>
 
 <template>
-  <div class="space-y-7" data-testid="project-notify-panel" :aria-busy="loadingChannel || saving">
+  <div class="space-y-7" data-testid="workspace-notify-panel" :aria-busy="loadingChannel || saving">
     <div
       v-if="loadingChannel"
       class="space-y-3 py-4"
@@ -213,7 +212,7 @@ function goChannelSettings() {
 
     <div v-else-if="channelError" data-testid="notify-channel-error">
       <AppInlineError
-        :title="t('pages.projectDetail.notify.loadChannelFailed')"
+        :title="t('pages.workspace.notify.loadChannelFailed')"
         :message="channelError"
         @retry="loadChannel"
       />
@@ -221,12 +220,12 @@ function goChannelSettings() {
 
     <template v-else>
       <SettingsSection
-        :title="t('pages.projectDetail.notify.deliverySection')"
-        :description="t('pages.projectDetail.notify.lead')"
+        :title="t('pages.workspace.notify.deliverySection')"
+        :description="t('pages.workspace.notify.lead')"
       >
         <SettingsRow
-          :label="t('pages.projectDetail.notify.master')"
-          :description="t('pages.projectDetail.notify.masterHint')"
+          :label="t('pages.workspace.notify.master')"
+          :description="t('pages.workspace.notify.masterHint')"
           inline
         >
           <template #meta>
@@ -249,18 +248,18 @@ function goChannelSettings() {
             v-model="enabled"
             data-testid="notify-master-toggle"
             :disabled="controlsDisabled"
-            :aria-label="t('pages.projectDetail.notify.master')"
+            :aria-label="t('pages.workspace.notify.master')"
           />
           <template v-if="!hasChannel" #details>
             <p class="m-0 text-txt2" data-testid="notify-no-channel-hint">
-              {{ t('pages.projectDetail.notify.noChannelHint') }}
+              {{ t('pages.workspace.notify.noChannelHint') }}
               <button
                 type="button"
                 class="ml-1 text-accent-2 underline underline-offset-2 hover:brightness-110"
                 data-testid="notify-go-channel"
                 @click="goChannelSettings"
               >
-                {{ t('pages.projectDetail.notify.goChannel') }}
+                {{ t('pages.workspace.notify.goChannel') }}
               </button>
             </p>
           </template>
@@ -268,57 +267,57 @@ function goChannelSettings() {
       </SettingsSection>
 
       <SettingsSection
-        :title="t('pages.projectDetail.notify.defaultEvents')"
-        :description="t('pages.projectDetail.notify.defaultEventsHint')"
+        :title="t('pages.workspace.notify.defaultEvents')"
+        :description="t('pages.workspace.notify.defaultEventsHint')"
       >
         <SettingsRow
-          :label="t('pages.projectDetail.notify.evWaitingHumanLabel')"
-          :description="t('pages.projectDetail.notify.evWaitingHuman')"
+          :label="t('pages.workspace.notify.evWaitingHumanLabel')"
+          :description="t('pages.workspace.notify.evWaitingHuman')"
           inline
         >
           <AppSwitch
             v-model="waitingHuman"
             data-testid="notify-ev-waiting-human"
             :disabled="controlsDisabled"
-            :aria-label="t('pages.projectDetail.notify.evWaitingHumanLabel')"
+            :aria-label="t('pages.workspace.notify.evWaitingHumanLabel')"
           />
         </SettingsRow>
         <SettingsRow
-          :label="t('pages.projectDetail.notify.evFailedLabel')"
-          :description="t('pages.projectDetail.notify.evFailed')"
+          :label="t('pages.workspace.notify.evFailedLabel')"
+          :description="t('pages.workspace.notify.evFailed')"
           inline
         >
           <AppSwitch
             v-model="failed"
             data-testid="notify-ev-failed"
             :disabled="controlsDisabled"
-            :aria-label="t('pages.projectDetail.notify.evFailedLabel')"
+            :aria-label="t('pages.workspace.notify.evFailedLabel')"
           />
         </SettingsRow>
         <SettingsRow
-          :label="t('pages.projectDetail.notify.evCompletedLabel')"
-          :description="t('pages.projectDetail.notify.evCompleted')"
+          :label="t('pages.workspace.notify.evCompletedLabel')"
+          :description="t('pages.workspace.notify.evCompleted')"
           inline
         >
           <AppSwitch
             v-model="completed"
             data-testid="notify-ev-completed"
             :disabled="controlsDisabled"
-            :aria-label="t('pages.projectDetail.notify.evCompletedLabel')"
+            :aria-label="t('pages.workspace.notify.evCompletedLabel')"
           />
         </SettingsRow>
       </SettingsSection>
 
       <SettingsSection
-        :title="t('pages.projectDetail.notify.templatesTitle')"
-        :description="t('pages.projectDetail.notify.templatesHint')"
+        :title="t('pages.workspace.notify.templatesTitle')"
+        :description="t('pages.workspace.notify.templatesHint')"
         data-testid="notify-template-section"
       >
-        <SettingsRow :label="t('pages.projectDetail.notify.templateEvent')">
+        <SettingsRow :label="t('pages.workspace.notify.templateEvent')">
           <div
             class="flex gap-1 rounded-lg bg-elevated p-1"
             role="tablist"
-            :aria-label="t('pages.projectDetail.notify.templateEvent')"
+            :aria-label="t('pages.workspace.notify.templateEvent')"
             data-testid="notify-template-seg"
           >
             <button
@@ -331,7 +330,7 @@ function goChannelSettings() {
               data-testid="notify-tpl-seg-waiting"
               @click="templateKind = 'waiting_human'"
             >
-              {{ t('pages.projectDetail.notify.segWaitingHuman') }}
+              {{ t('pages.workspace.notify.segWaitingHuman') }}
             </button>
             <button
               type="button"
@@ -343,7 +342,7 @@ function goChannelSettings() {
               data-testid="notify-tpl-seg-failed"
               @click="templateKind = 'failed'"
             >
-              {{ t('pages.projectDetail.notify.segFailed') }}
+              {{ t('pages.workspace.notify.segFailed') }}
             </button>
             <button
               type="button"
@@ -355,20 +354,20 @@ function goChannelSettings() {
               data-testid="notify-tpl-seg-completed"
               @click="templateKind = 'completed'"
             >
-              {{ t('pages.projectDetail.notify.segCompleted') }}
+              {{ t('pages.workspace.notify.segCompleted') }}
             </button>
           </div>
         </SettingsRow>
 
         <SettingsRow
-          :label="t('pages.projectDetail.notify.templateBody')"
-          :description="t('pages.projectDetail.notify.templatePlaceholder')"
+          :label="t('pages.workspace.notify.templateBody')"
+          :description="t('pages.workspace.notify.templatePlaceholder')"
           for="notify-template-input"
           stacked
         >
           <div class="space-y-3">
             <div class="flex flex-wrap items-center gap-1.5" data-testid="notify-placeholder-chips">
-              <span class="mr-1 text-[11px] text-txt3">{{ t('pages.projectDetail.notify.placeholders') }}</span>
+              <span class="mr-1 text-[11px] text-txt3">{{ t('pages.workspace.notify.placeholders') }}</span>
               <button
                 v-for="ph in RUN_NOTIFY_PLACEHOLDERS"
                 :key="ph"
@@ -387,7 +386,7 @@ function goChannelSettings() {
               v-model="currentTemplate"
               class="min-h-[160px] w-full resize-y rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-[12.5px] leading-relaxed text-txt placeholder:text-txt3 focus:border-accent/55 focus:outline-none disabled:opacity-55"
               data-testid="notify-tpl-input"
-              :placeholder="t('pages.projectDetail.notify.templatePlaceholder')"
+              :placeholder="t('pages.workspace.notify.templatePlaceholder')"
               :disabled="controlsDisabled"
               spellcheck="false"
             />
@@ -398,7 +397,7 @@ function goChannelSettings() {
                 :disabled="controlsDisabled"
                 @click="fillDefaultTemplate"
               >
-                {{ t('pages.projectDetail.notify.fillDefault') }}
+                {{ t('pages.workspace.notify.fillDefault') }}
               </AppButton>
               <AppButton
                 variant="outline"
@@ -406,7 +405,7 @@ function goChannelSettings() {
                 :disabled="controlsDisabled"
                 @click="clearTemplate"
               >
-                {{ t('pages.projectDetail.notify.clearDefault') }}
+                {{ t('pages.workspace.notify.clearDefault') }}
               </AppButton>
             </div>
           </div>
@@ -414,7 +413,7 @@ function goChannelSettings() {
             <div data-testid="notify-preview">
               <div class="mb-2 flex items-center justify-between gap-2">
                 <span class="font-medium text-txt2">
-                  {{ t('pages.projectDetail.notify.previewTitle') }}
+                  {{ t('pages.workspace.notify.previewTitle') }}
                 </span>
                 <span
                   class="rounded-full px-2 py-0.5 text-[11px]"

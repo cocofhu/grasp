@@ -4,7 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
-import type { ProjectMemoryItem, ChatThread, ChatMessage, AgentCronJob } from '@/lib/shared/types'
+import type { MemoryItem, ChatThread, ChatMessage, AgentCronJob } from '@/lib/shared/types'
 import { fmtTime } from '@/lib/shared/format'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
@@ -14,7 +14,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 export type DataSubTab = 'memory' | 'context' | 'jobs'
 
 const props = withDefaults(
-  defineProps<{ agentName: string; projectName: string; subTab?: DataSubTab }>(),
+  defineProps<{ agentName: string; subTab?: DataSubTab }>(),
   { subTab: undefined },
 )
 const emit = defineEmits<{ 'update:subTab': [value: DataSubTab] }>()
@@ -23,7 +23,7 @@ const { t } = useI18n()
 const toast = useToast()
 const { isMobile } = useBreakpoint()
 
-const adminRequiredTip = computed(() => t('pages.projectDetail.pm.adminRequired'))
+const adminRequiredTip = computed(() => t('pages.workspace.pm.adminRequired'))
 const dataSeq = createListRequestSeq()
 
 const sub = ref<DataSubTab>(props.subTab || 'memory')
@@ -58,7 +58,7 @@ function permissionMessage(err: unknown): string {
   return msg
 }
 
-const memories = ref<ProjectMemoryItem[]>([])
+const memories = ref<MemoryItem[]>([])
 const memLoading = ref(false)
 const memTitle = ref('')
 const memContent = ref('')
@@ -86,7 +86,7 @@ async function loadMemories(localSeq = dataSeq.beginListRequest()) {
     memLoading.value = false
   }
 }
-function editMemory(m: ProjectMemoryItem) {
+function editMemory(m: MemoryItem) {
   memEditingId.value = m.id
   memTitle.value = m.title
   memContent.value = m.content
@@ -293,7 +293,7 @@ const showSkeleton = computed(
     <div class="border-b border-line px-4 py-3">
       <h3 class="text-sm font-semibold text-txt">{{ t('pages.agentStudio.data.title') }}</h3>
       <p class="mt-0.5 text-[12px] text-txt3">
-        {{ t('pages.agentStudio.data.hint', { project: projectName || '—' }) }}
+        {{ t('pages.agentStudio.data.hint') }}
       </p>
       <div class="mt-3 flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <button

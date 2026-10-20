@@ -57,7 +57,7 @@ function compileErrors(source: string): number[] {
 describe('locale message-compiler scan', () => {
   it('baseCompile fails on unescaped ${GRASP_MEMORY_URL/TOKEN} (regression probe)', () => {
     const bad =
-      '在 Agent Studio 添加 memory-store（${GRASP_MEMORY_URL/TOKEN}）。项目管理咨询沙箱会自动注入。'
+      '在 Agent Studio 添加 memory-store（${GRASP_MEMORY_URL/TOKEN}）。PM 咨询沙箱会自动注入。'
     const codes = compileErrors(bad)
     expect(codes.length).toBeGreaterThan(0)
     expect(codes).toContain(7) // UNTERMINATED_CLOSING_BRACE

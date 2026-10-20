@@ -3,7 +3,6 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { agentProfileIssues } from '@/lib/run/workflowIO'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useToast } from '@/lib/composables/useToast'
 import { useAuth } from '@/lib/composables/useAuth'
 import type { Workflow } from '@/lib/shared/types'
@@ -11,14 +10,12 @@ import type { Workflow } from '@/lib/shared/types'
 export function useWorkflowImport(opts?: {
   dirty?: () => boolean
   onConfirmDiscard?: () => Promise<boolean>
-  projectId?: () => string | undefined
   /** When set, called after a successful import instead of navigating to the editor. */
   onImported?: (wf: Workflow) => void | Promise<void>
 }) {
   const router = useRouter()
   const { t } = useI18n()
   const toast = useToast()
-  const { workspaceId, ensureLoaded } = useWorkspaceContext()
   const fileInput = ref<HTMLInputElement | null>(null)
   const showDiscardConfirm = ref(false)
   const { user } = useAuth()
@@ -59,11 +56,7 @@ export function useWorkflowImport(opts?: {
     try {
       const text = await file.text()
       if (!current()) return
-      await ensureLoaded()
-      if (!current()) return
-      const projectId = workspaceId.value
-      if (!projectId) throw new Error(t('pages.workflowEditor.projectRequired'))
-      const wf = await api.importWorkflow(text, projectId)
+      const wf = await api.importWorkflow(text)
       if (!current()) return
       await warnMissingAgents(wf, current)
       if (!current()) return

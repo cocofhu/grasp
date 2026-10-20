@@ -5,7 +5,7 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import { setTheme } from '../src/lib/shared/theme'
 import { vHoverInk } from '../src/lib/shared/hoverInkDirective'
-import RequirementDraftsPanel from '../src/components/project/RequirementDraftsPanel.vue'
+import RequirementDraftsPanel from '../src/components/workspace/RequirementDraftsPanel.vue'
 
 installIdleScrollbar()
 
@@ -15,10 +15,8 @@ async function bootstrap() {
   await setLocale(params.get('lang') === 'en' ? 'en' : 'zh-CN')
   if (params.get('theme') === 'light') setTheme('light')
 
-  const projectId = params.get('projectId') || 'proj-1'
-
   createApp({
-    render: () => h(RequirementDraftsPanel, { projectId }),
+    render: () => h(RequirementDraftsPanel),
   })
     .directive('hover-ink', vHoverInk)
     .use(i18n)

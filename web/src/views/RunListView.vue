@@ -15,7 +15,6 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   useStatusFilter,
   parseStatusQuery,
@@ -61,7 +60,6 @@ const showTableLoading = computed(() => loading.value && hasInitialLoaded)
 let requestSeq = 0
 let activeLoadingSeq = 0
 const { selected: selectedWf } = useWorkflowFilter()
-const { workspaceId: selectedProject, ensureLoaded: hydrateProject } = useWorkspaceContext()
 const { selectedStatuses } = useStatusFilter()
 const statusFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
@@ -73,7 +71,6 @@ const listFadeKey = computed(() =>
   [
     page.value,
     selectedWf.value || '',
-    selectedProject.value || '',
     selectedStatuses.value.slice().sort().join(','),
     selectedTags.value.slice().sort().join(','),
     String(route.query.sort || ''),
@@ -427,7 +424,6 @@ function onFocus() {
 }
 
 onMounted(async () => {
-  await hydrateProject()
   const urlChanged = await validateQueryParams()
   const restored = await initStatusFilterFromStorage(route, router)
   if (!urlChanged && !restored) load({ showLoading: true })
@@ -454,7 +450,6 @@ onUnmounted(() => {
         <TagFilter
           v-model="selectedTags"
           v-model:open="tagFilterOpen"
-          :project-id="selectedProject"
         />
         <StatusFilter
           v-model="selectedStatuses"

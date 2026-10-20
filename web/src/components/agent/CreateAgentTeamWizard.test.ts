@@ -13,7 +13,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       startTeamBootstrap: vi.fn(),
-      getProjectSharedAgentConfig: vi.fn().mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} }),
+      getSharedAgentConfig: vi.fn().mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} }),
     },
   }
 })

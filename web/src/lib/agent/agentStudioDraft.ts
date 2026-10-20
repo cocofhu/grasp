@@ -20,7 +20,6 @@ export type DraftMCP = {
 export type DraftFile = { path: string; content: string }
 export type AgentStudioDraft = {
   name: string
-  projectId: string
   credentialBindings?: Record<string, string | null>
   acpBackend: BackendId
   openCodeCredentialId?: string
@@ -119,7 +118,6 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
     name: a.name,
-    projectId: a.projectId,
     ...(a.credentialBindings ? { credentialBindings: { ...a.credentialBindings } } : {}),
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
     openCodeCredentialId: a.openCodeCredentialId || '',
@@ -141,7 +139,6 @@ export function toDraft(a: Agent): AgentStudioDraft {
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
   return {
     name: d.name,
-    projectId: d.projectId.trim(),
     ...(d.credentialBindings !== undefined ? { credentialBindings: { ...d.credentialBindings } } : {}),
     acpBackend: d.acpBackend || 'cursor',
     ...(d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),

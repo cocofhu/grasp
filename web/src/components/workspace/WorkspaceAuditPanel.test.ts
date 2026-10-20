@@ -4,13 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { ProjectAuditEvent } from '@/lib/shared/types'
-import ProjectAuditPanel from './ProjectAuditPanel.vue'
+import type { AuditEvent } from '@/lib/shared/types'
+import WorkspaceAuditPanel from './WorkspaceAuditPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
-  listProjectAudit: vi.fn(),
-  listProjectAuditFacets: vi.fn(),
-  exportProjectAuditUrl: vi.fn(),
+  listAudit: vi.fn(),
+  listAuditFacets: vi.fn(),
+  exportAuditUrl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -19,9 +19,9 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectAudit: apiMocks.listProjectAudit,
-      listProjectAuditFacets: apiMocks.listProjectAuditFacets,
-      exportProjectAuditUrl: apiMocks.exportProjectAuditUrl,
+      listAudit: apiMocks.listAudit,
+      listAuditFacets: apiMocks.listAuditFacets,
+      exportAuditUrl: apiMocks.exportAuditUrl,
     },
   }
 })
@@ -40,9 +40,8 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
   useBreakpoint: () => ({ isMobile: breakpoint.isMobile }),
 }))
 
-const SAMPLE: ProjectAuditEvent = {
+const SAMPLE: AuditEvent = {
   id: 'e1',
-  projectId: 'proj-1',
   occurredAt: '2026-01-01T00:00:00Z',
   actor: 'pm',
   unattributable: false,
@@ -64,8 +63,8 @@ function mountPanel(props: Record<string, unknown> = {}) {
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
-  return mount(ProjectAuditPanel, {
-    props: { projectId: 'proj-1', ...props },
+  return mount(WorkspaceAuditPanel, {
+    props,
     global: {
       plugins: [i18n],
       stubs: {
@@ -76,17 +75,17 @@ function mountPanel(props: Record<string, unknown> = {}) {
   })
 }
 
-describe('ProjectAuditPanel', () => {
+describe('WorkspaceAuditPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     breakpoint.isMobile.value = false
-    apiMocks.exportProjectAuditUrl.mockReturnValue('http://example.test/export')
-    apiMocks.listProjectAuditFacets.mockResolvedValue({
+    apiMocks.exportAuditUrl.mockReturnValue('http://example.test/export')
+    apiMocks.listAuditFacets.mockResolvedValue({
       runs: [{ runId: 'run-1', label: 'Run 1', sub: 'ok' }],
       nodes: [{ nodeId: 'n1', label: 'Node 1' }],
       resources: [{ resourceType: 'mcp', resourceId: 'tool', resource: 'mcp/tool' }],
     })
-    apiMocks.listProjectAudit.mockResolvedValue({
+    apiMocks.listAudit.mockResolvedValue({
       items: [SAMPLE],
       total: 1,
       page: 1,
@@ -99,25 +98,25 @@ describe('ProjectAuditPanel', () => {
   it('loads run-mode events, expands payload, exports, and switches to all mode', async () => {
     const w = mountPanel()
     await flushPromises()
-    expect(w.get('[data-testid="project-audit-panel"]').exists()).toBe(true)
-    expect(apiMocks.listProjectAuditFacets).toHaveBeenCalled()
-    expect(apiMocks.listProjectAudit).toHaveBeenCalled()
+    expect(w.get('[data-testid="workspace-audit-panel"]').exists()).toBe(true)
+    expect(apiMocks.listAuditFacets).toHaveBeenCalled()
+    expect(apiMocks.listAudit).toHaveBeenCalled()
     expect(w.text()).toContain('called tool')
 
-    await w.get('[data-testid="project-audit-event-e1"]').trigger('click')
+    await w.get('[data-testid="workspace-audit-event-e1"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-testid="project-audit-payload"]').exists()).toBe(true)
+    expect(w.find('[data-testid="workspace-audit-payload"]').exists()).toBe(true)
 
-    await w.get('[data-testid="project-audit-export"]').trigger('click')
+    await w.get('[data-testid="workspace-audit-export"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.exportProjectAuditUrl).toHaveBeenCalled()
+    expect(apiMocks.exportAuditUrl).toHaveBeenCalled()
     expect(toast.success).toHaveBeenCalled()
 
-    await w.get('[data-testid="project-audit-mode-all"]').trigger('click')
+    await w.get('[data-testid="workspace-audit-mode-all"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.listProjectAudit).toHaveBeenCalled()
+    expect(apiMocks.listAudit).toHaveBeenCalled()
 
-    const search = w.findAll('[data-testid="project-audit-search"]').at(0)
+    const search = w.findAll('[data-testid="workspace-audit-search"]').at(0)
     await search!.setValue('tool')
     await search!.trigger('input')
     await flushPromises()
@@ -127,26 +126,26 @@ describe('ProjectAuditPanel', () => {
   it('shows denied state without fetching when forceDenied', async () => {
     const w = mountPanel({ forceDenied: true })
     await flushPromises()
-    expect(w.find('[data-testid="project-audit-denied"]').exists()).toBe(true)
-    expect(apiMocks.listProjectAudit).not.toHaveBeenCalled()
+    expect(w.find('[data-testid="workspace-audit-denied"]').exists()).toBe(true)
+    expect(apiMocks.listAudit).not.toHaveBeenCalled()
     w.unmount()
   })
 
   it('marks denied after 403 from facets', async () => {
-    apiMocks.listProjectAuditFacets.mockRejectedValue(Object.assign(new Error('no'), { status: 403 }))
+    apiMocks.listAuditFacets.mockRejectedValue(Object.assign(new Error('no'), { status: 403 }))
     const w = mountPanel()
     await flushPromises()
-    expect(w.find('[data-testid="project-audit-denied"]').exists()).toBe(true)
+    expect(w.find('[data-testid="workspace-audit-denied"]').exists()).toBe(true)
     w.unmount()
   })
 
   it('renders empty run state when there are no events', async () => {
-    apiMocks.listProjectAuditFacets.mockResolvedValue({
+    apiMocks.listAuditFacets.mockResolvedValue({
       runs: [],
       nodes: [],
       resources: [],
     })
-    apiMocks.listProjectAudit.mockResolvedValue({
+    apiMocks.listAudit.mockResolvedValue({
       items: [],
       total: 0,
       page: 1,
@@ -157,9 +156,9 @@ describe('ProjectAuditPanel', () => {
     const w = mountPanel()
     await flushPromises()
     expect(
-      w.find('[data-testid="project-audit-empty-runs"]').exists()
+      w.find('[data-testid="workspace-audit-empty-runs"]').exists()
         || w.find('[data-testid="audit-empty"]').exists()
-        || w.find('[data-testid="project-audit-empty"]').exists(),
+        || w.find('[data-testid="workspace-audit-empty"]').exists(),
     ).toBe(true)
     w.unmount()
   })

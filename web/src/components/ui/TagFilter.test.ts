@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 
 const apiMocks = vi.hoisted(() => ({
-  listProjectRunTags: vi.fn(),
+  listRunTags: vi.fn(),
 }))
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
@@ -21,7 +21,7 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectRunTags: apiMocks.listProjectRunTags,
+      listRunTags: apiMocks.listRunTags,
     },
   }
 })
@@ -29,7 +29,7 @@ vi.mock('@/lib/api/api', async () => {
 import TagFilter from './TagFilter.vue'
 
 function mountFilter(
-  props: { modelValue?: string[]; projectId?: string; open?: boolean } = {},
+  props: { modelValue?: string[]; open?: boolean } = {},
 ) {
   const i18n = createI18n({
     legacy: false,
@@ -39,7 +39,6 @@ function mountFilter(
   return mount(TagFilter, {
     props: {
       modelValue: props.modelValue ?? [],
-      projectId: props.projectId ?? '',
       open: props.open,
     },
     global: { plugins: [i18n], stubs: { Icon: true } },
@@ -48,7 +47,7 @@ function mountFilter(
 
 beforeEach(() => {
   vi.clearAllMocks()
-  apiMocks.listProjectRunTags.mockResolvedValue({ tags: ['prod', 'canary', 'hotfix'] })
+  apiMocks.listRunTags.mockResolvedValue({ tags: ['prod', 'canary', 'hotfix'] })
 })
 
 describe('TagFilter', () => {
@@ -77,9 +76,9 @@ describe('TagFilter', () => {
   })
 
   it('loads stock tags and toggles selection', async () => {
-    const wrapper = mountFilter({ projectId: 'p1', open: true })
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('p1')
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
 
     const suggestions = wrapper.get('[data-testid="tag-filter-suggestions"]').findAll('button')
     expect(suggestions.length).toBe(3)
@@ -94,7 +93,7 @@ describe('TagFilter', () => {
   })
 
   it('adds valid tag on Enter and shows selected chip', async () => {
-    const wrapper = mountFilter({ projectId: 'p1', open: true, modelValue: [] })
+    const wrapper = mountFilter({ open: true, modelValue: [] })
     await flushPromises()
     const input = wrapper.get('[data-testid="tag-filter-input"]')
     await input.setValue('nightly')
@@ -113,17 +112,16 @@ describe('TagFilter', () => {
     wrapper.unmount()
   })
 
-  it('loads workspace tags without requiring a project prop', async () => {
-    const wrapper = mountFilter({ open: true, projectId: '' })
+  it('loads workspace tags when opened', async () => {
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('p1')
-    expect(wrapper.text()).not.toMatch(/选择项目/)
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
     wrapper.unmount()
   })
 
-  it('shows no-stock empty state when project has no tags', async () => {
-    apiMocks.listProjectRunTags.mockResolvedValue({ tags: [] })
-    const wrapper = mountFilter({ open: true, projectId: 'p1' })
+  it('shows no-stock empty state when the workspace has no tags', async () => {
+    apiMocks.listRunTags.mockResolvedValue({ tags: [] })
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
     expect(wrapper.get('[data-testid="tag-filter-empty"]').text()).toMatch(/暂无存量/)
     wrapper.unmount()
@@ -144,7 +142,7 @@ describe('TagFilter', () => {
   })
 
   it('filters suggestions by draft input', async () => {
-    const wrapper = mountFilter({ projectId: 'p1', open: true })
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
     await wrapper.get('[data-testid="tag-filter-input"]').setValue('can')
     const suggestions = wrapper.get('[data-testid="tag-filter-suggestions"]').findAll('button')
@@ -153,19 +151,19 @@ describe('TagFilter', () => {
     wrapper.unmount()
   })
 
-  it('degrades to empty stock and shows error when listProjectRunTags rejects (404)', async () => {
-    apiMocks.listProjectRunTags.mockRejectedValue(new Error('not found'))
-    const wrapper = mountFilter({ projectId: 'proj-missing', open: true })
+  it('degrades to empty stock and shows error when listRunTags rejects (404)', async () => {
+    apiMocks.listRunTags.mockRejectedValue(new Error('not found'))
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('p1')
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
     expect(wrapper.find('[data-testid="tag-filter-stock-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tag-filter-suggestions"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('degrades to empty stock when tags is a non-array payload', async () => {
-    apiMocks.listProjectRunTags.mockResolvedValue({ tags: { items: ['x'] } as unknown as string[] })
-    const wrapper = mountFilter({ projectId: 'p1', open: true })
+    apiMocks.listRunTags.mockResolvedValue({ tags: { items: ['x'] } as unknown as string[] })
+    const wrapper = mountFilter({ open: true })
     await flushPromises()
     expect(wrapper.get('[data-testid="tag-filter-empty"]').text()).toMatch(/暂无存量/)
     wrapper.unmount()

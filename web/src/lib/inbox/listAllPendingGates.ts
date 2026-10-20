@@ -10,7 +10,6 @@ const GATES_LIST_MAX_PAGES = 50
 interface ListAllPendingGatesParams {
   signal?: AbortSignal
   wf?: string
-  projectId?: string
   tag?: string
 }
 
@@ -31,7 +30,6 @@ export async function listAllPendingGates(
       pageSize: GATES_LIST_PAGE_SIZE,
       signal: params.signal,
       wf: params.wf,
-      projectId: params.projectId,
       tag: params.tag,
     })
     total = Number.isFinite(data.total) ? data.total : items.length

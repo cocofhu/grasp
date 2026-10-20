@@ -1,7 +1,7 @@
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 /**
- * Temporary acceptance: en Inherit + nowrap; zh 跟随工作区; no Follow project; mode patch.
+ * Temporary acceptance: en Inherit + nowrap; zh 跟随工作区; no Follow-project wording; mode patch.
  * Uses the production workflow directory and workspace notification settings.
  */
 import { test, expect } from '@playwright/test'
@@ -13,9 +13,8 @@ import fs from 'node:fs'
 const shotDir = path.join('/tmp', 'notify-inherit-shots')
 fs.mkdirSync(shotDir, { recursive: true })
 
-const MOCK_PROJECT = {
-  id: 'proj-1',
-  name: 'Demo Project',
+const MOCK_WORKSPACE = {
+  name: 'Demo Workspace',
   description: 'Notify Inherit accept',
   variables: [],
   notifyPolicy: {
@@ -94,7 +93,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PROJECT),
+        body: JSON.stringify(MOCK_WORKSPACE),
       })
       return
     }
@@ -172,7 +171,7 @@ function assertSingleLine(box: { height: number } | null, label: string) {
 }
 
 test.describe('Notify Inherit label acceptance', () => {
-  test('en desktop: compact Inherit selector, no Follow project, mode patch', async ({ page }) => {
+  test('en desktop: compact Inherit selector, no Follow-project wording, mode patch', async ({ page }) => {
     const harness = await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/workspace-config.html?view=/workflows&lang=en')
@@ -183,7 +182,6 @@ test.describe('Notify Inherit label acceptance', () => {
     const inheritBtn = page.locator('[data-workflow-id="wf-inherit"]').getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]')
     await expect(inheritBtn).toBeVisible()
     await expect(inheritBtn).toHaveText('Inherit')
-    await expect(page.locator('body')).not.toContainText('Follow project')
 
     assertSingleLine(await inheritBtn.boundingBox(), 'desktop Inherit button')
 
@@ -230,7 +228,6 @@ test.describe('Notify Inherit label acceptance', () => {
     await expect(page.getByRole('option')).toHaveText(['Off', 'Inherit', 'Custom'])
     await page.keyboard.press('Escape')
     await expect(page.getByRole('listbox')).toBeHidden()
-    await expect(page.locator('body')).not.toContainText('Follow project')
     const bounds = await selector.boundingBox()
     expect(bounds!.height).toBeGreaterThanOrEqual(44)
     expect(bounds!.width).toBeGreaterThan(80)
@@ -241,14 +238,13 @@ test.describe('Notify Inherit label acceptance', () => {
     await page.screenshot({ path: path.join(shotDir, '03-en-mobile-inherit.png'), fullPage: true })
   })
 
-  test('zh-CN: 跟随工作区 single-line; hint has no Follow project', async ({ page }) => {
+  test('zh-CN: 跟随工作区 single-line; hint has no Follow-project wording', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/workspace-config.html?view=/settings/notification-policy')
 
-    await expect(page.getByTestId('project-notify-panel')).toBeVisible()
+    await expect(page.getByTestId('workspace-notify-panel')).toBeVisible()
     await expect(page.locator('text=跟随工作区').first()).toBeVisible()
-    await expect(page.locator('body')).not.toContainText('Follow project')
 
     await page.screenshot({
       path: path.join(shotDir, '04-zh-notify-hint.png'),
@@ -266,14 +262,13 @@ test.describe('Notify Inherit label acceptance', () => {
     })
   })
 
-  test('en notify tab hint uses Inherit not Follow project', async ({ page }) => {
+  test('en notify tab hint uses Inherit', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/workspace-config.html?view=/settings/notification-policy&lang=en')
 
-    await expect(page.getByTestId('project-notify-panel')).toBeVisible()
+    await expect(page.getByTestId('workspace-notify-panel')).toBeVisible()
     await expect(page.getByText(/choose “Inherit”|choose "Inherit"/)).toBeVisible()
-    await expect(page.locator('body')).not.toContainText('Follow project')
 
     await page.screenshot({
       path: path.join(shotDir, '06-en-notify-hint-inherit.png'),

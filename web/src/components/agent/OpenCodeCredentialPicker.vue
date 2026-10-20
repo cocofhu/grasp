@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
-import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
-import { api, type ProjectCredentialItem } from '@/lib/api/api'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import { api, type CredentialItem } from '@/lib/api/api'
 import { loadOpenCodeProviders } from '@/lib/agent/openCodeCatalog'
 import {
   DEFAULT_OPENCODE_PROVIDER,
@@ -13,13 +13,12 @@ import {
   type OpenCodeProviderId,
 } from '@/lib/agent/openCodeProvider'
 import { useToast } from '@/lib/composables/useToast'
-import { conflictingAlias, isModelVendorCredential, kindById } from '@/lib/project/credentialKinds'
+import { conflictingAlias, isModelVendorCredential, kindById } from '@/lib/workspace/credentialKinds'
 
 const props = withDefaults(defineProps<{
   mode: 'select' | 'manage'
-  projectId: string
-  /** When omitted, the picker loads project credentials itself. */
-  items?: ProjectCredentialItem[]
+  /** When omitted, the picker loads workspace credentials itself. */
+  items?: CredentialItem[]
   selectedId?: string
   title?: string
   hint?: string
@@ -41,7 +40,7 @@ const emit = defineEmits<{
 const { t } = useI18n()
 const toast = useToast()
 
-const remoteItems = ref<ProjectCredentialItem[]>([])
+const remoteItems = ref<CredentialItem[]>([])
 const showAdd = ref(false)
 const saving = ref(false)
 const attempted = ref(false)
@@ -71,21 +70,21 @@ const description = computed(() => {
   if (props.hint) return props.hint
   return props.mode === 'select'
     ? t('pages.agentStudio.openCode.credentialDesc')
-    : t('pages.projectDetail.projectCredentials.modelApiKeySubtitle')
+    : t('pages.workspace.credentials.modelApiKeySubtitle')
 })
 const heading = computed(() => props.title || t('pages.agentStudio.openCode.credentialTitle'))
 const canAdd = computed(() => props.allowAdd !== false)
 
-function metaString(item: ProjectCredentialItem, key: string): string {
+function metaString(item: CredentialItem, key: string): string {
   const value = item.metadata?.[key]
   return typeof value === 'string' ? value.trim() : ''
 }
 
-function vendorOf(item: ProjectCredentialItem): string {
+function vendorOf(item: CredentialItem): string {
   return metaString(item, 'provider')
 }
 
-function modelOf(item: ProjectCredentialItem): string {
+function modelOf(item: CredentialItem): string {
   return metaString(item, 'model')
 }
 
@@ -101,7 +100,6 @@ function resetForm() {
 }
 
 function openAdd() {
-  if (!props.projectId) return
   if (props.mode === 'manage') {
     emit('add')
     return
@@ -117,12 +115,12 @@ function cancelAdd() {
 }
 
 async function loadRemote() {
-  if (props.items !== undefined || !props.projectId) {
+  if (props.items !== undefined) {
     remoteItems.value = []
     return
   }
   try {
-    const response = await api.getProjectCredentials(props.projectId)
+    const response = await api.listCredentials()
     remoteItems.value = response.items || []
   } catch (e: unknown) {
     remoteItems.value = []
@@ -146,11 +144,10 @@ async function saveAdd() {
   const opencodeKind = kindById('opencode')
   const taken = opencodeKind ? conflictingAlias(source.value, opencodeKind, form.name) : ''
   if (taken) {
-    aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: taken })
+    aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: taken })
     return
   }
   if (
-    !props.projectId ||
     saving.value ||
     !form.name.trim() ||
     !form.apiKey.trim() ||
@@ -161,7 +158,7 @@ async function saveAdd() {
   }
   saving.value = true
   try {
-    const created = await api.createProjectCredential(props.projectId, {
+    const created = await api.createCredential({
       type: 'ai',
       provider: 'opencode',
       name: form.name.trim(),
@@ -179,11 +176,11 @@ async function saveAdd() {
     if (props.items === undefined) await loadRemote()
     if (props.mode === 'select') emit('update:selectedId', created.id)
     emit('changed')
-    toast.success(t('pages.projectDetail.projectCredentials.saved'))
+    toast.success(t('pages.workspace.credentials.saved'))
   } catch (e: unknown) {
     const err = e as { code?: string; alias?: string; message?: string }
     if (err.code === 'alias_taken') {
-      aliasError.value = t('pages.projectDetail.projectCredentials.aliasTaken', { alias: err.alias || form.name.trim() })
+      aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: err.alias || form.name.trim() })
       return
     }
     toast.error(String(err.message || e))
@@ -211,11 +208,11 @@ async function saveReplace(id: string) {
   if (!value || saving.value) return
   saving.value = true
   try {
-    await api.putProjectCredential(props.projectId, id, { value })
+    await api.putCredential(id, { value })
     cancelReplace()
     if (props.items === undefined) await loadRemote()
     emit('changed')
-    toast.success(t('pages.projectDetail.projectCredentials.saved'))
+    toast.success(t('pages.workspace.credentials.saved'))
   } catch (e: unknown) {
     toast.error(String((e as { message?: string })?.message || e))
   } finally {
@@ -227,10 +224,10 @@ async function clearRow(id: string) {
   if (clearingId.value) return
   clearingId.value = id
   try {
-    await api.deleteProjectCredential(props.projectId, id)
+    await api.deleteCredential(id)
     if (props.items === undefined) await loadRemote()
     emit('changed')
-    toast.success(t('pages.projectDetail.projectCredentials.cleared'))
+    toast.success(t('pages.workspace.credentials.cleared'))
   } catch (e: unknown) {
     toast.error(String((e as { message?: string })?.message || e))
   } finally {
@@ -243,19 +240,10 @@ onMounted(async () => {
   catalogTick.value++
   await loadRemote()
 })
-
-watch(
-  () => props.projectId,
-  () => {
-    showAdd.value = false
-    cancelReplace()
-    void loadRemote()
-  },
-)
 </script>
 
 <template>
-  <div data-testid="project-credential-opencode" :data-mode="mode">
+  <div data-testid="credential-opencode" :data-mode="mode">
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="text-[12px] font-medium text-txt2">{{ heading }}</div>
@@ -269,7 +257,7 @@ watch(
           data-testid="opencode-credential-clear-selection"
           @click="clearSelection"
         >
-          {{ t('pages.projectDetail.projectCredentials.pickClear') }}
+          {{ t('pages.workspace.credentials.pickClear') }}
         </AppButton>
         <AppButton
           v-if="canAdd"
@@ -278,16 +266,13 @@ watch(
           icon="plus"
           class="shrink-0"
           data-testid="opencode-credential-add"
-          :disabled="!projectId || showAdd"
+          :disabled="showAdd"
           @click="openAdd"
         >
           {{ t('pages.agentStudio.openCode.credentialAdd') }}
         </AppButton>
       </div>
     </div>
-    <p v-if="!projectId" class="mb-0 mt-2 text-[11px] text-txt3" data-testid="opencode-credential-need-project">
-      {{ t('pages.agentStudio.openCode.credentialNeedProject') }}
-    </p>
 
     <form
       v-if="showAdd"

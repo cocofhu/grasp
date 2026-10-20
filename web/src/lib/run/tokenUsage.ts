@@ -3,10 +3,10 @@ import type { ModelTokenUsage, TokenUsage, TokenUsageByModel } from '../shared/t
 /** Persistence / API key for unbucketed usage (matches server). */
 export const TOKEN_USAGE_UNKNOWN_MODEL = '未知/未分桶'
 
-/** Default user-visible label when no project alias is configured. */
+/** Default user-visible label when no workspace alias is configured. */
 export const TOKEN_USAGE_UNKNOWN_MODEL_DISPLAY = '未知模型'
 
-/** Max rune/char length for project unknown-model display name (matches server). */
+/** Max rune/char length for the workspace unknown-model display name (matches server). */
 export const UNKNOWN_MODEL_DISPLAY_NAME_MAX_LEN = 64
 
 function isUnsetUnknownAlias(v: string): boolean {
@@ -79,7 +79,7 @@ export function fmtTokenCount(n: number): string {
 /**
  * Compact K/M format (Demo-aligned).
  * null/undefined → "—"; 0 → "0"; under 1000 plain; ≥1000 K (1 decimal); ≥1e6 M (2 decimals).
- * Allowed for project totals, single-run stats KPI main values, and TokenUsageByModelTable
+ * Allowed for workspace totals, single-run stats KPI main values, and TokenUsageByModelTable
  * row figures (pair with fmtTokenCount in title for exact hover values).
  * Do not use for Run detail timeline / other out-of-scope surfaces (keep fmtTokenCount there).
  */

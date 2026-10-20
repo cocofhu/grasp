@@ -27,11 +27,11 @@ beforeEach(() => {
   mocks.updateWorkspace.mockImplementation(async (patch) => ({ ...mocks.workspace.value, ...patch }))
 })
 describe('workspace defaults pages', () => {
-  it('edits workspace metadata without exposing a delete or project-selection action', async () => {
+  it('edits workspace metadata without exposing a delete action', async () => {
     const wrapper = await setup('workspaceInfo')
-    expect(wrapper.find('[data-testid="project-meta-delete"]').exists()).toBe(false)
-    await wrapper.get('#project-meta-name').setValue('New studio')
-    await wrapper.get('#project-meta-desc').setValue('A shared workspace')
+    expect(wrapper.find('[data-testid="workspace-meta-delete"]').exists()).toBe(false)
+    await wrapper.get('#workspace-meta-name').setValue('New studio')
+    await wrapper.get('#workspace-meta-desc').setValue('A shared workspace')
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(mocks.updateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ name: 'New studio', description: 'A shared workspace' }))
@@ -59,11 +59,11 @@ describe('workspace defaults pages', () => {
   })
   it('validates the unknown-model display alias before sending metadata', async () => {
     const wrapper = await setup('workspaceInfo')
-    await wrapper.get('#project-meta-unknown-display').setValue('x'.repeat(81))
+    await wrapper.get('#workspace-meta-unknown-display').setValue('x'.repeat(81))
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(mocks.updateWorkspace).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="project-meta-unknown-display-error"]').text()).not.toBe('')
+    expect(wrapper.get('[data-testid="workspace-meta-unknown-display-error"]').text()).not.toBe('')
     wrapper.unmount()
   })
   it('clears edited secrets on logout and ignores a prior account save response', async () => {

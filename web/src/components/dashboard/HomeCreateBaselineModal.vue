@@ -16,7 +16,7 @@ const emit = defineEmits<{
 }>()
 const toast = useToast()
 const { t } = useI18n()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
+const { ensureLoaded } = useWorkspaceContext()
 const loading = ref(false)
 const loadError = ref('')
 const baselineName = ref('')
@@ -24,7 +24,7 @@ const baselineRepos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
 const creating = ref(false)
 const createError = ref('')
 const nameInput = ref<HTMLInputElement | null>(null)
-const canSubmit = computed(() => !!workspaceId.value && !!baselineName.value.trim() && baselineRepos.value.some((repo) => !!repo.url.trim()))
+const canSubmit = computed(() => !!baselineName.value.trim() && baselineRepos.value.some((repo) => !!repo.url.trim()))
 let generation = 0
 async function load() {
   const gen = ++generation
@@ -49,8 +49,8 @@ async function submit() {
   creating.value = true
   createError.value = ''
   try {
-    const created = await api.createWorkflowFromBaseline(workspaceId.value, baselineName.value.trim(), baselineRepos.value)
-    toast.success(t('pages.projectDetail.newWorkflow.created', { name: created.name }))
+    const created = await api.createWorkflowFromBaseline(baselineName.value.trim(), baselineRepos.value)
+    toast.success(t('pages.workspace.newWorkflow.created', { name: created.name }))
     emit('created', { id: created.id, name: created.name })
     emit('close')
   } catch (e: any) {
@@ -67,24 +67,24 @@ watch(() => props.open, (open) => {
 </script>
 
 <template>
-  <AppModal :open="open" :title="t('pages.projectDetail.newWorkflow.modalTitle')" :width="460" close-on-esc :close-on-backdrop="!creating" @close="close">
+  <AppModal :open="open" :title="t('pages.workspace.newWorkflow.modalTitle')" :width="460" close-on-esc :close-on-backdrop="!creating" @close="close">
     <div v-if="loading" class="py-6 text-center text-sm text-txt3" data-testid="home-create-loading">{{ t('common.loading.inProgress') }}</div>
     <div v-else-if="loadError" data-testid="home-create-load-error" role="alert">
       <p class="text-[13px] text-err">{{ loadError }}</p>
       <AppButton data-testid="home-create-retry" @click="load">{{ t('common.buttons.retry') }}</AppButton>
     </div>
     <div v-else data-testid="home-create-form">
-      <p class="mb-3 text-[13px] text-txt2">{{ t('pages.projectDetail.newWorkflow.modalHint') }}</p>
+      <p class="mb-3 text-[13px] text-txt2">{{ t('pages.workspace.newWorkflow.modalHint') }}</p>
       <div class="mb-4">
-        <label class="label" for="home-create-workflow-name">{{ t('pages.projectDetail.newWorkflow.nameLabel') }}</label>
-        <input id="home-create-workflow-name" ref="nameInput" v-model="baselineName" class="input" autocomplete="off" data-testid="home-create-workflow-name" :placeholder="t('pages.projectDetail.newWorkflow.namePlaceholder')" :disabled="creating" />
+        <label class="label" for="home-create-workflow-name">{{ t('pages.workspace.newWorkflow.nameLabel') }}</label>
+        <input id="home-create-workflow-name" ref="nameInput" v-model="baselineName" class="input" autocomplete="off" data-testid="home-create-workflow-name" :placeholder="t('pages.workspace.newWorkflow.namePlaceholder')" :disabled="creating" />
       </div>
       <ReposEditor :repos="baselineRepos" :min-rows="1" :editable="!creating" @update:repos="baselineRepos = $event" />
       <div v-if="createError" class="mt-3 flex gap-2 text-[12px] text-err" role="alert" data-testid="home-create-error"><Icon name="alert" :size="14" />{{ createError }}</div>
     </div>
     <template #footer>
       <AppButton variant="ghost" :disabled="creating" @click="close">{{ t('common.buttons.cancel') }}</AppButton>
-      <AppButton v-if="!loading && !loadError" variant="primary" :loading="creating" :disabled="!canSubmit" data-testid="home-create-submit" @click="submit">{{ creating ? t('pages.projectDetail.newWorkflow.creating') : t('pages.projectDetail.newWorkflow.create') }}</AppButton>
+      <AppButton v-if="!loading && !loadError" variant="primary" :loading="creating" :disabled="!canSubmit" data-testid="home-create-submit" @click="submit">{{ creating ? t('pages.workspace.newWorkflow.creating') : t('pages.workspace.newWorkflow.create') }}</AppButton>
     </template>
   </AppModal>
 </template>

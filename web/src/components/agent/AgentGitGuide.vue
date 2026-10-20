@@ -23,7 +23,7 @@ const { t } = useI18n()
 
 const showRecommend = computed(() => !!props.credentialType)
 
-// Git tokens / SSH keys come from project credentials; only GIT_REPOS goes into env.
+// Git tokens / SSH keys come from workspace credentials; only GIT_REPOS goes into env.
 const recommendations: { key: string; value: string }[] = [
   { key: 'GIT_REPOS', value: '${vars.repos}' },
 ]

@@ -2,14 +2,14 @@
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
-import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import VendorMark from '@/components/agent/VendorMark.vue'
 import Icon from '@/components/ui/Icon.vue'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { readCliModel } from '@/lib/agent/cliModelEnv'
-import type { ProjectCredentialItem } from '@/lib/api/api'
-import { isModelVendorCredential } from '@/lib/project/credentialKinds'
+import type { CredentialItem } from '@/lib/api/api'
+import { isModelVendorCredential } from '@/lib/workspace/credentialKinds'
 import type { CanvasAgent } from '../composables/outlets'
 import ModelCredentialSelect from './ModelCredentialSelect.vue'
 import ModelIdSelect from './ModelIdSelect.vue'
@@ -21,9 +21,8 @@ const props = defineProps<{
   /** Model picked for this node; empty uses the credential's default. */
   modelId: string
   agent: CanvasAgent | null
-  /** null while project credentials are loading. */
-  credentials: ProjectCredentialItem[] | null
-  projectId?: string
+  /** null while workspace credentials are loading. */
+  credentials: CredentialItem[] | null
 }>()
 const emit = defineEmits<{
   (e: 'update:credentialId', v: string): void
@@ -58,7 +57,7 @@ const studioMetaLink = computed(() => ({
   path: '/agents',
   query: props.agent?.name ? { agent: props.agent.name, studioTab: 'meta' } : {},
 }))
-const backendLabel = computed(() => (backend.value ? t(`pages.projectDetail.projectCredentials.kinds.${backend.value}`) : ''))
+const backendLabel = computed(() => (backend.value ? t(`pages.workspace.credentials.kinds.${backend.value}`) : ''))
 
 function setCredential(id: string) {
   const before = vendor.value
@@ -124,7 +123,6 @@ function clearAll() {
           :rows="rows"
           :inherited="inherited"
           :loading="loading"
-          :project-id="projectId"
           @update:model-value="setCredential"
         />
       </div>

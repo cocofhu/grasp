@@ -56,7 +56,7 @@ function mountTester(props: Record<string, unknown> = {}) {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(AgentChatTester, {
-    props: { profile: 'cursor', homeProjectId: ' project-1 ', ...props },
+    props: { profile: 'cursor', ...props },
     global: {
       plugins: [i18n],
       stubs: {
@@ -108,7 +108,6 @@ describe('AgentChatTester interactions', () => {
     vm.repos = [{ name: ' repo ', url: ' https://repo ', branch: ' main ' }, { name: '', url: 'x', branch: '' }]
     await vm.start()
     expect(create).toHaveBeenCalledWith('cursor', {
-      projectId: 'project-1',
       repos: [{ name: 'repo', url: 'https://repo', branch: 'main' }],
     })
     expect(socket).toBeTruthy()
@@ -120,6 +119,7 @@ describe('AgentChatTester interactions', () => {
     create.mockRejectedValueOnce(new Error('quota'))
     vm.launchMode = 'empty'
     await vm.start()
+    expect(create).toHaveBeenLastCalledWith('cursor', {})
     expect(vm.status).toBe('error')
     expect(vm.errorMsg).toBe('quota')
     w.unmount()

@@ -18,7 +18,7 @@ async function bootstrap() {
   const params = new URLSearchParams(window.location.search)
   const startParam = params.get('start') || 'dashboard'
   useAuth().setUser({ username: 'board-preview', isAdmin: true, expiresAt: '2099-01-01T00:00:00Z' })
-  const { workspaceId, ensureLoaded } = useWorkspaceContext()
+  const { ensureLoaded } = useWorkspaceContext()
   await ensureLoaded()
 
   const router = createRouter({
@@ -28,11 +28,7 @@ async function bootstrap() {
       { path: '/workflows', component: { render: () => h('div', { 'data-testid': 'workflows-page' }, 'workflows') } },
       {
         path: '/board',
-        component: {
-          setup() {
-            return () => h(BoardView, { projectId: workspaceId.value, embedded: true })
-          },
-        },
+        component: { render: () => h(BoardView, { embedded: true }) },
       },
       {
         path: '/runs',
@@ -41,22 +37,14 @@ async function bootstrap() {
             const route = useRoute()
             return () => {
               const status = typeof route.query.status === 'string' ? route.query.status : ''
-              const projectId =
-                typeof route.query.projectId === 'string' ? route.query.projectId : ''
               return h(
                 'div',
                 {
                   'data-testid': 'runs-page',
                   'data-status': status,
-                  'data-project-id': projectId,
                 },
                 [
                   h('span', { 'data-testid': 'runs-status-query' }, status || '(none)'),
-                  h(
-                    'span',
-                    { 'data-testid': 'runs-project-id-query' },
-                    projectId || '(none)',
-                  ),
                 ],
               )
             }

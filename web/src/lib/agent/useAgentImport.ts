@@ -1,6 +1,6 @@
 import { ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type Agent, type ProjectAgentsImportResult } from '@/lib/api/api'
+import { api, type Agent, type WorkspaceAgentsImportResult } from '@/lib/api/api'
 import {
   peekAgentZipName,
   peekZipPackage,
@@ -17,7 +17,7 @@ export function useAgentImport(opts: {
   dirty: () => boolean
   agentNames: () => string[]
   onImported: (agent: Agent) => void | Promise<void>
-  onBundleImported?: (result: ProjectAgentsImportResult) => void | Promise<void>
+  onBundleImported?: (result: WorkspaceAgentsImportResult) => void | Promise<void>
 }) {
   const { t } = useI18n()
   const toast = useToast()
@@ -37,13 +37,9 @@ export function useAgentImport(opts: {
   const batchConflictNames = ref<string[]>([])
 
   let pendingFile: File | null = null
-  let targetProjectId = ''
 
-  /** Open the file picker for an import into projectId (required). */
-  function triggerImport(projectId: string) {
-    const pid = projectId.trim()
-    if (!pid) return
-    targetProjectId = pid
+  /** Open the file picker for an Agent ZIP or workspace Agent bundle. */
+  function triggerImport() {
     if (opts.dirty()) {
       showDiscardConfirm.value = true
       return
@@ -54,7 +50,6 @@ export function useAgentImport(opts: {
   function onDiscardCancel() {
     showDiscardConfirm.value = false
     pendingFile = null
-    targetProjectId = ''
   }
 
   function onDiscardConfirm() {
@@ -66,7 +61,7 @@ export function useAgentImport(opts: {
     const input = e.target as HTMLInputElement
     const file = input.files?.[0]
     input.value = ''
-    if (!file || !targetProjectId) return
+    if (!file) return
 
     if (!file.name.toLowerCase().endsWith('.zip')) {
       importError.value = t('pages.agentStudio.exportImport.importError.invalidZip')
@@ -87,7 +82,7 @@ export function useAgentImport(opts: {
       return
     }
 
-    if (peek.kind === 'project-bundle') {
+    if (peek.kind === 'workspace-bundle') {
       await beginBundleImport(peek.agentNames)
       return
     }
@@ -202,10 +197,10 @@ export function useAgentImport(opts: {
   async function runImport(targetName: string, mode: 'create' | 'overwrite') {
     const file = pendingFile
     pendingFile = null
-    if (!file || !targetProjectId) return
+    if (!file) return
 
     try {
-      const agent = await api.importAgent(file, { projectId: targetProjectId, targetName, mode })
+      const agent = await api.importAgent(file, { targetName, mode })
       await opts.onImported(agent)
       toast.success(t('pages.agentStudio.exportImport.importSuccess', { name: targetName }))
     } catch (err: any) {
@@ -217,10 +212,10 @@ export function useAgentImport(opts: {
   async function runBundleImport(mode: 'rename' | 'overwrite') {
     const file = pendingFile
     pendingFile = null
-    if (!file || !targetProjectId) return
+    if (!file) return
 
     try {
-      const result = await api.importProjectAgents(targetProjectId, file, { mode })
+      const result = await api.importWorkspaceAgents(file, { mode })
       if (opts.onBundleImported) {
         await opts.onBundleImported(result)
       }

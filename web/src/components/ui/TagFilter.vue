@@ -5,18 +5,15 @@ import Icon from './Icon.vue'
 import AppInlineError from './AppInlineError.vue'
 import AppSpinner from './AppSpinner.vue'
 import { api } from '@/lib/api/api'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { MAX_TAG_RUNES, validateRunTag } from '@/lib/run/runTags'
 
 const props = withDefaults(
   defineProps<{
     modelValue: string[]
-    projectId?: string
     open?: boolean
   }>(),
   {
     modelValue: () => [],
-    projectId: '',
     open: undefined,
   },
 )
@@ -26,7 +23,6 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
 const internalOpen = ref(false)
 const root = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
@@ -70,12 +66,11 @@ function validationMessage(code: ReturnType<typeof validateRunTag>): string {
   return ''
 }
 
-async function loadStock(_projectId?: string) {
+async function loadStock() {
   stockLoading.value = true
   stockError.value = null
   try {
-    await ensureLoaded()
-    const res = await api.listProjectRunTags(workspaceId.value)
+    const res = await api.listRunTags()
     stockTags.value = Array.isArray(res.tags) ? res.tags : []
   } catch (err) {
     stockTags.value = []
@@ -88,13 +83,9 @@ async function loadStock(_projectId?: string) {
   }
 }
 
-watch(
-  () => props.projectId,
-  (id) => {
-    void loadStock(id || '')
-  },
-  { immediate: true },
-)
+onMounted(() => {
+  void loadStock()
+})
 
 watch(open, async (v) => {
   if (!v) {
@@ -261,7 +252,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
         <AppInlineError
           :title="t('common.tagFilter.loadFailed')"
           :message="stockError"
-          @retry="loadStock(projectId || '')"
+          @retry="loadStock()"
         />
       </div>
 

@@ -3,7 +3,7 @@ import { nextTick, ref } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import AgentProjectSidebar from '@/components/agent/AgentProjectSidebar.vue'
+import AgentSidebar from '@/components/agent/AgentSidebar.vue'
 import ResourceList from '@/components/ui/ResourceList.vue'
 import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
@@ -18,7 +18,7 @@ import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
 
-const props = defineProps<{ projectId?: string; embedded?: boolean }>()
+const props = defineProps<{ embedded?: boolean }>()
 
 const {
   t,
@@ -34,13 +34,11 @@ const {
   tabFadeLeft,
   tabFadeRight,
   closeFullNameTip,
-  showProjectSheet,
-  openProjectSheet,
-  closeProjectSheet,
+  showSidebarSheet,
+  openSidebarSheet,
+  closeSidebarSheet,
   leaveConfirmCfg,
   agents,
-  projects,
-  treeProjects,
   treeNodes,
   activeTreeKey,
   onTreeSelect,
@@ -51,9 +49,7 @@ const {
   draft,
   tab,
   dataSubTab,
-  savedProjectId,
   draftBindingDirty,
-  projectNameById,
   loading,
   loadFailed,
   loadDenied,
@@ -125,14 +121,12 @@ const {
   cancelUnsavedExport,
   discardAndExport,
   saveThenExport,
-  onExportProject,
+  onExportWorkspace,
   cancelBundleSecrets,
   confirmBundleSecrets,
-  onImportProject,
   showCreateWizard,
   showTeamWizard,
   teamBootstrapSessionId,
-  createAgentProjectId,
   openCreateAgent,
   openCreateTeam,
   showCreateTeam,
@@ -153,7 +147,7 @@ const {
   confirmOk,
   onAgentNameClick,
   syncTabFade,
-} = useAgentStudio({ projectId: () => props.projectId, embedded: () => !!props.embedded })
+} = useAgentStudio({ embedded: () => !!props.embedded })
 
 /** The env tab's "Edit" link for a managed model key lands on the Runtime card. */
 const focusModelTick = ref(0)
@@ -169,7 +163,7 @@ async function createStudioChatTest(
   profile: string,
   payload: CreateAgentTestPayload,
 ): Promise<SandboxView> {
-  return api.createProjectSharedAgentTest(savedProjectId.value, {
+  return api.createSharedAgentTest({
     agentName: profile,
     ...(payload.repos ? { repos: payload.repos } : {}),
     ...(payload.repoUrl ? { repoUrl: payload.repoUrl } : {}),
@@ -249,8 +243,8 @@ async function createStudioChatTest(
         data-testid="agent-studio-empty-team"
       >
         <template v-if="embedded">
-          <h2 class="m-0 text-[18px] font-semibold text-txt">{{ t('pages.agentStudio.emptyProjectTitle') }}</h2>
-          <p class="m-0 max-w-md text-[13px] leading-6 text-txt3">{{ t('pages.agentStudio.emptyProjectDesc') }}</p>
+          <h2 class="m-0 text-[18px] font-semibold text-txt">{{ t('pages.agentStudio.emptyWorkspaceTitle') }}</h2>
+          <p class="m-0 max-w-md text-[13px] leading-6 text-txt3">{{ t('pages.agentStudio.emptyWorkspaceDesc') }}</p>
           <AppButton variant="primary" icon="plus" data-testid="agent-studio-empty-create" @click="openCreateAgent()">
             {{ t('common.buttons.newAgent') }}
           </AppButton>
@@ -291,10 +285,9 @@ async function createStudioChatTest(
         :data-mobile="isMobile"
         :data-directory-collapsed="agentListCollapsed"
       >
-      <!-- project → Agent tree (hidden on narrow screens; agent name bar remains) -->
-      <AgentProjectSidebar
+      <!-- Agent tree (hidden on narrow screens; agent name bar remains) -->
+      <AgentSidebar
         class="agent-studio-directory"
-        :workspace-id="savedProjectId"
         v-if="!isMobile"
         :nodes="treeNodes"
         :active-key="activeTreeKey"
@@ -305,8 +298,7 @@ async function createStudioChatTest(
         @import="triggerImport"
         @create-agent="openCreateAgent"
         @create-team="openCreateTeam"
-        @export-project="onExportProject"
-        @import-project="onImportProject"
+        @export-workspace="onExportWorkspace"
         @toggle-collapsed="toggleAgentListCollapsed"
       />
 
@@ -341,11 +333,11 @@ async function createStudioChatTest(
             >{{ activeName }}</button>
             <button
               type="button"
-              data-test="project-switch"
+              data-test="sidebar-switch"
               class="inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-line bg-elevated px-2.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
               :title="t('pages.agentStudio.mobile.switchTitle')"
               :aria-label="t('pages.agentStudio.mobile.switchAria')"
-              @click="openProjectSheet"
+              @click="openSidebarSheet"
             >
               <Icon name="menu" :size="14" />
               <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
@@ -521,7 +513,6 @@ async function createStudioChatTest(
           </div>
           <AgentDataPanel
             :agent-name="activeName"
-            :project-name="projectNameById(savedProjectId)"
             :sub-tab="dataSubTab"
             @update:sub-tab="onDataSubTab"
           />
@@ -532,7 +523,6 @@ async function createStudioChatTest(
             key="meta"
             :draft="draft"
             :agent-name="activeName"
-            :projects="projects"
             :focus-model-tick="focusModelTick"
           />
 
@@ -545,7 +535,6 @@ async function createStudioChatTest(
             <AgentChatTester
               :key="activeName"
               :profile="activeName"
-              :home-project-id="savedProjectId"
               :create-test="createStudioChatTest"
             />
           </div>
@@ -675,20 +664,20 @@ async function createStudioChatTest(
       </template>
     </AppModal>
 
-    <!-- narrow-screen project tree sheet -->
+    <!-- narrow-screen Agent tree sheet -->
     <Teleport to="body">
       <div
-        v-if="showProjectSheet"
-        data-test="project-sheet"
+        v-if="showSidebarSheet"
+        data-test="sidebar-sheet"
         class="fixed inset-0 z-40"
         role="dialog"
         aria-modal="true"
         :aria-label="t('pages.agentStudio.mobile.sheetTitle')"
       >
         <div
-          data-test="project-sheet-backdrop"
+          data-test="sidebar-sheet-backdrop"
           class="absolute inset-0 bg-black/50"
-          @click="closeProjectSheet"
+          @click="closeSidebarSheet"
         />
         <div
           class="absolute inset-x-0 bottom-0 flex h-[70vh] max-h-[70vh] flex-col overflow-hidden rounded-t-xl border-t border-line bg-elevated shadow-card"
@@ -700,7 +689,7 @@ async function createStudioChatTest(
             </h3>
             <button
               type="button"
-              data-test="project-sheet-import"
+              data-test="sidebar-sheet-import"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :title="t('pages.agentStudio.exportImport.import')"
               :aria-label="t('pages.agentStudio.exportImport.import')"
@@ -710,7 +699,7 @@ async function createStudioChatTest(
             </button>
             <button
               type="button"
-              data-test="project-sheet-create-agent"
+              data-test="sidebar-sheet-create-agent"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :title="t('common.buttons.newAgent')"
               :aria-label="t('common.buttons.newAgent')"
@@ -721,7 +710,7 @@ async function createStudioChatTest(
             <button
               v-if="showCreateTeam"
               type="button"
-              data-test="project-sheet-create-team"
+              data-test="sidebar-sheet-create-team"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :title="t('pages.agentStudio.tree.newTeam')"
               :aria-label="t('pages.agentStudio.tree.newTeam')"
@@ -732,16 +721,16 @@ async function createStudioChatTest(
             <AppButton
               size="sm"
               variant="outline"
-              data-test="project-sheet-manage"
+              data-test="sidebar-sheet-manage"
               class="min-h-9 shrink-0"
               @click="openManageFromSheet"
             >{{ t('pages.agentStudio.tree.manage') }}</AppButton>
             <button
               type="button"
-              data-test="project-sheet-close"
+              data-test="sidebar-sheet-close"
               class="flex min-h-9 min-w-9 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
               :aria-label="t('common.buttons.close')"
-              @click="closeProjectSheet"
+              @click="closeSidebarSheet"
             >
               <Icon name="close" :size="14" />
             </button>
@@ -795,7 +784,7 @@ async function createStudioChatTest(
       </template>
     </AppModal>
 
-    <!-- project bundle export secrets warning -->
+    <!-- workspace bundle export secrets warning -->
     <AppModal
       :open="showBundleSecrets"
       :title="t('pages.agentStudio.exportImport.bundleSecrets.title')"
@@ -812,7 +801,7 @@ async function createStudioChatTest(
       </template>
     </AppModal>
 
-    <!-- project bundle name conflict -->
+    <!-- workspace bundle name conflict -->
     <AppModal
       :open="showBatchConflict"
       :title="t('pages.agentStudio.exportImport.batchConflict.title')"
@@ -950,8 +939,6 @@ async function createStudioChatTest(
     <AgentCreateWizard
       :open="showCreateWizard"
       :existing-names="agents.map((a) => a.name)"
-      :projects="treeProjects"
-      :project-id="createAgentProjectId"
       @close="showCreateWizard = false"
       @created="onWizardCreated"
     />

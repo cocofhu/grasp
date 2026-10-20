@@ -9,23 +9,23 @@ import PmChannelMultiPanel from '@/components/pm/PmChannelMultiPanel.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import type { Agent } from '@/lib/api/api'
-import type { PmLeaderBinding, Project } from '@/lib/shared/types'
+import type { PmLeaderBinding, Workspace } from '@/lib/shared/types'
 
-const props = defineProps<{ projectId: string; project?: Project | null }>()
+const props = defineProps<{ workspace?: Workspace | null }>()
 const emit = defineEmits<{
   changed: [PmLeaderBinding]
-  'project-updated': [project: Project]
+  'workspace-updated': [workspace: Workspace]
 }>()
 
 const { t } = useI18n()
 const toast = useToast()
 
 const PM_MCP_OPTIONS = [
-  { id: 'pm-progress', labelKey: 'pages.projectDetail.pm.mcpProgress' },
-  { id: 'pm-workflow-read', labelKey: 'pages.projectDetail.pm.mcpWorkflowRead' },
-  { id: 'pm-workflow-write', labelKey: 'pages.projectDetail.pm.mcpWorkflowWrite' },
-  { id: 'pm-agent-fs', labelKey: 'pages.projectDetail.pm.mcpAgentFs' },
-  { id: 'pm-prd-manager', labelKey: 'pages.projectDetail.pm.mcpPrdManager' },
+  { id: 'pm-progress', labelKey: 'pages.workspace.pm.mcpProgress' },
+  { id: 'pm-workflow-read', labelKey: 'pages.workspace.pm.mcpWorkflowRead' },
+  { id: 'pm-workflow-write', labelKey: 'pages.workspace.pm.mcpWorkflowWrite' },
+  { id: 'pm-agent-fs', labelKey: 'pages.workspace.pm.mcpAgentFs' },
+  { id: 'pm-prd-manager', labelKey: 'pages.workspace.pm.mcpPrdManager' },
 ] as const
 
 const binding = ref<PmLeaderBinding | null>(null)
@@ -37,7 +37,7 @@ const gateAutoVar = ref('')
 const gateAutoPrompt = ref('')
 const loading = ref(true)
 const saving = ref(false)
-const localProject = ref<Project | null>(props.project || null)
+const localWorkspace = ref<Workspace | null>(props.workspace || null)
 
 const noAgents = computed(() => !loading.value && agents.value.length === 0)
 const controlsDisabled = computed(() => noAgents.value || saving.value)
@@ -49,34 +49,34 @@ const statusBadge = computed(() => {
   if (agents.value.length === 0) {
     return {
       kind: 'err' as BadgeKind,
-      label: t('pages.projectDetail.pm.badgeUnavailable'),
+      label: t('pages.workspace.pm.badgeUnavailable'),
       agentName: '',
     }
   }
   if (binding.value?.agentError) {
     return {
       kind: 'err' as BadgeKind,
-      label: t('pages.projectDetail.pm.badgeError'),
+      label: t('pages.workspace.pm.badgeError'),
       agentName: selectedAgent.value,
     }
   }
   if (enabled.value && selectedAgent.value) {
     return {
       kind: 'ok' as BadgeKind,
-      label: t('pages.projectDetail.pm.badgeEnabled'),
+      label: t('pages.workspace.pm.badgeEnabled'),
       agentName: selectedAgent.value,
     }
   }
   if (enabled.value && !selectedAgent.value) {
     return {
       kind: 'err' as BadgeKind,
-      label: t('pages.projectDetail.pm.badgePending'),
+      label: t('pages.workspace.pm.badgePending'),
       agentName: '',
     }
   }
   return {
     kind: 'off' as BadgeKind,
-    label: t('pages.projectDetail.pm.badgeDisabled'),
+    label: t('pages.workspace.pm.badgeDisabled'),
     agentName: '',
   }
 })
@@ -106,14 +106,13 @@ const agentOptions = computed((): { name: string; stale: boolean }[] => {
 })
 
 const aclText = computed(
-  () => binding.value?.aclNote || t('pages.projectDetail.pm.aclMemoryNote'),
+  () => binding.value?.aclNote || t('pages.workspace.pm.aclMemoryNote'),
 )
 
-const channelProject = computed<Project>(() => {
-  if (localProject.value) return localProject.value
-  if (props.project) return props.project
+const channelWorkspace = computed<Workspace>(() => {
+  if (localWorkspace.value) return localWorkspace.value
+  if (props.workspace) return props.workspace
   return {
-    id: props.projectId,
     name: '',
     description: '',
     variables: [],
@@ -133,10 +132,10 @@ async function load() {
   loading.value = true
   try {
     const [b, list, proj] = await Promise.all([
-      api.getPmLeader(props.projectId),
+      api.getPmLeader(),
       api.listAgents(),
-      props.project
-        ? Promise.resolve(props.project)
+      props.workspace
+        ? Promise.resolve(props.workspace)
         : api.getWorkspace().catch(() => null),
     ])
     binding.value = b
@@ -148,7 +147,7 @@ async function load() {
       : ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager']
     gateAutoVar.value = b.gateAutoVar || ''
     gateAutoPrompt.value = b.gateAutoPrompt || ''
-    if (proj) localProject.value = proj
+    if (proj) localWorkspace.value = proj
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
@@ -158,16 +157,16 @@ async function load() {
 
 async function save() {
   if (noAgents.value) {
-    toast.error(t('pages.projectDetail.pm.noAgents'))
+    toast.error(t('pages.workspace.pm.noAgents'))
     return
   }
   if (enabled.value && !selectedAgent.value) {
-    toast.error(t('pages.projectDetail.pm.needAgent'))
+    toast.error(t('pages.workspace.pm.needAgent'))
     return
   }
   saving.value = true
   try {
-    binding.value = await api.updatePmLeader(props.projectId, {
+    binding.value = await api.updatePmLeader({
       enabled: enabled.value,
       agentConfigRef: selectedAgent.value,
       enabledMcps: [...enabledMcps.value],
@@ -182,7 +181,7 @@ async function save() {
     gateAutoVar.value = binding.value.gateAutoVar || ''
     gateAutoPrompt.value = binding.value.gateAutoPrompt || ''
     emit('changed', binding.value)
-    toast.success(t('pages.projectDetail.saved'))
+    toast.success(t('pages.workspace.saved'))
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
@@ -190,9 +189,9 @@ async function save() {
   }
 }
 
-function onProjectUpdated(p: Project) {
-  localProject.value = p
-  emit('project-updated', p)
+function onWorkspaceUpdated(p: Workspace) {
+  localWorkspace.value = p
+  emit('workspace-updated', p)
 }
 
 watch(noAgents, (empty) => {
@@ -207,16 +206,9 @@ watch(selectedAgent, (name) => {
 })
 
 watch(
-  () => props.projectId,
-  () => {
-    void load()
-  },
-)
-
-watch(
-  () => props.project,
+  () => props.workspace,
   (p) => {
-    if (p) localProject.value = p
+    if (p) localWorkspace.value = p
   },
 )
 
@@ -231,12 +223,12 @@ void load()
 
     <template v-else>
       <SettingsSection
-        :title="t('pages.projectDetail.pm.defaultAssistantSection')"
+        :title="t('pages.workspace.pm.defaultAssistantSection')"
         :description="aclText"
       >
         <SettingsRow
-          :label="t('pages.projectDetail.pm.enable')"
-          :description="t('pages.projectDetail.pm.enablePermissionHint')"
+          :label="t('pages.workspace.pm.enable')"
+          :description="t('pages.workspace.pm.enablePermissionHint')"
           inline
         >
           <template #meta>
@@ -260,27 +252,27 @@ void load()
           <AppSwitch
             v-model="enabled"
             :disabled="controlsDisabled"
-            :aria-label="t('pages.projectDetail.pm.enable')"
+            :aria-label="t('pages.workspace.pm.enable')"
           />
         </SettingsRow>
 
-        <SettingsRow :label="t('pages.projectDetail.pm.bindAgent')" for="pm-bind-agent">
+        <SettingsRow :label="t('pages.workspace.pm.bindAgent')" for="pm-bind-agent">
           <select
             id="pm-bind-agent"
             v-model="selectedAgent"
             class="input w-full disabled:cursor-not-allowed disabled:opacity-55 sm:w-60"
             :disabled="controlsDisabled"
           >
-            <option value="">{{ t('pages.projectDetail.pm.selectAgent') }}</option>
+            <option value="">{{ t('pages.workspace.pm.selectAgent') }}</option>
             <option v-for="a in agentOptions" :key="a.name" :value="a.name">
-              {{ a.stale ? `${a.name}${t('pages.projectDetail.pm.agentStaleSuffix')}` : a.name }}
+              {{ a.stale ? `${a.name}${t('pages.workspace.pm.agentStaleSuffix')}` : a.name }}
             </option>
           </select>
           <template v-if="noAgents || binding?.agentError" #details>
             <p class="m-0 text-err" role="alert">
-              {{ noAgents ? t('pages.projectDetail.pm.noAgents') : binding?.agentError }}
+              {{ noAgents ? t('pages.workspace.pm.noAgents') : binding?.agentError }}
               <RouterLink to="/agents" class="ml-1 text-accent-2 underline underline-offset-2 hover:text-accent">
-                {{ t('pages.projectDetail.pm.goAgents') }}
+                {{ t('pages.workspace.pm.goAgents') }}
               </RouterLink>
             </p>
           </template>
@@ -288,8 +280,8 @@ void load()
       </SettingsSection>
 
       <SettingsSection
-        :title="t('pages.projectDetail.pm.enabledMcps')"
-        :description="t('pages.projectDetail.pm.enabledMcpsHint')"
+        :title="t('pages.workspace.pm.enabledMcps')"
+        :description="t('pages.workspace.pm.enabledMcpsHint')"
       >
         <SettingsRow
           v-for="opt in PM_MCP_OPTIONS"
@@ -309,10 +301,10 @@ void load()
         </SettingsRow>
       </SettingsSection>
 
-      <SettingsSection :title="t('pages.projectDetail.pm.automaticApprovalSection')">
+      <SettingsSection :title="t('pages.workspace.pm.automaticApprovalSection')">
         <SettingsRow
-          :label="t('pages.projectDetail.pm.gateAutoVar')"
-          :description="t('pages.projectDetail.pm.gateAutoVarHint')"
+          :label="t('pages.workspace.pm.gateAutoVar')"
+          :description="t('pages.workspace.pm.gateAutoVarHint')"
           for="pm-gate-auto-var"
           stacked
         >
@@ -322,14 +314,14 @@ void load()
             class="input w-full font-mono text-[13px] disabled:cursor-not-allowed disabled:opacity-55 sm:max-w-sm"
             data-testid="pm-gate-auto-var"
             :disabled="controlsDisabled"
-            :placeholder="t('pages.projectDetail.pm.gateAutoVarPlaceholder')"
+            :placeholder="t('pages.workspace.pm.gateAutoVarPlaceholder')"
             autocomplete="off"
             spellcheck="false"
           />
         </SettingsRow>
         <SettingsRow
-          :label="t('pages.projectDetail.pm.gateAutoPrompt')"
-          :description="t('pages.projectDetail.pm.gateAutoPromptHint')"
+          :label="t('pages.workspace.pm.gateAutoPrompt')"
+          :description="t('pages.workspace.pm.gateAutoPromptHint')"
           for="pm-gate-auto-prompt"
           stacked
         >
@@ -339,7 +331,7 @@ void load()
             class="input min-h-24 w-full font-mono text-[12px] leading-relaxed disabled:cursor-not-allowed disabled:opacity-55"
             data-testid="pm-gate-auto-prompt"
             :disabled="controlsDisabled"
-            :placeholder="t('pages.projectDetail.pm.gateAutoPromptPlaceholder')"
+            :placeholder="t('pages.workspace.pm.gateAutoPromptPlaceholder')"
             rows="4"
           />
         </SettingsRow>
@@ -352,15 +344,14 @@ void load()
           :disabled="saving || noAgents || loading"
           @click="save"
         >
-          {{ saving ? t('common.buttons.saving') : t('pages.projectDetail.pm.saveLeaderButton') }}
+          {{ saving ? t('common.buttons.saving') : t('pages.workspace.pm.saveLeaderButton') }}
         </AppButton>
       </div>
 
       <PmChannelMultiPanel
-        :project-id="projectId"
-        :project="channelProject"
+        :workspace="channelWorkspace"
         :pm-leader-agent="selectedAgent"
-        @project-updated="onProjectUpdated"
+        @workspace-updated="onWorkspaceUpdated"
       />
     </template>
   </div>

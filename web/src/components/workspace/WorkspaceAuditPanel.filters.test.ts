@@ -4,13 +4,13 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { ProjectAuditEvent } from '@/lib/shared/types'
-import ProjectAuditPanel from './ProjectAuditPanel.vue'
+import type { AuditEvent } from '@/lib/shared/types'
+import WorkspaceAuditPanel from './WorkspaceAuditPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
-  listProjectAudit: vi.fn(),
-  listProjectAuditFacets: vi.fn(),
-  exportProjectAuditUrl: vi.fn(),
+  listAudit: vi.fn(),
+  listAuditFacets: vi.fn(),
+  exportAuditUrl: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -19,9 +19,9 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectAudit: apiMocks.listProjectAudit,
-      listProjectAuditFacets: apiMocks.listProjectAuditFacets,
-      exportProjectAuditUrl: apiMocks.exportProjectAuditUrl,
+      listAudit: apiMocks.listAudit,
+      listAuditFacets: apiMocks.listAuditFacets,
+      exportAuditUrl: apiMocks.exportAuditUrl,
     },
   }
 })
@@ -38,10 +38,9 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
   useBreakpoint: () => ({ isMobile: breakpoint.isMobile }),
 }))
 
-function ev(over: Partial<ProjectAuditEvent> = {}): ProjectAuditEvent {
+function ev(over: Partial<AuditEvent> = {}): AuditEvent {
   return {
     id: 'e1',
-    projectId: 'proj-1',
     occurredAt: '2026-01-01T00:00:00Z',
     actor: 'pm',
     unattributable: false,
@@ -59,7 +58,7 @@ function ev(over: Partial<ProjectAuditEvent> = {}): ProjectAuditEvent {
   }
 }
 
-function paged(items: ProjectAuditEvent[], over: Record<string, unknown> = {}) {
+function paged(items: AuditEvent[], over: Record<string, unknown> = {}) {
   return {
     items,
     total: items.length,
@@ -81,8 +80,8 @@ function mountPanel(props: Record<string, unknown> = {}) {
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
-  return mount(ProjectAuditPanel, {
-    props: { projectId: 'proj-1', ...props },
+  return mount(WorkspaceAuditPanel, {
+    props,
     global: {
       plugins: [i18n],
       stubs: {
@@ -93,13 +92,13 @@ function mountPanel(props: Record<string, unknown> = {}) {
   })
 }
 
-describe('ProjectAuditPanel filters and grouping', () => {
+describe('WorkspaceAuditPanel filters and grouping', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.useFakeTimers({ shouldAdvanceTime: true })
     breakpoint.isMobile.value = false
-    apiMocks.exportProjectAuditUrl.mockReturnValue('http://example.test/export')
-    apiMocks.listProjectAuditFacets.mockResolvedValue({
+    apiMocks.exportAuditUrl.mockReturnValue('http://example.test/export')
+    apiMocks.listAuditFacets.mockResolvedValue({
       runs: [
         { runId: 'run-1', label: 'Run 1', sub: 'ok' },
         { runId: 'run-2', label: 'Run 2', sub: 'fail' },
@@ -110,7 +109,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
         { resourceType: 'gate', resourceId: 'g1', resource: 'gate/g1' },
       ],
     })
-    apiMocks.listProjectAudit.mockResolvedValue(paged([ev()]))
+    apiMocks.listAudit.mockResolvedValue(paged([ev()]))
   })
 
   afterEach(() => {
@@ -160,9 +159,9 @@ describe('ProjectAuditPanel filters and grouping', () => {
     expect(vm.chips[0].value).toBe('mystery')
 
     // Re-entering the same mode is a no-op.
-    const calls = apiMocks.listProjectAudit.mock.calls.length
+    const calls = apiMocks.listAudit.mock.calls.length
     await vm.setMode('all')
-    expect(apiMocks.listProjectAudit).toHaveBeenCalledTimes(calls)
+    expect(apiMocks.listAudit).toHaveBeenCalledTimes(calls)
     w.unmount()
   })
 
@@ -177,7 +176,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     expect(vm.resDot('run/1')).toBe('run')
     expect(vm.resDot('gate/1')).toBe('gate')
     expect(vm.resDot('workflow/1')).toBe('wf')
-    expect(vm.resDot('project/1')).toBe('prj')
+    expect(vm.resDot('workspace/default')).toBe('ws')
     expect(vm.resDot('audit/1')).toBe('aud')
     expect(vm.resDot('other/1')).toBe('')
 
@@ -219,7 +218,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   })
 
   it('groups run events by node and defaults expansion to failing groups', async () => {
-    apiMocks.listProjectAudit.mockResolvedValue(
+    apiMocks.listAudit.mockResolvedValue(
       paged([
         ev({ id: 'a', nodeId: 'n1', occurredAt: '2026-01-01T00:00:02Z' }),
         ev({ id: 'b', nodeId: 'n1', occurredAt: '2026-01-01T00:00:01Z' }),
@@ -255,7 +254,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   })
 
   it('opens every group when nothing failed or only one group exists', async () => {
-    apiMocks.listProjectAudit.mockResolvedValue(
+    apiMocks.listAudit.mockResolvedValue(
       paged([ev({ id: 'a', nodeId: 'n1' }), ev({ id: 'b', nodeId: 'n2' })]),
     )
     const w = mountPanel()
@@ -267,7 +266,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   })
 
   it('prunes stale group overrides when the event set changes', async () => {
-    apiMocks.listProjectAudit.mockResolvedValue(
+    apiMocks.listAudit.mockResolvedValue(
       paged([ev({ id: 'a', nodeId: 'n1', outcome: 'fail' }), ev({ id: 'b', nodeId: 'n2' })]),
     )
     const w = mountPanel()
@@ -279,7 +278,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await flushPromises()
     expect(Object.keys(vm.groupOpen).sort()).toEqual(['n1', 'n2'])
 
-    apiMocks.listProjectAudit.mockResolvedValue(paged([ev({ id: 'a', nodeId: 'n1', outcome: 'fail' })]))
+    apiMocks.listAudit.mockResolvedValue(paged([ev({ id: 'a', nodeId: 'n1', outcome: 'fail' })]))
     await vm.load(true)
     await flushPromises()
     expect(Object.keys(vm.groupOpen)).toEqual(['n1'])
@@ -289,7 +288,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   it('pages through run-aligned results until hasMore clears', async () => {
     const page1 = paged([ev({ id: 'p1' })], { total: 2, hasMore: true, stats: undefined })
     const page2 = paged([ev({ id: 'p2' })], { total: 2, hasMore: false, stats: undefined })
-    apiMocks.listProjectAudit.mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)
+    apiMocks.listAudit.mockResolvedValueOnce(page1).mockResolvedValueOnce(page2)
 
     const w = mountPanel()
     await flushPromises()
@@ -304,7 +303,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   })
 
   it('flags a capped run fetch when the server reports more than it returns', async () => {
-    apiMocks.listProjectAudit.mockResolvedValue(paged([ev({ id: 'p1' })], { total: 900, hasMore: false }))
+    apiMocks.listAudit.mockResolvedValue(paged([ev({ id: 'p1' })], { total: 900, hasMore: false }))
     const w = mountPanel()
     await flushPromises()
     expect((w.vm as any).runCapped).toBe(true)
@@ -312,7 +311,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
   })
 
   it('clears the list when run mode has no selected run', async () => {
-    apiMocks.listProjectAuditFacets.mockResolvedValue({ runs: [], nodes: [], resources: [] })
+    apiMocks.listAuditFacets.mockResolvedValue({ runs: [], nodes: [], resources: [] })
     const w = mountPanel()
     await flushPromises()
     const vm = w.vm as any
@@ -321,7 +320,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     expect(vm.events).toEqual([])
     expect(vm.noRuns).toBe(true)
     expect(vm.loading).toBe(false)
-    expect(apiMocks.listProjectAudit).not.toHaveBeenCalled()
+    expect(apiMocks.listAudit).not.toHaveBeenCalled()
     w.unmount()
   })
 
@@ -362,7 +361,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     const vm = w.vm as any
     expect(vm.runId).toBe('run-1')
 
-    apiMocks.listProjectAuditFacets.mockResolvedValue({
+    apiMocks.listAuditFacets.mockResolvedValue({
       runs: [{ runId: 'run-9', label: 'Run 9' }],
       nodes: [],
       resources: [],
@@ -373,7 +372,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     expect(vm.runId).toBe('run-9')
 
     // When the window empties entirely the selection is dropped.
-    apiMocks.listProjectAuditFacets.mockResolvedValue({ runs: [], nodes: [], resources: [] })
+    apiMocks.listAuditFacets.mockResolvedValue({ runs: [], nodes: [], resources: [] })
     await vm.onTimeChange('30d')
     await flushPromises()
     expect(vm.runId).toBe('')
@@ -384,17 +383,17 @@ describe('ProjectAuditPanel filters and grouping', () => {
     const w = mountPanel()
     await flushPromises()
     const vm = w.vm as any
-    const before = apiMocks.listProjectAudit.mock.calls.length
+    const before = apiMocks.listAudit.mock.calls.length
 
     vm.search = 'to'
     vm.onSearchInput()
     vm.search = 'tool'
     vm.onSearchInput()
-    expect(apiMocks.listProjectAudit).toHaveBeenCalledTimes(before)
+    expect(apiMocks.listAudit).toHaveBeenCalledTimes(before)
 
     await vi.advanceTimersByTimeAsync(250)
     await flushPromises()
-    expect(apiMocks.listProjectAudit.mock.calls.length).toBeGreaterThan(before)
+    expect(apiMocks.listAudit.mock.calls.length).toBeGreaterThan(before)
 
     vm.nodeId = 'n1'
     vm.clearChip('node')
@@ -462,7 +461,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await vm.setMode('all')
     await flushPromises()
 
-    apiMocks.listProjectAudit.mockResolvedValue(paged([ev()], { page: 3 }))
+    apiMocks.listAudit.mockResolvedValue(paged([ev()], { page: 3 }))
     vm.onPageChange(3)
     await flushPromises()
     expect(vm.page).toBe(3)
@@ -483,7 +482,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await flushPromises()
     const vm = w.vm as any
 
-    apiMocks.listProjectAudit.mockRejectedValueOnce(new Error('boom'))
+    apiMocks.listAudit.mockRejectedValueOnce(new Error('boom'))
     await vm.load(true)
     await flushPromises()
     expect(toast.error).toHaveBeenCalledWith('boom')
@@ -496,17 +495,17 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await flushPromises()
     const vm = w.vm as any
 
-    apiMocks.listProjectAudit.mockRejectedValueOnce(Object.assign(new Error('no'), { status: 403 }))
+    apiMocks.listAudit.mockRejectedValueOnce(Object.assign(new Error('no'), { status: 403 }))
     await vm.load(true)
     await flushPromises()
     expect(vm.denied).toBe(true)
     expect(vm.events).toEqual([])
-    expect(w.find('[data-testid="project-audit-denied"]').exists()).toBe(true)
+    expect(w.find('[data-testid="workspace-audit-denied"]').exists()).toBe(true)
     w.unmount()
   })
 
   it('swallows non-403 facet failures and keeps the panel usable', async () => {
-    apiMocks.listProjectAuditFacets.mockRejectedValue(new Error('flaky'))
+    apiMocks.listAuditFacets.mockRejectedValue(new Error('flaky'))
     const w = mountPanel()
     await flushPromises()
     const vm = w.vm as any
@@ -520,15 +519,15 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await flushPromises()
     const vm = w.vm as any
 
-    apiMocks.listProjectAuditFacets.mockClear()
+    apiMocks.listAuditFacets.mockClear()
     await vm.loadFacets()
-    expect(apiMocks.listProjectAuditFacets).not.toHaveBeenCalled()
+    expect(apiMocks.listAuditFacets).not.toHaveBeenCalled()
     expect(vm.runOptions).toEqual([])
 
     // Export is refused rather than producing a download link.
     await vm.exportAudit()
     expect(toast.error).toHaveBeenCalled()
-    expect(apiMocks.exportProjectAuditUrl).not.toHaveBeenCalled()
+    expect(apiMocks.exportAuditUrl).not.toHaveBeenCalled()
     w.unmount()
   })
 
@@ -542,7 +541,7 @@ describe('ProjectAuditPanel filters and grouping', () => {
 
     await vm.exportAudit()
     await flushPromises()
-    expect(apiMocks.exportProjectAuditUrl).toHaveBeenCalledWith('proj-1', {
+    expect(apiMocks.exportAuditUrl).toHaveBeenCalledWith({
       format: 'json',
       time: '24h',
       callerKind: undefined,
@@ -554,33 +553,21 @@ describe('ProjectAuditPanel filters and grouping', () => {
     expect(toast.success).toHaveBeenCalled()
 
     // The deferred refresh fires after the download settles.
-    const before = apiMocks.listProjectAudit.mock.calls.length
+    const before = apiMocks.listAudit.mock.calls.length
     await vi.advanceTimersByTimeAsync(500)
     await flushPromises()
-    expect(apiMocks.listProjectAudit.mock.calls.length).toBeGreaterThan(before)
+    expect(apiMocks.listAudit.mock.calls.length).toBeGreaterThan(before)
     w.unmount()
   })
 
   it('reports an export failure through a toast', async () => {
     const w = mountPanel()
     await flushPromises()
-    apiMocks.exportProjectAuditUrl.mockImplementationOnce(() => {
+    apiMocks.exportAuditUrl.mockImplementationOnce(() => {
       throw new Error('no url')
     })
     await (w.vm as any).exportAudit()
     expect(toast.error).toHaveBeenCalledWith('no url')
-    w.unmount()
-  })
-
-  it('re-bootstraps when the project changes', async () => {
-    const w = mountPanel()
-    await flushPromises()
-    apiMocks.listProjectAuditFacets.mockClear()
-
-    await w.setProps({ projectId: 'proj-2' })
-    await flushPromises()
-    expect(apiMocks.listProjectAuditFacets).toHaveBeenCalled()
-    expect(apiMocks.listProjectAuditFacets.mock.calls[0][0]).toBe('proj-2')
     w.unmount()
   })
 
@@ -590,11 +577,11 @@ describe('ProjectAuditPanel filters and grouping', () => {
     await flushPromises()
     const vm = w.vm as any
 
-    expect(w.find('[data-testid="project-audit-filter-summary"]').exists()).toBe(true)
+    expect(w.find('[data-testid="workspace-audit-filter-summary"]').exists()).toBe(true)
     expect(vm.filtersExpanded).toBe(false)
     expect(vm.filterSummaryText).toContain('Run')
 
-    await w.get('[data-testid="project-audit-filter-summary"]').trigger('click')
+    await w.get('[data-testid="workspace-audit-filter-summary"]').trigger('click')
     expect(vm.filtersExpanded).toBe(true)
 
     // All mode summarises the caller instead of the run.

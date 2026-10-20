@@ -25,7 +25,6 @@ function draft(files = [
 ]) {
   return {
     name: 'demo',
-    projectId: 'p1',
     acpBackend: 'cursor',
     files,
     mcp: [],

@@ -87,7 +87,7 @@ describe('loading/pending Demo-locked locale keys', () => {
     for (const bag of [zhPages.pages.publicGate, enPages.pages.publicGate]) {
       for (const v of Object.values(bag)) {
         if (typeof v !== 'string') continue
-        expect(v).not.toMatch(/run-|projectId|token A|no runId/i)
+        expect(v).not.toMatch(/run-|token A|no runId/i)
         expect(v).not.toMatch(/\bcsrf\b|\bnonce\b/i)
       }
     }

@@ -27,19 +27,19 @@ const CATALOG = [
   },
   {
     id: 'pm-progress',
-    scope: 'project' as const,
+    scope: 'workspace' as const,
     toolCount: 6,
     writeTools: [] as string[],
   },
   {
     id: 'pm-workflow-read',
-    scope: 'project' as const,
+    scope: 'workspace' as const,
     toolCount: 7,
     writeTools: [] as string[],
   },
   {
     id: 'pm-workflow-write',
-    scope: 'project' as const,
+    scope: 'workspace' as const,
     toolCount: 9,
     writeTools: [
       'pm_create_workflow',
@@ -55,7 +55,7 @@ const CATALOG = [
   },
   {
     id: 'pm-agent-fs',
-    scope: 'project' as const,
+    scope: 'workspace' as const,
     toolCount: 12,
     writeTools: [
       'pm_fs_write',
@@ -68,7 +68,7 @@ const CATALOG = [
   },
   {
     id: 'pm-prd-manager',
-    scope: 'project' as const,
+    scope: 'workspace' as const,
     toolCount: 3,
     writeTools: ['pm_create_requirement_draft'],
   },
@@ -76,7 +76,7 @@ const CATALOG = [
 
 const INTEGRATIONS_SCOPE_KEYS = [
   'mcp.integrations.scopeRun',
-  'mcp.integrations.scopeProject',
+  'mcp.integrations.scopeWorkspace',
   'mcp.integrations.scopeAgent',
   'mcp.integrations.alwaysAvailable',
   'mcp.integrations.seenInPmLeader',

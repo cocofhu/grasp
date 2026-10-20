@@ -20,7 +20,7 @@ api.getArtifactTree = async () => {
   treeCalls += 1
   if (scenario === 'pending') await delay(delayMs)
   if (scenario === 'fail' && treeCalls === 1) { await delay(100); throw new Error('network') }
-  return [{ projectId: 'workspace', projectName: '工作区', count: 2, sessionCount: 0, workflows: [{ workflowId: 'wf-1', workflowName: 'Demo', count: 1 }, { workflowId: 'wf-2', workflowName: 'Review', count: 1 }] }]
+  return { count: 2, sessionCount: 0, workflows: [{ workflowId: 'wf-1', workflowName: 'Demo', count: 1 }, { workflowId: 'wf-2', workflowName: 'Review', count: 1 }] }
 }
 api.listArtifacts = async () => {
   listCalls += 1

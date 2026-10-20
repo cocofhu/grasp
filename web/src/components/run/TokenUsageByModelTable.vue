@@ -28,7 +28,7 @@ const props = defineProps<{
   usageByModel?: TokenUsageByModel | null
   /** Merge multiple process-level by-model maps (StateRun rows). */
   parts?: Array<{ usage?: TokenUsage | null; usageByModel?: TokenUsageByModel | null }>
-  /** Project-level alias for the unknown token bucket. */
+  /** Workspace-level alias for the unknown token bucket. */
   unknownModelDisplayName?: string | null
 }>()
 

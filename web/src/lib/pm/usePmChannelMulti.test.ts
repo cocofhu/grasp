@@ -5,12 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { Project } from '@/lib/shared/types'
+import type { Workspace } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
-  listProjectChannels: vi.fn(),
+  listChannels: vi.fn(),
   getWorkspace: vi.fn(),
-  listProjectNotifyReceipts: vi.fn(),
+  listNotifyReceipts: vi.fn(),
   listPmThreads: vi.fn(),
 }))
 
@@ -20,9 +20,9 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectChannels: mocks.listProjectChannels,
+      listChannels: mocks.listChannels,
       getWorkspace: mocks.getWorkspace,
-      listProjectNotifyReceipts: mocks.listProjectNotifyReceipts,
+      listNotifyReceipts: mocks.listNotifyReceipts,
       listPmThreads: mocks.listPmThreads,
     },
   }
@@ -34,9 +34,8 @@ vi.mock('@/lib/composables/useToast', () => ({
 
 import { usePmChannelMulti } from './usePmChannelMulti'
 
-const baseProject: Project = {
-  id: 'proj-a',
-  name: 'Project A',
+const baseWorkspace: Workspace = {
+  name: 'Workspace A',
   description: '',
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
@@ -53,8 +52,7 @@ function withPmChannelMulti(over: Partial<Parameters<typeof usePmChannelMulti>[0
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   const props = {
-    projectId: 'proj-a',
-    project: baseProject,
+    workspace: baseWorkspace,
     pmLeaderAgent: 'pm-leader',
     ...over,
   }
@@ -72,12 +70,12 @@ function withPmChannelMulti(over: Partial<Parameters<typeof usePmChannelMulti>[0
 
 describe('usePmChannelMulti', () => {
   beforeEach(() => {
-    mocks.listProjectChannels.mockReset()
+    mocks.listChannels.mockReset()
     mocks.getWorkspace.mockReset()
-    mocks.listProjectNotifyReceipts.mockReset()
+    mocks.listNotifyReceipts.mockReset()
     mocks.listPmThreads.mockReset()
 
-    mocks.listProjectChannels.mockResolvedValue({
+    mocks.listChannels.mockResolvedValue({
       items: [
         {
           id: 'ch-1',
@@ -93,8 +91,8 @@ describe('usePmChannelMulti', () => {
       freeAgents: ['pm-leader', 'agent-b'],
       secretsKeyConfigured: true,
     })
-    mocks.getWorkspace.mockResolvedValue(baseProject)
-    mocks.listProjectNotifyReceipts.mockResolvedValue({ items: [] })
+    mocks.getWorkspace.mockResolvedValue(baseWorkspace)
+    mocks.listNotifyReceipts.mockResolvedValue({ items: [] })
     mocks.listPmThreads.mockResolvedValue({ items: [] })
   })
 
@@ -137,7 +135,7 @@ describe('usePmChannelMulti', () => {
   })
 
   it('blocks add when no free agents', async () => {
-    mocks.listProjectChannels.mockResolvedValue({
+    mocks.listChannels.mockResolvedValue({
       items: [],
       freeAgents: [],
       secretsKeyConfigured: false,

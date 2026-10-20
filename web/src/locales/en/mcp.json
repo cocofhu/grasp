@@ -12,7 +12,7 @@
       "addViaAgentStudio": "Add via Agent Studio",
       "notRunScoped": "Not run-scoped global injection",
       "scopeRun": "scope: run",
-      "scopeProject": "scope: workspace / assistant-session",
+      "scopeWorkspace": "scope: workspace / assistant-session",
       "entryPathLabel": "Where to use:",
       "entryPath": "Settings → Assistant settings",
       "entryPathExternal": "Settings → External MCP",
@@ -381,8 +381,8 @@
       "overview": "Lists all Agents in the workspace (self = the current assistant, other = other members) and runs list/read/write/delete/mkdir/rename in any Agent working directory on the host. Does not touch Run sandboxes or agent.json metadata.",
       "convention": "Enable under Settings → Assistant settings (enabled by default; add it manually if a custom MCP selection has been saved). Changes appear in Agent Studio「Agent workspace」after refresh/reopen (not live hot-reload). Warning: if Studio has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits.",
       "tools": {
-        "pm_list_project_agents": {
-          "signature": "pm_list_project_agents()",
+        "pm_list_workspace_agents": {
+          "signature": "pm_list_workspace_agents()",
           "desc": "List workspace agents"
         },
         "pm_list_agent_templates": {
@@ -450,13 +450,6 @@
           "desc": "Create an open requirement draft; blank title uses the default unnamed title"
         }
       }
-    },
-    "externalProjectMcp": {
-      "name": "external-workspace-mcp",
-      "desc": "Workspace external MCP · Bearer workspace API key · separate from internal assistant",
-      "overview": "After enabling external MCP, selecting packs, and creating a workspace API key under Settings → External MCP, external AI tools (Cursor/Claude, etc.) can call the same five assistant MCP pack tool surfaces over HTTP MCP. Off by default; unauthorized or disabled packs are rejected for list/call.",
-      "convention": "Configure at Settings → External MCP. Write scope: pm-workflow-write (workflows/runs/gates), pm-agent-fs (workspace Agents + agent workspace FS), pm-prd-manager (create draft only); pm-progress and pm-workflow-read are read-only. Does not cover assistant binding, human collaborators, or Run sandbox files.",
-      "entryPath": "Settings → External MCP"
     }
   }
 }

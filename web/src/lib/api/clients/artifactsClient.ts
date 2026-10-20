@@ -1,4 +1,4 @@
-import type { Artifact, ArtifactTreeProject } from '../../shared/types'
+import type { Artifact, ArtifactTree } from '../../shared/types'
 import { i18n } from '../../shared/i18n'
 import {
   isDraining,
@@ -26,11 +26,11 @@ function filenameFromContentDisposition(header: string | null, fallback: string)
   return fallback
 }
 
-/** Scope of one artifacts page: a whole project, one workflow, or its Agent-session bucket. */
+/** Scope of one artifacts page: everything, one workflow, or the Agent-session bucket. */
 export type ArtifactListScope =
-  | { projectId?: string; workflowId?: undefined; session?: undefined }
-  | { projectId?: string; workflowId: string; session?: undefined }
-  | { projectId?: string; workflowId?: undefined; session: true }
+  | { workflowId?: undefined; session?: undefined }
+  | { workflowId: string; session?: undefined }
+  | { workflowId?: undefined; session: true }
 
 export type ListArtifactsParams = ArtifactListScope & {
   page?: number
@@ -41,7 +41,7 @@ export type ListArtifactsParams = ArtifactListScope & {
 }
 
 export const artifactsClient = {
-  getArtifactTree: () => req<ArtifactTreeProject[]>('/artifacts/tree'),
+  getArtifactTree: () => req<ArtifactTree>('/artifacts/tree'),
   listArtifacts: (params: ListArtifactsParams) => {
     const qs = new URLSearchParams()
     if (params.workflowId) qs.set('workflowId', params.workflowId)

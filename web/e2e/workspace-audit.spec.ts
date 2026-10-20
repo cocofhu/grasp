@@ -7,9 +7,8 @@ import path from 'node:path'
 import fs from 'node:fs'
 import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onboarding'
 
-const MOCK_PROJECT = {
-  id: 'proj-1',
-  name: 'Grasp Project',
+const MOCK_WORKSPACE = {
+  name: 'Grasp Workspace',
   description: 'Audit dual-mode e2e',
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
@@ -24,7 +23,6 @@ const RUN_D = 'run-bb22dddd'
 const MOCK_EVENTS = [
   {
     id: 'e1',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T10:42:03Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -42,7 +40,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e2',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T10:42:11Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -60,7 +57,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e3',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T10:43:02Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -78,7 +74,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e4',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T10:44:18Z',
     actor: 'alice',
     actorDisplay: 'alice',
@@ -96,7 +91,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e8',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T10:43:20Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -114,7 +108,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e5',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T06:05:22Z',
     actor: 'apikey',
     actorDisplay: 'API Key',
@@ -132,7 +125,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e6',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T06:06:01Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -150,16 +142,15 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e7',
-    projectId: 'proj-1',
     occurredAt: '2026-07-25T12:01:33Z',
     actor: 'apikey',
     actorDisplay: 'API Key',
     unattributable: false,
     callerKind: 'apikey',
-    action: 'project.config',
-    resourceType: 'project',
-    resourceId: 'proj-1',
-    resource: 'project/proj-1',
+    action: 'workspace.config',
+    resourceType: 'workspace',
+    resourceId: '',
+    resource: 'workspace',
     runId: '',
     nodeId: '',
     outcome: 'ok',
@@ -168,7 +159,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e10',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T08:10:00Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -186,7 +176,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e11',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T08:10:08Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -204,7 +193,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e12',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T08:10:16Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -222,7 +210,6 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e20',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T09:00:00Z',
     actor: 'system',
     actorDisplay: '系统',
@@ -240,16 +227,15 @@ const MOCK_EVENTS = [
   },
   {
     id: 'e21',
-    projectId: 'proj-1',
     occurredAt: '2026-07-26T09:00:04Z',
     actor: 'system',
     actorDisplay: '系统',
     unattributable: true,
     callerKind: 'system',
-    action: 'project.config',
-    resourceType: 'project',
-    resourceId: 'proj-1',
-    resource: 'project/proj-1',
+    action: 'workspace.config',
+    resourceType: 'workspace',
+    resourceId: '',
+    resource: 'workspace',
     runId: RUN_D,
     nodeId: '',
     outcome: 'ok',
@@ -346,14 +332,14 @@ function filterEvents(url: URL) {
   }
 }
 
-async function stubProjectApis(page: Page) {
-  await seedOnboardingDismissed(page, 'proj-1')
+async function stubWorkspaceApis(page: Page) {
+  await seedOnboardingDismissed(page)
   await routeApi(page, '**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PROJECT),
+        body: JSON.stringify(MOCK_WORKSPACE),
       })
       return
     }
@@ -416,14 +402,14 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
 
   test('默认按 Run：三列分组；语义摘要辅行；无独立动作/资源/调用者列', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
 
-    const panel = page.getByTestId('project-audit-panel')
+    const panel = page.getByTestId('workspace-audit-panel')
     await expect(panel).toBeVisible({ timeout: 15_000 })
 
-    await expect(page.getByTestId('project-audit-mode-run')).toHaveClass(/on/)
+    await expect(page.getByTestId('workspace-audit-mode-run')).toHaveClass(/on/)
     await expect(page.getByRole('button', { name: '按 Run 查看' })).toBeVisible()
     await expect(page.getByRole('button', { name: '全部日志' })).toBeVisible()
     await expect(page.locator('body')).not.toContainText('张三')
@@ -431,11 +417,11 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     await expect(page.locator('body')).not.toContainText('旧摘要')
 
     // Run mode hides event pagination; count lives on the toolbar (not a dedicated strip)
-    await expect(page.getByTestId('project-audit-stats')).toBeVisible()
-    await expect(page.getByTestId('project-audit-page-size')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-stats')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-page-size')).toHaveCount(0)
     await expect(panel.locator('select')).toHaveCount(0)
 
-    const list = page.getByTestId('project-audit-list')
+    const list = page.getByTestId('workspace-audit-list')
     await expect(list).toBeVisible()
     await expect(list).toHaveAttribute('data-layout', 'groups')
     const columnLabels = list.locator('.audit-column-labels')
@@ -448,34 +434,34 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     await expect(page.getByRole('columnheader', { name: '动作' })).toHaveCount(0)
     await expect(page.getByRole('columnheader', { name: '资源' })).toHaveCount(0)
     await expect(page.getByText('mcp.call')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-stats')).toContainText('MCP')
-    await expect(page.getByTestId('project-audit-stats')).toContainText('成功')
+    await expect(page.getByTestId('workspace-audit-stats')).toContainText('MCP')
+    await expect(page.getByTestId('workspace-audit-stats')).toContainText('成功')
 
-    await expect(page.getByTestId('project-audit-run')).toContainText('Run')
-    await expect(page.getByTestId('project-audit-run')).toContainText('2026-07-26 18:42 · 8f2a1111')
-    await expect(page.getByTestId('project-audit-resource')).toContainText('资源')
-    await expect(page.getByTestId('project-audit-time')).toContainText('时间')
+    await expect(page.getByTestId('workspace-audit-run')).toContainText('Run')
+    await expect(page.getByTestId('workspace-audit-run')).toContainText('2026-07-26 18:42 · 8f2a1111')
+    await expect(page.getByTestId('workspace-audit-resource')).toContainText('资源')
+    await expect(page.getByTestId('workspace-audit-time')).toContainText('时间')
     await expect(panel.locator('h4')).toHaveCount(0)
     await expect(panel.locator('.chip').filter({ hasText: /^Run\b/ })).toHaveCount(0)
 
-    const exportBtn = page.getByTestId('project-audit-export')
+    const exportBtn = page.getByTestId('workspace-audit-export')
     await expect(exportBtn).toHaveText('导出')
     await expect(page.getByRole('button', { name: '导出 JSON' })).toHaveCount(0)
 
     await page.screenshot({ path: path.join(SHOT_DIR, '01-run-mode-mcp.png'), fullPage: true })
 
-    await page.getByTestId('project-audit-resource').locator('button.audit-dd-trig').click()
+    await page.getByTestId('workspace-audit-resource').locator('button.audit-dd-trig').click()
     const resPanel = page.locator('.audit-dd-panel').filter({ visible: true })
     await expect(resPanel).toBeVisible()
     await resPanel.locator('.audit-dd-opt', { hasText: 'mcp/read_artifact' }).first().click()
-    await expect(page.getByTestId('project-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-list').locator('tbody tr.row')).toHaveCount(1)
+    await expect(page.getByTestId('workspace-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-list').locator('tbody tr.row')).toHaveCount(1)
     await expect(page.getByText('读取产物 research.json')).toBeVisible()
     await expect(page.getByText('mcp / read_artifact').first()).toBeVisible()
-    await expect(page.getByTestId('project-audit-chips')).toContainText('mcp/read_artifact')
+    await expect(page.getByTestId('workspace-audit-chips')).toContainText('mcp/read_artifact')
 
-    await page.getByTestId('project-audit-event-e2').click()
-    await expect(page.getByTestId('project-audit-payload')).toBeVisible()
+    await page.getByTestId('workspace-audit-event-e2').click()
+    await expect(page.getByTestId('workspace-audit-payload')).toBeVisible()
     await expect(page.locator('.detail-meta code').filter({ hasText: 'mcp.call' })).toBeVisible()
 
     await page.screenshot({ path: path.join(SHOT_DIR, '01b-resource-narrow.png'), fullPage: true })
@@ -483,20 +469,20 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
 
   test('全部日志：四列扁表时间/节点/摘要/结果；保留调用者筛选与分页', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-panel')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-audit-panel')).toBeVisible({ timeout: 15_000 })
 
-    await page.getByTestId('project-audit-mode-all').click()
-    await expect(page.getByTestId('project-audit-mode-all')).toHaveClass(/on/)
-    await expect(page.getByTestId('project-audit-caller')).toBeVisible()
-    await expect(page.getByTestId('project-audit-run')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-node')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-page-size')).toBeVisible()
-    await expect(page.getByTestId('project-audit-pager-info')).toBeVisible()
+    await page.getByTestId('workspace-audit-mode-all').click()
+    await expect(page.getByTestId('workspace-audit-mode-all')).toHaveClass(/on/)
+    await expect(page.getByTestId('workspace-audit-caller')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-run')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-node')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-page-size')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-pager-info')).toBeVisible()
 
-    const wrap = page.getByTestId('project-audit-list')
+    const wrap = page.getByTestId('workspace-audit-list')
     await expect(wrap).toHaveAttribute('data-layout', 'table')
     await expect(page.getByRole('columnheader', { name: '时间' })).toBeVisible()
     await expect(page.getByRole('columnheader', { name: '节点' })).toBeVisible()
@@ -508,7 +494,7 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     await expect(page.getByText('需求澄清 · 2wn4').first()).toBeVisible()
     await expect(page.getByText('读取产物 research.json').first()).toBeVisible()
 
-    await page.getByTestId('project-audit-caller').locator('button.audit-dd-trig').click()
+    await page.getByTestId('workspace-audit-caller').locator('button.audit-dd-trig').click()
     const callerPanel = page.locator('.audit-dd-panel').filter({ visible: true })
     await expect(callerPanel).toBeVisible()
     await expect(callerPanel.locator('.audit-dd-opt', { hasText: '工作区助手' })).toBeVisible()
@@ -522,7 +508,7 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
 
   test('无 Run 空态可切全部日志', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await routeApi(page, '**/api/workspace/audit/facets**', async (route) => {
       await route.fulfill({
         status: 200,
@@ -532,42 +518,42 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     })
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-empty-runs')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('project-audit-empty-runs').getByRole('button', { name: '全部日志' }).click()
-    await expect(page.getByTestId('project-audit-mode-all')).toHaveClass(/on/)
+    await expect(page.getByTestId('workspace-audit-empty-runs')).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('workspace-audit-empty-runs').getByRole('button', { name: '全部日志' }).click()
+    await expect(page.getByTestId('workspace-audit-mode-all')).toHaveClass(/on/)
     await page.screenshot({ path: path.join(SHOT_DIR, '03-empty-runs.png'), fullPage: true })
   })
 
   test('移动视口 ~390px：筛选摘要默认收起 + 事件卡片（plan g5.2）', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
 
-    const panel = page.getByTestId('project-audit-panel')
+    const panel = page.getByTestId('workspace-audit-panel')
     await expect(panel).toBeVisible({ timeout: 15_000 })
 
     // Default: one-line summary, not four stacked dropdowns
-    const summary = page.getByTestId('project-audit-filter-summary')
+    const summary = page.getByTestId('workspace-audit-filter-summary')
     await expect(summary).toBeVisible()
     await expect(summary).toContainText('Run')
-    await expect(page.getByTestId('project-audit-filters-editor')).toBeHidden()
-    await expect(page.getByTestId('project-audit-search')).toBeVisible()
-    await expect(page.getByTestId('project-audit-export')).toBeVisible()
-    await expect(page.getByTestId('project-audit-mode-run')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-filters-editor')).toBeHidden()
+    await expect(page.getByTestId('workspace-audit-search')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-export')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-mode-run')).toBeVisible()
 
     // Event cards (no wide table)
-    const list = page.getByTestId('project-audit-list')
+    const list = page.getByTestId('workspace-audit-list')
     await expect(list).toHaveAttribute('data-layout', 'cards')
     await expect(list.locator('table')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-event-e1')).toBeVisible()
-    await expect(page.getByTestId('project-audit-event-e2')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e1')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e2')).toBeVisible()
 
     // Collapsed filters keep panel chrome compact (search/export/meta only — not 4 stacked dropdowns).
     // Measure gap from summary to the first event card (newest), not a specific id.
     const layoutGap = await page.evaluate(() => {
-      const s = document.querySelector('[data-testid="project-audit-filter-summary"]')
-      const c = document.querySelector('[data-testid="project-audit-list"] .event-card')
+      const s = document.querySelector('[data-testid="workspace-audit-filter-summary"]')
+      const c = document.querySelector('[data-testid="workspace-audit-list"] .event-card')
       if (!s || !c) return -1
       return c.getBoundingClientRect().top - s.getBoundingClientRect().top
     })
@@ -578,15 +564,15 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
 
     // Expand filters → full-width triggers align with search
     await summary.click()
-    const editor = page.getByTestId('project-audit-filters-editor')
+    const editor = page.getByTestId('workspace-audit-filters-editor')
     await expect(editor).toBeVisible()
-    await expect(page.getByTestId('project-audit-run')).toBeVisible()
-    await expect(page.getByTestId('project-audit-node')).toBeVisible()
-    await expect(page.getByTestId('project-audit-resource')).toBeVisible()
-    await expect(page.getByTestId('project-audit-time')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-run')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-node')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-resource')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-time')).toBeVisible()
 
-    const searchBox = page.getByTestId('project-audit-search')
-    const runTrig = page.getByTestId('project-audit-run').locator('button.audit-dd-trig')
+    const searchBox = page.getByTestId('workspace-audit-search')
+    const runTrig = page.getByTestId('workspace-audit-run').locator('button.audit-dd-trig')
     const searchW = await searchBox.evaluate((el) => {
       const wrap = el.closest('.search') || el
       return wrap.getBoundingClientRect().width
@@ -607,106 +593,106 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     await page.screenshot({ path: path.join(SHOT_DIR, '04b-mobile-filters-open.png'), fullPage: true })
 
     // Card inline expand
-    await page.getByTestId('project-audit-event-e2').click()
-    await expect(page.getByTestId('project-audit-payload')).toBeVisible()
-    await expect(page.getByTestId('project-audit-event-e2')).toContainText('调用者')
+    await page.getByTestId('workspace-audit-event-e2').click()
+    await expect(page.getByTestId('workspace-audit-payload')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e2')).toContainText('调用者')
 
     // All-logs mode shares card layout
-    await page.getByTestId('project-audit-mode-all').click()
-    await expect(page.getByTestId('project-audit-mode-all')).toHaveClass(/on/)
-    await expect(page.getByTestId('project-audit-list')).toHaveAttribute('data-layout', 'cards')
-    await expect(page.getByTestId('project-audit-filter-summary')).toContainText('调用者')
+    await page.getByTestId('workspace-audit-mode-all').click()
+    await expect(page.getByTestId('workspace-audit-mode-all')).toHaveClass(/on/)
+    await expect(page.getByTestId('workspace-audit-list')).toHaveAttribute('data-layout', 'cards')
+    await expect(page.getByTestId('workspace-audit-filter-summary')).toContainText('调用者')
 
     await page.screenshot({ path: path.join(SHOT_DIR, '04c-mobile-all-mode.png'), fullPage: true })
   })
 
   test('宽屏仍为表 + 横向筛选（plan g4.1 / g5.2）', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-panel')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-audit-panel')).toBeVisible({ timeout: 15_000 })
 
-    await expect(page.getByTestId('project-audit-filter-summary')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-list')).toHaveAttribute('data-layout', 'groups')
+    await expect(page.getByTestId('workspace-audit-filter-summary')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-list')).toHaveAttribute('data-layout', 'groups')
     // Collapsed groups keep tables in DOM but hidden; only fail-open groups show a table.
-    await expect(page.locator('[data-testid="project-audit-list"] .group[data-open="true"] table')).toBeVisible()
-    await expect(page.getByTestId('project-audit-run')).toBeVisible()
-    await expect(page.getByTestId('project-audit-search')).toBeVisible()
+    await expect(page.locator('[data-testid="workspace-audit-list"] .group[data-open="true"] table')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-run')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-search')).toBeVisible()
   })
 
   test('组头可读名与失败组默认展开（g5.2）', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-panel')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-audit-panel')).toBeVisible({ timeout: 15_000 })
 
-    await expect(page.getByTestId('project-audit-group-head-clarify_2wn4')).toContainText('需求澄清 · 2wn4')
-    await expect(page.getByTestId('project-audit-group-head-clarify_2wn4')).toContainText('clarify_2wn4')
-    await expect(page.getByTestId('project-audit-group-head-agent_bqc5')).toContainText('Agent · bqc5')
-    await expect(page.getByTestId('project-audit-group-head-human_gate_vis01')).toContainText('门禁 · vis01')
-    await expect(page.getByTestId('project-audit-group-head-_system')).toContainText('系统/未归属')
+    await expect(page.getByTestId('workspace-audit-group-head-clarify_2wn4')).toContainText('需求澄清 · 2wn4')
+    await expect(page.getByTestId('workspace-audit-group-head-clarify_2wn4')).toContainText('clarify_2wn4')
+    await expect(page.getByTestId('workspace-audit-group-head-agent_bqc5')).toContainText('Agent · bqc5')
+    await expect(page.getByTestId('workspace-audit-group-head-human_gate_vis01')).toContainText('门禁 · vis01')
+    await expect(page.getByTestId('workspace-audit-group-head-_system')).toContainText('系统/未归属')
 
-    await expect(page.getByTestId('project-audit-group-agent_bqc5')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'false')
-    await expect(page.getByTestId('project-audit-group-human_gate_vis01')).toHaveAttribute('data-open', 'false')
-    await expect(page.getByTestId('project-audit-event-e8')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-group-agent_bqc5')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'false')
+    await expect(page.getByTestId('workspace-audit-group-human_gate_vis01')).toHaveAttribute('data-open', 'false')
+    await expect(page.getByTestId('workspace-audit-event-e8')).toBeVisible()
     await expect(page.getByText('写入产物 page.html 失败 · content too large')).toBeVisible()
-    await expect(page.getByTestId('project-audit-group-agent_bqc5')).toContainText('失败')
-    await expect(page.getByTestId('project-audit-group-agent_bqc5')).toContainText('成功')
+    await expect(page.getByTestId('workspace-audit-group-agent_bqc5')).toContainText('失败')
+    await expect(page.getByTestId('workspace-audit-group-agent_bqc5')).toContainText('成功')
 
-    await page.getByTestId('project-audit-group-head-clarify_2wn4').click()
-    await expect(page.getByTestId('project-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-event-e2')).toBeVisible()
+    await page.getByTestId('workspace-audit-group-head-clarify_2wn4').click()
+    await expect(page.getByTestId('workspace-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-event-e2')).toBeVisible()
 
-    await page.getByTestId('project-audit-node').locator('button.audit-dd-trig').click()
+    await page.getByTestId('workspace-audit-node').locator('button.audit-dd-trig').click()
     const nodePanel = page.locator('.audit-dd-panel').filter({ visible: true })
     await expect(nodePanel.locator('.audit-dd-opt', { hasText: '需求澄清 · 2wn4' })).toBeVisible()
     await page.keyboard.press('Escape')
 
-    await page.getByTestId('project-audit-mode-all').click()
-    await expect(page.getByTestId('project-audit-list')).toHaveAttribute('data-layout', 'table')
-    await page.getByTestId('project-audit-mode-run').click()
-    await expect(page.getByTestId('project-audit-list')).toHaveAttribute('data-layout', 'groups')
-    await expect(page.getByTestId('project-audit-export')).toBeVisible()
+    await page.getByTestId('workspace-audit-mode-all').click()
+    await expect(page.getByTestId('workspace-audit-list')).toHaveAttribute('data-layout', 'table')
+    await page.getByTestId('workspace-audit-mode-run').click()
+    await expect(page.getByTestId('workspace-audit-list')).toHaveAttribute('data-layout', 'groups')
+    await expect(page.getByTestId('workspace-audit-export')).toBeVisible()
   })
 
   test('全成功 Run：单分组与多分组均默认全展开且事件行可见', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-panel')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-audit-panel')).toBeVisible({ timeout: 15_000 })
 
     async function pickRun(label: string) {
-      await page.getByTestId('project-audit-run').locator('button.audit-dd-trig').click()
+      await page.getByTestId('workspace-audit-run').locator('button.audit-dd-trig').click()
       const panel = page.locator('.audit-dd-panel').filter({ visible: true })
       await expect(panel).toBeVisible()
       await panel.locator('.audit-dd-opt', { hasText: label }).first().click()
     }
 
     await pickRun('2026-07-26 16:10 · aa11cccc')
-    await expect(page.getByTestId('project-audit-group-_system')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-group-agent_bqc5')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-event-e10')).toBeVisible()
-    await expect(page.getByTestId('project-audit-event-e11')).toBeVisible()
-    await expect(page.getByTestId('project-audit-event-e12')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-group-_system')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-group-clarify_2wn4')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-group-agent_bqc5')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-event-e10')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e11')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e12')).toBeVisible()
     await expect(page.getByText('Run C 开始')).toBeVisible()
 
     await pickRun('2026-07-26 17:00 · bb22dddd')
-    await expect(page.getByTestId('project-audit-group-_system')).toHaveAttribute('data-open', 'true')
-    await expect(page.getByTestId('project-audit-event-e20')).toBeVisible()
-    await expect(page.getByTestId('project-audit-event-e21')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-group-_system')).toHaveAttribute('data-open', 'true')
+    await expect(page.getByTestId('workspace-audit-event-e20')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-event-e21')).toBeVisible()
     await expect(page.getByText('单分组配置变更')).toBeVisible()
-    await expect(page.getByTestId('project-audit-panel').locator('h4')).toHaveCount(0)
-    await expect(page.getByTestId('project-audit-panel').locator('.chip').filter({ hasText: /^Run\b/ })).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-panel').locator('h4')).toHaveCount(0)
+    await expect(page.getByTestId('workspace-audit-panel').locator('.chip').filter({ hasText: /^Run\b/ })).toHaveCount(0)
   })
 
   test('有权但 0 条事件时空态可切全部日志', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await stubProjectApis(page)
+    await stubWorkspaceApis(page)
     await routeApi(page, '**/api/workspace/audit?**', async (route) => {
       await route.fulfill({
         status: 200,
@@ -723,10 +709,10 @@ test.describe('审计 Tab 双模式 Demo 验收', () => {
     })
     await page.goto('/workspace-config.html?view=/settings/audit&theme=light')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-audit-empty')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('project-audit-empty-all')).toBeVisible()
-    await expect(page.getByTestId('project-audit-list')).toHaveCount(0)
-    await page.getByTestId('project-audit-empty-all').click()
-    await expect(page.getByTestId('project-audit-mode-all')).toHaveClass(/on/)
+    await expect(page.getByTestId('workspace-audit-empty')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-audit-empty-all')).toBeVisible()
+    await expect(page.getByTestId('workspace-audit-list')).toHaveCount(0)
+    await page.getByTestId('workspace-audit-empty-all').click()
+    await expect(page.getByTestId('workspace-audit-mode-all')).toHaveClass(/on/)
   })
 })

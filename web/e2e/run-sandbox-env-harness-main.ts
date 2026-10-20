@@ -5,7 +5,7 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import RunLaunchModal from '../src/components/workflow/RunLaunchModal.vue'
 import RunSandboxEnvPanel from '../src/components/run/RunSandboxEnvPanel.vue'
-import type { ProjectEnvEntry } from '../src/lib/shared/types'
+import type { SandboxEnvEntry } from '../src/lib/shared/types'
 
 async function boot() {
   await initLocale()
@@ -14,7 +14,7 @@ async function boot() {
 
   const open = ref(true)
   const view = ref<'launch' | 'detail'>('launch')
-  const snapshot = ref<ProjectEnvEntry[]>([
+  const snapshot = ref<SandboxEnvEntry[]>([
     { key: 'LOG_LEVEL', value: 'debug', secret: false },
     { key: 'FEATURE_FLAG', value: 'on', secret: false },
     { key: 'DB_PASSWORD', value: '••••••••', secret: true },

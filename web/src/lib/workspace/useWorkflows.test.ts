@@ -7,15 +7,16 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 const mocks = vi.hoisted(() => ({ listWorkflows: vi.fn(), getWorkflow: vi.fn(), createWorkflowFromBaseline: vi.fn(), copyPreviewWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), error: vi.fn(), success: vi.fn() }))
-const workspaceId = ref('original-id')
+const signedInWorkspace = { name: 'Workspace', description: '', variables: [] }
+const workspace = ref<typeof signedInWorkspace | null>(signedInWorkspace)
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId, ensureLoaded: async () => workspaceId.value ? { id: workspaceId.value } : null }) }))
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace, ensureLoaded: async () => workspace.value }) }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.error, success: mocks.success, warn: vi.fn() }) }))
 vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: ref(false) }) }))
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: vi.fn(), handleFileChange: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
 import { useWorkflows } from './useWorkflows'
-const item = { id: 'wf-one', projectId: 'original-id', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false, notifyPolicy: { mode: 'inherit' as const, events: ['failed'] } }
+const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false, notifyPolicy: { mode: 'inherit' as const, events: ['failed'] } }
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/workflows')
@@ -25,16 +26,16 @@ async function setup() {
   await flushPromises()
   return { logic, router, wrapper }
 }
-beforeEach(() => { vi.clearAllMocks(); workspaceId.value = 'original-id'; mocks.listWorkflows.mockResolvedValue([{ ...item }]); mocks.getWorkflow.mockResolvedValue(item) })
+beforeEach(() => { vi.clearAllMocks(); workspace.value = signedInWorkspace; mocks.listWorkflows.mockResolvedValue([{ ...item }]); mocks.getWorkflow.mockResolvedValue(item) })
 describe('workspace workflow actions', () => {
-  it('creates from baseline in the workspace without a project choice and opens scratch with a clean URL', async () => {
+  it('creates from baseline in the workspace and opens scratch with a clean URL', async () => {
     const { logic, router, wrapper } = await setup()
     mocks.createWorkflowFromBaseline.mockResolvedValue({ ...item, id: 'new-id', name: 'New' })
     logic.openBaselineModal()
     logic.baselineName.value = ' New '
     logic.baselineRepos.value = [{ name: 'repo', url: 'https://example.com/repo.git', branch: 'main' }]
     await logic.createFromBaseline()
-    expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith('original-id', 'New', logic.baselineRepos.value)
+    expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith('New', logic.baselineRepos.value)
     expect(logic.workflows.value.map((row) => row.id)).toEqual(['new-id', 'wf-one'])
     expect(logic.baselineModalOpen.value).toBe(false)
     logic.newWorkflow()
@@ -108,11 +109,11 @@ describe('workspace workflow actions', () => {
     logic.baselineName.value = 'private name'
     const launch = logic.openRun(item)
     const copy = logic.openCopy(item)
-    workspaceId.value = ''
+    workspace.value = null
     expect(logic.runInputs.value).toEqual({})
     expect(logic.runImages.value).toEqual({})
     expect(logic.baselineName.value).toBe('')
-    workspaceId.value = 'original-id'
+    workspace.value = signedInWorkspace
     resolveHead(item)
     resolveCopy({ sourceId: item.id, sourceName: item.name, suggestedName: 'old account copy' })
     await Promise.all([launch, copy])

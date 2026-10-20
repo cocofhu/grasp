@@ -24,7 +24,6 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
       if (url.pathname === '/api/workspace' && method === 'GET') {
         await route.fulfill({
           json: {
-            id: 'proj-e2e',
             name: '测试工作区',
             description: '',
             variables: [],

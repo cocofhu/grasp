@@ -17,7 +17,7 @@ test.describe('workflow favorites quick-launch', () => {
     await page.screenshot({ path: path.join(shotDir, 'fav-empty.png'), fullPage: true })
   })
 
-  test('sidebar lists favorites with project subtitle and draft badge; launch opens modal', async ({
+  test('sidebar lists favorites with draft badge; launch opens modal', async ({
     page,
   }) => {
     await page.goto('/workflow-favorites.html?scene=with-items')
@@ -25,17 +25,15 @@ test.describe('workflow favorites quick-launch', () => {
     const items = page.getByTestId('nav-quick-workflow-item')
     await expect(items).toHaveCount(3)
     await expect(items.nth(0)).toContainText('夜间回归')
-    await expect(items.nth(0)).toContainText('checkout-service')
     await expect(items.nth(0)).toContainText('草稿')
     await expect(items.nth(1)).toContainText('热修回滚')
     await expect(items.nth(2)).toContainText('发布预检')
-    await expect(items.nth(2)).toContainText('billing-api')
 
     const before = page.url()
     await items.nth(0).click()
     await expect(page.getByText('启动运行 · 夜间回归')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('分支')).toBeVisible()
-    // Route must not be forced to project/editor
+    // Route must not be forced to the editor
     expect(page.url()).toBe(before)
     await page.screenshot({ path: path.join(shotDir, 'fav-launch-modal.png'), fullPage: true })
   })

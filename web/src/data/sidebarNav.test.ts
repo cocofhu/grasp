@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { sidebarNavGroups } from './sidebarNav'
 
 describe('sidebarNav (plan g1.1)', () => {
-  it('workspace primary is exactly home / projects / runs / settings', () => {
+  it('workspace primary is exactly home / workflows / runs / settings', () => {
     expect(sidebarNavGroups).toHaveLength(1)
     expect(sidebarNavGroups[0].titleKey).toBeUndefined()
     const items = sidebarNavGroups[0].items

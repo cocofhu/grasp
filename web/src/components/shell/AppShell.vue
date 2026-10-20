@@ -229,7 +229,6 @@ onUnmounted(() => stopShutdownPolling())
       v-if="launchTarget"
       :open="launchOpen"
       :workflow-id="launchTarget.id"
-      :project-id="launchTarget.projectId"
       :workflow-name="launchTarget.name"
       :fields="launchFields"
       :run-inputs="launchInputs"

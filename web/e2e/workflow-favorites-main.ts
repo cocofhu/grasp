@@ -21,7 +21,6 @@ const username = params.get('user') || 'dev.li'
 const WF_CATALOG: Record<string, Workflow> = {
   'wf-night': {
     id: 'wf-night',
-    projectId: 'p-checkout',
     name: '夜间回归',
     description: '',
     status: 'draft',
@@ -43,7 +42,6 @@ const WF_CATALOG: Record<string, Workflow> = {
   },
   'wf-hotfix': {
     id: 'wf-hotfix',
-    projectId: 'p-checkout',
     name: '热修回滚',
     description: '',
     status: 'published',
@@ -55,7 +53,6 @@ const WF_CATALOG: Record<string, Workflow> = {
   },
   'wf-bill': {
     id: 'wf-bill',
-    projectId: 'p-billing',
     name: '发布预检',
     description: '',
     status: 'published',
@@ -77,7 +74,6 @@ const WF_CATALOG: Record<string, Workflow> = {
   },
   'wf-pre': {
     id: 'wf-pre',
-    projectId: 'p-checkout',
     name: '发布预检',
     description: '',
     status: 'published',
@@ -89,7 +85,6 @@ const WF_CATALOG: Record<string, Workflow> = {
   },
   'wf-extra': {
     id: 'wf-extra',
-    projectId: 'p-checkout',
     name: '金丝雀发布',
     description: '',
     status: 'published',
@@ -105,7 +100,6 @@ for (let i = 0; i < WORKFLOW_FAVORITES_MAX; i++) {
   const id = `wf-full-${i}`
   WF_CATALOG[id] = {
     id,
-    projectId: 'p-checkout',
     name: `满额工作流 ${i}`,
     description: '',
     status: 'published',
@@ -176,15 +170,6 @@ window.fetch = async (input: RequestInfo | URL) => {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
-  }
-  if (url.includes('/projects') && !url.includes('/workflows')) {
-    return new Response(
-      JSON.stringify([
-        { id: 'p-checkout', name: 'checkout-service' },
-        { id: 'p-billing', name: 'billing-api' },
-      ]),
-      { status: 200, headers: { 'Content-Type': 'application/json' } },
-    )
   }
   const wfMatch = url.match(/\/workflows\/([^/?#]+)/)
   if (wfMatch && !url.includes('/runs')) {

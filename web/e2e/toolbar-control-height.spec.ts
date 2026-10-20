@@ -35,10 +35,6 @@ async function mockApi(page: Page) {
       await route.fulfill({ json: MOCK_WORKFLOWS })
       return
     }
-    if (p.includes('/projects')) {
-      await route.fulfill({ json: [] })
-      return
-    }
     if (p.includes('/health')) {
       await route.fulfill({ json: { status: 'ok', ready: true } })
       return

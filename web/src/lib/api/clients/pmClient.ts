@@ -12,8 +12,8 @@ import type { SandboxView } from '../apiTypes'
 
 export const pmClient = {
   // PM Leader
-  getPmLeader: (_workspaceId: string) => req<PmLeaderBinding>(`/workspace/pm-leader`),
-  updatePmLeader: (projectId: string, body: {
+  getPmLeader: () => req<PmLeaderBinding>(`/workspace/pm-leader`),
+  updatePmLeader: (body: {
     enabled?: boolean
     agentConfigRef?: string
     enabledMcps?: string[]
@@ -24,28 +24,27 @@ export const pmClient = {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  listProjectCronJobs: (_workspaceId: string) =>
+  listCronJobs: () =>
     req<{ items: AgentCronJob[] }>(`/workspace/cron-jobs`),
-  patchProjectCronJob: (projectId: string, jobId: string, body: { deliverToChannel: boolean }) =>
+  patchCronJob: (jobId: string, body: { deliverToChannel: boolean }) =>
     req<AgentCronJob>(`/workspace/cron-jobs/${jobId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
-  deleteProjectCronJob: (projectId: string, jobId: string) =>
+  deleteCronJob: (jobId: string) =>
     req<{ status: string }>(`/workspace/cron-jobs/${jobId}`, { method: 'DELETE' }),
-  listPmThreads: (_workspaceId: string) =>
+  listPmThreads: () =>
     req<{ items: PmChatThread[] }>(`/workspace/pm/threads`),
-  createPmThread: (projectId: string, body?: { title?: string }) =>
+  createPmThread: (body?: { title?: string }) =>
     req<PmChatThread>(`/workspace/pm/threads`, {
       method: 'POST',
       body: JSON.stringify(body || {}),
     }),
-  getPmThread: (projectId: string, tid: string) =>
+  getPmThread: (tid: string) =>
     req<PmChatThread>(`/workspace/pm/threads/${tid}`),
-  deletePmThread: (projectId: string, tid: string) =>
+  deletePmThread: (tid: string) =>
     req<{ status: string }>(`/workspace/pm/threads/${tid}`, { method: 'DELETE' }),
   listPmMessages: (
-    projectId: string,
     tid: string,
     params?: { limit?: number; before?: string },
   ) => {
@@ -58,7 +57,6 @@ export const pmClient = {
     )
   },
   appendPmMessage: (
-    projectId: string,
     tid: string,
     body: {
       role?: string
@@ -73,7 +71,6 @@ export const pmClient = {
       body: JSON.stringify(body),
     }),
   patchPmMessage: (
-    projectId: string,
     tid: string,
     mid: string,
     body: { status: 'ok' | 'failed' | string; failKind?: string },
@@ -83,7 +80,6 @@ export const pmClient = {
       body: JSON.stringify(body),
     }),
   ensurePmSandbox: (
-    projectId: string,
     tid: string,
     body?: { attachedContext?: AttachedContext; injectHistory?: boolean },
   ) =>
@@ -93,7 +89,6 @@ export const pmClient = {
     ),
   /** Queue a PM turn: persists the user message (or reuses retryOf); the server readies the sandbox. */
   startPmTurn: (
-    projectId: string,
     tid: string,
     body: { content?: string; images?: ClarifyImage[]; retryOf?: string; attachedContext?: AttachedContext },
   ) =>
@@ -101,9 +96,9 @@ export const pmClient = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
-  cancelPmTurn: (projectId: string, tid: string) =>
+  cancelPmTurn: (tid: string) =>
     req<{ ok: boolean }>(`/workspace/pm/threads/${tid}/turns/cancel`, { method: 'POST' }),
   /** PM thread WebSocket: subscribe-only (snapshot, active-turn replay, live frames). */
-  pmThreadChatWsUrl: (projectId: string, tid: string) =>
+  pmThreadChatWsUrl: (tid: string) =>
     wsUrl(`/workspace/pm/threads/${tid}/chat`),
 }

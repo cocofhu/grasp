@@ -2,7 +2,6 @@ import { test, expect, type Page } from '@playwright/test'
 
 const MOCK_DRAFT = {
   id: 'rd-1',
-  projectId: 'proj-1',
   title: '支付失败重试',
   bodyMarkdown: '## 要点\n\n正文内容',
   status: 'open',

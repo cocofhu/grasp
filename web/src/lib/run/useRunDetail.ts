@@ -66,38 +66,19 @@ function emptyWorkflow(): Workflow {
 
 const run = ref<Run>(emptyRun(runId.value))
 const wf = ref<Workflow>(emptyWorkflow())
-/** Project alias for 「未知/未分桶」display on Run token table. */
+/** Workspace alias for 「未知/未分桶」display on Run token table. */
 const unknownModelDisplayName = ref('')
-/** projectId for which unknownModelDisplayName was last successfully loaded. */
-let unknownAliasLoadedForProjectId: string | null = null
+let unknownAliasLoaded = false
 
-async function loadUnknownModelDisplayName(projectId?: string | null) {
-  const pid = projectId ?? null
-  if (!pid) {
-    unknownModelDisplayName.value = ''
-    unknownAliasLoadedForProjectId = null
-    return
-  }
-
-  const projectChanged =
-    unknownAliasLoadedForProjectId !== null && unknownAliasLoadedForProjectId !== pid
-  if (projectChanged) {
-    unknownModelDisplayName.value = ''
-    unknownAliasLoadedForProjectId = null
-  }
-
-  // Soft refresh: keep the cached alias and skip redundant getProject polls.
-  if (unknownAliasLoadedForProjectId === pid) return
-
+async function loadUnknownModelDisplayName() {
+  // Soft refresh: keep the cached alias and skip redundant getWorkspace polls.
+  if (unknownAliasLoaded) return
   try {
-    const p = await api.getWorkspace()
-    unknownModelDisplayName.value = p.unknownModelDisplayName || ''
-    unknownAliasLoadedForProjectId = pid
+    const w = await api.getWorkspace()
+    unknownModelDisplayName.value = w.unknownModelDisplayName || ''
+    unknownAliasLoaded = true
   } catch {
-    // Keep the last successful alias when refresh fails; only clear on first load miss.
-    if (unknownAliasLoadedForProjectId !== pid) {
-      unknownModelDisplayName.value = ''
-    }
+    unknownModelDisplayName.value = ''
   }
 }
 const runLoading = ref(false)
@@ -258,7 +239,7 @@ const runFailureReason = computed(() => {
 const showRunFailureBanner = computed(() => !!runFailureReason.value)
 // Same phrase as server runtime.CodexLoginRepasteMark; server and gateway tests pin their messages to it.
 const CODEX_LOGIN_REPASTE_MARK = '请重新粘贴登录文件'
-/** Project credentials route when the run failed on a refused Codex login. */
+/** Workspace credentials route when the run failed on a refused Codex login. */
 const runFailureCredentialsRoute = computed(() => {
   if (!runFailureReason.value.includes(CODEX_LOGIN_REPASTE_MARK)) return null
   return { path: '/settings/credentials' }
@@ -455,7 +436,7 @@ function resetRunState(id: string) {
   run.value = emptyRun(id)
   wf.value = emptyWorkflow()
   unknownModelDisplayName.value = ''
-  unknownAliasLoadedForProjectId = null
+  unknownAliasLoaded = false
   selected.value = null
   manual.value = false
   gateError.value = null
@@ -486,7 +467,7 @@ async function fetchRunData(): Promise<true | RunLoadErrorKind> {
   try {
     const r = await api.getRun(id)
     if (run.value.id === r.id && runSnapshotUnchanged(run.value, r)) {
-      await loadUnknownModelDisplayName(wf.value.projectId)
+      await loadUnknownModelDisplayName()
       return true
     }
     // Turn fingerprint changed, but a local stream is still ahead of a shorter
@@ -499,7 +480,7 @@ async function fetchRunData(): Promise<true | RunLoadErrorKind> {
       ) {
         run.value = merged
       }
-      await loadUnknownModelDisplayName(wf.value.projectId)
+      await loadUnknownModelDisplayName()
       return true
     }
     run.value = r
@@ -511,19 +492,10 @@ async function fetchRunData(): Promise<true | RunLoadErrorKind> {
         id: r.workflowId, name: r.workflowName, description: '', status: 'published',
         version: r.workflowVersion || 1, updatedAt: '', needsRepo: false, nodes: r.nodes, edges: r.edges || [],
       }
-      // Still resolve projectId for unknown-model display alias when graph is pinned.
-      if (r.workflowId) {
-        try {
-          const live = await api.getWorkflow(r.workflowId)
-          if (live.projectId) wf.value.projectId = live.projectId
-        } catch {
-          // Workflow may have been deleted; alias stays unset → default label.
-        }
-      }
     } else if (r.workflowId) {
       wf.value = await api.getWorkflow(r.workflowId)
     }
-    await loadUnknownModelDisplayName(wf.value.projectId)
+    await loadUnknownModelDisplayName()
     // Refresh-resume: wait for dialogue surfaces to mount, then project busy/queue.
     void projectDialogueAfterLoad(r)
     return true

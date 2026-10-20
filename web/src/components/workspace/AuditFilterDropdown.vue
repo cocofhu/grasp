@@ -552,7 +552,7 @@ defineExpose({ close })
 .audit-dd-opt .dot.wf {
   background: rgb(var(--c-info));
 }
-.audit-dd-opt .dot.prj {
+.audit-dd-opt .dot.ws {
   background: rgb(var(--c-ok));
 }
 .audit-dd-opt .dot.aud {

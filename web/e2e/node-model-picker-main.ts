@@ -7,18 +7,18 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import NodeInspector from '../src/components/canvas/NodeInspector.vue'
 import type { CanvasAgent } from '../src/components/canvas/composables/outlets'
-import { api, type ProjectCredentialItem } from '../src/lib/api/api'
+import { api, type CredentialItem } from '../src/lib/api/api'
 import type { WFNode } from '../src/lib/shared/types'
 
 const caps = { interaction: 'auto', tools: [], reads: [], writes: [] }
 
 const agents: CanvasAgent[] = [
-  { name: 'ImplementAgent', projectId: 'p1', acpBackend: 'opencode', openCodeCredentialId: 'cred-ds', capabilities: caps as never },
-  { name: 'ReviewAgent', projectId: 'p1', acpBackend: 'opencode', openCodeCredentialId: '', capabilities: caps as never },
-  { name: 'CursorAgent', projectId: 'p1', acpBackend: 'cursor', capabilities: caps as never },
+  { name: 'ImplementAgent', acpBackend: 'opencode', openCodeCredentialId: 'cred-ds', capabilities: caps as never },
+  { name: 'ReviewAgent', acpBackend: 'opencode', openCodeCredentialId: '', capabilities: caps as never },
+  { name: 'CursorAgent', acpBackend: 'cursor', capabilities: caps as never },
 ]
 
-const model = (id: string, name: string, provider: string, m: string, vision = false): ProjectCredentialItem => ({
+const model = (id: string, name: string, provider: string, m: string, vision = false): CredentialItem => ({
   id,
   type: 'ai',
   provider: 'opencode',
@@ -29,7 +29,7 @@ const model = (id: string, name: string, provider: string, m: string, vision = f
   metadata: { provider, model: m, vision },
 })
 
-const credentials: ProjectCredentialItem[] = [
+const credentials: CredentialItem[] = [
   model('cred-ds', '工作号', 'deepseek', 'deepseek/deepseek-chat'),
   model('cred-oa', '视觉评审', 'openai', 'openai/gpt-4o', true),
   model('cred-or', '便宜跑量', 'openrouter', 'openrouter/qwen/qwen-2.5-coder-32b'),
@@ -118,7 +118,7 @@ async function boot() {
             ),
             h('label', { class: 'flex items-center gap-2 text-[12px] text-txt2' }, [
               h('input', { type: 'checkbox', checked: empty.value, onChange: (e: Event) => (empty.value = (e.target as HTMLInputElement).checked) }),
-              '项目里没有模型 Key',
+              '工作区里没有模型 Key',
             ]),
             h('pre', { class: 'rounded-lg border border-line bg-surface p-3 text-[12px]', 'data-testid': 'node-config' }, JSON.stringify(node.value.config, null, 2)),
           ]),
@@ -129,7 +129,6 @@ async function boot() {
             edges: [],
             agents,
             agentsLoaded: true,
-            projectId: 'p1',
             credentials: empty.value ? [] : credentials,
           }),
         ])

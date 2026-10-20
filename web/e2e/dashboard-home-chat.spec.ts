@@ -79,12 +79,12 @@ async function mockHomeApis(page: Page) {
     await route.continue()
   })
 
-  await page.route('**/api/projects**', async (route) => {
+  await page.route('**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: [], total: 0 }),
+        body: JSON.stringify({ name: '工作区', description: '', variables: [] }),
       })
       return
     }
@@ -93,14 +93,13 @@ async function mockHomeApis(page: Page) {
 }
 
 test.describe('首页 Chat 启动 Approve 工作流', () => {
-  test('无项目记忆：仍跨项目加载工作流并可发送', async ({ page }) => {
+  test('加载工作区工作流并可发送', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await mockHomeApis(page)
     await page.goto('/dashboard-home-chat.html')
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
-    await page.getByTestId('home-composer-input').fill('不先选项目也能开跑')
+    await page.getByTestId('home-composer-input').fill('直接开跑')
     await page.getByTestId('home-composer-send').click()
     await expect(page.getByTestId('gates-inbox-page')).toBeVisible({ timeout: 10_000 })
   })
@@ -108,7 +107,7 @@ test.describe('首页 Chat 启动 Approve 工作流', () => {
   test('发送第一句话：StartRun + ReactReply 后进入待审批并带上原文', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await mockHomeApis(page)
-    await page.goto('/dashboard-home-chat.html?memory=1&projectId=proj-1')
+    await page.goto('/dashboard-home-chat.html')
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
 

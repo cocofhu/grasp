@@ -30,8 +30,8 @@ const { t } = useI18n()
         <Icon name="plus" :size="16" />
       </span>
       <span>
-        <span class="block text-[13px] font-semibold text-txt">{{ t('pages.projectDetail.newWorkflow.scratch') }}</span>
-        <span class="mt-0.5 block text-[11.5px] leading-snug text-txt3">{{ t('pages.projectDetail.newWorkflow.scratchDesc') }}</span>
+        <span class="block text-[13px] font-semibold text-txt">{{ t('pages.workspace.newWorkflow.scratch') }}</span>
+        <span class="mt-0.5 block text-[11.5px] leading-snug text-txt3">{{ t('pages.workspace.newWorkflow.scratchDesc') }}</span>
       </span>
     </button>
     <button
@@ -45,8 +45,8 @@ const { t } = useI18n()
         <Icon name="trigger" :size="16" />
       </span>
       <span>
-        <span class="block text-[13px] font-semibold text-txt">{{ t('pages.projectDetail.newWorkflow.baseline') }}</span>
-        <span class="mt-0.5 block text-[11.5px] leading-snug text-txt3">{{ t('pages.projectDetail.newWorkflow.baselineDesc') }}</span>
+        <span class="block text-[13px] font-semibold text-txt">{{ t('pages.workspace.newWorkflow.baseline') }}</span>
+        <span class="mt-0.5 block text-[11.5px] leading-snug text-txt3">{{ t('pages.workspace.newWorkflow.baselineDesc') }}</span>
       </span>
     </button>
   </div>

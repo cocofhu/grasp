@@ -4,13 +4,13 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import AgentProjectSidebar from './AgentProjectSidebar.vue'
+import AgentSidebar from './AgentSidebar.vue'
 
 const wrappers: VueWrapper[] = []
 function mountSidebar(props: Record<string, unknown> = {}) {
-  const wrapper = mount(AgentProjectSidebar, {
+  const wrapper = mount(AgentSidebar, {
     attachTo: document.body,
-    props: { nodes: [{ id: 'alpha', label: 'alpha' }, { id: 'beta', label: 'beta' }], activeKey: 'alpha', collapsed: false, workspaceId: 'workspace', ...props },
+    props: { nodes: [{ id: 'alpha', label: 'alpha' }, { id: 'beta', label: 'beta' }], activeKey: 'alpha', collapsed: false, ...props },
     global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { Icon: true } },
   })
   wrappers.push(wrapper)
@@ -53,7 +53,7 @@ describe('Agent list sidebar', () => {
     }
     expect(wrapper.emitted('open-manage')).toEqual([[]])
     expect(wrapper.emitted('import')).toHaveLength(1)
-    expect(wrapper.emitted('export-project')).toEqual([['workspace']])
+    expect(wrapper.emitted('export-workspace')).toEqual([[]])
     expect(wrapper.emitted('create-agent')).toEqual([[]])
     expect(wrapper.emitted('create-team')).toHaveLength(1)
     wrapper.unmount()
@@ -113,9 +113,6 @@ describe('Agent list sidebar', () => {
     expect(tab.defaultPrevented).toBe(false)
     expect(document.querySelector('[role="menu"]')).toBeNull()
     expect(document.activeElement).toBe(trigger.element)
-    await trigger.trigger('click')
-    await wrapper.setProps({ workspaceId: 'another-workspace' })
-    expect(document.querySelector('[role="menu"]')).toBeNull()
   })
 
   it('closes on an outside press and clamps the teleported popup within the viewport', async () => {

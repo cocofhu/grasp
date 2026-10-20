@@ -39,7 +39,6 @@ describe('tokenAnalyticsShared', () => {
       granularity: 'hour',
     })
     expect(applyDrill(base, [{ dim: 'phase', key: 'chat', name: 'Chat' }]).phase).toBe('chat')
-    expect(filtersToParams(base)).not.toHaveProperty('projectId')
   })
 
   it('serializes filters to API params', () => {
@@ -104,10 +103,6 @@ describe('tokenAnalyticsCharts', () => {
   it('hides locked drill dimensions and single-bucket axes (g3.3 g4.2)', () => {
     const rich = {
       ...stats,
-      projects: [
-        { projectId: 'p1', name: 'P1', total: 10, inputTokens: 6, outputTokens: 4 },
-        { projectId: 'p2', name: 'P2', total: 4, inputTokens: 2, outputTokens: 2 },
-      ],
       modelRanking: [
         { modelKey: 'a', name: 'A', total: 8, inputTokens: 5, outputTokens: 3 },
         { modelKey: 'b', name: 'B', total: 6, inputTokens: 3, outputTokens: 3 },

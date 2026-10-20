@@ -3,11 +3,7 @@ import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
-import { useRequirementDrafts } from '@/lib/project/useRequirementDrafts'
-
-const props = defineProps<{
-  projectId: string
-}>()
+import { useRequirementDrafts } from '@/lib/workspace/useRequirementDrafts'
 
 const {
   t,
@@ -140,7 +136,7 @@ const {
   tickLabel,
   clampProgress,
   fmtTime
-} = useRequirementDrafts(props)
+} = useRequirementDrafts()
 
 const inspectorOpen = ref(false)
 const hasFilterContext = computed(() => Boolean(catalog.value.length || query.value.trim() || filter.value !== 'open'))
@@ -178,7 +174,7 @@ defineExpose({
     class="requirement-drafts flex h-full min-h-0 min-w-0 flex-1 flex-col"
     data-testid="requirement-drafts-panel"
   >
-    <nav class="rd-view-tabs shrink-0" data-testid="requirement-drafts-view-segment" :aria-label="t('pages.projectDetail.tabRequirementDrafts')">
+    <nav class="rd-view-tabs shrink-0" data-testid="requirement-drafts-view-segment" :aria-label="t('pages.workspace.tabRequirementDrafts')">
       <button
         v-for="mode in (['gantt', 'edit', 'milestones'] as const)"
         :key="mode"
@@ -188,7 +184,7 @@ defineExpose({
         :data-testid="`requirement-drafts-view-${mode}`"
         @click="setViewMode(mode)"
       >
-        {{ t(`pages.projectDetail.requirementDrafts.${mode === 'edit' ? 'viewEdit' : mode === 'gantt' ? 'viewGantt' : 'viewMilestones'}`) }}
+        {{ t(`pages.workspace.requirementDrafts.${mode === 'edit' ? 'viewEdit' : mode === 'gantt' ? 'viewGantt' : 'viewMilestones'}`) }}
       </button>
     </nav>
 
@@ -200,12 +196,12 @@ defineExpose({
           type="search"
           class="input w-full !pl-9 text-[13px]"
           data-testid="requirement-drafts-search"
-          :aria-label="t('pages.projectDetail.requirementDrafts.searchPh')"
-          :placeholder="t('pages.projectDetail.requirementDrafts.searchPh')"
+          :aria-label="t('pages.workspace.requirementDrafts.searchPh')"
+          :placeholder="t('pages.workspace.requirementDrafts.searchPh')"
           @input="onSearchInput"
         />
       </div>
-      <div class="rd-status-filter flex items-center gap-1" data-testid="requirement-drafts-filter" role="group" :aria-label="t('pages.projectDetail.requirementDrafts.filterAll')">
+      <div class="rd-status-filter flex items-center gap-1" data-testid="requirement-drafts-filter" role="group" :aria-label="t('pages.workspace.requirementDrafts.filterAll')">
         <button
           v-for="status in (['open', 'done', 'all'] as const)"
           :key="status"
@@ -215,7 +211,7 @@ defineExpose({
           :data-testid="`requirement-drafts-filter-${status}`"
           @click="setFilter(status)"
         >
-          {{ t(`pages.projectDetail.requirementDrafts.${status === 'open' ? 'filterOpen' : status === 'done' ? 'filterDone' : 'filterAll'}`) }}
+          {{ t(`pages.workspace.requirementDrafts.${status === 'open' ? 'filterOpen' : status === 'done' ? 'filterDone' : 'filterAll'}`) }}
         </button>
       </div>
       <AppButton
@@ -227,7 +223,7 @@ defineExpose({
         data-testid="requirement-drafts-new"
         @click="onNewClick"
       >
-        {{ t('pages.projectDetail.requirementDrafts.new') }}
+        {{ t('pages.workspace.requirementDrafts.new') }}
       </AppButton>
     </div>
 
@@ -237,7 +233,7 @@ defineExpose({
       data-testid="requirement-drafts-load-error"
       role="alert"
     >
-      <p class="m-0 font-medium text-err">{{ t('pages.projectDetail.requirementDrafts.loadFailed') }}</p>
+      <p class="m-0 font-medium text-err">{{ t('pages.workspace.requirementDrafts.loadFailed') }}</p>
       <p class="m-0 text-txt3">{{ loadError }}</p>
       <AppButton variant="outline" size="sm" data-testid="requirement-drafts-load-retry" @click="loadList()">
         {{ t('common.loading.retry') }}
@@ -252,10 +248,10 @@ defineExpose({
       <Icon :name="hasFilterContext ? 'search' : 'doc'" :size="28" class="text-txt3" />
       <div>
         <h2 class="m-0 text-lg font-semibold text-txt">
-          {{ t(`pages.projectDetail.requirementDrafts.${hasFilterContext ? 'noMatchesTitle' : 'emptyTitle'}`) }}
+          {{ t(`pages.workspace.requirementDrafts.${hasFilterContext ? 'noMatchesTitle' : 'emptyTitle'}`) }}
         </h2>
         <p class="mb-0 mt-2 text-[13px] leading-6 text-txt3" data-testid="requirement-drafts-list-empty">
-          {{ t(`pages.projectDetail.requirementDrafts.${hasFilterContext ? 'noMatchesHint' : 'emptyHint'}`) }}
+          {{ t(`pages.workspace.requirementDrafts.${hasFilterContext ? 'noMatchesHint' : 'emptyHint'}`) }}
         </p>
       </div>
       <AppButton
@@ -265,7 +261,7 @@ defineExpose({
         data-testid="requirement-drafts-clear-filters"
         @click="clearFilters"
       >
-        {{ t('pages.projectDetail.requirementDrafts.clearFilters') }}
+        {{ t('pages.workspace.requirementDrafts.clearFilters') }}
       </AppButton>
       <AppButton
         v-else
@@ -276,7 +272,7 @@ defineExpose({
         data-testid="requirement-drafts-empty-new"
         @click="onNewClick"
       >
-        {{ t('pages.projectDetail.requirementDrafts.newModalTitle') }}
+        {{ t('pages.workspace.requirementDrafts.newModalTitle') }}
       </AppButton>
     </div>
 
@@ -298,7 +294,7 @@ defineExpose({
             class="px-5 py-8 text-center text-[13px] text-txt3"
             data-testid="requirement-drafts-list-empty"
           >
-            {{ t('pages.projectDetail.requirementDrafts.listEmpty') }}
+            {{ t('pages.workspace.requirementDrafts.listEmpty') }}
           </div>
           <button
             v-for="d in items"
@@ -331,11 +327,11 @@ defineExpose({
               >
                 {{
                   d.status === 'open'
-                    ? t('pages.projectDetail.requirementDrafts.statusOpen')
-                    : t('pages.projectDetail.requirementDrafts.statusDone')
+                    ? t('pages.workspace.requirementDrafts.statusOpen')
+                    : t('pages.workspace.requirementDrafts.statusDone')
                 }}
               </span>
-              <span>{{ t('pages.projectDetail.requirementDrafts.updated') }} {{ fmtTime(d.updatedAt) }}</span>
+              <span>{{ t('pages.workspace.requirementDrafts.updated') }} {{ fmtTime(d.updatedAt) }}</span>
             </div>
           </button>
         </div>
@@ -352,14 +348,14 @@ defineExpose({
           class="px-5 py-8 text-center text-[13px] text-txt3"
           data-testid="requirement-drafts-empty-detail"
         >
-          <p>{{ t('pages.projectDetail.requirementDrafts.emptyDetail') }}</p>
+          <p>{{ t('pages.workspace.requirementDrafts.emptyDetail') }}</p>
         </div>
         <template v-else>
           <div class="draft-detail-header flex flex-wrap items-start justify-between gap-3 border-b border-line/60 py-4 md:pl-5">
             <div>
               <div class="flex flex-wrap items-center gap-2">
                 <strong class="text-[18px] font-[650] leading-tight text-txt">
-                  {{ t('pages.projectDetail.requirementDrafts.editLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.editLabel') }}
                 </strong>
                 <span
                   class="rounded-md border px-1.5 py-px text-[11px]"
@@ -372,8 +368,8 @@ defineExpose({
                 >
                   {{
                     selectedStatus === 'open'
-                      ? t('pages.projectDetail.requirementDrafts.statusOpen')
-                      : t('pages.projectDetail.requirementDrafts.statusDone')
+                      ? t('pages.workspace.requirementDrafts.statusOpen')
+                      : t('pages.workspace.requirementDrafts.statusDone')
                   }}
                 </span>
                 <span
@@ -381,16 +377,16 @@ defineExpose({
                   class="rounded-md border border-warn/40 bg-elevated px-1.5 py-px text-[11px] text-warn"
                   data-testid="requirement-drafts-dirty-chip"
                 >
-                  {{ t('pages.projectDetail.requirementDrafts.unsaved') }}
+                  {{ t('pages.workspace.requirementDrafts.unsaved') }}
                 </span>
               </div>
               <div class="mt-1 flex flex-wrap gap-3 text-[11px] text-txt3">
                 <span>
-                  {{ t('pages.projectDetail.requirementDrafts.created') }}
+                  {{ t('pages.workspace.requirementDrafts.created') }}
                   <span data-testid="requirement-drafts-created-at">{{ createdAtLabel }}</span>
                 </span>
                 <span>
-                  {{ t('pages.projectDetail.requirementDrafts.updated') }}
+                  {{ t('pages.workspace.requirementDrafts.updated') }}
                   <span data-testid="requirement-drafts-updated-at">{{ updatedAtLabel }}</span>
                 </span>
               </div>
@@ -405,8 +401,8 @@ defineExpose({
               >
                 {{
                   selectedStatus === 'open'
-                    ? t('pages.projectDetail.requirementDrafts.markDone')
-                    : t('pages.projectDetail.requirementDrafts.markOpen')
+                    ? t('pages.workspace.requirementDrafts.markDone')
+                    : t('pages.workspace.requirementDrafts.markOpen')
                 }}
               </AppButton>
               <AppButton
@@ -432,7 +428,7 @@ defineExpose({
           <div class="draft-editor-content flex min-h-0 flex-1 flex-col pb-4 pt-4 md:pl-5">
             <div>
               <label class="mb-1.5 block text-xs text-txt2" for="requirement-draft-title">
-                {{ t('pages.projectDetail.requirementDrafts.titleLabel') }}
+                {{ t('pages.workspace.requirementDrafts.titleLabel') }}
               </label>
               <input
                 id="requirement-draft-title"
@@ -440,7 +436,7 @@ defineExpose({
                 type="text"
                 class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent focus:shadow-[0_0_0_2px_rgba(123,97,255,0.3)]"
                 data-testid="requirement-drafts-title"
-                :placeholder="t('pages.projectDetail.requirementDrafts.titlePh')"
+                :placeholder="t('pages.workspace.requirementDrafts.titlePh')"
               />
               <div class="mt-1 min-h-[18px] text-xs text-err" data-testid="requirement-drafts-title-error">
                 {{ titleError }}
@@ -459,13 +455,13 @@ defineExpose({
                 :aria-expanded="!scheduleCollapsed"
                 :title="
                   scheduleCollapsed
-                    ? t('pages.projectDetail.requirementDrafts.expandSchedule')
-                    : t('pages.projectDetail.requirementDrafts.collapseSchedule')
+                    ? t('pages.workspace.requirementDrafts.expandSchedule')
+                    : t('pages.workspace.requirementDrafts.collapseSchedule')
                 "
                 @click="toggleScheduleCollapsed"
               >
                 <span class="text-[13px] font-medium text-txt">
-                  {{ t('pages.projectDetail.requirementDrafts.scheduleBlockTitle') }}
+                  {{ t('pages.workspace.requirementDrafts.scheduleBlockTitle') }}
                 </span>
                 <span
                   class="rd-schedule-arrow text-txt3"
@@ -477,11 +473,11 @@ defineExpose({
               </button>
               <div v-show="!scheduleCollapsed">
                 <p class="mb-3 text-[11px] text-txt3">
-                  {{ t('pages.projectDetail.requirementDrafts.scheduleHint') }}
+                  {{ t('pages.workspace.requirementDrafts.scheduleHint') }}
                 </p>
                 <div class="rd-schedule-fields grid gap-3">
                 <label class="block text-xs text-txt2">
-                  {{ t('pages.projectDetail.requirementDrafts.kindLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.kindLabel') }}
                   <select
                     v-model="editKind"
                     class="rounded-md mt-1 w-full border border-line bg-base px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
@@ -490,15 +486,15 @@ defineExpose({
                     @change="onScheduleKindChange"
                   >
                     <option value="requirement">
-                      {{ t('pages.projectDetail.requirementDrafts.kindRequirement') }}
+                      {{ t('pages.workspace.requirementDrafts.kindRequirement') }}
                     </option>
                     <option value="milestone">
-                      {{ t('pages.projectDetail.requirementDrafts.kindMilestone') }}
+                      {{ t('pages.workspace.requirementDrafts.kindMilestone') }}
                     </option>
                   </select>
                 </label>
                 <label v-if="editKind !== 'milestone'" class="block text-xs text-txt2">
-                  {{ t('pages.projectDetail.requirementDrafts.startAtLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.startAtLabel') }}
                   <input
                     v-model="editStartAt"
                     type="date"
@@ -509,7 +505,7 @@ defineExpose({
                   />
                 </label>
                 <label class="block text-xs text-txt2">
-                  {{ t('pages.projectDetail.requirementDrafts.dueAtLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.dueAtLabel') }}
                   <input
                     v-model="editDueAt"
                     type="date"
@@ -520,7 +516,7 @@ defineExpose({
                   />
                 </label>
                 <label class="block text-xs text-txt2">
-                  {{ t('pages.projectDetail.requirementDrafts.progressLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.progressLabel') }}
                   <input
                     v-model.number="editProgress"
                     type="number"
@@ -533,7 +529,7 @@ defineExpose({
                   />
                 </label>
                 <label v-if="canEditParent" class="rd-parent-field block text-xs text-txt2">
-                  {{ t('pages.projectDetail.requirementDrafts.parentLabel') }}
+                  {{ t('pages.workspace.requirementDrafts.parentLabel') }}
                   <select
                     v-model="editParentId"
                     class="rounded-md mt-1 w-full border border-line bg-base px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
@@ -542,7 +538,7 @@ defineExpose({
                     @change="onScheduleParentChange"
                   >
                     <option :value="null">
-                      {{ t('pages.projectDetail.requirementDrafts.parentNone') }}
+                      {{ t('pages.workspace.requirementDrafts.parentNone') }}
                     </option>
                     <option v-for="p in parentOptions" :key="p.id" :value="p.id">
                       {{ p.title }}
@@ -562,7 +558,7 @@ defineExpose({
 
             <div class="rd-body-editor flex min-h-0 flex-1 flex-col">
               <label class="mb-1.5 block text-xs text-txt2">
-                {{ t('pages.projectDetail.requirementDrafts.bodyLabel') }}
+                {{ t('pages.workspace.requirementDrafts.bodyLabel') }}
               </label>
               <div
                 class="rd-toolbar flex flex-wrap items-center gap-0.5 border-y border-line/60 py-1.5"
@@ -572,7 +568,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-h1"
-                  :title="t('pages.projectDetail.requirementDrafts.tbH1')"
+                  :title="t('pages.workspace.requirementDrafts.tbH1')"
                   @click="applyInsert('h1')"
                 >
                   H1
@@ -581,7 +577,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-h2"
-                  :title="t('pages.projectDetail.requirementDrafts.tbH2')"
+                  :title="t('pages.workspace.requirementDrafts.tbH2')"
                   @click="applyInsert('h2')"
                 >
                   H2
@@ -590,7 +586,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-h3"
-                  :title="t('pages.projectDetail.requirementDrafts.tbH3')"
+                  :title="t('pages.workspace.requirementDrafts.tbH3')"
                   @click="applyInsert('h3')"
                 >
                   H3
@@ -600,7 +596,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-bold"
-                  :title="t('pages.projectDetail.requirementDrafts.tbBold')"
+                  :title="t('pages.workspace.requirementDrafts.tbBold')"
                   @click="applyInsert('bold')"
                 >
                   B
@@ -609,7 +605,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-italic"
-                  :title="t('pages.projectDetail.requirementDrafts.tbItalic')"
+                  :title="t('pages.workspace.requirementDrafts.tbItalic')"
                   @click="applyInsert('italic')"
                 >
                   I
@@ -619,7 +615,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-ul"
-                  :title="t('pages.projectDetail.requirementDrafts.tbUl')"
+                  :title="t('pages.workspace.requirementDrafts.tbUl')"
                   @click="applyInsert('ul')"
                 >
                   · 列
@@ -628,7 +624,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-ol"
-                  :title="t('pages.projectDetail.requirementDrafts.tbOl')"
+                  :title="t('pages.workspace.requirementDrafts.tbOl')"
                   @click="applyInsert('ol')"
                 >
                   1. 列
@@ -638,7 +634,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-link"
-                  :title="t('pages.projectDetail.requirementDrafts.tbLink')"
+                  :title="t('pages.workspace.requirementDrafts.tbLink')"
                   @click="applyInsert('link')"
                 >
                   链接
@@ -647,7 +643,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-code"
-                  :title="t('pages.projectDetail.requirementDrafts.tbCode')"
+                  :title="t('pages.workspace.requirementDrafts.tbCode')"
                   @click="applyInsert('code')"
                 >
                   `
@@ -656,7 +652,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-fence"
-                  :title="t('pages.projectDetail.requirementDrafts.tbFence')"
+                  :title="t('pages.workspace.requirementDrafts.tbFence')"
                   @click="applyInsert('fence')"
                 >
                   ```
@@ -665,7 +661,7 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-table"
-                  :title="t('pages.projectDetail.requirementDrafts.tbTable')"
+                  :title="t('pages.workspace.requirementDrafts.tbTable')"
                   @click="applyInsert('table')"
                 >
                   表格
@@ -675,23 +671,23 @@ defineExpose({
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-find"
-                  :title="t('pages.projectDetail.requirementDrafts.tbFind')"
+                  :title="t('pages.workspace.requirementDrafts.tbFind')"
                   @click="openFind"
                 >
-                  {{ t('pages.projectDetail.requirementDrafts.find') }}
+                  {{ t('pages.workspace.requirementDrafts.find') }}
                 </button>
                 <button
                   v-if="!isNarrowEditor"
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-collapse"
-                  :title="t('pages.projectDetail.requirementDrafts.collapsePreview')"
+                  :title="t('pages.workspace.requirementDrafts.collapsePreview')"
                   @click="togglePreviewCollapsed"
                 >
                   {{
                     previewCollapsed
-                      ? t('pages.projectDetail.requirementDrafts.expandPreview')
-                      : t('pages.projectDetail.requirementDrafts.collapsePreview')
+                      ? t('pages.workspace.requirementDrafts.expandPreview')
+                      : t('pages.workspace.requirementDrafts.collapsePreview')
                   }}
                 </button>
               </div>
@@ -707,7 +703,7 @@ defineExpose({
                   data-testid="requirement-drafts-mobile-src"
                   @click="mobilePane = 'src'"
                 >
-                  {{ t('pages.projectDetail.requirementDrafts.source') }}
+                  {{ t('pages.workspace.requirementDrafts.source') }}
                 </button>
                 <button
                   type="button"
@@ -716,7 +712,7 @@ defineExpose({
                   data-testid="requirement-drafts-mobile-prev"
                   @click="mobilePane = 'prev'"
                 >
-                  {{ t('pages.projectDetail.requirementDrafts.preview') }}
+                  {{ t('pages.workspace.requirementDrafts.preview') }}
                 </button>
               </div>
               <div
@@ -735,7 +731,7 @@ defineExpose({
                   data-testid="requirement-drafts-source-pane"
                 >
                   <div class="flex h-7 items-center justify-between border-b border-line bg-elevated px-2.5 text-[11px] tracking-wide text-txt3">
-                    <span>{{ t('pages.projectDetail.requirementDrafts.source') }}</span>
+                    <span>{{ t('pages.workspace.requirementDrafts.source') }}</span>
                   </div>
                   <div
                     v-show="findOpen"
@@ -748,7 +744,7 @@ defineExpose({
                       type="search"
                       class="rounded-md min-w-0 flex-1 border border-line bg-base px-2 py-1 text-[12px] text-txt outline-none focus:border-accent"
                       data-testid="requirement-drafts-find-input"
-                      :placeholder="t('pages.projectDetail.requirementDrafts.findPh')"
+                      :placeholder="t('pages.workspace.requirementDrafts.findPh')"
                       @keydown="onFindInputKeydown"
                     />
                     <button
@@ -757,7 +753,7 @@ defineExpose({
                       data-testid="requirement-drafts-find-next"
                       @click="runFindNext"
                     >
-                      {{ t('pages.projectDetail.requirementDrafts.findNext') }}
+                      {{ t('pages.workspace.requirementDrafts.findNext') }}
                     </button>
                     <button
                       type="button"
@@ -765,7 +761,7 @@ defineExpose({
                       data-testid="requirement-drafts-find-close"
                       @click="closeFind"
                     >
-                      {{ t('pages.projectDetail.requirementDrafts.findClose') }}
+                      {{ t('pages.workspace.requirementDrafts.findClose') }}
                     </button>
                   </div>
                   <div class="rd-src-wrap relative flex min-h-0 flex-1">
@@ -791,7 +787,7 @@ defineExpose({
                         class="rd-src absolute inset-0 z-[1] m-0 resize-none overflow-auto border-none bg-transparent p-2.5 font-mono text-[12px] leading-[1.6] text-transparent caret-txt outline-none"
                         data-testid="requirement-drafts-body"
                         spellcheck="false"
-                        :placeholder="t('pages.projectDetail.requirementDrafts.bodyPh')"
+                        :placeholder="t('pages.workspace.requirementDrafts.bodyPh')"
                         @scroll="onSrcScroll"
                         @keydown="onSrcKeydown"
                       />
@@ -803,7 +799,7 @@ defineExpose({
                   class="rd-sash w-[5px] shrink-0 cursor-col-resize bg-line"
                   :class="sashDragging ? 'bg-accent' : 'hover:bg-accent'"
                   data-testid="requirement-drafts-sash"
-                  :title="t('pages.projectDetail.requirementDrafts.sashTitle')"
+                  :title="t('pages.workspace.requirementDrafts.sashTitle')"
                   @mousedown="onSashDown"
                 />
                 <div
@@ -812,7 +808,7 @@ defineExpose({
                   data-testid="requirement-drafts-preview-pane"
                 >
                   <div class="flex h-7 items-center justify-between border-b border-line bg-elevated px-2.5 text-[11px] tracking-wide text-txt3">
-                    <span>{{ t('pages.projectDetail.requirementDrafts.preview') }}</span>
+                    <span>{{ t('pages.workspace.requirementDrafts.preview') }}</span>
                   </div>
                   <div
                     ref="previewEl"
@@ -846,7 +842,7 @@ defineExpose({
               data-testid="requirement-drafts-scale-day"
               @click="setGanttScale('day')"
             >
-              {{ t('pages.projectDetail.requirementDrafts.scaleDay') }}
+              {{ t('pages.workspace.requirementDrafts.scaleDay') }}
             </button>
             <button
               type="button"
@@ -854,7 +850,7 @@ defineExpose({
               data-testid="requirement-drafts-scale-week"
               @click="setGanttScale('week')"
             >
-              {{ t('pages.projectDetail.requirementDrafts.scaleWeek') }}
+              {{ t('pages.workspace.requirementDrafts.scaleWeek') }}
             </button>
             <button
               type="button"
@@ -862,7 +858,7 @@ defineExpose({
               data-testid="requirement-drafts-scale-month"
               @click="setGanttScale('month')"
             >
-              {{ t('pages.projectDetail.requirementDrafts.scaleMonth') }}
+              {{ t('pages.workspace.requirementDrafts.scaleMonth') }}
             </button>
           </div>
           <AppButton
@@ -872,7 +868,7 @@ defineExpose({
             data-testid="requirement-drafts-inspector-reopen"
             @click="inspectorOpen = true"
           >
-            {{ t('pages.projectDetail.requirementDrafts.inspectorTitle') }}
+            {{ t('pages.workspace.requirementDrafts.inspectorTitle') }}
           </AppButton>
         </div>
 
@@ -888,7 +884,7 @@ defineExpose({
             data-testid="requirement-drafts-unscheduled"
           >
             <div class="border-b border-line px-3 py-1.5 text-[11px] font-medium uppercase tracking-wide text-txt3">
-              {{ t('pages.projectDetail.requirementDrafts.unscheduledTitle') }}
+              {{ t('pages.workspace.requirementDrafts.unscheduledTitle') }}
             </div>
             <div
               v-for="row in ganttRows.unscheduled"
@@ -899,7 +895,7 @@ defineExpose({
             >
               <div class="rd-gantt-name sticky left-0 z-[2] shrink-0 border-r border-line bg-elevated px-3 py-2 text-[13px] text-txt">
                 <span v-if="row.contextual" class="mr-1 text-[10px] text-txt3">
-                  {{ t('pages.projectDetail.requirementDrafts.contextualParentHint') }}
+                  {{ t('pages.workspace.requirementDrafts.contextualParentHint') }}
                 </span>
                 {{ row.draft.title }}
               </div>
@@ -908,7 +904,7 @@ defineExpose({
           </div>
 
           <p v-if="!ganttRows.scheduled.length" class="m-0 py-5 text-[13px] text-txt3">
-            {{ t('pages.projectDetail.requirementDrafts.ganttEmptyScheduled') }}
+            {{ t('pages.workspace.requirementDrafts.ganttEmptyScheduled') }}
           </p>
 
           <!-- Scheduled timeline -->
@@ -930,7 +926,7 @@ defineExpose({
                 <div
                   class="rd-gantt-today pointer-events-none absolute bottom-0 top-0 z-[1] w-px bg-warn"
                   :style="todayLineStyle"
-                  :title="t('pages.projectDetail.requirementDrafts.todayLabel')"
+                  :title="t('pages.workspace.requirementDrafts.todayLabel')"
                 />
               </div>
             </div>
@@ -947,12 +943,12 @@ defineExpose({
                 :class="row.indent ? 'pl-6' : ''"
               >
                 <span v-if="row.contextual" class="mr-1 text-[10px] text-txt3">
-                  {{ t('pages.projectDetail.requirementDrafts.contextualParentHint') }}
+                  {{ t('pages.workspace.requirementDrafts.contextualParentHint') }}
                 </span>
                 <span
                   v-if="row.rowKind === 'group'"
                   class="text-[11px] text-txt3"
-                  :title="t('pages.projectDetail.requirementDrafts.groupRowHint')"
+                  :title="t('pages.workspace.requirementDrafts.groupRowHint')"
                 >
                   {{ row.draft.title }}
                 </span>
@@ -995,7 +991,7 @@ defineExpose({
         data-testid="requirement-drafts-inspector"
       >
         <div class="flex items-center justify-between gap-3 border-b border-line/60 py-3 text-[13px] font-medium text-txt">
-          <span>{{ t('pages.projectDetail.requirementDrafts.inspectorTitle') }}</span>
+          <span>{{ t('pages.workspace.requirementDrafts.inspectorTitle') }}</span>
           <button
             type="button"
             class="inline-flex h-7 w-7 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt"
@@ -1010,7 +1006,7 @@ defineExpose({
           <div class="text-[13px] font-medium text-txt">{{ selectedDraft?.title }}</div>
           <div class="grid gap-3">
             <label class="block text-xs text-txt2">
-              {{ t('pages.projectDetail.requirementDrafts.kindLabel') }}
+              {{ t('pages.workspace.requirementDrafts.kindLabel') }}
               <select
                 v-model="editKind"
                 class="rounded-md mt-1 w-full border border-line bg-base px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
@@ -1019,15 +1015,15 @@ defineExpose({
                 @change="onScheduleKindChange"
               >
                 <option value="requirement">
-                  {{ t('pages.projectDetail.requirementDrafts.kindRequirement') }}
+                  {{ t('pages.workspace.requirementDrafts.kindRequirement') }}
                 </option>
                 <option value="milestone">
-                  {{ t('pages.projectDetail.requirementDrafts.kindMilestone') }}
+                  {{ t('pages.workspace.requirementDrafts.kindMilestone') }}
                 </option>
               </select>
             </label>
             <label v-if="editKind !== 'milestone'" class="block text-xs text-txt2">
-              {{ t('pages.projectDetail.requirementDrafts.startAtLabel') }}
+              {{ t('pages.workspace.requirementDrafts.startAtLabel') }}
               <input
                 v-model="editStartAt"
                 type="date"
@@ -1038,7 +1034,7 @@ defineExpose({
               />
             </label>
             <label class="block text-xs text-txt2">
-              {{ t('pages.projectDetail.requirementDrafts.dueAtLabel') }}
+              {{ t('pages.workspace.requirementDrafts.dueAtLabel') }}
               <input
                 v-model="editDueAt"
                 type="date"
@@ -1049,7 +1045,7 @@ defineExpose({
               />
             </label>
             <label class="block text-xs text-txt2">
-              {{ t('pages.projectDetail.requirementDrafts.progressLabel') }}
+              {{ t('pages.workspace.requirementDrafts.progressLabel') }}
               <input
                 v-model.number="editProgress"
                 type="number"
@@ -1062,7 +1058,7 @@ defineExpose({
               />
             </label>
             <label v-if="canEditParent" class="block text-xs text-txt2">
-              {{ t('pages.projectDetail.requirementDrafts.parentLabel') }}
+              {{ t('pages.workspace.requirementDrafts.parentLabel') }}
               <select
                 v-model="editParentId"
                 class="rounded-md mt-1 w-full border border-line bg-base px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
@@ -1071,7 +1067,7 @@ defineExpose({
                 @change="onScheduleParentChange"
               >
                 <option :value="null">
-                  {{ t('pages.projectDetail.requirementDrafts.parentNone') }}
+                  {{ t('pages.workspace.requirementDrafts.parentNone') }}
                 </option>
                 <option v-for="p in parentOptions" :key="p.id" :value="p.id">
                   {{ p.title }}
@@ -1088,7 +1084,7 @@ defineExpose({
             data-testid="requirement-drafts-open-body"
             @click="openBody()"
           >
-            {{ t('pages.projectDetail.requirementDrafts.openBody') }}
+            {{ t('pages.workspace.requirementDrafts.openBody') }}
           </AppButton>
         </div>
       </aside>
@@ -1104,7 +1100,7 @@ defineExpose({
         class="px-5 py-8 text-center text-[13px] text-txt3"
         data-testid="requirement-drafts-milestones-empty"
       >
-        <p class="m-0">{{ t('pages.projectDetail.requirementDrafts.milestonesEmpty') }}</p>
+        <p class="m-0">{{ t('pages.workspace.requirementDrafts.milestonesEmpty') }}</p>
         <AppButton
           v-if="!query.trim()"
           variant="outline"
@@ -1114,7 +1110,7 @@ defineExpose({
           :disabled="creating"
           @click="onNewMilestone"
         >
-          {{ t('pages.projectDetail.requirementDrafts.new') }} {{ t('pages.projectDetail.requirementDrafts.kindMilestone') }}
+          {{ t('pages.workspace.requirementDrafts.new') }} {{ t('pages.workspace.requirementDrafts.kindMilestone') }}
         </AppButton>
       </div>
       <div v-else class="max-w-3xl">
@@ -1135,7 +1131,7 @@ defineExpose({
             <div class="mt-1 text-[11px] text-txt3">{{ m.dueAt || '—' }} · {{ m.progress }}%</div>
             <div v-if="isRowSelected(m.id)" class="rd-milestone-fields mt-4 grid gap-3 border-t border-line/60 pt-4">
               <label class="block text-xs text-txt2">
-                {{ t('pages.projectDetail.requirementDrafts.dueAtLabel') }}
+                {{ t('pages.workspace.requirementDrafts.dueAtLabel') }}
                 <input
                   v-model="editDueAt"
                   type="date"
@@ -1147,7 +1143,7 @@ defineExpose({
                 />
               </label>
               <label class="block text-xs text-txt2">
-                {{ t('pages.projectDetail.requirementDrafts.progressLabel') }}
+                {{ t('pages.workspace.requirementDrafts.progressLabel') }}
                 <input
                   v-model.number="editProgress"
                   type="number"
@@ -1167,7 +1163,7 @@ defineExpose({
                 data-testid="requirement-drafts-open-body"
                 @click.stop="openBody(m.id)"
               >
-                {{ t('pages.projectDetail.requirementDrafts.openBody') }}
+                {{ t('pages.workspace.requirementDrafts.openBody') }}
               </AppButton>
             </div>
           </div>
@@ -1178,14 +1174,14 @@ defineExpose({
     <!-- New draft modal -->
     <AppModal
       :open="showNewModal"
-      :title="t('pages.projectDetail.requirementDrafts.newModalTitle')"
+      :title="t('pages.workspace.requirementDrafts.newModalTitle')"
       :width="440"
       close-on-esc
       data-testid="requirement-drafts-new-modal"
       @close="closeNewModal"
     >
       <p class="mb-4 text-[13px] text-txt2">
-        {{ t('pages.projectDetail.requirementDrafts.newModalHint') }}
+        {{ t('pages.workspace.requirementDrafts.newModalHint') }}
       </p>
       <div class="mb-4 flex gap-2">
         <button
@@ -1199,7 +1195,7 @@ defineExpose({
           data-testid="requirement-drafts-new-kind-requirement"
           @click="newModalKind = 'requirement'"
         >
-          {{ t('pages.projectDetail.requirementDrafts.kindRequirement') }}
+          {{ t('pages.workspace.requirementDrafts.kindRequirement') }}
         </button>
         <button
           type="button"
@@ -1212,14 +1208,14 @@ defineExpose({
           data-testid="requirement-drafts-new-kind-milestone"
           @click="newModalKind = 'milestone'"
         >
-          {{ t('pages.projectDetail.requirementDrafts.kindMilestone') }}
+          {{ t('pages.workspace.requirementDrafts.kindMilestone') }}
         </button>
       </div>
       <label
         v-if="newModalKind === 'milestone'"
         class="mb-2 block text-xs text-txt2"
       >
-        {{ t('pages.projectDetail.requirementDrafts.milestoneDueLabel') }}
+        {{ t('pages.workspace.requirementDrafts.milestoneDueLabel') }}
         <input
           v-model="newModalDueAt"
           type="date"
@@ -1247,7 +1243,7 @@ defineExpose({
             data-testid="requirement-drafts-new-confirm"
             @click="onConfirmCreate"
           >
-            {{ t('pages.projectDetail.requirementDrafts.newModalContinue') }}
+            {{ t('pages.workspace.requirementDrafts.newModalContinue') }}
           </AppButton>
         </div>
       </template>
@@ -1255,13 +1251,13 @@ defineExpose({
 
     <AppModal
       :open="showDelete"
-      :title="t('pages.projectDetail.requirementDrafts.deleteTitle')"
+      :title="t('pages.workspace.requirementDrafts.deleteTitle')"
       :width="440"
       close-on-esc
       @close="showDelete = false"
     >
       <p class="text-[13px] leading-relaxed text-txt2">
-        {{ t('pages.projectDetail.requirementDrafts.deleteBody') }}
+        {{ t('pages.workspace.requirementDrafts.deleteBody') }}
       </p>
       <template #footer>
         <div class="flex justify-end gap-2">
@@ -1276,7 +1272,7 @@ defineExpose({
             data-testid="requirement-drafts-delete-confirm"
             @click="onConfirmDelete"
           >
-            {{ t('pages.projectDetail.requirementDrafts.deleteConfirm') }}
+            {{ t('pages.workspace.requirementDrafts.deleteConfirm') }}
           </AppButton>
         </div>
       </template>
@@ -1284,13 +1280,13 @@ defineExpose({
 
     <AppModal
       :open="showLeave"
-      :title="t('pages.projectDetail.requirementDrafts.leaveTitle')"
+      :title="t('pages.workspace.requirementDrafts.leaveTitle')"
       :width="440"
       close-on-esc
       @close="resolveLeave(false)"
     >
       <p class="text-[13px] leading-relaxed text-txt2">
-        {{ t('pages.projectDetail.requirementDrafts.leaveBody') }}
+        {{ t('pages.workspace.requirementDrafts.leaveBody') }}
       </p>
       <template #footer>
         <div class="flex justify-end gap-2">
@@ -1308,7 +1304,7 @@ defineExpose({
             data-testid="requirement-drafts-leave-confirm"
             @click="resolveLeave(true)"
           >
-            {{ t('pages.projectDetail.requirementDrafts.leaveConfirm') }}
+            {{ t('pages.workspace.requirementDrafts.leaveConfirm') }}
           </AppButton>
         </div>
       </template>

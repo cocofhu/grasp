@@ -121,7 +121,6 @@ const sampleRun = (over: Partial<Run> = {}): Run =>
 
 const sampleWorkflow = (): Workflow => ({
   id: 'wf-1',
-  projectId: 'proj-1',
   name: '夜间回归',
   description: '',
   status: 'published',
@@ -228,7 +227,7 @@ describe('useRunDetail actions', () => {
 
     mocks.getRun.mockResolvedValue(sampleRun())
     mocks.getWorkflow.mockResolvedValue(sampleWorkflow())
-    mocks.getWorkspace.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
+    mocks.getWorkspace.mockResolvedValue({ unknownModelDisplayName: '未知模型' })
     mocks.runArtifacts.mockResolvedValue([])
     mocks.nodeEvents.mockResolvedValue({ events: [], nextCursor: '', hasMore: false })
     mocks.nodeSandboxLog.mockResolvedValue({ content: 'boot log', live: false, found: true })
@@ -873,7 +872,7 @@ describe('useRunDetail actions', () => {
     app.unmount()
   })
 
-  it('links the failure banner to project credentials on a refused Codex login', async () => {
+  it('links the failure banner to workspace credentials on a refused Codex login', async () => {
     mocks.getRun.mockResolvedValue(
       sampleRun({
         status: 'failed',

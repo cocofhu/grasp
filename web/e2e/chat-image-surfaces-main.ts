@@ -110,7 +110,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
           body: '顶栏过窄，Tab 被裁切',
           status: 'open',
           createdAt: '2026-08-09T00:00:00Z',
-          selector: '.project-detail-tabs',
+          selector: '.workspace-tabs',
           images: [
             { data: PNG_A, mimeType: 'image/png', name: 'issue附图.png' },
             { data: 'DOC', mimeType: 'application/pdf', name: '说明.pdf' },
@@ -138,7 +138,7 @@ const App = defineComponent({
     const { preview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
     const tabs: { id: Surf; label: string }[] = [
-      { id: 'pm', label: '项目管理' },
+      { id: 'pm', label: '工作区助手' },
       { id: 'feedback', label: '预览反馈' },
       { id: 'para', label: '段落输入' },
       { id: 'tester', label: 'Agent 调试' },
@@ -176,7 +176,6 @@ const App = defineComponent({
               { class: 'h-[640px] border border-line', 'data-testid': 'surf-panel-pm' },
               [
                 h(PmLeaderChat, {
-                  projectId: 'proj-1',
                   binding: {
                     enabled: true,
                     agentAvailable: true,
@@ -229,7 +228,7 @@ const App = defineComponent({
               'div',
               { class: 'h-[640px] border border-line', 'data-testid': 'surf-panel-tester' },
               [
-                h(AgentChatTester, { profile: 'cursor', attachId: 1, homeProjectId: 'proj-1', embedded: true }),
+                h(AgentChatTester, { profile: 'cursor', attachId: 1, embedded: true }),
               ],
             )
           : null,

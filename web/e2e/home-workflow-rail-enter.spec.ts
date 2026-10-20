@@ -20,7 +20,6 @@ function approveWorkflow(id = 'wf-approve', name = '自我迭代PRO') {
     updatedAt: '2026-08-10T12:00:00Z',
     needsRepo: false,
     showOnHome: true,
-    projectId: 'proj-1',
     nodes: [
       { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
       { id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清', position: { x: 0, y: 0 }, config: {} },
@@ -33,16 +32,13 @@ function approveWorkflow(id = 'wf-approve', name = '自我迭代PRO') {
   }
 }
 
-async function mockProjects(page: Page) {
-  await page.route('**/api/projects**', async (route) => {
+async function mockWorkspace(page: Page) {
+  await page.route('**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({
-          items: [{ id: 'proj-1', name: '综合项目组', description: '', variables: [] }],
-          total: 1,
-        }),
+        body: JSON.stringify({ name: '工作区', description: '', variables: [] }),
       })
       return
     }
@@ -53,7 +49,7 @@ async function mockProjects(page: Page) {
 test.describe('首页工作流整轨进场', () => {
   test('延迟加载：等待空白无加载文案，成功后立刻 ready 且含加卡', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await mockProjects(page)
+    await mockWorkspace(page)
 
     let release!: () => void
     const gate = new Promise<void>((r) => {
@@ -100,7 +96,7 @@ test.describe('首页工作流整轨进场', () => {
 
   test('空列表：空态与加卡同组立刻进场', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await mockProjects(page)
+    await mockWorkspace(page)
     await page.route('**/api/workflows**', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
@@ -124,7 +120,7 @@ test.describe('首页工作流整轨进场', () => {
 
   test('失败后重试成功：立刻揭示整轨', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await mockProjects(page)
+    await mockWorkspace(page)
     let failOnce = true
     await page.route('**/api/workflows**', async (route) => {
       if (route.request().method() !== 'GET') {
@@ -158,7 +154,7 @@ test.describe('首页工作流整轨进场', () => {
 
   test('多卡同组：8 张卡与加卡在同一 enter 容器', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
-    await mockProjects(page)
+    await mockWorkspace(page)
     const many = Array.from({ length: 8 }, (_, i) =>
       approveWorkflow(`wf-many-${i}`, `工作流 ${i + 1}`),
     )

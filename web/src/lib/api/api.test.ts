@@ -75,12 +75,10 @@ describe('api req helpers', () => {
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({ title: '短名字' })
   })
 
-  it('lists and mutates projects/workflows/runs', async () => {
+  it('reads the workspace and mutates workflows/runs', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse({ id: 'p1' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'p1', name: 'P' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'p1', name: 'P2' }))
-      .mockResolvedValueOnce(jsonResponse([{ id: 'w1' }]))
+      .mockResolvedValueOnce(jsonResponse({ name: 'W' }))
+      .mockResolvedValueOnce(jsonResponse({ name: 'W2' }))
       .mockResolvedValueOnce(jsonResponse([{ id: 'w1' }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'w1' }))
       .mockResolvedValueOnce(jsonResponse({ id: 'w1' }))
@@ -96,7 +94,6 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ id: 'w2' }))
       .mockResolvedValueOnce(jsonResponse({ nodes: [], edges: [] }))
       .mockResolvedValueOnce(jsonResponse({ id: 'imp' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'imp2' }))
       .mockResolvedValueOnce(
         jsonResponse({ items: [{ id: 'r1' }], total: 1, page: 1, pageSize: 20, hasMore: false }),
       )
@@ -134,12 +131,10 @@ describe('api req helpers', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 
-    await expect(api.getWorkspace()).resolves.toEqual({ id: 'p1' })
-    await expect(api.getWorkspace()).resolves.toMatchObject({ id: 'p1' })
-    await expect(api.updateWorkspace({ name: 'P2' })).resolves.toMatchObject({ name: 'P2' })
+    await expect(api.getWorkspace()).resolves.toEqual({ name: 'W' })
+    await expect(api.updateWorkspace({ name: 'W2' })).resolves.toMatchObject({ name: 'W2' })
 
     await expect(api.listWorkflows()).resolves.toEqual([{ id: 'w1' }])
-    await expect(api.listWorkflows({ projectId: 'p1' })).resolves.toEqual([{ id: 'w1' }])
     await expect(api.getWorkflow('w1')).resolves.toMatchObject({ id: 'w1' })
     await expect(api.saveWorkflow({ name: 'n' })).resolves.toMatchObject({ id: 'w1' })
     await expect(api.saveWorkflow({ id: 'w1', name: 'n' })).resolves.toMatchObject({ id: 'w1' })
@@ -154,10 +149,9 @@ describe('api req helpers', () => {
     await expect(api.copyWorkflow('w1', 'copy')).resolves.toMatchObject({ id: 'w2' })
     await expect(api.getWorkflowVersionGraph('w1', 1)).resolves.toEqual({ nodes: [], edges: [] })
     await expect(api.importWorkflow('{}')).resolves.toMatchObject({ id: 'imp' })
-    await expect(api.importWorkflow('{}', 'p1')).resolves.toMatchObject({ id: 'imp2' })
 
     await expect(api.listRuns()).resolves.toMatchObject({ items: [{ id: 'r1' }] })
-    await expect(api.listRuns({ status: 'running', tag: 'bugfix', wf: 'w1', projectId: 'p1', page: 1, pageSize: 10 })).resolves.toMatchObject({
+    await expect(api.listRuns({ status: 'running', tag: 'bugfix', wf: 'w1', page: 1, pageSize: 10 })).resolves.toMatchObject({
       total: 1,
     })
     await api.listRuns({ page: 1, pageSize: 10, sort: 'priority', order: 'desc' })
@@ -169,7 +163,7 @@ describe('api req helpers', () => {
     expect(lastCallUrl()).not.toMatch(/order=/)
     await expect(api.getRun('r1')).resolves.toMatchObject({ id: 'r1' })
     await expect(api.inboxContext('r1', 'n1', 1)).resolves.toEqual({ items: [] })
-    await expect(api.listProjectRunTags('p1')).resolves.toEqual({ tags: ['bugfix'] })
+    await expect(api.listRunTags()).resolves.toEqual({ tags: ['bugfix'] })
     await expect(api.startRun('w1', { a: 1 })).resolves.toMatchObject({ id: 'r1' })
     await expect(api.updateRunPriority('r1', 'high')).resolves.toMatchObject({ priority: 'high' })
     await expect(api.cancelRun('r1')).resolves.toEqual({ status: 'ok' })
@@ -206,7 +200,7 @@ describe('api req helpers', () => {
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse({ destroyed: 1, skipped: 0 }))
       .mockResolvedValueOnce(
-        jsonResponse([{ projectId: 'p', projectName: 'P', count: 1, sessionCount: 0, workflows: [] }]),
+        jsonResponse({ count: 1, sessionCount: 0, workflows: [] }),
       )
       .mockResolvedValueOnce(
         jsonResponse({ items: [{ id: 'art' }], total: 1, page: 1, pageSize: 10, hasMore: false }),
@@ -250,7 +244,7 @@ describe('api req helpers', () => {
     await expect(api.deleteAgent('a1')).resolves.toEqual({ status: 'ok' })
     await expect(api.exportAgent('a1')).resolves.toBeInstanceOf(Blob)
     await expect(
-      api.importAgent(new File(['z'], 'a.zip'), { projectId: 'p1', targetName: 'a1', mode: 'create' }),
+      api.importAgent(new File(['z'], 'a.zip'), { targetName: 'a1', mode: 'create' }),
     ).resolves.toEqual(agent)
 
     await expect(api.listSandboxes()).resolves.toEqual([])
@@ -263,16 +257,16 @@ describe('api req helpers', () => {
     expect(api.sandboxIdeUrl(1)).toContain('/sandbox/1/')
     expect(api.sandboxBridgeUrl(1)).toContain('/sandbox-bridge/1/')
 
-    await expect(api.getArtifactTree()).resolves.toMatchObject([{ projectId: 'p', sessionCount: 0 }])
+    await expect(api.getArtifactTree()).resolves.toMatchObject({ count: 1, sessionCount: 0 })
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(/\/artifacts\/tree$/)
     await expect(
-      api.listArtifacts({ projectId: 'p', workflowId: 'w', q: 'x', page: 1, pageSize: 10 }),
+      api.listArtifacts({ workflowId: 'w', q: 'x', page: 1, pageSize: 10 }),
     ).resolves.toMatchObject({ total: 1 })
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
       /\/artifacts\?workflowId=w&q=x&page=1&pageSize=10$/,
     )
     await expect(
-      api.listArtifacts({ projectId: 'p', session: true, page: 1, pageSize: 20, groupBy: 'run' }),
+      api.listArtifacts({ session: true, page: 1, pageSize: 20, groupBy: 'run' }),
     ).resolves.toMatchObject({ total: 1 })
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
       /\/artifacts\?session=1&page=1&pageSize=20&groupBy=run$/,
@@ -305,7 +299,7 @@ describe('api req helpers', () => {
     expect(api.sandboxVncWsUrl(3)).toMatch(/\/sandbox-vnc\/3\/ws$/)
 
     await expect(api.listGates()).resolves.toMatchObject({ items: [] })
-    await expect(api.listGates({ page: 1, pageSize: 10, wf: 'w', projectId: 'p', tag: 'bugfix' })).resolves.toMatchObject({
+    await expect(api.listGates({ page: 1, pageSize: 10, wf: 'w', tag: 'bugfix' })).resolves.toMatchObject({
       total: 0,
     })
     await expect(api.dashboard()).resolves.toMatchObject({ running: 0 })
@@ -343,7 +337,7 @@ describe('api req helpers', () => {
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'import fail' }, 400))
     await expect(
-      api.importAgent(new File(['z'], 'a.zip'), { projectId: 'p1', targetName: 'a', mode: 'create' }),
+      api.importAgent(new File(['z'], 'a.zip'), { targetName: 'a', mode: 'create' }),
     ).rejects.toThrow('import fail')
 
     vi.mocked(mutationsBlocked).mockReturnValue(true)
@@ -387,7 +381,7 @@ describe('api.createWorkflowFromBaseline', () => {
   it('POSTs the workflow name and repos to /workflows/from-baseline (plan g3.1)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'wf-base', name: 'Requirements', status: 'published' }))
     await expect(
-      api.createWorkflowFromBaseline('p1', 'Requirements', [
+      api.createWorkflowFromBaseline('Requirements', [
         { name: '', url: 'https://github.com/acme/app.git', branch: 'main' },
       ]),
     ).resolves.toMatchObject({ id: 'wf-base', status: 'published' })

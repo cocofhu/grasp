@@ -8,13 +8,6 @@ const mocks = vi.hoisted(() => ({
   listAgentTeamTemplates: vi.fn(async () => ({ items: [] })),
 }))
 
-vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { ref } = await import('vue')
-  const workspace = ref({ id: 'p1', name: '工作区', variables: [] })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
-})
-
-
 vi.mock('vue-i18n', () => ({
   useI18n: () => ({ t: (key: string) => key }),
 }))
@@ -34,8 +27,6 @@ function mountWizard(over: Partial<AgentCreateWizardProps> = {}) {
   const props = reactive<AgentCreateWizardProps>({
     open: true,
     existingNames: [],
-    projects: [{ id: 'p1', name: 'P1' }],
-    projectId: 'p1',
     ...over,
   })
   const Comp = defineComponent({

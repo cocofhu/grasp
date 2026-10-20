@@ -13,23 +13,22 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return { ...actual, api: { ...actual.api,
-    getProjectSharedAgentConfig: mocks.getConfig, listAgents: mocks.listAgents,
-    putProjectSharedAgentConfig: mocks.putConfig, createProjectSharedAgentTest: mocks.createTest,
-    getProjectCredentials: mocks.getCredentials,
+    getSharedAgentConfig: mocks.getConfig, listAgents: mocks.listAgents,
+    putSharedAgentConfig: mocks.putConfig, createSharedAgentTest: mocks.createTest,
+    listCredentials: mocks.getCredentials,
   } }
 })
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
-import ProjectSharedAgentPanel from './ProjectSharedAgentPanel.vue'
+import WorkspaceSharedAgentPanel from './WorkspaceSharedAgentPanel.vue'
 
 const cfg = {
-  projectId: 'p1', acpBackend: 'cursor', gitCredentialType: '', files: [], mcp: [], env: {},
+  acpBackend: 'cursor', gitCredentialType: '', files: [], mcp: [], env: {},
   layout: { configRoot: '~/.cursor', workspaceDir: '/workspace' },
 }
 const FilesStub = { name: 'AgentFilesPanel', props: ['draft', 'save'], methods: { openPathOrCreate: vi.fn() }, template: '<div data-testid="files"/>' }
-function mountPanel(projectId = 'p1') {
+function mountPanel() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
-  return mount(ProjectSharedAgentPanel, {
-    props: { projectId },
+  return mount(WorkspaceSharedAgentPanel, {
     global: { plugins: [i18n], stubs: {
       Icon: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' },
       AgentFilesPanel: FilesStub, AgentMcpPanel: { template: '<div data-testid="mcp"/>' },
@@ -38,13 +37,13 @@ function mountPanel(projectId = 'p1') {
   })
 }
 
-describe('ProjectSharedAgentPanel interactions', () => {
+describe('WorkspaceSharedAgentPanel interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getConfig.mockResolvedValue(cfg)
     mocks.getCredentials.mockResolvedValue({ items: [] })
-    mocks.listAgents.mockResolvedValue([{ name: 'a1', projectId: 'p1' }, { name: 'other', projectId: 'p2' }])
-    mocks.putConfig.mockImplementation(async (_: string, body: any) => ({ ...cfg, ...body }))
+    mocks.listAgents.mockResolvedValue([{ name: 'a1' }, { name: 'other' }])
+    mocks.putConfig.mockImplementation(async (body: any) => ({ ...cfg, ...body }))
     mocks.createTest.mockResolvedValue({ id: 'sandbox' })
   })
 
@@ -62,7 +61,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     vm.draft.layout.workspaceDir = '/srv/work'
     expect(vm.dirty).toBe(true)
     expect(await vm.save()).toBe(true)
-    expect(mocks.putConfig).toHaveBeenCalledWith('p1', expect.objectContaining({
+    expect(mocks.putConfig).toHaveBeenCalledWith(expect.objectContaining({
       layout: expect.objectContaining({ workspaceDir: '/srv/work' }),
       files: [],
     }))
@@ -71,7 +70,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     w.unmount()
   })
 
-  it('sets the project default model, clears it on a backend switch and saves it', async () => {
+  it('sets the workspace default model, clears it on a backend switch and saves it', async () => {
     mocks.getConfig.mockResolvedValue({ ...cfg, env: { ACP_BRIDGE_MODEL: 'composer-2.5' } })
     const w = mountPanel()
     await flushPromises()
@@ -86,7 +85,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     expect(vm.draft.env.some((e: { k: string }) => e.k === 'ACP_BRIDGE_MODEL')).toBe(false)
     vm.draft.env.push({ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' })
     expect(await vm.save()).toBe(true)
-    expect(mocks.putConfig).toHaveBeenCalledWith('p1', expect.objectContaining({
+    expect(mocks.putConfig).toHaveBeenCalledWith(expect.objectContaining({
       acpBackend: 'codex',
       env: expect.objectContaining({ ACP_BRIDGE_MODEL: 'gpt-6.1-sol' }),
     }))
@@ -126,17 +125,6 @@ describe('ProjectSharedAgentPanel interactions', () => {
     await flushPromises()
     expect(vm.subTab).toBe('files')
     expect(w.find('[data-testid="shared-agent-subtab-test"]').exists()).toBe(false)
-    w.unmount()
-  })
-
-  it('reloads when project id changes and resets the selected tab', async () => {
-    const w = mountPanel()
-    await flushPromises()
-    ;(w.vm as any).subTab = 'meta'
-    await w.setProps({ projectId: 'p2' })
-    await flushPromises()
-    expect(mocks.getConfig).toHaveBeenCalledWith('p2')
-    expect((w.vm as any).subTab).toBe('files')
     w.unmount()
   })
 
@@ -181,7 +169,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
     expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
     expect(await (w.vm as any).save()).toBe(true)
-    const body = mocks.putConfig.mock.calls.at(-1)?.[1]
+    const body = mocks.putConfig.mock.calls.at(-1)?.[0]
     expect(body.aiCredentialId).toBe('cred-work')
     expect(body.openCodeCredentialId).toBe('')
     expect(JSON.stringify(body)).not.toContain('sk-work')
@@ -273,7 +261,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     expect((w.vm as any).draft.aiCredentialId).toBe('')
     await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
     expect(await (w.vm as any).save()).toBe(true)
-    const body = mocks.putConfig.mock.calls.at(-1)?.[1]
+    const body = mocks.putConfig.mock.calls.at(-1)?.[0]
     expect(body.aiCredentialId).toBe('cred-work')
     expect(body.openCodeCredentialId).toBe('cred-oc')
     expect(JSON.stringify(body)).not.toContain('sk-')
@@ -287,7 +275,7 @@ describe('ProjectSharedAgentPanel interactions', () => {
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-testid="project-credential-opencode"]').exists()).toBe(true)
+    expect(w.find('[data-testid="credential-opencode"]').exists()).toBe(true)
     expect(w.find('[data-testid="opencode-credential-add"]').exists()).toBe(false)
     expect(w.text()).toContain('还没有模型厂商 API Key')
     w.unmount()

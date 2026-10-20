@@ -10,7 +10,6 @@ import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 function draft(partial: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
   return {
     name: 'a',
-    projectId: '',
     env: [],
     mcp: [],
     files: [],
@@ -60,7 +59,7 @@ describe('AgentEnvPanel managed model keys', () => {
     expect(w.emitted('toast')?.[0]?.[0]).toContain('运行配置')
   })
 
-  it('locks the keys in the project shared config too, which has its own Runtime card', async () => {
+  it('locks the keys in the workspace shared config too, which has its own Runtime card', async () => {
     const shared = mountPanel(draft({ env: pinned.map((e) => ({ ...e })) }), 'shared')
     expect(shared.find('[data-test="env-managed-model"]').exists()).toBe(true)
     await shared.get('[data-test="env-managed-model-edit"]').trigger('click')

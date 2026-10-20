@@ -58,7 +58,6 @@ describe('component shallow mount coverage (vitest 4 remapping)', () => {
       try {
         const w = mount(mod.default, {
           props: {
-            projectId: 'proj-1',
             open: true,
             modelValue: '',
             options: [],
@@ -66,7 +65,7 @@ describe('component shallow mount coverage (vitest 4 remapping)', () => {
             ports: [],
             existingNames: [],
             agentName: 'a',
-            project: { id: 'p', name: 'n', description: '', variables: [] },
+            workspace: { name: 'n', description: '', variables: [] },
             gate: { id: 'g', nodeId: 'n', status: 'pending', actions: [] },
             run: { id: 'r', status: 'running' },
             items: [],

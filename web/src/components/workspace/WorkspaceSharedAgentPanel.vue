@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
-import { api, type ProjectSharedAgentConfig } from '@/lib/api/api'
+import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
   DEFAULT_CONFIG_ROOT,
   DEFAULT_WORKSPACE_DIR,
@@ -38,12 +38,10 @@ import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vu
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
 import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
-import { backendKind } from '@/lib/project/credentialKinds'
+import { backendKind } from '@/lib/workspace/credentialKinds'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
-
-const props = defineProps<{ projectId: string }>()
 
 const { t } = useI18n()
 const toast = useToast()
@@ -148,10 +146,9 @@ const aiKind = computed(() => {
   return kind && kind.id !== 'opencode' ? kind : undefined
 })
 
-function sharedToDraft(cfg: ProjectSharedAgentConfig): AgentStudioDraft {
+function sharedToDraft(cfg: SharedAgentConfig): AgentStudioDraft {
   return hydrateStudioDraft({
-    name: '__project_shared__',
-    projectId: cfg.projectId,
+    name: '__workspace_shared__',
     acpBackend: cfg.acpBackend,
     aiCredentialId: cfg.aiCredentialId || '',
     openCodeCredentialId: cfg.openCodeCredentialId || '',
@@ -163,7 +160,7 @@ function sharedToDraft(cfg: ProjectSharedAgentConfig): AgentStudioDraft {
   })
 }
 
-function applyLoaded(cfg: ProjectSharedAgentConfig) {
+function applyLoaded(cfg: SharedAgentConfig) {
   const d = sharedToDraft(cfg)
   draft.value = d
   originalJson.value = draftPayloadJson(d)
@@ -174,7 +171,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const cfg = await api.getProjectSharedAgentConfig(props.projectId)
+    const cfg = await api.getSharedAgentConfig()
     applyLoaded(cfg)
   } catch (e: unknown) {
     loadError.value = String((e as { message?: string })?.message || e)
@@ -189,7 +186,7 @@ async function save(): Promise<boolean> {
   saving.value = true
   try {
     const payload = fromDraft(draft.value)
-    const saved = await api.putProjectSharedAgentConfig(props.projectId, {
+    const saved = await api.putSharedAgentConfig({
       acpBackend: payload.acpBackend,
       gitCredentialType: payload.gitCredentialType || '',
       aiCredentialId: draft.value.aiCredentialId || '',
@@ -200,7 +197,7 @@ async function save(): Promise<boolean> {
       layout: payload.layout || {},
     })
     applyLoaded(saved)
-    toast.success(t('pages.projectDetail.saved'))
+    toast.success(t('pages.workspace.saved'))
     justSaved.value = true
     return true
   } catch (e: unknown) {
@@ -262,14 +259,6 @@ function openSettingsInFiles() {
   })
 }
 
-watch(
-  () => props.projectId,
-  () => {
-    subTab.value = 'files'
-    void load()
-  },
-)
-
 onMounted(() => {
   void load()
 })
@@ -278,7 +267,7 @@ onMounted(() => {
 <template>
   <div
     class="flex min-h-0 flex-1 flex-col overflow-hidden"
-    data-testid="project-shared-agent-panel"
+    data-testid="workspace-shared-agent-panel"
   >
     <div
       v-if="loading"
@@ -300,7 +289,7 @@ onMounted(() => {
         <details class="relative shrink-0" data-testid="shared-agent-help">
           <summary
             class="flex h-[18px] w-[18px] cursor-pointer list-none items-center justify-center rounded-full border border-line text-[11px] font-semibold text-accent-2 transition hover:border-accent hover:bg-accent-dim [&::-webkit-details-marker]:hidden"
-            :aria-label="t('pages.projectDetail.sharedAgent.extendHint')"
+            :aria-label="t('pages.workspace.sharedAgent.extendHint')"
           >
             ?
           </summary>
@@ -308,7 +297,7 @@ onMounted(() => {
             class="absolute left-0 top-[24px] z-30 m-0 w-[min(280px,calc(100vw-48px))] rounded-md border border-line-strong bg-elevated px-3 py-2 text-[11px] leading-5 text-txt2 shadow-lg"
             data-testid="shared-agent-help-text"
           >
-            {{ t('pages.projectDetail.sharedAgent.extendHint') }}
+            {{ t('pages.workspace.sharedAgent.extendHint') }}
           </p>
         </details>
         <div class="scroll-area flex min-w-0 flex-1 gap-1 overflow-x-auto">
@@ -334,7 +323,7 @@ onMounted(() => {
           :disabled="!dirty || saving"
           @click="discard"
         >
-          {{ t('pages.projectDetail.sharedAgent.discard') }}
+          {{ t('pages.workspace.sharedAgent.discard') }}
         </AppButton>
         <AppButton
           size="sm"
@@ -363,7 +352,6 @@ onMounted(() => {
       <AgentMcpPanel
         v-if="subTab === 'mcp'"
         :draft="draft"
-        :is-project-bound="true"
         @toast="toast.success($event)"
       />
 
@@ -412,10 +400,10 @@ onMounted(() => {
           <CliRuntimeCard
             v-if="aiKind"
             :draft="draft"
-            :description="t('pages.projectDetail.sharedAgent.runtimeDesc')"
-            :credential-title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
-            :credential-hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
-            :model-hint="t('pages.projectDetail.sharedAgent.modelHint')"
+            :description="t('pages.workspace.sharedAgent.runtimeDesc')"
+            :credential-title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
+            :credential-hint="t('pages.workspace.sharedAgent.genericCredentialHint')"
+            :model-hint="t('pages.workspace.sharedAgent.modelHint')"
             :focus-tick="focusModelTick"
             data-testid="shared-generic-credential"
           />
@@ -428,10 +416,9 @@ onMounted(() => {
               mode="select"
               :allow-add="false"
               allow-clear
-              :project-id="draft.projectId"
               :selected-id="draft.openCodeCredentialId"
-              :title="t('pages.projectDetail.sharedAgent.genericCredentialTitle')"
-              :hint="t('pages.projectDetail.sharedAgent.genericCredentialHint')"
+              :title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
+              :hint="t('pages.workspace.sharedAgent.genericCredentialHint')"
               @update:selected-id="draft.openCodeCredentialId = $event"
             />
           </div>

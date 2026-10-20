@@ -21,7 +21,6 @@ import { setLocale } from '@/lib/shared/locale'
 import { setTheme, type ThemeName } from '@/lib/shared/theme'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import { useToast } from '@/lib/composables/useToast'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
@@ -52,19 +51,14 @@ import {
 } from '@/lib/pm/onboardingWizard'
 import { START_PATH_OPTIONS } from '@/lib/shared/startPath'
 
-export type OnboardingCompletedResult = OnboardingBootstrapResult & {
-  projectId?: string
-}
+export type OnboardingCompletedResult = OnboardingBootstrapResult
 
 const props = withDefaults(
   defineProps<{
     open: boolean
-    /** Internal workspace identity, resolved through the workspace context. */
-    projectId?: string
     mode?: OnboardingMode
   }>(),
   {
-    projectId: '',
     mode: 'firstInstall',
   },
 )
@@ -78,7 +72,6 @@ const { t } = useI18n()
 const toast = useToast()
 const router = useRouter()
 const launch = useWorkflowRunLaunch()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
 
 const draft = ref<OnboardingDraft>(freshOnboardingDraft())
 const creating = ref(false)
@@ -90,7 +83,6 @@ const keyError = ref(false)
 const modelError = ref(false)
 const templates = ref<AgentTemplate[]>([])
 const templatesState = ref<'loading' | 'ready' | 'error'>('loading')
-const retryProjectName = ref('')
 const showTeamErrors = ref(false)
 const leaving = ref(false)
 
@@ -133,7 +125,6 @@ const summaryItems = computed(() => [
   { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsValue', { n: enabledTeam.value.length }), ok: true },
   { id: 'workflow', label: t('pages.onboarding.workflow.wfLabel'), value: t('pages.onboarding.workflow.wfValue'), ok: true, wide: true },
 ])
-const targetProjectId = workspaceId
 const wizardTitle = computed(() => {
   if ((props.mode || 'firstInstall') === 'retry') return t('pages.onboarding.titleRetry')
   return t('pages.onboarding.title')
@@ -143,14 +134,9 @@ const identityOk = computed(() => gitIdentityConfigured(draft.value))
 const repoOk = computed(() => repoConfigured(draft.value))
 const repoDirName = computed(() => repoNameFromUrl(draft.value.repoUrl))
 
-/** Names the server would derive; empty when the project name is not known yet. */
-const defaultAgentNames = computed<string[]>(() => {
-  const lang = draft.value.language
-  const pid = workspaceId.value
-  return deriveOnboardingAgentNames(pid, retryProjectName.value, lang)
-})
-const allowBlankNames = computed(() => defaultAgentNames.value.length === 0)
-const nameIssues = computed(() => teamNameIssues(draft.value.team, { allowBlank: allowBlankNames.value }))
+/** Names the server would derive for the chosen language. */
+const defaultAgentNames = computed<string[]>(() => deriveOnboardingAgentNames(draft.value.language))
+const nameIssues = computed(() => teamNameIssues(draft.value.team))
 const workflowPreview = computed(() => buildOnboardingWorkflowPreview(draft.value.team))
 const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.id === 'test_review'))
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
@@ -174,7 +160,7 @@ watch(
     if (!open) return
     const inheritAppLocale = false
     draft.value = freshOnboardingDraft({ inheritAppLocale })
-    // createProject must not overwrite the user's saved locale with browser/OS.
+    // Opening the wizard must not overwrite the user's saved locale with browser/OS.
     if (!inheritAppLocale) {
       void setLocale(draft.value.language)
     }
@@ -186,11 +172,9 @@ watch(
     modelError.value = false
     showTeamErrors.value = false
     leaving.value = false
-    retryProjectName.value = ''
     applyDefaultTeamNames(draft.value.team, defaultAgentNames.value)
     stepAnimKey.value++
     void loadTemplates()
-    void loadRetryProjectName()
   },
   { immediate: true },
 )
@@ -204,18 +188,6 @@ async function loadTemplates() {
   } catch {
     templates.value = []
     templatesState.value = 'error'
-  }
-}
-
-async function loadRetryProjectName() {
-  await ensureLoaded()
-  const pid = workspaceId.value
-  if (!pid) return
-  try {
-    const proj = await api.getWorkspace()
-    retryProjectName.value = proj?.name || ''
-  } catch {
-    /* names stay blank; the server derives them */
   }
 }
 
@@ -317,7 +289,7 @@ function validateGit(): boolean {
 }
 
 function validateTeam(): boolean {
-  if (teamValid(draft.value.team, { allowBlank: allowBlankNames.value })) return true
+  if (teamValid(draft.value.team)) return true
   showTeamErrors.value = true
   toast.error(t('pages.onboarding.team.toastFixNames'))
   return false
@@ -357,12 +329,12 @@ function goNext() {
   stepAnimKey.value++
 }
 
-async function runBootstrap(projectId: string, body: ReturnType<typeof assembleBootstrapBody>) {
-  const res = await api.bootstrapProjectOnboarding(projectId, body)
+async function runBootstrap(body: ReturnType<typeof assembleBootstrapBody>) {
+  const res = await api.bootstrapOnboarding(body)
   result.value = res
   phase.value = 'success'
   toast.success(t('pages.onboarding.toastOk'))
-  emit('completed', { ...res, projectId })
+  emit('completed', res)
 }
 
 async function submitBootstrap() {
@@ -380,16 +352,7 @@ async function submitBootstrap() {
   creating.value = true
   createError.value = ''
   try {
-    const body = assembleBootstrapBody(draft.value)
-
-    await ensureLoaded()
-    const projectId = workspaceId.value
-    if (!projectId) {
-      createError.value = t('pages.onboarding.toastErr')
-      toast.error(createError.value)
-      return
-    }
-    await runBootstrap(projectId, body)
+    await runBootstrap(assembleBootstrapBody(draft.value))
   } catch (e: any) {
     createError.value = e?.message || String(e)
     toast.error(createError.value || t('pages.onboarding.toastErr'))
@@ -398,14 +361,12 @@ async function submitBootstrap() {
   }
 }
 
-function goToProject() {
-  const id = targetProjectId.value
-  if (!id) return
+function goToWorkflows() {
   void router.push({ path: '/workflows' })
 }
 
 function finish() {
-  goToProject()
+  goToWorkflows()
   emit('close')
 }
 
@@ -415,7 +376,7 @@ async function runOnce() {
   leaving.value = true
   try {
     const wf = await api.getWorkflow(id)
-    goToProject()
+    goToWorkflows()
     emit('close')
     await launch.openLaunch(wf)
   } catch (e: any) {

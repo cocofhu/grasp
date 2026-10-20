@@ -12,7 +12,6 @@ import AgentMcpPanel from './AgentMcpPanel.vue'
 function draft(over: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
   return reactive({
     name: 'agent-a',
-    projectId: 'p1',
     acpBackend: 'cursor',
     files: [],
     mcp: [],

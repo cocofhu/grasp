@@ -20,13 +20,13 @@ vi.mock('@/lib/api/api', async () => {
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 import RequirementDraftsPanel from './RequirementDraftsPanel.vue'
 
-const req: any = { id: 'r1', projectId: 'p', title: 'Requirement', bodyMarkdown: '# Body\ntext', status: 'open', kind: 'requirement', startAt: '2026-09-01', dueAt: '2026-09-10', progress: 25, parentId: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z' }
+const req: any = { id: 'r1', title: 'Requirement', bodyMarkdown: '# Body\ntext', status: 'open', kind: 'requirement', startAt: '2026-09-01', dueAt: '2026-09-10', progress: 25, parentId: null, createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-02T00:00:00Z' }
 const child: any = { ...req, id: 'r2', title: 'Child', parentId: 'r1', startAt: '', dueAt: '' }
 const milestone: any = { ...req, id: 'm1', title: 'Milestone', kind: 'milestone', startAt: '', dueAt: '2026-09-20', progress: 50 }
 function mountPanel() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(RequirementDraftsPanel, {
-    props: { projectId: 'p' }, attachTo: document.body,
+    attachTo: document.body,
     global: { plugins: [i18n], stubs: {
       AppButton: { props: ['disabled'], template: '<button v-bind="$attrs" :disabled="disabled"><slot/></button>' },
       AppModal: { props: ['open'], emits: ['close'], template: '<div v-if="open" data-testid="visible-modal"><button data-testid="modal-close" @click="$emit(\'close\')"/><slot/><slot name="footer"/></div>' },
@@ -97,7 +97,7 @@ describe('RequirementDraftsPanel interactions', () => {
     vm.newModalDueAt = '2026-10-01'
     mocks.create.mockResolvedValueOnce({ ...milestone, id: 'm2', dueAt: '2026-10-01' })
     await vm.onConfirmCreate()
-    expect(mocks.create).toHaveBeenCalledWith('p', { kind: 'milestone', dueAt: '2026-10-01' })
+    expect(mocks.create).toHaveBeenCalledWith({ kind: 'milestone', dueAt: '2026-10-01' })
     vm.openNewModal(); mocks.create.mockRejectedValueOnce(new Error('create boom'))
     await vm.onConfirmCreate()
     expect(mocks.error).toHaveBeenCalledWith('create boom')
@@ -119,7 +119,7 @@ describe('RequirementDraftsPanel interactions', () => {
     vm.editProgress = 500
     vm.onScheduleProgressChange()
     await flushPromises()
-    expect(mocks.schedule).toHaveBeenCalledWith('p', 'r1', { progress: 100 })
+    expect(mocks.schedule).toHaveBeenCalledWith('r1', { progress: 100 })
     vm.editKind = 'milestone'; vm.onScheduleKindChange()
     vm.editStartAt = '2026-01-01'; vm.onScheduleStartChange()
     vm.editDueAt = '2026-02-01'; vm.onScheduleDueChange()
@@ -168,8 +168,7 @@ describe('RequirementDraftsPanel interactions', () => {
     vm.query = 'abc'; vm.onSearchInput(); vm.onSearchInput()
     vi.runAllTimers(); await flushPromises()
     vi.useRealTimers()
-    await w.setProps({ projectId: 'p2' }); await flushPromises()
-    expect(mocks.list).toHaveBeenCalledWith('p2', expect.any(Object))
+    expect(mocks.list).toHaveBeenCalledWith({ status: 'open', q: 'abc' })
     w.unmount()
   })
 

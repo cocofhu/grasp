@@ -4,10 +4,10 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import HomeWorkflowSelect from './HomeWorkflowSelect.vue'
+import HomeWorkflowSelect, { type HomeWorkflowOption } from './HomeWorkflowSelect.vue'
 
 function mountSelect(props: {
-  workflows?: { id: string; name: string; projectName?: string }[]
+  workflows?: HomeWorkflowOption[]
   modelValue?: string
   disabled?: boolean
 } = {}) {
@@ -147,39 +147,25 @@ describe('HomeWorkflowSelect', () => {
     wrapper.unmount()
   })
 
-  // plan g2.2 — trigger "项目名 · 工作流名"; search matches projectName; no empty · prefix
-  it('shows only the workflow name on the trigger', async () => {
+  // plan g2.2 — trigger shows the selected workflow name; search matches workflow names
+  it('shows only the selected workflow name on the trigger', async () => {
     const wrapper = mountSelect({
       workflows: [
-        { id: 'wf-a', name: '默认工作流', projectName: '综合项目组' },
-        { id: 'wf-b', name: 'Skill workflow', projectName: 'Other' },
+        { id: 'wf-a', name: '默认工作流' },
+        { id: 'wf-b', name: 'Skill workflow' },
       ],
       modelValue: 'wf-a',
     })
     await flushPromises()
-    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
-      '默认工作流',
-    )
+    expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toBe('默认工作流')
     wrapper.unmount()
   })
 
-  it('does not prefix the trigger with an empty · when projectName is missing', async () => {
-    const wrapper = mountSelect({
-      workflows: [{ id: 'wf-a', name: '自我迭代PRO' }],
-      modelValue: 'wf-a',
-    })
-    await flushPromises()
-    const text = wrapper.get('[data-testid="home-workflow-select-trigger"]').text()
-    expect(text).toContain('自我迭代PRO')
-    expect(text).not.toContain('·')
-    wrapper.unmount()
-  })
-
-  it('searches workflow names and omits former project labels', async () => {
+  it('searches workflow names and highlights the match', async () => {
     const wrapper = mountSelect({
       workflows: [
-        { id: 'wf-a', name: '默认工作流', projectName: '综合项目组' },
-        { id: 'wf-b', name: 'Skill workflow', projectName: 'Other' },
+        { id: 'wf-a', name: '默认工作流' },
+        { id: 'wf-b', name: 'Skill workflow' },
       ],
       modelValue: 'wf-a',
     })
@@ -188,7 +174,6 @@ describe('HomeWorkflowSelect', () => {
     await flushPromises()
     const optA = document.querySelector('[data-testid="home-workflow-select-option-wf-a"]')
     expect(optA?.querySelector('.home-workflow-select__opt-name')?.textContent).toBe('默认工作流')
-    expect(optA?.querySelector('.home-workflow-select__opt-project')).toBeNull()
     const search = document.querySelector(
       '[data-testid="home-workflow-select-search"]',
     ) as HTMLInputElement
@@ -202,9 +187,9 @@ describe('HomeWorkflowSelect', () => {
     wrapper.unmount()
   })
 
-  it('shows the no-match empty state when neither name nor projectName hits', async () => {
+  it('shows the no-match empty state when no workflow name hits', async () => {
     const wrapper = mountSelect({
-      workflows: [{ id: 'wf-a', name: '默认工作流', projectName: '综合项目组' }],
+      workflows: [{ id: 'wf-a', name: '默认工作流' }],
       modelValue: 'wf-a',
     })
     await flushPromises()

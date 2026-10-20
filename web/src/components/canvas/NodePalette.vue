@@ -59,7 +59,7 @@ const groups = computed(() =>
     (g) => g.items.length || (g.id === 'agent' && !q.value),
   ),
 )
-const projectAgentCount = computed(() => props.items.filter((i) => i.agent).length)
+const agentCount = computed(() => props.items.filter((i) => i.agent).length)
 
 function onDragStart(ev: DragEvent, item: PaletteItem) {
   if (!ev.dataTransfer) return
@@ -130,7 +130,7 @@ function onDragStart(ev: DragEvent, item: PaletteItem) {
           </RouterLink>
         </div>
         <p
-          v-if="g.id === 'agent' && !agentsLoading && !projectAgentCount && !q"
+          v-if="g.id === 'agent' && !agentsLoading && !agentCount && !q"
           class="mb-1.5 px-1 text-[11.5px] text-txt3"
         >
           {{ t('canvas.palette.noAgents') }}

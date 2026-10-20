@@ -18,7 +18,8 @@ const { t } = useI18n()
 const route = useRoute()
 const toast = useToast()
 const context = useWorkspaceContext()
-const { workspaceId, ensureLoaded } = context
+const { workspace, ensureLoaded } = context
+const workspaceReady = computed(() => !!workspace.value)
 const { entries, isFavorite, toggleFavorite } = useWorkflowFavorites()
 const { openLaunch } = useWorkflowRunLaunch()
 const workflows = ref<WorkflowCatalogItem[]>([])
@@ -27,7 +28,7 @@ const loading = ref(false)
 const loadFailed = ref(false)
 const runsFailed = ref(false)
 const launchingId = ref('')
-const catalogBusy = computed(() => loading.value || (!workspaceId.value && !!context.loading?.value))
+const catalogBusy = computed(() => loading.value || (!workspaceReady.value && !!context.loading?.value))
 const catalogFailed = computed(() => loadFailed.value || !!context.error?.value)
 let request: AbortController | null = null
 let runsRequest: AbortController | null = null
@@ -94,11 +95,11 @@ async function launch(item: WorkflowCatalogItem) {
     if (current === launchGeneration) toast.error(cause instanceof Error ? cause.message : t('nav.workspaceLoadFailed'))
   } finally { if (current === launchGeneration) launchingId.value = '' }
 }
-watch([workspaceId, workflowCatalogRevision], () => {
-  if (workspaceId.value) void loadCatalog()
+watch([workspaceReady, workflowCatalogRevision], () => {
+  if (workspaceReady.value) void loadCatalog()
   else { request?.abort(); request = null; runsRequest?.abort(); runsRequest = null; workflows.value = []; runs.value = []; loading.value = false; loadFailed.value = false; runsFailed.value = false; launchGeneration++; launchingId.value = '' }
 }, { immediate: true })
-watch([workspaceId, () => route.path], () => { if (workspaceId.value) void loadRuns() }, { immediate: true })
+watch([workspaceReady, () => route.path], () => { if (workspaceReady.value) void loadRuns() }, { immediate: true })
 onBeforeUnmount(() => { request?.abort(); runsRequest?.abort(); launchGeneration++ })
 </script>
 
@@ -111,7 +112,7 @@ onBeforeUnmount(() => { request?.abort(); runsRequest?.abort(); launchGeneration
       </div>
       <div v-if="catalogFailed" class="workspace-list-state" role="alert"><span>{{ t('nav.workspaceLoadFailed') }}</span><button type="button" @click="loadCatalog">{{ t('nav.workspaceRetry') }}</button></div>
       <div v-if="catalogBusy && !workflows.length" class="workspace-catalog-skeleton" role="status"><span class="sr-only">{{ t('nav.workspaceLoading') }}</span><i v-for="index in 3" :key="index" /></div>
-      <div v-else-if="workspaceId && !catalogFailed && !workflows.length" class="workspace-empty"><Icon name="workflow" :size="24" /><p>{{ t('nav.workspaceNoWorkflows') }}</p><RouterLink to="/workflows" @click="emit('navigate')">{{ t('common.buttons.newWorkflow') }}</RouterLink></div>
+      <div v-else-if="workspaceReady && !catalogFailed && !workflows.length" class="workspace-empty"><Icon name="workflow" :size="24" /><p>{{ t('nav.workspaceNoWorkflows') }}</p><RouterLink to="/workflows" @click="emit('navigate')">{{ t('common.buttons.newWorkflow') }}</RouterLink></div>
       <div class="workspace-workflow-list scroll-area" :aria-busy="catalogBusy" data-testid="sidebar-workflow-list">
         <div v-for="workflow in orderedWorkflows" :key="workflow.id" class="workspace-workflow-row" :class="{ 'is-active': workflowActive(workflow.id), 'is-pinned': isFavorite(workflow.id) }" data-testid="sidebar-workflow">
           <RouterLink :to="editorPath(workflow.id)" class="workspace-workflow-link" :aria-current="workflowActive(workflow.id) ? 'page' : undefined" :title="workflow.description ? `${workflow.name}\n${workflow.description}` : workflow.name" @click="emit('navigate')">

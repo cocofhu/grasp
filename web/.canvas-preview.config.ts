@@ -6,7 +6,6 @@ const wf = {
   id: 'wf-canvas',
   name: '画布验收',
   description: '',
-  projectId: 'proj-1',
   status: 'draft',
   version: 1,
   updatedAt: '2026-10-06T00:00:00Z',
@@ -43,8 +42,8 @@ const previewApi: Plugin = {
         res.end(JSON.stringify(CANVAS_AGENTS.map((a) => ({ ...a, files: [], mcp: [], env: {} }))))
         return
       }
-      if (path === '/api/projects/proj-1') {
-        res.end(JSON.stringify({ id: 'proj-1', name: 'Grasp' }))
+      if (path === '/api/workspace') {
+        res.end(JSON.stringify({ name: 'Grasp' }))
         return
       }
       if (path.startsWith('/api/workflows')) {

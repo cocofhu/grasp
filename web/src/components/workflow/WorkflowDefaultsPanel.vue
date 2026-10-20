@@ -4,11 +4,9 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import { api } from '@/lib/api/api'
 import type { Agent, ChannelConfig } from '@/lib/api/api'
-import type { ProjectVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
+import type { WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
 const props = defineProps<{ workflow: Workflow; agents: Agent[] }>()
 const { t } = useI18n()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
 const channels = ref<ChannelConfig[]>([])
 const error = ref('')
 const events = ['waiting_human', 'failed', 'completed']
@@ -22,17 +20,17 @@ function ensureDefaults(): WorkflowDefaults {
 }
 function setInheritance(value: boolean) { ensureDefaults().inheritWorkspace = value }
 function addVariable() { ensureDefaults().variables.push({ name: '', type: 'string', value: '' }) }
-function setVariableValue(variable: ProjectVariable, input: string) { variable.value = variable.type === 'number' ? (input === '' ? '' : Number(input)) : input }
-function setVariableName(variable: ProjectVariable, name: string) {
+function setVariableValue(variable: WorkspaceVariable, input: string) { variable.value = variable.type === 'number' ? (input === '' ? '' : Number(input)) : input }
+function setVariableName(variable: WorkspaceVariable, name: string) {
   // The server can preserve a masked value only under its existing name.
   if (variable.name !== name && variable.value === '****') variable.value = ''
   variable.name = name
 }
-function setVariableSecret(variable: ProjectVariable, secret: boolean) {
+function setVariableSecret(variable: WorkspaceVariable, secret: boolean) {
   if (!secret && variable.value === '****') variable.value = ''
   variable.secret = secret
 }
-function setVariableType(variable: ProjectVariable, type: string) {
+function setVariableType(variable: WorkspaceVariable, type: string) {
   variable.type = type
   // Changing metadata must not replace an unchanged secret with a coerced value.
   if (variable.value === '****') return
@@ -53,7 +51,7 @@ function overrideGate(value: boolean) {
   else delete config.gateAuto
 }
 async function loadChannels() {
-  try { await ensureLoaded(); channels.value = (await api.listProjectChannels(workspaceId.value)).items || [] }
+  try { channels.value = (await api.listChannels()).items || [] }
   catch (cause: any) { error.value = String(cause?.message || cause) }
 }
 onMounted(() => { void loadChannels() })

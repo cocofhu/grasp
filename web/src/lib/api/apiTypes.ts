@@ -13,7 +13,6 @@ export type AgentTestRepo = { name: string; url: string; branch?: string }
 export type CreateAgentTestPayload = {
   repos?: AgentTestRepo[]
   repoUrl?: string
-  projectId?: string
 }
 
 export interface PaginatedResponse<T> {
@@ -170,14 +169,12 @@ export interface Agent {
   /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
   credentialBindings?: Record<string, string | null>
   name: string
-  /** Home project (required). */
-  projectId: string
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
   acpBackend: BackendId
-  /** Project credential selected for OpenCode. The secret is not stored here. */
+  /** Workspace credential selected for OpenCode. The secret is not stored here. */
   openCodeCredentialId?: string
-  /** Project credential selected for a non-OpenCode coding backend. */
+  /** Workspace credential selected for a non-OpenCode coding backend. */
   aiCredentialId?: string
   /** GitHub, GitLab, or SSH private-key credential selected for the Git method. */
   gitCredentialId?: string
@@ -192,14 +189,13 @@ export interface Agent {
   capabilities?: AgentCapabilities
 }
 
-/** Project-level shared Agent baseline (extend layer; Agent overlays on top). */
-export interface ProjectSharedAgentConfig {
-  projectId: string
+/** Workspace-level shared Agent baseline (extend layer; Agent overlays on top). */
+export interface SharedAgentConfig {
   acpBackend: BackendId
   gitCredentialType?: string
-  /** Project credential id for a non-OpenCode generic authorization. Empty means unset. */
+  /** Workspace credential id for a non-OpenCode generic authorization. Empty means unset. */
   aiCredentialId?: string
-  /** Project credential id for the OpenCode generic authorization. Empty means unset. */
+  /** Workspace credential id for the OpenCode generic authorization. Empty means unset. */
   openCodeCredentialId?: string
   files: AgentFile[]
   mcp: MCPServer[]
@@ -207,10 +203,9 @@ export interface ProjectSharedAgentConfig {
   layout: AgentLayout
 }
 
-/** Project-owned credential metadata. Secret values are never returned by GET. */
-export interface ProjectCredentialItem {
+/** Workspace-owned credential metadata. Secret values are never returned by GET. */
+export interface CredentialItem {
   id: string
-  projectId?: string
   /** Credential type (ai, git, ssh, mcp, custom, …). */
   type: string
   name: string
@@ -230,11 +225,11 @@ export interface ProjectCredentialItem {
   revokedAt?: string
 }
 
-export interface ProjectCredentialsResponse {
-  items: ProjectCredentialItem[]
+export interface CredentialsResponse {
+  items: CredentialItem[]
 }
 
-export interface ProjectCredentialPutBody {
+export interface CredentialPutBody {
   type?: string
   name?: string
   target?: string
@@ -249,14 +244,14 @@ export interface ProjectCredentialPutBody {
   clear?: boolean
 }
 
-export type CreateProjectSharedAgentTestPayload = {
+export type CreateSharedAgentTestPayload = {
   agentName: string
   repos?: AgentTestRepo[]
   repoUrl?: string
 }
 
 /** Result of POST /workspace/agents/import. */
-export interface ProjectAgentsImportResult {
+export interface WorkspaceAgentsImportResult {
   created?: string[]
   overwritten?: string[]
   renamed?: Record<string, string>
@@ -279,7 +274,6 @@ export interface TeamBootstrapSession {
   id: string
   status: 'starting' | 'running' | 'pulling' | 'ready' | 'failed' | string
   error?: string
-  projectId?: string
   pmAgent?: string
   sandboxId?: string
   /** Gateway/local sandbox lifecycle while bootstrap waits (pulling|creating|running|…). */
@@ -397,7 +391,6 @@ export interface ChannelConfig {
   type: string
   name: string
   enabled: boolean
-  projectId: string
   agentName: string
   isPrimary: boolean
   enabledMcps: string[]
@@ -415,7 +408,7 @@ export interface ChannelConfig {
   connectionDetail?: string
 }
 
-// Channel create/update payload. projectId is implied by the request path.
+// Channel create/update payload.
 export interface ChannelConfigInput {
   type: 'qq' | 'wecom' | 'feishu' | 'dingtalk'
   name: string
@@ -429,7 +422,7 @@ export interface ChannelConfigInput {
   cronDeliver: boolean
   cronDeliverTarget?: string
   config?: Record<string, unknown>
-  /** Confirm syncing Project.PmLeaderAgent when rebinding primary. */
+  /** Confirm syncing Workspace.PmLeaderAgent when rebinding primary. */
   syncPmLeader?: boolean
 }
 
@@ -553,5 +546,4 @@ export interface WorkflowCatalogItem {
   lastRunAt?: string
   showOnHome?: boolean
   needsRepo?: boolean
-  projectId?: string
 }

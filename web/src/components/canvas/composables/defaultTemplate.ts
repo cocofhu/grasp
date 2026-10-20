@@ -12,7 +12,7 @@ const ROLE_MATCH: Record<Role, (a: CanvasAgent) => boolean> = {
   test_review: (a) => isGated(a.capabilities),
 }
 
-/** Picks a distinct project Agent per role: template id first, then matching capabilities. */
+/** Picks a distinct workspace Agent per role: template id first, then matching capabilities. */
 export function pickTemplateAgents(agents: (CanvasAgent & { templateId?: string })[]): Record<Role, string> {
   const used = new Set<string>()
   const out = { clarify: '', implement: '', test_review: '' } as Record<Role, string>

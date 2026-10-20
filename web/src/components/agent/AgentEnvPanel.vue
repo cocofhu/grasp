@@ -25,7 +25,7 @@ import { isManagedCliEnvKey, managedCliEnvKeys } from '@/lib/agent/cliModelEnv'
 
 const props = defineProps<{
   draft: AgentStudioDraft
-  /** agent = Studio 单 Agent；shared = 项目共享配置 */
+  /** agent = Studio 单 Agent；shared = 工作区共享配置 */
   context?: 'agent' | 'shared'
 }>()
 const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': []; 'edit-model': [] }>()
@@ -61,7 +61,7 @@ function openEnvHelp(section: EnvCredentialHelpSection) {
   envHelpOpen.value = true
 }
 
-/** Secrets are owned by project credentials; env rows with these keys are rejected on save. */
+/** Secrets are owned by workspace credentials; env rows with these keys are rejected on save. */
 const credentialsRoute = computed(() => ({ path: '/settings/credentials' }))
 const rawHasSecretEnvKey = computed(() => props.draft.env.some((e) => isSecretEnvKey(e.k)))
 

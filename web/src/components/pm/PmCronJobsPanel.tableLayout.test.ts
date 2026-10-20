@@ -39,7 +39,7 @@ describe('PmCronJobsPanel table layout parity (g2.1 / g2.2)', () => {
     for (const th of headers) {
       expect(th).toMatch(/whitespace-nowrap/)
     }
-    const deleteBtn = block.slice(block.indexOf('data-testid="project-cron-delete"') - 200, block.indexOf('data-testid="project-cron-delete"'))
+    const deleteBtn = block.slice(block.indexOf('data-testid="workspace-cron-delete"') - 200, block.indexOf('data-testid="workspace-cron-delete"'))
     expect(deleteBtn).toMatch(/whitespace-nowrap/)
   })
 })

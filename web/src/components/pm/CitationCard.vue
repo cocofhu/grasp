@@ -145,7 +145,7 @@ function open() {
         data-testid="citation-open-source"
         @click="open"
       >
-        {{ t(citation.type === 'artifact' ? 'pages.conversationWorkspace.openArtifacts' : 'pages.projectDetail.pm.openSource') }}
+        {{ t(citation.type === 'artifact' ? 'pages.conversationWorkspace.openArtifacts' : 'pages.workspace.pm.openSource') }}
         <Icon name="arrow-right" :size="12" aria-hidden="true" />
       </button>
       <p
@@ -153,13 +153,13 @@ function open() {
         class="basis-full text-[11px] text-err"
         data-testid="citation-invalid-note"
       >
-        {{ t('pages.projectDetail.pm.citationInvalid') }}
+        {{ t('pages.workspace.pm.citationInvalid') }}
       </p>
     </div>
     <div v-if="expanded" class="citation-detail border-l border-line pl-3 py-1 text-xs leading-6 text-txt2">
       <pre v-if="citation.detail" class="whitespace-pre-wrap break-all">{{ citation.detail }}</pre>
       <p v-else>{{ citation.summarySnippet || citation.targetId }}</p>
-      <p v-if="shapeValid && !hrefFor()" class="mt-1 text-warn">{{ t('pages.projectDetail.pm.citationMissing') }}</p>
+      <p v-if="shapeValid && !hrefFor()" class="mt-1 text-warn">{{ t('pages.workspace.pm.citationMissing') }}</p>
     </div>
   </div>
 </template>

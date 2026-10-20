@@ -5,10 +5,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 
-const mocks = vi.hoisted(() => ({ startRun: vi.fn(), listProjectRunTags: vi.fn() }))
+const mocks = vi.hoisted(() => ({ startRun: vi.fn(), listRunTags: vi.fn() }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return { ...actual, api: { ...actual.api, startRun: mocks.startRun, listProjectRunTags: mocks.listProjectRunTags } }
+  return { ...actual, api: { ...actual.api, startRun: mocks.startRun, listRunTags: mocks.listRunTags } }
 })
 import RunLaunchModal from './RunLaunchModal.vue'
 
@@ -25,7 +25,7 @@ function mountModal(extra: Record<string, unknown> = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(RunLaunchModal, {
     props: {
-      open: true, workflowId: 'wf', projectId: 'p', workflowName: 'Flow', fields,
+      open: true, workflowId: 'wf', workflowName: 'Flow', fields,
       runInputs: { sel: 'a', bool: 'false', num: '2', text: 'x', para: 'body', repos: '[{"name":"api","url":"u"}]', other: 'y' },
       runImages: { para: [] }, firstMessage: null, ...extra,
     },
@@ -46,7 +46,7 @@ function mountModal(extra: Record<string, unknown> = {}) {
 describe('RunLaunchModal interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.listProjectRunTags.mockResolvedValue({ tags: ['bug', 'feature'] })
+    mocks.listRunTags.mockResolvedValue({ tags: ['bug', 'feature'] })
     mocks.startRun.mockResolvedValue({ id: 'run-1' })
   })
 

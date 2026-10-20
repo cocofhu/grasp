@@ -42,8 +42,6 @@ import {
 const props = defineProps<{
   open: boolean
   existingNames: string[]
-  /** When set, Git step can inherit project shared Agent env for hide/infer. */
-  projectId?: string
 }>()
 
 const emit = defineEmits<{
@@ -76,7 +74,7 @@ const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentReg
 const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
 const previewLine = computed(() =>
   t('pages.agentStudio.teamWizard.previewLine', {
-    project: draft.value.projectName.trim() || '—',
+    team: draft.value.teamName.trim() || '—',
     pm: draft.value.pmName || '—',
     n: TEAM_ENGINEER_COUNT,
   }),
@@ -94,7 +92,7 @@ watch(
     customConfigError.value = false
     customConfigDraft.value = ''
     stepAnimKey.value++
-    nextTick(() => document.getElementById('team-wiz-project')?.focus())
+    nextTick(() => document.getElementById('team-wiz-name')?.focus())
   },
 )
 
@@ -109,7 +107,7 @@ function upsertEnv(key: string, value: string) {
   else draft.value.env.push({ k: key, v: value })
 }
 
-function onProjectInput() {
+function onTeamNameInput() {
   syncDerivedNames(draft.value)
 }
 
@@ -413,14 +411,14 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <div class="mb-4 grid gap-3 md:grid-cols-2">
                     <label class="block">
                       <span class="mb-1.5 block text-[12px] font-medium text-txt2">
-                        {{ t('pages.agentStudio.teamWizard.team.projectName') }}
+                        {{ t('pages.agentStudio.teamWizard.team.teamName') }}
                         <span class="text-err">*</span>
                       </span>
                       <input
-                        id="team-wiz-project"
-                        v-model="draft.projectName"
+                        id="team-wiz-name"
+                        v-model="draft.teamName"
                         class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                        @input="onProjectInput"
+                        @input="onTeamNameInput"
                       />
                     </label>
                     <label class="block">
@@ -598,7 +596,7 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                 <template v-else-if="currentStep.id === 'review'">
                   <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.review.meta') }}</p>
                   <div class="rounded-lg border border-line bg-elevated px-4 py-3 text-[13px] leading-7 text-txt2">
-                    <div>{{ t('pages.agentStudio.teamWizard.review.project') }}：<strong class="text-txt">{{ draft.projectName }}</strong></div>
+                    <div>{{ t('pages.agentStudio.teamWizard.review.team') }}：<strong class="text-txt">{{ draft.teamName }}</strong></div>
                     <div>PM：<strong class="text-txt">{{ draft.pmName }}</strong></div>
                     <div>ACP：<strong class="text-txt">{{ draft.acpBackend }}</strong></div>
                     <div>API Key：<strong class="text-txt">{{ teamHasAuth(draft) ? (draft.authMode === 'customConfig' ? t('pages.agentStudio.wizard.review.customConfigWritten') : t('pages.agentStudio.teamWizard.review.set')) : t('pages.agentStudio.teamWizard.review.skip') }}</strong></div>

@@ -40,10 +40,8 @@ const props = defineProps<{
   profile: string
   attachId?: number
   embedded?: boolean
-  /** Agent home project id from Studio; omitted when attaching via attachId. */
-  homeProjectId?: string
   /**
-   * Required override for starting a test sandbox (project shared-config dialogue test).
+   * Required override for starting a test sandbox (workspace shared-config dialogue test).
    * Omitted when attaching to an existing sandbox via attachId.
    */
   createTest?: (profile: string, payload: CreateAgentTestPayload) => Promise<SandboxView>
@@ -199,16 +197,13 @@ async function start() {
     const payload =
       launchMode.value === 'clone'
         ? {
-            ...(props.homeProjectId?.trim() ? { projectId: props.homeProjectId.trim() } : {}),
             repos: validRepos.value.map((r) => ({
               name: r.name.trim(),
               url: r.url.trim(),
               ...(r.branch.trim() ? { branch: r.branch.trim() } : {}),
             })),
           }
-        : {
-            ...(props.homeProjectId?.trim() ? { projectId: props.homeProjectId.trim() } : {}),
-          }
+        : {}
     sandbox.value = await props.createTest(props.profile, payload)
     await waitReady(sandbox.value.id)
   } catch (e: any) {

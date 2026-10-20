@@ -55,7 +55,7 @@ async function mockApis(page: Page) {
     const method = route.request().method()
     const p = url.pathname
 
-    if (p.match(/\/projects\/[^/]+\/channels$/) && method === 'GET') {
+    if (p === '/api/workspace/channels' && method === 'GET') {
       await route.fulfill({
         status: 200,
         json: {
@@ -66,7 +66,7 @@ async function mockApis(page: Page) {
       })
       return
     }
-    if (p.match(/\/projects\/[^/]+\/channels$/) && method === 'POST') {
+    if (p === '/api/workspace/channels' && method === 'POST') {
       const body = route.request().postDataJSON() as Record<string, unknown>
       const created = {
         id: `chn-new-${Date.now()}`,
@@ -87,7 +87,7 @@ async function mockApis(page: Page) {
       await route.fulfill({ status: 200, json: created })
       return
     }
-    if (p.match(/\/projects\/[^/]+\/channels\/[^/]+$/) && method === 'PUT') {
+    if (p.match(/^\/api\/workspace\/channels\/[^/]+$/) && method === 'PUT') {
       const id = p.split('/').pop()!
       const body = route.request().postDataJSON() as Record<string, unknown>
       channels = channels.map((c) =>
@@ -109,7 +109,7 @@ async function mockApis(page: Page) {
       await route.fulfill({ status: 200, json: channels.find((c) => c.id === id) })
       return
     }
-    if (p.match(/\/projects\/[^/]+\/channels\/[^/]+$/) && method === 'DELETE') {
+    if (p.match(/^\/api\/workspace\/channels\/[^/]+$/) && method === 'DELETE') {
       const id = p.split('/').pop()!
       lastDeleteBody = (route.request().postDataJSON() as Record<string, unknown>) || {}
       const target = channels.find((c) => c.id === id)
@@ -133,11 +133,10 @@ async function mockApis(page: Page) {
       await route.fulfill({ status: 200, json: { status: 'ok' } })
       return
     }
-    if (p.match(/\/projects\/[^/]+$/) && method === 'GET') {
+    if (p === '/api/workspace' && method === 'GET') {
       await route.fulfill({
         status: 200,
         json: {
-          id: 'proj-e2e',
           name: 'E2E Multi Channel',
           notifyPolicy: {
             enabled: true,
@@ -148,14 +147,13 @@ async function mockApis(page: Page) {
       })
       return
     }
-    if (p.match(/\/projects\/[^/]+$/) && (method === 'PUT' || method === 'PATCH')) {
+    if (p === '/api/workspace' && (method === 'PUT' || method === 'PATCH')) {
       lastNotifyBody = route.request().postDataJSON() as Record<string, unknown>
       const pol = (lastNotifyBody.notifyPolicy || {}) as { channelIds?: string[] }
       notifyChannelIds = Array.isArray(pol.channelIds) ? pol.channelIds : []
       await route.fulfill({
         status: 200,
         json: {
-          id: 'proj-e2e',
           name: 'E2E Multi Channel',
           notifyPolicy: {
             enabled: true,
@@ -166,7 +164,7 @@ async function mockApis(page: Page) {
       })
       return
     }
-    if (p.match(/\/projects\/[^/]+\/pm\/threads/)) {
+    if (p.startsWith('/api/workspace/pm/threads')) {
       await route.fulfill({ status: 200, json: { items: [] } })
       return
     }
@@ -190,13 +188,12 @@ test.describe('QQ multi-channel primary/secondary UI', () => {
     await expect(page.getByTestId('pm-channel-multi-root')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('pm-channel-multi')).toBeVisible()
 
-    // g5.1: three tabs, no "每项目一个渠道"
+    // g5.1: three tabs
     await expect(page.getByTestId('channel-tab-list')).toBeVisible()
     await expect(page.getByTestId('channel-tab-edit')).toBeVisible()
     await expect(page.getByTestId('channel-tab-notify')).toBeVisible()
-    await expect(page.getByText('每个项目一个渠道')).toHaveCount(0)
     await expect(
-      page.getByText('同一项目可配置多个 Channel（QQ / 企业微信 / 飞书 / 钉钉，主+副）'),
+      page.getByText('同一工作区可配置多个 Channel（QQ / 企业微信 / 飞书 / 钉钉，主+副）', { exact: false }),
     ).toBeVisible()
 
     // list shows primary/secondary
@@ -227,7 +224,7 @@ test.describe('QQ multi-channel primary/secondary UI', () => {
     // g5.3: notify tab multi-select + empty hint
     await page.getByTestId('channel-tab-notify').click()
     await expect(page.getByTestId('channel-panel-notify')).toBeVisible()
-    await expect(page.getByText('项目通知 · Channel 目标')).toBeVisible()
+    await expect(page.getByText('工作区通知 · Channel 目标')).toBeVisible()
     await expect(page.getByText('已选 2')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '03-notify-targets.png'), fullPage: true })
 

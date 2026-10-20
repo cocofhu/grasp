@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref, toRef, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import RunBoardColumn from '@/components/board/RunBoardColumn.vue'
@@ -11,9 +11,7 @@ import { serializeStatusQuery } from '@/lib/composables/useStatusFilter'
 import { useRunBoard, type BoardColumnKey } from '@/lib/run/useRunBoard'
 import type { Run } from '@/lib/shared/types'
 
-const props = defineProps<{
-  /** Internal workspace identity for the shared board. */
-  projectId: string
+defineProps<{
   /** Hide the standalone heading when hosted by the workspace tool page. */
   embedded?: boolean
 }>()
@@ -35,16 +33,9 @@ const extraStatuses = computed(() => {
   return set
 })
 
-const projectIdRef = toRef(props, 'projectId')
-
 const { load, column, loading, hasLoaded, error } = useRunBoard({
   mode: 'full',
-  projectId: projectIdRef,
   extraStatuses: () => extraStatuses.value,
-})
-
-watch(projectIdRef, () => {
-  void load()
 })
 const selected = ref<Run | null>(null)
 const drawerOpen = ref(false)
@@ -180,7 +171,7 @@ onUnmounted(() => {
 
     <div class="min-h-0 flex-1 overflow-y-auto">
     <div
-      v-if="error && error !== 'missing_project'"
+      v-if="error"
       class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
       data-testid="board-load-error"
     >
@@ -282,7 +273,6 @@ onUnmounted(() => {
 
     <RunBoardStatusListModal
       :open="listModalOpen"
-      :project-id="projectId"
       :status="listModalStatus"
       :title="listModalTitle"
       @close="closeListModal"

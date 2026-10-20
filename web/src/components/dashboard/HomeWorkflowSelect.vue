@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
-export type HomeWorkflowOption = { id: string; name: string; projectName?: string }
+export type HomeWorkflowOption = { id: string; name: string }
 
 const props = withDefaults(
   defineProps<{
@@ -449,14 +449,6 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.home-workflow-select__opt-project {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 11px;
-  color: rgb(var(--c-txt2));
 }
 
 .home-workflow-select__opt:hover,

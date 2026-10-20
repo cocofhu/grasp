@@ -24,7 +24,7 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
       })
       return
     }
-    if (url.pathname === '/api/workspace') return route.fulfill({ json: { id: 'proj-e2e', name: 'Workspace' } })
+    if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   })
 
@@ -105,7 +105,7 @@ test('English template dropdown shows localized names without Chinese or interna
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     if (!url.pathname.startsWith('/api/')) return route.continue()
-    if (url.pathname === '/api/workspace') return route.fulfill({ json: { id: 'proj-e2e', name: 'Workspace' } })
+    if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
     if (url.pathname === '/api/agent-teams/templates') {
       return route.fulfill({
         json: {

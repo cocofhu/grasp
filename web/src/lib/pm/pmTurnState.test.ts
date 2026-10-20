@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it } from 'vitest'
-import { isPmFailKind, migratePmActiveThreadStorage, pmActiveThreadStorageKey, pmWsReconnectDelayMs } from './pmTurnState'
+import { describe, expect, it } from 'vitest'
+import { PM_ACTIVE_THREAD_STORAGE_KEY, isPmFailKind, pmWsReconnectDelayMs } from './pmTurnState'
 
 describe('pmTurnState', () => {
   it('isPmFailKind accepts the product kinds', () => {
@@ -16,28 +16,7 @@ describe('pmTurnState', () => {
   })
 
   it('uses one active thread selection for the workspace', () => {
-    expect(pmActiveThreadStorageKey('p1')).toBe('pm-leader:active-thread')
+    expect(PM_ACTIVE_THREAD_STORAGE_KEY).toBe('pm-leader:active-thread')
   })
 })
 
-describe('PM local preference conversion', () => {
-  afterEach(() => localStorage.clear())
-  it('uses the previously selected workspace only when its remembered thread is visible', () => {
-    localStorage.setItem('grasp-project-context', 'old-p')
-    localStorage.setItem('pm-leader:active-thread:old-p', 'old-thread')
-    localStorage.setItem('pm-leader:active-thread:canonical', 'canonical-thread')
-    migratePmActiveThreadStorage(['old-thread', 'canonical-thread'], 'canonical')
-    expect(localStorage.getItem(pmActiveThreadStorageKey())).toBe('old-thread')
-    expect(localStorage.getItem('grasp-project-context')).toBeNull()
-    expect(localStorage.getItem('pm-leader:active-thread:old-p')).toBe('old-thread')
-  })
-  it('waits for visible data and replaces an inaccessible local selection', () => {
-    localStorage.setItem('grasp-project-context', 'old-p')
-    localStorage.setItem('pm-leader:active-thread:old-p', 'visible')
-    localStorage.setItem(pmActiveThreadStorageKey(), 'another-user-thread')
-    migratePmActiveThreadStorage([], 'canonical')
-    expect(localStorage.getItem('pm-leader:workspace-selection-v1')).toBeNull()
-    migratePmActiveThreadStorage(['visible'], 'canonical')
-    expect(localStorage.getItem(pmActiveThreadStorageKey())).toBe('visible')
-  })
-})

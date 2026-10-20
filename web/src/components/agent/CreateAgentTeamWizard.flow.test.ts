@@ -8,7 +8,7 @@ import CreateAgentTeamWizard from './CreateAgentTeamWizard.vue'
 
 const mocks = vi.hoisted(() => ({
   bootstrapAgentTeam: vi.fn(),
-  getProjectSharedAgentConfig: vi.fn(),
+  getSharedAgentConfig: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -18,7 +18,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       bootstrapAgentTeam: mocks.bootstrapAgentTeam,
-      getProjectSharedAgentConfig: mocks.getProjectSharedAgentConfig,
+      getSharedAgentConfig: mocks.getSharedAgentConfig,
     },
   }
 })
@@ -74,8 +74,8 @@ function emitPanel(w: ReturnType<typeof mountWizard>, event: string, payload: un
 
 /** Fill the required basics so step 0 validation passes. */
 function fillBasics(vm: any, name = '登月') {
-  vm.draft.projectName = name
-  vm.onProjectInput()
+  vm.draft.teamName = name
+  vm.onTeamNameInput()
   vm.draft.background = '把火箭送上天'
 }
 
@@ -96,16 +96,16 @@ function goNextThrough(vm: any, count: number) {
 describe('CreateAgentTeamWizard flow', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    mocks.getProjectSharedAgentConfig.mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} })
+    mocks.getSharedAgentConfig.mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} })
     mocks.bootstrapAgentTeam.mockResolvedValue({ sessionId: 's1' })
   })
 
-  it('derives names from the project name and blocks Next until basics are valid', async () => {
+  it('derives names from the team name and blocks Next until basics are valid', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
 
-    // Empty project name fails validation and keeps the wizard on step 0.
+    // Empty team name fails validation and keeps the wizard on step 0.
     vm.goNext()
     await flushPromises()
     expect(vm.draft.step).toBe(0)
@@ -118,10 +118,10 @@ describe('CreateAgentTeamWizard flow', () => {
     expect(vm.previewLine).toContain('登月')
     expect(vm.previewLine).toContain('登月项目经理')
 
-    // A touched prefix wins over the project name for derived values.
+    // A touched prefix wins over the team name for derived values.
     vm.draft.prefixTouched = true
     vm.draft.prefix = 'Luna'
-    vm.onProjectInput()
+    vm.onTeamNameInput()
     expect(vm.draft.pmName).toBe('Luna项目经理')
 
     vm.goNext()
@@ -290,7 +290,7 @@ describe('CreateAgentTeamWizard flow', () => {
   })
 
   it('collects git url and credential type from the guide', async () => {
-    const w = mountWizard({ projectId: 'proj-a' })
+    const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
 
@@ -399,7 +399,7 @@ describe('CreateAgentTeamWizard flow', () => {
 
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
     const payload = mocks.bootstrapAgentTeam.mock.calls[0][0]
-    expect(payload).not.toHaveProperty('projectName')
+    expect(payload).not.toHaveProperty('teamName')
     expect(payload.pmName).toBe('登月项目经理')
     expect(payload.apiKey).toBe('sk-live')
     expect(w.emitted('started')).toBeTruthy()
@@ -483,7 +483,7 @@ describe('CreateAgentTeamWizard flow', () => {
     await w.setProps({ open: false })
     await w.setProps({ open: true })
     await flushPromises()
-    expect(vm.draft.projectName).toBe('')
+    expect(vm.draft.teamName).toBe('')
     expect(vm.draft.step).toBe(0)
 
     w.unmount()

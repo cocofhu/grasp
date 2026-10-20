@@ -15,7 +15,7 @@ export type AddLink =
 
 export interface CanvasEditorOptions {
   graph: GraphLike
-  /** Project Agents; null while loading. */
+  /** Workspace Agents; null while loading. */
   agents: Ref<CanvasAgent[] | null>
   t: Translate
   /** Default label for a new node of a type. */

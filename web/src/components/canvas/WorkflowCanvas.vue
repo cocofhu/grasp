@@ -46,7 +46,7 @@ const props = withDefaults(
     mode?: CanvasMode
     /** Required in edit mode. */
     editor?: CanvasEditor | null
-    /** Run mode: project agents used to resolve outlets when nodes carry no caps snapshot. */
+    /** Run mode: workspace agents used to resolve outlets when nodes carry no caps snapshot. */
     agents?: CanvasAgent[]
     statusMap?: Record<string, NodeRunStatus>
     iterations?: Record<string, number>

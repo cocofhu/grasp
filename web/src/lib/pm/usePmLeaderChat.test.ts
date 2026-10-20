@@ -44,7 +44,6 @@ import { usePmLeaderChat } from './usePmLeaderChat'
 
 const THREAD = {
   id: 'th-1',
-  projectId: 'proj-1',
   userId: 'u1',
   agentName: 'pm',
   kind: 'pm',
@@ -64,7 +63,7 @@ function withChat() {
   const Comp = defineComponent({
     setup() {
       chat = usePmLeaderChat(
-        { projectId: 'proj-1', binding: { enabled: true, agentConfigRef: 'pm', agentAvailable: true, aclNote: '' } },
+        { binding: { enabled: true, agentConfigRef: 'pm', agentAvailable: true, aclNote: '' } },
         emit,
       )
       return () => null

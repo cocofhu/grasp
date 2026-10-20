@@ -15,7 +15,7 @@ const apiMocks = vi.hoisted(() => ({
   updatePmLeader: vi.fn(),
   listAgents: vi.fn(),
   getWorkspace: vi.fn(),
-  listProjectChannels: vi.fn(),
+  listChannels: vi.fn(),
   listPmThreads: vi.fn(),
 }))
 
@@ -34,7 +34,7 @@ vi.mock('@/lib/api/api', async () => {
       updatePmLeader: apiMocks.updatePmLeader,
       listAgents: apiMocks.listAgents,
       getWorkspace: apiMocks.getWorkspace,
-      listProjectChannels: apiMocks.listProjectChannels,
+      listChannels: apiMocks.listChannels,
       listPmThreads: apiMocks.listPmThreads,
     },
   }
@@ -64,18 +64,16 @@ async function mountPanel(
   apiMocks.getPmLeader.mockResolvedValue(binding)
   apiMocks.listAgents.mockResolvedValue([{ name: 'agent-1' }])
   apiMocks.getWorkspace.mockResolvedValue({
-    id: 'proj-1',
     name: 'Demo',
     notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
   })
-  apiMocks.listProjectChannels.mockResolvedValue({
+  apiMocks.listChannels.mockResolvedValue({
     items: channelFixture.channel
       ? [{
           id: 'chn-1',
           type: 'qq',
           name: String((channelFixture.channel as any).name || 'QQ'),
           enabled: !!(channelFixture.channel as any).enabled,
-          projectId: 'proj-1',
           agentName: 'agent-1',
           isPrimary: true,
           enabledMcps: ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager'],
@@ -92,7 +90,7 @@ async function mountPanel(
     secretsKeyConfigured: channelFixture.secretsKeyConfigured ?? true,
     freeAgents: ['agent-1'],
   })
-  apiMocks.updatePmLeader.mockImplementation(async (_id: string, body: Record<string, unknown>) => ({
+  apiMocks.updatePmLeader.mockImplementation(async (body: Record<string, unknown>) => ({
     ...BINDING,
     ...body,
     agentAvailable: true,
@@ -110,7 +108,6 @@ async function mountPanel(
   })
   await router.push('/')
   const w = mount(PmSettingsPanel, {
-    props: { projectId: 'proj-1' },
     global: {
       plugins: [i18n, router],
       stubs: {
@@ -158,7 +155,7 @@ describe('PmSettingsPanel enabledMcps', () => {
     await saveBtn!.trigger('click')
     await flushPromises()
 
-    const body = apiMocks.updatePmLeader.mock.calls[0][1] as { enabledMcps: string[] }
+    const body = apiMocks.updatePmLeader.mock.calls[0][0] as { enabledMcps: string[] }
     expect(body.enabledMcps).toEqual(['pm-progress', 'pm-workflow-read'])
   })
 
@@ -187,7 +184,7 @@ describe('PmSettingsPanel enabledMcps', () => {
     await saveBtn!.trigger('click')
     await flushPromises()
 
-    const body = apiMocks.updatePmLeader.mock.calls[0][1] as { enabledMcps: string[] }
+    const body = apiMocks.updatePmLeader.mock.calls[0][0] as { enabledMcps: string[] }
     expect(body.enabledMcps).toEqual(['pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager'])
   })
 
@@ -207,7 +204,7 @@ describe('PmSettingsPanel enabledMcps', () => {
     await saveBtn!.trigger('click')
     await flushPromises()
 
-    const body = apiMocks.updatePmLeader.mock.calls[0][1] as { enabledMcps: string[] }
+    const body = apiMocks.updatePmLeader.mock.calls[0][0] as { enabledMcps: string[] }
     expect(body.enabledMcps).toEqual([])
   })
 
@@ -244,7 +241,7 @@ describe('PmSettingsPanel gate-auto config', () => {
     await flushPromises()
 
     const updateCalls = apiMocks.updatePmLeader.mock.calls
-    const body = updateCalls[updateCalls.length - 1]?.[1] as {
+    const body = updateCalls[updateCalls.length - 1]?.[0] as {
       gateAutoVar: string
       gateAutoPrompt: string
     }
@@ -256,10 +253,10 @@ describe('PmSettingsPanel gate-auto config', () => {
     const w = await mountPanel()
     await w.get('[data-testid="pm-gate-auto-var"]').setValue('pending_approval')
     await mcpSwitches(w)[0].trigger('click')
-    const updatedProject = { id: 'proj-1', name: 'Updated from channel', variables: [] }
-    w.getComponent({ name: 'PmChannelMultiPanel' }).vm.$emit('project-updated', updatedProject)
+    const updatedWorkspace = { name: 'Updated from channel', description: '', variables: [] }
+    w.getComponent({ name: 'PmChannelMultiPanel' }).vm.$emit('workspace-updated', updatedWorkspace)
     await flushPromises()
-    expect(w.emitted('project-updated')).toEqual([[updatedProject]])
+    expect(w.emitted('workspace-updated')).toEqual([[updatedWorkspace]])
     expect((w.get('[data-testid="pm-gate-auto-var"]').element as HTMLInputElement).value).toBe('pending_approval')
 
     apiMocks.updatePmLeader.mockRejectedValueOnce(new Error('Save failed'))
@@ -307,7 +304,7 @@ describe('PmSettingsPanel grouped settings', () => {
     expect(text).not.toContain('无官方模板')
     expect(text).not.toContain('仅配置项目管理专用 MCP')
     expect(text).not.toContain('No official template')
-    expect(text).not.toContain('pages.projectDetail.pm.settingsHint')
+    expect(text).not.toContain('pages.workspace.pm.settingsHint')
 
     expect(text).toContain('任意已登录用户可启用/换绑/停用')
     expect(text).toContain('通用记忆/上下文/调度器始终注入，不受此列表控制')
@@ -335,7 +332,6 @@ describe('PmSettingsPanel grouped settings', () => {
     })
     await router.push('/')
     const w2 = mount(PmSettingsPanel, {
-      props: { projectId: 'proj-1' },
       global: { plugins: [i18n, router], stubs: { PmChannelMultiPanel: true } },
     })
     await flushPromises()
@@ -357,11 +353,10 @@ describe('PmSettingsPanel grouped settings en locale', () => {
     vi.clearAllMocks()
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.getWorkspace.mockResolvedValue({
-      id: 'proj-1',
       name: 'Demo',
       notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
     })
-    apiMocks.listProjectChannels.mockResolvedValue({
+    apiMocks.listChannels.mockResolvedValue({
       items: [],
       secretsKeyConfigured: true,
       freeAgents: ['agent-1'],
@@ -383,7 +378,6 @@ describe('PmSettingsPanel grouped settings en locale', () => {
     })
     await router.push('/')
     const w = mount(PmSettingsPanel, {
-      props: { projectId: 'proj-1' },
       global: { plugins: [i18n, router], stubs: { PmChannelMultiPanel: true } },
     })
     await flushPromises()
@@ -394,6 +388,6 @@ describe('PmSettingsPanel grouped settings en locale', () => {
     expect(text).toContain('Any signed-in user may enable, rebind, or disable')
     expect(text).toContain('Shared memory/context/scheduler always inject and are not controlled here.')
     expect(text).not.toContain('No official template')
-    expect(text).not.toContain('pages.projectDetail.pm.settingsHint')
+    expect(text).not.toContain('pages.workspace.pm.settingsHint')
   })
 })

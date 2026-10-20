@@ -77,7 +77,7 @@ describe('Vue consumers no longer hardcode JSON palette (g3.1 / g2)', () => {
   const files = [
     join(vueDir, 'run/ArtifactPreview.vue'),
     join(vueDir, 'run/UpstreamRequirementContext.vue'),
-    join(vueDir, 'project/ProjectAuditPanel.vue'),
+    join(vueDir, 'workspace/WorkspaceAuditPanel.vue'),
   ]
 
   it.each(files)('%s does not contain old JSON hex', (file) => {

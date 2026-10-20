@@ -10,16 +10,16 @@ import pages from '@/locales/zh-CN/pages.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspaceId: ref('original-workspace'), isMobile: ref(false), listWorkflows: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
+  return { workspace: ref({ name: 'Workspace', description: '', variables: [] }), isMobile: ref(false), listWorkflows: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
 })
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: mocks.workspaceId, ensureLoaded: async () => ({ id: mocks.workspaceId.value }) }) }))
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, ensureLoaded: async () => mocks.workspace.value }) }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ success: vi.fn(), error: mocks.error, warn: vi.fn() }) }))
 vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: mocks.isMobile }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: mocks.triggerImport, handleFileChange: vi.fn() }) }))
 import WorkflowsView from './WorkflowsView.vue'
-const head = { id: 'wf-one', projectId: 'original-workspace', name: 'Draft one', description: 'First workflow', status: 'draft', version: 3, publishedVersion: 2, nodes: [{ id: 'input', type: 'input', config: { variables: [{ name: 'current', ask: true, required: true, value: 'head value' }] } }], edges: [], updatedAt: '2026-10-20', showOnHome: false }
+const head = { id: 'wf-one', name: 'Draft one', description: 'First workflow', status: 'draft', version: 3, publishedVersion: 2, nodes: [{ id: 'input', type: 'input', config: { variables: [{ name: 'current', ask: true, required: true, value: 'head value' }] } }], edges: [], updatedAt: '2026-10-20', showOnHome: false }
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push('/workflows')
@@ -30,7 +30,7 @@ async function setup() {
 }
 beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.isMobile.value = false; mocks.listWorkflows.mockResolvedValue([head]); mocks.getWorkflow.mockResolvedValue(head) })
 describe('workspace workflow management', () => {
-  it('searches in the management page while preserving direct editing without project queries', async () => {
+  it('searches in the management page while preserving direct editing with a clean URL', async () => {
     const { wrapper, router } = await setup()
     expect(wrapper.text()).toContain('Draft one')
     await wrapper.get('input[type="search"]').setValue('unmatched')

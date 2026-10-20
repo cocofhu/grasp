@@ -42,7 +42,7 @@ const MOCK_RUNS = {
 
 async function mockBoardApis(page: import('@playwright/test').Page) {
   await page.route('**/api/workspace', async (route) => {
-    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'proj-1', name: '工作区', description: '', variables: [] }) })
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ name: '工作区', description: '', variables: [] }) })
   })
   await page.route('**/api/stats/dashboard', async (route) => {
     if (route.request().method() === 'GET') {
@@ -147,7 +147,7 @@ async function gotoBoardHarness(
 }
 
 test.beforeEach(async ({ page }) => {
-  await page.route('**/api/workspace', async (route) => route.fulfill({ json: { id: 'proj-1', name: '工作区', description: '', variables: [] } }))
+  await page.route('**/api/workspace', async (route) => route.fulfill({ json: { name: '工作区', description: '', variables: [] } }))
 })
 
 test.describe('工作区进度看板', () => {
@@ -157,14 +157,12 @@ test.describe('工作区进度看板', () => {
     await expect(page.getByTestId('home-yume')).toBeVisible()
     await expect(page.getByTestId('home-composer')).toBeVisible()
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
-    await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
   })
 
-  test('Dashboard 直接展示工作流，无项目选择门槛', async ({ page }) => {
+  test('Dashboard 直接展示工作流', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'dashboard' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('home-composer')).toBeVisible()
     await expect(page.getByTestId('home-workflow-card-wf-approve')).toContainText('自我迭代PRO')
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)

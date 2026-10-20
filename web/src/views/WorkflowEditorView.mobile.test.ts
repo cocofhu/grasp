@@ -44,10 +44,6 @@ vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn() }),
 }))
 
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  readStoredProjectId: () => '',
-}))
-
 vi.mock('@/lib/run/useWorkflowImport', () => ({
   useWorkflowImport: () => ({
     fileInput: ref(null),
@@ -94,7 +90,7 @@ async function mountEditor() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/projects', component: { render: () => h('div') } },
+      { path: '/workflows', component: { render: () => h('div') } },
       { path: '/workflows/:id/edit', component: WorkflowEditorView },
     ],
   })
@@ -193,17 +189,12 @@ describe('WorkflowEditorView back navigation', () => {
   }
 
   it('desktop back lands on the workflow management', async () => {
-    const target = await backTarget(false, { ...MOCK_WF, projectId: 'proj-1' })
+    const target = await backTarget(false, { ...MOCK_WF })
     expect(target).toBe('/workflows')
   })
 
   it('mobile back lands on the workflow management', async () => {
-    const target = await backTarget(true, { ...MOCK_WF, projectId: 'proj-1' })
-    expect(target).toBe('/workflows')
-  })
-
-  it('links to workflow management when the workflow has no projectId', async () => {
-    const target = await backTarget(false, { ...MOCK_WF })
+    const target = await backTarget(true, { ...MOCK_WF })
     expect(target).toBe('/workflows')
   })
 })

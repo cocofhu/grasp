@@ -11,7 +11,6 @@ import {
   markFirstInstallCompleted,
   onboardingMode,
   onboardingOpen,
-  onboardingProjectId,
   probeFirstInstall,
 } from '@/lib/pm/firstInstall'
 import { useAuth } from '@/lib/composables/useAuth'
@@ -73,7 +72,6 @@ watch(
   <OnboardingWizard
     v-if="!bareLayout"
     :open="onboardingOpen"
-    :project-id="onboardingProjectId"
     :mode="onboardingMode"
     @close="closeFirstInstall"
     @completed="markFirstInstallCompleted"

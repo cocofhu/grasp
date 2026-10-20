@@ -8,7 +8,7 @@ import HomeCreateBaselineModal from './HomeCreateBaselineModal.vue'
 
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
-  listProjects: vi.fn(),
+  ensureLoaded: vi.fn(),
   createWorkflowFromBaseline: vi.fn(),
   toastSuccess: vi.fn(),
 }))
@@ -23,7 +23,6 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjects: mocks.listProjects,
       createWorkflowFromBaseline: mocks.createWorkflowFromBaseline,
     },
   }
@@ -31,7 +30,7 @@ vi.mock('@/lib/api/api', async () => {
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
   const { ref } = await import('vue')
-  return { useWorkspaceContext: () => ({ workspaceId: ref('proj-1'), ensureLoaded: mocks.listProjects }) }
+  return { useWorkspaceContext: () => ({ workspace: ref(null), ensureLoaded: mocks.ensureLoaded }) }
 })
 
 vi.mock('@/lib/composables/useToast', () => ({
@@ -42,10 +41,7 @@ vi.mock('@/lib/composables/useToast', () => ({
   }),
 }))
 
-
-const p1 = { id: 'proj-1', name: 'Grasp', description: '', variables: [] }
-const p2 = { id: 'proj-2', name: 'Platform', description: '', variables: [] }
-const p3 = { id: 'proj-3', name: 'Demo', description: '', variables: [] }
+const workspace = { name: 'Grasp', description: '', variables: [] }
 
 function q(testid: string) {
   const el = document.querySelector(`[data-testid="${testid}"]`)
@@ -76,10 +72,10 @@ function mountModal(open = true) {
 describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
   beforeEach(() => {
     mocks.push.mockReset()
-    mocks.listProjects.mockReset()
+    mocks.ensureLoaded.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
     mocks.toastSuccess.mockReset()
-    mocks.listProjects.mockResolvedValue(p1)
+    mocks.ensureLoaded.mockResolvedValue(workspace)
     mocks.createWorkflowFromBaseline.mockResolvedValue({ id: 'wf-new', name: '需求对齐工作流' })
   })
 
@@ -87,29 +83,29 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     document.body.innerHTML = ''
   })
 
-  // plan g2.2 — exactly one project skips the pick list
-  it('skips project list for a single project and focuses the name field', async () => {
+  // plan g2.2 — the form opens directly once the workspace is loaded
+  it('loads the workspace and focuses the name field', async () => {
     const wrapper = mountModal()
     await flushPromises()
-    expect(qExists('home-create-project-list')).toBe(false)
+    expect(mocks.ensureLoaded).toHaveBeenCalledTimes(1)
     const name = q('home-create-workflow-name')
     expect(name.element).toBe(document.activeElement)
     await name.setValue('需求对齐工作流')
     expect((name.element as HTMLInputElement).value).toBe('需求对齐工作流')
-    expect(document.body.textContent).not.toContain('项目：Grasp')
     expect(document.body.textContent).not.toContain('从零开始')
     wrapper.unmount()
   })
 
-  // plan g2.3 — listProjects failure can retry inside the modal
-  it('shows retry when project list fails and does not create', async () => {
-    mocks.listProjects.mockRejectedValueOnce(new Error('network down'))
+  // plan g2.3 — workspace load failure can retry inside the modal
+  it('shows retry when the workspace fails to load and does not create', async () => {
+    mocks.ensureLoaded.mockResolvedValueOnce(null)
     const wrapper = mountModal()
     await flushPromises()
-    expect(q('home-create-load-error').text()).toContain('network down')
-    mocks.listProjects.mockResolvedValue(p1)
+    expect(q('home-create-load-error').text()).toContain('无法加载工作区，请重试')
+    expect(qExists('home-create-form')).toBe(false)
     await q('home-create-retry').trigger('click')
     await flushPromises()
+    expect(mocks.ensureLoaded).toHaveBeenCalledTimes(2)
     expect(qExists('home-create-form')).toBe(true)
     expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -131,9 +127,7 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     expect((q('home-create-submit').element as HTMLButtonElement).disabled).toBe(false)
     await q('home-create-submit').trigger('click')
     await flushPromises()
-    expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith(
-      'proj-1',
-      '需求对齐工作流',
+    expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith('需求对齐工作流',
       expect.arrayContaining([expect.objectContaining({ url: 'https://github.com/org/repo' })]),
     )
     expect(mocks.toastSuccess).toHaveBeenCalled()

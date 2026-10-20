@@ -109,7 +109,6 @@ function mountChat(
   })
   return mount(PmLeaderChat, {
     props: {
-      projectId: 'proj-1',
       binding,
     },
     global: {
@@ -130,7 +129,7 @@ describe('PmLeaderChat first-send without thread', () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.createPmThread.mockResolvedValue({ id: 'thr-new', agentAvailable: true, title: '新会话' })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+    apiMocks.startPmTurn.mockImplementation(async (_tid: string, body: { content?: string }) => ({
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
@@ -149,10 +148,8 @@ describe('PmLeaderChat first-send without thread', () => {
     await suggestion!.trigger('click')
     await flushPromises()
 
-    expect(apiMocks.createPmThread).toHaveBeenCalledWith('proj-1')
-    expect(apiMocks.startPmTurn).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-new',
+    expect(apiMocks.createPmThread).toHaveBeenCalledWith()
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith('thr-new',
       expect.objectContaining({
         content: '工作区整体进度如何？',
       }),
@@ -180,9 +177,7 @@ describe('PmLeaderChat first-send without thread', () => {
     await flushPromises()
 
     expect(apiMocks.createPmThread).toHaveBeenCalledTimes(1)
-    expect(apiMocks.startPmTurn).toHaveBeenCalledWith(
-      'proj-1',
-      'thr-new',
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith('thr-new',
       expect.objectContaining({
         content: '本周有哪些风险？',
       }),
@@ -237,7 +232,7 @@ describe('PmLeaderChat ACP + hydrate', () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
     apiMocks.createPmThread.mockResolvedValue({ id: 'thr-new', agentAvailable: true, title: '新会话' })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+    apiMocks.startPmTurn.mockImplementation(async (_tid: string, body: { content?: string }) => ({
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
@@ -338,7 +333,7 @@ describe('PmLeaderChat ACP + hydrate', () => {
     expect(wrapper.text()).toContain('空回复')
     expect(wrapper.text()).toContain('重试')
     expect(apiMocks.patchPmMessage).not.toHaveBeenCalled()
-    expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalledWith('proj-1', 'thr-1')
+    expect(apiMocks.pmThreadChatWsUrl).toHaveBeenCalledWith('thr-1')
     wrapper.unmount()
   })
 
@@ -375,7 +370,7 @@ describe('PmLeaderChat ACP + hydrate', () => {
     expect(wrapper.find('textarea').exists()).toBe(false)
     expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(true)
     await wrapper.get('[data-testid="pm-paused-stop"]').trigger('click')
-    expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'thr-1')
+    expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('thr-1')
     wrapper.unmount()
   })
 
@@ -480,7 +475,7 @@ describe('PmLeaderChat ACP + hydrate', () => {
     await wrapper.find('[data-testid="pm-fail-retry"]').trigger('click')
     await flushPromises()
 
-    expect(apiMocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'thr-1', { retryOf: 'u1' })
+    expect(apiMocks.startPmTurn).toHaveBeenCalledWith('thr-1', { retryOf: 'u1' })
     expect(wrapper.find('[data-testid="pm-failed-partial"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('半成品内容')
     expect(wrapper.find('[data-testid="pm-stream-bubble"]').exists()).toBe(true)
@@ -503,7 +498,7 @@ describe('PmLeaderChat ACP + hydrate', () => {
 
     await wrapper.findAll('button').find((b) => b.text().includes('停止'))!.trigger('click')
     await flushPromises()
-    expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'thr-1')
+    expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('thr-1')
 
     apiMocks.listPmMessages.mockResolvedValueOnce({
       items: [{ id: 'msg-u1', role: 'user', content: '进度？', status: 'failed', failKind: 'stopped' }],
@@ -622,7 +617,7 @@ describe('PmLeaderChat loading states S1–S5', () => {
         { id: 'thr-b', agentAvailable: true, title: '会话B' },
       ],
     })
-    apiMocks.listPmMessages.mockImplementation(async (_p, tid) => {
+    apiMocks.listPmMessages.mockImplementation(async (tid) => {
       if (tid === 'thr-a') {
         return { items: [{ id: 'u1', role: 'user', content: 'A-only', status: 'ok' }] }
       }
@@ -685,7 +680,7 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
     globalThis.WebSocket = MockWebSocket
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', agentAvailable: true, title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+    apiMocks.startPmTurn.mockImplementation(async (_tid: string, body: { content?: string }) => ({
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
@@ -932,7 +927,7 @@ describe('PmLeaderChat loading states S3/S5 and race boundaries', () => {
     })
 
     const pending: Record<string, { resolve: (v: { items: unknown[] }) => void }> = {}
-    apiMocks.listPmMessages.mockImplementation((_p, tid) => {
+    apiMocks.listPmMessages.mockImplementation((tid: string) => {
       return new Promise((resolve) => {
         pending[tid] = { resolve }
       })
@@ -973,13 +968,13 @@ describe('PmLeaderChat i18n locale switch', () => {
       messages: { en: { ...enCommon.default, ...enPages.default } },
     })
     const wrapper = mount(PmLeaderChat, {
-      props: { projectId: 'proj-1', binding: { enabled: true, agentAvailable: true, agentConfigRef: 'a', aclNote: '' } },
+      props: { binding: { enabled: true, agentAvailable: true, agentConfigRef: 'a', aclNote: '' } },
       global: { plugins: [i18n], stubs: { Icon: true, CitationCard: true } },
     })
     await flushPromises()
 
     expect(wrapper.text()).toContain('Failed to load messages')
-    expect(wrapper.text()).not.toContain('pages.projectDetail.pm.loadFailed')
+    expect(wrapper.text()).not.toContain('pages.workspace.pm.loadFailed')
     wrapper.unmount()
   })
 })
@@ -1093,7 +1088,7 @@ describe('PmLeaderChat settings entry', () => {
       expect(wrapper.get('[data-testid="pm-history-readonly"]').text()).toContain('仅供查看')
       await wrapper.get('[data-testid="pm-paused-stop"]').trigger('click')
       await flushPromises()
-      expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'active')
+      expect(apiMocks.cancelPmTurn).toHaveBeenCalledWith('active')
     } finally {
       wrapper.unmount()
       globalThis.WebSocket = originalWs
@@ -1198,7 +1193,7 @@ describe('PmLeaderChat stick-to-bottom', () => {
     globalThis.WebSocket = MockWebSocket
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thr-1', agentAvailable: true, title: 't' }] })
     apiMocks.listPmMessages.mockResolvedValue({ items: [] })
-    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+    apiMocks.startPmTurn.mockImplementation(async (_tid: string, body: { content?: string }) => ({
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
@@ -1278,7 +1273,7 @@ describe('PmLeaderChat stick-to-bottom', () => {
         { id: 'thr-2', agentAvailable: true, title: '会话2' },
       ],
     })
-    apiMocks.listPmMessages.mockImplementation(async (_pid: string, tid: string) => ({
+    apiMocks.listPmMessages.mockImplementation(async (tid: string) => ({
       items: [{ id: `u-${tid}`, role: 'user', content: `msg-${tid}`, status: 'ok' }],
     }))
 
@@ -1312,7 +1307,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '产品评审同步',
           userId: 'qq:guild:ch1',
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1321,7 +1315,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '对接发布流程',
           userId: 'alice',
-          projectId: 'proj-1',
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T12:00:00Z',
         },
@@ -1368,7 +1361,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           title: '',
           userId: 'wecom:c2c:zhangsan',
           unspoken: true,
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1396,7 +1388,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '飞书私聊',
           userId: 'feishu:c2c:oc_zhang',
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1425,7 +1416,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '钉钉群',
           userId: 'dingtalk:group:cid_review',
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1452,7 +1442,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '你好',
           userId: 'qq:c2c:u1',
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1491,7 +1480,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: '   ',
           userId: 'qq:c2c:u1',
-          projectId: 'proj-1',
           createdAt: '2026-01-02T00:00:00Z',
           updatedAt: '2026-01-02T12:00:00Z',
         },
@@ -1500,7 +1488,6 @@ describe('PmLeaderChat stick-to-bottom', () => {
           agentAvailable: true,
           title: 'Web',
           userId: 'alice',
-          projectId: 'proj-1',
           createdAt: '2026-01-01T00:00:00Z',
           updatedAt: '2026-01-01T12:00:00Z',
         },
@@ -1633,7 +1620,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
     localStorage.clear()
     // @ts-expect-error test stub
     globalThis.WebSocket = MockWebSocket
-    apiMocks.startPmTurn.mockImplementation(async (_pid: string, _tid: string, body: { content?: string }) => ({
+    apiMocks.startPmTurn.mockImplementation(async (_tid: string, body: { content?: string }) => ({
       message: { id: 'msg-u1', role: 'user', content: body.content || '', status: 'ok' },
       waiting: 1,
     }))
@@ -1658,7 +1645,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('proj-1', 'thr-long', { limit: 20 })
+    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('thr-long', { limit: 20 })
     expect(wrapper.findAll('[data-msg-id]').length).toBe(20)
     const tip = wrapper.find('[data-testid="pm-history-tip"]')
     expect(tip.exists()).toBe(true)
@@ -1680,7 +1667,6 @@ describe('PmLeaderChat tail window + lazyload', () => {
           agentAvailable: true,
           title: 'QQ会话',
           userId: 'qq:guild:1',
-          projectId: 'proj-1',
         },
       ],
     })
@@ -1689,7 +1675,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
     const wrapper = mountChat()
     await flushPromises()
 
-    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('proj-1', 'thr-qq', { limit: 20 })
+    expect(apiMocks.listPmMessages).toHaveBeenCalledWith('thr-qq', { limit: 20 })
     expect(wrapper.find('[data-testid="pm-history-tip"]').exists()).toBe(true)
     expect(wrapper.findAll('[data-msg-id]').length).toBe(20)
     wrapper.unmount()
@@ -1723,7 +1709,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
     metrics.syncStickFromScroll()
     await flushPromises()
 
-    expect(apiMocks.listPmMessages).toHaveBeenLastCalledWith('proj-1', 'thr-long', {
+    expect(apiMocks.listPmMessages).toHaveBeenLastCalledWith('thr-long', {
       limit: 20,
       before: 'm-20',
     })
@@ -1823,7 +1809,7 @@ describe('PmLeaderChat tail window + lazyload', () => {
     expect(wrapper.findAll('[data-msg-id]').length).toBeGreaterThan(20)
     const mergeCalls = apiMocks.listPmMessages.mock.calls
     const mergeCall = mergeCalls[mergeCalls.length - 1]
-    expect(mergeCall?.[2]).toEqual({ limit: 20 })
+    expect(mergeCall).toEqual(['thr-long', { limit: 20 }])
     wrapper.unmount()
   })
 
@@ -1922,7 +1908,6 @@ function mountChatForPreview() {
   })
   return mount(PmLeaderChat, {
     props: {
-      projectId: 'proj-1',
       binding: {
         enabled: true,
         agentAvailable: true,
@@ -1976,7 +1961,6 @@ describe('PmLeaderChat image preview (f1/f2)', () => {
           agentAvailable: true,
           title: '你好',
           userId: 'qq:c2c:u1',
-          projectId: 'proj-1',
           createdAt: '2026-08-09T00:00:00Z',
           updatedAt: '2026-08-09T00:00:00Z',
         },
@@ -2164,7 +2148,7 @@ ${'保留原文 '.repeat(60)}`
     expect(wrapper.findComponent(ChatMessageRail).props('hasMore')).toBe(true)
     wrapper.findComponent(ChatMessageRail).vm.$emit('loadEarlier')
     await flushPromises()
-    expect(apiMocks.listPmMessages).toHaveBeenLastCalledWith('proj-1', 'thread-1', { limit: 20, before: 'question-1' })
+    expect(apiMocks.listPmMessages).toHaveBeenLastCalledWith('thread-1', { limit: 20, before: 'question-1' })
     expect(wrapper.findComponent(ChatMessageRail).props('items').map((item: { id: string }) => item.id)).toEqual(['earlier-question', 'question-1', 'question-2'])
     expect(wrapper.get('[data-chat-message-id="question-1"]').text()).toContain('如何交付这次变更？')
     wrapper.unmount()
@@ -2188,12 +2172,13 @@ ${'保留原文 '.repeat(60)}`
     wrapper.unmount()
   })
 
-  it('clears the open artifact when the workspace context changes', async () => {
+  it('clears the open artifact when the active thread changes', async () => {
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thread-1', agentAvailable: true, title: '交付验收' }, { id: 'thread-2', agentAvailable: true, title: '发布复盘' }] })
     const wrapper = mountChat()
     await flushPromises()
     await wrapper.get('[data-testid="pm-chat-artifacts"]').trigger('click')
     expect(wrapper.findComponent(ConversationWorkspace).props('open')).toBe(true)
-    await wrapper.setProps({ projectId: 'another-workspace' })
+    await (wrapper.vm as unknown as { selectThread: (id: string) => Promise<void> }).selectThread('thread-2')
     await flushPromises()
     expect(wrapper.findComponent(ConversationWorkspace).props('open')).toBe(false)
     expect(wrapper.findComponent(ConversationArtifactBrowser).props('target')).toBeNull()

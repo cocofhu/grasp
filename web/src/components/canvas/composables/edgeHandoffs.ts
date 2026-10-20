@@ -24,7 +24,7 @@ function handoffOf(execs: NodeRun[] | undefined, iteration: number): EdgeHandoff
 }
 
 /**
- * Project each traced leave (transition or rollback) onto the edge it took,
+ * Workspace each traced leave (transition or rollback) onto the edge it took,
  * in trace order. A visit counts only when that execution's handoff has text.
  * An in-progress execution with no handoff is not a visit and does not replace
  * earlier ones. Edges the trace never left through stay absent.

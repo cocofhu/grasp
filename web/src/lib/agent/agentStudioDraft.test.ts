@@ -4,7 +4,6 @@ import { draftPayloadJson, fromDraft, fromDraftRaw, hydrateStudioDraft, toDraft 
 
 const baseAgent: Agent = {
   name: '综合代码审查工程师',
-  projectId: 'p1',
   acpBackend: 'cursor',
   files: [],
   mcp: [],

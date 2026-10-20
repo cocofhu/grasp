@@ -18,7 +18,6 @@ export type GlobalTokenStatsParams = {
   source?: 'all' | 'workflow' | 'pm' | 'studio' | string
   status?: 'ok' | 'failed' | 'cancelled' | string
   phase?: 'production' | 'interactive' | 'chat' | string
-  projectId?: string
   modelKey?: string
   workflowId?: string
   nodeType?: string

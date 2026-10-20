@@ -40,16 +40,16 @@ describe('agentTeamWizard', () => {
 
   it('assembles bootstrap with opencode when Agent step skipped', () => {
     const d = freshTeamDraft()
-    d.projectName = 'Demo'
+    d.teamName = 'Demo'
     syncDerivedNames(d)
     d.background = 'build a workflow team'
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload.acpBackend).toBe('opencode')
   })
 
-  it('syncs derived names from project / prefix', () => {
+  it('syncs derived names from team name / prefix', () => {
     const d = freshTeamDraft()
-    d.projectName = 'Demo'
+    d.teamName = 'Demo'
     syncDerivedNames(d)
     expect(d.prefix).toBe('Demo')
     expect(d.pmName).toBe('Demo项目经理')
@@ -57,8 +57,8 @@ describe('agentTeamWizard', () => {
 
   it('validates required team fields and pm collision', () => {
     const d = freshTeamDraft()
-    expect(validateTeamBasics(d, [])).toBe('projectRequired')
-    d.projectName = 'Demo'
+    expect(validateTeamBasics(d, [])).toBe('teamNameRequired')
+    d.teamName = 'Demo'
     syncDerivedNames(d)
     d.background = 'bg'
     expect(validateTeamBasics(d, ['Demo项目经理'])).toBe('pmExists')
@@ -67,12 +67,12 @@ describe('agentTeamWizard', () => {
 
   it('assembles bootstrap payload with mcp/env', () => {
     const d = freshTeamDraft()
-    d.projectName = 'Demo'
+    d.teamName = 'Demo'
     syncDerivedNames(d)
     d.background = 'build a workflow team'
     d.gitUrl = 'https://github.com/org/repo.git'
     const payload = assembleTeamBootstrapPayload(d)
-    expect(payload).not.toHaveProperty('projectName')
+    expect(payload).not.toHaveProperty('teamName')
     expect(payload.pmName).toBe('Demo项目经理')
     expect(payload.mcp.some((m) => m.name === 'artifact-store')).toBe(true)
     expect(payload.env.GIT_REPOS).toBe('${vars.repos}')

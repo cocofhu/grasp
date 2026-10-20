@@ -7,26 +7,25 @@ import {
   type PushTargetOption,
 } from '@/lib/pm/cronDeliverTargets'
 import { useToast } from '@/lib/composables/useToast'
-import type { Project, ProjectNotifyPolicy } from '@/lib/shared/types'
+import type { Workspace, WorkspaceNotifyPolicy } from '@/lib/shared/types'
 
 export interface UsePmChannelMultiProps {
-  projectId: string
-  project: Project
+  workspace: Workspace
   pmLeaderAgent?: string
 }
 
-export type UsePmChannelMultiEmit = (event: 'project-updated', project: Project) => void
+export type UsePmChannelMultiEmit = (event: 'workspace-updated', workspace: Workspace) => void
 
 export function usePmChannelMulti(props: UsePmChannelMultiProps, emit: UsePmChannelMultiEmit) {
 const { t } = useI18n()
 const toast = useToast()
 
 const PM_MCP_OPTIONS = [
-  { id: 'pm-progress', labelKey: 'pages.projectDetail.pm.mcpProgress' },
-  { id: 'pm-workflow-read', labelKey: 'pages.projectDetail.pm.mcpWorkflowRead' },
-  { id: 'pm-workflow-write', labelKey: 'pages.projectDetail.pm.mcpWorkflowWrite' },
-  { id: 'pm-agent-fs', labelKey: 'pages.projectDetail.pm.mcpAgentFs' },
-  { id: 'pm-prd-manager', labelKey: 'pages.projectDetail.pm.mcpPrdManager' },
+  { id: 'pm-progress', labelKey: 'pages.workspace.pm.mcpProgress' },
+  { id: 'pm-workflow-read', labelKey: 'pages.workspace.pm.mcpWorkflowRead' },
+  { id: 'pm-workflow-write', labelKey: 'pages.workspace.pm.mcpWorkflowWrite' },
+  { id: 'pm-agent-fs', labelKey: 'pages.workspace.pm.mcpAgentFs' },
+  { id: 'pm-prd-manager', labelKey: 'pages.workspace.pm.mcpPrdManager' },
 ] as const
 
 type Tab = 'list' | 'edit' | 'notify'
@@ -87,8 +86,8 @@ const targetActiveIndex = ref(-1)
 const hasPrimary = computed(() => channelList.value.some((c) => c.isPrimary))
 const addButtonLabel = computed(() =>
   hasPrimary.value
-    ? t('pages.projectDetail.pm.channel.addSecondary')
-    : t('pages.projectDetail.pm.channel.addPrimary'),
+    ? t('pages.workspace.pm.channel.addSecondary')
+    : t('pages.workspace.pm.channel.addPrimary'),
 )
 
 const agentOptions = computed(() => {
@@ -114,7 +113,7 @@ async function ensureRecentTargets() {
   if (recentTargetsLoaded.value || recentTargetsLoading.value) return
   recentTargetsLoading.value = true
   try {
-    const res = await api.listPmThreads(props.projectId)
+    const res = await api.listPmThreads()
     recentTargets.value = deriveRecentPushTargets(res.items || [], chType.value)
     recentTargetsLoaded.value = true
   } catch {
@@ -177,13 +176,13 @@ function toggleChMcp(id: string) {
 function defaultChannelName(type: 'qq' | 'wecom' | 'feishu' | 'dingtalk'): string {
   switch (type) {
     case 'wecom':
-      return t('pages.projectDetail.pm.channel.defaultNameWecom')
+      return t('pages.workspace.pm.channel.defaultNameWecom')
     case 'feishu':
-      return t('pages.projectDetail.pm.channel.defaultNameFeishu')
+      return t('pages.workspace.pm.channel.defaultNameFeishu')
     case 'dingtalk':
-      return t('pages.projectDetail.pm.channel.defaultNameDingTalk')
+      return t('pages.workspace.pm.channel.defaultNameDingTalk')
     default:
-      return t('pages.projectDetail.pm.channel.defaultNameQQ')
+      return t('pages.workspace.pm.channel.defaultNameQQ')
   }
 }
 
@@ -249,26 +248,26 @@ async function load() {
   loading.value = true
   try {
     const [listRes, proj] = await Promise.all([
-      api.listProjectChannels(props.projectId),
-      api.getWorkspace().catch(() => props.project),
+      api.listChannels(),
+      api.getWorkspace().catch(() => props.workspace),
     ])
     channelList.value = listRes.items || []
     freeAgents.value = listRes.freeAgents || []
     secretsKeyConfigured.value = listRes.secretsKeyConfigured
     const ids = Array.isArray(proj.notifyPolicy?.channelIds)
       ? [...(proj.notifyPolicy!.channelIds || [])]
-      : Array.isArray(props.project.notifyPolicy?.channelIds)
-        ? [...(props.project.notifyPolicy!.channelIds || [])]
+      : Array.isArray(props.workspace.notifyPolicy?.channelIds)
+        ? [...(props.workspace.notifyPolicy!.channelIds || [])]
         : []
     notifySelected.value = ids
     try {
-      const rec = await api.listProjectNotifyReceipts(props.projectId)
+      const rec = await api.listNotifyReceipts()
       notifyReceipts.value = rec.items || []
     } catch {
       notifyReceipts.value = []
     }
   } catch (e: any) {
-    toast.error(String(e?.message || e) || t('pages.projectDetail.pm.channel.loadFailed'))
+    toast.error(String(e?.message || e) || t('pages.workspace.pm.channel.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -276,7 +275,7 @@ async function load() {
 
 function openAdd() {
   if (!freeAgents.value.length) {
-    toast.error(t('pages.projectDetail.pm.channel.noFreeAgent'))
+    toast.error(t('pages.workspace.pm.channel.noFreeAgent'))
     return
   }
   resetForm()
@@ -313,10 +312,10 @@ function setChannelType(next: 'qq' | 'wecom' | 'feishu' | 'dingtalk') {
   chType.value = next
   if (!isNew.value) return
   const defaults = [
-    t('pages.projectDetail.pm.channel.defaultNameQQ'),
-    t('pages.projectDetail.pm.channel.defaultNameWecom'),
-    t('pages.projectDetail.pm.channel.defaultNameFeishu'),
-    t('pages.projectDetail.pm.channel.defaultNameDingTalk'),
+    t('pages.workspace.pm.channel.defaultNameQQ'),
+    t('pages.workspace.pm.channel.defaultNameWecom'),
+    t('pages.workspace.pm.channel.defaultNameFeishu'),
+    t('pages.workspace.pm.channel.defaultNameDingTalk'),
   ]
   if (!chName.value.trim() || defaults.includes(chName.value)) {
     chName.value = defaultChannelName(next)
@@ -357,18 +356,18 @@ function buildInput(): ChannelConfigInput {
 function connectionLabel(ch: ChannelConfig): string {
   switch (ch.connectionState) {
     case 'connected':
-      return t('pages.projectDetail.pm.channel.connConnected')
+      return t('pages.workspace.pm.channel.connConnected')
     case 'auth_failed':
-      return t('pages.projectDetail.pm.channel.connAuthFailed')
+      return t('pages.workspace.pm.channel.connAuthFailed')
     case 'disconnected':
-      return t('pages.projectDetail.pm.channel.connDisconnected')
+      return t('pages.workspace.pm.channel.connDisconnected')
     default:
       if (typeof ch.online === 'boolean') {
         return ch.online
-          ? t('pages.projectDetail.pm.channel.online')
-          : t('pages.projectDetail.pm.channel.offline')
+          ? t('pages.workspace.pm.channel.online')
+          : t('pages.workspace.pm.channel.offline')
       }
-      return ch.enabled ? t('pages.projectDetail.pm.channel.connUnknown') : t('pages.projectDetail.pm.channel.statusOff')
+      return ch.enabled ? t('pages.workspace.pm.channel.connUnknown') : t('pages.workspace.pm.channel.statusOff')
   }
 }
 
@@ -404,13 +403,13 @@ function formConnectionHint(): { kind: 'ok' | 'err' | 'warn'; text: string } | n
   const ch = editingChannel.value
   if (!ch) return null
   if (ch.connectionState === 'connected') {
-    return { kind: 'ok', text: ch.connectionDetail || t('pages.projectDetail.pm.channel.connHintConnected') }
+    return { kind: 'ok', text: ch.connectionDetail || t('pages.workspace.pm.channel.connHintConnected') }
   }
   if (ch.connectionState === 'auth_failed') {
-    return { kind: 'err', text: ch.connectionDetail || t('pages.projectDetail.pm.channel.connHintAuthFailed') }
+    return { kind: 'err', text: ch.connectionDetail || t('pages.workspace.pm.channel.connHintAuthFailed') }
   }
   if (ch.connectionState === 'disconnected') {
-    return { kind: 'warn', text: ch.connectionDetail || t('pages.projectDetail.pm.channel.connHintDisconnected') }
+    return { kind: 'warn', text: ch.connectionDetail || t('pages.workspace.pm.channel.connHintDisconnected') }
   }
   return null
 }
@@ -418,23 +417,23 @@ function formConnectionHint(): { kind: 'ok' | 'err' | 'warn'; text: string } | n
 async function saveChannel() {
   saveError.value = ''
   if (!chName.value.trim()) {
-    toast.error(t('pages.projectDetail.pm.channel.needName'))
+    toast.error(t('pages.workspace.pm.channel.needName'))
     return
   }
   if (!chAgent.value.trim()) {
-    toast.error(t('pages.projectDetail.pm.channel.needAgent'))
+    toast.error(t('pages.workspace.pm.channel.needAgent'))
     return
   }
   if (!chAppId.value.trim()) {
     toast.error(
       chType.value === 'wecom'
-        ? t('pages.projectDetail.pm.channel.needBotId')
-        : t('pages.projectDetail.pm.channel.needAppId'),
+        ? t('pages.workspace.pm.channel.needBotId')
+        : t('pages.workspace.pm.channel.needAppId'),
     )
     return
   }
   if (isNew.value && !chAppSecret.value.trim()) {
-    toast.error(t('pages.projectDetail.pm.channel.needSecret'))
+    toast.error(t('pages.workspace.pm.channel.needSecret'))
     return
   }
   const input = buildInput()
@@ -442,25 +441,25 @@ async function saveChannel() {
   if (!isNew.value && chIsPrimary.value) {
     const prev = editingChannel.value?.agentName || ''
     if (prev && input.agentName && prev !== input.agentName && input.agentName !== props.pmLeaderAgent) {
-      const ok = window.confirm(t('pages.projectDetail.pm.channel.confirmSyncPmLeader'))
+      const ok = window.confirm(t('pages.workspace.pm.channel.confirmSyncPmLeader'))
       if (ok) input.syncPmLeader = true
     }
   }
   saving.value = true
   try {
     if (isNew.value) {
-      await api.createProjectChannel(props.projectId, input)
+      await api.createChannel(input)
     } else if (editingId.value) {
-      await api.updateProjectChannel(props.projectId, editingId.value, input)
+      await api.updateChannel(editingId.value, input)
     }
-    toast.success(t('pages.projectDetail.saved'))
+    toast.success(t('pages.workspace.saved'))
     await load()
     tab.value = 'list'
     resetForm()
     isNew.value = false
     editingId.value = null
   } catch (e: any) {
-    const msg = String(e?.message || e) || t('pages.projectDetail.pm.channel.saveFailed')
+    const msg = String(e?.message || e) || t('pages.workspace.pm.channel.saveFailed')
     saveError.value = msg
     toast.error(msg)
   } finally {
@@ -477,7 +476,7 @@ function askDelete(ch: ChannelConfig) {
       channelList.value.find((c) => c.id !== ch.id)?.id || ''
     deleteSyncPmLeader.value = true
   } else {
-    if (!window.confirm(t('pages.projectDetail.pm.channel.deleteConfirm'))) return
+    if (!window.confirm(t('pages.workspace.pm.channel.deleteConfirm'))) return
     void doDelete(ch, { confirmNoPrimary: false })
   }
 }
@@ -487,7 +486,7 @@ async function confirmDeletePrimary() {
   if (!ch) return
   if (deleteMode.value === 'promote') {
     if (!deleteNewPrimaryId.value) {
-      toast.error(t('pages.projectDetail.pm.channel.needNewPrimary'))
+      toast.error(t('pages.workspace.pm.channel.needNewPrimary'))
       return
     }
     await doDelete(ch, {
@@ -507,12 +506,12 @@ async function doDelete(
 ) {
   saving.value = true
   try {
-    await api.deleteProjectChannelById(props.projectId, ch.id, opts)
-    toast.success(t('pages.projectDetail.saved'))
+    await api.deleteChannel(ch.id, opts)
+    toast.success(t('pages.workspace.saved'))
     if (editingId.value === ch.id) cancelEdit()
     await load()
   } catch (e: any) {
-    toast.error(String(e?.message || e) || t('pages.projectDetail.pm.channel.deleteFailed'))
+    toast.error(String(e?.message || e) || t('pages.workspace.pm.channel.deleteFailed'))
   } finally {
     saving.value = false
   }
@@ -528,32 +527,24 @@ function toggleNotify(id: string) {
 async function saveNotifyTargets() {
   notifySaving.value = true
   try {
-    const notifyPolicy: ProjectNotifyPolicy = {
-      ...(props.project.notifyPolicy || {}),
-      enabled: props.project.notifyPolicy?.enabled !== false,
-      defaultEvents: props.project.notifyPolicy?.defaultEvents || ['waiting_human', 'failed'],
+    const notifyPolicy: WorkspaceNotifyPolicy = {
+      ...(props.workspace.notifyPolicy || {}),
+      enabled: props.workspace.notifyPolicy?.enabled !== false,
+      defaultEvents: props.workspace.notifyPolicy?.defaultEvents || ['waiting_human', 'failed'],
       channelIds: [...notifySelected.value],
     }
     const updated = await api.updateWorkspace({ notifyPolicy })
-    emit('project-updated', updated)
+    emit('workspace-updated', updated)
     notifySelected.value = Array.isArray(updated.notifyPolicy?.channelIds)
       ? [...updated.notifyPolicy!.channelIds!]
       : []
-    toast.success(t('pages.projectDetail.saved'))
+    toast.success(t('pages.workspace.saved'))
   } catch (e: any) {
     toast.error(String(e?.message || e))
   } finally {
     notifySaving.value = false
   }
 }
-
-watch(
-  () => props.projectId,
-  () => {
-    clearRecentTargetsCache()
-    void load()
-  },
-)
 
 watch(chCronDeliver, (on) => {
   if (!on) {

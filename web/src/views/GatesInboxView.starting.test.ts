@@ -52,7 +52,6 @@ vi.mock('@/lib/composables/useToast', () => ({
 
 const filterState = vi.hoisted(() => ({
   workflowSelected: null as { value: string } | null,
-  projectSelected: null as { value: string } | null,
 }))
 
 vi.mock('@/lib/composables/useWorkflowFilter', async () => {
@@ -63,8 +62,8 @@ vi.mock('@/lib/composables/useWorkflowFilter', async () => {
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
   const { ref } = await import('vue')
-  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+  const workspace = ref({ name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
 })
 
 vi.mock('@/lib/inbox/useClarifyDraft', async () => {
@@ -186,7 +185,6 @@ function mountInbox(opts?: { realGatePanel?: boolean }) {
     Icon: true,
     EmptyState: true,
     WorkflowFilter: true,
-    ProjectFilter: true,
     TagFilter: true,
     Pagination: true,
     ArtifactLoadingPane: true,
@@ -219,7 +217,6 @@ beforeEach(async () => {
   mocks.nodeEvents.mockResolvedValue({ events: [], live: false })
   mocks.runArtifacts.mockResolvedValue([])
   if (filterState.workflowSelected) filterState.workflowSelected.value = ''
-  if (filterState.projectSelected) filterState.projectSelected.value = ''
   mocks.listGates.mockResolvedValue(paged([]))
   mocks.listGatePrimaryArtifacts.mockResolvedValue({ items: [] })
   mocks.getRun.mockResolvedValue({ id: 'run-unknown', status: 'running' })
@@ -435,14 +432,14 @@ describe('GatesInboxView starting approvals', () => {
   })
 
   it('pins a parked deep-link row when filtered list omits it (plan g2.1 / g2.3)', async () => {
-    // Stored/filter project is proj-a; the deep-linked run belongs to proj-b and
-    // only appears on an unfiltered listGates. Identity is runId+nodeId.
+    // The workflow filter hides the deep-linked run; it only appears on an
+    // unfiltered listGates. Identity is runId+nodeId.
     routeState.query = { run: 'run-1', node: 'n1' }
     filterState.workflowSelected!.value = 'wf-other'
     const parked = parkedItem()
     parked.runId = 'run-1'
     parked.nodeId = 'n1'
-    // Filtered loadList (with projectId) returns empty; unfiltered pin peek returns the row.
+    // Filtered loadList (with wf) returns empty; unfiltered pin peek returns the row.
     mocks.listGates.mockImplementation(async (params?: { wf?: string }) => {
       if (params?.wf) return paged([])
       return paged([parked])

@@ -25,20 +25,20 @@ import {
 } from '@/lib/artifacts/artifactTree'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { groupByRun } from '@/lib/run/artifactGroups'
-import type { Artifact, ArtifactTreeProject, Run } from '@/lib/shared/types'
+import type { Artifact, ArtifactTree, Run } from '@/lib/shared/types'
 
 type MobileStep = 'list' | 'preview'
 
 const PAGE_SIZE = 20
 const SEARCH_DEBOUNCE_MS = 300
-const SELECTION_QUERY_KEYS = ['project', 'workflow', 'session'] as const
+const SELECTION_QUERY_KEYS = ['workflow', 'session'] as const
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
 const { isMobile } = useBreakpoint()
 
-const tree = ref<ArtifactTreeProject[]>([])
+const tree = ref<ArtifactTree | null>(null)
 /** True before onMounted so the empty state never flashes on first paint. */
 const treeLoading = ref(true)
 const treeFailed = ref(false)
@@ -119,18 +119,18 @@ const treeLabels = computed(() => ({
   unnamedWorkflow: t('pages.workflowEditor.unnamedWorkflow'),
 }))
 const treeNodes = computed(() => buildArtifactTreeNodes(tree.value, treeLabels.value))
-const treeTotal = computed(() => tree.value.reduce((n, p) => n + p.count, 0))
+const treeTotal = computed(() => tree.value?.count ?? 0)
 
 const selection = computed(() => resolveArtifactSelection(tree.value, selectionFromQuery(route.query)))
 const activeKey = computed(() => selectionTreeKey(selection.value))
 const selectionInfo = computed(() => describeSelection(tree.value, selection.value, treeLabels.value))
-const listTitle = computed(() => selectionInfo.value?.childLabel || selectionInfo.value?.projectLabel || '')
+const listTitle = computed(() => selectionInfo.value?.childLabel || selectionInfo.value?.rootLabel || '')
 
 const runSections = computed(() => groupByRun(pageArtifacts.value))
 
-const firstLoad = computed(() => treeLoading.value && !tree.value.length)
-const noArtifacts = computed(() => !treeLoading.value && !treeFailed.value && !tree.value.length)
-const treeFailedNoCache = computed(() => treeFailed.value && !tree.value.length)
+const firstLoad = computed(() => treeLoading.value && !tree.value)
+const noArtifacts = computed(() => !treeLoading.value && !treeFailed.value && !treeTotal.value)
+const treeFailedNoCache = computed(() => treeFailed.value && !tree.value)
 const surfaceBusy = computed(() => treeLoading.value || listLoading.value)
 const listSkeleton = computed(() => listLoading.value && !pageArtifacts.value.length)
 
@@ -162,12 +162,12 @@ async function loadTree() {
   try {
     const data = await api.getArtifactTree()
     if (gen !== treeLoadGen) return
-    tree.value = Array.isArray(data) ? data : []
+    tree.value = data
     treeFailed.value = false
   } catch {
     if (gen !== treeLoadGen) return
     // Keep the cached tree on refresh failure; only a cold failure blocks the page.
-    if (!tree.value.length) treeFailed.value = true
+    if (!tree.value) treeFailed.value = true
   } finally {
     if (gen === treeLoadGen) treeLoading.value = false
   }
@@ -210,7 +210,7 @@ function onTreeSelect(key: string) {
   void router.push({ query: queryWithSelection(sel) })
 }
 
-function selectProjectCrumb() {
+function selectRootCrumb() {
   const sel = selection.value
   if (!sel || sel.kind === 'all') return
   onTreeSelect(selectionTreeKey({ kind: 'all' }))
@@ -385,8 +385,8 @@ onBeforeUnmount(() => {
           <nav class="flex min-w-0 flex-1 items-center gap-1.5 text-xs" :aria-label="t('pages.artifacts.breadcrumbAria')" data-testid="artifacts-breadcrumb">
             <div v-if="firstLoad" class="h-3 w-40 animate-pulse rounded bg-elevated" aria-hidden="true" />
             <template v-else-if="selectionInfo">
-              <button v-if="selectionInfo.childLabel" type="button" data-testid="artifacts-crumb-project" class="shrink-0 text-txt3 hover:text-txt" @click="selectProjectCrumb">{{ selectionInfo.projectLabel }}</button>
-              <span v-else class="text-txt2" aria-current="page">{{ selectionInfo.projectLabel }}</span>
+              <button v-if="selectionInfo.childLabel" type="button" data-testid="artifacts-crumb-root" class="shrink-0 text-txt3 hover:text-txt" @click="selectRootCrumb">{{ selectionInfo.rootLabel }}</button>
+              <span v-else class="text-txt2" aria-current="page">{{ selectionInfo.rootLabel }}</span>
               <template v-if="selectionInfo.childLabel">
                 <Icon name="chevron-right" :size="12" class="shrink-0 text-txt3" />
                 <span class="min-w-0 truncate text-txt2" aria-current="page" :title="selectionInfo.childLabel">{{ selectionInfo.childLabel }}</span>
@@ -434,7 +434,7 @@ onBeforeUnmount(() => {
               <h3 class="min-w-0 flex-1 text-sm font-medium text-txt">{{ t('pages.artifacts.switchScope') }}</h3>
               <button type="button" data-testid="artifacts-tree-sheet-close" class="flex h-8 w-8 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt" :aria-label="t('common.buttons.close')" @click="closeScopePanel"><Icon name="close" :size="15" /></button>
             </div>
-            <ResourceList :nodes="treeNodes" :active-key="activeKey" :title="t('pages.artifacts.treeTitle')" :total="tree.length ? treeTotal : undefined" :search-placeholder="t('pages.artifacts.treeSearchPlaceholder')" :loading="treeLoading" :empty-text="t('pages.artifacts.noMatchingSources')" @select="onTreeSelect" />
+            <ResourceList :nodes="treeNodes" :active-key="activeKey" :title="t('pages.artifacts.treeTitle')" :total="tree ? treeTotal : undefined" :search-placeholder="t('pages.artifacts.treeSearchPlaceholder')" :loading="treeLoading" :empty-text="t('pages.artifacts.noMatchingSources')" @select="onTreeSelect" />
           </div>
         </div>
       </Transition>

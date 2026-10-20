@@ -65,7 +65,7 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/projects\/[^/]+\/run-tags\/?$/)) {
+    if (method === 'GET' && path === '/api/workspace/run-tags') {
       await route.fulfill({ json: { tags: ['prod', 'canary', 'hotfix', 'nightly'] } })
       return
     }
@@ -80,7 +80,6 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
         bodyMd: '请审批',
         actions: [{ id: 'approve', label: '通过' }],
         requestedAt: r.createdAt,
-        projectId: 'proj-1',
         tags: r.tags,
       }))
       await route.fulfill({ json: { items, total: items.length } })
@@ -90,13 +89,6 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
     if (path.endsWith('/api/workflows') || path === '/api/workflows') {
       await route.fulfill({
         json: [{ id: 'wf-1', name: 'Demo Workflow', status: 'published', version: 1, nodes: [], edges: [] }],
-      })
-      return
-    }
-
-    if (path.endsWith('/api/projects') || path === '/api/projects') {
-      await route.fulfill({
-        json: [{ id: 'proj-1', name: 'Grasp', slug: 'grasp' }],
       })
       return
     }
@@ -127,7 +119,7 @@ test.describe('TagFilter UX acceptance', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    const capture = await openPage(page, 'projectId=proj-1')
+    const capture = await openPage(page, '')
     await expect(page.getByRole('heading', { name: '运行' })).toBeVisible({ timeout: 15_000 })
     const trigger = page.getByTestId('tag-filter-trigger')
     await expect(trigger).toBeVisible()
@@ -176,7 +168,7 @@ test.describe('TagFilter UX acceptance', () => {
     page,
   }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await openPage(page, 'projectId=proj-1')
+    await openPage(page, '')
     await expect(page.getByTestId('tag-filter-trigger')).toBeVisible({ timeout: 15_000 })
     await page.getByTestId('tag-filter-trigger').click()
     const input = page.getByTestId('tag-filter-input')
@@ -198,9 +190,9 @@ test.describe('TagFilter UX acceptance', () => {
     await expect.poll(() => hashQuery(page).get('tag')).toBeNull()
   })
 
-  test('run list: URL restore shows count; no-project empty state', async ({ page }) => {
+  test('run list: URL restore shows count', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await openPage(page, 'tag=prod,canary&projectId=proj-1')
+    await openPage(page, 'tag=prod,canary')
     await expect(page.getByTestId('tag-filter-count')).toHaveText('2', { timeout: 15_000 })
     await page.getByTestId('tag-filter-trigger').click()
     await expect(page.getByTestId('tag-filter-selected')).toContainText('prod')
@@ -209,22 +201,11 @@ test.describe('TagFilter UX acceptance', () => {
       path: '/tmp/tag-filter-screenshots/05-runlist-url-restore.png',
       fullPage: true,
     })
-
-    // Clear persisted project so TagFilter sees empty projectId (「全部」).
-    await page.evaluate(() => localStorage.clear())
-    await page.goto('/tag-filter-ux.html')
-    await expect(page.getByTestId('tag-filter-trigger')).toBeVisible({ timeout: 15_000 })
-    await page.getByTestId('tag-filter-trigger').click()
-    await expect(page.getByTestId('tag-filter-empty')).toContainText('选择项目')
-    await page.screenshot({
-      path: '/tmp/tag-filter-screenshots/06-runlist-need-project.png',
-      fullPage: true,
-    })
   })
 
   test('run list mobile: full-width trigger usable; chips not in top bar', async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 })
-    await openPage(page, 'projectId=proj-1&tag=prod')
+    await openPage(page, 'tag=prod')
     await expect(page.getByTestId('tag-filter-trigger')).toBeVisible({ timeout: 15_000 })
     const box = await page.getByTestId('tag-filter-trigger').boundingBox()
     expect(box).toBeTruthy()
@@ -239,9 +220,9 @@ test.describe('TagFilter UX acceptance', () => {
     })
   })
 
-  test('gates inbox: TagFilter entry + mutual exclusion with project filter', async ({ page }) => {
+  test('gates inbox: TagFilter entry', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await openPage(page, 'page=gates&projectId=proj-1')
+    await openPage(page, 'page=gates')
     await expect(page.getByTestId('tag-filter-trigger')).toBeVisible({ timeout: 20_000 })
     await expect(page.getByTestId('tag-filter-trigger')).toContainText('标签')
     await page.screenshot({
@@ -257,14 +238,5 @@ test.describe('TagFilter UX acceptance', () => {
       path: '/tmp/tag-filter-screenshots/09-gates-selected.png',
       fullPage: true,
     })
-
-    // opening project filter should close tag popover
-    const projectTrigger = page.locator('[data-testid="project-filter-trigger"], button', {
-      hasText: /Grasp|全部项目|项目/,
-    }).first()
-    if (await projectTrigger.count()) {
-      await projectTrigger.click()
-      await expect(page.getByTestId('tag-filter-input')).toHaveCount(0)
-    }
   })
 })

@@ -45,7 +45,6 @@ import { useRequirementDrafts } from './useRequirementDrafts'
 
 const DRAFT: RequirementDraft = {
   id: 'd1',
-  projectId: 'proj-1',
   title: '草稿 A',
   bodyMarkdown: '# hello',
   status: 'open',
@@ -67,7 +66,7 @@ function withDrafts() {
   })
   const Comp = defineComponent({
     setup() {
-      api = useRequirementDrafts({ projectId: 'proj-1' })
+      api = useRequirementDrafts()
       return () => null
     },
   })

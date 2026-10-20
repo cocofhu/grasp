@@ -3,17 +3,16 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import Icon from '../../ui/Icon.vue'
-import CredentialProviderLogo from '@/components/project/CredentialProviderLogo.vue'
-import type { ProjectCredentialItem } from '@/lib/api/api'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import type { CredentialItem } from '@/lib/api/api'
 import { credentialModel, credentialVendor } from './modelCredential'
 
 const props = defineProps<{
   /** Selected credential id; empty follows the Agent. */
   modelValue: string
-  rows: ProjectCredentialItem[]
-  inherited: ProjectCredentialItem | null
+  rows: CredentialItem[]
+  inherited: CredentialItem | null
   loading: boolean
-  projectId?: string
 }>()
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -135,7 +134,7 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onDocDown, true)
       </button>
 
       <p class="mx-2 mb-1 mt-2 border-t border-line pt-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-txt3">
-        {{ t('canvas.inspector.model.projectKeys') }}
+        {{ t('canvas.inspector.model.workspaceKeys') }}
       </p>
       <p v-if="!rows.length" class="px-3 py-3 text-center text-[12px] text-txt3" data-testid="model-picker-empty">{{ t('canvas.inspector.model.empty') }}</p>
       <button

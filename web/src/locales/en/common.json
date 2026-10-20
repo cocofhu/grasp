@@ -260,28 +260,12 @@
       "noMatch": "No matching workflows",
       "loadFailed": "Failed to load workflows"
     },
-    "projectFilter": {
-      "all": "All projects",
-      "noMatch": "No matching projects",
-      "searchPlaceholder": "Search projects…",
-      "empty": "No projects yet",
-      "loadFailed": "Failed to load projects"
-    },
-    "projectTree": {
-      "searchPlaceholder": "Search projects…",
-      "clearSearch": "Clear search",
-      "empty": "No projects yet",
-      "noMatch": "No projects match “{q}”",
-      "expand": "Expand",
-      "collapse": "Collapse"
-    },
     "tagFilter": {
       "label": "Tags",
       "searchPlaceholder": "Search or type a tag, Enter to add",
       "selectedLabel": "Selected (AND)",
       "suggestionsLabel": "Suggestions",
       "selectedMark": "Selected",
-      "needProject": "Select a project to pick existing tags; you can still type a valid tag and press Enter",
       "noStock": "No existing tags yet — type one and press Enter to add",
       "noMatchHint": "No matching suggestions; press Enter to add “{tag}” if valid",
       "tagInvalid": "Tags allow letters, numbers, _ - . /, including Chinese",

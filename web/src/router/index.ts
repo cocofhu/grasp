@@ -63,8 +63,6 @@ const routes: RouteRecordRaw[] = [
   { path: '/sandboxes', name: 'sandboxes', component: () => import('@/views/SandboxListView.vue'), meta: { titleKey: 'route.sandboxes' } },
   { path: '/sandboxes/:id/console', name: 'sandbox-console', component: () => import('@/views/SandboxConsoleView.vue'), meta: { titleKey: 'route.sandboxConsole', full: true } },
   { path: '/settings', name: 'settings', component: () => import('@/views/SettingsView.vue'), meta: { titleKey: 'route.settings' } },
-  // Bookmarks from the multi-project UI.
-  { path: '/projects/:rest(.*)*', redirect: '/workflows' },
   { path: '/:pathMatch(.*)*', redirect: '/dashboard' },
 ]
 

@@ -195,7 +195,6 @@ const {
   ariaBusy,
   isMobile,
   selected,
-  selectedProject,
   selectedTags,
   clarifyDraft,
   clarifyAttachments,
@@ -214,7 +213,7 @@ const inboxPageControl = computed(() => {
 
 /** Whole-list fade when filter/page changes (g3.2). */
 const listFadeKey = computed(() =>
-  [listPage.value, selectedProject.value || '', selectedTags.value.slice().sort().join(',')].join('|'),
+  [listPage.value, selectedTags.value.slice().sort().join(',')].join('|'),
 )
 </script>
 

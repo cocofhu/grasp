@@ -14,7 +14,6 @@ import { useAuth } from '@/lib/composables/useAuth'
 
 vi.mock('@/lib/api/api', () => ({
   api: {
-    listProjects: vi.fn(async () => [{ id: 'p1', name: 'Proj A' }]),
     getWorkflow: vi.fn(async (id: string) => {
       if (id === 'gone') {
         const err = Object.assign(new Error('missing'), { status: 404 })
@@ -22,7 +21,6 @@ vi.mock('@/lib/api/api', () => ({
       }
       return {
         id,
-        projectId: 'p1',
         name: `WF ${id}`,
         description: '',
         status: id === 'draft-1' ? 'draft' : 'published',
@@ -138,7 +136,6 @@ describe('useWorkflowFavorites', () => {
     expect(fav.isFavorite('gone')).toBe(false)
     expect(fav.isFavorite('wf-ok')).toBe(true)
     expect(fav.displayItems.value[0]?.name).toBe('WF wf-ok')
-    expect(fav.displayItems.value[0]).not.toHaveProperty('projectName')
   })
 
   it('clears to empty after localStorage wipe', () => {

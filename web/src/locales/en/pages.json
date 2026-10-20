@@ -11,13 +11,11 @@
         "Copy or layout tweaks — one sentence is enough",
         "Attach a doc or screenshot to start clarifying"
       ],
-      "selectProject": "Select a workspace",
-      "noProject": "No workspace selected. Pick a workspace to start a Grasp workflow from Home.",
       "noWorkflows": "No workflows are available on Home. Enable Home visibility for a published workflow that starts with a clarify Agent.",
       "unpublishedWorkflows": "“{name}” has unpublished changes. Publish it to show it on Home.",
       "goPublish": "Open the editor to publish",
       "goCanvas": "Open the canvas and connect Grasp after start",
-      "goProjects": "View all workflows",
+      "goWorkflows": "View all workflows",
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
@@ -36,14 +34,6 @@
       },
       "create": {
         "addCard": "New workflow",
-        "pickTitle": "Select a workspace",
-        "pickStep": "Step 1 of 2 · The baseline workflow will be created in the selected workspace",
-        "formStep": "Step 2 of 2 · Workspace: {name}",
-        "formProject": "Workspace: {name}",
-        "back": "Back",
-        "emptyTitle": "Workspace unavailable",
-        "emptyHint": "Retry loading the workspace.",
-        "goProjects": "Go to workspace",
         "loadFailed": "Unable to load the workspace. Please try again."
       }
     },
@@ -76,19 +66,16 @@
       "sourceAll": "Source: all",
       "sourceWorkflow": "Workflow",
       "sourcePm": "Workspace management",
-      "projectAll": "Workspace: all",
       "modelAll": "Model: all",
       "kpiTotal": "Total tokens",
       "kpiInOutCache": "Input / output",
       "kpiScope": "Reported runs",
-      "kpiProjects": "{n} workspaces",
       "kpiRuns": "{n} reported runs",
       "kpiModels": "{n} models",
       "noPrev": "—",
       "linePrevWindow": "Previous period",
       "lineModes": {
         "total": "Total (vs previous period)",
-        "project": "By workspace",
         "model": "By model",
         "cost": "Cost & cache hit"
       },
@@ -98,7 +85,6 @@
         "status": "By outcome"
       },
       "barDimensions": {
-        "project": "Workspace",
         "workflow": "Workflow",
         "model": "Model",
         "nodeType": "Node type",
@@ -114,7 +100,6 @@
         "piesHint": "Click a slice for details",
         "bars": "Consumption ranking",
         "barsHints": {
-          "project": "Stacked usage by workspace",
           "workflow": "Stacked usage by workflow",
           "model": "Stacked usage by model",
           "nodeType": "Stacked usage by node type",
@@ -144,19 +129,15 @@
         "treemapHint": "Workflows / Assistant / Studio → node types. Click for details."
       },
       "tables": {
-        "projects": "Workspaces",
         "runs": "Highest-usage runs",
-        "colProject": "Workspace",
         "colRun": "Run",
         "colModel": "Model",
         "colTotal": "Total",
         "colInput": "Input",
         "colOutput": "Output",
-        "colDelta": "Change",
         "resizeCol": "Drag to resize the {col} column",
         "models": "Models",
         "colCost": "Cost",
-        "colRuns": "Runs",
         "colCache": "Cache r/w",
         "colShare": "Share",
         "details": "Details"
@@ -199,9 +180,7 @@
       "kpiFailed": "Failed / cancelled usage",
       "kpiFailedShare": "{pct} of total",
       "kpiAvgPerRun": "Avg {n} per run",
-      "unassigned": "Unassigned",
       "unknownModel": "Unknown model",
-      "deleted": "deleted",
       "exportCsv": "Export CSV",
       "weekdays": {
         "0": "Mon",
@@ -215,7 +194,6 @@
       "drill": {
         "title": "Usage details",
         "dims": {
-          "project": "Workspace",
           "model": "Model",
           "workflow": "Workflow",
           "nodeType": "Node type",
@@ -233,8 +211,7 @@
         "calls": "Calls",
         "nestedHint": "Click any chart element here to drill further; use the path above to go back",
         "apply": "Apply as page filter",
-        "openRun": "Open run",
-        "openProject": "Open workspace board"
+        "openRun": "Open run"
       },
       "events": {
         "sortBy": "Sort",
@@ -383,21 +360,6 @@
         "errorHint": "Could not fetch runs for this status. This is not an empty list."
       }
     },
-    "projectList": {
-      "title": "Workspaces",
-      "subtitle": "<strong class=\"font-medium text-warn\">Grasp the main cord</strong>; <em class=\"not-italic text-n-clarify\">each takes its place</em>",
-      "newProject": "New workspace",
-      "empty": "No workspaces yet",
-      "workflowCount": "{n} workflows",
-      "tokenLabel": "Token",
-      "createTitle": "New workspace",
-      "nameLabel": "Name",
-      "namePlaceholder": "Workspace name",
-      "nameRequired": "Name is required",
-      "descLabel": "Description (optional)",
-      "descPlaceholder": "Briefly describe this workspace",
-      "created": "Created workspace {name}"
-    },
     "onboarding": {
       "title": "First-time setup",
       "titleCreate": "New workspace setup",
@@ -423,13 +385,6 @@
         "team": "Team",
         "workflow": "Workflow preview",
         "done": "Done"
-      },
-      "projectName": {
-        "meta": "The workspace name prefixes the Agent names.",
-        "label": "Workspace name",
-        "placeholder": "e.g. Payments platform",
-        "required": "Please enter a workspace name",
-        "invalid": "That name cannot produce a valid Agent naming prefix — try another"
       },
       "language": {
         "detected": "You can switch languages later from the bottom-left corner.",
@@ -639,15 +594,11 @@
       "colSource": "Source",
       "colSubtotal": "Subtotal"
     },
-    "projectDetail": {
-      "back": "All workspaces",
-      "notFound": "Workspace not found or deleted",
-      "tokenUsage": "Token usage",
+    "workspace": {
       "tokenTipTitle": "Usage details",
       "tokenTipTotal": "Total",
       "tokenTipWorkflow": "Workflow",
       "tokenTipPm": "Workspace assistant",
-      "tokenTipAria": "Token usage, hover for details",
       "newWorkflow": {
         "scratch": "From scratch",
         "scratchDesc": "Start with an empty canvas and add nodes",
@@ -661,20 +612,7 @@
         "creating": "Creating…",
         "created": "Created workflow \"{name}\""
       },
-      "tabBoard": "Board",
-      "tabWorkflows": "Workflows",
       "tabRequirementDrafts": "Requirement drafts",
-      "tabNotify": "Notify",
-      "tabPmLeader": "Workspace assistant",
-      "tabExternalMcp": "External MCP",
-      "tabPmMemory": "Workspace memory",
-      "tabCronJobs": "Scheduled tasks",
-      "tabAgents": "Agents",
-      "tabSharedAgent": "Shared Agent config",
-      "tabCredentials": "Workspace credentials",
-      "tabVariables": "Workflow variables",
-      "tabAudit": "Audit",
-      "tabMeta": "Workspace info",
       "requirementDrafts": {
         "filterOpen": "Open",
         "filterDone": "Done",
@@ -785,7 +723,6 @@
         "clearFilters": "Clear filters"
       },
       "notify": {
-        "title": "Run notifications",
         "deliverySection": "Notification delivery",
         "templateEvent": "Notification event",
         "templateBody": "Message body",
@@ -859,7 +796,6 @@
         "colTime": "Time",
         "colNode": "Node",
         "colCaller": "Caller",
-        "colAction": "Action",
         "colResource": "Resource",
         "colRun": "Run",
         "colOutcome": "Result",
@@ -872,11 +808,8 @@
         "statTotal": "Total",
         "statOk": "OK",
         "statFail": "Failed",
-        "runCount": "{n} events in this run",
         "runCapped": "Showing the first {n} events. Narrow filters or switch to All logs.",
         "groupEvents": "{n}",
-        "expandHint": "Click a row to expand",
-        "expandHintCard": "Tap a card to expand",
         "filterExpand": "Expand filters",
         "filterCollapse": "Collapse",
         "cardExpandHint": "Tap for caller / resource",
@@ -886,18 +819,9 @@
         "emptyRunsTitle": "No runs in this time range",
         "emptyRunsDesc": "Switch to",
         "outcomeOk": "OK",
-        "outcomeFail": "Failed",
-        "perPage": "Per page",
-        "actorSystem": "System",
-        "actionProjectConfig": "Config",
-        "actionWorkflow": "Workflow",
-        "actionRun": "Workflow",
-        "actionGate": "Gate",
-        "actionMcp": "MCP call",
-        "actionExport": "Export"
+        "outcomeFail": "Failed"
       },
       "cron": {
-        "title": "Scheduled tasks",
         "emptyTitle": "No scheduled tasks yet",
         "emptyDesc": "Jobs created in Workspace assistant consult will appear in this list.",
         "colName": "Name",
@@ -1044,7 +968,7 @@
           "statusOff": "Off",
           "edit": "Edit",
           "noteTitle": "Note: ",
-          "noteHint": "Web consult and gates still use Workspace.PmLeader. Primary defaults to that Agent; secondary expands capacity.",
+          "noteHint": "Web consult and gates still use the workspace PM Leader. Primary defaults to that Agent; secondary expands capacity.",
           "editTitle": "Edit channel",
           "editPrimaryHint": "Primary channel · compatible with PmLeader",
           "editSecondaryHint": "Secondary channel · same capabilities as primary",
@@ -1061,7 +985,7 @@
           "cronDeliverHintMulti": "Separate from workspace notify targets. Only jobs for this channel's Agent are delivered here.",
           "channelMcpsTitle": "Platform PM role MCPs",
           "channelMcpsHint": "Channel turns only · does not affect Web/gate",
-          "channelMcpsNote": "Web/gate still read Workspace.PmEnabledMcps. Changes here affect inbound channel turns only.",
+          "channelMcpsNote": "Web/gate still read the workspace PM enabled MCPs. Changes here affect inbound channel turns only.",
           "notifyTitle": "Workspace notify · channel targets",
           "notifyHint": "Explicitly select 0–N channels (primary allowed). Empty list = no delivery. Independent of per-channel cron targets.",
           "notifySave": "Save notify targets",
@@ -1190,7 +1114,6 @@
       },
       "externalMcp": {
         "connectionTitle": "Connection",
-        "title": "External MCP access",
         "subtitle": "Let external AI tools (Cursor, Claude, etc.) call this workspace's PM MCP surface over HTTP — separate from internal PM Leader consult.",
         "distinctHint": "These switches and keys apply only to external MCP. They do not change Web/gate PM Leader or channel MCP injection.",
         "enable": "Enable external MCP",
@@ -1232,43 +1155,25 @@
       "colName": "Name",
       "colStatus": "Status",
       "colUpdated": "Updated",
-      "colValue": "VALUE",
       "colVarName": "Name",
       "colType": "Type",
       "colDefault": "Default",
       "plain": "Plain",
       "secret": "Secret",
-      "secretForced": "Forced",
-      "secretForcedHint": "Official ACP auth keys are always Secret and masked; cannot switch to plain",
-      "varsHint": "{'${vars.*}'} defaults at launch; not dumped as a whole into sandbox OS env.",
-      "envKey": "KEY",
-      "envValue": "value",
-      "envEmptyTitle": "No sandbox env yet",
-      "envEmptyDesc": "Add KEY/VALUE rows to write into node Spec.Env. Secret values are masked on read.",
       "varsEmptyTitle": "No workflow variables yet",
       "varsEmptyDesc": "Add a row to configure workspace-level defaults.",
       "sharedAgent": {
         "extendHint": "Workspace Runs and Agent Studio Chat test extend this shared config first, then the chosen Agent overlays same-named keys (Agent wins).",
         "discard": "Discard",
-        "testTab": "Chat test",
-        "pickAgent": "Pick Agent",
-        "pickAgentPlaceholder": "Select an Agent to overlay",
-        "testHint": "Only Agents bound to this workspace are listed. Starts with the shared baseline, then overlays the selected Agent.",
-        "noAgents": "No Agents yet — create one in Agent Studio first.",
-        "noProjectAgents": "No Agents are bound to this workspace yet. Open Agent management and bind this workspace in the Agent’s meta tab, then try again.",
         "genericCredentialTitle": "Shared credential",
         "genericCredentialHint": "This is the workspace default. An Agent that already chose a credential uses its own. An Agent that has not chosen one uses this credential when the kind matches.",
         "runtimeDesc": "Which account and model this workspace's Agents use by default.",
         "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
       },
-      "projectCredentials": {
+      "credentials": {
         "eyebrow": "SECURITY CREDENTIALS",
         "title": "Workspace credentials",
-        "subtitle": "Manage credentials once at workspace scope for Agents and Runs. Read responses contain only status or a masked value, never plaintext.",
-        "modelApiKeyTitle": "Model provider API Key",
         "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
-        "apiKeyLabel": "API Key",
-        "apiKeyHint": "The key is submitted only when you save or replace it; reads always show a masked value.",
         "empty": "This workspace has no managed credentials yet.",
         "create": "Add credential",
         "createTitle": "Add workspace credential",
@@ -1302,38 +1207,14 @@
           "ssh_key": "SSH private key",
           "ssh_hosts": "SSH known hosts"
         },
-        "createIntroTitle": "Keep the secret in one workspace-level vault",
-        "createIntro": "Only a masked value is shown after saving. Runs inject the secret through its environment key; plaintext never returns to the page, logs, or artifacts.",
-        "basicSection": "Basic details",
-        "bindingSection": "Runtime binding",
-        "bindingHint": "Provide a target or environment key. API credentials usually use an environment key.",
-        "secretSection": "Credential value",
-        "requiredHint": "Name and value required",
-        "namePlaceholder": "e.g. OpenAI API Key",
-        "providerPlaceholder": "e.g. openai, github",
-        "targetPlaceholder": "e.g. model-provider / repo",
-        "writeOnly": "Hidden",
         "summary": {
           "total": "Credential slots",
           "configured": "Configured",
           "apiKeys": "Model slots"
         },
         "groups": {
-          "ai": {
-            "title": "Models",
-            "hint": "Keys used by coding assistants and model calls."
-          },
-          "git": {
-            "title": "Repositories",
-            "hint": "Credentials used to pull, push, and open merge requests."
-          },
-          "ssh": {
-            "title": "SSH",
-            "hint": "Used when accessing repositories over SSH."
-          },
           "other": {
-            "title": "Other",
-            "hint": "Keys used by custom services."
+            "title": "Other"
           }
         },
         "typeAi": "Model",
@@ -1342,10 +1223,6 @@
         "typeMcp": "MCP",
         "typeCustom": "Custom",
         "type": "Type",
-        "name": "Name",
-        "provider": "Provider",
-        "target": "Target",
-        "envKey": "Environment key (optional)",
         "value": "Credential value",
         "configured": "Configured",
         "notConfigured": "Not configured",
@@ -1360,11 +1237,6 @@
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
-      "agents": {
-        "metaTab": "Meta",
-        "testTab": "Chat test",
-        "noAgentForTest": "No Agents are bound to this workspace yet. Create or bind an Agent under Meta, then open Chat test."
-      },
       "varName": "Name",
       "varValue": "Default",
       "varDescPlaceholder": "Description (optional)",
@@ -1372,9 +1244,8 @@
       "selectPlaceholder": "Select…",
       "addRow": "Add row",
       "saved": "Saved",
-      "deleteTitle": "Delete workspace · {name}",
-      "deleteWarning": "Only empty workspaces (no workflows) can be deleted. This cannot be undone.",
-      "deleted": "Workspace deleted"
+      "nameLabel": "Name",
+      "descLabel": "Description (optional)"
     },
     "workflowList": {
       "title": "Workflows",
@@ -1395,7 +1266,6 @@
       "unnamedWorkflow": "Untitled workflow",
       "descLabel": "Description (optional)",
       "descPlaceholder": "List subtitle / brief description",
-      "projectRequired": "The workspace could not be loaded. Refresh and try again.",
       "loadFailed": "Failed to load workflow; backend may be offline",
       "loading": "Loading workflow…",
       "mobile": {
@@ -2184,8 +2054,8 @@
       "emptyTeamDesc": "After you fill workspace background and runtime config, a sandbox creates the workspace, PM, and 4 engineers.",
       "emptyTeamCta": "Create Agent team",
       "emptyTeamOrSingle": "or create a single Agent",
-      "emptyProjectTitle": "No agents in this workspace yet",
-      "emptyProjectDesc": "Create an Agent bound to this workspace. Teams are set up when you create the workspace.",
+      "emptyWorkspaceTitle": "No agents in this workspace yet",
+      "emptyWorkspaceDesc": "Create an Agent bound to this workspace. Teams are set up when you create the workspace.",
       "createTeam": "Create Agent team",
       "unsaved": "Unsaved",
       "saved": "Saved",
@@ -2315,7 +2185,7 @@
         "agentMcpAlreadyExists": "{name} already exists; no duplicate entry added",
         "agentScopeBadge": "Agent-scoped platform MCP: used in test sandboxes and declared scenes; Workspace assistant consult injects the same endpoints automatically. Independent from artifact-store (run-scoped).",
         "pmVarsTitle": "Workspace assistant consult variables",
-        "pmScopeTag": "workspace / Workspace assistant",
+        "pmScopeTag": "Workspace assistant",
         "pmUrl": "Workspace assistant MCP endpoint (consult scenes only)",
         "pmToken": "Consult session token (consult scenes only)",
         "pmScopeNote": "Consult scenes only: injected by the platform into consult sandboxes; workflow runs do not use this entry. Keep separate from run-scoped variables above.",
@@ -2516,7 +2386,6 @@
         "credentialSave": "Save",
         "credentialCurrent": "In use",
         "credentialEmpty": "No model provider API key yet",
-        "credentialNeedProject": "Choose a primary workspace before adding a credential.",
         "credentialName": "Alias",
         "credentialNamePlaceholder": "Work account",
         "credentialNameRequired": "Enter an alias",
@@ -2602,11 +2471,6 @@
           "body": "The package includes environment variables/secrets. After download it leaves this environment; only share with trusted recipients.",
           "confirm": "Confirm and download"
         },
-        "pickProject": {
-          "title": "Import into workspace",
-          "intro": "Choose the workspace that will own the imported agents.",
-          "confirm": "Choose file"
-        },
         "batchConflict": {
           "title": "Duplicate agent names detected",
           "intro": "These agents already exist in this environment:",
@@ -2670,7 +2534,7 @@
         "headSub": "Team context and runtime configuration → start a sandbox to create the team",
         "confirmStart": "Confirm & start sandbox",
         "submitting": "Submitting",
-        "previewLine": "Team: {project} · PM: {pm} · {n} engineers",
+        "previewLine": "Team: {team} · PM: {pm} · {n} engineers",
         "steps": {
           "team": "Team info",
           "acp": "Agent",
@@ -2682,7 +2546,7 @@
         },
         "team": {
           "meta": "Choose the team name and naming prefix. Engineers are generated in the sandbox from the reference roster.",
-          "projectName": "Team name",
+          "teamName": "Team name",
           "prefix": "Name prefix",
           "pmName": "PM Agent name",
           "background": "Team context",
@@ -2710,7 +2574,7 @@
         },
         "review": {
           "meta": "Create the PM in this workspace, then start a sandbox to generate four engineers from the reference roster.",
-          "project": "Team",
+          "team": "Team",
           "set": "Set",
           "skip": "Skipped (add later)",
           "none": "None",
@@ -2719,7 +2583,7 @@
           "noArtifactWarn": "Workflow roles usually need artifact-store; it is missing from the MCP list."
         },
         "errors": {
-          "projectRequired": "Enter a team name",
+          "teamNameRequired": "Enter a team name",
           "prefixRequired": "Name prefix is required",
           "backgroundRequired": "Enter the team context",
           "pmRequired": "PM Agent name is required",
@@ -2911,20 +2775,6 @@
           "commands": "Commands"
         }
       },
-      "project": {
-        "label": "Home workspace",
-        "hint": "Owns memory-store / context-store / task-scheduler data. Switching purges this Agent's memories, threads, and jobs under the old workspace.",
-        "required": "The workspace has not loaded. Please retry.",
-        "placeholder": "Select a workspace",
-        "switchTitle": "Switch home workspace?",
-        "switchWarn": "This clears the Agent's data under the old workspace (not migrated):",
-        "switchItemMemory": "Long-term memories",
-        "switchItemContext": "Conversation threads",
-        "switchItemJobs": "Cron jobs",
-        "switchItemPm": "Workspace assistant binding on the old workspace (if this Agent) will be disabled",
-        "switchApplyHint": "Applied to the draft; takes effect when you save the Agent.",
-        "switchConfirm": "Switch to {name}"
-      },
       "data": {
         "title": "Agent data",
         "hint": "Workspace data: memories, context and scheduled tasks.",
@@ -3058,7 +2908,6 @@
         "inspectorEdit": "Change in Agent settings",
         "wizardHint": "Not sure? Start with auto; you can change it later in Agent settings."
       },
-      "workspaceUnavailable": "The workspace could not be loaded. Refresh and try again.",
       "pmScopeTag": "Workspace assistant"
     },
     "runLaunch": {

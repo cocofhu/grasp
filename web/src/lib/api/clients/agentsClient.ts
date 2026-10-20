@@ -2,7 +2,7 @@ import type {
   AgentCronJob,
   ChatThread,
   ChatMessage,
-  ProjectMemoryItem,
+  MemoryItem,
 } from '../../shared/types'
 import type { BackendId } from '../../shared/regionPolicy'
 import { BASE, req } from '../httpCore'
@@ -12,7 +12,7 @@ import type {
   CliModelsResponse,
   OpenCodeModelsResponse,
   OpenCodeProvidersResponse,
-  ProjectAgentsImportResult,
+  WorkspaceAgentsImportResult,
   TeamBootstrapRequest,
   TeamBootstrapSession,
 } from '../apiTypes'
@@ -39,8 +39,7 @@ export const agentsClient = {
   // skill/rules + MCP servers + environment variables)
   listAgents: () => req<Agent[]>('/agents'),
   getAgent: (name: string) => req<Agent>(`/agents/${encodeURIComponent(name)}`),
-  bootstrapProjectOnboarding: (
-    projectId: string,
+  bootstrapOnboarding: (
     body: {
       acpBackend: BackendId
       apiKey: string
@@ -114,16 +113,16 @@ export const agentsClient = {
       { method: 'POST', body: JSON.stringify({ reason: reason || '' }) },
     ),
 
-  // Agent-scoped data (Studio). Project resolved server-side from agent.projectId.
+  // Agent-scoped data (Studio).
   listAgentMemories: (name: string) =>
-    req<{ items: ProjectMemoryItem[] }>(`/agents/${encodeURIComponent(name)}/memories`),
+    req<{ items: MemoryItem[] }>(`/agents/${encodeURIComponent(name)}/memories`),
   upsertAgentMemory: (name: string, body: { title: string; content: string }) =>
-    req<ProjectMemoryItem>(`/agents/${encodeURIComponent(name)}/memories`, {
+    req<MemoryItem>(`/agents/${encodeURIComponent(name)}/memories`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
   updateAgentMemory: (name: string, mid: string, body: { title?: string; content?: string }) =>
-    req<ProjectMemoryItem>(`/agents/${encodeURIComponent(name)}/memories/${mid}`, {
+    req<MemoryItem>(`/agents/${encodeURIComponent(name)}/memories/${mid}`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
@@ -167,7 +166,7 @@ export const agentsClient = {
     }
     return res.blob()
   },
-  exportProjectAgents: async (_workspaceId: string): Promise<{ blob: Blob; filename: string }> => {
+  exportWorkspaceAgents: async (): Promise<{ blob: Blob; filename: string }> => {
     const res = await fetch(`${BASE}/workspace/agents/export`, {
       credentials: 'include',
     })
@@ -184,15 +183,14 @@ export const agentsClient = {
     const blob = await res.blob()
     const filename = filenameFromContentDisposition(
       res.headers.get('Content-Disposition'),
-      'project.zip',
+      'workspace-agents.zip',
     )
     return { blob, filename }
   },
-  importProjectAgents: async (
-    projectId: string,
+  importWorkspaceAgents: async (
     zipFile: File,
     opts: { mode: 'rename' | 'overwrite' },
-  ): Promise<ProjectAgentsImportResult> => {
+  ): Promise<WorkspaceAgentsImportResult> => {
     const fd = new FormData()
     fd.append('file', zipFile)
     fd.append('mode', opts.mode)
@@ -211,7 +209,7 @@ export const agentsClient = {
       }
       throw new Error(msg)
     }
-    return (await res.json()) as ProjectAgentsImportResult
+    return (await res.json()) as WorkspaceAgentsImportResult
   },
   /** Vendors OpenCode can resolve models for (models.dev, cached server-side). */
   openCodeProviders: () => req<OpenCodeProvidersResponse>(`/opencode/providers`),
@@ -223,7 +221,7 @@ export const agentsClient = {
     req<CliModelsResponse>(`/acp-backends/${encodeURIComponent(backend)}/models`),
   importAgent: async (
     zipFile: File,
-    opts: { projectId: string; targetName: string; mode: 'create' | 'overwrite' },
+    opts: { targetName: string; mode: 'create' | 'overwrite' },
   ): Promise<Agent> => {
     const fd = new FormData()
     fd.append('file', zipFile)

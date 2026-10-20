@@ -20,7 +20,7 @@ import WorkflowRunHistoryTab from '@/components/workflow/WorkflowRunHistoryTab.v
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
 import { useWorkflowAskInputs } from '@/lib/run/useWorkflowAskInputs'
 import { api } from '@/lib/api/api'
-import type { Agent, ProjectCredentialItem } from '@/lib/api/apiTypes'
+import type { Agent, CredentialItem } from '@/lib/api/apiTypes'
 import { useWorkflowImport } from '@/lib/run/useWorkflowImport'
 import { useNodeDefs } from '@/lib/run/useNodeDefs'
 import { fmtTime } from '@/lib/shared/format'
@@ -29,7 +29,6 @@ import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
 import { workflowGraphError } from '@/lib/workflow/graphValidation'
 import type { ClarifyImage, NodeType, WFEdge, WFNode, Workflow } from '@/lib/shared/types'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { CANVAS_EDITOR, useCanvasEditor } from '@/components/canvas/composables/useCanvasEditor'
 import { pendingBackup, useWorkflowSave, type WorkflowBackup } from '@/components/canvas/composables/useWorkflowSave'
@@ -74,11 +73,8 @@ function updateEditorTabIndicator() {
 
 watch(activeTab, () => void nextTick(updateEditorTabIndicator))
 
-const { workspaceId, ensureLoaded: loadWorkspace } = useWorkspaceContext()
-
 const wf = reactive<Workflow>({
   id: routeId === 'new' ? '' : routeId,
-  projectId: routeId === 'new' ? workspaceId.value : undefined,
   name: t('pages.workflowEditor.unnamedWorkflow'),
   description: '',
   status: 'draft',
@@ -92,12 +88,10 @@ const wf = reactive<Workflow>({
 const { fields: askFieldsComputed } = useWorkflowAskInputs(wf)
 
 
-function projectLink() {
-  return '/workflows'
-}
+const WORKFLOWS_PATH = '/workflows'
 
-function goBackToProject() {
-  router.push(projectLink())
+function goBackToWorkflows() {
+  router.push(WORKFLOWS_PATH)
 }
 
 const running = ref(false)
@@ -107,13 +101,10 @@ const hydrateFailed = ref(false)
 
 // ── Agents & editor ──
 const allAgents = ref<Agent[] | null>(null)
-const projectAgents = computed(() =>
-  allAgents.value,
-)
 
 const editor = useCanvasEditor({
   graph: wf,
-  agents: projectAgents,
+  agents: allAgents,
   t: tr,
   typeLabel: (type: NodeType) => NODE_DEFS.value[type]?.label ?? type,
   notify: (m, action) => (action ? toast.show(m, 'default', { action }) : toast.warn(m)),
@@ -129,7 +120,7 @@ const paletteItems = computed(() =>
   ),
 )
 
-const agentLookupMap = computed(() => (projectAgents.value ? editor.lookup.value : undefined))
+const agentLookupMap = computed(() => (allAgents.value ? editor.lookup.value : undefined))
 const graphError = computed(() => workflowGraphError(wf, { t: tr, agents: agentLookupMap.value }))
 
 async function loadAgents() {
@@ -140,17 +131,13 @@ async function loadAgents() {
   }
 }
 
-const projectCredentials = ref<ProjectCredentialItem[] | null>(null)
+const credentials = ref<CredentialItem[] | null>(null)
 
-function loadWorkspaceCredentials() {
-  if (wf.projectId) void loadProjectCredentials(wf.projectId)
-}
-
-async function loadProjectCredentials(projectId: string) {
+async function loadCredentials() {
   try {
-    projectCredentials.value = (await api.getProjectCredentials(projectId)).items || []
+    credentials.value = (await api.listCredentials()).items || []
   } catch {
-    projectCredentials.value = []
+    credentials.value = []
   }
 }
 
@@ -167,7 +154,6 @@ function absorb(res: Partial<Workflow> | null | undefined) {
   if (res.publishedVersion !== undefined) wf.publishedVersion = res.publishedVersion
   if (res.status) wf.status = res.status
   if (res.updatedAt) wf.updatedAt = res.updatedAt
-  if (res.projectId && !wf.projectId) wf.projectId = res.projectId
   if (wasNew && wf.id) {
     routeId = wf.id
     void router.replace({ path: `/workflows/${wf.id}/edit`, query: {} })
@@ -190,7 +176,7 @@ const saver = useWorkflowSave({
     absorb(await api.saveWorkflow(payload()))
   },
   backupId: () => wf.id,
-  enabled: () => !hydrating.value && !hydrateFailed.value && !!wf.projectId && !deleting,
+  enabled: () => !hydrating.value && !hydrateFailed.value && !deleting,
 })
 
 /** Saves unsaved changes (a new workflow is created even when untouched). */
@@ -292,7 +278,7 @@ async function loadExistingWorkflow() {
   try {
     await hydrate(() => api.getWorkflow(routeId))
     backupOffer.value = pendingBackup(wf.id, snapshotOf(wf), wf.updatedAt)
-    void loadWorkspaceCredentials()
+    void loadCredentials()
   } catch {
     hydrateFailed.value = true
     errorMsg.value = t('pages.workflowEditor.loadFailed')
@@ -315,11 +301,8 @@ onMounted(async () => {
   window.addEventListener('keydown', onSaveKey)
   void loadAgents()
   if (routeId === 'new') {
-    await loadWorkspace()
-    wf.projectId = workspaceId.value
     hydrating.value = false
-    if (!wf.projectId) errorMsg.value = t('pages.workflowEditor.projectRequired')
-    else void loadWorkspaceCredentials()
+    void loadCredentials()
     saver.markSaved()
     editor.history.reset()
     return
@@ -387,7 +370,6 @@ async function openExport() {
 }
 const { fileInput, showDiscardConfirm, triggerImport, onDiscardCancel, onDiscardConfirm, handleFileChange } = useWorkflowImport({
   dirty: () => saver.dirty.value,
-  projectId: () => wf.projectId,
   onImported: async (imported) => {
     // Unsaved changes were already discarded in the import confirmation.
     saver.discardBackup()
@@ -426,7 +408,7 @@ async function confirmDelete() {
     showDelete.value = false
     saver.discardBackup()
     saver.stop()
-    void router.push(projectLink())
+    void router.push(WORKFLOWS_PATH)
   } catch (e: any) {
     deleting = false
     toast.error(t('canvas.topbar.deleteFailed', { error: String(e?.message || e) }))
@@ -626,7 +608,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         type="button"
         class="flex min-h-11 items-center gap-1 text-[13px] text-txt3 hover:text-txt"
         data-testid="workflow-editor-back"
-        @click="goBackToProject"
+        @click="goBackToWorkflows"
       >
         <Icon name="arrow-left" :size="15" />{{ t('pages.sandboxConsole.back') }}
       </button>
@@ -668,12 +650,12 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
         :aria-label="t('pages.sandboxConsole.back')"
         data-testid="workflow-editor-back"
-        @click="goBackToProject"
+        @click="goBackToWorkflows"
       >
         <Icon name="arrow-left" :size="17" />
       </button>
-      <nav class="flex min-w-0 items-center gap-1 text-[13px]" :aria-label="t('canvas.topbar.projects')">
-        <RouterLink :to="projectLink()" class="max-w-[180px] truncate text-txt3 hover:text-txt" data-testid="editor-breadcrumb-project">
+      <nav class="flex min-w-0 items-center gap-1 text-[13px]" :aria-label="t('canvas.topbar.workspace')">
+        <RouterLink :to="WORKFLOWS_PATH" class="max-w-[180px] truncate text-txt3 hover:text-txt" data-testid="editor-breadcrumb-workflows">
           {{ t('pages.workflowList.title') }}
         </RouterLink>
         <span class="text-txt3" aria-hidden="true">/</span>
@@ -989,8 +971,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
               :agents="editor.agents.value"
               :agents-loaded="editor.agentsLoaded.value"
               :focus-goal-tick="editor.focusGoalTick.value"
-              :project-id="wf.projectId"
-              :credentials="projectCredentials"
+              :credentials="credentials"
               @close="editor.closeInspector()"
               @delete="deleteInspectorNode"
             />
@@ -1049,7 +1030,6 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
     <RunLaunchModal
       :open="showRun"
       :workflow-id="wf.id"
-      :project-id="wf.projectId"
       :workflow-name="wf.name"
       :fields="runFields"
       :run-inputs="runInputs"

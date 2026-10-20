@@ -81,10 +81,6 @@ async function openRunList(
       await route.fulfill({ json: [] })
       return
     }
-    if (path === '/api/projects') {
-      await route.fulfill({ json: [] })
-      return
-    }
     await route.fulfill({ status: 404, json: { error: 'not mocked' } })
   })
 

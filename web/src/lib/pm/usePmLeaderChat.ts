@@ -15,8 +15,7 @@ import {
 import { useToast } from '@/lib/composables/useToast'
 import {
   isPmFailKind,
-  pmActiveThreadStorageKey,
-  migratePmActiveThreadStorage,
+  PM_ACTIVE_THREAD_STORAGE_KEY,
   pmWsReconnectDelayMs,
   type PmFailKind,
 } from '@/lib/pm/pmTurnState'
@@ -30,7 +29,6 @@ import {
 import type { ChatMessage, ChatThread, ClarifyImage, PmChatThread, PmLeaderBinding } from '@/lib/shared/types'
 
 export interface UsePmLeaderChatProps {
-  projectId: string
   binding: PmLeaderBinding | null
   restoreMobileChat?: boolean
   unknownModelDisplayName?: string | null
@@ -211,16 +209,16 @@ const isPullingBoot = computed(
   () => (sandboxBootStatus.value || '').trim().toLowerCase() === 'pulling',
 )
 const busyHint = computed(() => {
-  if (finalizing.value) return t('pages.projectDetail.pm.busyFinalizing')
-  if (resuming.value) return t('pages.projectDetail.pm.busyResuming')
-  if (isPullingBoot.value) return t('pages.projectDetail.pm.busyPulling')
-  if (streaming.value && streamText.value) return t('pages.projectDetail.pm.busyStreaming')
-  return t('pages.projectDetail.pm.busyWaiting')
+  if (finalizing.value) return t('pages.workspace.pm.busyFinalizing')
+  if (resuming.value) return t('pages.workspace.pm.busyResuming')
+  if (isPullingBoot.value) return t('pages.workspace.pm.busyPulling')
+  if (streaming.value && streamText.value) return t('pages.workspace.pm.busyStreaming')
+  return t('pages.workspace.pm.busyWaiting')
 })
 const suggestions = computed(() => [
-  t('pages.projectDetail.pm.suggestProgress'),
-  t('pages.projectDetail.pm.suggestBlockers'),
-  t('pages.projectDetail.pm.suggestRisk'),
+  t('pages.workspace.pm.suggestProgress'),
+  t('pages.workspace.pm.suggestBlockers'),
+  t('pages.workspace.pm.suggestRisk'),
 ])
 const showStreamTypingDots = computed(
   () => showStreamBubble.value && !streamText.value && !finalizing.value && !resuming.value,
@@ -234,9 +232,9 @@ async function copyAssistantText(ev: Event) {
   if (!text) return
   try {
     await navigator.clipboard.writeText(text)
-    toast.success(t('pages.projectDetail.pm.copySuccess'))
+    toast.success(t('pages.workspace.pm.copySuccess'))
   } catch {
-    toast.error(t('pages.projectDetail.pm.copyFailed'))
+    toast.error(t('pages.workspace.pm.copyFailed'))
   }
 }
 const showThreadsAside = computed(() => !isMobile.value || mobileView.value === 'threads')
@@ -254,13 +252,13 @@ function isChannelThread(th: ChatThread | undefined | null): boolean {
 function channelBadgeLabel(th: ChatThread | undefined | null): string {
   switch (channelTypeOf(th)) {
     case 'wecom':
-      return t('pages.projectDetail.pm.channelBadgeWecom')
+      return t('pages.workspace.pm.channelBadgeWecom')
     case 'feishu':
-      return t('pages.projectDetail.pm.channelBadgeFeishu')
+      return t('pages.workspace.pm.channelBadgeFeishu')
     case 'dingtalk':
-      return t('pages.projectDetail.pm.channelBadgeDingTalk')
+      return t('pages.workspace.pm.channelBadgeDingTalk')
     default:
-      return t('pages.projectDetail.pm.channelBadgeQQ')
+      return t('pages.workspace.pm.channelBadgeQQ')
   }
 }
 
@@ -280,26 +278,26 @@ function channelBadgeClass(th: ChatThread | undefined | null): string {
 function channelReadonlyTitle(th: ChatThread | undefined | null): string {
   switch (channelTypeOf(th)) {
     case 'wecom':
-      return t('pages.projectDetail.pm.channelReadonlyTitleWecom')
+      return t('pages.workspace.pm.channelReadonlyTitleWecom')
     case 'feishu':
-      return t('pages.projectDetail.pm.channelReadonlyTitleFeishu')
+      return t('pages.workspace.pm.channelReadonlyTitleFeishu')
     case 'dingtalk':
-      return t('pages.projectDetail.pm.channelReadonlyTitleDingTalk')
+      return t('pages.workspace.pm.channelReadonlyTitleDingTalk')
     default:
-      return t('pages.projectDetail.pm.channelReadonlyTitle')
+      return t('pages.workspace.pm.channelReadonlyTitle')
   }
 }
 
 function channelReadonlyHint(th: ChatThread | undefined | null): string {
   switch (channelTypeOf(th)) {
     case 'wecom':
-      return t('pages.projectDetail.pm.channelReadonlyHintWecom')
+      return t('pages.workspace.pm.channelReadonlyHintWecom')
     case 'feishu':
-      return t('pages.projectDetail.pm.channelReadonlyHintFeishu')
+      return t('pages.workspace.pm.channelReadonlyHintFeishu')
     case 'dingtalk':
-      return t('pages.projectDetail.pm.channelReadonlyHintDingTalk')
+      return t('pages.workspace.pm.channelReadonlyHintDingTalk')
     default:
-      return t('pages.projectDetail.pm.channelReadonlyHint')
+      return t('pages.workspace.pm.channelReadonlyHint')
   }
 }
 
@@ -310,22 +308,22 @@ function threadDisplayTitle(th: ChatThread | undefined | null): string {
   }
   const title = (th?.title || '').trim()
   if (title) return title
-  return t('pages.projectDetail.pm.untitled')
+  return t('pages.workspace.pm.untitled')
 }
 
 function channelSourceLine(th: ChatThread | undefined | null): string {
   const kind = channelTypeOf(th)
   const src =
     kind === 'wecom'
-      ? t('pages.projectDetail.pm.channelSourceWecom')
+      ? t('pages.workspace.pm.channelSourceWecom')
       : kind === 'feishu'
-        ? t('pages.projectDetail.pm.channelSourceFeishu')
+        ? t('pages.workspace.pm.channelSourceFeishu')
         : kind === 'dingtalk'
-          ? t('pages.projectDetail.pm.channelSourceDingTalk')
-          : t('pages.projectDetail.pm.channelSourceQq')
+          ? t('pages.workspace.pm.channelSourceDingTalk')
+          : t('pages.workspace.pm.channelSourceQq')
   const peer = channelPeerId(th?.userId || '')
   if (th?.unspoken) {
-    return `${src} · ${t('pages.projectDetail.pm.unspoken')}${peer ? ` · ${peer}` : ''}`
+    return `${src} · ${t('pages.workspace.pm.unspoken')}${peer ? ` · ${peer}` : ''}`
   }
   return peer ? `${src} · ${peer}` : src
 }
@@ -348,10 +346,10 @@ const showHistoryTip = computed(
     (messages.value.length > 0 || historyLoading.value || historyLoadFailed.value),
 )
 const historyTipText = computed(() => {
-  if (historyLoading.value) return t('pages.projectDetail.pm.historyLoading')
-  if (historyLoadFailed.value) return t('pages.projectDetail.pm.historyLoadFailed')
-  if (!hasMoreEarlier.value) return t('pages.projectDetail.pm.historyReachedStart')
-  return t('pages.projectDetail.pm.historyScrollUp')
+  if (historyLoading.value) return t('pages.workspace.pm.historyLoading')
+  if (historyLoadFailed.value) return t('pages.workspace.pm.historyLoadFailed')
+  if (!hasMoreEarlier.value) return t('pages.workspace.pm.historyReachedStart')
+  return t('pages.workspace.pm.historyScrollUp')
 })
 const historyTipClass = computed(() => {
   if (historyLoading.value) return 'text-accent'
@@ -413,8 +411,8 @@ function failMeta(kind: string) {
   const keys = FAIL_KIND_KEYS[k]
   return {
     kind: k,
-    title: t(`pages.projectDetail.pm.${keys.title}`),
-    desc: t(`pages.projectDetail.pm.${keys.desc}`),
+    title: t(`pages.workspace.pm.${keys.title}`),
+    desc: t(`pages.workspace.pm.${keys.desc}`),
   }
 }
 
@@ -436,17 +434,15 @@ function isChannelHint(m: ChatMessage) {
 
 async function loadThreads() {
   const generation = ++threadsLoadGen
-  const workspaceId = props.projectId
   loading.value = true
   threadsLoadFailed.value = false
   try {
-    const res = await api.listPmThreads(workspaceId)
-    if (disposed || generation !== threadsLoadGen || workspaceId !== props.projectId) return
+    const res = await api.listPmThreads()
+    if (disposed || generation !== threadsLoadGen) return
     threads.value = res.items || []
-    migratePmActiveThreadStorage(threads.value.map((thread) => thread.id), props.projectId)
     const stored =
       typeof localStorage !== 'undefined'
-        ? localStorage.getItem(pmActiveThreadStorageKey(props.projectId)) || ''
+        ? localStorage.getItem(PM_ACTIVE_THREAD_STORAGE_KEY) || ''
         : ''
     const requestedThread = typeof route?.query?.thread === 'string' ? route.query.thread : ''
     const preferred =
@@ -484,7 +480,7 @@ async function activateThread(id: string, opts?: { preserveTurn?: boolean }) {
   resetHistoryWindowState()
   try {
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(pmActiveThreadStorageKey(props.projectId), id)
+      localStorage.setItem(PM_ACTIVE_THREAD_STORAGE_KEY, id)
     }
   } catch {
     /* ignore quota */
@@ -512,7 +508,7 @@ function backToThreads() {
 /** Create + activate a thread without resetting an in-flight send/retry generation. */
 async function ensureActiveThread() {
   if (activeId.value) return
-  const thr = await api.createPmThread(props.projectId)
+  const thr = await api.createPmThread()
   if (isMobile.value) mobileView.value = 'chat'
   threads.value = [thr, ...threads.value]
   await activateThread(thr.id, { preserveTurn: true })
@@ -526,14 +522,14 @@ async function loadMessages(tid: string) {
   historyLoading.value = false
   historyRetryNeedsScrollAway = false
   try {
-    const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
+    const res = await api.listPmMessages(tid, { limit: PAGE_SIZE })
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messages.value = res.items || []
     hasMoreEarlier.value = !!res.hasMore
   } catch {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     messagesLoadFailed.value = true
-    toast.error(t('pages.projectDetail.pm.loadFailed'))
+    toast.error(t('pages.workspace.pm.loadFailed'))
   } finally {
     if (gen === threadLoadGen && tid === activeId.value) {
       // Clear loading before scrollBottom: while messagesLoading, template shows
@@ -580,7 +576,7 @@ async function loadEarlier() {
   const el = scroller.value
 
   try {
-    const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE, before })
+    const res = await api.listPmMessages(tid, { limit: PAGE_SIZE, before })
     if (gen !== threadLoadGen || tid !== activeId.value) return
     // The user may have navigated elsewhere in the loaded window while this page was pending.
     const prevTop = el?.scrollTop ?? 0
@@ -633,7 +629,7 @@ async function newThread() {
   }
   if (turnBusy.value) return
   try {
-    const thr = await api.createPmThread(props.projectId)
+    const thr = await api.createPmThread()
     threads.value = [thr, ...threads.value]
     await activateThread(thr.id)
     if (isMobile.value) mobileView.value = 'chat'
@@ -647,7 +643,7 @@ async function removeThread(id: string) {
   const th = threads.value.find((x) => x.id === id)
   if (isChannelThread(th)) return
   try {
-    await api.deletePmThread(props.projectId, id)
+    await api.deletePmThread(id)
     threads.value = threads.value.filter((x) => x.id !== id)
     if (activeId.value === id) {
       activeId.value = ''
@@ -701,7 +697,7 @@ function openThreadWs() {
   if (!tid || disposed) return
   let socket: WebSocket
   try {
-    socket = new WebSocket(api.pmThreadChatWsUrl(props.projectId, tid))
+    socket = new WebSocket(api.pmThreadChatWsUrl(tid))
   } catch {
     scheduleReconnect()
     return
@@ -851,7 +847,7 @@ async function refreshMessages(): Promise<boolean> {
   if (!activeId.value) return false
   const tid = activeId.value
   const gen = threadLoadGen
-  const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
+  const res = await api.listPmMessages(tid, { limit: PAGE_SIZE })
   if (gen !== threadLoadGen || tid !== activeId.value) return false
   const incoming = res.items || []
   messages.value = mergeMessagesKeepPrefix(messages.value, incoming)
@@ -869,7 +865,7 @@ async function refetchAfterTurnDone() {
   const gen = threadLoadGen
   try {
     if (!(await refreshMessages())) return
-    const thr = await api.listPmThreads(props.projectId)
+    const thr = await api.listPmThreads()
     if (gen !== threadLoadGen || tid !== activeId.value) return
     threads.value = thr.items || []
     await nextTick()
@@ -878,7 +874,7 @@ async function refetchAfterTurnDone() {
   } catch {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     finalizingRefetchFailed.value = true
-    toast.error(t('pages.projectDetail.pm.loadFailed'))
+    toast.error(t('pages.workspace.pm.loadFailed'))
   }
 }
 
@@ -927,7 +923,7 @@ async function onTurnError(kind: FailKind, detail: string) {
 async function startTurn(body: { content?: string; images?: ClarifyImage[]; retryOf?: string }) {
   if (!activeId.value) throw new Error('no thread')
   const tid = activeId.value
-  const res = await api.startPmTurn(props.projectId, tid, body)
+  const res = await api.startPmTurn(tid, body)
   if (tid !== activeId.value) return
   upsertLocalMessage(res.message)
   if (!activeUserMessageId.value || !streaming.value) activeUserMessageId.value = res.message.id
@@ -977,7 +973,7 @@ async function send(text?: string, explicitImages?: ClarifyImage[]) {
 async function stop() {
   if (!turnBusy.value || !activeId.value) return
   try {
-    await api.cancelPmTurn(props.projectId, activeId.value)
+    await api.cancelPmTurn(activeId.value)
   } catch (e: any) {
     toast.error(String(e?.message || e))
   }
@@ -1005,19 +1001,6 @@ async function retryTurn(userMessageId: string) {
 watch(isMobile, () => {
   mobileView.value = 'threads'
 })
-
-watch(
-  () => props.projectId,
-  () => {
-    activeId.value = ''
-    messages.value = []
-    messagesLoadFailed.value = false
-    messagesLoading.value = false
-    mobileView.value = 'threads'
-    resetTurnLocal()
-    void loadThreads()
-  },
-)
 
 onMounted(() => {
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibilityChange)

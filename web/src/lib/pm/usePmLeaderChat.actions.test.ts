@@ -57,10 +57,10 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
 }))
 
 import { usePmLeaderChat } from './usePmLeaderChat'
+import { PM_ACTIVE_THREAD_STORAGE_KEY } from './pmTurnState'
 
 const thread = (over: Record<string, unknown> = {}) => ({
   id: 'th-1',
-  projectId: 'proj-1',
   userId: 'u1',
   agentName: 'pm',
   agentAvailable: true,
@@ -122,7 +122,6 @@ function withChat(over: Record<string, unknown> = {}) {
   let chat!: ReturnType<typeof usePmLeaderChat>
   const emit = vi.fn()
   const props = reactive({
-    projectId: 'proj-1',
     binding: { enabled: true, agentConfigRef: 'pm', agentAvailable: true, aclNote: '' },
     ...over,
   })
@@ -158,12 +157,12 @@ describe('usePmLeaderChat actions', () => {
     mocks.listPmMessages.mockResolvedValue({ items: [], hasMore: false })
     mocks.createPmThread.mockResolvedValue(thread({ id: 'th-2', title: '新会话' }))
     mocks.deletePmThread.mockResolvedValue({ status: 'ok' })
-    mocks.startPmTurn.mockImplementation(async (_p, _t, body) => ({
+    mocks.startPmTurn.mockImplementation(async (_t, body) => ({
       message: message(body.retryOf || 'u-new', 'user', { content: body.content ?? 'retry', status: 'ok' }),
       waiting: 1,
     }))
     mocks.cancelPmTurn.mockResolvedValue({ ok: true })
-    mocks.patchPmMessage.mockImplementation(async (_p, _t, id, patch) => message(id, 'user', patch))
+    mocks.patchPmMessage.mockImplementation(async (_t, id, patch) => message(id, 'user', patch))
   })
 
   afterEach(() => {
@@ -173,7 +172,7 @@ describe('usePmLeaderChat actions', () => {
   })
 
   it('restores the stored thread and derives channel presentation', async () => {
-    localStorage.setItem('pm-leader:active-thread:proj-1', 'ch')
+    localStorage.setItem(PM_ACTIVE_THREAD_STORAGE_KEY, 'ch')
     mocks.listPmThreads.mockResolvedValue({
       items: [
         thread(),
@@ -349,7 +348,7 @@ describe('usePmLeaderChat actions', () => {
     el.scrollTop = 0
     chat.onScrollerScroll()
     await flushPromises()
-    expect(mocks.listPmMessages).toHaveBeenLastCalledWith('proj-1', 'second', { limit: 20, before: 'b2' })
+    expect(mocks.listPmMessages).toHaveBeenLastCalledWith('second', { limit: 20, before: 'b2' })
     expect(chat.messages.value.map((item) => item.id)).toEqual(['b1', 'b2'])
     app.unmount()
   })
@@ -437,7 +436,7 @@ describe('usePmLeaderChat actions', () => {
   it('selects threads on mobile and honors busy navigation guards', async () => {
     shared.isMobile.value = true
     mocks.listPmThreads.mockResolvedValue({ items: [thread(), thread({ id: 'th-2' })] })
-    const { chat, app, emit, props } = withChat({ restoreMobileChat: true })
+    const { chat, app, emit } = withChat({ restoreMobileChat: true })
     await flushPromises()
     expect(chat.mobileView.value).toBe('chat')
     expect(emit).toHaveBeenCalledWith('restoredMobileChat')
@@ -453,9 +452,6 @@ describe('usePmLeaderChat actions', () => {
     await chat.selectThread('th-1')
     expect(chat.activeId.value).toBe('th-2')
     chat.sending.value = false
-    props.projectId = 'proj-2'
-    await flushPromises()
-    expect(mocks.listPmThreads).toHaveBeenCalledWith('proj-2')
     app.unmount()
   })
 
@@ -524,12 +520,12 @@ describe('usePmLeaderChat actions', () => {
     const { chat, app } = withChat()
     await flushPromises()
     const socket = MockWebSocket.instances.at(-1)!
-    expect(mocks.pmThreadChatWsUrl).toHaveBeenCalledWith('proj-1', 'th-1')
+    expect(mocks.pmThreadChatWsUrl).toHaveBeenCalledWith('th-1')
 
     chat.input.value = '进度？'
     await chat.send()
     await flushPromises()
-    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'th-1', { content: '进度？', images: undefined })
+    expect(mocks.startPmTurn).toHaveBeenCalledWith('th-1', { content: '进度？', images: undefined })
     expect(chat.messages.value.map((m) => m.id)).toEqual(['u-new'])
     expect(chat.sending.value).toBe(true)
     expect(socket.sent).toEqual([])
@@ -585,7 +581,7 @@ describe('usePmLeaderChat actions', () => {
     chat.input.value = 'continue history'
     await chat.send()
     expect(mocks.createPmThread).not.toHaveBeenCalled()
-    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', chat.activeId.value, expect.objectContaining({ content: 'continue history' }))
+    expect(mocks.startPmTurn).toHaveBeenCalledWith(chat.activeId.value, expect.objectContaining({ content: 'continue history' }))
     app.unmount()
   })
 
@@ -703,12 +699,12 @@ describe('usePmLeaderChat actions', () => {
     await chat.retryTurn('missing')
     expect(mocks.startPmTurn).not.toHaveBeenCalled()
     await chat.retryTurn('u1')
-    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', 'th-1', { retryOf: 'u1' })
+    expect(mocks.startPmTurn).toHaveBeenCalledWith('th-1', { retryOf: 'u1' })
     expect(chat.messages.value[0]?.status).toBe('ok')
 
     mocks.cancelPmTurn.mockRejectedValueOnce(new Error('cancel failed'))
     await chat.stop()
-    expect(mocks.cancelPmTurn).toHaveBeenCalledWith('proj-1', 'th-1')
+    expect(mocks.cancelPmTurn).toHaveBeenCalledWith('th-1')
     expect(mocks.toastError).toHaveBeenCalledWith('cancel failed')
 
     chat.sending.value = false

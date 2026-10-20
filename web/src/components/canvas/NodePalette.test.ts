@@ -31,7 +31,7 @@ function mountPalette(props: { items?: PaletteItem[]; agentsLoading?: boolean; p
 describe('NodePalette', () => {
   beforeEach(() => localStorage.clear())
 
-  it('groups project agents, control and collaboration nodes', () => {
+  it('groups workspace agents, control and collaboration nodes', () => {
     const w = mountPalette()
     const agent = w.find('[data-testid="palette-group-agent"]')
     expect(agent.find('[data-testid="palette-item-agent:测试评审"]').exists()).toBe(true)
@@ -88,7 +88,7 @@ describe('NodePalette', () => {
     expect(dataTransfer.effectAllowed).toBe('copy')
   })
 
-  it('hints when the project has no agents and skeletons while loading', () => {
+  it('hints when the workspace has no agents and skeletons while loading', () => {
     expect(mountPalette({ items: items([]) }).text()).toContain(t('canvas.palette.noAgents'))
     const loading = mountPalette({ items: items([]), agentsLoading: true })
     expect(loading.text()).not.toContain(t('canvas.palette.noAgents'))

@@ -4,11 +4,11 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { Project } from '@/lib/shared/types'
-import ProjectNotifyPanel from './ProjectNotifyPanel.vue'
+import type { Workspace } from '@/lib/shared/types'
+import WorkspaceNotifyPanel from './WorkspaceNotifyPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
-  listProjectChannels: vi.fn(),
+  listChannels: vi.fn(),
   updateWorkspace: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
@@ -20,7 +20,7 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      listProjectChannels: apiMocks.listProjectChannels,
+      listChannels: apiMocks.listChannels,
       updateWorkspace: apiMocks.updateWorkspace,
     },
   }
@@ -30,8 +30,7 @@ vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ success: apiMocks.toastSuccess, error: apiMocks.toastError }),
 }))
 
-const SAMPLE_PROJECT: Project = {
-  id: 'proj-1',
+const SAMPLE_WORKSPACE: Workspace = {
   name: 'Demo',
   description: '',
   variables: [],
@@ -45,30 +44,30 @@ const SAMPLE_PROJECT: Project = {
   },
 }
 
-function mountPanel(project: Project = SAMPLE_PROJECT) {
+function mountPanel(workspace: Workspace = SAMPLE_WORKSPACE) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
-  return mount(ProjectNotifyPanel, {
-    props: { projectId: 'proj-1', project },
+  return mount(WorkspaceNotifyPanel, {
+    props: { workspace },
     global: {
       plugins: [i18n],
     },
   })
 }
 
-describe('ProjectNotifyPanel', () => {
+describe('WorkspaceNotifyPanel', () => {
   beforeEach(() => {
     vi.resetAllMocks()
-    apiMocks.listProjectChannels.mockResolvedValue({
+    apiMocks.listChannels.mockResolvedValue({
       items: [{ id: 'ch-1', name: 'QQ', enabled: true, cronDeliverTarget: 'group:1' }],
       freeAgents: [],
       secretsKeyConfigured: true,
     })
-    apiMocks.updateWorkspace.mockImplementation(async (body: Partial<Project>) => ({
-      ...SAMPLE_PROJECT,
+    apiMocks.updateWorkspace.mockImplementation(async (body: Partial<Workspace>) => ({
+      ...SAMPLE_WORKSPACE,
       ...body,
     }))
   })
@@ -76,7 +75,7 @@ describe('ProjectNotifyPanel', () => {
   it('saves selected events and all templates from the grouped settings', async () => {
     const w = mountPanel()
     await flushPromises()
-    expect(apiMocks.listProjectChannels).toHaveBeenCalledWith('proj-1')
+    expect(apiMocks.listChannels).toHaveBeenCalledWith()
     expect(w.findAll('h2').map((heading) => heading.text())).toEqual([
       '通知发送', '默认通知时机', '消息文案模板',
     ])
@@ -91,7 +90,7 @@ describe('ProjectNotifyPanel', () => {
     expect(w.get<HTMLTextAreaElement>('[data-testid="notify-tpl-input"]').element.value).toBe('fail {{run}}')
     await w.get('[data-testid="notify-tpl-input"]').setValue('Failed {workflow}')
     await w.get('[data-testid="notify-tpl-seg-completed"]').trigger('click')
-    await w.get('[data-testid="notify-tpl-input"]').setValue('Completed {project}')
+    await w.get('[data-testid="notify-tpl-input"]').setValue('Completed {workspace}')
     await w.get('[data-testid="notify-save"]').trigger('click')
     await flushPromises()
 
@@ -100,7 +99,7 @@ describe('ProjectNotifyPanel', () => {
       defaultEvents: ['failed', 'completed'],
       waitingHumanTemplate: 'Waiting {run_id}',
       failedTemplate: 'Failed {workflow}',
-      completedTemplate: 'Completed {project}',
+      completedTemplate: 'Completed {workspace}',
     }
     expect(apiMocks.updateWorkspace).toHaveBeenCalledWith({ notifyPolicy: policy })
     expect(w.emitted('updated')?.[0]?.[0]).toMatchObject({ notifyPolicy: policy })
@@ -125,7 +124,7 @@ describe('ProjectNotifyPanel', () => {
     expect(input.element.value).toBe('')
     expect(w.get('[data-testid="notify-preview-mode"]').text()).toBe('使用系统默认')
     await w.get('[data-testid="notify-tpl-fill-default"]').trigger('click')
-    expect(input.element.value).toContain('{project}')
+    expect(input.element.value).toContain('{workspace}')
     await w.get('[data-testid="notify-tpl-clear"]').trigger('click')
     expect(input.element.value).toBe('')
     expect(w.get('[data-testid="notify-preview-body"]').text().length).toBeGreaterThan(0)
@@ -136,7 +135,7 @@ describe('ProjectNotifyPanel', () => {
 
   it('locks the policy and template editors during save and retains edits after failure', async () => {
     let rejectSave!: (error: Error) => void
-    apiMocks.updateWorkspace.mockImplementationOnce(() => new Promise<Project>((_, reject) => {
+    apiMocks.updateWorkspace.mockImplementationOnce(() => new Promise<Workspace>((_, reject) => {
       rejectSave = reject
     }))
     const w = mountPanel()
@@ -145,7 +144,7 @@ describe('ProjectNotifyPanel', () => {
     await w.get('[data-testid="notify-ev-completed"]').trigger('click')
     await w.get('[data-testid="notify-save"]').trigger('click')
 
-    expect(w.get('[data-testid="project-notify-panel"]').attributes('aria-busy')).toBe('true')
+    expect(w.get('[data-testid="workspace-notify-panel"]').attributes('aria-busy')).toBe('true')
     for (const control of w.findAll('button[role="switch"], button[role="tab"], [data-testid="notify-ph-run_id"], [data-testid="notify-tpl-fill-default"], [data-testid="notify-tpl-clear"], [data-testid="notify-save"], textarea')) {
       expect(control.attributes('disabled')).toBeDefined()
     }
@@ -161,11 +160,11 @@ describe('ProjectNotifyPanel', () => {
 
   it('handles missing channel ids without fetching and links to channel settings', async () => {
     const w = mountPanel({
-      ...SAMPLE_PROJECT,
+      ...SAMPLE_WORKSPACE,
       notifyPolicy: { enabled: true, defaultEvents: ['failed'] },
     })
     await flushPromises()
-    expect(apiMocks.listProjectChannels).not.toHaveBeenCalled()
+    expect(apiMocks.listChannels).not.toHaveBeenCalled()
     expect(w.get('[data-testid="notify-status-badge"]').text()).toBe('已开启，但未配置通知渠道')
     await w.get('[data-testid="notify-go-channel"]').trigger('click')
     expect(w.emitted('openChannelSettings')).toHaveLength(1)
@@ -174,7 +173,7 @@ describe('ProjectNotifyPanel', () => {
   })
 
   it('keeps channel load failures explicit and restores the form after retry', async () => {
-    apiMocks.listProjectChannels.mockRejectedValueOnce(new Error('Channel unavailable'))
+    apiMocks.listChannels.mockRejectedValueOnce(new Error('Channel unavailable'))
     const w = mountPanel()
     expect(w.find('[data-testid="notify-channel-skeleton"]').exists()).toBe(true)
     expect(w.find('[data-testid="notify-save"]').exists()).toBe(false)
@@ -183,7 +182,7 @@ describe('ProjectNotifyPanel', () => {
     expect(w.find('[data-testid="notify-master-toggle"]').exists()).toBe(false)
     await w.get('[data-testid="app-inline-error-retry"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.listProjectChannels).toHaveBeenCalledTimes(2)
+    expect(apiMocks.listChannels).toHaveBeenCalledTimes(2)
     expect(w.find('[data-testid="notify-channel-error"]').exists()).toBe(false)
     expect(w.get('[data-testid="notify-master-toggle"]').attributes('aria-checked')).toBe('true')
     w.unmount()

@@ -8,7 +8,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import { useToast } from '@/lib/composables/useToast'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 
-const mocks = vi.hoisted(() => ({ getProjectCredentials: vi.fn(), getProjectSharedAgentConfig: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), getSharedAgentConfig: vi.fn() }))
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
@@ -16,8 +16,8 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
-      getProjectCredentials: mocks.getProjectCredentials,
-      getProjectSharedAgentConfig: mocks.getProjectSharedAgentConfig,
+      listCredentials: mocks.listCredentials,
+      getSharedAgentConfig: mocks.getSharedAgentConfig,
     },
   }
 })
@@ -50,7 +50,6 @@ vi.mock('@/lib/agent/cliCatalog', () => ({
 function draftFor(overrides: Record<string, unknown> = {}) {
   return reactive({
     name: 'a',
-    projectId: 'p1',
     acpBackend: 'cursor',
     aiCredentialId: '',
     openCodeCredentialId: '',
@@ -71,7 +70,7 @@ const mounted: { unmount: () => void }[] = []
 function mountPanel(draft: ReturnType<typeof draftFor>) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   const w = mount(AgentMetaPanel, {
-    props: { draft, agentName: 'a', projects: [{ id: 'p1', name: 'P' }] },
+    props: { draft, agentName: 'a' },
     global: {
       plugins: [i18n],
       stubs: { Icon: true, AppModal: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' } },
@@ -87,8 +86,8 @@ function envOf(draft: ReturnType<typeof draftFor>) {
 }
 
 beforeEach(() => {
-  mocks.getProjectCredentials.mockResolvedValue({ items: [] })
-  mocks.getProjectSharedAgentConfig.mockResolvedValue({ projectId: 'p1', acpBackend: '', env: {} })
+  mocks.listCredentials.mockResolvedValue({ items: [] })
+  mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: '', env: {} })
 })
 afterEach(() => {
   mounted.splice(0).forEach((w) => w.unmount())
@@ -113,9 +112,8 @@ describe('AgentMetaPanel runtime card', () => {
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
   })
 
-  it('names the project model an Agent on auto inherits, only for the same CLI', async () => {
-    mocks.getProjectSharedAgentConfig.mockResolvedValue({
-      projectId: 'p1',
+  it('names the workspace model an Agent on auto inherits, only for the same CLI', async () => {
+    mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'codex',
       env: { ACP_BRIDGE_MODEL: 'gpt-6-luna' },
     })

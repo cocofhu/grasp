@@ -59,17 +59,12 @@ const sampleData = {
     cacheWriteTokens: 100,
     workflowTotal: 4200,
     pmTotal: 800,
-    projectCount: 2,
     runCount: 5,
     modelCount: 2,
   },
   trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }],
   prevTrend: [{ bucket: '2026-06-01', total: 80, workflowTotal: 60, pmTotal: 20, inputTokens: 30, outputTokens: 25, cacheReadTokens: 15, cacheWriteTokens: 10 }],
   composition: { inputTokens: 3000, outputTokens: 1500, cacheReadTokens: 400, cacheWriteTokens: 100, total: 5000 },
-  projects: [
-    { projectId: 'p1', name: 'Grasp', total: 3000, inputTokens: 1800, outputTokens: 900, cacheReadTokens: 200, cacheWriteTokens: 100 },
-    { projectId: 'p2', name: 'Other project', total: 2000, inputTokens: 1200, outputTokens: 600, cacheReadTokens: 200, cacheWriteTokens: 0 },
-  ],
   modelRanking: [
     { modelKey: 'sonnet', name: 'Sonnet', total: 4000, inputTokens: 2400, outputTokens: 1200, cacheReadTokens: 300, cacheWriteTokens: 100 },
     { modelKey: 'opus', name: 'Opus', total: 1000, inputTokens: 600, outputTokens: 300, cacheReadTokens: 100, cacheWriteTokens: 0 },
@@ -79,11 +74,9 @@ const sampleData = {
     { workflowId: 'w1', name: 'main', total: 3000, inputTokens: 1800, outputTokens: 900, cacheReadTokens: 200, cacheWriteTokens: 100, kind: 'workflow' as const },
     { workflowId: 'w2', name: 'review', total: 2000, inputTokens: 1200, outputTokens: 600, cacheReadTokens: 200, cacheWriteTokens: 0, kind: 'workflow' as const },
   ],
-  heatmap: { rows: ['Sonnet'], cols: ['Grasp'], grid: [[3000]] },
-  topRuns: [{ runId: 'r1', title: 'Run 1', projectId: 'p1', projectName: 'Grasp', workflowName: 'main', modelKey: 'sonnet', modelName: 'Sonnet', total: 500 }],
-  projectTrends: [{ key: 'p1', name: 'Grasp', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
+  topRuns: [{ runId: 'r1', title: 'Run 1', workflowName: 'main', modelKey: 'sonnet', modelName: 'Sonnet', total: 500 }],
   modelTrends: [{ key: 'sonnet', name: 'Sonnet', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
-  filterOptions: { workflows: [{ key: 'w1', name: 'main' }], projects: [{ key: 'p1', name: 'Grasp' }], models: [{ key: 'sonnet', name: 'Sonnet' }] },
+  filterOptions: { workflows: [{ key: 'w1', name: 'main' }], models: [{ key: 'sonnet', name: 'Sonnet' }] },
 }
 
 describe('TokenAnalyticsView', () => {
@@ -275,11 +268,9 @@ describe('TokenAnalyticsView', () => {
   it('defaults and falls back to the first comparable bar dimension', async () => {
     const cases = [
       { data: sampleData, active: 'workflow' },
-      { data: { ...sampleData, projects: sampleData.projects.slice(0, 1) }, active: 'workflow' },
       {
         data: {
           ...sampleData,
-          projects: sampleData.projects.slice(0, 1),
           workflows: sampleData.workflows.slice(0, 1),
         },
         active: 'model',
@@ -298,7 +289,6 @@ describe('TokenAnalyticsView', () => {
   it('disables non-comparable dimensions and hides bars when none are comparable', async () => {
     vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
       ...sampleData,
-      projects: sampleData.projects.slice(0, 1),
       workflows: sampleData.workflows.slice(0, 1),
       modelRanking: sampleData.modelRanking.slice(0, 1),
     })
@@ -306,15 +296,6 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="token-analytics-bars"]').exists()).toBe(false)
     wrapper.unmount()
-
-    vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
-      ...sampleData,
-      projects: sampleData.projects.slice(0, 1),
-    })
-    const fallbackWrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
-    await flushPromises()
-    expect(fallbackWrapper.find('[data-testid="token-analytics-bar-dimension-project"]').exists()).toBe(false)
-    fallbackWrapper.unmount()
   })
 
   it('switches bar dimensions locally and applies bar styling and colors', async () => {
@@ -423,7 +404,7 @@ describe('TokenAnalyticsView', () => {
       currency: 'USD',
       items: [{
         id: 1, at: '2026-07-01T10:00:00Z', source: 'workflow', phase: 'production', status: 'failed',
-        projectId: 'p1', projectName: 'Grasp', runId: 'r1', runTitle: 'Run 1', nodeType: 'agent',
+        runId: 'r1', runTitle: 'Run 1', nodeType: 'agent',
         modelKey: 'sonnet', total: 10, inputTokens: 6, outputTokens: 4, cacheReadTokens: 0, cacheWriteTokens: 0, cost: 0.5, priced: true,
       }],
     })
@@ -508,16 +489,15 @@ describe('TokenAnalyticsView', () => {
     vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({
       ...sampleData,
       weekHour,
-      tree: [{ key: 'p1', name: 'Grasp', kind: 'project', value: 3000, children: [
-        { key: 'w1', name: 'main', kind: 'workflow', value: 3000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 3000 }] },
-      ] }],
+      tree: [{ key: 'w1', name: 'main', kind: 'workflow', value: 3000, children: [{ key: 'agent', name: 'agent', kind: 'nodeType', value: 3000 }] }],
     })
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
     const charts = wrapper.findAllComponents({ name: 'VChart' })
     const tree = charts.find((c) => (c.props('option') as { series?: { type?: string }[] }).series?.[0]?.type === 'treemap')
     expect(tree).toBeTruthy()
-    const treeData = (tree!.props('option') as { series: Array<{ data: Array<{ drill: unknown; children: Array<{ drill: unknown; children: Array<{ drill: unknown }> }> }> }> }).series[0].data
+    const treeData = (tree!.props('option') as { series: Array<{ data: Array<{ drill: unknown; children: Array<{ drill: unknown }> }> }> }).series[0].data
+    expect(treeData[0].drill).toEqual([{ dim: 'workflow', key: 'w1', name: 'main' }])
     expect(treeData[0].children[0].drill).toEqual([
       { dim: 'workflow', key: 'w1', name: 'main' },
       { dim: 'nodeType', key: 'agent', name: 'agent' },
@@ -625,14 +605,6 @@ describe('TokenAnalyticsView', () => {
     comparable.unmount()
   })
 
-  it('omits project navigation and filters from analytics', async () => {
-    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
-    await flushPromises()
-    expect(wrapper.find('[data-testid="token-analytics-filter-project"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="token-analytics-project-detail-p1"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
   it('truncates long multiline run titles to a single line in top runs table', async () => {
     // plan coverage: g2.1 — 60-char cap, single line, tooltip for overflow
     const longTitle =
@@ -710,7 +682,6 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const runsTable = wrapper.find('[data-testid="token-analytics-runs-table"]')
     expect(runsTable.text()).toContain('运行')
-    expect(runsTable.text()).not.toContain('项目')
     expect(runsTable.text()).toContain('模型')
     expect(runsTable.text()).toContain('总量')
     for (const key of ['run', 'model', 'total', 'cost'] as const) {
@@ -739,7 +710,7 @@ describe('TokenAnalyticsView', () => {
   })
 
   it('resizes each of the four runs-table columns independently', async () => {
-    // plan coverage: g1.2 — run/project/model/total each have their own pixel width
+    // plan coverage: g1.2 — run/cost/model/total each have their own pixel width
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
     const drags: Array<[string, number, number]> = [
@@ -807,12 +778,11 @@ describe('TokenAnalyticsView', () => {
     wrapper.unmount()
   })
 
-  it('keeps source/project/model filters defaulting to all (g2.1)', async () => {
+  it('keeps source/model filters defaulting to all (g2.1)', async () => {
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
     const filters = wrapper.find('[data-testid="token-analytics-filters"]')
     expect(filters.text()).toContain('来源：全部')
-    expect(filters.text()).not.toContain('项目：全部')
     expect(filters.text()).toContain('模型：全部')
     const sourceAll = filters.findAll('button').find((b) => b.text() === '来源：全部')
     expect(sourceAll?.classes()).toContain('bg-accent-dim')

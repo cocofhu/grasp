@@ -260,28 +260,12 @@
       "noMatch": "无匹配工作流",
       "loadFailed": "工作流列表加载失败"
     },
-    "projectFilter": {
-      "all": "全部项目",
-      "noMatch": "无匹配项目",
-      "searchPlaceholder": "搜索项目…",
-      "empty": "暂无项目",
-      "loadFailed": "项目列表加载失败"
-    },
-    "projectTree": {
-      "searchPlaceholder": "搜索项目…",
-      "clearSearch": "清空搜索",
-      "empty": "暂无项目",
-      "noMatch": "没有匹配「{q}」的项目",
-      "expand": "展开",
-      "collapse": "折叠"
-    },
     "tagFilter": {
       "label": "标签",
       "searchPlaceholder": "搜索或输入标签，回车添加",
       "selectedLabel": "已选（AND）",
       "suggestionsLabel": "存量建议",
       "selectedMark": "已选",
-      "needProject": "选择项目后可点选存量标签；仍可输入合法标签后回车添加",
       "noStock": "暂无存量标签，可输入后回车添加",
       "noMatchHint": "无匹配建议，回车可将「{tag}」加入筛选（须合法）",
       "tagInvalid": "标签仅允许字母、数字、_ - . /，支持中文",

@@ -10,7 +10,6 @@ import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 function draft(partial: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
   return {
     name: 'test-agent',
-    projectId: '',
     env: [],
     mcp: [],
     files: [],
@@ -52,9 +51,9 @@ describe('AgentEnvPanel secret key hint', () => {
   }
 
   it.each(['GIT_SSH_PRIVATE_KEY', 'GITHUB_TOKEN', 'GRASP_CURSOR_API_KEY', 'ANTHROPIC_API_KEY'])(
-    'shows an inline hint linking to the project credentials tab when %s is typed',
+    'shows an inline hint linking to the workspace credentials tab when %s is typed',
     async (key) => {
-      const d = draft({ projectId: 'proj-1', env: [{ k: '', v: '' }] })
+      const d = draft({ env: [{ k: '', v: '' }] })
       const wrapper = mountWithLink(d)
       expect(wrapper.find('[data-test="env-secret-hint"]').exists()).toBe(false)
 
@@ -71,12 +70,12 @@ describe('AgentEnvPanel secret key hint', () => {
   )
 
   it('links to workspace credentials from both shared and Agent editors', async () => {
-    const shared = mountWithLink(draft({ projectId: 'proj-1', env: [{ k: 'GIT_SSH_KNOWN_HOSTS', v: 'x' }] }), 'shared')
+    const shared = mountWithLink(draft({ env: [{ k: 'GIT_SSH_KNOWN_HOSTS', v: 'x' }] }), 'shared')
     expect(shared.find('[data-test="env-secret-hint"] [data-test="env-secret-credentials-link"]').exists()).toBe(true)
 
-    const noProject = mountWithLink(draft({ env: [{ k: 'GITLAB_TOKEN', v: 'x' }] }))
-    expect(noProject.find('[data-test="env-secret-hint"]').exists()).toBe(true)
-    expect(noProject.find('[data-test="env-secret-credentials-link"]').exists()).toBe(true)
+    const agentEditor = mountWithLink(draft({ env: [{ k: 'GITLAB_TOKEN', v: 'x' }] }))
+    expect(agentEditor.find('[data-test="env-secret-hint"]').exists()).toBe(true)
+    expect(agentEditor.find('[data-test="env-secret-credentials-link"]').exists()).toBe(true)
   })
 
   it('does not flag non-secret git env such as GIT_SSH_COMMAND or GITLAB_URL', () => {

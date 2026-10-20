@@ -13,7 +13,7 @@ const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
 
 const globalCss = read('styles/global.css')
 const studioSrc = read('views/AgentStudioView.vue')
-const sharedSrc = read('components/project/ProjectSharedAgentPanel.vue')
+const sharedSrc = read('components/workspace/WorkspaceSharedAgentPanel.vue')
 const mcpSrc = read('components/agent/AgentMcpPanel.vue')
 const envSrc = read('components/agent/AgentEnvPanel.vue')
 const capsSrc = read('components/agent/AgentCapabilitiesPanel.vue')

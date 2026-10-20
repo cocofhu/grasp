@@ -10,10 +10,9 @@ import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onbo
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const SHOT_DIR = path.join(__dirname, '..', 'test-results', 'pm-tail-window')
 
-const MOCK_PROJECT = {
-  id: 'proj-1',
-  name: 'Demo Project',
-  description: 'Project for e2e',
+const MOCK_WORKSPACE = {
+  name: 'Demo Workspace',
+  description: 'Workspace for e2e',
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -34,7 +33,7 @@ async function stubCommonApis(page: Page) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(MOCK_PROJECT),
+        body: JSON.stringify(MOCK_WORKSPACE),
       })
       return
     }
@@ -102,7 +101,7 @@ async function stubCommonApis(page: Page) {
 
 async function gotoPmLeader(page: Page, binding?: { enabled: boolean; agentAvailable: boolean }) {
   await page.setViewportSize({ width: 1280, height: 800 })
-  await seedOnboardingDismissed(page, 'proj-1')
+  await seedOnboardingDismissed(page)
   await stubCommonApis(page)
   if (binding) await routeApi(page, '**/api/workspace/pm-leader', async (route) => route.fulfill({ json: { ...binding, agentConfigRef: 'new-default' } }))
   await page.goto('/workspace-config.html?view=/assistant')

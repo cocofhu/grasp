@@ -233,7 +233,7 @@
         "followEmpty": "Agent 还没选模型 Key，运行会失败",
         "nodeChip": "本节点",
         "agentDefault": "Agent 默认",
-        "projectKeys": "工作区模型 Key",
+        "workspaceKeys": "工作区模型 Key",
         "empty": "工作区里还没有模型 Key",
         "manage": "在安全凭据中心新增或管理",
         "staleTitle": "所选模型 Key 已失效",
@@ -258,7 +258,7 @@
       }
     },
     "topbar": {
-      "projects": "工作区",
+      "workspace": "工作区",
       "rename": "点击重命名",
       "saveError": "保存失败：{error}",
       "issuesNone": "没有问题",

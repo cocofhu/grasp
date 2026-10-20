@@ -15,7 +15,6 @@ import { usePmLeaderChat } from '@/lib/pm/usePmLeaderChat'
 import type { PmLeaderBinding } from '@/lib/shared/types'
 
 const props = defineProps<{
-  projectId: string
   binding: PmLeaderBinding | null
   restoreMobileChat?: boolean
   unknownModelDisplayName?: string | null
@@ -151,7 +150,7 @@ const setupRequired = computed(() => !loading.value && !threadsLoadFailed.value 
 const suggestionIcons = ['chart', 'gate', 'alert']
 const artifactOpen = ref(false)
 const artifactTarget = ref<ConversationArtifactTarget | null>(null)
-const conversationScope = computed(() => `pm:${props.projectId}:${activeId.value || 'new'}`)
+const conversationScope = computed(() => `pm:${activeId.value || 'new'}`)
 provideConversationArtifacts({ open(target) { artifactTarget.value = target; artifactOpen.value = true } })
 watch(conversationScope, () => { artifactOpen.value = false; artifactTarget.value = null })
 
@@ -177,24 +176,24 @@ function showConversationHistory() { artifactOpen.value = false }
 <template>
   <div v-if="loading && !threads.length" class="flex min-h-0 flex-1 items-start justify-center pt-12" role="status">
     <Icon name="spinner" :size="20" class="animate-spin text-txt3" />
-    <span class="sr-only">{{ t('pages.projectDetail.pm.loadingHistory') }}</span>
+    <span class="sr-only">{{ t('pages.workspace.pm.loadingHistory') }}</span>
   </div>
 
   <div v-else-if="threadsLoadFailed && !threads.length" class="scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="pm-threads-load-failed">
     <div class="pm-entry-content">
-      <h2 class="text-xl font-semibold tracking-tight text-txt">{{ t('pages.projectDetail.pm.threadsLoadFailed') }}</h2>
-      <p class="mb-5 mt-2 text-sm leading-6 text-txt2">{{ t('pages.projectDetail.pm.threadsLoadFailedDesc') }}</p>
-      <AppButton icon="refresh" @click="loadThreads">{{ t('pages.projectDetail.pm.retry') }}</AppButton>
+      <h2 class="text-xl font-semibold tracking-tight text-txt">{{ t('pages.workspace.pm.threadsLoadFailed') }}</h2>
+      <p class="mb-5 mt-2 text-sm leading-6 text-txt2">{{ t('pages.workspace.pm.threadsLoadFailedDesc') }}</p>
+      <AppButton icon="refresh" @click="loadThreads">{{ t('pages.workspace.pm.retry') }}</AppButton>
     </div>
   </div>
 
   <section v-else-if="setupRequired" data-testid="pm-setup-state" class="scroll-area min-h-0 flex-1 overflow-y-auto">
     <div class="pm-entry-content">
-      <p class="mb-3 text-xs font-medium text-txt3">{{ t('pages.projectDetail.pm.scopeLabel') }}</p>
-      <h2 class="text-xl font-semibold tracking-tight text-txt">{{ t(enabled ? 'pages.projectDetail.pm.unavailableTitle' : 'pages.projectDetail.pm.disabledTitle') }}</h2>
-      <p class="mt-3 max-w-lg text-sm leading-6 text-txt2">{{ t('pages.projectDetail.pm.disabledHint') }}</p>
+      <p class="mb-3 text-xs font-medium text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</p>
+      <h2 class="text-xl font-semibold tracking-tight text-txt">{{ t(enabled ? 'pages.workspace.pm.unavailableTitle' : 'pages.workspace.pm.disabledTitle') }}</h2>
+      <p class="mt-3 max-w-lg text-sm leading-6 text-txt2">{{ t('pages.workspace.pm.disabledHint') }}</p>
       <p v-if="binding?.agentError" class="mt-4 text-sm leading-6 text-err" role="alert">{{ binding.agentError }}</p>
-      <AppButton class="mt-6" variant="primary" icon="settings" data-testid="pm-setup-settings" @click="emit('openSettings')">{{ t('pages.projectDetail.pm.goSettings') }}</AppButton>
+      <AppButton class="mt-6" variant="primary" icon="settings" data-testid="pm-setup-settings" @click="emit('openSettings')">{{ t('pages.workspace.pm.goSettings') }}</AppButton>
     </div>
   </section>
 
@@ -207,7 +206,7 @@ function showConversationHistory() { artifactOpen.value = false }
       :class="isMobile ? 'w-full' : 'w-56'"
     >
       <div class="flex min-h-12 items-center justify-between gap-2 py-2">
-        <span class="text-xs font-medium text-txt3">{{ t('pages.projectDetail.pm.threads') }}</span>
+        <span class="text-xs font-medium text-txt3">{{ t('pages.workspace.pm.threads') }}</span>
         <div class="flex items-center gap-1">
         <AppButton
           size="sm"
@@ -215,8 +214,8 @@ function showConversationHistory() { artifactOpen.value = false }
           :disabled="turnBusy || !canCreateThread"
           :class="isMobile ? 'min-h-[44px] min-w-[44px]' : ''"
           @click="newThread"
-        >{{ t('pages.projectDetail.pm.newThread') }}</AppButton>
-        <AppButton v-if="isMobile" size="sm" variant="ghost" icon="settings" class="min-h-[44px]" @click="emit('openSettings')">{{ t('pages.projectDetail.pm.settings') }}</AppButton>
+        >{{ t('pages.workspace.pm.newThread') }}</AppButton>
+        <AppButton v-if="isMobile" size="sm" variant="ghost" icon="settings" class="min-h-[44px]" @click="emit('openSettings')">{{ t('pages.workspace.pm.settings') }}</AppButton>
         </div>
       </div>
       <div class="pm-thread-list scroll-area min-h-0 flex-1 space-y-1 overflow-y-auto pb-3">
@@ -248,12 +247,12 @@ function showConversationHistory() { artifactOpen.value = false }
               v-if="th.unspoken"
               class="rounded-md inline-flex shrink-0 items-center border border-warn/45 px-1 text-[9px] leading-4 text-warn"
               data-testid="pm-unspoken-tag"
-            >{{ t('pages.projectDetail.pm.unspoken') }}</span>
+            >{{ t('pages.workspace.pm.unspoken') }}</span>
             <span
               v-else
               class="rounded-md inline-flex shrink-0 items-center border border-line bg-elevated px-1 text-[9px] font-bold tracking-wide leading-4 text-txt3"
               data-testid="pm-web-tag"
-            >{{ t('pages.projectDetail.pm.channelBadgeWeb') }}</span>
+            >{{ t('pages.workspace.pm.channelBadgeWeb') }}</span>
           </span>
           <span
             v-if="!turnBusy && !isChannelThread(th)"
@@ -263,7 +262,7 @@ function showConversationHistory() { artifactOpen.value = false }
           >×</span>
         </button>
         <p v-if="!threads.length && !loading" class="px-2 py-4 text-xs text-txt3">
-          {{ t('pages.projectDetail.pm.noThreads') }}
+          {{ t('pages.workspace.pm.noThreads') }}
         </p>
       </div>
     </aside>
@@ -316,7 +315,7 @@ function showConversationHistory() { artifactOpen.value = false }
               v-if="activeThread?.unspoken"
               class="rounded-md inline-flex shrink-0 items-center border border-warn/45 px-1 text-[9px] leading-4 text-warn"
               data-testid="pm-unspoken-tag-header"
-            >{{ t('pages.projectDetail.pm.unspoken') }}</span>
+            >{{ t('pages.workspace.pm.unspoken') }}</span>
           </div>
           <div
             v-if="activeIsChannel"
@@ -326,8 +325,8 @@ function showConversationHistory() { artifactOpen.value = false }
             {{ channelSourceLine(activeThread) }}
           </div>
         </div>
-        <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.projectDetail.pm.scopeLabel') }}</span>
-        <AppButton v-if="!isMobile && artifactOpen && threads.length" size="sm" variant="ghost" icon="chat" data-testid="pm-chat-show-threads" @click="showConversationHistory">{{ t('pages.projectDetail.pm.threads') }}</AppButton>
+        <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</span>
+        <AppButton v-if="!isMobile && artifactOpen && threads.length" size="sm" variant="ghost" icon="chat" data-testid="pm-chat-show-threads" @click="showConversationHistory">{{ t('pages.workspace.pm.threads') }}</AppButton>
         <AppButton class="pm-header-action" size="sm" variant="ghost" icon="chat-artifacts" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" @click="artifactOpen = !artifactOpen">{{ t('pages.artifacts.title') }}</AppButton>
         <AppButton
           size="sm"
@@ -338,11 +337,11 @@ function showConversationHistory() { artifactOpen.value = false }
           :class="isMobile ? 'min-h-[44px] shrink-0' : ''"
           @click="emit('openSettings')"
         >
-          {{ t('pages.projectDetail.pm.settings') }}
+          {{ t('pages.workspace.pm.settings') }}
         </AppButton>
       </div>
       <p v-if="!canCreateThread" class="shrink-0 border-b border-line/60 py-3 text-xs leading-5 text-txt2" data-testid="pm-availability-notice" role="status">
-        {{ t(!enabled ? 'pages.projectDetail.pm.pausedHistoryHint' : 'pages.projectDetail.pm.defaultUnavailableHint') }}
+        {{ t(!enabled ? 'pages.workspace.pm.pausedHistoryHint' : 'pages.workspace.pm.defaultUnavailableHint') }}
       </p>
       <div class="pm-message-area relative flex min-h-0 flex-1 flex-col" :class="{ 'pm-message-area-empty': showEmptyHint && canContinueThread }">
       <ChatMessageRail :items="messageNavigation" :scroller="scroller" :scope-key="conversationScope" :has-more="hasMoreEarlier" :loading-earlier="historyLoading" @navigate="onNavigateMessage" @load-earlier="loadEarlier" />
@@ -357,14 +356,14 @@ function showConversationHistory() { artifactOpen.value = false }
       >
         <ArtifactLoadingPane
           v-if="mainViewState === 'messagesLoading'"
-          message-key="pages.projectDetail.pm.loadingHistory"
+          message-key="pages.workspace.pm.loadingHistory"
           data-testid="pm-messages-loading"
         />
 
         <div v-else-if="mainViewState === 'errorEmpty'" class="mx-auto w-full max-w-3xl py-10" data-testid="pm-messages-load-failed" role="status">
-          <h2 class="text-base font-semibold text-txt">{{ t('pages.projectDetail.pm.loadFailed') }}</h2>
-          <p class="mb-4 mt-2 text-sm leading-6 text-txt2">{{ t('pages.projectDetail.pm.loadFailedDesc') }}</p>
-          <AppButton size="sm" icon="refresh" @click="retryLoadMessages">{{ t('pages.projectDetail.pm.retry') }}</AppButton>
+          <h2 class="text-base font-semibold text-txt">{{ t('pages.workspace.pm.loadFailed') }}</h2>
+          <p class="mb-4 mt-2 text-sm leading-6 text-txt2">{{ t('pages.workspace.pm.loadFailedDesc') }}</p>
+          <AppButton size="sm" icon="refresh" @click="retryLoadMessages">{{ t('pages.workspace.pm.retry') }}</AppButton>
         </div>
 
         <template v-else>
@@ -384,7 +383,7 @@ function showConversationHistory() { artifactOpen.value = false }
             :disabled="historyLoading"
             data-testid="pm-history-retry"
             @click="loadEarlier"
-          >{{ t('pages.projectDetail.pm.retry') }}</button>
+          >{{ t('pages.workspace.pm.retry') }}</button>
         </div>
 
         <template v-for="m in messages" :key="m.id">
@@ -398,12 +397,12 @@ function showConversationHistory() { artifactOpen.value = false }
             <span
               class="rounded-md shrink-0 border border-warn/35 px-1.5 py-px text-[10px] font-bold tracking-wide text-warn"
             >
-              {{ t('pages.projectDetail.pm.channelHintLabel') }}
+              {{ t('pages.workspace.pm.channelHintLabel') }}
             </span>
             <div class="min-w-0">
               <div>{{ m.content }}</div>
               <div class="mt-0.5 text-[11px] text-txt2">
-                {{ t('pages.projectDetail.pm.channelHintMeta') }}
+                {{ t('pages.workspace.pm.channelHintMeta') }}
               </div>
             </div>
           </div>
@@ -442,7 +441,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 v-else-if="m.images?.length"
                 class="chat-user-message px-4 py-2.5"
               >
-                {{ t('pages.projectDetail.pm.imagesOnly') }}
+                {{ t('pages.workspace.pm.imagesOnly') }}
               </div>
               <div class="chat-meta msg-time mt-1.5 text-right">{{ relTime(m.createdAt) }}</div>
             </div>
@@ -472,7 +471,7 @@ function showConversationHistory() { artifactOpen.value = false }
                     @click="copyAssistantText"
                   >
                     <Icon name="copy" :size="12" />
-                    {{ t('pages.projectDetail.pm.copyFull') }}
+                    {{ t('pages.workspace.pm.copyFull') }}
                   </button>
                 </div>
               </div>
@@ -492,7 +491,7 @@ function showConversationHistory() { artifactOpen.value = false }
               <div class="rounded-lg border border-err/35 bg-err/[0.06] px-3 py-2 text-sm leading-6 text-txt">
                 <div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-err">
                   <Icon name="alert" :size="14" class="shrink-0" />
-                  {{ t('pages.projectDetail.pm.failPartialKeptMeta') }}
+                  {{ t('pages.workspace.pm.failPartialKeptMeta') }}
                 </div>
                 <div class="md chat-prose" v-html="renderMarkdown(failedPartialByUserMsgId[m.id])" />
               </div>
@@ -524,7 +523,7 @@ function showConversationHistory() { artifactOpen.value = false }
                   data-testid="pm-fail-retry"
                   @click="retryTurn(m.id)"
                 >
-                  {{ t('pages.projectDetail.pm.retry') }}
+                  {{ t('pages.workspace.pm.retry') }}
                 </button>
               </div>
             </div>
@@ -536,16 +535,16 @@ function showConversationHistory() { artifactOpen.value = false }
             <div>
               <div v-if="resuming && !streamText && !finalizing" class="flex items-center gap-1.5 text-txt3">
                 <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
-                {{ t('pages.projectDetail.pm.resuming') }}
+                {{ t('pages.workspace.pm.resuming') }}
               </div>
               <div v-else-if="streamText" class="md chat-prose" v-html="streamHtml" />
               <div v-else-if="showStreamTypingDots" class="chat-typing py-1" role="status">
                 <i aria-hidden="true" /><i aria-hidden="true" /><i aria-hidden="true" />
-                <span class="sr-only">{{ t('pages.projectDetail.pm.generating') }}</span>
+                <span class="sr-only">{{ t('pages.workspace.pm.generating') }}</span>
               </div>
               <div v-else class="flex items-center gap-1.5 text-txt3">
                 <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
-                {{ t('pages.projectDetail.pm.generating') }}
+                {{ t('pages.workspace.pm.generating') }}
               </div>
               <div
                 v-if="finalizing"
@@ -554,19 +553,19 @@ function showConversationHistory() { artifactOpen.value = false }
               >
                 <template v-if="finalizingRefetchFailed">
                   <Icon name="alert" :size="13" class="text-warn" />
-                  <span>{{ t('pages.projectDetail.pm.loadFailed') }}</span>
+                  <span>{{ t('pages.workspace.pm.loadFailed') }}</span>
                   <button
                     type="button"
                     class="ml-1 text-accent underline-offset-2 hover:underline"
                     data-testid="pm-finalizing-retry"
                     @click="refetchAfterTurnDone"
                   >
-                    {{ t('pages.projectDetail.pm.retry') }}
+                    {{ t('pages.workspace.pm.retry') }}
                   </button>
                 </template>
                 <template v-else>
                   <Icon name="spinner" :size="13" class="animate-spin text-warn" />
-                  {{ t('pages.projectDetail.pm.finalizing') }}
+                  {{ t('pages.workspace.pm.finalizing') }}
                 </template>
               </div>
               <div
@@ -575,7 +574,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 data-testid="pm-stream-resuming-meta"
               >
                 <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
-                {{ t('pages.projectDetail.pm.resuming') }}
+                {{ t('pages.workspace.pm.resuming') }}
               </div>
             </div>
           </div>
@@ -624,13 +623,13 @@ function showConversationHistory() { artifactOpen.value = false }
         </div>
       </div>
       <div v-else-if="!canContinueThread" class="flex shrink-0 flex-wrap items-center justify-center gap-3 border-t border-line/60 py-4 text-center text-xs leading-5 text-txt2" data-testid="pm-history-readonly">
-        <span>{{ t(enabled ? 'pages.projectDetail.pm.threadUnavailableHint' : 'pages.projectDetail.pm.pausedComposerHint') }}</span>
-        <AppButton v-if="turnBusy" size="sm" icon="close" data-testid="pm-paused-stop" @click="stop">{{ t('pages.projectDetail.pm.stop') }}</AppButton>
+        <span>{{ t(enabled ? 'pages.workspace.pm.threadUnavailableHint' : 'pages.workspace.pm.pausedComposerHint') }}</span>
+        <AppButton v-if="turnBusy" size="sm" icon="close" data-testid="pm-paused-stop" @click="stop">{{ t('pages.workspace.pm.stop') }}</AppButton>
       </div>
       <div v-else class="pm-composer-zone mx-auto w-full max-w-[760px] shrink-0" :class="showEmptyHint ? 'pm-composer-zone-welcome scroll-area' : ''" data-testid="pm-composer-zone">
         <div v-if="showEmptyHint" class="mb-5" data-testid="pm-welcome-state">
-          <h2 class="text-2xl font-semibold tracking-tight text-txt">{{ t('pages.projectDetail.pm.welcomeTitle') }}</h2>
-          <p class="mt-2 text-[13px] leading-6 text-txt2">{{ t('pages.projectDetail.pm.emptyHint') }}</p>
+          <h2 class="text-2xl font-semibold tracking-tight text-txt">{{ t('pages.workspace.pm.welcomeTitle') }}</h2>
+          <p class="mt-2 text-[13px] leading-6 text-txt2">{{ t('pages.workspace.pm.emptyHint') }}</p>
         </div>
         <div v-if="attachments.length" class="mb-2 flex flex-wrap gap-1.5">
           <div v-for="(im, ii) in attachments" :key="ii" class="relative">
@@ -675,8 +674,8 @@ function showConversationHistory() { artifactOpen.value = false }
             v-model="input"
             rows="2"
             class="chat-input scroll-area max-h-32 min-h-[40px] w-full min-w-0 resize-none px-2 py-1.5 outline-none disabled:opacity-50"
-            :placeholder="t('pages.projectDetail.pm.inputPh')"
-            :aria-label="t('pages.projectDetail.pm.inputPh')"
+            :placeholder="t('pages.workspace.pm.inputPh')"
+            :aria-label="t('pages.workspace.pm.inputPh')"
             :disabled="busy"
             @keydown.enter.exact.prevent="send()"
             @paste="onPaste"
@@ -687,23 +686,23 @@ function showConversationHistory() { artifactOpen.value = false }
             class="chat-action-button"
             :disabled="busy"
             data-testid="pm-chat-attach"
-            :aria-label="t('pages.projectDetail.pm.images')"
-            :title="t('pages.projectDetail.pm.images')"
+            :aria-label="t('pages.workspace.pm.images')"
+            :title="t('pages.workspace.pm.images')"
             @click="fileInput?.click()"
           >
             <Icon name="plus" :size="18" />
-            <span class="sr-only">{{ t('pages.projectDetail.pm.images') }}</span>
+            <span class="sr-only">{{ t('pages.workspace.pm.images') }}</span>
           </button>
           <button
             v-if="turnBusy"
             type="button"
             class="chat-action-button chat-action-stop"
-            :aria-label="t('pages.projectDetail.pm.stop')"
-            :title="t('pages.projectDetail.pm.stop')"
+            :aria-label="t('pages.workspace.pm.stop')"
+            :title="t('pages.workspace.pm.stop')"
             @click="stop"
           >
             <Icon name="chat-stop" :size="16" />
-            <span class="sr-only">{{ t('pages.projectDetail.pm.stop') }}</span>
+            <span class="sr-only">{{ t('pages.workspace.pm.stop') }}</span>
           </button>
           <button
             v-else
@@ -711,12 +710,12 @@ function showConversationHistory() { artifactOpen.value = false }
             class="chat-action-button chat-action-primary"
             :disabled="!canSend"
             data-testid="pm-chat-send"
-            :aria-label="t('pages.projectDetail.pm.send')"
-            :title="t('pages.projectDetail.pm.send')"
+            :aria-label="t('pages.workspace.pm.send')"
+            :title="t('pages.workspace.pm.send')"
             @click="send()"
           >
             <Icon name="chat-send" :size="18" />
-            <span class="sr-only">{{ t('pages.projectDetail.pm.send') }}</span>
+            <span class="sr-only">{{ t('pages.workspace.pm.send') }}</span>
           </button>
           </div>
         </div>
@@ -774,7 +773,7 @@ function showConversationHistory() { artifactOpen.value = false }
       @click="onChannelCtxAction"
     >
       <Icon name="doc" :size="13" />
-      {{ t('pages.projectDetail.pm.channelViewDetail') }}
+      {{ t('pages.workspace.pm.channelViewDetail') }}
     </button>
   </div>
 
@@ -789,24 +788,24 @@ function showConversationHistory() { artifactOpen.value = false }
   >
     <div class="rounded-xl w-full max-w-[360px] border border-line bg-surface shadow-card">
       <div class="flex items-center justify-between border-b border-line px-3.5 py-3 text-[13px] font-semibold text-txt">
-        <span>{{ t('pages.projectDetail.pm.channelDetailTitle') }}</span>
+        <span>{{ t('pages.workspace.pm.channelDetailTitle') }}</span>
         <button
           type="button"
           class="px-2 text-txt2 hover:text-txt"
-          :aria-label="t('pages.projectDetail.pm.channelDetailClose')"
+          :aria-label="t('pages.workspace.pm.channelDetailClose')"
           data-testid="pm-channel-detail-close"
           @click="closeChannelDetail"
         >×</button>
       </div>
       <div class="flex flex-col gap-3 p-3.5">
         <div>
-          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.projectDetail.pm.channelDetailLabelTitle') }}</div>
+          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.workspace.pm.channelDetailLabelTitle') }}</div>
           <div class="rounded-lg border border-line bg-base px-2.5 py-2 text-[13px] text-txt" data-testid="pm-channel-detail-title">
             {{ channelDetailTitle }}
           </div>
         </div>
         <div>
-          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.projectDetail.pm.channelDetailLabelSource') }}</div>
+          <div class="mb-1 text-[11px] text-txt3">{{ t('pages.workspace.pm.channelDetailLabelSource') }}</div>
           <div class="rounded-lg border border-line bg-base px-2.5 py-2 text-[13px] text-txt" data-testid="pm-channel-detail-source">
             {{ channelDetailSource }}
           </div>
@@ -814,7 +813,7 @@ function showConversationHistory() { artifactOpen.value = false }
       </div>
       <div class="flex justify-end border-t border-line px-3.5 py-2.5">
         <AppButton size="sm" variant="outline" data-testid="pm-channel-detail-ok" @click="closeChannelDetail">
-          {{ t('pages.projectDetail.pm.channelDetailClose') }}
+          {{ t('pages.workspace.pm.channelDetailClose') }}
         </AppButton>
       </div>
     </div>

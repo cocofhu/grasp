@@ -6,7 +6,7 @@ export type AuthApplyLink = {
 }
 
 export type AuthKeySpec = {
-  /** Project credential env key (one per backend). */
+  /** Workspace credential env key (one per backend). */
   key: string
 }
 

@@ -85,8 +85,8 @@ describe('agent profile helpers', () => {
 
   it('accepts every Agent in the workspace and only warns about missing profiles', () => {
     const agents = [
-      { name: 'ImplementAgent', projectId: 'alpha' },
-      { name: 'PreviewAgent', projectId: 'beta' },
+      { name: 'ImplementAgent' },
+      { name: 'PreviewAgent' },
     ]
     const withGhost: WFNode[] = [
       ...nodes,

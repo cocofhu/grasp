@@ -24,9 +24,6 @@ export {
   type StartPath as OnboardingStartPath,
 }
 
-/** Matches models.DefaultProjectID — first-install wizard only opens here. */
-export const DEFAULT_PROJECT_ID = 'proj-default'
-
 /** The default workflow's name in every UI language (mirrors server onboardingLocales). */
 export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
 
@@ -57,7 +54,7 @@ const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
 const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
 const MAX_AGENT_NAME_RUNES = 64
 
-/** Canonical default-project Agent names (the server's template labels); used for conflict checks. */
+/** Canonical default Agent names (the server's template labels); used for conflict checks. */
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
 
 /** Default role names shown and saved for the given UI language. */
@@ -88,11 +85,11 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
 export type OnboardingTeamMember = {
   templateId: OnboardingTemplateId
   enabled: boolean
-  /** Full Agent name; '' lets the server derive it from the project name. */
+  /** Full Agent name; '' lets the server derive it from the template. */
   name: string
   /** True once the user typed a name, so default refreshes leave it alone. */
   nameEdited: boolean
-  /** ACP_BRIDGE_MODEL for this Agent; '' inherits the project default. */
+  /** ACP_BRIDGE_MODEL for this Agent; '' inherits the workspace default. */
   model: string
 }
 
@@ -127,11 +124,8 @@ export function applyDefaultTeamNames(team: OnboardingTeamMember[], defaults: re
 
 export type TeamNameIssue = '' | 'required' | 'invalid' | 'duplicate'
 
-/** Per-member name problems for enabled members. Blank is fine only when the server derives it. */
-export function teamNameIssues(
-  team: OnboardingTeamMember[],
-  opts: { allowBlank?: boolean } = {},
-): Record<OnboardingTemplateId, TeamNameIssue> {
+/** Per-member name problems for enabled members. */
+export function teamNameIssues(team: OnboardingTeamMember[]): Record<OnboardingTemplateId, TeamNameIssue> {
   const out = { clarify: '', implement: '', test_review: '', deliver: '' } as Record<OnboardingTemplateId, TeamNameIssue>
   const counts = new Map<string, number>()
   for (const m of team) {
@@ -143,7 +137,7 @@ export function teamNameIssues(
     if (!m.enabled) continue
     const n = normalizeAgentName(m.name)
     if (!n) {
-      if (!opts.allowBlank) out[m.templateId] = 'required'
+      out[m.templateId] = 'required'
       continue
     }
     if (validateAgentName(n)) out[m.templateId] = 'invalid'
@@ -152,8 +146,8 @@ export function teamNameIssues(
   return out
 }
 
-export function teamValid(team: OnboardingTeamMember[], opts: { allowBlank?: boolean } = {}): boolean {
-  return Object.values(teamNameIssues(team, opts)).every((v) => !v)
+export function teamValid(team: OnboardingTeamMember[]): boolean {
+  return Object.values(teamNameIssues(team)).every((v) => !v)
 }
 
 export type OnboardingPreviewNode = {
@@ -213,7 +207,6 @@ export const ONBOARDING_GIT_TYPES: { id: GitCredentialType; labelKey: string }[]
 
 export type OnboardingDraft = {
   step: number
-  projectName: string
   language: AppLocale
   theme: ThemeName
   startPath: StartPath
@@ -285,33 +278,27 @@ export type OnboardingBootstrapResult = {
  * button deliberately does NOT write this: closing it is per-view, and a reload
  * re-opens the wizard until the default workflow exists (see needsOnboarding).
  */
-const SUPPRESS_PREFIX = 'grasp-onboarding-suppress:'
+export const ONBOARDING_SUPPRESS_KEY = 'grasp-onboarding-suppress'
 
-export function onboardingSuppressKey(projectId: string): string {
-  return `${SUPPRESS_PREFIX}${projectId}`
-}
-
-export function isOnboardingSuppressed(projectId: string): boolean {
-  if (!projectId) return true
+export function isOnboardingSuppressed(): boolean {
   try {
-    return localStorage.getItem(onboardingSuppressKey(projectId)) === '1'
+    return localStorage.getItem(ONBOARDING_SUPPRESS_KEY) === '1'
   } catch {
     return true
   }
 }
 
-export function suppressOnboarding(projectId: string): void {
-  if (!projectId) return
+export function suppressOnboarding(): void {
   try {
-    localStorage.setItem(onboardingSuppressKey(projectId), '1')
+    localStorage.setItem(ONBOARDING_SUPPRESS_KEY, '1')
   } catch {
     /* ignore */
   }
 }
 
-/** Wash project name into a valid Agent-name prefix (mirrors server SanitizeOnboardingPrefix). */
-export function sanitizeOnboardingPrefix(projectName: string): string {
-  const raw = normalizeAgentName(projectName)
+/** Wash a display name into a valid Agent-name prefix (mirrors server SanitizeOnboardingPrefix). */
+export function sanitizeOnboardingPrefix(name: string): string {
+  const raw = normalizeAgentName(name)
   if (!raw) return ''
   let out = ''
   for (const ch of raw) {
@@ -328,18 +315,8 @@ export function sanitizeOnboardingPrefix(projectName: string): string {
 }
 
 /** Agent role names used when bootstrapping an empty workspace. */
-export function deriveOnboardingAgentNames(_workspaceId: string, _workspaceName: string, lang: AppLocale = 'zh-CN'): string[] {
+export function deriveOnboardingAgentNames(lang: AppLocale = 'zh-CN'): string[] {
   return onboardingRoleNames(lang)
-}
-
-/** Bootstrap is offered only for an empty workspace. */
-export function isEmptyProjectForOnboarding(
-  workflowCount: number,
-  agents: { name?: string; projectId?: string }[],
-  workspaceId: string,
-  _workspaceName = '',
-): boolean {
-  return !!workspaceId && workflowCount === 0 && agents.length === 0
 }
 
 /** The default workflow is the completion marker for first install. */
@@ -350,22 +327,13 @@ export function hasDefaultWorkflow(workflows: { name?: string }[]): boolean {
 /**
  * Existing workflows or Agents keep automatic first-install prompting closed.
  */
-export function needsOnboarding(
-  workflows: { name?: string }[],
-  agents: { name?: string; projectId?: string }[],
-  workspaceId: string,
-): boolean {
-  return !!workspaceId && workflows.length === 0 && agents.length === 0
+export function needsOnboarding(workflows: { name?: string }[], agents: { name?: string }[]): boolean {
+  return workflows.length === 0 && agents.length === 0
 }
 
-export function shouldAutoOpenOnboarding(
-  projectId: string,
-  workflows: { name?: string }[],
-  agents: { name?: string; projectId?: string }[],
-): boolean {
-  if (!projectId) return false
-  if (isOnboardingSuppressed(projectId)) return false
-  return needsOnboarding(workflows, agents, projectId)
+export function shouldAutoOpenOnboarding(workflows: { name?: string }[], agents: { name?: string }[]): boolean {
+  if (isOnboardingSuppressed()) return false
+  return needsOnboarding(workflows, agents)
 }
 
 /**
@@ -375,7 +343,6 @@ export function shouldAutoOpenOnboarding(
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {
   return {
     step: 0,
-    projectName: '',
     language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(),
     theme: theme.value,
     startPath: 'apiKey',

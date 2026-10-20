@@ -60,26 +60,26 @@ export function suggestRename(name: string, existing: string[]): string {
 }
 
 export type ZipPeek =
-  | { kind: 'project-bundle'; agentNames: string[] }
+  | { kind: 'workspace-bundle'; agentNames: string[] }
   | { kind: 'agent'; name?: string }
   | { kind: 'unknown'; error: string }
 
-export const PROJECT_BUNDLE_MANIFEST = 'project.json'
-export const PROJECT_BUNDLE_KIND = 'project-agents'
+export const WORKSPACE_BUNDLE_MANIFEST = 'workspace.json'
+export const WORKSPACE_BUNDLE_KIND = 'workspace-agents'
 
-/** Peek a ZIP: project.json (project bundle) first, then root agent.json. */
+/** Peek a ZIP: workspace.json (workspace Agent bundle) first, then root agent.json. */
 export async function peekZipPackage(file: File): Promise<ZipPeek> {
   try {
     const buf = new Uint8Array(await file.arrayBuffer())
-    const manifestText = await readZipTextEntry(buf, PROJECT_BUNDLE_MANIFEST)
+    const manifestText = await readZipTextEntry(buf, WORKSPACE_BUNDLE_MANIFEST)
     if (manifestText != null) {
       try {
         const json = JSON.parse(manifestText) as { kind?: string; agentNames?: unknown }
-        if (json?.kind === PROJECT_BUNDLE_KIND) {
+        if (json?.kind === WORKSPACE_BUNDLE_KIND) {
           const names = Array.isArray(json.agentNames)
             ? json.agentNames.map((n) => String(n).trim()).filter(Boolean)
             : []
-          return { kind: 'project-bundle', agentNames: names }
+          return { kind: 'workspace-bundle', agentNames: names }
         }
       } catch {
         return { kind: 'unknown', error: 'invalid zip' }

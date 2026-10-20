@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AuditFilterDropdown, { type AuditDdOption } from '@/components/project/AuditFilterDropdown.vue'
+import AuditFilterDropdown, { type AuditDdOption } from '@/components/workspace/AuditFilterDropdown.vue'
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
@@ -12,14 +12,13 @@ import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
 import { fmtTime } from '@/lib/shared/format'
 import type {
-  ProjectAuditEvent,
-  ProjectAuditFacetResource,
-  ProjectAuditFacetRun,
-  ProjectAuditStats,
+  AuditEvent,
+  AuditFacetResource,
+  AuditFacetRun,
+  AuditStats,
 } from '@/lib/shared/types'
 
 const props = defineProps<{
-  projectId: string
   /** Test/demo hook: force the Demo「无权查看」state without a read-only role. */
   forceDenied?: boolean
 }>()
@@ -33,9 +32,9 @@ type Mode = 'run' | 'all'
 
 const loading = ref(false)
 const denied = ref(false)
-const events = ref<ProjectAuditEvent[]>([])
+const events = ref<AuditEvent[]>([])
 const total = ref(0)
-const stats = ref<ProjectAuditStats>({ total: 0, mcp: 0, fail: 0 })
+const stats = ref<AuditStats>({ total: 0, mcp: 0, fail: 0 })
 const page = ref(1)
 const pageSize = ref(10)
 const openId = ref<string | null>(null)
@@ -59,17 +58,17 @@ const callerKind = ref('')
 const resource = ref('')
 const search = ref('')
 
-const runOptions = ref<ProjectAuditFacetRun[]>([])
+const runOptions = ref<AuditFacetRun[]>([])
 const nodeOptions = ref<{ nodeId: string; label: string }[]>([])
-const resourceOptions = ref<ProjectAuditFacetResource[]>([])
+const resourceOptions = ref<AuditFacetResource[]>([])
 
 const AUDIT_PAGE_SIZE_OPTIONS = [5, 10, 20]
 
 const CALLER_LABEL_KEYS: Record<string, string> = {
-  pm: 'pages.projectDetail.audit.callerPm',
-  apikey: 'pages.projectDetail.audit.callerApiKey',
-  system: 'pages.projectDetail.audit.callerSystem',
-  external: 'pages.projectDetail.audit.callerExternal',
+  pm: 'pages.workspace.audit.callerPm',
+  apikey: 'pages.workspace.audit.callerApiKey',
+  system: 'pages.workspace.audit.callerSystem',
+  external: 'pages.workspace.audit.callerExternal',
 }
 
 const runDdOptions = computed<AuditDdOption[]>(() =>
@@ -82,7 +81,7 @@ const runDdOptions = computed<AuditDdOption[]>(() =>
 )
 
 const nodeDdOptions = computed<AuditDdOption[]>(() => [
-  { value: '', label: t('pages.projectDetail.audit.filterAll') },
+  { value: '', label: t('pages.workspace.audit.filterAll') },
   ...nodeOptions.value.map((n) => ({
     value: n.nodeId,
     label: formatAuditNodeTitle(n.nodeId),
@@ -91,15 +90,15 @@ const nodeDdOptions = computed<AuditDdOption[]>(() => [
 ])
 
 const callerDdOptions = computed<AuditDdOption[]>(() => [
-  { value: '', label: t('pages.projectDetail.audit.filterAll') },
-  { value: 'pm', label: t('pages.projectDetail.audit.callerPm'), sub: t('pages.projectDetail.audit.callerPmSub') },
-  { value: 'apikey', label: t('pages.projectDetail.audit.callerApiKey'), sub: t('pages.projectDetail.audit.callerApiKeySub') },
-  { value: 'system', label: t('pages.projectDetail.audit.callerSystem'), sub: t('pages.projectDetail.audit.callerSystemSub') },
-  { value: 'external', label: t('pages.projectDetail.audit.callerExternal'), sub: t('pages.projectDetail.audit.callerExternalSub') },
+  { value: '', label: t('pages.workspace.audit.filterAll') },
+  { value: 'pm', label: t('pages.workspace.audit.callerPm'), sub: t('pages.workspace.audit.callerPmSub') },
+  { value: 'apikey', label: t('pages.workspace.audit.callerApiKey'), sub: t('pages.workspace.audit.callerApiKeySub') },
+  { value: 'system', label: t('pages.workspace.audit.callerSystem'), sub: t('pages.workspace.audit.callerSystemSub') },
+  { value: 'external', label: t('pages.workspace.audit.callerExternal'), sub: t('pages.workspace.audit.callerExternalSub') },
 ])
 
 const resourceDdOptions = computed<AuditDdOption[]>(() => [
-  { value: '', label: t('pages.projectDetail.audit.filterAll'), dot: '' },
+  { value: '', label: t('pages.workspace.audit.filterAll'), dot: '' },
   ...resourceOptions.value.map((r) => {
     const value = r.resource || [r.resourceType, r.resourceId].filter(Boolean).join('/')
     return {
@@ -113,9 +112,9 @@ const resourceDdOptions = computed<AuditDdOption[]>(() => [
 ])
 
 const timeDdOptions = computed<AuditDdOption[]>(() => [
-  { value: '24h', label: t('pages.projectDetail.audit.time24h') },
-  { value: '7d', label: t('pages.projectDetail.audit.time7d') },
-  { value: '30d', label: t('pages.projectDetail.audit.time30d') },
+  { value: '24h', label: t('pages.workspace.audit.time24h') },
+  { value: '7d', label: t('pages.workspace.audit.time7d') },
+  { value: '30d', label: t('pages.workspace.audit.time30d') },
 ])
 
 type Chip = { key: string; label: string; value: string; clearable: boolean }
@@ -126,7 +125,7 @@ const chips = computed<Chip[]>(() => {
     if (nodeId.value) {
       list.push({
         key: 'node',
-        label: t('pages.projectDetail.audit.colNode'),
+        label: t('pages.workspace.audit.colNode'),
         value: formatAuditNodeTitle(nodeId.value),
         clearable: true,
       })
@@ -134,7 +133,7 @@ const chips = computed<Chip[]>(() => {
   } else if (callerKind.value) {
     list.push({
       key: 'caller',
-      label: t('pages.projectDetail.audit.colCaller'),
+      label: t('pages.workspace.audit.colCaller'),
       value: t(CALLER_LABEL_KEYS[callerKind.value] || '') || callerKind.value,
       clearable: true,
     })
@@ -142,7 +141,7 @@ const chips = computed<Chip[]>(() => {
   if (resource.value) {
     list.push({
       key: 'resource',
-      label: t('pages.projectDetail.audit.colResource'),
+      label: t('pages.workspace.audit.colResource'),
       value: resource.value,
       clearable: true,
     })
@@ -150,7 +149,7 @@ const chips = computed<Chip[]>(() => {
   if (search.value.trim()) {
     list.push({
       key: 'search',
-      label: t('pages.projectDetail.audit.filterSearch'),
+      label: t('pages.workspace.audit.filterSearch'),
       value: search.value.trim(),
       clearable: true,
     })
@@ -158,11 +157,11 @@ const chips = computed<Chip[]>(() => {
   if (timeWindow.value !== '24h') {
     const lab =
       timeWindow.value === '7d'
-        ? t('pages.projectDetail.audit.time7d')
-        : t('pages.projectDetail.audit.time30d')
+        ? t('pages.workspace.audit.time7d')
+        : t('pages.workspace.audit.time30d')
     list.push({
       key: 'time',
-      label: t('pages.projectDetail.audit.filterTime'),
+      label: t('pages.workspace.audit.filterTime'),
       value: lab,
       clearable: true,
     })
@@ -174,27 +173,27 @@ const clearableChips = computed(() => chips.value.filter((c) => c.clearable))
 const noRuns = computed(() => mode.value === 'run' && initialized.value && runOptions.value.length === 0)
 
 const timeWindowLabel = computed(() => {
-  if (timeWindow.value === '7d') return t('pages.projectDetail.audit.time7d')
-  if (timeWindow.value === '30d') return t('pages.projectDetail.audit.time30d')
-  return t('pages.projectDetail.audit.time24h')
+  if (timeWindow.value === '7d') return t('pages.workspace.audit.time7d')
+  if (timeWindow.value === '30d') return t('pages.workspace.audit.time30d')
+  return t('pages.workspace.audit.time24h')
 })
 
 /** One-line mobile filter summary (plan g2.1/g2.2); not the chips row. */
 const filterSummaryText = computed(() => {
-  const all = t('pages.projectDetail.audit.filterAll')
+  const all = t('pages.workspace.audit.filterAll')
   const resLab = resource.value || all
   const timeLab = timeWindowLabel.value
   if (mode.value === 'run') {
     const runLab = runId.value
       ? runOptions.value.find((r) => r.runId === runId.value)?.label || shortRun(runId.value)
-      : t('pages.projectDetail.audit.noRun')
+      : t('pages.workspace.audit.noRun')
     const nodeLab = nodeId.value ? formatAuditNodeTitle(nodeId.value) : all
-    return `Run · ${runLab} · ${timeLab} · ${t('pages.projectDetail.audit.colNode')} ${nodeLab} / ${t('pages.projectDetail.audit.colResource')} ${resLab}`
+    return `Run · ${runLab} · ${timeLab} · ${t('pages.workspace.audit.colNode')} ${nodeLab} / ${t('pages.workspace.audit.colResource')} ${resLab}`
   }
   const callerLab = callerKind.value
     ? t(CALLER_LABEL_KEYS[callerKind.value] || '') || callerKind.value
     : all
-  return `${t('pages.projectDetail.audit.colCaller')} · ${callerLab} · ${timeLab} · ${t('pages.projectDetail.audit.colResource')} ${resLab}`
+  return `${t('pages.workspace.audit.colCaller')} · ${callerLab} · ${timeLab} · ${t('pages.workspace.audit.colResource')} ${resLab}`
 })
 
 function toggleFiltersExpanded() {
@@ -207,13 +206,13 @@ function resDot(v: string) {
   if (v.startsWith('run/')) return 'run'
   if (v.startsWith('gate/')) return 'gate'
   if (v.startsWith('workflow/')) return 'wf'
-  if (v.startsWith('project/')) return 'prj'
+  if (v.startsWith('workspace/') || v === 'workspace') return 'ws'
   if (v.startsWith('audit/')) return 'aud'
   return ''
 }
 
 function resGroup(o: AuditDdOption) {
-  if (!o.value) return t('pages.projectDetail.audit.filterAll')
+  if (!o.value) return t('pages.workspace.audit.filterAll')
   const i = o.value.indexOf('/')
   return i > 0 ? o.value.slice(0, i) : 'other'
 }
@@ -223,7 +222,7 @@ function shortRun(id: string) {
   return s.length > 8 ? s.slice(0, 8) : s
 }
 
-function callerLabel(ev: ProjectAuditEvent) {
+function callerLabel(ev: AuditEvent) {
   const kind = ev.callerKind || (ev.unattributable || ev.actor === 'system' ? 'system' : 'pm')
   const key = CALLER_LABEL_KEYS[kind]
   return key ? t(key) : kind
@@ -235,7 +234,7 @@ function nodeLabel(id?: string) {
 }
 
 /** Demo「类别 / 标识」辅行；缺字段则空，不回退到 action。 */
-function resourceAux(ev: ProjectAuditEvent) {
+function resourceAux(ev: AuditEvent) {
   const type = (ev.resourceType || '').trim()
   const id = (ev.resourceId || '').trim()
   if (type && id) return `${type} / ${id}`
@@ -253,7 +252,7 @@ type RunGroup = {
   title: string
   type: string
   fullId: string
-  events: ProjectAuditEvent[]
+  events: AuditEvent[]
   ok: number
   fail: number
 }
@@ -265,7 +264,7 @@ const runGroups = computed<RunGroup[]>(() => {
     return a.occurredAt < b.occurredAt ? -1 : 1
   })
   const order: string[] = []
-  const map = new Map<string, ProjectAuditEvent[]>()
+  const map = new Map<string, AuditEvent[]>()
   for (const ev of chronological) {
     const key = ev.nodeId?.trim() || '_system'
     if (!map.has(key)) {
@@ -330,13 +329,13 @@ function toggleGroup(id: string) {
   groupOpen.value = { ...groupOpen.value, [id]: !isGroupOpen(g) }
 }
 
-function outcomeLabel(ev: ProjectAuditEvent) {
+function outcomeLabel(ev: AuditEvent) {
   return ev.outcome === 'fail'
-    ? t('pages.projectDetail.audit.outcomeFail')
-    : t('pages.projectDetail.audit.outcomeOk')
+    ? t('pages.workspace.audit.outcomeFail')
+    : t('pages.workspace.audit.outcomeOk')
 }
 
-function resourceText(ev: ProjectAuditEvent) {
+function resourceText(ev: AuditEvent) {
   return ev.resource || [ev.resourceType, ev.resourceId].filter(Boolean).join('/') || '—'
 }
 
@@ -369,7 +368,7 @@ async function loadFacets(selectedRun?: string) {
     return
   }
   try {
-    const res = await api.listProjectAuditFacets(props.projectId, {
+    const res = await api.listAuditFacets({
       time: timeWindow.value,
       runId: selectedRun || (mode.value === 'run' ? runId.value || undefined : undefined),
     })
@@ -388,15 +387,13 @@ async function loadFacets(selectedRun?: string) {
 }
 
 async function loadRunAligned() {
-  const collected: ProjectAuditEvent[] = []
+  const collected: AuditEvent[] = []
   let nextPage = 1
   let hasMore = true
-  let pageStats: ProjectAuditStats | undefined
+  let pageStats: AuditStats | undefined
   let fullTotal = 0
   while (hasMore && nextPage <= RUN_FETCH_MAX_PAGES && collected.length < RUN_FETCH_HARD_CAP) {
-    const res = await api.listProjectAudit(
-      props.projectId,
-      buildParams({ page: nextPage, pageSize: RUN_FETCH_PAGE_SIZE }),
+    const res = await api.listAudit(buildParams({ page: nextPage, pageSize: RUN_FETCH_PAGE_SIZE }),
     )
     const items = res.items
     collected.push(...items)
@@ -446,7 +443,7 @@ async function load(resetPage = false) {
     } else {
       runCapped.value = false
       runFetched.value = 0
-      const res = await api.listProjectAudit(props.projectId, buildParams())
+      const res = await api.listAudit(buildParams())
       const pageData = res
       events.value = pageData.items
       total.value = pageData.total
@@ -464,7 +461,7 @@ async function load(resetPage = false) {
       total.value = 0
       return
     }
-    toast.error(e?.message || t('pages.projectDetail.audit.loadFailed'))
+    toast.error(e?.message || t('pages.workspace.audit.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -567,11 +564,11 @@ function toggleOpen(id: string) {
 
 async function exportAudit() {
   if (denied.value || props.forceDenied) {
-    toast.error(t('pages.projectDetail.audit.exportDenied'))
+    toast.error(t('pages.workspace.audit.exportDenied'))
     return
   }
   try {
-    const url = api.exportProjectAuditUrl(props.projectId, {
+    const url = api.exportAuditUrl({
       format: 'json',
       time: timeWindow.value,
       callerKind: mode.value === 'all' ? callerKind.value || undefined : undefined,
@@ -587,10 +584,10 @@ async function exportAudit() {
     document.body.appendChild(a)
     a.click()
     a.remove()
-    toast.success(t('pages.projectDetail.audit.exportStarted', { format: 'JSON' }))
+    toast.success(t('pages.workspace.audit.exportStarted', { format: 'JSON' }))
     setTimeout(() => void load(true), 400)
   } catch (e: any) {
-    toast.error(e?.message || t('pages.projectDetail.audit.exportFailed'))
+    toast.error(e?.message || t('pages.workspace.audit.exportFailed'))
   }
 }
 
@@ -624,7 +621,7 @@ watch(runGroups, () => {
 })
 
 watch(
-  () => [props.projectId, props.forceDenied],
+  () => props.forceDenied,
   () => {
     initialized.value = false
     void bootstrap()
@@ -641,59 +638,59 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="audit-panel" data-testid="project-audit-panel">
+  <div class="audit-panel" data-testid="workspace-audit-panel">
     <div
       v-if="denied || forceDenied"
       class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center"
-      data-testid="project-audit-denied"
+      data-testid="workspace-audit-denied"
     >
-      <div class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.audit.deniedTitle') }}</div>
-      <p class="max-w-md text-[13px] text-txt3">{{ t('pages.projectDetail.audit.deniedDesc') }}</p>
+      <div class="text-sm font-semibold text-txt">{{ t('pages.workspace.audit.deniedTitle') }}</div>
+      <p class="max-w-md text-[13px] text-txt3">{{ t('pages.workspace.audit.deniedDesc') }}</p>
     </div>
 
     <template v-else>
-      <p class="audit-intro">{{ t('pages.projectDetail.audit.description') }}</p>
+      <p class="audit-intro">{{ t('pages.workspace.audit.description') }}</p>
       <div class="audit-toolbar">
-        <div class="seg" role="group" :aria-label="t('pages.projectDetail.audit.title')" data-testid="project-audit-mode">
-          <button type="button" :class="{ on: mode === 'run' }" :aria-pressed="mode === 'run'" data-testid="project-audit-mode-run" @click="setMode('run')">
-            {{ t('pages.projectDetail.audit.modeRun') }}
+        <div class="seg" role="group" :aria-label="t('pages.workspace.audit.title')" data-testid="workspace-audit-mode">
+          <button type="button" :class="{ on: mode === 'run' }" :aria-pressed="mode === 'run'" data-testid="workspace-audit-mode-run" @click="setMode('run')">
+            {{ t('pages.workspace.audit.modeRun') }}
           </button>
-          <button type="button" :class="{ on: mode === 'all' }" :aria-pressed="mode === 'all'" data-testid="project-audit-mode-all" @click="setMode('all')">
-            {{ t('pages.projectDetail.audit.modeAll') }}
+          <button type="button" :class="{ on: mode === 'all' }" :aria-pressed="mode === 'all'" data-testid="workspace-audit-mode-all" @click="setMode('all')">
+            {{ t('pages.workspace.audit.modeAll') }}
           </button>
         </div>
         <div class="toolbar-end">
-          <div class="toolbar-stats" data-testid="project-audit-stats">
-            <span class="stat-chip" data-testid="project-audit-run-count">{{ t('pages.projectDetail.audit.statTotal') }} <b>{{ stats.total }}</b></span>
-            <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <b>{{ statOk }}</b></span>
-            <span class="stat-chip" :class="{ fail: stats.fail }">{{ t('pages.projectDetail.audit.statFail') }} <b>{{ stats.fail }}</b></span>
+          <div class="toolbar-stats" data-testid="workspace-audit-stats">
+            <span class="stat-chip" data-testid="workspace-audit-run-count">{{ t('pages.workspace.audit.statTotal') }} <b>{{ stats.total }}</b></span>
+            <span class="stat-chip ok">{{ t('pages.workspace.audit.statOk') }} <b>{{ statOk }}</b></span>
+            <span class="stat-chip" :class="{ fail: stats.fail }">{{ t('pages.workspace.audit.statFail') }} <b>{{ stats.fail }}</b></span>
             <span class="stat-chip">MCP <b>{{ stats.mcp }}</b></span>
           </div>
-          <button type="button" class="btn export-btn" data-testid="project-audit-export" @click="exportAudit">
-            <Icon name="download" :size="14" />{{ t('pages.projectDetail.audit.export') }}
+          <button type="button" class="btn export-btn" data-testid="workspace-audit-export" @click="exportAudit">
+            <Icon name="download" :size="14" />{{ t('pages.workspace.audit.export') }}
           </button>
         </div>
       </div>
-      <div class="filters" :class="{ 'filters-mobile': isMobile }" data-testid="project-audit-filters">
+      <div class="filters" :class="{ 'filters-mobile': isMobile }" data-testid="workspace-audit-filters">
         <div class="search">
           <Icon name="search" :size="14" />
-          <input v-model="search" type="search" :aria-label="t('pages.projectDetail.audit.filterSearch')" :placeholder="t('pages.projectDetail.audit.searchPlaceholder')" autocomplete="off" data-testid="project-audit-search" @input="onSearchInput" />
+          <input v-model="search" type="search" :aria-label="t('pages.workspace.audit.filterSearch')" :placeholder="t('pages.workspace.audit.searchPlaceholder')" autocomplete="off" data-testid="workspace-audit-search" @input="onSearchInput" />
         </div>
-        <button v-if="isMobile" type="button" class="filter-summary" data-testid="project-audit-filter-summary" :aria-expanded="filtersExpanded" @click="toggleFiltersExpanded">
+        <button v-if="isMobile" type="button" class="filter-summary" data-testid="workspace-audit-filter-summary" :aria-expanded="filtersExpanded" @click="toggleFiltersExpanded">
           <Icon name="filter" :size="14" />
           <span class="sum-text">{{ filterSummaryText }}</span>
-          <span class="sum-action">{{ filtersExpanded ? t('pages.projectDetail.audit.filterCollapse') : t('pages.projectDetail.audit.filterExpand') }}</span>
+          <span class="sum-action">{{ filtersExpanded ? t('pages.workspace.audit.filterCollapse') : t('pages.workspace.audit.filterExpand') }}</span>
         </button>
-        <div v-show="!isMobile || filtersExpanded" class="filters-editor" :class="{ 'run-filters': mode === 'run' }" data-testid="project-audit-filters-editor">
-          <AuditFilterDropdown v-if="mode === 'run'" :model-value="runId" label-key="Run" :options="runDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.projectDetail.audit.noRun')" test-id="project-audit-run" @update:model-value="onRunChange" />
-          <AuditFilterDropdown v-if="mode === 'run'" :model-value="nodeId" :label-key="t('pages.projectDetail.audit.colNode')" :options="nodeDdOptions" searchable :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" test-id="project-audit-node" @update:model-value="(v) => { nodeId = v; onFilterChange() }" />
-          <AuditFilterDropdown v-if="mode === 'all'" :model-value="callerKind" :label-key="t('pages.projectDetail.audit.colCaller')" :options="callerDdOptions" :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" test-id="project-audit-caller" @update:model-value="(v) => { callerKind = v; onFilterChange() }" />
-          <AuditFilterDropdown :model-value="resource" :label-key="t('pages.projectDetail.audit.colResource')" :options="resourceDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" :group-by="resGroup" test-id="project-audit-resource" @update:model-value="(v) => { resource = v; onFilterChange() }" />
-          <AuditFilterDropdown :model-value="timeWindow" :label-key="t('pages.projectDetail.audit.filterTime')" :options="timeDdOptions" :block="isMobile" test-id="project-audit-time" @update:model-value="onTimeChange" />
+        <div v-show="!isMobile || filtersExpanded" class="filters-editor" :class="{ 'run-filters': mode === 'run' }" data-testid="workspace-audit-filters-editor">
+          <AuditFilterDropdown v-if="mode === 'run'" :model-value="runId" label-key="Run" :options="runDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.workspace.audit.noRun')" test-id="workspace-audit-run" @update:model-value="onRunChange" />
+          <AuditFilterDropdown v-if="mode === 'run'" :model-value="nodeId" :label-key="t('pages.workspace.audit.colNode')" :options="nodeDdOptions" searchable :block="isMobile" :empty-label="t('pages.workspace.audit.filterAll')" test-id="workspace-audit-node" @update:model-value="(v) => { nodeId = v; onFilterChange() }" />
+          <AuditFilterDropdown v-if="mode === 'all'" :model-value="callerKind" :label-key="t('pages.workspace.audit.colCaller')" :options="callerDdOptions" :block="isMobile" :empty-label="t('pages.workspace.audit.filterAll')" test-id="workspace-audit-caller" @update:model-value="(v) => { callerKind = v; onFilterChange() }" />
+          <AuditFilterDropdown :model-value="resource" :label-key="t('pages.workspace.audit.colResource')" :options="resourceDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.workspace.audit.filterAll')" :group-by="resGroup" test-id="workspace-audit-resource" @update:model-value="(v) => { resource = v; onFilterChange() }" />
+          <AuditFilterDropdown :model-value="timeWindow" :label-key="t('pages.workspace.audit.filterTime')" :options="timeDdOptions" :block="isMobile" test-id="workspace-audit-time" @update:model-value="onTimeChange" />
         </div>
       </div>
 
-      <div v-if="!isMobile && chips.length" class="chips" data-testid="project-audit-chips">
+      <div v-if="!isMobile && chips.length" class="chips" data-testid="workspace-audit-chips">
         <span v-for="ch in chips" :key="ch.key" class="chip">
           <em>{{ ch.label }}</em>
           <b>{{ ch.value }}</b>
@@ -701,7 +698,7 @@ onUnmounted(() => {
             v-if="ch.clearable"
             type="button"
             class="x"
-            :data-testid="`project-audit-chip-clear-${ch.key}`"
+            :data-testid="`workspace-audit-chip-clear-${ch.key}`"
             @click="clearChip(ch.key)"
           >
             ×
@@ -711,55 +708,55 @@ onUnmounted(() => {
           v-if="clearableChips.length"
           type="button"
           class="linkish"
-          data-testid="project-audit-clear"
+          data-testid="workspace-audit-clear"
           @click="clearOptional"
         >
-          {{ t('pages.projectDetail.audit.clearFilters') }}
+          {{ t('pages.workspace.audit.clearFilters') }}
         </button>
       </div>
 
-      <p v-if="mode === 'run' && runCapped && !loading" class="cap-hint" data-testid="project-audit-capped">
-        {{ t('pages.projectDetail.audit.runCapped', { n: runFetched }) }}
+      <p v-if="mode === 'run' && runCapped && !loading" class="cap-hint" data-testid="workspace-audit-capped">
+        {{ t('pages.workspace.audit.runCapped', { n: runFetched }) }}
       </p>
 
       <div v-if="loading" class="list-placeholder text-[13px] text-txt2">
-        {{ t('pages.projectDetail.audit.loading') }}
+        {{ t('pages.workspace.audit.loading') }}
       </div>
       <div
         v-else-if="noRuns"
         class="empty list-placeholder"
-        data-testid="project-audit-empty-runs"
+        data-testid="workspace-audit-empty-runs"
       >
-        <div class="big">{{ t('pages.projectDetail.audit.emptyRunsTitle') }}</div>
+        <div class="big">{{ t('pages.workspace.audit.emptyRunsTitle') }}</div>
         <div>
-          {{ t('pages.projectDetail.audit.emptyRunsDesc') }}
+          {{ t('pages.workspace.audit.emptyRunsDesc') }}
           <button type="button" class="linkish" @click="setMode('all')">
-            {{ t('pages.projectDetail.audit.modeAll') }}
+            {{ t('pages.workspace.audit.modeAll') }}
           </button>
         </div>
       </div>
       <EmptyState
         v-else-if="!events.length"
         class="list-placeholder"
-        data-testid="project-audit-empty"
-        :title="t('pages.projectDetail.audit.emptyTitle')"
-        :desc="t('pages.projectDetail.audit.emptyDesc')"
+        data-testid="workspace-audit-empty"
+        :title="t('pages.workspace.audit.emptyTitle')"
+        :desc="t('pages.workspace.audit.emptyDesc')"
       >
         <button
           v-if="mode === 'run'"
           type="button"
           class="linkish"
-          data-testid="project-audit-empty-all"
+          data-testid="workspace-audit-empty-all"
           @click="setMode('all')"
         >
-          {{ t('pages.projectDetail.audit.modeAll') }}
+          {{ t('pages.workspace.audit.modeAll') }}
         </button>
       </EmptyState>
       <!-- Mobile event cards (plan g3); shared by run + all modes -->
       <div
         v-else-if="isMobile"
         class="event-cards"
-        data-testid="project-audit-list"
+        data-testid="workspace-audit-list"
         data-layout="cards"
       >
         <button
@@ -768,7 +765,7 @@ onUnmounted(() => {
           type="button"
           class="event-card"
           :class="{ open: openId === ev.id, fail: ev.outcome === 'fail' }"
-          :data-testid="`project-audit-event-${ev.id}`"
+          :data-testid="`workspace-audit-event-${ev.id}`"
           :aria-expanded="openId === ev.id"
           :aria-controls="`${detailId}-${ev.id}`"
           @click="toggleOpen(ev.id)"
@@ -779,21 +776,21 @@ onUnmounted(() => {
           </div>
           <div class="ec-sum" :class="{ open: openId === ev.id }">{{ ev.summary }}</div>
           <div class="ec-row">
-            <span class="k">{{ t('pages.projectDetail.audit.colNode') }}</span>
+            <span class="k">{{ t('pages.workspace.audit.colNode') }}</span>
             {{ nodeLabel(ev.nodeId) }}
             <span v-if="resourceAux(ev)" class="ec-aux">{{ resourceAux(ev) }}</span>
           </div>
           <div v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="ec-detail" @click.stop>
             <div>
-              <span class="k">{{ t('pages.projectDetail.audit.colCaller') }}</span>
+              <span class="k">{{ t('pages.workspace.audit.colCaller') }}</span>
               {{ callerLabel(ev) }}
             </div>
             <div>
-              <span class="k">{{ t('pages.projectDetail.audit.colResource') }}</span>
+              <span class="k">{{ t('pages.workspace.audit.colResource') }}</span>
               {{ resourceText(ev) }}
             </div>
             <div v-if="mode === 'all' && ev.runId">
-              <span class="k">{{ t('pages.projectDetail.audit.colRun') }}</span>
+              <span class="k">{{ t('pages.workspace.audit.colRun') }}</span>
               <code>{{ ev.runId }}</code>
             </div>
             <div>
@@ -802,15 +799,15 @@ onUnmounted(() => {
             </div>
             <pre
               class="payload"
-              data-testid="project-audit-payload"
+              data-testid="workspace-audit-payload"
               v-html="prettyPayload(ev.payload)"
             />
           </div>
           <div v-if="openId === ev.id" class="ec-hint">
             {{
               openId === ev.id
-                ? t('pages.projectDetail.audit.cardCollapseHint')
-                : t('pages.projectDetail.audit.cardExpandHint')
+                ? t('pages.workspace.audit.cardCollapseHint')
+                : t('pages.workspace.audit.cardExpandHint')
             }}
           </div>
         </button>
@@ -819,16 +816,16 @@ onUnmounted(() => {
       <div
         v-else-if="mode === 'run'"
         class="groups-wrap"
-        data-testid="project-audit-list"
+        data-testid="workspace-audit-list"
         data-layout="groups"
       >
-        <div class="audit-column-labels" aria-hidden="true"><span>{{ t('pages.projectDetail.audit.colTime') }}</span><span>{{ t('pages.projectDetail.audit.colSummary') }}</span><span>{{ t('pages.projectDetail.audit.colOutcome') }}</span></div>
+        <div class="audit-column-labels" aria-hidden="true"><span>{{ t('pages.workspace.audit.colTime') }}</span><span>{{ t('pages.workspace.audit.colSummary') }}</span><span>{{ t('pages.workspace.audit.colOutcome') }}</span></div>
         <div
           v-for="g in runGroups"
           :key="g.id"
           class="group"
           :class="{ open: isGroupOpen(g) }"
-          :data-testid="`project-audit-group-${g.id}`"
+          :data-testid="`workspace-audit-group-${g.id}`"
           :data-open="isGroupOpen(g) ? 'true' : 'false'"
         >
           <button
@@ -836,7 +833,7 @@ onUnmounted(() => {
             class="group-head"
             :aria-expanded="isGroupOpen(g)"
             :aria-controls="`${detailId}-group-${g.id}`"
-            :data-testid="`project-audit-group-head-${g.id}`"
+            :data-testid="`workspace-audit-group-head-${g.id}`"
             @click="toggleGroup(g.id)"
           >
             <span class="chev" aria-hidden="true" />
@@ -847,12 +844,12 @@ onUnmounted(() => {
                 <span v-if="g.fullId" class="nid" :title="g.fullId">{{ g.fullId }}</span>
               </span>
               <span class="group-sub">
-                {{ t('pages.projectDetail.audit.groupEvents', { n: g.events.length }) }}
+                {{ t('pages.workspace.audit.groupEvents', { n: g.events.length }) }}
               </span>
             </span>
             <span class="group-counts">
-              <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <strong>{{ g.ok }}</strong></span>
-              <span v-if="g.fail" class="stat-chip fail">{{ t('pages.projectDetail.audit.statFail') }} <strong>{{ g.fail }}</strong></span>
+              <span class="stat-chip ok">{{ t('pages.workspace.audit.statOk') }} <strong>{{ g.ok }}</strong></span>
+              <span v-if="g.fail" class="stat-chip fail">{{ t('pages.workspace.audit.statFail') }} <strong>{{ g.fail }}</strong></span>
             </span>
           </button>
           <div v-show="isGroupOpen(g)" :id="`${detailId}-group-${g.id}`" class="group-body">
@@ -860,9 +857,9 @@ onUnmounted(() => {
               <colgroup><col class="audit-time-col" /><col /><col class="audit-outcome-col" /></colgroup>
               <thead class="sr-only">
                 <tr>
-                  <th>{{ t('pages.projectDetail.audit.colTime') }}</th>
-                  <th>{{ t('pages.projectDetail.audit.colSummary') }}</th>
-                  <th>{{ t('pages.projectDetail.audit.colOutcome') }}</th>
+                  <th>{{ t('pages.workspace.audit.colTime') }}</th>
+                  <th>{{ t('pages.workspace.audit.colSummary') }}</th>
+                  <th>{{ t('pages.workspace.audit.colOutcome') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -870,7 +867,7 @@ onUnmounted(() => {
                   <tr
                     class="row"
                     :class="{ open: openId === ev.id, fail: ev.outcome === 'fail' }"
-                    :data-testid="`project-audit-event-${ev.id}`"
+                    :data-testid="`workspace-audit-event-${ev.id}`"
                     @click="toggleOpen(ev.id)"
                   >
                     <td>
@@ -889,14 +886,14 @@ onUnmounted(() => {
                       <div class="detail-inner" @click.stop>
                         <div class="detail-meta">
                           <span>action <code>{{ ev.action }}</code></span>
-                          <span v-if="ev.nodeId">{{ t('pages.projectDetail.audit.colNode') }} <code>{{ ev.nodeId }}</code></span>
-                          <span>{{ t('pages.projectDetail.audit.colResource') }} <code>{{ resourceText(ev) }}</code></span>
+                          <span v-if="ev.nodeId">{{ t('pages.workspace.audit.colNode') }} <code>{{ ev.nodeId }}</code></span>
+                          <span>{{ t('pages.workspace.audit.colResource') }} <code>{{ resourceText(ev) }}</code></span>
                           <span v-if="ev.runId">Run <code>{{ ev.runId }}</code></span>
-                          <span>{{ t('pages.projectDetail.audit.colCaller') }} <code>{{ callerLabel(ev) }}</code></span>
+                          <span>{{ t('pages.workspace.audit.colCaller') }} <code>{{ callerLabel(ev) }}</code></span>
                         </div>
                         <pre
                           class="payload"
-                          data-testid="project-audit-payload"
+                          data-testid="workspace-audit-payload"
                           v-html="prettyPayload(ev.payload)"
                         />
                       </div>
@@ -911,17 +908,17 @@ onUnmounted(() => {
       <div
         v-else
         class="table-wrap"
-        data-testid="project-audit-list"
+        data-testid="workspace-audit-list"
         data-layout="table"
       >
         <table>
           <colgroup><col class="audit-time-col" /><col class="audit-node-col" /><col /><col class="audit-outcome-col" /></colgroup>
           <thead>
             <tr>
-              <th>{{ t('pages.projectDetail.audit.colTime') }}</th>
-              <th>{{ t('pages.projectDetail.audit.colNode') }}</th>
-              <th>{{ t('pages.projectDetail.audit.colSummary') }}</th>
-              <th>{{ t('pages.projectDetail.audit.colOutcome') }}</th>
+              <th>{{ t('pages.workspace.audit.colTime') }}</th>
+              <th>{{ t('pages.workspace.audit.colNode') }}</th>
+              <th>{{ t('pages.workspace.audit.colSummary') }}</th>
+              <th>{{ t('pages.workspace.audit.colOutcome') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -929,7 +926,7 @@ onUnmounted(() => {
               <tr
                 class="row"
                 :class="{ open: openId === ev.id, fail: ev.outcome === 'fail' }"
-                :data-testid="`project-audit-event-${ev.id}`"
+                :data-testid="`workspace-audit-event-${ev.id}`"
                 @click="toggleOpen(ev.id)"
               >
                 <td>
@@ -951,14 +948,14 @@ onUnmounted(() => {
                   <div class="detail-inner" @click.stop>
                     <div class="detail-meta">
                       <span>action <code>{{ ev.action }}</code></span>
-                      <span v-if="ev.nodeId">{{ t('pages.projectDetail.audit.colNode') }} <code>{{ ev.nodeId }}</code></span>
-                      <span>{{ t('pages.projectDetail.audit.colResource') }} <code>{{ resourceText(ev) }}</code></span>
+                      <span v-if="ev.nodeId">{{ t('pages.workspace.audit.colNode') }} <code>{{ ev.nodeId }}</code></span>
+                      <span>{{ t('pages.workspace.audit.colResource') }} <code>{{ resourceText(ev) }}</code></span>
                       <span v-if="ev.runId">Run <code>{{ ev.runId }}</code></span>
-                      <span>{{ t('pages.projectDetail.audit.colCaller') }} <code>{{ callerLabel(ev) }}</code></span>
+                      <span>{{ t('pages.workspace.audit.colCaller') }} <code>{{ callerLabel(ev) }}</code></span>
                     </div>
                     <pre
                       class="payload"
-                      data-testid="project-audit-payload"
+                      data-testid="workspace-audit-payload"
                       v-html="prettyPayload(ev.payload)"
                     />
                   </div>
@@ -977,8 +974,8 @@ onUnmounted(() => {
         :total="total"
         :loading="loading"
         :page-size-options="AUDIT_PAGE_SIZE_OPTIONS"
-        summary-test-id="project-audit-pager-info"
-        page-size-test-id="project-audit-page-size"
+        summary-test-id="workspace-audit-pager-info"
+        page-size-test-id="workspace-audit-page-size"
         @update:page="onPageChange"
         @update:page-size="onPageSizeChange"
       />

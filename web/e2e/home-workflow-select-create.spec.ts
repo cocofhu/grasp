@@ -19,8 +19,6 @@ function approveWorkflow(overrides: Record<string, unknown> = {}) {
     updatedAt: '2026-08-10T12:00:00Z',
     needsRepo: false,
     showOnHome: true,
-    projectId: 'proj-1',
-    projectName: '综合项目组',
     nodes: [
       { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
       { id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '澄清', position: { x: 0, y: 0 }, config: {} },
@@ -48,7 +46,7 @@ async function mockApis(page: Page, opts: { workflows?: unknown[] } = {}) {
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify(
-          approveWorkflow({ id: 'wf-new', name: '浏览器新建', projectName: '综合项目组' }),
+          approveWorkflow({ id: 'wf-new', name: '浏览器新建' }),
         ),
       })
       return
@@ -72,14 +70,12 @@ async function mockApis(page: Page, opts: { workflows?: unknown[] } = {}) {
     await route.continue()
   })
 
-  await page.route('**/api/projects**', async (route) => {
-    const path = new URL(route.request().url()).pathname
-    if (route.request().method() === 'GET' && (path === '/api/projects' || path.endsWith('/api/projects'))) {
-      // listProjects expects Project[], not { items, total }
+  await page.route('**/api/workspace', async (route) => {
+    if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([{ id: 'proj-1', name: '综合项目组' }]),
+        body: JSON.stringify({ name: '工作区', description: '', variables: [] }),
       })
       return
     }

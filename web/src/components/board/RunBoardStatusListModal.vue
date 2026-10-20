@@ -13,7 +13,6 @@ const PAGE_SIZE = 20
 
 const props = defineProps<{
   open: boolean
-  projectId: string
   /** Run status filter matching the activated board column. */
   status: string
   /** Localized column title for the modal heading. */
@@ -87,7 +86,7 @@ function resetState() {
 }
 
 async function fetchPage(nextPage: number, mode: 'initial' | 'more') {
-  if (!props.projectId || !props.status) return
+  if (!props.status) return
   const seq = ++requestSeq
   loading.value = true
   if (mode === 'initial') {
@@ -101,7 +100,6 @@ async function fetchPage(nextPage: number, mode: 'initial' | 'more') {
 
   try {
     const data = await api.listRuns({
-      projectId: props.projectId,
       status: props.status,
       page: nextPage,
       pageSize: PAGE_SIZE,
@@ -164,7 +162,7 @@ function onSelect(run: Run) {
 }
 
 watch(
-  () => [props.open, props.projectId, props.status] as const,
+  () => [props.open, props.status] as const,
   ([open]) => {
     if (open) {
       loadInitial()

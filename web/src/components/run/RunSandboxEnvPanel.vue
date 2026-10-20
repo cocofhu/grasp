@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { ProjectEnvEntry } from '@/lib/shared/types'
+import type { SandboxEnvEntry } from '@/lib/shared/types'
 
-const props = defineProps<{ entries: ProjectEnvEntry[] }>()
+const props = defineProps<{ entries: SandboxEnvEntry[] }>()
 const { t } = useI18n()
 const items = computed(() => props.entries || [])
 </script>

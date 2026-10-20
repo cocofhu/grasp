@@ -10,7 +10,7 @@ import {
   insertDraftMarkdown,
   syncScrollTop,
   type DraftInsertCmd,
-} from '@/lib/project/requirementDraftMarkdown'
+} from '@/lib/workspace/requirementDraftMarkdown'
 import {
   barStyle,
   buildGanttRows,
@@ -27,7 +27,7 @@ import {
   withContextualParents,
   type GanttRow,
   type GanttScale,
-} from '@/lib/project/requirementDraftSchedule'
+} from '@/lib/workspace/requirementDraftSchedule'
 import { fmtTime } from '@/lib/shared/format'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import type {
@@ -38,11 +38,7 @@ import type {
   RequirementDraftViewMode,
 } from '@/lib/shared/types'
 
-export interface UseRequirementDraftsProps {
-  projectId: string
-}
-
-export function useRequirementDrafts(props: UseRequirementDraftsProps) {
+export function useRequirementDrafts() {
 const { t } = useI18n()
 const toast = useToast()
 const { isMobile } = useBreakpoint()
@@ -210,7 +206,7 @@ let highlightRaf = 0
 let scrollLock = false
 
 function emptyPreviewHtml() {
-  return `<p class="text-txt3">${t('pages.projectDetail.requirementDrafts.emptyBodyPreview')}</p>`
+  return `<p class="text-txt3">${t('pages.workspace.requirementDrafts.emptyBodyPreview')}</p>`
 }
 
 function schedulePreview() {
@@ -267,24 +263,24 @@ function mergeScheduleIntoItems(updated: RequirementDraft) {
 function mapScheduleApiError(msg: string): string {
   const m = String(msg || '').toLowerCase()
   if (m.includes('due') && m.includes('before') && m.includes('start')) {
-    return t('pages.projectDetail.requirementDrafts.errDueBeforeStart')
+    return t('pages.workspace.requirementDrafts.errDueBeforeStart')
   }
   if (m.includes('invalid date') || m.includes('yyyy-mm-dd')) {
-    return t('pages.projectDetail.requirementDrafts.errInvalidDate')
+    return t('pages.workspace.requirementDrafts.errInvalidDate')
   }
   if (m.includes('milestone') && (m.includes('due') || m.includes('date'))) {
-    return t('pages.projectDetail.requirementDrafts.errMilestoneDue')
+    return t('pages.workspace.requirementDrafts.errMilestoneDue')
   }
-  if (m.includes('parent')) return t('pages.projectDetail.requirementDrafts.errInvalidParent')
+  if (m.includes('parent')) return t('pages.workspace.requirementDrafts.errInvalidParent')
   if (m.includes('children') || m.includes('child')) {
-    return t('pages.projectDetail.requirementDrafts.errHasChildren')
+    return t('pages.workspace.requirementDrafts.errHasChildren')
   }
   if (m.includes('kind') && m.includes('date')) {
-    return t('pages.projectDetail.requirementDrafts.errKindNeedsDate')
+    return t('pages.workspace.requirementDrafts.errKindNeedsDate')
   }
-  if (m.includes('progress')) return t('pages.projectDetail.requirementDrafts.errInvalidProgress')
-  if (m.includes('kind')) return t('pages.projectDetail.requirementDrafts.errInvalidKind')
-  return msg || t('pages.projectDetail.requirementDrafts.scheduleFailed')
+  if (m.includes('progress')) return t('pages.workspace.requirementDrafts.errInvalidProgress')
+  if (m.includes('kind')) return t('pages.workspace.requirementDrafts.errInvalidKind')
+  return msg || t('pages.workspace.requirementDrafts.scheduleFailed')
 }
 
 function revertScheduleFields() {
@@ -319,7 +315,7 @@ function resolveLeave(ok: boolean) {
 }
 
 async function loadCatalog() {
-  const res = await api.listRequirementDrafts(props.projectId, { status: filter.value })
+  const res = await api.listRequirementDrafts({ status: filter.value })
   catalog.value = (Array.isArray(res.items) ? res.items : []).map(normalizeDraft)
 }
 
@@ -329,7 +325,7 @@ async function loadList(opts?: { preferId?: string | null; keepSelection?: boole
   loadError.value = ''
   try {
     const [res] = await Promise.all([
-      api.listRequirementDrafts(props.projectId, {
+      api.listRequirementDrafts({
         status: filter.value,
         q: query.value.trim() || undefined,
       }),
@@ -365,7 +361,7 @@ async function loadList(opts?: { preferId?: string | null; keepSelection?: boole
     selectedId.value = null
   } catch (e: any) {
     if (seq !== loadSeq) return
-    loadError.value = e?.message || t('pages.projectDetail.requirementDrafts.loadFailed')
+    loadError.value = e?.message || t('pages.workspace.requirementDrafts.loadFailed')
     toast.error(loadError.value)
     items.value = []
     catalog.value = []
@@ -441,7 +437,7 @@ async function onNewClick() {
 async function onConfirmCreate() {
   newModalError.value = ''
   if (newModalKind.value === 'milestone' && !newModalDueAt.value.trim()) {
-    newModalError.value = t('pages.projectDetail.requirementDrafts.milestoneDueRequired')
+    newModalError.value = t('pages.workspace.requirementDrafts.milestoneDueRequired')
     return
   }
   creating.value = true
@@ -450,7 +446,7 @@ async function onConfirmCreate() {
       newModalKind.value === 'milestone'
         ? { kind: 'milestone' as const, dueAt: newModalDueAt.value.trim() }
         : { kind: 'requirement' as const }
-    const created = await api.createRequirementDraft(props.projectId, body)
+    const created = await api.createRequirementDraft(body)
     closeNewModal()
     filter.value = 'open'
     query.value = ''
@@ -461,9 +457,9 @@ async function onConfirmCreate() {
       viewMode.value = 'edit'
     }
     await loadList({ preferId: norm.id })
-    toast.success(t('pages.projectDetail.requirementDrafts.createdToast'))
+    toast.success(t('pages.workspace.requirementDrafts.createdToast'))
   } catch (e: any) {
-    toast.error(e?.message || t('pages.projectDetail.requirementDrafts.createFailed'))
+    toast.error(e?.message || t('pages.workspace.requirementDrafts.createFailed'))
   } finally {
     creating.value = false
   }
@@ -475,11 +471,11 @@ async function patchSchedule(body: RequirementDraftSchedulePatch) {
   scheduleBusy.value = true
   scheduleError.value = ''
   try {
-    const updated = await api.patchRequirementDraftSchedule(props.projectId, id, body)
+    const updated = await api.patchRequirementDraftSchedule(id, body)
     mergeScheduleIntoItems(updated)
     applyScheduleFromDraft(updated)
     await loadList({ keepSelection: true })
-    toast.success(t('pages.projectDetail.requirementDrafts.scheduleSaved'))
+    toast.success(t('pages.workspace.requirementDrafts.scheduleSaved'))
   } catch (e: any) {
     // Revert inputs first, then set error (revert must not clear scheduleError).
     revertScheduleFields()
@@ -529,18 +525,18 @@ async function onSave() {
   const id = selectedId.value
   if (!id || saving.value) return
   if (!isDirty.value) {
-    toast.show(t('pages.projectDetail.requirementDrafts.noUnsavedToast'))
+    toast.show(t('pages.workspace.requirementDrafts.noUnsavedToast'))
     return
   }
   const title = editTitle.value.replace(/^\s+|\s+$/g, '')
   if (!title) {
-    titleError.value = t('pages.projectDetail.requirementDrafts.titleRequired')
+    titleError.value = t('pages.workspace.requirementDrafts.titleRequired')
     return
   }
   titleError.value = ''
   saving.value = true
   try {
-    const saved = await api.updateRequirementDraft(props.projectId, id, {
+    const saved = await api.updateRequirementDraft(id, {
       title,
       bodyMarkdown: editBody.value,
     })
@@ -554,9 +550,9 @@ async function onSave() {
       updatedAtLabel.value = fmtTime(cur.updatedAt)
       selectedStatus.value = cur.status
     }
-    toast.success(t('pages.projectDetail.requirementDrafts.savedToast'))
+    toast.success(t('pages.workspace.requirementDrafts.savedToast'))
   } catch (e: any) {
-    toast.error(e?.message || t('pages.projectDetail.requirementDrafts.saveFailed'))
+    toast.error(e?.message || t('pages.workspace.requirementDrafts.saveFailed'))
   } finally {
     saving.value = false
   }
@@ -568,18 +564,18 @@ async function onToggleStatus() {
   const next = selectedStatus.value === 'open' ? 'done' : 'open'
   statusBusy.value = true
   try {
-    const patched = await api.patchRequirementDraftStatus(props.projectId, id, next)
+    const patched = await api.patchRequirementDraftStatus(id, next)
     selectedStatus.value = patched.status
     createdAtLabel.value = fmtTime(patched.createdAt)
     updatedAtLabel.value = fmtTime(patched.updatedAt)
     toast.success(
       next === 'done'
-        ? t('pages.projectDetail.requirementDrafts.archivedToast')
-        : t('pages.projectDetail.requirementDrafts.reopenedToast'),
+        ? t('pages.workspace.requirementDrafts.archivedToast')
+        : t('pages.workspace.requirementDrafts.reopenedToast'),
     )
     await loadList({ keepSelection: true })
   } catch (e: any) {
-    toast.error(e?.message || t('pages.projectDetail.requirementDrafts.statusFailed'))
+    toast.error(e?.message || t('pages.workspace.requirementDrafts.statusFailed'))
   } finally {
     statusBusy.value = false
   }
@@ -590,17 +586,17 @@ async function onConfirmDelete() {
   if (!id || deleting.value) return
   deleting.value = true
   try {
-    await api.deleteRequirementDraft(props.projectId, id)
+    await api.deleteRequirementDraft(id)
     showDelete.value = false
     selectedId.value = null
     editTitle.value = ''
     editBody.value = ''
     applySavedBaseline('', '')
     titleError.value = ''
-    toast.success(t('pages.projectDetail.requirementDrafts.deletedToast'))
+    toast.success(t('pages.workspace.requirementDrafts.deletedToast'))
     await loadList()
   } catch (e: any) {
-    toast.error(e?.message || t('pages.projectDetail.requirementDrafts.deleteFailed'))
+    toast.error(e?.message || t('pages.workspace.requirementDrafts.deleteFailed'))
   } finally {
     deleting.value = false
   }
@@ -655,7 +651,7 @@ function runFindNext() {
     from: ta?.selectionEnd || 0,
   })
   if (!hit) {
-    toast.show(t('pages.projectDetail.requirementDrafts.findNoMatch'))
+    toast.show(t('pages.workspace.requirementDrafts.findNoMatch'))
     return
   }
   ta?.focus()
@@ -767,8 +763,8 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
 
 function kindLabel(kind: RequirementDraftKind) {
   return kind === 'milestone'
-    ? t('pages.projectDetail.requirementDrafts.kindMilestone')
-    : t('pages.projectDetail.requirementDrafts.kindRequirement')
+    ? t('pages.workspace.requirementDrafts.kindMilestone')
+    : t('pages.workspace.requirementDrafts.kindRequirement')
 }
 
 function rowBarStyle(row: GanttRow) {
@@ -780,22 +776,6 @@ function rowBarStyle(row: GanttRow) {
 function isRowSelected(id: string) {
   return selectedId.value === id
 }
-
-watch(
-  () => props.projectId,
-  () => {
-    filter.value = 'open'
-    query.value = ''
-    viewMode.value = 'gantt'
-    ganttScale.value = 'week'
-    selectedId.value = null
-    editTitle.value = ''
-    editBody.value = ''
-    scheduleCollapsed.value = false
-    applySavedBaseline('', '')
-    void loadList()
-  },
-)
 
 watch(filter, () => {
   void loadList({ keepSelection: true })

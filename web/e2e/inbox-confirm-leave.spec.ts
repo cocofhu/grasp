@@ -251,15 +251,11 @@ async function mockApis(page: Page, state: State) {
       })
       return
     }
-    if (method === 'GET' && (path === '/api/projects' || path.endsWith('/api/projects'))) {
-      await route.fulfill({ json: [{ id: 'proj-1', name: 'Grasp', slug: 'grasp' }] })
-      return
-    }
     if (path.includes('/api/auth') || path.endsWith('/api/me')) {
       await route.fulfill({ json: { username: 'admin', isAdmin: true } })
       return
     }
-    if (method === 'GET' && path.match(/\/api\/projects\/[^/]+\/run-tags/)) {
+    if (method === 'GET' && path === '/api/workspace/run-tags') {
       await route.fulfill({ json: { tags: [] } })
       return
     }

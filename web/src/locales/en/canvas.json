@@ -233,7 +233,7 @@
         "followEmpty": "The Agent has no model key yet; the run will fail",
         "nodeChip": "This node",
         "agentDefault": "Agent default",
-        "projectKeys": "Workspace model keys",
+        "workspaceKeys": "Workspace model keys",
         "empty": "No model keys in this workspace yet",
         "manage": "Add or manage in the credential center",
         "staleTitle": "The selected model key is gone",
@@ -258,7 +258,7 @@
       }
     },
     "topbar": {
-      "projects": "Workspace",
+      "workspace": "Workspace",
       "rename": "Click to rename",
       "saveError": "Save failed: {error}",
       "issuesNone": "No issues",

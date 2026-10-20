@@ -65,7 +65,6 @@ vi.mock('@/lib/composables/useToast', () => ({
 
 const filterState = vi.hoisted(() => ({
   workflowSelected: null as { value: string } | null,
-  projectSelected: null as { value: string } | null,
 }))
 
 vi.mock('@/lib/composables/useWorkflowFilter', async () => {
@@ -73,17 +72,6 @@ vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   filterState.workflowSelected = ref('')
   return {
     useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }),
-  }
-})
-
-vi.mock('@/lib/composables/useProjectContext', async () => {
-  const { ref } = await import('vue')
-  filterState.projectSelected = ref('')
-  return {
-    useProjectContext: () => ({
-      selected: filterState.projectSelected!,
-      ensureHydrated: vi.fn(),
-    }),
   }
 })
 
@@ -246,7 +234,6 @@ function mountInbox() {
         Icon: true,
         EmptyState: true,
         WorkflowFilter: true,
-        ProjectFilter: true,
         Pagination: true,
         ArtifactLoadingPane: true,
         GateApproval: GateApprovalStub,
@@ -305,7 +292,6 @@ beforeEach(async () => {
   mocks.nodeEvents.mockResolvedValue({ events: [], live: false })
   mocks.runArtifacts.mockResolvedValue([])
   if (filterState.workflowSelected) filterState.workflowSelected.value = ''
-  if (filterState.projectSelected) filterState.projectSelected.value = ''
   // Reset singleton so each test starts from an empty pending badge/list.
   mocks.listGates.mockResolvedValue(paged([]))
   await usePendingGates().refresh({ mode: 'force' })

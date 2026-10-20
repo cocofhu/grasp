@@ -15,7 +15,6 @@ const MOCK_STATS = {
     cacheWriteTokens: 200,
     workflowTotal: 7000,
     pmTotal: 2000,
-    projectCount: 1,
     runCount: 3,
     modelCount: 1,
   },
@@ -39,10 +38,6 @@ const MOCK_STATS = {
     cacheReadTokens: 800,
     cacheWriteTokens: 200,
   },
-  projects: [
-    { projectId: 'p1', name: 'Demo', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200 },
-    { projectId: 'p2', name: 'Docs', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
-  ],
   modelRanking: [
     { modelKey: 'm1', name: 'Model', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200 },
     { modelKey: 'm2', name: 'Model Mini', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0 },
@@ -52,23 +47,20 @@ const MOCK_STATS = {
     { workflowId: 'w1', name: 'wf', total: 7000, inputTokens: 4000, outputTokens: 2200, cacheReadTokens: 600, cacheWriteTokens: 200, kind: 'workflow' },
     { workflowId: 'w2', name: 'review', total: 2000, inputTokens: 1000, outputTokens: 800, cacheReadTokens: 200, cacheWriteTokens: 0, kind: 'workflow' },
   ],
-  heatmap: { rows: ['Model'], cols: ['Demo'], grid: [[9000]] },
+  heatmap: { rows: ['Model'], cols: ['wf'], grid: [[9000]] },
   topRuns: [
     {
       runId: 'r1',
       title: 'Run',
-      projectId: 'p1',
-      projectName: 'Demo',
       workflowName: 'wf',
       modelKey: 'm1',
       modelName: 'Model',
       total: 9000,
     },
   ],
-  projectTrends: [],
   modelTrends: [],
   filterOptions: {
-    projects: [{ key: 'p1', name: 'Demo' }],
+    workflows: [{ key: 'w1', name: 'wf' }],
     models: [{ key: 'm1', name: 'Model' }],
   },
 }
@@ -127,7 +119,6 @@ test.describe('Global token analytics', () => {
 
   test('line mode tabs switch visible labels', async ({ page }) => {
     await openStatsPage(page)
-    await expect(page.getByRole('button', { name: '按项目' })).toHaveCount(0)
     await page.getByRole('button', { name: '按模型' }).click()
     await expect(page.getByRole('button', { name: '按模型' })).toHaveClass(/font-semibold/)
     await page.getByRole('button', { name: '总量（对比上一周期）' }).click()
@@ -140,7 +131,6 @@ test.describe('Global token analytics', () => {
     await openStatsPage(page)
     const bars = page.getByTestId('token-analytics-bars')
     await expect(bars).toBeVisible()
-    await expect(page.getByTestId('token-analytics-bar-dimension-project')).toHaveCount(0)
 
     await page.getByTestId('token-analytics-bar-dimension-workflow').click()
     await expect(page.getByTestId('token-analytics-bar-dimension-workflow')).toHaveClass(/font-semibold/)
@@ -150,12 +140,6 @@ test.describe('Global token analytics', () => {
     await expect(page.getByTestId('token-analytics-bar-dimension-model')).toHaveClass(/font-semibold/)
     await expect(bars).toContainText('各模型用量堆叠对比')
     expect(errors).toEqual([])
-  })
-
-  test('omits project controls and navigation from statistics', async ({ page }) => {
-    await openStatsPage(page)
-    await expect(page.getByTestId('token-analytics-filter-project')).toHaveCount(0)
-    await expect(page.getByTestId('token-analytics-project-detail-p1')).toHaveCount(0)
   })
 
   test('top run link navigates to run detail', async ({ page }) => {

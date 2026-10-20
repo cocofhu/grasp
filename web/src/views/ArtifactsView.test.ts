@@ -6,7 +6,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { Artifact, ArtifactTreeProject } from '@/lib/shared/types'
+import type { Artifact, ArtifactTree } from '@/lib/shared/types'
 
 const apiMocks = vi.hoisted(() => ({
   getArtifactTree: vi.fn(),
@@ -36,16 +36,11 @@ vi.mock('@/lib/composables/useBreakpoint', async () => {
 
 import ArtifactsView from './ArtifactsView.vue'
 
-const tree: ArtifactTreeProject[] = [
-  {
-    projectId: 'p1',
-    projectName: 'Alpha',
-    count: 3,
-    sessionCount: 1,
-    workflows: [{ workflowId: 'w1', workflowName: 'Build', count: 2 }],
-  },
-  { projectId: 'p2', projectName: 'Beta', count: 1, sessionCount: 0, workflows: [] },
-]
+const tree: ArtifactTree = {
+  count: 4,
+  sessionCount: 1,
+  workflows: [{ workflowId: 'w1', workflowName: 'Build', count: 2 }],
+}
 
 function art(id: string, overrides: Partial<Artifact> = {}): Artifact {
   return {
@@ -152,7 +147,7 @@ afterEach(() => {
 
 describe('ArtifactsView', () => {
   it('shows skeletons (not the empty state) while the tree is pending', async () => {
-    let resolveTree!: (v: ArtifactTreeProject[]) => void
+    let resolveTree!: (v: ArtifactTree) => void
     apiMocks.getArtifactTree.mockImplementation(() => new Promise((r) => (resolveTree = r)))
     const w = await mountAt('/artifacts')
     await flushPromises()
@@ -167,7 +162,7 @@ describe('ArtifactsView', () => {
     expect(w.find('[data-testid="artifacts-surface"]').attributes('aria-busy')).toBe('false')
   })
 
-  it('defaults to all sources without adding a project to the URL', async () => {
+  it('defaults to all sources without a selection query', async () => {
     const w = await mountAt('/artifacts')
     await flushPromises()
 
@@ -190,7 +185,7 @@ describe('ArtifactsView', () => {
   })
 
   it('selecting a child syncs the URL and narrows the list; back/forward restores', async () => {
-    const w = await mountAt('/artifacts?project=p1')
+    const w = await mountAt('/artifacts')
     await flushPromises()
 
     await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
@@ -213,7 +208,7 @@ describe('ArtifactsView', () => {
     expect(router.currentRoute.value.query).toEqual({ workflow: 'w1' })
     expect(lastListCall()).toMatchObject({ workflowId: 'w1' })
 
-    await w.find('[data-testid="artifacts-crumb-project"]').trigger('click')
+    await w.find('[data-testid="artifacts-crumb-root"]').trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({})
     expect(lastListCall()).toEqual(expect.objectContaining({}))
@@ -221,7 +216,7 @@ describe('ArtifactsView', () => {
   })
 
   it('does not rewrite the query of the route it is leaving to', async () => {
-    await mountAt('/artifacts?project=p1')
+    await mountAt('/artifacts')
     await flushPromises()
     const calls = apiMocks.listArtifacts.mock.calls.length
     await router.push('/other')
@@ -231,14 +226,14 @@ describe('ArtifactsView', () => {
   })
 
   it('canonicalizes unknown workflow URLs to all sources', async () => {
-    await mountAt('/artifacts?project=p2&workflow=gone')
+    await mountAt('/artifacts?workflow=gone')
     await flushPromises()
     expect(router.currentRoute.value.query).toEqual({})
     expect(lastListCall()).toMatchObject({})
   })
 
   it('shows the global empty state when no sources own artifacts', async () => {
-    apiMocks.getArtifactTree.mockResolvedValue([])
+    apiMocks.getArtifactTree.mockResolvedValue({ count: 0, sessionCount: 0, workflows: [] })
     const w = await mountAt('/artifacts')
     await flushPromises()
     expect(w.find('[data-testid="artifacts-empty"]').text()).toContain('还没有产物')
@@ -260,7 +255,7 @@ describe('ArtifactsView', () => {
 
   it('debounces server search into q', async () => {
     vi.useFakeTimers()
-    const w = await mountAt('/artifacts?project=p1')
+    const w = await mountAt('/artifacts')
     await flushPromises()
     const before = apiMocks.listArtifacts.mock.calls.length
 
@@ -272,11 +267,11 @@ describe('ArtifactsView', () => {
   })
 
   it('refreshes tree counts and the list after a delete, selecting the neighbour', async () => {
-    const w = await mountAt('/artifacts?project=p1')
+    const w = await mountAt('/artifacts')
     await flushPromises()
     expect(w.find('[data-testid="preview-id"]').text()).toBe('a1')
 
-    apiMocks.getArtifactTree.mockResolvedValue([{ ...tree[0], count: 2 }, tree[1]])
+    apiMocks.getArtifactTree.mockResolvedValue({ ...tree, count: 3 })
     apiMocks.listArtifacts.mockResolvedValue(page([art('a2')]))
     await w.find('[data-testid="preview-delete"]').trigger('click')
     await flushPromises()
@@ -288,9 +283,9 @@ describe('ArtifactsView', () => {
   })
 
   it('falls back to all sources when a delete empties the selected workflow', async () => {
-    const w = await mountAt('/artifacts?project=p2')
+    const w = await mountAt('/artifacts?workflow=w1')
     await flushPromises()
-    apiMocks.getArtifactTree.mockResolvedValue([tree[0]])
+    apiMocks.getArtifactTree.mockResolvedValue({ ...tree, count: 2, workflows: [] })
     apiMocks.listArtifacts.mockResolvedValue(page([art('a9')]))
     await w.find('[data-testid="preview-delete"]').trigger('click')
     await flushPromises()
@@ -365,7 +360,7 @@ describe('ArtifactsView', () => {
 
   it('mobile: tree lives in a sheet toggled from the breadcrumb bar', async () => {
     viewport.mobile = true
-    const w = await mountAt('/artifacts?project=p1')
+    const w = await mountAt('/artifacts')
     await flushPromises()
 
     expect(w.find('[data-testid="artifacts-tree-pane"]').exists()).toBe(false)

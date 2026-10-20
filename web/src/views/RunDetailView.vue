@@ -250,7 +250,7 @@ const canvasFollowNodeId = computed(() => {
   const s = statusMap.value
   return wf.value.nodes.find((n) => s[n.id] === 'running' || s[n.id] === 'waiting_human')?.id ?? null
 })
-// Same source as the editor: project Agents resolve outlets for nodes without a caps snapshot.
+// Same source as the editor: workspace Agents resolve outlets for nodes without a caps snapshot.
 const allAgents = ref<Agent[]>([])
 const canvasAgents = computed(() =>
   allAgents.value,

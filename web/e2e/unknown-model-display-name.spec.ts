@@ -11,10 +11,9 @@ import { RESEARCH_CAPS } from '../src/test/capsFixtures'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const shotDir = path.join(__dirname, '..', 'test-results', 'unknown-model-display-shots')
 
-const BASE_PROJECT = {
-  id: 'proj-1',
-  name: 'Demo Project',
-  description: 'Project for unknown-model display e2e',
+const BASE_WORKSPACE = {
+  name: 'Demo Workspace',
+  description: 'Workspace for unknown-model display e2e',
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
@@ -59,11 +58,11 @@ function aliasedTokenStats() {
 }
 
 test.describe('未知模型显示名', () => {
-  test('项目信息：配置/保存/清空显示名', async ({ page }) => {
-    await seedOnboardingDismissed(page, 'proj-1')
+  test('工作区信息：配置/保存/清空显示名', async ({ page }) => {
+    await seedOnboardingDismissed(page)
     await page.setViewportSize({ width: 1280, height: 900 })
 
-    let project = { ...BASE_PROJECT, unknownModelDisplayName: '' as string }
+    let workspace = { ...BASE_WORKSPACE, unknownModelDisplayName: '' as string }
     let lastPatch: Record<string, unknown> | null = null
 
     await routeApi(page, '**/api/workspace', async (route) => {
@@ -72,18 +71,18 @@ test.describe('未知模型显示名', () => {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(project),
+          body: JSON.stringify(workspace),
         })
         return
       }
       if (method === 'PATCH') {
         lastPatch = route.request().postDataJSON() as Record<string, unknown>
         const next = String(lastPatch.unknownModelDisplayName ?? '')
-        project = { ...project, unknownModelDisplayName: next, name: String(lastPatch.name ?? project.name) }
+        workspace = { ...workspace, unknownModelDisplayName: next, name: String(lastPatch.name ?? workspace.name) }
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
-          body: JSON.stringify(project),
+          body: JSON.stringify(workspace),
         })
         return
       }
@@ -132,27 +131,27 @@ test.describe('未知模型显示名', () => {
 
     await page.goto('/workspace-config.html?view=/settings/workspace')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('project-meta-footer')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('workspace-meta-footer')).toBeVisible({ timeout: 15_000 })
 
-    const input = page.getByTestId('project-meta-unknown-display')
+    const input = page.getByTestId('workspace-meta-unknown-display')
     await expect(input).toBeVisible()
     await expect(page.getByText('未知模型显示名', { exact: true })).toBeVisible()
     await expect(input).toHaveAttribute('placeholder', /例如 gpt-5/)
     await expect(page.getByText(/不改变已记录的数据/)).toBeVisible()
     // 空态/帮助不出现「分桶」行话（标签「未知模型显示名」本身合规）
-    const help = page.locator('label[for="project-meta-unknown-display"]').locator('..')
+    const help = page.locator('label[for="workspace-meta-unknown-display"]').locator('..')
     await expect(help).not.toContainText('分桶')
 
     await page.screenshot({ path: path.join(shotDir, '01-meta-empty.png'), fullPage: false })
 
     await input.fill('gpt-5')
-    await page.getByTestId('project-meta-footer').getByRole('button', { name: '保存' }).click()
+    await page.getByTestId('workspace-meta-footer').getByRole('button', { name: '保存' }).click()
     await expect.poll(() => lastPatch?.unknownModelDisplayName).toBe('gpt-5')
     await expect(input).toHaveValue('gpt-5')
 
     await page.screenshot({ path: path.join(shotDir, '02-meta-saved-gpt5.png'), fullPage: false })
 
-    await page.getByTestId('project-meta-unknown-display-clear').click()
+    await page.getByTestId('workspace-meta-unknown-display-clear').click()
     await expect.poll(() => lastPatch?.unknownModelDisplayName).toBe('')
     await expect(input).toHaveValue('')
   })
@@ -310,7 +309,6 @@ test.describe('未知模型显示名', () => {
         body: JSON.stringify({
           id: 'wf-alias',
           name: 'alias-demo',
-          projectId: 'proj-1',
           status: 'published',
           version: 1,
           nodes,
@@ -322,7 +320,7 @@ test.describe('未知模型显示名', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ ...BASE_PROJECT, unknownModelDisplayName: 'gpt-5' }),
+        body: JSON.stringify({ ...BASE_WORKSPACE, unknownModelDisplayName: 'gpt-5' }),
       })
     })
 

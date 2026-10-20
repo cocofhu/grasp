@@ -16,7 +16,6 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
   listWorkflows: vi.fn(),
-  listProjects: vi.fn(),
   listAgents: vi.fn(async () => [
     { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
     { name: 'worker', capabilities: { interaction: 'auto' } },
@@ -25,7 +24,6 @@ const mocks = vi.hoisted(() => ({
   startRun: vi.fn(),
   getRun: vi.fn(),
   reactReply: vi.fn(),
-  readStoredProjectId: vi.fn(() => 'proj-1'),
 }))
 
 vi.mock('vue-router', () => ({
@@ -40,11 +38,6 @@ vi.mock('@/lib/composables/useToast', () => ({
   }),
 }))
 
-vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { ref } = await import('vue')
-  return { useWorkspaceContext: () => ({ workspaceId: ref('proj-1'), ensureLoaded: async () => ({ id: 'proj-1', name: 'Workspace' }) }) }
-})
-
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return {
@@ -52,7 +45,6 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listWorkflows: mocks.listWorkflows,
-      listProjects: mocks.listProjects,
       listAgents: mocks.listAgents,
       patchWorkflowHomeVisibility: mocks.patchWorkflowHomeVisibility,
       startRun: mocks.startRun,
@@ -89,7 +81,6 @@ const approveWf: Workflow = {
   version: 1,
   updatedAt: '',
   needsRepo: false,
-  projectId: 'proj-1',
   showOnHome: true,
   nodes: [
     { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
@@ -106,7 +97,6 @@ const approveWfB: Workflow = {
   ...approveWf,
   id: 'wf-lite',
   name: '快速澄清 Lite',
-  projectId: 'proj-2',
 }
 
 const reactWf: Workflow = {
@@ -152,17 +142,11 @@ describe('useHomeApproveChat', () => {
     mocks.toastError.mockReset()
     mocks.toastSuccess.mockReset()
     mocks.listWorkflows.mockReset()
-    mocks.listProjects.mockReset()
     mocks.patchWorkflowHomeVisibility.mockReset()
     mocks.startRun.mockReset()
     mocks.getRun.mockReset()
     mocks.reactReply.mockReset()
-    mocks.readStoredProjectId.mockReturnValue('proj-1')
     mocks.listWorkflows.mockResolvedValue([approveWf, reactWf])
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-1', name: '综合项目组', description: '', variables: [] },
-      { id: 'proj-2', name: 'SkillHub', description: '', variables: [] },
-    ])
     mocks.patchWorkflowHomeVisibility.mockResolvedValue({ ...approveWf, showOnHome: false })
     mocks.startRun.mockResolvedValue({ id: 'run-1', status: 'queued' })
     mocks.getRun.mockResolvedValue({
@@ -194,31 +178,13 @@ describe('useHomeApproveChat', () => {
     expect(chat.selected.value?.id).toBe('wf-ap')
   })
 
-  // plan g2.2 — load listProjects in parallel and attach projectName
-  it('loads workflows across projects without requiring a stored projectId', async () => {
-    mocks.readStoredProjectId.mockReturnValue('')
+  it('loads every published clarify-first workflow', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB, reactWf])
     const chat = withSetup(() => useHomeApproveChat())
     await flushPromises()
     await chat.load()
     expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    const arg = mocks.listWorkflows.mock.calls[0]?.[0] || {}
-    expect(arg.projectId).toBeUndefined()
     expect(chat.homeWorkflows.value.map((w) => w.id)).toEqual(['wf-ap', 'wf-lite'])
-    expect(chat.projectId.value).toBe('proj-1')
-  })
-
-  it('ignores stale project filters while preserving the remembered workflow', async () => {
-    currentRoute.value = { path: '/dashboard', query: { projectId: 'deleted-project' } }
-    localStorage.setItem(HOME_WORKFLOW_MEMORY_KEY, 'wf-lite')
-    mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB, reactWf])
-    const chat = withSetup(() => useHomeApproveChat())
-    await flushPromises()
-    await chat.load()
-    expect(chat.homeWorkflows.value.map((workflow) => workflow.id)).toEqual(['wf-ap', 'wf-lite'])
-    expect(chat.selected.value?.id).toBe('wf-lite')
-    expect(mocks.push).not.toHaveBeenCalled()
-    expect(chat.projectId.value).toBe('proj-1')
   })
 
   it('defaults to remembered workflow and falls back when memory is gone', async () => {
@@ -228,7 +194,6 @@ describe('useHomeApproveChat', () => {
     await flushPromises()
     await chat.load()
     expect(chat.selectedId.value).toBe('wf-lite')
-    expect(chat.projectId.value).toBe('proj-1')
 
     mocks.listWorkflows.mockResolvedValue([approveWf])
     await chat.load()
@@ -236,14 +201,13 @@ describe('useHomeApproveChat', () => {
     expect(localStorage.getItem(HOME_WORKFLOW_MEMORY_KEY)).toBe('wf-ap')
   })
 
-  it('selectWorkflow updates selection memory and project context', async () => {
+  it('selectWorkflow updates selection memory', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
     await flushPromises()
     await chat.load()
     chat.selectWorkflow('wf-lite')
     expect(chat.selectedId.value).toBe('wf-lite')
-    expect(chat.projectId.value).toBe('proj-1')
     expect(localStorage.getItem(HOME_WORKFLOW_MEMORY_KEY)).toBe('wf-lite')
   })
 
@@ -376,13 +340,13 @@ describe('useHomeApproveChat', () => {
     expect(mocks.reactReply).not.toHaveBeenCalled()
   })
 
-  it('goGates writes the current workflow projectId dynamically (plan g1.1)', async () => {
+  it('goGates targets the run of the newly selected workflow (plan g1.1)', async () => {
     mocks.listWorkflows.mockResolvedValue([approveWf, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
     await flushPromises()
     await chat.load()
     chat.selectWorkflow('wf-lite')
-    chat.draft.value = '跨项目提交'
+    chat.draft.value = '切换工作流提交'
     await chat.send()
     await nextTick()
     expect(mocks.push).toHaveBeenCalledWith({
@@ -391,32 +355,30 @@ describe('useHomeApproveChat', () => {
     })
   })
 
-  it('keeps an in-flight run on its original workflow when a project compose link changes the selection', async () => {
+  it('keeps an in-flight run on its original workflow when the selection changes', async () => {
     const otherWorkflow = {
       ...approveWfB,
       nodes: [approveWfB.nodes[0], { ...approveWfB.nodes[1], id: 'ap-b' }, approveWfB.nodes[2]],
       edges: [{ ...approveWfB.edges[0], target: 'ap-b' }, { ...approveWfB.edges[1], source: 'ap-b' }],
     }
-    currentRoute.value = { path: '/dashboard', query: { projectId: 'proj-1' } }
     mocks.listWorkflows.mockResolvedValue([approveWf, otherWorkflow])
     let resolveStart!: (result: { id: string; status: string }) => void
     mocks.startRun.mockReturnValueOnce(new Promise((resolve) => { resolveStart = resolve }))
     const chat = withSetup(() => useHomeApproveChat())
     await flushPromises()
-    const image = { data: btoa('original-image'), mimeType: 'image/png', name: 'project-one.png' }
-    chat.draft.value = '项目一原始需求'
+    const image = { data: btoa('original-image'), mimeType: 'image/png', name: 'original-one.png' }
+    chat.draft.value = '工作流一原始需求'
     chat.attachments.value = [image]
     const sending = chat.send()
 
-    currentRoute.value = { path: '/dashboard', query: { projectId: 'proj-2' } }
     chat.selectWorkflow('wf-lite')
     await nextTick()
     expect(chat.selected.value?.id).toBe('wf-lite')
-    expect(chat.draft.value).toBe('项目一原始需求')
+    expect(chat.draft.value).toBe('工作流一原始需求')
     expect(chat.attachments.value).toEqual([image])
     expect(mocks.startRun).toHaveBeenCalledWith('wf-ap', {}, 'manual', 'normal', [], {
-      title: '项目一原始需求',
-      firstMessage: { text: '项目一原始需求', images: [image] },
+      title: '工作流一原始需求',
+      firstMessage: { text: '工作流一原始需求', images: [image] },
       publishedSnapshot: true,
     })
 
@@ -427,13 +389,13 @@ describe('useHomeApproveChat', () => {
       query: { run: 'run-original-one', node: 'ap' },
     })
     expect(peekHomeApproveHandoff()).toEqual({
-      runId: 'run-original-one', nodeId: 'ap', text: '项目一原始需求', images: [image],
+      runId: 'run-original-one', nodeId: 'ap', text: '工作流一原始需求', images: [image],
     })
     expect(chat.draft.value).toBe('')
     expect(chat.attachments.value).toEqual([])
   })
 
-  it('uses the launch target for the handoff even if the dashboard now selects another project', async () => {
+  it('uses the launch target for the handoff even if the dashboard now selects another workflow', async () => {
     const requiresTopic = {
       ...approveWf,
       nodes: [
@@ -441,18 +403,16 @@ describe('useHomeApproveChat', () => {
         approveWf.nodes[1], approveWf.nodes[2],
       ],
     }
-    currentRoute.value = { path: '/dashboard', query: { projectId: 'proj-1' } }
     mocks.listWorkflows.mockResolvedValue([requiresTopic, approveWfB])
     const chat = withSetup(() => useHomeApproveChat())
     await flushPromises()
     const image = { data: btoa('launch-image'), mimeType: 'image/png' }
-    chat.draft.value = '由项目一启动对话'
+    chat.draft.value = '由工作流一启动对话'
     chat.attachments.value = [image]
     await chat.send()
     expect(chat.launchTarget.value?.id).toBe('wf-ap')
     expect(mocks.startRun).not.toHaveBeenCalled()
 
-    currentRoute.value = { path: '/dashboard', query: { projectId: 'proj-2' } }
     chat.selectWorkflow('wf-lite')
     await nextTick()
     expect(chat.selected.value?.id).toBe('wf-lite')
@@ -462,23 +422,8 @@ describe('useHomeApproveChat', () => {
       query: { run: 'run-launch-one', node: 'ap' },
     })
     expect(peekHomeApproveHandoff()).toEqual({
-      runId: 'run-launch-one', nodeId: 'ap', text: '由项目一启动对话', images: [image],
+      runId: 'run-launch-one', nodeId: 'ap', text: '由工作流一启动对话', images: [image],
     })
-  })
-
-  it('goGates omits projectId when the workflow has none (plan g1.1 / g2.3)', async () => {
-    mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }, reactWf])
-    const chat = withSetup(() => useHomeApproveChat())
-    await flushPromises()
-    await chat.load()
-    chat.draft.value = '无项目工作流'
-    await chat.send()
-    await nextTick()
-    expect(mocks.push).toHaveBeenCalledWith({
-      path: '/gates',
-      query: { run: 'run-1', node: 'ap' },
-    })
-    expect(mocks.push.mock.calls[0][0].query).not.toHaveProperty('projectId')
   })
 
   it('navigates even when the home view unmounts mid-send', async () => {

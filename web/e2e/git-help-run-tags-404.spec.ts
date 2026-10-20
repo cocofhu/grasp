@@ -24,7 +24,7 @@ test('run-tags 404 时点 git-help-link 仍打开环境变量与凭据', async (
       await route.fulfill({
         status: 404,
         contentType: 'application/json',
-        body: JSON.stringify({ error: 'project not found' }),
+        body: JSON.stringify({ error: 'not found' }),
       })
       return
     }
@@ -54,7 +54,7 @@ test('run-tags 404 时点 git-help-link 仍打开环境变量与凭据', async (
   // Concurrent noise: fire a run-tags request that 404s while opening help
   await page.evaluate(async () => {
     try {
-      await fetch('/api/projects/proj-28d13430/run-tags')
+      await fetch('/api/workspace/run-tags')
     } catch {
       /* ignore */
     }

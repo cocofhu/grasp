@@ -183,8 +183,8 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/\bapp-sidebar-card\b/)
   })
 
-  it('ProjectAuditPanel boxed search and export controls use role radii', () => {
-    const src = read('components/project/ProjectAuditPanel.vue')
+  it('WorkspaceAuditPanel boxed search and export controls use role radii', () => {
+    const src = read('components/workspace/WorkspaceAuditPanel.vue')
     expect(src).toMatch(/\.btn\s*\{[^}]*border-radius:\s*8px/s)
     expect(src).toMatch(/\.search\s*\{[^}]*border-radius:\s*8px/s)
   })

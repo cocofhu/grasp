@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import canvas from '@/locales/zh-CN/canvas.json'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import type { ProjectCredentialItem } from '@/lib/api/api'
+import type { CredentialItem } from '@/lib/api/api'
 import type { CanvasAgent } from '../composables/outlets'
 import ModelPicker from './ModelPicker.vue'
 
@@ -23,7 +23,7 @@ vi.mock('@/lib/agent/cliCatalog', () => ({
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...canvas } } })
 
-const key = (id: string, name: string, model: string): ProjectCredentialItem => ({
+const key = (id: string, name: string, model: string): CredentialItem => ({
   id,
   type: 'ai',
   provider: 'opencode',
@@ -41,11 +41,11 @@ const credentials = [
 ]
 const oc: CanvasAgent = { name: 'Impl', acpBackend: 'opencode', openCodeCredentialId: 'k1' }
 
-type Props = { credentialId?: string; modelId?: string; agent?: CanvasAgent | null; credentials?: ProjectCredentialItem[] | null }
+type Props = { credentialId?: string; modelId?: string; agent?: CanvasAgent | null; credentials?: CredentialItem[] | null }
 
 async function mountPicker(props: Props) {
   const w = mount(ModelPicker, {
-    props: { credentialId: '', modelId: '', agent: oc, credentials, projectId: 'p1', ...props },
+    props: { credentialId: '', modelId: '', agent: oc, credentials, ...props },
     global: { plugins: [i18n], stubs: { Icon: true, RouterLink: RouterLinkStub, CredentialProviderLogo: true } },
     attachTo: document.body,
   })

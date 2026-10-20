@@ -1,12 +1,12 @@
 /**
- * Agent Studio view: project tree / draft / selection / panel orchestration.
+ * Agent Studio view: Agent tree / draft / selection / panel orchestration.
  */
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toValue, type MaybeRefOrGetter } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import type { DataSubTab } from '@/components/agent/AgentDataPanel.vue'
-import { api, type Agent, type ProjectAgentsImportResult, type TeamBootstrapSession } from '@/lib/api/api'
+import { api, type Agent, type WorkspaceAgentsImportResult, type TeamBootstrapSession } from '@/lib/api/api'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
@@ -34,7 +34,6 @@ function parseDataSub(q: unknown): DataSubTab {
 
 
 export function useAgentStudio(opts?: {
-  projectId?: MaybeRefOrGetter<string | undefined>
   embedded?: boolean | MaybeRefOrGetter<boolean>
 }) {
 const { t } = useI18n()
@@ -42,7 +41,7 @@ const { isMobile } = useBreakpoint()
 const route = useRoute()
 const router = useRouter()
 
-const { workspaceId: scopedProjectId, workspace, ensureLoaded: loadWorkspace, reload: reloadWorkspace } = useWorkspaceContext()
+const { ensureLoaded: loadWorkspace, reload: reloadWorkspace } = useWorkspaceContext()
 const embedded = computed(() => toValue(opts?.embedded) === true)
 const hideTeamCreate = computed(() => embedded.value)
 const showCreateTeam = computed(() => !hideTeamCreate.value)
@@ -110,8 +109,8 @@ function closeMobileChromeOverlays() {
   filesPanelRef.value?.closeExplorerMore()
 }
 
-/** Narrow-screen project tree bottom sheet (≈70vh). */
-const showProjectSheet = ref(false)
+/** Narrow-screen Agent tree bottom sheet (≈70vh). */
+const showSidebarSheet = ref(false)
 
 type LeaveConfirmCfg = {
   title: string
@@ -125,7 +124,6 @@ type LeaveConfirmCfg = {
 const leaveConfirmCfg = ref<LeaveConfirmCfg | null>(null)
 
 const agents = ref<Agent[]>([])
-const projects = ref<{ id: string; name: string }[]>([])
 const activeName = ref('')
 const draft = ref<Draft | null>(null)
 const originalJson = ref('')
@@ -141,7 +139,7 @@ function syncStudioQuery() {
   if (activeName.value) next.agent = activeName.value
   else if (useStudioTabKey) delete next.agent
 
-  // Never overwrite project detail `tab=agents`.
+  // Never overwrite the host page's `tab` query.
   if (tab.value !== 'files') next.studioTab = tab.value
   else delete next.studioTab
 
@@ -162,13 +160,7 @@ function syncStudioQuery() {
   void router.replace({ query: next as typeof route.query })
 }
 
-// Data / chat tester follow the last-saved project so unsaved draft edits
-// cannot hit APIs under the wrong project.
-const savedProjectId = scopedProjectId
 const draftBindingDirty = computed(() => false)
-function projectNameById(id: string): string {
-  return projects.value.find((p) => p.id === id)?.name || id
-}
 const loading = ref(true)
 const hasInitialLoaded = ref(false)
 const loadFailed = ref(false)
@@ -238,10 +230,10 @@ const manageFocusAgent = ref('')
 const showUnsavedExport = ref(false)
 const exporting = ref(false)
 const showBundleSecrets = ref(false)
-const pendingBundleExportProjectId = ref('')
+const pendingBundleExport = ref(false)
 
 
-async function onBundleImported(_result: ProjectAgentsImportResult) {
+async function onBundleImported(_result: WorkspaceAgentsImportResult) {
   try {
     const list = await api.listAgents()
     agents.value = filterAgentsByScope(list)
@@ -285,7 +277,7 @@ const {
   renameError: importRenameError,
   showBatchConflict,
   batchConflictNames,
-  triggerImport: triggerProjectImport,
+  triggerImport,
   onDiscardCancel: onImportDiscardCancel,
   onDiscardConfirm: onImportDiscardConfirm,
   handleFileChange: onImportFileChange,
@@ -307,7 +299,7 @@ watch(dirty, (d) => {
 
 watch(isMobile, (mobile) => {
   if (!mobile) {
-    showProjectSheet.value = false
+    showSidebarSheet.value = false
     closeMobileChromeOverlays()
   }
   nextTick(() => {
@@ -341,7 +333,6 @@ function clearManageSearch() {
   manageSearch.value = ''
 }
 
-const treeProjects = computed(() => projects.value)
 const treeNodes = computed(() => agents.value.map((agent) => ({ id: agent.name, label: agent.name, icon: 'robot' })))
 const activeTreeKey = activeName
 function onTreeSelect(key: string) { chooseAgent(key) }
@@ -352,13 +343,13 @@ function selectFirstAgent(opts?: { skipQuerySync?: boolean }) {
   if (first) select(first.id, opts)
 }
 
-function openProjectSheet() {
+function openSidebarSheet() {
   closeMobileChromeOverlays()
-  showProjectSheet.value = true
+  showSidebarSheet.value = true
 }
 
-function closeProjectSheet() {
-  showProjectSheet.value = false
+function closeSidebarSheet() {
+  showSidebarSheet.value = false
 }
 
 const studioTabs = computed(() => {
@@ -479,10 +470,9 @@ async function load() {
   loadFailed.value = false
   loadDenied.value = false
   try {
-    const [list, currentWorkspace] = await Promise.all([api.listAgents(), loadWorkspace()])
+    const [list] = await Promise.all([api.listAgents(), loadWorkspace()])
     if (!studioSeq.isCurrentSeq(localSeq)) return
     agents.value = filterAgentsByScope(list)
-    projects.value = currentWorkspace ? [{ id: currentWorkspace.id, name: currentWorkspace.name }] : []
     applyingStudioQuery = true
     try {
       const qAgent = typeof route.query.agent === 'string' ? route.query.agent.trim() : ''
@@ -551,12 +541,12 @@ function chooseAgent(name: string) {
 /** Narrow-screen sheet switch: leaveConfirm-style save / discard / cancel. */
 function chooseAgentFromSheet(name: string) {
   if (name === activeName.value) {
-    closeProjectSheet()
+    closeSidebarSheet()
     return
   }
   if (!dirty.value) {
     select(name)
-    closeProjectSheet()
+    closeSidebarSheet()
     return
   }
   leaveConfirmCfg.value = {
@@ -569,12 +559,12 @@ function chooseAgentFromSheet(name: string) {
       if (!ok) return false
       justSaved.value = true
       select(name)
-      closeProjectSheet()
+      closeSidebarSheet()
       return true
     },
     onDiscard: () => {
       select(name)
-      closeProjectSheet()
+      closeSidebarSheet()
     },
   }
 }
@@ -598,12 +588,6 @@ async function save(reason?: string) {
   error.value = ''
   try {
     if (draft.value) {
-      if (!draft.value.projectId) {
-        error.value = t('pages.agentStudio.project.required')
-        tab.value = 'meta'
-        syncStudioQuery()
-        return false
-      }
       const payload = fromDraft(draft.value)
       if (typeof reason === 'string' && reason.trim()) {
         await api.saveAgent(payload, { reason: reason.trim() })
@@ -669,7 +653,7 @@ async function doExport(name: string) {
 
 function triggerExport() {
   if (!activeName.value || exporting.value) return
-  pendingBundleExportProjectId.value = ''
+  pendingBundleExport.value = false
   if (dirty.value) {
     showUnsavedExport.value = true
     return
@@ -679,12 +663,12 @@ function triggerExport() {
 
 function cancelUnsavedExport() {
   showUnsavedExport.value = false
-  pendingBundleExportProjectId.value = ''
+  pendingBundleExport.value = false
 }
 
 async function discardAndExport() {
   showUnsavedExport.value = false
-  if (pendingBundleExportProjectId.value) {
+  if (pendingBundleExport.value) {
     showBundleSecrets.value = true
     return
   }
@@ -696,18 +680,17 @@ async function saveThenExport() {
   const ok = await save()
   if (!ok) return
   showUnsavedExport.value = false
-  if (pendingBundleExportProjectId.value) {
+  if (pendingBundleExport.value) {
     showBundleSecrets.value = true
     return
   }
   if (activeName.value) await doExport(activeName.value)
 }
 
-function onExportProject(_projectId?: string) {
-  const projectId = scopedProjectId.value
-  if (!projectId || exporting.value) return
-  pendingBundleExportProjectId.value = projectId
-  if (dirty.value && savedProjectId.value === projectId) {
+function onExportWorkspace() {
+  if (exporting.value) return
+  pendingBundleExport.value = true
+  if (dirty.value) {
     showUnsavedExport.value = true
     return
   }
@@ -716,18 +699,18 @@ function onExportProject(_projectId?: string) {
 
 function cancelBundleSecrets() {
   showBundleSecrets.value = false
-  pendingBundleExportProjectId.value = ''
+  pendingBundleExport.value = false
 }
 
 async function confirmBundleSecrets() {
-  const projectId = pendingBundleExportProjectId.value
+  const pending = pendingBundleExport.value
   showBundleSecrets.value = false
-  pendingBundleExportProjectId.value = ''
-  if (!projectId || exporting.value) return
+  pendingBundleExport.value = false
+  if (!pending || exporting.value) return
   exporting.value = true
   error.value = ''
   try {
-    const { blob, filename } = await api.exportProjectAgents(projectId)
+    const { blob, filename } = await api.exportWorkspaceAgents()
     downloadZip(blob, filename)
     const base = filename.replace(/\.zip$/i, '')
     showToast(t('pages.agentStudio.exportImport.bundleExportSuccess', { name: base }))
@@ -738,22 +721,14 @@ async function confirmBundleSecrets() {
   }
 }
 
-function onImportProject(_projectId?: string) {
+function onImportWorkspace() {
   triggerImport()
 }
-
-/** Import directly into the single workspace. */
-function triggerImport() { if (scopedProjectId.value) triggerProjectImport(scopedProjectId.value) }
 
 const showCreateWizard = ref(false)
 const showTeamWizard = ref(false)
 const teamBootstrapSessionId = ref('')
-/** Project prefilled in the create wizard (project row menu, or the current context). */
-const createAgentProjectId = ref('')
-
-function openCreateAgent(_projectId?: string) {
-  createAgentProjectId.value =
-    scopedProjectId.value
+function openCreateAgent() {
   showCreateWizard.value = true
 }
 
@@ -784,17 +759,16 @@ async function refreshAgentsList() {
   }
 }
 
-async function refreshProjects() {
+async function refreshWorkspace() {
   try {
     await reloadWorkspace()
-    projects.value = workspace.value ? [{ id: workspace.value.id, name: workspace.value.name }] : []
   } catch {
     /* ignore */
   }
 }
 
 async function onTeamBootstrapRefresh() {
-  await Promise.all([refreshProjects(), refreshAgentsList()])
+  await Promise.all([refreshWorkspace(), refreshAgentsList()])
 }
 
 function onTeamBootstrapSelectPm(name: string) {
@@ -1046,13 +1020,11 @@ onBeforeUnmount(() => {
   tabFadeRight,
   closeFullNameTip,
   closeMobileChromeOverlays,
-  showProjectSheet,
-  openProjectSheet,
-  closeProjectSheet,
+  showSidebarSheet,
+  openSidebarSheet,
+  closeSidebarSheet,
   leaveConfirmCfg,
   agents,
-  projects,
-  treeProjects,
   treeNodes,
   activeTreeKey,
   onTreeSelect,
@@ -1063,9 +1035,7 @@ onBeforeUnmount(() => {
   tab,
   dataSubTab,
   syncStudioQuery,
-  savedProjectId,
   draftBindingDirty,
-  projectNameById,
   loading,
   hasInitialLoaded,
   loadFailed,
@@ -1088,7 +1058,7 @@ onBeforeUnmount(() => {
   showUnsavedExport,
   exporting,
   showBundleSecrets,
-  pendingBundleExportProjectId,
+  pendingBundleExport,
   agentImport,
   importFileInput,
   showImportDiscardConfirm,
@@ -1140,20 +1110,18 @@ onBeforeUnmount(() => {
   cancelUnsavedExport,
   discardAndExport,
   saveThenExport,
-  onExportProject,
+  onExportWorkspace,
   cancelBundleSecrets,
   confirmBundleSecrets,
-  onImportProject,
+  onImportWorkspace,
   showCreateWizard,
   showTeamWizard,
   teamBootstrapSessionId,
-  createAgentProjectId,
   openCreateAgent,
   openCreateTeam,
   showCreateTeam,
   hideTeamCreate,
   embedded,
-  scopedProjectId,
   onWizardCreated,
   onTeamBootstrapStarted,
   refreshAgentsList,

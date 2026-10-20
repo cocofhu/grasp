@@ -12,7 +12,7 @@ function findStartButton(wrapper: ReturnType<typeof mount>) {
 const apiMocks = vi.hoisted(() => ({
   startRun: vi.fn(),
   listRepos: vi.fn(),
-  listProjectRunTags: vi.fn(),
+  listRunTags: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -23,7 +23,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       startRun: apiMocks.startRun,
       listRepos: apiMocks.listRepos,
-      listProjectRunTags: apiMocks.listProjectRunTags,
+      listRunTags: apiMocks.listRunTags,
     },
   }
 })
@@ -76,7 +76,7 @@ function mountModal(open = true, extraProps: Record<string, unknown> = {}) {
 beforeEach(() => {
   vi.clearAllMocks()
   apiMocks.listRepos.mockResolvedValue([])
-  apiMocks.listProjectRunTags.mockResolvedValue({ tags: [] })
+  apiMocks.listRunTags.mockResolvedValue({ tags: [] })
 })
 
 describe('RunLaunchModal', () => {
@@ -259,25 +259,24 @@ describe('RunLaunchModal', () => {
     wrapper.unmount()
   })
 
-  // g5.2: ProjectDetail/WorkflowList 用 v-if + open=true 挂载，须立即拉取项目存量 tags
-  it('fetches project run-tags when mounted with open=true and projectId (v-if path)', async () => {
-    apiMocks.listProjectRunTags.mockResolvedValue({ tags: ['bugfix-login', 'spike'] })
-    const wrapper = mountModal(true, { projectId: 'proj-1' })
+  it('fetches workspace run-tags when mounted with open=true (v-if path)', async () => {
+    apiMocks.listRunTags.mockResolvedValue({ tags: ['bugfix-login', 'spike'] })
+    const wrapper = mountModal(true)
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledTimes(1)
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('proj-1')
+    expect(apiMocks.listRunTags).toHaveBeenCalledTimes(1)
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
     wrapper.unmount()
   })
 
-  it('fetches project run-tags when open flips false→true (editor path)', async () => {
-    apiMocks.listProjectRunTags.mockResolvedValue({ tags: ['bugfix'] })
-    const wrapper = mountModal(false, { projectId: 'proj-2' })
+  it('fetches workspace run-tags when open flips false→true (editor path)', async () => {
+    apiMocks.listRunTags.mockResolvedValue({ tags: ['bugfix'] })
+    const wrapper = mountModal(false)
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).not.toHaveBeenCalled()
+    expect(apiMocks.listRunTags).not.toHaveBeenCalled()
     await wrapper.setProps({ open: true })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledTimes(1)
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('proj-2')
+    expect(apiMocks.listRunTags).toHaveBeenCalledTimes(1)
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
     wrapper.unmount()
   })
 
@@ -302,18 +301,11 @@ describe('RunLaunchModal', () => {
     wrapper.unmount()
   })
 
-  it('does not fetch run-tags when open without projectId', async () => {
+  it('keeps empty tag suggestions when listRunTags rejects', async () => {
+    apiMocks.listRunTags.mockRejectedValue(new Error('not found'))
     const wrapper = mountModal(true)
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).not.toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
-  it('keeps empty tag suggestions when listProjectRunTags rejects', async () => {
-    apiMocks.listProjectRunTags.mockRejectedValue(new Error('not found'))
-    const wrapper = mountModal(true, { projectId: 'proj-gone' })
-    await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('proj-gone')
+    expect(apiMocks.listRunTags).toHaveBeenCalledWith()
     expect(wrapper.text()).not.toMatch(/is not iterable/i)
     wrapper.unmount()
   })
@@ -383,7 +375,7 @@ describe('RunLaunchModal', () => {
 
   it('sends the typed message as title + first message and opens the inbox chat', async () => {
     apiMocks.startRun.mockResolvedValue({ id: 'run-msg' })
-    const wrapper = mountModal(true, { projectId: 'proj-1' })
+    const wrapper = mountModal(true)
     await flushPromises()
     await wrapper.find('[data-testid="run-launch-message"] [data-testid="paragraph"]').setValue('  修一下登录页  ')
     await findStartButton(wrapper)!.trigger('click')

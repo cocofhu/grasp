@@ -14,7 +14,6 @@ const shared = vi.hoisted(() => {
   return {
     isMobile: ref(false),
     selected: ref(''),
-    selectedProject: ref(''),
     selectedTags: ref<string[]>([]),
     displayedItems: ref<InboxItem[]>([]),
     remoteItems: ref<InboxItem[]>([]),
@@ -50,7 +49,6 @@ const mocks = vi.hoisted(() => ({
   patchItemReplying: vi.fn(),
   syncDisplayedBaseline: vi.fn(),
   clearVisibleMembership: vi.fn(),
-  hydrateProject: vi.fn(),
   toastSuccess: vi.fn(),
   toastWarn: vi.fn(),
   toastError: vi.fn(),
@@ -61,12 +59,6 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
 }))
 vi.mock('@/lib/composables/useWorkflowFilter', () => ({
   useWorkflowFilter: () => ({ selected: shared.selected }),
-}))
-vi.mock('@/lib/composables/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({
-    workspaceId: shared.selectedProject,
-    ensureLoaded: mocks.hydrateProject,
-  }),
 }))
 vi.mock('@/lib/composables/useTagFilter', () => ({
   useTagFilter: () => ({ selectedTags: shared.selectedTags }),
@@ -243,7 +235,6 @@ describe('useGatesInbox actions', () => {
     for (const fn of Object.values(mocks)) (fn as ReturnType<typeof vi.fn>).mockReset()
     shared.isMobile.value = false
     shared.selected.value = ''
-    shared.selectedProject.value = ''
     shared.selectedTags.value = []
     shared.displayedItems.value = []
     shared.remoteItems.value = []
@@ -275,7 +266,6 @@ describe('useGatesInbox actions', () => {
 
   it('loads, filters and selects inbox rows', async () => {
     const { inbox, app } = await withInbox()
-    expect(mocks.hydrateProject).toHaveBeenCalled()
     expect(mocks.listGates).toHaveBeenCalledWith({
       page: 1,
       pageSize: 20,
@@ -295,7 +285,6 @@ describe('useGatesInbox actions', () => {
     expect(synced.map((it) => it.runId).sort()).toEqual(['run-chat', 'run-gate'])
 
     shared.selected.value = 'wf-1'
-    shared.selectedProject.value = 'project-1'
     shared.selectedTags.value = ['urgent']
     await nextTick()
     await flushPromises()

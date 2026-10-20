@@ -28,42 +28,42 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     await workspaceClient.getWorkspace()
     await workspaceClient.getWorkspace()
     await workspaceClient.updateWorkspace({ name: 'n2' })
-    await workspaceClient.getProjectSharedAgentConfig('p1')
-    await workspaceClient.putProjectSharedAgentConfig('p1', {
+    await workspaceClient.getSharedAgentConfig()
+    await workspaceClient.putSharedAgentConfig({
       files: [],
       mcp: [],
       env: {},
       layout: {},
     })
-    await workspaceClient.createProjectSharedAgentTest('p1', { agentName: 'a' })
-    await workspaceClient.getProjectCredentials('p1')
-    await workspaceClient.createProjectCredential('p1', {
+    await workspaceClient.createSharedAgentTest({ agentName: 'a' })
+    await workspaceClient.listCredentials()
+    await workspaceClient.createCredential({
       type: 'custom',
       name: 'demo',
       value: 'secret',
     })
-    await workspaceClient.putProjectCredential('p1', 'cred-1', {
+    await workspaceClient.putCredential('cred-1', {
       type: 'custom',
       name: 'demo',
       value: 'rotated',
     })
-    await workspaceClient.deleteProjectCredential('p1', 'cred-1')
-    await workspaceClient.listRequirementDrafts('p1', { status: 'open', q: 'x' })
-    await workspaceClient.getRequirementDraft('p1', 'd1')
-    await workspaceClient.createRequirementDraft('p1', { title: 't' })
-    await workspaceClient.updateRequirementDraft('p1', 'd1', { title: 't' })
-    await workspaceClient.patchRequirementDraftStatus('p1', 'd1', 'done')
-    await workspaceClient.patchRequirementDraftSchedule('p1', 'd1', {
+    await workspaceClient.deleteCredential('cred-1')
+    await workspaceClient.listRequirementDrafts({ status: 'open', q: 'x' })
+    await workspaceClient.getRequirementDraft('d1')
+    await workspaceClient.createRequirementDraft({ title: 't' })
+    await workspaceClient.updateRequirementDraft('d1', { title: 't' })
+    await workspaceClient.patchRequirementDraftStatus('d1', 'done')
+    await workspaceClient.patchRequirementDraftSchedule('d1', {
       parentId: null,
       progress: 1,
     })
-    await workspaceClient.deleteRequirementDraft('p1', 'd1')
-    await workspaceClient.getProjectExternalMcp('p1')
-    await workspaceClient.updateProjectExternalMcp('p1', { enabled: true, enabledPacks: [] })
-    await workspaceClient.listProjectMcpKeys('p1')
-    await workspaceClient.createProjectMcpKey('p1', 'k')
-    await workspaceClient.revokeProjectMcpKey('p1', 'k1')
-    await workspaceClient.listProjectAudit('p1', {
+    await workspaceClient.deleteRequirementDraft('d1')
+    await workspaceClient.getExternalMcp()
+    await workspaceClient.updateExternalMcp({ enabled: true, enabledPacks: [] })
+    await workspaceClient.listMcpKeys()
+    await workspaceClient.createMcpKey('k')
+    await workspaceClient.revokeMcpKey('k1')
+    await workspaceClient.listAudit({
       time: '7d',
       actor: 'pm',
       callerKind: 'pm',
@@ -77,8 +77,8 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       page: 2,
       pageSize: 10,
     })
-    await workspaceClient.listProjectAuditFacets('p1', { time: '7d', runId: 'r', from: 'a', to: 'b' })
-    const url = workspaceClient.exportProjectAuditUrl('p1', {
+    await workspaceClient.listAuditFacets({ time: '7d', runId: 'r', from: 'a', to: 'b' })
+    const url = workspaceClient.exportAuditUrl({
       format: 'text',
       time: '7d',
       actor: 'pm',
@@ -93,32 +93,32 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
   })
 
   it('pmClient issues PM and cron requests', async () => {
-    await pmClient.getPmLeader('p1')
-    await pmClient.updatePmLeader('p1', { enabled: true })
-    await pmClient.listProjectCronJobs('p1')
-    await pmClient.patchProjectCronJob('p1', 'j1', { deliverToChannel: true })
-    await pmClient.deleteProjectCronJob('p1', 'j1')
-    await pmClient.listPmThreads('p1')
-    await pmClient.createPmThread('p1', { title: 't' })
-    await pmClient.getPmThread('p1', 't1')
-    await pmClient.deletePmThread('p1', 't1')
-    await pmClient.listPmMessages('p1', 't1', { limit: 10, before: 'm0' })
-    await pmClient.appendPmMessage('p1', 't1', { content: 'hi' })
-    await pmClient.patchPmMessage('p1', 't1', 'm1', { status: 'ok' })
-    await pmClient.ensurePmSandbox('p1', 't1', { injectHistory: true })
-    await pmClient.startPmTurn('p1', 't1', { content: 'hi' })
-    await pmClient.cancelPmTurn('p1', 't1')
-    expect(pmClient.pmThreadChatWsUrl('p1', 't1')).toContain('/chat')
+    await pmClient.getPmLeader()
+    await pmClient.updatePmLeader({ enabled: true })
+    await pmClient.listCronJobs()
+    await pmClient.patchCronJob('j1', { deliverToChannel: true })
+    await pmClient.deleteCronJob('j1')
+    await pmClient.listPmThreads()
+    await pmClient.createPmThread({ title: 't' })
+    await pmClient.getPmThread('t1')
+    await pmClient.deletePmThread('t1')
+    await pmClient.listPmMessages('t1', { limit: 10, before: 'm0' })
+    await pmClient.appendPmMessage('t1', { content: 'hi' })
+    await pmClient.patchPmMessage('t1', 'm1', { status: 'ok' })
+    await pmClient.ensurePmSandbox('t1', { injectHistory: true })
+    await pmClient.startPmTurn('t1', { content: 'hi' })
+    await pmClient.cancelPmTurn('t1')
+    expect(pmClient.pmThreadChatWsUrl('t1')).toContain('/chat')
   })
 
   it('agentsClient list/get plus import error path', async () => {
     await agentsClient.listAgents()
     await agentsClient.getAgent('a1')
     const file = new File(['x'], 'a.zip')
-    await agentsClient.importAgent(file, { projectId: 'p1', targetName: 'n', mode: 'create' })
+    await agentsClient.importAgent(file, { targetName: 'n', mode: 'create' })
     ;(fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
       new Response('not-json', { status: 500 }),
     )
-    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'n', mode: 'overwrite' })).rejects.toThrow()
+    await expect(agentsClient.importAgent(file, { targetName: 'n', mode: 'overwrite' })).rejects.toThrow()
   })
 })

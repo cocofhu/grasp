@@ -14,7 +14,7 @@ describe('runNotifyTemplate', () => {
     expect(got).toBe(
       [
         '【Grasp】等待人工处理',
-        '项目：grasp-demo',
+        '工作区：grasp-demo',
         '工作流：gate-main',
         'Run：run-4c9100d0',
         '节点：人工门禁',
@@ -31,7 +31,7 @@ describe('runNotifyTemplate', () => {
     expect(got).toBe(
       [
         '【Grasp】运行失败',
-        '项目：grasp-demo',
+        '工作区：grasp-demo',
         '工作流：gate-main',
         'Run：run-4c9100d0',
         '打开：https://approving.example/runs/run-4c9100d0',
@@ -47,10 +47,10 @@ describe('runNotifyTemplate', () => {
   })
 
   it('custom template replaces six keys; empty node stays empty', () => {
-    const tmpl = '【Grasp】{title}\n{project}/{workflow}\n{run_id}|{node}|{link}'
+    const tmpl = '【Grasp】{title}\n{workspace}/{workflow}\n{run_id}|{node}|{link}'
     expect(
       renderRunNotifyMessage('failed', tmpl, {
-        project: 'P',
+        workspace: 'P',
         workflow: 'W',
         runId: 'r',
         node: '',
@@ -61,8 +61,8 @@ describe('runNotifyTemplate', () => {
 
   it('unknown placeholders stay as-is', () => {
     expect(
-      replaceRunNotifyPlaceholders('x {project} {nope} {title}', {
-        project: 'P',
+      replaceRunNotifyPlaceholders('x {workspace} {nope} {title}', {
+        workspace: 'P',
         workflow: 'W',
         runId: 'r',
         node: 'n',

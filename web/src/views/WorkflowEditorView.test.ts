@@ -79,7 +79,6 @@ const t = i18n.global.t as (k: string, n?: Record<string, unknown>) => string
 function workflow(over: Record<string, unknown> = {}) {
   return {
     id: 'wf-1',
-    projectId: 'p1',
     name: 'demo-flow',
     description: '',
     status: 'draft',
@@ -106,7 +105,7 @@ async function mountEditor() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/projects/:id?', component: { render: () => h('div') } },
+      { path: '/workflows', component: { render: () => h('div') } },
       { path: '/agents', component: { render: () => h('div') } },
       { path: '/workflows/:id/edit', component: WorkflowEditorView },
     ],
@@ -152,8 +151,8 @@ beforeEach(() => {
   ])
   apiMocks.getWorkflowVersionGraph.mockResolvedValue({ nodes: workflow().nodes.slice(0, 2), edges: [] })
   apiMocks.restoreWorkflowVersion.mockImplementation(async (_id: string, v: number) => workflow({ version: 4, name: `restored-v${v}` }))
-  apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', projectId: 'p1', capabilities: TEST_REVIEW_CAPS }])
-  apiMocks.getWorkspace.mockResolvedValue({ name: '我的项目' })
+  apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', capabilities: TEST_REVIEW_CAPS }])
+  apiMocks.getWorkspace.mockResolvedValue({ name: '我的工作区' })
 })
 
 afterEach(() => {
@@ -174,7 +173,7 @@ describe('WorkflowEditorView', () => {
     expect(canvasSpy.props.nodes).toHaveLength(3)
     expect(canvasSpy.props.mode).toBe('edit')
     expect(canvasSpy.props.autoLayoutOnInit).toBe(true)
-    expect(wrapper.get('[data-testid="editor-breadcrumb-project"]').text()).toBe('工作流')
+    expect(wrapper.get('[data-testid="editor-breadcrumb-workflows"]').text()).toBe('工作流')
     expect((wrapper.get('[data-testid="editor-name"]').element as HTMLInputElement).value).toBe('demo-flow')
     expect(status(wrapper)).toBe('saved')
     expect(wrapper.find('[data-testid="node-palette"]').exists()).toBe(true)
@@ -243,31 +242,31 @@ describe('WorkflowEditorView', () => {
     await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
     await flushPromises()
 
-    let nav = router.push('/projects/p1')
+    let nav = router.push('/workflows')
     await flushPromises()
     expect(wrapper.find('[data-testid="editor-leave-save"]').exists()).toBe(true)
     await wrapper.get('[data-testid="editor-leave-cancel"]').trigger('click')
     await nav
     expect(router.currentRoute.value.path).toBe('/workflows/wf-1/edit')
 
-    nav = router.push('/projects/p1')
+    nav = router.push('/workflows')
     await flushPromises()
     await wrapper.get('[data-testid="editor-leave-save"]').trigger('click')
     await nav
     expect(apiMocks.saveWorkflow).toHaveBeenCalledTimes(1)
-    expect(router.currentRoute.value.path).toBe('/projects/p1')
+    expect(router.currentRoute.value.path).toBe('/workflows')
   })
 
   it('leaves without saving and drops the local backup', async () => {
     const { wrapper, router } = await mountEditor()
     await wrapper.get('[data-testid="editor-name"]').setValue('renamed')
     await flushPromises()
-    const nav = router.push('/projects/p1')
+    const nav = router.push('/workflows')
     await flushPromises()
     await wrapper.get('[data-testid="editor-leave-discard"]').trigger('click')
     await nav
     expect(apiMocks.saveWorkflow).not.toHaveBeenCalled()
-    expect(router.currentRoute.value.path).toBe('/projects/p1')
+    expect(router.currentRoute.value.path).toBe('/workflows')
     expect(localStorage.getItem(BACKUP_PREFIX + 'wf-1')).toBeNull()
   })
 

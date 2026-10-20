@@ -37,7 +37,7 @@ describe('tokenUsage', () => {
     expect(fmtTokenRate(100, 0)).toBeNull()
   })
 
-  it('formats project totals with Demo K/M compact rules', () => {
+  it('formats workspace totals with Demo K/M compact rules', () => {
     expect(fmtCompactTokenCount(null)).toBe('—')
     expect(fmtCompactTokenCount(undefined)).toBe('—')
     expect(fmtCompactTokenCount(0)).toBe('0')

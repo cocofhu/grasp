@@ -44,7 +44,6 @@ export const runsClient = {
     status?: string
     tag?: string
     wf?: string
-    projectId?: string
     page?: number
     pageSize?: number
     /** Whitelist: started_at | priority. Only sent when paired with a valid order. */
@@ -57,7 +56,6 @@ export const runsClient = {
     if (params?.status) qs.set('status', params.status)
     if (params?.tag) qs.set('tag', params.tag)
     if (params?.wf) qs.set('wf', params.wf)
-
     if (params?.page != null) qs.set('page', String(params.page))
     if (params?.pageSize != null) qs.set('pageSize', String(params.pageSize))
     const sort = params?.sort
@@ -86,7 +84,7 @@ export const runsClient = {
       `/runs/${runId}/inbox-context?nodeId=${encodeURIComponent(nodeId)}&iteration=${iteration}`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
-  listProjectRunTags: (_workspaceId: string) =>
+  listRunTags: () =>
     req<{ tags: string[] }>(`/workspace/run-tags`),
   startRun: (
     workflowId: string,

@@ -5,7 +5,7 @@ import Icon from '@/components/ui/Icon.vue'
 import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
 import { kvToRec, recToKV, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
-import { backendKind } from '@/lib/project/credentialKinds'
+import { backendKind } from '@/lib/workspace/credentialKinds'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import {
@@ -22,12 +22,12 @@ import {
  * draft's env in place, like the panels around it.
  */
 const props = defineProps<{
-  draft: Pick<AgentStudioDraft, 'acpBackend' | 'projectId' | 'aiCredentialId' | 'env'>
+  draft: Pick<AgentStudioDraft, 'acpBackend' | 'aiCredentialId' | 'env'>
   description?: string
   credentialTitle?: string
   credentialHint?: string
   modelHint?: string
-  /** The project's shared model, shown while this draft stays on auto. */
+  /** The workspace's shared model, shown while this draft stays on auto. */
   inheritedModel?: string
   focusTick?: number
 }>()
@@ -106,11 +106,10 @@ watch(
     </header>
     <div v-if="aiKind" class="py-4">
       <CredentialAliasPicker
-        :project-id="draft.projectId"
         :kind="aiKind.id"
         :selected-id="draft.aiCredentialId"
         :title="credentialTitle"
-        :hint="credentialHint ?? t('pages.projectDetail.projectCredentials.codingPickHint')"
+        :hint="credentialHint ?? t('pages.workspace.credentials.codingPickHint')"
         @update:selected-id="draft.aiCredentialId = $event"
       />
     </div>

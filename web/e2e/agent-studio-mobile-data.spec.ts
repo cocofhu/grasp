@@ -2,7 +2,6 @@ import { test, expect, type Page } from '@playwright/test'
 
 const BOUND_AGENT = {
   name: 'GraspPM',
-  projectId: 'proj-default',
   acpBackend: 'codebuddy',
   files: [
     { path: 'AGENTS.md', content: '# demo' },
@@ -69,7 +68,7 @@ async function mockStudioApi(page: Page) {
       return
     }
     if (path === '/workspace' && method === 'GET') {
-      await route.fulfill({ json: { id: 'proj-default', name: 'Default' } })
+      await route.fulfill({ json: { name: 'Default' } })
       return
     }
     if (path === '/agents' && method === 'GET') {

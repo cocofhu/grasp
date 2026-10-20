@@ -6,7 +6,7 @@ import { req } from '../httpCore'
 export const workflowsClient = {
   listWorkflowCatalog: (opts?: { signal?: AbortSignal }) =>
     req<WorkflowCatalogItem[]>('/workflows/catalog', opts?.signal ? { signal: opts.signal } : undefined),
-  listWorkflows: (params?: { projectId?: string; signal?: AbortSignal }) => {
+  listWorkflows: (params?: { signal?: AbortSignal }) => {
     return req<Workflow[]>('/workflows', params?.signal ? { signal: params.signal } : undefined)
   },
   getWorkflow: (id: string, opts?: { signal?: AbortSignal }) =>
@@ -16,7 +16,7 @@ export const workflowsClient = {
       method: wf.id ? 'PUT' : 'POST',
       body: JSON.stringify(wf),
     }),
-  createWorkflowFromBaseline: (projectId: string, name: string, repos: RepoRow[]) =>
+  createWorkflowFromBaseline: (name: string, repos: RepoRow[]) =>
     req<Workflow>('/workflows/from-baseline', {
       method: 'POST',
       body: JSON.stringify({ name, repos }),
@@ -61,7 +61,7 @@ export const workflowsClient = {
       `/workflows/${id}/versions/${version}/graph`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
-  importWorkflow: (json: string, _workspaceId?: string) => {
+  importWorkflow: (json: string) => {
     return req<Workflow>('/workflows/import', { method: 'POST', body: json })
   },
 }

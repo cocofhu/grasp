@@ -8,7 +8,7 @@ import { BUILTIN_MCPS, type McpServer } from '@/data/mcp'
 
 const { t } = useI18n()
 const selected = ref<McpServer | null>(null)
-const isProjectScope = computed(() => selected.value?.scope === 'project')
+const isWorkspaceScope = computed(() => selected.value?.scope === 'workspace')
 const isAgentScope = computed(() => selected.value?.scope === 'agent')
 const isRunScope = computed(() => selected.value?.scope === 'run')
 
@@ -21,13 +21,13 @@ function backToCatalog() {
 }
 
 function scopeLabelKey(scope: McpServer['scope']): string {
-  if (scope === 'project') return 'mcp.integrations.scopeProject'
+  if (scope === 'workspace') return 'mcp.integrations.scopeWorkspace'
   if (scope === 'agent') return 'mcp.integrations.scopeAgent'
   return 'mcp.integrations.scopeRun'
 }
 
 function availabilityBadgeKey(scope: McpServer['scope']): string {
-  if (scope === 'project') return 'mcp.integrations.seenInPmLeader'
+  if (scope === 'workspace') return 'mcp.integrations.seenInPmLeader'
   if (scope === 'agent') return 'mcp.integrations.seenInAgentStudio'
   return 'mcp.integrations.alwaysAvailable'
 }
@@ -83,7 +83,7 @@ function availabilityBadgeKey(scope: McpServer['scope']): string {
             <span>{{ t(scopeLabelKey(selected.scope)) }}</span>
             <span>{{ t(availabilityBadgeKey(selected.scope)) }}</span>
           </div>
-          <template v-if="isProjectScope">
+          <template v-if="isWorkspaceScope">
             <p class="mb-0 mt-3">{{ t('mcp.integrations.notRunScoped') }} · {{ t('mcp.integrations.noConfigHere') }}</p>
             <p class="mb-0 mt-1">{{ t('mcp.integrations.entryPathLabel') }}<span class="text-txt2">{{ t('mcp.integrations.entryPath') }}</span></p>
           </template>

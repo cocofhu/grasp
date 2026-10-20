@@ -47,12 +47,12 @@ describe('user-facing copy remediation keys', () => {
   })
 
   it('attachment fallback is neutral without 仅* / only', () => {
-    expect(zh.global.t('pages.projectDetail.pm.imagesOnly')).toBe('附件')
+    expect(zh.global.t('pages.workspace.pm.imagesOnly')).toBe('附件')
     expect(zh.global.t('pages.agentChatTester.imagesOnly')).toBe('附件')
-    expect(en.global.t('pages.projectDetail.pm.imagesOnly')).toBe('Attachments')
-    expect(zh.global.t('pages.projectDetail.pm.imagesOnly')).not.toMatch(/仅/)
-    expect(en.global.t('pages.projectDetail.pm.imagesOnly')).not.toMatch(/only/i)
-    expect(zh.global.t('pages.projectDetail.pm.inputPh')).toContain('50 MiB')
+    expect(en.global.t('pages.workspace.pm.imagesOnly')).toBe('Attachments')
+    expect(zh.global.t('pages.workspace.pm.imagesOnly')).not.toMatch(/仅/)
+    expect(en.global.t('pages.workspace.pm.imagesOnly')).not.toMatch(/only/i)
+    expect(zh.global.t('pages.workspace.pm.inputPh')).toContain('50 MiB')
   })
 
   it('chat-test entry copy points to Agent Studio Chat test (g2.3)', () => {
@@ -64,19 +64,19 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.sandboxes.empty')).toMatch(/Agent Studio → Chat test/i)
     expect(zh.global.t('common.empty.noSandboxes')).toContain('Agent Studio「对话测试」')
     expect(en.global.t('common.empty.noSandboxes')).toMatch(/Agent Studio → Chat test/i)
-    expect(zh.global.t('pages.projectDetail.sharedAgent.extendHint')).toContain('Agent Studio「对话测试」')
-    expect(zh.global.t('pages.projectDetail.sharedAgent.extendHint')).not.toContain('仅在此入口')
-    expect(en.global.t('pages.projectDetail.sharedAgent.extendHint')).toMatch(/Agent Studio Chat test/i)
-    expect(en.global.t('pages.projectDetail.sharedAgent.extendHint')).not.toMatch(/only from this panel/i)
+    expect(zh.global.t('pages.workspace.sharedAgent.extendHint')).toContain('Agent Studio「对话测试」')
+    expect(zh.global.t('pages.workspace.sharedAgent.extendHint')).not.toContain('仅在此入口')
+    expect(en.global.t('pages.workspace.sharedAgent.extendHint')).toMatch(/Agent Studio Chat test/i)
+    expect(en.global.t('pages.workspace.sharedAgent.extendHint')).not.toMatch(/only from this panel/i)
     expect(zh.global.t('pages.agentStudio.tabs.test')).toBe('对话测试')
     expect(en.global.t('pages.agentStudio.tabs.test')).toBe('Chat test')
   })
 
   it('pm status/error copy drops internal jargon', () => {
-    expect(zh.global.t('pages.projectDetail.pm.busyStreaming')).not.toMatch(/Steam/i)
-    expect(zh.global.t('pages.projectDetail.pm.failSandboxDesc')).not.toMatch(/自动收场/)
-    expect(zh.global.t('pages.projectDetail.pm.failEmptyDesc')).not.toMatch(/未落库|空气泡/)
-    expect(zh.global.t('pages.projectDetail.pm.failUnknownDesc')).not.toMatch(/无法归入/)
+    expect(zh.global.t('pages.workspace.pm.busyStreaming')).not.toMatch(/Steam/i)
+    expect(zh.global.t('pages.workspace.pm.failSandboxDesc')).not.toMatch(/自动收场/)
+    expect(zh.global.t('pages.workspace.pm.failEmptyDesc')).not.toMatch(/未落库|空气泡/)
+    expect(zh.global.t('pages.workspace.pm.failUnknownDesc')).not.toMatch(/无法归入/)
   })
 
   // Freeze contract: Approve opening hint stays exact zh「请先描述目标…」(en existing).
@@ -217,8 +217,8 @@ describe('user-facing copy remediation keys', () => {
     expect(zh.global.t('pages.publicGate.networkFault')).toBe('网络故障，请检查网络后重试')
     expect(zh.global.t('pages.publicGate.rateLimited')).toBe('请求过于频繁，请稍后再试')
     expect(zh.global.t('pages.publicGate.submitting')).toBe('提交中…')
-    expect(zh.global.t('pages.projectDetail.audit.callerExternal')).toBe('外部')
-    expect(en.global.t('pages.projectDetail.audit.callerExternal')).toBe('External')
+    expect(zh.global.t('pages.workspace.audit.callerExternal')).toBe('外部')
+    expect(en.global.t('pages.workspace.audit.callerExternal')).toBe('External')
   })
 
   it('integrations subtitle is the live mcp key without env/template pile-up', () => {
@@ -237,17 +237,17 @@ describe('user-facing copy remediation keys', () => {
 
   it('unknown model display name settings copy avoids 分桶 jargon', () => {
     const keys = [
-      'pages.projectDetail.unknownModelDisplayNameLabel',
-      'pages.projectDetail.unknownModelDisplayNamePlaceholder',
-      'pages.projectDetail.unknownModelDisplayNameHelp',
-      'pages.projectDetail.unknownModelDisplayNameClear',
-      'pages.projectDetail.metaHint',
+      'pages.workspace.unknownModelDisplayNameLabel',
+      'pages.workspace.unknownModelDisplayNamePlaceholder',
+      'pages.workspace.unknownModelDisplayNameHelp',
+      'pages.workspace.unknownModelDisplayNameClear',
+      'pages.workspace.metaHint',
     ]
     for (const k of keys) {
       expect(zh.global.t(k)).not.toMatch(/分桶/)
       expect(en.global.t(k)).not.toMatch(/unbucket/i)
     }
-    expect(zh.global.t('pages.projectDetail.unknownModelDisplayNameLabel')).toBe('未知模型显示名')
+    expect(zh.global.t('pages.workspace.unknownModelDisplayNameLabel')).toBe('未知模型显示名')
     expect(zh.global.t('pages.tokenByModel.unknownBadge')).toBe('未知')
   })
 
@@ -282,9 +282,9 @@ describe('user-facing copy remediation keys', () => {
   it('user-facing product naming uses 工作区助手 / Workspace assistant consistently', () => {
     const zhKeys = [
       'common.runTrigger.pmMcp',
-      'pages.projectDetail.tokenTipPm',
+      'pages.workspace.tokenTipPm',
       'pages.board.tokenStats.pm',
-      'pages.projectDetail.pm.enabledMcps',
+      'pages.workspace.pm.enabledMcps',
       'pages.agentStudio.dialogs.renameCascadeHint',
       'pages.agentStudio.data.context.hint',
       'mcp.pmProgress.desc',
@@ -301,10 +301,10 @@ describe('user-facing copy remediation keys', () => {
 
     const enKeys = [
       'common.runTrigger.pmMcp',
-      'pages.projectDetail.tokenTipPm',
+      'pages.workspace.tokenTipPm',
       'pages.board.tokenStats.pm',
-      'pages.projectDetail.pm.enabledMcps',
-      'pages.projectDetail.pm.gateAutoVar',
+      'pages.workspace.pm.enabledMcps',
+      'pages.workspace.pm.gateAutoVar',
       'pages.agentStudio.dialogs.renameCascadeHint',
       'pages.agentStudio.data.context.hint',
       'mcp.pmProgress.desc',
@@ -322,19 +322,19 @@ describe('user-facing copy remediation keys', () => {
 
     expect(zh.global.t('common.runTrigger.pmMcp')).toBe('工作区助手 MCP')
     expect(en.global.t('common.runTrigger.pmMcp')).toBe('Workspace assistant MCP')
-    expect(zh.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('工作流')
-    expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('Workflow')
+    expect(zh.global.t('pages.workspace.tokenTipWorkflow')).toBe('工作流')
+    expect(en.global.t('pages.workspace.tokenTipWorkflow')).toBe('Workflow')
 
     // Token source visible copy: 工作流 / Workflow + 工作区助手 / Workspace assistant
     expect(zh.global.t('pages.board.tokenStats.workflow')).toBe('工作流')
-    expect(zh.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('工作流')
+    expect(zh.global.t('pages.workspace.tokenTipWorkflow')).toBe('工作流')
     expect(zh.global.t('pages.board.tokenStats.pm')).toBe('工作区助手')
     expect(en.global.t('pages.board.tokenStats.workflow')).toBe('Workflow')
-    expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('Workflow')
+    expect(en.global.t('pages.workspace.tokenTipWorkflow')).toBe('Workflow')
     expect(en.global.t('pages.board.tokenStats.pm')).toBe('Workspace assistant')
     // Do not verify Title Case with case-insensitive /workflow/ substring
     expect(en.global.t('pages.board.tokenStats.workflow')).not.toBe('workflow')
-    expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).not.toBe('workflow')
+    expect(en.global.t('pages.workspace.tokenTipWorkflow')).not.toBe('workflow')
 
     expect(zh.global.t('pages.appPreview.novnc.inspect')).toBe('取点标注')
     expect(zh.global.t('pages.appPreview.novnc.cancelInspect')).toBe('取消标注')
@@ -345,7 +345,7 @@ describe('user-facing copy remediation keys', () => {
 
     const tokenSourceNoPmKeys = [
       'pages.board.tokenStats.workflow',
-      'pages.projectDetail.tokenTipWorkflow',
+      'pages.workspace.tokenTipWorkflow',
       'pages.board.tokenStats.pm',
     ] as const
     for (const key of tokenSourceNoPmKeys) {

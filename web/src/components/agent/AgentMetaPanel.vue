@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
   ACP_BACKENDS,
@@ -27,7 +27,7 @@ import {
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
 import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
-import { gitKind } from '@/lib/project/credentialKinds'
+import { gitKind } from '@/lib/workspace/credentialKinds'
 import { api } from '@/lib/api/api'
 import { readCliModel, switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { useToast } from '@/lib/composables/useToast'
@@ -36,7 +36,6 @@ import AgentCredentialBindings from '@/components/agent/AgentCredentialBindings.
 const props = defineProps<{
   draft: AgentStudioDraft
   agentName: string
-  projects: { id: string; name: string }[]
   /** Bumped by the env tab's "Edit" link: scroll to the model card and pulse it. */
   focusModelTick?: number
 }>()
@@ -94,24 +93,16 @@ function selectAcpBackend(id: BackendId) {
 
 const showCliRuntime = computed(() => !!props.draft.acpBackend && props.draft.acpBackend !== 'opencode')
 
-/** The project's shared model applies only while the Agent runs the same CLI (see ExtendOverlay). */
+/** The workspace's shared model applies only while the Agent runs the same CLI (see ExtendOverlay). */
 const sharedBaseline = ref<{ acpBackend: string; model: string } | null>(null)
-watch(
-  () => props.draft.projectId,
-  async (pid) => {
-    sharedBaseline.value = null
-    if (!pid) return
-    try {
-      const cfg = await api.getProjectSharedAgentConfig(pid)
-      if (props.draft.projectId === pid) {
-        sharedBaseline.value = { acpBackend: cfg.acpBackend || '', model: readCliModel(cfg.env || {}) }
-      }
-    } catch {
-      /* The hint is optional; the card works without it. */
-    }
-  },
-  { immediate: true },
-)
+onMounted(async () => {
+  try {
+    const cfg = await api.getSharedAgentConfig()
+    sharedBaseline.value = { acpBackend: cfg.acpBackend || '', model: readCliModel(cfg.env || {}) }
+  } catch {
+    /* The hint is optional; the card works without it. */
+  }
+})
 const inheritedModel = computed(() => {
   const s = sharedBaseline.value
   return s && s.acpBackend === props.draft.acpBackend ? s.model : ''
@@ -245,14 +236,12 @@ const derivedPaths = computed(() => {
       <div v-if="showOpenCode" class="border-t border-dashed border-line pt-4">
         <OpenCodeCredentialPicker
           mode="select"
-          :project-id="draft.projectId"
           :selected-id="draft.openCodeCredentialId"
           @update:selected-id="onSelectCredential"
         />
       </div>
       <div v-if="gitAliasKind" class="border-t border-dashed border-line pt-4">
         <CredentialAliasPicker
-          :project-id="draft.projectId"
           :kind="gitAliasKind.id"
           :selected-id="draft.gitCredentialId"
           @update:selected-id="draft.gitCredentialId = $event"
@@ -260,7 +249,6 @@ const derivedPaths = computed(() => {
       </div>
       <div v-if="showSshHosts" class="border-t border-dashed border-line pt-4">
         <CredentialAliasPicker
-          :project-id="draft.projectId"
           kind="ssh_hosts"
           :selected-id="draft.sshHostsCredentialId"
           @update:selected-id="draft.sshHostsCredentialId = $event"

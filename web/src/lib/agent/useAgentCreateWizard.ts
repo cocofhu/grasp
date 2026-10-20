@@ -3,7 +3,6 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { api, type Agent } from '@/lib/api/api'
 import {
   ACP_BACKENDS,
@@ -45,10 +44,6 @@ import {
 export interface AgentCreateWizardProps {
   open: boolean
   existingNames: string[]
-  /** Workspace metadata supplied by its host. */
-  projects: { id: string; name: string }[]
-  /** Internal workspace identity. */
-  projectId?: string
 }
 
 export type AgentCreateWizardEmit = {
@@ -59,14 +54,9 @@ export type AgentCreateWizardEmit = {
 
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
 const { t, te } = useI18n()
-const { workspaceId, ensureLoaded } = useWorkspaceContext()
-function openDraft(): WizardDraft {
-  return { ...freshDraft(), projectId: workspaceId.value }
-}
-const draft = ref<WizardDraft>(openDraft())
+const draft = ref<WizardDraft>(freshDraft())
 
 const nameError = ref('')
-const projectError = ref('')
 const creating = ref(false)
 const createError = ref('')
 const pendingAcp = ref<WizardBackendId | null>(null)
@@ -105,7 +95,6 @@ async function loadTemplates() {
 }
 
 onMounted(() => {
-  void ensureLoaded().then(() => { draft.value.projectId = workspaceId.value })
   void loadTemplates()
 })
 
@@ -149,9 +138,8 @@ watch(
   () => props.open,
   (open) => {
     if (open) {
-      draft.value = openDraft()
+      draft.value = freshDraft()
       nameError.value = ''
-      projectError.value = ''
       createError.value = ''
       creating.value = false
       pendingAcp.value = null
@@ -379,7 +367,6 @@ function applyBasicsError(err: string): boolean {
         : err === 'exists'
           ? t('pages.agentStudio.dialogs.nameExists')
           : ''
-  projectError.value = err === 'projectRequired' ? t('pages.agentStudio.workspaceUnavailable') : ''
   return !err
 }
 
@@ -430,7 +417,6 @@ function chipClass(kind: string) {
   t,
   draft,
   nameError,
-  projectError,
   creating,
   createError,
   pendingAcp,

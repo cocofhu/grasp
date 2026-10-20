@@ -1,5 +1,5 @@
 /**
- * Env keys that may only be supplied by project credentials (credential preset
+ * Env keys that may only be supplied by workspace credentials (credential preset
  * keys plus the CLI auth keys they map to). Agent / shared Agent env saves that
  * contain any of them are rejected with 400. Keep in sync with
  * server/internal/envauth SecretEnvKeys.

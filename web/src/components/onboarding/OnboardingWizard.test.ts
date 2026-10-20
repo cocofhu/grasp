@@ -4,7 +4,6 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import OnboardingWizard from './OnboardingWizard.vue'
 import {
-  DEFAULT_PROJECT_ID,
   suppressOnboarding,
   isOnboardingSuppressed,
   ONBOARDING_WORKFLOW_NAMES,
@@ -71,14 +70,12 @@ const launchMocks = vi.hoisted(() => ({ openLaunch: vi.fn(async () => {}) }))
 
 vi.mock('@/lib/api/api', () => ({
   api: {
-    getWorkspace: vi.fn(async () => ({ id: 'p-retry', name: '老项目' })),
     getWorkflow: vi.fn(async (id: string) => ({ id, name: '默认工作流' })),
     listAgentTeamTemplates: vi.fn(async () => ({ items: TEMPLATES })),
-    bootstrapProjectOnboarding: vi.fn(async () => ({
+    bootstrapOnboarding: vi.fn(async () => ({
       agentIds: ['需求澄清', '实现', '测试评审'],
       workflowId: 'wf-1',
       published: true,
-      groupName: '默认项目组',
     })),
     openCodeProviders: vi.fn(async () => ({
       providers: [{ id: 'deepseek', name: 'DeepSeek', models: 1 }],
@@ -94,11 +91,6 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), warn: vi.fn(), show: vi.fn() }),
 }))
-
-vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { ref } = await import('vue')
-  return { useWorkspaceContext: () => ({ workspaceId: ref('proj-default'), ensureLoaded: async () => ({ id: 'proj-default', name: 'Workspace' }) }) }
-})
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
@@ -124,7 +116,7 @@ async function mountWizard(props: Record<string, unknown> = {}) {
   })
   await router.push('/')
   const wrapper = mount(OnboardingWizard, {
-    props: { open: true, projectId: DEFAULT_PROJECT_ID, mode: 'firstInstall', ...props },
+    props: { open: true, mode: 'firstInstall', ...props },
     global: {
       plugins: [router],
       stubs: { Teleport: true, Icon: true, AppButton: true },
@@ -176,8 +168,10 @@ function activeStep(wrapper: Wrapper) {
 
 async function lastBody() {
   const { api } = await import('@/lib/api/api')
-  const calls = vi.mocked(api.bootstrapProjectOnboarding).mock.calls
-  return calls[calls.length - 1]?.[1]
+  const calls = vi.mocked(api.bootstrapOnboarding).mock.calls as unknown[][]
+  const last = calls[calls.length - 1]
+  expect(last).toHaveLength(1)
+  return last?.[0] as Record<string, any> | undefined
 }
 
 describe('OnboardingWizard', () => {
@@ -209,7 +203,6 @@ describe('OnboardingWizard', () => {
     expect(activeStep(wrapper)).toBe('onboarding-rail-prefs')
     expect(section('language')).toBe(true)
     expect(wrapper.find('[data-testid="onboarding-vnc-preview"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="onboarding-project-name"]').exists()).toBe(false)
     expect(section('backend')).toBe(false)
 
     for (const [step, id] of [
@@ -396,7 +389,7 @@ describe('OnboardingWizard', () => {
     )
     await next(wrapper)
     expect(activeStep(wrapper)).toBe('onboarding-rail-team')
-    expect(api.bootstrapProjectOnboarding).not.toHaveBeenCalled()
+    expect(api.bootstrapOnboarding).not.toHaveBeenCalled()
   })
 
   it('falls back to the default team when templates fail to load', async () => {
@@ -471,7 +464,9 @@ describe('OnboardingWizard', () => {
     await walkToTeam(wrapper)
     await next(wrapper)
     await next(wrapper)
-    expect(wrapper.emitted('completed')?.[0]?.[0]).toEqual(expect.objectContaining({ workflowId: 'wf-1' }))
+    expect(wrapper.emitted('completed')?.[0]).toEqual([
+      { agentIds: ['需求澄清', '实现', '测试评审'], workflowId: 'wf-1', published: true },
+    ])
     expect(wrapper.find('[data-testid="onboarding-success-agents"]').text()).toContain('测试评审')
 
     await wrapper.find('[data-testid="onboarding-run-once"]').trigger('click')
@@ -481,8 +476,8 @@ describe('OnboardingWizard', () => {
     expect(wrapper.emitted('close')).toBeTruthy()
     expect(wrapper.router.currentRoute.value.path).toBe('/workflows')
     // The created default workflow is what stops the wizard from re-opening.
-    expect(isOnboardingSuppressed(DEFAULT_PROJECT_ID)).toBe(false)
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(false)
+    expect(isOnboardingSuppressed()).toBe(false)
+    expect(shouldAutoOpenOnboarding([{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(false)
   })
 
   it('done page: edit workflow opens the editor', async () => {
@@ -501,20 +496,19 @@ describe('OnboardingWizard', () => {
       const wrapper = await mountWizard()
       await wrapper.find(`[data-testid="${id}"]`).trigger('click')
       expect(wrapper.emitted('close')).toBeTruthy()
-      expect(isOnboardingSuppressed(DEFAULT_PROJECT_ID)).toBe(false)
+      expect(isOnboardingSuppressed()).toBe(false)
     }
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(true)
+    expect(shouldAutoOpenOnboarding([], [])).toBe(true)
   })
 
   it('the storage escape hatch still suppresses auto-open', () => {
-    suppressOnboarding(DEFAULT_PROJECT_ID)
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(false)
+    suppressOnboarding()
+    expect(shouldAutoOpenOnboarding([], [])).toBe(false)
   })
 
-  it('retry continues in the only workspace without a project creation step', async () => {
-    const wrapper = await mountWizard({ mode: 'retry', projectId: 'proj-default' })
+  it('retry continues in the workspace from the preferences step', async () => {
+    const wrapper = await mountWizard({ mode: 'retry' })
     expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleRetry')
-    expect(wrapper.find('[data-testid="onboarding-project-name"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="onboarding-section-language"]').exists()).toBe(true)
     await walkToTeam(wrapper)
     expect((wrapper.find('[data-testid="onboarding-team-name-implement"]').element as HTMLInputElement).value).toBe('实现')

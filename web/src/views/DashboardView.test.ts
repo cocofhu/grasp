@@ -11,7 +11,6 @@ import type { Workflow } from '@/lib/shared/types'
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   listWorkflows: vi.fn(),
-  listProjects: vi.fn(),
   listAgents: vi.fn(async () => [
     { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
     { name: 'worker', capabilities: { interaction: 'auto' } },
@@ -21,13 +20,12 @@ const mocks = vi.hoisted(() => ({
   getRun: vi.fn(),
   reactReply: vi.fn(),
   createWorkflowFromBaseline: vi.fn(),
-  readStoredProjectId: vi.fn(() => 'proj-1'),
 }))
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
   const { ref } = await import('vue')
-  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+  const workspace = ref({ name: '工作区', description: '', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
 })
 
 
@@ -42,7 +40,6 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listWorkflows: mocks.listWorkflows,
-      listProjects: mocks.listProjects,
       listAgents: mocks.listAgents,
       patchWorkflowHomeVisibility: mocks.patchWorkflowHomeVisibility,
       startRun: mocks.startRun,
@@ -87,7 +84,6 @@ const approveWf: Workflow = {
   version: 1,
   updatedAt: '',
   needsRepo: false,
-  projectId: 'proj-1',
   showOnHome: true,
   nodes: [
     { id: 'in', type: 'input', label: '开始', position: { x: 0, y: 0 }, config: {} },
@@ -215,15 +211,12 @@ describe('DashboardView home composer', () => {
   beforeEach(() => {
     mocks.push.mockReset()
     mocks.listWorkflows.mockReset()
-    mocks.listProjects.mockReset()
     mocks.patchWorkflowHomeVisibility.mockReset()
     mocks.startRun.mockReset()
     mocks.getRun.mockReset()
     mocks.reactReply.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
-    mocks.readStoredProjectId.mockReturnValue('proj-1')
     mocks.listWorkflows.mockResolvedValue([approveWf])
-    mocks.listProjects.mockResolvedValue([{ id: 'proj-1', name: '综合项目组', description: '', variables: [] }])
     mocks.patchWorkflowHomeVisibility.mockResolvedValue({ ...approveWf, showOnHome: false })
     mocks.startRun.mockResolvedValue({ id: 'run-9', status: 'queued' })
     mocks.getRun.mockResolvedValue({
@@ -248,54 +241,32 @@ describe('DashboardView home composer', () => {
     document.body.innerHTML = ''
   })
 
-  it('renders composer and clarify-first cards without a project gate', async () => {
-    mocks.readStoredProjectId.mockReturnValue('')
+  it('renders composer and clarify-first cards from the unscoped workflow list', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-title"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
-    expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    const call = mocks.listWorkflows.mock.calls[0]?.[0] || {}
-    expect(call).not.toHaveProperty('projectId')
+    expect(mocks.listWorkflows).toHaveBeenCalledWith({ signal: expect.any(AbortSignal) })
     wrapper.unmount()
   })
 
-  // plan g2.1 — card title = workflow name, next line = project name; same workflow name, different projects
-  it('shows all workflow names without former project metadata', async () => {
+  // plan g2.1 — card title = workflow name; same-named workflows each keep their own card
+  it('shows a card per workflow even when names repeat', async () => {
     const other: Workflow = {
       ...approveWf,
       id: 'wf-ap-b',
       name: '自我迭代PRO',
-      projectId: 'proj-2',
-      description: '另一项目的同名工作流',
+      description: '同名的另一个工作流',
     }
     mocks.listWorkflows.mockResolvedValue([approveWf, other])
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-1', name: '综合项目组', description: '', variables: [] },
-      { id: 'proj-2', name: 'SkillHub', description: '', variables: [] },
-    ])
     const wrapper = mountDashboard()
     await flushPromises()
     const a = wrapper.get('[data-testid="home-workflow-card-wf-ap"]')
     const b = wrapper.get('[data-testid="home-workflow-card-wf-ap-b"]')
     expect(a.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
     expect(b.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
-    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap-b"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('omits the project name row when the workflow has no projectId', async () => {
-    mocks.listWorkflows.mockResolvedValue([{ ...approveWf, projectId: undefined }])
-    mocks.listProjects.mockResolvedValue([{ id: 'proj-1', name: '综合项目组', description: '', variables: [] }])
-    const wrapper = mountDashboard()
-    await flushPromises()
-    expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -542,17 +513,6 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2.1 — no project gate; still loads cross-project workflows
-  it('loads workflows without a stored project and does not show project empty state', async () => {
-    mocks.readStoredProjectId.mockReturnValue('')
-    const wrapper = mountDashboard()
-    await flushPromises()
-    expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="home-workflow-cards"]').exists()).toBe(true)
-    expect(mocks.listWorkflows).toHaveBeenCalled()
-    wrapper.unmount()
-  })
-
   // plan g2.2 — combobox and card selection stay in sync
   it('keeps workflow combobox and card selection in sync', async () => {
     const second: Workflow = {
@@ -618,14 +578,9 @@ describe('DashboardView home composer', () => {
       ...approveWf,
       id: 'wf-lite',
       name: 'Skill workflow',
-      projectId: 'proj-2',
       description: '轻量 Approve 入口',
     }
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-1', name: '综合项目组', description: '', variables: [] },
-      { id: 'proj-2', name: 'SkillHub', description: '', variables: [] },
-    ])
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
@@ -753,14 +708,13 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="home-workflows-empty"]').text()).not.toContain('选择项目')
-    expect(wrapper.find('[data-testid="home-go-projects"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="home-go-projects"]').trigger('click')
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="home-go-workflows"]').trigger('click')
     expect(mocks.push).toHaveBeenCalledWith('/workflows')
     wrapper.unmount()
   })
 
-  it('shows empty state prompting project Show on Home when workflows are hidden (g3.2 / g3.3)', async () => {
+  it('shows empty state prompting Show on Home when workflows are hidden (g3.2 / g3.3)', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, showOnHome: false }])
     const wrapper = mountDashboard()
     await flushPromises()
@@ -1361,7 +1315,6 @@ describe('DashboardView home composer', () => {
     await add.trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-create-project-list"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('从零开始')
     wrapper.unmount()
   })
@@ -1629,13 +1582,8 @@ describe('DashboardView home composer', () => {
       ...approveWf,
       id: 'wf-keep',
       name: '保留卡',
-      projectId: 'proj-2',
     }
     mocks.listWorkflows.mockResolvedValue([approveWf, second])
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-1', name: '综合项目组', description: '', variables: [] },
-      { id: 'proj-2', name: 'SkillHub', description: '', variables: [] },
-    ])
     const wrapper = mountDashboard()
     await flushPromises()
     const enterBefore = wrapper.get('[data-testid="home-workflow-enter"]').element

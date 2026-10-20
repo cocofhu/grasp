@@ -67,8 +67,6 @@ export const AGENT_SETTINGS_PATH = AGENT_SETTINGS_REL_PATH
 export type WizardDraft = {
   step: number
   name: string
-  /** Home project (required). */
-  projectId: string
   description: string
   /**
    * Role pack id for POST /agents templateId.
@@ -130,7 +128,6 @@ export function freshDraft(): WizardDraft {
   return {
     step: 0,
     name: '',
-    projectId: '',
     description: '',
     templateId: 'blank',
     startPath: 'apiKey',
@@ -308,7 +305,7 @@ function collectFiles(draft: WizardDraft): AgentFile[] {
 }
 
 /** Assemble POST /agents payload. Skip Rules still writes default rule.
- * Token-class keys are always stripped from env (write them in Project shared Agent config).
+ * Token-class keys are always stripped from env (write them in Workspace shared Agent config).
  * When templateId is set (not blank), payload includes templateId and omits default identity files
  * so the server can copy the embed pack and its capabilities; blank Agents start with
  * blankAgentCapabilities(). */
@@ -327,7 +324,6 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   const files = collectFiles(draft)
   return {
     name,
-    projectId: draft.projectId.trim(),
     acpBackend: draft.acpBackend || APIKEY_BACKEND,
     ...(draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
@@ -348,7 +344,6 @@ export function validateBasics(draft: WizardDraft, existingNames: string[]): str
   if (code === 'invalid') return 'invalid'
   const normalized = normalizeAgentName(draft.name)
   if (existingNames.includes(normalized)) return 'exists'
-  if (!draft.projectId.trim()) return 'projectRequired'
   return ''
 }
 

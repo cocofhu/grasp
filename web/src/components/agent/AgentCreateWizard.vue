@@ -22,7 +22,6 @@ const {
   t,
   draft,
   nameError,
-  projectError,
   creating,
   createError,
   pendingAcp,
@@ -294,7 +293,6 @@ function setCliModel(id: string) {
               </div>
             </div>
 
-            <p v-if="projectError" class="px-5 pb-3 text-xs text-err" role="alert">{{ projectError }}</p>
             <div class="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-surface px-5 py-3.5">
               <AppButton variant="ghost" :disabled="creating" @click="close">
                 {{ t('pages.agentStudio.dialogs.cancel') }}

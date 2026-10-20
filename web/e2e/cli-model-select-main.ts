@@ -8,7 +8,7 @@ import AgentMetaPanel from '../src/components/agent/AgentMetaPanel.vue'
 import AgentEnvPanel from '../src/components/agent/AgentEnvPanel.vue'
 import CliModelSelect from '../src/components/agent/CliModelSelect.vue'
 import ToastHost from '../src/components/ui/ToastHost.vue'
-import ProjectSharedAgentPanel from '../src/components/project/ProjectSharedAgentPanel.vue'
+import WorkspaceSharedAgentPanel from '../src/components/workspace/WorkspaceSharedAgentPanel.vue'
 import { api } from '../src/lib/api/api'
 import type { CliCatalogModel } from '../src/lib/api/apiTypes'
 
@@ -47,11 +47,10 @@ const catalog: Record<string, CliCatalogModel[]> = {
 
 const harnessParams = new URLSearchParams(location.search)
 Object.assign(api, {
-  getProjectSharedAgentConfig: async () => {
+  getSharedAgentConfig: async () => {
     const backend = harnessParams.get('backend') || 'cursor'
     const shared = harnessParams.get('shared') || ''
     return {
-      projectId: 'p1',
       acpBackend: backend,
       aiCredentialId: backend === 'codex' ? 'c2' : 'c1',
       files: [],
@@ -64,7 +63,7 @@ Object.assign(api, {
     await new Promise((r) => setTimeout(r, new URLSearchParams(location.search).get('slow') ? 60000 : 150))
     return { models: catalog[backend] || [] }
   },
-  getProjectCredentials: async () => ({
+  listCredentials: async () => ({
     items: [
       { id: 'c1', type: 'ai', provider: 'cursor', name: '团队 Cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'key_••••a91' },
       { id: 'c2', type: 'ai', provider: 'codex', name: 'Codex 登录', envKey: 'GRASP_CODEX_AUTH_JSON', configured: true },
@@ -86,7 +85,6 @@ async function boot() {
   if (params.get('effort')) env.push({ k: 'ACP_BRIDGE_REASONING_EFFORT', v: params.get('effort')! })
   const draft = reactive({
     name: 'ImplementAgent',
-    projectId: 'p1',
     acpBackend: backend,
     aiCredentialId: backend === 'codex' ? 'c2' : 'c1',
     openCodeCredentialId: '',
@@ -102,7 +100,6 @@ async function boot() {
   const compact = reactive({ value: model })
 
   const router = createRouter({ history: createMemoryHistory(), routes: [
-      { path: '/projects/:id', name: 'project-detail', component: { render: () => null } },
       { path: '/:p(.*)*', component: { render: () => null } },
     ] })
   const app = createApp({
@@ -111,10 +108,10 @@ async function boot() {
         h('div', { class: 'mx-auto flex max-w-[860px] flex-col', 'data-testid': 'harness' }, [
           view === 'meta'
             ? h('div', { class: 'flex h-[900px] flex-col', 'data-testid': 'shot' }, [
-                h(AgentMetaPanel, { draft: draft as never, agentName: 'ImplementAgent', projects: [{ id: 'p1', name: 'Grasp' }] }),
+                h(AgentMetaPanel, { draft: draft as never, agentName: 'ImplementAgent' }),
               ])
             : view === 'shared'
-              ? h('div', { class: 'flex h-[1100px] flex-col', 'data-testid': 'shot' }, [h(ProjectSharedAgentPanel, { projectId: 'p1' })])
+              ? h('div', { class: 'flex h-[1100px] flex-col', 'data-testid': 'shot' }, [h(WorkspaceSharedAgentPanel)])
             : view === 'env'
               ? h('div', { class: 'flex h-[560px] flex-col', 'data-testid': 'shot' }, [h(AgentEnvPanel, { draft: draft as never })])
               : h('div', { class: 'w-[440px] p-6', 'data-testid': 'shot' }, [

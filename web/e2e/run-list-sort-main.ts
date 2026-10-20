@@ -26,7 +26,7 @@ async function bootstrap() {
 
   const params = new URLSearchParams(window.location.search)
   const startQuery: Record<string, string> = {}
-  for (const key of ['sort', 'order', 'status', 'wf', 'projectId', 'page']) {
+  for (const key of ['sort', 'order', 'status', 'wf', 'page']) {
     const v = params.get(key)
     if (v != null && v !== '') startQuery[key] = v
   }

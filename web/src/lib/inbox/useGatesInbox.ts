@@ -6,7 +6,6 @@ import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
-import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
@@ -175,7 +174,6 @@ const pendingAcpFrames = createPendingAcpBuffer()
 /** Snapshot reactSessions stashed when activeRun is still null during hard load. */
 let pendingSnapshotSessions: Run['reactSessions'] | null = null
 const { selected } = useWorkflowFilter()
-const { workspaceId: selectedProject, ensureLoaded: hydrateProject } = useWorkspaceContext()
 const { selectedTags } = useTagFilter()
 const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
@@ -852,11 +850,6 @@ watch(selected, () => {
   loadList({ showLoading: true })
 })
 
-watch(selectedProject, () => {
-  listPage.value = 1
-  loadList({ showLoading: true })
-})
-
 watch(listPage, () => {
   loadList({ showLoading: true })
 })
@@ -1234,7 +1227,7 @@ function startBusySeedRetry(runId: string, nodeId: string) {
   })
 }
 
-/** Project authoritative busy/queue onto ClarifyChat / GateApproval. */
+/** Workspace authoritative busy/queue onto ClarifyChat / GateApproval. */
 function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: Run['gate'] } | null) {
   const nodeId = activeDialogueNodeId(r as Run | null)
   if (!nodeId) return
@@ -2099,7 +2092,6 @@ watch(() => [route.query.run, route.query.node], () => {
 seedIncomingIfNeeded()
 
 onMounted(() => {
-  hydrateProject()
   loadList({ showLoading: true }).then(() => {
     if (incomingTarget()) {
       void waitForQueryItem()
@@ -2323,7 +2315,6 @@ function itemSecondary(it: InboxItem) {
     ariaBusy,
     isMobile,
     selected,
-    selectedProject,
     selectedTags,
     clarifyDraft,
     clarifyAttachments,

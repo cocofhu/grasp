@@ -9,14 +9,13 @@ import pages from '@/locales/zh-CN/pages.json'
 
 const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
-  listProjects: vi.fn(),
   saveAgent: vi.fn(),
   getAgent: vi.fn(),
   exportAgent: vi.fn(),
   renameAgent: vi.fn(),
   deleteAgent: vi.fn(),
-  exportProjectAgents: vi.fn(),
-  triggerProjectImport: vi.fn(),
+  exportWorkspaceAgents: vi.fn(),
+  triggerImport: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -26,21 +25,20 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listAgents: mocks.listAgents,
-      listProjects: mocks.listProjects,
       saveAgent: mocks.saveAgent,
       getAgent: mocks.getAgent,
       exportAgent: mocks.exportAgent,
       renameAgent: mocks.renameAgent,
       deleteAgent: mocks.deleteAgent,
-      exportProjectAgents: mocks.exportProjectAgents,
+      exportWorkspaceAgents: mocks.exportWorkspaceAgents,
     },
   }
 })
 
 vi.mock('@/lib/composables/useWorkspaceContext', async () => {
-  const { computed, ref } = await import('vue')
-  const workspace = ref({ id: 'proj-1', name: 'Workspace' })
-  return { useWorkspaceContext: () => ({ workspace, workspaceId: computed(() => workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+  const { ref } = await import('vue')
+  const workspace = ref({ name: 'Workspace', description: '', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
 })
 
 vi.mock('@/lib/composables/useBreakpoint', async () => {
@@ -63,7 +61,7 @@ vi.mock('@/lib/agent/useAgentImport', async () => {
       renameError: ref(''),
       showBatchConflict: ref(false),
       batchConflictNames: ref([]),
-      triggerImport: mocks.triggerProjectImport,
+      triggerImport: mocks.triggerImport,
       onDiscardCancel: vi.fn(),
       onDiscardConfirm: vi.fn(),
       handleFileChange: vi.fn(),
@@ -121,19 +119,15 @@ describe('useAgentStudio', () => {
     for (const fn of Object.values(mocks)) fn.mockReset()
 
     mocks.listAgents.mockResolvedValue([
-      { name: 'agent-a', projectId: 'proj-1', acpBackend: 'cursor' },
-      { name: 'agent-b', projectId: 'proj-2', acpBackend: 'cursor' },
+      { name: 'agent-a', acpBackend: 'cursor' },
+      { name: 'agent-b', acpBackend: 'cursor' },
     ])
-    mocks.listProjects.mockResolvedValue([
-      { id: 'proj-1', name: 'Proj 1' },
-      { id: 'proj-2', name: 'Proj 2' },
-    ])
-    mocks.saveAgent.mockResolvedValue({ name: 'agent-a', projectId: 'proj-1', acpBackend: 'cursor' })
-    mocks.getAgent.mockResolvedValue({ name: 'agent-a', projectId: 'proj-1', acpBackend: 'cursor' })
+    mocks.saveAgent.mockResolvedValue({ name: 'agent-a', acpBackend: 'cursor' })
+    mocks.getAgent.mockResolvedValue({ name: 'agent-a', acpBackend: 'cursor' })
     mocks.exportAgent.mockResolvedValue(new Blob(['x']))
-    mocks.renameAgent.mockResolvedValue({ name: 'agent-z', projectId: 'proj-1', acpBackend: 'cursor' })
+    mocks.renameAgent.mockResolvedValue({ name: 'agent-z', acpBackend: 'cursor' })
     mocks.deleteAgent.mockResolvedValue({ status: 'ok' })
-    mocks.exportProjectAgents.mockResolvedValue({ blob: new Blob(['zip']), filename: 'Proj 1-agents.zip' })
+    mocks.exportWorkspaceAgents.mockResolvedValue({ blob: new Blob(['zip']), filename: 'workspace-agents.zip' })
   })
 
   afterEach(() => {
@@ -141,7 +135,7 @@ describe('useAgentStudio', () => {
     vi.restoreAllMocks()
   })
 
-  it('loads agents/projects on mount and selects query agent', async () => {
+  it('loads agents on mount and selects query agent', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
     await nextTick()
@@ -162,8 +156,10 @@ describe('useAgentStudio', () => {
     studio.openCreateTeam()
     studio.openAgentManage('agent-a')
     studio.closeAgentManage()
-    studio.openProjectSheet()
-    studio.closeProjectSheet()
+    studio.openSidebarSheet()
+    expect(studio.showSidebarSheet.value).toBe(true)
+    studio.closeSidebarSheet()
+    expect(studio.showSidebarSheet.value).toBe(false)
     studio.onDataSubTab('memory')
     studio.requestStudioTab('mcp')
     studio.leaveConfirmCancel()
@@ -174,7 +170,7 @@ describe('useAgentStudio', () => {
     studio.showToast('ok')
     studio.chooseAgent('agent-b')
     studio.chooseAgentFromSheet('agent-a')
-    studio.onWizardCreated({ name: 'agent-c', projectId: 'proj-1', acpBackend: 'cursor' } as never)
+    studio.onWizardCreated({ name: 'agent-c', acpBackend: 'cursor' } as never)
     studio.onTeamBootstrapStarted({
       id: 'sess-1',
       status: 'running',
@@ -205,47 +201,43 @@ describe('useAgentStudio', () => {
     app.unmount()
   })
 
-  it('imports directly into the workspace without opening a project chooser', async () => {
+  it('imports directly into the workspace', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
     studio.triggerImport()
-    expect(mocks.triggerProjectImport).toHaveBeenLastCalledWith('proj-1')
+    expect(mocks.triggerImport).toHaveBeenCalledTimes(1)
+    expect(mocks.triggerImport).toHaveBeenLastCalledWith()
+    studio.onImportWorkspace()
+    expect(mocks.triggerImport).toHaveBeenCalledTimes(2)
+    expect(mocks.triggerImport).toHaveBeenLastCalledWith()
     app.unmount()
   })
 
   it('creates in the workspace and keeps team creation available', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
-    studio.openCreateAgent('stale-project')
-    expect(studio.createAgentProjectId.value).toBe('proj-1')
+    studio.openCreateAgent()
+    expect(studio.showCreateWizard.value).toBe(true)
     studio.openCreateTeam()
     expect(studio.showTeamWizard.value).toBe(true)
     app.unmount()
   })
 
-  it('exports a project bundle after the secrets confirmation', async () => {
+  it('exports a workspace bundle after the secrets confirmation', async () => {
     const createObjectURL = vi.fn(() => 'blob:x')
     vi.stubGlobal('URL', Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() }))
     const { studio, app } = await withAgentStudio()
     await flushPromises()
 
-    studio.onExportProject('proj-1')
+    studio.onExportWorkspace()
+    expect(studio.pendingBundleExport.value).toBe(true)
     expect(studio.showBundleSecrets.value).toBe(true)
-    expect(mocks.exportProjectAgents).not.toHaveBeenCalled()
+    expect(mocks.exportWorkspaceAgents).not.toHaveBeenCalled()
     await studio.confirmBundleSecrets()
-    expect(mocks.exportProjectAgents).toHaveBeenCalledWith('proj-1')
+    expect(mocks.exportWorkspaceAgents).toHaveBeenCalledWith()
     expect(createObjectURL).toHaveBeenCalled()
     expect(studio.showBundleSecrets.value).toBe(false)
-    app.unmount()
-  })
-
-  it('refuses to save an agent without a home project', async () => {
-    const { studio, app } = await withAgentStudio()
-    await flushPromises()
-    studio.draft.value!.projectId = ''
-    expect(await studio.save()).toBe(false)
-    expect(mocks.saveAgent).not.toHaveBeenCalled()
-    expect(studio.error.value).toBe(pages.pages.agentStudio.project.required)
+    expect(studio.pendingBundleExport.value).toBe(false)
     app.unmount()
   })
 
@@ -267,7 +259,6 @@ describe('useAgentStudio', () => {
     mocks.listAgents.mockResolvedValue([
       {
         name: 'agent-a',
-        projectId: 'proj-1',
         acpBackend: 'cursor',
         capabilities: { interaction: 'auto', reads: ['*'] },
       },
@@ -299,7 +290,6 @@ describe('useAgentStudio', () => {
     mocks.listAgents.mockResolvedValue([
       {
         name: 'agent-a',
-        projectId: 'proj-1',
         acpBackend: 'cursor',
         capabilities: { interaction: 'auto', reads: ['*'] },
       },

@@ -75,10 +75,10 @@ type BootstrapBody = {
   repos?: unknown
 }
 
-type MockState = { bootstrapBody: BootstrapBody | null; bootstrapPath: string; createBody: { name?: string } | null }
+type MockState = { bootstrapBody: BootstrapBody | null; bootstrapPath: string }
 
 async function mockOnboardingApi(page: Page): Promise<MockState> {
-  const state: MockState = { bootstrapBody: null, bootstrapPath: '', createBody: null }
+  const state: MockState = { bootstrapBody: null, bootstrapPath: '' }
   await page.route('**/api/**', async (route) => {
     const url = new URL(route.request().url())
     if (!url.pathname.startsWith('/api/')) {
@@ -102,18 +102,7 @@ async function mockOnboardingApi(page: Page): Promise<MockState> {
       await json({ items: TEMPLATES })
       return
     }
-    if (pathname === '/api/workspace' && method === 'GET') { await json({id: 'existing-workspace', name: 'Existing Workspace'}); return }
-    if (pathname === '/api/projects' && method === 'POST') {
-      state.createBody = route.request().postDataJSON() as { name?: string }
-      await json({
-        id: 'proj-e2e-created',
-        name: state.createBody?.name || 'created',
-        description: '',
-        createdAt: '2026-01-01T00:00:00Z',
-        updatedAt: '2026-01-01T00:00:00Z',
-      })
-      return
-    }
+    if (pathname === '/api/workspace' && method === 'GET') { await json({ name: 'Existing Workspace'}); return }
     if (pathname.includes('/bootstrap-onboarding') && method === 'POST') {
       const body = route.request().postDataJSON() as BootstrapBody
       state.bootstrapBody = body
@@ -122,10 +111,9 @@ async function mockOnboardingApi(page: Page): Promise<MockState> {
         await json({ error: 'apiKey required' }, 400)
         return
       }
-      const prefix = pathname.includes('proj-e2e-created') ? state.createBody?.name || '' : ''
       await json({
         agentIds: (body.agents || []).map(
-          (a) => a.name || prefix + TEMPLATES.find((t) => t.id === a.templateId)!.roleLabelZh,
+          (a) => a.name || TEMPLATES.find((t) => t.id === a.templateId)!.roleLabelZh,
         ),
         workflowId: 'wf-onboard-1',
         published: true,
@@ -387,16 +375,14 @@ test('a missing server encryption key shows plain copy, not config names', async
   await page.screenshot({ path: path.join(OUT, 'secrets-key-missing.png') })
 })
 
-test('重试引导复用现有工作区，不创建项目或给 Agent 添加项目前缀', async ({ page }) => {
+test('重试引导复用现有工作区，Agent 名不加前缀', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html?mode=retry', { waitUntil: 'networkidle' })
-  await expect(page.getByTestId('onboarding-project-name')).toHaveCount(0)
   await walkToTeam(page, 'sk-retry-e2e')
   await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('需求澄清')
   await next(page)
   await next(page)
   await expect(page.getByTestId('onboarding-success')).toBeVisible({ timeout: 10_000 })
-  expect(state.createBody).toBeNull()
   expect(state.bootstrapPath).toBe('/api/workspace/bootstrap-onboarding')
   await page.getByTestId('onboarding-success-close').click()
   await expect(page.getByTestId('workflow-list-landing')).toBeVisible()

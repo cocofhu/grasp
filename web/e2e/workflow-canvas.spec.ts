@@ -20,7 +20,6 @@ function freshStore(graph: Graph = { nodes: [], edges: [] }): Store {
       id: 'wf-canvas',
       name: '画布验收',
       description: '',
-      projectId: 'proj-1',
       status: 'draft',
       version: 1,
       updatedAt: '2026-10-05T00:00:00Z',
@@ -43,7 +42,6 @@ async function mockApis(page: Page, store: Store) {
       return route.fulfill({ json: store.wf })
     }
     if (path === '/api/agents') return route.fulfill({ json: CANVAS_AGENTS.map((a) => ({ ...a, files: [], mcp: [], env: {} })) })
-    if (path === '/api/projects/proj-1') return route.fulfill({ json: { id: 'proj-1', name: 'Grasp' } })
     if (path.startsWith('/api/workflows')) return route.fulfill({ json: [] })
     return route.fulfill({ json: {} })
   })

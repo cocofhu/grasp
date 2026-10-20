@@ -18,7 +18,8 @@ export function useWorkflows() {
 const router = useRouter()
 const { t } = useI18n()
 const toast = useToast()
-const { workspaceId: projectId, ensureLoaded } = useWorkspaceContext()
+const { workspace, ensureLoaded } = useWorkspaceContext()
+const workspaceReady = computed(() => !!workspace.value)
 const { isFavorite, toggleFavorite } = useWorkflowFavorites()
 const { isMobile } = useBreakpoint()
 const workflows = ref<Workflow[]>([])
@@ -55,7 +56,6 @@ const copyPreviewLoading = ref<string | null>(null)
 const copyModal = ref<{ sourceId: string; sourceName: string; suggestedName: string } | null>(null)
 const exportTarget = ref<Workflow | null>(null)
 const { fileInput, triggerImport, handleFileChange } = useWorkflowImport({
-  projectId: () => projectId.value,
   onImported: async (wf) => {
     workflows.value = [wf, ...workflows.value.filter((x) => x.id !== wf.id)]
   },
@@ -81,7 +81,7 @@ async function persistWorkflowNotify(w: Workflow, policy: WorkflowNotifyPolicy) 
     const saved = await api.patchWorkflowNotifyPolicy(w.id, policy)
     if (current !== workspaceGeneration) return
     workflows.value = workflows.value.map((x) => (x.id === w.id ? { ...x, ...saved } : x))
-    toast.success(t('pages.projectDetail.notify.wfUpdated'))
+    toast.success(t('pages.workspace.notify.wfUpdated'))
   } catch (e: any) {
     if (current !== workspaceGeneration) return
     toast.error(String(e?.message || e))
@@ -123,11 +123,11 @@ async function toggleWorkflowShowOnHome(w: Workflow, next: boolean) {
     const saved = await api.patchWorkflowHomeVisibility(w.id, next)
     if (current !== workspaceGeneration) return
     workflows.value = workflows.value.map((x) => (x.id === w.id ? { ...x, ...saved } : x))
-    toast.success(t('pages.projectDetail.homeVisibility.updated'))
+    toast.success(t('pages.workspace.homeVisibility.updated'))
   } catch (e: any) {
     if (current !== workspaceGeneration) return
     workflows.value = workflows.value.map((x) => (x.id === w.id ? { ...x, showOnHome: prev } : x))
-    toast.error(String(e?.message || e) || t('pages.projectDetail.homeVisibility.updateFailed'))
+    toast.error(String(e?.message || e) || t('pages.workspace.homeVisibility.updateFailed'))
   } finally {
     if (current === workspaceGeneration) savingHomeWfId.value = null
   }
@@ -248,15 +248,13 @@ async function createFromBaseline() {
   const current = workspaceGeneration
   baselineCreateError.value = ''
   try {
-    const created = await api.createWorkflowFromBaseline(
-      projectId.value,
-      baselineName.value.trim(),
+    const created = await api.createWorkflowFromBaseline(baselineName.value.trim(),
       baselineRepos.value,
     )
     if (current !== workspaceGeneration) return
     workflows.value = [created, ...workflows.value.filter((workflow) => workflow.id !== created.id)]
     baselineModalOpen.value = false
-    toast.success(t('pages.projectDetail.newWorkflow.created', { name: created.name }))
+    toast.success(t('pages.workspace.newWorkflow.created', { name: created.name }))
   } catch (e: any) {
     if (current !== workspaceGeneration) return
     baselineCreateError.value = String(e?.message || e)
@@ -395,9 +393,9 @@ async function confirmDeleteWf() {
   }
 }
 
-watch(projectId, () => {
+watch(workspaceReady, () => {
   workspaceGeneration++
-  if (projectId.value) void reloadWorkflows()
+  if (workspaceReady.value) void reloadWorkflows()
   else {
     sequence++
     workflows.value = []
@@ -421,7 +419,7 @@ watch(projectId, () => {
     savingHomeWfId.value = null
   }
 }, { flush: 'sync' })
-watch(workflowCatalogRevision, () => { if (projectId.value) void reloadWorkflows() })
+watch(workflowCatalogRevision, () => { if (workspaceReady.value) void reloadWorkflows() })
 onMounted(() => {
   void reloadWorkflows()
   document.addEventListener('click', onDocClick)
@@ -437,6 +435,6 @@ onUnmounted(() => {
   document.removeEventListener('scroll', onScrollClose, true)
 })
 return {
-router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, creatingBaseline, baselineCreateError, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingNotifyWfId, wfNotifyMode, wfNotifyHas, persistWorkflowNotify, setWorkflowNotifyMode, toggleWorkflowNotifyEvent, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, projectId, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
+router, toast, workflows, search, visibleWorkflows, loading, loadError, toggleWorkflowFavorite, runTarget, runFields, runInputs, runImages, draftRestored, openMenuId, menuPosition, newWorkflowMenuOpen, baselineModalOpen, baselineName, baselineRepos, creatingBaseline, baselineCreateError, deleteWfTarget, deletingWf, deleteWfError, copyPreviewLoading, copyModal, exportTarget, savingNotifyWfId, wfNotifyMode, wfNotifyHas, persistWorkflowNotify, setWorkflowNotifyMode, toggleWorkflowNotifyEvent, savingHomeWfId, toggleWorkflowShowOnHome, existingNames, askFields, fieldOptions, closeMenu, toggleMenu, toggleNewWorkflowMenu, menuIdFor, onDocClick, onKeydown, onScrollClose, reloadWorkflows, newWorkflow, openBaselineModal, closeBaselineModal, hasValidBaselineRepo, createFromBaseline, openWorkflow, openEdit, openRun, saveRunDraftClick, closeRunModal, onRunStayed, onRunStarted, onViewRun, openCopy, closeCopyModal, onCopied, openExport, openDeleteWf, confirmDeleteWf, t, isFavorite, toggleFavorite, isMobile, fileInput, triggerImport, handleFileChange, fmtTime
 }
 }

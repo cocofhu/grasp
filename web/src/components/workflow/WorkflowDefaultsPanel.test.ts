@@ -7,7 +7,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
 import type { Workflow } from '@/lib/shared/types'
 import WorkflowDefaultsPanel from './WorkflowDefaultsPanel.vue'
-vi.mock('@/lib/api/api', () => ({ api: { listProjectChannels: async () => ({ items: [] }) } }))
+vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }) } }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: { value: 'ws' }, ensureLoaded: async () => ({ id: 'ws' }) }) }))
 function setup(defaults?: Workflow['defaults']) {
   const workflow = reactive({ id: 'w', name: 'Test', description: '', status: 'draft', version: 1, updatedAt: '', nodes: [], edges: [], defaults } as Workflow)

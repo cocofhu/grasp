@@ -475,7 +475,7 @@ export function treemapOption(tree: GlobalTokenStatsTreeNode[] | undefined, curr
           { colorSaturation: [0.35, 0.6], itemStyle: { gapWidth: 2, borderColorSaturation: 0.6 } },
           { colorSaturation: [0.3, 0.5], itemStyle: { gapWidth: 1, borderColorSaturation: 0.5 } },
         ],
-        data: tree.flatMap((node) => node.kind === 'project' ? node.children || [] : [node]).map((n, i) => convert(n, [], 0, i)),
+        data: tree.map((n, i) => convert(n, [], 0, i)),
       },
     ],
   }

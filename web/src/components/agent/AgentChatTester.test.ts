@@ -66,7 +66,7 @@ function mountTester() {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(AgentChatTester, {
-    props: { profile: 'cursor', attachId: 1, homeProjectId: 'proj-1' },
+    props: { profile: 'cursor', attachId: 1 },
     global: {
       plugins: [i18n],
       stubs: {

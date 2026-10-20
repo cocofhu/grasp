@@ -66,24 +66,14 @@ function errorMessage(err: unknown): string {
   return String(err || 'load failed')
 }
 
-export type ProjectIdSource = string | Ref<string | null | undefined> | (() => string | null | undefined)
-
-function resolveProjectId(source: ProjectIdSource): string {
-  if (typeof source === 'function') return String(source() ?? '').trim()
-  if (typeof source === 'object' && source && 'value' in source) return String(source.value ?? '').trim()
-  return String(source ?? '').trim()
-}
-
 async function fetchColumn(
   query: BoardColumnQuery,
-  projectId: string,
   signal?: AbortSignal,
 ): Promise<BoardColumnState> {
   const data = await api.listRuns({
     status: query.status,
     page: 1,
     pageSize: query.pageSize,
-    projectId,
     signal,
   })
   let items = data.items
@@ -103,11 +93,6 @@ async function fetchColumn(
 
 export interface UseRunBoardOptions {
   mode: BoardMode
-  /**
-   * Required project boundary. Without a non-empty projectId, load() must not
-   * call listRuns (fail-safe: empty columns + missing_project error).
-   */
-  projectId: ProjectIdSource
   /** Extra statuses to load on the full board (queued / failed / cancelled). */
   extraStatuses?: Ref<Set<string>> | (() => Set<string>)
   /** Shared loading-layer timeout; does not change global api defaults. */
@@ -150,18 +135,6 @@ export function useRunBoard(options: UseRunBoardOptions) {
     abortCtrl = new AbortController()
     const tc = createTimeoutController(timeoutMs, abortCtrl.signal)
 
-    const projectId = resolveProjectId(options.projectId)
-    if (!projectId) {
-      tc.clear()
-      if (localSeq !== requestSeq) return
-      columns.value = {}
-      error.value = 'missing_project'
-      hasLoaded.value = true
-      loading.value = false
-      terminalState.value = 'error'
-      return
-    }
-
     const queries = queriesForLoad()
     loading.value = true
     try {
@@ -180,7 +153,7 @@ export function useRunBoard(options: UseRunBoardOptions) {
         Promise.all(
           queries.map(async (query) => {
             try {
-              return await fetchColumn(query, projectId, tc.signal)
+              return await fetchColumn(query, tc.signal)
             } catch (err) {
               if (isAbortError(err) || tc.timedOut || err instanceof LoadingTimeoutError) throw err
               console.warn('[useRunBoard] listRuns failed', query.key, err)

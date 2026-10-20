@@ -20,16 +20,17 @@ describe('agentsClient request coverage', () => {
 
   afterEach(() => vi.unstubAllGlobals())
 
-  it('builds agent, team, project bundle, revision, memory, thread, and cron requests', async () => {
+  it('builds agent, team, workspace bundle, revision, memory, thread, and cron requests', async () => {
     const agent = { name: 'agent / one', description: 'reviewer' } as never
 
     await agentsClient.listAgents()
     await agentsClient.getAgent('agent / one')
-    await agentsClient.bootstrapProjectOnboarding('project / 1', {
+    await agentsClient.bootstrapOnboarding({
       acpBackend: 'cursor',
       apiKey: 'secret',
     })
-    await agentsClient.bootstrapAgentTeam({ projectId: 'p1' } as never)
+    const teamBody = { prefix: 'Pay', pmName: 'PM', background: 'payments', acpBackend: 'cursor' } as const
+    await agentsClient.bootstrapAgentTeam(teamBody)
     await agentsClient.getAgentTeamBootstrap('team / 1')
     await agentsClient.retryAgentTeamBootstrap('team / 1')
     await agentsClient.listAgentTeamTemplates()
@@ -60,6 +61,10 @@ describe('agentsClient request coverage', () => {
       method: 'POST',
       body: JSON.stringify({ acpBackend: 'cursor', apiKey: 'secret' }),
     }))
+    expect(fetchMock).toHaveBeenCalledWith('/api/agent-teams/bootstrap', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify(teamBody),
+    }))
     expect(fetchMock).toHaveBeenCalledWith(
       '/api/agents/agent%20%2F%20one/workspace/revisions/sha%20%2F%201/restore',
       expect.objectContaining({ method: 'POST', body: JSON.stringify({ reason: '' }) }),
@@ -80,12 +85,12 @@ describe('agentsClient request coverage', () => {
     await expect(agentsClient.exportAgent('a')).rejects.toThrow('502 export failed')
   })
 
-  it('exports project bundles with every content-disposition filename form', async () => {
+  it('exports workspace bundles with every content-disposition filename form', async () => {
     const cases = [
       ["attachment; filename*=UTF-8''report%20pack.zip", 'report pack.zip'],
       ['attachment; filename="quoted.zip"', 'quoted.zip'],
       ['attachment; filename=plain.zip', 'plain.zip'],
-      ['attachment', 'project.zip'],
+      ['attachment', 'workspace-agents.zip'],
       ["attachment; filename*=UTF-8''%E0%A4%A; filename=\"fallback.zip\"", 'fallback.zip'],
     ]
     for (const [header, filename] of cases) {
@@ -95,22 +100,22 @@ describe('agentsClient request coverage', () => {
           headers: { 'Content-Disposition': header },
         }),
       )
-      await expect(agentsClient.exportProjectAgents('p / 1')).resolves.toMatchObject({ filename })
+      await expect(agentsClient.exportWorkspaceAgents()).resolves.toMatchObject({ filename })
     }
     expect(fetchMock).toHaveBeenCalledWith('/api/workspace/agents/export', {
       credentials: 'include',
     })
 
-    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'project denied' }, { status: 403 }))
-    await expect(agentsClient.exportProjectAgents('p')).rejects.toThrow('project denied')
+    fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'workspace denied' }, { status: 403 }))
+    await expect(agentsClient.exportWorkspaceAgents()).rejects.toThrow('workspace denied')
     fetchMock.mockResolvedValueOnce(new Response('oops', { status: 500 }))
-    await expect(agentsClient.exportProjectAgents('p')).rejects.toThrow('500 export failed')
+    await expect(agentsClient.exportWorkspaceAgents()).rejects.toThrow('500 export failed')
   })
 
-  it('imports project bundles and agents with exact multipart fields and handles failures', async () => {
+  it('imports workspace bundles and agents with exact multipart fields and handles failures', async () => {
     const file = new File(['zip'], 'agents.zip')
     fetchMock.mockResolvedValueOnce(jsonResponse({ created: ['a'], overwritten: ['b'] }))
-    await expect(agentsClient.importProjectAgents('p / 1', file, { mode: 'overwrite' })).resolves.toEqual({
+    await expect(agentsClient.importWorkspaceAgents(file, { mode: 'overwrite' })).resolves.toEqual({
       created: ['a'],
       overwritten: ['b'],
     })
@@ -121,20 +126,20 @@ describe('agentsClient request coverage', () => {
     expect((init.body as FormData).get('mode')).toBe('overwrite')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ name: 'new-agent' }))
-    await agentsClient.importAgent(file, { projectId: 'p1', targetName: 'new-agent', mode: 'create' })
+    await agentsClient.importAgent(file, { targetName: 'new-agent', mode: 'create' })
     ;[, init] = fetchMock.mock.calls.at(-1)!
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/agents/import')
-    expect((init.body as FormData).has('projectId')).toBe(false)
+    expect([...(init.body as FormData).keys()]).toEqual(['file', 'targetName', 'mode'])
     expect((init.body as FormData).get('targetName')).toBe('new-agent')
     expect((init.body as FormData).get('mode')).toBe('create')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'bad archive' }, { status: 400 }))
-    await expect(agentsClient.importProjectAgents('p1', file, { mode: 'rename' })).rejects.toThrow('bad archive')
+    await expect(agentsClient.importWorkspaceAgents(file, { mode: 'rename' })).rejects.toThrow('bad archive')
     fetchMock.mockResolvedValueOnce(new Response('invalid', { status: 422 }))
-    await expect(agentsClient.importProjectAgents('p1', file, { mode: 'rename' })).rejects.toThrow('422 import failed')
+    await expect(agentsClient.importWorkspaceAgents(file, { mode: 'rename' })).rejects.toThrow('422 import failed')
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'name exists' }, { status: 409 }))
-    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'a', mode: 'create' })).rejects.toThrow('name exists')
+    await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('name exists')
     fetchMock.mockResolvedValueOnce(new Response('invalid', { status: 500 }))
-    await expect(agentsClient.importAgent(file, { projectId: 'p1', targetName: 'a', mode: 'create' })).rejects.toThrow('500 import failed')
+    await expect(agentsClient.importAgent(file, { targetName: 'a', mode: 'create' })).rejects.toThrow('500 import failed')
   })
 })

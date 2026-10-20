@@ -37,7 +37,6 @@ type Phase = 'form' | 'loading' | 'success' | 'error'
 const props = defineProps<{
   open: boolean
   workflowId: string
-  projectId?: string
   workflowName: string
   fields: InputField[]
   runInputs: Record<string, string>
@@ -58,7 +57,7 @@ const props = defineProps<{
    */
   initialPriority?: RunPriority
   /**
-   * Home page only. Editor, project detail, and sidebar quick launch leave this
+   * Home page only. Editor, workflow list, and sidebar quick launch leave this
    * unset so the run still executes the latest saved head.
    */
   publishedSnapshot?: boolean
@@ -144,16 +143,14 @@ watch(
       messageImages.value = []
       emit('update:loading', false)
       resetScrollTop()
-      if (props.projectId) {
-        void api.listProjectRunTags(props.projectId).then((res) => {
-          tagSuggestions.value = Array.isArray(res.tags) ? res.tags : []
-        }).catch(() => {
-          tagSuggestions.value = []
-        })
-      }
+      void api.listRunTags().then((res) => {
+        tagSuggestions.value = Array.isArray(res.tags) ? res.tags : []
+      }).catch(() => {
+        tagSuggestions.value = []
+      })
     }
   },
-  // immediate: v-if + open=true 挂载时（ProjectDetail/WorkflowList）也要拉取存量 tags
+  // immediate: v-if + open=true 挂载时（WorkflowList）也要拉取存量 tags
   { immediate: true },
 )
 
@@ -292,7 +289,7 @@ function validateTag(value: string): string {
 
 const tagError = computed(() => validateTag(tagInput.value))
 const filteredTagSuggestions = computed(() => {
-  if (!props.projectId || !tagInput.value.trim()) return []
+  if (!tagInput.value.trim()) return []
   return tagSuggestions.value
     .filter((tag) => tag.includes(tagInput.value.trim()) && !tags.value.includes(tag))
     .slice(0, 8)

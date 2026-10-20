@@ -1,67 +1,65 @@
 import type {
-  Project,
-  ProjectAuditEvent,
-  ProjectAuditFacets,
-  ProjectAuditStats,
+  Workspace,
+  AuditEvent,
+  AuditFacets,
+  AuditStats,
   RequirementDraft,
   RequirementDraftCreateBody,
   RequirementDraftSchedulePatch,
 } from '../../shared/types'
 import { origin, req } from '../httpCore'
 import type {
-  CreateProjectSharedAgentTestPayload,
+  CreateSharedAgentTestPayload,
   PaginatedResponse,
-  ProjectCredentialItem,
-  ProjectCredentialPutBody,
-  ProjectCredentialsResponse,
-  ProjectSharedAgentConfig,
+  CredentialItem,
+  CredentialPutBody,
+  CredentialsResponse,
+  SharedAgentConfig,
   SandboxView,
 } from '../apiTypes'
 
 export const workspaceClient = {
-  updateWorkspace: (body: Partial<Project>) =>
-    req<Project>('/workspace', { method: 'PATCH', body: JSON.stringify(body) }),
+  updateWorkspace: (body: Partial<Workspace>) =>
+    req<Workspace>('/workspace', { method: 'PATCH', body: JSON.stringify(body) }),
   getWorkspace: (opts?: { signal?: AbortSignal }) =>
-    req<Project>('/workspace', opts?.signal ? { signal: opts.signal } : undefined),
-  /** Project shared Agent baseline (extend layer before Agent overlay). */
-  getProjectSharedAgentConfig: (_workspaceId: string) =>
-    req<ProjectSharedAgentConfig>(`/workspace/shared-agent-config`),
-  putProjectSharedAgentConfig: (
-    id: string,
-    body: Omit<ProjectSharedAgentConfig, 'projectId'> & { projectId?: string },
+    req<Workspace>('/workspace', opts?.signal ? { signal: opts.signal } : undefined),
+  /** Workspace shared Agent baseline (extend layer before Agent overlay). */
+  getSharedAgentConfig: () =>
+    req<SharedAgentConfig>(`/workspace/shared-agent-config`),
+  putSharedAgentConfig: (
+    body: SharedAgentConfig,
   ) =>
-    req<ProjectSharedAgentConfig>(`/workspace/shared-agent-config`, {
+    req<SharedAgentConfig>(`/workspace/shared-agent-config`, {
       method: 'PUT',
       body: JSON.stringify(body),
     }),
-  /** Project-context chat test: extend shared config then overlay chosen Agent. */
-  createProjectSharedAgentTest: (id: string, body: CreateProjectSharedAgentTestPayload) =>
+  /** Workspace-context chat test: extend shared config then overlay chosen Agent. */
+  createSharedAgentTest: (body: CreateSharedAgentTestPayload) =>
     req<SandboxView>(`/workspace/shared-agent-config/test`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
 
-  /** Project-owned credentials. GET never returns plaintext; PUT accepts a new value. */
-  getProjectCredentials: (_workspaceId: string) =>
-    req<ProjectCredentialsResponse>(`/workspace/credentials`),
-  createProjectCredential: (projectId: string, body: ProjectCredentialPutBody) =>
-    req<ProjectCredentialItem>(
+  /** Workspace-owned credentials. GET never returns plaintext; PUT accepts a new value. */
+  listCredentials: () =>
+    req<CredentialsResponse>(`/workspace/credentials`),
+  createCredential: (body: CredentialPutBody) =>
+    req<CredentialItem>(
       `/workspace/credentials`,
       { method: 'POST', body: JSON.stringify(body) },
     ),
-  putProjectCredential: (projectId: string, credentialId: string, body: ProjectCredentialPutBody) =>
-    req<ProjectCredentialItem>(
+  putCredential: (credentialId: string, body: CredentialPutBody) =>
+    req<CredentialItem>(
       `/workspace/credentials/${encodeURIComponent(credentialId)}`,
       { method: 'PUT', body: JSON.stringify(body) },
     ),
-  deleteProjectCredential: (projectId: string, credentialId: string) =>
+  deleteCredential: (credentialId: string) =>
     req<{ status: string }>(
       `/workspace/credentials/${encodeURIComponent(credentialId)}`,
       { method: 'DELETE' },
     ),
 
   listRequirementDrafts: (
-    projectId: string,
     params?: { status?: 'open' | 'done' | 'all'; q?: string },
   ) => {
     const q = new URLSearchParams()
@@ -72,11 +70,11 @@ export const workspaceClient = {
       `/workspace/requirement-drafts${qs ? `?${qs}` : ''}`,
     )
   },
-  getRequirementDraft: (projectId: string, draftId: string) =>
+  getRequirementDraft: (draftId: string) =>
     req<RequirementDraft>(
       `/workspace/requirement-drafts/${encodeURIComponent(draftId)}`,
     ),
-  createRequirementDraft: (projectId: string, body?: RequirementDraftCreateBody) =>
+  createRequirementDraft: (body?: RequirementDraftCreateBody) =>
     req<RequirementDraft>(
       `/workspace/requirement-drafts`,
       {
@@ -85,7 +83,6 @@ export const workspaceClient = {
       },
     ),
   updateRequirementDraft: (
-    projectId: string,
     draftId: string,
     body: { title: string; bodyMarkdown?: string },
   ) =>
@@ -94,7 +91,6 @@ export const workspaceClient = {
       { method: 'PUT', body: JSON.stringify(body) },
     ),
   patchRequirementDraftStatus: (
-    projectId: string,
     draftId: string,
     status: 'open' | 'done',
   ) =>
@@ -103,7 +99,6 @@ export const workspaceClient = {
       { method: 'PATCH', body: JSON.stringify({ status }) },
     ),
   patchRequirementDraftSchedule: (
-    projectId: string,
     draftId: string,
     body: RequirementDraftSchedulePatch,
   ) => {
@@ -120,42 +115,40 @@ export const workspaceClient = {
       { method: 'PATCH', body: JSON.stringify(payload) },
     )
   },
-  deleteRequirementDraft: (projectId: string, draftId: string) =>
+  deleteRequirementDraft: (draftId: string) =>
     req<{ status: string }>(
       `/workspace/requirement-drafts/${encodeURIComponent(draftId)}`,
       { method: 'DELETE' },
     ),
 
-  getProjectExternalMcp: (_workspaceId: string) =>
+  getExternalMcp: () =>
     req<{ enabled: boolean; enabledPacks: string[]; mcpBaseUrl: string; updatedAt?: string }>(
       `/workspace/external-mcp`,
     ),
-  updateProjectExternalMcp: (
-    projectId: string,
+  updateExternalMcp: (
     body: { enabled: boolean; enabledPacks: string[] },
   ) =>
     req<{ enabled: boolean; enabledPacks: string[]; mcpBaseUrl: string; updatedAt?: string }>(
       `/workspace/external-mcp`,
       { method: 'PUT', body: JSON.stringify(body) },
     ),
-  listProjectMcpKeys: (_workspaceId: string) =>
+  listMcpKeys: () =>
     req<{ id: string; name: string; key_prefix: string; created_at: string }[]>(
       `/workspace/external-mcp/keys`,
     ),
-  createProjectMcpKey: (projectId: string, name: string) =>
+  createMcpKey: (name: string) =>
     req<{ id: string; name: string; key: string; key_prefix: string; created_at: string }>(
       `/workspace/external-mcp/keys`,
       { method: 'POST', body: JSON.stringify({ name }) },
     ),
-  revokeProjectMcpKey: (projectId: string, keyId: string) =>
+  revokeMcpKey: (keyId: string) =>
     req<{ status: string }>(
       `/workspace/external-mcp/keys/${encodeURIComponent(keyId)}`,
       { method: 'DELETE' },
     ),
 
-  /** Project audit timeline (paginated). Default time window: 24h. */
-  listProjectAudit: (
-    id: string,
+  /** Workspace audit timeline (paginated). Default time window: 24h. */
+  listAudit: (
     params?: {
       time?: string
       actor?: string
@@ -184,14 +177,13 @@ export const workspaceClient = {
     if (params?.to) q.set('to', params.to)
     q.set('page', String(params?.page ?? 1))
     q.set('pageSize', String(params?.pageSize ?? 20))
-    return req<PaginatedResponse<ProjectAuditEvent> & { stats?: ProjectAuditStats }>(
+    return req<PaginatedResponse<AuditEvent> & { stats?: AuditStats }>(
       `/workspace/audit?${q}`,
     )
   },
 
   /** Run / node / resource options for dual-mode audit filters. */
-  listProjectAuditFacets: (
-    id: string,
+  listAuditFacets: (
     params?: {
       time?: string
       runId?: string
@@ -204,12 +196,11 @@ export const workspaceClient = {
     if (params?.runId) q.set('runId', params.runId)
     if (params?.from) q.set('from', params.from)
     if (params?.to) q.set('to', params.to)
-    return req<ProjectAuditFacets>(`/workspace/audit/facets?${q}`)
+    return req<AuditFacets>(`/workspace/audit/facets?${q}`)
   },
 
   /** Download URL for audit export (JSON); triggers meta-audit on server. */
-  exportProjectAuditUrl: (
-    id: string,
+  exportAuditUrl: (
     params?: {
       format?: 'json' | 'text'
       time?: string

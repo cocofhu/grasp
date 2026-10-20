@@ -1,5 +1,5 @@
 {
-  "principle": "Align with components/{run,agent,inbox,pm,project}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
+  "principle": "Align with components/{run,agent,inbox,pm,workspace}; api/ root=httpCore+apiTypes+api aggregate, clients/ under api/clients/; chat/ agent-chat session queue/frame core shared by every chat surface; composables/ cross-domain use*; workflow/ graph model shared by the editor and run views (agent capabilities, outlets, validation); shared/ types/regionPolicy/loading*/i18n/format/theme and other cross-cutting utils",
   "domains": {
     "agent": [
       "agentCreateWizard.ts",
@@ -100,13 +100,6 @@
       "pmTurnState.ts",
       "usePmChannelMulti.ts",
       "usePmLeaderChat.ts"
-    ],
-    "project": [
-      "credentialKinds.ts",
-      "requirementDraftMarkdown.ts",
-      "requirementDraftSchedule.ts",
-      "useRequirementDrafts.ts",
-      "useWorkflows.ts"
     ],
     "run": [
       "acpTools.ts",
@@ -213,6 +206,13 @@
       "agentCapabilities.ts",
       "graphValidation.ts",
       "nodeOutlets.ts"
+    ],
+    "workspace": [
+      "credentialKinds.ts",
+      "requirementDraftMarkdown.ts",
+      "requirementDraftSchedule.ts",
+      "useRequirementDrafts.ts",
+      "useWorkflows.ts"
     ]
   },
   "totals": {
@@ -223,9 +223,9 @@
     "composables": 19,
     "inbox": 33,
     "pm": 7,
-    "project": 5,
     "run": 58,
     "shared": 39,
-    "workflow": 3
+    "workflow": 3,
+    "workspace": 5
   }
 }

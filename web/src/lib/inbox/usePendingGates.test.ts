@@ -327,9 +327,9 @@ describe('usePendingGates', () => {
     expect('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined).toBeUndefined()
   })
 
-  it('peek passes workflow and tag while ignoring obsolete project query to listGates (plan g2.2)', async () => {
+  it('peek passes workflow and tag filters to listGates (plan g2.2)', async () => {
     const prev = window.location.search
-    window.history.replaceState({}, '', '/gates?wf=wf-1&projectId=proj-b&tag=urgent')
+    window.history.replaceState({}, '', '/gates?wf=wf-1&tag=urgent')
     vi.mocked(api.listGates).mockClear()
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
@@ -339,7 +339,6 @@ describe('usePendingGates', () => {
         page: 1,
         pageSize: 100,
         wf: 'wf-1',
-        projectId: undefined,
         tag: 'urgent',
       }),
     )
@@ -355,7 +354,6 @@ describe('usePendingGates', () => {
     expect(api.listGates).toHaveBeenCalledWith(
       expect.objectContaining({
         wf: undefined,
-        projectId: undefined,
         tag: undefined,
       }),
     )

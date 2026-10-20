@@ -7,14 +7,14 @@ import { createI18n } from 'vue-i18n'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import zhPages from '@/locales/zh-CN/pages.json'
 import zhCommon from '@/locales/zh-CN/common.json'
-import ProjectExternalMcpPanel from './ProjectExternalMcpPanel.vue'
+import WorkspaceExternalMcpPanel from './WorkspaceExternalMcpPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
-  getProjectExternalMcp: vi.fn(),
-  updateProjectExternalMcp: vi.fn(),
-  listProjectMcpKeys: vi.fn(),
-  createProjectMcpKey: vi.fn(),
-  revokeProjectMcpKey: vi.fn(),
+  getExternalMcp: vi.fn(),
+  updateExternalMcp: vi.fn(),
+  listMcpKeys: vi.fn(),
+  createMcpKey: vi.fn(),
+  revokeMcpKey: vi.fn(),
 }))
 
 const mocks = vi.hoisted(() => ({
@@ -41,30 +41,29 @@ function mountPanel() {
     locale: 'zh-CN',
     messages: { 'zh-CN': { pages: zhPages.pages, common: zhCommon.common } },
   })
-  return mount(ProjectExternalMcpPanel, {
-    props: { projectId: 'proj-1' },
+  return mount(WorkspaceExternalMcpPanel, {
     attachTo: document.body,
     global: { plugins: [i18n], stubs: { Teleport: true } },
   })
 }
 
-describe('ProjectExternalMcpPanel (plan g3.1/g3.2/g3.3)', () => {
+describe('WorkspaceExternalMcpPanel (plan g3.1/g3.2/g3.3)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.copyToClipboard.mockReset()
     mocks.copyToClipboard.mockResolvedValue(true)
-    apiMocks.getProjectExternalMcp.mockResolvedValue({
+    apiMocks.getExternalMcp.mockResolvedValue({
       enabled: false,
       enabledPacks: [],
-      mcpBaseUrl: 'http://api.example.com/mcp/external/proj-1',
+      mcpBaseUrl: 'http://api.example.com/mcp/workspace',
     })
-    apiMocks.listProjectMcpKeys.mockResolvedValue([])
-    apiMocks.updateProjectExternalMcp.mockResolvedValue({
+    apiMocks.listMcpKeys.mockResolvedValue([])
+    apiMocks.updateExternalMcp.mockResolvedValue({
       enabled: true,
       enabledPacks: ['pm-progress'],
-      mcpBaseUrl: 'http://api.example.com/mcp/external/proj-1',
+      mcpBaseUrl: 'http://api.example.com/mcp/workspace',
     })
-    apiMocks.createProjectMcpKey.mockResolvedValue({
+    apiMocks.createMcpKey.mockResolvedValue({
       id: 'k1',
       name: 'cursor',
       key: 'cf_proj_abcd',
@@ -76,12 +75,12 @@ describe('ProjectExternalMcpPanel (plan g3.1/g3.2/g3.3)', () => {
   it('loads settings and saves enabled packs (g3.1)', async () => {
     const wrapper = mountPanel()
     await flushPromises()
-    expect(apiMocks.getProjectExternalMcp).toHaveBeenCalledWith('proj-1')
+    expect(apiMocks.getExternalMcp).toHaveBeenCalledWith()
     expect(wrapper.find('[data-testid="external-mcp-enabled"]').exists()).toBe(true)
 
     await wrapper.get('[data-testid="external-mcp-save"]').trigger('click')
     await flushPromises()
-    expect(apiMocks.updateProjectExternalMcp).toHaveBeenCalled()
+    expect(apiMocks.updateExternalMcp).toHaveBeenCalled()
   })
 
   it('opens create-key modal (g3.2)', async () => {
@@ -96,23 +95,23 @@ describe('ProjectExternalMcpPanel (plan g3.1/g3.2/g3.3)', () => {
     const wrapper = mountPanel()
     await flushPromises()
     const text = wrapper.text()
-    expect(text).toContain('http://api.example.com/mcp/external/proj-1/pm-progress')
+    expect(text).toContain('http://api.example.com/mcp/workspace/pm-progress')
     expect(text).not.toContain('{base}')
   })
 })
 
-describe('ProjectExternalMcpPanel copy (plan g1/g2)', () => {
+describe('WorkspaceExternalMcpPanel copy (plan g1/g2)', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.copyToClipboard.mockReset()
     mocks.copyToClipboard.mockResolvedValue(true)
-    apiMocks.getProjectExternalMcp.mockResolvedValue({
+    apiMocks.getExternalMcp.mockResolvedValue({
       enabled: true,
       enabledPacks: ['pm-progress'],
-      mcpBaseUrl: 'http://api.example.com/mcp/external/proj-1',
+      mcpBaseUrl: 'http://api.example.com/mcp/workspace',
     })
-    apiMocks.listProjectMcpKeys.mockResolvedValue([])
-    apiMocks.createProjectMcpKey.mockResolvedValue({
+    apiMocks.listMcpKeys.mockResolvedValue([])
+    apiMocks.createMcpKey.mockResolvedValue({
       id: 'k1',
       name: 'cursor',
       key: 'cf_proj_abcd',
@@ -126,7 +125,7 @@ describe('ProjectExternalMcpPanel copy (plan g1/g2)', () => {
     await flushPromises()
     await wrapper.get('[data-testid="external-mcp-copy-url"]').trigger('click')
     await flushPromises()
-    expect(mocks.copyToClipboard).toHaveBeenCalledWith('http://api.example.com/mcp/external/proj-1')
+    expect(mocks.copyToClipboard).toHaveBeenCalledWith('http://api.example.com/mcp/workspace')
     expect(mocks.toastSuccess).toHaveBeenCalledWith('已复制到剪贴板')
     expect(mocks.toastError).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="external-mcp-copy-url"]').text()).toContain('已复制')
@@ -138,7 +137,7 @@ describe('ProjectExternalMcpPanel copy (plan g1/g2)', () => {
     await wrapper.get('[data-testid="external-mcp-copy-example"]').trigger('click')
     await flushPromises()
     const call = mocks.copyToClipboard.mock.calls[0]?.[0] as string
-    expect(call).toContain('http://api.example.com/mcp/external/proj-1')
+    expect(call).toContain('http://api.example.com/mcp/workspace')
     expect(call).toContain('mcpServers')
     expect(mocks.toastSuccess).toHaveBeenCalledWith('已复制到剪贴板')
     expect(mocks.toastError).not.toHaveBeenCalled()
@@ -179,7 +178,7 @@ describe('ProjectExternalMcpPanel copy (plan g1/g2)', () => {
 
   it('does not call navigator.clipboard.writeText directly (g2.2)', () => {
     const panelSrc = readFileSync(
-      join(dirname(fileURLToPath(import.meta.url)), 'ProjectExternalMcpPanel.vue'),
+      join(dirname(fileURLToPath(import.meta.url)), 'WorkspaceExternalMcpPanel.vue'),
       'utf8',
     )
     expect(panelSrc).not.toMatch(/navigator\.clipboard\.writeText/)

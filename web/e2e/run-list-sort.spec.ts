@@ -110,12 +110,6 @@ async function mockApis(page: Page, capture: { requests: Request[] }) {
       })
       return
     }
-    if (path.endsWith('/api/projects') || path === '/api/projects') {
-      await route.fulfill({
-        json: [{ id: 'proj-1', name: 'Grasp', slug: 'grasp' }],
-      })
-      return
-    }
     await route.fulfill({ status: 404, json: { error: 'not mocked' } })
   })
 }

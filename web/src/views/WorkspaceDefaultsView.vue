@@ -12,11 +12,11 @@ import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useToast } from '@/lib/composables/useToast'
 import { normalizeUnknownModelDisplayNameInput } from '@/lib/run/tokenUsage'
-import type { ProjectVariable } from '@/lib/shared/types'
+import type { WorkspaceVariable } from '@/lib/shared/types'
 const { t } = useI18n()
 const route = useRoute()
 const toast = useToast()
-const { workspace: project } = useWorkspaceContext()
+const { workspace } = useWorkspaceContext()
 const isVariables = computed(() => route.meta.workspaceTool === 'variables')
 const savingMeta = ref(false)
 const savingVars = ref(false)
@@ -24,10 +24,10 @@ const editName = ref('')
 const editDesc = ref('')
 const editUnknownModelDisplayName = ref('')
 const unknownModelDisplayNameError = ref('')
-const varRows = ref<ProjectVariable[]>([])
+const varRows = ref<WorkspaceVariable[]>([])
 let workspaceGeneration = 0
-watch(project, (p, previous) => {
- if (p?.id !== previous?.id) workspaceGeneration++
+watch(workspace, (p, previous) => {
+ if (!p || !previous) workspaceGeneration++
  if (!p) {
    editName.value = ''
    editDesc.value = ''
@@ -52,12 +52,12 @@ const VAR_TYPES = computed(() => [
 ])
 
 async function saveMeta() {
-  if (!project.value) return
+  if (!workspace.value) return
   const current = workspaceGeneration
   unknownModelDisplayNameError.value = ''
   const normalized = normalizeUnknownModelDisplayNameInput(editUnknownModelDisplayName.value)
   if (normalized.error) {
-    unknownModelDisplayNameError.value = t('pages.projectDetail.unknownModelDisplayNameTooLong')
+    unknownModelDisplayNameError.value = t('pages.workspace.unknownModelDisplayNameTooLong')
     return
   }
   savingMeta.value = true
@@ -68,9 +68,9 @@ async function saveMeta() {
       unknownModelDisplayName: normalized.value,
     })
     if (current !== workspaceGeneration) return
-    project.value = saved
-    editUnknownModelDisplayName.value = project.value.unknownModelDisplayName || ''
-    toast.success(t('pages.projectDetail.saved'))
+    workspace.value = saved
+    editUnknownModelDisplayName.value = workspace.value.unknownModelDisplayName || ''
+    toast.success(t('pages.workspace.saved'))
   } catch (e: any) {
     if (current !== workspaceGeneration) return
     toast.error(String(e?.message || e))
@@ -86,19 +86,19 @@ function clearUnknownModelDisplayName() {
 }
 
 async function saveVars() {
-  if (!project.value) return
+  if (!workspace.value) return
   const current = workspaceGeneration
   savingVars.value = true
   try {
-    // Submit full row objects (incl. hidden ask/required/editable) so mergeProjectVars
+    // Submit full row objects (incl. hidden ask/required/editable) so mergeWorkspaceVars
     // whole-table replace does not wipe server-side values.
     const saved = await api.updateWorkspace({
       variables: varRows.value.filter((v) => v.name.trim()),
     })
     if (current !== workspaceGeneration) return
-    project.value = saved
-    varRows.value = (project.value.variables || []).map((v) => ({ ...v }))
-    toast.success(t('pages.projectDetail.saved'))
+    workspace.value = saved
+    varRows.value = (workspace.value.variables || []).map((v) => ({ ...v }))
+    toast.success(t('pages.workspace.saved'))
   } catch (e: any) {
     if (current !== workspaceGeneration) return
     toast.error(String(e?.message || e))
@@ -127,13 +127,13 @@ function removeVarRow(i: number) {
 }
 
 /** Clear mask when un-secreting or renaming so **** is never treated as plaintext. */
-function onVarSecretChange(row: ProjectVariable, secret: boolean) {
+function onVarSecretChange(row: WorkspaceVariable, secret: boolean) {
   row.secret = secret
   if (!secret && row.value === SECRET_MASK) {
     row.value = ''
   }
 }
-function onVarNameChange(row: ProjectVariable, name: string) {
+function onVarNameChange(row: WorkspaceVariable, name: string) {
   if (row.name !== name && row.value === SECRET_MASK) {
     row.value = ''
   }
@@ -141,7 +141,7 @@ function onVarNameChange(row: ProjectVariable, name: string) {
 }
 
 /** In-place type switch — never rebuild the row object (preserves ask/required/editable). */
-function onVarTypeChange(row: ProjectVariable, type: string) {
+function onVarTypeChange(row: WorkspaceVariable, type: string) {
   row.type = type
   if (type === 'bool') {
     row.value = row.value === true || row.value === 'true'
@@ -156,22 +156,22 @@ function onVarTypeChange(row: ProjectVariable, type: string) {
   }
 }
 
-function selectOptions(row: ProjectVariable): string[] {
+function selectOptions(row: WorkspaceVariable): string[] {
   return String(row.options || '')
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean)
 }
 
-function isBoolTrue(row: ProjectVariable): boolean {
+function isBoolTrue(row: WorkspaceVariable): boolean {
   return row.value === true || row.value === 'true'
 }
 
-function setBoolValue(row: ProjectVariable, v: boolean) {
+function setBoolValue(row: WorkspaceVariable, v: boolean) {
   row.value = v
 }
 
-function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
+function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) {
   row.value = asNumber ? Number(raw) : raw
 }
 
@@ -190,11 +190,11 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
           <div class="flex flex-1 flex-col items-center justify-center">
             <EmptyState
               icon="doc"
-              :title="t('pages.projectDetail.varsEmptyTitle')"
-              :desc="t('pages.projectDetail.varsEmptyDesc')"
+              :title="t('pages.workspace.varsEmptyTitle')"
+              :desc="t('pages.workspace.varsEmptyDesc')"
             >
               <AppButton variant="primary" icon="plus" @click="addVarRow">
-                {{ t('pages.projectDetail.addRow') }}
+                {{ t('pages.workspace.addRow') }}
               </AppButton>
             </EmptyState>
           </div>
@@ -209,9 +209,9 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
           <div
             class="workspace-var-header shrink-0 gap-2 border-b border-line/60 py-2.5 text-[11px] font-semibold uppercase tracking-wider text-txt3"
           >
-            <span>{{ t('pages.projectDetail.colVarName') }}</span>
-            <span>{{ t('pages.projectDetail.colDefault') }}</span>
-            <span>{{ t('pages.projectDetail.colType') }}</span>
+            <span>{{ t('pages.workspace.colVarName') }}</span>
+            <span>{{ t('pages.workspace.colDefault') }}</span>
+            <span>{{ t('pages.workspace.colType') }}</span>
             <span>{{ t('common.table.actions') }}</span>
           </div>
 
@@ -225,24 +225,24 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
                 class="workspace-var-fields grid gap-2"
               >
                 <label class="workspace-var-name min-w-0">
-                  <span class="workspace-var-label">{{ t('pages.projectDetail.colVarName') }}</span>
+                  <span class="workspace-var-label">{{ t('pages.workspace.colVarName') }}</span>
                   <input
                     :value="row.name"
-                    :aria-label="t('pages.projectDetail.colVarName')"
+                    :aria-label="t('pages.workspace.colVarName')"
                     :data-testid="`workspace-var-name-${i}`"
                     class="input min-w-0 px-2.5 py-1.5 font-mono text-xs"
-                    :placeholder="t('pages.projectDetail.varName')"
+                    :placeholder="t('pages.workspace.varName')"
                     @input="onVarNameChange(row, ($event.target as HTMLInputElement).value)"
                   />
 
                 </label>
                 <div class="workspace-var-value min-w-0">
-                  <span class="workspace-var-label">{{ t('pages.projectDetail.colDefault') }}</span>
+                  <span class="workspace-var-label">{{ t('pages.workspace.colDefault') }}</span>
                   <!-- Value control matrix by type -->
                   <div
                     v-if="row.type === 'bool'"
                     role="group"
-                    :aria-label="t('pages.projectDetail.colDefault')"
+                    :aria-label="t('pages.workspace.colDefault')"
                     class="rounded-lg flex min-w-0 overflow-hidden border border-line"
                   >
                     <button
@@ -264,49 +264,49 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
                   </div>
                   <input
                     v-else-if="row.type === 'number'"
-                    :aria-label="t('pages.projectDetail.colDefault')"
+                    :aria-label="t('pages.workspace.colDefault')"
                     :value="row.value == null ? '' : String(row.value)"
                     type="number"
                     class="input w-full min-w-0 px-2.5 py-1.5 text-xs"
-                    :placeholder="t('pages.projectDetail.varValue')"
+                    :placeholder="t('pages.workspace.varValue')"
                     @input="onVarValueInput(row, ($event.target as HTMLInputElement).value, true)"
                   />
                   <textarea
                     v-else-if="row.type === 'paragraph'"
-                    :aria-label="t('pages.projectDetail.colDefault')"
+                    :aria-label="t('pages.workspace.colDefault')"
                     :value="row.value == null ? '' : String(row.value)"
                     rows="2"
                     class="input w-full min-h-[40px] min-w-0 px-2.5 py-1.5 text-xs"
-                    :placeholder="t('pages.projectDetail.varValue')"
+                    :placeholder="t('pages.workspace.varValue')"
                     @input="onVarValueInput(row, ($event.target as HTMLTextAreaElement).value)"
                   />
                   <select
                     v-else-if="row.type === 'select'"
-                    :aria-label="t('pages.projectDetail.colDefault')"
+                    :aria-label="t('pages.workspace.colDefault')"
                     :value="row.value == null ? '' : String(row.value)"
                     class="input w-full min-w-0 px-2.5 py-1.5 text-xs"
                     @change="onVarValueInput(row, ($event.target as HTMLSelectElement).value)"
                   >
-                    <option value="">{{ t('pages.projectDetail.selectPlaceholder') }}</option>
+                    <option value="">{{ t('pages.workspace.selectPlaceholder') }}</option>
                     <option v-for="opt in selectOptions(row)" :key="opt" :value="opt">{{ opt }}</option>
                   </select>
                   <input
                     v-else
-                    :aria-label="t('pages.projectDetail.colDefault')"
+                    :aria-label="t('pages.workspace.colDefault')"
                     :value="row.value == null ? '' : String(row.value)"
                     class="input w-full min-w-0 px-2.5 py-1.5 text-xs"
-                    :placeholder="t('pages.projectDetail.varValue')"
+                    :placeholder="t('pages.workspace.varValue')"
                     :type="row.secret ? 'password' : 'text'"
                     @input="onVarValueInput(row, ($event.target as HTMLInputElement).value)"
                   />
 
                 </div>
                 <div class="workspace-var-type min-w-0">
-                  <label class="workspace-var-label" :for="`workspace-var-type-${i}`">{{ t('pages.projectDetail.colType') }}</label>
+                  <label class="workspace-var-label" :for="`workspace-var-type-${i}`">{{ t('pages.workspace.colType') }}</label>
                   <div class="flex min-w-0 items-center gap-1.5">
                     <select
                       :id="`workspace-var-type-${i}`"
-                      :aria-label="t('pages.projectDetail.colType')"
+                      :aria-label="t('pages.workspace.colType')"
                       :value="row.type"
                       class="input min-w-0 flex-1 px-2.5 py-1.5 text-xs"
                       @change="onVarTypeChange(row, ($event.target as HTMLSelectElement).value)"
@@ -319,10 +319,10 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
                       type="button"
                       class="chip shrink-0"
                       :class="row.secret ? 'border-accent/50 text-accent-2' : 'text-txt3'"
-                      :title="row.secret ? t('pages.projectDetail.secret') : t('pages.projectDetail.plain')"
+                      :title="row.secret ? t('pages.workspace.secret') : t('pages.workspace.plain')"
                       @click="onVarSecretChange(row, !row.secret)"
                     >
-                      {{ row.secret ? t('pages.projectDetail.secret') : t('pages.projectDetail.plain') }}
+                      {{ row.secret ? t('pages.workspace.secret') : t('pages.workspace.plain') }}
                     </button>
                 </div>
                 </div>
@@ -343,13 +343,13 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
                 <input
                   v-model="row.desc"
                   class="input px-2.5 py-1.5 text-xs"
-                  :placeholder="t('pages.projectDetail.varDescPlaceholder')"
+                  :placeholder="t('pages.workspace.varDescPlaceholder')"
                 />
                 <input
                   v-if="row.type === 'select'"
                   v-model="row.options"
                   class="input px-2.5 py-1.5 font-mono text-xs"
-                  :placeholder="t('pages.projectDetail.varOptionsPlaceholder')"
+                  :placeholder="t('pages.workspace.varOptionsPlaceholder')"
                 />
               </div>
             </div>
@@ -360,7 +360,7 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
             data-testid="workflow-vars-footer"
           >
             <AppButton variant="outline" icon="plus" @click="addVarRow">
-              {{ t('pages.projectDetail.addRow') }}
+              {{ t('pages.workspace.addRow') }}
             </AppButton>
             <AppButton variant="primary" :disabled="savingVars" @click="saveVars">
               {{ savingVars ? t('common.buttons.saving') : t('common.buttons.save') }}
@@ -370,43 +370,43 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
       </div>
 
       <div v-else>
-          <SettingsSection :title="t('pages.projectDetail.metaTitle')" :description="t('pages.projectDetail.metaHint')">
-            <SettingsRow :label="t('pages.projectList.nameLabel')" for="project-meta-name">
+          <SettingsSection :title="t('pages.workspace.metaTitle')" :description="t('pages.workspace.metaHint')">
+            <SettingsRow :label="t('pages.workspace.nameLabel')" for="workspace-meta-name">
               <input
-                id="project-meta-name"
+                id="workspace-meta-name"
                 v-model="editName"
                 class="input w-full sm:w-[340px]"
                 autocomplete="off"
               />
             </SettingsRow>
-            <SettingsRow :label="t('pages.projectList.descLabel')" for="project-meta-desc">
+            <SettingsRow :label="t('pages.workspace.descLabel')" for="workspace-meta-desc">
               <textarea
-                id="project-meta-desc"
+                id="workspace-meta-desc"
                 v-model="editDesc"
                 rows="3"
                 class="input min-h-[88px] w-full resize-y sm:w-[340px]"
-                :placeholder="t('pages.projectDetail.metaDescPlaceholder')"
+                :placeholder="t('pages.workspace.metaDescPlaceholder')"
               />
             </SettingsRow>
-            <SettingsRow :label="t('pages.projectDetail.unknownModelDisplayNameLabel')" :description="t('pages.projectDetail.unknownModelDisplayNameHelp')" for="project-meta-unknown-display">
+            <SettingsRow :label="t('pages.workspace.unknownModelDisplayNameLabel')" :description="t('pages.workspace.unknownModelDisplayNameHelp')" for="workspace-meta-unknown-display">
               <div class="flex w-full flex-col items-end gap-2 sm:w-[340px]">
               <input
-                id="project-meta-unknown-display"
+                id="workspace-meta-unknown-display"
                 v-model="editUnknownModelDisplayName"
                 class="input"
                 maxlength="80"
                 autocomplete="off"
-                data-testid="project-meta-unknown-display"
-                :placeholder="t('pages.projectDetail.unknownModelDisplayNamePlaceholder')"
+                data-testid="workspace-meta-unknown-display"
+                :placeholder="t('pages.workspace.unknownModelDisplayNamePlaceholder')"
                 @input="unknownModelDisplayNameError = ''"
               />
-              <AppButton variant="ghost" size="sm" data-testid="project-meta-unknown-display-clear" :disabled="savingMeta" @click="clearUnknownModelDisplayName">{{ t('pages.projectDetail.unknownModelDisplayNameClear') }}</AppButton>
+              <AppButton variant="ghost" size="sm" data-testid="workspace-meta-unknown-display-clear" :disabled="savingMeta" @click="clearUnknownModelDisplayName">{{ t('pages.workspace.unknownModelDisplayNameClear') }}</AppButton>
               </div>
               <template #details>
               <p
                 v-if="unknownModelDisplayNameError"
                 class="m-0 mt-1.5 text-xs text-err"
-                data-testid="project-meta-unknown-display-error"
+                data-testid="workspace-meta-unknown-display-error"
               >
                 {{ unknownModelDisplayNameError }}
               </p>
@@ -416,7 +416,7 @@ function onVarValueInput(row: ProjectVariable, raw: string, asNumber = false) {
 
           <div
             class="mt-5 flex flex-wrap items-center justify-end gap-2"
-            data-testid="project-meta-footer"
+            data-testid="workspace-meta-footer"
           >
             <div class="flex flex-wrap items-center gap-2">
               <AppButton variant="primary" :disabled="savingMeta" @click="saveMeta">

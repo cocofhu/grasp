@@ -12,8 +12,8 @@ export interface McpServer {
   id: string
   name: string
   builtin: boolean
-  /** run = 运行级；project = 项目/PM 会话级；agent = 任意 Agent 可声明的通用平台 MCP */
-  scope: 'run' | 'project' | 'agent'
+  /** run = 运行级；workspace = 工作区助手会话级；agent = 任意 Agent 可声明的通用平台 MCP */
+  scope: 'run' | 'workspace' | 'agent'
   descKey: string
   overviewKey?: string
   tools: McpTool[]
@@ -119,7 +119,7 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'pm-progress',
     name: 'pm-progress',
     builtin: true,
-    scope: 'project',
+    scope: 'workspace',
     descKey: 'mcp.pmProgress.desc',
     overviewKey: 'mcp.pmProgress.overview',
     tools: [
@@ -136,7 +136,7 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'pm-workflow-read',
     name: 'pm-workflow-read',
     builtin: true,
-    scope: 'project',
+    scope: 'workspace',
     descKey: 'mcp.pmWorkflowRead.desc',
     overviewKey: 'mcp.pmWorkflowRead.overview',
     tools: [
@@ -154,7 +154,7 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'pm-workflow-write',
     name: 'pm-workflow-write',
     builtin: true,
-    scope: 'project',
+    scope: 'workspace',
     descKey: 'mcp.pmWorkflowWrite.desc',
     overviewKey: 'mcp.pmWorkflowWrite.overview',
     tools: [
@@ -174,11 +174,11 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'pm-agent-fs',
     name: 'pm-agent-fs',
     builtin: true,
-    scope: 'project',
+    scope: 'workspace',
     descKey: 'mcp.pmAgentFs.desc',
     overviewKey: 'mcp.pmAgentFs.overview',
     tools: [
-      { name: 'pm_list_project_agents', signatureKey: 'mcp.pmAgentFs.tools.pm_list_project_agents.signature', descKey: 'mcp.pmAgentFs.tools.pm_list_project_agents.desc', io: 'read' },
+      { name: 'pm_list_workspace_agents', signatureKey: 'mcp.pmAgentFs.tools.pm_list_workspace_agents.signature', descKey: 'mcp.pmAgentFs.tools.pm_list_workspace_agents.desc', io: 'read' },
       { name: 'pm_list_agent_templates', signatureKey: 'mcp.pmAgentFs.tools.pm_list_agent_templates.signature', descKey: 'mcp.pmAgentFs.tools.pm_list_agent_templates.desc', io: 'read' },
       { name: 'pm_create_agent_from_template', signatureKey: 'mcp.pmAgentFs.tools.pm_create_agent_from_template.signature', descKey: 'mcp.pmAgentFs.tools.pm_create_agent_from_template.desc', io: 'write' },
       { name: 'pm_fs_list', signatureKey: 'mcp.pmAgentFs.tools.pm_fs_list.signature', descKey: 'mcp.pmAgentFs.tools.pm_fs_list.desc', io: 'read' },
@@ -197,7 +197,7 @@ export const BUILTIN_MCPS: McpServer[] = [
     id: 'pm-prd-manager',
     name: 'pm-prd-manager',
     builtin: true,
-    scope: 'project',
+    scope: 'workspace',
     descKey: 'mcp.pmPrdManager.desc',
     overviewKey: 'mcp.pmPrdManager.overview',
     tools: [

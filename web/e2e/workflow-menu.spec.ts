@@ -64,12 +64,12 @@ async function mockHomeApis(page: Page) {
     await route.continue()
   })
 
-  await page.route('**/api/projects**', async (route) => {
+  await page.route('**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ items: [], total: 0 }),
+        body: JSON.stringify({ name: '工作区', description: '', variables: [] }),
       })
       return
     }
@@ -79,7 +79,7 @@ async function mockHomeApis(page: Page) {
 
 async function openDashboard(page: Page) {
   await mockHomeApis(page)
-  await page.goto('/dashboard-home-chat.html?memory=1&projectId=proj-1')
+  await page.goto('/dashboard-home-chat.html')
   await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('home-workflow-card-wf-approve')).toBeVisible()
 }

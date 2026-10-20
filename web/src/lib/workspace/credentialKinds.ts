@@ -50,12 +50,12 @@ type ModelVendorItem = KindItem & {
   revokedAt?: string
 }
 
-/** A saved, usable project model-vendor API key (the OpenCode kind). */
+/** A saved, usable workspace model-vendor API key (the OpenCode kind). */
 export function isModelVendorCredential(item: ModelVendorItem): boolean {
   return (
     (item.type || '').toLowerCase() === 'ai' &&
     (item.provider || '').toLowerCase() === 'opencode' &&
-    (!item.source || item.source === 'project') &&
+    (!item.source || item.source === 'workspace') &&
     !!item.configured &&
     item.enabled !== false &&
     !item.revokedAt

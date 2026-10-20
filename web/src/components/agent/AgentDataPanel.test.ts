@@ -57,7 +57,6 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
 const SAMPLE_JOB = {
   id: 'cron-1',
   agentName: 'demo-agent',
-  projectId: 'proj-1',
   threadId: 'th-1',
   name: '每日汇报',
   prompt: '汇报',
@@ -71,7 +70,6 @@ const SAMPLE_JOB = {
 
 const SAMPLE_THREAD = {
   id: 'th-user-1',
-  projectId: 'proj-1',
   userId: 'other',
   agentName: 'demo-agent',
   kind: 'user',
@@ -87,7 +85,7 @@ function mountPanel(props?: { subTab?: 'memory' | 'context' | 'jobs' }) {
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(AgentDataPanel, {
-    props: { agentName: 'demo-agent', projectName: 'demo-project', ...props },
+    props: { agentName: 'demo-agent', ...props },
     global: {
       plugins: [i18n],
       stubs: {
@@ -122,7 +120,6 @@ describe('AgentDataPanel', () => {
       items: [
         {
           id: 'm1',
-          projectId: 'proj-1',
           agentName: 'demo-agent',
           title: '部署约定',
           content: '确认配置',
@@ -209,7 +206,6 @@ describe('AgentDataPanel', () => {
       items: [
         {
           id: 'm1',
-          projectId: 'proj-1',
           agentName: 'demo-agent',
           title: '部署约定',
           content: '确认配置',
@@ -256,7 +252,6 @@ describe('AgentDataPanel', () => {
       items: [
         {
           id: 'm1',
-          projectId: 'proj-1',
           agentName: 'demo-agent',
           title: '部署约定',
           content: '确认配置',
@@ -339,7 +334,6 @@ describe('AgentDataPanel', () => {
       items: [
         {
           id: 'm1',
-          projectId: 'proj-1',
           agentName: 'demo-agent',
           title: '部署约定',
           content: '确认配置',
@@ -366,7 +360,7 @@ describe('AgentDataPanel', () => {
     await flushPromises()
     expect(w.text()).toContain('部署约定')
     expect(w.find('[data-testid="agent-data-thin-progress"]').exists()).toBe(true)
-    releaseMem!({ items: [{ id: 'm2', title: '新记忆', content: 'x', projectId: 'p', agentName: 'other-agent', source: 'user', createdAt: '', updatedAt: '' }] })
+    releaseMem!({ items: [{ id: 'm2', title: '新记忆', content: 'x', agentName: 'other-agent', source: 'user', createdAt: '', updatedAt: '' }] })
     await flushPromises()
 
     await openTab(w, /上下文/)
@@ -404,7 +398,6 @@ describe('AgentDataPanel', () => {
     expect((saveBtn.element as HTMLButtonElement).disabled).toBe(true)
     release!({
       id: 'm-new',
-      projectId: 'proj-1',
       agentName: 'demo-agent',
       title: '新记忆',
       content: '',
@@ -415,7 +408,6 @@ describe('AgentDataPanel', () => {
     apiMocks.listAgentMemories.mockResolvedValue({
       items: [{
         id: 'm-new',
-        projectId: 'proj-1',
         agentName: 'demo-agent',
         title: '新记忆',
         content: '',

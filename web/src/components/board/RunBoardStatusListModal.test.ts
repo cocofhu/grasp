@@ -62,7 +62,6 @@ function mountModal(props: Record<string, unknown> = {}) {
   return mount(RunBoardStatusListModal, {
     props: {
       open: true,
-      projectId: 'proj-1',
       status: 'completed',
       title: '已完成',
       ...props,
@@ -116,7 +115,6 @@ describe('RunBoardStatusListModal', () => {
     await flushPromises()
 
     expect(listRuns).toHaveBeenCalledWith({
-      projectId: 'proj-1',
       status: 'completed',
       page: 1,
       pageSize: 20,
@@ -152,7 +150,6 @@ describe('RunBoardStatusListModal', () => {
     await flushPromises()
 
     expect(listRuns).toHaveBeenNthCalledWith(2, {
-      projectId: 'proj-1',
       status: 'completed',
       page: 2,
       pageSize: 20,
