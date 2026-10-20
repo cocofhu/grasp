@@ -82,6 +82,29 @@ describe('ClarifyDemoFrame', () => {
     wrapper.unmount()
   })
 
+  it('keeps the selected mark and enlarge outside the truncated name', () => {
+    const label = '产物抽屉顶部加一条只读工作流，资源抽屉不放，名字长到顶栏放不下'
+    const wrapper = mountFrame({
+      label,
+      html: '<p>a</p>',
+      highlighted: true,
+      selected: true,
+    })
+    const name = wrapper.get('[data-testid="clarify-demo-label"]')
+    expect(name.text()).toBe(label)
+    expect(name.classes()).toEqual(expect.arrayContaining(['truncate', 'min-w-0', 'flex-1']))
+    expect(name.text()).not.toContain('已选')
+    const selected = wrapper.get('[data-testid="clarify-demo-selected"]')
+    expect(selected.text()).toContain('已选')
+    expect(selected.classes()).toEqual(expect.arrayContaining(['shrink-0', 'whitespace-nowrap']))
+    expect(name.element.contains(selected.element)).toBe(false)
+    const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
+    expect(enlarge.classes()).toContain('shrink-0')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    wrapper.unmount()
+  })
+
   it('shows selected marker and highlighted border', () => {
     const wrapper = mountFrame({
       label: '方案 B',

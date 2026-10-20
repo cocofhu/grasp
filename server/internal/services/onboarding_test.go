@@ -509,6 +509,122 @@ func TestOnboardingBootstrapRenamesAndSetsModel(t *testing.T) {
 	}
 }
 
+func TestOnboardingBootstrapWritesCliModelToSharedEnv(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend: "cursor",
+		APIKey:     "k",
+		CliModel:   " composer-2.5 ",
+		Agents: []services.OnboardingAgentChoice{
+			{TemplateID: "clarify", Name: "需求澄清"},
+			{TemplateID: "implement", Name: "实现", Model: "gpt-5"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	shared := svc.SharedAgent.Get()
+	if shared.Env["ACP_BRIDGE_MODEL"] != "composer-2.5" {
+		t.Fatalf("shared model = %q", shared.Env["ACP_BRIDGE_MODEL"])
+	}
+	impl, ok := svc.Skills.Get("实现")
+	if !ok || impl.Env["ACP_BRIDGE_MODEL"] != "gpt-5" {
+		t.Fatalf("agent override = %#v ok=%v", impl.Env, ok)
+	}
+	clarify, ok := svc.Skills.Get("需求澄清")
+	if !ok || clarify.Env["ACP_BRIDGE_MODEL"] != "" {
+		t.Fatalf("unset agent must not copy the shared model: %#v", clarify.Env)
+	}
+	inherited := services.ExtendOverlay(shared, clarify)
+	if inherited.Env["ACP_BRIDGE_MODEL"] != "composer-2.5" {
+		t.Fatalf("unset agent should inherit the shared model, got %#v", inherited.Env)
+	}
+	overridden := services.ExtendOverlay(shared, impl)
+	if overridden.Env["ACP_BRIDGE_MODEL"] != "gpt-5" {
+		t.Fatalf("agent model should override the shared model, got %#v", overridden.Env)
+	}
+}
+
+func TestOnboardingBootstrapClearsCliModelWhenAuto(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	shared := svc.SharedAgent.Get()
+	shared.Env = map[string]string{"ACP_BRIDGE_MODEL": "old-model", "KEEP": "1"}
+	if err := svc.SharedAgent.Save(shared); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend: "claude_code",
+		APIKey:     "k",
+		CliModel:   "   ",
+	}); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	got := svc.SharedAgent.Get()
+	if _, ok := got.Env["ACP_BRIDGE_MODEL"]; ok {
+		t.Fatalf("auto must delete the pinned model: %+v", got.Env)
+	}
+	if got.Env["KEEP"] != "1" {
+		t.Fatalf("other env must stay: %+v", got.Env)
+	}
+}
+
+func TestOnboardingBootstrapCliModelKeepsCodeBuddyRegion(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend: "codebuddy",
+		APIKey:     "cb-key",
+		Region:     "public",
+		CliModel:   "gpt-5",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	shared := svc.SharedAgent.Get()
+	if shared.Env["ACP_BRIDGE_MODEL"] != "gpt-5" {
+		t.Fatalf("shared model = %+v", shared.Env)
+	}
+	if shared.Env["GRASP_CODEBUDDY_REGION"] != "public" {
+		t.Fatalf("region = %+v", shared.Env)
+	}
+}
+
+func TestOnboardingBootstrapIgnoresCliModelForOpenCode(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend:       "opencode",
+		APIKey:           "sk-oc",
+		OpenCodeProvider: "anthropic",
+		OpenCodeModel:    "anthropic/claude-sonnet-4-5",
+		CliModel:         "composer-2.5",
+	})
+	if err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	got := svc.SharedAgent.Get()
+	if got.Env["ACP_BRIDGE_MODEL"] != "anthropic/claude-sonnet-4-5" {
+		t.Fatalf("opencode must use openCodeModel, got %+v", got.Env)
+	}
+}
+
+func TestOnboardingBootstrapOpenCodeDoesNotClearModelViaCliModel(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	shared := svc.SharedAgent.Get()
+	shared.Env = map[string]string{"ACP_BRIDGE_MODEL": "keep-me"}
+	if err := svc.SharedAgent.Save(shared); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend: "opencode",
+		APIKey:     "sk-oc",
+	}); err != nil {
+		t.Fatalf("bootstrap: %v", err)
+	}
+	got := svc.SharedAgent.Get()
+	if got.Env["ACP_BRIDGE_MODEL"] != "keep-me" {
+		t.Fatalf("opencode must ignore an empty cliModel, got %+v", got.Env)
+	}
+}
+
 func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{

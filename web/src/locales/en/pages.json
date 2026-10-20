@@ -403,7 +403,7 @@
           },
           "cli": {
             "title": "Use a coding tool account",
-            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. The tool decides the model."
+            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. You can specify a model, or leave the choice to the tool."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -4290,6 +4290,8 @@
       "artifacts": "Artifacts",
       "openArtifacts": "Open artifacts",
       "closeArtifacts": "Close artifacts",
+      "openArtifactsUnread": "Open artifacts, {n} unviewed",
+      "openArtifactsUnreadCap": "Open artifacts, 99 or more unviewed",
       "backToChat": "Back to chat",
       "resizePanel": "Resize artifact preview",
       "chooseArtifact": "View artifacts here",
