@@ -1793,7 +1793,12 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
     expect(w.get('[data-testid="clarify-scroller"]').element.querySelector('[data-testid="html-preview"]')).toBeNull()
     expect(w.get('[data-testid="clarify-scroller"]').text()).not.toContain('title-preview')
-    expect(w.get('[data-testid="clarify-option-enlarge"]').text()).toContain('放大')
+    const enlarge = w.get('[data-testid="clarify-option-enlarge"]')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.text()).not.toContain('Enlarge')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    expect(enlarge.attributes('title')).toBe('放大')
+    expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
 
     const next = w.findAll('button').find((b) => b.text().includes('下一个'))
     expect(next).toBeTruthy()

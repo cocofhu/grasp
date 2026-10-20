@@ -1,16 +1,18 @@
-/** Page-level enlarge window: sits beside the chat and does not cover it. */
+/** Page-level enlarge window: centered in the viewport, draggable and resizable. */
 
 export type DemoWindowBox = { x: number; y: number; w: number; h: number }
 
+export type DemoWindowEdge = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw'
+
 export const CLARIFY_DEMO_ESCAPE = 'grasp-clarify-demo-escape'
 
-const SIDE_MARGIN = 28
-const CHAT_GAP = 16
-const TOP = 72
-const BOTTOM = 28
-const MAX_W = 560
-const MAX_H = 520
-const MIN_USEFUL = 200
+/** Default inset from each viewport edge. */
+export const DEMO_WINDOW_MARGIN = 28
+/** Tighter inset when a 28px margin would leave less than DEMO_WINDOW_USEFUL on either axis. */
+export const DEMO_WINDOW_TIGHT_MARGIN = 8
+const DEMO_WINDOW_USEFUL = 160
+export const DEMO_WINDOW_MIN_W = 480
+export const DEMO_WINDOW_MIN_H = 320
 
 function roundBox(box: DemoWindowBox): DemoWindowBox {
   return {
@@ -21,73 +23,112 @@ function roundBox(box: DemoWindowBox): DemoWindowBox {
   }
 }
 
-/** Beside the chat when that side is wide enough that the window need not cover it. */
-function placeBeside(
-  viewport: { w: number; h: number },
-  chat: { x: number; y: number; w: number; h: number },
-): DemoWindowBox | null {
-  const vw = Math.max(0, viewport.w)
-  const vh = Math.max(0, viewport.h)
-  const top = vh > 160 ? Math.min(TOP, Math.max(16, vh - 160)) : 8
-  const leftRoom = Math.max(0, chat.x)
-  const rightEdge = chat.x + chat.w
-  const rightRoom = Math.max(0, vw - rightEdge)
-  const placeLeft = leftRoom >= rightRoom
-  const room = placeLeft ? leftRoom : rightRoom
-  const usable = Math.max(0, room - CHAT_GAP - SIDE_MARGIN)
-  const w = Math.min(MAX_W, usable)
-  const h = Math.min(MAX_H, Math.max(0, vh - top - BOTTOM))
-  if (w < MIN_USEFUL || h < 160) return null
-  let x = placeLeft ? Math.max(SIDE_MARGIN, chat.x - CHAT_GAP - w) : rightEdge + CHAT_GAP
-  if (placeLeft && x + w > chat.x - CHAT_GAP) x = Math.max(0, chat.x - CHAT_GAP - w)
-  if (!placeLeft && x + w > vw - SIDE_MARGIN) x = Math.max(rightEdge + CHAT_GAP, vw - SIDE_MARGIN - w)
-  const box = roundBox({ x, y: top, w, h })
-  return demoWindowOverlapsChat(box, chat) ? null : box
+function viewportSize(viewport: { w: number; h: number }) {
+  return { w: Math.max(0, viewport.w), h: Math.max(0, viewport.h) }
 }
 
-/** Above or below a full-width chat column (mobile drawer), still outside that column. */
-function placeVertical(
-  viewport: { w: number; h: number },
-  chat: { x: number; y: number; w: number; h: number },
-): DemoWindowBox | null {
-  const vw = Math.max(0, viewport.w)
-  const vh = Math.max(0, viewport.h)
-  const above = Math.max(0, chat.y - CHAT_GAP - 16)
-  const below = Math.max(0, vh - (chat.y + chat.h) - CHAT_GAP - 16)
-  const placeAbove = above >= below
-  const room = placeAbove ? above : below
-  const h = Math.min(MAX_H, room)
-  if (h < 160) return null
-  const w = Math.min(MAX_W, Math.max(0, vw - SIDE_MARGIN * 2))
-  if (w < MIN_USEFUL) return null
-  const x = Math.max(SIDE_MARGIN, (vw - w) / 2)
-  const y = placeAbove ? Math.max(16, chat.y - CHAT_GAP - h) : chat.y + chat.h + CHAT_GAP
-  const box = roundBox({ x, y, w, h })
-  return demoWindowOverlapsChat(box, chat) ? null : box
+/** Margin is 8 when width−56 or height−56 would be under 160; otherwise 28. */
+export function demoWindowMargin(viewport: { w: number; h: number }): number {
+  const { w, h } = viewportSize(viewport)
+  const usableW = w - DEMO_WINDOW_MARGIN * 2
+  const usableH = h - DEMO_WINDOW_MARGIN * 2
+  if (usableW < DEMO_WINDOW_USEFUL || usableH < DEMO_WINDOW_USEFUL) return DEMO_WINDOW_TIGHT_MARGIN
+  return DEMO_WINDOW_MARGIN
 }
 
 /**
- * Place one window outside the chat column.
- * Side room wins; otherwise the free band above or below the column.
- * There is never a full-page mask, so uncovered chat controls stay clickable.
+ * Default rectangle: viewport minus the margin on every side, so the window is centered.
+ * Chat geometry is ignored; the window may cover the conversation.
  */
-export function placeClarifyDemoWindow(
-  viewport: { w: number; h: number },
-  chat: { x: number; y: number; w: number; h: number },
-): DemoWindowBox {
-  return (
-    placeBeside(viewport, chat) ??
-    placeVertical(viewport, chat) ??
-    roundBox({ x: SIDE_MARGIN, y: TOP, w: 0, h: 0 })
-  )
+export function placeClarifyDemoWindow(viewport: { w: number; h: number }): DemoWindowBox {
+  const { w: vw, h: vh } = viewportSize(viewport)
+  const margin = demoWindowMargin({ w: vw, h: vh })
+  return roundBox({
+    x: margin,
+    y: margin,
+    w: vw - margin * 2,
+    h: vh - margin * 2,
+  })
 }
 
-export function demoWindowOverlapsChat(
+/** Keep an already placed window inside the viewport without restoring the default size. */
+export function clampDemoWindow(box: DemoWindowBox, viewport: { w: number; h: number }): DemoWindowBox {
+  const { w: vw, h: vh } = viewportSize(viewport)
+  const w = Math.min(Math.max(0, box.w), vw)
+  const h = Math.min(Math.max(0, box.h), vh)
+  const x = Math.min(Math.max(0, box.x), Math.max(0, vw - w))
+  const y = Math.min(Math.max(0, box.y), Math.max(0, vh - h))
+  return roundBox({ x, y, w, h })
+}
+
+/** Move by a pointer delta. Width and height stay put; the box is clamped to the viewport. */
+export function moveDemoWindow(
   box: DemoWindowBox,
-  chat: { x: number; y: number; w: number; h: number },
-): boolean {
-  if (box.w <= 0 || box.h <= 0 || chat.w <= 0 || chat.h <= 0) return false
-  return box.x < chat.x + chat.w && box.x + box.w > chat.x && box.y < chat.y + chat.h && box.y + box.h > chat.y
+  dx: number,
+  dy: number,
+  viewport: { w: number; h: number },
+): DemoWindowBox {
+  return clampDemoWindow({ ...box, x: box.x + dx, y: box.y + dy }, viewport)
+}
+
+/** Floor is 480×320, or the viewport itself when the viewport is smaller. */
+export function demoWindowMinSize(viewport: { w: number; h: number }): { w: number; h: number } {
+  const { w, h } = viewportSize(viewport)
+  return { w: Math.min(DEMO_WINDOW_MIN_W, w), h: Math.min(DEMO_WINDOW_MIN_H, h) }
+}
+
+function clampSpan(value: number, min: number, max: number): number {
+  const hi = Math.max(0, max)
+  const lo = Math.min(Math.max(0, min), hi)
+  return Math.min(hi, Math.max(lo, value))
+}
+
+/**
+ * Resize from one edge or corner. The opposite edge stays fixed.
+ * The result stays inside the viewport and does not go under the minimum
+ * unless the viewport itself is smaller than that minimum.
+ */
+export function resizeDemoWindow(
+  start: DemoWindowBox,
+  edge: DemoWindowEdge,
+  dx: number,
+  dy: number,
+  viewport: { w: number; h: number },
+): DemoWindowBox {
+  const { w: vw, h: vh } = viewportSize(viewport)
+  const { w: minW, h: minH } = demoWindowMinSize({ w: vw, h: vh })
+  let { x, y, w, h } = start
+  const touchesE = edge === 'e' || edge === 'ne' || edge === 'se'
+  const touchesW = edge === 'w' || edge === 'nw' || edge === 'sw'
+  const touchesS = edge === 's' || edge === 'se' || edge === 'sw'
+  const touchesN = edge === 'n' || edge === 'ne' || edge === 'nw'
+
+  if (touchesE) {
+    const maxW = Math.max(0, vw - start.x)
+    w = clampSpan(start.w + dx, Math.min(minW, maxW), maxW)
+    x = start.x
+  }
+  if (touchesW) {
+    const fixedRight = Math.min(Math.max(0, start.x + start.w), vw)
+    const maxW = fixedRight
+    const nextW = clampSpan(start.w - dx, Math.min(minW, maxW), maxW)
+    x = fixedRight - nextW
+    w = nextW
+  }
+  if (touchesS) {
+    const maxH = Math.max(0, vh - start.y)
+    h = clampSpan(start.h + dy, Math.min(minH, maxH), maxH)
+    y = start.y
+  }
+  if (touchesN) {
+    const fixedBottom = Math.min(Math.max(0, start.y + start.h), vh)
+    const maxH = fixedBottom
+    const nextH = clampSpan(start.h - dy, Math.min(minH, maxH), maxH)
+    y = fixedBottom - nextH
+    h = nextH
+  }
+
+  return roundBox(clampDemoWindow({ x, y, w, h }, { w: vw, h: vh }))
 }
 
 /** Srcdoc bridge so Escape inside the sandboxed preview iframe can close the window. */
