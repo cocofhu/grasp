@@ -142,6 +142,7 @@
       "stageLinks.ts",
       "streamTextReveal.ts",
       "structuredArtifacts.ts",
+      "takeoverTimeline.ts",
       "tokenUsage.ts",
       "toolLabels.ts",
       "useArtifactPreview.ts",
@@ -227,7 +228,7 @@
     "composables": 19,
     "inbox": 33,
     "pm": 7,
-    "run": 61,
+    "run": 62,
     "shared": 39,
     "workflow": 3,
     "workspace": 5

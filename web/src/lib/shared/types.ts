@@ -911,6 +911,12 @@ export interface ClarifyTurn {
   startedAt?: string
   /** Wall clock when this reply stopped. */
   endedAt?: string
+  /**
+   * Aggregated ACP timeline behind this turn (prompt stripped). Today only the
+   * opening agent turn of a takeover conversation carries it: the interrupted
+   * auto phase. Absent when there are none.
+   */
+  events?: AcpEvent[]
 }
 
 /** One tool call shown in the folded tool row of an agent turn. */
@@ -1038,7 +1044,9 @@ export interface RunVar {
 export type RunNodeMode = 'auto' | 'manual'
 
 /**
- * runSummary.currentNode (GET /api/runs). kind priority on the server:
+ * currentNode on the run list summary (GET /api/runs), the run detail
+ * (GET /api/runs/:id) and the run WS snapshot frame (same server derivation).
+ * kind priority on the server:
  * takeover > gate > clarify > review > agent. mode is auto only for kind=agent.
  * state busy = a manual session turn is running (offer Stop).
  */
@@ -1078,9 +1086,9 @@ export interface Run {
   branch?: string
   /** Current workflow node label for running/waiting_human runs (list summary). */
   currentNodeLabel?: string
-  /** List summary: last agent / human activity (falls back to startedAt / createdAt server-side). */
+  /** Last agent / human activity (list + detail; falls back to startedAt / createdAt server-side). */
   lastActivityAt?: string
-  /** List summary: the node the run is on now (running / waiting_human runs only). */
+  /** The node the run is on now (list, detail, WS snapshot; running / waiting_human runs only). */
   currentNode?: RunCurrentNode
   /** Admission priority: high | normal | low (default normal). */
   priority?: 'high' | 'normal' | 'low'

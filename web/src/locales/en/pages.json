@@ -4313,7 +4313,7 @@
       "not_auto_node": "This node is not an automatic node and cannot be stopped",
       "node_not_current": "The node is no longer running; refreshed",
       "node_finishing": "The node is finishing; refreshed",
-      "run_not_running": "The run is no longer running",
+      "run_not_running": "The run is no longer running ({status}); refreshed",
       "server_halting": "The server is shutting down. Try again later",
       "run_not_found": "Run not found",
       "node_not_found": "Node not found"

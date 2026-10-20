@@ -5,6 +5,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import pages from '@/locales/zh-CN/pages.json'
+import common from '@/locales/zh-CN/common.json'
 
 const mocks = vi.hoisted(() => ({ getRun: vi.fn(), nodeEvents: vi.fn(), takeoverNode: vi.fn(), show: vi.fn(), error: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: { getRun: mocks.getRun, nodeEvents: mocks.nodeEvents, takeoverNode: mocks.takeoverNode, runEventsWsUrl: (id: string) => `ws://test/api/runs/${id}/events` } }))
@@ -21,9 +22,10 @@ class FakeSocket {
   send(frame: unknown) { this.onmessage?.({ data: JSON.stringify(frame) }) }
 }
 
-const autoRun = { id: 'r1', status: 'running', nodeRuns: { impl: { status: 'running', iteration: 1 } } }
-const stoppingRun = { id: 'r1', status: 'running', nodeRuns: { impl: { status: 'running', iteration: 1, mode: 'manual' } } }
-const takenRun = { id: 'r1', status: 'waiting_human', nodeRuns: { impl: { status: 'waiting_human', iteration: 1, mode: 'manual' } } }
+const cur = (id: string, kind: string, mode: string, state: string) => ({ id, name: id, iteration: 1, kind, mode, state })
+const autoRun = { id: 'r1', status: 'running', currentNode: cur('impl', 'agent', 'auto', 'running') }
+const stoppingRun = { id: 'r1', status: 'running', currentNode: cur('impl', 'takeover', 'manual', 'stopping') }
+const takenRun = { id: 'r1', status: 'waiting_human', currentNode: cur('impl', 'takeover', 'manual', 'waiting_human') }
 
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
@@ -36,7 +38,7 @@ async function setup() {
       return () => h('div')
     },
   })
-  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
   const wrapper = mount(Harness, { global: { plugins: [router, i18n] } })
   await flushPromises()
   return { wrapper, router, surface, live: () => live }
@@ -76,7 +78,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
-  it('a synchronous waiting_human result (or already manual) goes straight to the chat', async () => {
+  it('already_manual (a concurrent takeover won) is success: no error, straight into the chat', async () => {
     const { live, router, wrapper } = await setup()
     mocks.takeoverNode.mockResolvedValue({ runId: 'r1', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human', status: 'already_manual' })
     await live().takeover()
@@ -123,10 +125,54 @@ describe('useRunLive (auto node → Stop → chat)', () => {
 
   it('follows the run to the next auto node once this one is done', async () => {
     const { live, router, wrapper } = await setup()
-    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', nodeRuns: { impl: { status: 'completed', iteration: 1, mode: 'manual' }, test: { status: 'running', iteration: 1 } } })
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
     await live().reload()
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
+    wrapper.unmount()
+  })
+
+  it('already_manual while the auto call still unwinds waits like taken_over, without an error', async () => {
+    const { live, router, wrapper } = await setup()
+    mocks.takeoverNode.mockResolvedValue({ runId: 'r1', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'stopping', status: 'already_manual' })
+    await live().takeover()
+    expect(live().stopping.value).toBe(true)
+    expect(mocks.error).not.toHaveBeenCalled()
+    FakeSocket.last!.send({ type: 'node_takeover', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human' })
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    wrapper.unmount()
+  })
+
+  it('409 run_not_running shows the re-read run status with the error toast and refreshes to run detail', async () => {
+    const { live, router, wrapper } = await setup()
+    mocks.takeoverNode.mockRejectedValue(Object.assign(new Error('run_not_running'), { status: 409, current: { runStatus: 'cancelled' } }))
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'cancelled' })
+    const before = mocks.getRun.mock.calls.length
+    await live().takeover()
+    await flushPromises()
+    expect(mocks.error).toHaveBeenCalledWith('运行已不在执行中（已取消），已刷新')
+    expect(mocks.show).not.toHaveBeenCalled()
+    expect(mocks.getRun.mock.calls.length).toBeGreaterThan(before)
+    expect(live().stopping.value).toBe(false)
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1')
+    wrapper.unmount()
+  })
+
+  it('routes on the WS snapshot frame currentNode without another GET', async () => {
+    const { router, wrapper } = await setup()
+    const before = mocks.getRun.mock.calls.length
+    FakeSocket.last!.send({ type: 'snapshot', run: { ...takenRun, lastActivityAt: '2026-10-21T00:00:00Z' } })
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=impl')
+    expect(mocks.getRun.mock.calls.length).toBe(before)
+    wrapper.unmount()
+  })
+
+  it('ignores nodeRuns: a stale running nodeRun with no currentNode is not observed as auto', async () => {
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('gate', 'gate', 'manual', 'waiting_human'), nodeRuns: { impl: { status: 'running', iteration: 1 } } })
+    const { router, wrapper } = await setup()
+    expect(router.currentRoute.value.fullPath).toBe('/gates?run=r1&node=gate')
     wrapper.unmount()
   })
 })

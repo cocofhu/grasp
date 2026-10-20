@@ -1,55 +1,47 @@
-import type { NodeRun, Run } from '@/lib/shared/types'
+import type { Run, RunCurrentNode } from '@/lib/shared/types'
+import { isObservableNode, recentCurrentNode } from './recentRuns'
 
 /** Pure helpers for the live (read-only) view of an auto node. */
 
-/** Where the live view should be: watch this node, the chat, another live node, or run detail. */
+/**
+ * Where the live view should be: watch this node, the chat, another live node,
+ * or run detail. iteration is absent while the engine routes between nodes
+ * (the caller keeps the one it has).
+ */
 export type LiveDecision =
-  | { kind: 'observe'; nodeId: string; iteration: number; stopping?: boolean }
+  | { kind: 'observe'; nodeId: string; iteration?: number; stopping?: boolean }
   | { kind: 'chat'; nodeId: string }
   | { kind: 'follow'; nodeId: string }
   | { kind: 'detail' }
 
-const isManual = (nr?: NodeRun) => nr?.mode === 'manual'
-
-/** First node whose latest visit is running automatically. */
-export function runningAutoNodeId(run: Run): string {
-  for (const [id, nr] of Object.entries(run.nodeRuns || {})) {
-    if (nr?.status === 'running' && !isManual(nr)) return id
-  }
-  return ''
-}
-
-/** First node parked for a person (gate, clarify, review, takeover). */
-export function waitingNodeId(run: Run): string {
-  for (const [id, nr] of Object.entries(run.nodeRuns || {})) {
-    if (nr?.status === 'waiting_human') return id
-  }
-  return ''
+/**
+ * The auto node the run is on now (server currentNode: kind=agent, mode=auto,
+ * state=running), or null. Same source as the sidebar row.
+ */
+export function runningAutoNode(run: Run): RunCurrentNode | null {
+  const n = recentCurrentNode(run)
+  return n && n.kind === 'agent' && n.mode === 'auto' && n.state === 'running' ? n : null
 }
 
 /**
- * Decide what the live view shows for `requested` (route ?node=, may be empty).
- * A taken-over node goes to its chat; a finished node follows the run to the
- * next auto node; a run parked elsewhere goes to that chat; else run detail.
+ * Decide what the live view shows for `requested` (route ?node=, may be empty),
+ * from the server's run.currentNode (GET /runs/:id and the WS snapshot frame).
+ * A taken-over node still unwinding (kind=takeover, state=stopping) keeps the
+ * stream with the spinner; a node parked for a person goes to its chat; a
+ * finished node follows the run to its next auto node; else run detail.
  */
 export function decideLive(run: Run, requested: string): LiveDecision {
-  const nr = requested ? run.nodeRuns?.[requested] : undefined
-  if (nr && nr.status === 'running' && !isManual(nr)) {
-    return { kind: 'observe', nodeId: requested, iteration: nr.iteration ?? 1 }
+  const cur = recentCurrentNode(run)
+  if (cur) {
+    if (isObservableNode(cur)) {
+      if (requested && requested !== cur.id) return { kind: 'follow', nodeId: cur.id }
+      return { kind: 'observe', nodeId: cur.id, iteration: cur.iteration || 1, ...(cur.state === 'stopping' ? { stopping: true } : {}) }
+    }
+    // gate / clarify / review / takeover parked for a person (or busy in a manual turn).
+    return { kind: 'chat', nodeId: cur.id }
   }
-  // Taken over but the auto call is still winding down (state=stopping).
-  if (nr && isManual(nr) && nr.status === 'running') {
-    return { kind: 'observe', nodeId: requested, iteration: nr.iteration ?? 1, stopping: true }
-  }
-  if (nr && isManual(nr) && nr.status === 'waiting_human') return { kind: 'chat', nodeId: requested }
-  if (run.status === 'running' || run.status === 'queued' || run.status === 'waiting_human') {
-    const next = runningAutoNodeId(run)
-    if (next) return requested ? { kind: 'follow', nodeId: next } : { kind: 'observe', nodeId: next, iteration: run.nodeRuns[next]?.iteration ?? 1 }
-    const waiting = waitingNodeId(run)
-    if (waiting) return { kind: 'chat', nodeId: waiting }
-    // Between nodes (the engine is routing): stay and let the next refresh decide.
-    if (requested && run.status === 'running') return { kind: 'observe', nodeId: requested, iteration: nr?.iteration ?? 1 }
-  }
+  // Between nodes (the engine is routing): stay and let the next refresh decide.
+  if (requested && (run.status === 'running' || run.status === 'queued')) return { kind: 'observe', nodeId: requested }
   return { kind: 'detail' }
 }
 
@@ -70,7 +62,24 @@ export function takeoverErrorCode(e: unknown): TakeoverErrorCode | null {
   return (TAKEOVER_ERROR_CODES as readonly string[]).includes(msg) ? (msg as TakeoverErrorCode) : null
 }
 
-/** Codes where the node moved on by itself: refresh and follow instead of failing. */
+/** 409 body `current` (the server's re-read view of the run). */
+export interface TakeoverConflictCurrent {
+  runStatus?: string
+  nodeId?: string
+  iteration?: number
+  mode?: string
+}
+
+/** current.runStatus of a 409 (run_not_running carries the re-read value). */
+export function takeoverConflictRunStatus(e: unknown): string {
+  const cur = e && typeof e === 'object' ? (e as { current?: TakeoverConflictCurrent }).current : undefined
+  return typeof cur?.runStatus === 'string' ? cur.runStatus : ''
+}
+
+/**
+ * Codes where the node moved on by itself: refresh and follow instead of
+ * failing. node_finishing only means the node is settling / switching.
+ */
 export function takeoverRaceLost(code: TakeoverErrorCode | null): boolean {
   return code === 'node_finishing' || code === 'node_not_current'
 }
@@ -79,4 +88,5 @@ export function takeoverRaceLost(code: TakeoverErrorCode | null): boolean {
 export type LiveFrame =
   | { type: 'acp'; runId?: string; nodeId?: string; events?: unknown[]; busy?: boolean }
   | { type: 'node_takeover'; runId?: string; nodeId?: string; iteration?: number; mode?: 'manual'; state?: 'stopping' | 'waiting_human' }
+  | { type: 'snapshot'; run?: Run }
   | { type: string; [k: string]: unknown }

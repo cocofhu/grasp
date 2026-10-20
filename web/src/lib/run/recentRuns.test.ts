@@ -41,6 +41,8 @@ describe('recentRunTarget goes straight into the chat', () => {
     expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
     expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
     expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
+    // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
+    expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
   })
   it('marks the row active on its detail, live and chat pages', () => {
     const r = run(undefined)

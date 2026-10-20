@@ -4313,7 +4313,7 @@
       "not_auto_node": "该节点不是自动执行节点，无法停止",
       "node_not_current": "节点已不在执行，已刷新",
       "node_finishing": "节点正在结束，已刷新",
-      "run_not_running": "运行已不在执行中",
+      "run_not_running": "运行已不在执行中（{status}），已刷新",
       "server_halting": "服务正在停机，请稍后重试",
       "run_not_found": "运行不存在",
       "node_not_found": "节点不存在"

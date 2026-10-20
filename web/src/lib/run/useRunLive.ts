@@ -5,7 +5,7 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { notifyRecentActivity, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
-import { decideLive, takeoverErrorCode, takeoverRaceLost, type LiveFrame } from '@/lib/run/runLive'
+import { decideLive, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost, type LiveFrame } from '@/lib/run/runLive'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 
 /** The ReviewComposer / ClarifyChat surface this view drives. */
@@ -55,32 +55,37 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     leaveTo({ path: '/gates', query: { run: runId.value, node } })
   }
 
+  /** Route on the server's run.currentNode (GET /runs/:id or the WS snapshot frame). */
+  function applyRun(r: Run, id: string) {
+    run.value = r
+    loadError.value = false
+    const d = decideLive(r, requestedNode.value)
+    if (d.kind === 'chat') return goToChat(d.nodeId)
+    if (d.kind === 'detail') return leaveTo(runDetailPath(id))
+    if (d.kind === 'follow') {
+      notifyRecentActivity()
+      stopping.value = false
+      void router.replace({ path: runLivePath(id), query: { node: d.nodeId } })
+      return
+    }
+    if (nodeId.value !== d.nodeId) {
+      nodeId.value = d.nodeId
+      seededKey = ''
+      lastEvents = null
+    }
+    if (d.iteration != null) iteration.value = d.iteration
+    if (d.stopping) stopping.value = true
+    connect(id)
+    void seed()
+  }
+
   async function load() {
     const gen = ++loadGen
     const id = runId.value
     try {
       const r = await api.getRun(id)
       if (gen !== loadGen || disposed) return
-      run.value = r
-      loadError.value = false
-      const d = decideLive(r, requestedNode.value)
-      if (d.kind === 'chat') return goToChat(d.nodeId)
-      if (d.kind === 'detail') return leaveTo(runDetailPath(id))
-      if (d.kind === 'follow') {
-        notifyRecentActivity()
-        stopping.value = false
-        void router.replace({ path: runLivePath(id), query: { node: d.nodeId } })
-        return
-      }
-      if (nodeId.value !== d.nodeId) {
-        nodeId.value = d.nodeId
-        seededKey = ''
-        lastEvents = null
-      }
-      iteration.value = d.iteration
-      if (d.stopping) stopping.value = true
-      connect(id)
-      void seed()
+      applyRun(r, id)
     } catch {
       if (gen === loadGen) loadError.value = !run.value
     } finally {
@@ -116,6 +121,15 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   function onFrame(m: LiveFrame) {
+    if (m.type === 'snapshot') {
+      // Same run detail DTO as GET /runs/:id, currentNode included.
+      const r = (m as { run?: Run }).run
+      if (r && typeof r === 'object' && (!r.id || r.id === runId.value)) {
+        loadGen++ // a GET still in flight is older than this frame
+        applyRun(r, runId.value)
+      }
+      return
+    }
     if (m.type === 'acp') {
       if (m.nodeId !== nodeId.value) {
         if (m.nodeId) scheduleRefresh()
@@ -173,10 +187,20 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     notifyRecentActivity()
     try {
       const res = await api.takeoverNode(runId.value, nodeId.value, iteration.value)
+      // taken_over and already_manual (a concurrent takeover won) are both success.
       if (res.state === 'waiting_human') goToChat(nodeId.value)
       // stopping: wait for WS node_takeover waiting_human (poll is the fallback).
     } catch (e) {
       const code = takeoverErrorCode(e)
+      if (code === 'run_not_running') {
+        // The run was cancelled / failed under us: say so, then refresh (the
+        // view leaves for run detail once the run is no longer active).
+        stopping.value = false
+        const status = takeoverConflictRunStatus(e)
+        toast.error(t('pages.runLive.run_not_running', { status: status ? t(`common.status.${status}`, status) : '-' }))
+        void load()
+        return
+      }
       if (takeoverRaceLost(code)) {
         stopping.value = false
         toast.show(t(`pages.runLive.${code}`))

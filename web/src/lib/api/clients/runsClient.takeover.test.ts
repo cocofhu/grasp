@@ -31,4 +31,17 @@ describe('runsClient takeover + last_activity sort', () => {
     await expect(runsClient.takeoverNode('r1', 'impl')).rejects.toThrow('node_finishing')
     expect(fetchMock.mock.calls[0][1].body).toBe('{}')
   })
+
+  it('keeps the 409 current (run_not_running carries the re-read run status)', async () => {
+    fetchMock.mockResolvedValue(json({ error: 'run_not_running', message: '运行未在执行中: cancelled', current: { runStatus: 'cancelled', nodeId: 'impl' } }, 409))
+    const err = await runsClient.takeoverNode('r1', 'impl', 1).catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(Error)
+    expect((err as Error).message).toBe('run_not_running')
+    expect(err).toMatchObject({ status: 409, current: { runStatus: 'cancelled', nodeId: 'impl' } })
+  })
+
+  it('a duplicate takeover answers 200 already_manual and resolves like success', async () => {
+    fetchMock.mockResolvedValue(json({ runId: 'r1', nodeId: 'impl', iteration: 1, mode: 'manual', state: 'waiting_human', status: 'already_manual' }))
+    await expect(runsClient.takeoverNode('r1', 'impl', 1)).resolves.toMatchObject({ status: 'already_manual', state: 'waiting_human' })
+  })
 })

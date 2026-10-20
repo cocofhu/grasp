@@ -23,9 +23,15 @@ export function recentCurrentNode(run: RecentRun): RunCurrentNode | null {
   return n
 }
 
-/** An auto agent visit the user can only watch (read-only stream + Stop). */
+/**
+ * A visit the user can only watch (read-only stream + Stop): an auto agent
+ * that is running, or one just taken over whose auto call is still unwinding
+ * (server: kind=takeover, state=stopping; the chat opens once it waits).
+ */
 export function isObservableNode(n: RunCurrentNode | null | undefined): boolean {
-  return !!n && n.kind === 'agent' && n.mode === 'auto' && (n.state === 'running' || n.state === 'stopping')
+  if (!n) return false
+  if (n.kind === 'agent') return n.mode === 'auto' && (n.state === 'running' || n.state === 'stopping')
+  return n.kind === 'takeover' && n.state === 'stopping'
 }
 
 /**

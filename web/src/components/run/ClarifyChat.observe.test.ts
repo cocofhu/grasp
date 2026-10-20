@@ -173,3 +173,37 @@ describe('ClarifyChat takeover turns (re-review after Stop)', () => {
     expect(wrapper.emitted('send')?.[0]?.[0]).toBe('主按钮文案改成「保存」')
   })
 })
+
+describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () => {
+  beforeEach(() => sessionStorage.clear())
+
+  it('continues the auto-phase timeline with the existing thought / tool rows before the narration', () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      turns: [{
+        role: 'agent',
+        text: '已中断自动执行，本节点转为人工接管（不会再自动执行）。',
+        at: '2026-10-21T00:00:01Z',
+        events: [
+          { t: 1, kind: 'thought', text: '先看登录页结构' },
+          { t: 2, kind: 'tool_call', title: 'Read LoginView.vue', status: 'completed' },
+          { t: 3, kind: 'tool_call', title: 'Edit LoginView.vue', status: 'completed' },
+          { t: 4, kind: 'message', text: '表单布局已调整一半' },
+        ],
+      }],
+    })
+    const agentRows = wrapper.findAll('[data-turn-role="agent"]')
+    expect(agentRows).toHaveLength(2)
+    expect(agentRows[0]!.find('[data-testid="clarify-thought"]').exists()).toBe(true)
+    expect(agentRows[0]!.find('[data-testid="agent-tool-group"]').exists()).toBe(true)
+    expect(agentRows[0]!.get('[data-testid="clarify-agent-message"]').text()).toContain('表单布局已调整一半')
+    expect(agentRows[1]!.get('[data-testid="clarify-agent-message"]').text()).toContain('转为人工接管')
+    expect(wrapper.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
+  })
+
+  it('without events the opening turn renders as before (single narration row)', () => {
+    const wrapper = mountChat({ reviewMode: true, turns: [{ role: 'agent', text: '已中断自动执行。', at: '2026-10-21T00:00:01Z' }] })
+    expect(wrapper.findAll('[data-turn-role="agent"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="agent-tool-group"]').exists()).toBe(false)
+  })
+})

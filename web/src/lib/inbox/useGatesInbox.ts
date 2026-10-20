@@ -59,7 +59,7 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity, runLivePath } from '@/lib/run/recentRuns'
-import { runningAutoNodeId } from '@/lib/run/runLive'
+import { runningAutoNode } from '@/lib/run/runLive'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -2047,9 +2047,10 @@ async function followRunAfterTakeoverConfirm(runId: string, fromNodeId: string) 
     try {
       const r = await api.getRun(runId)
       if (route.path !== '/gates') return
-      const next = runningAutoNodeId(r)
-      if (next && next !== fromNodeId) {
-        await router.push({ path: runLivePath(runId), query: { node: next } })
+      // Server currentNode (kind=agent, mode=auto, state=running).
+      const next = runningAutoNode(r)
+      if (next && next.id !== fromNodeId) {
+        await router.push({ path: runLivePath(runId), query: { node: next.id } })
         return
       }
       if (r.status !== 'running' && r.status !== 'queued') return
