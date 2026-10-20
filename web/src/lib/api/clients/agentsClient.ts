@@ -61,6 +61,7 @@ export const agentsClient = {
       openCodeBaseURL?: string
       openCodeModel?: string
       openCodeModelVision?: boolean
+      cliModel?: string
       agents?: { templateId: string; name?: string; model?: string }[]
     },
   ) =>

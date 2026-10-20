@@ -43,16 +43,20 @@ type OnboardingBootstrapRequest struct {
 	OpenCodeBaseURL     string `json:"openCodeBaseURL,omitempty"`
 	OpenCodeModel       string `json:"openCodeModel,omitempty"`
 	OpenCodeModelVision *bool  `json:"openCodeModelVision,omitempty"`
-	GitCredentialType   string `json:"gitCredentialType,omitempty"`
-	GitHubToken         string `json:"githubToken,omitempty"`
-	GitLabToken         string `json:"gitlabToken,omitempty"`
-	GitLabURL           string `json:"gitlabUrl,omitempty"`
-	SSHPrivateKey       string `json:"sshPrivateKey,omitempty"`
-	SSHKnownHosts       string `json:"sshKnownHosts,omitempty"`
-	RepoURL             string `json:"repoUrl,omitempty"`
-	RepoBranch          string `json:"repoBranch,omitempty"`
-	GitUserName         string `json:"gitUserName,omitempty"`
-	GitUserEmail        string `json:"gitUserEmail,omitempty"`
+	// CliModel is the coding-tool model for shared ACP_BRIDGE_MODEL.
+	// Non-empty pins it; empty clears a previous pin. Ignored for OpenCode,
+	// which still uses OpenCodeModel.
+	CliModel          string `json:"cliModel,omitempty"`
+	GitCredentialType string `json:"gitCredentialType,omitempty"`
+	GitHubToken       string `json:"githubToken,omitempty"`
+	GitLabToken       string `json:"gitlabToken,omitempty"`
+	GitLabURL         string `json:"gitlabUrl,omitempty"`
+	SSHPrivateKey     string `json:"sshPrivateKey,omitempty"`
+	SSHKnownHosts     string `json:"sshKnownHosts,omitempty"`
+	RepoURL           string `json:"repoUrl,omitempty"`
+	RepoBranch        string `json:"repoBranch,omitempty"`
+	GitUserName       string `json:"gitUserName,omitempty"`
+	GitUserEmail      string `json:"gitUserEmail,omitempty"`
 	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
 	VncPreview *bool `json:"vncPreview"`
 	BrowserMcp *bool `json:"browserMcp"`
@@ -547,6 +551,9 @@ func (s *OnboardingService) writeWorkspaceAuth(backend, apiKey, region string, r
 	case AcpBackendOpenCode:
 		applyOpenCodeSharedEnv(cfg.Env, req)
 	}
+	if backend != AcpBackendOpenCode {
+		applyCliSharedModel(cfg.Env, req.CliModel)
+	}
 	cred := strings.TrimSpace(req.GitCredentialType)
 	if cred != "" {
 		cfg.GitCredentialType = cred
@@ -683,6 +690,20 @@ func applyOnboardingAgentRegion(env map[string]string, backend, region string) {
 		}
 		env[runtime.EnvTraeRegion] = region
 	}
+}
+
+// applyCliSharedModel writes the coding-tool model onto the shared Agent.
+// An empty value deletes ACP_BRIDGE_MODEL so a later install can return to auto
+// without touching the rest of the env. OpenCode does not call this.
+func applyCliSharedModel(env map[string]string, model string) {
+	if env == nil {
+		return
+	}
+	if v := strings.TrimSpace(model); v != "" {
+		env[runtime.EnvACPBridgeModel] = v
+		return
+	}
+	delete(env, runtime.EnvACPBridgeModel)
 }
 
 func applyOpenCodeSharedEnv(env map[string]string, req OnboardingBootstrapRequest) {

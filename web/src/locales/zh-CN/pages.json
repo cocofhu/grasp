@@ -403,7 +403,7 @@
           },
           "cli": {
             "title": "用编码工具账号",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae 或 Codex 的账号。Codex 粘贴 ChatGPT 登录文件，其余工具使用各自的账号密钥。模型由对应工具决定。"
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae 或 Codex 的账号。Codex 粘贴 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
           }
         },
         "cliLabel": "选择编码工具",
