@@ -761,7 +761,7 @@ func (c *acpProvider) specLayered(req NodeReq, shared, materialize bool) (layere
 	// SSH comes only from project credentials.
 	sandbox.ApplySSHCredentials(&out.spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
 	if shared {
-		out.fingerprint = sharedSandboxFingerprint(c.backend, out.spec, homeSpec, sharedCredentialIDs(c.backend, agentCfg))
+		out.fingerprint = sharedSandboxFingerprint(c.backend, out.spec, homeSpec, sharedCredentialIDs(c.backend, agentCfg, agentEnvKeys))
 	}
 	return out, nil
 }

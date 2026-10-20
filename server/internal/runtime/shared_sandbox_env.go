@@ -50,9 +50,14 @@ func sharedSandboxFingerprint(backend AcpBackend, spec sandbox.Spec, home sandbo
 }
 
 // sharedCredentialIDs lists the credential selections that land in the shared
-// container (git / SSH, and the Codex login file in ConfigHome). AI keys of
-// other backends ride the per-node overlay and do not split containers.
-func sharedCredentialIDs(backend AcpBackend, cfg agentFile) map[string]string {
+// container (git / SSH, the Codex login file in ConfigHome, and every
+// per-Agent credential binding whose key stays in the container env). AI keys
+// of other backends and bound keys that ride the per-node overlay do not
+// split containers. Secret values are masked to "<set>" in the fingerprint,
+// so the credential id is what tells two different tokens apart: without it a
+// node bound to another GITHUB_TOKEN would reuse a container created with the
+// first node's token.
+func sharedCredentialIDs(backend AcpBackend, cfg agentFile, agentEnvKeys map[string]struct{}) map[string]string {
 	ids := map[string]string{
 		"git":     strings.TrimSpace(cfg.GitCredentialID),
 		"gitType": strings.TrimSpace(cfg.GitCredentialType),
@@ -61,8 +66,38 @@ func sharedCredentialIDs(backend AcpBackend, cfg agentFile) map[string]string {
 	if backend == BackendCodex {
 		ids["ai"] = strings.TrimSpace(cfg.AiCredentialID)
 	}
+	for key, id := range cfg.CredentialBindings {
+		key = strings.TrimSpace(key)
+		if key == "" || isNodeSessionEnvKey(key, agentEnvKeys) {
+			continue
+		}
+		v := "<disabled>"
+		if id != nil {
+			v = strings.TrimSpace(*id)
+		}
+		ids["binding:"+key] = v
+	}
 	return ids
 }
+
+// Trust boundary of a shared run sandbox: every Agent node of the run executes
+// in the same container as the same OS user, so isolation between nodes is
+// limited to what the platform injects per bridge chat.
+//   - Per node: the ACP session env overlay (AI keys, Agent env, node-bound
+//     credentials whose key is not container-scoped) is set on that node's
+//     chat process only and cleared when the chat closes. It is not a secret
+//     boundary against a later node: anything a node writes to disk or leaves
+//     running is visible to the next one.
+//   - Per container (decided at create time, part of the fingerprint): git
+//     clone tokens, SSH key / known_hosts, the Codex auth.json in ConfigHome
+//     and any other bound key classified as container env. Nodes whose ids for
+//     these differ never share a container.
+//   - Not isolated: CLI login caches written under the container's home or
+//     ConfigRoot (for example a refreshed Codex auth.json or another CLI's
+//     token cache), the workspace, and processes a node leaves behind (preview
+//     servers started with setsid and kept alive by the keepalive lease keep
+//     the env they were started with). Do not put nodes that must not see each
+//     other's credentials in one run.
 
 // isNodeSessionEnvKey reports keys that must ride the ACP connect overlay for
 // a shared run sandbox instead of the durable container environment. AI/CLI
