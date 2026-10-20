@@ -91,8 +91,16 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   }
   apiState.online = true
   const result = (await res.json()) as T
-  if (method !== 'GET' && /^\/workflows(?:\/|$)/.test(path)) invalidateWorkflowCatalog()
+  if (writesWorkflowCatalog(method, path)) invalidateWorkflowCatalog()
   return result
+}
+
+/** Successful writes that publish or change the workflow directory. */
+function writesWorkflowCatalog(method: string, path: string): boolean {
+  if (method === 'GET') return false
+  // Onboarding creates the default workflow without touching /workflows.
+  if (path === '/workspace/bootstrap-onboarding') return true
+  return /^\/workflows(?:\/|$)/.test(path)
 }
 
 // origin resolves the API origin (absolute VITE_API_BASE, else same-origin).
