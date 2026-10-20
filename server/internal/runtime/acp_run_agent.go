@@ -642,7 +642,7 @@ func (c *acpProvider) teardownDetachedRunSandbox(runID string, keepPreview bool)
 	}
 	var sb *sandbox.Sandbox
 	if attacher, ok := c.mgr.(sandboxAttacher); ok {
-		sb, _ = attacher.Attach(context.Background(), info.Name)
+		sb, _ = attacher.AttachNoEnsure(context.Background(), info.Name)
 	}
 	c.teardownSharedSandbox(info.Name, sb, info.HomeDir, keepPreview)
 }

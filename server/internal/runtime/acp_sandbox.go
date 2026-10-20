@@ -456,7 +456,7 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 	}
 	prev := max(info.Generation, 1)
 	if attacher, ok := c.mgr.(sandboxAttacher); ok {
-		if sb, err := attacher.Attach(ctx, info.Name); err == nil {
+		if sb, err := attacher.AttachNoEnsure(ctx, info.Name); err == nil {
 			if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 30*time.Second); werr == nil {
 				return sharedCreateResult{sb: sb, home: info.HomeDir, fingerprint: info.EnvFingerprint, generation: prev}, true, prev
 			}
@@ -469,12 +469,6 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 	c.deregisterRunSandbox(info.Name)
 	removeHome(info.HomeDir)
 	return res, false, prev + 1
-}
-
-// sandboxAttacher is the optional manager capability to re-open a container
-// by its gateway id.
-type sandboxAttacher interface {
-	Attach(context.Context, string) (*sandbox.Sandbox, error)
 }
 
 func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {

@@ -211,7 +211,7 @@ func TestSandboxReconcileKeepsOnlyInProgressSharedRunSandbox(t *testing.T) {
 		ds.setStatus(row.Name, "running")
 	}
 
-	s.ReconcileOnStartup(context.Background())
+	s.ReconcileOnStartup(context.Background(), map[string]bool{})
 
 	if !ds.fg.Has("gw-shared-live") {
 		t.Fatal("in-progress run's shared container must survive restart")
