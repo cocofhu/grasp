@@ -21,6 +21,8 @@ const shared = vi.hoisted(() => {
     hasPendingUpdate: ref(false),
     pendingMeta: ref<{ added?: number; removed?: number } | null>(null),
     lastPeekAt: ref(0),
+    lastAutoAppliedAt: ref(0),
+    autoApplyHold: null as (() => boolean) | null,
     ariaBusy: ref(false),
     draft: ref(''),
     attachments: ref([]),
@@ -44,6 +46,7 @@ const mocks = vi.hoisted(() => ({
   refresh: vi.fn(),
   peek: vi.fn(),
   applyPending: vi.fn(),
+  autoApplyPending: vi.fn(),
   removeItemLocally: vi.fn(),
   restoreItemLocally: vi.fn(),
   patchItemReplying: vi.fn(),
@@ -104,6 +107,9 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     hasPendingUpdate: shared.hasPendingUpdate,
     pendingMeta: shared.pendingMeta,
     lastPeekAt: shared.lastPeekAt,
+    lastAutoAppliedAt: shared.lastAutoAppliedAt,
+    autoApplyPending: mocks.autoApplyPending,
+    setAutoApplyHold: (hold: (() => boolean) | null) => { shared.autoApplyHold = hold },
     itemKey: (it: InboxItem) => `${it.runId}:${it.nodeId}`,
     ariaBusy: shared.ariaBusy,
   }),
@@ -242,6 +248,8 @@ describe('useGatesInbox actions', () => {
     shared.hasPendingUpdate.value = false
     shared.pendingMeta.value = null
     shared.lastPeekAt.value = 0
+    shared.lastAutoAppliedAt.value = 0
+    shared.autoApplyHold = null
     shared.ariaBusy.value = false
     shared.draft.value = ''
     shared.attachments.value = []
@@ -508,17 +516,14 @@ describe('useGatesInbox actions', () => {
 
   it('applies manual refreshes, pending updates and editing banners', async () => {
     const { inbox, app } = await withInbox()
+    // No update banner any more: a held pending change is applied by manual refresh.
+    expect('showUpdateBanner' in inbox).toBe(false)
+    expect('dismissUpdateBanner' in inbox).toBe(false)
     shared.hasPendingUpdate.value = true
-    shared.pendingMeta.value = { added: 2, removed: 1 }
     shared.lastPeekAt.value++
     await nextTick()
-    expect(inbox.showUpdateBanner.value).toBe(true)
-    expect(inbox.updateBannerDetail.value).toBeTruthy()
-
     await inbox.onManualRefresh()
     expect(mocks.applyPending).toHaveBeenCalled()
-    inbox.dismissUpdateBanner()
-    expect(inbox.showUpdateBanner.value).toBe(false)
 
     shared.hasPendingUpdate.value = false
     shared.draft.value = 'editing'
@@ -532,6 +537,60 @@ describe('useGatesInbox actions', () => {
     shared.draft.value = ''
     await nextTick()
     expect(inbox.showProcessedBanner.value).toBe(false)
+    app.unmount()
+  })
+
+  it('registers an auto-apply hold while editing, focused or processing and releases it after', async () => {
+    const { inbox, app } = await withInbox()
+    expect(shared.autoApplyHold).toBeTypeOf('function')
+    expect(shared.autoApplyHold!()).toBe(false)
+
+    shared.draft.value = '还在写'
+    await nextTick()
+    expect(shared.autoApplyHold!()).toBe(true)
+    mocks.autoApplyPending.mockClear()
+    shared.draft.value = ''
+    await nextTick()
+    // Hold ended → apply whatever the peek left pending.
+    expect(mocks.autoApplyPending).toHaveBeenCalledTimes(1)
+
+    const field = document.createElement('input')
+    document.body.appendChild(field)
+    field.focus()
+    document.dispatchEvent(new FocusEvent('focusin'))
+    await nextTick()
+    expect(inbox.inputFocused.value).toBe(true)
+    expect(shared.autoApplyHold!()).toBe(true)
+    field.blur()
+    document.dispatchEvent(new FocusEvent('focusout'))
+    await nextTick()
+    await nextTick()
+    expect(inbox.inputFocused.value).toBe(false)
+    field.remove()
+
+    app.unmount()
+    // Page gone: the hold is cleared and pending changes flow to the sidebar.
+    expect(shared.autoApplyHold).toBeNull()
+    expect(mocks.autoApplyPending).toHaveBeenCalled()
+  })
+
+  it('reloads the page list silently after an auto-apply and keeps the selection', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.active.value = inbox.listItems.value[1]!
+    await flushPromises()
+    const selectedKey = `${inbox.active.value.runId}:${inbox.active.value.nodeId}`
+    mocks.listGates.mockClear()
+    mocks.listGates.mockResolvedValue({
+      items: [{ ...gateItem(), runId: 'run-new', title: '新审批' } as InboxItem, gateItem(), clarifyItem()],
+      total: 3,
+    })
+    shared.lastAutoAppliedAt.value = Date.now()
+    await nextTick()
+    expect(inbox.listLoading.value).toBe(false)
+    await flushPromises()
+    expect(mocks.listGates).toHaveBeenCalledTimes(1)
+    expect(inbox.listItems.value.map((it) => it.runId)).toContain('run-new')
+    expect(`${inbox.active.value!.runId}:${inbox.active.value!.nodeId}`).toBe(selectedKey)
     app.unmount()
   })
 
@@ -785,16 +844,13 @@ describe('useGatesInbox actions', () => {
 
   it('derives status, preview and composer presentation states', async () => {
     const { inbox, app } = await withInbox()
-    expect(inbox.statusPillClass.value).toBe('idle')
-    expect(inbox.statusPillText.value).toBeTruthy()
+    expect(inbox.autoApplyHeld.value).toBe(false)
     shared.draft.value = 'draft'
     await nextTick()
-    expect(inbox.statusPillClass.value).toBe('editing')
-    shared.hasPendingUpdate.value = true
-    shared.pendingMeta.value = { added: 1 }
+    expect(inbox.autoApplyHeld.value).toBe(true)
+    shared.draft.value = ''
     await nextTick()
-    expect(inbox.statusPillClass.value).toBe('pending')
-    expect(inbox.updateBannerDetail.value).toBeTruthy()
+    expect(inbox.autoApplyHeld.value).toBe(false)
 
     const clarify = inbox.listItems.value[1]!
     inbox.active.value = clarify

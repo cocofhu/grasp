@@ -91,8 +91,10 @@ const {
   syncDisplayedBaseline,
   clearVisibleMembership,
   hasPendingUpdate,
-  pendingMeta,
   lastPeekAt,
+  lastAutoAppliedAt,
+  autoApplyPending,
+  setAutoApplyHold,
   itemKey,
   ariaBusy,
 } = usePendingGates()
@@ -190,7 +192,6 @@ watch(tagFilterOpen, (v) => {
   }
 })
 
-const showUpdateBanner = ref(false)
 const showProcessedBanner = ref(false)
 const manualRefreshing = ref(false)
 /** First-screen skeleton when loading with no rows yet (plan g2.1). */
@@ -918,27 +919,35 @@ const isClarifyEditing = computed(
 
 const isEditing = computed(() => isGateEditing.value || isClarifyEditing.value)
 
-const statusPillClass = computed(() => {
-  if (hasPendingUpdate.value) return 'pending'
-  if (isEditing.value) return 'editing'
-  return 'idle'
-})
+/**
+ * Focus is in a text field (gate form, clarify composer, filters…). Counted as
+ * editing for list auto-apply even before anything is typed, so the caret and
+ * the focused element are never disturbed.
+ */
+const inputFocused = ref(false)
+function isTextEntry(el: Element | null): boolean {
+  if (!(el instanceof HTMLElement)) return false
+  if (el.isContentEditable) return true
+  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true
+  if (el instanceof HTMLInputElement) {
+    return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type)
+  }
+  return false
+}
+function syncInputFocused() {
+  inputFocused.value = typeof document !== 'undefined' && isTextEntry(document.activeElement)
+}
+function onFocusOut() {
+  // activeElement is still the old field during focusout; read it next tick.
+  void nextTick(syncInputFocused)
+}
 
-const statusPillText = computed(() => {
-  if (hasPendingUpdate.value) return t('pages.gatesInbox.statusPending')
-  if (isEditing.value) return t('pages.gatesInbox.statusEditing')
-  return t('pages.gatesInbox.statusIdle')
-})
-
-const updateBannerDetail = computed(() => {
-  const meta = pendingMeta.value
-  if (!meta) return t('pages.gatesInbox.updateBannerDetailEmpty')
-  const parts: string[] = []
-  if (meta.added) parts.push(t('pages.gatesInbox.updateAdded', { n: meta.added }))
-  if (meta.removed) parts.push(t('pages.gatesInbox.updateRemoved', { n: meta.removed }))
-  const summary = parts.length ? `（${parts.join('，')}）` : ''
-  return t('pages.gatesInbox.updateBannerDetail', { summary })
-})
+/**
+ * List auto-apply waits while the user is working: editing a gate form or a
+ * clarify draft, focus in a text field, or a processing intent (approve /
+ * confirm in flight). Pending membership changes apply once this clears.
+ */
+const autoApplyHeld = computed(() => isEditing.value || inputFocused.value || processingLock.value)
 
 function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
@@ -983,14 +992,37 @@ function checkProcessedWhileEditing() {
   if (!inRemote) showProcessedBanner.value = true
 }
 
-watch(hasPendingUpdate, (pending) => {
-  if (pending) showUpdateBanner.value = true
-})
-
 watch(lastPeekAt, () => {
-  if (hasPendingUpdate.value) showUpdateBanner.value = true
   checkProcessedWhileEditing()
 })
+
+// Hold ended (blur, draft cleared, processing done): apply what the peek found.
+watch(autoApplyHeld, (held) => {
+  if (!held) autoApplyPending()
+})
+
+// usePendingGates applied a membership change to displayedItems (sidebar):
+// reload this page's list silently, keep the selection and the scroll offset.
+watch(lastAutoAppliedAt, () => {
+  void syncListAfterAutoApply()
+})
+
+let autoApplyGen = 0
+async function syncListAfterAutoApply() {
+  const gen = ++autoApplyGen
+  const prevKey = active.value ? itemKey(active.value) : null
+  const scrollTop = listEl.value?.scrollTop ?? null
+  await loadList()
+  if (gen !== autoApplyGen) return
+  // The user may have started typing while listGates was in flight: keep the
+  // current selection untouched; the processed banner still covers removal.
+  if (!autoApplyHeld.value) syncActiveAfterApply(listItems.value, prevKey)
+  else checkProcessedWhileEditing()
+  if (scrollTop != null) {
+    await nextTick()
+    if (listEl.value && listEl.value.scrollTop !== scrollTop) listEl.value.scrollTop = scrollTop
+  }
+}
 
 // Peek/poll may only change state=replying on existing keys. Merge onto the
 // current page so badges follow sessionBusy without hanging the update banner.
@@ -1695,6 +1727,7 @@ const clarifyInputActive = computed(() =>
   activeRun.value ? ['queued', 'running', 'waiting_human'].includes(activeRun.value.status) : false,
 )
 
+/** Manual refresh with a held pending change: the user asked, so apply now. */
 async function applyListUpdate() {
   if (processingLock.value) return
   const prevKey = active.value ? itemKey(active.value) : null
@@ -1703,7 +1736,6 @@ async function applyListUpdate() {
   syncActiveAfterApply(listItems.value, prevKey)
   await loadActiveRun(false)
   await softRefreshActiveRun()
-  showUpdateBanner.value = false
 }
 
 async function onManualRefresh() {
@@ -1723,10 +1755,6 @@ async function onManualRefresh() {
   } finally {
     manualRefreshing.value = false
   }
-}
-
-function dismissUpdateBanner() {
-  showUpdateBanner.value = false
 }
 
 // ReAct reject-and-revise edited the upstream producer in place; the gate stays
@@ -2102,6 +2130,10 @@ onMounted(() => {
     if (!active.value) active.value = listItems.value[0] || null
   })
   peek({ source: 'mount' })
+  setAutoApplyHold(() => autoApplyHeld.value)
+  syncInputFocused()
+  document.addEventListener('focusin', syncInputFocused)
+  document.addEventListener('focusout', onFocusOut)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -2110,6 +2142,11 @@ onUnmounted(() => {
   stopStartingPoll()
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
+  document.removeEventListener('focusin', syncInputFocused)
+  document.removeEventListener('focusout', onFocusOut)
+  // Leaving the page: nothing holds the list any more, so apply what is pending.
+  setAutoApplyHold(null)
+  autoApplyPending()
   closeActiveRunWs()
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
   confirmFlowDeskHold.value = false
@@ -2192,9 +2229,7 @@ function itemSecondary(it: InboxItem) {
     softRefreshActiveRun,
     loadActiveRun,
     retryActiveRun,
-    applyListUpdate,
     onManualRefresh,
-    dismissUpdateBanner,
     onReactRevised,
     onResolve,
     patchShareStatus,
@@ -2245,7 +2280,6 @@ function itemSecondary(it: InboxItem) {
     pendingAcpFrames,
     workflowFilterOpen,
     tagFilterOpen,
-    showUpdateBanner,
     showProcessedBanner,
     manualRefreshing,
     showListSkeleton,
@@ -2270,9 +2304,8 @@ function itemSecondary(it: InboxItem) {
     lastStagedAppPreviewPick,
     isClarifyEditing,
     isEditing,
-    statusPillClass,
-    statusPillText,
-    updateBannerDetail,
+    inputFocused,
+    autoApplyHeld,
     activeRun,
     activeRunLoading,
     activeRunLoadError,
@@ -2310,8 +2343,8 @@ function itemSecondary(it: InboxItem) {
     removeItemLocally,
     restoreItemLocally,
     hasPendingUpdate,
-    pendingMeta,
     lastPeekAt,
+    lastAutoAppliedAt,
     itemKey,
     patchVisibleCardBusy,
     ariaBusy,

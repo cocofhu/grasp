@@ -51,6 +51,7 @@ describe('usePendingGates', () => {
     usePendingGates().startFailedKeys.value = []
     usePendingGates().setActiveInboxKey(null)
     usePendingGates().setSidebarExtras([])
+    usePendingGates().setAutoApplyHold(null)
     await usePendingGates().refresh({ mode: 'force' })
   })
 
@@ -115,10 +116,11 @@ describe('usePendingGates', () => {
     expect(lastRefreshSource.value).toBe('sidebar-poll')
   })
 
-  it('peek updates remoteItems and count without changing displayedItems', async () => {
+  it('peek holds membership changes in remoteItems while the inbox hold is active', async () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
+    pg.setAutoApplyHold(() => true)
     expect(pg.displayedItems.value).toHaveLength(1)
     expect(pg.count.value).toBe(1)
 
@@ -132,10 +134,96 @@ describe('usePendingGates', () => {
     expect(pg.pendingMeta.value).toEqual({ added: 1, removed: 0 })
   })
 
+  describe('auto-apply (no update banner)', () => {
+    it('applies a peek membership change at once when no inbox page holds it (sidebar on other pages)', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      const before = pg.lastAutoAppliedAt.value
+
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('3'), gate('1')], 2))
+      await pg.peek({ source: 'sidebar-poll' })
+
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-3', 'run-1'])
+      expect(pg.hasPendingUpdate.value).toBe(false)
+      expect(pg.count.value).toBe(2)
+      expect(pg.lastAutoAppliedAt.value).toBeGreaterThan(before)
+    })
+
+    it('applies through an idle inbox hold and defers through a busy one until autoApplyPending', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      let busy = true
+      pg.setAutoApplyHold(() => busy)
+
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('2'), gate('1')], 2))
+      await pg.peek({ source: 'focus' })
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-1'])
+      expect(pg.hasPendingUpdate.value).toBe(true)
+      expect(pg.autoApplyPending()).toBe(false)
+
+      busy = false
+      expect(pg.autoApplyPending()).toBe(true)
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-2', 'run-1'])
+      expect(pg.hasPendingUpdate.value).toBe(false)
+
+      // Idle hold: the next peek applies directly.
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('2')], 1))
+      await pg.peek({ source: 'focus' })
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-2'])
+    })
+
+    it('a lagging peek cannot resurrect a locally removed gate (d8513aec ghost card)', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      pg.removeItemLocally('run-1:node-1')
+      expect(pg.count.value).toBe(1)
+
+      // Server has not caught up yet and still lists gate 1.
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
+      await pg.peek({ source: 'sidebar-poll' })
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-2'])
+      expect(pg.count.value).toBe(1)
+      expect(pg.hasPendingUpdate.value).toBe(false)
+
+      // Once the server drops it, a later reopen at a new iteration shows again.
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('2')], 1))
+      await pg.peek({ source: 'sidebar-poll' })
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([{ ...gate('1'), iteration: 2 } as InboxItem, gate('2')], 2))
+      await pg.peek({ source: 'sidebar-poll' })
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-1', 'run-2'])
+    })
+
+    it('a reopened gate at a later iteration is not hidden by a recent local removal', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      pg.removeItemLocally('run-1:node-1')
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([{ ...gate('1'), iteration: 2 } as InboxItem], 1))
+      await pg.peek({ source: 'sidebar-poll' })
+      expect(pg.displayedItems.value).toHaveLength(1)
+      expect(pg.count.value).toBe(1)
+    })
+
+    it('restoreItemLocally lifts the local-removal guard', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      pg.removeItemLocally('run-1:node-1')
+      pg.restoreItemLocally(gate('1'))
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+      await pg.peek({ source: 'sidebar-poll' })
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-1'])
+    })
+  })
+
   it('applyPending writes remote snapshot to displayedItems', async () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
+    pg.setAutoApplyHold(() => true)
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     await pg.peek()
@@ -158,6 +246,7 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
+    pg.setAutoApplyHold(() => true)
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     await pg.peek()
@@ -375,10 +464,11 @@ describe('usePendingGates', () => {
     expect(pg.displayedItems.value.map((it) => it.nodeId).sort()).toEqual(['node-1', 'node-2'])
   })
 
-  it('syncDisplayedBaseline clears a stale banner when visible membership matches remote (plan g2.1 / g4.2)', async () => {
+  it('syncDisplayedBaseline clears a held change when visible membership matches remote (plan g2.1 / g4.2)', async () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
+    pg.setAutoApplyHold(() => true)
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     await pg.peek({ source: 'sidebar-poll' })

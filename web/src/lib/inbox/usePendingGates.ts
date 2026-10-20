@@ -56,6 +56,28 @@ const hasPendingUpdate = ref(false)
 const pendingMeta = ref<PendingMeta | null>(null)
 const lastRefreshSource = ref<RefreshSource | null>(null)
 const lastPeekAt = ref(0)
+/**
+ * Bumped whenever a pending membership change is applied to displayedItems
+ * automatically. The inbox page watches it to reload its own page list.
+ */
+const lastAutoAppliedAt = ref(0)
+/**
+ * Mounted inbox page registers a hold: while it returns true (editing a form or
+ * draft, focus in an input, processingLock) membership changes stay pending and
+ * nothing the user is working on re-renders. Null = inbox not mounted → apply
+ * at once so the sidebar never freezes on other pages.
+ */
+let autoApplyHold: (() => boolean) | null = null
+/**
+ * Keys removed locally (approve/reject/force) → time. A lagging peek that still
+ * lists them must not resurrect a ghost card now that peeks apply on their own.
+ * Cleared once the server stops listing the key, on restore, or after the TTL.
+ */
+const LOCAL_REMOVAL_TTL_MS = 60_000
+const locallyRemoved = new Map<string, { at: number; iteration: number }>()
+const iterationOf = (it: InboxItem) => it.iteration ?? 1
+/** Same run:node at a later iteration (reject → loop back) is a new gate, not a ghost. */
+const isLocallyRemoved = (it: InboxItem) => locallyRemoved.get(itemKey(it))?.iteration === iterationOf(it)
 const error = ref<string | null>(null)
 const ariaBusy = ref(false)
 /**
@@ -128,13 +150,25 @@ function readPeekFiltersFromLocation(): {
   }
 }
 
-function setPending(remote: InboxItem[], total: number) {
+function dropLocallyRemoved(remote: InboxItem[]): InboxItem[] {
+  if (!locallyRemoved.size) return remote
+  const now = Date.now()
+  const listed = new Set(remote.filter(isLocallyRemoved).map(itemKey))
+  for (const [k, mark] of locallyRemoved) {
+    if (!listed.has(k) || now - mark.at > LOCAL_REMOVAL_TTL_MS) locallyRemoved.delete(k)
+  }
+  return locallyRemoved.size ? remote.filter((it) => !isLocallyRemoved(it)) : remote
+}
+
+function setPending(rawRemote: InboxItem[], rawTotal: number) {
+  const remote = dropLocallyRemoved(rawRemote)
   remoteItems.value = remote
-  totalCount.value = total
+  totalCount.value = Math.max(0, rawTotal - (rawRemote.length - remote.length))
   const meta = diffMembership(remote)
   if (meta.added > 0 || meta.removed > 0) {
     hasPendingUpdate.value = true
     pendingMeta.value = meta
+    autoApplyPending()
     return
   }
   // Same membership: fold visible∩remote into displayed, then merge badge-level
@@ -175,9 +209,10 @@ function patchItemReplying(key: string, busy: boolean): void {
   remoteItems.value = apply(remoteItems.value)
 }
 
-function applyRemoteToDisplayed(remote: InboxItem[], total: number) {
+function applyRemoteToDisplayed(rawRemote: InboxItem[], rawTotal: number) {
+  const remote = dropLocallyRemoved(rawRemote)
   remoteItems.value = remote
-  totalCount.value = total
+  totalCount.value = Math.max(0, rawTotal - (rawRemote.length - remote.length))
   displayedItems.value = remote
   hasPendingUpdate.value = false
   pendingMeta.value = null
@@ -188,6 +223,7 @@ function syncPendingMetaFromDiff() {
   if (meta.added > 0 || meta.removed > 0) {
     hasPendingUpdate.value = true
     pendingMeta.value = meta
+    autoApplyPending()
   } else {
     // Empty membership diff: close banner state without inventing "added N" (g2.1).
     hasPendingUpdate.value = false
@@ -250,6 +286,8 @@ function removeItemLocally(key: string): void {
   const inExtras = sidebarExtras.value.some((it) => itemKey(it) === key)
   if (!inDisplayed && !inRemote && !inExtras) return
 
+  const removed = [...displayedItems.value, ...remoteItems.value].find((it) => itemKey(it) === key)
+  if (removed) locallyRemoved.set(key, { at: Date.now(), iteration: iterationOf(removed) })
   displayedItems.value = displayedItems.value.filter((it) => itemKey(it) !== key)
   remoteItems.value = remoteItems.value.filter((it) => itemKey(it) !== key)
   sidebarExtras.value = sidebarExtras.value.filter((it) => itemKey(it) !== key)
@@ -266,6 +304,7 @@ function removeItemLocally(key: string): void {
  */
 function restoreItemLocally(item: InboxItem): void {
   const key = itemKey(item)
+  locallyRemoved.delete(key)
   const hadDisplayed = displayedItems.value.some((it) => itemKey(it) === key)
   const hadRemote = remoteItems.value.some((it) => itemKey(it) === key)
   if (!hadDisplayed) {
@@ -320,6 +359,23 @@ function applyPending(): void {
   displayedItems.value = [...remoteItems.value]
   hasPendingUpdate.value = false
   pendingMeta.value = null
+}
+
+/**
+ * Apply a pending membership change unless the mounted inbox holds it.
+ * Returns true when applied. The inbox calls it again once its hold ends.
+ */
+function autoApplyPending(): boolean {
+  if (!hasPendingUpdate.value) return false
+  if (autoApplyHold?.()) return false
+  applyPending()
+  lastAutoAppliedAt.value = Date.now()
+  return true
+}
+
+/** Register (or clear with null) the inbox page's edit/processing hold. */
+function setAutoApplyHold(hold: (() => boolean) | null): void {
+  autoApplyHold = hold
 }
 
 async function refresh(opts?: RefreshOptions): Promise<void> {
@@ -423,11 +479,14 @@ export function usePendingGates() {
     pendingMeta,
     lastRefreshSource,
     lastPeekAt,
+    lastAutoAppliedAt,
     error,
     ariaBusy,
     refresh,
     peek,
     applyPending,
+    autoApplyPending,
+    setAutoApplyHold,
     removeItemLocally,
     restoreItemLocally,
     setSidebarExtras,
