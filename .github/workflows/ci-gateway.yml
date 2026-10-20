@@ -6,6 +6,7 @@ name: ci-gateway
 # Image publish remains in publish-gateway (v* tags); not merged into ci-sandbox.
 on:
   push:
+    branches: [main]
     paths:
       - "sandbox-gateway/gateway/**"
       - "sandbox-gateway/Dockerfile"
@@ -24,9 +25,17 @@ on:
       - ".github/scripts/publish-coverage-badge.sh"
       - ".golangci.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   gateway:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # contents:write only used to update the orphan coverage-badges branch endpoint.
     permissions:
       contents: write
