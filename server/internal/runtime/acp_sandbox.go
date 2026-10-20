@@ -354,6 +354,7 @@ func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq, shared boo
 		removeHome(home)
 		return nil, layeredSpec{}, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
+	ls.placeholder = placeholder
 	return sb, ls, nil
 }
 
@@ -417,7 +418,14 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (*sand
 		if err != nil {
 			return sharedCreateResult{}, err
 		}
-		return sharedCreateResult{sb: sb, home: created.spec.ConfigHome, fingerprint: created.fingerprint, generation: generation}, nil
+		home := created.spec.ConfigHome
+		return sharedCreateResult{sb: sb, home: home, fingerprint: created.fingerprint, generation: generation,
+			discard: func() {
+				// Never adopted: the platform row still carries the placeholder.
+				c.deregisterRunSandbox(created.placeholder)
+				sb.Destroy(context.Background())
+				removeHome(home)
+			}}, nil
 	})
 	if err != nil {
 		if !errors.Is(err, errSharedSandboxIncompatible) {
@@ -486,7 +494,9 @@ func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*san
 	acp, err := c.connectSandbox(ctx, req, sb, ls.model, false, nil)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		c.deregisterRunSandbox(sb.Name)
+		// The row was never adopted by registerRunSandbox, so it is still
+		// keyed by the placeholder (as in createSandbox's failure paths).
+		c.deregisterRunSandbox(ls.placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
 		return nil, nil, "", err
@@ -585,6 +595,10 @@ type layeredSpec struct {
 	// fingerprint digests every container-shaping input (shared only); nodes
 	// reuse a shared container only when fingerprints are equal.
 	fingerprint string
+	// placeholder is the creating-row name createSandbox registered before
+	// the gateway assigned an id. Until registerRunSandbox adopts the real
+	// name, the platform row is still keyed by it.
+	placeholder string
 }
 
 // specLayered builds the sandbox Spec. When shared is true, Spec.Env keeps only

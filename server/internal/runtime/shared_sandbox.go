@@ -47,6 +47,10 @@ type sharedCreateResult struct {
 	home        string
 	fingerprint string
 	generation  int
+	// discard, when set, tears down a result the coordinator cannot use
+	// (AbortRun finalized the run while create was in flight): it must
+	// destroy the container and forget every record create left behind.
+	discard func()
 }
 
 // sharedSandboxCoordinator serializes Agent node use of one run's workspace.
@@ -137,8 +141,12 @@ func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID, fingerpri
 			return nil, errors.New("共享沙箱创建返回空容器")
 		}
 		if orphaned {
-			res.sb.Destroy(context.Background())
-			removeHome(res.home)
+			if res.discard != nil {
+				res.discard()
+			} else {
+				res.sb.Destroy(context.Background())
+				removeHome(res.home)
+			}
 			return nil, errors.New("运行已结束，共享沙箱不可用")
 		}
 	} else {
