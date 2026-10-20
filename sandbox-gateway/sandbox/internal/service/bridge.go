@@ -94,6 +94,9 @@ type Bridge struct {
 	sampler     processSampler
 	livenessCPU time.Duration
 	livenessIO  int64
+	// 看门狗采样 / 心跳周期（默认 livenessSampleEvery / livenessHeartbeatEvery）。
+	livenessSample time.Duration
+	livenessBeat   time.Duration
 }
 
 // queuedPrompt：入队前 InMessage 核心字段（单会话 FIFO）。
@@ -137,6 +140,8 @@ func NewBridge() *Bridge {
 		sampler:        procSampler{root: "/proc"},
 		livenessCPU:    liveCPU,
 		livenessIO:     liveIO,
+		livenessSample: livenessSampleEvery,
+		livenessBeat:   livenessHeartbeatEvery,
 		id:             DefaultChatID,
 		createdAt:      time.Now(),
 		permWait:       make(map[string]chan string),
