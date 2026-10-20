@@ -1648,6 +1648,7 @@ defineExpose({
         ref="shellRef"
         class="min-h-0 flex-1"
         :chat-only="chatOnly"
+        :split-drawer="usePublicArtifactStage"
       >
         <template #stage>
           <div

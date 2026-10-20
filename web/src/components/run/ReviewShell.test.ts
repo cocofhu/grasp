@@ -7,9 +7,10 @@ import pages from '@/locales/zh-CN/pages.json'
 import ReviewShell from './ReviewShell.vue'
 import { useConversationArtifacts, type ConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import { registerStageLinks } from '@/lib/run/stageLinks'
+import { ensureConversationDrawer, resetConversationDrawers } from '@/lib/chat/conversationDrawer'
 
 enableAutoUnmount(afterEach)
-afterEach(() => { document.body.replaceChildren(); localStorage.clear() })
+afterEach(() => { document.body.replaceChildren(); localStorage.clear(); resetConversationDrawers() })
 
 function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean } = {}) {
   const mountedChat = vi.fn()
@@ -37,6 +38,7 @@ function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boole
 describe('ReviewShell conversation layout', () => {
   it('starts with the conversation and keeps both the draft and product mounted while toggling', async () => {
     const { wrapper, mountedChat, mountedStage } = mountShell()
+    expect(wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="review-shell-sidebar"]').isVisible()).toBe(true)
     expect(wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
     expect(mountedStage).toHaveBeenCalledOnce()
@@ -96,5 +98,44 @@ describe('ReviewShell conversation layout', () => {
     expect((ordinary.wrapper.vm as { playConfirmCeremony: unknown }).playConfirmCeremony).toBeTypeOf('function')
     const gate = mountShell({ hostConfirmFlow: false })
     expect(gate.wrapper.find('[data-testid="confirm-flow-overlay"]').exists()).toBe(false)
+  })
+
+  it('opens one sandbox drawer from icon buttons and drops it when the conversation changes', async () => {
+    const entry = ensureConversationDrawer('run-1')
+    const host = mountShell({ splitDrawer: true })
+    expect(host.wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(true)
+    const artifact = host.wrapper.get('[data-testid="conversation-panel-toggle"]')
+    expect(artifact.text()).not.toContain('产物')
+    await host.wrapper.get('[data-testid="conversation-resource-toggle"]').trigger('click')
+    expect(host.wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('resources')
+    await artifact.trigger('click')
+    expect(artifact.attributes('aria-pressed')).toBe('true')
+    expect(host.wrapper.get('[data-testid="conversation-resource-toggle"]').attributes('aria-pressed')).toBe('false')
+    const epoch = entry!.resetEpoch
+    await host.wrapper.setProps({ scopeKey: 'run:node:2' })
+    await flushPromises()
+    expect(host.wrapper.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+    expect(artifact.attributes('aria-pressed')).toBe('false')
+    expect(entry!.resetEpoch).toBe(epoch + 1)
+    const embedded = mountShell({ splitDrawer: true, chatOnly: true })
+    expect(embedded.wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
+    expect(embedded.wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(false)
+  })
+
+  it('opens an artifact reference on the artifact icon and a preview on the resource icon', async () => {
+    const openArtifact = vi.fn()
+    const openPreview = vi.fn()
+    const unregister = registerStageLinks('run-1', { hasArtifact: () => true, openArtifact, canOpenPreview: () => true, openPreview })
+    try {
+      const host = mountShell({ splitDrawer: true })
+      await host.openArtifact({ name: 'review.json', runId: 'run-1' })
+      expect(host.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
+      expect(host.wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('artifacts')
+      expect(openArtifact).toHaveBeenCalledWith('review.json')
+      await host.openArtifact({ preview: true, runId: 'run-1' })
+      expect(host.wrapper.get('[data-testid="conversation-resource-toggle"]').attributes('aria-pressed')).toBe('true')
+      expect(host.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
+      expect(openPreview).toHaveBeenCalledOnce()
+    } finally { unregister() }
   })
 })

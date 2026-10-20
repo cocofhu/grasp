@@ -9,6 +9,7 @@ import enCommon from '@/locales/en/common.json'
 import enPages from '@/locales/en/pages.json'
 import type { Artifact } from '@/lib/shared/types'
 import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
+import { ensureConversationDrawer, resetConversationDrawers } from '@/lib/chat/conversationDrawer'
 import ReactArtifactStage from './ReactArtifactStage.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
@@ -148,6 +149,7 @@ describe('ReactArtifactStage', () => {
   beforeEach(() => {
     // Stage specs use runId values starting with "run-"; keep unrelated helper keys intact for parallel files.
     resetStageOpenStateForTests(':run-')
+    resetConversationDrawers()
     vi.mocked(api.artifactContent).mockImplementation(async () =>
       art({ id: 'thumb', name: 'thumb.html', kind: 'html', content: '<html>thumb</html>' }),
     )
@@ -166,6 +168,7 @@ describe('ReactArtifactStage', () => {
   })
   afterEach(() => {
     resetStageOpenStateForTests(':run-')
+    resetConversationDrawers()
     document.body.innerHTML = ''
   })
 
@@ -1938,6 +1941,172 @@ describe('ReactArtifactStage', () => {
     expect(wrapper.get('[data-testid="react-artifact-tab-brand-row-preview.html"]').attributes('aria-selected')).toBe(
       'true',
     )
+    wrapper.unmount()
+  })
+})
+
+describe('ReactArtifactStage split drawer', () => {
+  const longName = '需求澄清这是一个非常非常非常非常非常非常非常非常长的节点名称需要完整换行'
+  function graphRun() {
+    return {
+      id: 'run-split',
+      nodes: [
+        { id: 'in', type: 'input', label: '输入', position: { x: 0, y: 0 }, config: {} },
+        { id: 'clarify', type: 'agent', label: longName, position: { x: 0, y: 0 }, config: {} },
+        { id: 'out', type: 'output', label: '输出', position: { x: 0, y: 0 }, config: {} },
+      ],
+      nodeRuns: {
+        in: { nodeId: 'in', status: 'completed' },
+        clarify: { nodeId: 'clarify', status: 'waiting_human' },
+      },
+      artifacts: [],
+    }
+  }
+  function mountSplit(mode: 'resources' | 'artifacts', extra: { locale?: 'zh-CN' | 'en'; artifacts?: ReturnType<typeof art>[] } = {}) {
+    const entry = ensureConversationDrawer('run-split')
+    entry!.split = true
+    entry!.mode = mode
+    return mount(ReactArtifactStage, {
+      props: {
+        artifacts: extra.artifacts ?? [
+          art({ id: 'own', name: 'notes.md', kind: 'markdown', nodeId: 'clarify', runId: 'run-split' }),
+          art({ id: 'up', name: 'upstream.json', kind: 'json', nodeId: 'in', runId: 'run-split' }),
+        ],
+        runId: 'run-split',
+        nodeId: 'clarify',
+        run: graphRun() as never,
+      },
+      global: { plugins: [i18n(extra.locale || 'zh-CN')], stubs },
+    })
+  }
+  beforeEach(() => {
+    resetStageOpenStateForTests(':run-')
+    resetConversationDrawers()
+  })
+  afterEach(() => {
+    resetConversationDrawers()
+    resetStageOpenStateForTests(':run-')
+  })
+
+  it('shows a read-only timeline and artifact cards without a second product title', async () => {
+    const wrapper = mountSplit('artifacts')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('工作流产物')
+    expect(wrapper.get('[data-testid="stage-workflow-heading"]').text()).toBe('工作流')
+    expect(wrapper.get('[data-testid="react-artifact-grid"]').classes()).toContain('overflow-x-hidden')
+    const nodes = wrapper.findAll('[data-testid="stage-workflow-node"]')
+    expect(nodes).toHaveLength(3)
+    expect(nodes[1].attributes('data-current')).toBe('true')
+    expect(nodes[1].attributes('data-status')).toBe('waiting_human')
+    expect(nodes[1].classes()).toContain('cursor-default')
+    expect(nodes[1].classes()).toContain('border-accent/60')
+    expect(nodes[1].element.tagName).toBe('DIV')
+    expect(nodes[1].text()).toContain(longName)
+    expect(nodes[1].text()).toContain('当前')
+    expect(nodes[1].text()).toContain('等待人工')
+    expect(nodes[1].text()).not.toContain('tokens')
+    expect(nodes[0].text()).toContain('已完成')
+    expect(wrapper.get('[data-testid="stage-workflow-label"]').classes().join(' ')).toContain('overflow-wrap:anywhere')
+    const waitingDot = wrapper.findAll('[data-testid="stage-workflow-dot"]')[1]
+    expect(waitingDot.classes()).toContain('bg-warn')
+    expect(wrapper.find('[data-testid="react-artifact-card-ide"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-card-notes.md"]').text()).toContain('产物')
+    expect(wrapper.get('[data-testid="react-artifact-card-upstream.json"]').text()).toContain('只读')
+    await nodes[1].trigger('click')
+    expect(wrapper.find('[data-testid="react-artifact-tab-notes.md"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('uses the plain empty copy when the run has no artifacts and invents no nodes without a graph', async () => {
+    const entry = ensureConversationDrawer('run-split')
+    entry!.split = true
+    entry!.mode = 'artifacts'
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-split',
+        nodeId: 'clarify',
+        run: { id: 'run-split', nodeRuns: { ghost: { nodeId: 'ghost', status: 'running' } } } as never,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-grid-empty-hint"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-split-empty"]').text()).toBe('本次运行还没有产物')
+    expect(wrapper.text()).not.toContain('ghost')
+    wrapper.unmount()
+  })
+
+  it('keeps resource cards on their own home and remembers each mode’s preview', async () => {
+    const entry = ensureConversationDrawer('run-split')
+    entry!.split = true
+    entry!.mode = 'resources'
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'own', name: 'notes.md', kind: 'markdown', nodeId: 'clarify', runId: 'run-split' })],
+        runId: 'run-split',
+        nodeId: 'clarify',
+        run: graphRun() as never,
+        remoteKind: 'app',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-notes.md"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-tab-novnc"]').exists()).toBe(false)
+    expect(cardTestIds(wrapper)).toEqual([
+      'react-artifact-card-ide',
+      'react-artifact-card-terminal',
+      'react-artifact-card-browser',
+      'react-artifact-card-app',
+      'react-artifact-card-log',
+    ])
+    await wrapper.get('[data-testid="react-artifact-card-ide"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-ide"]').text()).toContain('IDE')
+    expect(wrapper.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(false)
+    expect((wrapper.get('[data-testid="react-artifact-preview-ide"]').element as HTMLElement).style.display).not.toBe('none')
+    entry!.mode = 'artifacts'
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(true)
+    expect((wrapper.get('[data-testid="react-artifact-preview-ide"]').element as HTMLElement).style.display).toBe('none')
+    await wrapper.get('[data-testid="react-artifact-card-notes.md"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-notes.md"]').text()).toContain('notes.md')
+    expect(wrapper.get('[data-testid="react-artifact-tab-notes.md"]').text()).not.toContain('产物')
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="react-artifact-tab-close-notes.md"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-notes.md"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-card-notes.md"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="react-artifact-card-notes.md"]').trigger('click')
+    entry!.mode = 'resources'
+    await flushPromises()
+    expect((wrapper.get('[data-testid="react-artifact-preview-ide"]').element as HTMLElement).style.display).not.toBe('none')
+    entry!.mode = 'artifacts'
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-notes.md"]').attributes('aria-selected')).toBe('true')
+    entry!.resetEpoch += 1
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-notes.md"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-card-notes.md"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-preview-ide"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('labels the current mark and empty state in English without a second Artifacts tab', async () => {
+    const wrapper = mountSplit('artifacts', { locale: 'en', artifacts: [] })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stage-workflow-heading"]').text()).toBe('Workflow')
+    expect(wrapper.get('[data-testid="stage-workflow-current"]').text()).toBe('Current')
+    expect(wrapper.get('[data-testid="react-artifact-split-empty"]').text()).toBe('This run has no artifacts yet')
+    expect(wrapper.text()).toContain('Waiting for human')
     wrapper.unmount()
   })
 })

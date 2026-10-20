@@ -11,14 +11,20 @@ const props = withDefaults(defineProps<{
   panelWidth?: number
   panelEnabled?: boolean
   showToolbar?: boolean
-}>(), { title: '', storageKey: 'grasp.conversation.panelWidth', panelWidth: 440, panelEnabled: true, showToolbar: true })
+  /** Sandbox stage: icon-only resource and artifact toggles share this drawer. */
+  splitModes?: boolean
+}>(), { title: '', storageKey: 'grasp.conversation.panelWidth', panelWidth: 440, panelEnabled: true, showToolbar: true, splitModes: false })
 const open = defineModel<boolean>('open', { default: false })
+const mode = defineModel<'resources' | 'artifacts' | null>('mode', { default: null })
 provide(conversationPanelVisibleKey, computed(() => open.value && props.panelEnabled))
 const { t } = useI18n()
 const root = ref<HTMLElement | null>(null)
 const main = ref<HTMLElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const toggle = ref<HTMLButtonElement | null>(null)
+const resourceToggle = ref<HTMLButtonElement | null>(null)
+const artifactToggle = ref<HTMLButtonElement | null>(null)
+const pressedToggle = ref<'resources' | 'artifacts' | null>(null)
 const closeButton = ref<HTMLButtonElement | null>(null)
 const canvasWidth = ref(0)
 const preferredWidth = ref(props.panelWidth)
@@ -26,7 +32,18 @@ const dragging = ref(false)
 const compact = computed(() => canvasWidth.value > 0 && canvasWidth.value < 800)
 const maxWidth = computed(() => Math.max(280, Math.min(880, canvasWidth.value - 364)))
 const width = computed(() => Math.max(280, Math.min(maxWidth.value, preferredWidth.value)))
-const panelTitle = computed(() => props.title || t('pages.conversationWorkspace.artifacts'))
+const panelTitle = computed(() => {
+  if (props.splitModes) {
+    return mode.value === 'resources'
+      ? t('pages.conversationWorkspace.resources')
+      : t('pages.conversationWorkspace.artifacts')
+  }
+  return props.title || t('pages.conversationWorkspace.artifacts')
+})
+const headingIcon = computed(() => {
+  if (!props.splitModes) return 'artifact'
+  return mode.value === 'resources' ? 'stage-resources' : 'doc'
+})
 let observer: ResizeObserver | undefined
 let returnFocus: HTMLElement | null = null
 let pointerStart = 0
@@ -60,7 +77,18 @@ function capturePassage(): (() => void) | undefined {
   }
 }
 function restorePassage(restore?: () => void) { void nextTick(() => restore?.()) }
-function close() { open.value = false }
+function close() {
+  open.value = false
+  if (props.splitModes) mode.value = null
+}
+function toggleMode(next: 'resources' | 'artifacts') {
+  pressedToggle.value = next
+  if (mode.value === next) close()
+  else {
+    mode.value = next
+    open.value = true
+  }
+}
 function onPanelKeydown(event: KeyboardEvent) {
   if (event.defaultPrevented) return
   if (event.key === 'Escape') {
@@ -110,11 +138,30 @@ watch(open, async value => {
   restore?.()
   if (value && compact.value) closeButton.value?.focus()
   if (!value) {
-    const target = returnFocus?.isConnected ? returnFocus : toggle.value
+    const fallback = props.splitModes
+      ? (pressedToggle.value === 'resources' ? resourceToggle.value : artifactToggle.value)
+      : toggle.value
+    const target = returnFocus?.isConnected ? returnFocus : fallback
     target?.focus({ preventScroll: true })
   }
 })
-watch(() => props.scopeKey, () => { open.value = false; dragging.value = false; returnFocus = null })
+watch(open, (value) => {
+  if (!props.splitModes) return
+  if (!value) {
+    if (mode.value) mode.value = null
+  } else if (!mode.value) mode.value = 'artifacts'
+})
+watch(mode, (value) => {
+  if (!props.splitModes) return
+  const shouldOpen = value != null
+  if (open.value !== shouldOpen) open.value = shouldOpen
+})
+watch(() => props.scopeKey, () => {
+  open.value = false
+  if (props.splitModes) mode.value = null
+  dragging.value = false
+  returnFocus = null
+})
 watch(() => props.storageKey, readWidth)
 watch(() => props.panelEnabled, enabled => { if (!enabled) open.value = false })
 watch(compact, async value => { if (value && open.value) { await nextTick(); closeButton.value?.focus() } })
@@ -141,18 +188,22 @@ onBeforeUnmount(() => observer?.disconnect())
         <span class="conversation-heading"><Icon name="chat" :size="15" aria-hidden="true" />{{ t('pages.conversationWorkspace.conversation') }}</span>
         <div class="ml-auto flex min-w-0 items-center gap-2">
           <slot name="actions" />
-          <button v-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="open ? t('pages.conversationWorkspace.closeArtifacts') : t('pages.conversationWorkspace.openArtifacts')" @click="open = !open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" />{{ t('pages.conversationWorkspace.artifacts') }}</button>
+          <div v-if="panelEnabled && splitModes" class="flex items-center gap-0.5">
+            <button ref="resourceToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-resource-toggle" :aria-pressed="mode === 'resources'" :aria-expanded="mode === 'resources'" :aria-label="mode === 'resources' ? t('pages.conversationWorkspace.closeResources') : t('pages.conversationWorkspace.openResources')" :title="t('pages.conversationWorkspace.resourceTip')" @click="toggleMode('resources')"><Icon name="stage-resources" :size="16" aria-hidden="true" /></button>
+            <button ref="artifactToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-panel-toggle" :aria-pressed="mode === 'artifacts'" :aria-expanded="mode === 'artifacts'" :aria-label="mode === 'artifacts' ? t('pages.conversationWorkspace.closeArtifacts') : t('pages.conversationWorkspace.openArtifacts')" :title="t('pages.conversationWorkspace.artifacts')" @click="toggleMode('artifacts')"><Icon name="doc" :size="16" aria-hidden="true" /></button>
+          </div>
+          <button v-else-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="open ? t('pages.conversationWorkspace.closeArtifacts') : t('pages.conversationWorkspace.openArtifacts')" @click="open = !open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" />{{ t('pages.conversationWorkspace.artifacts') }}</button>
         </div>
       </slot>
     </header>
     <div class="conversation-body">
       <div ref="main" class="conversation-main" :inert="compact && open && panelEnabled ? true : undefined" :aria-hidden="compact && open && panelEnabled ? 'true' : undefined" data-testid="conversation-main"><slot /></div>
       <div v-if="panelEnabled && open && !compact" role="separator" tabindex="0" aria-orientation="vertical" :aria-valuemin="280" :aria-valuemax="maxWidth" :aria-valuenow="width" :aria-label="t('pages.conversationWorkspace.resizePanel')" class="conversation-sash" data-testid="conversation-panel-sash" @pointerdown="startResize" @pointermove="resize" @pointerup="endResize" @pointercancel="endResize" @keydown="resizeByKey" />
-      <aside v-if="panelEnabled" v-show="open" ref="panel" class="conversation-panel" :style="compact ? undefined : { width: width + 'px' }" :role="compact ? 'dialog' : 'complementary'" :aria-modal="compact && open ? 'true' : undefined" :aria-label="panelTitle" data-testid="conversation-artifact-panel" @keydown="onPanelKeydown">
+      <aside v-if="panelEnabled" v-show="open" ref="panel" class="conversation-panel" :style="compact ? undefined : { width: width + 'px' }" :role="compact ? 'dialog' : 'complementary'" :aria-modal="compact && open ? 'true' : undefined" :aria-label="panelTitle" :data-drawer-mode="splitModes ? (mode || 'closed') : undefined" data-testid="conversation-artifact-panel" @keydown="onPanelKeydown">
         <header class="conversation-panel-heading">
-          <Icon v-if="!compact" name="artifact" :size="15" class="shrink-0 text-txt3" />
+          <Icon v-if="!compact" :name="headingIcon" :size="15" class="shrink-0 text-txt3" />
           <span class="min-w-0 flex-1 truncate text-xs font-medium text-txt2" :title="panelTitle">{{ panelTitle }}</span>
-          <button ref="closeButton" type="button" class="conversation-close" data-testid="conversation-panel-close" :aria-label="compact ? t('pages.conversationWorkspace.backToChat') : t('pages.conversationWorkspace.closeArtifacts')" @click="close"><Icon :key="compact ? 'back' : 'close'" :name="compact ? 'arrow-left' : 'close'" :size="16" /><span v-if="compact" class="text-xs">{{ t('pages.conversationWorkspace.backToChat') }}</span></button>
+          <button ref="closeButton" type="button" class="conversation-close" data-testid="conversation-panel-close" :aria-label="compact ? t('pages.conversationWorkspace.backToChat') : (splitModes && mode === 'resources' ? t('pages.conversationWorkspace.closeResources') : t('pages.conversationWorkspace.closeArtifacts'))" @click="close"><Icon :key="compact ? 'back' : 'close'" :name="compact ? 'arrow-left' : 'close'" :size="16" /><span v-if="compact" class="text-xs">{{ t('pages.conversationWorkspace.backToChat') }}</span></button>
         </header>
         <div class="conversation-panel-content"><slot name="panel" /></div>
       </aside>
@@ -167,7 +218,10 @@ onBeforeUnmount(() => observer?.disconnect())
 .conversation-panel-toggle, .conversation-close { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 9px; padding: 0 10px; color: rgb(var(--c-txt2)); font-size: 12px; transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }
 .conversation-panel-toggle:hover, .conversation-close:hover { background: rgb(var(--c-txt) / .05); color: rgb(var(--c-txt)); }
 .conversation-panel-toggle[aria-expanded="true"] { border-color: rgb(var(--c-accent) / .12); background: rgb(var(--c-accent-dim)); color: rgb(var(--c-accent-2)); }
-.conversation-panel-toggle:focus-visible, .conversation-close:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
+.conversation-panel-toggle:focus-visible, .conversation-close:focus-visible, .conversation-mode-toggle:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }
+.conversation-mode-toggle { display: inline-flex; width: 32px; height: 32px; flex: none; align-items: center; justify-content: center; padding: 0; border: 1px solid transparent; border-radius: 8px; background: transparent; color: rgb(var(--c-txt3)); transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }
+.conversation-mode-toggle:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
+.conversation-mode-toggle[aria-pressed="true"] { border-color: rgb(var(--c-line)); background: rgb(var(--c-base)); color: rgb(var(--c-txt)); }
 .conversation-body { display: flex; position: relative; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
 .conversation-main { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
 .conversation-panel { display: flex; min-width: 0; min-height: 0; flex: none; flex-direction: column; overflow: hidden; border-left: 1px solid rgb(var(--c-line)); background: rgb(var(--c-surface)); animation: conversation-panel-reveal 160ms ease-out; }
@@ -179,9 +233,10 @@ onBeforeUnmount(() => observer?.disconnect())
 .is-compact .conversation-panel { position: absolute; z-index: 20; inset: 0; width: 100%; border-left: 0; }
 .is-compact .conversation-panel-heading { padding-inline: 12px; }
 .is-compact .conversation-close, .is-compact .conversation-panel-toggle { min-height: 44px; }
+.is-compact .conversation-mode-toggle { width: 44px; height: 44px; }
 @keyframes conversation-panel-reveal { from { opacity: .4; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .conversation-panel-toggle, .conversation-close { transition: none; }
+  .conversation-panel-toggle, .conversation-close, .conversation-mode-toggle { transition: none; }
   .conversation-panel { animation: none; }
 }
 </style>
