@@ -111,7 +111,7 @@ All notable public-release changes are documented here.
   and project MCP addresses are removed in favour of workspace endpoints
   (`/api/workspace`, `/mcp/workspace`); the PM tool is now
   `pm_list_workspace_agents` and Agent bundles use `workspace.json`.
-  Requires a fresh install.
+  Requires a fresh install with an empty database and an empty data directory.
 
 - **HTML preview toolbar:** removes the repeated file-information row and puts
   copy and download immediately before the enlarge control. Version selection

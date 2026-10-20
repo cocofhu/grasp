@@ -21,6 +21,8 @@
 
 </div>
 
+This release requires a fresh install: an empty database and an empty data directory.
+
 ## Why Grasp
 
 Over the past two years I built 150+ personal projects with coding agents, and two problems kept slowing me down:
