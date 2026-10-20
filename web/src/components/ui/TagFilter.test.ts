@@ -8,6 +8,13 @@ const apiMocks = vi.hoisted(() => ({
   listProjectRunTags: vi.fn(),
 }))
 
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  const workspace = ref({ id: 'p1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+})
+
+
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return {
@@ -106,11 +113,11 @@ describe('TagFilter', () => {
     wrapper.unmount()
   })
 
-  it('shows need-project empty state without calling API', async () => {
+  it('loads workspace tags without requiring a project prop', async () => {
     const wrapper = mountFilter({ open: true, projectId: '' })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="tag-filter-empty"]').text()).toMatch(/选择项目/)
+    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('p1')
+    expect(wrapper.text()).not.toMatch(/选择项目/)
     wrapper.unmount()
   })
 
@@ -150,7 +157,7 @@ describe('TagFilter', () => {
     apiMocks.listProjectRunTags.mockRejectedValue(new Error('not found'))
     const wrapper = mountFilter({ projectId: 'proj-missing', open: true })
     await flushPromises()
-    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('proj-missing')
+    expect(apiMocks.listProjectRunTags).toHaveBeenCalledWith('p1')
     expect(wrapper.find('[data-testid="tag-filter-stock-error"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="tag-filter-suggestions"]').exists()).toBe(false)
     wrapper.unmount()

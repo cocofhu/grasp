@@ -1,133 +1,55 @@
 import type { LocationQuery } from 'vue-router'
-import {
-  childKey,
-  parseTreeKey,
-  projectKey,
-  type ProjectTreeNode,
-} from '@/components/ui/projectTree'
+import type { ResourceListItem } from '@/components/ui/ResourceList.vue'
 import type { ArtifactListScope } from '@/lib/api/clients/artifactsClient'
 import type { ArtifactTreeProject, ArtifactTreeWorkflow } from '@/lib/shared/types'
 
-/** Tree child id of a project's workflow-less (Agent session) bucket. */
 export const SESSION_CHILD_ID = '__session__'
-
-export type ArtifactSelection =
-  | { kind: 'project'; projectId: string }
-  | { kind: 'workflow'; projectId: string; workflowId: string }
-  | { kind: 'session'; projectId: string }
-
-export type ArtifactTreeLabels = { session: string; unnamedWorkflow: string }
-
-export function workflowLabel(wf: ArtifactTreeWorkflow, unnamed: string): string {
-  return wf.workflowName.trim() || unnamed
+export type ArtifactSelection = { kind: 'all' } | { kind: 'workflow'; workflowId: string } | { kind: 'session' }
+export type ArtifactTreeLabels = { session: string; unnamedWorkflow: string; all?: string }
+export function workflowLabel(wf: ArtifactTreeWorkflow, unnamed: string): string { return wf.workflowName.trim() || unnamed }
+export function buildArtifactTreeNodes(tree: ArtifactTreeProject[], labels: ArtifactTreeLabels): ResourceListItem[] {
+  const workflows = tree.flatMap((p) => p.workflows)
+  const rows: ResourceListItem[] = [{ id: 'all', label: labels.all || labels.unnamedWorkflow, count: tree.reduce((n, p) => n + p.count, 0), icon: 'artifact' }]
+  rows.push(...workflows.map((wf) => ({ id: 'workflow:' + wf.workflowId, label: workflowLabel(wf, labels.unnamedWorkflow), count: wf.count, icon: 'workflow' })))
+  const sessions = tree.reduce((n, p) => n + p.sessionCount, 0)
+  if (sessions) rows.push({ id: 'session', label: labels.session, count: sessions, icon: 'robot' })
+  return rows
 }
-
-export function projectLabel(p: ArtifactTreeProject): string {
-  return p.projectName.trim() || p.projectId
-}
-
-export function buildArtifactTreeNodes(
-  tree: ArtifactTreeProject[],
-  labels: ArtifactTreeLabels,
-): ProjectTreeNode[] {
-  return tree.map((p) => {
-    const children = p.workflows.map((wf) => ({
-      id: wf.workflowId,
-      label: workflowLabel(wf, labels.unnamedWorkflow),
-      count: wf.count,
-      icon: 'workflow',
-    }))
-    if (p.sessionCount > 0) {
-      children.push({ id: SESSION_CHILD_ID, label: labels.session, count: p.sessionCount, icon: 'robot' })
-    }
-    return { id: p.projectId, label: projectLabel(p), count: p.count, children }
-  })
-}
-
-function firstString(v: LocationQuery[string] | undefined): string {
-  const s = Array.isArray(v) ? v[0] : v
-  return typeof s === 'string' ? s : ''
-}
-
-/** Raw (unvalidated) selection requested by ?project=&workflow= / ?project=&session=1. */
-export function selectionFromQuery(query: LocationQuery): ArtifactSelection | null {
-  const projectId = firstString(query.project)
-  if (!projectId) return null
+function firstString(v: LocationQuery[string] | undefined): string { const s = Array.isArray(v) ? v[0] : v; return typeof s === 'string' ? s : '' }
+export function selectionFromQuery(query: LocationQuery): ArtifactSelection {
   const workflowId = firstString(query.workflow)
-  if (workflowId) return { kind: 'workflow', projectId, workflowId }
-  if (firstString(query.session) === '1') return { kind: 'session', projectId }
-  return { kind: 'project', projectId }
+  if (workflowId) return { kind: 'workflow', workflowId }
+  return firstString(query.session) === '1' ? { kind: 'session' } : { kind: 'all' }
 }
-
 export function selectionToQuery(sel: ArtifactSelection): Record<string, string> {
-  if (sel.kind === 'workflow') return { project: sel.projectId, workflow: sel.workflowId }
-  if (sel.kind === 'session') return { project: sel.projectId, session: '1' }
-  return { project: sel.projectId }
+  if (sel.kind === 'workflow') return { workflow: sel.workflowId }
+  if (sel.kind === 'session') return { session: '1' }
+  return {}
 }
-
-export function selectionTreeKey(sel: ArtifactSelection | null): string {
-  if (!sel) return ''
-  if (sel.kind === 'workflow') return childKey(sel.projectId, sel.workflowId)
-  if (sel.kind === 'session') return childKey(sel.projectId, SESSION_CHILD_ID)
-  return projectKey(sel.projectId)
-}
-
+export function selectionTreeKey(sel: ArtifactSelection | null): string { return !sel ? '' : sel.kind === 'workflow' ? 'workflow:' + sel.workflowId : sel.kind }
 export function selectionFromTreeKey(key: string): ArtifactSelection | null {
-  const parsed = parseTreeKey(key)
-  if (!parsed) return null
-  const { projectId, childId } = parsed
-  if (!childId) return { kind: 'project', projectId }
-  if (childId === SESSION_CHILD_ID) return { kind: 'session', projectId }
-  return { kind: 'workflow', projectId, workflowId: childId }
+  if (key === 'all' || key === 'session') return { kind: key }
+  return key.startsWith('workflow:') && key.slice(9) ? { kind: 'workflow', workflowId: key.slice(9) } : null
 }
-
-/**
- * Clamp a requested selection to what the tree holds: unknown children fall back
- * to their project, unknown projects (or none requested) to the first project.
- */
-export function resolveArtifactSelection(
-  tree: ArtifactTreeProject[],
-  wanted: ArtifactSelection | null,
-): ArtifactSelection | null {
-  const project = (wanted && tree.find((p) => p.projectId === wanted.projectId)) || tree[0]
-  if (!project) return null
-  const projectId = project.projectId
-  if (wanted?.projectId === projectId) {
-    if (wanted.kind === 'workflow' && project.workflows.some((w) => w.workflowId === wanted.workflowId)) {
-      return wanted
-    }
-    if (wanted.kind === 'session' && project.sessionCount > 0) return wanted
-  }
-  return { kind: 'project', projectId }
+export function resolveArtifactSelection(tree: ArtifactTreeProject[], wanted: ArtifactSelection | null): ArtifactSelection | null {
+  if (!tree.length) return null
+  if (wanted?.kind === 'workflow' && tree.some((p) => p.workflows.some((w) => w.workflowId === wanted.workflowId))) return wanted
+  if (wanted?.kind === 'session' && tree.some((p) => p.sessionCount > 0)) return wanted
+  return { kind: 'all' }
 }
-
 export function selectionScope(sel: ArtifactSelection): ArtifactListScope {
-  if (sel.kind === 'workflow') return { projectId: sel.projectId, workflowId: sel.workflowId }
-  if (sel.kind === 'session') return { projectId: sel.projectId, session: true }
-  return { projectId: sel.projectId }
+  if (sel.kind === 'workflow') return { workflowId: sel.workflowId }
+  if (sel.kind === 'session') return { session: true }
+  return {}
 }
-
-export type SelectionInfo = {
-  project: ArtifactTreeProject
-  projectLabel: string
-  /** Second breadcrumb segment; empty when the whole project is selected. */
-  childLabel: string
-  count: number
-}
-
-export function describeSelection(
-  tree: ArtifactTreeProject[],
-  sel: ArtifactSelection | null,
-  labels: ArtifactTreeLabels,
-): SelectionInfo | null {
+export type SelectionInfo = { projectLabel: string; childLabel: string; count: number }
+export function describeSelection(tree: ArtifactTreeProject[], sel: ArtifactSelection | null, labels: ArtifactTreeLabels): SelectionInfo | null {
   if (!sel) return null
-  const project = tree.find((p) => p.projectId === sel.projectId)
-  if (!project) return null
-  const base = { project, projectLabel: projectLabel(project) }
-  if (sel.kind === 'session') return { ...base, childLabel: labels.session, count: project.sessionCount }
+  const base = { projectLabel: labels.all || labels.unnamedWorkflow }
+  if (sel.kind === 'session') return { ...base, childLabel: labels.session, count: tree.reduce((n, p) => n + p.sessionCount, 0) }
   if (sel.kind === 'workflow') {
-    const wf = project.workflows.find((w) => w.workflowId === sel.workflowId)
+    const wf = tree.flatMap((p) => p.workflows).find((w) => w.workflowId === sel.workflowId)
     if (wf) return { ...base, childLabel: workflowLabel(wf, labels.unnamedWorkflow), count: wf.count }
   }
-  return { ...base, childLabel: '', count: project.count }
+  return { ...base, childLabel: '', count: tree.reduce((n, p) => n + p.count, 0) }
 }

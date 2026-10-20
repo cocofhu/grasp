@@ -115,6 +115,27 @@ describe('ArtifactList', () => {
     wrapper.unmount()
   })
 
+  it('identifies the current file and keeps storage details out of the directory heading', async () => {
+    const wrapper = mountList({ activeId: 'research.json' })
+    const current = wrapper.get('[data-testid="artifact-list-row"][data-artifact-id="research.json"]')
+    expect(current.attributes('aria-current')).toBe('true')
+    expect(wrapper.get('[data-artifact-id="a2"]').attributes('aria-current')).toBeUndefined()
+    expect(wrapper.text()).not.toContain(pages.pages.artifactList.subtitle)
+    await wrapper.setProps({ headerSubtitle: '运行说明' })
+    expect(wrapper.text()).toContain('运行说明')
+    wrapper.unmount()
+  })
+
+  it('keeps server search controlled by the parent and exposes its accessible name', async () => {
+    const wrapper = mountList({ scope: 'platform', serverSearch: true, search: 'research', groupTotal: 4, matchTotal: 1 })
+    const input = wrapper.get('input[type="search"]')
+    expect(input.attributes('aria-label')).toBe(pages.pages.artifactList.artSearchPlaceholder)
+    await input.setValue('plan')
+    expect(wrapper.emitted('update:search')).toEqual([['plan']])
+    expect(wrapper.props('search')).toBe('research')
+    wrapper.unmount()
+  })
+
   it('shows empty text when no artifacts', () => {
     const wrapper = mountList({ artifacts: [] })
     expect(wrapper.text()).toMatch(/暂无|没有/)

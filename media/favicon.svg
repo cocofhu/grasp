@@ -1,20 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="32" height="32" role="img" aria-label="Grasp">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="40 50 120 120" width="32" height="32" role="img" aria-label="Grasp">
   <title>Grasp</title>
-
-  <defs>
-    <linearGradient id="coreGrad" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#7B61FF"/>
-      <stop offset="100%" stop-color="#A78BFA"/>
-    </linearGradient>
-  </defs>
-  <rect x="40" y="40" width="44" height="44" rx="12" transform="rotate(45 62 62)"
-        fill="url(#coreGrad)" stroke="#3b2f4a" stroke-width="8"/>
-  <path d="M36 26 C12 40 10 70 24 96" fill="none" stroke="#3b2f4a"
-        stroke-width="14" stroke-linecap="round"/>
-  <path d="M36 26 C12 40 10 70 24 96" fill="none" stroke="#ff9db5"
-        stroke-width="7" stroke-linecap="round"/>
-  <path d="M92 102 C116 88 118 58 104 32" fill="none" stroke="#3b2f4a"
-        stroke-width="14" stroke-linecap="round"/>
-  <path d="M92 102 C116 88 118 58 104 32" fill="none" stroke="#9fe3ff"
-        stroke-width="7" stroke-linecap="round"/>
+  <path
+    d="M58 160 L58 92 L66 58 L84 76 Q100 70 116 76 L134 58 L142 92 L142 160 Q131 150 121 162 Q110 150 100 162 Q90 150 79 162 Q69 150 58 160Z"
+    fill="#fff" stroke="#1a1a1a" stroke-width="6" stroke-linejoin="round"
+  />
+  <ellipse cx="84" cy="110" rx="6" ry="8" fill="#1a1a1a" />
+  <ellipse cx="116" cy="110" rx="6" ry="8" fill="#1a1a1a" />
+  <path d="M92 124 Q96 130 100 124 Q104 130 108 124" fill="none" stroke="#1a1a1a" stroke-width="5" stroke-linecap="round" />
+  <circle cx="74" cy="126" r="6" fill="#c8c8c8" />
+  <circle cx="126" cy="126" r="6" fill="#c8c8c8" />
 </svg>

@@ -423,7 +423,7 @@ const Fixture = defineComponent({
                         nodeTab.value === 'review' && selNode.value && selRun.value
                           ? h(
                               ReviewShell,
-                              { class: 'h-full min-h-0', mobile: true, sidebarWidth: 320 },
+                              { class: 'h-full min-h-0', runId: run.id, scopeKey: `mobile-review:${run.id}:visual:1` },
                               {
                                 stage: () =>
                                   h('div', {

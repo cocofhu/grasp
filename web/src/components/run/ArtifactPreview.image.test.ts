@@ -102,13 +102,14 @@ describe('ArtifactPreview image preview UI', () => {
     wrapper.unmount()
   })
 
-  it('applies p-3 padding on inline image-wrap success canvas', async () => {
+  it('shows the loaded image canvas with its file identity and download control', async () => {
     const wrapper = mountPreview()
     await flushPromises()
     const wrap = wrapper.find('[data-testid="artifact-preview-image-wrap"]')
     expect(wrap.exists()).toBe(true)
-    expect(wrap.classes()).toContain('p-3')
-    // loading/error branches must not be the padded canvas
+    expect(wrap.get('img').attributes('alt')).toBe(wrapper.props('artifact')?.name)
+    expect(wrapper.get('[data-testid="artifact-preview-identity-bar"]').text()).toContain(wrapper.props('artifact')?.name)
+    expect(wrapper.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="artifact-preview-image-loading"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="artifact-preview-image-error"]').exists()).toBe(false)
     wrapper.unmount()

@@ -28,9 +28,9 @@ function filenameFromContentDisposition(header: string | null, fallback: string)
 
 /** Scope of one artifacts page: a whole project, one workflow, or its Agent-session bucket. */
 export type ArtifactListScope =
-  | { projectId: string; workflowId?: undefined; session?: undefined }
-  | { projectId: string; workflowId: string; session?: undefined }
-  | { projectId: string; workflowId?: undefined; session: true }
+  | { projectId?: string; workflowId?: undefined; session?: undefined }
+  | { projectId?: string; workflowId: string; session?: undefined }
+  | { projectId?: string; workflowId?: undefined; session: true }
 
 export type ListArtifactsParams = ArtifactListScope & {
   page?: number
@@ -43,7 +43,7 @@ export type ListArtifactsParams = ArtifactListScope & {
 export const artifactsClient = {
   getArtifactTree: () => req<ArtifactTreeProject[]>('/artifacts/tree'),
   listArtifacts: (params: ListArtifactsParams) => {
-    const qs = new URLSearchParams({ projectId: params.projectId })
+    const qs = new URLSearchParams()
     if (params.workflowId) qs.set('workflowId', params.workflowId)
     if (params.session) qs.set('session', '1')
     if (params.q) qs.set('q', params.q)

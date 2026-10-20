@@ -89,48 +89,23 @@ describe('DashboardView light selectors survive scoped compile', () => {
     expect(compiled.errors).toEqual([])
     const rules = collectRules(compiled.code)
 
-    const lightCopy = rules.filter(
+    // plan g1.3 — hero copy unified via the --c-txt token; no .em split highlight
+    const heroCopyRules = rules.filter(
       (rule) =>
-        rule.selector.includes('html.light') &&
-        hasClass(rule.selector, '.home-hero-copy') &&
-        !hasClass(rule.selector, '.em') &&
-        rule.body.includes('#6b6b6b'),
+        hasClass(rule.selector, '.home-hero-copy') && /var\(--c-txt\)/.test(rule.body),
     )
-    expect(lightCopy.length).toBeGreaterThan(0)
-    for (const rule of lightCopy) {
+    expect(heroCopyRules.length).toBeGreaterThan(0)
+    for (const rule of heroCopyRules) {
       expect(rule.selector.replace(/\s+/g, ' ').trim()).not.toBe('html.light')
       expect(rule.selector).not.toMatch(/html\.light\[data-v-/)
       expect(rule.selector).toMatch(/\.home-hero-copy\[data-v-/)
-      expect(hasClass(rule.selector, '.home-hero-copy')).toBe(true)
+      expect(rule.selector).not.toMatch(/html\.light/)
     }
-
-    const lightEm = rules.filter(
-      (rule) =>
-        rule.selector.includes('html.light') &&
-        hasClass(rule.selector, '.home-hero-copy') &&
-        hasClass(rule.selector, '.em') &&
-        rule.body.includes('#1a1a1a'),
-    )
-    expect(lightEm.length).toBeGreaterThan(0)
-    for (const rule of lightEm) {
-      expect(rule.selector.replace(/\s+/g, ' ').trim()).not.toBe('html.light')
-    }
-
-    const darkCopy = rules.filter(
-      (rule) => hasClass(rule.selector, '.home-hero-copy') && rule.body.includes('#9a9a9a'),
-    )
-    const darkEm = rules.filter(
-      (rule) => hasClass(rule.selector, '.em') && rule.body.includes('#f2f2f2'),
-    )
-    expect(darkCopy.length).toBeGreaterThan(0)
-    expect(darkEm.length).toBeGreaterThan(0)
-    expect(darkCopy.every((rule) => !rule.selector.includes('html.light'))).toBe(true)
-    expect(darkEm.every((rule) => !rule.selector.includes('html.light'))).toBe(true)
+    const heroEmRules = rules.filter((rule) => hasClass(rule.selector, '.em'))
+    expect(heroEmRules.length).toBe(0)
 
     const targets: { className: string; body: RegExp }[] = [
-      { className: '.home-composer', body: /--c-elevated/ },
       { className: '.home-composer__send', body: /#fff/ },
-      { className: '.home-shell__card', body: /--c-elevated/ },
       { className: '.home-shell__card-top', body: /244,\s*244,\s*245/ },
     ]
     for (const target of targets) {
@@ -147,7 +122,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
       }
     }
 
-    const darkSurfaces = rules.filter(
+    const sharedSurfaces = rules.filter(
       (rule) =>
         !rule.selector.includes('html.light') &&
         (hasClass(rule.selector, '.home-composer') ||
@@ -156,7 +131,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
           hasClass(rule.selector, '.home-shell__card-top')) &&
         /--c-surface|--c-txt|--c-elevated/.test(rule.body),
     )
-    expect(darkSurfaces.length).toBeGreaterThan(0)
+    expect(sharedSurfaces.length).toBeGreaterThan(0)
   })
 
   it('reduced-motion send button none beats the hover lift and press scale', () => {

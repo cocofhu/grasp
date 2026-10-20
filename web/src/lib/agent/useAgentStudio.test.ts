@@ -37,6 +37,12 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { computed, ref } = await import('vue')
+  const workspace = ref({ id: 'proj-1', name: 'Workspace' })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: computed(() => workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+})
+
 vi.mock('@/lib/composables/useBreakpoint', async () => {
   const { ref } = await import('vue')
   return { useBreakpoint: () => ({ isMobile: ref(false) }) }
@@ -187,66 +193,33 @@ describe('useAgentStudio', () => {
     app.unmount()
   })
 
-  it('builds project tree nodes and selects agents only from child keys', async () => {
+  it('lists agents directly and selects by their stable name', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
-    expect(studio.treeNodes.value.map((n) => [n.id, n.children?.map((c) => c.id)])).toEqual([
-      ['proj-1', ['agent-a']],
-      ['proj-2', ['agent-b']],
-    ])
-    expect(studio.activeTreeKey.value).toBe('c:proj-1:agent-a')
-
-    studio.onTreeSelect('p:proj-2')
-    await flushPromises()
-    expect(studio.activeName.value).toBe('agent-a')
-
-    studio.onTreeSelect('c:proj-2:agent-b')
+    expect(studio.treeNodes.value.map((row) => row.id)).toEqual(['agent-a', 'agent-b'])
+    expect(studio.activeTreeKey.value).toBe('agent-a')
+    studio.onTreeSelect('agent-b')
     await flushPromises()
     expect(studio.activeName.value).toBe('agent-b')
-    expect(studio.activeTreeKey.value).toBe('c:proj-2:agent-b')
+    expect(studio.activeTreeKey.value).toBe('agent-b')
     app.unmount()
   })
 
-  it('header import asks for a target project, project row import goes straight in', async () => {
+  it('imports directly into the workspace without opening a project chooser', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
-
     studio.triggerImport()
-    expect(studio.showImportProjectPick.value).toBe(true)
-    expect(studio.importProjectId.value).toBe('proj-1')
-    studio.importProjectId.value = 'proj-2'
-    studio.confirmImportProjectPick()
-    expect(studio.showImportProjectPick.value).toBe(false)
-    expect(mocks.triggerProjectImport).toHaveBeenLastCalledWith('proj-2')
-
-    studio.triggerImport()
-    studio.cancelImportProjectPick()
-    expect(mocks.triggerProjectImport).toHaveBeenCalledTimes(1)
-
-    studio.onImportProject('proj-1')
     expect(mocks.triggerProjectImport).toHaveBeenLastCalledWith('proj-1')
     app.unmount()
   })
 
-  it('header import without projects only toasts', async () => {
-    mocks.listProjects.mockResolvedValue([])
+  it('creates in the workspace and keeps team creation available', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()
-    studio.triggerImport()
-    expect(studio.showImportProjectPick.value).toBe(false)
-    expect(studio.toastMsg.value).toBe(pages.pages.agentStudio.project.noProjects)
-    expect(mocks.triggerProjectImport).not.toHaveBeenCalled()
-    app.unmount()
-  })
-
-  it('prefills the create wizard project from the row, else the current agent project', async () => {
-    const { studio, app } = await withAgentStudio()
-    await flushPromises()
-    studio.openCreateAgent('proj-2')
-    expect(studio.showCreateWizard.value).toBe(true)
-    expect(studio.createAgentProjectId.value).toBe('proj-2')
-    studio.openCreateAgent()
+    studio.openCreateAgent('stale-project')
     expect(studio.createAgentProjectId.value).toBe('proj-1')
+    studio.openCreateTeam()
+    expect(studio.showTeamWizard.value).toBe(true)
     app.unmount()
   })
 

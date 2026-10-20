@@ -27,7 +27,7 @@ const selected = computed(() => props.rows.find((r) => r.id === props.modelValue
 const stale = computed(() => !!props.modelValue && !props.loading && !selected.value)
 /** Index 0 is "follow Agent"; credential rows start at 1. */
 const options = computed(() => ['', ...props.rows.map((r) => r.id)])
-const manageLink = computed(() => (props.projectId ? { path: `/projects/${props.projectId}`, query: { tab: 'credentials' } } : null))
+const manageLink = computed(() => ({ path: '/settings/credentials' }))
 
 function followLine(): string {
   const c = props.inherited

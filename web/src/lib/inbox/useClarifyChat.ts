@@ -287,16 +287,17 @@ async function scrollBottom(force = false) {
 
 /**
  * Enter / remount / session-switch stick sequence (aligned with PmLeaderChat + Demo):
- * force pin immediately (scrollBottom already awaits nextTick), then re-pin after paint
+ * pin on entry (scrollBottom already awaits nextTick), then re-pin after paint
  * so tall ReAct / high content blocks that lag one frame still land at the latest message.
  * Must not be used for incremental turn updates — those stay stick-gated.
  */
 async function enterStickSequence() {
   stickToBottom.value = true
   unreadCount.value = 0
-  await scrollBottom(true)
+  await scrollBottom()
   requestAnimationFrame(() => {
-    void scrollBottom(true)
+    // A message-rail click or manual scroll may have cancelled follow in the meantime.
+    void scrollBottom()
   })
 }
 
@@ -1150,7 +1151,8 @@ function send() {
 // Clarify: force Agent wrap-up (disabled while thinking).
 // Review: accept store snapshot only when ready (not thinking / queue empty).
 function finishAbort() {
-  if (props.done || !props.confirmCanAbort) return
+  if (props.done || !props.confirmCanAbort || composerSending.value ||
+    (!props.coldSession && hasComposerDraft())) return
   emit('finish-abort')
 }
 
@@ -1166,7 +1168,9 @@ function finishEarly() {
 
 const confirmDisabled = computed(() => {
   // Force finish / 确认并流转: only when session idle (no in-flight / queue).
-  return !!props.finishDisabled || validating.value || thinking.value || queued.value.length > 0 || liveAgentIdx.value >= 0
+  return !!props.finishDisabled || composerSending.value ||
+    (!props.coldSession && hasComposerDraft()) ||
+    validating.value || thinking.value || queued.value.length > 0 || liveAgentIdx.value >= 0
 })
 
 function cancelReview() {

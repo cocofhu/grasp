@@ -51,7 +51,7 @@ describe('component shallow mount coverage (vitest 4 remapping)', () => {
     const pinia = createPinia()
 
     let mounted = 0
-    const skip = /MermaidDiagram|NodeOutputPanel|NovncPreviewPanel|HtmlPreview|WorkflowCanvas|TokenDonutChart|TokenTrendChart/
+    const skip = /MermaidDiagram|NodeOutputPanel|NovncPreviewPanel|HtmlPreview|WorkflowCanvas/
     for (const [path, load] of Object.entries(loaders)) {
       if (skip.test(path)) continue
       const mod = (await load()) as { default: Component }

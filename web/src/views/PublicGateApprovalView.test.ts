@@ -11,6 +11,7 @@ import shellEn from '@/locales/en/shell.json'
 import { setTheme } from '@/lib/shared/theme'
 import { i18n as appI18n } from '@/lib/shared/i18n'
 import { locale as appLocale, setLocale } from '@/lib/shared/locale'
+import ReviewShell from '@/components/run/ReviewShell.vue'
 
 const mocks = vi.hoisted(() => ({
   preview: vi.fn(),
@@ -1783,7 +1784,9 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.text()).toContain('推荐')
     expect(w.find('[data-testid="clarify-other-input"]').exists()).toBe(true)
     expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
-    expect(w.html()).toContain('title-preview')
+    expect(w.get('[data-testid="clarify-scroller"]').element.querySelector('[data-testid="html-preview"]')).toBeNull()
+    expect(w.get('[data-testid="clarify-scroller"]').text()).not.toContain('title-preview')
+    expect(w.get('[data-testid="clarify-option-enlarge"]').text()).toContain('放大')
 
     const next = w.findAll('button').find((b) => b.text().includes('下一个'))
     expect(next).toBeTruthy()
@@ -2130,4 +2133,28 @@ describe('public approval page keeps its top-bar language select (plan g2)', () 
     expect(w.find('[data-testid="preview-chat-locale"]').exists()).toBe(false)
     expect(w.find('[data-testid="page-collaboration-toggle"]').exists()).toBe(false)
   })
+})
+
+it('resets the public conversation panel for a new credential without exposing that credential in its scope', async () => {
+  const firstToken = 'ab'.repeat(32)
+  const secondToken = 'cd'.repeat(32)
+  window.location.hash = `#t=${firstToken}`
+  mocks.preview.mockResolvedValue({
+    status: 'active', kind: 'review', remainingSec: 3600, nonce: 'n-scope', reactSessionAlive: true,
+    productKind: 'structured', productName: 'research.json', actions: { confirm: 'confirm', reply: 'reply', cancel: 'cancel' },
+    structured: { name: 'research.json', title: '摘要', doc: { title: '摘要' } }, turns: [],
+  })
+  const wrapper = mountView()
+  await flushPromises()
+  const firstScope = wrapper.getComponent(ReviewShell).props('scopeKey')
+  await wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+  expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
+  window.history.replaceState(null, '', `#t=${secondToken}`)
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+  await flushPromises()
+  const secondScope = wrapper.getComponent(ReviewShell).props('scopeKey')
+  expect(secondScope).not.toBe(firstScope)
+  expect(`${firstScope} ${secondScope}`).not.toContain(firstToken)
+  expect(`${firstScope} ${secondScope}`).not.toContain(secondToken)
+  expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('false')
 })

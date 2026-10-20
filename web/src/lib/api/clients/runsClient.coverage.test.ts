@@ -39,7 +39,7 @@ describe('runsClient request coverage', () => {
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/runs?status=running&tag=nightly&wf=wf+1&projectId=p1&page=2&pageSize=25&sort=priority&order=desc',
+      '/api/runs?status=running&tag=nightly&wf=wf+1&page=2&pageSize=25&sort=priority&order=desc',
       expect.objectContaining({ signal }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/runs', expect.not.objectContaining({ signal }))
@@ -96,6 +96,11 @@ describe('runsClient request coverage', () => {
     })
 
     await runsClient.updateRunPriority('r1', 'high')
+    await runsClient.updateRunTitle('r1', '短名字')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r1/title', expect.objectContaining({
+      method: 'PATCH',
+      body: JSON.stringify({ title: '短名字' }),
+    }))
     await runsClient.cancelRun('r1')
     await runsClient.deleteRun('r1')
     await runsClient.resumeRun('r1')

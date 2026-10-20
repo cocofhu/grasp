@@ -8,6 +8,7 @@ import RefreshStrip from '../RefreshStrip.vue'
 import UpstreamRequirementContext from '../UpstreamRequirementContext.vue'
 import ReviewShell from '../ReviewShell.vue'
 import PreviewFeedbackChat from '../PreviewFeedbackChat.vue'
+import GateReactStreamPanel from '../GateReactStreamPanel.vue'
 import GateProductEditor from '../GateProductEditor.vue'
 import GateHotUnifiedActions from './GateHotUnifiedActions.vue'
 import GateApprovalColdActions from './GateApprovalColdActions.vue'
@@ -63,7 +64,6 @@ const {
   useUnifiedPreviewBudget,
   contentFitChromeOffsetPx,
   CONTENT_FIT_PREVIEW_MAX_VH,
-  REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   shouldHideGateForm,
   footerActions,
   isColdSession,
@@ -126,11 +126,9 @@ const {
     data-testid="mobile-fill-remaining"
   >
       <ReviewShell
+        :scope-key="`approval:${gate.runId}:${gate.nodeId}:${gate.iteration ?? 1}`"
+        :run-id="gate.runId"
         class="min-h-0 flex-1"
-        mobile
-        :sidebar-width="400"
-        :drawer-height="320"
-        :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
         :host-confirm-flow="false"
       >
         <template #stage>
@@ -350,7 +348,20 @@ const {
                     :hide-submit="canReactRevise"
                     @clear-selector="clearHtmlPreviewPick"
                     @issues-changed="loadPreviewIssues()"
-                  />
+                  >
+                  <template #history-footer>
+                    <GateReactStreamPanel
+                      v-if="canReactRevise"
+                      :run-id="gate.runId"
+                      :thinking="reactThinking"
+                      :stream-text="reactStreamText"
+                      :stream-thought="reactStreamThought"
+                      :stream-tools="s.reactStreamTools"
+                      :interrupted="reactInterrupted"
+                      :completed-at="reactStreamCompletedAt"
+                    />
+                  </template>
+                </PreviewFeedbackChat>
                 </div>
               </div>
               <div

@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import AppButton from '@/components/ui/AppButton.vue'
-import AppModal from '@/components/ui/AppModal.vue'
 import {
   ACP_BACKENDS,
   getRegionPolicy,
@@ -33,6 +31,7 @@ import { gitKind } from '@/lib/project/credentialKinds'
 import { api } from '@/lib/api/api'
 import { readCliModel, switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { useToast } from '@/lib/composables/useToast'
+import AgentCredentialBindings from '@/components/agent/AgentCredentialBindings.vue'
 
 const props = defineProps<{
   draft: AgentStudioDraft
@@ -47,8 +46,6 @@ const toast = useToast()
 
 let configRootTouched = false
 
-const pendingProjectId = ref<string | null>(null)
-const showProjectSwitch = ref(false)
 
 watch(
   () => props.agentName,
@@ -56,41 +53,6 @@ watch(
     configRootTouched = false
   },
 )
-
-function projectNameById(id: string): string {
-  return props.projects.find((p) => p.id === id)?.name || id
-}
-
-const projectSelectValue = computed<string>({
-  get: () => props.draft.projectId,
-  set: (val) => {
-    const old = props.draft.projectId
-    if (val === old) return
-    if (old) {
-      pendingProjectId.value = val
-      showProjectSwitch.value = true
-      return
-    }
-    props.draft.projectId = val
-  },
-})
-
-const pendingProjectLabel = computed(() =>
-  pendingProjectId.value ? projectNameById(pendingProjectId.value) : '',
-)
-
-function confirmProjectChange() {
-  if (pendingProjectId.value !== null) {
-    props.draft.projectId = pendingProjectId.value
-  }
-  pendingProjectId.value = null
-  showProjectSwitch.value = false
-}
-
-function cancelProjectChange() {
-  pendingProjectId.value = null
-  showProjectSwitch.value = false
-}
 
 function selectAcpBackend(id: BackendId) {
   const prev = props.draft.acpBackend
@@ -219,25 +181,9 @@ const derivedPaths = computed(() => {
 <template>
   <div class="scroll-area min-h-0 flex-1 overflow-auto p-4">
     <div class="mb-4 max-w-3xl">
-      <p class="border-l-2 border-accent-2 bg-accent-dim px-2.5 py-1.5 text-[11px] leading-5 text-txt2">
+      <p class="text-[12px] leading-5 text-txt3">
         {{ t('pages.agentStudio.tree.metaRenameHint') }}
       </p>
-    </div>
-
-    <div class="mb-8 max-w-3xl">
-      <div class="mb-1 text-[12px] font-medium text-txt2">
-        {{ t('pages.agentStudio.project.label') }}
-        <span class="text-err">*</span>
-      </div>
-      <p class="mb-2.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.project.hint') }}</p>
-      <select
-        v-model="projectSelectValue"
-        data-test="agent-project-select"
-        class="max-w-sm w-full rounded border border-line bg-surface px-2 py-1.5 text-[12px] text-txt outline-none focus:border-accent"
-      >
-        <option v-if="!draft.projectId" value="" disabled>{{ t('pages.agentStudio.project.placeholder') }}</option>
-        <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
     </div>
 
     <div class="mb-4 max-w-3xl border-t border-line pt-5">
@@ -249,13 +195,13 @@ const derivedPaths = computed(() => {
       <div>
         <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.acpBackend') }}</div>
         <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.acpBackendDesc') }}</p>
-        <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+        <div class="flex flex-wrap gap-1 border-b border-line/60 pb-3">
           <button
             v-for="b in ACP_BACKENDS"
             :key="b.id"
             type="button"
-            class="rounded-lg border px-2 py-3 text-center transition"
-            :class="draft.acpBackend === b.id ? 'border-accent bg-accent-dim text-txt' : 'border-line bg-base text-txt2 hover:border-line-strong'"
+            class="min-h-11 rounded-md px-3 py-2 text-left transition"
+            :class="draft.acpBackend === b.id ? 'bg-elevated font-medium text-txt' : 'text-txt2 hover:bg-elevated/50'"
             @click="selectAcpBackend(b.id)"
           >
             <div class="text-[12px] font-semibold">{{ b.label }}</div>
@@ -272,13 +218,13 @@ const derivedPaths = computed(() => {
         <p v-if="specialRegion" class="mb-2 rounded-lg border border-warn/35 bg-warn/10 px-2.5 py-2 font-mono text-[11px] text-warn">
           {{ t('pages.agentStudio.region.special', { value: specialRegion }) }}
         </p>
-        <div class="grid max-w-md grid-cols-2 gap-2" role="radiogroup" :aria-label="t('pages.agentStudio.region.title')">
+        <div class="flex max-w-lg flex-wrap gap-2" role="radiogroup" :aria-label="t('pages.agentStudio.region.title')">
           <button
             v-for="r in metaRegionOptions"
             :key="r.id"
             type="button"
-            class="rounded-lg border px-2 py-3 text-center transition"
-            :class="displayRegion === r.id ? 'border-accent bg-accent-dim text-txt' : 'border-line bg-base text-txt2 hover:border-line-strong'"
+            class="min-h-11 rounded-md px-3 py-2 text-left transition"
+            :class="displayRegion === r.id ? 'bg-elevated font-medium text-txt' : 'text-txt2 hover:bg-elevated/50'"
             role="radio"
             :aria-checked="displayRegion === r.id"
             :aria-label="`${t(r.labelKey)} (${r.id})`"
@@ -345,7 +291,7 @@ const derivedPaths = computed(() => {
 
     <div class="mt-5 max-w-3xl">
       <div class="mb-1.5 text-[11px] uppercase tracking-wider text-txt3">{{ t('pages.agentStudio.meta.derivedPaths') }}</div>
-      <div class="overflow-hidden rounded-lg border border-line">
+      <div class="overflow-x-auto border-y border-line/60">
         <table class="w-full text-left text-[12px]">
           <tbody>
             <tr v-for="(e, i) in derivedPaths" :key="e.label" :class="i % 2 ? 'bg-base/40' : ''">
@@ -358,28 +304,12 @@ const derivedPaths = computed(() => {
       </div>
     </div>
 
+    <AgentCredentialBindings :draft="draft" />
+
     <p class="mt-3 max-w-3xl text-[11px] leading-5 text-txt3">
       {{ t('pages.agentStudio.meta.capabilitiesNote') }}
     </p>
 
-    <AppModal :open="showProjectSwitch" :title="t('pages.agentStudio.project.switchTitle')" :width="460" @close="cancelProjectChange">
-      <div class="space-y-2 text-[13px] leading-6 text-txt2">
-        <p>{{ t('pages.agentStudio.project.switchWarn') }}</p>
-        <ul class="list-disc space-y-1 pl-5 text-[12px]">
-          <li>{{ t('pages.agentStudio.project.switchItemMemory') }}</li>
-          <li>{{ t('pages.agentStudio.project.switchItemContext') }}</li>
-          <li>{{ t('pages.agentStudio.project.switchItemJobs') }}</li>
-          <li>{{ t('pages.agentStudio.project.switchItemPm') }}</li>
-        </ul>
-        <p class="mt-2 text-[11.5px] text-txt3">{{ t('pages.agentStudio.project.switchApplyHint') }}</p>
-      </div>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="cancelProjectChange">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton size="sm" variant="danger" @click="confirmProjectChange">
-          {{ t('pages.agentStudio.project.switchConfirm', { name: pendingProjectLabel }) }}
-        </AppButton>
-      </template>
-    </AppModal>
   </div>
 </template>
 

@@ -1,5 +1,6 @@
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useRoute } from 'vue-router'
 import { relTime } from '@/lib/shared/format'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
@@ -15,6 +16,7 @@ import { useToast } from '@/lib/composables/useToast'
 import {
   isPmFailKind,
   pmActiveThreadStorageKey,
+  migratePmActiveThreadStorage,
   pmWsReconnectDelayMs,
   type PmFailKind,
 } from '@/lib/pm/pmTurnState'
@@ -25,7 +27,7 @@ import {
   isChannelThreadUserId,
   parseChannelUserId,
 } from '@/lib/pm/cronDeliverTargets'
-import type { ChatMessage, ChatThread, ClarifyImage, PmLeaderBinding } from '@/lib/shared/types'
+import type { ChatMessage, ChatThread, ClarifyImage, PmChatThread, PmLeaderBinding } from '@/lib/shared/types'
 
 export interface UsePmLeaderChatProps {
   projectId: string
@@ -44,10 +46,11 @@ type FailKind = PmFailKind
 
 const { t } = useI18n()
 const toast = useToast()
+const route = useRoute()
 const { isMobile } = useBreakpoint()
 const mobileView = ref<'threads' | 'chat'>('threads')
 
-const threads = ref<ChatThread[]>([])
+const threads = ref<PmChatThread[]>([])
 const activeId = ref('')
 const messages = ref<ChatMessage[]>([])
 const input = ref('')
@@ -94,6 +97,8 @@ const stickToBottom = ref(true)
 const hasMoreEarlier = ref(false)
 const historyLoading = ref(false)
 const historyLoadFailed = ref(false)
+// Failed requests can queue several top scroll events; retry only after a new approach to the top.
+let historyRetryNeedsScrollAway = false
 
 function isNearBottom(el: HTMLElement) {
   return el.scrollHeight - el.scrollTop - el.clientHeight <= STICK_THRESHOLD
@@ -103,7 +108,9 @@ function onScrollerScroll() {
   const el = scroller.value
   if (!el) return
   stickToBottom.value = isNearBottom(el)
-  if (el.scrollTop <= TOP_THRESHOLD) {
+  if (el.scrollTop > TOP_THRESHOLD) {
+    historyRetryNeedsScrollAway = false
+  } else if (!historyRetryNeedsScrollAway) {
     void loadEarlier()
   }
 }
@@ -138,6 +145,7 @@ function resetHistoryWindowState() {
   hasMoreEarlier.value = false
   historyLoading.value = false
   historyLoadFailed.value = false
+  historyRetryNeedsScrollAway = false
 }
 
 /** Session-only failed partial bubbles (S2); not persisted as assistant rows. */
@@ -173,14 +181,20 @@ let disposed = false
 const sandboxBootStatus = ref('')
 /** Discard stale listPmMessages responses after thread switch or re-load. */
 let threadLoadGen = 0
+let threadsLoadGen = 0
 
-const enabled = computed(() => !!props.binding?.enabled && props.binding.agentAvailable)
+const enabled = computed(() => !!props.binding?.enabled)
+const threadsLoadFailed = ref(false)
+const canCreateThread = computed(() => enabled.value && !!props.binding?.agentAvailable)
+const canContinueThread = computed(() => enabled.value && (activeId.value
+  ? !!activeThread.value?.agentAvailable
+  : !!props.binding?.agentAvailable))
 const turnBusy = computed(
   () => sending.value || streaming.value || finalizing.value || resuming.value,
 )
 const busy = computed(() => turnBusy.value || messagesLoading.value)
 const canSend = computed(
-  () => !busy.value && (!!input.value.trim() || attachments.value.length > 0),
+  () => canContinueThread.value && !activeIsChannel.value && !busy.value && (!!input.value.trim() || attachments.value.length > 0),
 )
 const showStreamBubble = computed(
   () => sending.value || streaming.value || finalizing.value || resuming.value,
@@ -326,7 +340,7 @@ const showEmptyHint = computed(
     !messages.value.length &&
     !showStreamBubble.value,
 )
-/** Top non-button history tip (Demo four-state). */
+/** History status, including recoverable failures while loading earlier messages. */
 const showHistoryTip = computed(
   () =>
     mainViewState.value === 'content' &&
@@ -421,15 +435,22 @@ function isChannelHint(m: ChatMessage) {
 }
 
 async function loadThreads() {
+  const generation = ++threadsLoadGen
+  const workspaceId = props.projectId
   loading.value = true
+  threadsLoadFailed.value = false
   try {
-    const res = await api.listPmThreads(props.projectId)
+    const res = await api.listPmThreads(workspaceId)
+    if (disposed || generation !== threadsLoadGen || workspaceId !== props.projectId) return
     threads.value = res.items || []
+    migratePmActiveThreadStorage(threads.value.map((thread) => thread.id), props.projectId)
     const stored =
       typeof localStorage !== 'undefined'
         ? localStorage.getItem(pmActiveThreadStorageKey(props.projectId)) || ''
         : ''
+    const requestedThread = typeof route?.query?.thread === 'string' ? route.query.thread : ''
     const preferred =
+      (requestedThread && threads.value.some((thread) => thread.id === requestedThread) && requestedThread) ||
       (stored && threads.value.some((t) => t.id === stored) && stored) ||
       activeId.value ||
       (threads.value[0]?.id ?? '')
@@ -439,9 +460,12 @@ async function loadThreads() {
       await loadMessages(activeId.value)
     }
   } catch (e: any) {
-    toast.error(String(e?.message || e))
+    if (!disposed && generation === threadsLoadGen) {
+      threadsLoadFailed.value = true
+      toast.error(String(e?.message || e))
+    }
   } finally {
-    loading.value = false
+    if (!disposed && generation === threadsLoadGen) loading.value = false
   }
 }
 
@@ -489,6 +513,7 @@ function backToThreads() {
 async function ensureActiveThread() {
   if (activeId.value) return
   const thr = await api.createPmThread(props.projectId)
+  if (isMobile.value) mobileView.value = 'chat'
   threads.value = [thr, ...threads.value]
   await activateThread(thr.id, { preserveTurn: true })
 }
@@ -499,6 +524,7 @@ async function loadMessages(tid: string) {
   messagesLoading.value = true
   historyLoadFailed.value = false
   historyLoading.value = false
+  historyRetryNeedsScrollAway = false
   try {
     const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE })
     if (gen !== threadLoadGen || tid !== activeId.value) return
@@ -549,13 +575,16 @@ async function loadEarlier() {
 
   historyLoading.value = true
   historyLoadFailed.value = false
+  // Explicit retries remain available even when the viewport cannot scroll away.
+  historyRetryNeedsScrollAway = false
   const el = scroller.value
-  const prevTop = el?.scrollTop ?? 0
-  const prevHeight = el?.scrollHeight ?? 0
 
   try {
     const res = await api.listPmMessages(props.projectId, tid, { limit: PAGE_SIZE, before })
     if (gen !== threadLoadGen || tid !== activeId.value) return
+    // The user may have navigated elsewhere in the loaded window while this page was pending.
+    const prevTop = el?.scrollTop ?? 0
+    const prevHeight = el?.scrollHeight ?? 0
     const older = res.items || []
     if (older.length) {
       const existing = new Set(messages.value.map((m) => m.id))
@@ -565,12 +594,13 @@ async function loadEarlier() {
     hasMoreEarlier.value = !!res.hasMore
     stickToBottom.value = false
     await nextTick()
-    if (el) {
+    if (el && gen === threadLoadGen && tid === activeId.value) {
       el.scrollTop = prevTop + (el.scrollHeight - prevHeight)
     }
   } catch {
     if (gen !== threadLoadGen || tid !== activeId.value) return
     historyLoadFailed.value = true
+    historyRetryNeedsScrollAway = true
   } finally {
     if (gen === threadLoadGen && tid === activeId.value) {
       historyLoading.value = false
@@ -597,7 +627,7 @@ function clearFailedPartial(userMsgId: string) {
 }
 
 async function newThread() {
-  if (!enabled.value) {
+  if (!canCreateThread.value) {
     emit('openSettings')
     return
   }
@@ -919,7 +949,7 @@ async function send(text?: string, explicitImages?: ClarifyImage[]) {
       : attachments.value.slice()
   if ((!content && imgs.length === 0) || busy.value) return
   if (activeIsChannel.value) return
-  if (!enabled.value) {
+  if (!canContinueThread.value) {
     emit('openSettings')
     return
   }
@@ -955,7 +985,7 @@ async function stop() {
 
 /** Cover-this-turn retry: reuse userMessageId, do not append a new user bubble. */
 async function retryTurn(userMessageId: string) {
-  if (busy.value) return
+  if (busy.value || !canContinueThread.value || activeIsChannel.value) return
   const userMsg = messages.value.find((m) => m.id === userMessageId && m.role === 'user')
   if (!userMsg) return
   sending.value = true
@@ -995,6 +1025,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   disposed = true
+  threadsLoadGen++
+  threadLoadGen++
   if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibilityChange)
   unsubStreamHtml()
   streamPreview.reset()
@@ -1051,6 +1083,9 @@ onBeforeUnmount(() => {
   openChatImagePreview,
   closeChatImagePreview,
   enabled,
+  threadsLoadFailed,
+  canCreateThread,
+  canContinueThread,
   turnBusy,
   busy,
   canSend,

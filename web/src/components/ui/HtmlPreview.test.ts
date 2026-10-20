@@ -26,7 +26,7 @@ const AppModalStub = defineComponent({
     '<div v-if="open" data-enlarge-modal="1" :data-title="title || \'\'"><slot /></div>',
 })
 
-function mountPreview(props: Record<string, unknown> = {}) {
+function mountPreview(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
@@ -41,6 +41,7 @@ function mountPreview(props: Record<string, unknown> = {}) {
       maxContentHeightVh: 60,
       ...props,
     },
+    slots,
     global: {
       plugins: [i18n],
       stubs: {
@@ -263,6 +264,51 @@ describe('HtmlPreview inline/fillParent enlarge', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals()
+  })
+
+  it('groups toolbar actions before enlarge without duplicating them in the modal or remounting the preview', async () => {
+    const wrapper = mountPreview({ enlargeable: true }, {
+      'toolbar-actions': '<button data-testid="preview-copy">复制</button><a data-testid="preview-download" href="/page.html" download>下载</a>',
+    })
+    await flushPromises()
+    const toolbar = wrapper.get('[data-testid="html-preview-toolbar"]')
+    const copy = toolbar.get('[data-testid="preview-copy"]')
+    const download = toolbar.get('[data-testid="preview-download"]')
+    const enlarge = toolbar.get('[data-testid="html-preview-enlarge"]')
+    const originalIframe = wrapper.get('iframe').element
+    expect(copy.element.parentElement).toBe(enlarge.element.parentElement)
+    expect(download.element.parentElement).toBe(enlarge.element.parentElement)
+    expect(enlarge.element.parentElement).not.toBe(toolbar.element)
+    expect(enlarge.element.parentElement?.parentElement).toBe(toolbar.element)
+    expect(copy.element.compareDocumentPosition(enlarge.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(download.element.compareDocumentPosition(enlarge.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    await enlarge.trigger('click')
+    await nextTick()
+    const modal = wrapper.findComponent(AppModalStub)
+    expect(modal.props('open')).toBe(true)
+    expect(modal.find('iframe').exists()).toBe(true)
+    expect(modal.find('[data-testid="preview-copy"]').exists()).toBe(false)
+    expect(modal.find('[data-testid="preview-download"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="preview-copy"]')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="preview-download"]')).toHaveLength(1)
+    expect(wrapper.get('iframe').element).toBe(originalIframe)
+
+    modal.vm.$emit('close')
+    await nextTick()
+    await wrapper.setProps({ enlargeable: false })
+    expect(wrapper.find('[data-testid="html-preview-enlarge"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="preview-copy"]').element).toBe(copy.element)
+    expect(wrapper.get('[data-testid="preview-download"]').attributes('download')).toBeDefined()
+    expect(wrapper.get('iframe').element).toBe(originalIframe)
+    wrapper.unmount()
+
+    const withoutActions = mountPreview({ enlargeable: true })
+    expect(withoutActions.get('[data-testid="html-preview-toolbar"]').text()).toContain(common.common.htmlPreview.desktop)
+    expect(withoutActions.get('[data-testid="html-preview-toolbar"]').text()).toContain(common.common.htmlPreview.mobile)
+    expect(withoutActions.find('[data-testid="html-preview-enlarge"]').exists()).toBe(true)
+    expect(withoutActions.find('[data-testid="preview-copy"]').exists()).toBe(false)
+    withoutActions.unmount()
   })
 
   it('opens enlarge modal for mode=inline + fillParent + enlargeable with filename title', async () => {
@@ -537,6 +583,72 @@ describe('HtmlPreview comment pin overlay', () => {
     await nextTick()
     await wrapper.find('[data-testid="comment-pin-send-chat"]').trigger('click')
     expect(wrapper.emitted('annotate-send-chat')?.[0]).toEqual(['发给评审'])
+    wrapper.unmount()
+  })
+})
+
+describe('HtmlPreview toolbar actions slot', () => {
+  it('does not render copy or download unless a caller supplies them', async () => {
+    const wrapper = mountPreview({
+      mode: 'default',
+      fitContent: false,
+      fillParent: true,
+      enlargeable: true,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-preview-copy"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="html-preview-canvas-overlay"]').exists()).toBe(false)
+    const end = wrapper.get('[data-testid="html-preview-toolbar-end"]')
+    expect(end.get('[data-testid="html-preview-enlarge"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps canvas overlays outside the toolbar and places caller actions before enlarge', async () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const wrapper = mount(HtmlPreview, {
+      props: {
+        html: '<!doctype html><html><body><p>hi</p></body></html>',
+        mode: 'default',
+        fitContent: false,
+        fillParent: true,
+        enlargeable: true,
+      },
+      slots: {
+        'toolbar-actions':
+          '<button type="button" data-testid="artifact-preview-copy">copy</button><button type="button" data-testid="artifact-preview-download-raw">dl</button>',
+        'canvas-overlay': '<div data-testid="preview-loading">Loading preview</div>',
+      },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          AppModal: AppModalStub,
+          Icon: { template: '<span />' },
+        },
+      },
+    })
+    await flushPromises()
+    const toolbar = wrapper.get('[data-testid="html-preview-toolbar"]')
+    const end = toolbar.get('[data-testid="html-preview-toolbar-end"]')
+    const order = [...end.element.children].map((el) => el.getAttribute('data-testid'))
+    expect(order).toEqual([
+      'artifact-preview-copy',
+      'artifact-preview-download-raw',
+      'html-preview-enlarge',
+    ])
+    const host = wrapper.get('[data-testid="html-preview-pin-host"]')
+    const overlay = wrapper.get('[data-testid="html-preview-canvas-overlay"]')
+    expect(overlay.get('[data-testid="preview-loading"]').text()).toBe('Loading preview')
+    expect(overlay.element.parentElement?.contains(host.element)).toBe(true)
+    expect(overlay.element.parentElement?.contains(toolbar.element)).toBe(false)
+    expect(host.element.contains(end.element)).toBe(false)
+    expect(
+      host.element.compareDocumentPosition(end.element) & Node.DOCUMENT_POSITION_PRECEDING,
+    ).toBeTruthy()
     wrapper.unmount()
   })
 })

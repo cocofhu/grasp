@@ -39,6 +39,7 @@ func TestDeleteWorkflowAndAgentOK(t *testing.T) {
 		t.Fatalf("save wf: %d %s", w.Code, w.Body.String())
 	}
 	id := jsonField(w.Body.String(), "id")
+
 	if id == "" {
 		t.Fatalf("no id: %s", w.Body.String())
 	}

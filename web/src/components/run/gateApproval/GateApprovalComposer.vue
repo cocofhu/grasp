@@ -15,6 +15,9 @@ const { s } = useGateApprovalCtx()
   <ReviewComposer
     v-bind="attrs"
     mode="gate"
+    :run-id="s.gate.runId"
+    :node-id="s.gate.nodeId"
+    :iteration="s.gate.iteration ?? 1"
     v-model:draft="s.reactText"
     v-model:attachments="s.reactImages"
     v-model:annotations="s.reactAnnotations"

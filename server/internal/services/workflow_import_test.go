@@ -131,6 +131,29 @@ func TestWorkflowImportCreatesDraft(t *testing.T) {
 	}
 }
 
+func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T) {
+	db := newTestDB(t)
+	svc := NewWorkflowService(db)
+	env := validEnvelope("Configured")
+	env.Defaults = &models.WorkflowDefaults{InheritWorkspace: false, Variables: []models.ProjectVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.ProjectNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
+	wf, err := svc.Import(envelopeJSON(env), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := svc.Get(wf.ID)
+	if !ok || stored.Defaults == nil || stored.Defaults.InheritWorkspace || stored.Defaults.GateAuto.AgentName != "reviewer" || stored.Defaults.NotifyPolicy.ChannelIDs[0] != "channel" || stored.Defaults.Variables[0].Value != nil {
+		t.Fatalf("defaults=%+v", stored.Defaults)
+	}
+	copy, err := svc.Copy(wf.ID, "Configured copy")
+	if err != nil || copy.Defaults == nil || copy.Defaults.GateAuto.AgentName != "reviewer" {
+		t.Fatalf("copy defaults=%+v %v", copy.Defaults, err)
+	}
+	env.Defaults.Variables[0].Value = SecretMask
+	if _, err = svc.Import(envelopeJSON(env), ""); !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
+		t.Fatalf("masked secret accepted: %v", err)
+	}
+}
+
 func TestWorkflowVersionGraph(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)

@@ -13,7 +13,7 @@ const apiMocks = vi.hoisted(() => ({
   getWorkflow: vi.fn(),
   saveWorkflow: vi.fn(),
   listAgents: vi.fn(async () => []),
-  getProject: vi.fn(async () => ({ name: 'proj' })),
+  getWorkspace: vi.fn(async () => ({ name: 'proj' })),
 }))
 
 const breakpointMocks = vi.hoisted(() => {
@@ -31,7 +31,7 @@ vi.mock('@/lib/api/api', async () => {
       getWorkflow: apiMocks.getWorkflow,
       saveWorkflow: apiMocks.saveWorkflow,
       listAgents: apiMocks.listAgents,
-      getProject: apiMocks.getProject,
+      getWorkspace: apiMocks.getWorkspace,
     },
   }
 })
@@ -192,18 +192,18 @@ describe('WorkflowEditorView back navigation', () => {
     return target
   }
 
-  it('desktop back lands on the owning project workflows Tab', async () => {
+  it('desktop back lands on the workflow management', async () => {
     const target = await backTarget(false, { ...MOCK_WF, projectId: 'proj-1' })
-    expect(target).toBe('/projects/proj-1?tab=workflows')
+    expect(target).toBe('/workflows')
   })
 
-  it('mobile back lands on the owning project workflows Tab', async () => {
+  it('mobile back lands on the workflow management', async () => {
     const target = await backTarget(true, { ...MOCK_WF, projectId: 'proj-1' })
-    expect(target).toBe('/projects/proj-1?tab=workflows')
+    expect(target).toBe('/workflows')
   })
 
-  it('falls back to the project list when the workflow has no projectId', async () => {
+  it('links to workflow management when the workflow has no projectId', async () => {
     const target = await backTarget(false, { ...MOCK_WF })
-    expect(target).toBe('/projects')
+    expect(target).toBe('/workflows')
   })
 })

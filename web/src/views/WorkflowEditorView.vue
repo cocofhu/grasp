@@ -15,6 +15,7 @@ import RunLaunchModal, { type InputField } from '@/components/workflow/RunLaunch
 import ExportVersionModal from '@/components/workflow/ExportVersionModal.vue'
 import CopyWorkflowModal from '@/components/workflow/CopyWorkflowModal.vue'
 import WorkflowApiTab from '@/components/workflow/WorkflowApiTab.vue'
+import WorkflowDefaultsPanel from '@/components/workflow/WorkflowDefaultsPanel.vue'
 import WorkflowRunHistoryTab from '@/components/workflow/WorkflowRunHistoryTab.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
 import { useWorkflowAskInputs } from '@/lib/run/useWorkflowAskInputs'
@@ -28,7 +29,7 @@ import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
 import { workflowGraphError } from '@/lib/workflow/graphValidation'
 import type { ClarifyImage, NodeType, WFEdge, WFNode, Workflow } from '@/lib/shared/types'
-import { readStoredProjectId } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { CANVAS_EDITOR, useCanvasEditor } from '@/components/canvas/composables/useCanvasEditor'
 import { pendingBackup, useWorkflowSave, type WorkflowBackup } from '@/components/canvas/composables/useWorkflowSave'
@@ -53,6 +54,7 @@ function toggleCurrentFavorite() {
 
 type EditorTab = 'canvas' | 'runs' | 'api'
 const activeTab = ref<EditorTab>('canvas')
+const defaultsOpen = ref(false)
 const TABS: EditorTab[] = ['canvas', 'runs', 'api']
 const editorTabTrack = ref<HTMLElement | null>(null)
 const editorTabIndicator = ref<Record<string, string>>({ opacity: '0', transform: 'translateX(0)', width: '0px' })
@@ -72,14 +74,11 @@ function updateEditorTabIndicator() {
 
 watch(activeTab, () => void nextTick(updateEditorTabIndicator))
 
-function initialProjectId(): string {
-  const q = typeof route.query.projectId === 'string' ? route.query.projectId : ''
-  return q || readStoredProjectId() || ''
-}
+const { workspaceId, ensureLoaded: loadWorkspace } = useWorkspaceContext()
 
 const wf = reactive<Workflow>({
   id: routeId === 'new' ? '' : routeId,
-  projectId: routeId === 'new' ? initialProjectId() : undefined,
+  projectId: routeId === 'new' ? workspaceId.value : undefined,
   name: t('pages.workflowEditor.unnamedWorkflow'),
   description: '',
   status: 'draft',
@@ -92,11 +91,9 @@ const wf = reactive<Workflow>({
 })
 const { fields: askFieldsComputed } = useWorkflowAskInputs(wf)
 
-const PROJECT_WORKFLOWS_TAB = 'workflows'
-const projectName = ref('')
 
 function projectLink() {
-  return wf.projectId ? `/projects/${wf.projectId}?tab=${PROJECT_WORKFLOWS_TAB}` : '/projects'
+  return '/workflows'
 }
 
 function goBackToProject() {
@@ -111,7 +108,7 @@ const hydrateFailed = ref(false)
 // ── Agents & editor ──
 const allAgents = ref<Agent[] | null>(null)
 const projectAgents = computed(() =>
-  allAgents.value === null ? null : allAgents.value.filter((a) => !!wf.projectId && a.projectId === wf.projectId),
+  allAgents.value,
 )
 
 const editor = useCanvasEditor({
@@ -145,14 +142,8 @@ async function loadAgents() {
 
 const projectCredentials = ref<ProjectCredentialItem[] | null>(null)
 
-async function loadProjectName() {
-  if (!wf.projectId) return
-  void loadProjectCredentials(wf.projectId)
-  try {
-    projectName.value = (await api.getProject(wf.projectId))?.name || ''
-  } catch {
-    projectName.value = ''
-  }
+function loadWorkspaceCredentials() {
+  if (wf.projectId) void loadProjectCredentials(wf.projectId)
 }
 
 async function loadProjectCredentials(projectId: string) {
@@ -184,9 +175,9 @@ function absorb(res: Partial<Workflow> | null | undefined) {
 }
 
 /** The editable content; a change from the last saved value means unsaved changes. */
-type EditableSnapshot = Pick<Workflow, 'name' | 'description' | 'needsRepo' | 'nodes' | 'edges'>
+type EditableSnapshot = Pick<Workflow, 'name' | 'description' | 'needsRepo' | 'nodes' | 'edges' | 'defaults'>
 function snapshotOf(w: EditableSnapshot): string {
-  return JSON.stringify({ name: w.name, description: w.description, needsRepo: w.needsRepo, nodes: w.nodes, edges: w.edges })
+  return JSON.stringify({ name: w.name, description: w.description, needsRepo: w.needsRepo, nodes: w.nodes, edges: w.edges, defaults: w.defaults })
 }
 
 let deleting = false
@@ -233,6 +224,12 @@ function onSaveKey(e: KeyboardEvent) {
 
 // ── Unsaved-change backup ──
 const backupOffer = ref<WorkflowBackup | null>(null)
+const backupComparisonOpen = ref(false)
+const restoreBackupName = ref(false)
+const backupContent = computed(() => {
+  try { return backupOffer.value ? JSON.parse(backupOffer.value.snapshot) as EditableSnapshot : null }
+  catch { return null }
+})
 
 function restoreBackup() {
   const b = backupOffer.value
@@ -241,14 +238,18 @@ function restoreBackup() {
   try {
     const snap = JSON.parse(b.snapshot) as EditableSnapshot
     editor.clearSelection()
-    Object.assign(wf, { name: snap.name, description: snap.description, needsRepo: snap.needsRepo })
+    Object.assign(wf, { ...(restoreBackupName.value ? { name: snap.name } : {}), description: snap.description, needsRepo: snap.needsRepo, ...(snap.defaults ? { defaults: snap.defaults } : {}) })
+    backupComparisonOpen.value = false
+    restoreBackupName.value = false
     editor.replaceGraph(snap.nodes || [], snap.edges || [])
   } catch {
-    saver.discardBackup()
+    backupOffer.value = b
+    toast.error(t('pages.workflowEditor.loadFailed'))
   }
 }
 
 function discardBackupOffer() {
+  backupComparisonOpen.value = false
   backupOffer.value = null
   saver.discardBackup()
 }
@@ -291,7 +292,7 @@ async function loadExistingWorkflow() {
   try {
     await hydrate(() => api.getWorkflow(routeId))
     backupOffer.value = pendingBackup(wf.id, snapshotOf(wf), wf.updatedAt)
-    void loadProjectName()
+    void loadWorkspaceCredentials()
   } catch {
     hydrateFailed.value = true
     errorMsg.value = t('pages.workflowEditor.loadFailed')
@@ -314,9 +315,11 @@ onMounted(async () => {
   window.addEventListener('keydown', onSaveKey)
   void loadAgents()
   if (routeId === 'new') {
+    await loadWorkspace()
+    wf.projectId = workspaceId.value
     hydrating.value = false
     if (!wf.projectId) errorMsg.value = t('pages.workflowEditor.projectRequired')
-    else void loadProjectName()
+    else void loadWorkspaceCredentials()
     saver.markSaved()
     editor.history.reset()
     return
@@ -399,7 +402,7 @@ async function openCopy() {
   try {
     const [preview, list] = await Promise.all([
       api.copyPreviewWorkflow(wf.id),
-      api.listWorkflows({ projectId: wf.projectId }).catch(() => [] as Workflow[]),
+      api.listWorkflows().catch(() => [] as Workflow[]),
     ])
     copyModal.value = { ...preview, existing: (list || []).map((w) => w.name) }
   } catch {
@@ -671,7 +674,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       </button>
       <nav class="flex min-w-0 items-center gap-1 text-[13px]" :aria-label="t('canvas.topbar.projects')">
         <RouterLink :to="projectLink()" class="max-w-[180px] truncate text-txt3 hover:text-txt" data-testid="editor-breadcrumb-project">
-          {{ projectName || t('canvas.topbar.projects') }}
+          {{ t('pages.workflowList.title') }}
         </RouterLink>
         <span class="text-txt3" aria-hidden="true">/</span>
         <span class="inline-grid min-w-0 max-w-[320px] text-[14px] font-semibold">
@@ -764,6 +767,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       >
         {{ t('canvas.topbar.versions') }}
       </AppButton>
+      <AppButton variant="ghost" size="sm" icon="settings" :disabled="!editable || !!preview" data-testid="editor-defaults" @click="defaultsOpen = true">{{ t('pages.workspaceDefaults.title') }}</AppButton>
       <AppButton
         :variant="saver.dirty.value || !wf.id ? 'primary' : 'outline'"
         size="sm"
@@ -844,9 +848,28 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
     >
       <Icon name="alert" :size="14" class="shrink-0 text-warn" />
       <span class="min-w-0 flex-1">{{ t('canvas.backup.banner', { time: fmtTime(new Date(backupOffer.savedAt).toISOString()) }) }}</span>
+      <AppButton size="sm" variant="ghost" data-testid="editor-backup-compare" @click="backupComparisonOpen = true">{{ t('pages.workflowEditor.backupCompare') }}</AppButton>
       <AppButton size="sm" variant="primary" data-testid="editor-backup-restore" @click="restoreBackup">{{ t('canvas.backup.restore') }}</AppButton>
       <AppButton size="sm" variant="ghost" data-testid="editor-backup-discard" @click="discardBackupOffer">{{ t('canvas.backup.discard') }}</AppButton>
     </div>
+
+    <AppModal :open="defaultsOpen" :title="t('pages.workspaceDefaults.title')" :width="720" @close="defaultsOpen = false">
+      <WorkflowDefaultsPanel :workflow="wf" :agents="allAgents || []" />
+      <template #footer><AppButton variant="ghost" @click="defaultsOpen = false">{{ t('common.buttons.close') }}</AppButton><AppButton variant="primary" :loading="saver.saving.value" @click="saveNow()">{{ t('canvas.save.button') }}</AppButton></template>
+    </AppModal>
+
+    <AppModal :open="backupComparisonOpen && !!backupContent" :title="t('pages.workflowEditor.backupCompare')" :width="640" @close="backupComparisonOpen = false">
+      <div v-if="backupContent" class="grid gap-3 sm:grid-cols-2">
+        <div v-for="(content, index) in [wf, backupContent]" :key="index" class="rounded border border-line p-3">
+          <h3 class="mb-2 text-xs text-txt3">{{ t(index ? 'pages.workflowEditor.backupLocal' : 'pages.workflowEditor.backupServer') }}</h3>
+          <p class="break-words text-sm font-semibold text-txt">{{ content.name }}</p>
+          <p class="mt-2 whitespace-pre-wrap break-words text-xs text-txt2">{{ content.description }}</p>
+          <ul class="mt-3 space-y-1 text-xs text-txt3"><li v-for="node in content.nodes" :key="node.id">{{ node.label || node.id }}</li></ul>
+        </div>
+      </div>
+      <label class="mt-4 flex items-center gap-2 text-xs text-txt2"><input v-model="restoreBackupName" type="checkbox" data-testid="editor-backup-restore-name" />{{ t('pages.workflowEditor.backupRestoreName') }}</label>
+      <template #footer><AppButton variant="ghost" @click="backupComparisonOpen = false">{{ t('common.buttons.cancel') }}</AppButton><AppButton variant="primary" data-testid="editor-backup-confirm" @click="restoreBackup">{{ t('canvas.backup.restore') }}</AppButton></template>
+    </AppModal>
 
     <div ref="editorTabTrack" class="relative flex shrink-0 gap-1 border-b border-line bg-surface px-4" role="tablist">
       <button
@@ -1129,6 +1152,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       :needs-repo="wf.needsRepo"
       :status="wf.status"
       :local-draft="{ nodes: wf.nodes, edges: wf.edges }"
+      :defaults="wf.defaults"
       @close="showExport = false"
     />
 

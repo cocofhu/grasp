@@ -27,6 +27,7 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 type agentBody struct {
 	Name                 string                    `json:"name"`
 	ProjectID            string                    `json:"projectId"`
+	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	TemplateID           string                    `json:"templateId"`
 	AcpBackend           string                    `json:"acpBackend"`
 	GitCredentialType    string                    `json:"gitCredentialType"`
@@ -44,7 +45,7 @@ type agentBody struct {
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		Name: name, ProjectID: strings.TrimSpace(b.ProjectID), AcpBackend: b.AcpBackend,
+		Name: name, ProjectID: strings.TrimSpace(b.ProjectID), CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
 		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
 		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID),
@@ -92,6 +93,9 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "agent already exists"})
 		return
 	}
+	if !h.resolveWorkspaceID(c, &b.ProjectID) {
+		return
+	}
 	agent := b.toAgent(name)
 
 	templateID := strings.TrimSpace(b.TemplateID)
@@ -128,6 +132,9 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 	oldProjectID := ""
 	if prev, ok := h.Agents.Get(name); ok {
 		oldProjectID = strings.TrimSpace(prev.ProjectID)
+	}
+	if !h.resolveWorkspaceID(c, &b.ProjectID) {
+		return
 	}
 	agent := b.toAgent(name)
 	if err := h.validateAgentProjectBinding(agent); err != nil {
@@ -289,6 +296,9 @@ func (h *Handlers) ImportAgent(c *gin.Context) {
 		return
 	}
 	projectID := strings.TrimSpace(c.PostForm("projectId"))
+	if !h.resolveWorkspaceID(c, &projectID) {
+		return
+	}
 	if err := h.validateAgentProjectBinding(services.Agent{ProjectID: projectID}); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

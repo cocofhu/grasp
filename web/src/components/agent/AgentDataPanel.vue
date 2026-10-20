@@ -326,7 +326,7 @@ const showSkeleton = computed(
         v-if="loadDenied"
         role="status"
         data-testid="agent-data-denied"
-        class="rounded-lg border border-warn/40 bg-warn/10 px-5 py-10 text-center"
+        class="border-y border-line/60 py-10 text-center"
       >
         <Icon name="lock" :size="22" class="mx-auto mb-3 text-warn" />
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h3>
@@ -339,7 +339,7 @@ const showSkeleton = computed(
         v-else-if="loadFailed"
         role="status"
         data-testid="agent-data-failed"
-        class="rounded-lg border border-err/40 bg-err/10 px-5 py-10 text-center"
+        class="border-y border-line/60 py-10 text-center"
       >
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
         <p class="mt-1 text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
@@ -350,7 +350,7 @@ const showSkeleton = computed(
 
       <!-- memory: any authenticated user -->
       <div v-else-if="sub === 'memory'" class="space-y-4" :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
-        <div class="rounded border border-line bg-base p-3">
+        <div class="border-b border-line/60 py-4">
           <div class="grid gap-2">
             <input v-model="memTitle" class="rounded border border-line bg-surface px-3 py-2 text-sm" :placeholder="t('pages.agentStudio.data.memory.titlePh')" />
             <textarea v-model="memContent" rows="3" class="rounded border border-line bg-surface px-3 py-2 text-sm" :placeholder="t('pages.agentStudio.data.memory.contentPh')" />
@@ -388,14 +388,14 @@ const showSkeleton = computed(
           data-testid="agent-data-mem-skeleton"
           aria-hidden="true"
         >
-          <div v-for="n in 3" :key="'mem-skel-' + n" class="rounded border border-line bg-base p-3">
+          <div v-for="n in 3" :key="'mem-skel-' + n" class="border-b border-line/60 py-4">
             <div class="h-3.5 w-1/3 bg-elevated animate-pulse" />
             <div class="mt-2 h-10 w-full bg-elevated animate-pulse" />
           </div>
         </div>
         <div v-else-if="!memories.length" class="text-sm text-txt3">{{ t('pages.agentStudio.data.memory.empty') }}</div>
         <div v-else class="space-y-2">
-          <div v-for="m in memories" :key="m.id" class="rounded border border-line bg-base p-3">
+          <div v-for="m in memories" :key="m.id" class="border-b border-line/60 py-4" data-testid="agent-memory-row">
             <div class="flex items-start justify-between gap-2" :class="isMobile ? 'flex-col' : ''">
               <div class="min-w-0">
                 <div class="truncate text-[13px] font-medium">{{ m.title }}</div>
@@ -434,15 +434,15 @@ const showSkeleton = computed(
           data-testid="agent-data-ctx-skeleton"
           aria-hidden="true"
         >
-          <div v-for="n in 3" :key="'ctx-skel-' + n" class="rounded border border-line bg-base px-3 py-2">
+          <div v-for="n in 3" :key="'ctx-skel-' + n" class="border-b border-line/60 py-3">
             <div class="h-3.5 w-1/2 bg-elevated animate-pulse" />
             <div class="mt-2 h-2.5 w-2/3 bg-elevated animate-pulse" />
           </div>
         </div>
         <div v-else-if="!threads.length" class="text-sm text-txt3">{{ t('pages.agentStudio.data.context.empty') }}</div>
         <div v-else class="space-y-2">
-          <div v-for="th in threads" :key="th.id" class="rounded border border-line bg-base">
-            <div class="flex items-center gap-2 px-3" :class="isMobile ? 'min-h-11 py-2' : 'py-2'">
+          <div v-for="th in threads" :key="th.id" class="border-b border-line/60">
+            <div class="flex items-center gap-2" :class="isMobile ? 'min-h-11 py-2' : 'py-2'">
               <button type="button" class="min-w-0 flex-1 text-left" :class="isMobile ? 'min-h-11' : ''" @click="openThread(th.id)">
                 <div class="truncate text-[13px] font-medium">{{ th.title || th.id }}</div>
                 <div class="text-[11px] text-txt3">{{ th.kind || 'user' }} · {{ threadCounts[th.id] || 0 }} msgs · {{ fmtTime(th.updatedAt) }}</div>
@@ -459,7 +459,7 @@ const showSkeleton = computed(
                 <Icon name="trash" :size="12" />
               </button>
             </div>
-            <div v-if="openThreadId === th.id" class="border-t border-line px-3 py-2">
+            <div v-if="openThreadId === th.id" class="border-t border-line/60 py-3">
               <div v-if="msgLoading" class="text-[12px] text-txt3">{{ t('common.buttons.loading') }}</div>
               <div v-else class="max-h-64 space-y-2 overflow-auto">
                 <div v-for="msg in threadMessages" :key="msg.id" class="text-[12px]">
@@ -479,12 +479,12 @@ const showSkeleton = computed(
         </p>
         <div
           v-if="showSkeleton"
-          class="rounded-lg overflow-x-auto border border-line"
+          class="overflow-x-auto border-y border-line/60"
           data-testid="agent-data-jobs-skeleton"
           aria-hidden="true"
         >
           <div v-if="isMobile" class="space-y-3 p-2">
-            <div v-for="n in 3" :key="'job-skel-m-' + n" class="rounded border border-line p-3">
+            <div v-for="n in 3" :key="'job-skel-m-' + n" class="border-b border-line/60 py-4">
               <div class="h-3.5 w-1/2 bg-elevated animate-pulse" />
               <div class="mt-2 h-8 w-full bg-elevated animate-pulse" />
             </div>
@@ -513,7 +513,7 @@ const showSkeleton = computed(
           <div
             v-for="job in jobs"
             :key="job.id"
-            class="rounded border border-line bg-base p-3"
+            class="border-b border-line/60 py-4"
             data-testid="agent-cron-card"
           >
             <div class="text-[13px] font-medium text-txt">{{ job.name }}</div>

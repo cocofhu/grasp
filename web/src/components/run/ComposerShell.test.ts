@@ -37,6 +37,35 @@ describe('ComposerShell', () => {
     wrapper.unmount()
   })
 
+  it('keeps action controls together in an expandable toolbar without requiring a footer', async () => {
+    const wrapper = mount(ComposerShell, {
+      props: { wrapToolbar: true, showFooter: false },
+      slots: {
+        input: '<textarea data-testid="shell-ta">draft</textarea>',
+        'toolbar-start': '<button data-testid="shell-attach">clip</button>',
+        'toolbar-end': '<button data-testid="shell-send">send</button><button data-testid="shell-confirm">confirm</button>',
+      },
+    })
+    const toolbar = wrapper.get('[data-testid="composer-shell-toolbar"]')
+    const send = toolbar.get('[data-testid="shell-send"]').element
+    const confirm = toolbar.get('[data-testid="shell-confirm"]').element
+    expect(send.parentElement).toBe(confirm.parentElement)
+    expect(send.parentElement?.parentElement).toBe(toolbar.element)
+    expect(toolbar.get('[data-testid="shell-attach"]').element.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(toolbar.classes()).toContain('flex-wrap')
+    expect(toolbar.classes()).toContain('min-h-11')
+    expect(toolbar.classes()).not.toContain('h-11')
+    expect(wrapper.find('[data-testid="composer-shell-footer"]').exists()).toBe(false)
+
+    await wrapper.setProps({ wrapToolbar: false })
+    expect(toolbar.classes()).toContain('h-11')
+    expect(toolbar.classes()).not.toContain('flex-wrap')
+    expect(wrapper.get('[data-testid="shell-send"]').element).toBe(send)
+    expect(wrapper.get('[data-testid="shell-confirm"]').element).toBe(confirm)
+    expect(wrapper.get('[data-testid="shell-ta"]').element).toHaveProperty('value', 'draft')
+    wrapper.unmount()
+  })
+
   it('drops the hint column when no hint is supplied so the footer stays one row (g2.2)', () => {
     const withoutHint = mount(ComposerShell, {
       slots: { footer: '<button data-testid="shell-confirm" class="h-9">ok</button>' },

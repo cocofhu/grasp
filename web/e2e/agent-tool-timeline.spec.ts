@@ -10,6 +10,9 @@ test.describe('Agent 工具调用时间线', () => {
       await page.setViewportSize({ width: 1200, height: 720 })
       await page.goto(`/agent-tool-timeline.html?theme=${theme}`)
       await expect(page.getByTestId('tool-timeline-root')).toBeVisible({ timeout: 15_000 })
+      const panel = page.getByTestId('conversation-artifact-panel')
+      await expect(panel).toBeHidden()
+      await expect(page.getByTestId('conversation-panel-toggle')).toHaveAttribute('aria-expanded', 'false')
 
       const groups = page.getByTestId('agent-tool-group')
       await expect(groups).toHaveCount(2)
@@ -25,8 +28,17 @@ test.describe('Agent 工具调用时间线', () => {
       await page.screenshot({ path: path.join(shotDir, `tool-timeline-${theme}.png`) })
 
       await groups.nth(1).getByTestId('agent-tool-open-artifact').click()
+      await expect(panel).toBeVisible()
+      await expect(panel).toHaveAttribute('role', 'complementary')
+      await expect(page.getByTestId('conversation-panel-toggle')).toHaveAttribute('aria-expanded', 'true')
       await expect(page.getByTestId('react-artifact-tab-plan.json')).toHaveAttribute('aria-selected', 'true')
       await page.screenshot({ path: path.join(shotDir, `tool-timeline-open-${theme}.png`) })
+      await page.getByTestId('conversation-panel-close').click()
+      await expect(panel).toBeHidden()
+      await expect(groups.nth(1).getByTestId('agent-tool-detail')).toContainText('findings 不能为空')
+      await groups.nth(1).getByTestId('agent-tool-open-artifact').click()
+      await expect(panel).toBeVisible()
+      await expect(page.getByTestId('react-artifact-tab-plan.json')).toHaveAttribute('aria-selected', 'true')
     })
   }
 })

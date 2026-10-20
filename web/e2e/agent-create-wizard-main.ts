@@ -5,12 +5,14 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import AgentCreateWizard from '../src/components/agent/AgentCreateWizard.vue'
 import type { Agent } from '../src/lib/api/api'
+import { useAuth } from '../src/lib/composables/useAuth'
 
 async function boot() {
   await initLocale()
   await setLocale(new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme('dark')
 
+  useAuth().setUser({ username: 'wizard', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
   const open = ref(true)
   const createdName = ref('')
   const app = createApp({
@@ -23,11 +25,6 @@ async function boot() {
           h(AgentCreateWizard, {
             open: open.value,
             existingNames: [],
-            projects: [
-              { id: 'proj-e2e', name: 'E2E' },
-              { id: 'proj-shared', name: 'Shared' },
-            ],
-            projectId: new URLSearchParams(location.search).get('projectId') || undefined,
             onClose: () => {
               open.value = false
             },

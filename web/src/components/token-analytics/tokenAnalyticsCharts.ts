@@ -16,7 +16,7 @@ import {
   TOKEN_SOURCE_COLORS,
   formatBucketLabel,
   type TokenPartKey,
-} from '@/components/board/token-stats/tokenStatsShared'
+} from '@/components/token-analytics/tokenStatsShared'
 import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
 import type {
   GlobalTokenStats,
@@ -32,7 +32,7 @@ import {
 
 export type Translate = (key: string, params?: Record<string, unknown>) => string
 
-export type TrendMode = 'total' | 'project' | 'model' | 'cost'
+export type TrendMode = 'total' | 'model' | 'cost'
 export type AreaMode = 'source' | 'comp' | 'status'
 
 export const BAR_MAX_WIDTH = 28
@@ -201,11 +201,11 @@ export function trendChartOption(data: GlobalTokenStats | null, mode: TrendMode,
       },
     ]
   } else {
-    const groups = mode === 'project' ? data.projectTrends : data.modelTrends
+    const groups = data.modelTrends
     series = groups.map((s, i) => {
       const values = alignSeries(s.trend, data.trend)
       const extra: DrillTarget | undefined = s.key && !s.key.startsWith('_')
-        ? { dim: mode === 'project' ? 'project' : 'model', key: s.key, name: s.name }
+        ? { dim: 'model', key: s.key, name: s.name }
         : undefined
       return {
         name: s.name,
@@ -400,62 +400,6 @@ export function drillPieOption(slices: DrillPieSlice[], donut = false) {
   return { ...opt, series: [{ ...opt.series[0], data }] }
 }
 
-export function modelProjectHeatmapOption(data: GlobalTokenStats | null) {
-  const hm = data?.heatmap
-  if (!data || !hm?.rows.length || !hm.cols.length) return null
-  const modelKeys = new Map(data.modelRanking.map((m) => [m.name, m.modelKey || '']))
-  const projectKeys = new Map(data.projects.map((p) => [p.name, p.projectId]))
-  const flat: Array<{ value: [number, number, number]; drill?: DrillTarget[] }> = []
-  hm.grid.forEach((row, ri) => {
-    row.forEach((v, ci) => {
-      const mk = modelKeys.get(hm.rows[ri])
-      const pk = projectKeys.get(hm.cols[ci])
-      const drill: DrillTarget[] = []
-      if (pk) drill.push({ dim: 'project', key: pk, name: hm.cols[ci] })
-      if (mk) drill.push({ dim: 'model', key: mk, name: hm.rows[ri] })
-      flat.push({ value: [ci, ri, v], drill: drill.length ? drill : undefined })
-    })
-  })
-  const max = Math.max(1, ...flat.map((f) => f.value[2]))
-  const tone = chartTone()
-  return {
-    grid: { left: 8, right: 12, top: 12, bottom: 28, containLabel: true },
-    tooltip: statsTooltip({
-      position: 'top',
-      formatter: (p: { data: { value: [number, number, number] } }) => {
-        const [x, y, v] = p.data.value
-        return `${hm.rows[y]} × ${hm.cols[x]}<br/>${fmtCompactTokenCount(v)}<br/><span style="opacity:0.75;font-size:11px">${fmtTokenCount(v)}</span>`
-      },
-    }),
-    xAxis: {
-      type: 'category',
-      data: hm.cols,
-      splitArea: { show: true },
-      axisLabel: { fontSize: 10, color: tone.axisLabel, width: 96, overflow: 'truncate', interval: 0 },
-    },
-    yAxis: {
-      type: 'category',
-      data: hm.rows,
-      splitArea: { show: true },
-      axisLabel: { fontSize: 10, color: tone.axisLabel, width: 160, overflow: 'truncate' },
-    },
-    visualMap: { min: 0, max, show: false, inRange: { color: [tone.heatLow, tone.heatHigh] } },
-    series: [
-      {
-        type: 'heatmap',
-        data: flat,
-        label: {
-          show: true,
-          color: tone.pieLabel,
-          fontSize: 10,
-          formatter: (p: { data: { value: [number, number, number] } }) => (p.data.value[2] ? fmtCompactTokenCount(p.data.value[2]) : ''),
-        },
-        emphasis: { itemStyle: { borderColor: '#5b4dff', borderWidth: 1 } },
-      },
-    ],
-  }
-}
-
 export function weekHourHeatmapOption(weekHour: number[][] | undefined, t: Translate) {
   if (!weekHour?.length || !weekHour.some((row) => row.some((v) => v > 0))) return null
   const days = [0, 1, 2, 3, 4, 5, 6].map((d) => t(`pages.tokenAnalytics.weekdays.${d}`))
@@ -480,9 +424,7 @@ export function weekHourHeatmapOption(weekHour: number[][] | undefined, t: Trans
 
 function treeDrill(node: GlobalTokenStatsTreeNode, parents: DrillTarget[], t: Translate): DrillTarget[] {
   const step: DrillTarget | null =
-    node.kind === 'project'
-      ? node.key ? { dim: 'project', key: node.key, name: node.name } : null
-      : node.kind === 'workflow'
+    node.kind === 'workflow'
         ? node.key && !node.key.startsWith('_') ? { dim: 'workflow', key: node.key, name: node.name } : null
         : node.kind === 'pm' || node.kind === 'studio'
           ? { dim: 'source', key: node.kind, name: sourceLabel(t, node.kind) }
@@ -533,7 +475,7 @@ export function treemapOption(tree: GlobalTokenStatsTreeNode[] | undefined, curr
           { colorSaturation: [0.35, 0.6], itemStyle: { gapWidth: 2, borderColorSaturation: 0.6 } },
           { colorSaturation: [0.3, 0.5], itemStyle: { gapWidth: 1, borderColorSaturation: 0.5 } },
         ],
-        data: tree.map((n, i) => convert(n, [], 0, i)),
+        data: tree.flatMap((node) => node.kind === 'project' ? node.children || [] : [node]).map((n, i) => convert(n, [], 0, i)),
       },
     ],
   }
@@ -562,7 +504,6 @@ function breakdownParts(row: { inputTokens?: number; outputTokens?: number; cach
 export function listDrillBreakdowns(
   stats: GlobalTokenStats,
   filters: {
-    projectId?: string
     modelKey?: string
     workflowId?: string
     nodeType?: string
@@ -577,17 +518,6 @@ export function listDrillBreakdowns(
   const push = (id: string, rows: StackedBarRow[]) => {
     if (rows.length < 2) return
     out.push({ id, title: t(`pages.tokenAnalytics.barDimensions.${id}`), rows })
-  }
-  if (!filters.projectId) {
-    push(
-      'project',
-      stats.projects.slice(0, 10).map((p) => ({
-        name: p.name,
-        ...breakdownParts(p),
-        other: false,
-        drill: p.projectId ? { dim: 'project', key: p.projectId, name: p.name } : undefined,
-      })),
-    )
   }
   if (!filters.source || filters.source === 'all') {
     push(

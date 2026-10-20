@@ -46,6 +46,7 @@ describe('Agent Studio help buttons', () => {
       global: {
         plugins: [createI18nPlugin()],
         stubs: {
+          RouterLink: true,
           AgentGitGuide: true,
           EnvCredentialHelpModal: true,
           CodeEditor: true,

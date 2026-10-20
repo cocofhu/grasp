@@ -84,6 +84,7 @@ func TestSandboxInject(t *testing.T) {
 
 	store := sandbox.NewBundleStore()
 	id, token := store.Put([]byte("tarball"), time.Minute)
+
 	hn.h.InjectBundles = store
 
 	w = httptest.NewRecorder()

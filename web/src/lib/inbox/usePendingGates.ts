@@ -1,10 +1,10 @@
 import { ref, computed } from 'vue'
-import { api } from '@/lib/api/api'
 import { i18n } from '@/lib/shared/i18n'
 import { beginRefresh, endRefresh } from '@/lib/shared/refreshChrome'
 import { createTimeoutController, isAbortError } from '@/lib/shared/loadingRequest'
 import { DEFAULT_LOADING_TIMEOUT_MS } from '@/lib/shared/loadingTypes'
 import { applyInboxReplyingState, mergeInboxReplyingFromRemote } from '@/lib/inbox/inboxDisplay'
+import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import type { InboxItem } from '@/lib/shared/types'
 
 export type RefreshSource =
@@ -42,6 +42,15 @@ function errorMessage(err: unknown): string {
 // Module-level singleton
 const displayedItems = ref<InboxItem[]>([])
 const remoteItems = ref<InboxItem[]>([])
+/**
+ * Rows the inbox page is holding locally (incoming ghost, start-failed) that
+ * the pending snapshot does not include yet. Shown above displayedItems.
+ */
+const sidebarExtras = ref<InboxItem[]>([])
+/** Clarify rows whose sandbox boot failed. They stay listed but do not animate. */
+const startFailedKeys = ref<string[]>([])
+/** Run:node of the inbox panel selection. Null when the inbox view is unmounted. */
+const activeInboxKey = ref<string | null>(null)
 const totalCount = ref(0)
 const hasPendingUpdate = ref(false)
 const pendingMeta = ref<PendingMeta | null>(null)
@@ -94,31 +103,26 @@ let abortCtrl: AbortController | null = null
 async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; total: number }> {
   // Align with GatesInbox loadList: use the live URL filter set (plan g2.2).
   // Do not hard-code project/wf/tag — read whatever is currently in the query.
+  // Page through the whole total: the desktop sidebar is the only entry now.
   const filters = readPeekFiltersFromLocation()
-  const data = await api.listGates({
-    page: 1,
-    pageSize: 20,
+  return listAllPendingGates({
     signal,
     wf: filters.wf,
-    projectId: filters.projectId,
     tag: filters.tag,
   })
-  return { items: data.items, total: data.total }
 }
 
 /** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */
 function readPeekFiltersFromLocation(): {
   wf?: string
-  projectId?: string
   tag?: string
 } {
   if (typeof window === 'undefined') return {}
   try {
     const q = new URLSearchParams(window.location.search)
     const wf = q.get('wf')?.trim() || undefined
-    const projectId = q.get('projectId')?.trim() || undefined
     const tag = q.get('tag')?.trim() || undefined
-    return { wf, projectId, tag }
+    return { wf, tag }
   } catch {
     return {}
   }
@@ -243,10 +247,13 @@ function syncAriaBusy() {
 function removeItemLocally(key: string): void {
   const inDisplayed = displayedItems.value.some((it) => itemKey(it) === key)
   const inRemote = remoteItems.value.some((it) => itemKey(it) === key)
-  if (!inDisplayed && !inRemote) return
+  const inExtras = sidebarExtras.value.some((it) => itemKey(it) === key)
+  if (!inDisplayed && !inRemote && !inExtras) return
 
   displayedItems.value = displayedItems.value.filter((it) => itemKey(it) !== key)
   remoteItems.value = remoteItems.value.filter((it) => itemKey(it) !== key)
+  sidebarExtras.value = sidebarExtras.value.filter((it) => itemKey(it) !== key)
+  startFailedKeys.value = startFailedKeys.value.filter((k) => k !== key)
   if (inDisplayed || inRemote) {
     totalCount.value = Math.max(0, totalCount.value - 1)
   }
@@ -367,10 +374,49 @@ async function refresh(opts?: RefreshOptions): Promise<void> {
   return holder.flight
 }
 
+function setSidebarExtras(items: InboxItem[]) {
+  sidebarExtras.value = items
+}
+
+function markStartFailed(key: string) {
+  if (startFailedKeys.value.includes(key)) return
+  startFailedKeys.value = [...startFailedKeys.value, key]
+}
+
+function clearStartFailed(key: string) {
+  if (!startFailedKeys.value.includes(key)) return
+  startFailedKeys.value = startFailedKeys.value.filter((k) => k !== key)
+}
+
+function setActiveInboxKey(key: string | null) {
+  activeInboxKey.value = key
+}
+
+/** Write a saved run title onto every inbox row of that run (sidebar extras included). */
+function patchRunTitle(runId: string, title: string): void {
+  const id = runId.trim()
+  if (!id) return
+  const apply = (arr: InboxItem[]) => {
+    let changed = false
+    const next = arr.map((it) => {
+      if (it.runId !== id || it.runTitle === title) return it
+      changed = true
+      return { ...it, runTitle: title }
+    })
+    return changed ? next : arr
+  }
+  displayedItems.value = apply(displayedItems.value)
+  remoteItems.value = apply(remoteItems.value)
+  sidebarExtras.value = apply(sidebarExtras.value)
+}
+
 export function usePendingGates() {
   return {
     displayedItems,
     remoteItems,
+    sidebarExtras,
+    startFailedKeys,
+    activeInboxKey,
     totalCount,
     count,
     hasPendingUpdate,
@@ -384,6 +430,11 @@ export function usePendingGates() {
     applyPending,
     removeItemLocally,
     restoreItemLocally,
+    setSidebarExtras,
+    markStartFailed,
+    clearStartFailed,
+    setActiveInboxKey,
+    patchRunTitle,
     patchItemReplying,
     syncDisplayedBaseline,
     clearVisibleMembership,

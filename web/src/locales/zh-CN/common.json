@@ -24,7 +24,7 @@
     "runTrigger": {
       "manual": "手动",
       "api": "API",
-      "pmMcp": "项目管理 MCP"
+      "pmMcp": "工作区助手 MCP"
     },
     "statusFilter": {
       "selectedCount": "已选 {n} 项"

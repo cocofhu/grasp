@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
@@ -39,13 +40,15 @@ function fieldLabel(f: PreflightField): string {
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div class="space-y-4" data-testid="preflight-view">
     <div class="flex flex-wrap items-center gap-2">
       <code class="rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{
         t('pages.product.preflight.filename')
       }}</code>
       <span
-        class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[10px] font-medium"
+        class="inline-flex items-center gap-1 rounded-md px-2 py-0.5 text-[11px] font-medium"
         :class="doc.confirmed ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'"
         data-testid="preflight-confirmed"
       >
@@ -58,21 +61,21 @@ function fieldLabel(f: PreflightField): string {
       </span>
     </div>
 
-    <div v-if="doc.summary" class="rounded-lg border border-line bg-accent-dim/30 p-3">
-      <div class="text-[12px] leading-relaxed text-txt2" data-testid="preflight-summary">
+    <div v-if="doc.summary" class="report-summary">
+      <div class="text-[13px] leading-relaxed text-txt2" data-testid="preflight-summary">
         {{ doc.summary }}
       </div>
     </div>
 
-    <section v-if="doc.fields?.length">
-      <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.fields?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-txt3">
         <Icon name="ci" :size="12" :style="{ color: accent || 'var(--c-n-ci, #2DD4BF)' }" />
         {{ t('pages.product.preflight.fields') }}
-      </div>
-      <div class="overflow-x-auto rounded-lg border border-line">
-        <table class="w-full min-w-[420px] border-collapse text-left text-[12px]">
+      </h3>
+      <div class="overflow-x-auto report-table-scroll">
+        <table class="w-full min-w-[420px] border-collapse text-left text-[13px]">
           <thead>
-            <tr class="border-b border-line bg-base/60 text-[10px] uppercase tracking-wider text-txt3">
+            <tr class="border-b border-line text-[11px] text-txt3">
               <th class="px-2.5 py-1.5 font-medium">{{ t('pages.product.preflight.labelCol') }}</th>
               <th class="px-2.5 py-1.5 font-medium">{{ t('pages.product.preflight.valueCol') }}</th>
               <th class="px-2.5 py-1.5 font-medium">{{ t('pages.product.preflight.verification') }}</th>
@@ -91,7 +94,7 @@ function fieldLabel(f: PreflightField): string {
                 <div class="font-medium text-txt">{{ fieldLabel(f) }}</div>
                 <div
                   v-if="f.verified != null"
-                  class="mt-0.5 text-[10px]"
+                  class="mt-0.5 text-[11px]"
                   :class="f.verified ? 'text-ok' : 'text-txt3'"
                 >
                   {{
@@ -104,24 +107,24 @@ function fieldLabel(f: PreflightField): string {
               <td class="px-2.5 py-2 align-top font-mono text-[11px] text-txt whitespace-pre-wrap break-all">
                 {{ f.value ?? '' }}
               </td>
-              <td class="px-2.5 py-2 align-top text-[11px] text-txt2">{{ f.verification || '—' }}</td>
-              <td class="px-2.5 py-2 align-top text-[11px] text-txt2">{{ f.source || '—' }}</td>
-              <td class="px-2.5 py-2 align-top text-[11px] text-txt3">{{ f.notes || '—' }}</td>
+              <td class="px-2.5 py-2 align-top text-[13px] text-txt2">{{ f.verification || '—' }}</td>
+              <td class="px-2.5 py-2 align-top text-[13px] text-txt2">{{ f.source || '—' }}</td>
+              <td class="px-2.5 py-2 align-top text-[13px] text-txt3">{{ f.notes || '—' }}</td>
             </tr>
           </tbody>
         </table>
       </div>
     </section>
 
-    <section v-if="doc.unresolved?.length" class="rounded-lg border border-warn/30 bg-warn/5 p-3">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-warn">
+    <section v-if="doc.unresolved?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-warn">
         {{ t('pages.product.preflight.unresolved') }}
-      </div>
+      </h3>
       <ul class="space-y-1">
         <li
           v-for="(u, i) in doc.unresolved"
           :key="i"
-          class="text-[11px] leading-5 text-txt2"
+          class="text-[13px] leading-5 text-txt2"
         >
           {{ u }}
         </li>
@@ -141,9 +144,11 @@ function fieldLabel(f: PreflightField): string {
       </button>
       <pre
         v-if="showRaw"
-        class="mt-2 overflow-x-auto rounded-lg border border-line bg-base/40 p-2.5 font-mono text-[11px] leading-relaxed text-txt2"
+        class="report-code mt-2 overflow-x-auto font-mono text-[11px] leading-relaxed text-txt2"
         data-testid="preflight-raw-json"
       >{{ rawJson }}</pre>
     </section>
   </div>
+
+  </ArtifactReportDocument>
 </template>

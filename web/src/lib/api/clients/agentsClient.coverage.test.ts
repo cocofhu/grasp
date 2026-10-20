@@ -56,7 +56,7 @@ describe('agentsClient request coverage', () => {
       method: 'POST',
       body: JSON.stringify({ name: 'renamed' }),
     }))
-    expect(fetchMock).toHaveBeenCalledWith('/api/projects/project%20%2F%201/bootstrap-onboarding', expect.objectContaining({
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspace/bootstrap-onboarding', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ acpBackend: 'cursor', apiKey: 'secret' }),
     }))
@@ -97,7 +97,7 @@ describe('agentsClient request coverage', () => {
       )
       await expect(agentsClient.exportProjectAgents('p / 1')).resolves.toMatchObject({ filename })
     }
-    expect(fetchMock).toHaveBeenCalledWith('/api/projects/p%20%2F%201/agents/export', {
+    expect(fetchMock).toHaveBeenCalledWith('/api/workspace/agents/export', {
       credentials: 'include',
     })
 
@@ -115,7 +115,7 @@ describe('agentsClient request coverage', () => {
       overwritten: ['b'],
     })
     let [, init] = fetchMock.mock.calls.at(-1)!
-    expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/projects/p%20%2F%201/agents/import')
+    expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/workspace/agents/import')
     expect(init).toMatchObject({ method: 'POST', credentials: 'include' })
     expect((init.body as FormData).get('file')).toBe(file)
     expect((init.body as FormData).get('mode')).toBe('overwrite')
@@ -124,7 +124,7 @@ describe('agentsClient request coverage', () => {
     await agentsClient.importAgent(file, { projectId: 'p1', targetName: 'new-agent', mode: 'create' })
     ;[, init] = fetchMock.mock.calls.at(-1)!
     expect(fetchMock.mock.calls.at(-1)![0]).toBe('/api/agents/import')
-    expect((init.body as FormData).get('projectId')).toBe('p1')
+    expect((init.body as FormData).has('projectId')).toBe(false)
     expect((init.body as FormData).get('targetName')).toBe('new-agent')
     expect((init.body as FormData).get('mode')).toBe('create')
 

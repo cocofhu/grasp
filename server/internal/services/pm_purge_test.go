@@ -13,11 +13,11 @@ func TestPurgeAgentProjectData(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	pA, err := ps.Create("ProjA", "", nil)
+	pA, err := ps.CreateFixture("ProjA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pB, err := ps.Create("ProjB", "", nil)
+	pB, err := ps.CreateFixture("ProjB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestUpdateBindingRequiresAgentHomeProject(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	pA, err := ps.Create("BindA", "", nil)
+	pA, err := ps.CreateFixture("BindA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pB, err := ps.Create("BindB", "", nil)
+	pB, err := ps.CreateFixture("BindB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestUpdateMemoryForAgentScoped(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	p, err := ps.Create("MemScope", "", nil)
+	p, err := ps.CreateFixture("MemScope", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -166,7 +166,7 @@ func TestRenameAgentScopedData(t *testing.T) {
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
 	ps := NewProjectService(db)
-	p, err := ps.Create("RenameHome", "", nil)
+	p, err := ps.CreateFixture("RenameHome", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

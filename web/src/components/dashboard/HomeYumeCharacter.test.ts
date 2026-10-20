@@ -7,19 +7,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import HomeYumeCharacter from './HomeYumeCharacter.vue'
 
 function stubReducedMotion(matches: boolean) {
+  const listeners = new Set<() => void>()
+  const media = {
+    matches,
+    media: '(prefers-reduced-motion: reduce)',
+    onchange: null,
+    addListener: vi.fn(),
+    removeListener: vi.fn(),
+    addEventListener: vi.fn((_event: string, listener: () => void) => listeners.add(listener)),
+    removeEventListener: vi.fn((_event: string, listener: () => void) => listeners.delete(listener)),
+    dispatchEvent: vi.fn(),
+  }
   vi.stubGlobal(
     'matchMedia',
-    vi.fn((query: string) => ({
-      matches: query.includes('prefers-reduced-motion') ? matches : false,
-      media: query,
-      onchange: null,
-      addListener: vi.fn(),
-      removeListener: vi.fn(),
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      dispatchEvent: vi.fn(),
-    })),
+    vi.fn(() => media),
   )
+  return {
+    media,
+    listeners,
+    change(value: boolean) {
+      media.matches = value
+      for (const listener of listeners) listener()
+    },
+  }
 }
 
 describe('HomeYumeCharacter', () => {
@@ -94,6 +104,18 @@ describe('HomeYumeCharacter', () => {
     wrapper.unmount()
   })
 
+  it('keeps a hidden 240×200 crop at rest and shows overflow while jumping or pressed', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
+    const root = src.match(/\.home-yume\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(root).toMatch(/width:\s*var\(--yume-w,\s*240px\)/)
+    expect(root).toMatch(/height:\s*var\(--yume-h,\s*200px\)/)
+    expect(root).toMatch(/overflow:\s*hidden/)
+    const shown = src.match(/\.home-yume\.jump\s*,\s*\.home-yume\.pressed\s*\{([^}]+)\}/)?.[1] ?? ''
+    expect(shown).toMatch(/overflow:\s*visible/)
+    expect(src).toMatch(/scale\(0\.92,\s*1\.08\)\s*translateY\(-14%\)/)
+    expect(src).toMatch(/translateY\(-9%\)/)
+  })
+
   it('keeps the dark drop-shadow and uses a lighter one in light theme', () => {
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'HomeYumeCharacter.vue'), 'utf8')
     expect(src).toMatch(/filter:\s*drop-shadow\(0 12px 28px rgba\(0,\s*0,\s*0,\s*0\.45\)\)/)
@@ -112,8 +134,59 @@ describe('HomeYumeCharacter', () => {
     const root = wrapper.get('[data-testid="home-yume"]')
     expect(root.classes()).toContain('home-yume--static')
     await root.trigger('pointerdown', { pointerType: 'mouse', button: 0 })
+    expect(root.classes()).not.toContain('pressed')
     await root.trigger('pointerup', { pointerType: 'mouse', button: 0 })
     expect(root.classes()).not.toContain('jump')
     wrapper.unmount()
+  })
+
+  it('stops an active interaction when motion preference changes and cleans up on unmount', async () => {
+    const motion = stubReducedMotion(false)
+    const removed = vi.spyOn(window, 'removeEventListener')
+    const wrapper = mount(HomeYumeCharacter, { attachTo: document.body })
+    await flushPromises()
+    const root = wrapper.get('[data-testid="home-yume"]')
+    const eyes = wrapper.get('.c-eyes').element as SVGGElement
+    eyes.style.transform = 'translate(4px, 2px)'
+    await root.trigger('pointerdown', { pointerType: 'mouse', button: 0 })
+    await root.trigger('pointerup', { pointerType: 'mouse', button: 0 })
+    expect(root.classes()).toContain('jump')
+    expect(vi.getTimerCount()).toBe(1)
+
+    motion.change(true)
+    await flushPromises()
+    expect(root.classes()).toContain('home-yume--static')
+    expect(root.classes()).not.toContain('jump')
+    expect(root.classes()).not.toContain('pressed')
+    expect(eyes.style.transform).toBe('')
+    expect(vi.getTimerCount()).toBe(0)
+
+    motion.change(false)
+    await flushPromises()
+    await root.trigger('keydown', { key: 'Enter' })
+    expect(root.classes()).toContain('jump')
+    wrapper.unmount()
+    expect(vi.getTimerCount()).toBe(0)
+    expect(motion.listeners.size).toBe(0)
+    expect(removed).toHaveBeenCalledWith('pointermove', expect.any(Function))
+  })
+
+  it('ignores non-primary clicks and keeps keyboard and assistive activation available', async () => {
+    const wrapper = mount(HomeYumeCharacter, { attachTo: document.body })
+    await flushPromises()
+    const root = wrapper.get('[data-testid="home-yume"]')
+    await root.trigger('pointerdown', { pointerType: 'mouse', button: 2 })
+    await root.trigger('pointerup', { pointerType: 'mouse', button: 2 })
+    expect(root.classes()).not.toContain('pressed')
+    expect(root.classes()).not.toContain('jump')
+    for (const key of ['Enter', ' ']) {
+      await root.trigger('keydown', { key })
+      expect(root.classes()).toContain('jump')
+      await vi.advanceTimersByTimeAsync(360)
+    }
+    await root.trigger('click', { detail: 0 })
+    expect(root.classes()).toContain('jump')
+    wrapper.unmount()
+    expect(vi.getTimerCount()).toBe(0)
   })
 })

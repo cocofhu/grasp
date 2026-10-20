@@ -10,6 +10,10 @@
   var EMBED_SESSION = 'grasp-embed:session';
   var EMBED_THEME = 'grasp-embed:theme';
   var EMBED_LANG = 'grasp-embed:lang';
+  // Drawer → page: open/replace/close the image shell. No picture address.
+  var EMBED_IMAGE = 'grasp-embed:image';
+  // Drawer → page: open/replace/close the single-demo shell. No HTML.
+  var EMBED_DEMO = 'grasp-embed:demo';
   var EMBED_HASH = '__grasp_embed';
   var EMBED_ORIGIN_PATH = '/__grasp/embed-origin';
   var EMBED_STORE_KEY = '__grasp_embed';
@@ -69,6 +73,10 @@
       artifact: '产物',
       artifactTitle: '产物',
       closeArtifact: '关闭产物',
+      imagePreview: '图片预览',
+      closeImage: '关闭',
+      demoPreview: '窗口放大查看',
+      closeDemo: '关闭',
       chat: '对话',
       chatTitle: 'Grasp · Agent 对话',
       needTicket: '需要从预览页跳转重新获得票据',
@@ -90,6 +98,10 @@
       artifact: 'Artifact',
       artifactTitle: 'Artifacts',
       closeArtifact: 'Close artifacts',
+      imagePreview: 'Image preview',
+      closeImage: 'Close',
+      demoPreview: 'Open enlarged preview',
+      closeDemo: 'Close',
       chat: 'Chat',
       chatTitle: 'Grasp · Agent chat',
       needTicket: 'Reopen from the preview page in Grasp to get a new ticket.',
@@ -148,6 +160,14 @@
   // Artifact modal: separate iframe over the current preview page (not the chat drawer).
   var artifactOpen = false;
   var artifactFrame = null;
+  // Image preview shell, sibling of the artifact window. The picture address stays in Grasp.
+  var imageOpen = false;
+  var imageFrame = null;
+  var imageLabel = '';
+  // Single-option demo enlarge, sibling of the image window. The HTML stays in Grasp.
+  var demoOpen = false;
+  var demoFrame = null;
+  var demoLabel = '';
   // The drawer reported its session invalid, expired or revoked.
   var sessionDead = false;
   // Custom no-ticket bubble: open only while the gate is hovered or focused.
@@ -284,8 +304,19 @@
   var ARTIFACT_DEFAULT_W = 920;
   var ARTIFACT_DEFAULT_H = 640;
   var ARTIFACT_MARGIN = 28;
+  // Later peer sits this far down-right so the earlier title bar still shows.
+  var PEER_NUDGE = 36;
+  // Close button inside .mhead: height 40, padding-right 8, button 28×28.
+  var IMAGE_HEAD_H = 40;
+  var IMAGE_CLOSE_W = 28;
+  var IMAGE_CLOSE_H = 28;
+  var IMAGE_CLOSE_RIGHT = 8;
   var artifactBox = null;
   var artifactDrag = null;
+  var imageBox = null;
+  var imageDrag = null;
+  var demoBox = null;
+  var demoDrag = null;
 
   var BAR_CSS =
     ':host{all:initial}' +
@@ -341,6 +372,8 @@
     'opacity:.35;flex:none;color:inherit}' +
     '.mhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
     '.mhead [data-role="artifact-title"]{flex:1;min-width:0;font-size:13px;font-weight:600}' +
+    '.mhead [data-role="image-title"]{flex:1;min-width:0;font-size:13px;font-weight:600;' +
+    'white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.mhead button{width:28px;height:28px;padding:0;display:grid;place-items:center;flex:none;' +
     'border:0;border-radius:6px;background:transparent;color:#9ca3af;font-size:16px;line-height:1;cursor:pointer}' +
     '.mhead button:hover{background:#1f2937;color:#e5e7eb}' +
@@ -380,6 +413,8 @@
     '.light .artifact[aria-expanded="true"]{background:#eef2ff;border-color:#c7d2fe;color:#4f46e5}' +
     '.light .chat{background:linear-gradient(135deg,#6d5dfc,#8b5cf6);border-color:#8b5cf6;color:#fff}' +
     '.light .chat[aria-expanded="true"]{background:linear-gradient(135deg,#5b4bd6,#7c3aed)}' +
+    '.light .chat:hover{background:linear-gradient(135deg,#7c6cff,#9b6cff);border-color:#a78bfa;color:#fff}' +
+    '.light .chat[aria-expanded="true"]:hover{background:linear-gradient(135deg,#5b4bd6,#7c3aed);color:#fff}' +
     '.light .live{background:#f4f4f5;border-color:#e4e4e7;color:#52525b}' +
     '.light .live:hover{background:#fff;border-color:#c4b5fd;color:#5b21b6}' +
     '.light .live[aria-pressed="true"],.light .live[aria-expanded="true"]{background:#f3e8ff;border-color:#c4b5fd;color:#6d28d9}' +
@@ -575,7 +610,7 @@
   }
 
   function beginDrag(ev, kind, dir) {
-    if (!drawerOpen || drag || artifactDrag) return;
+    if (!drawerOpen || drag || artifactDrag || imageDrag || demoDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -612,7 +647,7 @@
   }
 
   function onViewportResize() {
-    if (!ui || drag || artifactDrag) return;
+    if (!ui || drag || artifactDrag || imageDrag || demoDrag) return;
     // Pull the window into the current viewport for display only. The size
     // written on pointerup stays in the session, so a larger viewport can restore it.
     box = drawer ? boxFromEmbed(drawer.embed) : clampBox(box);
@@ -620,6 +655,14 @@
     if (artifactOpen) {
       artifactBox = clampArtifactBox(artifactBox || artifactDefaultBox());
       applyArtifactBox();
+    }
+    if (imageOpen) {
+      imageBox = clampArtifactBox(imageBox || imageDefaultBox());
+      applyImageBox();
+    }
+    if (demoOpen) {
+      demoBox = clampArtifactBox(demoBox || demoDefaultBox());
+      applyDemoBox();
     }
   }
 
@@ -761,7 +804,7 @@
   }
 
   function beginArtifactDrag(ev, kind, dir) {
-    if (!artifactOpen || artifactDrag || drag) return;
+    if (!artifactOpen || artifactDrag || drag || imageDrag || demoDrag) return;
     if (ev.button != null && ev.button !== 0) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -798,6 +841,330 @@
     beginArtifactDrag(ev, 'resize', dir || '');
   }
 
+  function imageTitleText() {
+    if (!imageLabel) return '';
+    var head = /^zh/i.test(lang || '') ? '图片预览 · ' : 'Image preview · ';
+    return head + imageLabel;
+  }
+
+  function applyImageTitle() {
+    if (!ui || !ui.imageTitle) return;
+    var title = imageTitleText();
+    ui.imageTitle.textContent = title;
+    if (imageFrame) imageFrame.title = title || T.imagePreview;
+  }
+
+  function imageDefaultBox() {
+    var v = viewport();
+    var drawerLeft = (v.vw || 0) - DEFAULT_W - DEFAULT_MARGIN_X;
+    var room = drawerLeft - 16 - ARTIFACT_MARGIN;
+    var w = ARTIFACT_DEFAULT_W;
+    if (room >= ARTIFACT_MIN_W) w = Math.min(ARTIFACT_DEFAULT_W, room);
+    var x = ARTIFACT_MARGIN;
+    var y = ARTIFACT_MARGIN;
+    // Nudge off the artifact window so both title bars stay visible.
+    if (artifactOpen) {
+      x += PEER_NUDGE;
+      y += PEER_NUDGE;
+    }
+    return clampArtifactBox({ x: x, y: y, w: w, h: ARTIFACT_DEFAULT_H });
+  }
+
+  function nudgePeer(b) {
+    return clampArtifactBox({ x: b.x + PEER_NUDGE, y: b.y + PEER_NUDGE, w: b.w, h: b.h });
+  }
+
+  function raisePeer(el) {
+    if (!ui || !ui.artifactModal || !ui.imageModal || !el) return;
+    // Stay inside the mask, under the chat card. The later window paints on top.
+    ui.artifactModal.style.zIndex = el === ui.artifactModal ? '2' : '1';
+    ui.imageModal.style.zIndex = el === ui.imageModal ? '2' : '1';
+    if (ui.demoModal) ui.demoModal.style.zIndex = el === ui.demoModal ? '2' : '1';
+  }
+
+  // Opening the second window at the same origin would hide the first title bar.
+  // Shift the new one down-right and put it above its peer.
+  function placeAbovePeer(box, other, openingEl, otherEl) {
+    if (box.x === other.x && box.y === other.y) {
+      raisePeer(openingEl);
+      return nudgePeer(box);
+    }
+    if (box.x > other.x || box.y > other.y) raisePeer(openingEl);
+    else raisePeer(otherEl);
+    return box;
+  }
+
+  function imageCloseRect(b) {
+    return {
+      x: b.x + b.w - IMAGE_CLOSE_RIGHT - IMAGE_CLOSE_W,
+      y: b.y + (IMAGE_HEAD_H - IMAGE_CLOSE_H) / 2,
+      w: IMAGE_CLOSE_W,
+      h: IMAGE_CLOSE_H,
+    };
+  }
+
+  function rectHits(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+
+  // The chat card paints above this window. Stop a drag once the close button
+  // would slide under that card; do not raise the window over the card.
+  function keepImageCloseReachable(b) {
+    if (!drawerOpen || !b) return b;
+    var btn = imageCloseRect(b);
+    if (!rectHits(btn, box)) return b;
+    var into = btn.x + btn.w - box.x;
+    if (into <= 0) return b;
+    var next = clampArtifactBox({ x: b.x - into, y: b.y, w: b.w, h: b.h });
+    if (!rectHits(imageCloseRect(next), box)) return next;
+    return b;
+  }
+
+  function applyImageBox() {
+    if (!ui || !ui.imageModal) return;
+    var b = clampArtifactBox(imageBox || imageDefaultBox());
+    ui.imageModal.style.left = b.x + 'px';
+    ui.imageModal.style.top = b.y + 'px';
+    ui.imageModal.style.width = b.w + 'px';
+    ui.imageModal.style.height = b.h + 'px';
+  }
+
+  function setImageFramePassthrough(on) {
+    if (!imageFrame) return;
+    imageFrame.style.pointerEvents = on ? 'none' : '';
+  }
+
+  function onImagePointerMove(ev) {
+    if (!imageDrag) return;
+    var dx = ev.clientX - imageDrag.sx;
+    var dy = ev.clientY - imageDrag.sy;
+    if (imageDrag.kind === 'move') {
+      imageBox = clampArtifactBox({
+        x: imageDrag.x + dx,
+        y: imageDrag.y + dy,
+        w: imageDrag.w,
+        h: imageDrag.h,
+      });
+      imageBox = keepImageCloseReachable(imageBox);
+    } else {
+      imageBox = artifactResizeFrom(imageDrag, dx, dy);
+    }
+    applyImageBox();
+  }
+
+  function endImageDrag() {
+    if (!imageDrag) return;
+    imageDrag = null;
+    setImageFramePassthrough(false);
+    window.removeEventListener('pointermove', onImagePointerMove, true);
+    window.removeEventListener('pointerup', endImageDrag, true);
+    window.removeEventListener('pointercancel', endImageDrag, true);
+    if (ui && ui.imageModal) {
+      imageBox = {
+        x: Number.parseInt(ui.imageModal.style.left, 10) || 0,
+        y: Number.parseInt(ui.imageModal.style.top, 10) || 0,
+        w: Number.parseInt(ui.imageModal.style.width, 10) || 0,
+        h: Number.parseInt(ui.imageModal.style.height, 10) || 0,
+      };
+      imageBox = clampArtifactBox(imageBox);
+    }
+  }
+
+  function beginImageDrag(ev, kind, dir) {
+    if (!imageOpen || imageDrag || artifactDrag || drag || demoDrag) return;
+    if (ev.button != null && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var cur = clampArtifactBox(imageBox || imageDefaultBox());
+    imageDrag = {
+      kind: kind,
+      dir: dir || '',
+      sx: ev.clientX,
+      sy: ev.clientY,
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: cur.h,
+    };
+    setImageFramePassthrough(true);
+    try {
+      if (ev.currentTarget && ev.currentTarget.setPointerCapture && ev.pointerId != null) {
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }
+    } catch (e) {}
+    window.addEventListener('pointermove', onImagePointerMove, true);
+    window.addEventListener('pointerup', endImageDrag, true);
+    window.addEventListener('pointercancel', endImageDrag, true);
+  }
+
+  function onImageHeadPointerDown(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('button')) return;
+    beginImageDrag(ev, 'move', '');
+  }
+
+  function onImageEdgePointerDown(ev) {
+    var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
+    beginImageDrag(ev, 'resize', dir || '');
+  }
+
+  function clipImageLabel(v) {
+    var s = typeof v === 'string' ? v : '';
+    s = s.replace(/[\r\n\t]/g, ' ').replace(/^\s+|\s+$/g, '');
+    if (s.length > 180) s = s.slice(0, 180);
+    return s;
+  }
+
+  function onEmbedImage(data) {
+    if (!usable() || !drawerReady) return;
+    if (data.action === 'close') {
+      setImageOpen(false);
+      return;
+    }
+    if (data.action !== 'open') return;
+    // label only — data.src is intentionally ignored.
+    imageLabel = clipImageLabel(data.label);
+    setImageOpen(true);
+  }
+
+  function demoTitleText() {
+    if (!demoLabel) return '';
+    return T.demoPreview + ' · ' + demoLabel;
+  }
+
+  function applyDemoTitle() {
+    if (!ui || !ui.demoTitle) return;
+    var title = demoTitleText();
+    ui.demoTitle.textContent = title;
+    if (demoFrame) demoFrame.title = title || T.demoPreview;
+  }
+
+  function demoDefaultBox() {
+    var v = viewport();
+    var drawerLeft = (v.vw || 0) - DEFAULT_W - DEFAULT_MARGIN_X;
+    var room = drawerLeft - 16 - ARTIFACT_MARGIN;
+    var w = ARTIFACT_DEFAULT_W;
+    if (room >= ARTIFACT_MIN_W) w = Math.min(ARTIFACT_DEFAULT_W, room);
+    var x = ARTIFACT_MARGIN;
+    var y = ARTIFACT_MARGIN;
+    if (artifactOpen || imageOpen) {
+      x += PEER_NUDGE;
+      y += PEER_NUDGE;
+    }
+    return clampArtifactBox({ x: x, y: y, w: w, h: ARTIFACT_DEFAULT_H });
+  }
+
+  function applyDemoBox() {
+    if (!ui || !ui.demoModal) return;
+    var b = clampArtifactBox(demoBox || demoDefaultBox());
+    ui.demoModal.style.left = b.x + 'px';
+    ui.demoModal.style.top = b.y + 'px';
+    ui.demoModal.style.width = b.w + 'px';
+    ui.demoModal.style.height = b.h + 'px';
+  }
+
+  function setDemoFramePassthrough(on) {
+    if (!demoFrame) return;
+    demoFrame.style.pointerEvents = on ? 'none' : '';
+  }
+
+  function keepDemoCloseReachable(b) {
+    if (!drawerOpen || !b) return b;
+    var btn = imageCloseRect(b);
+    if (!rectHits(btn, box)) return b;
+    var into = btn.x + btn.w - box.x;
+    if (into <= 0) return b;
+    var next = clampArtifactBox({ x: b.x - into, y: b.y, w: b.w, h: b.h });
+    if (!rectHits(imageCloseRect(next), box)) return next;
+    return b;
+  }
+
+  function onDemoPointerMove(ev) {
+    if (!demoDrag) return;
+    var dx = ev.clientX - demoDrag.sx;
+    var dy = ev.clientY - demoDrag.sy;
+    if (demoDrag.kind === 'move') {
+      demoBox = clampArtifactBox({
+        x: demoDrag.x + dx,
+        y: demoDrag.y + dy,
+        w: demoDrag.w,
+        h: demoDrag.h,
+      });
+      demoBox = keepDemoCloseReachable(demoBox);
+    } else {
+      demoBox = artifactResizeFrom(demoDrag, dx, dy);
+    }
+    applyDemoBox();
+  }
+
+  function endDemoDrag() {
+    if (!demoDrag) return;
+    demoDrag = null;
+    setDemoFramePassthrough(false);
+    window.removeEventListener('pointermove', onDemoPointerMove, true);
+    window.removeEventListener('pointerup', endDemoDrag, true);
+    window.removeEventListener('pointercancel', endDemoDrag, true);
+    if (ui && ui.demoModal) {
+      demoBox = {
+        x: Number.parseInt(ui.demoModal.style.left, 10) || 0,
+        y: Number.parseInt(ui.demoModal.style.top, 10) || 0,
+        w: Number.parseInt(ui.demoModal.style.width, 10) || 0,
+        h: Number.parseInt(ui.demoModal.style.height, 10) || 0,
+      };
+      demoBox = clampArtifactBox(demoBox);
+    }
+  }
+
+  function beginDemoDrag(ev, kind, dir) {
+    if (!demoOpen || demoDrag || imageDrag || artifactDrag || drag) return;
+    if (ev.button != null && ev.button !== 0) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    var cur = clampArtifactBox(demoBox || demoDefaultBox());
+    demoDrag = {
+      kind: kind,
+      dir: dir || '',
+      sx: ev.clientX,
+      sy: ev.clientY,
+      x: cur.x,
+      y: cur.y,
+      w: cur.w,
+      h: cur.h,
+    };
+    setDemoFramePassthrough(true);
+    try {
+      if (ev.currentTarget && ev.currentTarget.setPointerCapture && ev.pointerId != null) {
+        ev.currentTarget.setPointerCapture(ev.pointerId);
+      }
+    } catch (e) {}
+    window.addEventListener('pointermove', onDemoPointerMove, true);
+    window.addEventListener('pointerup', endDemoDrag, true);
+    window.addEventListener('pointercancel', endDemoDrag, true);
+  }
+
+  function onDemoHeadPointerDown(ev) {
+    var t = ev.target;
+    if (t && t.closest && t.closest('button')) return;
+    beginDemoDrag(ev, 'move', '');
+  }
+
+  function onDemoEdgePointerDown(ev) {
+    var dir = ev.currentTarget && ev.currentTarget.getAttribute ? ev.currentTarget.getAttribute('data-dir') : '';
+    beginDemoDrag(ev, 'resize', dir || '');
+  }
+
+  function onEmbedDemo(data) {
+    if (!usable() || !drawerReady) return;
+    if (data.action === 'close') {
+      setDemoOpen(false);
+      return;
+    }
+    if (data.action !== 'open') return;
+    // label only — data.html is intentionally ignored.
+    demoLabel = clipImageLabel(data.label);
+    setDemoOpen(true);
+  }
+
   function mountBar() {
     var root = document.body || document.documentElement;
     if (!root) return;
@@ -818,6 +1185,28 @@
       '<span class="drag" data-role="artifact-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
       '<span data-role="artifact-title"></span>' +
       '<button type="button" data-role="artifact-close" aria-label="">×</button>' +
+      '</div>' +
+      '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
+      '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
+      '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
+      '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
+      '</div>' +
+      '<div class="modal" data-role="image-modal" role="dialog" aria-modal="true" hidden>' +
+      '<div class="mhead" data-role="image-head">' +
+      '<span class="drag" data-role="image-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
+      '<span data-role="image-title"></span>' +
+      '<button type="button" data-role="image-close" aria-label="">×</button>' +
+      '</div>' +
+      '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
+      '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
+      '<div class="edge nw" data-dir="nw"></div><div class="edge ne" data-dir="ne"></div>' +
+      '<div class="edge sw" data-dir="sw"></div><div class="edge se" data-dir="se"></div>' +
+      '</div>' +
+      '<div class="modal" data-role="demo-modal" role="dialog" aria-modal="true" hidden>' +
+      '<div class="mhead" data-role="demo-head">' +
+      '<span class="drag" data-role="demo-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
+      '<span data-role="demo-title"></span>' +
+      '<button type="button" data-role="demo-close" aria-label="">×</button>' +
       '</div>' +
       '<div class="edge n" data-dir="n"></div><div class="edge s" data-dir="s"></div>' +
       '<div class="edge e" data-dir="e"></div><div class="edge w" data-dir="w"></div>' +
@@ -873,6 +1262,12 @@
       artifactModal: shadow.querySelector('[data-role="artifact-modal"]'),
       artifactTitle: shadow.querySelector('[data-role="artifact-title"]'),
       artifactClose: shadow.querySelector('[data-role="artifact-close"]'),
+      imageModal: shadow.querySelector('[data-role="image-modal"]'),
+      imageTitle: shadow.querySelector('[data-role="image-title"]'),
+      imageClose: shadow.querySelector('[data-role="image-close"]'),
+      demoModal: shadow.querySelector('[data-role="demo-modal"]'),
+      demoTitle: shadow.querySelector('[data-role="demo-title"]'),
+      demoClose: shadow.querySelector('[data-role="demo-close"]'),
       drawerTitle: shadow.querySelector('[data-role="drawer-title"]'),
       drawerClose: shadow.querySelector('[data-role="drawer-close"]'),
     };
@@ -891,6 +1286,26 @@
     artifactHead.addEventListener('pointerdown', onArtifactHeadPointerDown);
     Array.prototype.forEach.call(ui.artifactModal.querySelectorAll('.edge'), function (edge) {
       edge.addEventListener('pointerdown', onArtifactEdgePointerDown);
+    });
+    var imageHead = shadow.querySelector('[data-role="image-head"]');
+    imageHead.addEventListener('pointerdown', onImageHeadPointerDown);
+    Array.prototype.forEach.call(ui.imageModal.querySelectorAll('.edge'), function (edge) {
+      edge.addEventListener('pointerdown', onImageEdgePointerDown);
+    });
+    ui.imageClose.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setImageOpen(false);
+    });
+    var demoHead = shadow.querySelector('[data-role="demo-head"]');
+    demoHead.addEventListener('pointerdown', onDemoHeadPointerDown);
+    Array.prototype.forEach.call(ui.demoModal.querySelectorAll('.edge'), function (edge) {
+      edge.addEventListener('pointerdown', onDemoEdgePointerDown);
+    });
+    ui.demoClose.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      setDemoOpen(false);
     });
     ui.toggle.addEventListener('click', function (ev) {
       ev.preventDefault();
@@ -994,6 +1409,14 @@
     ui.artifactTitle.textContent = T.artifactTitle;
     ui.artifactClose.setAttribute('aria-label', T.closeArtifact);
     ui.artifactClose.title = T.closeArtifact;
+    ui.imageClose.setAttribute('aria-label', T.closeImage);
+    ui.imageClose.title = T.closeImage;
+    applyImageTitle();
+    if (ui.demoClose) {
+      ui.demoClose.setAttribute('aria-label', T.closeDemo);
+      ui.demoClose.title = T.closeDemo;
+    }
+    applyDemoTitle();
     ui.drawerClose.setAttribute('aria-label', T.close);
     ui.drawerClose.title = T.close;
     if (drawer) drawer.frame.title = T.chatTitle;
@@ -1048,8 +1471,17 @@
     setButtonLabel(ui.artifact, ICON_LAYERS, T.artifact);
     ui.artifact.title = ok && drawerReady ? T.artifactTitle : '';
     ui.artifact.setAttribute('aria-expanded', artifactOpen ? 'true' : 'false');
-    ui.artifactMask.hidden = !artifactOpen;
+    ui.artifactMask.hidden = !(artifactOpen || imageOpen || demoOpen);
+    ui.artifactModal.hidden = !artifactOpen;
     if (artifactOpen) applyArtifactBox();
+    if (ui.imageModal) {
+      ui.imageModal.hidden = !imageOpen;
+      if (imageOpen) applyImageBox();
+    }
+    if (ui.demoModal) {
+      ui.demoModal.hidden = !demoOpen;
+      if (demoOpen) applyDemoBox();
+    }
     ui.chat.disabled = !ok;
     setButtonLabel(ui.chat, ICON_CHAT, T.chat);
     ui.chat.title = ok ? T.chatTitle : '';
@@ -1117,6 +1549,7 @@
 
   function setDrawerOpen(on) {
     drawerOpen = !!on && usable();
+    if (!drawerOpen && demoOpen) setDemoOpen(false);
     if (drawer) {
       drawer.embed.open = drawerOpen;
       saveEmbed(drawer.embed);
@@ -1132,8 +1565,77 @@
       ensureArtifactFrame();
       if (!artifactBox) artifactBox = artifactDefaultBox();
       else artifactBox = clampArtifactBox(artifactBox);
+      if (imageOpen && imageBox) {
+        artifactBox = placeAbovePeer(
+          artifactBox,
+          clampArtifactBox(imageBox),
+          ui.artifactModal,
+          ui.imageModal,
+        );
+      } else if (demoOpen && demoBox && ui.demoModal) {
+        artifactBox = placeAbovePeer(
+          artifactBox,
+          clampArtifactBox(demoBox),
+          ui.artifactModal,
+          ui.demoModal,
+        );
+      }
     }
     render();
+  }
+
+  function setImageOpen(on) {
+    imageOpen = !!on && usable() && drawerReady;
+    if (imageOpen) {
+      ensureImageFrame();
+      if (!imageBox) imageBox = imageDefaultBox();
+      else imageBox = clampArtifactBox(imageBox);
+      if (artifactOpen && artifactBox) {
+        imageBox = placeAbovePeer(
+          imageBox,
+          clampArtifactBox(artifactBox),
+          ui.imageModal,
+          ui.artifactModal,
+        );
+      } else if (demoOpen && demoBox && ui.demoModal) {
+        imageBox = placeAbovePeer(
+          imageBox,
+          clampArtifactBox(demoBox),
+          ui.imageModal,
+          ui.demoModal,
+        );
+      }
+    }
+    render();
+    applyImageTitle();
+  }
+
+  function setDemoOpen(on) {
+    var next = !!on && usable() && drawerReady;
+    if (!next && !demoOpen) return;
+    demoOpen = next;
+    if (demoOpen) {
+      ensureDemoFrame();
+      if (!demoBox) demoBox = demoDefaultBox();
+      else demoBox = clampArtifactBox(demoBox);
+      if (imageOpen && imageBox) {
+        demoBox = placeAbovePeer(
+          demoBox,
+          clampArtifactBox(imageBox),
+          ui.demoModal,
+          ui.imageModal,
+        );
+      } else if (artifactOpen && artifactBox) {
+        demoBox = placeAbovePeer(
+          demoBox,
+          clampArtifactBox(artifactBox),
+          ui.demoModal,
+          ui.artifactModal,
+        );
+      }
+    }
+    render();
+    applyDemoTitle();
   }
 
   // ---- chat drawer ----
@@ -1156,6 +1658,16 @@
     if (artifactFrame && artifactFrame.contentWindow) {
       try {
         artifactFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
+      } catch (e) {}
+    }
+    if (imageFrame && imageFrame.contentWindow) {
+      try {
+        imageFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
+      } catch (e) {}
+    }
+    if (demoFrame && demoFrame.contentWindow) {
+      try {
+        demoFrame.contentWindow.postMessage({ type: EMBED_THEME, theme: theme }, drawer.origin);
       } catch (e) {}
     }
   }
@@ -1281,6 +1793,84 @@
     if (artifactFrame.parentNode !== ui.artifactModal) {
       ui.artifactModal.appendChild(artifactFrame);
     }
+  }
+
+  function imageSrc(e) {
+    var src =
+      e.origin +
+      '/embed/runs/' +
+      encodeURIComponent(e.run) +
+      '/nodes/' +
+      encodeURIComponent(e.node) +
+      '/image';
+    var q = new URLSearchParams();
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
+  }
+
+  function pingImageFrame() {
+    if (!drawer || !imageFrame || !imageFrame.contentWindow) return;
+    try {
+      // Ask the Grasp frame to say it is ready. The picture address is not included.
+      imageFrame.contentWindow.postMessage({ type: EMBED_IMAGE, action: 'open' }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function ensureImageFrame() {
+    if (!ui || !drawer) return;
+    if (!imageFrame) {
+      imageFrame = document.createElement('iframe');
+      imageFrame.title = imageTitleText() || T.imagePreview;
+      imageFrame.setAttribute('referrerpolicy', 'no-referrer');
+      imageFrame.src = imageSrc(drawer.embed);
+      ui.imageModal.appendChild(imageFrame);
+      postTheme();
+      pingImageFrame();
+      return;
+    }
+    if (imageFrame.parentNode !== ui.imageModal) {
+      ui.imageModal.appendChild(imageFrame);
+    }
+    pingImageFrame();
+  }
+
+  function demoSrc(e) {
+    var src =
+      e.origin +
+      '/embed/runs/' +
+      encodeURIComponent(e.run) +
+      '/nodes/' +
+      encodeURIComponent(e.node) +
+      '/demo';
+    var q = new URLSearchParams();
+    q.set('theme', e.theme === 'light' ? 'light' : 'dark');
+    return src + '#' + q.toString();
+  }
+
+  function pingDemoFrame() {
+    if (!drawer || !demoFrame || !demoFrame.contentWindow) return;
+    try {
+      // Ask the Grasp frame to say it is ready. The demo HTML is not included.
+      demoFrame.contentWindow.postMessage({ type: EMBED_DEMO, action: 'open' }, drawer.origin);
+    } catch (e) {}
+  }
+
+  function ensureDemoFrame() {
+    if (!ui || !drawer) return;
+    if (!demoFrame) {
+      demoFrame = document.createElement('iframe');
+      demoFrame.title = demoTitleText() || T.demoPreview;
+      demoFrame.setAttribute('referrerpolicy', 'no-referrer');
+      demoFrame.src = demoSrc(drawer.embed);
+      ui.demoModal.appendChild(demoFrame);
+      postTheme();
+      pingDemoFrame();
+      return;
+    }
+    if (demoFrame.parentNode !== ui.demoModal) {
+      ui.demoModal.appendChild(demoFrame);
+    }
+    pingDemoFrame();
   }
 
   function attachDrawer() {
@@ -1702,6 +2292,8 @@
       setControl(false);
       setDrawerOpen(false);
       setArtifactOpen(false);
+      setImageOpen(false);
+      setDemoOpen(false);
       live.enabled = false;
       if (live.api) live.api.setEnabled(false);
       render();
@@ -1711,6 +2303,10 @@
       setControl(data.on);
     } else if (data.type === EMBED_CMD) {
       onCmd(data);
+    } else if (data.type === EMBED_IMAGE) {
+      onEmbedImage(data);
+    } else if (data.type === EMBED_DEMO) {
+      onEmbedDemo(data);
     }
   });
 

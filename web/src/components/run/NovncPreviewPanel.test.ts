@@ -21,6 +21,7 @@ class MockWebSocket {
     MockWebSocket.instances.push(this)
     queueMicrotask(() => {
       this.onopen?.()
+      if (MockWebSocket.holdServer) return
       const frame = MockWebSocket.failWith
         ? { type: 'error', message: MockWebSocket.failWith }
         : { type: 'ready', url: MockWebSocket.readyUrl }
@@ -31,10 +32,13 @@ class MockWebSocket {
   static readyUrl = 'http://localhost:5173'
   /** When set, new sockets answer with this server error instead of ready. */
   static failWith = ''
+  /** When set, the socket opens and stays quiet so the pane remains connecting. */
+  static holdServer = false
   static reset() {
     MockWebSocket.instances = []
     MockWebSocket.readyUrl = 'http://localhost:5173'
     MockWebSocket.failWith = ''
+    MockWebSocket.holdServer = false
   }
   send(data: string) {
     this.sent.push(data)
@@ -51,8 +55,11 @@ const rfbMocks = vi.hoisted(() => {
   }> = []
   return {
     instances,
+    /** When set, the RFB connect event is not fired, so the pane stays connecting. */
+    holdConnect: false,
     reset() {
       instances.length = 0
+      this.holdConnect = false
     },
     last() {
       return instances[instances.length - 1] ?? null
@@ -84,7 +91,7 @@ vi.mock('@novnc/novnc/lib/rfb.js', () => ({
       this.scaleViewportSets.push(v)
     }
     addEventListener(event: string, cb: () => void) {
-      if (event === 'connect') queueMicrotask(cb)
+      if (event === 'connect' && !rfbMocks.holdConnect) queueMicrotask(cb)
     }
     disconnect() {}
   },
@@ -245,6 +252,34 @@ describe('NovncPreviewPanel', () => {
     expect(wrapper.find('[aria-busy="true"]').exists()).toBe(true)
     await flushPromises()
     wrapper.unmount()
+  })
+
+  it('warns the preview may be stuck only after the advertised first-boot window', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    rfbMocks.holdConnect = true
+    MockWebSocket.holdServer = true
+    const wrapper = mountNovnc()
+    try {
+      await flushPromises()
+      expect(wrapper.find('[data-testid="novnc-connecting-hint"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="novnc-preview-stuck"]').exists()).toBe(false)
+
+      await vi.advanceTimersByTimeAsync(20_000)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="novnc-preview-stuck"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="novnc-connecting-hint"]').text()).toContain('30')
+
+      await vi.advanceTimersByTimeAsync(40_000)
+      await flushPromises()
+      const stuck = wrapper.find('[data-testid="novnc-preview-stuck"]')
+      expect(stuck.exists()).toBe(true)
+      expect(stuck.text()).toContain('可能卡死')
+      expect(stuck.text()).toContain('重新连接')
+      expect(wrapper.find('[data-testid="novnc-connecting-hint"]').exists()).toBe(false)
+    } finally {
+      wrapper.unmount()
+      vi.useRealTimers()
+    }
   })
 
   it('connects preview mode and shows live toolbar without share-approval entry', async () => {

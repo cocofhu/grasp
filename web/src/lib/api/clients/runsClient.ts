@@ -2,7 +2,6 @@ import type {
   Run,
   Artifact,
   GateShareInboxStatus,
-  AcpEvent,
   ClarifyImage,
   ReactAnnotation,
 } from '../../shared/types'
@@ -58,7 +57,7 @@ export const runsClient = {
     if (params?.status) qs.set('status', params.status)
     if (params?.tag) qs.set('tag', params.tag)
     if (params?.wf) qs.set('wf', params.wf)
-    if (params?.projectId) qs.set('projectId', params.projectId)
+
     if (params?.page != null) qs.set('page', String(params.page))
     if (params?.pageSize != null) qs.set('pageSize', String(params.pageSize))
     const sort = params?.sort
@@ -87,8 +86,8 @@ export const runsClient = {
       `/runs/${runId}/inbox-context?nodeId=${encodeURIComponent(nodeId)}&iteration=${iteration}`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
-  listProjectRunTags: (projectId: string) =>
-    req<{ tags: string[] }>(`/projects/${encodeURIComponent(projectId)}/run-tags`),
+  listProjectRunTags: (_workspaceId: string) =>
+    req<{ tags: string[] }>(`/workspace/run-tags`),
   startRun: (
     workflowId: string,
     inputs: Record<string, any>,
@@ -123,6 +122,11 @@ export const runsClient = {
     req<{ id: string; status: string; priority: string }>(`/runs/${id}/priority`, {
       method: 'PATCH',
       body: JSON.stringify({ priority }),
+    }),
+  updateRunTitle: (id: string, title: string) =>
+    req<{ id: string; title: string }>(`/runs/${id}/title`, {
+      method: 'PATCH',
+      body: JSON.stringify({ title }),
     }),
   cancelRun: (id: string) => req<{ status: string }>(`/runs/${id}/cancel`, { method: 'POST' }),
   // Hard-delete a completed/failed run. Missing → 404; non-deletable status → 409.

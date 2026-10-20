@@ -22,9 +22,10 @@ import (
 
 func TestEnsurePmSandboxOpensAndBuildsPreamble(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
+	_ = pid
 	hn.h.PMMCP = pmmcp.NewHost(hn.h.Pm, hn.h.PmProgress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "沙箱"})
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "沙箱"})
 	if w.Code != 200 {
 		t.Fatalf("thread: %d %s", w.Code, w.Body.String())
 	}
@@ -32,14 +33,14 @@ func TestEnsurePmSandboxOpensAndBuildsPreamble(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", map[string]any{
 		"role": "user", "content": "历史消息",
 	})
 	if w.Code != 200 {
 		t.Fatalf("msg: %d", w.Code)
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/sandbox", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/sandbox", map[string]any{
 		"injectHistory": true,
 		"attachedContext": map[string]any{
 			"kind": "run", "id": "run-1", "label": "某次运行",
@@ -55,7 +56,7 @@ func TestEnsurePmSandboxOpensAndBuildsPreamble(t *testing.T) {
 	}
 
 	// Second call should hit reuse path (same thread sandbox).
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/sandbox", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/sandbox", map[string]any{
 		"injectHistory": false,
 	})
 	if w.Code != 200 {
@@ -65,6 +66,7 @@ func TestEnsurePmSandboxOpensAndBuildsPreamble(t *testing.T) {
 
 func TestPmMCPRPCPostInitialize(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
+
 	progress := services.NewPmProgress(hn.h.Pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PmProgress = progress
 	hn.h.PMMCP = pmmcp.NewHost(hn.h.Pm, progress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
@@ -93,30 +95,31 @@ func TestEnsurePmSandboxUnavailable(t *testing.T) {
 	hn.h.Pm = pm
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = nil
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "NoMCP"})
+	w := hn.seedWorkspace(map[string]any{"name": "NoMCP"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
+
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-agent",
 	})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var thr map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/sandbox", nil)
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/sandbox", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("unavailable want 500 got %d", w.Code)
 	}
@@ -197,6 +200,7 @@ func TestGetPmLeaderProjectMissing(t *testing.T) {
 func setupPmMCPStack(t *testing.T) (*harness, string) {
 	t.Helper()
 	hn, pid, _ := setupPmEnabledHarness(t)
+
 	hn.h.MemoryMCP = memorymcp.NewHost(hn.h.Pm)
 	hn.h.ContextMCP = contextmcp.NewHost(hn.h.Pm)
 	hn.h.SchedulerMCP = schedulermcp.NewHost(hn.db, hn.h.Pm)
@@ -205,7 +209,8 @@ func setupPmMCPStack(t *testing.T) (*harness, string) {
 
 func TestPmDeleteThreadUnregistersPlatformMCP(t *testing.T) {
 	hn, pid := setupPmMCPStack(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "del"})
+
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "del"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -213,7 +218,7 @@ func TestPmDeleteThreadUnregistersPlatformMCP(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/sandbox", map[string]any{})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/sandbox", map[string]any{})
 	if w.Code != 200 {
 		t.Fatalf("sandbox: %d %s", w.Code, w.Body.String())
 	}
@@ -221,7 +226,7 @@ func TestPmDeleteThreadUnregistersPlatformMCP(t *testing.T) {
 		t.Fatal("expected pm token after sandbox")
 	}
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/threads/"+tid, nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/pm/threads/"+tid, nil)
 	if w.Code != 200 {
 		t.Fatalf("delete thread: %d %s", w.Code, w.Body.String())
 	}
@@ -232,6 +237,7 @@ func TestPmDeleteThreadUnregistersPlatformMCP(t *testing.T) {
 
 func TestSchedulerMCPRPCHandler(t *testing.T) {
 	hn, pid := setupPmMCPStack(t)
+
 	agent := "pm-agent"
 	tok := platformmcp.NewToken()
 	hn.h.SchedulerMCP.Restore(tok, pid, agent, "thr-s", "admin", true)
@@ -261,6 +267,7 @@ func TestSchedulerMCPRPCHandler(t *testing.T) {
 
 func TestContextMCPRPCPostInitialize(t *testing.T) {
 	hn, pid := setupPmMCPStack(t)
+
 	tok := platformmcp.NewToken()
 	hn.h.ContextMCP.Restore(tok, pid, "pm-agent", "thr-ctx", "admin")
 	body, _ := json.Marshal(map[string]any{

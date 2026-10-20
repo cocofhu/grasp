@@ -63,6 +63,7 @@ const thread = (over: Record<string, unknown> = {}) => ({
   projectId: 'proj-1',
   userId: 'u1',
   agentName: 'pm',
+  agentAvailable: true,
   kind: 'pm',
   title: '会话',
   createdAt: '2026-01-01T00:00:00Z',
@@ -231,6 +232,128 @@ describe('usePmLeaderChat actions', () => {
     app.unmount()
   })
 
+  it('preserves the current reading position when navigation changes during an earlier-page request', async () => {
+    let resolveEarlier!: (value: { items: ReturnType<typeof message>[]; hasMore: boolean }) => void
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('current-1'), message('current-2', 'assistant')], hasMore: true })
+      .mockImplementationOnce(() => new Promise(resolve => { resolveEarlier = resolve }))
+    const { chat, app } = withChat()
+    await flushPromises()
+    const el = document.createElement('div')
+    Object.defineProperties(el, {
+      scrollTop: { value: 150, writable: true },
+      clientHeight: { value: 100 },
+      scrollHeight: { get: () => chat.messages.value.length * 100 },
+    })
+    chat.scroller.value = el
+    const pending = chat.loadEarlier()
+    // A rail click or manual scroll can move within the loaded window while the network is pending.
+    el.scrollTop = 40
+    resolveEarlier({ items: [message('earlier-1'), message('earlier-2', 'assistant')], hasMore: false })
+    await pending
+    expect(el.scrollTop).toBe(240)
+    expect(chat.messages.value.map(item => item.id)).toEqual(['earlier-1', 'earlier-2', 'current-1', 'current-2'])
+    expect(chat.stickToBottom.value).toBe(false)
+    app.unmount()
+  })
+
+  it('keeps a failed earlier-page request latched through repeated top events until scrolling away and returning', async () => {
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('m2'), message('m3')], hasMore: true })
+      .mockRejectedValueOnce(new Error('older down'))
+      .mockResolvedValueOnce({ items: [message('m1')], hasMore: false })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const el = document.createElement('div')
+    Object.defineProperties(el, {
+      scrollTop: { value: 0, writable: true },
+      scrollHeight: { value: 500, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+    })
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    await flushPromises()
+    expect(chat.historyLoadFailed.value).toBe(true)
+    for (const top of [0, 1, chat.TOP_THRESHOLD]) {
+      el.scrollTop = top
+      chat.onScrollerScroll()
+      await flushPromises()
+    }
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(2)
+    expect(chat.historyLoadFailed.value).toBe(true)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['m2', 'm3'])
+    el.scrollTop = chat.TOP_THRESHOLD + 1
+    chat.onScrollerScroll()
+    await flushPromises()
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(2)
+    expect(chat.historyLoadFailed.value).toBe(true)
+    el.scrollTop = 0
+    chat.onScrollerScroll()
+    await flushPromises()
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(3)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['m1', 'm2', 'm3'])
+    expect(chat.historyLoadFailed.value).toBe(false)
+    app.unmount()
+  })
+
+  it('allows direct retry without scrolling and guards a pending request from repeated retry clicks', async () => {
+    let finishRetry!: (value: unknown) => void
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('m2')], hasMore: true })
+      .mockRejectedValueOnce(new Error('older down'))
+      .mockImplementationOnce(() => new Promise((resolve) => { finishRetry = resolve }))
+    const { chat, app } = withChat()
+    await flushPromises()
+    const el = document.createElement('div')
+    Object.defineProperties(el, {
+      scrollTop: { value: 0, writable: true },
+      scrollHeight: { value: 100, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+    })
+    chat.scroller.value = el
+    await chat.loadEarlier()
+    expect(chat.historyLoadFailed.value).toBe(true)
+    const pending = chat.loadEarlier()
+    expect(chat.historyLoading.value).toBe(true)
+    await chat.loadEarlier()
+    chat.onScrollerScroll()
+    expect(mocks.listPmMessages).toHaveBeenCalledTimes(3)
+    finishRetry({ items: [message('m1')], hasMore: false })
+    await pending
+    expect(chat.historyLoading.value).toBe(false)
+    expect(chat.historyLoadFailed.value).toBe(false)
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['m1', 'm2'])
+    app.unmount()
+  })
+
+  it('clears the failed-scroll latch when another thread starts its own history window', async () => {
+    mocks.listPmThreads.mockResolvedValue({ items: [thread(), thread({ id: 'second' })] })
+    mocks.listPmMessages
+      .mockResolvedValueOnce({ items: [message('m2')], hasMore: true })
+      .mockRejectedValueOnce(new Error('older down'))
+      .mockResolvedValueOnce({ items: [message('b2')], hasMore: true })
+      .mockResolvedValueOnce({ items: [message('b1')], hasMore: false })
+    const { chat, app } = withChat()
+    await flushPromises()
+    const el = document.createElement('div')
+    Object.defineProperties(el, {
+      scrollTop: { value: 0, writable: true },
+      scrollHeight: { value: 500, configurable: true },
+      clientHeight: { value: 100, configurable: true },
+    })
+    chat.scroller.value = el
+    await chat.loadEarlier()
+    expect(chat.historyLoadFailed.value).toBe(true)
+    await chat.activateThread('second')
+    expect(chat.historyLoadFailed.value).toBe(false)
+    el.scrollTop = 0
+    chat.onScrollerScroll()
+    await flushPromises()
+    expect(mocks.listPmMessages).toHaveBeenLastCalledWith('proj-1', 'second', { limit: 20, before: 'b2' })
+    expect(chat.messages.value.map((item) => item.id)).toEqual(['b1', 'b2'])
+    app.unmount()
+  })
+
   it('handles load, create, delete and localStorage failures', async () => {
     mocks.listPmThreads.mockRejectedValueOnce(new Error('threads down'))
     const { chat, app, emit } = withChat()
@@ -294,6 +417,20 @@ describe('usePmLeaderChat actions', () => {
     expect(chat.messages.value[0]?.id).toBe('ok')
     chat.messagesLoading.value = true
     await chat.retryLoadMessages()
+    app.unmount()
+  })
+
+  it('stays in chat when the first mobile message creates its thread', async () => {
+    shared.isMobile.value = true
+    mocks.listPmThreads.mockResolvedValue({ items: [] })
+    const { chat, app } = withChat()
+    await flushPromises()
+    chat.input.value = '当前进展'
+    await chat.send()
+    expect(chat.activeId.value).toBe('th-2')
+    expect(chat.mobileView.value).toBe('chat')
+    expect(chat.showChatSection.value).toBe(true)
+    expect(chat.turnBusy.value).toBe(true)
     app.unmount()
   })
 
@@ -436,6 +573,46 @@ describe('usePmLeaderChat actions', () => {
     expect(chat.sending.value).toBe(false)
     expect(mocks.toastError).toHaveBeenCalledWith('PM 会话排队已满，请稍候')
     expect(chat.messages.value[0]?.failKind).toBe('unknown')
+    app.unmount()
+  })
+
+  it('continues the original thread when the new default Agent is unavailable', async () => {
+    const { chat, app } = withChat({ binding: { enabled: true, agentConfigRef: 'new-pm', agentAvailable: false, aclNote: '' } })
+    await flushPromises()
+    expect(chat.threads.value).toHaveLength(1)
+    expect(chat.canCreateThread.value).toBe(false)
+    expect(chat.canContinueThread.value).toBe(true)
+    chat.input.value = 'continue history'
+    await chat.send()
+    expect(mocks.createPmThread).not.toHaveBeenCalled()
+    expect(mocks.startPmTurn).toHaveBeenCalledWith('proj-1', chat.activeId.value, expect.objectContaining({ content: 'continue history' }))
+    app.unmount()
+  })
+
+  it('keeps history readable while the global sending switch is disabled', async () => {
+    const { chat, app } = withChat({ binding: { enabled: false, agentConfigRef: 'new-pm', agentAvailable: false, aclNote: '' } })
+    await flushPromises()
+    expect(chat.threads.value).toHaveLength(1)
+    expect(mocks.listPmMessages).toHaveBeenCalled()
+    expect(chat.canCreateThread.value).toBe(false)
+    expect(chat.canContinueThread.value).toBe(false)
+    await chat.send('blocked')
+    expect(mocks.startPmTurn).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('blocks send and retry when the original thread Agent is unavailable', async () => {
+    mocks.listPmThreads.mockResolvedValue({ items: [thread({ agentAvailable: false })] })
+    mocks.listPmMessages.mockResolvedValue({ items: [message('failed', 'user', { status: 'failed' })] })
+    const { chat, app } = withChat()
+    await flushPromises()
+
+    expect(chat.canCreateThread.value).toBe(true)
+    expect(chat.canContinueThread.value).toBe(false)
+    expect(chat.messages.value).toHaveLength(1)
+    await chat.send('blocked')
+    await chat.retryTurn('failed')
+    expect(mocks.startPmTurn).not.toHaveBeenCalled()
     app.unmount()
   })
 

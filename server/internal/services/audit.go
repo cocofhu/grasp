@@ -440,7 +440,9 @@ func (s *ProjectAuditService) listFacetResources(f AuditListFilter) ([]AuditFace
 }
 
 func (s *ProjectAuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
-	q = q.Where("project_id = ?", f.ProjectID)
+	if f.ProjectID != "" {
+		q = q.Where("project_id = ?", f.ProjectID)
+	}
 	if f.From != nil {
 		q = q.Where("occurred_at >= ?", *f.From)
 	}

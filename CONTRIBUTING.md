@@ -42,6 +42,13 @@ ROOT="$PWD"
 
 Matching workflows: `ci-server`, `ci-gateway`, `ci-sandbox` (sandbox-go job).
 
+`ci-server` also starts a disposable MySQL 8.4 service and explicitly runs
+`TestMySQLMigration` to verify workspace merge, integrity checks and rollback.
+For a local run, set `GRASP_WORKSPACE_MIGRATION_TEST_DSN` to an empty disposable
+database named `grasp_workspace_migration_test`, then run
+`go test ./internal/workspacemigration/ -count=1 -run '^TestMySQLMigration$' -v`
+from `server/`. The test rejects other database names and nonempty databases.
+
 **Workflows and shell** — always-on [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 (every pull request and push to `main`, no path filter). These do not replace
 module tests or coverage.
@@ -84,18 +91,33 @@ three checks in parallel / fan-in:
 Non-web path changes do not trigger `ci-web`, so these three are not in play;
 the always-on `ci` / `gate` job is **not** a substitute for `web-e2e`.
 
-`test:e2e:ci` specs (target wall time usually under 5–8 minutes with
-`workers: 1`; not the full suite):
+`test:e2e:ci` covers the critical paths below; the exact spec list is maintained
+in [`web/package.json`](web/package.json). This is a subset of the full suite
+(target wall time usually under 5–8 minutes with `workers: 1`). Coverage includes:
 
 - `gate-mobile-fill.spec.ts` — gate mobile approve / reject
 - `clarify-inbox-product.spec.ts` — clarify inbox product surface
 - `delete-run-list.spec.ts` — run list delete / cancel / placeholders
 - `cancel-run.spec.ts` — cancel run across statuses
 - `agent-create-wizard.spec.ts` — agent create wizard happy path
-- `board-token-stats.spec.ts` — board / token stats incl. narrow viewport
+- `board-workspace.spec.ts` — workspace board and its separate usage entry
+- `workspace-{credentials,shared-env,external-mcp,audit}.spec.ts` — workspace
+  configuration, secret masking and execution audit
+- `artifact-library.spec.ts`, `conversation-workspace.spec.ts` — artifact
+  filtering/version previews and chat-side artifact panels
+- `clarify-question-layout.spec.ts` — long question metadata clearance,
+  Chinese/English, narrow screens and selection/submission after resizing
 - `run-detail-mobile.spec.ts` — run detail mobile layout (assertions aligned to
   5 KPI cards: wall / node-sum / gap / total-tokens / token-rate; trim further
   if CI flake appears)
+- `yume-motion.spec.ts` — character tail attachment, sidebar motion, and
+  reduced-motion behavior without shifting the surrounding layout
+- `confirm-flow-clip.spec.ts` — draft-dependent confirm visibility, smooth
+  toolbar transitions, reduced motion, and narrow input layouts
+- `artifacts-page-version.spec.ts` — artifact versions, read-only historical
+  previews, and responsive HTML preview toolbar actions
+- `desktop-sidebar-hide.spec.ts` — hide/reopen persistence and mobile drawer
+  behavior when returning to desktop
 
 Reproduce locally (same entry as CI):
 
@@ -175,9 +197,9 @@ set them Public under GitHub → Packages if anonymous pulls are required.
 
 Default tags used by `./start.sh` (overridable in `.env`):
 
-- `ghcr.io/cocofhu/grasp:2.1.0`
-- `ghcr.io/cocofhu/sandbox-gateway:2.1.0`
-- `ghcr.io/cocofhu/universal-sandbox:2.1.0`
+- `ghcr.io/cocofhu/grasp:2.2.0`
+- `ghcr.io/cocofhu/sandbox-gateway:2.2.0`
+- `ghcr.io/cocofhu/universal-sandbox:2.2.0`
   (one image for every `acpBackend`; `SANDBOX_IMAGE` / `GRASP_SANDBOX_IMAGE` pin or override it — used by release-smoke).
 
 ### release-smoke (manual; not a PR required check)

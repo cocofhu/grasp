@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -239,6 +240,82 @@ func (s *PreviewService) ProbeHTTPPort(ctx context.Context, sandboxName string, 
 	// server — whatever its status — counts as healthy.
 	return true
 }
+
+// injectScript is the runtime bundle's injector script (symlink to the
+// current bundle). Old bundles lack set-upstream and would start a second
+// injector if called with it, hence the marker check.
+const injectScript = "/usr/local/bin/preview-inject.sh"
+
+// SwitchInjectUpstream asks the sandbox injector to serve the app on port
+// behind PREVIEW_PORT (`preview-inject.sh set-upstream`).
+func (s *PreviewService) SwitchInjectUpstream(ctx context.Context, sandboxName string, port int) (mcp.InjectSwitch, error) {
+	if s.mgr == nil || sandboxName == "" || port <= 0 {
+		return mcp.InjectSwitch{}, fmt.Errorf("sandbox not available")
+	}
+	script := fmt.Sprintf(`s=%s
+if [ ! -x "$s" ] || ! grep -q '^# grasp:set-upstream' "$s"; then
+  echo result=%s
+  exit 0
+fi
+exec "$s" set-upstream %d
+`, injectScript, mcp.InjectUnsupported, port)
+	out, err := s.mgr.ExecScript(ctx, sandboxName, 15*time.Second, "bash", script)
+	if err != nil {
+		return mcp.InjectSwitch{}, fmt.Errorf("set-upstream: %w: %s", err, lastNonEmptyLine(out))
+	}
+	return parseInjectSwitch(out)
+}
+
+// parseInjectSwitch reads the last "result=<status> preview_port=<n>" line.
+func parseInjectSwitch(out string) (mcp.InjectSwitch, error) {
+	lines := strings.Split(out, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		line := strings.TrimSpace(lines[i])
+		if !strings.HasPrefix(line, "result=") {
+			continue
+		}
+		var res mcp.InjectSwitch
+		for _, f := range strings.Fields(line) {
+			k, v, _ := strings.Cut(f, "=")
+			switch k {
+			case "result":
+				res.Result = v
+			case "preview_port":
+				res.PreviewPort, _ = strconv.Atoi(v)
+			}
+		}
+		return res, nil
+	}
+	return mcp.InjectSwitch{}, fmt.Errorf("set-upstream: no result line: %s", lastNonEmptyLine(out))
+}
+
+// ProbeInjectUpstream requests PREVIEW_PORT the way reviewers do and checks
+// the injector's X-Grasp-Upstream header names want, so a stale app still on
+// PREVIEW_PORT cannot pass for the switched one.
+func (s *PreviewService) ProbeInjectUpstream(ctx context.Context, sandboxName string, previewPort, want int) bool {
+	if s.mgr == nil || sandboxName == "" || previewPort <= 0 || want <= 0 {
+		return false
+	}
+	base, ok := s.PreviewUpstream(ctx, sandboxName, previewPort)
+	if !ok {
+		return false
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, base+"/", nil)
+	if err != nil {
+		return false
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false
+	}
+	_ = resp.Body.Close()
+	return resp.Header.Get(injectUpstreamHeader) == strconv.Itoa(want)
+}
+
+// injectUpstreamHeader mirrors previewinject.UpstreamHeader in the sandbox.
+const injectUpstreamHeader = "X-Grasp-Upstream"
 
 // ShowPreviewOnDesktop puts the app at http://127.0.0.1:<port>/ on the
 // sandbox desktop in the background, so whoever opens the VNC preview sees it

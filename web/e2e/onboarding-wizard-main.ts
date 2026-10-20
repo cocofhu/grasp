@@ -6,7 +6,7 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import OnboardingWizard from '../src/components/onboarding/OnboardingWizard.vue'
 import type { OnboardingMode } from '../src/lib/pm/onboardingWizard'
-import { DEFAULT_PROJECT_ID } from '../src/lib/pm/onboardingWizard'
+import { useAuth } from '../src/lib/composables/useAuth'
 
 async function boot() {
   await initLocale()
@@ -14,17 +14,17 @@ async function boot() {
   await setLocale(params.get('lang') === 'en' ? 'en' : 'zh-CN')
   setTheme('dark')
 
-  const mode = (params.get('mode') === 'createProject' ? 'createProject' : 'firstInstall') as OnboardingMode
-  const projectId = mode === 'createProject' ? '' : DEFAULT_PROJECT_ID
+  useAuth().setUser({ username: 'onboarding', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
+  const mode: OnboardingMode = params.get('mode') === 'retry' ? 'retry' : 'firstInstall'
 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
       {
-        path: '/projects/:id',
+        path: '/workflows',
         component: {
-          render: () => h('div', { 'data-testid': 'project-agents-landing' }, 'agents'),
+          render: () => h('div', { 'data-testid': 'workflow-list-landing' }, 'agents'),
         },
       },
       {
@@ -43,7 +43,7 @@ async function boot() {
       return () =>
         h('div', [
           h(RouterView),
-          // Mirrors ProjectDetailView empty CTA copy for shell i18n e2e assertions.
+          // Shows the empty workspace CTA alongside the wizard.
           h(
             'p',
             { 'data-testid': 'onboarding-empty-desc' },
@@ -51,7 +51,6 @@ async function boot() {
           ),
           h(OnboardingWizard, {
             open: open.value,
-            projectId,
             mode,
             onClose: () => {
               open.value = false

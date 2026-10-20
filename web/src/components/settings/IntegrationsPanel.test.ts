@@ -45,4 +45,26 @@ describe('IntegrationsPanel', () => {
     expect(w.find('[data-testid="integrations-panel-catalog"]').exists()).toBe(true)
     w.unmount()
   })
+  it('preserves every integration tool, signature, availability, and usage convention', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    for (const [index, integration] of BUILTIN_MCPS.entries()) {
+      await w.findAll('[data-testid="integrations-mcp-card"]')[index]!.trigger('click')
+      const detail = w.get('[data-testid="integrations-panel-detail"]')
+      const rows = detail.findAll('[data-testid="integration-tool-row"]')
+      expect(rows).toHaveLength(integration.tools.length)
+      for (const [toolIndex, tool] of integration.tools.entries()) {
+        expect(rows[toolIndex]!.text()).toContain(tool.name)
+        expect(rows[toolIndex]!.findAll('code').length).toBeGreaterThan(0)
+        expect(rows[toolIndex]!.text()).toContain(tool.io)
+      }
+      if (integration.scope === 'project') expect(detail.text()).toContain('设置 → 助手设置')
+      if (integration.scope === 'agent') expect(detail.text()).toContain('Agent Studio → MCP')
+      if (integration.scope === 'run') expect(detail.text()).toContain('全程可用')
+      if (integration.conventionKey) expect(detail.find('p').exists()).toBe(true)
+      await w.get('[data-testid="integrations-panel-back"]').trigger('click')
+    }
+    w.unmount()
+  })
+
 })

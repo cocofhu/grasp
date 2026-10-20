@@ -1,7 +1,6 @@
 package services
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"sort"
@@ -24,7 +23,7 @@ const (
 	TokenStatsBucketDay  = "day"
 	TokenStatsBucketWeek = "week"
 
-	// tokenStatsTimeout is the server-side soft deadline for large project scans.
+	// tokenStatsTimeout is the server-side soft deadline for large ledger scans.
 	tokenStatsTimeout = 30 * time.Second
 )
 
@@ -38,14 +37,6 @@ var (
 	// (clients should treat as retryable).
 	ErrTokenStatsTimeout = errors.New("token-stats aggregation timed out")
 )
-
-// TokenStatsQuery is the input for project-level token chart aggregation.
-type TokenStatsQuery struct {
-	Window           string // 24h|7d|30d|90d|all
-	Timezone         string // preferred IANA name
-	UTCOffsetMinutes *int   // fallback fixed offset (east of UTC positive)
-	Now              time.Time
-}
 
 // TokenStatsBucket is one hour, day, or week bucket with totals, source split, and
 // four components (sum of all reported sources in the bucket).
@@ -64,7 +55,7 @@ type TokenStatsBucket struct {
 	Cost        float64 `json:"cost,omitempty"`
 }
 
-// TokenStatsComposition is the four-component sum for the window (workflow+PM).
+// TokenStatsComposition is the four-component sum for the selected window.
 type TokenStatsComposition struct {
 	InputTokens      int64 `json:"inputTokens"`
 	OutputTokens     int64 `json:"outputTokens"`
@@ -117,215 +108,6 @@ type TokenStatsModel struct {
 	Source string `json:"source,omitempty"`
 	// Cost is the estimated spend (global stats only).
 	Cost float64 `json:"cost,omitempty"`
-}
-
-// TokenStatsResult is the single-response payload for trend/composition/workflows
-// plus model composition/ranking.
-type TokenStatsResult struct {
-	Window      string                `json:"window"`
-	BucketWidth string                `json:"bucketWidth"`
-	Timezone    string                `json:"timezone"`
-	Empty       bool                  `json:"empty"`
-	Trend       []TokenStatsBucket    `json:"trend"`
-	Composition TokenStatsComposition `json:"composition"`
-	Workflows   []TokenStatsWorkflow  `json:"workflows"`
-	// ModelComposition is per-model four-component totals (window scope).
-	ModelComposition []TokenStatsModel `json:"modelComposition"`
-	// ModelRanking is Top10 models by total + optional other remainder.
-	// Unknown is a normal bucket: shown as「未知/未分桶」only when it ranks
-	// in Top10; otherwise its total is included in other.
-	ModelRanking []TokenStatsModel `json:"modelRanking"`
-}
-
-type tokenUsageRow struct {
-	ts           time.Time
-	usage        models.TokenUsage
-	byModel      models.TokenUsageByModel // effective (unattributed → unknown)
-	workflowID   string
-	workflowName string
-	source       string // workflow | pm
-}
-
-// TokenStats aggregates the project's workflow + PM token ledger rows for
-// one project into trend (workflow/pm split), composition (four parts), and
-// consumption rank (workflow Top10 + PM + other). Stdio is never counted.
-// Timestamp prefers StateRun.StartedAt / message CreatedAt.
-func (s *ProjectService) TokenStats(ctx context.Context, projectID string, q TokenStatsQuery) (TokenStatsResult, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	ctx, cancel := context.WithTimeout(ctx, tokenStatsTimeout)
-	defer cancel()
-
-	window := strings.TrimSpace(q.Window)
-	if window == "" {
-		window = TokenStatsWindow30d
-	}
-	spec, err := parseTokenStatsWindow(window)
-	if err != nil {
-		return TokenStatsResult{}, err
-	}
-	bucketWidth := spec.bucketWidth
-
-	loc, tzLabel, err := resolveTokenStatsLocation(q.Timezone, q.UTCOffsetMinutes)
-	if err != nil {
-		return TokenStatsResult{}, err
-	}
-
-	now := q.Now
-	if now.IsZero() {
-		now = time.Now().UTC()
-	}
-	nowLocal := now.In(loc)
-
-	rows, err := s.loadTokenUsageRows(ctx, projectID)
-	if err != nil {
-		return TokenStatsResult{}, err
-	}
-
-	win := buildWindowSlice(nowLocal, spec)
-	windowStart := win.start
-	hasStart := win.hasStart
-	windowEnd := win.end
-	hasEnd := spec.duration > 0
-
-	type agg struct {
-		input, output, cacheRead, cacheWrite int64
-		workflow, pm                         int64
-	}
-	buckets := map[string]*agg{}
-	wfTotals := map[string]int64{}
-	wfNames := map[string]string{}
-	wfLatest := map[string]time.Time{}
-	var pmTotal int64
-	var hasPM bool
-	var composition agg
-	var hasAny bool
-	modelTotals := map[string]*tokenModelAgg{}
-
-	for _, row := range rows {
-		if err := ctx.Err(); err != nil {
-			return TokenStatsResult{}, ErrTokenStatsTimeout
-		}
-		local := row.ts.In(loc)
-		if hasStart && local.Before(windowStart) {
-			continue
-		}
-		if hasEnd && local.After(windowEnd) {
-			continue
-		}
-		hasAny = true
-		key := bucketKey(local, bucketWidth)
-		b := buckets[key]
-		if b == nil {
-			b = &agg{}
-			buckets[key] = b
-		}
-		b.input += row.usage.InputTokens
-		b.output += row.usage.OutputTokens
-		b.cacheRead += row.usage.CacheReadTokens
-		b.cacheWrite += row.usage.CacheWriteTokens
-
-		composition.input += row.usage.InputTokens
-		composition.output += row.usage.OutputTokens
-		composition.cacheRead += row.usage.CacheReadTokens
-		composition.cacheWrite += row.usage.CacheWriteTokens
-
-		for mk, mu := range row.byModel {
-			ma := modelTotals[mk]
-			if ma == nil {
-				ma = &tokenModelAgg{source: mu.Source}
-				modelTotals[mk] = ma
-			}
-			ma.total += mu.Total()
-			ma.filled = ma.filled || mu.Filled
-			if mu.Filled {
-				ma.source = models.TokenUsageSourceBridge
-			} else if ma.source == "" {
-				ma.source = mu.Source
-			}
-		}
-
-		total := row.usage.Total()
-		if row.source == TokenStatsKindPM {
-			b.pm += total
-			pmTotal += total
-			hasPM = true
-			continue
-		}
-		b.workflow += total
-
-		wfID := row.workflowID
-		if wfID == "" {
-			wfID = "_unknown"
-		}
-		wfTotals[wfID] += total
-		if prev, ok := wfLatest[wfID]; !ok || !local.Before(prev) {
-			wfLatest[wfID] = local
-			name := strings.TrimSpace(row.workflowName)
-			if name == "" {
-				name = wfID
-			}
-			wfNames[wfID] = name
-		}
-	}
-
-	out := TokenStatsResult{
-		Window:           window,
-		BucketWidth:      bucketWidth,
-		Timezone:         tzLabel,
-		Empty:            !hasAny,
-		Trend:            []TokenStatsBucket{},
-		Composition:      TokenStatsComposition{},
-		Workflows:        []TokenStatsWorkflow{},
-		ModelComposition: []TokenStatsModel{},
-		ModelRanking:     []TokenStatsModel{},
-	}
-	if !hasAny {
-		// Empty window: no forged all-zero series.
-		return out, nil
-	}
-
-	out.Composition = TokenStatsComposition{
-		InputTokens:      composition.input,
-		OutputTokens:     composition.output,
-		CacheReadTokens:  composition.cacheRead,
-		CacheWriteTokens: composition.cacheWrite,
-		Total: composition.input + composition.output +
-			composition.cacheRead + composition.cacheWrite,
-	}
-
-	presentKeys := make(map[string]struct{}, len(buckets))
-	for k := range buckets {
-		presentKeys[k] = struct{}{}
-	}
-	keys := fillBucketKeys(nowLocal, windowStart, hasStart, bucketWidth, presentKeys)
-	out.Trend = make([]TokenStatsBucket, 0, len(keys))
-	for _, k := range keys {
-		b := buckets[k]
-		if b == nil {
-			out.Trend = append(out.Trend, TokenStatsBucket{Bucket: k})
-			continue
-		}
-		out.Trend = append(out.Trend, TokenStatsBucket{
-			Bucket:           k,
-			Total:            b.workflow + b.pm,
-			WorkflowTotal:    b.workflow,
-			PmTotal:          b.pm,
-			InputTokens:      b.input,
-			OutputTokens:     b.output,
-			CacheReadTokens:  b.cacheRead,
-			CacheWriteTokens: b.cacheWrite,
-		})
-	}
-
-	out.Workflows = buildConsumptionRank(wfTotals, wfNames, pmTotal, hasPM)
-	unknownAlias := ""
-	if proj, ok := s.Get(projectID); ok {
-		unknownAlias = proj.UnknownModelDisplayName
-	}
-	out.ModelComposition, out.ModelRanking = buildModelStats(modelTotals, unknownAlias)
-	return out, nil
 }
 
 // tokenStatsWindowSpec is the parsed window preset.
@@ -654,27 +436,4 @@ func buildConsumptionRank(totals map[string]int64, names map[string]string, pmTo
 	// Fixed slot order: Top workflows (already desc) → PM (if any) → other (if any).
 	// Do not re-sort by Total — that would insert PM between workflow rows (12PM34).
 	return out
-}
-
-// loadTokenUsageRows reads the project's workflow + PM ledger rows. Studio chat
-// is platform-wide analytics only and stays off the project board.
-func (s *ProjectService) loadTokenUsageRows(ctx context.Context, projectID string) ([]tokenUsageRow, error) {
-	var out []tokenUsageRow
-	err := loadLedgerEvents(ctx, s.db, ledgerRowFilter{
-		projectID: projectID,
-		sources:   []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM},
-	}, func(ev models.TokenUsageEvent) {
-		out = append(out, tokenUsageRow{
-			ts:           ev.CreatedAt,
-			usage:        ledgerUsage(ev),
-			byModel:      ledgerByModel(ev),
-			workflowID:   ev.WorkflowID,
-			workflowName: ev.WorkflowName,
-			source:       orDefault(ev.Source, models.TokenLedgerSourceWorkflow),
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	return out, nil
 }

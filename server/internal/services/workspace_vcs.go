@@ -35,6 +35,7 @@ var (
 	ErrVcsReasonRequired = errors.New("变更原因不能为空")
 	ErrVcsRevisionMiss   = errors.New("目标版本不存在")
 	ErrVcsGitFailed      = errors.New("版本记录失败")
+	ErrVcsNoChanges      = git.ErrEmptyCommit
 )
 
 // VcsCommitMeta is metadata stored in each workspace revision.
@@ -78,7 +79,7 @@ func wrapVcs(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%w: %s", ErrVcsGitFailed, err.Error())
+	return fmt.Errorf("%w: %w", ErrVcsGitFailed, err)
 }
 
 func vcsFilesystems(gitDir, workTree string) (*filesystem.Storage, billy.Filesystem) {

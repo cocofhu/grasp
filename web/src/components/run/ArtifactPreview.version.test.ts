@@ -63,7 +63,7 @@ function mountPreview(artifact: Artifact | null, extra: Record<string, unknown> 
         HtmlPreview: {
           props: ['html', 'inspectable'],
           template:
-            '<div data-testid="html-preview-stub" :data-inspectable="inspectable ? \'1\' : \'0\'">{{ html }}</div>',
+            '<div data-testid="html-preview-stub" :data-inspectable="inspectable ? \'1\' : \'0\'"><div data-testid="html-preview-toolbar-stub"><slot name="toolbar-actions" /></div><div data-testid="html-preview-content-stub">{{ html }}</div></div>',
         },
         StructuredArtifactView: true,
         AppModal: {
@@ -115,8 +115,12 @@ describe('ArtifactPreview version switch', () => {
     const wrapper = mountPreview(live)
     await flushPromises()
 
-    expect(wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').text()).toContain('v2 · 最新')
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>new</p>')
+    const toolbar = wrapper.get('[data-testid="html-preview-toolbar-stub"]')
+    expect(wrapper.find('[data-testid="artifact-preview-identity-bar"]').exists()).toBe(false)
+    expect(toolbar.get('[data-testid="artifact-preview-version-chip-btn"]').text()).toContain('v2 · 最新')
+    expect(toolbar.find('[data-testid="artifact-preview-copy"]').exists()).toBe(true)
+    expect(toolbar.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="html-preview-content-stub"]').text()).toBe('<p>new</p>')
 
     await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
     await flushPromises()
@@ -128,17 +132,17 @@ describe('ArtifactPreview version switch', () => {
     ;(document.querySelector('[data-testid="artifact-preview-version-option-v1"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(apiMocks.artifactVersionContent).toHaveBeenCalledWith('live', 1, undefined)
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>old</p>')
-    expect(wrapper.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="html-preview-content-stub"]').text()).toBe('<p>old</p>')
+    expect(toolbar.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="artifact-preview-delete"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
     await flushPromises()
     ;(document.querySelector('[data-testid="artifact-preview-version-option-v2"]') as HTMLButtonElement).click()
     await flushPromises()
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>new</p>')
+    expect(wrapper.get('[data-testid="html-preview-content-stub"]').text()).toBe('<p>new</p>')
     expect(wrapper.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="artifact-preview-delete"]').exists()).toBe(true)
+    expect(toolbar.find('[data-testid="artifact-preview-delete"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -147,7 +151,7 @@ describe('ArtifactPreview version switch', () => {
     const wrapper = mountPreview(live)
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>only</p>')
+    expect(wrapper.get('[data-testid="html-preview-content-stub"]').text()).toBe('<p>only</p>')
     wrapper.unmount()
   })
 
@@ -172,7 +176,9 @@ describe('ArtifactPreview version switch', () => {
     })
     const wrapper = mountPreview(json)
     await flushPromises()
-    expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(true)
+    const header = wrapper.get('[data-testid="artifact-preview-identity-bar"]')
+    expect(header.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="html-preview-stub"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -182,7 +188,7 @@ describe('ArtifactPreview version switch', () => {
     const wrapper = mountPreview(live)
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="html-preview-stub"]').text()).toBe('<p>fallback</p>')
+    expect(wrapper.get('[data-testid="html-preview-content-stub"]').text()).toBe('<p>fallback</p>')
     wrapper.unmount()
   })
 })

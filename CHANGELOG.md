@@ -4,16 +4,246 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Conversation actions:** uses one readable purple for submissions and flow
+  confirmation, neutral secondary/disabled buttons and quieter recommendation
+  labels, including compact approval layouts.
+
+- **Home background:** removes the separate gray-purple backdrop and aligns
+  the home page, workflow edge fades and controls with the app theme.
+
+- **Chat design:** unifies readable message typography, neutral user messages,
+  composer actions, line icons, tool/thought states and artifact controls across
+  chats. Motion is restrained and honors reduced-motion preferences; icon
+  changes now update their shapes and sizes correctly during live replies.
+
+- **Inbox conversation:** removes the redundant run/node heading and run-detail
+  shortcut above the chat, including the desktop loading heading.
+
+- **Conversation navigation:** previews only the last nonempty assistant reply
+  for each question, preserving its paragraphs and Markdown text while leaving
+  earlier progress messages out of the summary.
+
+- **Notifications:** uses a clean inbox with small unread indicators, quiet
+  status labels and a separate filter/action toolbar. Mobile rows show time and
+  their destination, while long titles and run identifiers stay within the list.
+
+- **Audit workspace:** separates view controls from filters, uses quiet inline
+  counts and compact groups on the page surface, and removes repeated visible
+  table headings. Event details and filter menus support keyboard navigation,
+  with theme-aware mobile records and bounded dropdown positioning.
+
+- **Usage statistics:** detail tables expand with their rows, leaving one main
+  vertical scroll area. Wide tables scroll horizontally within their own bounds
+  on narrow screens without stretching the page. Long model names retain a
+  readable prefix and show their full name on hover.
+
+- **Workflow notification selector:** replaces the native dropdown with a
+  compact themed menu, a checkmark and soft accent selection. Keyboard focus,
+  dismissal and viewport placement work across desktop and mobile layouts.
+
+- **Run board:** status columns have subtle outlines and tinted headings, with
+  inset task content and fine row dividers for clearer grouping in both themes.
+  Long unbroken titles wrap without overlapping status or priority badges.
+
+- **Inbox conversation:** detail views use a flat surface without an outer
+  rounded border or card shadow on desktop and mobile, including initial loading.
+
+- **Conversation navigation:** hover summaries display readable Markdown text
+  across chats, preserving filenames and code symbols while removing formatting
+  markers. Summaries are shortened after parsing; full replies keep their layout.
+
+- **Chat theme:** conversations share the app's light and dark palette, with
+  lavender user messages, clearer prose and compact metadata. Composer focus,
+  artifact references and message navigation use the existing brand accent.
+  Code blocks and wide tables scroll within their messages on narrow screens.
+
+- **Conversation workspace:** chats use a shared reading column with question
+  navigation, hover previews and stable jumps through loaded history. Artifact
+  references open in a resizable right pane; narrow canvases use a returnable
+  preview while preserving drafts and reading position. Version menus dismiss
+  with their pane, filenames retain explicit run provenance, and public approval
+  links keep their scoped APIs and reset on credential changes.
+
+- **Application background:** all app routes use a clean, solid canvas in light
+  and dark themes, including trailing-slash and case-insensitive workflow links.
+  Removes the route-specific background whitelist and decorative shell dot grid.
+
+- **Artifact library and settings tools:** artifacts use a compact file directory
+  and wide preview, with searchable source filtering on demand and a list/preview
+  switch on smaller canvases. Structured reports use document sections. Settings
+  lists and Agent editors remove repeated card frames; narrow Agent layouts retain
+  their configuration tabs and file history. Failed source changes never display
+  another source's cached files, and deleting a final paged file returns to the list.
+
+- **Browser icon:** uses the Grasp character in a transparent multi-resolution
+  favicon, served through the existing ICO endpoint with an updated cache key.
+
+- **Workflow, drafts and assistant layout:** workflows use a flat directory with
+  compact notification controls and responsive rows. Requirement drafts use a
+  document workspace with an on-demand planning inspector and distinct empty,
+  filtered and error states. Assistant setup and conversations use an open canvas
+  with a single composer and lightweight suggestions instead of large panels.
+  Sidebar directories now use neutral surfaces, and narrower editors adapt to
+  their actual available width; mobile chat controls stay clear of floating navigation.
+  Failed history loading keeps its retry state until a deliberate retry.
+
+- **Settings layout:** the narrow navigation rail stays beside a 248px category
+  directory, with workspace tools first, then execution and platform settings.
+  Centered forms use flat groups and fine separators, aligned labels and controls,
+  and natural page scrolling. General settings scroll correctly; assistant,
+  notification and external MCP forms share the layout without sidebar search.
+
+- **Workspace tools:** board focuses on current runs and human attention;
+  Token, model and cost analysis lives in Usage, with clearer filters and
+  chart sections. Assistant setup and first-chat screens replace the empty
+  split view and repeated settings buttons; paused conversations remain
+  readable. Agent lists show full titles and group secondary actions under More.
+  The duplicate board usage endpoint and unused charts are removed.
+
+- **Settings navigation:** switching to board, workflows, drafts, or assistant
+  keeps the settings directory open. The navigation rail and mobile drawer
+  share this context; returning home or selecting a main section exits it.
+
+- **Single workspace:** removes project selection and project management. The
+  compact sidebar lists every workflow without search; workflow search stays on
+  the management page. Board, drafts, assistant, and shared configuration have
+  dedicated pages and Settings entries. Existing installations use an offline
+  plan/apply/verify/rollback tool that preserves history and converts differing
+  defaults into ordinary workflow overrides and Agent credential bindings.
+  Project API and external MCP addresses are replaced by workspace endpoints.
+  See [upgrade instructions](server/WORKSPACE_MIGRATION.md) before deployment.
+
+- **HTML preview toolbar:** removes the repeated file-information row and puts
+  copy and download immediately before the enlarge control. Version selection
+  and historical read-only controls remain available, including on narrow panels.
+- **Unified chat actions:** Confirm & continue now sits inside the input panel
+  alongside send and attachments, with wrapping for narrow panels. Draft text,
+  attachments, annotations and pending sends hide confirmation with a smooth
+  collapse and reveal. Sending shows progress inside its button, and reduced
+  motion switches immediately. Unsent content remains protected from confirmation.
+- **Yume motion:** the home mascot's tail stays attached throughout its wag,
+  press and jump. Home and sidebar characters gain gentle breathing, double
+  blinks and hover greetings; reduced-motion mode keeps both still.
+- **Two-level navigation:** a compact desktop icon rail sits beside the
+  workflow directory and recent runs. New request, pinning, contextual actions,
+  account controls, and a single-column mobile drawer remain available.
+- **Priority and chat controls:** the home priority chooser gains a compact
+  lightning icon and a layered three-level panel; keyboard opening and short
+  windows scroll the active option into view. Chat avatars, bubbles, input and actions
+  share a softer purple palette with a thinner pane separator.
+- **Resource card icons:** IDE, terminal, browser and logs share upright SVG
+  windows with consistent size, strokes and neutral surfaces, replacing the
+  mixed paper, dark terminal and planet illustrations.
+- **Home and artifact visuals:** the home page uses a quieter deep-purple
+  palette, layered workflow illustrations and subtle hover feedback while
+  keeping its mascot, layout and controls. Resource and artifact cards gain
+  softer surfaces and animated illustrations, with static reduced-motion states.
+- **Agent wizard service address:** the OpenCode API Key step now hints the
+  picked vendor's real default base URL (from the model catalog) as the service
+  address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor
+  with no published address, or a self-hosted gateway, falls back to neutral
+  copy. The field stays optional and blank by default.
+- **Control-plane restarts no longer wait for agents:** on SIGTERM Grasp now
+  stops scheduling, finishes in-flight HTTP requests (at most 10s) and exits,
+  instead of draining agent runs for up to 10 minutes (which outlasted
+  `kubectl rollout status` timeouts). Sandboxes keep running. On startup, an
+  autonomous agent node whose sandbox is still alive is reattached and its
+  current visit continues: a turn still running is awaited, a finished one is
+  read back from the sandbox event log, and the main prompt is not resent.
+  Queued runs stay queued. Other in-flight nodes (clarify, human-facing,
+  non-agent) re-enter at the same node. If reattach fails, the node retries in
+  a fresh sandbox as before.
+- **Live request card while generating:** in the preview chat drawer, a Live
+  request (for example「趣味细节」from the element card) now shows its card
+  right away with a loading animation (skeleton rows and a sweep; static
+  under reduced motion) instead of an empty「我」bubble. The full card with
+  switch / adopt controls still appears under the agent reply once the
+  candidates are ready (#813).
+- **Candidate switcher clicks:** the in-page switcher no longer rebuilds its
+  buttons when nothing changed, so ‹ / › and「原版」clicks are no longer lost
+  on pages that keep changing (animated candidates, HMR), and switching no
+  longer cuts off the candidate fade (#813).
+- **Preview pick on any port:** with IP-direct preview, `set_preview(port=X)`
+  now gives the reviewer's new-tab link (`IP:$PREVIEW_PORT`) the page on port X
+  with pick injected, even when the app does not listen on `$PREVIEW_PORT`
+  (e.g. Vite on 5173). Only the last registered port per sandbox has pick;
+  if `$PREVIEW_PORT` already serves another app it keeps the entry. Sandbox
+  service ports (SSH, VNC, IDE, CDP, sandbox backend) are rejected. Agent
+  prompts now say not to register backends and to self-test on
+  `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
+  behavior until the bundle updates.
+
+## 2.2.0 — 2026-10-15
+
+<img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />
+
+- **Home mascot:** the home page, the desktop sidebar, and the login page now
+  use this black-and-white ghost cat (yume). White body, ink outline, grey
+  cheeks, a small tail. The home hero is the cropped cat (240×200) with no
+  wordmark and no logo-mark. It floats, blinks, and wags its tail; hovering
+  makes the eyes follow the pointer; pressing squishes it and it springs
+  back. Reduced motion keeps a still cat. Light theme drops the sparkles and
+  uses a light shadow. The sidebar shows it at 28px and the login page at
+  48px (#794, #798).
+- **Home subtitle:** the sentence under the home mascot now shows the brand
+  setting「首页副标题」(`home_subtitle`) and falls back to the locale default
+  (zh「先说清，再动手」/ en「Clarify first, then act」) when it is blank. The copy
+  is one uniform color and no longer highlights only its first half.
+- **Run canvas handoff:** a node with post-run review (e.g. the 实现 node) no
+  longer loses its handoff when the reviewer clicks「确认并流转」. The handoff
+  and its source are preserved through review confirm, revise refresh, and
+  clarify/react resume, and the platform fallback still writes one when a node
+  with a downstream left none. The「实现 → 测试评审」edge shows the handoff chip
+  again and the downstream prompt gets the upstream handoff, including after a
+  test-fail loop-back (#796 follow-up).
+- **App preview:** the "may be stuck" warning now appears after 60 seconds of
+  connecting instead of 20, matching the advertised 30–60 second first launch.
+  The "please wait" hint is hidden once the warning shows (#802).
+- **Run canvas handoff:** traversed-edge handoffs are now a compact "⇄ 交接"
+  icon chip instead of a truncated slice of the text. Opening it shows a card
+  above the nodes with the "source → target" route, the handoff rendered as
+  Markdown (headings, lists, inline code; sanitized), and a source footer.
+  Platform-written handoffs are dashed with a warning icon and a "平台代写 ·
+  上游未提供交接" tag. Empty handoffs show no chip.
+- **Home attachments:** adding an image on the home composer at a window height
+  that just fits the page no longer brings up a scrollbar. The 120px top gap
+  shrinks first (down to 48px) and the column only scrolls after that (#800).
 - **Codex login failures:** when Codex rejects or cannot refresh the ChatGPT
   login (CLI `401 Unauthorized` from `api.openai.com`), the Agent node now fails
   on the first failed turn with "Codex 登录已失效或无法刷新，请重新粘贴登录文件"
   instead of re-prompting, reporting "MCP 工具面为空", and auto-retrying. The
   run failure banner links to the project credentials tab.
+- **CLI models:** Agent settings, the project shared Agent config, the create
+  wizard, and the workflow node inspector pick a model from a dropdown
+  (vendor marks, recommended cards, search). Codex also picks a reasoning
+  effort. The lists are the CLI's real model IDs. A shared default applies
+  only to Agents on the same CLI; an Agent that has not picked its own model
+  says it follows the project model (#789, #790).
+- **Sandbox lifetime:** a run sandbox stays up by lease (debug after the node
+  ends, activity while the terminal, IDE, chat, or preview is in use, preview
+  after `set_preview`, and a manual extension) instead of a fixed 30 minutes.
+  The sandbox list and console show time left and offer +30 minutes, +2 hours,
+  and keep until the run ends. The cap is **Settings → Sandbox recycle →
+  Run sandbox max retention** (default 24 hours, 1–168) (#796).
+- **Test node:** destroying one node's sandbox no longer revokes MCP for the
+  rest of the run, and the test node follows the implement branch instead of
+  falling back to `main` (#796).
+- **Page Harness images:** an image opened from the Page Harness chat is a
+  floating window next to the artifact window, not inside the chat card.
+  Opening the artifact after the image offsets it by 36px so both title bars
+  stay visible (#795).
+- **Project agents:** a workflow created from the baseline binds Agents in
+  this project (reuse one with the same name, or create it from the shared
+  Agent config). Saving or starting a run rejects an Agent that belongs to
+  another project. If the clarify node's sandbox fails to start, the run is
+  marked failed. A sandbox config or credential error is not retried. The
+  start-run dialog accepts an optional first message (#787).
 - **Shared sandbox compatibility and recovery:** an Agent node joins the run's shared sandbox only when its backend, image, Agent config home (rules, skills, MCP, settings), container env, and credentials match; otherwise it runs in its own private container as before. Each node's bridge chat uses that node's model. A failed turn (idle, stuck, dropped connection) keeps the shared workspace when the container is still healthy and only replaces the generation when it is not. A node parked for review releases the lease so later nodes can run before the gate. Codex nodes that reuse the container refresh their login file. On server restart only the shared container of a run still in progress is kept; private node containers and finished runs are destroyed, and Cancel after restart cleans up a detached shared container.
 - **Shared sandbox AbortRun keeps preview:** with a run-level coordinator, Cancel/Abort retires the shared container when preview keepalive is healthy (including KeepAliveForReview parked sessions) instead of Destroying it; connect/chat failures release the lease without discarding the generation; a create raced with AbortRun cleans up the orphaned container and ConfigHome.
 - **Shared sandbox node env overlay:** sequential Agent nodes with different credentials reuse one run-level sandbox; node secrets are injected per ACP session and cleared on chat teardown, and platform-reserved keys cannot be overridden.
-
 - **Run-level shared workflow sandboxes:** Agent nodes in one workflow run now reuse one isolated workspace with serialized leases, independent bridge chats, durable generation/replacement records, restart recovery, and one terminal cleanup.
+- Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
+  images to `*:2.2.0`.
 
 ## 2.1.0 — 2026-10-12
 

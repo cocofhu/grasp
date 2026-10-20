@@ -186,7 +186,7 @@ func TestV1CancelRun(t *testing.T) {
 	}
 
 	// V1 cancel must write run.cancel with system+unattributable (no Session).
-	aw := hn.do(http.MethodGet, "/api/projects/"+models.DefaultProjectID+"/audit?time=all&action=run.cancel&page=1&pageSize=20", nil)
+	aw := hn.do(http.MethodGet, "/api/workspace/audit?time=all&action=run.cancel&page=1&pageSize=20", nil)
 	if aw.Code != http.StatusOK {
 		t.Fatalf("list audit: %d %s", aw.Code, aw.Body.String())
 	}
@@ -230,7 +230,7 @@ func TestV1StartRunWritesAudit(t *testing.T) {
 		t.Fatalf("no run id: %s", w.Body.String())
 	}
 
-	aw := hn.do(http.MethodGet, "/api/projects/"+models.DefaultProjectID+"/audit?time=all&action=run.start&page=1&pageSize=50", nil)
+	aw := hn.do(http.MethodGet, "/api/workspace/audit?time=all&action=run.start&page=1&pageSize=50", nil)
 	var page struct {
 		Items []map[string]any `json:"items"`
 		Total int              `json:"total"`

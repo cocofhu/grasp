@@ -49,7 +49,7 @@ async function mockApi(page: Page) {
 }
 
 test.describe('hover-ink scroll-shift fix', () => {
-  test('workspace nav icons stay left-aligned after left-edge click/hover', async ({ page }) => {
+  test('workspace entry stays aligned after left-edge hover and app-rail navigation', async ({ page }) => {
     await mockApi(page)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/hover-ink-scroll-shift.html?start=/dashboard')
@@ -79,21 +79,18 @@ test.describe('hover-ink scroll-shift fix', () => {
 
     const before = await measure()
     expect(before).not.toBeNull()
-    expect(before!.length).toBeGreaterThanOrEqual(4)
+    expect(before).toHaveLength(1)
     expect(before!.every((x) => x.overflow === 'clip')).toBe(true)
 
     const active = before!.find((x) => x.active)
-    const idle = before!.find((x) => !x.active)
     expect(active).toBeTruthy()
-    expect(idle).toBeTruthy()
-    expect(Math.abs(active!.iconLeft - idle!.iconLeft)).toBeLessThanOrEqual(1)
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-dashboard-active.png'),
       fullPage: false,
     })
 
-    // Left-edge pointerenter on active「开始」— max left overflow for ink circle.
+    // Left-edge pointerenter on active「新需求」— max left overflow for ink circle.
     const dashboardLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').first()
     const box = await dashboardLink.boundingBox()
     expect(box).toBeTruthy()
@@ -104,8 +101,6 @@ test.describe('hover-ink scroll-shift fix', () => {
     expect(afterHover).not.toBeNull()
     expect(afterHover!.every((x) => x.scrollLeft === 0)).toBe(true)
     const activeAfter = afterHover!.find((x) => x.active)!
-    const idleAfter = afterHover!.find((x) => !x.active)!
-    expect(Math.abs(activeAfter.iconLeft - idleAfter.iconLeft)).toBeLessThanOrEqual(1)
     expect(Math.abs(activeAfter.iconLeft - active!.iconLeft)).toBeLessThanOrEqual(1)
 
     await page.screenshot({
@@ -113,8 +108,8 @@ test.describe('hover-ink scroll-shift fix', () => {
       fullPage: false,
     })
 
-    // plan g2.1: click 「运行」, pointerleave, icon left vs 「开始」 ≤ 1px (real geometry).
-    const runsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(2)
+    // Primary destinations now live in the outer rail; inner Home keeps hover ink.
+    const runsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '运行', exact: true })
     const runsBox = await runsLink.boundingBox()
     expect(runsBox).toBeTruthy()
     await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
@@ -126,58 +121,27 @@ test.describe('hover-ink scroll-shift fix', () => {
 
     const afterRunsLeave = await measure()
     expect(afterRunsLeave).not.toBeNull()
-    const runsRow = afterRunsLeave!.find((x) => x.active)
     const homeRow = afterRunsLeave!.find((x) => !x.active)
-    expect(runsRow).toBeTruthy()
     expect(homeRow).toBeTruthy()
-    expect(Math.abs(runsRow!.iconLeft - homeRow!.iconLeft)).toBeLessThanOrEqual(1)
-    expect(runsRow!.inkD === '' || runsRow!.inkD === '0px').toBe(true)
+    expect(Math.abs(homeRow!.iconLeft - active!.iconLeft)).toBeLessThanOrEqual(1)
+    expect(homeRow!.scrollLeft).toBe(0)
+    expect(homeRow!.inkD === '' || homeRow!.inkD === '0px').toBe(true)
+    await expect(runsLink).toHaveAttribute('aria-current', 'page')
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-after-runs-leave.png'),
       fullPage: false,
     })
 
-    // Click through 待办 / 设置; leave after each click (sticky-shift contract).
-    const paths = ['/gates', '/settings'] as const
-    const pageIds = ['page-gates', 'page-settings'] as const
-    for (let i = 0; i < paths.length; i++) {
-      const link = page.locator(`[data-testid="nav-workspace-chrome"] a.nav-item[href="${paths[i]}"]`)
-      const target =
-        (await link.count()) > 0
-          ? link
-          : page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').nth(paths[i] === '/gates' ? 1 : 3)
-      const b = await target.boundingBox()
-      expect(b).toBeTruthy()
-      await page.mouse.click(b!.x + 2, b!.y + b!.height / 2)
-      await expect(page.getByTestId(pageIds[i])).toBeVisible({ timeout: PAGE_READY_MS })
-      await page.waitForTimeout(100)
-
-      if (paths[i] === '/settings') {
-        // settings chrome replaces workspace nav — skip workspace measure
-        await page.screenshot({
-          path: path.join(shotDir, `hover-ink-after-${paths[i].slice(1)}.png`),
-          fullPage: false,
-        })
-        continue
-      }
-
-      await page.mouse.move(b!.x + b!.width + 40, b!.y + b!.height / 2)
-      await page.waitForTimeout(400)
-
-      const m = await measure()
-      expect(m).not.toBeNull()
-      expect(m!.every((x) => x.scrollLeft === 0)).toBe(true)
-      const act = m!.find((x) => x.active)
-      const idl = m!.find((x) => !x.active)
-      expect(act).toBeTruthy()
-      expect(idl).toBeTruthy()
-      expect(Math.abs(act!.iconLeft - idl!.iconLeft)).toBeLessThanOrEqual(1)
-      await page.screenshot({
-        path: path.join(shotDir, `hover-ink-after-${paths[i].slice(1)}.png`),
-        fullPage: false,
-      })
-    }
+    const settingsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '设置', exact: true })
+    const settingsBox = await settingsLink.boundingBox()
+    expect(settingsBox).toBeTruthy()
+    await page.mouse.click(settingsBox!.x + 2, settingsBox!.y + settingsBox!.height / 2)
+    await expect(page.getByTestId('page-settings')).toBeVisible({ timeout: PAGE_READY_MS })
+    await page.screenshot({
+      path: path.join(shotDir, 'hover-ink-after-settings.png'),
+      fullPage: false,
+    })
 
     // plan g2.2: settings chrome — click General, leave, real icon offset ≤ 1px vs siblings / self.
     await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
@@ -218,7 +182,7 @@ test.describe('hover-ink scroll-shift fix', () => {
     const baselineOffset = beforeSettings![0].offset
     expect(beforeSettings!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)
 
-    const general = page.locator('[data-testid="nav-settings-chrome"] a.nav-item').filter({ hasText: '通用' })
+    const general = page.locator('[data-testid="nav-settings-chrome"] a.nav-item').filter({ hasText: '常规' })
     const gBox = await general.boundingBox()
     expect(gBox).toBeTruthy()
     await page.mouse.click(gBox!.x + 2, gBox!.y + gBox!.height / 2)
@@ -227,7 +191,7 @@ test.describe('hover-ink scroll-shift fix', () => {
     await page.waitForTimeout(400)
     const afterGeneral = await measureSettings()
     expect(afterGeneral).not.toBeNull()
-    const clicked = afterGeneral!.find((x) => x.text.includes('通用')) ?? afterGeneral!.find((x) => x.active)
+    const clicked = afterGeneral!.find((x) => x.text.includes('常规')) ?? afterGeneral!.find((x) => x.active)
     expect(clicked).toBeTruthy()
     expect(Math.abs(clicked!.offset - baselineOffset)).toBeLessThanOrEqual(1)
     expect(afterGeneral!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)

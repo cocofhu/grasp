@@ -1,0 +1,73 @@
+name: e2e-restart
+
+# Real-model e2e: a control-plane restart must exit fast, keep queued runs, and
+# let the new process reattach to the agent sandbox that kept running.
+# Needs the DEEPSEEK_API_KEY repository secret; skipped when it is absent
+# (forks, or before the secret is configured).
+on:
+  push:
+    paths:
+      - "server/**"
+      - "sandbox-gateway/sandbox/**"
+      - "compose.release.yaml"
+      - ".github/workflows/e2e-restart.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "sandbox-gateway/sandbox/**"
+      - "compose.release.yaml"
+      - ".github/workflows/e2e-restart.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: e2e-restart-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  restart-reattach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GOPROXY: https://proxy.golang.org,direct
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+    steps:
+      - name: Check secret
+        id: secret
+        run: |
+          if [ -z "$DEEPSEEK_API_KEY" ]; then
+            echo "DEEPSEEK_API_KEY not configured; skipping"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/checkout@v7
+        if: steps.secret.outputs.present == 'true'
+      - uses: actions/setup-go@v7
+        if: steps.secret.outputs.present == 'true'
+        with:
+          go-version: "1.26.9"
+          cache-dependency-path: server/go.sum
+      - uses: docker/setup-buildx-action@v4
+        if: steps.secret.outputs.present == 'true'
+      - name: Build grasp image
+        if: steps.secret.outputs.present == 'true'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: server/Dockerfile
+          load: true
+          tags: grasp:e2e
+          cache-from: type=gha,scope=grasp-e2e
+          cache-to: type=gha,mode=max,scope=grasp-e2e
+      - name: Restart reattach e2e
+        if: steps.secret.outputs.present == 'true'
+        working-directory: server
+        env:
+          GRASP_IMAGE: grasp:e2e
+        run: go test -tags e2ereal ./e2e -run TestRestartReattach -v -count=1 -timeout 45m
+      - uses: actions/upload-artifact@v7
+        if: failure() && steps.secret.outputs.present == 'true'
+        with:
+          name: e2e-restart-logs
+          path: e2e-artifacts/
+          retention-days: 14

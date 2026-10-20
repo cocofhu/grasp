@@ -157,3 +157,25 @@ func (w *platformMCPWire) restoreChannel(projectID, threadID, userID, agent, tok
 		w.scheduler.Restore(token, projectID, agent, threadID, userID, caps.AllowSchedulerWrite)
 	}
 }
+
+// registerPMPolicy authorizes an ordinary per-workflow PM policy explicitly.
+func (w *platformMCPWire) registerPMPolicy(projectID, threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec) {
+	if !w.agentBoundToProject(projectID, agent) {
+		return "", nil
+	}
+	token := platformmcp.NewToken()
+	if w.memory != nil {
+		w.memory.Restore(token, projectID, agent, threadID, "system", true)
+	}
+	if w.context != nil {
+		w.context.Restore(token, projectID, agent, threadID, "system")
+	}
+	if w.scheduler != nil {
+		w.scheduler.Restore(token, projectID, agent, threadID, "system", false)
+	}
+	if w.pm != nil {
+		w.pm.RestoreWithMcps(projectID, threadID, "system", agent, token, services.EffectivePmEnabledMcps(enabledMcps))
+	}
+	specs := services.BuildAgentPlatformMCPSpecs(projectID, agent, token)
+	return token, append(specs, services.BuildPmRoleMCPSpecs(projectID, token, enabledMcps)...)
+}

@@ -20,6 +20,7 @@ import {
   shareApiErrorMessage,
   isLoopbackHostname,
   isLoopbackShareHost,
+  reachableShareUrl,
   getShareVisitorId,
   publicGateApi,
 } from './gateShareLink'
@@ -57,6 +58,15 @@ describe('gateShareLink helpers', () => {
     expect(isLoopbackShareHost('https://approving.example.com/public/gate-approvals#t=x')).toBe(false)
     expect(isLoopbackShareHost('http://192.168.1.10:8080/public/gate-approvals#t=x')).toBe(false)
     expect(isLoopbackShareHost('http://10.0.0.5/public/gate-approvals#t=x')).toBe(false)
+    const token = 'ab'.repeat(8)
+    const minted = `http://localhost:8080/public/gate-approvals#t=${token}`
+    expect(reachableShareUrl(minted, 'http://21.130.250.101:5173')).toBe(
+      `http://21.130.250.101:5173/public/gate-approvals#t=${token}`,
+    )
+    expect(reachableShareUrl(minted, 'http://localhost:5173')).toBe(minted)
+    expect(reachableShareUrl('https://approving.example.com/public/gate-approvals#t=x', 'http://21.130.250.101:5173')).toBe(
+      'https://approving.example.com/public/gate-approvals#t=x',
+    )
   })
 
   it('formats remaining time and status chips', () => {

@@ -4,6 +4,8 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import SettingsSection from '@/components/settings/SettingsSection.vue'
+import SettingsRow from '@/components/settings/SettingsRow.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { copyToClipboard } from '@/lib/shared/copyToClipboard'
@@ -59,9 +61,9 @@ const mcpBaseForHint = computed(() =>
 
 const mcpJsonExample = computed(() => JSON.stringify({
   mcpServers: {
-    'project-pm': {
+    'workspace-assistant': {
       url: packExampleUrl.value,
-      headers: { Authorization: 'Bearer YOUR_PROJECT_MCP_KEY' },
+      headers: { Authorization: 'Bearer YOUR_WORKSPACE_MCP_KEY' },
     },
   },
 }, null, 2))
@@ -163,134 +165,69 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div
-    class="flex min-h-0 flex-1 flex-col overflow-hidden"
-    data-testid="project-external-mcp-panel"
-  >
-    <div class="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-4 sm:px-6">
-      <div class="mx-auto max-w-3xl space-y-6">
-        <div>
-          <h2 class="text-lg font-semibold text-txt">{{ t('pages.projectDetail.externalMcp.title') }}</h2>
-          <p class="mt-1 text-sm text-txt3">{{ t('pages.projectDetail.externalMcp.subtitle') }}</p>
-          <p class="mt-2 rounded-md border border-info/30 bg-info/10 px-3 py-2 text-xs leading-snug text-info">
-            {{ t('pages.projectDetail.externalMcp.distinctHint') }}
-          </p>
-        </div>
-
-        <div class="card space-y-4 p-4">
-          <div class="flex items-start justify-between gap-3">
-            <div>
-              <strong class="block text-sm font-medium text-txt">{{ t('pages.projectDetail.externalMcp.enable') }}</strong>
-              <p class="m-0 mt-1 text-xs leading-snug text-txt3">{{ t('pages.projectDetail.externalMcp.enableHint') }}</p>
-            </div>
-            <AppSwitch
-              v-model="enabled"
-              data-testid="external-mcp-enabled"
-              :disabled="loading || saving"
-              :aria-label="t('pages.projectDetail.externalMcp.enable')"
-            />
-          </div>
-
-          <div>
-            <strong class="block text-sm font-medium text-txt">{{ t('pages.projectDetail.externalMcp.packsTitle') }}</strong>
-            <p class="m-0 mt-1 text-xs leading-snug text-txt3">{{ t('pages.projectDetail.externalMcp.packsHint') }}</p>
-            <div class="mt-2.5 flex flex-col gap-2">
-              <label
-                v-for="opt in PM_MCP_OPTIONS"
-                :key="opt.id"
-                class="flex cursor-pointer items-start gap-2.5 text-[13px] text-txt"
-                :class="loading || saving ? 'cursor-not-allowed opacity-55' : ''"
-              >
-                <AppSwitch
-                  class="mt-0.5"
-                  :model-value="enabledPacks.includes(opt.id)"
-                  :disabled="loading || saving"
-                  :aria-label="opt.id"
-                  @update:model-value="togglePack(opt.id)"
-                />
-                <span>
-                  <code class="font-mono text-[12px] text-accent-2">{{ opt.id }}</code>
-                  <span class="mt-0.5 block text-xs text-txt3">{{ t(opt.labelKey) }}</span>
-                </span>
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div class="card space-y-3 p-4">
-          <h3 class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.externalMcp.urlTitle') }}</h3>
-          <p class="text-xs leading-snug text-txt3">{{ t('pages.projectDetail.externalMcp.urlHint') }}</p>
-          <div class="flex items-center gap-2 rounded-md border border-line bg-base px-3 py-2 font-mono text-[12px]">
-            <code class="min-w-0 flex-1 break-all text-accent-2">{{ mcpBaseUrl || t('pages.projectDetail.externalMcp.urlPending') }}</code>
-            <button
-              type="button"
-              class="chip shrink-0 hover:border-line-strong"
-              data-testid="external-mcp-copy-url"
-              @click="copyText(mcpBaseUrl, 'url')"
-            >
-              {{ copied === 'url' ? t('pages.projectDetail.externalMcp.copied') : t('pages.projectDetail.externalMcp.copy') }}
-            </button>
-          </div>
-          <p class="text-xs text-txt3">{{ t('pages.projectDetail.externalMcp.urlPackSuffix', { base: mcpBaseForHint }) }}</p>
-        </div>
-
-        <div class="card space-y-3 p-4">
-          <div class="flex items-center justify-between gap-2">
-            <h3 class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.externalMcp.keysTitle') }}</h3>
-            <AppButton variant="primary" size="sm" icon="plus" data-testid="external-mcp-create-key" @click="openCreateKey">
-              {{ t('pages.projectDetail.externalMcp.createKey') }}
-            </AppButton>
-          </div>
-          <p class="text-xs leading-snug text-txt3">{{ t('pages.projectDetail.externalMcp.keysHint') }}</p>
-          <div v-if="loadingKeys" class="py-4 text-center text-sm text-txt3">{{ t('common.loading') }}</div>
-          <div v-else-if="!keys.length" class="rounded-md border border-line bg-surface px-4 py-5 text-center text-[13px] text-txt3">
-            {{ t('pages.projectDetail.externalMcp.noKeys') }}
-          </div>
-          <div v-else class="space-y-2">
-            <div
-              v-for="k in keys"
-              :key="k.id"
-              class="flex flex-wrap items-center gap-3 rounded-md border border-line bg-surface px-4 py-3"
-              data-testid="external-mcp-key-row"
-            >
-              <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ k.name }}</span>
-              <span class="font-mono text-[12px] text-txt3">{{ k.key_prefix }}</span>
-              <span class="text-[11px] text-txt3">{{ fmtTime(k.created_at) }}</span>
-              <AppButton variant="ghost" size="sm" class="!text-err" @click="revokeKey(k.id)">
-                {{ t('pages.projectDetail.externalMcp.revoke') }}
-              </AppButton>
-            </div>
-          </div>
-        </div>
-
-        <div class="card space-y-3 p-4">
-          <h3 class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.externalMcp.exampleTitle') }}</h3>
-          <p class="text-xs leading-snug text-txt3">{{ t('pages.projectDetail.externalMcp.exampleHint') }}</p>
-          <div class="relative rounded-md border border-line bg-base p-3">
-            <button
-              type="button"
-              class="absolute right-2 top-2 chip text-[11px]"
-              data-testid="external-mcp-copy-example"
-              @click="copyText(mcpJsonExample, 'example')"
-            >
-              {{ copied === 'example' ? t('pages.projectDetail.externalMcp.copied') : t('pages.projectDetail.externalMcp.copy') }}
-            </button>
-            <pre class="scroll-area overflow-x-auto pr-16 font-mono text-[12px] leading-5 text-txt2">{{ mcpJsonExample }}</pre>
-          </div>
-        </div>
-      </div>
+  <div class="space-y-8" data-testid="project-external-mcp-panel">
+    <div class="space-y-2 text-[13px] leading-6 text-txt3">
+      <p>{{ t('pages.projectDetail.externalMcp.subtitle') }}</p>
+      <p>{{ t('pages.projectDetail.externalMcp.distinctHint') }}</p>
     </div>
 
-    <div class="flex shrink-0 justify-end gap-2 border-t border-line bg-surface p-3">
-      <AppButton
-        variant="primary"
-        data-testid="external-mcp-save"
-        :disabled="loading || saving"
-        @click="saveSettings"
-      >
+    <SettingsSection :title="t('pages.projectDetail.externalMcp.connectionTitle')">
+      <SettingsRow :label="t('pages.projectDetail.externalMcp.enable')" :description="t('pages.projectDetail.externalMcp.enableHint')" inline>
+        <AppSwitch v-model="enabled" data-testid="external-mcp-enabled" :disabled="loading || saving" :aria-label="t('pages.projectDetail.externalMcp.enable')" />
+      </SettingsRow>
+    </SettingsSection>
+
+    <SettingsSection :title="t('pages.projectDetail.externalMcp.packsTitle')" :description="t('pages.projectDetail.externalMcp.packsHint')">
+      <SettingsRow v-for="opt in PM_MCP_OPTIONS" :key="opt.id" :label="opt.id" :description="t(opt.labelKey)" inline>
+        <AppSwitch :model-value="enabledPacks.includes(opt.id)" :disabled="loading || saving" :aria-label="opt.id" @update:model-value="togglePack(opt.id)" />
+      </SettingsRow>
+    </SettingsSection>
+    <div class="flex justify-end">
+      <AppButton variant="primary" data-testid="external-mcp-save" :disabled="loading || saving" @click="saveSettings">
         {{ saving ? t('common.buttons.saving') : t('pages.projectDetail.externalMcp.save') }}
       </AppButton>
     </div>
+
+    <SettingsSection :title="t('pages.projectDetail.externalMcp.urlTitle')" :description="t('pages.projectDetail.externalMcp.urlHint')">
+      <div class="space-y-3 py-4">
+        <div class="flex items-center gap-2 rounded-lg border border-line bg-base px-3 py-2.5 font-mono text-[12px]">
+          <code class="min-w-0 flex-1 break-all text-txt2">{{ mcpBaseUrl || t('pages.projectDetail.externalMcp.urlPending') }}</code>
+          <button type="button" class="chip shrink-0 hover:border-line-strong" data-testid="external-mcp-copy-url" @click="copyText(mcpBaseUrl, 'url')">
+            {{ copied === 'url' ? t('pages.projectDetail.externalMcp.copied') : t('pages.projectDetail.externalMcp.copy') }}
+          </button>
+        </div>
+        <p class="text-xs leading-5 text-txt3">{{ t('pages.projectDetail.externalMcp.urlPackSuffix', { base: mcpBaseForHint }) }}</p>
+      </div>
+    </SettingsSection>
+
+    <SettingsSection :title="t('pages.projectDetail.externalMcp.keysTitle')" :description="t('pages.projectDetail.externalMcp.keysHint')">
+      <div class="space-y-3 py-4">
+        <div class="flex justify-end">
+          <AppButton size="sm" icon="plus" data-testid="external-mcp-create-key" @click="openCreateKey">{{ t('pages.projectDetail.externalMcp.createKey') }}</AppButton>
+        </div>
+        <div v-if="loadingKeys" class="py-4 text-center text-sm text-txt3">{{ t('common.loading') }}</div>
+        <div v-else-if="!keys.length" class="py-5 text-center text-[13px] text-txt3">{{ t('pages.projectDetail.externalMcp.noKeys') }}</div>
+        <div v-else class="divide-y divide-line">
+          <div v-for="k in keys" :key="k.id" class="flex flex-wrap items-center gap-3 py-3" data-testid="external-mcp-key-row">
+            <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ k.name }}</span>
+            <span class="font-mono text-[12px] text-txt3">{{ k.key_prefix }}</span>
+            <span class="text-[11px] text-txt3">{{ fmtTime(k.created_at) }}</span>
+            <AppButton variant="ghost" size="sm" class="!text-err" @click="revokeKey(k.id)">{{ t('pages.projectDetail.externalMcp.revoke') }}</AppButton>
+          </div>
+        </div>
+      </div>
+    </SettingsSection>
+
+    <SettingsSection :title="t('pages.projectDetail.externalMcp.exampleTitle')" :description="t('pages.projectDetail.externalMcp.exampleHint')">
+      <div class="py-4">
+        <div class="relative rounded-lg border border-line bg-base p-3">
+          <button type="button" class="chip absolute right-2 top-2 text-[11px]" data-testid="external-mcp-copy-example" @click="copyText(mcpJsonExample, 'example')">
+            {{ copied === 'example' ? t('pages.projectDetail.externalMcp.copied') : t('pages.projectDetail.externalMcp.copy') }}
+          </button>
+          <pre class="scroll-area overflow-x-auto pr-16 font-mono text-[12px] leading-5 text-txt2">{{ mcpJsonExample }}</pre>
+        </div>
+      </div>
+    </SettingsSection>
 
     <AppModal
       :open="showCreateKey"

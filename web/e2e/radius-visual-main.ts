@@ -40,9 +40,9 @@ const App = {
       h(
         'div',
         {
-          class: 'app-shell-dotgrid min-h-screen p-6',
+          class: 'app-shell-canvas min-h-screen p-6',
           'data-testid': 'radius-visual-root',
-          style: 'display:grid; grid-template-columns: 248px 1fr; gap: 24px; min-height: 100vh;',
+          style: 'display:grid; grid-template-columns: 304px 1fr; gap: 24px; min-height: 100vh;',
         },
         [
           h('div', { style: 'height: 720px;' }, [h(AppSidebar)]),

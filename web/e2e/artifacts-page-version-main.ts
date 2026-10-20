@@ -5,9 +5,9 @@ import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import ArtifactPreview from '../src/components/run/ArtifactPreview.vue'
-import type { Artifact, Run } from '../src/lib/shared/types'
+import type { Artifact } from '../src/lib/shared/types'
 import { api } from '../src/lib/api/api'
-import { PAGE_CAPS } from '../src/test/capsFixtures'
+import { provideReviewAnnotate } from '../src/lib/inbox/reviewAnnotate'
 
 const params = new URLSearchParams(location.search)
 const scenario = params.get('scenario') || 'multi'
@@ -22,8 +22,10 @@ const livePage: Artifact = {
   kind: 'html',
   nodeId: 'visual_1',
   runId: 'run-version-e2e',
+  workflowName: 'version-e2e',
   sizeBytes: 64,
   createdAt: '2026-08-21T12:00:00Z',
+  revision: scenario === 'single' ? 1 : 2,
   content: '<!doctype html><html><body style="font-family:sans-serif;padding:24px"><h1 id="mark-latest">最新稿 v2</h1><p>产物页版本切换验收</p></body></html>',
 }
 
@@ -33,47 +35,32 @@ const planJson: Artifact = {
   kind: 'json',
   nodeId: 'plan_1',
   runId: 'run-version-e2e',
+  workflowName: 'version-e2e',
   sizeBytes: 32,
   createdAt: '2026-08-21T12:00:00Z',
+  revision: 1,
 }
 
-const multiRun = {
-  id: 'run-version-e2e',
-  nodes: [{ id: 'visual_1', type: 'agent', caps: PAGE_CAPS, label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-  nodeExecutions: {
-    visual_1: [
-      {
-        nodeId: 'visual_1',
-        iteration: 1,
-        status: 'completed',
-        outputs: {
-          page: '<!doctype html><html><body style="font-family:sans-serif;padding:24px;background:#fef3c7"><h1 id="mark-v1">历史稿 v1</h1><p>只读预览</p></body></html>',
-        },
-      },
-      {
-        nodeId: 'visual_1',
-        iteration: 2,
-        status: 'waiting_human',
-        outputs: { page: livePage.content },
-      },
-    ],
-  },
-} as unknown as Run
+const historicalHtml = '<!doctype html><html><body style="font-family:sans-serif;padding:24px;background:#fef3c7"><h1 id="mark-v1">历史稿 v1</h1><p>只读预览</p></body></html>'
 
-const singleRun = {
-  id: 'run-version-e2e',
-  nodes: [{ id: 'visual_1', type: 'agent', caps: PAGE_CAPS, label: '视觉', position: { x: 0, y: 0 }, config: {} }],
-  nodeExecutions: {
-    visual_1: [
-      {
-        nodeId: 'visual_1',
-        iteration: 1,
-        status: 'completed',
-        outputs: { page: livePage.content },
-      },
-    ],
-  },
-} as unknown as Run
+api.artifactVersions = async (id) => {
+  if (scenario === 'versions-error') throw new Error('Version list unavailable')
+  return id === livePage.id && scenario !== 'single'
+    ? [{ artifactId: id, revision: 1, nodeId: livePage.nodeId, sizeBytes: historicalHtml.length, createdAt: '2026-08-20T12:00:00Z' }]
+    : []
+}
+api.artifactVersionContent = async (id, revision) => {
+  if (id !== livePage.id || revision !== 1) throw new Error('Unknown artifact version')
+  return {
+    artifactId: id,
+    revision,
+    nodeId: livePage.nodeId,
+    kind: 'html',
+    sizeBytes: historicalHtml.length,
+    createdAt: '2026-08-20T12:00:00Z',
+    content: historicalHtml,
+  }
+}
 
 ;(api as { artifactContent: (id: string) => Promise<Artifact & { content: string }> }).artifactContent =
   async (id: string) => {
@@ -88,11 +75,9 @@ const singleRun = {
 const App = defineComponent({
   name: 'ArtifactsPageVersionHarness',
   setup() {
+    provideReviewAnnotate({ enabled: scenario === 'single', annotate: () => undefined })
     const artifact = ref<Artifact | null>(
       scenario === 'json' ? planJson : livePage,
-    )
-    const run = ref<Run | null>(
-      scenario === 'no-run' ? null : scenario === 'single' ? singleRun : multiRun,
     )
 
     return () =>
@@ -110,8 +95,8 @@ const App = defineComponent({
           h(ArtifactPreview, {
             artifact: artifact.value,
             scope: 'platform',
-            run: run.value,
-            annotatable: false,
+            annotatable: scenario === 'single',
+            hideDelete: scenario === 'single',
           }),
         ],
       )

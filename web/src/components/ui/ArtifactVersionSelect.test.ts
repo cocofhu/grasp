@@ -1,8 +1,11 @@
 // @vitest-environment happy-dom
+import { h, nextTick, ref, type Ref } from 'vue'
+import { conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import ArtifactVersionSelect from './ArtifactVersionSelect.vue'
+import ConversationWorkspace from '@/components/chat/ConversationWorkspace.vue'
 import type { ArtifactVersionChoice } from '@/lib/run/reactArtifactPreview'
 
 const choices: ArtifactVersionChoice[] = [
@@ -31,6 +34,7 @@ function stubMenuHeight(menu: HTMLElement, height: number) {
 function mountSelect(
   extra: Record<string, unknown> = {},
   rect: Partial<DOMRect> = { top: 400, bottom: 420, left: 200, right: 280, width: 80, height: 20 },
+  hostVisible?: Ref<boolean>,
 ) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': {} } })
   const wrapper = mount(ArtifactVersionSelect, {
@@ -47,7 +51,7 @@ function mountSelect(
       ...extra,
     },
     attachTo: document.body,
-    global: { plugins: [i18n], stubs: { Teleport: false } },
+    global: { plugins: [i18n], stubs: { Teleport: false }, provide: hostVisible ? { [conversationPanelVisibleKey as symbol]: hostVisible } : {} },
   })
   const btn = wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').element as HTMLElement
   vi.spyOn(btn, 'getBoundingClientRect').mockReturnValue({
@@ -163,4 +167,69 @@ describe('ArtifactVersionSelect', () => {
     expect(top + menuHeight).toBeCloseTo(triggerTop - 4, 0)
     wrapper.unmount()
   })
+
+  it('consumes the first Escape for the version menu and returns focus before a parent handles another Escape', async () => {
+    const wrapper = mountSelect()
+    const trigger = wrapper.get('[data-testid="react-artifact-version-chip-btn-page.html"]').element as HTMLButtonElement
+    await openMenu(wrapper, 80)
+    const option = document.querySelector<HTMLButtonElement>('[data-testid="react-artifact-version-option-v1"]')!
+    option.focus()
+    const parentEscape = vi.fn()
+    document.addEventListener('keydown', parentEscape)
+    const first = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    option.dispatchEvent(first)
+    await nextTick()
+    expect(first.defaultPrevented).toBe(true)
+    expect(parentEscape).not.toHaveBeenCalled()
+    expect(document.querySelector('[data-testid="react-artifact-version-menu"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger)
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
+    expect(parentEscape).toHaveBeenCalledTimes(1)
+    document.removeEventListener('keydown', parentEscape)
+    wrapper.unmount()
+  })
+
+  it('removes a teleported menu when a kept-alive parent panel closes or changes scope', async () => {
+    const visible = ref(true)
+    const wrapper = mountSelect({}, undefined, visible)
+    await openMenu(wrapper, 80)
+    visible.value = false
+    await nextTick()
+    expect(document.querySelector('[data-testid="react-artifact-version-menu"]')).toBeNull()
+    expect(wrapper.get('[aria-haspopup="listbox"]').attributes('aria-expanded')).toBe('false')
+    expect(wrapper.emitted('select')).toBeUndefined()
+    visible.value = true
+    await nextTick()
+    await openMenu(wrapper, 80)
+    expect(document.querySelector('[data-testid="react-artifact-version-menu"]')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('unregisters Escape handling when an open version selector unmounts', async () => {
+    const wrapper = mountSelect()
+    await openMenu(wrapper, 80)
+    wrapper.unmount()
+    const event = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true })
+    document.dispatchEvent(event)
+    expect(event.defaultPrevented).toBe(false)
+  })
+
+
+  it('receives visibility through the real workspace panel slot while keeping the selector mounted', async () => {
+    const wrapper = mount(ConversationWorkspace, {
+      props: { scopeKey: 'conversation', open: true },
+      attachTo: document.body,
+      slots: { panel: () => h(ArtifactVersionSelect, { choices, currentLabel: 'v2', menuAriaLabel: '版本', labelFor: choice => `v${choice.index}` }) },
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': {} } })] },
+    })
+    await wrapper.get('[data-testid="artifact-version-chip-btn"]').trigger('click')
+    await nextTick()
+    expect(document.querySelector('[data-testid="artifact-version-menu"]')).not.toBeNull()
+    await wrapper.setProps({ open: false })
+    await nextTick()
+    expect(wrapper.findComponent(ArtifactVersionSelect).exists()).toBe(true)
+    expect(document.querySelector('[data-testid="artifact-version-menu"]')).toBeNull()
+    wrapper.unmount()
+  })
+
 })

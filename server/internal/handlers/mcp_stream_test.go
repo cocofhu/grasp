@@ -185,6 +185,7 @@ func TestMCPStreamSessionsReconnectAndDelete(t *testing.T) {
 		t.Fatal("reconnecting a session must close its previous stream")
 	}
 	_, other := b.listen()
+
 	h.host.SetOutcomeAllowed("run-stream", true)
 	expectToolsChanged(t, current)
 	expectToolsChanged(t, other)

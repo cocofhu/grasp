@@ -98,6 +98,46 @@ cmp -s "$work/overlay.js" "$repo/sandbox-gateway/sandbox/internal/previewinject/
   die "/__grasp/live-overlay.js 与运行时包源码不一致"
 log "2. 直连预览注入：通过"
 
+# --- 2b. 应用不在 PREVIEW_PORT：set-upstream 把对外入口接过去（走真实 iptables） ---
+# entry_upstream: which port the injector proxied for the public PREVIEW_PORT entry.
+entry_upstream() {
+  curl -sS -D - -o /dev/null -H 'Accept: text/html' "http://127.0.0.1:$(host_port 3000)/" 2>/dev/null |
+    tr -d '\r' | sed -n 's/^[Xx]-[Gg]rasp-[Uu]pstream: //p'
+}
+wait_entry_upstream() {
+  for _ in $(seq 1 30); do
+    [ "$(entry_upstream)" = "$1" ] && return 0
+    sleep 1
+  done
+  return 1
+}
+# stop_site <port>: kill the in-box python http.server on that port (image has no procps).
+stop_site() {
+  in_box bash -c 'for d in /proc/[0-9]*; do
+    tr "\0" " " <"$d/cmdline" 2>/dev/null | grep -q "http\.server $1 " && kill "${d#/proc/}"
+  done; true' _ "$1"
+}
+in_box bash -c 'mkdir -p /tmp/e2e-vite && printf "<!doctype html><html><head><title>vite</title></head><body>app-5173</body></html>" >/tmp/e2e-vite/index.html'
+docker exec -d -w /tmp/e2e-vite "$name" python3 -m http.server 5173
+for _ in $(seq 1 30); do in_box bash -c 'echo >/dev/tcp/127.0.0.1/5173' 2>/dev/null && break; sleep 1; done
+out="$(in_box /usr/local/bin/preview-inject.sh set-upstream 5173 || true)"
+[[ "$out" == result=busy* ]] || die "PREVIEW_PORT 已有应用时 set-upstream 应返回 busy，实际：$out"
+stop_site 3000
+out="$(in_box env -u PREVIEW_PORT /usr/local/bin/preview-inject.sh set-upstream 5173 || true)"
+[[ "$out" == "result=ok preview_port=3000 upstream=5173" ]] || die "set-upstream 5173 失败：$out"
+wait_entry_upstream 5173 || die "对外入口没有切到 5173（X-Grasp-Upstream=$(entry_upstream)）"
+curl -fsS -H 'Accept: text/html' "http://127.0.0.1:$(host_port 3000)/" -o "$work/switched.html" || die "切换后对外入口请求失败"
+grep -q 'app-5173' "$work/switched.html" || die "切换后对外入口不是 5173 的页面"
+grep -q '/__grasp/preview-pick.js' "$work/switched.html" || die "切换后页面没有注入取点脚本"
+out="$(in_box /usr/local/bin/preview-inject.sh set-upstream 9222 || true)"
+[[ "$out" == result=denied* ]] || die "set-upstream 9222 应被拒绝，实际：$out"
+out="$(in_box /usr/local/bin/preview-inject.sh set-upstream reset || true)"
+[[ "$out" == result=reset* ]] || die "set-upstream reset 失败：$out"
+stop_site 5173
+docker exec -d -w /tmp/e2e-site "$name" python3 -m http.server 3000
+wait_entry_upstream 3000 || die "reset 后对外入口没有回到 3000"
+log "2b. 非 PREVIEW_PORT 应用切换注入：通过"
+
 # --- 3. 热更新：推第二个包，重启服务，不重启容器 ---
 v2="$(repack_runtime "$bundle" "$work/v2.tgz" "" "runtime-e2e hot update")"
 [ "$v2" != "$version" ] || die "第二个包版本没变"

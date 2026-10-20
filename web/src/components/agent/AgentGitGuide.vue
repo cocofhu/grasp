@@ -50,10 +50,10 @@ defineExpose({ isGitEnvKey })
 
 <template>
   <section
-    class="mb-4 overflow-hidden rounded-lg border border-line bg-surface shadow-sm"
+    class="mb-4 border-y border-line/60"
     data-test="git-guide"
   >
-    <header class="flex items-start gap-3 border-b border-line px-4 py-3">
+    <header class="flex items-start gap-3 border-b border-line/60 py-3">
       <div class="min-w-0 flex-1">
         <div class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.git.title') }}</div>
       </div>
@@ -69,18 +69,18 @@ defineExpose({ isGitEnvKey })
       </AppButton>
     </header>
 
-    <div class="p-4">
+    <div class="py-4">
       <p class="mb-3 text-[13px] text-txt2">{{ t('pages.agentStudio.git.choiceHint') }}</p>
-      <div class="grid grid-cols-3 gap-2.5">
+      <div class="grid grid-cols-3 gap-1">
         <button
           v-for="type in CHOICES"
           :key="type"
           type="button"
-          class="rounded-[10px] border px-2.5 py-3.5 text-center"
+          class="rounded-md px-2.5 py-3 text-left"
           :class="
             credentialType === type
-              ? 'border-accent bg-accent-dim'
-              : 'border-line bg-elevated hover:border-line-strong'
+              ? 'bg-elevated text-txt'
+              : 'text-txt2 hover:bg-elevated/50'
           "
           :data-test="`git-choice-${type}`"
           :aria-pressed="credentialType === type"

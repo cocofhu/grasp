@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
@@ -64,20 +65,22 @@ const { t } = useI18n()
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div class="space-y-4">
-    <div v-if="doc.summary" class="group rounded-lg border border-line bg-accent-dim/30 p-3">
-      <div v-if="doc.title" class="mb-1 flex items-center gap-1 text-[13px] font-semibold text-txt">
+    <div v-if="doc.summary" class="report-summary group">
+      <h2 v-if="doc.title" class="report-title mb-3 flex items-center gap-2">
         <span data-json-path="title" :data-label="doc.title">{{ doc.title }}</span>
         <AnnotateBtn json-path="title" :label="doc.title" />
-      </div>
-      <div class="flex items-start gap-1 text-[12px] leading-relaxed text-txt2">
+      </h2>
+      <div class="flex items-start gap-1 text-[13px] leading-relaxed text-txt2">
         <span class="min-w-0 flex-1" data-json-path="summary" data-label="概述">{{ doc.summary }}</span>
         <AnnotateBtn json-path="summary" label="概述" />
       </div>
-      <div v-if="doc.work_kind" class="mt-2 flex items-center gap-1.5 text-[11px] text-txt3">
+      <div v-if="doc.work_kind" class="mt-2 flex items-center gap-1.5 text-[13px] text-txt3">
         <span class="font-semibold uppercase tracking-wider">{{ t('pages.product.clarifiedRequirement.workKind') }}</span>
         <code
-          class="rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt2"
+          class="rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt2"
           data-json-path="work_kind"
           :data-label="t('pages.product.clarifiedRequirement.workKind')"
         >{{ doc.work_kind }}</code>
@@ -85,22 +88,22 @@ const { t } = useI18n()
       </div>
     </div>
 
-    <section v-if="doc.background" class="group">
-      <div class="mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.background" class="report-section group">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1 font-semibold text-txt3">
         {{ t('pages.product.clarifiedRequirement.background') }}
         <AnnotateBtn json-path="background" :label="t('pages.product.clarifiedRequirement.background')" />
-      </div>
+      </h3>
       <div
-        class="text-[11px] leading-relaxed text-txt2"
+        class="text-[13px] leading-relaxed text-txt2"
         data-json-path="background"
         :data-label="t('pages.product.clarifiedRequirement.background')"
       >{{ doc.background }}</div>
     </section>
 
-    <section v-if="doc.goals?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.goals') }}</div>
+    <section v-if="doc.goals?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.goals') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(g, i) in doc.goals" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(g, i) in doc.goals" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`goals[${i}]`" :data-label="`目标 ${i + 1}`">{{ g }}</span>
           <AnnotateBtn :json-path="`goals[${i}]`" :label="`目标 ${i + 1}`" />
@@ -108,10 +111,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.success_metrics?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.successMetrics') }}</div>
+    <section v-if="doc.success_metrics?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.successMetrics') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(m, i) in doc.success_metrics" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(m, i) in doc.success_metrics" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`success_metrics[${i}]`" :data-label="m">{{ m }}</span>
           <AnnotateBtn :json-path="`success_metrics[${i}]`" :label="m" />
@@ -119,15 +122,15 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.in_scope?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.inScope') }}</div>
+    <section v-if="doc.in_scope?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.inScope') }}</h3>
       <div class="flex flex-wrap gap-1.5">
         <span v-for="(s, i) in doc.in_scope" :key="i" class="group inline-flex items-center rounded-md bg-ok/10 px-2 py-0.5 text-[11px] text-txt2" :data-json-path="`in_scope[${i}]`" :data-label="s">{{ s }}<AnnotateBtn :json-path="`in_scope[${i}]`" :label="s" /></span>
       </div>
     </section>
 
-    <section v-if="doc.out_of_scope?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.outOfScope') }}</div>
+    <section v-if="doc.out_of_scope?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.outOfScope') }}</h3>
       <div class="flex flex-wrap gap-1.5">
         <span v-for="(o, i) in doc.out_of_scope" :key="i" class="group inline-flex items-center rounded-md bg-base px-2 py-0.5 text-[11px] text-txt3 line-through" :data-json-path="`out_of_scope[${i}]`" :data-label="o">
           {{ o }}
@@ -136,14 +139,14 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.personas?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.personas') }}</div>
+    <section v-if="doc.personas?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.personas') }}</h3>
       <div class="space-y-2">
-        <div v-for="(p, i) in doc.personas" :key="p.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5">
+        <div v-for="(p, i) in doc.personas" :key="p.id || i" class="report-item group">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ p.id }}</code>
+            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ p.id }}</code>
             <span
-              class="text-[12px] font-semibold text-txt"
+              class="text-[13px] font-semibold text-txt"
               :data-json-path="`personas[${p.id || i}].name`"
               :data-label="p.name || `画像 ${i + 1}`"
             >{{ p.name }}</span>
@@ -151,7 +154,7 @@ const { t } = useI18n()
           </div>
           <div
             v-if="p.description"
-            class="mt-1 text-[11px] leading-relaxed text-txt3"
+            class="mt-1 text-[13px] leading-relaxed text-txt2"
             :data-json-path="`personas[${p.id || i}].description`"
             :data-label="`${p.name || i} 描述`"
           >{{ p.description }}</div>
@@ -159,7 +162,7 @@ const { t } = useI18n()
             <li
               v-for="(g, k) in p.goals"
               :key="k"
-              class="text-[11px] text-txt2"
+              class="text-[13px] text-txt2"
               :data-json-path="`personas[${p.id || i}].goals[${k}]`"
               :data-label="`${p.name || i} 目标 ${k + 1}`"
             >• {{ g }}</li>
@@ -168,13 +171,13 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.user_scenarios?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.scenarios') }}</div>
+    <section v-if="doc.user_scenarios?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.scenarios') }}</h3>
       <div class="space-y-2">
-        <div v-for="(s, i) in doc.user_scenarios" :key="s.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5 text-[11px] leading-5 text-txt2">
+        <div v-for="(s, i) in doc.user_scenarios" :key="s.id || i" class="report-item group text-[13px] leading-5 text-txt2">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ s.id }}</code>
-            <span class="text-[12px] font-semibold text-txt">{{ s.name }}</span>
+            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ s.id }}</code>
+            <span class="text-[13px] font-semibold text-txt">{{ s.name }}</span>
             <AnnotateBtn :json-path="`user_scenarios[${s.id || i}]`" :label="s.name || `场景 ${i + 1}`" />
           </div>
           <div
@@ -205,27 +208,27 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.functional_requirements?.length">
-      <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.functional_requirements?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-txt3">
         <Icon name="check" :size="12" :style="{ color: accent }" />{{ t('pages.product.clarifiedRequirement.functional', { n: doc.functional_requirements.length }) }}
-      </div>
+      </h3>
       <div class="space-y-2">
-        <div v-for="(f, i) in doc.functional_requirements" :key="f.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5">
+        <div v-for="(f, i) in doc.functional_requirements" :key="f.id || i" class="report-item group">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ f.id }}</code>
-            <span class="text-[12px] font-semibold text-txt">{{ f.title }}</span>
-            <span v-if="f.priority" class="rounded bg-elevated px-1.5 py-0.5 text-[9px] font-medium uppercase text-txt2">{{ f.priority }}</span>
+            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ f.id }}</code>
+            <span class="text-[13px] font-semibold text-txt">{{ f.title }}</span>
+            <span v-if="f.priority" class="rounded bg-elevated px-1.5 py-0.5 text-[11px] font-medium uppercase text-txt2">{{ f.priority }}</span>
             <AnnotateBtn :json-path="`functional_requirements[${f.id || i}]`" :label="f.title || `功能需求 ${i + 1}`" />
           </div>
           <div
             v-if="f.detail"
-            class="mt-1 text-[11px] leading-relaxed text-txt3"
+            class="mt-1 text-[13px] leading-relaxed text-txt2"
             :data-json-path="`functional_requirements[${f.id || i}].detail`"
             :data-label="`${f.title || i} 详情`"
           >{{ f.detail }}</div>
           <div
             v-if="f.scenario_ids?.length"
-            class="mt-1 text-[10px] text-txt3"
+            class="mt-1 text-[11px] text-txt3"
             :data-json-path="`functional_requirements[${f.id || i}].scenario_ids`"
             :data-label="`${f.title || i} 场景`"
           >{{ f.scenario_ids.join(', ') }}</div>
@@ -233,43 +236,43 @@ const { t } = useI18n()
             <div
               v-for="(ac, k) in f.acceptance_criteria"
               :key="k"
-              class="flex items-start gap-1.5 text-[11px] leading-5 text-txt2"
+              class="flex items-start gap-1.5 text-[13px] leading-5 text-txt2"
               :data-json-path="`functional_requirements[${f.id || i}].acceptance_criteria[${k}]`"
               :data-label="`验收 ${k + 1}`"
             >
-              <span class="mt-0.5 shrink-0 rounded bg-ok/10 px-1 text-[9px] font-medium text-ok">{{ t('pages.product.clarifiedRequirement.acceptance') }}</span>{{ ac }}
+              <span class="mt-0.5 shrink-0 rounded bg-ok/10 px-1 text-[11px] font-medium text-ok">{{ t('pages.product.clarifiedRequirement.acceptance') }}</span>{{ ac }}
             </div>
           </div>
         </div>
       </div>
     </section>
 
-    <section v-if="doc.non_functional_requirements?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.nonFunctional') }}</div>
+    <section v-if="doc.non_functional_requirements?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.nonFunctional') }}</h3>
       <div class="space-y-1.5">
         <div
           v-for="(n, i) in doc.non_functional_requirements"
           :key="n.id || i"
-          class="group rounded-lg border border-line bg-base/40 p-2.5"
+          class="report-item group"
           :data-json-path="`non_functional_requirements[${n.id || i}]`"
           :data-label="n.detail || `NFR ${i + 1}`"
         >
           <div class="flex flex-wrap items-center gap-2">
             <span
               v-if="n.category"
-              class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-[10px] font-medium text-txt2"
+              class="shrink-0 rounded-md bg-elevated px-1.5 py-0.5 text-[11px] font-medium text-txt2"
             >{{ n.category }}</span>
             <AnnotateBtn :json-path="`non_functional_requirements[${n.id || i}]`" :label="n.detail || `NFR ${i + 1}`" />
           </div>
           <div
             v-if="n.detail"
-            class="mt-1 min-w-0 w-full text-[11px] leading-relaxed text-txt2 [overflow-wrap:anywhere] break-words"
+            class="mt-1 min-w-0 w-full text-[13px] leading-relaxed text-txt2 [overflow-wrap:anywhere] break-words"
             :data-json-path="`non_functional_requirements[${n.id || i}]`"
             :data-label="n.detail || `NFR ${i + 1}`"
           >{{ n.detail }}</div>
           <div
             v-if="n.metric"
-            class="mt-1 min-w-0 w-full text-[10px] text-txt3 [overflow-wrap:anywhere] break-words"
+            class="mt-1 min-w-0 w-full text-[11px] text-txt3 [overflow-wrap:anywhere] break-words"
             :data-json-path="`non_functional_requirements[${n.id || i}].metric`"
             :data-label="`${n.detail || `NFR ${i + 1}`} metric`"
           >{{ t('pages.product.clarifiedRequirement.metric') }}: {{ n.metric }}</div>
@@ -277,15 +280,15 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.external_interfaces?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.interfaces') }}</div>
+    <section v-if="doc.external_interfaces?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.interfaces') }}</h3>
       <div class="space-y-1.5">
-        <div v-for="(iface, i) in doc.external_interfaces" :key="iface.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5 text-[11px] text-txt2">
+        <div v-for="(iface, i) in doc.external_interfaces" :key="iface.id || i" class="report-item group text-[13px] text-txt2">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ iface.id }}</code>
+            <code class="rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ iface.id }}</code>
             <span class="font-semibold text-txt">{{ iface.name }}</span>
-            <span v-if="iface.kind" class="text-[10px] text-txt3">{{ iface.kind }}</span>
-            <span v-if="iface.direction" class="text-[10px] text-txt3">{{ iface.direction }}</span>
+            <span v-if="iface.kind" class="text-[11px] text-txt3">{{ iface.kind }}</span>
+            <span v-if="iface.direction" class="text-[11px] text-txt3">{{ iface.direction }}</span>
             <AnnotateBtn :json-path="`external_interfaces[${iface.id || i}]`" :label="iface.name || `接口 ${i + 1}`" />
           </div>
           <div v-if="iface.description" class="mt-1 text-txt3">{{ iface.description }}</div>
@@ -293,27 +296,27 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.data_entities?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.dataEntities') }}</div>
+    <section v-if="doc.data_entities?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.dataEntities') }}</h3>
       <div class="space-y-1.5">
-        <div v-for="(d, i) in doc.data_entities" :key="d.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5 text-[11px] text-txt2">
+        <div v-for="(d, i) in doc.data_entities" :key="d.id || i" class="report-item group text-[13px] text-txt2">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ d.id }}</code>
+            <code class="rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ d.id }}</code>
             <span class="font-semibold text-txt">{{ d.name }}</span>
             <AnnotateBtn :json-path="`data_entities[${d.id || i}]`" :label="d.name || `实体 ${i + 1}`" />
           </div>
           <div v-if="d.description" class="mt-1 text-txt3">{{ d.description }}</div>
           <div v-if="d.attributes?.length" class="mt-1 flex flex-wrap gap-1">
-            <span v-for="(a, k) in d.attributes" :key="k" class="rounded bg-base px-1.5 py-0.5 text-[10px] text-txt3">{{ a }}</span>
+            <span v-for="(a, k) in d.attributes" :key="k" class="rounded bg-base px-1.5 py-0.5 text-[11px] text-txt3">{{ a }}</span>
           </div>
         </div>
       </div>
     </section>
 
-    <section v-if="doc.business_rules?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.businessRules') }}</div>
+    <section v-if="doc.business_rules?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.businessRules') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(r, i) in doc.business_rules" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(r, i) in doc.business_rules" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`business_rules[${i}]`" :data-label="r">{{ r }}</span>
           <AnnotateBtn :json-path="`business_rules[${i}]`" :label="r" />
@@ -321,10 +324,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.edge_cases?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.edgeCases') }}</div>
+    <section v-if="doc.edge_cases?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.edgeCases') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(e, i) in doc.edge_cases" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(e, i) in doc.edge_cases" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`edge_cases[${i}]`" :data-label="e">{{ e }}</span>
           <AnnotateBtn :json-path="`edge_cases[${i}]`" :label="e" />
@@ -332,10 +335,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.assumptions?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.assumptions') }}</div>
+    <section v-if="doc.assumptions?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.assumptions') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(a, i) in doc.assumptions" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(a, i) in doc.assumptions" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`assumptions[${i}]`" :data-label="a">{{ a }}</span>
           <AnnotateBtn :json-path="`assumptions[${i}]`" :label="a" />
@@ -343,10 +346,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.dependencies?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.dependencies') }}</div>
+    <section v-if="doc.dependencies?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.dependencies') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(d, i) in doc.dependencies" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(d, i) in doc.dependencies" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`dependencies[${i}]`" :data-label="d">{{ d }}</span>
           <AnnotateBtn :json-path="`dependencies[${i}]`" :label="d" />
@@ -354,10 +357,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.constraints?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.constraints') }}</div>
+    <section v-if="doc.constraints?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.constraints') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(c, i) in doc.constraints" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(c, i) in doc.constraints" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`constraints[${i}]`" :data-label="c">{{ c }}</span>
           <AnnotateBtn :json-path="`constraints[${i}]`" :label="c" />
@@ -365,10 +368,10 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.limitations?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.limitations') }}</div>
+    <section v-if="doc.limitations?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.limitations') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(l, i) in doc.limitations" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(l, i) in doc.limitations" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">•</span>
           <span class="min-w-0 flex-1" :data-json-path="`limitations[${i}]`" :data-label="l">{{ l }}</span>
           <AnnotateBtn :json-path="`limitations[${i}]`" :label="l" />
@@ -376,12 +379,12 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.risks?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.risks') }}</div>
+    <section v-if="doc.risks?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.risks') }}</h3>
       <div class="space-y-1.5">
-        <div v-for="(r, i) in doc.risks" :key="r.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5 text-[11px] text-txt2">
+        <div v-for="(r, i) in doc.risks" :key="r.id || i" class="report-item group text-[13px] text-txt2">
           <div class="flex gap-2">
-            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ r.id }}</code>
+            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ r.id }}</code>
             <span class="min-w-0 flex-1" :data-json-path="`risks[${r.id || i}]`" :data-label="r.description || `风险 ${i + 1}`">{{ r.description }}</span>
             <AnnotateBtn :json-path="`risks[${r.id || i}]`" :label="r.description || `风险 ${i + 1}`" />
           </div>
@@ -390,22 +393,22 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.glossary?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.clarifiedRequirement.glossary') }}</div>
+    <section v-if="doc.glossary?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.clarifiedRequirement.glossary') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(g, i) in doc.glossary" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(g, i) in doc.glossary" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="min-w-0 flex-1" :data-json-path="`glossary[${i}]`" :data-label="g.term || `术语 ${i + 1}`"><span class="font-semibold text-txt">{{ g.term }}</span>: {{ g.definition }}</span>
           <AnnotateBtn :json-path="`glossary[${i}]`" :label="g.term || `术语 ${i + 1}`" />
         </li>
       </ul>
     </section>
 
-    <section v-if="doc.open_questions?.length">
-      <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-warn">
+    <section v-if="doc.open_questions?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-warn">
         <Icon name="gate" :size="12" />{{ t('pages.product.clarifiedRequirement.openQuestions') }}
-      </div>
+      </h3>
       <ul class="space-y-1">
-        <li v-for="(q, i) in doc.open_questions" :key="i" class="group flex items-start gap-1.5 rounded-md bg-warn/5 px-2 py-1 text-[11px] leading-5 text-txt2">
+        <li v-for="(q, i) in doc.open_questions" :key="i" class="group flex items-start gap-2 py-1 text-[13px] leading-6 text-txt2">
           <span class="mt-0.5 shrink-0 text-warn">?</span>
           <span class="min-w-0 flex-1" :data-json-path="`open_questions[${i}]`" :data-label="q">{{ q }}</span>
           <AnnotateBtn :json-path="`open_questions[${i}]`" :label="q" />
@@ -413,4 +416,6 @@ const { t } = useI18n()
       </ul>
     </section>
   </div>
+
+  </ArtifactReportDocument>
 </template>

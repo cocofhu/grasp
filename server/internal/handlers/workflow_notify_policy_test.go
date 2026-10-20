@@ -36,6 +36,7 @@ func TestPatchWorkflowNotifyPolicyOnly(t *testing.T) {
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	id, _ := created["id"].(string)
+
 	if id == "" {
 		t.Fatal("no id")
 	}

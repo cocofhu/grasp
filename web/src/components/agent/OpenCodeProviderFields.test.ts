@@ -132,6 +132,59 @@ describe('OpenCodeProviderFields', () => {
     wrapper.unmount()
   })
 
+  // plan g1.1: the empty service address hints the picked vendor's own default
+  // address instead of one globally fixed sample domain.
+  it("shows the picked vendor's catalog address as the service address placeholder", async () => {
+    const wrapper = mountFields({ provider: 'deepseek' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="opencode-base-url"]').attributes('placeholder')).toBe(
+      'https://api.deepseek.com',
+    )
+    wrapper.unmount()
+  })
+
+  it('falls back to neutral copy when a catalog vendor has no default address', async () => {
+    const wrapper = mountFields({ provider: 'anthropic' })
+    await flushPromises()
+    const placeholder = wrapper.get('[data-test="opencode-base-url"]').attributes('placeholder') || ''
+    expect(placeholder).not.toContain('example')
+    expect(placeholder).not.toBe('https://api.deepseek.com')
+    expect(placeholder).toBe('留空则使用厂商默认地址')
+    wrapper.unmount()
+  })
+
+  it('falls back to neutral copy for a self-hosted gateway', async () => {
+    const wrapper = mountFields({ provider: 'custom' })
+    await flushPromises()
+    const placeholder = wrapper.get('[data-test="opencode-base-url"]').attributes('placeholder') || ''
+    expect(placeholder).not.toContain('example')
+    expect(placeholder).toBe('填写你的接口根地址')
+    wrapper.unmount()
+  })
+
+  it('falls back to neutral copy when the catalog is unreachable', async () => {
+    openCodeProviders.mockRejectedValue(new Error('offline'))
+    const wrapper = mountFields({ provider: 'deepseek' })
+    await flushPromises()
+    const placeholder = wrapper.get('[data-test="opencode-base-url"]').attributes('placeholder') || ''
+    expect(placeholder).not.toContain('example')
+    expect(placeholder).toBe('留空则使用厂商默认地址')
+    wrapper.unmount()
+  })
+
+  it('updates the placeholder on a vendor switch without touching the typed address', async () => {
+    const wrapper = mountFields({ provider: 'deepseek', baseUrl: 'https://my-proxy.example/v1' })
+    await flushPromises()
+    const input = wrapper.get('[data-test="opencode-base-url"]')
+    expect(input.attributes('placeholder')).toBe('https://api.deepseek.com')
+
+    await wrapper.setProps({ provider: 'anthropic' })
+    await flushPromises()
+    expect(input.attributes('placeholder')).toBe('留空则使用厂商默认地址')
+    expect((input.element as HTMLInputElement).value).toBe('https://my-proxy.example/v1')
+    wrapper.unmount()
+  })
+
   it('does not call a required service address optional', async () => {
     const wrapper = mountFields()
     await flushPromises()

@@ -20,7 +20,7 @@ func parseGlobalTokenStatsQuery(c *gin.Context) (services.GlobalTokenStatsQuery,
 }
 
 // parseTokenStatsQuery reads the shared stats filters. defaultWindow is used
-// only when the request omits window (usage stats: all, project board: 30d).
+// only when the request omits window.
 func parseTokenStatsQuery(c *gin.Context, defaultWindow string) (services.GlobalTokenStatsQuery, bool) {
 	if strings.TrimSpace(defaultWindow) == "" {
 		defaultWindow = services.TokenStatsWindowAll
@@ -68,7 +68,7 @@ func writeTokenStatsError(c *gin.Context, err error) {
 	}
 }
 
-// GetGlobalTokenStats returns cross-project token analytics for /stats.
+// GetGlobalTokenStats returns workspace-wide token analytics for /stats.
 func (h *Handlers) GetGlobalTokenStats(c *gin.Context) {
 	if h.Projects == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})

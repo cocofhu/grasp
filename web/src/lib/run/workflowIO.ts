@@ -26,6 +26,7 @@ export interface ExportEnvelope {
   name: string
   description: string
   needsRepo: boolean
+  defaults?: Workflow['defaults']
   graph: {
     nodes: WFNode[]
     edges: WFEdge[]
@@ -54,7 +55,7 @@ function exportNodes(nodes: WFNode[]): WFNode[] {
 
 /** Build a portable export envelope from workflow metadata and graph. */
 export function buildEnvelope(
-  meta: Pick<Workflow, 'name' | 'description' | 'needsRepo'>,
+  meta: Pick<Workflow, 'name' | 'description' | 'needsRepo' | 'defaults'>,
   graph: WorkflowGraphPayload,
 ): ExportEnvelope {
   const input = graph.nodes.find((n) => n.type === 'input')
@@ -69,18 +70,30 @@ export function buildEnvelope(
     delete cfg.inputs
     return { ...n, config: cfg }
   })
+  // Runtime defaults are portable metadata. Secret values must be supplied again after import.
+  const defaults = meta.defaults ? JSON.parse(JSON.stringify(meta.defaults)) as NonNullable<Workflow['defaults']> : undefined
+  if (defaults) defaults.variables = exportVariables(defaults.variables || [])
   return {
     schemaVersion: EXPORT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     name: meta.name,
     description: meta.description ?? '',
     needsRepo: !!meta.needsRepo,
+    ...(defaults ? { defaults } : {}),
     graph: {
       nodes,
       edges: graph.edges.map((e) => ({ ...e })),
-      variables,
+      variables: exportVariables(variables),
     },
   }
+}
+
+function exportVariables<T extends { secret?: boolean; value?: unknown }>(variables: T[]): T[] {
+  return variables.map((variable) => {
+    const copy = JSON.parse(JSON.stringify(variable)) as T
+    if (copy.secret) delete copy.value
+    return copy
+  })
 }
 
 /** Trigger a browser download of JSON content. */
@@ -106,27 +119,21 @@ export function collectAgentProfiles(nodes: WFNode[]): string[] {
 
 export type AgentProfileIssue = {
   name: string
-  /** missing = not found / deleted; foreign = belongs to another project */
-  reason: 'missing' | 'foreign'
+  reason: 'missing'
 }
 
-/** Return agent_profile refs that are missing or belong to another project. */
+/** Return agent_profile refs missing from the workspace's Agent directory. */
 export function agentProfileIssues(
   nodes: WFNode[],
-  agents: { name: string; projectId: string }[],
-  projectId?: string,
+  agents: { name: string }[],
 ): AgentProfileIssue[] {
   const byName = new Map(agents.map((a) => [a.name, a]))
-  const pid = String(projectId || '').trim()
   const out: AgentProfileIssue[] = []
   for (const name of collectAgentProfiles(nodes)) {
     const a = byName.get(name)
     if (!a) {
       out.push({ name, reason: 'missing' })
       continue
-    }
-    if (a.projectId !== pid) {
-      out.push({ name, reason: 'foreign' })
     }
   }
   return out

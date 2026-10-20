@@ -1,3 +1,4 @@
+import { isLoopbackHostname } from '@/lib/inbox/gateShareLink'
 import type { AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import type { ThemeName } from '@/lib/shared/theme'
 
@@ -10,6 +11,16 @@ export const EMBED_READY_MESSAGE = 'grasp-embed:ready'
 export const EMBED_THEME_MESSAGE = 'grasp-embed:theme'
 /** Drawer → page: Grasp UI language (`zh-CN` | `en`) so the page toolbar matches the app. */
 export const EMBED_LANG_MESSAGE = 'grasp-embed:lang'
+/**
+ * Drawer → page: open, replace, or close the page-level image window.
+ * The message carries the action and display name only — never the picture address.
+ */
+export const EMBED_IMAGE_MESSAGE = 'grasp-embed:image'
+/**
+ * Drawer → page: open, replace, or close the page-level single-demo window.
+ * The message carries the action and option label only — never the demo HTML.
+ */
+export const EMBED_DEMO_MESSAGE = 'grasp-embed:demo'
 /** Drawer → page: `{ok:false}` when the drawer session is invalid, expired or revoked. */
 export const EMBED_SESSION_MESSAGE = 'grasp-embed:session'
 /** Page ↔ drawer: capability announce / stop (page → drawer), toggle state (drawer → page). */
@@ -44,9 +55,64 @@ export function embedArtifactsPath(runId: string, nodeId: string): string {
   return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/artifacts`
 }
 
+/** Picture frame inside the page-level image window. The address arrives later, same-origin, not in this URL. */
+export function embedImagePath(runId: string, nodeId: string): string {
+  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/image`
+}
+
+/** Demo frame inside the page-level enlarge window. The HTML arrives later, same-origin, not in this URL. */
+export function embedDemoPath(runId: string, nodeId: string): string {
+  return `/embed/runs/${encodeURIComponent(runId)}/nodes/${encodeURIComponent(nodeId)}/demo`
+}
+
+export type EmbedImageAction = 'open' | 'close'
+
+/** Host-bound image-window request. Drops any picture address that may have been attached. */
+export function parseEmbedImageMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
+  return parseEmbedShellMessage(data, EMBED_IMAGE_MESSAGE)
+}
+
+/** Host-bound demo-window request. Drops any HTML that may have been attached. */
+export function parseEmbedDemoMessage(data: unknown): { action: EmbedImageAction; label: string } | null {
+  return parseEmbedShellMessage(data, EMBED_DEMO_MESSAGE)
+}
+
+function parseEmbedShellMessage(
+  data: unknown,
+  type: typeof EMBED_IMAGE_MESSAGE | typeof EMBED_DEMO_MESSAGE,
+): { action: EmbedImageAction; label: string } | null {
+  if (!data || typeof data !== 'object') return null
+  const m = data as { type?: unknown; action?: unknown; label?: unknown }
+  if (m.type !== type) return null
+  if (m.action !== 'open' && m.action !== 'close') return null
+  const label = typeof m.label === 'string' ? m.label.replace(/[\r\n\t]/g, ' ').trim().slice(0, 180) : ''
+  return { action: m.action, label }
+}
+
+/**
+ * Host the reviewer's browser can open. Docker publishes the preview on every
+ * interface when bindIP is loopback, but the stored direct URL still says
+ * 127.0.0.1. A page opened at a real host must use that host and the same port.
+ */
+export function directPreviewReachableUrl(directUrl: string, pageHost?: string): string {
+  const raw = directUrl.trim()
+  if (!raw) return directUrl
+  let u: URL
+  try {
+    u = new URL(raw)
+  } catch {
+    return directUrl
+  }
+  if (!isLoopbackHostname(u.hostname)) return directUrl
+  const host = (pageHost ?? (typeof window !== 'undefined' ? window.location.hostname : '')).trim()
+  if (!host || isLoopbackHostname(host)) return directUrl
+  u.hostname = host
+  return u.toString()
+}
+
 /** Direct preview URL carrying a drawer ticket for the in-page pick script (preview-pick.js). */
 export function directPreviewEmbedUrl(directUrl: string, t: EmbedTicket, theme: ThemeName, lang?: string): string {
-  const base = directUrl.split('#')[0]
+  const base = directPreviewReachableUrl(directUrl).split('#')[0]
   const q = new URLSearchParams({ run: t.runId, node: t.nodeId, ticket: t.ticket, theme })
   if (lang) q.set('lang', lang)
   return `${base}#__grasp_embed&${q.toString()}`

@@ -10,7 +10,7 @@ func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DelThread", "", nil)
+	p, err := ps.CreateFixture("DelThread", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestPmDeleteThreadByID(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DelByID", "", nil)
+	p, err := ps.CreateFixture("DelByID", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +93,7 @@ func TestPmUpsertDraftBranches(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("DraftBranch", "", nil)
+	p, err := ps.CreateFixture("DraftBranch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

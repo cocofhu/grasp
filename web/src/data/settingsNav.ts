@@ -1,36 +1,31 @@
 import type { SidebarNavItem } from './sidebarNav'
 
-export type SettingsNavItem = SidebarNavItem & {
-  exact?: boolean
-  query?: Record<string, string>
-  /** When set, a group label is rendered before this item. */
-  groupKey?: string
-}
+export type SettingsNavItem = SidebarNavItem & { exact?: boolean; query?: Record<string, string>; groupKey?: string }
 
-/**
- * Settings-chrome subnav order (plan g1.2):
- * Projects, Notifications, Stats, Artifacts, Agents, Sandboxes, General, Integrations.
- * Global `/agents` Studio coexists with project detail `?tab=agents` (restored after #546).
- */
 export const settingsNavItems: SettingsNavItem[] = [
-  { to: '/projects', icon: 'folder', labelKey: 'nav.projects' },
-  { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
-  { to: '/stats', icon: 'chart', labelKey: 'nav.stats' },
+  { to: '/board', icon: 'board', labelKey: 'nav.board', groupKey: 'nav.groupWorkspaceTools' },
+  { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
+  { to: '/requirements', icon: 'doc', labelKey: 'nav.requirements' },
+  { to: '/assistant', icon: 'chat', labelKey: 'nav.assistant' },
+  { to: '/settings/schedules', icon: 'clock', labelKey: 'nav.schedules' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
-  { to: '/agents', icon: 'robot', labelKey: 'nav.agents' },
-  { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
+  { to: '/stats', icon: 'chart', labelKey: 'nav.stats' },
+  { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
+  { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
+  { to: '/agents', icon: 'robot', labelKey: 'nav.agents', groupKey: 'nav.groupExecution' },
+  { to: '/settings/shared-agent', icon: 'skills', labelKey: 'nav.sharedAgent' },
+  { to: '/settings/credentials', icon: 'key', labelKey: 'nav.credentials' },
+  { to: '/settings/variables', icon: 'variable', labelKey: 'nav.variables' },
+  { to: '/settings/assistant', icon: 'chat', labelKey: 'nav.assistantSettings' },
+  { to: '/settings/notification-policy', icon: 'bell', labelKey: 'nav.notificationPolicy' },
+  { to: '/settings/external-mcp', icon: 'connector', labelKey: 'nav.externalMcp' },
   { to: '/settings', icon: 'settings', labelKey: 'nav.general', exact: true, groupKey: 'nav.groupPlatform' },
-  {
-    to: '/settings',
-    icon: 'connector',
-    labelKey: 'nav.integrations',
-    exact: true,
-    query: { integrations: '1' },
-  },
+  { to: '/settings', icon: 'connector', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
+  { to: '/settings/workspace', icon: 'folder', labelKey: 'nav.workspaceInfo' },
+  { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
 ]
 
 export const SETTINGS_CHROME_PREFIXES = [
-  '/projects',
   '/notifications',
   '/stats',
   '/artifacts',
@@ -39,7 +34,7 @@ export const SETTINGS_CHROME_PREFIXES = [
   '/settings',
 ] as const
 
-/** Settings subnav on matching routes; full-page views keep workspace chrome (plan g3.1). */
+/** Default chrome for direct visits; settings navigation also retains context on shared tools. */
 export function isSettingsChrome(path: string, full?: boolean): boolean {
   if (full) return false
   return SETTINGS_CHROME_PREFIXES.some((p) => path === p || path.startsWith(`${p}/`))

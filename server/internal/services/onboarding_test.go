@@ -33,7 +33,7 @@ func TestOnboardingBootstrapRequiresAPIKey(t *testing.T) {
 
 func TestOnboardingBootstrapAllowsNonDefaultProjectWithDerivedNames(t *testing.T) {
 	svc, defaultID := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("中国象棋", "", nil)
+	other, err := svc.Projects.CreateFixture("中国象棋", "", nil)
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -454,7 +454,7 @@ func TestOnboardingBootstrapLanguageSwitchReusesWorkflow(t *testing.T) {
 
 func TestOnboardingBootstrapRejectsCrossProjectAgentConflict(t *testing.T) {
 	svc, projectA := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("Other", "", nil)
+	other, err := svc.Projects.CreateFixture("Other", "", nil)
 	if err != nil {
 		t.Fatalf("create B: %v", err)
 	}
@@ -821,7 +821,7 @@ func baselineAgentProfiles(t *testing.T, wf models.WorkflowDef) map[string]strin
 
 func TestCreateFromBaselineCreatesProjectAgentsWithSharedBackend(t *testing.T) {
 	svc, _ := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("Codex项目组", "", nil)
+	other, err := svc.Projects.CreateFixture("Codex项目组", "", nil)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -883,7 +883,7 @@ func TestCreateFromBaselineReusesExistingProjectAgents(t *testing.T) {
 
 func TestCreateFromBaselineRejectsForeignNameConflict(t *testing.T) {
 	svc, defaultID := newOnboardingHarness(t)
-	other, err := svc.Projects.Create("象棋", "", nil)
+	other, err := svc.Projects.CreateFixture("象棋", "", nil)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

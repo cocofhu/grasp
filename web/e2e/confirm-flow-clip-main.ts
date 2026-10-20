@@ -8,6 +8,8 @@ import ReviewComposer from '../src/components/run/ReviewComposer.vue'
 const params = new URLSearchParams(window.location.search)
 const theme = params.get('theme') === 'light' ? 'light' : 'dark'
 const hostH = Number(params.get('h') || '320')
+const hostW = Number(params.get('w') || '420')
+const locale = params.get('lang') === 'en' ? 'en' : 'zh-CN'
 const withError = params.get('error') === '1'
 const cold = params.get('cold') === '1'
 const tallInput = params.get('tall') === '1'
@@ -34,7 +36,7 @@ const Fixture = defineComponent({
           // Mirrors GatesInbox card + ReviewShell sidebar: fixed height + overflow hidden.
           class: 'mx-auto flex flex-col overflow-hidden rounded-lg border border-line bg-surface',
           style: {
-            width: '420px',
+            width: `${hostW}px`,
             height: `${hostH}px`,
           },
         },
@@ -63,7 +65,7 @@ const Fixture = defineComponent({
 
 async function boot() {
   await initLocale()
-  await setLocale('zh-CN')
+  await setLocale(locale)
   setTheme(theme)
   createApp({ render: () => h(Fixture) })
     .use(i18n)

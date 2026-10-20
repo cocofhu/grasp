@@ -7,10 +7,6 @@ import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
-import {
-  REVIEW_SIDEBAR,
-  REVIEW_SHELL_WIDTH_KEY_REVIEW,
-} from '@/lib/inbox/reviewLayoutBudget'
 import type {
   ClarifyImage,
   ClarifyTurn,
@@ -95,12 +91,10 @@ defineExpose({
 
 <template>
   <ReviewShell
+    :scope-key="`run-review:${run.id}:${clarify?.nodeId || node.id}:${clarify?.iteration ?? 1}`"
+    :run-id="run.id"
     ref="reviewShellRef"
     class="h-full min-h-0"
-    :mobile="mobile"
-    :sidebar-width="REVIEW_SIDEBAR"
-    :storage-key="REVIEW_SHELL_WIDTH_KEY_REVIEW"
-    card-panes
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" />

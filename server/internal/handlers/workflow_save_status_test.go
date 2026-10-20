@@ -38,6 +38,7 @@ func TestSaveWorkflowStatusGuard(t *testing.T) {
 	var created map[string]any
 	json.Unmarshal(w.Body.Bytes(), &created)
 	id, _ := created["id"].(string)
+
 	if id == "" {
 		t.Fatal("no id")
 	}

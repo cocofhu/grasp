@@ -1,0 +1,14 @@
+# Overlay on compose.release.yaml for the restart-reattach e2e: isolated data
+# dirs (never the developer's .localdata) and a single run slot so a second run
+# stays queued across the restart.
+services:
+  gateway:
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./.localdata-e2e/gateway:/data
+  grasp:
+    environment:
+      GRASP_MAX_RUNS: "1"
+    volumes:
+      - ./.localdata-e2e/db:/data
+      - ./.localdata-e2e/app-data:/app/data

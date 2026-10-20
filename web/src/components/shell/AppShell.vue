@@ -25,6 +25,9 @@ import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import ServiceCommitBadge from './ServiceCommitBadge.vue'
 import { sidebarHidden } from '@/lib/shared/sidebarHidden'
 import { loadBrandSettings } from '@/lib/composables/useBrandSettings'
+import { provideSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
+
+const { settingsChrome } = provideSidebarNavigation()
 
 const route = useRoute()
 const router = useRouter()
@@ -57,6 +60,9 @@ const mainAriaBusy = computed(() => {
 })
 
 const drawerOpen = ref(false)
+
+// A launch form belongs to the current account, including any in-flight field hydration.
+watch(() => auth.user.value?.username, () => closeLaunch(), { flush: 'sync' })
 
 watch(
   () => auth.user.value,
@@ -91,12 +97,13 @@ onUnmounted(() => stopShutdownPolling())
 
 <template>
   <div
-    class="app-shell-dotgrid relative flex h-screen w-screen overflow-hidden text-txt"
+    class="app-shell-canvas relative flex h-screen w-screen overflow-hidden text-txt"
+    :class="{ 'app-shell-settings': settingsChrome }"
     :data-testid="full ? 'app-shell-full' : 'app-shell-workspace'"
   >
     <div
       class="hidden h-full min-h-0 shrink-0 md:flex"
-      :class="!sidebarHidden ? 'py-[14px] pl-[14px]' : ''"
+      :class="!sidebarHidden && !settingsChrome ? 'py-[14px] pl-[14px]' : ''"
       data-testid="app-shell-sidebar-slot"
     >
       <AppSidebar />
@@ -148,10 +155,10 @@ onUnmounted(() => stopShutdownPolling())
         >
           <slot />
         </div>
-        <div v-else class="scroll-area safe-area-bottom h-full min-h-0 overflow-y-auto">
+        <div v-else class="scroll-area safe-area-bottom h-full min-h-0 overflow-y-auto" :class="{ 'settings-main-scroll': settingsChrome }" data-testid="shell-page-scroll">
           <div
-            class="flex h-full min-h-0 flex-col px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3"
-            :class="{ 'app-refresh-dim': dimContent }"
+            class="flex h-full min-h-0 min-w-0 flex-col"
+            :class="[settingsChrome ? 'settings-shell-content' : 'px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3', { 'app-refresh-dim': dimContent }]"
           >
             <slot />
           </div>
@@ -198,7 +205,8 @@ onUnmounted(() => stopShutdownPolling())
           data-testid="mobile-nav-drawer"
         >
           <div class="safe-area-top flex h-14 items-center justify-between gap-2 px-4">
-            <BrandLogo use-custom-brand />
+            <span v-if="settingsChrome" class="text-lg font-semibold text-txt" data-testid="mobile-settings-title">{{ t('nav.settings') }}</span>
+            <BrandLogo v-else use-custom-brand />
             <button
               class="flex h-11 w-11 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
               :aria-label="t('shell.aria.closeNav')"
@@ -208,7 +216,7 @@ onUnmounted(() => stopShutdownPolling())
               <Icon name="close" :size="18" />
             </button>
           </div>
-          <AppSidebarNav @navigate="closeDrawer" />
+          <AppSidebarNav workspace-lists @navigate="closeDrawer" />
           <div class="mt-auto border-t border-line p-3">
             <ShellChromeControls layout="sidebar" />
           </div>
@@ -236,6 +244,35 @@ onUnmounted(() => stopShutdownPolling())
 </template>
 
 <style scoped>
+.settings-shell-content {
+  padding: 24px 40px 32px;
+}
+.settings-shell-content:has(.settings-document),
+.settings-shell-content:has([data-testid="settings-panel"]) {
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.settings-shell-content :deep(.route-view-wrap:has(.settings-document)),
+.settings-shell-content :deep(.route-view-wrap:has([data-testid="settings-panel"])) {
+  height: auto;
+  min-height: 100%;
+  flex: none;
+  overflow: visible;
+}
+.settings-main-scroll {
+  scrollbar-gutter: stable;
+  scrollbar-color: rgb(var(--c-txt3) / .65) transparent;
+}
+.settings-main-scroll::-webkit-scrollbar { width: 8px; }
+.settings-main-scroll::-webkit-scrollbar-thumb { background: rgb(var(--c-txt3) / .65); border-radius: 9999px; }
+.settings-main-scroll:hover,
+.settings-main-scroll.is-scrolling { scrollbar-color: rgb(var(--c-txt3) / .8) transparent; }
+.settings-main-scroll::-webkit-scrollbar-thumb:hover { background: rgb(var(--c-txt2) / .75); }
+@media (max-width: 767px) {
+  .settings-shell-content { padding: 20px; }
+  .settings-shell-content:has(.settings-document),
+  .settings-shell-content:has([data-testid="settings-panel"]) { padding-top: 0; padding-bottom: 0; }
+}
 .drawer-fade-enter-active,
 .drawer-fade-leave-active {
   transition: opacity var(--dur-overlay) var(--ease-out-expo);

@@ -138,7 +138,7 @@ describe('useWorkflowFavorites', () => {
     expect(fav.isFavorite('gone')).toBe(false)
     expect(fav.isFavorite('wf-ok')).toBe(true)
     expect(fav.displayItems.value[0]?.name).toBe('WF wf-ok')
-    expect(fav.displayItems.value[0]?.projectName).toBe('Proj A')
+    expect(fav.displayItems.value[0]).not.toHaveProperty('projectName')
   })
 
   it('clears to empty after localStorage wipe', () => {

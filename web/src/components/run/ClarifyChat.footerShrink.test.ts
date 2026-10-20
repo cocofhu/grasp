@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 /**
- * plan g1 / g2 — active-session footer must not shrink under a fixed-height sidebar.
+ * plan g1 / g2 — active-session actions must not shrink under a fixed-height sidebar.
  * Screenshot path: page-control status + empty input clipped「确认并流转」at card bottom.
  */
 import { readFileSync } from 'node:fs'
@@ -66,7 +66,7 @@ function mountComposer(extra: Record<string, unknown> = {}) {
   })
 }
 
-describe('hot-path footer shrink-0 (plan g2.1 / g1.1 / g1.2)', () => {
+describe('hot-path actions shrink-0 (plan g2.1 / g1.1 / g1.2)', () => {
   it('source: hot actions and confirm-error match cold-session shrink-0', () => {
     // Cold session already locked shrink-0; hot path must align (root cause).
     expect(chatSrc).toMatch(
@@ -85,8 +85,10 @@ describe('hot-path footer shrink-0 (plan g2.1 / g1.1 / g1.2)', () => {
     await flushPromises()
     const hotActions = hot.get('[data-testid="clarify-hot-actions"]')
     expect(hotActions.classes()).toContain('shrink-0')
-    expect(hot.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
-    expect(hot.find('[data-testid="clarify-confirm-flow"]').classes()).toContain('h-9')
+    const hotConfirm = hot.get('[data-testid="clarify-action-row"]').get('[data-testid="clarify-confirm-flow"]')
+    expect(hotConfirm.classes()).toContain('h-9')
+    expect(hot.get('[data-testid="clarify-input-row"]').element.contains(hotConfirm.element)).toBe(true)
+    expect(hot.find('[data-testid="composer-shell-footer"]').exists()).toBe(false)
     hot.unmount()
 
     const withErr = mountChat({ confirmError: '产物契约不满足' })
@@ -95,11 +97,15 @@ describe('hot-path footer shrink-0 (plan g2.1 / g1.1 / g1.2)', () => {
     expect(withErr.get('[data-testid="clarify-hot-actions"]').classes()).toContain('shrink-0')
     withErr.unmount()
 
-    const cold = mountChat({ coldSession: true, active: false })
+    const cold = mountChat({ coldSession: true, active: false, draft: '隐藏的会话草稿' })
     await flushPromises()
     expect(cold.get('[data-testid="clarify-cold-actions"]').classes()).toContain('shrink-0')
     expect(cold.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
     expect(cold.find('[data-testid="clarify-hot-actions"]').exists()).toBe(false)
+    expect(cold.find('[data-testid="clarify-input"]').exists()).toBe(false)
+    expect(cold.find('[data-testid="clarify-send-icon"]').exists()).toBe(false)
+    const coldConfirm = cold.get('[data-testid="composer-shell-footer"]').get('[data-testid="clarify-confirm-flow"]')
+    expect((coldConfirm.element as HTMLButtonElement).disabled).toBe(false)
     cold.unmount()
   })
 })
@@ -114,9 +120,8 @@ describe('message list absorbs leftover height (plan g1.3)', () => {
     // Parent of scroller keeps min-h-0 flex-1 so the column can shrink the list.
     expect(chatSrc).toMatch(/class="relative flex min-h-0 flex-1 flex-col"/)
     // Multi-root: bake min-h-0 flex-1 on chat root (parent fallthrough is ignored).
-    expect(chatSrc).toMatch(
-      /class="flex h-full min-h-0 flex-1 flex-col" data-review-composer/,
-    )
+    const chatRootClasses = chatSrc.match(/ref="chatRoot" class="([^"]+)"/)?.[1].split(/\s+/)
+    expect(chatRootClasses).toEqual(expect.arrayContaining(['flex', 'h-full', 'min-h-0', 'flex-1', 'flex-col']))
   })
 
   it('ReviewComposer page-control row is shrink-0 and does not own the flex grow', () => {
@@ -132,7 +137,7 @@ describe('constrained sidebar with page-control status (plan g2.2)', () => {
     // Fixed-height overflow-hidden host mirrors GatesInbox card + ReviewShell sidebar.
     const host = document.createElement('div')
     host.style.cssText =
-      'display:flex;flex-direction:column;height:320px;overflow:hidden;position:relative'
+      'display:flex;flex-direction:column;width:320px;height:320px;overflow:hidden;position:relative'
     document.body.appendChild(host)
 
     const wrapper = mountComposer({ pageControl: 'offline' })
@@ -159,6 +164,8 @@ describe('constrained sidebar with page-control status (plan g2.2)', () => {
     )
     // Disabled gate unchanged: idle approve session allows confirm.
     expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-action-row"]').element.contains(confirm.element)).toBe(true)
+    expect(wrapper.find('[data-testid="composer-shell-footer"]').exists()).toBe(false)
 
     // Full confirm control stays under the fixed overflow-hidden host (not clipped out of tree).
     expect(host.contains(confirm.element)).toBe(true)

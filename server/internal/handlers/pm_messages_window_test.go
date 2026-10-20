@@ -12,7 +12,8 @@ import (
 
 func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "window"})
+	_ = pid
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "window"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
@@ -36,7 +37,7 @@ func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 	}
 
 	// No params → default tail window of 20.
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages", nil)
 	if w.Code != 200 {
 		t.Fatalf("default: %d %s", w.Code, w.Body.String())
 	}
@@ -50,7 +51,7 @@ func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 	}
 
 	// limit=20 → tail window + hasMore.
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages?limit=20", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages?limit=20", nil)
 	if w.Code != 200 {
 		t.Fatalf("tail: %d %s", w.Code, w.Body.String())
 	}
@@ -69,7 +70,7 @@ func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 	}
 
 	// before=first → older 5, hasMore=false.
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages?limit=20&before="+firstID, nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages?limit=20&before="+firstID, nil)
 	if w.Code != 200 {
 		t.Fatalf("before: %d %s", w.Code, w.Body.String())
 	}
@@ -82,13 +83,13 @@ func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
 	}
 
 	// Invalid limit.
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages?limit=abc", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages?limit=abc", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("bad limit want 400 got %d", w.Code)
 	}
 
 	// Unknown before.
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages?limit=20&before=missing", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages?limit=20&before=missing", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("missing before want 404 got %d", w.Code)
 	}

@@ -98,20 +98,22 @@ describe('user-facing copy remediation keys', () => {
   it('run list page title is 运行记录 not the terse 运行', () => {
     expect(zh.global.t('pages.runList.title')).toBe('运行记录')
     expect(en.global.t('pages.runList.title')).toBe('Run history')
-    expect(zh.global.t('pages.runList.subtitle')).toBe('按项目、工作流与状态筛选')
+    expect(zh.global.t('pages.runList.subtitle')).toBe('按工作流与状态筛选')
     expect(zh.global.t('common.table.title')).toBe('标题')
     expect(zhRoute.route.runs).toBe('运行记录')
     expect(enRoute.route.runs).toBe('Run history')
   })
 
-  it('uses Start and Needs attention consistently in navigation and page titles', () => {
-    expect(zhNav.nav.dashboard).toBe('开始')
-    expect(zhRoute.route.dashboard).toBe('开始')
+  it('uses New request and Needs attention consistently in navigation and page titles', () => {
+    expect(zhNav.nav.dashboard).toBe('新需求')
+    expect(zhRoute.route.dashboard).toBe('新需求')
+    expect(zhNav.nav.dashboard).toBe(zhRoute.route.dashboard)
     expect(zhNav.nav.gates).toBe('待办')
     expect(zhRoute.route.gates).toBe('待办')
     expect(zh.global.t('pages.gatesInbox.title')).toBe('待办')
-    expect(enNav.nav.dashboard).toBe('Start')
-    expect(enRoute.route.dashboard).toBe('Start')
+    expect(enNav.nav.dashboard).toBe('New request')
+    expect(enRoute.route.dashboard).toBe('New request')
+    expect(enNav.nav.dashboard).toBe(enRoute.route.dashboard)
     expect(enNav.nav.gates).toBe('Needs attention')
     expect(enRoute.route.gates).toBe('Needs attention')
     expect(en.global.t('pages.gatesInbox.title')).toBe('Needs attention')
@@ -277,7 +279,7 @@ describe('user-facing copy remediation keys', () => {
     expect(enRank).not.toMatch(/Unknown.*≠.*other/i)
   })
 
-  it('user-facing product naming uses 项目管理 / Project Management, not PM', () => {
+  it('user-facing product naming uses 工作区助手 / Workspace assistant consistently', () => {
     const zhKeys = [
       'common.runTrigger.pmMcp',
       'pages.projectDetail.tokenTipPm',
@@ -286,19 +288,14 @@ describe('user-facing copy remediation keys', () => {
       'pages.agentStudio.dialogs.renameCascadeHint',
       'pages.agentStudio.data.context.hint',
       'mcp.pmProgress.desc',
-      'mcp.pmProgress.convention',
       'mcp.pmWorkflowRead.desc',
-      'mcp.pmWorkflowRead.convention',
       'mcp.pmWorkflowWrite.desc',
-      'mcp.pmWorkflowWrite.convention',
       'mcp.pmAgentFs.desc',
-      'mcp.pmAgentFs.convention',
       'mcp.pmPrdManager.desc',
-      'mcp.pmPrdManager.convention',
     ] as const
     for (const key of zhKeys) {
       const text = zh.global.t(key)
-      expect(text, key).toMatch(/项目管理/)
+      expect(text, key).toMatch(/工作区助手/)
       expect(text, key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
     }
 
@@ -311,35 +308,30 @@ describe('user-facing copy remediation keys', () => {
       'pages.agentStudio.dialogs.renameCascadeHint',
       'pages.agentStudio.data.context.hint',
       'mcp.pmProgress.desc',
-      'mcp.pmProgress.convention',
       'mcp.pmWorkflowRead.desc',
-      'mcp.pmWorkflowRead.convention',
       'mcp.pmWorkflowWrite.desc',
-      'mcp.pmWorkflowWrite.convention',
       'mcp.pmAgentFs.desc',
-      'mcp.pmAgentFs.convention',
       'mcp.pmPrdManager.desc',
-      'mcp.pmPrdManager.convention',
     ] as const
     for (const key of enKeys) {
       const text = en.global.t(key)
-      expect(text, key).toMatch(/Project Management/)
+      expect(text, key).toMatch(/Workspace assistant/)
       expect(text, key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
       expect(text, key).not.toMatch(/PM-only|project PM/i)
     }
 
-    expect(zh.global.t('common.runTrigger.pmMcp')).toBe('项目管理 MCP')
-    expect(en.global.t('common.runTrigger.pmMcp')).toBe('Project Management MCP')
+    expect(zh.global.t('common.runTrigger.pmMcp')).toBe('工作区助手 MCP')
+    expect(en.global.t('common.runTrigger.pmMcp')).toBe('Workspace assistant MCP')
     expect(zh.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('工作流')
     expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('Workflow')
 
-    // Token source visible copy: 工作流 / Workflow + 项目管理 / Project Management (exact Title Case)
+    // Token source visible copy: 工作流 / Workflow + 工作区助手 / Workspace assistant
     expect(zh.global.t('pages.board.tokenStats.workflow')).toBe('工作流')
     expect(zh.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('工作流')
-    expect(zh.global.t('pages.board.tokenStats.pm')).toBe('项目管理')
+    expect(zh.global.t('pages.board.tokenStats.pm')).toBe('工作区助手')
     expect(en.global.t('pages.board.tokenStats.workflow')).toBe('Workflow')
     expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).toBe('Workflow')
-    expect(en.global.t('pages.board.tokenStats.pm')).toBe('Project Management')
+    expect(en.global.t('pages.board.tokenStats.pm')).toBe('Workspace assistant')
     // Do not verify Title Case with case-insensitive /workflow/ substring
     expect(en.global.t('pages.board.tokenStats.workflow')).not.toBe('workflow')
     expect(en.global.t('pages.projectDetail.tokenTipWorkflow')).not.toBe('workflow')
@@ -359,6 +351,11 @@ describe('user-facing copy remediation keys', () => {
     for (const key of tokenSourceNoPmKeys) {
       expect(zh.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
       expect(en.global.t(key), key).not.toMatch(/(?<![A-Za-z0-9_-])PM(?![A-Za-z0-9_-])/)
+    }
+
+    for (const key of ['pmProgress', 'pmWorkflowRead', 'pmWorkflowWrite', 'pmAgentFs', 'pmPrdManager']) {
+      expect(zh.global.t(`mcp.${key}.convention`)).toContain('设置 → 助手设置')
+      expect(en.global.t(`mcp.${key}.convention`)).toContain('Settings → Assistant settings')
     }
 
     // MCP server ids stay as protocol names

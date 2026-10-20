@@ -71,8 +71,7 @@ const launchMocks = vi.hoisted(() => ({ openLaunch: vi.fn(async () => {}) }))
 
 vi.mock('@/lib/api/api', () => ({
   api: {
-    createProject: vi.fn(),
-    getProject: vi.fn(async () => ({ id: 'p-retry', name: '老项目' })),
+    getWorkspace: vi.fn(async () => ({ id: 'p-retry', name: '老项目' })),
     getWorkflow: vi.fn(async (id: string) => ({ id, name: '默认工作流' })),
     listAgentTeamTemplates: vi.fn(async () => ({ items: TEMPLATES })),
     bootstrapProjectOnboarding: vi.fn(async () => ({
@@ -96,9 +95,10 @@ vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ success: vi.fn(), error: vi.fn(), warn: vi.fn(), show: vi.fn() }),
 }))
 
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  writeStoredProjectId: vi.fn(),
-}))
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  return { useWorkspaceContext: () => ({ workspaceId: ref('proj-default'), ensureLoaded: async () => ({ id: 'proj-default', name: 'Workspace' }) }) }
+})
 
 vi.mock('vue-i18n', async (importOriginal) => {
   const actual = await importOriginal<typeof import('vue-i18n')>()
@@ -118,7 +118,7 @@ async function mountWizard(props: Record<string, unknown> = {}) {
     history: createMemoryHistory(),
     routes: [
       { path: '/', component: { template: '<div />' } },
-      { path: '/projects/:id', component: { template: '<div />' } },
+      { path: '/workflows', component: { template: '<div />' } },
       { path: '/workflows/:id/edit', component: { template: '<div />' } },
     ],
   })
@@ -479,7 +479,7 @@ describe('OnboardingWizard', () => {
     expect(api.getWorkflow).toHaveBeenCalledWith('wf-1')
     expect(launchMocks.openLaunch).toHaveBeenCalledWith(expect.objectContaining({ id: 'wf-1' }))
     expect(wrapper.emitted('close')).toBeTruthy()
-    expect(wrapper.router.currentRoute.value.path).toBe(`/projects/${DEFAULT_PROJECT_ID}`)
+    expect(wrapper.router.currentRoute.value.path).toBe('/workflows')
     // The created default workflow is what stops the wizard from re-opening.
     expect(isOnboardingSuppressed(DEFAULT_PROJECT_ID)).toBe(false)
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(false)
@@ -511,70 +511,12 @@ describe('OnboardingWizard', () => {
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(false)
   })
 
-  it('create mode: project name on preferences, prefixed names, and bootstrap retry never re-creates (s3/f6)', async () => {
-    const { api } = await import('@/lib/api/api')
-    vi.mocked(api.createProject).mockResolvedValue({ id: 'proj-created-1', name: '支付中台' } as never)
-    vi.mocked(api.bootstrapProjectOnboarding)
-      .mockRejectedValueOnce(new Error('bootstrap blew up'))
-      .mockResolvedValueOnce({
-        agentIds: ['支付中台实现'],
-        workflowId: 'wf-x',
-        published: true,
-        groupName: '支付中台项目组',
-      } as never)
-
-    const wrapper = await mountWizard({ mode: 'createProject', projectId: '' })
-    expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleCreate')
-    expect(wrapper.find('[data-testid="onboarding-section-language"]').exists()).toBe(false)
-    await next(wrapper)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-prefs')
-
-    await wrapper.find('[data-testid="onboarding-project-name"]').setValue('支付中台')
-    await walkToTeam(wrapper, { key: 'sk-create' })
-    expect(
-      (wrapper.find('[data-testid="onboarding-team-name-clarify"]').element as HTMLInputElement).value,
-    ).toBe('支付中台需求澄清')
-    await next(wrapper)
-    await next(wrapper)
-
-    expect(api.createProject).toHaveBeenCalledTimes(1)
-    expect(api.bootstrapProjectOnboarding).toHaveBeenCalledWith('proj-created-1', expect.any(Object))
-    expect(wrapper.find('[data-testid="onboarding-create-error"]').text()).toBe('bootstrap blew up')
-
-    await next(wrapper)
-    expect(api.createProject).toHaveBeenCalledTimes(1)
-    expect(api.bootstrapProjectOnboarding).toHaveBeenCalledTimes(2)
-    expect(api.bootstrapProjectOnboarding).toHaveBeenNthCalledWith(2, 'proj-created-1', expect.any(Object))
-    expect(wrapper.find('[data-testid="onboarding-success"]').exists()).toBe(true)
-
-    await wrapper.find('[data-testid="onboarding-success-close"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.router.currentRoute.value.path).toBe('/projects/proj-created-1')
-  })
-
-  it('createProject does not overwrite grasp-locale (g2.1)', async () => {
-    localStorage.setItem('grasp-locale', 'zh-CN')
-    const { locale } = await import('@/lib/shared/locale')
-    locale.value = 'zh-CN'
-    vi.stubGlobal('navigator', { language: 'en-US' })
-
-    const wrapper = await mountWizard({ mode: 'createProject', projectId: '' })
-    expect(wrapper.find('[data-testid="onboarding-language-zh-CN"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="onboarding-project-name"]').exists()).toBe(true)
-    await wrapper.find('[data-testid="onboarding-later"]').trigger('click')
-    expect(localStorage.getItem('grasp-locale')).toBe('zh-CN')
-    expect(locale.value).toBe('zh-CN')
-    vi.unstubAllGlobals()
-  })
-
-  it('retry on a non-default project derives names from the project name', async () => {
-    const { api } = await import('@/lib/api/api')
-    const wrapper = await mountWizard({ mode: 'retry', projectId: 'p-retry' })
-    expect(api.getProject).toHaveBeenCalledWith('p-retry')
+  it('retry continues in the only workspace without a project creation step', async () => {
+    const wrapper = await mountWizard({ mode: 'retry', projectId: 'proj-default' })
     expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleRetry')
+    expect(wrapper.find('[data-testid="onboarding-project-name"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="onboarding-section-language"]').exists()).toBe(true)
     await walkToTeam(wrapper)
-    expect(
-      (wrapper.find('[data-testid="onboarding-team-name-implement"]').element as HTMLInputElement).value,
-    ).toBe('老项目实现')
+    expect((wrapper.find('[data-testid="onboarding-team-name-implement"]').element as HTMLInputElement).value).toBe('实现')
   })
 })

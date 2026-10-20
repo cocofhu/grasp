@@ -7,7 +7,7 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import nav from '@/locales/zh-CN/nav.json'
 import route from '@/locales/zh-CN/route.json'
-import { TOKEN_PART_COLORS } from '@/components/board/token-stats/tokenStatsShared'
+import { TOKEN_PART_COLORS } from '@/components/token-analytics/tokenStatsShared'
 
 vi.mock('@/lib/api/api', () => ({
   api: {
@@ -83,7 +83,7 @@ const sampleData = {
   topRuns: [{ runId: 'r1', title: 'Run 1', projectId: 'p1', projectName: 'Grasp', workflowName: 'main', modelKey: 'sonnet', modelName: 'Sonnet', total: 500 }],
   projectTrends: [{ key: 'p1', name: 'Grasp', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
   modelTrends: [{ key: 'sonnet', name: 'Sonnet', trend: [{ bucket: '2026-07-01', total: 100, workflowTotal: 80, pmTotal: 20, inputTokens: 40, outputTokens: 30, cacheReadTokens: 20, cacheWriteTokens: 10 }] }],
-  filterOptions: { projects: [{ key: 'p1', name: 'Grasp' }], models: [{ key: 'sonnet', name: 'Sonnet' }] },
+  filterOptions: { workflows: [{ key: 'w1', name: 'main' }], projects: [{ key: 'p1', name: 'Grasp' }], models: [{ key: 'sonnet', name: 'Sonnet' }] },
 }
 
 describe('TokenAnalyticsView', () => {
@@ -116,6 +116,57 @@ describe('TokenAnalyticsView', () => {
     expect(wrapper.text()).not.toContain('统计导航')
     expect(wrapper.text()).not.toContain('四分量')
     expect(wrapper.text()).not.toContain('多折线')
+    wrapper.unmount()
+  })
+
+  it('separates page actions from scope controls and keeps detailed analysis reachable', async () => {
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    const header = wrapper.get('[data-testid="token-analytics-header"]')
+    expect(header.text()).toContain('Token 用量、模型分布和预估费用')
+    expect(header.find('[data-testid="token-analytics-pricing"]').exists()).toBe(true)
+    expect(header.find('[data-testid="token-analytics-window"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="token-analytics-controls"]').find('[data-testid="token-analytics-window"]').exists()).toBe(true)
+    const advanced = wrapper.get('[data-testid="token-analytics-patterns"]')
+    expect(advanced.element.tagName).toBe('DETAILS')
+    expect((advanced.element as HTMLDetailsElement).open).toBe(false)
+    expect(advanced.get('summary').text()).toContain('时段与执行分析')
+    expect(advanced.find('[data-testid="token-analytics-area"]').exists()).toBe(true)
+    expect(advanced.find('[data-testid="token-analytics-node-wf"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="token-analytics-details"]').find('[data-testid="token-analytics-export-models"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps an aliased unknown model separate from the real model with the same name', async () => {
+    vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({ ...sampleData, modelRanking: [
+      { modelKey: 'gpt-5', name: 'gpt-5', total: 100 },
+      { modelKey: '未知/未分桶', name: 'gpt-5', total: 80, unknown: true },
+    ] })
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    const table = wrapper.get('[data-testid="token-analytics-models-table"]')
+    expect(table.findAll('tbody tr')).toHaveLength(2)
+    expect(table.get('[data-unknown="1"]').text()).toContain('gpt-5')
+    expect(table.get('[data-unknown="1"]').attributes('data-model-key')).toBe('未知/未分桶')
+    expect(table.find('[data-testid="unknown-model-badge"]').exists()).toBe(false)
+    const option = wrapper.get('[data-testid="token-analytics-model-share"]').findComponent({ name: 'VChart' }).props('option') as any
+    expect(option.series[0].data.map((row: any) => row.drill[0].key)).toEqual(['gpt-5', '未知/未分桶'])
+    expect(option.series[0].data[1].itemStyle.color).not.toBe('#71717a')
+    wrapper.unmount()
+  })
+
+  it('marks an unnamed model without exposing its raw bucket key as the display name', async () => {
+    vi.mocked(api.getGlobalTokenStats).mockResolvedValueOnce({ ...sampleData, modelRanking: [
+      { modelKey: '未知/未分桶', name: '未知模型', total: 80, unknown: true },
+    ] })
+    const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
+    await flushPromises()
+    const row = wrapper.get('[data-testid="token-analytics-models-table"] [data-unknown="1"]')
+    expect(row.text()).toContain('未知模型')
+    expect(row.text()).not.toContain('未知/未分桶')
+    expect(row.get('[data-testid="unknown-model-badge"]').text()).toBe('未知')
+    const option = wrapper.get('[data-testid="token-analytics-model-share"]').findComponent({ name: 'VChart' }).props('option') as any
+    expect(option.series[0].data[0].itemStyle.color).toBe('#71717a')
     wrapper.unmount()
   })
 
@@ -170,7 +221,7 @@ describe('TokenAnalyticsView', () => {
     expect(wrapper.find('[data-testid="token-analytics-plot-lines"]').classes()).toContain('overflow-visible')
     expect(wrapper.find('[data-testid="token-analytics-plot-bars"]').classes()).toContain('overflow-visible')
     expect(wrapper.find('[data-testid="token-analytics-plot-area"]').classes()).toContain('overflow-visible')
-    expect(wrapper.find('[data-testid="token-analytics-plot-heat"]').classes()).toContain('overflow-visible')
+    expect(wrapper.find('[data-testid="token-analytics-plot-heat"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -223,7 +274,7 @@ describe('TokenAnalyticsView', () => {
 
   it('defaults and falls back to the first comparable bar dimension', async () => {
     const cases = [
-      { data: sampleData, active: 'project' },
+      { data: sampleData, active: 'workflow' },
       { data: { ...sampleData, projects: sampleData.projects.slice(0, 1) }, active: 'workflow' },
       {
         data: {
@@ -262,9 +313,7 @@ describe('TokenAnalyticsView', () => {
     })
     const fallbackWrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
-    const projectButton = fallbackWrapper.find('[data-testid="token-analytics-bar-dimension-project"]')
-    expect(projectButton.attributes('disabled')).toBeDefined()
-    expect(projectButton.classes()).toContain('opacity-40')
+    expect(fallbackWrapper.find('[data-testid="token-analytics-bar-dimension-project"]').exists()).toBe(false)
     fallbackWrapper.unmount()
   })
 
@@ -299,7 +348,7 @@ describe('TokenAnalyticsView', () => {
     wrapper.unmount()
   })
 
-  it('opens the drill-down modal from project/model bars and applies the drill as a page filter', async () => {
+  it('opens the drill-down modal from workflow/model bars and applies the drill as a page filter', async () => {
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n], stubs: { teleport: true } } })
     await flushPromises()
     const getBarChart = () => wrapper.findAllComponents({ name: 'VChart' }).find((chart) => {
@@ -310,14 +359,14 @@ describe('TokenAnalyticsView', () => {
     vi.mocked(api.getGlobalTokenStats).mockClear()
     getBarChart().vm.$emit('click', {
       componentType: 'series',
-      name: 'Grasp',
-      data: { drill: [{ dim: 'project', key: 'p1', name: 'Grasp' }], other: false },
+      name: 'main',
+      data: { drill: [{ dim: 'workflow', key: 'w1', name: 'main' }], other: false },
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="token-drill-modal"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="token-drill-breadcrumb"]').text()).toContain('项目：Grasp')
+    expect(wrapper.find('[data-testid="token-drill-breadcrumb"]').text()).toContain('工作流：main')
     expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: 'p1' }),
+      expect.objectContaining({ workflowId: 'w1' }),
       expect.anything(),
     )
 
@@ -326,10 +375,10 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="token-drill-modal"]').exists()).toBe(false)
     expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: 'p1' }),
+      expect.objectContaining({ workflowId: 'w1' }),
       expect.anything(),
     )
-    expect((wrapper.find('[data-testid="token-analytics-filter-project"]').element as HTMLSelectElement).value).toBe('p1')
+    expect((wrapper.find('[data-testid="token-analytics-filter-workflow"]').element as HTMLSelectElement).value).toBe('w1')
     wrapper.unmount()
   })
 
@@ -380,14 +429,15 @@ describe('TokenAnalyticsView', () => {
     })
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n], stubs: { teleport: true } } })
     await flushPromises()
-    await wrapper.find('[data-testid="token-analytics-project-detail-p1"]').trigger('click')
+    const chart = wrapper.findAllComponents({ name: 'VChart' }).find((chart) => (chart.props('option') as any).series?.[0]?.stack === 'total')!
+    chart.vm.$emit('click', { componentType: 'series', data: { drill: [{ dim: 'workflow', key: 'w1', name: 'main' }], other: false } })
     await flushPromises()
     expect(wrapper.find('[data-testid="token-drill-modal"]').exists()).toBe(true)
 
     await wrapper.find('[data-testid="token-drill-tab-events"]').trigger('click')
     await flushPromises()
     expect(api.listTokenUsageEvents).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: 'p1', page: 1, sort: 'time' }),
+      expect.objectContaining({ workflowId: 'w1', page: 1, sort: 'time' }),
       expect.anything(),
     )
     const table = wrapper.find('[data-testid="token-events-table"]')
@@ -400,7 +450,7 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="token-drill-breadcrumb"]').text()).toContain('模型：sonnet')
     expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
-      expect.objectContaining({ projectId: 'p1', modelKey: 'sonnet' }),
+      expect.objectContaining({ workflowId: 'w1', modelKey: 'sonnet' }),
       expect.anything(),
     )
 
@@ -468,8 +518,7 @@ describe('TokenAnalyticsView', () => {
     const tree = charts.find((c) => (c.props('option') as { series?: { type?: string }[] }).series?.[0]?.type === 'treemap')
     expect(tree).toBeTruthy()
     const treeData = (tree!.props('option') as { series: Array<{ data: Array<{ drill: unknown; children: Array<{ drill: unknown; children: Array<{ drill: unknown }> }> }> }> }).series[0].data
-    expect(treeData[0].children[0].children[0].drill).toEqual([
-      { dim: 'project', key: 'p1', name: 'Grasp' },
+    expect(treeData[0].children[0].drill).toEqual([
       { dim: 'workflow', key: 'w1', name: 'main' },
       { dim: 'nodeType', key: 'agent', name: 'agent' },
     ])
@@ -576,13 +625,11 @@ describe('TokenAnalyticsView', () => {
     comparable.unmount()
   })
 
-  it('navigates to project board when clicking project name', async () => {
+  it('omits project navigation and filters from analytics', async () => {
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
-    const projectBtn = wrapper.findAll('button.text-accent-2').find((b) => b.text() === 'Grasp')
-    expect(projectBtn).toBeTruthy()
-    await projectBtn!.trigger('click')
-    expect(pushMock).toHaveBeenCalledWith({ path: '/projects/p1', query: { tab: 'board', window: 'all' } })
+    expect(wrapper.find('[data-testid="token-analytics-filter-project"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="token-analytics-project-detail-p1"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -663,10 +710,10 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const runsTable = wrapper.find('[data-testid="token-analytics-runs-table"]')
     expect(runsTable.text()).toContain('运行')
-    expect(runsTable.text()).toContain('项目')
+    expect(runsTable.text()).not.toContain('项目')
     expect(runsTable.text()).toContain('模型')
     expect(runsTable.text()).toContain('总量')
-    for (const key of ['run', 'project', 'model', 'total'] as const) {
+    for (const key of ['run', 'model', 'total', 'cost'] as const) {
       const sash = runsTable.find(`[data-testid="token-analytics-runs-col-sash-${key}"]`)
       expect(sash.exists()).toBe(true)
       expect(sash.classes()).toContain('cursor-col-resize')
@@ -697,7 +744,7 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const drags: Array<[string, number, number]> = [
       ['run', 100, 150],
-      ['project', 100, 130],
+      ['cost', 100, 130],
       ['model', 100, 90],
       ['total', 100, 140],
     ]
@@ -709,7 +756,7 @@ describe('TokenAnalyticsView', () => {
     }
     await flushPromises()
     expect(wrapper.find('[data-testid="token-analytics-runs-col-run"]').attributes('style')).toContain('270px')
-    expect(wrapper.find('[data-testid="token-analytics-runs-col-project"]').attributes('style')).toContain('170px')
+    expect(wrapper.find('[data-testid="token-analytics-runs-col-cost"]').attributes('style')).toContain('110px')
     expect(wrapper.find('[data-testid="token-analytics-runs-col-model"]').attributes('style')).toContain('130px')
     expect(wrapper.find('[data-testid="token-analytics-runs-col-total"]').attributes('style')).toContain('128px')
     wrapper.unmount()
@@ -765,7 +812,7 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const filters = wrapper.find('[data-testid="token-analytics-filters"]')
     expect(filters.text()).toContain('来源：全部')
-    expect(filters.text()).toContain('项目：全部')
+    expect(filters.text()).not.toContain('项目：全部')
     expect(filters.text()).toContain('模型：全部')
     const sourceAll = filters.findAll('button').find((b) => b.text() === '来源：全部')
     expect(sourceAll?.classes()).toContain('bg-accent-dim')
@@ -774,7 +821,7 @@ describe('TokenAnalyticsView', () => {
     expect(filters.text()).toContain('状态：全部')
     expect(filters.text()).toContain('阶段：全部')
     const selects = filters.findAll('select')
-    expect(selects).toHaveLength(6)
+    expect(selects).toHaveLength(5)
     for (const sel of selects) expect((sel.element as HTMLSelectElement).value).toBe('')
     wrapper.unmount()
   })

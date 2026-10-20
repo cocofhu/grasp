@@ -1,0 +1,20 @@
+import { inject, provide, type InjectionKey, type Ref } from 'vue'
+
+export type ConversationArtifactTarget = {
+  id?: string
+  name?: string
+  runId?: string
+  preview?: boolean
+}
+export type ConversationArtifacts = { open: (target: ConversationArtifactTarget) => void | Promise<void> }
+export const conversationPanelVisibleKey: InjectionKey<Readonly<Ref<boolean>>> = Symbol('conversation-panel-visible')
+
+const key: InjectionKey<ConversationArtifacts> = Symbol('conversation-artifacts')
+
+export function provideConversationArtifacts(controller: ConversationArtifacts): void {
+  provide(key, controller)
+}
+
+export function useConversationArtifacts(): ConversationArtifacts | null {
+  return inject(key, null)
+}

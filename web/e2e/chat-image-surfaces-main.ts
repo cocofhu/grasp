@@ -54,7 +54,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const method = (init?.method || 'GET').toUpperCase()
 
   if (url.includes('/pm/threads') && !url.includes('/messages') && !url.includes('/draft') && !url.includes('/sandbox') && method === 'GET') {
-    return json({ items: [{ id: 'thr-1', title: '你好' }] })
+    return json({ items: [{ id: 'thr-1', agentAvailable: true, title: '你好' }] })
   }
   if (url.includes('/pm/threads/thr-1/messages') && method === 'GET') {
     return json({
@@ -86,7 +86,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     return json({ draft: null, live: false, hasFinal: false })
   }
   if (url.includes('/sandbox') && method === 'POST') {
-    return json({ sandbox: { id: 1, status: 'running' }, preamble: '', thread: { id: 'thr-1', title: '你好' } })
+    return json({ sandbox: { id: 1, status: 'running' }, preamble: '', thread: { id: 'thr-1', agentAvailable: true, title: '你好' } })
   }
   if (url.includes('/sandboxes/1/eventlog')) {
     return json({

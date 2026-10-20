@@ -101,8 +101,13 @@ export function paramDefault(p: LiveParam): string | number {
 export function showVariant(w: Wrapper, n: number) {
   const previouslyVisible = w.variants.filter((v) => !v.el.hidden)
   const originalVisible = !!w.original && !w.original.hidden
-  if (w.original) setVariantVisible(w.original, n === 0)
-  for (const v of w.variants) setVariantVisible(v.el, v.n === n)
+  // Rescans re-apply the current view; settled roots (and a running fade) stay untouched.
+  const sync = (el: HTMLElement, visible: boolean) => {
+    if (isSettled(el, visible)) return
+    setVariantVisible(el, visible)
+  }
+  if (w.original) sync(w.original, n === 0)
+  for (const v of w.variants) sync(v.el, v.n === n)
   const selected = w.variants.find((v) => v.n === n)
   // Fade only a candidate-to-candidate switch. Compare and original peek stay immediate.
   if (selected && !originalVisible && previouslyVisible.length === 1 && previouslyVisible[0].n !== n) {
@@ -129,6 +134,11 @@ function fadeCandidate(el: HTMLElement) {
   animation.onfinish = () => {
     if (transitions.get(el) === animation) transitions.delete(el)
   }
+}
+
+function isSettled(el: HTMLElement, visible: boolean): boolean {
+  const forced = el.style.getPropertyValue('display') === 'none' && el.style.getPropertyPriority('display') === 'important'
+  return visible ? !el.hidden && !forced : el.hidden && forced && displays.has(el)
 }
 
 /** Author display rules, including inline !important, must not reveal a hidden candidate. */

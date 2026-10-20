@@ -182,7 +182,7 @@ function lineClass(kind: string) {
         <div
           v-for="(r, i) in session?.resources || []"
           :key="i"
-          class="rounded-lg mb-2 border border-line bg-elevated px-3 py-2 text-[12px]"
+          class="border-b border-line/60 py-3 text-[12px]"
           :class="session?.status === 'ready' ? 'border-ok/35' : ''"
         >
           <div class="font-semibold text-txt">{{ r.name }}</div>

@@ -277,7 +277,7 @@ onMounted(() => {
 
 <template>
   <div
-    class="rounded-lg flex min-h-0 flex-1 flex-col overflow-hidden border border-b-0 border-line bg-surface shadow-[var(--shadow-card)]"
+    class="flex min-h-0 flex-1 flex-col overflow-hidden"
     data-testid="project-shared-agent-panel"
   >
     <div
@@ -296,7 +296,7 @@ onMounted(() => {
     </div>
 
     <template v-else-if="draft">
-      <div class="toolbar-inline-row flex shrink-0 items-center gap-2 border-b border-line px-2">
+      <div class="toolbar-inline-row flex shrink-0 items-center gap-2 border-b border-line/60">
         <details class="relative shrink-0" data-testid="shared-agent-help">
           <summary
             class="flex h-[18px] w-[18px] cursor-pointer list-none items-center justify-center rounded-full border border-line text-[11px] font-semibold text-accent-2 transition hover:border-accent hover:bg-accent-dim [&::-webkit-details-marker]:hidden"
@@ -512,7 +512,7 @@ onMounted(() => {
           <div class="mb-1.5 text-[11px] uppercase tracking-wider text-txt3">
             {{ t('pages.agentStudio.meta.derivedPaths') }}
           </div>
-          <div class="rounded-lg overflow-hidden border border-line">
+          <div class="overflow-hidden border-y border-line/60">
             <table class="w-full text-left text-[12px]">
               <tbody>
                 <tr

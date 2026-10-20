@@ -1,0 +1,46 @@
+import { test, expect } from '@playwright/test'
+
+test.use({ baseURL: 'http://127.0.0.1:5174' })
+
+test('board starts with active work and keeps usage in its own page', async ({ page }) => {
+  await page.goto('/workspace.html?view=/board')
+  const board = page.getByTestId('board-view')
+  await expect(board.getByTestId('run-board-column')).toHaveCount(3)
+  await expect(board.getByTestId('board-overview-running')).toContainText('1')
+  await expect(board.getByTestId('board-overview-waiting_human')).toContainText('1')
+  await expect(board.getByTestId('board-overview-completed')).toContainText('4')
+  await expect(board.getByTestId('board-usage-link')).toHaveAttribute('href', '/stats')
+  await expect(board.getByTestId('token-stats-panel')).toHaveCount(0)
+  const before = await page.evaluate(() => (window as any).__workspaceFixture.calls.filter((call: any) => call.path === '/api/runs').length)
+  await board.getByTestId('board-refresh').click()
+  await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.calls.filter((call: any) => call.path === '/api/runs').length)).toBeGreaterThanOrEqual(before + 3)
+  const paths = await page.evaluate(() => (window as any).__workspaceFixture.calls.map((call: any) => call.path))
+  expect(paths).not.toContain('/api/workspace/token-stats')
+  expect(paths).not.toContain('/api/stats/token')
+})
+
+test('board retains preview, optional columns and the full run list', async ({ page }) => {
+  await page.goto('/workspace.html?view=/board')
+  const board = page.getByTestId('board-view')
+  await board.locator('.run-board-card').first().click()
+  await expect(page.getByText('运行摘要', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '继续浏览' }).click()
+  await board.getByTestId('board-filter-failed').click()
+  await expect(board.getByTestId('run-board-column')).toHaveCount(4)
+  await board.getByTestId('board-all-runs').click()
+  await expect(page.getByTestId('board-view')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '运行记录', exact: true })).toBeVisible()
+})
+
+test('mobile board keeps current work visible without horizontal overflow', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.goto('/workspace.html?view=/board')
+  const columns = page.getByTestId('board-view').getByTestId('run-board-column')
+  await expect(columns).toHaveCount(3)
+  const first = await columns.nth(0).boundingBox()
+  const second = await columns.nth(1).boundingBox()
+  expect(first).toBeTruthy()
+  expect(second!.y).toBeGreaterThan(first!.y)
+  await expect(page.getByTestId('board-overview')).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
+})

@@ -16,7 +16,7 @@ const apiMocks = vi.hoisted(() => ({
   saveWorkflow: vi.fn(),
   publishWorkflow: vi.fn(),
   listAgents: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   listWorkflowVersions: vi.fn(),
   getWorkflowVersionGraph: vi.fn(),
   restoreWorkflowVersion: vi.fn(),
@@ -33,7 +33,6 @@ vi.mock('@/lib/composables/useBreakpoint', async () => {
   return { useBreakpoint: () => ({ isMobile: ref(false) }) }
 })
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => toast }))
-vi.mock('@/lib/composables/useProjectContext', () => ({ readStoredProjectId: () => '' }))
 vi.mock('@/lib/run/useWorkflowImport', async () => {
   const { ref } = await import('vue')
   return {
@@ -154,7 +153,7 @@ beforeEach(() => {
   apiMocks.getWorkflowVersionGraph.mockResolvedValue({ nodes: workflow().nodes.slice(0, 2), edges: [] })
   apiMocks.restoreWorkflowVersion.mockImplementation(async (_id: string, v: number) => workflow({ version: 4, name: `restored-v${v}` }))
   apiMocks.listAgents.mockResolvedValue([{ name: '测试评审', projectId: 'p1', capabilities: TEST_REVIEW_CAPS }])
-  apiMocks.getProject.mockResolvedValue({ name: '我的项目' })
+  apiMocks.getWorkspace.mockResolvedValue({ name: '我的项目' })
 })
 
 afterEach(() => {
@@ -175,7 +174,7 @@ describe('WorkflowEditorView', () => {
     expect(canvasSpy.props.nodes).toHaveLength(3)
     expect(canvasSpy.props.mode).toBe('edit')
     expect(canvasSpy.props.autoLayoutOnInit).toBe(true)
-    expect(wrapper.get('[data-testid="editor-breadcrumb-project"]').text()).toBe('我的项目')
+    expect(wrapper.get('[data-testid="editor-breadcrumb-project"]').text()).toBe('工作流')
     expect((wrapper.get('[data-testid="editor-name"]').element as HTMLInputElement).value).toBe('demo-flow')
     expect(status(wrapper)).toBe('saved')
     expect(wrapper.find('[data-testid="node-palette"]').exists()).toBe(true)
@@ -295,17 +294,19 @@ describe('WorkflowEditorView', () => {
     )
     const { wrapper } = await mountEditor()
     expect(wrapper.find('[data-testid="editor-backup-banner"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="editor-backup-restore"]').trigger('click')
+    await wrapper.get('[data-testid="editor-backup-compare"]').trigger('click')
+    await wrapper.get('[data-testid="editor-backup-restore-name"]').setValue(true)
+    await wrapper.get('[data-testid="editor-backup-confirm"]').trigger('click')
     expect((wrapper.get('[data-testid="editor-name"]').element as HTMLInputElement).value).toBe('from-backup')
     expect(status(wrapper)).toBe('dirty')
     expect(wrapper.find('[data-testid="editor-backup-banner"]').exists()).toBe(false)
   })
 
-  it('ignores a backup older than the server copy and discards on request', async () => {
+  it('offers differing local work even after a newer remote update and discards only on request', async () => {
     const snap = JSON.stringify({ name: 'stale', description: '', needsRepo: false, nodes: [], edges: [] })
     localStorage.setItem(BACKUP_PREFIX + 'wf-1', JSON.stringify({ snapshot: snap, savedAt: Date.parse('2025-12-01T00:00:00Z') }))
     const first = await mountEditor()
-    expect(first.wrapper.find('[data-testid="editor-backup-banner"]').exists()).toBe(false)
+    expect(first.wrapper.find('[data-testid="editor-backup-banner"]').exists()).toBe(true)
     first.wrapper.unmount()
     mounted.length = 0
 
@@ -395,6 +396,30 @@ describe('WorkflowEditorView', () => {
     expect(apiMocks.publishWorkflow).toHaveBeenCalledWith('wf-1')
     expect(apiMocks.saveWorkflow.mock.invocationCallOrder[0]!).toBeLessThan(apiMocks.publishWorkflow.mock.invocationCallOrder[0]!)
     expect(wrapper.text()).toContain(t('canvas.publish.done', { n: 4 }))
+  })
+
+  it('keeps migrated ordinary defaults through metadata save and subsequent publication', async () => {
+    const defaults = { inheritWorkspace: false, variables: [{ name: 'LOCAL', type: 'string', value: 'configured' }], notifyPolicy: { enabled: false, defaultEvents: ['failed'], channelIds: ['original-channel'] }, gateAuto: { enabled: false, agentName: 'original-reviewer', variable: 'AUTO', prompt: 'review', enabledMcps: [] } }
+    apiMocks.getWorkflow.mockResolvedValue(workflow({ defaults }))
+    const { wrapper } = await mountEditor()
+    await wrapper.get('[data-testid="editor-name"]').setValue('metadata changed')
+    await wrapper.get('[data-testid="editor-publish"]').trigger('click')
+    await wrapper.get('[data-testid="editor-publish-confirm"]').trigger('click')
+    await flushPromises()
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0].defaults).toEqual(defaults)
+    expect(apiMocks.publishWorkflow).toHaveBeenCalledWith('wf-1')
+  })
+
+  it('restores backup content while preserving a newer server name by default', async () => {
+    const current = workflow({ name: 'server name', defaults: { inheritWorkspace: false, variables: [{ name: 'PRESERVED', type: 'string', value: 'current' }] } })
+    apiMocks.getWorkflow.mockResolvedValue(current)
+    localStorage.setItem(BACKUP_PREFIX + current.id, JSON.stringify({ savedAt: 1, snapshot: JSON.stringify({ name: 'old local name', description: 'local changes', nodes: current.nodes, edges: current.edges }) }))
+    const { wrapper } = await mountEditor()
+    await wrapper.get('[data-testid="editor-backup-restore"]').trigger('click')
+    expect((wrapper.get('[data-testid="editor-name"]').element as HTMLInputElement).value).toBe('server name')
+    await wrapper.get('[data-testid="editor-save"]').trigger('click')
+    await flushPromises()
+    expect(apiMocks.saveWorkflow.mock.calls[0]![0]).toMatchObject({ name: 'server name', description: 'local changes', defaults: current.defaults })
   })
 
   it('lists versions, previews one read-only and restores it after confirmation', async () => {

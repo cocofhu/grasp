@@ -32,9 +32,7 @@ const panelStyle = ref<Record<string, string>>({})
 
 function triggerLabel(p: HomeWorkflowOption | undefined): string {
   if (!p) return ''
-  const project = (p.projectName || '').trim()
-  // No empty " · 工作流名" prefix when project name is missing (g1.3 / F4).
-  return project ? `${project} · ${p.name}` : p.name
+  return p.name
 }
 
 const selectedName = computed(() => {
@@ -49,7 +47,7 @@ const filtered = computed(() => {
   if (!q) return props.workflows
   return props.workflows.filter(
     (p) =>
-      p.name.toLowerCase().includes(q) || (p.projectName || '').toLowerCase().includes(q),
+      p.name.toLowerCase().includes(q),
   )
 })
 
@@ -299,11 +297,6 @@ onBeforeUnmount(() => {
               <span
                 class="home-workflow-select__opt-name"
                 v-html="highlightName(p.name, search.trim())"
-              />
-              <span
-                v-if="p.projectName"
-                class="home-workflow-select__opt-project"
-                v-html="highlightName(p.projectName, search.trim())"
               />
             </button>
           </template>

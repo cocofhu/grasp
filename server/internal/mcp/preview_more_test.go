@@ -254,9 +254,9 @@ func TestListPreviewPortsMergeStore(t *testing.T) {
 		t.Fatalf("merged=%d %+v", len(ports), ports)
 	}
 
-	url, err := h.setPreviewPort("r", "n", 3000, "web")
-	if err != nil || url == "" {
-		t.Fatalf("setPreviewPort: %v %q", err, url)
+	reg, err := h.setPreviewPort("r", "n", 3000, "web")
+	if err != nil || reg.ProxyURL == "" {
+		t.Fatalf("setPreviewPort: %v %+v", err, reg)
 	}
 	ops := h.previewOps.(*fakePreviewOps)
 	if len(ops.shown) != 1 || ops.shown[0] != "sb:3000" {

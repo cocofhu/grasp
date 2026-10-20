@@ -18,14 +18,14 @@ func TestProjectCRUDAndDeleteConstraint(t *testing.T) {
 	}
 	s := NewProjectService(db)
 
-	p, err := s.Create("Alpha", "desc", nil)
+	p, err := s.CreateFixture("Alpha", "desc", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if p.ID == "" || p.Name != "Alpha" || p.Description != "desc" {
 		t.Fatalf("create = %+v", p)
 	}
-	if _, err := s.Create("Alpha", "", nil); err != ErrProjectNameExists {
+	if _, err := s.CreateFixture("Alpha", "", nil); err != ErrProjectNameExists {
 		t.Fatalf("dup name: %v", err)
 	}
 
@@ -44,13 +44,13 @@ func TestProjectCRUDAndDeleteConstraint(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Delete(p.ID); err != ErrProjectHasWorkflows {
+	if err := s.DeleteFixture(p.ID); err != ErrProjectHasWorkflows {
 		t.Fatalf("delete with wf: %v", err)
 	}
 	if err := db.Delete(&models.WorkflowDef{}, "id = ?", "wf-1").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Delete(p.ID); err != nil {
+	if err := s.DeleteFixture(p.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := s.Get(p.ID); ok {
@@ -64,7 +64,7 @@ func TestProjectSecretMergeAndMask(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	p, err := s.Create("S", "", []models.ProjectVariable{
+	p, err := s.CreateFixture("S", "", []models.ProjectVariable{
 		{Name: "api_key", Type: "string", Value: "sk-123", Secret: true},
 		{Name: "region", Type: "string", Value: "cn", Secret: false},
 	})
@@ -110,44 +110,41 @@ func TestProjectSecretMergeAndMask(t *testing.T) {
 	}
 }
 
-func TestProjectSecretTogglePreservesPlaintext(t *testing.T) {
+func TestProjectSecretToggleRequiresExplicitPublicValue(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "toggle.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	p, err := s.Create("T", "", []models.ProjectVariable{
+	p, err := s.CreateFixture("T", "", []models.ProjectVariable{
 		{Name: "api_key", Type: "string", Value: "sk-real", Secret: true},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// secret → non-secret with masked value must keep plaintext (not store ****).
+	// A mask is not consent to expose the stored secret as a public value.
 	vars := []models.ProjectVariable{{Name: "api_key", Type: "string", Value: SecretMask, Secret: false}}
-	p, err = s.Update(p.ID, nil, nil, &vars, nil, nil)
-	if err != nil {
-		t.Fatal(err)
+	if _, err = s.Update(p.ID, nil, nil, &vars, nil, nil); !errors.Is(err, ErrSecretPlaceholderOnPublicValue) {
+		t.Fatalf("un-secret mask accepted: %v", err)
 	}
-	var apiKey models.ProjectVariable
-	for _, v := range p.Variables {
-		if v.Name == "api_key" {
-			apiKey = v
+	stored, _ := s.Get(p.ID)
+	if !stored.Variables[0].Secret || stored.Variables[0].Value != "sk-real" {
+		t.Fatal("rejected update changed the stored secret")
+	}
+	for _, value := range []any{"", nil, "public replacement"} {
+		// Restore a secret before checking each transition.
+		secret := []models.ProjectVariable{{Name: "api_key", Type: "string", Value: "sk-real", Secret: true}}
+		if _, err = s.Update(p.ID, nil, nil, &secret, nil, nil); err != nil {
+			t.Fatal(err)
 		}
-	}
-	if apiKey.Value != "sk-real" || apiKey.Secret {
-		t.Fatalf("api_key after un-secret = %+v", apiKey)
-	}
-
-	// non-secret → secret with mask/empty keeps plaintext and flips flag.
-	vars2 := []models.ProjectVariable{{Name: "api_key", Type: "string", Value: SecretMask, Secret: true}}
-	p, err = s.Update(p.ID, nil, nil, &vars2, nil, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, v := range p.Variables {
-		if v.Name == "api_key" && (v.Value != "sk-real" || !v.Secret) {
-			t.Fatalf("api_key after re-secret = %+v", v)
+		vars[0].Value = value
+		p, err = s.Update(p.ID, nil, nil, &vars, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := p.Variables[0]; got.Secret || got.Value != value {
+			t.Fatalf("un-secret value=%v produced %+v", value, got)
 		}
 	}
 }
@@ -158,7 +155,7 @@ func TestProjectRejectsMaskOnRenamedKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	p, err := s.Create("R", "", []models.ProjectVariable{{Name: "token", Type: "string", Value: "v", Secret: true}})
+	p, err := s.CreateFixture("R", "", []models.ProjectVariable{{Name: "token", Type: "string", Value: "v", Secret: true}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -174,7 +171,7 @@ func TestProjectRejectsMaskOnCreateVars(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	_, err = s.Create("C", "", []models.ProjectVariable{
+	_, err = s.CreateFixture("C", "", []models.ProjectVariable{
 		{Name: "api_key", Type: "string", Value: SecretMask, Secret: true},
 	})
 	if !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
@@ -214,7 +211,7 @@ func TestProjectListAndWorkflowLookups(t *testing.T) {
 		t.Fatalf("format: %q", got)
 	}
 
-	p, err := s.Create("LookMe", "", []models.ProjectVariable{{Name: "v1", Type: "string", Value: "1"}})
+	p, err := s.CreateFixture("LookMe", "", []models.ProjectVariable{{Name: "v1", Type: "string", Value: "1"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -267,23 +264,23 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 	}
 	s := NewProjectService(db)
 
-	noRun, err := s.Create("NoRun", "", nil)
+	noRun, err := s.CreateFixture("NoRun", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	noUsage, err := s.Create("NoUsage", "", nil)
+	noUsage, err := s.CreateFixture("NoUsage", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	partial, err := s.Create("Partial", "", nil)
+	partial, err := s.CreateFixture("Partial", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero, err := s.Create("Zero", "", nil)
+	zero, err := s.CreateFixture("Zero", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	large, err := s.Create("Large", "", nil)
+	large, err := s.CreateFixture("Large", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +354,7 @@ func TestTotalTokensByProjectIDs(t *testing.T) {
 	}
 
 	// g2.1 / g2.5: PM Usage merges into totals with source split; no Usage = no backfill.
-	pmOnly, err := s.Create("PMOnly", "", nil)
+	pmOnly, err := s.CreateFixture("PMOnly", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -438,7 +435,7 @@ func TestProjectUpdateUnknownModelDisplayName(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewProjectService(db)
-	p, err := s.Create("UnkAlias", "", nil)
+	p, err := s.CreateFixture("UnkAlias", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

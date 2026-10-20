@@ -1,13 +1,15 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { defineComponent, h } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
 import enCommon from '@/locales/en/common.json'
 import type { AgentTool } from '@/lib/shared/types'
 import { registerStageLinks } from '@/lib/run/stageLinks'
+import { provideConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import AgentToolGroup from './AgentToolGroup.vue'
 
 function mountGroup(tools: AgentTool[], busy = false, locale: 'zh-CN' | 'en' = 'zh-CN') {
@@ -56,6 +58,7 @@ describe('AgentToolGroup', () => {
     expect(head.attributes('aria-expanded')).toBe('false')
     await head.trigger('click')
     expect(head.attributes('aria-expanded')).toBe('true')
+    expect(w.get('[data-testid="agent-tool-list"]').attributes('id')).toBe(head.attributes('aria-controls'))
     const rows = w.findAll('[data-testid="agent-tool-row"]')
     expect(rows.map((r) => r.attributes('data-state'))).toEqual(['done', 'running', 'failed'])
     expect(rows.map((r) => r.text())).toEqual(['读取文件完成', '运行命令运行中', '写入文件失败'])
@@ -116,6 +119,7 @@ describe('AgentToolGroup details', () => {
     expect(w.find('[data-testid="agent-tool-detail"]').exists()).toBe(false)
     await toggles[0]!.trigger('click')
     expect(toggles[0]!.attributes('aria-expanded')).toBe('true')
+    expect(w.get('[data-testid="agent-tool-detail"]').attributes('id')).toBe(toggles[0]!.attributes('aria-controls'))
     expect(w.find('[data-testid="agent-tool-input"]').text()).toContain('"command": "curl"')
     expect(w.find('[data-testid="agent-tool-output"]').text()).toBe('ok')
     expect(w.text()).toContain('入参')
@@ -178,6 +182,59 @@ describe('AgentToolGroup Grasp-aware rows', () => {
 })
 
 describe('AgentToolGroup stage links', () => {
+  it('does not borrow the sole mounted stage when no run identity was provided', async () => {
+    const openArtifact = vi.fn()
+    const unregister = registerStageLinks('another-conversation', {
+      hasArtifact: () => true,
+      openArtifact,
+      canOpenPreview: () => true,
+      openPreview: vi.fn(),
+    })
+    try {
+      const w = mountGroup([{ title: 'set_plan', status: 'completed' }, { title: 'set_preview', status: 'completed' }])
+      await w.setProps({ expanded: true })
+      expect(w.find('[data-testid="agent-tool-open-artifact"]').exists()).toBe(false)
+      expect(w.find('[data-testid="agent-tool-open-preview"]').exists()).toBe(false)
+      expect(openArtifact).not.toHaveBeenCalled()
+      await w.setProps({ runId: 'missing-run' })
+      expect(w.find('[data-testid="agent-tool-open-artifact"]').exists()).toBe(false)
+      w.unmount()
+    } finally {
+      unregister()
+    }
+  })
+
+  it('opens real artifacts and previews through the conversation workspace when available', async () => {
+    const stageOpen = vi.fn()
+    const open = vi.fn()
+    const unregister = registerStageLinks('run-workspace', {
+      hasArtifact: name => name === 'spec.md',
+      openArtifact: stageOpen,
+      canOpenPreview: () => true,
+      openPreview: stageOpen,
+    })
+    try {
+      const host = defineComponent({
+        setup() {
+          provideConversationArtifacts({ open })
+          return () => h(AgentToolGroup, {
+            runId: 'run-workspace', expanded: true,
+            tools: [{ title: 'write_artifact', status: 'completed', summary: 'spec.md' }, { title: 'set_preview', status: 'completed' }],
+          })
+        },
+      })
+      const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+      const w = mount(host, { global: { plugins: [i18n], stubs: { Icon: true } } })
+      await w.get('[data-testid="agent-tool-open-artifact"]').trigger('click')
+      await w.get('[data-testid="agent-tool-open-preview"]').trigger('click')
+      expect(open.mock.calls).toEqual([[{ name: 'spec.md', runId: 'run-workspace' }], [{ runId: 'run-workspace', preview: true }]])
+      expect(stageOpen).not.toHaveBeenCalled()
+      w.unmount()
+    } finally {
+      unregister()
+    }
+  })
+
   function mountWithStage(tools: AgentTool[], artifacts: string[], preview: boolean) {
     const opened: string[] = []
     const unregister = registerStageLinks('run-1', {

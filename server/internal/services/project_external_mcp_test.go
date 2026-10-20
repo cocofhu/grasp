@@ -28,7 +28,7 @@ func TestProjectExternalMcpServiceDefaultsAndUpdate(t *testing.T) {
 	if view.Enabled || len(view.EnabledPacks) != 0 {
 		t.Fatalf("defaults = %+v", view)
 	}
-	if view.McpBaseURL != "http://api.example.com/mcp/external/p1" {
+	if view.McpBaseURL != "http://api.example.com/mcp/workspace" {
 		t.Fatalf("base url = %q", view.McpBaseURL)
 	}
 

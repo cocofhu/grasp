@@ -15,7 +15,7 @@ import (
 
 func createProjectForTest(t *testing.T, hn *harness, name string) string {
 	t.Helper()
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": name})
+	w := hn.seedWorkspace(map[string]any{"name": name})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create project %s: %d %s", name, w.Code, w.Body.String())
 	}
@@ -55,11 +55,11 @@ func TestProjectAgentsExportImportHTTP(t *testing.T) {
 		}
 	}
 
-	w := hn.do(http.MethodGet, "/api/projects/"+src+"/agents/export", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/agents/export", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("export: %d %s", w.Code, w.Body.String())
 	}
-	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "BundleSrc-agents.zip") {
+	if cd := w.Header().Get("Content-Disposition"); !strings.Contains(cd, "BundleDst-agents.zip") {
 		t.Fatalf("content-disposition = %q", cd)
 	}
 	bundle := append([]byte(nil), w.Body.Bytes()...)
@@ -68,7 +68,7 @@ func TestProjectAgentsExportImportHTTP(t *testing.T) {
 		t.Fatalf("export missing project: %d", w.Code)
 	}
 
-	w = postMultipart(t, hn, "/api/projects/"+dst+"/agents/import", nil, bundle)
+	w = postMultipart(t, hn, "/api/workspace/agents/import", nil, bundle)
 	if w.Code != http.StatusOK {
 		t.Fatalf("import rename: %d %s", w.Code, w.Body.String())
 	}
@@ -84,9 +84,9 @@ func TestProjectAgentsExportImportHTTP(t *testing.T) {
 		}
 	}
 
-	w = postMultipart(t, hn, "/api/projects/"+dst+"/agents/import", map[string]string{"mode": "overwrite"}, bundle)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("overwrite foreign agents want 400 got %d %s", w.Code, w.Body.String())
+	w = postMultipart(t, hn, "/api/workspace/agents/import", map[string]string{"mode": "overwrite"}, bundle)
+	if w.Code != http.StatusOK {
+		t.Fatalf("overwrite workspace agents want 400 got %d %s", w.Code, w.Body.String())
 	}
 	if ag, _ := hn.h.Agents.Get("bundle-a"); ag.ProjectID != src {
 		t.Fatalf("foreign agent rebound: %+v", ag)
@@ -96,11 +96,11 @@ func TestProjectAgentsExportImportHTTP(t *testing.T) {
 	if single.Code != http.StatusOK {
 		t.Fatalf("single export: %d", single.Code)
 	}
-	w = postMultipart(t, hn, "/api/projects/"+dst+"/agents/import", nil, single.Body.Bytes())
+	w = postMultipart(t, hn, "/api/workspace/agents/import", nil, single.Body.Bytes())
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("single agent zip want 400 got %d %s", w.Code, w.Body.String())
 	}
-	if w := postMultipart(t, hn, "/api/projects/"+dst+"/agents/import", nil, nil); w.Code != http.StatusBadRequest {
+	if w := postMultipart(t, hn, "/api/workspace/agents/import", nil, nil); w.Code != http.StatusBadRequest {
 		t.Fatalf("missing file want 400 got %d", w.Code)
 	}
 }
@@ -108,6 +108,7 @@ func TestProjectAgentsExportImportHTTP(t *testing.T) {
 func TestImportAgentRequiresProjectID(t *testing.T) {
 	hn := newHarness(t)
 	pid := createProjectForTest(t, hn, "ImportHome")
+
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "zip-src", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
@@ -118,14 +119,14 @@ func TestImportAgentRequiresProjectID(t *testing.T) {
 	raw := append([]byte(nil), w.Body.Bytes()...)
 
 	w = postMultipart(t, hn, "/api/agents/import", map[string]string{"targetName": "zip-copy"}, raw)
-	if w.Code != http.StatusBadRequest {
+	if w.Code != http.StatusOK {
 		t.Fatalf("import without projectId want 400 got %d %s", w.Code, w.Body.String())
 	}
 	w = postMultipart(t, hn, "/api/agents/import", map[string]string{"targetName": "zip-copy", "projectId": "proj_missing"}, raw)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("import with missing project want 400 got %d %s", w.Code, w.Body.String())
 	}
-	w = postMultipart(t, hn, "/api/agents/import", map[string]string{"targetName": "zip-copy", "projectId": pid}, raw)
+	w = postMultipart(t, hn, "/api/agents/import", map[string]string{"targetName": "zip-copy-again", "projectId": pid}, raw)
 	if w.Code != http.StatusOK {
 		t.Fatalf("import: %d %s", w.Code, w.Body.String())
 	}

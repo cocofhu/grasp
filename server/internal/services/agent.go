@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 
@@ -182,7 +183,8 @@ type Agent struct {
 	// ProjectID is the Agent's single home project (required). Switching it
 	// purges the Agent's data under the old project (see
 	// PmService.PurgeAgentProjectData).
-	ProjectID string `json:"projectId,omitempty"`
+	ProjectID          string             `json:"projectId,omitempty"`
+	CredentialBindings map[string]*string `json:"credentialBindings,omitempty"`
 	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex).
 	// Required on save.
 	AcpBackend string `json:"acpBackend"`
@@ -219,6 +221,7 @@ type Agent struct {
 // the workspace/ subfolder).
 type agentConfig struct {
 	ProjectID            string                    `json:"projectId,omitempty"`
+	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	AcpBackend           string                    `json:"acpBackend,omitempty"`
 	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
 	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
@@ -285,6 +288,7 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 	return Agent{
 		Name:                 name,
 		ProjectID:            strings.TrimSpace(cfg.ProjectID),
+		CredentialBindings:   cfg.CredentialBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
@@ -408,6 +412,11 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 			return err
 		}
 	}
+	for key := range a.CredentialBindings {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(key) != key || envauth.IsPlatformReservedEnvKey(key) {
+			return fmt.Errorf("invalid credential binding key %q", key)
+		}
+	}
 	if err := RejectSecretEnvKeys(a.Env); err != nil {
 		return err
 	}
@@ -425,6 +434,7 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 	}
 	cfg := agentConfig{
 		ProjectID:            strings.TrimSpace(a.ProjectID),
+		CredentialBindings:   a.CredentialBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(a.GitCredentialType),
 		OpenCodeCredentialID: strings.TrimSpace(a.OpenCodeCredentialID),

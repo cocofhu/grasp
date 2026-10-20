@@ -87,7 +87,7 @@ Agent 授予了 `set_preview` 时，noVNC 工具栏会多一个「新标签页�
 
 Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway) 在 Docker 容器中执行，经 ACP 通信。
 
-支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；密钥只在项目详情的项目凭据 UI 中保存；站点等非敏感选项可写在 Agent meta env（OpenCode 还可指定厂商、API Base 与 model）。
+支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；密钥只在「设置 → 凭据」 中保存；站点等非敏感选项可写在 Agent meta env（OpenCode 还可指定厂商、API Base 与 model）。
 
 ## 产物契约与 MCP
 
@@ -99,12 +99,12 @@ Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sa
 
 按 run token 隔离，留下可检查的纸面轨迹。
 
-## PM：`pm-agent-fs`（项目成员 + Agent 工作目录）
+## PM：`pm-agent-fs`（工作区成员 + Agent 工作目录）
 
-项目绑定的 PM Leader 可启用独立 MCP `pm-agent-fs`（新项目默认启用；旧项目若已显式保存过 EnabledMcps 需在 PM 设置中手动勾选）：
+工作区绑定的 PM Leader 可启用独立 MCP `pm-agent-fs`（默认启用；已有部署若已显式保存过 EnabledMcps 需在 PM 设置中手动勾选）：
 
-- `pm_list_project_agents`：列出当前项目的全部 Agent，并标注相对 Leader 的 self / other
-- `pm_fs_*`：对同项目 Agent 的 **host 侧** `workspace/` 做 list/read/write/delete/mkdir/rename（**不是** Run 沙箱 FS）
+- `pm_list_project_agents`：列出工作区的全部 Agent，并标注相对 Leader 的 self / other
+- `pm_fs_*`：对工作区 Agent 的 **host 侧** `workspace/` 做 list/read/write/delete/mkdir/rename（**不是** Run 沙箱 FS）
 
 写入结果与 Agent Studio「Agent 工作目录」同一磁盘树；**刷新或重新打开该 Agent 后可见**（不做热更新）。若 Studio 仍打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——使用/Demo 时请刷新并避免并行脏写。
 

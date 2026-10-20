@@ -119,6 +119,7 @@ func TestGateShareCreateRegenRevokeAndInboxStatus(t *testing.T) {
 	}
 	prev2 := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: newToken})
 	p2 := parseJSON(t, prev2)
+
 	if p2["status"] != models.ShareLinkStateActive {
 		t.Fatalf("new token preview: %s", prev2.Body.String())
 	}

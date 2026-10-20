@@ -1,9 +1,6 @@
 <script setup lang="ts">
 import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
-import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
-import ProjectFilter from '@/components/ui/ProjectFilter.vue'
-import TagFilter from '@/components/ui/TagFilter.vue'
 import GateApproval from '@/components/run/GateApproval.vue'
 import GateShareLinkPanel from '@/components/run/GateShareLinkPanel.vue'
 import InboxPendingCard from '@/components/inbox/InboxPendingCard.vue'
@@ -86,13 +83,11 @@ const {
   loadActiveRun,
   retryActiveRun,
   applyListUpdate,
-  onManualRefresh,
   dismissUpdateBanner,
   onReactRevised,
   onResolve,
   patchShareStatus,
   openSharePanel,
-  selectItem,
   openDetail,
   backToList,
   onClarifySend,
@@ -106,7 +101,6 @@ const {
   onVisible,
   itemTitle,
   itemSecondary,
-  router,
   route,
   toast,
   PAGE_SIZE,
@@ -134,12 +128,8 @@ const {
   inboxConfirmFlowReduce,
   inboxConfirmFlowToken,
   pendingAcpFrames,
-  projectFilterOpen,
-  workflowFilterOpen,
-  tagFilterOpen,
   showUpdateBanner,
   showProcessedBanner,
-  manualRefreshing,
   showListSkeleton,
   showListError,
   showListRefresh,
@@ -162,8 +152,6 @@ const {
   lastStagedAppPreviewPick,
   isClarifyEditing,
   isEditing,
-  statusPillClass,
-  statusPillText,
   updateBannerDetail,
   activeRun,
   activeRunLoading,
@@ -215,7 +203,6 @@ const {
   isShareableInboxItem,
   isHumanGateInboxItem,
   inboxShareKind,
-  REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   pageControlByNode,
 } = useGatesInbox()
 
@@ -251,62 +238,6 @@ const listFadeKey = computed(() =>
         <p class="truncate text-[11px] text-txt3" :title="active ? itemSecondary(active) : undefined">
           {{ active ? itemSecondary(active) : '' }}
         </p>
-      </div>
-    </div>
-
-    <!-- Desktop / mobile list header -->
-    <div v-else class="mb-5 flex shrink-0 flex-col gap-2.5 md:flex-row md:items-start md:justify-between">
-      <div class="min-w-0">
-        <h2 class="text-lg font-semibold text-txt">{{ t('pages.gatesInbox.title') }}</h2>
-        <p class="text-sm text-txt3" v-html="t('pages.gatesInbox.subtitleHtml')" />
-      </div>
-      <div class="flex w-full shrink-0 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center md:w-auto">
-        <TagFilter
-          v-model="selectedTags"
-          v-model:open="tagFilterOpen"
-          :project-id="selectedProject"
-        />
-        <div class="flex flex-wrap items-center gap-2">
-          <span
-            class="toolbar-control inline-flex items-center gap-1.5 border text-[11px] font-medium"
-            data-testid="gates-inbox-status-pill"
-            :class="{
-              'border-info/40 bg-info/10 text-info': statusPillClass === 'pending',
-              'border-accent/40 bg-accent-dim/50 text-accent-2': statusPillClass === 'editing',
-              'border-ok/35 bg-ok/10 text-ok': statusPillClass === 'idle',
-            }"
-          >
-            <span
-              class="h-1.5 w-1.5 rounded-full"
-              :class="{
-                'bg-info animate-pulse': statusPillClass === 'pending',
-                'bg-accent': statusPillClass === 'editing',
-                'bg-ok': statusPillClass === 'idle',
-              }"
-            />
-            {{ statusPillText }}
-          </span>
-          <button
-            class="toolbar-control inline-flex items-center gap-1.5 border border-line bg-surface text-xs font-medium text-txt transition hover:border-line-strong hover:bg-elevated disabled:opacity-45"
-            data-testid="gates-inbox-refresh"
-            :disabled="manualRefreshing || processingLock"
-            :aria-busy="processingLock || undefined"
-            @click="onManualRefresh"
-          >
-            <Icon name="refresh" :size="14" :class="{ 'animate-spin': manualRefreshing }" />
-            {{ t('common.buttons.refresh') }}
-          </button>
-          <ProjectFilter
-            v-model="selectedProject"
-            v-model:open="projectFilterOpen"
-            :count="listTotal"
-          />
-          <WorkflowFilter
-            v-model="selected"
-            v-model:open="workflowFilterOpen"
-            :count="listTotal"
-          />
-        </div>
       </div>
     </div>
 
@@ -422,10 +353,10 @@ const listFadeKey = computed(() =>
     </template>
 
     <!-- Mobile detail view -->
-    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="card relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div v-if="active" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
+    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
+      data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
+      <div v-if="active && isShareableInboxItem(active)" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
-          v-if="isShareableInboxItem(active)"
           type="button"
           class="inline-flex min-h-11 items-center text-xs text-accent-2 hover:underline"
           data-testid="gate-share-copy-btn-detail"
@@ -433,9 +364,6 @@ const listFadeKey = computed(() =>
           @click="openSharePanel(active)"
         >
           {{ t('pages.gatesInbox.share.copyLink') }}
-        </button>
-        <button class="text-xs text-accent-2 hover:underline" @click="router.push('/runs/' + active.runId)">
-          {{ t('common.buttons.openRunDetail') }}
         </button>
       </div>
       <div class="relative flex min-h-0 flex-1 flex-col">
@@ -455,13 +383,12 @@ const listFadeKey = computed(() =>
         />
         <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
         <ReviewShell
+          :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
+          :run-id="active.runId"
           v-else-if="showClarifyReviewShell"
           ref="reviewShellRef"
           :key="active.runId + active.nodeId"
           class="min-h-0 flex-1"
-          mobile
-          :sidebar-width="400"
-          :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
           :host-confirm-flow="false"
         >
           <template #stage>
@@ -540,43 +467,16 @@ const listFadeKey = computed(() =>
       </div>
     </div>
 
-    <!-- Desktop three-zone: list | product stage + review sidebar (via GateApproval/ReviewShell).
-         items-stretch so detail card + review sidebar fill remaining viewport height (no page void under card). -->
+    <!-- Desktop: existing panel only. Pending rows live in the sidebar. -->
     <div
       v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"
-      class="grid min-h-0 flex-1 grid-cols-[320px_1fr] items-stretch gap-4"
+      class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
-      <div class="flex h-full min-h-0 flex-col overflow-hidden">
-        <RefreshStrip v-if="showListRefresh" data-testid="gates-inbox-refresh-strip" />
-        <!-- plan g2.1: py-0.5 so list-card-lift hover translateY(-1px) top border is not clipped -->
-        <div class="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto py-0.5">
-          <Transition name="ui-fade" mode="out-in">
-          <div :key="listFadeKey" class="flex flex-col gap-2" data-testid="inbox-list-fade-desktop">
-          <InboxPendingCard
-            v-for="it in listItems"
-            :key="itemKey(it)"
-            :item="it"
-            :active="isActive(it)"
-            :disabled="isItemCardDisabled(it)"
-            @select="selectItem(it)"
-            @open-share="openSharePanel(it)"
-          />
-          </div>
-          </Transition>
-        </div>
-        <Pagination v-if="listTotal > PAGE_SIZE" v-model:page="listPage" :page-size="PAGE_SIZE" :total="listTotal" />
-      </div>
-
-      <div v-if="active || confirmFlowDeskHold" class="relative flex h-full min-h-0 min-w-0 flex-col">
-        <div class="card relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div v-if="active || confirmFlowDeskHold" class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col"
+        data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
+        <div class="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
           <template v-if="active">
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
-            <span class="text-xs text-txt3">Run #{{ active.runId.replace('run-', '') }} · {{ active.nodeId }}</span>
-            <button class="text-xs text-accent-2 hover:underline" @click="router.push('/runs/' + active.runId)">
-              {{ t('common.buttons.openRunDetail') }}
-            </button>
-          </div>
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ArtifactLoadingPane v-if="activeRunLoading && active.type === 'gate'" message-key="pages.gatesInbox.loadingRun" />
             <GateApproval
@@ -595,12 +495,12 @@ const listFadeKey = computed(() =>
             />
             <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
             <ReviewShell
+              :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
+              :run-id="active.runId"
               v-else-if="showClarifyReviewShell"
               ref="reviewShellRef"
               :key="active.runId + active.nodeId"
               class="min-h-0 flex-1"
-              :sidebar-width="400"
-              :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
               :host-confirm-flow="false"
             >
               <template #stage>
@@ -681,33 +581,14 @@ const listFadeKey = computed(() =>
       </div>
     </div>
 
-    <!-- Desktop loading∧empty: keep the 320px list rail + a weak detail hint (no EmptyState flash). -->
+    <!-- Desktop loading: panel hint only. The card rail moved to the sidebar. -->
     <div
       v-else-if="!isMobile && showListSkeleton"
-      class="grid min-h-0 flex-1 grid-cols-[320px_1fr] items-stretch gap-4"
+      class="flex min-h-0 flex-1 items-stretch"
       data-testid="inbox-list-skeleton"
     >
-      <div class="flex h-full min-h-0 flex-col gap-2 overflow-hidden" aria-hidden="true">
-        <div
-          v-for="n in SKELETON_CARDS"
-          :key="'skel-d-' + n"
-          class="flex w-full shrink-0 flex-col gap-2 rounded-lg border border-line bg-surface p-3"
-          data-testid="inbox-pending-card-skeleton"
-        >
-          <div class="flex items-start gap-3">
-            <div class="h-9 w-9 shrink-0 bg-elevated animate-pulse" />
-            <div class="min-w-0 flex-1 space-y-2">
-              <div class="h-3.5 w-2/3 bg-elevated animate-pulse" />
-              <div class="h-2.5 w-full bg-elevated animate-pulse" />
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="flex h-full min-h-0 min-w-0 flex-col">
-        <div class="card flex h-full min-h-0 w-full flex-col overflow-hidden">
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
-            <span class="text-xs text-txt3">{{ t('pages.gatesInbox.detailPane') }}</span>
-          </div>
+      <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
+        <div class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
           <div class="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
             <p class="text-sm text-txt2">{{ t('pages.gatesInbox.listLoadingHint') }}</p>
           </div>

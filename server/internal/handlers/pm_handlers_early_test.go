@@ -17,15 +17,16 @@ import (
 func TestPmThreadChatEarlyFailures(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	hn, pid, _ := setupPmEnabledHarness(t)
+	_ = pid
 
 	hn.h.PmTurns = nil
-	w := hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/any/chat", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/pm/threads/any/chat", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("nil turns: %d %s", w.Code, w.Body.String())
 	}
 
 	hn.h.PmTurns = services.NewPmTurnRunner(hn.h.Pm, hn.h.Sbx)
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/missing/chat", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/missing/chat", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("missing thread: %d %s", w.Code, w.Body.String())
 	}
@@ -33,18 +34,19 @@ func TestPmThreadChatEarlyFailures(t *testing.T) {
 
 func TestPmMessagesHandlersBranches(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "msgs"})
+	_ = pid
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "msgs"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	tid := jsonField(w.Body.String(), "id")
 
 	hn.h.Pm = nil
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("list nil pm: %d", w.Code)
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{"content": "x"})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", map[string]any{"content": "x"})
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("append nil pm: %d", w.Code)
 	}
@@ -80,9 +82,10 @@ func TestPmHandlersRequireAuthWhenEnabled(t *testing.T) {
 
 func TestAppendPmMessageInvalidJSON(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "bad-json"})
+	_ = pid
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "bad-json"})
 	tid := jsonField(w.Body.String(), "id")
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", "not-json")
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", "not-json")
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("bad json: %d %s", w.Code, w.Body.String())
 	}

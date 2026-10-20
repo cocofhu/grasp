@@ -250,7 +250,7 @@ function onConfirm() {
   <!-- Clarify / review: reuse ClarifyChat (chip + image + threshold already wired). -->
   <div
     v-if="mode === 'clarify' || mode === 'review'"
-    class="flex h-full min-h-0 flex-col"
+    class="chat-thread flex h-full min-h-0 min-w-0 flex-col"
     data-testid="review-composer-shell"
   >
     <div v-if="pageControl" class="shrink-0 border-b border-line px-3 py-1.5">
@@ -294,16 +294,28 @@ function onConfirm() {
   <!-- Gate: local composer with review-semantics sticky actions (send + confirm). -->
   <div
     v-else
-    class="flex h-full min-h-0 flex-col"
+    class="chat-thread flex h-full min-h-0 min-w-0 flex-col"
     data-testid="review-composer-gate"
     data-review-composer
   >
-    <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2 text-[12px] text-txt3">
+    <div class="review-gate-transcript scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-5" data-conversation-scroll>
+      <div class="mx-auto w-full max-w-[760px]">
       <slot name="gate-body">
-        <template v-if="!coldSession">
+        <p v-if="!coldSession" class="chat-meta">
           {{ t('pages.reviewComposer.gateHint') }}
-        </template>
+        </p>
       </slot>
+      <GateReactStreamPanel
+        v-if="!coldSession"
+        :run-id="runId"
+        :thinking="thinking"
+        :stream-text="streamText"
+        :stream-thought="streamThought"
+        :stream-tools="streamTools"
+        :interrupted="interrupted"
+        :completed-at="streamCompletedAt"
+      />
+      </div>
     </div>
     <div class="shrink-0 border-t border-line p-3" data-testid="review-composer-actions">
       <template v-if="!coldSession">
@@ -323,6 +335,7 @@ function onConfirm() {
         <template v-if="!coldSession" #input>
           <ParagraphInput
             ref="paragraphRef"
+            class="chat-input"
             v-model:text="draft"
             v-model:images="attachments"
             embedded
@@ -335,42 +348,43 @@ function onConfirm() {
           <button
             v-if="!textOnly"
             type="button"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line text-txt2 hover:border-line-strong disabled:opacity-50"
+            class="chat-action-button"
             data-testid="paragraph-input-attach"
             :disabled="rejecting || !canReject"
             :title="t('common.paragraphInput.addImage')"
+            :aria-label="t('common.paragraphInput.addImage')"
             @click="paragraphRef?.pickFiles?.()"
           >
-            <Icon name="paperclip" :size="16" />
+            <Icon name="plus" :size="18" />
           </button>
         </template>
         <template v-if="!coldSession" #toolbar-end>
           <button
             v-if="showGateCancel"
             type="button"
-            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
+            class="chat-action-button chat-action-stop"
             data-testid="gate-react-cancel"
             title="Cancel"
             aria-label="Cancel"
             @click="emit('cancel')"
           >
-            <Icon name="stop" :size="12" />
+            <Icon name="chat-stop" :size="16" />
           </button>
           <button
             v-if="showGateSend"
             type="button"
-            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+            class="chat-action-button chat-action-primary"
             data-testid="review-composer-send"
             :title="sendButtonLabel"
             :aria-label="sendButtonLabel"
             :disabled="!canSubmitGate"
             @click="onSend"
           >
-            <Icon name="send" :size="14" />
+            <Icon name="chat-send" :size="18" />
           </button>
         </template>
         <template v-if="!coldSession" #hint>
-          <p class="m-0 min-w-0 text-[11px] leading-snug [overflow-wrap:anywhere]" data-testid="review-composer-footer-hint">
+          <p class="chat-meta m-0 min-w-0 leading-snug [overflow-wrap:anywhere]" data-testid="review-composer-footer-hint">
             {{ gateFooterHint }}
           </p>
         </template>
@@ -378,7 +392,7 @@ function onConfirm() {
           <button
             v-if="canPass"
             type="button"
-            class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:cursor-not-allowed disabled:opacity-50"
+            class="chat-action-confirm inline-flex h-9 shrink-0"
             data-testid="review-composer-pass"
             :disabled="passDisabled"
             :title="passTitle"
@@ -400,14 +414,6 @@ function onConfirm() {
           @edit="(i) => emit('queue-edit', i)"
           @reorder="(from, to) => emit('queue-reorder-indexes', from, to)"
         />
-        <GateReactStreamPanel
-          :thinking="thinking"
-          :stream-text="streamText"
-          :stream-thought="streamThought"
-          :stream-tools="streamTools"
-          :interrupted="interrupted"
-          :completed-at="streamCompletedAt"
-        />
       </template>
     </div>
   </div>
@@ -415,4 +421,10 @@ function onConfirm() {
 
 <style scoped>
 /* typing-dots / outputting / caret live in GateReactStreamPanel */
+[data-testid="review-composer-actions"] {
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
+  border-top-color: transparent;
+}
 </style>

@@ -291,7 +291,7 @@ watch(
 
     <form
       v-if="showAdd"
-      class="mt-3 space-y-3 rounded-lg border border-line bg-base p-3"
+      class="mt-3 space-y-3 border-y border-line/60 py-4"
       data-testid="opencode-credential-form"
       @submit.prevent="saveAdd"
     >
@@ -355,18 +355,19 @@ watch(
 
     <div
       v-if="!rows.length"
-      class="mt-3 rounded-lg border border-dashed border-line px-3 py-3 text-[12px] text-txt3"
+      class="mt-3 py-3 text-[12px] text-txt3"
       data-testid="opencode-credential-empty"
     >
       {{ t('pages.agentStudio.openCode.credentialEmpty') }}
     </div>
-    <div v-else class="mt-3 space-y-2">
+    <div v-else class="mt-3 divide-y divide-line/60">
       <div v-for="item in rows" :key="item.id" :data-testid="`opencode-credential-row-${item.id}`">
         <component
           :is="mode === 'select' ? 'button' : 'div'"
           :type="mode === 'select' ? 'button' : undefined"
-          class="w-full rounded-lg border px-3 py-2.5 text-left transition"
-          :class="mode === 'select' && selectedId === item.id ? 'border-accent bg-accent-dim text-txt' : 'border-line bg-base text-txt2'"
+          class="w-full border-l-2 px-3 py-3 text-left transition"
+          :class="mode === 'select' && selectedId === item.id ? 'border-accent bg-accent-dim text-txt' : 'border-transparent text-txt2'"
+          :aria-pressed="mode === 'select' ? selectedId === item.id : undefined"
           @click="choose(item.id)"
         >
           <div class="flex items-start gap-3">
@@ -412,7 +413,7 @@ watch(
         </component>
         <form
           v-if="mode === 'manage' && replacingId === item.id"
-          class="mt-2 rounded-lg border border-line bg-surface p-3"
+          class="mt-2 border-t border-line/60 py-3"
           :data-testid="`opencode-credential-replace-form-${item.id}`"
           @submit.prevent="saveReplace(item.id)"
         >

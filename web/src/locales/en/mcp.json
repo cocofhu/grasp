@@ -7,15 +7,15 @@
       "noConfigNeeded": "No setup required",
       "noConfigHere": "No setup on this page",
       "alwaysAvailable": "Always available",
-      "seenInPmLeader": "Seen in Project Management",
+      "seenInPmLeader": "Seen in Workspace assistant",
       "seenInAgentStudio": "Seen in Agent Studio",
       "addViaAgentStudio": "Add via Agent Studio",
       "notRunScoped": "Not run-scoped global injection",
       "scopeRun": "scope: run",
-      "scopeProject": "scope: project / pm-session",
+      "scopeProject": "scope: workspace / assistant-session",
       "entryPathLabel": "Where to use:",
-      "entryPath": "Project detail → Project Management → Settings",
-      "entryPathExternal": "Project detail → External MCP",
+      "entryPath": "Settings → Assistant settings",
+      "entryPathExternal": "Settings → External MCP",
       "entryPathAgent": "Agent Studio → MCP",
       "toolCount": "{n} tools · Click for details",
       "openDetail": "Open details",
@@ -177,9 +177,9 @@
     },
     "memoryStore": {
       "name": "memory-store",
-      "desc": "Shared long-term memory · isolated by project+agent",
+      "desc": "Shared long-term memory · isolated by workspace + Agent",
       "overview": "Agent-scoped memory MCP. Progressive list/search then get; upsert conclusions.",
-      "convention": "Add via Agent Studio ({'${GRASP_MEMORY_URL/TOKEN}'}). Auto-injected in Project Management consult.",
+      "convention": "Add via Agent Studio ({'${GRASP_MEMORY_URL/TOKEN}'}). Auto-injected in Workspace assistant consult.",
       "tools": {
         "list_memories": {
           "signature": "list_memories()",
@@ -234,8 +234,8 @@
     "taskScheduler": {
       "name": "task-scheduler",
       "desc": "Agent scheduled tasks · definition MCP; platform executes",
-      "overview": "Agent-level cron. Writes only in Project Management consult; each fire uses a fresh sandbox.",
-      "convention": "create_job requires Project Management consult. Platform scheduler runs Chat.",
+      "overview": "Agent-level cron. Writes only in Workspace assistant consult; each fire uses a fresh sandbox.",
+      "convention": "create_job requires Workspace assistant consult. Platform scheduler runs Chat.",
       "tools": {
         "list_jobs": {
           "signature": "list_jobs()",
@@ -265,9 +265,9 @@
     },
     "pmProgress": {
       "name": "pm-progress",
-      "desc": "Project Management only · project progress / blockers (read-only)",
-      "overview": "Project progress MCP injected in Project Management consult when enabled.",
-      "convention": "Enable under Project → Project Management settings.",
+      "desc": "Workspace assistant only · workspace progress / blockers (read-only)",
+      "overview": "Workspace progress MCP injected in Workspace assistant consult when enabled.",
+      "convention": "Enable under Settings → Assistant settings.",
       "tools": {
         "pm_get_progress": {
           "signature": "pm_get_progress()",
@@ -297,9 +297,9 @@
     },
     "pmWorkflowRead": {
       "name": "pm-workflow-read",
-      "desc": "Project Management only · read-only workflow queries in the same project",
-      "overview": "List/get/graph/versions/runs plus pending gates, scoped to the current project.",
-      "convention": "Enable under Project → Project Management settings.",
+      "desc": "Workspace assistant only · read-only workflow queries in the workspace",
+      "overview": "List/get/graph/versions/runs plus pending gates, scoped to the workspace.",
+      "convention": "Enable under Settings → Assistant settings.",
       "tools": {
         "pm_list_workflows": {
           "signature": "pm_list_workflows()",
@@ -333,9 +333,9 @@
     },
     "pmWorkflowWrite": {
       "name": "pm-workflow-write",
-      "desc": "Project Management only · workflow write operations in the same project",
-      "overview": "Create/update/copy/delete workflows, publish, start runs, approve gates and cancel runs, scoped to the current project.",
-      "convention": "Enable under Project → Project Management settings.",
+      "desc": "Workspace assistant only · workflow write operations in the workspace",
+      "overview": "Create/update/copy/delete workflows, publish, start runs, approve gates and cancel runs, scoped to the workspace.",
+      "convention": "Enable under Settings → Assistant settings.",
       "tools": {
         "pm_create_workflow": {
           "signature": "pm_create_workflow(name, description?, needsRepo?, nodes?, edges?, variables?)",
@@ -377,13 +377,13 @@
     },
     "pmAgentFs": {
       "name": "pm-agent-fs",
-      "desc": "Project Management only · list project agents and edit same-project agent workspaces",
-      "overview": "Lists every agent in the current project (self = this PM, other = other members) and runs list/read/write/delete/mkdir/rename on the host-side workspace/ of any same-project agent. Does not touch Run sandboxes or agent.json metadata.",
-      "convention": "Enable under Project → Project Management settings (on by default for new projects; older projects with an explicit EnabledMcps list must opt in). Changes appear in Agent Studio「Agent workspace」after refresh/reopen (not live hot-reload). Warning: if Studio has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits.",
+      "desc": "Workspace assistant only · list Agents and edit their working directories",
+      "overview": "Lists all Agents in the workspace (self = the current assistant, other = other members) and runs list/read/write/delete/mkdir/rename in any Agent working directory on the host. Does not touch Run sandboxes or agent.json metadata.",
+      "convention": "Enable under Settings → Assistant settings (enabled by default; add it manually if a custom MCP selection has been saved). Changes appear in Agent Studio「Agent workspace」after refresh/reopen (not live hot-reload). Warning: if Studio has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits.",
       "tools": {
         "pm_list_project_agents": {
           "signature": "pm_list_project_agents()",
-          "desc": "List same-project agents"
+          "desc": "List workspace agents"
         },
         "pm_list_agent_templates": {
           "signature": "pm_list_agent_templates()",
@@ -391,7 +391,7 @@
         },
         "pm_create_agent_from_template": {
           "signature": "pm_create_agent_from_template(templateId, name)",
-          "desc": "Create an engineer Agent from a template (same project; no overwrite)"
+          "desc": "Create an engineer Agent from a template (workspace; no overwrite)"
         },
         "pm_fs_list": {
           "signature": "pm_fs_list(agentName, path?)",
@@ -433,13 +433,13 @@
     },
     "pmPrdManager": {
       "name": "pm-prd-manager",
-      "desc": "Project Management only · list / get / create requirement drafts",
-      "overview": "List requirement-draft summaries for the current Project Management session project, read a draft body, and create an open draft. List results omit the markdown body; the default title is the unnamed-draft label. This release does not update, change status, or delete drafts.",
-      "convention": "Enable pm-prd-manager under Project → Project Management settings or channel MCP checkboxes (on by default for new projects; older projects with an explicit EnabledMcps list must opt in). Calls fail with mcp disabled when the MCP is not enabled.",
+      "desc": "Workspace assistant only · list / get / create requirement drafts",
+      "overview": "List requirement-draft summaries for the workspace, read a draft body, and create an open draft. List results omit the markdown body; the default title is the unnamed-draft label. This release does not update, change status, or delete drafts.",
+      "convention": "Enable pm-prd-manager under Settings → Assistant settings or channel MCP checkboxes (enabled by default; add it manually if a custom MCP selection has been saved). Calls fail with mcp disabled when the MCP is not enabled.",
       "tools": {
         "pm_list_requirement_drafts": {
           "signature": "pm_list_requirement_drafts(status?, query?)",
-          "desc": "List current-project requirement draft summaries (id/title/status/updatedAt/createdAt, no body)"
+          "desc": "List workspace requirement draft summaries (id/title/status/updatedAt/createdAt, no body)"
         },
         "pm_get_requirement_draft": {
           "signature": "pm_get_requirement_draft(draftId)",
@@ -452,11 +452,11 @@
       }
     },
     "externalProjectMcp": {
-      "name": "external-project-mcp",
-      "desc": "Project external MCP · Bearer project API key · separate from internal PM Leader",
-      "overview": "After enabling external MCP, selecting packs, and creating a project API key under Project detail → External MCP, external AI tools (Cursor/Claude, etc.) can call the same five PM pack tool surfaces over HTTP MCP. Off by default; unauthorized or disabled packs are rejected for list/call.",
-      "convention": "Configure at Project detail → External MCP. Write scope: pm-workflow-write (workflows/runs/gates), pm-agent-fs (project agents + agent workspace FS), pm-prd-manager (create draft only); pm-progress and pm-workflow-read are read-only. Does not cover PM Leader binding, human collaborators, or Run sandbox files.",
-      "entryPath": "Project detail → External MCP"
+      "name": "external-workspace-mcp",
+      "desc": "Workspace external MCP · Bearer workspace API key · separate from internal assistant",
+      "overview": "After enabling external MCP, selecting packs, and creating a workspace API key under Settings → External MCP, external AI tools (Cursor/Claude, etc.) can call the same five assistant MCP pack tool surfaces over HTTP MCP. Off by default; unauthorized or disabled packs are rejected for list/call.",
+      "convention": "Configure at Settings → External MCP. Write scope: pm-workflow-write (workflows/runs/gates), pm-agent-fs (workspace Agents + agent workspace FS), pm-prd-manager (create draft only); pm-progress and pm-workflow-read are read-only. Does not cover assistant binding, human collaborators, or Run sandbox files.",
+      "entryPath": "Settings → External MCP"
     }
   }
 }

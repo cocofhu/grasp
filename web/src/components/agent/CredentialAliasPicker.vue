@@ -113,18 +113,18 @@ watch(
     <p v-if="!projectId" class="mb-0 mt-2 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.credentialNeedProject') }}</p>
     <div
       v-else-if="!rows.length"
-      class="mt-2 rounded-lg border border-dashed border-line px-3 py-3 text-[12px] text-txt3"
+      class="mt-2 py-3 text-[12px] text-txt3"
       data-testid="credential-alias-empty"
     >
       {{ t('pages.projectDetail.projectCredentials.pickEmpty') }}
     </div>
-    <div v-else class="mt-2 space-y-2">
+    <div v-else class="mt-2 divide-y divide-line/60">
       <button
         v-for="item in rows"
         :key="item.id"
         type="button"
-        class="flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-[border-color,background-color] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
-        :class="selectedId === item.id ? 'border-accent bg-accent-dim' : 'border-line bg-base hover:border-line-strong'"
+        class="flex w-full items-start gap-3 border-l-2 px-3 py-3 text-left transition-colors"
+        :class="selectedId === item.id ? 'border-accent bg-accent-dim' : 'border-transparent hover:bg-elevated/40'"
         :data-testid="`credential-alias-option-${item.id}`"
         :data-alias="item.name"
         :aria-pressed="selectedId === item.id"

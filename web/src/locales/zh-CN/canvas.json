@@ -81,7 +81,7 @@
       "control": "控制",
       "collab": "协作",
       "fromTemplate": "从模板新建",
-      "noAgents": "项目里还没有 Agent",
+      "noAgents": "工作区里还没有 Agent",
       "noMatch": "没有匹配的节点",
       "dragHint": "拖到画布上，或点击后在画布上放置",
       "collapse": "收起面板",
@@ -177,7 +177,7 @@
       "outputHasOutgoing": "输出节点不能有出边",
       "unreachable": "没有连线进入这个节点",
       "noAgent": "未选择 Agent",
-      "agentNotFound": "Agent「{name}」不存在或不属于本项目",
+      "agentNotFound": "Agent「{name}」不存在或已被删除",
       "agentNoCaps": "Agent {name} 未声明能力",
       "agentBadCaps": "Agent {name} 的能力有误:{reason}",
       "noGoal": "未填写目标",
@@ -233,8 +233,8 @@
         "followEmpty": "Agent 还没选模型 Key，运行会失败",
         "nodeChip": "本节点",
         "agentDefault": "Agent 默认",
-        "projectKeys": "项目模型 Key",
-        "empty": "项目里还没有模型 Key",
+        "projectKeys": "工作区模型 Key",
+        "empty": "工作区里还没有模型 Key",
         "manage": "在安全凭据中心新增或管理",
         "staleTitle": "所选模型 Key 已失效",
         "staleBody": "它已被删除或清除，请重新选择",
@@ -258,7 +258,7 @@
       }
     },
     "topbar": {
-      "projects": "项目",
+      "projects": "工作区",
       "rename": "点击重命名",
       "saveError": "保存失败：{error}",
       "issuesNone": "没有问题",
@@ -357,9 +357,15 @@
       "doneNote": "API 运行将使用这个版本。"
     },
     "handoff": {
-      "title": "「{source}」的交接",
+      "chip": "交接",
+      "title": "交接说明",
       "platformTitle": "平台交接(上游未能自行交接)",
+      "platformNote": "平台代写 · 上游未提供交接",
+      "fromNode": "来自「{source}」节点",
+      "fromNodeVisit": "来自「{source}」节点 · 正在看第 {n} 次",
+      "visit": "第 {n} 次",
       "aria": "{source} 交给 {target} 的交接说明",
+      "ariaCount": "{source} 交给 {target} 的交接说明，共 {n} 次",
       "close": "关闭交接说明"
     }
   }

@@ -9,6 +9,7 @@ import nav from '@/locales/zh-CN/nav.json'
 const route = { path: '/dashboard', query: {} as any, meta: {} as any }
 vi.mock('vue-router', () => ({
   useRoute: () => route,
+  useRouter: () => ({ push: vi.fn() }),
   RouterLink: { props: ['to'], emits: ['click'], template: '<a :data-to="typeof to === \'string\' ? to : to.path" @click="$emit(\'click\')"><slot/></a>' },
 }))
 const mocks = vi.hoisted(() => {
@@ -18,9 +19,19 @@ const mocks = vi.hoisted(() => {
     count: ref(3), unread: ref(5), items: ref<any[]>([]), mobile: ref(false),
     peek: vi.fn(), refresh: vi.fn(), hydrate: vi.fn(), unfavorite: vi.fn(),
     getWorkflow: vi.fn(), reorder: vi.fn(), launch: vi.fn(), toastError: vi.fn(),
+    displayedItems: ref<any[]>([]),
+    sidebarExtras: ref<any[]>([]),
+    startFailedKeys: ref<string[]>([]),
+    activeInboxKey: ref<string | null>(null),
   }
 })
-vi.mock('@/lib/inbox/usePendingGates', () => ({ usePendingGates: () => ({ count: mocks.count, peek: mocks.peek, refresh: mocks.refresh }) }))
+vi.mock('@/lib/inbox/usePendingGates', () => ({ usePendingGates: () => ({
+  count: mocks.count, peek: mocks.peek, refresh: mocks.refresh,
+  displayedItems: mocks.displayedItems,
+  sidebarExtras: mocks.sidebarExtras, startFailedKeys: mocks.startFailedKeys,
+  activeInboxKey: mocks.activeInboxKey,
+  itemKey: (it: { runId: string; nodeId: string }) => `${it.runId}:${it.nodeId}`,
+}) }))
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({ useRunTerminalNotifications: () => ({ unreadCount: mocks.unread }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({
   displayItems: mocks.items, hydrateDisplay: mocks.hydrate, unfavorite: mocks.unfavorite,
@@ -57,52 +68,10 @@ describe('AppSidebarNav interactions', () => {
     expect(mocks.peek).toHaveBeenCalledWith({ source: 'sidebar-poll' })
     await w.find('[data-to="/runs"]').trigger('click')
     expect(w.emitted('navigate')).toBeTruthy()
-    mocks.getWorkflow.mockResolvedValueOnce(null)
-    await (w.vm as any).onLaunch('missing')
-    mocks.getWorkflow.mockRejectedValueOnce(new Error('offline'))
-    await (w.vm as any).onLaunch('bad')
-    expect(mocks.toastError).toHaveBeenCalled()
     route.path = '/runs'
     await w.vm.$nextTick()
     expect(mocks.refresh).toHaveBeenCalledWith({ source: 'mount' })
     w.unmount()
   })
 
-  it('reorders favorites by pointer drag and supports cancellation/guards', async () => {
-    const w = mountNav()
-    await flushPromises()
-    const rows = w.findAll('[data-sortable-row]')
-    rows.forEach((row, i) => {
-      Object.defineProperty(row.element, 'offsetHeight', { configurable: true, value: 40 })
-      row.element.getBoundingClientRect = () => ({ top: i * 50, left: 10, width: 180, height: 40, right: 190, bottom: i * 50 + 40, x: 10, y: i * 50, toJSON() {} })
-    })
-    const handle = w.find('[data-testid="nav-quick-workflow-drag-handle"]')
-    ;(handle.element as any).setPointerCapture = vi.fn()
-    ;(handle.element as any).releasePointerCapture = vi.fn()
-    await handle.trigger('pointerdown', { button: 0, pointerId: 1, clientX: 15, clientY: 5 })
-    handle.element.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, clientX: 30, clientY: 90, bubbles: true }))
-    await w.vm.$nextTick()
-    expect(document.body.classList.contains('quick-workflow-dragging')).toBe(true)
-    window.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1 }))
-    expect(mocks.reorder).toHaveBeenCalled()
-    vi.advanceTimersByTime(0)
-    mocks.mobile.value = true
-    ;(w.vm as any).onHandlePointerDown('w1', new PointerEvent('pointerdown', { button: 0 }))
-    expect(mocks.reorder).toHaveBeenCalledTimes(1)
-    w.unmount()
-  })
-
-  it('does not launch or unfavorite while click suppression is active', async () => {
-    const w = mountNav()
-    await flushPromises()
-    const vm = w.vm as any
-    vm.suppressQuickItemClick = true
-    await vm.onLaunch('w1')
-    vm.onUnfavorite('w1', 'One', new MouseEvent('click'))
-    expect(mocks.getWorkflow).not.toHaveBeenCalled()
-    expect(mocks.unfavorite).not.toHaveBeenCalled()
-    expect(vm.badgeFor('/other')).toBe(0)
-    expect(vm.isActive('/dashboard')).toBe(true)
-    w.unmount()
-  })
 })

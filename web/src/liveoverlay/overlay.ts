@@ -164,6 +164,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
   const postedViews = new Map<string, string>()
   const pending = new Map<string, { sid: string; op: string; previousState?: string }>()
   const lastCandidate = new Map<string, number>()
+  const renderedHtml = new WeakMap<HTMLElement, string>()
   const mountWatch = new Map<string, { key: string; since: number; sent: boolean; error?: string }>()
   let wrappers: Wrapper[] = []
 
@@ -554,12 +555,19 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     return ({ generating: T.generating, refining: T.refining, accepting: T.accepting, discarding: T.discarding } as Record<string, string>)[state] || ''
   }
 
+  /** Replace markup only when it changed: a rebuild between mousedown and mouseup swallows the click. */
+  function setHtml(el: HTMLElement, html: string) {
+    if (renderedHtml.get(el) === html) return
+    el.innerHTML = html
+    renderedHtml.set(el, html)
+  }
+
   function renderSwitchers() {
     const layerEl = layer('switchers')
     const frames = layer('frames')
     if (!enabled || hidden || peek) {
-      layerEl.innerHTML = ''
-      frames.innerHTML = ''
+      setHtml(layerEl, '')
+      setHtml(frames, '')
       return
     }
     let html = ''
@@ -639,8 +647,8 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           : '') +
         '</div>'
     }
-    layerEl.innerHTML = html
-    frames.innerHTML = frameHtml
+    setHtml(layerEl, html)
+    setHtml(frames, frameHtml)
     layout()
   }
 
@@ -1388,8 +1396,8 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       setInserting(false)
       panel = null
       renderAll()
-      layer('switchers').innerHTML = ''
-      layer('frames').innerHTML = ''
+      setHtml(layer('switchers'), '')
+      setHtml(layer('frames'), '')
     }
     opts.changed()
   }

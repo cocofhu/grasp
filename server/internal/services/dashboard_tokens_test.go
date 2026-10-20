@@ -95,11 +95,11 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 	}
 
 	// No usage anywhere → null (not 0).
-	_, err = s.Create("EmptyA", "", nil)
+	_, err = s.CreateFixture("EmptyA", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = s.Create("EmptyB", "", nil)
+	_, err = s.CreateFixture("EmptyB", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,15 +109,15 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 			st.TotalTokens, st.WorkflowTokens, st.PMTokens)
 	}
 
-	partial, err := s.Create("Partial", "", nil)
+	partial, err := s.CreateFixture("Partial", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	zero, err := s.Create("Zero", "", nil)
+	zero, err := s.CreateFixture("Zero", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	pmOnly, err := s.Create("PMOnly", "", nil)
+	pmOnly, err := s.CreateFixture("PMOnly", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,7 +187,7 @@ func TestPlatformTokenBreakdown_matchesPerProjectSum(t *testing.T) {
 		t.Fatal(err)
 	}
 	s2 := NewProjectService(db2)
-	z, err := s2.Create("OnlyZero", "", nil)
+	z, err := s2.CreateFixture("OnlyZero", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

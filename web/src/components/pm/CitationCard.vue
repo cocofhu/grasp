@@ -2,6 +2,8 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
+import Icon from '@/components/ui/Icon.vue'
+import { useConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import type { ProgressCitation } from '@/lib/shared/types'
 import {
   isBareExtractSnippet,
@@ -10,9 +12,13 @@ import {
 } from '@/lib/pm/pmCitationShape'
 
 const props = defineProps<{ citation: ProgressCitation }>()
+const artifacts = useConversationArtifacts()
+const emit = defineEmits<{ 'open-artifact': [target: { id?: string; name?: string }] }>()
 const { t } = useI18n()
 const router = useRouter()
 const expanded = ref(false)
+const citationIcons: Record<string, string> = { run: 'runs', workflow: 'workflow', artifact: 'artifact', gate: 'gate', plan: 'doc' }
+const typeIcon = computed(() => citationIcons[props.citation.type] || 'doc')
 
 const shapeValid = computed(() =>
   isValidPmCitationShape(props.citation.type, props.citation.targetId),
@@ -89,6 +95,14 @@ const canJump = computed(() => shapeValid.value && !!hrefFor())
 
 function open() {
   if (!canJump.value) return
+  if (props.citation.type === 'artifact') {
+    const target = /^art-[0-9a-f]{8}$/i.test(props.citation.targetId)
+      ? { id: props.citation.targetId }
+      : { name: props.citation.targetId }
+    if (artifacts) void artifacts.open(target)
+    else emit('open-artifact', target)
+    return
+  }
   const href = hrefFor()
   if (!href) {
     expanded.value = true
@@ -100,53 +114,62 @@ function open() {
 
 <template>
   <div
-    class="rounded-md border text-sm"
+    class="citation-source"
     :class="
       shapeValid
-        ? 'border-[var(--cf-border)] bg-[var(--cf-surface-2,var(--cf-surface))]'
-        : 'border-[var(--cf-border)] bg-[var(--cf-surface-2,var(--cf-surface))] opacity-70'
+        ? 'text-txt2'
+        : 'text-txt3 opacity-70'
     "
     :data-testid="shapeValid ? 'citation-card-valid' : 'citation-card-invalid'"
   >
-    <div class="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5">
+    <div class="flex flex-wrap items-center justify-between gap-2 py-1.5">
       <button
         type="button"
-        class="min-w-0 flex-1 truncate text-left"
-        :class="shapeValid ? 'hover:underline' : 'cursor-default text-txt3'"
+        class="citation-label flex min-w-0 flex-1 items-center gap-2 text-left"
+        :class="shapeValid ? 'text-txt2' : 'text-txt3'"
+        :aria-expanded="expanded"
         @click="expanded = !expanded"
       >
-        <span
-          class="mr-1.5 rounded px-1.5 py-0.5 text-[10px] uppercase tracking-wide"
-          :class="shapeValid ? 'bg-[var(--cf-border)]' : 'bg-elevated text-txt3'"
-        >
-          {{ citation.type }}
+        <Icon :key="citation.type" :name="typeIcon" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
+        <span class="min-w-0">
+          <span class="citation-title block truncate">{{ mainLabel }}</span>
+          <span v-if="subLabel" class="chat-meta mt-0.5 block truncate">{{ subLabel }}</span>
         </span>
-        <span class="font-medium text-txt">{{ mainLabel }}</span>
-        <span v-if="subLabel" class="mt-0.5 block truncate text-[11px] font-normal text-txt3">{{ subLabel }}</span>
       </button>
       <button
         type="button"
-        class="shrink-0 text-xs"
-        :class="canJump ? 'text-[var(--cf-accent,#2563eb)] hover:underline' : 'cursor-not-allowed text-txt3'"
+        class="citation-action shrink-0"
+        :class="canJump ? 'text-accent-2 hover:underline' : 'cursor-not-allowed text-txt3'"
         :disabled="!canJump"
         :aria-disabled="!canJump"
         data-testid="citation-open-source"
         @click="open"
       >
-        {{ t('pages.projectDetail.pm.openSource') }}
+        {{ t(citation.type === 'artifact' ? 'pages.conversationWorkspace.openArtifacts' : 'pages.projectDetail.pm.openSource') }}
+        <Icon name="arrow-right" :size="12" aria-hidden="true" />
       </button>
       <p
         v-if="!shapeValid"
-        class="basis-full text-[11px] text-rose-600"
+        class="basis-full text-[11px] text-err"
         data-testid="citation-invalid-note"
       >
         {{ t('pages.projectDetail.pm.citationInvalid') }}
       </p>
     </div>
-    <div v-if="expanded" class="border-t border-[var(--cf-border)] px-2.5 py-2 text-xs text-[var(--cf-muted)]">
+    <div v-if="expanded" class="citation-detail border-l border-line pl-3 py-1 text-xs leading-6 text-txt2">
       <pre v-if="citation.detail" class="whitespace-pre-wrap break-all">{{ citation.detail }}</pre>
       <p v-else>{{ citation.summarySnippet || citation.targetId }}</p>
-      <p v-if="shapeValid && !hrefFor()" class="mt-1 text-rose-600">{{ t('pages.projectDetail.pm.citationMissing') }}</p>
+      <p v-if="shapeValid && !hrefFor()" class="mt-1 text-warn">{{ t('pages.projectDetail.pm.citationMissing') }}</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+.citation-source { font-size: 12px; line-height: 1.6; }
+.citation-label { min-height: 32px; }
+.citation-title { font-weight: 500; }
+.citation-label:hover .citation-title { color: rgb(var(--c-accent-2)); text-decoration: underline; text-underline-offset: 3px; }
+.citation-label:focus-visible, .citation-action:focus-visible { outline: 2px solid rgb(var(--c-accent) / .4); outline-offset: 3px; border-radius: 4px; }
+.citation-action { display: inline-flex; min-height: 32px; align-items: center; gap: 6px; font-size: 11px; text-underline-offset: 3px; }
+.citation-detail { margin: 2px 0 6px 6px; }
+</style>

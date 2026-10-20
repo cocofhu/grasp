@@ -211,7 +211,7 @@ describe('RequirementDraftsPanel interactions', () => {
     const vm = w.vm as any
     vm.items = []; vm.catalog = []; vm.setViewMode('gantt')
     await w.vm.$nextTick()
-    expect(w.text()).toContain('无匹配')
+    expect(w.text()).toContain('把想法整理成下一步')
     vm.items = [milestone]; vm.catalog = [milestone]; vm.selectDraft('m1')
     await w.vm.$nextTick()
     expect(w.find('[data-testid="requirement-drafts-inspector-kind"]').exists()).toBe(true)

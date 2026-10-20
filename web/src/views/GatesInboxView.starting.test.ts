@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => ({
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
   runEventsWsUrl: vi.fn((id: string) => `ws://test/runs/${id}/events`),
+  listGatePrimaryArtifacts: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -30,6 +31,7 @@ vi.mock('@/lib/api/api', async () => {
       nodeEvents: mocks.nodeEvents,
       runArtifacts: mocks.runArtifacts,
       runEventsWsUrl: mocks.runEventsWsUrl,
+      listGatePrimaryArtifacts: mocks.listGatePrimaryArtifacts,
     },
   }
 })
@@ -59,15 +61,10 @@ vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   return { useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }) }
 })
 
-vi.mock('@/lib/composables/useProjectContext', async () => {
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
   const { ref } = await import('vue')
-  filterState.projectSelected = ref('')
-  return {
-    useProjectContext: () => ({
-      selected: filterState.projectSelected!,
-      ensureHydrated: vi.fn(),
-    }),
-  }
+  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
 })
 
 vi.mock('@/lib/inbox/useClarifyDraft', async () => {
@@ -179,31 +176,36 @@ const ReviewComposerStub = defineComponent({
   template: '<div data-testid="review-composer-stub" />',
 })
 
-function mountInbox() {
+function mountInbox(opts?: { realGatePanel?: boolean }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
+  const stubs: Record<string, unknown> = {
+    Icon: true,
+    EmptyState: true,
+    WorkflowFilter: true,
+    ProjectFilter: true,
+    TagFilter: true,
+    Pagination: true,
+    ArtifactLoadingPane: true,
+    GateApproval: true,
+    ReviewShell: defineComponent({
+      template: '<div><slot name="stage" /><slot name="sidebar" /></div>',
+    }),
+    ReviewComposer: ReviewComposerStub,
+    ClarifyProductStage: true,
+    ReactArtifactStage: true,
+  }
+  if (opts?.realGatePanel) {
+    delete stubs.ArtifactLoadingPane
+    delete stubs.GateApproval
+  }
   return mount(GatesInboxView, {
     global: {
       plugins: [i18n],
-      stubs: {
-        Icon: true,
-        EmptyState: true,
-        WorkflowFilter: true,
-        ProjectFilter: true,
-        TagFilter: true,
-        Pagination: true,
-        ArtifactLoadingPane: true,
-        GateApproval: true,
-        ReviewShell: defineComponent({
-          template: '<div><slot name="stage" /><slot name="sidebar" /></div>',
-        }),
-        ReviewComposer: ReviewComposerStub,
-        ClarifyProductStage: true,
-        ReactArtifactStage: true,
-      },
+      stubs,
     },
   })
 }
@@ -219,6 +221,7 @@ beforeEach(async () => {
   if (filterState.workflowSelected) filterState.workflowSelected.value = ''
   if (filterState.projectSelected) filterState.projectSelected.value = ''
   mocks.listGates.mockResolvedValue(paged([]))
+  mocks.listGatePrimaryArtifacts.mockResolvedValue({ items: [] })
   mocks.getRun.mockResolvedValue({ id: 'run-unknown', status: 'running' })
   await usePendingGates().refresh({ mode: 'force' })
 })
@@ -232,14 +235,13 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBe('true')
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
     expect((wrapper.get('[data-testid="react-connecting-input"]').element as HTMLTextAreaElement).disabled).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="gate-share-row"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -266,7 +268,6 @@ describe('GatesInboxView starting approvals', () => {
     expect(composer.exists()).toBe(true)
     expect(composer.props('turns')).toHaveLength(1)
     expect(composer.props('seedHumanText')).toBe('把登录做清楚')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -287,14 +288,12 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
 
     expect(mocks.getRun).toHaveBeenCalledWith('run-boot')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="inbox-start-failed-dismiss"]').trigger('click')
     await flushPromises()
     await nextTick()
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -341,7 +340,7 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
 
     // Answered: the row leaves pending. `?run=` and the consumed handoff both
     // still point at it, but that must not resurrect a "starting" ghost.
@@ -352,12 +351,12 @@ describe('GatesInboxView starting approvals', () => {
       status: 'completed',
       nodeRuns: { ap: { nodeId: 'ap', status: 'completed' } },
     })
-    filterState.projectSelected!.value = 'proj-x'
+    filterState.workflowSelected!.value = 'wf-other'
     await flushPromises()
     await nextTick()
     await flushPromises()
     await vi.waitFor(() => {
-      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(false)
     })
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     wrapper.unmount()
@@ -388,7 +387,7 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
 
     expect(mocks.getRun).toHaveBeenCalledWith('run-f66f29e4')
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     wrapper.unmount()
   })
@@ -414,7 +413,7 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -431,7 +430,6 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBe('true')
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     wrapper.unmount()
   })
@@ -440,13 +438,13 @@ describe('GatesInboxView starting approvals', () => {
     // Stored/filter project is proj-a; the deep-linked run belongs to proj-b and
     // only appears on an unfiltered listGates. Identity is runId+nodeId.
     routeState.query = { run: 'run-1', node: 'n1' }
-    filterState.projectSelected!.value = 'proj-a'
+    filterState.workflowSelected!.value = 'wf-other'
     const parked = parkedItem()
     parked.runId = 'run-1'
     parked.nodeId = 'n1'
     // Filtered loadList (with projectId) returns empty; unfiltered pin peek returns the row.
-    mocks.listGates.mockImplementation(async (params?: { projectId?: string }) => {
-      if (params?.projectId) return paged([])
+    mocks.listGates.mockImplementation(async (params?: { wf?: string }) => {
+      if (params?.wf) return paged([])
       return paged([parked])
     })
     mocks.getRun.mockResolvedValue({
@@ -463,11 +461,9 @@ describe('GatesInboxView starting approvals', () => {
     await nextTick()
     await flushPromises()
     await vi.waitFor(() => {
-      expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
     })
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).not.toBe(
-      'true',
-    )
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -490,18 +486,71 @@ describe('GatesInboxView starting approvals', () => {
     wrapper.unmount()
   })
 
-  it('status pill and refresh button share .toolbar-control sizing (g3.1 g3.2 g4.4)', async () => {
+  it('opens a gate past the first inbox page without staying on the loading layer', async () => {
+    const now = new Date().toISOString()
+    const rows: InboxItem[] = Array.from({ length: 21 }, (_, i) => {
+      const n = i + 1
+      return {
+        type: 'gate',
+        runId: `run-${n}`,
+        nodeId: `g${n}`,
+        iteration: 1,
+        workflowName: 'wf',
+        title: `待审批项 ${n}`,
+        bodyMd: n === 21 ? '正文 21' : `正文 ${n}`,
+        actions: [{ id: 'approve', label: '批准' }],
+        requestedAt: now,
+      }
+    })
+    routeState.query = { run: 'run-21', node: 'g21' }
+    mocks.listGates.mockImplementation(async (params?: { page?: number; pageSize?: number }) => {
+      const page = params?.page ?? 1
+      const pageSize = params?.pageSize ?? 20
+      const start = (page - 1) * pageSize
+      const items = rows.slice(start, start + pageSize)
+      return {
+        items,
+        total: rows.length,
+        page,
+        pageSize,
+        hasMore: start + pageSize < rows.length,
+      }
+    })
+    mocks.getRun.mockResolvedValue({
+      id: 'run-21',
+      status: 'waiting_human',
+      nodes: [{ id: 'g21', type: 'human_gate', label: '门禁' }],
+      nodeRuns: { g21: { nodeId: 'g21', status: 'waiting_human' } },
+    })
+    mocks.inboxContext.mockResolvedValue({
+      type: 'gate',
+      nodes: [{ id: 'g21', type: 'human_gate', label: '门禁', position: { x: 0, y: 0 }, config: {} }],
+      artifacts: [],
+      nodeExecutions: {},
+    })
+    const wrapper = mountInbox({ realGatePanel: true })
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    await vi.waitFor(() => {
+      expect(wrapper.text()).toContain('正文 21')
+      expect(wrapper.text()).toContain('确认并流转')
+    })
+    expect(wrapper.text()).not.toContain('加载运行详情')
+    expect(wrapper.findComponent({ name: 'ArtifactLoadingPane' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'GateApproval' }).exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('does not render the inbox top bar or the desktop card column', async () => {
     mocks.listGates.mockResolvedValue(paged([]))
     const wrapper = mountInbox()
     await flushPromises()
-    const pill = wrapper.get('[data-testid="gates-inbox-status-pill"]')
-    const refresh = wrapper.get('[data-testid="gates-inbox-refresh"]')
-    expect(pill.classes()).toContain('toolbar-control')
-    expect(refresh.classes()).toContain('toolbar-control')
-    expect(pill.classes().join(' ')).not.toMatch(/\brounded\b(?!-md)/)
-    expect(refresh.classes().join(' ')).not.toContain('px-2.5')
-    expect(refresh.classes().join(' ')).not.toContain('py-1.5')
-    expect(pill.classes().join(' ')).toContain('text-[11px]')
+    expect(wrapper.find('[data-testid="gates-inbox-status-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="gates-inbox-refresh"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('运筹帷幄之中')
+    expect(wrapper.text()).not.toContain('决胜千里之外')
     wrapper.unmount()
   })
 })

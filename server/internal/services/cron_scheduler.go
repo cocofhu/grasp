@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -16,6 +17,7 @@ import (
 
 // CronTokenHooks registers/unregisters shared MCP tokens for a cron execution.
 type CronTokenHooks struct {
+	RegisterPM func(projectID, threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec)
 	Register   func(projectID, threadID, agent string) (token string, specs []sandbox.MCPServerSpec)
 	Unregister func(token string)
 }
@@ -50,9 +52,13 @@ type CronScheduler struct {
 
 	deliverer ChannelDeliverer
 
-	parallel atomic.Int64
-	staleMin atomic.Int64
-	active   atomic.Int64
+	// Pause must wait until an admitted claim is visible in active. Checking
+	// paused alone leaves a gap where maintenance can report a false safe point.
+	admissionMu sync.Mutex
+	paused      atomic.Bool
+	parallel    atomic.Int64
+	staleMin    atomic.Int64
+	active      atomic.Int64
 }
 
 // SetChannelDeliverer wires the optional cron→channel result push. Safe to call
@@ -105,6 +111,9 @@ func (s *CronScheduler) releaseSlot() {
 }
 
 func (s *CronScheduler) tick(ctx context.Context) {
+	if s.paused.Load() {
+		return
+	}
 	stale := time.Duration(s.staleMin.Load()) * time.Minute
 	limit := int(s.parallel.Load()) * 2
 	if limit < 8 {
@@ -121,18 +130,26 @@ func (s *CronScheduler) tick(ctx context.Context) {
 		return
 	}
 	for i := range jobs {
+		s.admissionMu.Lock()
+		if s.paused.Load() {
+			s.admissionMu.Unlock()
+			return
+		}
 		job := jobs[i]
 		if !s.tryClaim(&job, now) {
+			s.admissionMu.Unlock()
 			continue
 		}
 		if !s.tryAcquire() {
 			s.releaseClaim(&job)
+			s.admissionMu.Unlock()
 			continue
 		}
 		go func(j models.AgentCronJob) {
 			defer s.releaseSlot()
 			s.execute(ctx, &j)
 		}(job)
+		s.admissionMu.Unlock()
 	}
 }
 

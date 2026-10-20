@@ -1539,9 +1539,24 @@ func buildFilterOptions(projects map[string]globalProjOpt, models map[string]str
 	return GlobalTokenStatsFilterOptions{
 		Projects:  sortOptions(pList),
 		Models:    sortOptions(optionsFromMap(models)),
-		Workflows: sortOptions(optionsFromMap(workflows)),
+		Workflows: sortOptions(disambiguateOptions(optionsFromMap(workflows))),
 		NodeTypes: sortOptions(optionsFromMap(nodeTypes)),
 	}
+}
+
+// Ledger rows keep the workflow name at usage time, so merged sources can
+// leave two different workflows with the same historical name.
+func disambiguateOptions(list []GlobalTokenStatsFilterOption) []GlobalTokenStatsFilterOption {
+	count := map[string]int{}
+	for _, o := range list {
+		count[o.Name]++
+	}
+	for i := range list {
+		if count[list[i].Name] > 1 && list[i].Name != list[i].Key {
+			list[i].Name += " · " + list[i].Key
+		}
+	}
+	return list
 }
 
 func optionsFromMap(m map[string]string) []GlobalTokenStatsFilterOption {

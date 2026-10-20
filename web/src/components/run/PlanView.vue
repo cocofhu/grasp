@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './product/ArtifactReportDocument.vue'
 import { computed, reactive, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
@@ -188,6 +189,8 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div>
     <div class="mb-3 flex items-center gap-2">
       <div class="flex h-7 w-7 items-center justify-center rounded-md" :style="{ background: hexSoft, color: hex }">
@@ -195,7 +198,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
       </div>
       <div class="group min-w-0 flex-1">
         <div class="flex min-w-0 items-center gap-1">
-          <div class="truncate text-sm font-semibold text-txt">{{ doc.title || t('pages.plan.defaultTitle') }}</div>
+          <h2 class="report-title">{{ doc.title || t('pages.plan.defaultTitle') }}</h2>
           <AnnotateBtn v-if="doc.title" json-path="title" :label="doc.title" />
         </div>
       </div>
@@ -210,15 +213,15 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
     </div>
 
     <div v-if="hasDesign" class="mb-4 space-y-3" data-testid="plan-design">
-      <div class="text-[11px] font-semibold uppercase tracking-wide text-txt3">{{ t('pages.plan.designTitle') }}</div>
+      <h3 class="report-heading">{{ t('pages.plan.designTitle') }}</h3>
 
-      <section v-if="doc.architecture" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-architecture">
+      <section v-if="doc.architecture" class="report-section" data-testid="plan-sec-architecture">
         <div class="group flex items-center gap-2">
-          <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.architecture') }}</div>
+          <h3 class="report-heading">{{ t('pages.plan.sections.architecture') }}</h3>
           <AnnotateBtn json-path="architecture" :label="t('pages.plan.sections.architecture')" />
         </div>
         <div
-          class="mt-1 text-[12px] leading-relaxed"
+          class="mt-1 text-[13px] leading-relaxed"
           :class="isNA(doc.architecture.summary) ? 'text-warn' : 'text-txt2'"
           data-testid="plan-body-architecture"
         >
@@ -248,7 +251,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
             @click="selectTab('architecture', di)"
           >
             <span>{{ tabLabel(d, di) }}</span>
-            <span v-if="d.scope" class="ml-1 text-[10px] opacity-70">{{ d.scope }}</span>
+            <span v-if="d.scope" class="ml-1 text-[11px] opacity-70">{{ d.scope }}</span>
           </button>
         </div>
         <MermaidDiagram
@@ -259,20 +262,20 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
         />
       </section>
 
-      <section v-if="doc.data_design" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-data">
+      <section v-if="doc.data_design" class="report-section" data-testid="plan-sec-data">
         <div class="group flex items-center gap-2">
-          <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.dataDesign') }}</div>
+          <h3 class="report-heading">{{ t('pages.plan.sections.dataDesign') }}</h3>
           <AnnotateBtn json-path="data_design" :label="t('pages.plan.sections.dataDesign')" />
         </div>
         <div
-          class="mt-1 text-[12px] leading-relaxed"
+          class="mt-1 text-[13px] leading-relaxed"
           :class="isNA(doc.data_design.summary) ? 'text-warn' : 'text-txt2'"
           data-testid="plan-body-data"
         >
           {{ displaySummary(doc.data_design.summary) }}
         </div>
         <ul v-if="doc.data_design.entities?.length" class="mt-2 space-y-2">
-          <li v-for="(e, ei) in doc.data_design.entities" :key="e.name || ei" class="text-[12px] text-txt2">
+          <li v-for="(e, ei) in doc.data_design.entities" :key="e.name || ei" class="text-[13px] text-txt2">
             <div class="group flex flex-wrap items-center gap-2">
               <code class="font-mono text-[11px] text-txt3">{{ e.name }}</code>
               <span v-if="e.description"> — {{ e.description }}</span>
@@ -285,7 +288,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
             >
               <table class="w-full min-w-[28rem] border-collapse text-left">
                 <thead>
-                  <tr class="border-b border-line text-[10px] font-medium uppercase tracking-wide text-txt3">
+                  <tr class="border-b border-line text-[11px] font-medium text-txt3">
                     <th class="py-1 pr-3 font-medium">{{ t('pages.plan.fieldTable.name') }}</th>
                     <th class="py-1 pr-3 font-medium">{{ t('pages.plan.fieldTable.type') }}</th>
                     <th class="py-1 pr-3 font-medium">{{ t('pages.plan.fieldTable.constraints') }}</th>
@@ -301,24 +304,24 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
                     <td class="py-1 pr-3">
                       <code class="font-mono text-[11px] text-txt">{{ f.name }}</code>
                     </td>
-                    <td class="py-1 pr-3 text-[11px] text-txt3 break-words">{{ f.type }}</td>
+                    <td class="py-1 pr-3 text-[13px] text-txt3 break-words">{{ f.type }}</td>
                     <td class="py-1 pr-3">
                       <span class="inline-flex flex-wrap gap-1">
                         <span
                           v-for="tag in fieldBadges(f)"
                           :key="tag"
-                          class="rounded bg-base px-1 py-0.5 text-[10px] font-medium text-txt3"
+                          class="rounded bg-base px-1 py-0.5 text-[11px] font-medium text-txt3"
                           data-testid="plan-field-badge"
                         >{{ tag }}</span>
                       </span>
                     </td>
-                    <td class="py-1 text-[11px] text-txt3 break-words">{{ f.description }}</td>
+                    <td class="py-1 text-[13px] text-txt3 break-words">{{ f.description }}</td>
                   </tr>
                 </tbody>
               </table>
             </div>
             <ul v-if="e.relationships?.length" class="mt-1 space-y-0.5 border-l border-line pl-2" data-testid="plan-entity-relationships">
-              <li v-for="(r, ri) in e.relationships" :key="ri" class="text-[11px] text-txt2">{{ r }}</li>
+              <li v-for="(r, ri) in e.relationships" :key="ri" class="text-[13px] text-txt2">{{ r }}</li>
             </ul>
           </li>
         </ul>
@@ -330,7 +333,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
           <li
             v-for="(r, ri) in doc.data_design.relationships"
             :key="ri"
-            class="text-[12px] text-txt2"
+            class="text-[13px] text-txt2"
           >{{ r }}</li>
         </ul>
         <div
@@ -356,7 +359,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
             @click="selectTab('data_design', di)"
           >
             <span>{{ tabLabel(d, di) }}</span>
-            <span v-if="d.scope" class="ml-1 text-[10px] opacity-70">{{ d.scope }}</span>
+            <span v-if="d.scope" class="ml-1 text-[11px] opacity-70">{{ d.scope }}</span>
           </button>
         </div>
         <MermaidDiagram
@@ -367,10 +370,10 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
         />
       </section>
 
-      <section v-if="doc.interfaces?.length" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-interfaces">
-        <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.interfaces') }}</div>
+      <section v-if="doc.interfaces?.length" class="report-section" data-testid="plan-sec-interfaces">
+        <h3 class="report-heading">{{ t('pages.plan.sections.interfaces') }}</h3>
         <ul class="mt-2 space-y-1.5">
-          <li v-for="(it, ii) in doc.interfaces" :key="it.name || ii" class="text-[12px] text-txt2">
+          <li v-for="(it, ii) in doc.interfaces" :key="it.name || ii" class="text-[13px] text-txt2">
             <div class="group flex flex-wrap items-center gap-2">
               <code class="font-mono text-[11px] text-txt3">{{ it.name }}</code>
               <span
@@ -384,10 +387,10 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
         </ul>
       </section>
 
-      <section v-if="doc.components?.length" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-components">
-        <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.components') }}</div>
+      <section v-if="doc.components?.length" class="report-section" data-testid="plan-sec-components">
+        <h3 class="report-heading">{{ t('pages.plan.sections.components') }}</h3>
         <ul class="mt-2 space-y-1.5">
-          <li v-for="(c, ci) in doc.components" :key="c.name || ci" class="text-[12px] text-txt2">
+          <li v-for="(c, ci) in doc.components" :key="c.name || ci" class="text-[13px] text-txt2">
             <div class="group flex flex-wrap items-center gap-2">
               <code class="font-mono text-[11px] text-txt3">{{ c.name }}</code>
               <span
@@ -401,13 +404,13 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
         </ul>
       </section>
 
-      <section v-if="doc.interaction" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-interaction">
+      <section v-if="doc.interaction" class="report-section" data-testid="plan-sec-interaction">
         <div class="group flex items-center gap-2">
-          <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.interaction') }}</div>
+          <h3 class="report-heading">{{ t('pages.plan.sections.interaction') }}</h3>
           <AnnotateBtn json-path="interaction" :label="t('pages.plan.sections.interaction')" />
         </div>
         <div
-          class="mt-1 text-[12px] leading-relaxed"
+          class="mt-1 text-[13px] leading-relaxed"
           :class="isNA(doc.interaction.summary) ? 'text-warn' : 'text-txt2'"
           data-testid="plan-body-interaction"
         >
@@ -436,7 +439,7 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
             @click="selectTab('interaction', di)"
           >
             <span>{{ tabLabel(d, di) }}</span>
-            <span v-if="d.scope" class="ml-1 text-[10px] opacity-70">{{ d.scope }}</span>
+            <span v-if="d.scope" class="ml-1 text-[11px] opacity-70">{{ d.scope }}</span>
           </button>
         </div>
         <MermaidDiagram
@@ -447,13 +450,13 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
         />
       </section>
 
-      <section v-if="doc.test_design?.trim()" class="rounded-lg border border-line bg-base/40 p-3" data-testid="plan-sec-test">
+      <section v-if="doc.test_design?.trim()" class="report-section" data-testid="plan-sec-test">
         <div class="group flex items-center gap-2">
-          <div class="text-[13px] font-semibold text-txt">{{ t('pages.plan.sections.testDesign') }}</div>
+          <h3 class="report-heading">{{ t('pages.plan.sections.testDesign') }}</h3>
           <AnnotateBtn json-path="test_design" :label="t('pages.plan.sections.testDesign')" />
         </div>
         <div
-          class="mt-1 text-[12px] leading-relaxed whitespace-pre-wrap"
+          class="mt-1 text-[13px] leading-relaxed whitespace-pre-wrap"
           :class="isNA(doc.test_design) ? 'text-warn' : 'text-txt2'"
           data-testid="plan-body-test"
         >
@@ -462,22 +465,22 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
       </section>
     </div>
 
-    <div v-if="hasDesign" class="mb-2 text-[11px] font-semibold uppercase tracking-wide text-txt3">
+    <h3 v-if="hasDesign" class="report-heading">
       {{ t('pages.plan.goalsTitle') }}
-    </div>
+    </h3>
 
     <div class="space-y-2.5">
-      <div v-for="(g, gi) in doc.goals || []" :key="g.id || gi" class="rounded-lg border border-line bg-base/40 p-3">
+      <div v-for="(g, gi) in doc.goals || []" :key="g.id || gi" class="report-item">
         <div class="flex items-start gap-2.5">
           <span class="mt-1.5 h-2 w-2 shrink-0 rounded-full" :class="st(g.status).dot" />
           <div class="min-w-0 flex-1">
             <div class="group flex flex-wrap items-center gap-2">
-              <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ g.id }}</code>
-              <span class="text-[13px] font-semibold text-txt">{{ g.title }}</span>
+              <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ g.id }}</code>
+              <span class="report-heading">{{ g.title }}</span>
               <AnnotateBtn :json-path="`goals[${g.id || gi}]`" :label="g.title || `目标 ${gi + 1}`" />
-              <span class="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium" :class="st(g.status).cls">{{ st(g.status).label }}</span>
+              <span class="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium" :class="st(g.status).cls">{{ st(g.status).label }}</span>
             </div>
-            <div v-if="g.detail" class="mt-1 text-[12px] leading-relaxed text-txt2" data-testid="plan-body-goal-detail">{{ g.detail }}</div>
+            <div v-if="g.detail" class="mt-1 text-[13px] leading-relaxed text-txt2" data-testid="plan-body-goal-detail">{{ g.detail }}</div>
           </div>
         </div>
 
@@ -486,16 +489,18 @@ function diagramJsonPath(section: 'architecture' | 'data_design' | 'interaction'
             <span class="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full" :class="st(s.status).dot" />
             <div class="min-w-0 flex-1">
               <div class="group flex flex-wrap items-center gap-2">
-                <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ s.id }}</code>
-                <span class="text-[12px] text-txt2">{{ s.title }}</span>
+                <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ s.id }}</code>
+                <span class="text-[13px] text-txt2">{{ s.title }}</span>
                 <AnnotateBtn :json-path="`goals[${g.id || gi}].subgoals[${s.id || si}]`" :label="s.title || `小目标 ${si + 1}`" />
-                <span class="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[10px] font-medium" :class="st(s.status).cls">{{ st(s.status).label }}</span>
+                <span class="ml-auto shrink-0 rounded-md px-2 py-0.5 text-[11px] font-medium" :class="st(s.status).cls">{{ st(s.status).label }}</span>
               </div>
-              <div v-if="s.detail" class="mt-1 text-[11px] leading-relaxed text-txt2" data-testid="plan-body-subgoal-detail">{{ s.detail }}</div>
+              <div v-if="s.detail" class="mt-1 text-[13px] leading-relaxed text-txt2" data-testid="plan-body-subgoal-detail">{{ s.detail }}</div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </div>
+
+  </ArtifactReportDocument>
 </template>

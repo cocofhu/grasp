@@ -90,6 +90,23 @@ func TestParseOptions_FlagBeatsEnv(t *testing.T) {
 	}
 }
 
+func TestParseOptions_UpstreamFile(t *testing.T) {
+	opt, err := parseOptions([]string{"-upstream-file", "/tmp/x/upstream"}, func(k string) string {
+		if k == "PREVIEW_PORT" {
+			return "18080"
+		}
+		return ""
+	})
+	if err != nil || opt.UpstreamFile != "/tmp/x/upstream" {
+		t.Fatalf("flag: %+v err=%v", opt, err)
+	}
+	env := map[string]string{"PREVIEW_PORT": "18080", "PREVIEW_INJECT_UPSTREAM_FILE": "/env/upstream"}
+	opt, err = parseOptions(nil, func(k string) string { return env[k] })
+	if err != nil || opt.UpstreamFile != "/env/upstream" {
+		t.Fatalf("env: %+v err=%v", opt, err)
+	}
+}
+
 func TestParseOptions_Missing(t *testing.T) {
 	if _, err := parseOptions(nil, func(string) string { return "" }); err == nil {
 		t.Fatal("expected error")

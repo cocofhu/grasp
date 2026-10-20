@@ -6,8 +6,15 @@ import {
   clearAllEmbedSessions,
   clearEmbedSession,
   directPreviewEmbedUrl,
+  directPreviewReachableUrl,
   embedChatPath,
   embedArtifactsPath,
+  embedImagePath,
+  embedDemoPath,
+  EMBED_IMAGE_MESSAGE,
+  EMBED_DEMO_MESSAGE,
+  parseEmbedImageMessage,
+  parseEmbedDemoMessage,
   loadEmbedSession,
   parseEmbedPickMessage,
   parseEmbedThemeFromHash,
@@ -27,6 +34,19 @@ describe('embedChat', () => {
   it('builds the drawer path and reads the ticket from the fragment', () => {
     expect(embedChatPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/chat')
     expect(embedArtifactsPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/artifacts')
+    expect(embedImagePath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/image')
+    expect(embedDemoPath('run-1', 'n/1')).toBe('/embed/runs/run-1/nodes/n%2F1/demo')
+    expect(parseEmbedDemoMessage({ type: EMBED_DEMO_MESSAGE, action: 'open', label: '方案 A', html: '<p>secret</p>' })).toEqual({
+      action: 'open',
+      label: '方案 A',
+    })
+    expect(parseEmbedDemoMessage({ type: EMBED_DEMO_MESSAGE, action: 'close' })).toEqual({ action: 'close', label: '' })
+    expect(parseEmbedImageMessage({ type: EMBED_IMAGE_MESSAGE, action: 'open', label: 'image.png', src: 'blob:secret' })).toEqual({
+      action: 'open',
+      label: 'image.png',
+    })
+    expect(parseEmbedImageMessage({ type: EMBED_IMAGE_MESSAGE, action: 'close' })).toEqual({ action: 'close', label: '' })
+    expect(parseEmbedImageMessage({ type: 'other', action: 'open' })).toBeNull()
     expect(parseEmbedTicketFromHash('#ticket=abc')).toBe('abc')
     expect(parseEmbedTicketFromHash('#t=abc')).toBe('')
     expect(parseEmbedTicketFromHash('')).toBe('')
@@ -37,6 +57,9 @@ describe('embedChat', () => {
     expect(directPreviewEmbedUrl('http://10.0.0.5:18080/x', t, 'dark', 'zh-CN')).toBe(
       'http://10.0.0.5:18080/x#__grasp_embed&run=r&node=n&ticket=a+b&theme=dark&lang=zh-CN',
     )
+    expect(directPreviewReachableUrl('http://127.0.0.1:18081/', '21.130.250.101')).toBe('http://21.130.250.101:18081/')
+    expect(directPreviewReachableUrl('http://127.0.0.1:18081/', 'localhost')).toBe('http://127.0.0.1:18081/')
+    expect(directPreviewReachableUrl('http://10.0.0.5:18081/', '21.130.250.101')).toBe('http://10.0.0.5:18081/')
   })
 
   it('reads the host theme from the fragment and from messages', () => {

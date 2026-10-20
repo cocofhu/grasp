@@ -15,6 +15,7 @@ import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import Icon from '../ui/Icon.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -125,24 +126,24 @@ function onToggle(index: number, last: boolean, e: Event) {
       <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" :run-id="runId" />
       <details
         v-else-if="b.kind === 'thought'"
-        class="mb-2 w-full rounded-md border border-line bg-base/60 text-[11.5px] text-txt3"
+        class="agent-thought chat-meta mb-3 w-full min-w-0"
         data-testid="agent-timeline-thought"
         :open="isOpen(b.index, b.last)"
         @toggle="onToggle(b.index, b.last, $event)"
       >
-        <summary class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-1.5 text-txt3 hover:text-txt2">
+        <summary class="agent-thought-summary">
           <ThoughtSummaryStatus
             :busy="streaming && b.last"
             :completed="streaming ? !b.last : completed"
             :interrupted="!streaming && interrupted"
           />
+          <Icon name="chevron-down" :size="16" class="agent-thought-chevron" aria-hidden="true" />
         </summary>
-        <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ streaming && b.last ? liveThought : b.text }}</div>
+        <div class="agent-thought-body whitespace-pre-wrap">{{ streaming && b.last ? liveThought : b.text }}</div>
       </details>
       <div
         v-else
-        class="md mb-2 min-w-0 text-[13px] text-txt last:mb-0"
-        :class="bare ? 'leading-6' : 'rounded-lg border border-line bg-elevated px-3 py-2 leading-relaxed'"
+        class="chat-prose md mb-3 min-w-0 last:mb-0"
         :data-testid="messageTestId"
       >
         <StreamMarkdown v-if="streaming && b.last" :blocks="liveBlocks" /><span
@@ -153,3 +154,40 @@ function onToggle(index: number, last: boolean, e: Event) {
     </template>
   </div>
 </template>
+
+<style scoped>
+.agent-thought { color: var(--chat-muted, rgb(var(--c-txt2))); }
+.agent-thought-summary {
+  display: flex;
+  min-width: 0;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px;
+  padding: 4px 6px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+  transition: background-color var(--dur-ui), color var(--dur-ui);
+}
+.agent-thought-summary::-webkit-details-marker { display: none; }
+.agent-thought-summary:hover { background: rgb(var(--c-elevated) / .6); color: rgb(var(--c-txt)); }
+.agent-thought-summary:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
+.agent-thought-chevron { flex-shrink: 0; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
+.agent-thought[open] > .agent-thought-summary .agent-thought-chevron { transform: rotate(180deg); }
+.agent-thought-body {
+  min-width: 0;
+  margin: 3px 0 0 13px;
+  border-left: 1px solid rgb(var(--c-line) / .8);
+  padding: 3px 6px 8px 15px;
+  overflow-wrap: anywhere;
+  color: rgb(var(--c-txt2));
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+@media (max-width: 767px) { .agent-thought-summary { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) {
+  .agent-thought-summary,
+  .agent-thought-chevron { transition: none; }
+}
+</style>

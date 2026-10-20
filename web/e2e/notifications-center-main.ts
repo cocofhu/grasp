@@ -396,7 +396,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/projects')) {
+  if (path === '/api/workflows/catalog') {
     return new Response(JSON.stringify([]), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },

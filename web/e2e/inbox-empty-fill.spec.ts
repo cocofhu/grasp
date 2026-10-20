@@ -72,9 +72,7 @@ async function emptyMetrics(page: Page) {
     )
     const card = cards[0] as HTMLElement | undefined
     const empty = card?.firstElementChild as HTMLElement | undefined
-    const heading = Array.from(document.querySelectorAll('h2')).find((el) =>
-      (el.textContent || '').includes('待办'),
-    ) as HTMLElement | undefined
+    const heading = document.querySelector('[data-testid="gates-inbox-view"]') as HTMLElement | null
     function box(el: Element | null | undefined) {
       if (!el) return null
       const r = (el as HTMLElement).getBoundingClientRect()
@@ -136,7 +134,7 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await mockApi(page)
     await page.goto('/inbox-empty-fill.html?theme=light')
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(emptyCard(page)).toBeVisible()
     await expect(page.getByText('没有待审批项')).toBeVisible()
 
@@ -159,7 +157,7 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
     await page.setViewportSize({ width: 390, height: 844 })
     await mockApi(page)
     await page.goto('/inbox-empty-fill.html?theme=light')
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByText('没有待审批项')).toBeVisible()
 
     const m = await emptyMetrics(page)
@@ -202,7 +200,7 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
     await page.setViewportSize({ width: 390, height: 360 })
     await mockApi(page)
     await page.goto('/inbox-empty-fill.html?theme=light')
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(emptyCard(page)).toBeVisible()
 
     const m = await emptyMetrics(page)
@@ -211,7 +209,7 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
     expect(m.cardBox).not.toBeNull()
     // Card stays inside the viewport (does not blow past chrome).
     expect(m.cardBox!.bottom).toBeLessThanOrEqual(m.viewportH + 1)
-    expect(m.cardBox!.top).toBeGreaterThan(m.headingBox!.bottom - 1)
+    expect(m.cardBox!.top).toBeGreaterThanOrEqual(m.headingBox!.top - 1)
     // overflow-auto allows internal scroll when EmptyState exceeds card height.
     expect(['auto', 'overlay', 'scroll']).toContain(m.cardOverflow)
   })
@@ -222,14 +220,14 @@ test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await mockApi(page, { gatesDelayMs: 1800 })
     await page.goto('/inbox-empty-fill.html?theme=light')
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('inbox-list-skeleton')).toBeVisible()
-    await expect(page.getByTestId('inbox-pending-card-skeleton')).toHaveCount(6)
+    await expect(page.getByTestId('inbox-pending-card-skeleton')).toHaveCount(0)
     await expect(page.getByText('列表加载后可选择一项')).toBeVisible()
     await expect(page.getByText('没有待审批项')).toHaveCount(0)
     await expect(page.getByText('该工作流没有待审批项')).toHaveCount(0)
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '刷新' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: '待办' })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '刷新' })).toHaveCount(0)
 
     await expect(page.getByText('没有待审批项')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('inbox-list-skeleton')).toHaveCount(0)
@@ -241,7 +239,7 @@ test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
     const failGates = { current: true }
     await mockApi(page, { failGates })
     await page.goto('/inbox-empty-fill.html?theme=light')
-    await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('inbox-list-failed')).toBeVisible()
     await expect(page.getByText('加载失败')).toBeVisible()
     await expect(page.getByText('无法获取列表，请稍后重试')).toBeVisible()

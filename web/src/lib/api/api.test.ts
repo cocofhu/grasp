@@ -66,13 +66,20 @@ describe('notifications client', () => {
 })
 
 describe('api req helpers', () => {
+  it('patches a run title', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'r1', title: '短名字' }))
+    await expect(api.updateRunTitle('r1', '短名字')).resolves.toEqual({ id: 'r1', title: '短名字' })
+    const call = fetchMock.mock.calls.at(-1)
+    expect(String(call?.[0])).toMatch(/\/runs\/r1\/title$/)
+    expect(call?.[1]).toMatchObject({ method: 'PATCH' })
+    expect(JSON.parse(String(call?.[1]?.body))).toEqual({ title: '短名字' })
+  })
+
   it('lists and mutates projects/workflows/runs', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse([{ id: 'p1' }]))
+      .mockResolvedValueOnce(jsonResponse({ id: 'p1' }))
       .mockResolvedValueOnce(jsonResponse({ id: 'p1', name: 'P' }))
       .mockResolvedValueOnce(jsonResponse({ id: 'p1', name: 'P2' }))
-      .mockResolvedValueOnce(jsonResponse({ id: 'p1', name: 'new' }))
-      .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
       .mockResolvedValueOnce(jsonResponse([{ id: 'w1' }]))
       .mockResolvedValueOnce(jsonResponse([{ id: 'w1' }]))
       .mockResolvedValueOnce(jsonResponse({ id: 'w1' }))
@@ -127,11 +134,9 @@ describe('api req helpers', () => {
       )
       .mockResolvedValueOnce(jsonResponse({ status: 'ok' }))
 
-    await expect(api.listProjects()).resolves.toEqual([{ id: 'p1' }])
-    await expect(api.getProject('p1')).resolves.toMatchObject({ id: 'p1' })
-    await expect(api.updateProject('p1', { name: 'P2' })).resolves.toMatchObject({ name: 'P2' })
-    await expect(api.createProject({ name: 'new' })).resolves.toMatchObject({ id: 'p1' })
-    await expect(api.deleteProject('p1')).resolves.toEqual({ status: 'ok' })
+    await expect(api.getWorkspace()).resolves.toEqual({ id: 'p1' })
+    await expect(api.getWorkspace()).resolves.toMatchObject({ id: 'p1' })
+    await expect(api.updateWorkspace({ name: 'P2' })).resolves.toMatchObject({ name: 'P2' })
 
     await expect(api.listWorkflows()).resolves.toEqual([{ id: 'w1' }])
     await expect(api.listWorkflows({ projectId: 'p1' })).resolves.toEqual([{ id: 'w1' }])
@@ -264,13 +269,13 @@ describe('api req helpers', () => {
       api.listArtifacts({ projectId: 'p', workflowId: 'w', q: 'x', page: 1, pageSize: 10 }),
     ).resolves.toMatchObject({ total: 1 })
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
-      /\/artifacts\?projectId=p&workflowId=w&q=x&page=1&pageSize=10$/,
+      /\/artifacts\?workflowId=w&q=x&page=1&pageSize=10$/,
     )
     await expect(
       api.listArtifacts({ projectId: 'p', session: true, page: 1, pageSize: 20, groupBy: 'run' }),
     ).resolves.toMatchObject({ total: 1 })
     expect(String(fetchMock.mock.calls.at(-1)?.[0])).toMatch(
-      /\/artifacts\?projectId=p&session=1&page=1&pageSize=20&groupBy=run$/,
+      /\/artifacts\?session=1&page=1&pageSize=20&groupBy=run$/,
     )
     await expect(api.artifactContent('art')).resolves.toMatchObject({ id: 'art' })
     await expect(api.artifactVersions('art')).resolves.toMatchObject([{ revision: 1 }])
@@ -315,17 +320,17 @@ describe('api req helpers', () => {
   it('blocks mutations when draining and surfaces HTTP errors', async () => {
     vi.mocked(mutationsBlocked).mockReturnValue(true)
     shutdownState.message = 'draining'
-    await expect(api.createProject({ name: 'x' })).rejects.toThrow('draining')
+    await expect(api.updateWorkspace({ name: 'x' })).rejects.toThrow('draining')
     expect(showDrainToast).toHaveBeenCalled()
 
     vi.mocked(mutationsBlocked).mockReturnValue(false)
     fetchMock.mockResolvedValueOnce(
       jsonResponse({ status: 'shutting_down', message: 'bye' }, 503),
     )
-    await expect(api.listProjects()).rejects.toThrow('bye')
+    await expect(api.getWorkspace()).rejects.toThrow('bye')
 
     fetchMock.mockResolvedValueOnce(jsonResponse({ error: 'boom' }, 500))
-    await expect(api.listProjects()).rejects.toThrow('boom')
+    await expect(api.getWorkspace()).rejects.toThrow('boom')
 
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }))
     await expect(api.getRunNodeSandbox('r', 'n')).resolves.toBeNull()
@@ -379,7 +384,7 @@ describe('api.saveWorkflow description payload', () => {
 })
 
 describe('api.createWorkflowFromBaseline', () => {
-  it('POSTs the workflow name, projectId, and repos to /workflows/from-baseline (plan g3.1)', async () => {
+  it('POSTs the workflow name and repos to /workflows/from-baseline (plan g3.1)', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse({ id: 'wf-base', name: 'Requirements', status: 'published' }))
     await expect(
       api.createWorkflowFromBaseline('p1', 'Requirements', [
@@ -390,7 +395,6 @@ describe('api.createWorkflowFromBaseline', () => {
     expect(String(call?.[0])).toMatch(/\/workflows\/from-baseline$/)
     expect(call?.[1]).toMatchObject({ method: 'POST' })
     expect(JSON.parse(String(call?.[1]?.body))).toEqual({
-      projectId: 'p1',
       name: 'Requirements',
       repos: [{ name: '', url: 'https://github.com/acme/app.git', branch: 'main' }],
     })

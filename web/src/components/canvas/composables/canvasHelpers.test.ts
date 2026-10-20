@@ -1,11 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ref } from 'vue'
 import { getSmoothStepPath, Position } from '@vue-flow/core'
-import type { WFEdge, WFNode } from '@/lib/shared/types'
+import type { NodeRun, StateTraceEntry, WFEdge, WFNode } from '@/lib/shared/types'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS, TEST_REVIEW_CAPS } from '@/test/capsFixtures'
 import { agentHueIndex, agentHueVar, agentInitial, HUE_COUNT } from './agentAvatar'
 import { buildDefaultWorkflow, pickTemplateAgents } from './defaultTemplate'
 import { backEdgeRoute, backLaneIndexes, edgeGeometry, isBackward, laneFloor, type EdgeEnds, type NodeBox } from './edgePath'
+import { collectEdgeHandoffs } from './edgeHandoffs'
 import { useFlowElements, type FlowInputs } from './useFlowElements'
 import { collectGraphIssues, issuesByNode } from './useGraphIssues'
 import { formatKey, resolveShortcut, useCanvasShortcuts } from './useCanvasShortcuts'
@@ -483,19 +484,137 @@ describe('flow edge lanes', () => {
       { id: 'ok', source: 'impl', target: 'test' },
       { id: 'ko', source: 'impl', target: 'fix', kind: 'failure' },
     ]
-    const handoffs = { impl: { text: '分支 feat/x 已推送', source: 'agent' as const } }
-    const run = (status: Record<string, any>) =>
+    const executions = { impl: [visit('impl', 1, '分支 feat/x 已推送')] }
+    const taken = (to: string, kind: 'success' | 'failure') =>
+      collectEdgeHandoffs(
+        edges,
+        [
+          { at: '1', nodeId: 'impl', event: 'enter', iteration: 1 },
+          { at: '2', nodeId: 'impl', event: 'transition', to, kind },
+        ],
+        executions,
+      )
+    const run = (handoffs: Record<string, { text: string; source: 'agent' }[]>, status: Record<string, any>) =>
       useFlowElements(flowInputs(nodes, edges, { mode: () => 'run', statusMap: () => status, handoffs: () => handoffs })).flowEdges.value
-    const done = run({ impl: 'completed', test: 'running' })
+    const done = run(taken('test', 'success'), { impl: 'completed', test: 'running' })
     expect(done.find((e) => e.id === 'ok')!.data.handoff?.text).toBe('分支 feat/x 已推送')
     expect(done.find((e) => e.id === 'ko')!.data.handoff).toBeUndefined()
 
-    const failed = run({ impl: 'failed', fix: 'running' })
+    const failed = run(taken('fix', 'failure'), { impl: 'failed', fix: 'running' })
     expect(failed.find((e) => e.id === 'ko')!.data.handoff).toBeDefined()
     expect(failed.find((e) => e.id === 'ok')!.data.handoff).toBeUndefined()
 
-    const edit = useFlowElements(flowInputs(nodes, edges, { handoffs: () => handoffs })).flowEdges.value
-    expect(edit.every((e) => !e.data.handoff)).toBe(true)
+    const edit = useFlowElements(flowInputs(nodes, edges, { handoffs: () => taken('test', 'success') })).flowEdges.value
+    expect(edit.every((e) => !e.data.handoff && !e.data.handoffs)).toBe(true)
+  })
+})
+
+function visit(
+  nodeId: string,
+  iteration: number,
+  handoff: string,
+  status: NodeRun['status'] = 'completed',
+  source?: 'agent' | 'platform',
+): NodeRun {
+  const outputs: Record<string, string> = {}
+  if (handoff) outputs.handoff = handoff
+  if (source) outputs.handoff_source = source
+  return { nodeId, iteration, status, outputs }
+}
+
+describe('edge handoffs by visit', () => {
+  const node = (id: string, x: number): WFNode => ({ id, type: 'agent', label: id, position: { x, y: 0 }, config: {} })
+  const nodes = [node('clarify', 0), node('implement', 320), node('test_review', 640), { ...node('output', 960), type: 'output' } as WFNode]
+  const edges: WFEdge[] = [
+    { id: 'c2i', source: 'clarify', target: 'implement' },
+    { id: 'i2t', source: 'implement', target: 'test_review' },
+    { id: 'pass', source: 'test_review', sourceHandle: 'pass', target: 'output' },
+    { id: 'back', source: 'test_review', sourceHandle: 'fail', target: 'implement', kind: 'rollback' },
+  ]
+  const trace: StateTraceEntry[] = [
+    { at: '1', nodeId: 'clarify', event: 'enter', iteration: 1 },
+    { at: '2', nodeId: 'clarify', event: 'transition', to: 'implement', kind: 'success' },
+    { at: '3', nodeId: 'implement', event: 'enter', iteration: 1 },
+    { at: '4', nodeId: 'implement', event: 'transition', to: 'test_review', kind: 'success' },
+    { at: '5', nodeId: 'test_review', event: 'enter', iteration: 1 },
+    { at: '6', nodeId: 'test_review', event: 'rollback', to: 'implement', kind: 'rollback' },
+    { at: '7', nodeId: 'implement', event: 'enter', iteration: 2 },
+  ]
+
+  it('keeps the previous success handoff while the source runs again, and leaves the untaken outlet empty', () => {
+    const executions: Record<string, NodeRun[]> = {
+      clarify: [visit('clarify', 1, '需求已对齐')],
+      implement: [visit('implement', 1, '第一次交给测试'), visit('implement', 2, '', 'running')],
+      test_review: [visit('test_review', 1, '测试未通过', 'failed')],
+    }
+    const lists = collectEdgeHandoffs(edges, trace, executions)
+    expect(lists.c2i).toEqual([{ text: '需求已对齐', source: 'agent' }])
+    expect(lists.i2t).toEqual([{ text: '第一次交给测试', source: 'agent' }])
+    expect(lists.back).toEqual([{ text: '测试未通过', source: 'agent' }])
+    expect(lists.pass).toBeUndefined()
+
+    const placed = useFlowElements({
+      nodes: () => nodes,
+      edges: () => edges,
+      mode: () => 'run',
+      agents: () => [],
+      lookup: () => ({}),
+      statusMap: () => ({ clarify: 'completed', implement: 'waiting_human', test_review: 'failed', output: 'pending' }),
+      iterations: () => undefined,
+      failReasons: () => undefined,
+      handoffs: () => lists,
+      activePath: () => undefined,
+      issues: () => undefined,
+      selectedNodes: () => [],
+      selectedEdges: () => [],
+      renamingId: () => null,
+      connecting: ref(null),
+      typeText: (type) => ({ label: type, desc: '' }),
+      t: (k) => k,
+    }).flowEdges.value
+    expect(placed.find((e) => e.id === 'i2t')!.data.handoffs).toEqual([{ text: '第一次交给测试', source: 'agent' }])
+    expect(placed.find((e) => e.id === 'i2t')!.data.run).not.toBe('traversed')
+    expect(placed.find((e) => e.id === 'back')!.data.handoff?.text).toBe('测试未通过')
+    expect(placed.find((e) => e.id === 'pass')!.data.handoffs).toBeUndefined()
+  })
+
+  it('lists two leaves of the same edge in order and skips a blank or still-running visit', () => {
+    const again: StateTraceEntry[] = [
+      ...trace,
+      { at: '8', nodeId: 'implement', event: 'transition', to: 'test_review', kind: 'success' },
+      { at: '9', nodeId: 'test_review', event: 'enter', iteration: 2 },
+    ]
+    const both = collectEdgeHandoffs(edges, again, {
+      clarify: [visit('clarify', 1, '需求已对齐')],
+      implement: [visit('implement', 1, '第一次交给测试'), visit('implement', 2, '第二次交给测试')],
+      test_review: [visit('test_review', 1, '测试未通过', 'failed'), visit('test_review', 2, '', 'running')],
+    })
+    expect(both.i2t?.map((item) => item.text)).toEqual(['第一次交给测试', '第二次交给测试'])
+    expect(both.back).toHaveLength(1)
+
+    const blankSecond = collectEdgeHandoffs(edges, again, {
+      implement: [visit('implement', 1, '第一次交给测试'), visit('implement', 2, '   ')],
+    })
+    expect(blankSecond.i2t).toEqual([{ text: '第一次交给测试', source: 'agent' }])
+
+    const platform = collectEdgeHandoffs(
+      edges,
+      [
+        { at: '1', nodeId: 'implement', event: 'enter', iteration: 1 },
+        { at: '2', nodeId: 'implement', event: 'transition', to: 'test_review', kind: 'success' },
+      ],
+      { implement: [visit('implement', 1, '平台补的说明', 'failed', 'platform')] },
+    )
+    expect(platform.i2t).toEqual([{ text: '平台补的说明', source: 'platform' }])
+  })
+
+  it('does not invent a handoff for an edge the trace never names', () => {
+    const lists = collectEdgeHandoffs(
+      edges,
+      [{ at: '1', nodeId: 'implement', event: 'transition', to: 'missing', kind: 'success' }],
+      { implement: [visit('implement', 1, '有正文')] },
+    )
+    expect(lists).toEqual({})
   })
 })
 

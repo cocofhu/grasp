@@ -24,16 +24,16 @@ describe('toolbar-control shared sizing (g2.1 g2.2 g4.1 g4.2 g4.4)', () => {
     expect(block).toMatch(/shrink-0/)
   })
 
-  it('RunListView toolbar still hosts the four shared filters without local size classes (g4.1)', () => {
+  it('RunListView toolbar hosts workspace filters without local size classes (g4.1)', () => {
     expect(runList).toContain('<TagFilter')
-    expect(runList).toContain('<ProjectFilter')
+    expect(runList).not.toContain('<ProjectFilter')
     expect(runList).toContain('<StatusFilter')
     expect(runList).toContain('<WorkflowFilter')
     expect(runList).toContain('flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center')
   })
 
-  it('ArtifactsView navigates projects via ProjectTree instead of a ProjectFilter toolbar', () => {
+  it('ArtifactsView navigates workflow and session resources with ResourceList', () => {
     expect(artifacts).not.toContain('<ProjectFilter')
-    expect(artifacts).toContain('<ProjectTree')
+    expect(artifacts).toContain('<ResourceList')
   })
 })

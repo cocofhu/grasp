@@ -9,7 +9,7 @@ import type { Project } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
   listProjectChannels: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   listProjectNotifyReceipts: vi.fn(),
   listPmThreads: vi.fn(),
 }))
@@ -21,7 +21,7 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listProjectChannels: mocks.listProjectChannels,
-      getProject: mocks.getProject,
+      getWorkspace: mocks.getWorkspace,
       listProjectNotifyReceipts: mocks.listProjectNotifyReceipts,
       listPmThreads: mocks.listPmThreads,
     },
@@ -73,7 +73,7 @@ function withPmChannelMulti(over: Partial<Parameters<typeof usePmChannelMulti>[0
 describe('usePmChannelMulti', () => {
   beforeEach(() => {
     mocks.listProjectChannels.mockReset()
-    mocks.getProject.mockReset()
+    mocks.getWorkspace.mockReset()
     mocks.listProjectNotifyReceipts.mockReset()
     mocks.listPmThreads.mockReset()
 
@@ -93,7 +93,7 @@ describe('usePmChannelMulti', () => {
       freeAgents: ['pm-leader', 'agent-b'],
       secretsKeyConfigured: true,
     })
-    mocks.getProject.mockResolvedValue(baseProject)
+    mocks.getWorkspace.mockResolvedValue(baseProject)
     mocks.listProjectNotifyReceipts.mockResolvedValue({ items: [] })
     mocks.listPmThreads.mockResolvedValue({ items: [] })
   })

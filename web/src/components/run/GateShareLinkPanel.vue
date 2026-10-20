@@ -16,6 +16,7 @@ import {
   forgetShareUrl,
   isGateShareActive,
   isLoopbackShareHost,
+  reachableShareUrl,
   maskShareUrl,
   recallShareUrl,
   rememberShareUrl,
@@ -94,7 +95,9 @@ watch(
       (props.target?.shareLink?.ttlTier as GateShareTTLTier) || DEFAULT_GATE_SHARE_TTL
     permissionPreset.value = props.target?.shareLink?.permissionPreset ?? DEFAULT_GATE_SHARE_PERMISSION
     revealUrl.value = false
-    fullUrl.value = recallShareUrl(props.target?.runId || '', props.target?.nodeId || '', props.target?.iteration)
+    fullUrl.value = reachableShareUrl(
+      recallShareUrl(props.target?.runId || '', props.target?.nodeId || '', props.target?.iteration),
+    )
     confirmKind.value = null
     errorText.value = ''
   },
@@ -149,8 +152,9 @@ async function createAndCopy() {
             ttlTier.value,
             permissionPreset.value,
           )
-    fullUrl.value = res.url
-    rememberShareUrl(props.target.runId, props.target.nodeId, props.target.iteration, res.url)
+    const url = reachableShareUrl(res.url)
+    fullUrl.value = url
+    rememberShareUrl(props.target.runId, props.target.nodeId, props.target.iteration, url)
     const next: GateShareInboxStatus = {
       state: res.state || 'active',
       ttlTier: res.ttlTier,
@@ -161,9 +165,9 @@ async function createAndCopy() {
       remainingSec: undefined,
     }
     localStatus.value = next
-    emit('updated', next, res.url)
-    if (!isLoopbackShareHost(res.url)) {
-      await copyText(res.url, { auto: true })
+    emit('updated', next, url)
+    if (!isLoopbackShareHost(url)) {
+      await copyText(url, { auto: true })
     }
   } catch (e) {
     errorText.value = shareApiErrorMessage(e, t)
@@ -202,8 +206,9 @@ async function confirmRegen() {
       shareKind.value === 'review'
         ? await api.regenReviewShareLink(props.target.runId, props.target.nodeId)
         : await api.regenGateShareLink(props.target.runId, props.target.nodeId)
-    fullUrl.value = res.url
-    rememberShareUrl(props.target.runId, props.target.nodeId, props.target.iteration, res.url)
+    const url = reachableShareUrl(res.url)
+    fullUrl.value = url
+    rememberShareUrl(props.target.runId, props.target.nodeId, props.target.iteration, url)
     revealUrl.value = false
     confirmKind.value = null
     const next: GateShareInboxStatus = {
@@ -215,11 +220,11 @@ async function confirmRegen() {
       canManage: true,
     }
     localStatus.value = next
-    emit('updated', next, res.url)
+    emit('updated', next, url)
     // plan g2.3: regenerate feedback first, then auto-copy result (success or fallback)
     toast.success(t('pages.gatesInbox.share.regenerated'))
-    if (!isLoopbackShareHost(res.url)) {
-      await copyText(res.url, { auto: true })
+    if (!isLoopbackShareHost(url)) {
+      await copyText(url, { auto: true })
     }
   } catch (e) {
     errorText.value = shareApiErrorMessage(e, t)

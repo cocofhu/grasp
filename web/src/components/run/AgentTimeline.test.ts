@@ -31,7 +31,6 @@ describe('AgentTimeline', () => {
     expect(w.findAll('[data-testid="agent-tool-group"]')[0]!.text()).toContain('使用了 2 个工具')
     const msgs = w.findAll('[data-testid="agent-timeline-message"]')
     expect(msgs[0]!.html()).toContain('<strong>bold</strong>')
-    expect(msgs[0]!.classes()).toContain('rounded-lg')
     expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
     expect((w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(false)
   })

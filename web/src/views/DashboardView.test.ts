@@ -24,6 +24,13 @@ const mocks = vi.hoisted(() => ({
   readStoredProjectId: vi.fn(() => 'proj-1'),
 }))
 
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+})
+
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mocks.push }),
 }))
@@ -46,9 +53,7 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  readStoredProjectId: () => mocks.readStoredProjectId(),
-}))
+
 
 vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ warn: vi.fn(), error: vi.fn(), success: vi.fn() }),
@@ -252,7 +257,7 @@ describe('DashboardView home composer', () => {
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
     expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const call = mocks.listWorkflows.mock.calls[0]?.[0] || {}
     expect(call).not.toHaveProperty('projectId')
@@ -260,7 +265,7 @@ describe('DashboardView home composer', () => {
   })
 
   // plan g2.1 — card title = workflow name, next line = project name; same workflow name, different projects
-  it('shows workflow name above project name and distinguishes same-named workflows', async () => {
+  it('shows all workflow names without former project metadata', async () => {
     const other: Workflow = {
       ...approveWf,
       id: 'wf-ap-b',
@@ -279,12 +284,8 @@ describe('DashboardView home composer', () => {
     const b = wrapper.get('[data-testid="home-workflow-card-wf-ap-b"]')
     expect(a.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
     expect(b.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap-b"]').text()).toBe('SkillHub')
-    expect(a.get('[data-testid="home-workflow-card-name"]').attributes('title')).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').attributes('title')).toBe(
-      '综合项目组',
-    )
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap-b"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -318,7 +319,7 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // fill LOCKED — cropped yume + copy
+  // plan g1.1/g1.3 — default sentence from locale, whole sentence single color (no .em)
   it('renders fill hero with yume and locked copy', async () => {
     const wrapper = mountDashboard()
     await flushPromises()
@@ -326,7 +327,7 @@ describe('DashboardView home composer', () => {
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.text()).toContain('先说清')
     expect(copy.text()).toContain('再动手')
-    expect(copy.find('.em').text()).toBe('先说清')
+    expect(copy.find('.em').exists()).toBe(false)
     expect(copy.text().replace(/\s+/g, '')).toContain('先说清，再动手')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
@@ -340,13 +341,44 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
+  // plan g1.1 — brand「首页副标题」drives the hero copy when set
+  it('renders the configured home subtitle instead of the default sentence', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '先聊清楚，再开工' })
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text()).toBe('先聊清楚，再开工')
+    expect(copy.find('.em').exists()).toBe(false)
+    expect(copy.text()).not.toBe('先说清，再动手')
+    wrapper.unmount()
+  })
+
+  // plan g1.1 / f2 — blank or whitespace-only subtitle falls back to locale default
+  it('falls back to the default sentence when the subtitle is blank', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '   ' })
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text().replace(/\s+/g, '')).toBe('先说清，再动手')
+    wrapper.unmount()
+  })
+
   it('renders the English slogan without Chinese copy', async () => {
     const wrapper = mountDashboard('en')
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.find('.em').text()).toBe('Clarify first')
+    expect(copy.find('.em').exists()).toBe(false)
     expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
     expect(copy.text()).not.toMatch(/先说清|再动手/)
+    wrapper.unmount()
+  })
+
+  it('falls back to the English default sentence when the subtitle is blank', async () => {
+    setBrandSettings({ product_name: '', home_subtitle: '' })
+    const wrapper = mountDashboard('en')
+    await flushPromises()
+    const copy = wrapper.get('[data-testid="home-hero-copy"]')
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
     wrapper.unmount()
   })
 
@@ -581,11 +613,11 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  it('filters the home combobox by project name as well as workflow name (plan g2.1/g2.2)', async () => {
+  it('filters the home combobox by workflow name', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
-      name: '默认工作流',
+      name: 'Skill workflow',
       projectId: 'proj-2',
       description: '轻量 Approve 入口',
     }
@@ -597,7 +629,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
-      '综合项目组 · 自我迭代PRO',
+      '自我迭代PRO',
     )
     await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
@@ -724,7 +756,7 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-workflows-empty"]').text()).not.toContain('选择项目')
     expect(wrapper.find('[data-testid="home-go-projects"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-go-projects"]').trigger('click')
-    expect(mocks.push).toHaveBeenCalledWith('/projects')
+    expect(mocks.push).toHaveBeenCalledWith('/workflows')
     wrapper.unmount()
   })
 
@@ -797,7 +829,7 @@ describe('DashboardView home composer', () => {
       publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
     wrapper.unmount()
   })
 
@@ -972,7 +1004,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

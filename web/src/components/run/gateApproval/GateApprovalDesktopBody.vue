@@ -65,7 +65,6 @@ const {
   useUnifiedPreviewBudget,
   contentFitChromeOffsetPx,
   CONTENT_FIT_PREVIEW_MAX_VH,
-  REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   shouldHideGateForm,
   footerActions,
   isColdSession,

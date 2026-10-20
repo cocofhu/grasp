@@ -76,7 +76,8 @@ type SandboxService struct {
 	openCodeCatalog runtime.OpenCodeCatalog
 	// codexLoginWriteBack stores a refreshed Codex auth.json into the project
 	// credential. Nil skips write-back. The callback must not log the file body.
-	codexLoginWriteBack func(projectID, content string) error
+	codexLoginWriteBack  func(projectID, credentialID, content string) error
+	injectedCredentialID func(projectID, envKey, value string) string
 }
 
 // TestSchedulerHooks wires purpose=test scheduler session lifecycle.
@@ -87,12 +88,13 @@ type TestSchedulerHooks struct {
 
 // liveSandbox is the in-memory connection state for a running sandbox.
 type liveSandbox struct {
-	sb                *sandbox.Sandbox
-	acp               *sandbox.ACPClient
-	home              string
-	busy              bool
-	codexAuthInjected string
-	codexAuthPath     string
+	sb                    *sandbox.Sandbox
+	acp                   *sandbox.ACPClient
+	home                  string
+	busy                  bool
+	codexAuthCredentialID string
+	codexAuthInjected     string
+	codexAuthPath         string
 	// codexAuthRejected is set from the latest turn's CLI error, not from
 	// narration. A login refusal keeps the previously saved file.
 	codexAuthRejected bool

@@ -103,4 +103,77 @@ describe('Icon', () => {
     expect(svg.attributes('style')).toMatch(/transform-origin:\s*center/)
     wrapper.unmount()
   })
+
+  it('updates a mounted chat icon between send, solid stop, artifacts, and spinner', async () => {
+    const wrapper = mount(Icon, { props: { name: 'chat-send', size: 18 }, attrs: { class: 'text-accent-2' } })
+    const svg = wrapper.find('svg')
+    const element = svg.element
+    const sendPath = wrapper.find('path').attributes('d')
+    expect(svg.classes()).toEqual(expect.arrayContaining(['app-icon', 'text-accent-2']))
+    expect(svg.attributes('data-icon')).toBe('chat-send')
+    expect(svg.attributes('fill')).toBe('none')
+    expect(svg.attributes('stroke-width')).toBe('1.7')
+    expect(svg.attributes('stroke-linecap')).toBe('round')
+
+    await wrapper.setProps({ name: 'chat-stop' })
+    expect(wrapper.find('svg').element).toBe(element)
+    expect(svg.attributes('data-icon')).toBe('chat-stop')
+    expect(svg.attributes('fill')).toBe('currentColor')
+    expect(wrapper.find('path').exists()).toBe(false)
+    expect(wrapper.find('rect').attributes('rx')).toBe('2')
+
+    await wrapper.setProps({ name: 'chat-artifacts' })
+    expect(svg.attributes('data-icon')).toBe('chat-artifacts')
+    expect(svg.attributes('fill')).toBe('none')
+    expect(svg.attributes('stroke-width')).toBe('1.7')
+    expect(wrapper.find('rect').exists()).toBe(true)
+    expect(wrapper.find('path').exists()).toBe(true)
+    expect(wrapper.find('path').attributes('d')).not.toBe(sendPath)
+
+    await wrapper.setProps({ name: 'spinner' })
+    expect(svg.classes()).toEqual(expect.arrayContaining(['app-icon', 'icon-spinner']))
+    expect(wrapper.find('circle').exists()).toBe(true)
+    expect(svg.attributes('style')).toMatch(/transform-origin:\s*center/)
+
+    await wrapper.setProps({ name: 'chat-send' })
+    expect(svg.classes()).toContain('app-icon')
+    expect(svg.classes()).not.toContain('icon-spinner')
+    expect(svg.attributes('style') || '').not.toMatch(/transform-origin/)
+    expect(wrapper.find('path').attributes('d')).toBe(sendPath)
+    expect(wrapper.find('circle').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('updates numeric and CSS sizes without remounting and restores the default', async () => {
+    const wrapper = mount(Icon, { props: { name: 'check' } })
+    const svg = wrapper.find('svg')
+    const element = svg.element
+    expect(svg.attributes('width')).toBe('18')
+    expect(svg.attributes('height')).toBe('18')
+
+    await wrapper.setProps({ size: 24 })
+    expect(svg.element).toBe(element)
+    expect(svg.attributes('width')).toBe('24')
+    expect(svg.attributes('height')).toBe('24')
+
+    await wrapper.setProps({ size: '1.25em' })
+    expect(svg.attributes('width')).toBe('1.25em')
+    expect(svg.attributes('height')).toBe('1.25em')
+
+    await wrapper.setProps({ size: undefined })
+    expect(svg.attributes('width')).toBe('18')
+    expect(svg.attributes('height')).toBe('18')
+    wrapper.unmount()
+  })
+
+  it('replaces a known solid icon with the unknown-name fallback', async () => {
+    const fallback = mount(Icon, { props: { name: 'unknown-icon-xyz' } })
+    const wrapper = mount(Icon, { props: { name: 'chat-stop' } })
+    await wrapper.setProps({ name: 'unknown-icon-xyz' })
+    expect(wrapper.find('svg').element.innerHTML).toBe(fallback.find('svg').element.innerHTML)
+    expect(wrapper.find('svg').attributes('data-icon')).toBe('unknown-icon-xyz')
+    expect(wrapper.find('svg').attributes('fill')).toBe('none')
+    wrapper.unmount()
+    fallback.unmount()
+  })
 })

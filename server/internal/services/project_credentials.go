@@ -262,6 +262,11 @@ func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
 		var existing models.ProjectCredential
 		err := s.db.Where("id = ?", row.ID).First(&existing).Error
 		if err == nil {
+			if existing.BuiltinSlot == "" {
+				if err := s.db.Model(&models.ProjectCredential{}).Where("id = ?", existing.ID).UpdateColumn("builtin_slot", row.EnvKey).Error; err != nil {
+					return err
+				}
+			}
 			if legacyBuiltinName(existing.Name, slot.legacy) {
 				if err := s.db.Model(&models.ProjectCredential{}).Where("id = ?", existing.ID).UpdateColumn("name", row.Name).Error; err != nil {
 					return err
@@ -274,6 +279,7 @@ func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
 		}
 		now := time.Now()
 		row.ProjectID, row.Enabled, row.CreatedAt, row.UpdatedAt = projectID, true, now, now
+		row.BuiltinSlot = row.EnvKey
 		if err := s.db.Create(&row).Error; err != nil && !strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return err
 		}
@@ -570,7 +576,7 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 			kinds[key] = kind
 		}
 		if strings.TrimSpace(row.ValueEnc) == "" {
-			if !isDefaultCredentialID(projectID, row.ID) {
+			if row.BuiltinSlot == "" {
 				kind.clearedExtra = true
 			}
 			continue
@@ -629,6 +635,64 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 	return out
 }
 
+// InjectedCredentialID identifies an unambiguous inherited secret without ever
+// exposing it. Explicit Agent selections are resolved before this fallback.
+func (s *ProjectCredentialService) InjectedCredentialID(projectID, envKey, value string) string {
+	if value == "" || s.ResolveEnv(projectID)[envKey] != value {
+		return ""
+	}
+	var rows []models.ProjectCredential
+	if s.db.Where("project_id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL", projectID, envKey, true).Find(&rows).Error != nil {
+		return ""
+	}
+	id := ""
+	for _, row := range rows {
+		if row.ValueEnc == "" {
+			continue
+		}
+		plain, err := crypto.Decrypt(row.ValueEnc)
+		if err != nil || plain != value {
+			continue
+		}
+		if id != "" {
+			return ""
+		}
+		id = row.ID
+	}
+	return id
+}
+
+// WriteBackCodexLoginCredential refreshes precisely the injected credential.
+// Revocation, clearing and deletion while a sandbox runs are never undone.
+func (s *ProjectCredentialService) WriteBackCodexLoginCredential(projectID, credentialID, content string) error {
+	if err := runtime.ValidateCodexLoginFile(content); err != nil {
+		return err
+	}
+	var row models.ProjectCredential
+	if err := s.db.Where("id = ? AND project_id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL AND value_enc <> ''", credentialID, projectID, envauth.EnvCodexAuthFile, true).First(&row).Error; err != nil {
+		return err
+	}
+	previous, err := crypto.Decrypt(row.ValueEnc)
+	if err != nil {
+		return err
+	}
+	if previous == content {
+		return nil
+	}
+	enc, err := crypto.Encrypt(content)
+	if err != nil {
+		return err
+	}
+	result := s.db.Model(&models.ProjectCredential{}).Where("id = ? AND project_id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, projectID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now()})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("Codex login credential changed during writeback")
+	}
+	return nil
+}
+
 func credentialAliasKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
@@ -669,23 +733,6 @@ func credentialEnvRow(row models.ProjectCredential) bool {
 	}
 	key := strings.TrimSpace(row.EnvKey)
 	return key != "" && !envauth.IsPlatformReservedEnvKey(key)
-}
-
-func isDefaultCredentialID(projectID, id string) bool {
-	projectID = strings.TrimSpace(projectID)
-	id = strings.TrimSpace(id)
-	if projectID == "" || id == "" {
-		return false
-	}
-	for _, suffix := range []string{
-		"cursor", "claude", "codebuddy", "trae", "opencode", "codex",
-		"github", "gitlab", "gitlab-url", "ssh-key", "ssh-hosts",
-	} {
-		if id == "cred-"+projectID+"-"+suffix {
-			return true
-		}
-	}
-	return false
 }
 
 // ResolveSelectedValue returns one credential's env key and plaintext.
@@ -745,44 +792,6 @@ func aiCredentialName(backend string) string {
 		}
 		return backend + " API Key"
 	}
-}
-
-// WriteBackCodexLoginFile replaces the project's Codex login file when a run
-// produced a different auth.json. Identical content does not touch UpdatedAt.
-// The plaintext is never logged or returned.
-func (s *ProjectCredentialService) WriteBackCodexLoginFile(projectID, content string) error {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return ErrCredentialProject
-	}
-	if err := runtime.ValidateCodexLoginFile(content); err != nil {
-		return err
-	}
-	if err := s.ensureProject(projectID); err != nil {
-		return err
-	}
-	if err := s.ensureDefaultRows(projectID); err != nil {
-		return err
-	}
-	var row models.ProjectCredential
-	err := s.db.Where("project_id = ? AND env_key = ?", projectID, envauth.EnvCodexAuthFile).
-		Order("created_at asc").First(&row).Error
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(row.ValueEnc) != "" {
-		cur, decErr := crypto.Decrypt(row.ValueEnc)
-		if decErr == nil && cur == content {
-			return nil
-		}
-	}
-	enc, err := crypto.Encrypt(content)
-	if err != nil {
-		return fmt.Errorf("encrypt credential: %w", err)
-	}
-	now := time.Now()
-	return s.db.Model(&models.ProjectCredential{}).Where("id = ? AND project_id = ?", row.ID, projectID).
-		Updates(map[string]any{"value_enc": enc, "updated_at": now, "enabled": true, "revoked_at": nil}).Error
 }
 
 func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {

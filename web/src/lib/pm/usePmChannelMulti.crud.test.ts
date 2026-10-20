@@ -10,13 +10,13 @@ import type { Project } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
   listProjectChannels: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   listProjectNotifyReceipts: vi.fn(),
   listPmThreads: vi.fn(),
   createProjectChannel: vi.fn(),
   updateProjectChannel: vi.fn(),
   deleteProjectChannelById: vi.fn(),
-  updateProject: vi.fn(),
+  updateWorkspace: vi.fn(),
   toastSuccess: vi.fn(),
   toastError: vi.fn(),
 }))
@@ -28,13 +28,13 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listProjectChannels: mocks.listProjectChannels,
-      getProject: mocks.getProject,
+      getWorkspace: mocks.getWorkspace,
       listProjectNotifyReceipts: mocks.listProjectNotifyReceipts,
       listPmThreads: mocks.listPmThreads,
       createProjectChannel: mocks.createProjectChannel,
       updateProjectChannel: mocks.updateProjectChannel,
       deleteProjectChannelById: mocks.deleteProjectChannelById,
-      updateProject: mocks.updateProject,
+      updateWorkspace: mocks.updateWorkspace,
     },
   }
 })
@@ -126,7 +126,7 @@ describe('usePmChannelMulti CRUD', () => {
       freeAgents: ['pm-leader', 'agent-b'],
       secretsKeyConfigured: true,
     })
-    mocks.getProject.mockResolvedValue(baseProject())
+    mocks.getWorkspace.mockResolvedValue(baseProject())
     mocks.listProjectNotifyReceipts.mockResolvedValue({
       items: [{ runId: 'run-1', kind: 'waiting_human', status: 'ok', createdAt: '2026-01-01T00:00:00Z' }],
     })
@@ -142,7 +142,7 @@ describe('usePmChannelMulti CRUD', () => {
     mocks.createProjectChannel.mockResolvedValue({ id: 'ch-3' })
     mocks.updateProjectChannel.mockResolvedValue({ id: 'ch-1' })
     mocks.deleteProjectChannelById.mockResolvedValue({ status: 'ok' })
-    mocks.updateProject.mockImplementation(async (_id: string, patch: Partial<Project>) => ({
+    mocks.updateWorkspace.mockImplementation(async (patch: Partial<Project>) => ({
       ...baseProject(),
       ...patch,
     }))
@@ -162,7 +162,7 @@ describe('usePmChannelMulti CRUD', () => {
   })
 
   it('falls back to prop notify ids and tolerates missing receipts', async () => {
-    mocks.getProject.mockRejectedValue(new Error('offline'))
+    mocks.getWorkspace.mockRejectedValue(new Error('offline'))
     mocks.listProjectNotifyReceipts.mockRejectedValue(new Error('offline'))
     const { panel, app } = withPmChannelMulti()
     await flushPromises()
@@ -171,7 +171,7 @@ describe('usePmChannelMulti CRUD', () => {
     app.unmount()
 
     // Neither source has a policy → empty selection.
-    mocks.getProject.mockResolvedValue(baseProject({ notifyPolicy: undefined }))
+    mocks.getWorkspace.mockResolvedValue(baseProject({ notifyPolicy: undefined }))
     const bare = withPmChannelMulti({ project: baseProject({ notifyPolicy: undefined }) })
     await flushPromises()
     expect(bare.panel.notifySelected.value).toEqual([])
@@ -631,22 +631,22 @@ describe('usePmChannelMulti CRUD', () => {
     panel.toggleNotify('ch-1')
     expect(panel.notifySelected.value).toEqual(['ch-2'])
 
-    mocks.updateProject.mockResolvedValueOnce(
+    mocks.updateWorkspace.mockResolvedValueOnce(
       baseProject({ notifyPolicy: { enabled: true, defaultEvents: ['failed'], channelIds: ['ch-2'] } }),
     )
     await panel.saveNotifyTargets()
-    expect(mocks.updateProject).toHaveBeenCalledWith('proj-a', {
+    expect(mocks.updateWorkspace).toHaveBeenCalledWith({
       notifyPolicy: expect.objectContaining({ channelIds: ['ch-2'] }),
     })
     expect(emit).toHaveBeenCalledWith('project-updated', expect.objectContaining({ id: 'proj-a' }))
     expect(panel.notifySelected.value).toEqual(['ch-2'])
     expect(panel.notifySaving.value).toBe(false)
 
-    mocks.updateProject.mockResolvedValueOnce(baseProject({ notifyPolicy: undefined }))
+    mocks.updateWorkspace.mockResolvedValueOnce(baseProject({ notifyPolicy: undefined }))
     await panel.saveNotifyTargets()
     expect(panel.notifySelected.value).toEqual([])
 
-    mocks.updateProject.mockRejectedValueOnce(new Error('notify failed'))
+    mocks.updateWorkspace.mockRejectedValueOnce(new Error('notify failed'))
     await panel.saveNotifyTargets()
     expect(mocks.toastError).toHaveBeenCalledWith('notify failed')
 

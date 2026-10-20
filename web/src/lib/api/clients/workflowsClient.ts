@@ -1,14 +1,13 @@
+import type { WorkflowCatalogItem } from '../apiTypes'
 import type { Workflow, WorkflowVersion, WorkflowNotifyPolicy, WorkflowGraph } from '../../shared/types'
 import type { RepoRow } from '../../../components/ui/ReposEditor.vue'
 import { req } from '../httpCore'
 
 export const workflowsClient = {
-  // workflows
+  listWorkflowCatalog: (opts?: { signal?: AbortSignal }) =>
+    req<WorkflowCatalogItem[]>('/workflows/catalog', opts?.signal ? { signal: opts.signal } : undefined),
   listWorkflows: (params?: { projectId?: string; signal?: AbortSignal }) => {
-    const qs = new URLSearchParams()
-    if (params?.projectId) qs.set('projectId', params.projectId)
-    const q = qs.toString()
-    return req<Workflow[]>(q ? `/workflows?${q}` : '/workflows', params?.signal ? { signal: params.signal } : undefined)
+    return req<Workflow[]>('/workflows', params?.signal ? { signal: params.signal } : undefined)
   },
   getWorkflow: (id: string, opts?: { signal?: AbortSignal }) =>
     req<Workflow>(`/workflows/${id}`, opts?.signal ? { signal: opts.signal } : undefined),
@@ -20,7 +19,7 @@ export const workflowsClient = {
   createWorkflowFromBaseline: (projectId: string, name: string, repos: RepoRow[]) =>
     req<Workflow>('/workflows/from-baseline', {
       method: 'POST',
-      body: JSON.stringify({ projectId, name, repos }),
+      body: JSON.stringify({ name, repos }),
     }),
   /** Notify-only: never sends nodes/edges (avoids stale list-cache graph rollback). */
   patchWorkflowNotifyPolicy: (id: string, notifyPolicy: WorkflowNotifyPolicy) =>
@@ -62,8 +61,7 @@ export const workflowsClient = {
       `/workflows/${id}/versions/${version}/graph`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
-  importWorkflow: (json: string, projectId?: string) => {
-    const qs = projectId ? `?projectId=${encodeURIComponent(projectId)}` : ''
-    return req<Workflow>(`/workflows/import${qs}`, { method: 'POST', body: json })
+  importWorkflow: (json: string, _workspaceId?: string) => {
+    return req<Workflow>('/workflows/import', { method: 'POST', body: json })
   },
 }

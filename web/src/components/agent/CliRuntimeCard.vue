@@ -94,9 +94,9 @@ watch(
 </script>
 
 <template>
-  <section class="runtime-card overflow-hidden rounded-xl border border-line bg-surface" data-test="agent-cli-runtime">
-    <header class="flex items-center gap-2.5 border-b border-line/70 px-4 py-3">
-      <span class="flex h-7 w-7 items-center justify-center rounded-lg bg-accent-dim text-accent-2">
+  <section class="runtime-section border-y border-line/60" data-test="agent-cli-runtime">
+    <header class="flex items-start gap-2 border-b border-line/60 py-3">
+      <span class="flex h-5 w-5 shrink-0 items-center justify-center text-txt3">
         <Icon name="terminal" :size="14" />
       </span>
       <div class="min-w-0">
@@ -104,7 +104,7 @@ watch(
         <p class="m-0 text-[11px] text-txt3">{{ description ?? t('pages.agentStudio.cliModel.runtimeDesc') }}</p>
       </div>
     </header>
-    <div v-if="aiKind" class="px-4 py-3.5">
+    <div v-if="aiKind" class="py-4">
       <CredentialAliasPicker
         :project-id="draft.projectId"
         :kind="aiKind.id"
@@ -116,7 +116,7 @@ watch(
     </div>
     <div
       ref="modelCard"
-      class="model-block border-t border-line/70 px-4 py-3.5"
+      class="model-block border-t border-line/60 py-4"
       :class="{ 'is-pulse': modelPulse }"
       data-test="agent-cli-model"
     >
@@ -133,7 +133,7 @@ watch(
         <code class="rounded bg-base px-1 py-px font-mono text-[10.5px] text-txt2">{{ inheritedLabel }}</code>
       </p>
     </div>
-    <div v-if="draft.acpBackend === 'codex'" class="border-t border-line/70 px-4 py-3.5" data-test="agent-cli-effort">
+    <div v-if="draft.acpBackend === 'codex'" class="border-t border-line/60 py-4" data-test="agent-cli-effort">
       <div class="mb-0.5 flex items-center gap-2 text-[12px] font-medium text-txt2">
         <Icon name="brain" :size="13" class="text-txt3" />
         {{ t('pages.agentStudio.cliModel.effortLabel') }}

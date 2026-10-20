@@ -614,6 +614,74 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it.each(['text', 'attachment', 'annotation'])('preserves unsent %s when abort-confirm is requested', (kind) => {
+    const { chat, models, emit, app } = withChat({ confirmCanAbort: true })
+    if (kind === 'text') models.draft.value = '未发送内容'
+    if (kind === 'attachment') models.attachments.value = [image()]
+    if (kind === 'annotation') models.annotations.value = [annotation()]
+    const original = {
+      text: models.draft.value,
+      images: [...models.attachments.value],
+      annotations: [...models.annotations.value],
+    }
+
+    chat.finishAbort()
+    expect(emit).not.toHaveBeenCalled()
+    expect(models.draft.value).toBe(original.text)
+    expect(models.attachments.value).toEqual(original.images)
+    expect(models.annotations.value).toEqual(original.annotations)
+    expect(chat.validating.value).toBe(false)
+
+    models.draft.value = ''
+    models.attachments.value = []
+    models.annotations.value = []
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
+    app.unmount()
+  })
+
+  it.each([false, true])('blocks abort-confirm during send acknowledgement even after clearing the draft (cold=%s)', async (coldSession) => {
+    let complete!: (accepted: boolean) => void
+    const sendRequest = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+    const { chat, models, props, emit, app } = withChat({ confirmCanAbort: true, sendRequest })
+    models.draft.value = '正在发送'
+    const sending = chat.sendFromComposer()
+    models.draft.value = ''
+    props.coldSession = coldSession
+    expect(chat.composerSending.value).toBe(true)
+    chat.finishAbort()
+    expect(emit).not.toHaveBeenCalled()
+
+    complete(true)
+    await sending
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
+    app.unmount()
+  })
+
+  it('still allows abort-confirm while ordinary confirmation is blocked by a busy queue', () => {
+    const { chat, emit, app } = withChat({ confirmCanAbort: true, finishDisabled: true })
+    chat.thinking.value = true
+    chat.queued.value.push({ text: '已排队', images: [], annotations: [] })
+    expect(chat.confirmDisabled.value).toBe(true)
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
+    app.unmount()
+  })
+
+  it('allows cold abort-confirm without modifying hidden composer content', () => {
+    const { chat, models, emit, app } = withChat({ coldSession: true, active: false, confirmCanAbort: true })
+    models.draft.value = '隐藏的草稿'
+    models.attachments.value = [image()]
+    models.annotations.value = [annotation()]
+    chat.finishAbort()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
+    expect(models.draft.value).toBe('隐藏的草稿')
+    expect(models.attachments.value).toEqual([image()])
+    expect(models.annotations.value).toEqual([annotation()])
+    app.unmount()
+  })
+
   it('supports finish and confirm flows and releases validation on errors', async () => {
     const clarify = withChat()
     clarify.chat.finishEarly()
@@ -636,6 +704,52 @@ describe('useClarifyChat actions', () => {
     review.chat.finishEarly()
     expect(review.emit).toHaveBeenCalledTimes(1)
     review.app.unmount()
+  })
+
+  it.each(['text', 'image', 'annotation'])('keeps an unsent %s when confirmation is requested', (kind) => {
+    const { chat, models, emit, app } = withChat({ annotateEnabled: true })
+    if (kind === 'text') models.draft.value = '未发送的补充'
+    if (kind === 'image') models.attachments.value = [image()]
+    if (kind === 'annotation') models.annotations.value = [annotation()]
+    const original = {
+      text: models.draft.value,
+      images: [...models.attachments.value],
+      annotations: [...models.annotations.value],
+    }
+
+    expect(chat.confirmDisabled.value).toBe(true)
+    chat.finishEarly()
+    expect(emit).not.toHaveBeenCalled()
+    expect(chat.validating.value).toBe(false)
+    expect(models.draft.value).toBe(original.text)
+    expect(models.attachments.value).toEqual(original.images)
+    expect(models.annotations.value).toEqual(original.annotations)
+
+    models.draft.value = ''
+    models.attachments.value = []
+    models.annotations.value = []
+    expect(chat.confirmDisabled.value).toBe(false)
+    chat.finishEarly()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
+    app.unmount()
+  })
+
+  it('allows a cold session to confirm without touching hidden composer content', () => {
+    const { chat, models, emit, props, app } = withChat({ coldSession: true, active: false, finishDisabled: true })
+    models.draft.value = '隐藏的草稿'
+    models.attachments.value = [image()]
+    models.annotations.value = [annotation()]
+    chat.finishEarly()
+    expect(emit).not.toHaveBeenCalled()
+
+    props.finishDisabled = false
+    expect(chat.confirmDisabled.value).toBe(false)
+    chat.finishEarly()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
+    expect(models.draft.value).toBe('隐藏的草稿')
+    expect(models.attachments.value).toEqual([image()])
+    expect(models.annotations.value).toEqual([annotation()])
+    app.unmount()
   })
 
   it('tracks scrolling and unread persisted turns', async () => {
@@ -991,6 +1105,34 @@ describe('acknowledged composer transport', () => {
     expect(models.annotations.value).toHaveLength(1)
     expect(chat.queued.value).toHaveLength(0)
     expect(emit).not.toHaveBeenCalledWith('send', expect.anything(), expect.anything(), expect.anything())
+    expect(chat.confirmDisabled.value).toBe(true)
+    chat.finishEarly()
+    expect(emit).not.toHaveBeenCalledWith('finish')
+    app.unmount()
+  })
+
+  it('blocks confirmation while awaiting send acknowledgement even if the editor is cleared', async () => {
+    let resolve!: (accepted: boolean) => void
+    const sendRequest = vi.fn(() => new Promise<boolean>((done) => { resolve = done }))
+    const { chat, models, emit, app } = withChat({ sendRequest })
+    models.draft.value = '正在提交的内容'
+    const pending = chat.sendFromComposer()
+    expect(chat.composerSending.value).toBe(true)
+
+    // A user can edit or clear the composer while transport is pending. The
+    // in-flight request must still prevent confirmation from overtaking it.
+    models.draft.value = ''
+    expect(chat.confirmDisabled.value).toBe(true)
+    chat.finishEarly()
+    expect(emit).not.toHaveBeenCalledWith('finish')
+
+    resolve(false)
+    expect(await pending).toBe(false)
+    expect(chat.composerSending.value).toBe(false)
+    expect(models.draft.value).toBe('')
+    expect(chat.confirmDisabled.value).toBe(false)
+    chat.finishEarly()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
     app.unmount()
   })
 

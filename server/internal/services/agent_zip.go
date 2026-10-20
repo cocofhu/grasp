@@ -19,6 +19,7 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
+	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	Name                 string                    `json:"name"`
 	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
 	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
@@ -61,6 +62,7 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	layout := a.Layout.withDefaults()
 	export := agentExportJSON{
 		Name:                 name,
+		CredentialBindings:   a.CredentialBindings,
 		GitCredentialType:    a.GitCredentialType,
 		OpenCodeCredentialID: a.OpenCodeCredentialID,
 		AiCredentialID:       a.AiCredentialID,
@@ -265,6 +267,7 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 	agent := Agent{
 		Name:                 targetName,
 		ProjectID:            strings.TrimSpace(projectID),
+		CredentialBindings:   export.CredentialBindings,
 		AcpBackend:           export.AcpBackend,
 		GitCredentialType:    export.GitCredentialType,
 		OpenCodeCredentialID: export.OpenCodeCredentialID,

@@ -43,3 +43,15 @@ describe('capabilities draft round-trip', () => {
     expect(JSON.parse(draftPayloadJson(d))).toEqual(canonical)
   })
 })
+
+describe('credential binding round-trip', () => {
+  it('preserves explicit IDs, disabled keys and the distinction from inheritance', () => {
+    const bindings = { OPENAI_API_KEY: 'cred-1', ANTHROPIC_API_KEY: null }
+    const draft = toDraft({ ...baseAgent, credentialBindings: bindings })
+    expect(fromDraft(draft).credentialBindings).toEqual(bindings)
+    draft.credentialBindings!.OPENAI_API_KEY = 'cred-2'
+    expect(bindings.OPENAI_API_KEY).toBe('cred-1')
+    expect(fromDraftRaw(draft).credentialBindings).toEqual({ OPENAI_API_KEY: 'cred-2', ANTHROPIC_API_KEY: null })
+    expect(fromDraft(toDraft(baseAgent))).not.toHaveProperty('credentialBindings')
+  })
+})

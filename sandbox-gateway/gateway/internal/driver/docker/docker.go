@@ -127,11 +127,12 @@ func (d *Driver) Create(ctx context.Context, spec driver.Spec) (*driver.Handle, 
 	// Publish only public ports on bindIP. Internal CDP/noVNC stay unpublished
 	// even when bindIP is 127.0.0.1 (host-side unauthenticated access must fail).
 	// PREVIEW_DIRECT ports use 1:1 host:container mapping so the app origin port
-	// matches what the browser hits.
+	// matches what the browser hits. That one port is what a remote browser
+	// opens, so a loopback bindIP must not hide it on 127.0.0.1 only.
 	exact := previewExactPort(spec)
 	for _, p := range spec.Ports {
 		if exact > 0 && p == exact {
-			args = append(args, "-p", fmt.Sprintf("%s:%d:%d", d.bindIP, p, p))
+			args = append(args, "-p", fmt.Sprintf("%s:%d:%d", previewPublishHost(d.bindIP), p, p))
 			continue
 		}
 		args = append(args, "-p", fmt.Sprintf("%s::%d", d.bindIP, p))
@@ -481,6 +482,18 @@ func mapState(s string) driver.Status {
 	}
 }
 
+// previewPublishHost is the address docker binds the IP-direct preview port on.
+// Other published ports stay on bindIP. Loopback bindIP is for local testing,
+// but the preview port has to accept the host the reviewer's browser uses.
+func previewPublishHost(bindIP string) string {
+	switch strings.ToLower(strings.TrimSpace(bindIP)) {
+	case "", "localhost", "127.0.0.1", "::1":
+		return "0.0.0.0"
+	default:
+		return bindIP
+	}
+}
+
 func previewExactPort(spec driver.Spec) int {
 	if !driver.PreviewDirectEnabled(spec.Env) {
 		return 0
@@ -517,7 +530,7 @@ func (d *Driver) allocatePreviewPort() (int, error) {
 		return d.pickPreviewPort()
 	}
 	for p := driver.PreviewPortMin; p <= driver.PreviewPortMax; p++ {
-		ln, err := net.Listen("tcp", net.JoinHostPort(d.bindIP, strconv.Itoa(p)))
+		ln, err := net.Listen("tcp", net.JoinHostPort(previewPublishHost(d.bindIP), strconv.Itoa(p)))
 		if err != nil {
 			continue
 		}

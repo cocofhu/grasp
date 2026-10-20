@@ -110,124 +110,58 @@ const displayName = computed(() => friendlyName.value || technicalName.value)
 const modalTitle = computed(() =>
   friendlyName.value ? `${friendlyName.value} · ${technicalName.value}` : technicalName.value,
 )
+/** Cover missing HTML content without hiding the preview controls. */
+const htmlCanvasOverlay = computed(
+  () => activeIsHtml.value && (!!loadErr.value || !activeContent.value),
+)
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-    <div v-if="displayArtifact" class="flex items-center gap-2 border-b border-line px-4 py-2.5">
-      <span class="chip border-n-artifact/30 text-n-artifact">{{ displayArtifact.kind }}</span>
-      <span class="min-w-0 flex-1 truncate text-xs font-medium text-txt" :title="technicalName">
-        {{ displayName }}
-        <span v-if="friendlyName" class="ml-1.5 text-[10px] font-normal text-txt3">{{ technicalName }}</span>
-      </span>
-      <ArtifactVersionSelect
-        v-if="showVersionChip"
-        :choices="versionChoices"
-        :selected-index="selectedChoice?.index"
-        :current-label="currentChipLabel"
-        :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
-        chip-test-id="artifact-preview-version-chip"
-        button-test-id="artifact-preview-version-chip-btn"
-        menu-test-id="artifact-preview-version-menu"
-        option-test-id-prefix="artifact-preview-version-option-v"
-        :label-for="versionChipLabel"
-        @select="selectVersion"
-      />
-      <span
-        v-if="viewingHistorical"
-        class="rounded-md shrink-0 border border-line px-1 py-px text-[10px] text-txt3"
-        data-testid="artifact-preview-historical-readonly"
-      >{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
-      <div
-        v-if="isStructuredPreview"
-        class="rounded-md overflow-hidden inline-flex shrink-0 border border-line"
-        data-testid="artifact-preview-mode-toggle"
-        role="group"
-        :aria-label="t('pages.artifactPreview.modeToggleAria')"
-      >
-        <button
-          type="button"
-          class="px-2 py-0.5 text-[11px]"
-          :class="structuredMode === 'structured' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
-          data-testid="artifact-preview-mode-structured"
-          @click="structuredMode = 'structured'"
-        >
-          {{ t('pages.artifactPreview.modeStructured') }}
-        </button>
-        <button
-          type="button"
-          class="px-2 py-0.5 text-[11px]"
-          :class="structuredMode === 'raw' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
-          data-testid="artifact-preview-mode-raw"
-          @click="structuredMode = 'raw'"
-        >
-          {{ t('pages.artifactPreview.modeRaw') }}
-        </button>
+  <div class="artifact-preview flex h-full min-h-0 min-w-0 flex-1 flex-col" data-testid="artifact-preview">
+    <div v-if="displayArtifact && !activeIsHtml" class="artifact-preview-header" data-testid="artifact-preview-identity-bar">
+      <div class="artifact-preview-file-row">
+        <Icon name="doc" :size="17" class="shrink-0 text-txt3" />
+        <div class="min-w-0 flex-1">
+          <p class="artifact-preview-file-name" :title="technicalName">{{ displayName }}</p>
+          <p class="artifact-preview-file-meta"><span class="uppercase">{{ displayArtifact.kind }}</span><span v-if="friendlyName" class="ml-2" :title="technicalName">{{ technicalName }}</span></p>
+        </div>
+        <div class="artifact-preview-revisions" data-testid="artifact-preview-revisions">
+          <ArtifactVersionSelect
+            v-if="showVersionChip"
+            :choices="versionChoices"
+            :selected-index="selectedChoice?.index"
+            :current-label="currentChipLabel"
+            :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
+            chip-test-id="artifact-preview-version-chip"
+            button-test-id="artifact-preview-version-chip-btn"
+            menu-test-id="artifact-preview-version-menu"
+            option-test-id-prefix="artifact-preview-version-option-v"
+            :label-for="versionChipLabel"
+            @select="selectVersion"
+          />
+          <span v-if="viewingHistorical" class="artifact-preview-readonly" data-testid="artifact-preview-historical-readonly">{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
+        </div>
       </div>
-      <button
-        v-if="!hideZoom && !activeIsHtml"
-        class="text-txt3 hover:text-txt"
-        :title="t('pages.artifactPreview.enlarge')"
-        data-testid="artifact-preview-zoom"
-        @click="zoom = true"
-      >
-        <Icon name="expand" :size="15" />
-      </button>
-      <button
-        v-if="!hideCopy"
-        class="text-txt3 hover:text-txt disabled:opacity-50"
-        :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
-        :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
-        :disabled="copying"
-        :aria-busy="copying ? 'true' : undefined"
-        data-testid="artifact-preview-copy"
-        @click="copyContent"
-      >
-        <Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" />
-      </button>
-      <button
-        class="text-txt3 hover:text-txt"
-        :title="t('pages.artifactPreview.downloadRawTitle')"
-        data-testid="artifact-preview-download-raw"
-        @click="download"
-      >
-        <Icon name="download" :size="15" />
-      </button>
-      <button
-        v-if="!hideExport && isStructuredPreview"
-        type="button"
-        class="chip text-[11px] hover:text-txt disabled:cursor-not-allowed disabled:opacity-45"
-        data-testid="artifact-preview-download-png"
-        :disabled="exportDisabled"
-        @click="downloadPng"
-      >
-        {{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPng') }}
-      </button>
-      <button
-        v-if="!hideExport && isStructuredPreview"
-        type="button"
-        class="chip text-[11px] hover:text-txt disabled:cursor-not-allowed disabled:opacity-45"
-        data-testid="artifact-preview-download-pdf"
-        :disabled="exportDisabled"
-        @click="downloadPdf"
-      >
-        {{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPdf') }}
-      </button>
-      <button
-        v-if="showDelete"
-        class="text-txt3 hover:text-err"
-        :title="t('pages.artifactPreview.delete')"
-        data-testid="artifact-preview-delete"
-        @click="openDeleteConfirm"
-      >
-        <Icon name="trash" :size="15" />
-      </button>
+      <div class="artifact-preview-toolbar" data-testid="artifact-preview-toolbar">
+        <div v-if="isStructuredPreview" class="artifact-preview-view-options" data-testid="artifact-preview-mode-toggle" role="group" :aria-label="t('pages.artifactPreview.modeToggleAria')">
+          <button type="button" :class="{ 'is-selected': structuredMode === 'structured' }" :aria-pressed="structuredMode === 'structured'" data-testid="artifact-preview-mode-structured" @click="structuredMode = 'structured'">{{ t('pages.artifactPreview.modeStructured') }}</button>
+          <button type="button" :class="{ 'is-selected': structuredMode === 'raw' }" :aria-pressed="structuredMode === 'raw'" data-testid="artifact-preview-mode-raw" @click="structuredMode = 'raw'">{{ t('pages.artifactPreview.modeRaw') }}</button>
+        </div>
+        <div class="artifact-preview-actions" data-testid="artifact-preview-actions" role="group" :aria-label="t('common.table.actions')">
+          <button v-if="!hideZoom" type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.enlarge')" :aria-label="t('pages.artifactPreview.enlarge')" data-testid="artifact-preview-zoom" @click="zoom = true"><Icon name="expand" :size="15" /></button>
+          <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+          <button type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.downloadRawTitle')" :aria-label="t('pages.artifactPreview.downloadRawTitle')" data-testid="artifact-preview-download-raw" @click="download"><Icon name="download" :size="15" /></button>
+          <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-png" :disabled="exportDisabled" @click="downloadPng">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPng') }}</button>
+          <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-pdf" :disabled="exportDisabled" @click="downloadPdf">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPdf') }}</button>
+          <button v-if="showDelete" type="button" class="artifact-preview-icon-action artifact-preview-delete-action" :title="t('pages.artifactPreview.delete')" :aria-label="t('pages.artifactPreview.delete')" data-testid="artifact-preview-delete" @click="openDeleteConfirm"><Icon name="trash" :size="15" /></button>
+        </div>
+      </div>
     </div>
     <div
       ref="stageEl"
       class="flex-1 overflow-hidden"
       data-review-annotate-stage
-      :class="activeIsHtml && activeContent && !loading && !loadErr ? 'flex min-h-0 flex-col' : 'scroll-area overflow-y-auto p-4'"
+      :class="activeIsHtml ? 'flex min-h-0 flex-col' : 'scroll-area overflow-y-auto p-4'"
     >
       <template v-if="displayArtifact && isImageBranch">
         <div v-if="loadErr" class="flex h-full items-center justify-center text-center text-[12px] text-err" role="alert">
@@ -252,7 +186,7 @@ const modalTitle = computed(() =>
         </div>
         <div
           v-else
-          class="rounded-lg flex h-full min-h-[320px] w-full items-center justify-center border border-line bg-base p-3"
+          class="flex h-full min-h-48 w-full items-center justify-center py-3"
           data-testid="artifact-preview-image-wrap"
         >
           <img
@@ -266,14 +200,14 @@ const modalTitle = computed(() =>
       <template v-else-if="displayArtifact">
         <RefreshStrip v-if="loading && activeContent" />
         <HardLoadLayer
-          v-else-if="loading && !activeContent && !loadErr"
+          v-else-if="!activeIsHtml && loading && !activeContent && !loadErr"
           :overlay="false"
           :stuck-after-ms="10_000"
           :stage="t('pages.artifactPreview.loading')"
           @retry="displayArtifact && loadContent(displayArtifact, { force: true })"
         />
         <div
-          v-if="loadErr"
+          v-if="!activeIsHtml && loadErr"
           class="mb-2 flex items-center justify-center gap-2 text-center text-[12px] text-err"
           role="alert"
           data-testid="artifact-preview-load-error"
@@ -288,13 +222,92 @@ const modalTitle = computed(() =>
           </button>
         </div>
         <HtmlPreview
-          v-if="previewBranch.kind === 'html' && activeContent"
+          v-if="activeIsHtml"
           :html="activeContent"
           fill-parent
           :inspectable="canAnnotate"
+          :modal-title="modalTitle"
           class="h-full min-h-0"
           @pick="onHtmlPick"
-        />
+        >
+          <template #toolbar-actions>
+            <ArtifactVersionSelect
+              v-if="showVersionChip"
+              :choices="versionChoices"
+              :selected-index="selectedChoice?.index"
+              :current-label="currentChipLabel"
+              :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
+              chip-test-id="artifact-preview-version-chip"
+              button-test-id="artifact-preview-version-chip-btn"
+              menu-test-id="artifact-preview-version-menu"
+              option-test-id-prefix="artifact-preview-version-option-v"
+              :label-for="versionChipLabel"
+              @select="selectVersion"
+            />
+            <span
+              v-if="viewingHistorical"
+              class="shrink-0 rounded-md border border-line px-1 py-px text-[10px] text-txt3"
+              data-testid="artifact-preview-historical-readonly"
+            >{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
+            <button
+              v-if="showDelete"
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-err"
+              :title="t('pages.artifactPreview.delete')"
+              :aria-label="t('pages.artifactPreview.delete')"
+              data-testid="artifact-preview-delete"
+              @click="openDeleteConfirm"
+            ><Icon name="trash" :size="15" /></button>
+            <button
+              v-if="!hideCopy"
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt disabled:opacity-50"
+              :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
+              :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
+              :disabled="copying"
+              :aria-busy="copying ? 'true' : undefined"
+              data-testid="artifact-preview-copy"
+              @click="copyContent"
+            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+            <button
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
+              :title="t('pages.artifactPreview.download')"
+              :aria-label="t('pages.artifactPreview.download')"
+              data-testid="artifact-preview-download-raw"
+              @click="download"
+            ><Icon name="download" :size="15" /></button>
+          </template>
+          <template v-if="htmlCanvasOverlay" #canvas-overlay>
+            <HardLoadLayer
+              v-if="loading && !activeContent && !loadErr"
+              :stuck-after-ms="10_000"
+              :stage="t('pages.artifactPreview.loading')"
+              @retry="displayArtifact && loadContent(displayArtifact, { force: true })"
+            />
+            <div
+              v-else-if="loadErr"
+              class="flex h-full items-center justify-center gap-2 px-4 text-center text-[12px] text-err"
+              role="alert"
+              data-testid="artifact-preview-load-error"
+            >
+              {{ t('pages.artifactPreview.loadFailed') }}
+              <button
+                type="button"
+                class="rounded-lg inline-flex min-h-11 items-center border border-line px-3 text-[12px] text-txt"
+                @click="displayArtifact && loadContent(displayArtifact, { force: true })"
+              >
+                {{ t('pages.artifactPreview.retry') }}
+              </button>
+            </div>
+            <div
+              v-else
+              class="flex h-full items-center justify-center px-4 text-center text-[12px] text-txt3"
+            >
+              {{ t('pages.artifactPreview.contentEmpty') }}
+            </div>
+          </template>
+        </HtmlPreview>
         <div
           v-else-if="showStructuredUi"
           ref="structuredExportRootInline"
@@ -332,8 +345,9 @@ const modalTitle = computed(() =>
           {{ t('pages.artifactPreview.contentEmpty') }}
         </div>
       </template>
-      <div v-else class="flex h-full items-center justify-center text-center text-[12px] text-txt3">
-        {{ emptyHint || t('pages.artifactPreview.emptyHint') }}
+      <div v-else class="flex h-full flex-col items-center justify-center gap-3 px-5 text-center text-[12px] leading-6 text-txt3">
+        <Icon name="doc" :size="26" class="opacity-60" />
+        <p>{{ emptyHint || t('pages.artifactPreview.emptyHint') }}</p>
       </div>
     </div>
   </div>
@@ -408,7 +422,7 @@ const modalTitle = computed(() =>
     <template #footer>
       <span class="mr-auto text-[11px] text-txt3">
         <template v-if="scope === 'platform' && displayArtifact?.workflowName">{{ displayArtifact.workflowName }} · </template>
-        {{ displayArtifact?.nodeId }} · {{ displayArtifact ? fmtTime(displayArtifact.createdAt) : '' }} · {{ t('pages.artifactPreview.platformStorage') }}
+        {{ displayArtifact?.nodeId }} · {{ displayArtifact ? fmtTime(displayArtifact.createdAt) : '' }}
       </span>
       <button
         v-if="!hideCopy"
@@ -475,6 +489,32 @@ const modalTitle = computed(() =>
 </template>
 
 <style scoped>
+.artifact-preview-header { flex: none; border-bottom: 1px solid rgb(var(--c-line) / .7); }
+.artifact-preview-file-row { display: flex; min-width: 0; align-items: center; gap: 10px; padding: 12px 16px 8px; }
+.artifact-preview-file-name { overflow: hidden; color: rgb(var(--c-txt)); font-size: 13px; font-weight: 500; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-preview-file-meta { display: flex; min-width: 0; overflow: hidden; color: rgb(var(--c-txt3)); font-size: 10px; line-height: 17px; white-space: nowrap; }
+.artifact-preview-file-meta > span { overflow: hidden; text-overflow: ellipsis; }
+.artifact-preview-revisions { display: flex; max-width: 50%; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 5px; }
+.artifact-preview-revisions :deep(button) { min-height: 26px; border-color: transparent; background: rgb(var(--c-txt) / .04); padding-inline: 7px; }
+.artifact-preview-readonly { color: rgb(var(--c-txt3)); font-size: 10px; white-space: nowrap; }
+.artifact-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 0 12px 8px; }
+.artifact-preview-view-options { display: inline-flex; flex: none; align-items: center; gap: 2px; }
+.artifact-preview-view-options > button { min-height: 30px; border-radius: 6px; padding: 4px 8px; color: rgb(var(--c-txt3)); font-size: 11px; white-space: nowrap; }
+.artifact-preview-view-options > button.is-selected { background: rgb(var(--c-txt) / .055); color: rgb(var(--c-txt)); }
+.artifact-preview-actions { display: flex; min-width: 0; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 2px; margin-left: auto; }
+.artifact-preview-icon-action { display: inline-flex; width: 30px; height: 30px; flex: none; align-items: center; justify-content: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
+.artifact-preview-text-action { min-height: 30px; border-radius: 6px; padding: 4px 6px; color: rgb(var(--c-txt2)); font-size: 11px; white-space: nowrap; }
+.artifact-preview-toolbar button:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
+.artifact-preview-toolbar button:disabled { cursor: not-allowed; opacity: .45; }
+.artifact-preview-delete-action { margin-left: 5px; }
+.artifact-preview-toolbar .artifact-preview-delete-action:hover { color: rgb(var(--c-err)); }
+.artifact-preview :deep([data-testid="html-preview-toolbar"]) { padding-block: 10px; border-color: rgb(var(--c-line) / .7); background: transparent; }
+@media (max-width: 767px) {
+  .artifact-preview-file-row { padding-inline: 12px; }
+  .artifact-preview-toolbar { padding-inline: 8px; }
+  .artifact-preview-view-options > button, .artifact-preview-text-action { min-height: 36px; }
+  .artifact-preview-icon-action { width: 36px; height: 36px; }
+}
 .json-code-view {
   padding: 12px 14px;
   overflow: auto;

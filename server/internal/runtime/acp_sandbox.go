@@ -495,6 +495,75 @@ func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*san
 	return sb, acp, home, nil
 }
 
+// sandboxAttacher is implemented by managers that can rebuild a handle for a
+// running sandbox without touching its runtime (see Manager.AttachNoEnsure).
+type sandboxAttacher interface {
+	AttachNoEnsure(ctx context.Context, id string) (*sandbox.Sandbox, error)
+}
+
+// reattachKnownWait bounds how long a reattached connection waits for the
+// bridge's first queue_state. A var so tests can shrink it.
+var reattachKnownWait = 15 * time.Second
+
+// attachSandbox reconnects to a node sandbox that kept running across a
+// control-plane restart. The bridge reuses the agent session already open in
+// the container. Failures are errSandboxSetup so RunAgent retries the node in
+// a fresh sandbox, and the unusable sandbox is torn down.
+func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, error) {
+	name := req.ReattachSandbox
+	att, ok := c.mgr.(sandboxAttacher)
+	if !ok {
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: sandbox manager cannot reattach", errSandboxSetup)
+	}
+	sb, err := att.AttachNoEnsure(ctx, name)
+	if err != nil {
+		c.deregisterRunSandbox(name)
+		return nil, nil, fmt.Errorf("%w: reattach %s: %v", errSandboxSetup, name, err)
+	}
+	sb.Password = req.Token
+	sb.ConfigRoot = c.agentLayout(models.AgentProfile(req.Config), c.effectiveAgent(req)).ConfigRoot
+	model, _ := sb.ExecScript(ctx, 10*time.Second, "bash", "printenv "+EnvACPBridgeModel+" || true")
+	acp := sb.ACP().
+		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
+		WithIdleTimeoutFunc(c.agentIdle).
+		WithBridgeModel(strings.TrimSpace(model))
+	if err := acp.Connect(ctx); err != nil {
+		acp.Close()
+		c.deregisterRunSandbox(name)
+		sb.Destroy(context.Background())
+		return nil, nil, fmt.Errorf("%w: reattach acp connect: %v", errSandboxSetup, err)
+	}
+	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).
+		Msg("reattached node sandbox after restart")
+	return sb, acp, nil
+}
+
+// reattachTurn collects the main turn of a reattached sandbox: it waits out a
+// turn still running on the bridge, then rebuilds the node's first turn from
+// the event log. A nil result with nil error means no turn was ever sent and
+// the caller should send the main prompt.
+func (c *acpProvider) reattachTurn(ctx context.Context, sb *sandbox.Sandbox, acp *sandbox.ACPClient) (*sandbox.ChatResult, error) {
+	st, ok := acp.WaitBridgeKnown(ctx, reattachKnownWait)
+	if !ok {
+		return nil, fmt.Errorf("%w: bridge reported no queue state after reattach", errSandboxSetup)
+	}
+	if st.RunningOpID != "" {
+		if err := acp.AwaitTurn(ctx, st.RunningOpID); err != nil {
+			return nil, err
+		}
+	}
+	frames, _, err := sandbox.NewEventLogReader(sb.Host, sb.Port, sb.Password).Raw(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("%w: read event log after reattach: %v", errSandboxSetup, err)
+	}
+	first, ok := sandbox.FirstTurnFrames(frames)
+	if !ok {
+		return nil, nil
+	}
+	return acp.ReplayTurn(first)
+}
+
 func removeHome(home string) {
 	if home != "" {
 		_ = os.RemoveAll(home)
@@ -596,6 +665,7 @@ func (c *acpProvider) specLayered(req NodeReq, shared, materialize bool) (layere
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
 	}, c.opts.SelectedCredentialForProject)
 	markChangedKeys(agentEnvKeys, beforeCred, env)
+	ApplyCredentialBindings(env, projectCreds, c.projectIDForReq(req), agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
@@ -658,7 +728,7 @@ func (c *acpProvider) specLayered(req NodeReq, shared, materialize bool) (layere
 	// Every node remembers its login, including nodes reusing a shared
 	// container, so settleCodexLogin can write back a refreshed auth.json.
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(c.projectIDForReq(req), envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject, c.opts.InjectedCredentialID))
 	}
 
 	out := layeredSpec{model: strings.TrimSpace(env[EnvACPBridgeModel])}
@@ -758,11 +828,11 @@ func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr 
 		}
 		return runErr
 	}
-	if c.opts.WriteBackCodexLoginFile == nil {
+	if c.opts.WriteBackCodexLoginFile == nil || state.credentialID == "" {
 		return runErr
 	}
 	pid := c.projectIDForReq(req)
-	if err := c.opts.WriteBackCodexLoginFile(pid, next); err != nil {
+	if err := c.opts.WriteBackCodexLoginFile(pid, state.credentialID, next); err != nil {
 		log.Warn().Err(err).Str("project", pid).Str("run", req.RunID).Msg("codex login writeback failed")
 	}
 	return runErr

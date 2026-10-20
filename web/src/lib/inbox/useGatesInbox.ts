@@ -1,13 +1,13 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
-import { useProjectContext } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
+import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -52,6 +52,11 @@ import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
 import { inboxShareKind, isHumanGateInboxItem, isShareableInboxItem } from '@/lib/inbox/gateShareLink'
+import {
+  INBOX_SHARE_INTENT_QUERY,
+  INBOX_SHARE_INTENT_VALUE,
+  knownInboxProcessingLock,
+} from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import {
   consumeHomeApproveHandoff,
@@ -78,6 +83,10 @@ const {
   applyPending,
   removeItemLocally,
   restoreItemLocally,
+  setSidebarExtras,
+  markStartFailed,
+  clearStartFailed,
+  setActiveInboxKey,
   patchItemReplying,
   syncDisplayedBaseline,
   clearVisibleMembership,
@@ -166,27 +175,18 @@ const pendingAcpFrames = createPendingAcpBuffer()
 /** Snapshot reactSessions stashed when activeRun is still null during hard load. */
 let pendingSnapshotSessions: Run['reactSessions'] | null = null
 const { selected } = useWorkflowFilter()
-const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
+const { workspaceId: selectedProject, ensureLoaded: hydrateProject } = useWorkspaceContext()
 const { selectedTags } = useTagFilter()
-const projectFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 
-watch(projectFilterOpen, (v) => {
-  if (v) {
-    workflowFilterOpen.value = false
-    tagFilterOpen.value = false
-  }
-})
 watch(workflowFilterOpen, (v) => {
   if (v) {
-    projectFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
 watch(tagFilterOpen, (v) => {
   if (v) {
-    projectFilterOpen.value = false
     workflowFilterOpen.value = false
   }
 })
@@ -499,7 +499,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     // and keep armed so later filtered loadList passes still merge it (g2.1).
     if (isClarifyAwaitingHuman(run, nodeId)) {
       try {
-        const data = await api.listGates({ page: 1, pageSize: 100 })
+        const data = await listAllPendingGates()
         if (!incomingArmed.value) return
         const curAfter = incomingTarget()
         if (!curAfter || `${curAfter.runId}:${curAfter.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
@@ -507,11 +507,15 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
         if (hit) {
           incomingGhost.value = hit
           const hitKey = itemKey(hit)
-          if (!listItems.value.some((it) => itemKey(it) === hitKey)) {
-            const withoutStartingGhost = listItems.value.filter(
-              (it) => !(it.runId === target.runId && isStartingInboxItem(it)),
+          // A starting ghost uses the same run:node key as the real row. Replace it.
+          const hasRealRow = listItems.value.some(
+            (it) => itemKey(it) === hitKey && !isStartingInboxItem(it),
+          )
+          if (!hasRealRow) {
+            const rest = listItems.value.filter(
+              (it) => itemKey(it) !== hitKey && !(it.runId === target.runId && isStartingInboxItem(it)),
             )
-            listItems.value = [hit, ...withoutStartingGhost]
+            listItems.value = [hit, ...rest]
             listTotal.value = Math.max(listTotal.value, listItems.value.length)
           }
           if (!processingLock.value) ensureValidActive()
@@ -559,7 +563,12 @@ function seedIncomingIfNeeded() {
 }
 
 function isIncomingContextPending(target: InboxItem): boolean {
-  return !!incomingGhost.value && itemKey(incomingGhost.value) === itemKey(target)
+  const ghost = incomingGhost.value
+  if (!ghost || itemKey(ghost) !== itemKey(target)) return false
+  // A real pending row pinned over the starting placeholder shares this key
+  // (gates past the inbox page of 20). That pin already has a panel — keeping
+  // the flag true leaves 「加载运行详情…」 up after inbox-context returns.
+  return isStartingInboxItem(ghost)
 }
 
 /**
@@ -803,7 +812,6 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
       page: listPage.value,
       pageSize: PAGE_SIZE,
       wf: selected.value || undefined,
-      projectId: selectedProject.value || undefined,
       tag: selectedTags.value.join(',') || undefined,
     })
     // Discard overdue snapshots so they cannot resurrect a just-removed gate.
@@ -1006,6 +1014,32 @@ watch(isEditing, (editing) => {
 watch(isMobile, (mobile) => {
   if (!mobile) mobileView.value = 'list'
 })
+
+watch(
+  [incomingGhost, startFailedItem],
+  () => {
+    const extras: InboxItem[] = []
+    const failed = startFailedItem.value
+    const ghost = incomingGhost.value
+    if (failed) extras.push(failed)
+    if (ghost && (!failed || itemKey(ghost) !== itemKey(failed))) extras.push(ghost)
+    setSidebarExtras(extras)
+    if (failed) markStartFailed(itemKey(failed))
+  },
+  { immediate: true },
+)
+
+watch(startFailedItem, (it, prev) => {
+  if (prev && (!it || itemKey(it) !== itemKey(prev))) clearStartFailed(itemKey(prev))
+})
+
+watch(
+  active,
+  (it) => {
+    setActiveInboxKey(it ? itemKey(it) : null)
+  },
+  { immediate: true },
+)
 
 watch(
   activeStarting,
@@ -1529,6 +1563,9 @@ async function loadActiveRun(hard = true) {
     if (isProcessedTriple(target)) return
     activeRun.value = adaptInboxContextToRun(ctx, target.runId)
     activeRunLoadError.value = false
+    // Context is in. Clear even when a same-key ghost was pending: the finally
+    // below used to leave the flag set, so a gate past page 1 never mounted.
+    if (hard) activeRunLoading.value = false
     // Must project AFTER loading flag clears so ReviewComposer / GateApproval can mount.
     projectAfterLoad = hard && (target.type === 'clarify' || target.type === 'gate')
   } catch (e) {
@@ -1776,6 +1813,83 @@ function openSharePanel(it: InboxItem, alsoOpenDetail = false) {
   if (alsoOpenDetail) openDetail(it)
 }
 
+function queryText(value: unknown): string {
+  if (Array.isArray(value)) return String(value[0] ?? '').trim()
+  return String(value ?? '').trim()
+}
+
+function shareIntentPending(): boolean {
+  return queryText(route.query[INBOX_SHARE_INTENT_QUERY]) === INBOX_SHARE_INTENT_VALUE
+}
+
+function activeMatchesShareQuery(it: InboxItem): boolean {
+  const run = queryText(route.query.run)
+  const node = queryText(route.query.node)
+  return !!run && !!node && it.runId === run && it.nodeId === node
+}
+
+function shareIntentBlocked(it: InboxItem): boolean {
+  if (isStartingInboxItem(it) || processingLock.value || !isShareableInboxItem(it)) return true
+  return 'shareLink' in it && it.shareLink?.state === 'used'
+}
+
+function clearShareIntent() {
+  if (!(INBOX_SHARE_INTENT_QUERY in route.query)) return
+  const query: Record<string, string | string[]> = {}
+  for (const [key, value] of Object.entries(route.query)) {
+    if (key === INBOX_SHARE_INTENT_QUERY || value == null) continue
+    query[key] = value as string | string[]
+  }
+  void router.replace({ path: route.path, query })
+}
+
+/**
+ * Identity of the share query currently being consumed.
+ * Cleared once `share` leaves the URL, so the next menu click can open again.
+ * A refresh without the query does not reopen the panel.
+ */
+let settledShareKey = ''
+function shareIntentKey(): string {
+  if (!shareIntentPending()) return ''
+  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+}
+
+function consumeShareIntent() {
+  const key = shareIntentKey()
+  if (!key) {
+    settledShareKey = ''
+    return
+  }
+  if (settledShareKey === key || !active.value) return
+  if (!activeMatchesShareQuery(active.value)) return
+  // Deep-link placeholder uses the same run and node while it is still booting.
+  // Settling here would drop the intent before the real row can open the panel.
+  if (isIncomingContextPending(active.value)) return
+  settledShareKey = key
+  const it = active.value
+  if (!shareIntentBlocked(it)) openSharePanel(it)
+  clearShareIntent()
+}
+
+watch(processingLock, (locked) => {
+  knownInboxProcessingLock.value = locked
+}, { immediate: true })
+
+watch(
+  () => [
+    active.value ? itemKey(active.value) : '',
+    active.value && isStartingInboxItem(active.value) ? 'starting' : '',
+    incomingGhost.value ? itemKey(incomingGhost.value) : '',
+    route.query.run,
+    route.query.node,
+    route.query[INBOX_SHARE_INTENT_QUERY],
+    processingLock.value,
+  ],
+  () => {
+    consumeShareIntent()
+  },
+)
+
 function selectItem(it: InboxItem) {
   if (isItemCardDisabled(it)) return
   showProcessedBanner.value = false
@@ -2007,6 +2121,9 @@ onUnmounted(() => {
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
   clearVisibleMembership()
+  setSidebarExtras([])
+  setActiveInboxKey(null)
+  knownInboxProcessingLock.value = false
 })
 
 function itemTitle(it: InboxItem) {
@@ -2132,7 +2249,6 @@ function itemSecondary(it: InboxItem) {
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
     inboxConfirmFlowToken: inboxConfirmFlow.playToken,
     pendingAcpFrames,
-    projectFilterOpen,
     workflowFilterOpen,
     tagFilterOpen,
     showUpdateBanner,
@@ -2215,6 +2331,5 @@ function itemSecondary(it: InboxItem) {
     isShareableInboxItem,
     isHumanGateInboxItem,
     inboxShareKind,
-    REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   }
 }

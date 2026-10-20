@@ -7,15 +7,15 @@
       "noConfigNeeded": "无需配置",
       "noConfigHere": "无需在此配置",
       "alwaysAvailable": "全程可用",
-      "seenInPmLeader": "见于项目管理",
+      "seenInPmLeader": "见于工作区助手",
       "seenInAgentStudio": "见于 Agent Studio",
       "addViaAgentStudio": "在 Agent Studio 添加",
       "notRunScoped": "非运行级全局注入",
       "scopeRun": "scope: run",
-      "scopeProject": "scope: project / pm-session",
+      "scopeProject": "作用域：工作区 / 助手会话",
       "entryPathLabel": "使用入口：",
-      "entryPath": "项目详情 → 项目管理 → 设置",
-      "entryPathExternal": "项目详情 → 外部 MCP",
+      "entryPath": "设置 → 助手设置",
+      "entryPathExternal": "设置 → 外部 MCP",
       "entryPathAgent": "Agent Studio → MCP",
       "toolCount": "{n} 个工具 · 点击查看详细说明",
       "openDetail": "打开详述",
@@ -177,9 +177,9 @@
     },
     "memoryStore": {
       "name": "memory-store",
-      "desc": "通用长期记忆 · 按项目+Agent 隔离，任意 Agent 可在 mcp[] 声明",
-      "overview": "Agent 级长期记忆 MCP。按 (projectId, agentName) 隔离。先 list/search 再 get；重要结论 upsert。",
-      "convention": "在 Agent Studio 添加 memory-store（{'${GRASP_MEMORY_URL/TOKEN}'}）。项目管理咨询沙箱会自动注入。",
+      "desc": "通用长期记忆 · 按工作区+Agent 隔离，任意 Agent 可在 mcp[] 声明",
+      "overview": "Agent 级长期记忆 MCP。按工作区中的 Agent 隔离。先 list/search 再 get；重要结论 upsert。",
+      "convention": "在 Agent Studio 添加 memory-store（{'${GRASP_MEMORY_URL/TOKEN}'}）。工作区助手咨询沙箱会自动注入。",
       "tools": {
         "list_memories": {
           "signature": "list_memories()",
@@ -207,7 +207,7 @@
       "name": "context-store",
       "desc": "对话上下文 · 平台自动落 QA，Agent 经 MCP 渐进回看",
       "overview": "对话上下文 MCP。存储为 ChatThread/ChatMessage 单一事实源；每次 Chat 自动落库。按 Agent 隔离。",
-      "convention": "项目管理咨询自动注入。请用 list_conversations / get_messages 拉取历史，勿依赖 ACP session 全文。",
+      "convention": "工作区助手咨询自动注入。请用 list_conversations / get_messages 拉取历史，勿依赖 ACP session 全文。",
       "tools": {
         "list_conversations": {
           "signature": "list_conversations()",
@@ -234,8 +234,8 @@
     "taskScheduler": {
       "name": "task-scheduler",
       "desc": "Agent 级定时任务 · 定义面 MCP；平台调度执行",
-      "overview": "Agent 级定时任务。仅 项目管理咨询可写；到点新建沙箱 Chat。任务独占 cron 线程。",
-      "convention": "create_job 仅项目管理咨询可用。执行由平台调度器完成，每次新沙箱。",
+      "overview": "Agent 级定时任务。仅工作区助手咨询可写；到点新建沙箱 Chat。任务独占 cron 线程。",
+      "convention": "create_job 仅工作区助手咨询可用。执行由平台调度器完成，每次新沙箱。",
       "tools": {
         "list_jobs": {
           "signature": "list_jobs()",
@@ -265,9 +265,9 @@
     },
     "pmProgress": {
       "name": "pm-progress",
-      "desc": "项目管理专用 · 项目进度/阻塞/风险只读",
-      "overview": "项目级进度 MCP。仅 项目管理咨询沙箱按项目配置注入。",
-      "convention": "项目详情 → 项目管理设置中启用 pm-progress。",
+      "desc": "工作区助手专用 · 工作区进度/阻塞/风险只读",
+      "overview": "工作区进度 MCP。在工作区助手咨询沙箱中按已启用的能力注入。",
+      "convention": "设置 → 助手设置中启用 pm-progress。",
       "tools": {
         "pm_get_progress": {
           "signature": "pm_get_progress()",
@@ -297,9 +297,9 @@
     },
     "pmWorkflowRead": {
       "name": "pm-workflow-read",
-      "desc": "项目管理专用 · 同项目工作流只读查询",
-      "overview": "工作流 list/get/graph/versions/runs 与待审批门禁查询，仅限当前项目。",
-      "convention": "项目详情 → 项目管理设置中启用 pm-workflow-read。",
+      "desc": "工作区助手专用 · 当前工作区工作流只读查询",
+      "overview": "工作流 list/get/graph/versions/runs 与待审批门禁查询，仅限当前工作区。",
+      "convention": "设置 → 助手设置中启用 pm-workflow-read。",
       "tools": {
         "pm_list_workflows": {
           "signature": "pm_list_workflows()",
@@ -327,15 +327,15 @@
         },
         "pm_get_artifact": {
           "signature": "pm_get_artifact(artifactId? | runId+name, offset?, limit<=65536?)",
-          "desc": "读取当前项目产物全文片段"
+          "desc": "读取当前工作区产物全文片段"
         }
       }
     },
     "pmWorkflowWrite": {
       "name": "pm-workflow-write",
-      "desc": "项目管理专用 · 同项目工作流写操作",
-      "overview": "创建/更新/复制/删除工作流、发布、启动 Run、审批门禁与取消 Run，仅限当前项目。",
-      "convention": "项目详情 → 项目管理设置中启用 pm-workflow-write。",
+      "desc": "工作区助手专用 · 当前工作区工作流写操作",
+      "overview": "创建/更新/复制/删除工作流、发布、启动 Run、审批门禁与取消 Run，仅限当前工作区。",
+      "convention": "设置 → 助手设置中启用 pm-workflow-write。",
       "tools": {
         "pm_create_workflow": {
           "signature": "pm_create_workflow(name, description?, needsRepo?, nodes?, edges?, variables?)",
@@ -377,13 +377,13 @@
     },
     "pmAgentFs": {
       "name": "pm-agent-fs",
-      "desc": "项目管理专用 · 列出项目 Agent 与编辑同项目 Agent 工作目录",
-      "overview": "列出当前项目的全部 Agent 成员（self 为当前 PM，other 为同项目其他成员），并对同项目任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
-      "convention": "项目详情 → 项目管理设置中启用 pm-agent-fs（新项目默认启用；旧项目若已显式保存 EnabledMcps 需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
+      "desc": "工作区助手专用 · 列出 Agent 并编辑其工作目录",
+      "overview": "列出当前工作区的全部 Agent 成员（self 为当前助手，other 为其他成员），并对同工作区任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
+      "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
       "tools": {
         "pm_list_project_agents": {
           "signature": "pm_list_project_agents()",
-          "desc": "列出同项目 Agent 成员"
+          "desc": "列出同工作区 Agent 成员"
         },
         "pm_list_agent_templates": {
           "signature": "pm_list_agent_templates()",
@@ -391,7 +391,7 @@
         },
         "pm_create_agent_from_template": {
           "signature": "pm_create_agent_from_template(templateId, name)",
-          "desc": "从模板创建工程师 Agent（同项目，禁止覆盖重名）"
+          "desc": "从模板创建工程师 Agent（同工作区，禁止覆盖重名）"
         },
         "pm_fs_list": {
           "signature": "pm_fs_list(agentName, path?)",
@@ -433,13 +433,13 @@
     },
     "pmPrdManager": {
       "name": "pm-prd-manager",
-      "desc": "项目管理专用 · 查看与创建需求草稿",
-      "overview": "按当前项目管理会话项目列出需求草稿摘要、读取全文，并创建 open 草稿。列表不含正文；创建缺省标题为「未命名需求」。本轮不提供更新/改状态/删除。",
-      "convention": "项目详情 → 项目管理设置或渠道 MCP 勾选中启用 pm-prd-manager（新项目默认启用；旧项目若已显式保存 EnabledMcps 需手动勾选）。未启用时调用返回 mcp disabled。",
+      "desc": "工作区助手专用 · 查看与创建需求草稿",
+      "overview": "列出当前工作区需求草稿摘要、读取全文，并创建 open 草稿。列表不含正文；创建缺省标题为「未命名需求」。本轮不提供更新/改状态/删除。",
+      "convention": "设置 → 助手设置或渠道 MCP 勾选中启用 pm-prd-manager（默认启用；若已保存专用 MCP 列表，需手动勾选）。未启用时调用返回 mcp disabled。",
       "tools": {
         "pm_list_requirement_drafts": {
           "signature": "pm_list_requirement_drafts(status?, query?)",
-          "desc": "列出当前项目需求草稿摘要（id/title/status/updatedAt/createdAt，不含正文）"
+          "desc": "列出当前工作区需求草稿摘要（id/title/status/updatedAt/createdAt，不含正文）"
         },
         "pm_get_requirement_draft": {
           "signature": "pm_get_requirement_draft(draftId)",
@@ -452,11 +452,11 @@
       }
     },
     "externalProjectMcp": {
-      "name": "external-project-mcp",
-      "desc": "项目级外部 MCP · Bearer 项目 API Key · 独立于内部 PM Leader",
-      "overview": "在项目详情 → 外部 MCP 开启总开关、勾选能力包并创建项目 API Key 后，外部 AI（Cursor/Claude 等）可通过 HTTP MCP 调用与内部 PM 同名的五包工具面。默认关闭；未授权或包未启用时拒绝 list/call。",
-      "convention": "配置入口：项目详情 → 外部 MCP。写范围：pm-workflow-write（工作流/Run/门禁）、pm-agent-fs（项目 Agent 与 workspace FS）、pm-prd-manager（仅创建草稿）；pm-progress 与 pm-workflow-read 为只读。不含 PM Leader 绑定、人类协作者或 Run 沙箱内文件。",
-      "entryPath": "项目详情 → 外部 MCP"
+      "name": "external-workspace-mcp",
+      "desc": "工作区级外部 MCP · Bearer 工作区 API Key · 独立于内部助手",
+      "overview": "在设置 → 外部 MCP 开启总开关、勾选能力包并创建工作区 API Key 后，外部 AI（Cursor/Claude 等）可通过 HTTP MCP 调用与内部助手同名的五包工具面。默认关闭；未授权或包未启用时拒绝 list/call。",
+      "convention": "配置入口：设置 → 外部 MCP。写范围：pm-workflow-write（工作流/Run/门禁）、pm-agent-fs（工作区 Agent 与 workspace FS）、pm-prd-manager（仅创建草稿）；pm-progress 与 pm-workflow-read 为只读。不含助手绑定、人类协作者或 Run 沙箱内文件。",
+      "entryPath": "设置 → 外部 MCP"
     }
   }
 }

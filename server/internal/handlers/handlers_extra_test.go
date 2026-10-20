@@ -112,6 +112,7 @@ func TestWorkflowImportCopyAndVersionGraph(t *testing.T) {
 	var imported map[string]any
 	json.Unmarshal(w.Body.Bytes(), &imported)
 	id, _ := imported["id"].(string)
+
 	if id == "" {
 		t.Fatal("import missing id")
 	}

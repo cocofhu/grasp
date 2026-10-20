@@ -23,8 +23,7 @@ func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("MoreMCP", "", nil)
+	p, err := legacyProjectFixture(db, "MoreMCP")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +73,7 @@ func TestPmMCPServeRPCBranches(t *testing.T) {
 		t.Fatalf("unknown mcp: %d %s", st, body)
 	}
 
-	disabled, err := services.NewProjectService(db).Create("NoMCP", "", nil)
+	disabled, err := legacyProjectFixture(db, "NoMCP")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,7 +324,7 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	if st, resp := call(MCPWorkflowRead, "pm_get_workflow", map[string]any{"workflowId": "missing"}); st != 200 || !strings.Contains(string(resp), `"isError":true`) {
 		t.Fatalf("missing wf: %d %s", st, resp)
 	}
-	otherProj, err := services.NewProjectService(db).Create("OtherProj", "", nil)
+	otherProj, err := legacyProjectFixture(db, "OtherProj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -437,7 +436,7 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 		t.Fatalf("oversized limit should clamp to %d: %s", pmGetArtifactMaxLimit, artifactJSON)
 	}
 
-	otherProj, err := services.NewProjectService(db).Create("OtherProjArtifact", "", nil)
+	otherProj, err := legacyProjectFixture(db, "OtherProjArtifact")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,4 +581,9 @@ func TestPmMCPStartCancelWritesRunAudit(t *testing.T) {
 	if !sawMCP {
 		t.Fatalf("expected mcp.call events from pm tools/call")
 	}
+}
+
+func legacyProjectFixture(db *gorm.DB, name string) (models.Project, error) {
+	p := models.Project{ID: "fixture-" + name, Name: name}
+	return p, db.Create(&p).Error
 }

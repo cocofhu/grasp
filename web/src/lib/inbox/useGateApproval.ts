@@ -8,7 +8,6 @@ import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
 import { pushAnnotationUnique } from '@/lib/inbox/reviewQuote'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
-import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { OUTPUT_KEY_TO_ARTIFACT } from '@/lib/run/structuredArtifacts'
 import {
   CONTENT_FIT_PREVIEW_MAX_VH,
@@ -36,7 +35,7 @@ import type { AcpEvent, AgentTool, ClarifyImage, Gate, GateShareInboxStatus, Run
 import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
-import { gateApprovalKey } from '@/components/run/gateApproval/gateApprovalContext'
+import { gateApprovalKey, type GateApprovalProductEditorExpose } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
 import {
@@ -89,7 +88,7 @@ const formText = ref<Record<string, string>>({})
 const formImages = ref<Record<string, ClarifyImage[]>>({})
 const resolved = ref<string | null>(null)
 const formError = ref<string | null>(null)
-const productEditorRef = ref<{ isDirty: { value: boolean }; discard: () => void } | null>(null)
+const productEditorRef = ref<GateApprovalProductEditorExpose | null>(null)
 const productDirty = ref(false)
 const savedProductContent = ref<Record<string, string>>({})
 const savedProductMeta = ref<Record<string, { etag?: string; updatedAt?: string; sizeBytes?: number }>>({})
@@ -1716,7 +1715,6 @@ provide(gateApprovalKey, {
     useUnifiedPreviewBudget,
     contentFitChromeOffsetPx,
     CONTENT_FIT_PREVIEW_MAX_VH,
-    REVIEW_SHELL_WIDTH_KEY_APPROVAL,
     shouldHideGateForm,
     footerActions,
     isColdSession,

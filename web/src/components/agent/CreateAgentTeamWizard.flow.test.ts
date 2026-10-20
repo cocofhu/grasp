@@ -399,7 +399,7 @@ describe('CreateAgentTeamWizard flow', () => {
 
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
     const payload = mocks.bootstrapAgentTeam.mock.calls[0][0]
-    expect(payload.projectName).toBe('登月')
+    expect(payload).not.toHaveProperty('projectName')
     expect(payload.pmName).toBe('登月项目经理')
     expect(payload.apiKey).toBe('sk-live')
     expect(w.emitted('started')).toBeTruthy()

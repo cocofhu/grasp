@@ -124,8 +124,12 @@ func (h *Handlers) RevokeProjectMcpKey(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
 
-// ExternalMCPRPC handles POST/GET/DELETE /mcp/external/:projectId[/:mcpId].
+// ExternalMCPRPC handles POST/GET/DELETE /mcp/workspace[/:mcpId].
 func (h *Handlers) ExternalMCPRPC(c *gin.Context) {
+	if h.Shutdown != nil && h.Shutdown.IsDraining() {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "workspace maintenance"})
+		return
+	}
 	if h.PMMCP == nil || h.ExternalMcp == nil || h.ProjectMcpKeys == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return

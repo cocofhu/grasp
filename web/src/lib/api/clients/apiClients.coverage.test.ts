@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { projectsClient } from './projectsClient'
+import { workspaceClient } from './workspaceClient'
 import { agentsClient } from './agentsClient'
 import { pmClient } from './pmClient'
 
@@ -24,48 +24,46 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
     vi.unstubAllGlobals()
   })
 
-  it('projectsClient builds audit/token/draft URLs and issues req', async () => {
-    await projectsClient.listProjects()
-    await projectsClient.getProject('p1')
-    await projectsClient.createProject({ name: 'n', description: '', variables: [] })
-    await projectsClient.updateProject('p1', { name: 'n2' })
-    await projectsClient.deleteProject('p1')
-    await projectsClient.getProjectSharedAgentConfig('p1')
-    await projectsClient.putProjectSharedAgentConfig('p1', {
+  it('workspaceClient builds audit/credential/draft URLs and issues req', async () => {
+    await workspaceClient.getWorkspace()
+    await workspaceClient.getWorkspace()
+    await workspaceClient.updateWorkspace({ name: 'n2' })
+    await workspaceClient.getProjectSharedAgentConfig('p1')
+    await workspaceClient.putProjectSharedAgentConfig('p1', {
       files: [],
       mcp: [],
       env: {},
       layout: {},
     })
-    await projectsClient.createProjectSharedAgentTest('p1', { agentName: 'a' })
-    await projectsClient.getProjectCredentials('p1')
-    await projectsClient.createProjectCredential('p1', {
+    await workspaceClient.createProjectSharedAgentTest('p1', { agentName: 'a' })
+    await workspaceClient.getProjectCredentials('p1')
+    await workspaceClient.createProjectCredential('p1', {
       type: 'custom',
       name: 'demo',
       value: 'secret',
     })
-    await projectsClient.putProjectCredential('p1', 'cred-1', {
+    await workspaceClient.putProjectCredential('p1', 'cred-1', {
       type: 'custom',
       name: 'demo',
       value: 'rotated',
     })
-    await projectsClient.deleteProjectCredential('p1', 'cred-1')
-    await projectsClient.listRequirementDrafts('p1', { status: 'open', q: 'x' })
-    await projectsClient.getRequirementDraft('p1', 'd1')
-    await projectsClient.createRequirementDraft('p1', { title: 't' })
-    await projectsClient.updateRequirementDraft('p1', 'd1', { title: 't' })
-    await projectsClient.patchRequirementDraftStatus('p1', 'd1', 'done')
-    await projectsClient.patchRequirementDraftSchedule('p1', 'd1', {
+    await workspaceClient.deleteProjectCredential('p1', 'cred-1')
+    await workspaceClient.listRequirementDrafts('p1', { status: 'open', q: 'x' })
+    await workspaceClient.getRequirementDraft('p1', 'd1')
+    await workspaceClient.createRequirementDraft('p1', { title: 't' })
+    await workspaceClient.updateRequirementDraft('p1', 'd1', { title: 't' })
+    await workspaceClient.patchRequirementDraftStatus('p1', 'd1', 'done')
+    await workspaceClient.patchRequirementDraftSchedule('p1', 'd1', {
       parentId: null,
       progress: 1,
     })
-    await projectsClient.deleteRequirementDraft('p1', 'd1')
-    await projectsClient.getProjectExternalMcp('p1')
-    await projectsClient.updateProjectExternalMcp('p1', { enabled: true, enabledPacks: [] })
-    await projectsClient.listProjectMcpKeys('p1')
-    await projectsClient.createProjectMcpKey('p1', 'k')
-    await projectsClient.revokeProjectMcpKey('p1', 'k1')
-    await projectsClient.listProjectAudit('p1', {
+    await workspaceClient.deleteRequirementDraft('p1', 'd1')
+    await workspaceClient.getProjectExternalMcp('p1')
+    await workspaceClient.updateProjectExternalMcp('p1', { enabled: true, enabledPacks: [] })
+    await workspaceClient.listProjectMcpKeys('p1')
+    await workspaceClient.createProjectMcpKey('p1', 'k')
+    await workspaceClient.revokeProjectMcpKey('p1', 'k1')
+    await workspaceClient.listProjectAudit('p1', {
       time: '7d',
       actor: 'pm',
       callerKind: 'pm',
@@ -79,8 +77,8 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       page: 2,
       pageSize: 10,
     })
-    await projectsClient.listProjectAuditFacets('p1', { time: '7d', runId: 'r', from: 'a', to: 'b' })
-    const url = projectsClient.exportProjectAuditUrl('p1', {
+    await workspaceClient.listProjectAuditFacets('p1', { time: '7d', runId: 'r', from: 'a', to: 'b' })
+    const url = workspaceClient.exportProjectAuditUrl('p1', {
       format: 'text',
       time: '7d',
       actor: 'pm',
@@ -92,7 +90,6 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       search: 'q',
     })
     expect(url).toContain('/audit/export')
-    await projectsClient.getProjectTokenStats('p1', { window: '7d', timezone: 'UTC', utcOffsetMinutes: 480 })
   })
 
   it('pmClient issues PM and cron requests', async () => {

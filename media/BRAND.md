@@ -9,7 +9,7 @@
 | `logo-mark.svg` | 纯图标 128×128，深浅底通用 |
 | `logo-dark.svg` | 深色底完整 lockup（mark + Grasp 字标，奶油色字） |
 | `logo-light.svg` | 浅色底完整 lockup（mark + Grasp 字标，墨色字） |
-| `favicon.svg` | 浏览器标签 / 32×32，加粗描边、无高光 |
+| `favicon.svg` | 当前 Grasp 角色的静态矢量源，透明背景，与侧栏角色保持一致 |
 | `preview-*.png` | 评审用预览图 |
 
 字标已转成 **Fredoka Bold 路径**，不依赖外链字体。
@@ -18,7 +18,7 @@
 
 - **深色 UI / 首页英雄**：`logo-dark.svg` 或单独 `logo-mark.svg`
 - **浅色文档 / README 浅底**：`logo-light.svg`
-- **Favicon / App icon**：只用 `favicon.svg`（或由其导出的 PNG）
+- **Favicon**：使用 `web/public/favicon.ico`，由静态角色 `favicon.svg` 导出 16/24/32/48/64/128/256px 多尺寸 ICO；浏览器入口使用已有的 `/favicon.ico` 静态路径。三份 SVG（本目录、`web/src/assets/brand`、`web/public`）保持同步。
 - **不要**把奶油色字放在浅底上，**不要**把墨色字放在近黑底上
 - 最小可读尺寸：mark ≥ 16px；完整 lockup ≥ 120px 宽
 - 保持描边比例，勿压扁；透明底导出，勿自带背景色块

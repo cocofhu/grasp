@@ -4,7 +4,6 @@
     "agent": [
       "agentCreateWizard.ts",
       "agentIO.ts",
-      "agentProjectTree.ts",
       "agentStudioDraft.ts",
       "agentTeamWizard.ts",
       "agentTemplateOptions.ts",
@@ -26,12 +25,15 @@
     "api": [
       "api.ts",
       "apiTypes.ts",
-      "httpCore.ts"
+      "httpCore.ts",
+      "workflowCatalogEvents.ts"
     ],
     "artifacts": [
       "artifactTree.ts"
     ],
     "chat": [
+      "conversationArtifacts.ts",
+      "messagePreview.ts",
       "sessionQueue.ts"
     ],
     "composables": [
@@ -39,27 +41,32 @@
       "useBrandSettings.ts",
       "useBreakpoint.ts",
       "useChatImagePreview.ts",
+      "useComposerActionMotion.ts",
       "useDelayedBusy.ts",
       "useFixedOverlayAbove.ts",
       "useImageAttachments.ts",
       "useNotificationsPageEntry.ts",
       "usePlatformStatusMetrics.ts",
-      "useProjectContext.ts",
       "useServiceCommit.ts",
       "useShutdownState.ts",
+      "useSidebarNavigation.ts",
       "useStatusFilter.ts",
       "useTagFilter.ts",
       "useTestScreenshotLoad.ts",
       "useToast.ts",
-      "useWorkflowFilter.ts"
+      "useWorkflowFilter.ts",
+      "useWorkspaceContext.ts"
     ],
     "inbox": [
       "clarifyDemo.ts",
+      "clarifyDemoWindow.ts",
       "clarifyEmptyFail.ts",
       "clarifyInboxStage.ts",
       "composerAutoGrow.ts",
       "confirmFlowCeremony.ts",
       "embedChat.ts",
+      "embedDemoPreview.ts",
+      "embedImagePreview.ts",
       "embedLiveContext.ts",
       "embedPageControl.ts",
       "gateShareLink.ts",
@@ -68,12 +75,15 @@
       "inboxContext.ts",
       "inboxDisplay.ts",
       "inboxReviewMode.ts",
+      "inboxShareIntent.ts",
       "inboxStartingCards.ts",
+      "listAllPendingGates.ts",
       "liveVariants.ts",
       "mergeClarifyLiveTurns.ts",
       "reviewAnnotate.ts",
       "reviewLayoutBudget.ts",
       "reviewQuote.ts",
+      "sidebarPins.ts",
       "useClarifyChat.ts",
       "useClarifyDraft.ts",
       "useCommentPins.ts",
@@ -95,8 +105,8 @@
       "credentialKinds.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
-      "useProjectDetail.ts",
-      "useRequirementDrafts.ts"
+      "useRequirementDrafts.ts",
+      "useWorkflows.ts"
     ],
     "run": [
       "acpTools.ts",
@@ -206,12 +216,12 @@
     ]
   },
   "totals": {
-    "agent": 20,
-    "api": 3,
+    "agent": 19,
+    "api": 4,
     "artifacts": 1,
-    "chat": 1,
-    "composables": 17,
-    "inbox": 27,
+    "chat": 3,
+    "composables": 19,
+    "inbox": 33,
     "pm": 7,
     "project": 5,
     "run": 58,

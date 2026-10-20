@@ -48,7 +48,12 @@ export interface CanvasEdgeData {
   replacing?: boolean
   /** Under-card channel for a backward edge. Forward edges omit it. */
   backLane?: number
-  /** Run mode: the source node's handoff, set only on the edge the run took. */
+  /**
+   * Run mode: every non-empty handoff left through this edge, oldest first.
+   * One chip; the popover switches visits when there is more than one.
+   */
+  handoffs?: EdgeHandoff[]
+  /** Latest visit. Kept so a single handoff still reads as one note. */
   handoff?: EdgeHandoff
 }
 

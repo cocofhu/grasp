@@ -53,7 +53,7 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("GlobalStats", "", nil)
+	proj, err := s.CreateFixture("GlobalStats", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("Grasp", "", nil)
+	proj, err := s.CreateFixture("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.Create("Grasp", "", nil)
+	proj, err := s.CreateFixture("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +274,7 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC) // 20:00 Shanghai
-	proj, err := s.Create("G24h", "", nil)
+	proj, err := s.CreateFixture("G24h", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestGlobalTokenStats24hEmptyWindow(t *testing.T) {
 	}
 	s := NewProjectService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
-	if _, err := s.Create("EmptyG24h", "", nil); err != nil {
+	if _, err := s.CreateFixture("EmptyG24h", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	syncTokenLedger(t, db)
@@ -440,3 +440,14 @@ func assertTokenPartsMatchWorkflowTotals(t *testing.T, rows []TokenStatsWorkflow
 }
 
 func aliasPtr(s string) *string { return &s }
+
+func TestTokenStatsWorkflowFilterDistinguishesDuplicateNames(t *testing.T) {
+	opts := buildFilterOptions(nil, nil, map[string]string{"wf-a": "构建发布", "wf-b": "构建发布", "wf-c": "Other"}, nil)
+	names := map[string]string{}
+	for _, o := range opts.Workflows {
+		names[o.Key] = o.Name
+	}
+	if names["wf-a"] != "构建发布 · wf-a" || names["wf-b"] != "构建发布 · wf-b" || names["wf-c"] != "Other" {
+		t.Fatalf("duplicate workflow names not distinguished: %+v", opts.Workflows)
+	}
+}

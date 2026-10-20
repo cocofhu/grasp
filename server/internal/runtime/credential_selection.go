@@ -139,3 +139,55 @@ func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID s
 		apply(choice.SshHostsCredentialID, envauth.EnvGitSSHKnownHosts)
 	}
 }
+
+// ApplyCredentialBindings applies explicit per-Agent choices after inherited defaults.
+// A missing binding inherits; nil and unresolved IDs explicitly remove the value.
+func ApplyCredentialBindings(env, creds map[string]string, projectID string, bindings map[string]*string, resolve SelectedCredentialFunc) {
+	for key, id := range bindings {
+		key = strings.TrimSpace(key)
+		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
+			continue
+		}
+		delete(env, key)
+		delete(creds, key)
+		if id == nil || resolve == nil {
+			continue
+		}
+		actual, value, ok := resolve(projectID, strings.TrimSpace(*id))
+		if ok && actual == key && strings.TrimSpace(value) != "" {
+			if env != nil {
+				env[key] = value
+			}
+			if creds != nil {
+				creds[key] = value
+			}
+		}
+	}
+}
+
+// CredentialIDForWriteBack records the same row selected for injection. Explicit
+// disables and invalid choices never acquire an inherited credential identity.
+func CredentialIDForWriteBack(projectID, envKey, value, selected string, bindings map[string]*string, resolve SelectedCredentialFunc, inherited func(projectID, envKey, value string) string) string {
+	if id, explicit := bindings[envKey]; explicit {
+		if id == nil {
+			return ""
+		}
+		selected = strings.TrimSpace(*id)
+		if selected == "" {
+			return ""
+		}
+	}
+	if selected = strings.TrimSpace(selected); selected != "" {
+		if resolve != nil {
+			key, actual, ok := resolve(projectID, selected)
+			if ok && key == envKey && actual == value && value != "" {
+				return selected
+			}
+		}
+		return ""
+	}
+	if inherited != nil && value != "" {
+		return inherited(projectID, envKey, value)
+	}
+	return ""
+}

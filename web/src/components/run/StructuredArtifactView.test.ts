@@ -94,3 +94,16 @@ describe('merge_request.json card', () => {
     expect(rows[1]!.text()).toContain('自建 Git 服务')
   })
 })
+
+describe('structured report content', () => {
+  it.each([
+    ['research.json', { title: '调研结论', summary: '选择现有接口', questions: [{ question: '如何接入？', answer: '复用现有入口' }], findings: [{ title: '接口稳定', detail: '已有回归覆盖' }], recommendation: '按现有契约推进' }, ['调研结论', '选择现有接口', '如何接入？', '复用现有入口', '接口稳定', '已有回归覆盖', '按现有契约推进']],
+    ['implementation_result.json', { summary: '实现已完成', changed_areas: [{ title: '运行入口', detail: '保留历史输入' }], tests: ['验证手动运行'], breaking_changes: ['旧入口已迁移'], follow_ups: ['跟踪执行结果'] }, ['实现已完成', '运行入口', '保留历史输入', '验证手动运行', '旧入口已迁移', '跟踪执行结果']],
+  ])('keeps every report section when rendering %s as a document', (name, doc, expected) => {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhPages } })
+    const wrapper = mount(StructuredArtifactView, { props: { name: name as string, doc }, global: { plugins: [i18n], stubs: { Icon: true } } })
+    expect(wrapper.find('article').exists()).toBe(true)
+    for (const text of expected as string[]) expect(wrapper.text()).toContain(text)
+    wrapper.unmount()
+  })
+})

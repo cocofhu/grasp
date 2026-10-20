@@ -5,12 +5,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -49,8 +52,9 @@ import (
 )
 
 const (
-	// shutdownDrainTimeout bounds how long shutdown waits for in-flight work.
-	shutdownDrainTimeout = 600 * time.Second
+	// shutdownHTTPTimeout bounds how long shutdown waits for in-flight HTTP
+	// requests. It is also the grace shown on the draining banner.
+	shutdownHTTPTimeout = 10 * time.Second
 	// pmTurnDeadline caps one PM / channel / cron turn.
 	pmTurnDeadline = 630 * time.Second
 )
@@ -94,7 +98,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.Open(cfg.Database)
+	db, err := database.Open(cfg.Database, cfg.Engine.ProfilesRoot)
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
@@ -249,7 +253,8 @@ func main() {
 		},
 		PublicAdvertise:         cfg.Server.PublicAdvertise,
 		OpenCodeCatalog:         openCodeCatalog,
-		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginFile,
+		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginCredential,
+		InjectedCredentialID:    projectCredentialSvc.InjectedCredentialID,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
@@ -334,6 +339,9 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
+	if err := projectSvc.ValidateWorkspaceAgents(agentSvc); err != nil {
+		log.Fatal().Err(err).Msg("Agent ownership requires offline workspace migration")
+	}
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
@@ -362,7 +370,7 @@ func main() {
 		SelectedCredential:          projectCredentialSvc.ResolveSelectedValue,
 		OpenCodeCatalog:             openCodeCatalog,
 	})
-	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginFile)
+	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginCredential, projectCredentialSvc.InjectedCredentialID)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -370,7 +378,7 @@ func main() {
 	}
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
-	sbxSvc.ReconcileOnStartup(context.Background())
+	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
 	sweeperCtx, stopSweeper := context.WithCancel(context.Background())
 	go sbxSvc.RunSweeper(sweeperCtx)
 
@@ -408,7 +416,7 @@ func main() {
 	requirementDraftSvc := services.NewRequirementDraftService(db)
 	notificationSvc := services.NewNotificationService(db, runSvc)
 
-	coord := shutdown.New(shutdownDrainTimeout)
+	coord := shutdown.New(shutdownHTTPTimeout)
 	authSvc := auth.NewService(db, config.GetConfig)
 
 	pmSvc := services.NewPmService(db, agentSvc)
@@ -452,6 +460,7 @@ func main() {
 		Unregister: mcpWire.unregister,
 	})
 	gateAutoSvc := services.NewGateAutoInvokeService(db, pmSvc, sbxSvc, pmTurns, services.CronTokenHooks{
+		RegisterPM: mcpWire.registerPMPolicy,
 		Register:   mcpWire.registerCron,
 		Unregister: mcpWire.unregister,
 	})
@@ -534,6 +543,34 @@ func main() {
 		Team:               services.NewTeamService(projectSvc, agentSvc, pmSvc, sbxSvc),
 		OpenCodeCatalog:    openCodeCatalog,
 	}
+	var maintenancePrepared atomic.Bool
+	var maintenanceMu sync.Mutex
+	h.Maintenance = func(ctx context.Context, begin bool) (map[string]any, error) {
+		maintenanceMu.Lock()
+		defer maintenanceMu.Unlock()
+		if begin {
+			coord.BeginDraining()
+			eng.Halt()
+			cronSched.Pause()
+			gateAutoSvc.BeginMaintenance()
+			channelMgr.BeginMaintenance()
+		}
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance()}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
+		state["safeToStop"] = safe && maintenancePrepared.Load()
+		if begin && safe {
+			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {
+				state["safeToStop"] = false
+				return state, fmt.Errorf("archive interactive sandboxes: %w", err)
+			}
+			maintenancePrepared.Store(true)
+			state["safeToStop"] = true
+		}
+		if begin && !safe {
+			return state, fmt.Errorf("maintenance is draining; poll status, then POST again to archive idle interactive sandboxes")
+		}
+		return state, nil
+	}
 	h.Team.SharedAgent = sharedAgentSvc
 	h.Team.Credentials = projectCredentialSvc
 	if h.Team != nil && h.PMMCP != nil {
@@ -548,6 +585,8 @@ func main() {
 		log.Fatal().Err(err).Str("addr", addr).Msg("listen failed")
 	}
 	srv := &http.Server{Handler: r}
+	// Agent MCP clients hold a tool-list SSE stream open for the whole run.
+	srv.RegisterOnShutdown(host.CloseToolStreams)
 
 	log.Info().Str("port", port).
 		Str("config_path", cfgPath).Msg("approving server starting")
@@ -557,6 +596,9 @@ func main() {
 			log.Fatal().Err(err).Msg("server exited")
 		}
 	}()
+	// Every provider hook is wired now; continue agent nodes whose sandboxes
+	// survived the previous process.
+	eng.ResumeInterrupted()
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
@@ -566,36 +608,25 @@ func main() {
 	coord.BeginDraining()
 	log.Info().Msg("drain started")
 
-	// Stop admitting new work and drop anything still queued. The drain
-	// middleware already 503s new mutating /api requests; halting the scheduler
-	// prevents the dispatcher from promoting queued runs while we drain.
+	// Stop admitting new work. Queued runs stay queued and running drivers
+	// requeue at their next node boundary, so the next process picks both up.
 	eng.Halt()
-	eng.CancelQueuedRuns()
 
-	// Keep the HTTP server up while waiting for active agent/react nodes to
-	// finish: their in-container sandboxes still call back to /mcp/runs/:id on
-	// this same server, and the frontend keeps polling /api/health to render the
-	// draining banner. Waiting first (bounded by the grace deadline) is what
-	// lets rolling updates finish in-flight agent work instead of severing it.
-	timedOut := eng.WaitAgentReact(context.Background(), coord.Deadline())
-
-	// Now tear everything down: idle sweeper, interactive test sandboxes, then
-	// the HTTP server (which closes /api and /mcp for good).
+	// Sandboxes and ACP connections are left alone on purpose: closing an ACP
+	// client makes the in-flight turn fail and discard its sandbox, while the
+	// next process reattaches running agent sandboxes and resumes their nodes.
 	stopSweeper()
 	channelMgr.StopAll()
 	browserSvc.Stop()
-	sbxSvc.ShutdownAllTestSandboxes(context.Background(), true)
 
-	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 15*time.Second)
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownHTTPTimeout)
 	defer cancelShutdown()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Warn().Err(err).Msg("http server shutdown")
 	}
 
-	if timedOut {
-		log.Info().Msg("exit")
-		os.Exit(1)
-	}
+	// Exit without unwinding: node goroutines must not get a chance to record
+	// failures for work the next process is about to resume.
 	log.Info().Msg("exit")
 	os.Exit(0)
 }

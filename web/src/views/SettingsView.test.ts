@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 
+const authMocks = vi.hoisted(() => ({ isAdmin: true }))
+
 const apiMocks = vi.hoisted(() => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
@@ -33,7 +35,7 @@ vi.mock('@/lib/api/api', async () => {
 vi.mock('@/lib/composables/useAuth', async () => {
   const { ref } = await import('vue')
   return {
-    useAuth: () => ({ user: ref({ username: 'admin', isAdmin: true }) }),
+    useAuth: () => ({ user: ref({ username: 'admin', isAdmin: authMocks.isAdmin }) }),
   }
 })
 
@@ -44,10 +46,10 @@ const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'Settings
 const SETTINGS = {
   brand: { product_name: 'Acme Flow', home_subtitle: 'Clarify together' },
   items: [
-    { key: 'max_concurrent_runs', value: 4, min: 1, source: 'ui', locked: false },
-    { key: 'run_sandbox_ttl_minutes', value: 30, min: 1, source: 'ui', locked: false },
-    { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'ui', locked: false },
-    { key: 'max_test_sandboxes', value: 3, min: 1, source: 'ui', locked: false },
+    { key: 'max_concurrent_runs', value: 4, min: 1, source: 'db', locked: false },
+    { key: 'run_sandbox_ttl_minutes', value: 30, min: 1, source: 'db', locked: false },
+    { key: 'test_sandbox_ttl_minutes', value: 15, min: 1, source: 'db', locked: false },
+    { key: 'max_test_sandboxes', value: 3, min: 1, source: 'db', locked: false },
     { key: 'sandbox_memory_mb', value: 8192, min: 1024, source: 'config', locked: false },
     { key: 'agent_idle_timeout_minutes', value: 20, min: 2, max: 120, source: 'config', locked: false },
   ],
@@ -78,6 +80,8 @@ function mountSettings() {
   })
 }
 
+beforeEach(() => { authMocks.isAdmin = true })
+
 describe('SettingsView loading source lock', () => {
   it('first load uses grouped form skeleton, not EmptyState loadingTitle', () => {
     expect(src).toMatch(/data-testid="settings-form-skeleton"/)
@@ -85,8 +89,9 @@ describe('SettingsView loading source lock', () => {
     expect(src).not.toMatch(/pages\.settings\.loadingTitle/)
     expect(src).toMatch(/admin-list-thin-bar bg-accent/)
     expect(src).toMatch(/opacity-\[0\.55\]/)
-    expect(src).toMatch(/flex-col items-stretch gap-3 md:flex-row md:items-end md:justify-between/)
-    expect(src).toMatch(/min-h-11 w-full md:min-h-0 md:w-auto/)
+    expect(src).toMatch(/class="settings-page"/)
+    expect(src).not.toMatch(/overflow-y-auto/)
+    expect(src).toMatch(/data-testid="settings-save-actions"/)
   })
 })
 
@@ -103,6 +108,7 @@ describe('SettingsView brand copy', () => {
     await flushPromises()
     expect(w.get('[data-testid="brand-product-name"]').element).toHaveProperty('value', 'Acme Flow')
     expect(w.get('[data-testid="brand-home-subtitle"]').element).toHaveProperty('value', 'Clarify together')
+    expect(w.get('[data-testid="brand-home-subtitle"]').attributes('placeholder')).toBe('先说清，再动手')
     await w.get('[data-testid="brand-product-name"]').setValue('New Name')
     await w.get('[data-testid="brand-home-subtitle"]').setValue('New subtitle')
     const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
@@ -241,7 +247,7 @@ describe('SettingsView first skeleton vs reset keep form', () => {
     release!(SETTINGS)
     await flushPromises()
     expect(w.find('[data-testid="settings-form-skeleton"]').exists()).toBe(false)
-    expect(w.text()).toContain('max_concurrent_runs')
+    expect(w.text()).toContain('最大并发运行数')
     w.unmount()
   })
 
@@ -337,5 +343,123 @@ describe('SettingsView general page has no entry cards (plan g2.1 / f1 / f2)', (
     expect(w.find('[data-testid="settings-form-skeleton"]').exists()).toBe(false)
     expect(router.currentRoute.value.query.integrations).toBe('1')
     w.unmount()
+  })
+})
+
+describe('SettingsView grouped form behavior', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    apiMocks.updateSettings.mockResolvedValue(SETTINGS)
+    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.dashboard.mockResolvedValue({ running: 0 })
+  })
+
+  it('keeps environment-locked values read-only and omits them from saves', async () => {
+    const locked = {
+      ...SETTINGS,
+      items: SETTINGS.items.map((item) => item.key === 'max_concurrent_runs' ? { ...item, source: 'env', locked: true } : item),
+    }
+    apiMocks.getSettings.mockResolvedValue(locked)
+    apiMocks.updateSettings.mockResolvedValue(locked)
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.get('#setting-max_concurrent_runs').attributes('disabled')).toBeDefined()
+    expect(w.text()).toContain('环境变量锁定')
+    await w.get('[data-testid="brand-product-name"]').setValue('Renamed')
+    await w.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ brand_product_name: 'Renamed' }))
+    expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('max_concurrent_runs')
+    w.unmount()
+  })
+
+  it('leaves brand fields read-only for non-admins and saves only allowed numeric values', async () => {
+    authMocks.isAdmin = false
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.get('[data-testid="brand-product-name"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[data-testid="brand-home-subtitle"]').attributes('disabled')).toBeDefined()
+    expect(w.text()).toContain('仅管理员可修改品牌文案')
+    await w.get('#setting-max_concurrent_runs').setValue(5)
+    await w.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ max_concurrent_runs: 5 }))
+    expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('brand_product_name')
+    expect(apiMocks.updateSettings.mock.calls[0]![0]).not.toHaveProperty('brand_home_subtitle')
+    w.unmount()
+  })
+
+  it('keeps all detailed resource and retention rules available', async () => {
+    apiMocks.getSettings.mockResolvedValue({
+      ...SETTINGS,
+      items: [...SETTINGS.items, { key: 'run_sandbox_max_retention_hours', value: 12, min: 1, source: 'config', locked: false }],
+    })
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.findAll('details').length).toBe(3)
+    expect(w.get('label[for="setting-sandbox_memory_mb"]').text()).toContain('沙箱内存上限')
+    expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('保留不跨重启')
+    expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('OOM')
+    expect(w.findAll('details').map((details) => details.text()).join(' ')).toContain('不会被误杀')
+    w.unmount()
+  })
+
+  it('rejects an invalid test sandbox limit and keeps the edit after a save failure', async () => {
+    const w = mountSettings()
+    await flushPromises()
+    await w.get('#setting-max_test_sandboxes').setValue(0)
+    const save = w.findAll('button').find((button) => button.text() === '保存')!
+    await save.trigger('click')
+    expect(apiMocks.updateSettings).not.toHaveBeenCalled()
+    expect(w.get('[role="alert"]').text()).toContain('不能小于 1')
+    await w.get('#setting-max_test_sandboxes').setValue(6)
+    apiMocks.updateSettings.mockRejectedValueOnce(new Error('Save unavailable'))
+    await save.trigger('click')
+    await flushPromises()
+    expect(w.get('[role="alert"]').text()).toContain('Save unavailable')
+    expect(w.get('#setting-max_test_sandboxes').element).toHaveProperty('value', '6')
+    w.unmount()
+  })
+
+  it('retries a failed initial settings request', async () => {
+    apiMocks.getSettings.mockRejectedValueOnce(new Error('Service unavailable'))
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.find('[data-testid="settings-failed"]').exists()).toBe(true)
+    await w.get('[data-testid="settings-retry"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="settings-failed"]').exists()).toBe(false)
+    expect(w.get('#setting-max_concurrent_runs').element).toHaveProperty('value', '4')
+    w.unmount()
+  })
+
+  it('polls capacity every five seconds, retains the last values on failure, and stops on unmount', async () => {
+    vi.useFakeTimers()
+    const w = mountSettings()
+    try {
+      apiMocks.listSandboxes.mockResolvedValue([{ id: 'test-1', purpose: 'test', status: 'running' }, { id: 'ttl-1', purpose: 'run', status: 'running' }])
+      apiMocks.dashboard.mockResolvedValue({ running: 4 })
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(5000)
+      await flushPromises()
+      const usage = w.get('[data-testid="settings-capacity-usage"]')
+      expect(usage.text()).toContain('5个')
+      expect(usage.text()).toContain('1/3')
+      expect(usage.text()).toContain('4/4')
+      expect(usage.find('.bg-err').exists()).toBe(true)
+      apiMocks.listSandboxes.mockRejectedValueOnce(new Error('Usage unavailable'))
+      await vi.advanceTimersByTimeAsync(5000)
+      await flushPromises()
+      expect(usage.text()).toContain('Usage unavailable')
+      expect(usage.text()).toContain('5个')
+      w.unmount()
+      const callCount = apiMocks.listSandboxes.mock.calls.length
+      await vi.advanceTimersByTimeAsync(10000)
+      expect(apiMocks.listSandboxes.mock.calls.length).toBe(callCount)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
   })
 })

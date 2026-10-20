@@ -5,6 +5,7 @@ import Icon from './Icon.vue'
 import AppInlineError from './AppInlineError.vue'
 import AppSpinner from './AppSpinner.vue'
 import { api } from '@/lib/api/api'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { MAX_TAG_RUNES, validateRunTag } from '@/lib/run/runTags'
 
 const props = withDefaults(
@@ -25,6 +26,7 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const { workspaceId, ensureLoaded } = useWorkspaceContext()
 const internalOpen = ref(false)
 const root = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
@@ -53,7 +55,6 @@ const filteredStock = computed(() => {
 })
 
 const emptyHint = computed(() => {
-  if (!props.projectId) return t('common.tagFilter.needProject')
   if (stockLoading.value || stockError.value) return ''
   const q = draft.value.trim()
   if (!filteredStock.value.length) {
@@ -69,17 +70,12 @@ function validationMessage(code: ReturnType<typeof validateRunTag>): string {
   return ''
 }
 
-async function loadStock(projectId: string) {
-  if (!projectId) {
-    stockTags.value = []
-    stockLoading.value = false
-    stockError.value = null
-    return
-  }
+async function loadStock(_projectId?: string) {
   stockLoading.value = true
   stockError.value = null
   try {
-    const res = await api.listProjectRunTags(projectId)
+    await ensureLoaded()
+    const res = await api.listProjectRunTags(workspaceId.value)
     stockTags.value = Array.isArray(res.tags) ? res.tags : []
   } catch (err) {
     stockTags.value = []

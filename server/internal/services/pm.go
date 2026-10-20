@@ -292,3 +292,16 @@ func (s *PmService) project(id string) (models.Project, bool) {
 	}
 	return p, true
 }
+
+// RequireSendEnabled checks the workspace switch independently of the default
+// Agent. Existing threads resolve their own AgentName.
+func (s *PmService) RequireSendEnabled(projectID string) (models.Project, error) {
+	p, ok := s.project(projectID)
+	if !ok {
+		return p, ErrProjectNotFound
+	}
+	if !p.PmLeaderEnabled {
+		return p, ErrPmLeaderDisabled
+	}
+	return p, nil
+}

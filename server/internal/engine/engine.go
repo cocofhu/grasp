@@ -74,9 +74,17 @@ type Engine struct {
 	execGen  map[string]uint64
 
 	// haltMu guards halted: when true the dispatcher stops admitting work and
-	// agent/react nodes finish as cancelled instead of advancing the FSM.
+	// running drivers requeue their run at the next node boundary.
 	haltMu sync.RWMutex
 	halted bool
+
+	// reattachMu guards pendingReattach / adoptedSandboxes: agent nodes found
+	// mid-flight on startup whose sandbox is still alive. Their slots are
+	// reserved in New; ResumeInterrupted starts their drivers once the
+	// composition root has wired the sandbox registry.
+	reattachMu       sync.Mutex
+	pendingReattach  []reattachInfo
+	adoptedSandboxes map[string]bool
 
 	// projectVarsLookup, when set, returns project-level workflow variables for
 	// a workflow so StartRun can seed them into vars.* before Graph.Variables
@@ -148,6 +156,7 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 		wake: make(chan struct{}, 1), stop: make(chan struct{}),
 		tokens: map[string]string{}, resumeLocks: map[string]*sync.Mutex{},
 		execRuns: map[string]bool{}, execGen: map[string]uint64{},
+		adoptedSandboxes: map[string]bool{},
 	}
 
 	if sink, ok := provider.(interface {
@@ -158,6 +167,8 @@ func New(db *gorm.DB, provider runtime.ExecProvider, host *mcp.Host, store mcp.S
 
 	host.SetAfterWriteArtifact(e.syncAfterPrimaryArtifactWrite)
 	host.SetArtifactPreviewHook(e.setReactPreviewArtifact)
+	// Reconcile before the dispatcher starts so adopted runs reserve their
+	// slots ahead of the queued backlog.
 	e.reconcileInterrupted()
 
 	go e.dispatch()

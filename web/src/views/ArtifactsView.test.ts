@@ -167,51 +167,56 @@ describe('ArtifactsView', () => {
     expect(w.find('[data-testid="artifacts-surface"]').attributes('aria-busy')).toBe('false')
   })
 
-  it('defaults to the first project and writes it to the URL', async () => {
+  it('defaults to all sources without adding a project to the URL', async () => {
     const w = await mountAt('/artifacts')
     await flushPromises()
 
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1' })
-    expect(lastListCall()).toEqual({ projectId: 'p1', page: 1, pageSize: 20, groupBy: 'run', q: undefined })
-    expect(w.find('[data-testid="artifacts-breadcrumb"]').text()).toBe('Alpha')
-    expect(w.find('[data-testid="list-title"]').text()).toBe('Alpha · 3')
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(lastListCall()).toEqual({ page: 1, pageSize: 20, groupBy: 'run', q: undefined })
+    expect(w.find('[data-testid="artifacts-breadcrumb"]').text()).toBe('产物')
+    expect(w.find('[data-testid="list-title"]').text()).toBe('产物 · 4')
     expect(w.find('[data-testid="preview-id"]').text()).toBe('a1')
   })
 
-  it('renders project → workflow / session children in the tree', async () => {
+  it('opens workflow and session sources on demand instead of a third pane', async () => {
     const w = await mountAt('/artifacts')
     await flushPromises()
 
-    const labels = w.findAll('[data-testid="project-tree"] [role="treeitem"]').map((el) => el.text())
-    expect(labels).toEqual(['Alpha3', 'Build2', 'Agent 会话产物1', 'Beta1'])
+    expect(w.find('[data-testid="artifacts-tree-pane"]').exists()).toBe(false)
+    expect(w.find('[data-testid="resource-list"]').exists()).toBe(false)
+    await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
+    const labels = w.findAll('[data-testid="resource-list"] [data-resource-key]').map((el) => el.text())
+    expect(labels).toEqual(['产物4', 'Build2', 'Agent 会话产物1'])
   })
 
   it('selecting a child syncs the URL and narrows the list; back/forward restores', async () => {
     const w = await mountAt('/artifacts?project=p1')
     await flushPromises()
 
-    await w.find('[data-tree-key="c:p1:w1"]').trigger('click')
+    await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
+    await w.find('[data-resource-key="workflow:w1"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1', workflow: 'w1' })
-    expect(lastListCall()).toMatchObject({ projectId: 'p1', workflowId: 'w1' })
-    expect(w.find('[data-testid="artifacts-breadcrumb"]').text()).toBe('AlphaBuild')
+    expect(router.currentRoute.value.query).toEqual({ workflow: 'w1' })
+    expect(lastListCall()).toMatchObject({ workflowId: 'w1' })
+    expect(w.find('[data-testid="artifacts-breadcrumb"]').text()).toBe('产物Build')
 
-    await w.find('[data-tree-key="c:p1:__session__"]').trigger('click')
+    await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
+    await w.find('[data-resource-key="session"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1', session: '1' })
-    expect(lastListCall()).toMatchObject({ projectId: 'p1', session: true })
+    expect(router.currentRoute.value.query).toEqual({ session: '1' })
+    expect(lastListCall()).toMatchObject({ session: true })
     expect(lastListCall()).not.toHaveProperty('workflowId')
 
     router.back()
     await flushPromises()
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1', workflow: 'w1' })
-    expect(lastListCall()).toMatchObject({ projectId: 'p1', workflowId: 'w1' })
+    expect(router.currentRoute.value.query).toEqual({ workflow: 'w1' })
+    expect(lastListCall()).toMatchObject({ workflowId: 'w1' })
 
     await w.find('[data-testid="artifacts-crumb-project"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1' })
-    expect(lastListCall()).toEqual(expect.objectContaining({ projectId: 'p1' }))
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(lastListCall()).toEqual(expect.objectContaining({}))
     expect(lastListCall()).not.toHaveProperty('workflowId')
   })
 
@@ -225,14 +230,14 @@ describe('ArtifactsView', () => {
     expect(apiMocks.listArtifacts.mock.calls.length).toBe(calls)
   })
 
-  it('canonicalizes stale URLs (unknown workflow → its project)', async () => {
+  it('canonicalizes unknown workflow URLs to all sources', async () => {
     await mountAt('/artifacts?project=p2&workflow=gone')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p2' })
-    expect(lastListCall()).toMatchObject({ projectId: 'p2' })
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(lastListCall()).toMatchObject({})
   })
 
-  it('shows the global empty state when no project owns artifacts', async () => {
+  it('shows the global empty state when no sources own artifacts', async () => {
     apiMocks.getArtifactTree.mockResolvedValue([])
     const w = await mountAt('/artifacts')
     await flushPromises()
@@ -250,7 +255,7 @@ describe('ArtifactsView', () => {
     await flushPromises()
     expect(w.find('[data-testid="artifacts-load-failed"]').exists()).toBe(false)
     expect(apiMocks.getArtifactTree).toHaveBeenCalledTimes(2)
-    expect(lastListCall()).toMatchObject({ projectId: 'p1' })
+    expect(lastListCall()).toMatchObject({})
   })
 
   it('debounces server search into q', async () => {
@@ -263,7 +268,7 @@ describe('ArtifactsView', () => {
     await vi.advanceTimersByTimeAsync(300)
     await flushPromises()
     expect(apiMocks.listArtifacts.mock.calls.length).toBe(before + 1)
-    expect(lastListCall()).toMatchObject({ projectId: 'p1', q: 'spec', page: 1 })
+    expect(lastListCall()).toMatchObject({ q: 'spec', page: 1 })
   })
 
   it('refreshes tree counts and the list after a delete, selecting the neighbour', async () => {
@@ -277,12 +282,12 @@ describe('ArtifactsView', () => {
     await flushPromises()
 
     expect(apiMocks.getArtifactTree).toHaveBeenCalledTimes(2)
-    expect(w.find('[data-tree-key="p:p1"] [data-tree-count]').text()).toBe('2')
-    expect(w.find('[data-testid="list-title"]').text()).toBe('Alpha · 2')
+    expect(w.find('[data-testid="artifacts-total"]').text()).toBe('3 个文件')
+    expect(w.find('[data-testid="list-title"]').text()).toBe('产物 · 3')
     expect(w.find('[data-testid="preview-id"]').text()).toBe('a2')
   })
 
-  it('falls back to the project when a delete empties the selected workflow', async () => {
+  it('falls back to all sources when a delete empties the selected workflow', async () => {
     const w = await mountAt('/artifacts?project=p2')
     await flushPromises()
     apiMocks.getArtifactTree.mockResolvedValue([tree[0]])
@@ -291,8 +296,71 @@ describe('ArtifactsView', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(router.currentRoute.value.query).toEqual({ project: 'p1' })
-    expect(lastListCall()).toMatchObject({ projectId: 'p1' })
+    expect(router.currentRoute.value.query).toEqual({})
+    expect(lastListCall()).toMatchObject({})
+  })
+
+  it('clears the previous source before loading and exposes a failed source request', async () => {
+    const w = await mountAt('/artifacts')
+    await flushPromises()
+    let fail!: (error: Error) => void
+    apiMocks.listArtifacts.mockImplementationOnce(() => new Promise((_, reject) => { fail = reject }))
+    await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
+    await w.find('[data-resource-key="workflow:w1"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="artifacts-list-skeleton"]').exists()).toBe(true)
+    expect(w.find('[data-testid="list-item"]').exists()).toBe(false)
+    expect(w.find('[data-testid="preview-id"]').text()).toBe('')
+    fail(new Error('network'))
+    await flushPromises()
+    expect(w.find('[data-testid="artifacts-list-failed"]').exists()).toBe(true)
+    await w.find('[data-testid="artifacts-list-failed"] button').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="list-item"]').exists()).toBe(true)
+  })
+
+  it('returns a narrow canvas to the list after deleting the last file on a later page', async () => {
+    viewport.mobile = true
+    apiMocks.listArtifacts.mockResolvedValue({ ...page([art('first')]), total: 21 })
+    const w = await mountAt('/artifacts')
+    await flushPromises()
+    apiMocks.listArtifacts.mockResolvedValueOnce({ ...page([art('last')]), total: 21 })
+    w.findComponent({ name: 'Pagination' }).vm.$emit('update:page', 2)
+    await flushPromises()
+    await w.find('[data-testid="list-item"]').trigger('click')
+    expect(w.find('[data-testid="artifacts-preview-pane"]').exists()).toBe(true)
+    apiMocks.listArtifacts.mockResolvedValueOnce({ ...page([]), total: 20 })
+    apiMocks.listArtifacts.mockResolvedValueOnce({ ...page([art('first')]), total: 20 })
+    await w.find('[data-testid="preview-delete"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="artifacts-list-pane"]').exists()).toBe(true)
+    expect(w.find('[data-testid="artifacts-preview-pane"]').exists()).toBe(false)
+    expect(w.find('[data-testid="list-item"]').text()).toBe('first')
+    expect(lastListCall()).toMatchObject({ page: 1 })
+  })
+
+  it('closes sources with Escape and restores trigger focus', async () => {
+    const w = await mountAt('/artifacts')
+    await flushPromises()
+    const trigger = w.find('[data-testid="artifacts-tree-toggle"]')
+    await trigger.trigger('click')
+    await flushPromises()
+    expect(document.activeElement?.tagName).toBe('INPUT')
+    await w.find('[role="dialog"]').trigger('keydown', { key: 'Escape' })
+    await flushPromises()
+    expect(w.find('[data-testid="artifacts-tree-sheet"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
+  it('selecting the current source closes without fetching again', async () => {
+    const w = await mountAt('/artifacts')
+    await flushPromises()
+    const calls = apiMocks.listArtifacts.mock.calls.length
+    await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
+    await w.find('[data-resource-key="all"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="artifacts-tree-sheet"]').exists()).toBe(false)
+    expect(apiMocks.listArtifacts.mock.calls.length).toBe(calls)
   })
 
   it('mobile: tree lives in a sheet toggled from the breadcrumb bar', async () => {
@@ -306,9 +374,9 @@ describe('ArtifactsView', () => {
     await w.find('[data-testid="artifacts-tree-toggle"]').trigger('click')
     expect(w.find('[data-testid="artifacts-tree-sheet"]').exists()).toBe(true)
 
-    await w.find('[data-tree-key="p:p2"]').trigger('click')
+    await w.find('[data-resource-key="workflow:w1"]').trigger('click')
     await flushPromises()
-    expect(router.currentRoute.value.query).toEqual({ project: 'p2' })
+    expect(router.currentRoute.value.query).toEqual({ workflow: 'w1' })
     expect(w.find('[data-testid="artifacts-tree-sheet"]').exists()).toBe(false)
 
     await w.find('[data-testid="list-item"]').trigger('click')

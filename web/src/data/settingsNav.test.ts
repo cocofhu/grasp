@@ -1,67 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import {
-  isSettingsChrome,
-  settingsItemActive,
-  settingsNavItems,
-} from './settingsNav'
+import { isSettingsChrome, settingsItemActive, settingsNavItems } from './settingsNav'
 import { shellNavPaths } from './shellNavPaths'
 
-describe('settingsNav (plan g2.1 / g2.2 / g2.3)', () => {
-  it('lists subnav in the confirmed order', () => {
-    expect(settingsNavItems.map((i) => i.labelKey)).toEqual([
-      'nav.projects',
-      'nav.notifications',
-      'nav.stats',
-      'nav.artifacts',
-      'nav.agents',
-      'nav.sandboxes',
-      'nav.general',
-      'nav.integrations',
-    ])
-    expect(settingsNavItems.map((i) => i.to)).toEqual([
-      '/projects',
-      '/notifications',
-      '/stats',
-      '/artifacts',
-      '/agents',
-      '/sandboxes',
-      '/settings',
-      '/settings',
-    ])
+describe('workspace settings navigation', () => {
+  it('keeps every former project capability reachable in three clear groups', () => {
+    const paths = settingsNavItems.map((item) => item.to)
+    expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/requirements', '/assistant', '/settings/notification-policy', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/agents', '/settings/shared-agent', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']))
+    expect(settingsNavItems.filter((item) => item.groupKey).map((item) => item.groupKey)).toEqual(['nav.groupWorkspaceTools', 'nav.groupExecution', 'nav.groupPlatform'])
+    expect(paths.some((path) => path.startsWith('/projects'))).toBe(false)
+    expect(new Set(paths.filter((path) => path !== '/settings')).size).toBe(paths.filter((path) => path !== '/settings').length)
   })
-
-  it('treats settings-state routes as chrome and skips full pages (plan g3.1)', () => {
-    expect(isSettingsChrome('/settings')).toBe(true)
-    expect(isSettingsChrome('/settings/other')).toBe(true)
-    expect(isSettingsChrome('/projects')).toBe(true)
-    expect(isSettingsChrome('/projects/abc')).toBe(true)
-    expect(isSettingsChrome('/notifications')).toBe(true)
-    expect(isSettingsChrome('/agents')).toBe(true)
-    expect(isSettingsChrome('/dashboard')).toBe(false)
-    expect(isSettingsChrome('/gates')).toBe(false)
-    expect(isSettingsChrome('/runs')).toBe(false)
-    expect(isSettingsChrome('/runs/rid', true)).toBe(false)
-    expect(isSettingsChrome('/sandboxes/sid/console', true)).toBe(false)
+  it('keeps operational tools and full pages in workspace chrome', () => {
+    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/workflows', '/runs', '/gates']) expect(isSettingsChrome(path)).toBe(false)
+    for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/stats', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
+    expect(isSettingsChrome('/sandboxes/1/console', true)).toBe(false)
   })
-
-  it('highlights prefix routes and exact general vs integrations (plan g2.2 / g2.3)', () => {
-    const projects = settingsNavItems[0]
-    const general = settingsNavItems.find((i) => i.labelKey === 'nav.general')!
-    const integ = settingsNavItems.find((i) => i.labelKey === 'nav.integrations')!
-    expect(settingsItemActive(projects, '/projects/p1', {})).toBe(true)
-    expect(settingsItemActive(projects, '/runs', {})).toBe(false)
-    expect(settingsItemActive(general, '/settings', {})).toBe(true)
-    expect(settingsItemActive(general, '/settings/other', {})).toBe(false)
-    expect(settingsItemActive(general, '/settings', { integrations: '1' })).toBe(false)
-    expect(settingsItemActive(integ, '/settings', { integrations: '1' })).toBe(true)
-    expect(settingsItemActive(integ, '/settings', {})).toBe(false)
-  })
-
-  it('shellNavPaths includes both workspace and settings destinations', () => {
-    const paths = shellNavPaths()
-    expect(paths).toContain('/dashboard')
-    expect(paths).toContain('/settings')
-    expect(paths).toContain('/projects')
-    expect(paths).not.toContain('/settings/platform-rules')
+  it('separates exact general settings, integrations, notification policy and messages', () => {
+    const find = (key: string) => settingsNavItems.find((item) => item.labelKey === `nav.${key}`)!
+    expect(settingsItemActive(find('general'), '/settings', {})).toBe(true)
+    expect(settingsItemActive(find('general'), '/settings/credentials', {})).toBe(false)
+    expect(settingsItemActive(find('general'), '/settings', { integrations: '1' })).toBe(false)
+    expect(settingsItemActive(find('integrations'), '/settings', { integrations: '1' })).toBe(true)
+    expect(settingsItemActive(find('notificationPolicy'), '/notifications', {})).toBe(false)
+    expect(settingsItemActive(find('notifications'), '/notifications', {})).toBe(true)
+    expect(shellNavPaths()).toEqual(expect.arrayContaining(['/dashboard', '/workflows', '/settings/credentials']))
   })
 })

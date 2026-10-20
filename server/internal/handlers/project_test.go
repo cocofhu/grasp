@@ -4,176 +4,58 @@ import (
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/tokenledger/ledgertest"
 )
 
-func TestProjectCRUDAndErrors(t *testing.T) {
-	hn := newHarness(t)
-
-	// List (includes default project from migrate)
-	w := hn.do("GET", "/api/projects", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("list: %d %s", w.Code, w.Body.String())
+func TestWorkspaceSettingsAndRemovedProjectCRUD(t *testing.T) {
+	h := newHarness(t)
+	for _, method := range []string{"GET", "POST", "DELETE"} {
+		if w := h.do(method, "/api/projects", nil); w.Code != 404 {
+			t.Fatalf("old project route %s = %d", method, w.Code)
+		}
 	}
-
-	// Create
-	w = hn.do("POST", "/api/projects", map[string]any{
-		"name":        "ProjA",
-		"description": "desc",
-		"variables":   []map[string]any{{"name": "x", "type": "string", "value": "1"}},
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	w := h.do("GET", "/api/workspace", nil)
+	if w.Code != 200 || jsonField(w.Body.String(), "id") != models.DefaultProjectID {
+		t.Fatal(w.Body.String())
 	}
-	id := jsonField(w.Body.String(), "id")
-	if id == "" {
-		t.Fatalf("missing id: %s", w.Body.String())
+	w = h.do("PUT", "/api/workspace", map[string]any{"name": "Workspace", "description": "updated", "variables": []map[string]any{{"name": "TOKEN", "type": "string", "secret": true, "value": "sensitive"}}})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "****") || strings.Contains(w.Body.String(), "sensitive") {
+		t.Fatal(w.Body.String())
 	}
-	if strings.Contains(w.Body.String(), "sandboxEnv") {
-		t.Fatalf("project API must not return sandboxEnv: %s", w.Body.String())
+	for _, body := range []any{map[string]any{"name": " "}, "invalid"} {
+		if w = h.do("PUT", "/api/workspace", body); w.Code != 400 {
+			t.Fatalf("invalid settings %d", w.Code)
+		}
 	}
-
-	// Get
-	w = hn.do("GET", "/api/projects/"+id, nil)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "ProjA") {
-		t.Fatalf("get: %d %s", w.Code, w.Body.String())
-	}
-
-	// Get missing
-	w = hn.do("GET", "/api/projects/missing-id", nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("get missing: %d", w.Code)
-	}
-
-	// Create empty name
-	w = hn.do("POST", "/api/projects", map[string]any{"name": "  "})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("empty name: %d %s", w.Code, w.Body.String())
-	}
-
-	// Create duplicate name
-	w = hn.do("POST", "/api/projects", map[string]any{"name": "ProjA"})
-	if w.Code != http.StatusConflict {
-		t.Fatalf("dup name: %d %s", w.Code, w.Body.String())
-	}
-
-	// Create bad JSON
-	w = hn.do("POST", "/api/projects", "not-an-object")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("bad json create: %d", w.Code)
-	}
-
-	// Shared agent config stores project-level non-secret env and credential ids.
-	w = hn.do("PUT", "/api/projects/"+id+"/shared-agent-config", map[string]any{
-		"acpBackend":           "cursor",
-		"aiCredentialId":       "cred-cursor",
-		"openCodeCredentialId": "",
-		"env":                  map[string]string{"GITLAB_URL": "https://gl"},
-	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("shared agent put: %d %s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), "GITLAB_URL") || !strings.Contains(w.Body.String(), `"aiCredentialId":"cred-cursor"`) {
-		t.Fatalf("shared agent env or credential id missing: %s", w.Body.String())
-	}
-	if strings.Contains(w.Body.String(), "sk-") {
-		t.Fatalf("shared agent response leaked a secret: %s", w.Body.String())
-	}
-	w = hn.do("GET", "/api/projects/"+id+"/shared-agent-config", nil)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"aiCredentialId":"cred-cursor"`) {
-		t.Fatalf("shared agent get: %d %s", w.Code, w.Body.String())
-	}
-
-	// Update
-	newName := "ProjA2"
-	newDesc := "updated"
-	w = hn.do("PUT", "/api/projects/"+id, map[string]any{
-		"name":        newName,
-		"description": newDesc,
-		"variables":   []map[string]any{{"name": "y", "type": "string", "value": "2"}},
-	})
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "ProjA2") {
-		t.Fatalf("update: %d %s", w.Code, w.Body.String())
-	}
-
-	// Update missing
-	w = hn.do("PUT", "/api/projects/missing-id", map[string]any{"name": "x"})
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("update missing: %d", w.Code)
-	}
-
-	// Update empty name
-	empty := "  "
-	w = hn.do("PATCH", "/api/projects/"+id, map[string]any{"name": empty})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("update empty name: %d %s", w.Code, w.Body.String())
-	}
-
-	// Update bad JSON
-	w = hn.do("PUT", "/api/projects/"+id, "bad")
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("bad json update: %d", w.Code)
-	}
-
-	// Delete ok
-	w = hn.do("DELETE", "/api/projects/"+id, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
-	}
-
-	// Delete missing
-	w = hn.do("DELETE", "/api/projects/"+id, nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("delete missing: %d", w.Code)
+	for _, method := range []string{"POST", "DELETE"} {
+		if w = h.do(method, "/api/workspace", nil); w.Code != 404 {
+			t.Fatalf("singleton mutation %s = %d", method, w.Code)
+		}
 	}
 }
 
-func TestProjectDeleteWithWorkflows(t *testing.T) {
-	hn := newHarness(t)
-	w := hn.do("POST", "/api/projects", map[string]any{"name": "HasWF"})
-	if w.Code != http.StatusOK {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	id := jsonField(w.Body.String(), "id")
-
-	wf := models.WorkflowDef{
-		ID: "wf-proj-block", Name: "blocked", Version: 1,
-		ProjectID: id, Graph: models.Graph{},
-	}
-	if err := hn.db.Create(&wf).Error; err != nil {
+func TestWorkspaceCannotBeDeletedWithWorkflows(t *testing.T) {
+	h := newHarness(t)
+	if err := h.db.Create(&models.WorkflowDef{ID: "protected", ProjectID: models.DefaultProjectID, Name: "protected"}).Error; err != nil {
 		t.Fatal(err)
 	}
-
-	w = hn.do("DELETE", "/api/projects/"+id, nil)
-	if w.Code != http.StatusConflict {
-		t.Fatalf("delete with workflows: %d %s", w.Code, w.Body.String())
+	if w := h.do("DELETE", "/api/workspace", nil); w.Code != 404 {
+		t.Fatal(w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "工作流") {
-		t.Fatalf("expected workflows error body: %s", w.Body.String())
+	if _, ok := h.h.Projects.Get(models.DefaultProjectID); !ok {
+		t.Fatal("workspace deleted")
 	}
 }
 
-func TestProjectNilService(t *testing.T) {
-	hn := newHarness(t)
-	hn.h.Projects = nil
-
-	if w := hn.do("GET", "/api/projects", nil); w.Code != http.StatusOK {
-		t.Fatalf("list nil: %d", w.Code)
-	}
-	if w := hn.do("GET", "/api/projects/x", nil); w.Code != http.StatusNotFound {
-		t.Fatalf("get nil: %d", w.Code)
-	}
-	if w := hn.do("POST", "/api/projects", map[string]any{"name": "n"}); w.Code != http.StatusInternalServerError {
-		t.Fatalf("create nil: %d", w.Code)
-	}
-	if w := hn.do("PUT", "/api/projects/x", map[string]any{"name": "n"}); w.Code != http.StatusInternalServerError {
-		t.Fatalf("update nil: %d", w.Code)
-	}
-	if w := hn.do("DELETE", "/api/projects/x", nil); w.Code != http.StatusInternalServerError {
-		t.Fatalf("delete nil: %d", w.Code)
+func TestWorkspaceUnavailableFailsClosed(t *testing.T) {
+	h := newHarness(t)
+	h.h.Projects = nil
+	for _, method := range []string{"GET", "PUT"} {
+		if w := h.do(method, "/api/workspace", nil); w.Code != 409 {
+			t.Fatalf("missing workspace %s: %d", method, w.Code)
+		}
 	}
 }
 
@@ -195,7 +77,7 @@ func jsonField(body, key string) string {
 func TestProjectTotalTokensInListAndGet(t *testing.T) {
 	hn := newHarness(t)
 
-	w := hn.do("POST", "/api/projects", map[string]any{"name": "TokProj", "description": "d"})
+	w := hn.seedWorkspace(map[string]any{"name": "TokProj", "description": "d"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -204,7 +86,7 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 	}
 	id := jsonField(w.Body.String(), "id")
 
-	w = hn.do("GET", "/api/projects/"+id, nil)
+	w = hn.do("GET", "/api/workspace", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":null`) {
 		t.Fatalf("get empty: %d %s", w.Code, w.Body.String())
 	}
@@ -224,120 +106,13 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 
 	must(ledgertest.Sync(hn.db))
 
-	w = hn.do("GET", "/api/projects/"+id, nil)
+	w = hn.do("GET", "/api/workspace", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
 		t.Fatalf("get with usage: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do("GET", "/api/projects", nil)
+	w = hn.do("GET", "/api/workspace", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
 		t.Fatalf("list with usage: %d %s", w.Code, w.Body.String())
-	}
-}
-
-func TestGetProjectTokenStats(t *testing.T) {
-	hn := newHarness(t)
-
-	w := hn.do("POST", "/api/projects", map[string]any{"name": "StatsProj", "description": "d"})
-	if w.Code != http.StatusOK {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	id := jsonField(w.Body.String(), "id")
-
-	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=30d&timezone=UTC", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("empty stats: %d %s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), `"empty":true`) {
-		t.Fatalf("want empty true: %s", w.Body.String())
-	}
-
-	w = hn.do("GET", "/api/projects/"+id+"/token-stats?timezone=UTC", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("omit window: %d %s", w.Code, w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), `"window":"30d"`) {
-		t.Fatalf("project token-stats omitted window must stay 30d: %s", w.Body.String())
-	}
-
-	must := func(err error) {
-		t.Helper()
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	now := time.Now().UTC()
-	must(hn.db.Create(&models.WorkflowDef{ID: "wf-stats", ProjectID: id, Name: "w", Version: 1}).Error)
-	must(hn.db.Create(&models.Run{
-		ID: "run-stats", WorkflowID: "wf-stats", WorkflowName: "approve-main",
-		Status: "completed", StartedAt: now,
-	}).Error)
-	must(hn.db.Create(&models.StateRun{
-		RunID: "run-stats", NodeID: "n1", Status: "completed",
-		StartedAt: &now,
-		Usage:     &models.TokenUsage{InputTokens: 10, OutputTokens: 5},
-	}).Error)
-
-	must(ledgertest.Sync(hn.db))
-
-	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=all&timezone=UTC", nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("stats: %d %s", w.Code, w.Body.String())
-	}
-	body := w.Body.String()
-	if !strings.Contains(body, `"empty":false`) || !strings.Contains(body, `"total":15`) {
-		t.Fatalf("unexpected body: %s", body)
-	}
-	if !strings.Contains(body, `"bucketWidth":"week"`) {
-		t.Fatalf("all should be week: %s", body)
-	}
-
-	// Same ledger the board reads: studio with this project counts; studio
-	// without a project and another project's rows do not. Query projectId
-	// cannot retarget the path project. plan coverage: g1.1 g1.2 g1.3 g4.1
-	other := hn.do("POST", "/api/projects", map[string]any{"name": "OtherStats", "description": "d"})
-	if other.Code != http.StatusOK {
-		t.Fatalf("create other: %d %s", other.Code, other.Body.String())
-	}
-	otherID := jsonField(other.Body.String(), "id")
-	must(hn.db.Create(&models.TokenUsageEvent{
-		CreatedAt: now, Source: "studio", Phase: "chat", Status: "ok",
-		ProjectID: id, ProjectName: "StatsProj", ModelKey: "m",
-		InputTokens: 7, OutputTokens: 3,
-	}).Error)
-	must(hn.db.Create(&models.TokenUsageEvent{
-		CreatedAt: now, Source: "studio", Phase: "chat", Status: "ok",
-		ModelKey: "orphan", InputTokens: 1000,
-	}).Error)
-	must(hn.db.Create(&models.TokenUsageEvent{
-		CreatedAt: now, Source: "workflow", Phase: "production", Status: "ok",
-		ProjectID: otherID, ProjectName: "OtherStats", WorkflowID: "wf-other", ModelKey: "m",
-		InputTokens: 50,
-	}).Error)
-
-	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=all&timezone=UTC&projectId="+otherID, nil)
-	if w.Code != http.StatusOK {
-		t.Fatalf("locked stats: %d %s", w.Code, w.Body.String())
-	}
-	lockedBody := w.Body.String()
-	if !strings.Contains(lockedBody, `"total":25`) || strings.Contains(lockedBody, `"total":1000`) || strings.Contains(lockedBody, `"total":50`) {
-		t.Fatalf("project lock/studio scope: %s", lockedBody)
-	}
-	global := hn.do("GET", "/api/stats/token?window=all&timezone=UTC&projectId="+id, nil)
-	if global.Code != http.StatusOK {
-		t.Fatalf("global: %d %s", global.Code, global.Body.String())
-	}
-	if !strings.Contains(global.Body.String(), `"total":25`) {
-		t.Fatalf("global project filter should match board: %s", global.Body.String())
-	}
-
-	w = hn.do("GET", "/api/projects/"+id+"/token-stats?window=bad", nil)
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("bad window: %d %s", w.Code, w.Body.String())
-	}
-
-	w = hn.do("GET", "/api/projects/nope/token-stats?window=7d", nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("missing project: %d", w.Code)
 	}
 }

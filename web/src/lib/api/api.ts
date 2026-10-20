@@ -4,7 +4,7 @@ export type * from './apiTypes'
 import { authRedirectPath } from '../composables/useAuth'
 import { req } from './httpCore'
 import type { AuthLoginResponse, AuthMeResponse } from './apiTypes'
-import { projectsClient } from './clients/projectsClient'
+import { workspaceClient } from './clients/workspaceClient'
 import { pmClient } from './clients/pmClient'
 import { workflowsClient } from './clients/workflowsClient'
 import { runsClient } from './clients/runsClient'
@@ -16,7 +16,7 @@ import { statsClient } from './clients/statsClient'
 import { notificationsClient } from './clients/notificationsClient'
 
 export const api = {
-  ...projectsClient,
+  ...workspaceClient,
   ...pmClient,
   ...workflowsClient,
   ...runsClient,

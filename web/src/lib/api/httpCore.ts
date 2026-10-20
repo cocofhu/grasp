@@ -1,4 +1,5 @@
 import { reactive } from 'vue'
+import { invalidateWorkflowCatalog } from './workflowCatalogEvents'
 import { i18n } from '../shared/i18n'
 import {
   isDraining,
@@ -89,7 +90,9 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     throw Object.assign(new Error(msg), { status: res.status, ...extra })
   }
   apiState.online = true
-  return (await res.json()) as T
+  const result = (await res.json()) as T
+  if (method !== 'GET' && /^\/workflows(?:\/|$)/.test(path)) invalidateWorkflowCatalog()
+  return result
 }
 
 // origin resolves the API origin (absolute VITE_API_BASE, else same-origin).

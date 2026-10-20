@@ -7,6 +7,8 @@ import type { PlanDoc } from '../PlanView.vue'
 export type GateApprovalProductEditorExpose = {
   isDirty: { value: boolean }
   discard: () => void
+  selectProduct?: (name: string) => void
+  showPreview?: () => void
 }
 
 export type GateApprovalFeedbackChatExpose = {
@@ -88,7 +90,6 @@ export type GateApprovalState = {
   useUnifiedPreviewBudget: boolean
   contentFitChromeOffsetPx: number
   CONTENT_FIT_PREVIEW_MAX_VH: number
-  REVIEW_SHELL_WIDTH_KEY_APPROVAL: string
 
   shouldHideGateForm: boolean
   footerActions: NonNullable<Gate['actions']>

@@ -46,17 +46,20 @@ func grantAdmin(t *testing.T) {
 	})
 }
 
-func TestAgentProjectIDRequired(t *testing.T) {
+func TestAgentProjectIDDefaultsToWorkspace(t *testing.T) {
 	hn := newHarness(t)
 	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "no-home"})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("create without projectId want 400 got %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create without projectId want 201 got %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "no-home", "projectId": "proj_dead"})
+	if ag, ok := hn.h.Agents.Get("no-home"); !ok || ag.ProjectID != models.DefaultProjectID {
+		t.Fatalf("create without projectId must bind the workspace, got %+v", ag)
+	}
+	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "foreign-home", "projectId": "proj_dead"})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("create with missing project want 400 got %d %s", w.Code, w.Body.String())
 	}
-	if hn.h.Agents.Exists("no-home") {
+	if hn.h.Agents.Exists("foreign-home") {
 		t.Fatal("rejected create must not persist")
 	}
 
@@ -65,12 +68,12 @@ func TestAgentProjectIDRequired(t *testing.T) {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
 	w = hn.do(http.MethodPut, "/api/agents/home", map[string]any{"acpBackend": "cursor", "name": "home"})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("save without projectId want 400 got %d %s", w.Code, w.Body.String())
+	if w.Code != http.StatusOK {
+		t.Fatalf("save without projectId want 200 got %d %s", w.Code, w.Body.String())
 	}
 	ag, ok := hn.h.Agents.Get("home")
 	if !ok || ag.ProjectID != models.DefaultProjectID {
-		t.Fatalf("binding must survive rejected save, got %+v", ag)
+		t.Fatalf("binding must survive save without projectId, got %+v", ag)
 	}
 }
 
@@ -98,11 +101,11 @@ func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 	}
 }
 
-func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
+func TestAgentWorkspaceScopeRejectsSwitchWithoutPurging(t *testing.T) {
 	hn := newHarness(t)
 	pm := attachPm(t, hn)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "OldHome"})
+	w := hn.seedWorkspace(map[string]any{"name": "OldHome"})
 	if w.Code != 200 {
 		t.Fatalf("create project A: %d %s", w.Code, w.Body.String())
 	}
@@ -110,13 +113,14 @@ func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &projA)
 	pidA := projA["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "NewHome"})
+	w = hn.seedWorkspace(map[string]any{"name": "NewHome"})
 	if w.Code != 200 {
 		t.Fatalf("create project B: %d %s", w.Code, w.Body.String())
 	}
 	var projB map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &projB)
 	pidB := projB["id"].(string)
+	_ = pidB
 
 	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor",
 		"name": "switcher", "projectId": pidA,
@@ -132,17 +136,17 @@ func TestSaveAgentPurgesOnProjectSwitch(t *testing.T) {
 	}
 
 	w = hn.do(http.MethodPut, "/api/agents/switcher", map[string]any{"acpBackend": "cursor",
-		"name": "switcher", "projectId": pidB,
+		"name": "switcher", "projectId": "foreign",
 	})
-	if w.Code != http.StatusOK {
+	if w.Code != http.StatusBadRequest {
 		t.Fatalf("switch project: %d %s", w.Code, w.Body.String())
 	}
 	mem, _ := pm.ListMemories(pidA, "switcher")
-	if len(mem) != 0 {
+	if len(mem) != 1 {
 		t.Fatalf("old memories should be purged: %v", mem)
 	}
 	threads, _ := pm.ListThreadsForAgent(pidA, "switcher")
-	if len(threads) != 0 {
+	if len(threads) != 1 {
 		t.Fatalf("old threads should be purged: %v", threads)
 	}
 }
@@ -151,7 +155,7 @@ func TestDeleteAgentPurgesScopedData(t *testing.T) {
 	hn := newHarness(t)
 	pm := attachPm(t, hn)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DelHome"})
+	w := hn.seedWorkspace(map[string]any{"name": "DelHome"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
@@ -183,7 +187,7 @@ func TestAgentDataAPIUsesHomeProject(t *testing.T) {
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DataHome"})
+	w := hn.seedWorkspace(map[string]any{"name": "DataHome"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
@@ -232,7 +236,7 @@ func TestAgentCronJobsListAllowedForNonAdmin(t *testing.T) {
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronACLHome"})
+	w := hn.seedWorkspace(map[string]any{"name": "CronACLHome"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
@@ -385,15 +389,16 @@ func TestPmLeaderBindRejectsWrongHomeProject(t *testing.T) {
 	hn := newHarness(t)
 	attachPm(t, hn)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "PM1"})
+	w := hn.seedWorkspace(map[string]any{"name": "PM1"})
 	if w.Code != 200 {
 		t.Fatalf("project: %d %s", w.Code, w.Body.String())
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
+	_ = pid
 
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "Other"})
+	w = hn.seedWorkspace(map[string]any{"name": "Other"})
 	if w.Code != 200 {
 		t.Fatalf("other: %d %s", w.Code, w.Body.String())
 	}
@@ -402,11 +407,11 @@ func TestPmLeaderBindRejectsWrongHomeProject(t *testing.T) {
 
 	if err := hn.h.Agents.Save(services.Agent{
 		AcpBackend: services.AcpBackendCursor,
-		Name:       "elsewhere", ProjectID: other["id"].(string),
+		Name:       "elsewhere", ProjectID: "foreign",
 	}); err != nil {
 		t.Fatal(err)
 	}
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "elsewhere",
 	})
 	if w.Code != http.StatusConflict {

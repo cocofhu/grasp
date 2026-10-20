@@ -1,30 +1,25 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref, toRef, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import RunBoardColumn from '@/components/board/RunBoardColumn.vue'
 import RunBoardPreviewDrawer from '@/components/board/RunBoardPreviewDrawer.vue'
 import RunBoardStatusListModal from '@/components/board/RunBoardStatusListModal.vue'
-import TokenStatsPanel from '@/components/board/token-stats/TokenStatsPanel.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import Icon from '@/components/ui/Icon.vue'
 import { serializeStatusQuery } from '@/lib/composables/useStatusFilter'
 import { useRunBoard, type BoardColumnKey } from '@/lib/run/useRunBoard'
 import type { Run } from '@/lib/shared/types'
 
 const props = defineProps<{
-  /** Required project boundary — board never loads unfiltered platform runs. */
+  /** Internal workspace identity for the shared board. */
   projectId: string
-  /** When embedded in project detail, hide the standalone page heading. */
+  /** Hide the standalone heading when hosted by the workspace tool page. */
   embedded?: boolean
 }>()
 
 const router = useRouter()
-const route = useRoute()
 const { t } = useI18n()
-
-function queryText(key: string): string {
-  const v = route.query[key]
-  return typeof v === 'string' ? v : ''
-}
 
 const extraEnabled = reactive({
   queued: false,
@@ -74,6 +69,22 @@ const extraCols: { key: BoardColumnKey; titleKey: string; emptyKey: string }[] =
 const visibleExtras = computed(() => extraCols.filter((c) => extraEnabled[c.key as keyof typeof extraEnabled]))
 
 const showInitialLoading = computed(() => loading.value && !hasLoaded.value)
+const refreshing = ref(false)
+const overview = computed(() => mainCols.map((col) => {
+  const state = column(col.key)
+  return {
+    key: col.key,
+    label: col.key === 'completed' ? t('pages.board.overviewRecent') : t(col.titleKey),
+    count: !hasLoaded.value || state.error ? '—' : col.key === 'completed' ? state.items.length : state.total,
+  }
+}))
+
+async function refreshBoard() {
+  if (refreshing.value) return
+  refreshing.value = true
+  try { await load({ intent: 'user_initiated' }) }
+  finally { refreshing.value = false }
+}
 
 function truncatedHint(key: BoardColumnKey): string {
   const col = column(key)
@@ -120,7 +131,6 @@ function goMoreCompleted() {
     path: '/runs',
     query: {
       status: serializeStatusQuery(['completed']),
-      projectId: props.projectId,
     },
   })
 }
@@ -154,13 +164,19 @@ onUnmounted(() => {
 
 <template>
   <!-- plan g1.3: fill-height + single overflow-y-auto (standalone + embedded) -->
-  <div data-testid="board-view" class="flex h-full min-h-0 min-w-0 flex-col">
-    <div v-if="!embedded" class="mb-5 flex shrink-0 flex-wrap items-start justify-between gap-4">
-      <div>
-        <h2 class="text-lg font-semibold text-txt">{{ t('pages.board.title') }}</h2>
-        <p class="text-sm text-txt3">{{ t('pages.board.subtitle') }}</p>
+  <div data-testid="board-view" class="board-workbench flex h-full min-h-0 min-w-0 flex-col">
+    <header class="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3" data-testid="board-toolbar">
+      <div class="min-w-0">
+        <h2 v-if="!embedded" class="text-lg font-semibold text-txt">{{ t('pages.board.title') }}</h2>
+        <p class="text-[13px] leading-6 text-txt3">{{ t('pages.board.subtitle') }}</p>
       </div>
-    </div>
+      <nav class="flex flex-wrap items-center gap-2 text-xs" :aria-label="t('pages.board.actionsLabel')">
+        <RouterLink to="/stats" class="board-text-link" data-testid="board-usage-link"><Icon name="chart" :size="14" />{{ t('pages.board.usage') }}</RouterLink>
+        <span class="h-3 w-px bg-line" aria-hidden="true" />
+        <RouterLink to="/runs" class="board-text-link" data-testid="board-all-runs"><Icon name="runs" :size="14" />{{ t('pages.board.allRuns') }}</RouterLink>
+        <AppButton variant="ghost" size="sm" icon="refresh" :loading="refreshing" data-testid="board-refresh" class="min-h-9" @click="refreshBoard">{{ t('pages.board.refresh') }}</AppButton>
+      </nav>
+    </header>
 
     <div class="min-h-0 flex-1 overflow-y-auto">
     <div
@@ -179,15 +195,14 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <TokenStatsPanel
-      :project-id="projectId"
-      :initial-window="queryText('window')"
-      :initial-from="queryText('from')"
-      :initial-to="queryText('to')"
-      :initial-granularity="queryText('granularity')"
-    />
+    <section class="board-overview mb-5" :aria-label="t('pages.board.overview')" data-testid="board-overview">
+      <div class="board-overview-heading"><span class="inline-block h-1.5 w-1.5 rounded-full bg-ok/70" aria-hidden="true" /><span>{{ t('pages.board.overview') }}</span></div>
+      <dl class="board-overview-values">
+        <div v-for="item in overview" :key="item.key" :data-testid="`board-overview-${item.key}`"><dt>{{ item.label }}</dt><dd>{{ item.count }}</dd></div>
+      </dl>
+    </section>
 
-    <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
       <div class="flex flex-wrap items-center gap-2">
         <span class="mr-1 text-xs text-txt3">{{ t('pages.board.filters.label') }}</span>
         <button
@@ -197,23 +212,20 @@ onUnmounted(() => {
           class="rounded-md inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs transition"
           :class="
             extraEnabled[key]
-              ? 'border-accent-2/45 bg-accent-dim text-txt'
+              ? 'border-line-strong bg-elevated text-txt'
               : 'border-line bg-surface text-txt2 hover:border-line-strong'
           "
           :data-testid="`board-filter-${key}`"
           @click="toggleExtra(key)"
         >
-          <span
-            class="inline-block h-2 w-2 rounded-full border"
-            :class="extraEnabled[key] ? 'border-accent-2 bg-accent-2' : 'border-line-strong bg-transparent'"
-          />
+          <Icon :name="extraEnabled[key] ? 'check' : 'plus'" :size="12" class="text-txt3" />
           {{ t(`common.status.${key}`) }}
         </button>
       </div>
       <span class="text-[11px] text-txt3">{{ t('pages.board.toolbarHint') }}</span>
     </div>
 
-    <div class="grid grid-cols-1 items-start gap-3.5 md:grid-cols-3">
+    <div class="board-columns">
       <RunBoardColumn
         v-for="col in mainCols"
         :key="col.key"
@@ -246,7 +258,7 @@ onUnmounted(() => {
 
     <div
       v-if="visibleExtras.length"
-      class="mt-3.5 grid grid-cols-1 items-start gap-3.5 sm:grid-cols-2 lg:grid-cols-3"
+      class="board-columns mt-3.5"
       data-testid="board-extra-columns"
     >
       <RunBoardColumn
@@ -278,3 +290,31 @@ onUnmounted(() => {
     />
   </div>
 </template>
+
+<style scoped>
+.board-workbench { container: board-workbench / inline-size; }
+.board-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 14px; }
+@container board-workbench (max-width: 1039px) {
+  .board-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@container board-workbench (max-width: 799px) {
+  .board-columns { grid-template-columns: minmax(0, 1fr); }
+}
+
+.board-text-link { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 6px; border-radius: 6px; color: rgb(var(--c-txt3)); }
+.board-text-link:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .035); }
+.board-text-link:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
+.board-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 32px; border-block: 1px solid rgb(var(--c-line) / .7); padding: 15px 2px; }
+.board-overview-heading { display: flex; align-items: center; gap: 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
+.board-overview-values { display: flex; flex: 1; gap: 40px; margin: 0; }
+.board-overview-values > div { display: flex; align-items: baseline; gap: 12px; }
+.board-overview-values dt { color: rgb(var(--c-txt3)); font-size: 12px; white-space: nowrap; }
+.board-overview-values dd { margin: 0; color: rgb(var(--c-txt)); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+@container board-workbench (max-width: 799px) {
+  .board-overview { gap: 14px; padding-block: 16px; }
+  .board-overview-heading { width: 100%; }
+  .board-overview-values { justify-content: space-between; gap: 12px; }
+  .board-overview-values > div { flex-direction: column; gap: 8px; }
+  .board-text-link { min-height: 44px; }
+}
+</style>

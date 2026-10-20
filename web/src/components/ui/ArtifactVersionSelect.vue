@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
 import type { ArtifactVersionChoice } from '@/lib/run/reactArtifactPreview'
 
 const props = withDefaults(
@@ -32,6 +33,7 @@ const GAP = 4
 const MAX_PANEL_HEIGHT = 320
 
 const open = ref(false)
+const hostVisible = inject(conversationPanelVisibleKey, null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
 const panelStyle = ref<Record<string, string>>({})
@@ -93,6 +95,21 @@ function close() {
   open.value = false
 }
 
+function onEscape(event: KeyboardEvent) {
+  if (!open.value || event.key !== 'Escape') return
+  event.preventDefault()
+  event.stopPropagation()
+  close()
+  void nextTick(() => trigger.value?.focus({ preventScroll: true }))
+}
+
+// A hidden, kept-alive artifact panel must not leave its teleported menu behind.
+if (hostVisible) watch(hostVisible, visible => { if (!visible) close() }, { flush: 'sync' })
+watch(open, visible => {
+  if (visible) document.addEventListener('keydown', onEscape, true)
+  else document.removeEventListener('keydown', onEscape, true)
+}, { flush: 'sync' })
+
 function select(choice: ArtifactVersionChoice) {
   if (!choice.available) return
   emit('select', choice)
@@ -121,6 +138,7 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick)
+  document.removeEventListener('keydown', onEscape, true)
   window.removeEventListener('resize', onScrollOrResize)
   window.removeEventListener('scroll', onScrollOrResize, true)
 })

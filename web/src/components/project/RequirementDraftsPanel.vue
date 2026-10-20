@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import { useRequirementDrafts } from '@/lib/project/useRequirementDrafts'
@@ -11,12 +13,14 @@ const {
   t,
   toast,
   isMobile,
+  isNarrowEditor,
   viewMode,
   filter,
   query,
   items,
   catalog,
   loading,
+  loadError,
   selectedId,
   creating,
   saving,
@@ -138,6 +142,29 @@ const {
   fmtTime
 } = useRequirementDrafts(props)
 
+const inspectorOpen = ref(false)
+const hasFilterContext = computed(() => Boolean(catalog.value.length || query.value.trim() || filter.value !== 'open'))
+
+function clearFilters() {
+  query.value = ''
+  if (filter.value !== 'open') setFilter('open')
+  else void loadList({ keepSelection: true })
+}
+
+watch(selectedId, (id) => {
+  inspectorOpen.value = Boolean(id)
+})
+
+async function revealInspector(id: string) {
+  await onSelectFromGantt(id)
+  if (selectedId.value === id) inspectorOpen.value = true
+}
+
+async function onNewMilestone() {
+  await onNewClick()
+  if (showNewModal.value) newModalKind.value = 'milestone'
+}
+
 defineExpose({
   get isDirty() {
     return isDirty.value
@@ -148,93 +175,119 @@ defineExpose({
 
 <template>
   <div
-    class="rounded-lg requirement-drafts flex h-full min-h-0 min-w-0 flex-1 flex-col border border-line bg-base"
+    class="requirement-drafts flex h-full min-h-0 min-w-0 flex-1 flex-col"
     data-testid="requirement-drafts-panel"
   >
-    <!-- Top toolbar -->
-    <div class="flex shrink-0 flex-wrap items-center gap-2 border-b border-line p-3">
-      <div class="seg" data-testid="requirement-drafts-view-segment">
+    <nav class="rd-view-tabs shrink-0" data-testid="requirement-drafts-view-segment" :aria-label="t('pages.projectDetail.tabRequirementDrafts')">
+      <button
+        v-for="mode in (['gantt', 'edit', 'milestones'] as const)"
+        :key="mode"
+        type="button"
+        :class="{ on: viewMode === mode }"
+        :aria-current="viewMode === mode ? 'page' : undefined"
+        :data-testid="`requirement-drafts-view-${mode}`"
+        @click="setViewMode(mode)"
+      >
+        {{ t(`pages.projectDetail.requirementDrafts.${mode === 'edit' ? 'viewEdit' : mode === 'gantt' ? 'viewGantt' : 'viewMilestones'}`) }}
+      </button>
+    </nav>
+
+    <div class="rd-filter-toolbar flex shrink-0 flex-wrap items-center gap-3 border-b border-line/60 py-4">
+      <div class="relative min-w-0 flex-1 basis-48 sm:max-w-xs">
+        <Icon name="search" :size="15" class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-txt3" />
+        <input
+          v-model="query"
+          type="search"
+          class="input w-full !pl-9 text-[13px]"
+          data-testid="requirement-drafts-search"
+          :aria-label="t('pages.projectDetail.requirementDrafts.searchPh')"
+          :placeholder="t('pages.projectDetail.requirementDrafts.searchPh')"
+          @input="onSearchInput"
+        />
+      </div>
+      <div class="rd-status-filter flex items-center gap-1" data-testid="requirement-drafts-filter" role="group" :aria-label="t('pages.projectDetail.requirementDrafts.filterAll')">
         <button
+          v-for="status in (['open', 'done', 'all'] as const)"
+          :key="status"
           type="button"
-          :class="{ on: viewMode === 'edit' }"
-          data-testid="requirement-drafts-view-edit"
-          @click="setViewMode('edit')"
+          :class="{ on: filter === status }"
+          :aria-pressed="filter === status"
+          :data-testid="`requirement-drafts-filter-${status}`"
+          @click="setFilter(status)"
         >
-          {{ t('pages.projectDetail.requirementDrafts.viewEdit') }}
-        </button>
-        <button
-          type="button"
-          :class="{ on: viewMode === 'gantt' }"
-          data-testid="requirement-drafts-view-gantt"
-          @click="setViewMode('gantt')"
-        >
-          {{ t('pages.projectDetail.requirementDrafts.viewGantt') }}
-        </button>
-        <button
-          type="button"
-          :class="{ on: viewMode === 'milestones' }"
-          data-testid="requirement-drafts-view-milestones"
-          @click="setViewMode('milestones')"
-        >
-          {{ t('pages.projectDetail.requirementDrafts.viewMilestones') }}
+          {{ t(`pages.projectDetail.requirementDrafts.${status === 'open' ? 'filterOpen' : status === 'done' ? 'filterDone' : 'filterAll'}`) }}
         </button>
       </div>
-
-      <div class="seg" data-testid="requirement-drafts-filter">
-        <button
-          type="button"
-          :class="{ on: filter === 'open' }"
-          data-testid="requirement-drafts-filter-open"
-          @click="setFilter('open')"
-        >
-          {{ t('pages.projectDetail.requirementDrafts.filterOpen') }}
-        </button>
-        <button
-          type="button"
-          :class="{ on: filter === 'done' }"
-          data-testid="requirement-drafts-filter-done"
-          @click="setFilter('done')"
-        >
-          {{ t('pages.projectDetail.requirementDrafts.filterDone') }}
-        </button>
-        <button
-          type="button"
-          :class="{ on: filter === 'all' }"
-          data-testid="requirement-drafts-filter-all"
-          @click="setFilter('all')"
-        >
-          {{ t('pages.projectDetail.requirementDrafts.filterAll') }}
-        </button>
-      </div>
-
       <AppButton
         variant="primary"
         size="sm"
+        icon="plus"
+        class="ml-auto shrink-0"
         :disabled="creating"
         data-testid="requirement-drafts-new"
         @click="onNewClick"
       >
         {{ t('pages.projectDetail.requirementDrafts.new') }}
       </AppButton>
+    </div>
 
-      <input
-        v-model="query"
-        type="search"
-        class="rounded-md min-w-[160px] flex-1 border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent focus:shadow-[0_0_0_2px_rgba(123,97,255,0.3)]"
-        data-testid="requirement-drafts-search"
-        :placeholder="t('pages.projectDetail.requirementDrafts.searchPh')"
-        @input="onSearchInput"
-      />
+    <div
+      v-if="loadError && !loading"
+      class="flex flex-col items-start gap-3 py-8 text-[13px]"
+      data-testid="requirement-drafts-load-error"
+      role="alert"
+    >
+      <p class="m-0 font-medium text-err">{{ t('pages.projectDetail.requirementDrafts.loadFailed') }}</p>
+      <p class="m-0 text-txt3">{{ loadError }}</p>
+      <AppButton variant="outline" size="sm" data-testid="requirement-drafts-load-retry" @click="loadList()">
+        {{ t('common.loading.retry') }}
+      </AppButton>
+    </div>
+
+    <div
+      v-else-if="!loading && !items.length"
+      class="mx-auto flex max-w-md flex-col items-center gap-4 px-2 py-12 text-center sm:py-16"
+      data-testid="requirement-drafts-empty"
+    >
+      <Icon :name="hasFilterContext ? 'search' : 'doc'" :size="28" class="text-txt3" />
+      <div>
+        <h2 class="m-0 text-lg font-semibold text-txt">
+          {{ t(`pages.projectDetail.requirementDrafts.${hasFilterContext ? 'noMatchesTitle' : 'emptyTitle'}`) }}
+        </h2>
+        <p class="mb-0 mt-2 text-[13px] leading-6 text-txt3" data-testid="requirement-drafts-list-empty">
+          {{ t(`pages.projectDetail.requirementDrafts.${hasFilterContext ? 'noMatchesHint' : 'emptyHint'}`) }}
+        </p>
+      </div>
+      <AppButton
+        v-if="hasFilterContext"
+        variant="outline"
+        size="sm"
+        data-testid="requirement-drafts-clear-filters"
+        @click="clearFilters"
+      >
+        {{ t('pages.projectDetail.requirementDrafts.clearFilters') }}
+      </AppButton>
+      <AppButton
+        v-else
+        variant="primary"
+        size="sm"
+        icon="plus"
+        :disabled="creating"
+        data-testid="requirement-drafts-empty-new"
+        @click="onNewClick"
+      >
+        {{ t('pages.projectDetail.requirementDrafts.newModalTitle') }}
+      </AppButton>
     </div>
 
     <!-- Edit view -->
     <div
-      v-if="viewMode === 'edit'"
-      class="draft-layout grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[280px_1fr]"
+      v-else-if="viewMode === 'edit'"
+      class="draft-layout grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[250px_1fr]"
     >
-      <aside class="flex min-h-0 flex-col border-b border-line md:border-b-0 md:border-r">
+      <aside class="draft-list-pane flex min-h-0 flex-col border-b border-line/60 md:border-b-0 md:border-r">
         <div
-          class="min-h-0 flex-1 space-y-1.5 overflow-auto p-2"
+          class="min-h-0 flex-1 overflow-auto py-2 md:pr-4"
           data-testid="requirement-drafts-list"
         >
           <div v-if="loading && !items.length" class="px-5 py-8 text-center text-[13px] text-txt3">
@@ -251,7 +304,7 @@ defineExpose({
             v-for="d in items"
             :key="d.id"
             type="button"
-            class="rounded-lg relative block w-full border border-line px-3 py-2.5 text-left hover:bg-elevated"
+            class="relative block w-full border-b border-line/50 px-3 py-3 text-left transition last:border-b-0 hover:bg-elevated/50"
             :class="d.id === selectedId ? 'bg-accent-dim' : 'bg-transparent'"
             :data-testid="`requirement-drafts-item-${d.id}`"
             @click="onPickDraft(d.id)"
@@ -289,7 +342,8 @@ defineExpose({
       </aside>
 
       <div
-        class="flex min-h-0 min-w-0 flex-col"
+        class="draft-detail flex min-h-0 min-w-0 flex-col"
+        :class="{ 'draft-detail-selected': hasSelection }"
         data-testid="requirement-drafts-detail"
         @keydown="onDetailKeydown"
       >
@@ -301,7 +355,7 @@ defineExpose({
           <p>{{ t('pages.projectDetail.requirementDrafts.emptyDetail') }}</p>
         </div>
         <template v-else>
-          <div class="flex flex-wrap items-start justify-between gap-3 border-b border-line px-4 py-3.5">
+          <div class="draft-detail-header flex flex-wrap items-start justify-between gap-3 border-b border-line/60 py-4 md:pl-5">
             <div>
               <div class="flex flex-wrap items-center gap-2">
                 <strong class="text-[18px] font-[650] leading-tight text-txt">
@@ -375,7 +429,7 @@ defineExpose({
               </AppButton>
             </div>
           </div>
-          <div class="flex min-h-0 flex-1 flex-col px-4 pb-4 pt-3">
+          <div class="draft-editor-content flex min-h-0 flex-1 flex-col pb-4 pt-4 md:pl-5">
             <div>
               <label class="mb-1.5 block text-xs text-txt2" for="requirement-draft-title">
                 {{ t('pages.projectDetail.requirementDrafts.titleLabel') }}
@@ -395,7 +449,7 @@ defineExpose({
 
             <!-- Schedule block (edit view) -->
             <div
-              class="rounded-lg rd-schedule mb-4 border border-accent bg-surface p-3"
+              class="rd-schedule mb-4 border-y border-line/60 py-3"
               data-testid="requirement-drafts-schedule-block"
             >
               <button
@@ -425,7 +479,7 @@ defineExpose({
                 <p class="mb-3 text-[11px] text-txt3">
                   {{ t('pages.projectDetail.requirementDrafts.scheduleHint') }}
                 </p>
-                <div class="grid gap-3 sm:grid-cols-2">
+                <div class="rd-schedule-fields grid gap-3">
                 <label class="block text-xs text-txt2">
                   {{ t('pages.projectDetail.requirementDrafts.kindLabel') }}
                   <select
@@ -478,7 +532,7 @@ defineExpose({
                     @change="onScheduleProgressChange"
                   />
                 </label>
-                <label v-if="canEditParent" class="block text-xs text-txt2 sm:col-span-2">
+                <label v-if="canEditParent" class="rd-parent-field block text-xs text-txt2">
                   {{ t('pages.projectDetail.requirementDrafts.parentLabel') }}
                   <select
                     v-model="editParentId"
@@ -506,12 +560,12 @@ defineExpose({
               </div>
             </div>
 
-            <div class="flex min-h-0 flex-1 flex-col">
+            <div class="rd-body-editor flex min-h-0 flex-1 flex-col">
               <label class="mb-1.5 block text-xs text-txt2">
                 {{ t('pages.projectDetail.requirementDrafts.bodyLabel') }}
               </label>
               <div
-                class="rounded-lg rd-toolbar flex flex-wrap items-center gap-0.5 border border-b-0 border-line bg-elevated p-1.5"
+                class="rd-toolbar flex flex-wrap items-center gap-0.5 border-y border-line/60 py-1.5"
                 data-testid="requirement-drafts-toolbar"
               >
                 <button
@@ -627,7 +681,7 @@ defineExpose({
                   {{ t('pages.projectDetail.requirementDrafts.find') }}
                 </button>
                 <button
-                  v-if="!isMobile"
+                  v-if="!isNarrowEditor"
                   type="button"
                   class="rd-tb"
                   data-testid="requirement-drafts-tb-collapse"
@@ -642,8 +696,8 @@ defineExpose({
                 </button>
               </div>
               <div
-                v-if="isMobile"
-                class="rounded-lg flex gap-1.5 border border-b-0 border-line bg-elevated p-1.5"
+                v-if="isNarrowEditor"
+                class="flex gap-1.5 border-b border-line/60 py-1.5"
                 data-testid="requirement-drafts-mobile-switch"
               >
                 <button
@@ -667,10 +721,10 @@ defineExpose({
               </div>
               <div
                 ref="splitEl"
-                class="rounded-lg rd-split flex min-h-[360px] flex-1 border border-line bg-surface"
+                class="rd-split flex min-h-[360px] flex-1 border-b border-line/60"
                 :class="{
-                  'rd-split-narrow': isMobile,
-                  'rd-split-collapsed': previewCollapsed && !isMobile,
+                  'rd-split-narrow': isNarrowEditor,
+                  'rd-split-collapsed': previewCollapsed && !isNarrowEditor,
                 }"
                 data-testid="requirement-drafts-markdown-split"
               >
@@ -778,14 +832,14 @@ defineExpose({
     <!-- Gantt view -->
     <div
       v-else-if="viewMode === 'gantt'"
-      class="flex min-h-0 flex-1 flex-col lg:flex-row"
+      class="rd-gantt-layout flex min-h-0 flex-1 flex-col lg:flex-row"
     >
       <div
-        class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
+        class="rd-gantt-main flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
         data-testid="requirement-drafts-gantt"
       >
-        <div class="flex items-center gap-2 border-b border-line px-3 py-2">
-          <div class="seg" data-testid="requirement-drafts-scale-segment">
+        <div class="flex items-center justify-between gap-3 border-b border-line/60 py-3">
+          <div class="rd-scale flex gap-1" data-testid="requirement-drafts-scale-segment">
             <button
               type="button"
               :class="{ on: ganttScale === 'day' }"
@@ -811,6 +865,15 @@ defineExpose({
               {{ t('pages.projectDetail.requirementDrafts.scaleMonth') }}
             </button>
           </div>
+          <AppButton
+            v-if="selectedDraft && !inspectorOpen"
+            variant="ghost"
+            size="sm"
+            data-testid="requirement-drafts-inspector-reopen"
+            @click="inspectorOpen = true"
+          >
+            {{ t('pages.projectDetail.requirementDrafts.inspectorTitle') }}
+          </AppButton>
         </div>
 
         <div v-if="loading && !items.length" class="px-5 py-8 text-center text-[13px] text-txt3">
@@ -832,7 +895,7 @@ defineExpose({
               :key="'u-' + row.draft.id"
               class="rd-gantt-row flex cursor-pointer border-b border-line hover:bg-surface"
               :class="isRowSelected(row.draft.id) ? 'bg-accent-dim' : ''"
-              @click="onSelectFromGantt(row.draft.id)"
+              @click="revealInspector(row.draft.id)"
             >
               <div class="rd-gantt-name sticky left-0 z-[2] shrink-0 border-r border-line bg-elevated px-3 py-2 text-[13px] text-txt">
                 <span v-if="row.contextual" class="mr-1 text-[10px] text-txt3">
@@ -844,8 +907,12 @@ defineExpose({
             </div>
           </div>
 
+          <p v-if="!ganttRows.scheduled.length" class="m-0 py-5 text-[13px] text-txt3">
+            {{ t('pages.projectDetail.requirementDrafts.ganttEmptyScheduled') }}
+          </p>
+
           <!-- Scheduled timeline -->
-          <div class="rd-gantt-scroll relative min-w-[640px]">
+          <div v-if="ganttRows.scheduled.length" class="rd-gantt-scroll relative min-w-[640px]">
             <div class="rd-gantt-header flex border-b border-line bg-surface">
               <div class="rd-gantt-name sticky left-0 z-[3] shrink-0 border-r border-line bg-surface px-3 py-2 text-[11px] text-txt3">
                 &nbsp;
@@ -869,24 +936,11 @@ defineExpose({
             </div>
 
             <div
-              v-if="!ganttRows.scheduled.length && !ganttRows.unscheduled.length"
-              class="px-5 py-8 text-center text-[13px] text-txt3"
-            >
-              {{ t('pages.projectDetail.requirementDrafts.listEmpty') }}
-            </div>
-            <div
-              v-else-if="!ganttRows.scheduled.length"
-              class="px-5 py-6 text-center text-[13px] text-txt3"
-            >
-              {{ t('pages.projectDetail.requirementDrafts.ganttEmptyScheduled') }}
-            </div>
-
-            <div
               v-for="row in ganttRows.scheduled"
               :key="'s-' + row.draft.id"
               class="rd-gantt-row relative flex cursor-pointer border-b border-line hover:bg-elevated"
               :class="isRowSelected(row.draft.id) ? 'bg-accent-dim' : ''"
-              @click="onSelectFromGantt(row.draft.id)"
+              @click="revealInspector(row.draft.id)"
             >
               <div
                 class="rd-gantt-name sticky left-0 z-[2] shrink-0 border-r border-line bg-base px-3 py-2 text-[13px] text-txt"
@@ -913,7 +967,7 @@ defineExpose({
                   <div
                     class="rd-gantt-bar absolute top-1/2 h-[18px] -translate-y-1/2 cursor-pointer"
                     :style="rowBarStyle(row)!"
-                    @click.stop="onSelectFromGantt(row.draft.id)"
+                    @click.stop="revealInspector(row.draft.id)"
                   >
                     <div
                       class="rd-gantt-bar-fill h-full"
@@ -925,7 +979,7 @@ defineExpose({
                   <div
                     class="rd-gantt-diamond absolute top-1/2 h-3 w-3 -translate-y-1/2 rotate-45 cursor-pointer"
                     :style="diamondStyle(row.draft.dueAt, timelineWindow)"
-                    @click.stop="onSelectFromGantt(row.draft.id)"
+                    @click.stop="revealInspector(row.draft.id)"
                   />
                 </template>
               </div>
@@ -936,16 +990,23 @@ defineExpose({
 
       <!-- Inspector -->
       <aside
-        class="flex min-h-0 w-full shrink-0 flex-col border-t border-line bg-surface lg:w-[300px] lg:border-l lg:border-t-0"
+        v-if="selectedDraft && inspectorOpen"
+        class="rd-gantt-inspector flex min-h-0 w-full shrink-0 flex-col border-t border-line/60 lg:w-[280px] lg:border-l lg:border-t-0 lg:pl-5"
         data-testid="requirement-drafts-inspector"
       >
-        <div class="border-b border-line px-3 py-2.5 text-[13px] font-medium text-txt">
-          {{ t('pages.projectDetail.requirementDrafts.inspectorTitle') }}
+        <div class="flex items-center justify-between gap-3 border-b border-line/60 py-3 text-[13px] font-medium text-txt">
+          <span>{{ t('pages.projectDetail.requirementDrafts.inspectorTitle') }}</span>
+          <button
+            type="button"
+            class="inline-flex h-7 w-7 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt"
+            :aria-label="t('common.buttons.close')"
+            data-testid="requirement-drafts-inspector-close"
+            @click="inspectorOpen = false"
+          >
+            <Icon name="close" :size="14" />
+          </button>
         </div>
-        <div v-if="!hasSelection" class="min-h-0 flex-1 overflow-auto px-3 py-6 text-[13px] text-txt3">
-          {{ t('pages.projectDetail.requirementDrafts.inspectorEmpty') }}
-        </div>
-        <div v-else class="flex min-h-0 flex-1 flex-col gap-3 overflow-auto p-3">
+        <div class="rd-inspector-fields flex min-h-0 flex-1 flex-col gap-3 overflow-auto py-4">
           <div class="text-[13px] font-medium text-txt">{{ selectedDraft?.title }}</div>
           <div class="grid gap-3">
             <label class="block text-xs text-txt2">
@@ -1034,7 +1095,7 @@ defineExpose({
     </div>
 
     <!-- Milestones view -->
-    <div v-else class="min-h-0 flex-1 overflow-auto p-4">
+    <div v-else class="min-h-0 flex-1 overflow-auto py-4">
       <div v-if="loading && !items.length" class="px-5 py-8 text-center text-[13px] text-txt3">
         {{ t('common.loading.label') }}
       </div>
@@ -1043,14 +1104,25 @@ defineExpose({
         class="px-5 py-8 text-center text-[13px] text-txt3"
         data-testid="requirement-drafts-milestones-empty"
       >
-        {{ t('pages.projectDetail.requirementDrafts.milestonesEmpty') }}
+        <p class="m-0">{{ t('pages.projectDetail.requirementDrafts.milestonesEmpty') }}</p>
+        <AppButton
+          v-if="!query.trim()"
+          variant="outline"
+          size="sm"
+          class="mt-4"
+          data-testid="requirement-drafts-new-milestone"
+          :disabled="creating"
+          @click="onNewMilestone"
+        >
+          {{ t('pages.projectDetail.requirementDrafts.new') }} {{ t('pages.projectDetail.requirementDrafts.kindMilestone') }}
+        </AppButton>
       </div>
-      <div v-else class="mx-auto max-w-xl">
+      <div v-else class="max-w-3xl">
         <div
           v-for="(m, idx) in milestoneItems"
           :key="m.id"
-          class="rd-milestone-row flex cursor-pointer gap-4 border-l-2 border-line py-3 pl-4"
-          :class="isRowSelected(m.id) ? 'border-accent bg-accent-dim' : 'hover:bg-elevated'"
+          class="rd-milestone-row flex cursor-pointer gap-4 border-b border-line/60 py-4"
+          :class="isRowSelected(m.id) ? 'bg-accent-dim/40' : 'hover:bg-elevated/50'"
           :data-testid="`requirement-drafts-milestone-${m.id}`"
           @click="onPickDraft(m.id)"
         >
@@ -1061,7 +1133,7 @@ defineExpose({
           <div class="min-w-0 flex-1">
             <div class="text-[13px] font-medium text-txt">{{ m.title }}</div>
             <div class="mt-1 text-[11px] text-txt3">{{ m.dueAt || '—' }} · {{ m.progress }}%</div>
-            <div v-if="isRowSelected(m.id)" class="rounded-lg mt-3 grid gap-2 border border-line bg-surface p-3">
+            <div v-if="isRowSelected(m.id)" class="rd-milestone-fields mt-4 grid gap-3 border-t border-line/60 pt-4">
               <label class="block text-xs text-txt2">
                 {{ t('pages.projectDetail.requirementDrafts.dueAtLabel') }}
                 <input
@@ -1245,38 +1317,40 @@ defineExpose({
 </template>
 
 <style scoped>
-/* 分段控件：对齐 ProjectAuditPanel / page.html Demo（浅底 track + 选中浮起） */
-.seg {
-  display: inline-flex;
-  align-items: stretch;
-  gap: 2px;
-  padding: 3px;
-  background: rgb(var(--c-elevated));
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
+/* View navigation and status filtering are distinct, flat controls. */
+.requirement-drafts { container-type: inline-size; container-name: requirement-workbench; }
+.draft-detail { container-type: inline-size; container-name: requirement-editor; }
+.rd-schedule-fields, .rd-milestone-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.rd-parent-field { grid-column: 1 / -1; }
+.rd-view-tabs { display: flex; gap: 24px; border-bottom: 1px solid rgb(var(--c-line) / .6); }
+.rd-view-tabs button { padding: 0 0 12px; border-bottom: 2px solid transparent; color: rgb(var(--c-txt3)); font-size: 14px; font-weight: 500; }
+.rd-view-tabs button:hover { color: rgb(var(--c-txt)); }
+.rd-view-tabs button.on { border-color: rgb(var(--c-accent)); color: rgb(var(--c-txt)); }
+.rd-status-filter button, .rd-scale button { padding: 6px 10px; border-radius: 6px; color: rgb(var(--c-txt3)); font-size: 12px; white-space: nowrap; }
+.rd-status-filter button:hover, .rd-scale button:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-elevated) / .5); }
+.rd-status-filter button.on, .rd-scale button.on { color: rgb(var(--c-txt)); background: rgb(var(--c-elevated)); font-weight: 600; }
+.draft-detail { overflow-y: auto; }
+@container requirement-workbench (max-width: 719px) {
+  .rd-filter-toolbar { column-gap: 8px; }
+  .rd-filter-toolbar > :first-child { flex-basis: 100%; max-width: none; }
+  .draft-layout { display: flex; flex-direction: column; overflow-y: auto; }
+  .draft-list-pane { max-height: 180px; flex-shrink: 0; border-right: 0; border-bottom: 1px solid rgb(var(--c-line) / .6); }
+  .draft-list-pane > div { padding-right: 0; }
+  .draft-detail-selected { min-height: 0; flex: none; overflow: visible; }
+  .draft-detail-header, .draft-editor-content { padding-left: 0; }
+  .draft-editor-content, .rd-body-editor { flex: none; }
+  .rd-split { flex: none; height: 360px; }
+  .rd-milestone-fields { grid-template-columns: minmax(0, 1fr); }
+  .rd-gantt-name { width: 160px !important; min-width: 160px !important; }
 }
-.seg button {
-  border: 0;
-  background: transparent;
-  height: 28px;
-  padding: 0 12px;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.3;
-  color: rgb(var(--c-txt2));
-  cursor: pointer;
-  font-weight: 500;
-  white-space: nowrap;
-  border-radius: 6px;
+@container requirement-editor (max-width: 479px) {
+  .rd-schedule-fields { grid-template-columns: minmax(0, 1fr); }
 }
-.seg button:hover {
-  color: rgb(var(--c-txt));
-}
-.seg button.on {
-  background: rgb(var(--c-surface));
-  color: rgb(var(--c-txt));
-  font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+@container requirement-workbench (max-width: 959px) {
+  .rd-gantt-layout { flex-direction: column; overflow-y: auto; }
+  .rd-gantt-main { min-height: 240px; flex-shrink: 0; }
+  .rd-gantt-inspector { width: 100%; flex-shrink: 0; padding-left: 0; border-left: 0; border-top: 1px solid rgb(var(--c-line) / .6); }
+  .rd-inspector-fields { flex: none; overflow: visible; }
 }
 .rd-tb {
   min-width: 28px;
@@ -1316,9 +1390,6 @@ defineExpose({
 }
 .rd-src::placeholder {
   color: rgb(var(--c-txt3));
-}
-.rd-schedule {
-  border-radius: 12px;
 }
 .rd-schedule-head {
   cursor: pointer;

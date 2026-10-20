@@ -73,7 +73,7 @@ describe('ReviewComposer gate busy status (C-tier)', () => {
     expect(wrapper.find('[data-testid="gate-react-stream"]').exists()).toBe(true)
     expect(placeholder.exists()).toBe(true)
     expect(placeholder.text()).toContain('思考中')
-    expect(placeholder.find('.typing-dots').exists()).toBe(true)
+    expect(placeholder.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -269,7 +269,7 @@ describe('ReviewComposer gate review semantics (send + confirm)', () => {
     await flushPromises()
     const send = idle.get('[data-testid="review-composer-send"]')
     expect((send.element as HTMLButtonElement).disabled).toBe(true)
-    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
     expect(idle.find('[data-testid="gate-react-cancel"]').exists()).toBe(false)
     expect(idle.find('[data-testid="paragraph-input-attach"]').exists()).toBe(true)
     expect(idle.get('[data-testid="composer-shell-footer"]').find('[data-testid="review-composer-pass"]').exists()).toBe(
@@ -284,7 +284,7 @@ describe('ReviewComposer gate review semantics (send + confirm)', () => {
     expect(stop.attributes('aria-label')).toBe('Cancel')
     expect(stop.attributes('title')).toBe('Cancel')
     expect(stop.text()).not.toContain('Cancel')
-    expect(stop.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    expect(stop.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await stop.trigger('click')
     expect(busy.emitted('cancel')).toBeTruthy()
     busy.unmount()

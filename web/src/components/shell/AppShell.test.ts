@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import shell from '@/locales/zh-CN/shell.json'
+import nav from '@/locales/zh-CN/nav.json'
 import { __resetSidebarHiddenForTests, setSidebarHidden, sidebarHidden } from '@/lib/shared/sidebarHidden'
 
 const routeState = { path: '/', meta: {} as Record<string, unknown> }
@@ -13,7 +14,8 @@ const isMobileRef = ref(false)
 
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: vi.fn(), afterEach: vi.fn(() => vi.fn()), resolve: (to: string) => ({ fullPath: to }) }),
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('@/lib/composables/useBreakpoint', () => ({
@@ -57,7 +59,7 @@ function mountShell(opts?: { stubSidebar?: boolean; attachToBody?: boolean }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages, ...shell } },
+    messages: { 'zh-CN': { ...common, ...pages, ...shell, ...nav } },
   })
   return mount(AppShell, {
     attachTo: opts?.attachToBody ? document.body : undefined,
@@ -69,7 +71,7 @@ function mountShell(opts?: { stubSidebar?: boolean; attachToBody?: boolean }) {
           ? false
           : defineComponent({
               template:
-                '<aside data-testid="sidebar" class="w-[232px] shrink-0" />',
+                '<aside data-testid="sidebar" class="w-[304px] shrink-0" />',
             }),
         AppSidebarNav: { template: '<nav data-testid="shell-nav" />' },
         BrandLogo: true,
@@ -192,10 +194,10 @@ describe('AppShell (no topbar + floating ball)', () => {
     wrapper.unmount()
   })
 
-  it('workspace shell uses dotted canvas and sidebar padding (plan g1.3)', () => {
+  it('workspace shell uses the shared canvas and sidebar padding', () => {
     const wrapper = mountShell()
     expect(wrapper.find('[data-testid="app-shell-workspace"]').exists()).toBe(true)
-    expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(true)
+    expect(wrapper.find('.app-shell-canvas').exists()).toBe(true)
     const slot = wrapper.find('[data-testid="app-shell-sidebar-slot"]')
     expect(slot.classes()).toContain('py-[14px]')
     expect(slot.classes()).toContain('pl-[14px]')
@@ -213,11 +215,29 @@ describe('AppShell (no topbar + floating ball)', () => {
     wrapper.unmount()
   })
 
-  it('full pages keep dotted canvas and sidebar pad (plan g1.2 / g1.3)', () => {
+  it('keeps the settings rail and directory flush alongside the independent page scroll', () => {
+    routeState.path = '/settings'
+    const wrapper = mountShell({ stubSidebar: false })
+    expect(wrapper.find('.app-shell-settings').exists()).toBe(true)
+    expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(false)
+    const slot = wrapper.get('[data-testid="app-shell-sidebar-slot"]')
+    expect(slot.classes()).not.toContain('py-[14px]')
+    expect(slot.classes()).not.toContain('pl-[14px]')
+    const sidebar = wrapper.get('[data-testid="app-desktop-sidebar"]')
+    expect(sidebar.classes()).toContain('w-[304px]')
+    expect(sidebar.find('[data-testid="sidebar-app-rail"]').exists()).toBe(true)
+    expect(sidebar.get('[data-testid="sidebar-settings-title"]').text()).toBe('设置')
+    expect(sidebar.get('.sidebar-footer').find('[data-testid="sidebar-account-trigger"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="shell-page-scroll"]').classes()).toContain('settings-main-scroll')
+    expect(wrapper.get('[data-testid="shell-page-scroll"]').classes()).toContain('overflow-y-auto')
+    wrapper.unmount()
+  })
+
+  it('full pages use the shared canvas and sidebar padding', () => {
     routeState.meta = { full: true }
     const wrapper = mountShell()
     expect(wrapper.find('[data-testid="app-shell-full"]').exists()).toBe(true)
-    expect(wrapper.find('.app-shell-dotgrid').exists()).toBe(true)
+    expect(wrapper.find('.app-shell-canvas').exists()).toBe(true)
     const slot = wrapper.find('[data-testid="app-shell-sidebar-slot"]')
     expect(slot.classes()).toContain('py-[14px]')
     expect(slot.classes()).toContain('pl-[14px]')
@@ -232,7 +252,7 @@ describe('AppShell (no topbar + floating ball)', () => {
     const workspaceRoot = workspace.find('[data-testid="app-shell-workspace"]')
     const fullRoot = fullShell.find('[data-testid="app-shell-full"]')
     expect(fullRoot.classes().sort()).toEqual(workspaceRoot.classes().sort())
-    expect(fullRoot.classes()).toContain('app-shell-dotgrid')
+    expect(fullRoot.classes()).toContain('app-shell-canvas')
     const workspaceSlot = workspace.find('[data-testid="app-shell-sidebar-slot"]')
     const fullSlot = fullShell.find('[data-testid="app-shell-sidebar-slot"]')
     expect(fullSlot.classes().sort()).toEqual(workspaceSlot.classes().sort())

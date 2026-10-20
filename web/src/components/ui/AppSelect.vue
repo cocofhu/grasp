@@ -7,7 +7,7 @@ let closeOpenPanel: (() => void) | null = null
 </script>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from './Icon.vue'
 
@@ -28,6 +28,8 @@ const props = withDefaults(
     loading?: boolean
     /** sm matches compact 12px form rows; md matches .input sizing. */
     size?: 'sm' | 'md'
+    /** Quiet trigger and compact menu for controls embedded in a list. */
+    variant?: 'outline' | 'ghost'
   }>(),
   {
     disabled: false,
@@ -36,6 +38,7 @@ const props = withDefaults(
     allowCustom: false,
     loading: false,
     size: 'md',
+    variant: 'outline',
   },
 )
 
@@ -44,6 +47,9 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const selectId = `app-select-${useId().replace(/:/g, '')}`
+const listboxId = `${selectId}-listbox`
+const optionId = (index: number) => `${selectId}-option-${index}`
 
 const open = ref(false)
 const search = ref('')
@@ -54,6 +60,7 @@ const panel = ref<HTMLElement | null>(null)
 const searchInput = ref<HTMLInputElement | null>(null)
 /** Fixed position: Teleport escapes modal/scroll-area overflow clipping. */
 const panelStyle = ref<Record<string, string>>({})
+let panelPositioned = false
 
 const matched = computed(() => props.options.find((o) => o.value === props.modelValue))
 const selectedLabel = computed(() => {
@@ -92,6 +99,9 @@ const rows = computed<{ value: string; label: string; hint: string; custom: bool
     : []),
   ...filtered.value.map((o) => ({ value: o.value, label: o.label, hint: o.hint || '', custom: false })),
 ])
+const activeDescendant = computed(() =>
+  open.value && rows.value[activeIndex.value] ? optionId(activeIndex.value) : undefined,
+)
 
 function escapeHtml(s: string): string {
   return s.replace(
@@ -125,20 +135,76 @@ const MARGIN = 8
 const GAP = 6
 const MAX_PANEL_HEIGHT = 288
 
+function ghostAnchorVisible(trig: HTMLElement, rect: DOMRect): boolean {
+  // DOM-only tests and a just-mounted trigger can still have no measured box.
+  if (rect.width <= 0 || rect.height <= 0) return true
+  let left = Math.max(0, rect.left)
+  let right = Math.min(window.innerWidth, rect.right)
+  let top = Math.max(0, rect.top)
+  let bottom = Math.min(window.innerHeight, rect.bottom)
+  const clips = /^(auto|scroll|hidden|clip)$/
+  for (let ancestor = trig.parentElement; ancestor; ancestor = ancestor.parentElement) {
+    if (left >= right || top >= bottom) return false
+    const style = window.getComputedStyle(ancestor)
+    const overflow = style.overflow.split(/\s+/)
+    const clipX = clips.test(style.overflowX || overflow[0])
+    const clipY = clips.test(style.overflowY || overflow[1] || overflow[0])
+    if (!clipX && !clipY) continue
+    const box = ancestor.getBoundingClientRect()
+    if (clipX) {
+      const clipLeft = box.left + (ancestor.clientLeft || Number.parseFloat(style.borderLeftWidth) || 0)
+      const clipRight = ancestor.clientWidth > 0
+        ? clipLeft + ancestor.clientWidth
+        : box.right - (Number.parseFloat(style.borderRightWidth) || 0)
+      left = Math.max(left, clipLeft)
+      right = Math.min(right, clipRight)
+    }
+    if (clipY) {
+      const clipTop = box.top + (ancestor.clientTop || Number.parseFloat(style.borderTopWidth) || 0)
+      const clipBottom = ancestor.clientHeight > 0
+        ? clipTop + ancestor.clientHeight
+        : box.bottom - (Number.parseFloat(style.borderBottomWidth) || 0)
+      top = Math.max(top, clipTop)
+      bottom = Math.min(bottom, clipBottom)
+    }
+  }
+  return left < right && top < bottom
+}
+
 function placePanel() {
   const trig = trigger.value
   if (!trig) return
   const r = trig.getBoundingClientRect()
+  if (props.variant === 'ghost' && !ghostAnchorVisible(trig, r)) {
+    // Scrolling a row away dismisses its menu without moving focus back to the
+    // offscreen trigger, which would scroll the list to the old row again.
+    closePanel()
+    return
+  }
   const height = Math.min(panel.value?.offsetHeight || MAX_PANEL_HEIGHT, MAX_PANEL_HEIGHT)
   const below = window.innerHeight - r.bottom - GAP - MARGIN
   const flipUp = below < height && r.top - GAP - MARGIN > below
-  const top = flipUp ? Math.max(MARGIN, r.top - GAP - height) : r.bottom + GAP
+  let top = flipUp ? Math.max(MARGIN, r.top - GAP - height) : r.bottom + GAP
+  let maxHeight = Math.max(0, Math.min(MAX_PANEL_HEIGHT, flipUp ? r.top - GAP - MARGIN : below))
+  if (props.variant === 'ghost') {
+    maxHeight = Math.min(maxHeight, Math.max(0, window.innerHeight - MARGIN * 2))
+    const visibleHeight = Math.min(height, maxHeight)
+    top = Math.max(MARGIN, Math.min(top, window.innerHeight - MARGIN - visibleHeight))
+  }
+  // Form menus retain their trigger width; list menus need room for their labels
+  // and must stay inside the viewport even when the trigger sits at the row end.
+  const width = props.variant === 'ghost'
+    ? Math.min(Math.max(168, r.width), Math.max(0, window.innerWidth - MARGIN * 2))
+    : r.width
+  const left = props.variant === 'ghost'
+    ? Math.max(MARGIN, Math.min(r.left, window.innerWidth - width - MARGIN))
+    : r.left
   panelStyle.value = {
     position: 'fixed',
     top: `${Math.round(top)}px`,
-    left: `${Math.round(r.left)}px`,
-    width: `${Math.round(r.width)}px`,
-    maxHeight: `${Math.round(Math.min(MAX_PANEL_HEIGHT, flipUp ? r.top - GAP - MARGIN : below))}px`,
+    left: `${Math.round(left)}px`,
+    width: `${Math.round(width)}px`,
+    maxHeight: `${Math.round(maxHeight)}px`,
     zIndex: '60',
   }
 }
@@ -147,29 +213,54 @@ function onScrollOrResize() {
   if (open.value) placePanel()
 }
 
-async function openPanel() {
+function revealActiveOption() {
+  if (!open.value || !panelPositioned) return
+  panel.value?.querySelectorAll<HTMLElement>('[role="option"]')[activeIndex.value]
+    ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+}
+
+async function openPanel(edge?: 'first' | 'last') {
   if (props.disabled) return
   // A trigger click stops propagating, so a parent row or menu does not react to
   // it — which also hides it from every other select's document listener. Panels
   // therefore hand over here, keeping at most one open.
   if (closeOpenPanel && closeOpenPanel !== closePanel) closeOpenPanel()
   closeOpenPanel = closePanel
+  panelPositioned = false
   open.value = true
   search.value = ''
   activeIndex.value = Math.max(
     0,
     props.options.findIndex((o) => o.value === props.modelValue),
   )
+  if (edge) activeIndex.value = edge === 'first' ? 0 : Math.max(0, rows.value.length - 1)
   await nextTick()
+  if (!open.value || props.disabled) return
   placePanel()
-  searchInput.value?.focus()
+  // Only scroll after Vue applies the fixed positioning. A newly teleported
+  // list still in body flow must never scroll the surrounding page.
+  await nextTick()
+  if (!open.value || props.disabled) return
+  panelPositioned = true
+  revealActiveOption()
+  searchInput.value?.focus({ preventScroll: true })
+  await nextTick()
+  if (open.value) placePanel()
 }
 
 function closePanel() {
   if (closeOpenPanel === closePanel) closeOpenPanel = null
   open.value = false
+  panelPositioned = false
   search.value = ''
   panelStyle.value = {}
+}
+
+function hideLeavingPanel(element: Element) {
+  // A fading-out menu must not remain in the accessibility tree when another
+  // select opens, or receive a late click while the replacement is active.
+  element.setAttribute('aria-hidden', 'true')
+  ;(element as HTMLElement).inert = true
 }
 
 function togglePanel(e: MouseEvent) {
@@ -180,9 +271,10 @@ function togglePanel(e: MouseEvent) {
 }
 
 function choose(value: string) {
+  if (props.disabled || !open.value) return
   emit('update:modelValue', value)
   closePanel()
-  trigger.value?.focus()
+  trigger.value?.focus({ preventScroll: true })
 }
 
 function onDocClick(e: MouseEvent) {
@@ -194,25 +286,44 @@ function onDocClick(e: MouseEvent) {
 
 /** Shared by the panel search box and the document-level fallback. */
 function handleListKeydown(e: KeyboardEvent): void {
+  if (!open.value || props.disabled || e.isComposing || e.keyCode === 229) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
   const items = rows.value
+  if (e.key === 'Tab') {
+    // The search field lives at the end of body via Teleport. Return to the
+    // trigger synchronously so native Tab continues in the original form order.
+    if (panel.value?.contains(document.activeElement)) trigger.value?.focus({ preventScroll: true })
+    closePanel()
+    return
+  }
   if (e.key === 'Escape') {
     e.preventDefault()
+    e.stopPropagation()
     closePanel()
-    trigger.value?.focus()
+    trigger.value?.focus({ preventScroll: true })
     return
   }
   if (e.key === 'ArrowDown') {
     e.preventDefault()
+    e.stopPropagation()
     if (items.length) activeIndex.value = (activeIndex.value + 1) % items.length
     return
   }
   if (e.key === 'ArrowUp') {
     e.preventDefault()
+    e.stopPropagation()
     if (items.length) activeIndex.value = (activeIndex.value - 1 + items.length) % items.length
+    return
+  }
+  if ((e.key === 'Home' || e.key === 'End') && e.target !== searchInput.value) {
+    e.preventDefault()
+    e.stopPropagation()
+    activeIndex.value = e.key === 'Home' ? 0 : Math.max(0, items.length - 1)
     return
   }
   if (e.key === 'Enter' || (e.key === ' ' && !props.searchable)) {
     e.preventDefault()
+    e.stopPropagation()
     const opt = items[activeIndex.value]
     if (opt) choose(opt.value)
   }
@@ -220,16 +331,18 @@ function handleListKeydown(e: KeyboardEvent): void {
 
 function onDocKeydown(e: KeyboardEvent) {
   if (!open.value) return
-  // The search box handles its own keys, including space as literal input.
-  if (props.searchable && e.target === searchInput.value) return
+  const target = e.target as Node | null
+  if (target !== document && !root.value?.contains(target) && !panel.value?.contains(target)) return
   handleListKeydown(e)
 }
 
 function onTriggerKeydown(e: KeyboardEvent) {
-  if (props.disabled || open.value) return
-  if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
+  if (props.disabled || open.value || e.isComposing || e.keyCode === 229) return
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  if (['ArrowDown', 'ArrowUp', 'Home', 'End', 'Enter', ' '].includes(e.key)) {
     e.preventDefault()
-    void openPanel()
+    e.stopPropagation()
+    void openPanel(e.key === 'Home' ? 'first' : e.key === 'End' ? 'last' : undefined)
   }
 }
 
@@ -239,17 +352,21 @@ watch(
     if (activeIndex.value >= len) activeIndex.value = Math.max(0, len - 1)
   },
 )
+watch([activeIndex, rows], () => { if (open.value) void nextTick(revealActiveOption) })
+watch(() => props.disabled, disabled => { if (disabled) closePanel() }, { flush: 'sync' })
 
 onMounted(() => {
   document.addEventListener('click', onDocClick)
-  document.addEventListener('keydown', onDocKeydown)
+  // Capture sees the opening key while still closed, before the trigger opens;
+  // a bubble listener would immediately select again with that same Enter.
+  document.addEventListener('keydown', onDocKeydown, true)
   window.addEventListener('resize', onScrollOrResize)
   window.addEventListener('scroll', onScrollOrResize, true)
 })
 onBeforeUnmount(() => {
   if (closeOpenPanel === closePanel) closeOpenPanel = null
   document.removeEventListener('click', onDocClick)
-  document.removeEventListener('keydown', onDocKeydown)
+  document.removeEventListener('keydown', onDocKeydown, true)
   window.removeEventListener('resize', onScrollOrResize)
   window.removeEventListener('scroll', onScrollOrResize, true)
 })
@@ -260,15 +377,21 @@ onBeforeUnmount(() => {
     <button
       ref="trigger"
       type="button"
-      class="flex w-full items-center gap-2 rounded-md border bg-base px-3 py-2 text-left text-txt transition"
+      class="app-select-trigger flex w-full items-center gap-2 rounded-md border text-left transition"
       :class="[
+        variant === 'ghost' ? 'app-select-trigger--ghost px-2 text-txt2' : 'bg-base px-3 py-2 text-txt',
+        size === 'sm' ? 'app-select-trigger--sm' : '',
         size === 'sm' ? 'text-[12px]' : 'text-sm',
-        invalid ? 'border-err' : open ? 'border-accent' : 'border-line hover:border-line-strong',
+        invalid ? 'border-err' : open ? variant === 'ghost' ? 'border-accent/35 bg-accent-dim/40' : 'border-accent' : variant === 'ghost' ? 'border-transparent bg-transparent hover:border-line hover:bg-elevated/60' : 'border-line hover:border-line-strong',
         disabled ? 'cursor-default text-txt3' : '',
       ]"
       :disabled="disabled"
+      :role="searchable ? undefined : 'combobox'"
       aria-haspopup="listbox"
       :aria-expanded="open"
+      :aria-controls="open ? listboxId : undefined"
+      :aria-activedescendant="searchable ? undefined : activeDescendant"
+      :aria-invalid="invalid || undefined"
       :aria-label="ariaLabel"
       data-test="app-select-trigger"
       @click="togglePanel"
@@ -286,11 +409,12 @@ onBeforeUnmount(() => {
     </button>
 
     <Teleport to="body">
-      <Transition name="overlay-pop">
+      <Transition name="overlay-pop" @before-leave="hideLeavingPanel">
         <div
           v-if="open"
           ref="panel"
-          class="card app-select-panel flex flex-col overflow-hidden"
+          class="app-select-panel flex flex-col overflow-hidden"
+          :class="variant === 'ghost' ? 'app-select-panel--ghost rounded-md border border-line bg-surface' : 'card'"
           :aria-label="ariaLabel"
           data-test="app-select-panel"
           :style="panelStyle"
@@ -301,6 +425,11 @@ onBeforeUnmount(() => {
               ref="searchInput"
               v-model="search"
               type="search"
+              role="combobox"
+              aria-autocomplete="list"
+              :aria-expanded="open"
+              :aria-controls="listboxId"
+              :aria-activedescendant="activeDescendant"
               class="w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-[12px] text-txt outline-none transition placeholder:text-txt3 focus:border-accent"
               :placeholder="searchPlaceholder || t('common.search.optionPlaceholder')"
               :aria-label="searchPlaceholder || t('common.search.optionPlaceholder')"
@@ -313,6 +442,7 @@ onBeforeUnmount(() => {
           </div>
 
           <div
+            :id="listboxId"
             class="scroll-area min-h-0 flex-1 overflow-y-auto p-1"
             role="listbox"
             :aria-label="ariaLabel"
@@ -320,13 +450,16 @@ onBeforeUnmount(() => {
             <button
               v-for="(row, i) in rows"
               :key="(row.custom ? 'custom:' : 'opt:') + row.value"
+              :id="optionId(i)"
               type="button"
               role="option"
-              class="flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition"
+              tabindex="-1"
+              class="app-select-option flex w-full items-center gap-2 rounded-md px-2.5 text-left transition"
               :class="[
+                variant === 'ghost' ? 'app-select-option--ghost py-1.5' : 'py-2',
                 size === 'sm' ? 'text-[12px]' : 'text-sm',
                 row.value === modelValue ? 'text-accent-2' : 'text-txt2',
-                i === activeIndex ? 'bg-accent-dim text-txt' : 'hover:bg-elevated',
+                i === activeIndex ? variant === 'ghost' ? 'bg-accent-dim' : 'bg-accent-dim text-txt' : 'hover:bg-elevated',
               ]"
               :aria-selected="row.value === modelValue"
               :data-test="row.custom ? 'app-select-custom' : `app-select-option-${row.value}`"
@@ -367,6 +500,35 @@ onBeforeUnmount(() => {
   background: rgb(var(--c-accent) / 0.35);
   color: inherit;
   padding: 0 1px;
+}
+.app-select-trigger--ghost {
+  min-height: 36px;
+  padding-block: 5px;
+  outline: none;
+}
+.app-select-trigger--ghost.app-select-trigger--sm {
+  min-height: 30px;
+  padding-block: 4px;
+}
+.app-select-trigger--ghost:focus-visible {
+  border-color: rgb(var(--c-accent-2) / .5);
+  box-shadow: 0 0 0 2px rgb(var(--c-accent-2) / .1);
+}
+.app-select-trigger--ghost:disabled {
+  opacity: .6;
+}
+.app-select-panel--ghost {
+  box-shadow: 0 6px 20px rgb(0 0 0 / .1);
+}
+.app-select-option--ghost {
+  min-height: 32px;
+}
+@media (max-width: 767px) {
+  .app-select-trigger--ghost,
+  .app-select-trigger--ghost.app-select-trigger--sm,
+  .app-select-option--ghost {
+    min-height: 44px;
+  }
 }
 .app-select-chevron {
   transition: transform var(--dur-ui) var(--ease-out-expo);

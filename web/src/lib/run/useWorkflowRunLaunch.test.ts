@@ -5,13 +5,14 @@ import { createApp, defineComponent } from 'vue'
 import common from '@/locales/zh-CN/common.json'
 import { useWorkflowRunLaunch } from './useWorkflowRunLaunch'
 import type { Workflow } from '@/lib/shared/types'
+import { mergeRunDraft } from './runDraft'
 
 vi.mock('@/lib/run/runDraft', () => ({
-  mergeRunDraft: async (_id: string, seed: Record<string, string>, images: Record<string, unknown>) => ({
+  mergeRunDraft: vi.fn(async (_id: string, seed: Record<string, string>, images: Record<string, unknown>) => ({
     inputs: seed,
     images,
     restored: false,
-  }),
+  })),
   saveRunDraft: vi.fn(async () => 'ok'),
   clearRunDraft: vi.fn(async () => {}),
 }))
@@ -73,6 +74,19 @@ describe('useWorkflowRunLaunch', () => {
     expect(launch.target.value?.id).toBe('wf-1')
     expect(launch.runFields.value.map((f) => f.key)).toEqual(['branch'])
     expect(launch.runInputs.value.branch).toBe('main')
+  })
+
+  it('discards a pending launch after the shell closes it on account change', async () => {
+    let resolve!: (value: any) => void
+    vi.mocked(mergeRunDraft).mockReturnValueOnce(new Promise((done) => { resolve = done }))
+    const launch = withSetup(() => useWorkflowRunLaunch())
+    const pending = launch.openLaunch(baseWf())
+    launch.closeLaunch()
+    resolve({ inputs: { branch: 'private' }, images: {}, restored: true })
+    await pending
+    expect(launch.open.value).toBe(false)
+    expect(launch.target.value).toBeNull()
+    expect(launch.runInputs.value).toEqual({})
   })
 
   it('openLaunch still opens when there are no ask fields', async () => {

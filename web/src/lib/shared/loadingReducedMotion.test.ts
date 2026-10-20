@@ -37,14 +37,12 @@ describe('global loading reduced-motion (g4.4)', () => {
     expect(css).toMatch(/\.ui-fold-chevron[\s\S]*transition:\s*none/)
   })
 
-  it('source-contracts: filters / board card / lang select use overlay-pop or list-card-lift (g1.1 / g2.1)', () => {
+  it('source-contracts: filters and overlays use shared motion and board rows do not lift', () => {
     const root = join(dirname(fileURLToPath(import.meta.url)), '../..')
     const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
-    expect(read('components/ui/ProjectFilter.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/ui/StatusFilter.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/ui/WorkflowFilter.vue')).toMatch(/name="overlay-pop"/)
     expect(read('components/ui/LangSelect.vue')).toMatch(/name="overlay-pop"/)
-    expect(read('components/board/RunBoardCard.vue')).toMatch(/list-card-lift/)
     expect(read('components/board/RunBoardCard.vue')).not.toMatch(/translateY\(-1px\)/)
     expect(read('components/ui/AppModal.vue')).toMatch(/var\(--dur-overlay\)/)
     expect(read('components/ui/AppDrawer.vue')).toMatch(/var\(--dur-overlay\)/)

@@ -41,6 +41,9 @@ const MOCK_RUNS = {
 }
 
 async function mockBoardApis(page: import('@playwright/test').Page) {
+  await page.route('**/api/workspace', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ id: 'proj-1', name: '工作区', description: '', variables: [] }) })
+  })
   await page.route('**/api/stats/dashboard', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
@@ -51,32 +54,6 @@ async function mockBoardApis(page: import('@playwright/test').Page) {
           waitingHuman: 1,
           failed: 1,
           completed: 1,
-        }),
-      })
-      return
-    }
-    await route.continue()
-  })
-
-  await page.route('**/api/projects/*/token-stats**', async (route) => {
-    if (route.request().method() === 'GET') {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          window: '30d',
-          bucketWidth: 'day',
-          timezone: 'UTC',
-          empty: true,
-          trend: [],
-          composition: {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-            total: 0,
-          },
-          workflows: [],
         }),
       })
       return
@@ -136,15 +113,6 @@ async function mockBoardApis(page: import('@playwright/test').Page) {
       return
     }
     const url = new URL(route.request().url())
-    // Fail-safe: unfiltered global list must not be used by project board.
-    if (!url.searchParams.get('projectId')) {
-      await route.fulfill({
-        status: 400,
-        contentType: 'application/json',
-        body: JSON.stringify({ error: 'projectId required in e2e mock' }),
-      })
-      return
-    }
     const status = url.searchParams.get('status') || ''
     const items = (MOCK_RUNS as Record<string, unknown[]>)[status] || []
     const pageSize = Number(url.searchParams.get('pageSize') || items.length || 20)
@@ -167,24 +135,24 @@ async function gotoBoardHarness(
   opts: {
     width: number
     height?: number
-    start?: 'dashboard' | 'project-board'
-    memory?: '0' | '1'
-    projectId?: string
+    start?: 'dashboard' | 'board'
   } = { width: 1280 },
 ) {
   await page.setViewportSize({ width: opts.width, height: opts.height ?? 800 })
   await mockBoardApis(page)
   const qs = new URLSearchParams()
   if (opts.start) qs.set('start', opts.start)
-  if (opts.memory) qs.set('memory', opts.memory)
-  if (opts.projectId) qs.set('projectId', opts.projectId)
   const q = qs.toString()
   await page.goto(`/board.html${q ? `?${q}` : ''}`)
 }
 
-test.describe('需求进度看板（项目级）', () => {
-  test('Dashboard 有项目记忆：首页 Composer + Approve 工作流卡片', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '1', projectId: 'proj-1' })
+test.beforeEach(async ({ page }) => {
+  await page.route('**/api/workspace', async (route) => route.fulfill({ json: { id: 'proj-1', name: '工作区', description: '', variables: [] } }))
+})
+
+test.describe('工作区进度看板', () => {
+  test('Dashboard 首页 Composer 与工作流卡片', async ({ page }) => {
+    await gotoBoardHarness(page, { width: 1280, start: 'dashboard' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-yume')).toBeVisible()
     await expect(page.getByTestId('home-composer')).toBeVisible()
@@ -193,8 +161,8 @@ test.describe('需求进度看板（项目级）', () => {
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
   })
 
-  test('Dashboard 无项目记忆：跨项目展示工作流，无先选项目门槛', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '0' })
+  test('Dashboard 直接展示工作流，无项目选择门槛', async ({ page }) => {
+    await gotoBoardHarness(page, { width: 1280, start: 'dashboard' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-no-project')).toHaveCount(0)
     await expect(page.getByTestId('home-composer')).toBeVisible()
@@ -202,8 +170,8 @@ test.describe('需求进度看板（项目级）', () => {
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)
   })
 
-  test('项目看板三主列、侧滑预览关闭后不离页', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'project-board', memory: '1', projectId: 'proj-1' })
+  test('工作区看板三主列、侧滑预览关闭后不离页', async ({ page }) => {
+    await gotoBoardHarness(page, { width: 1280, start: 'board' })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
     const cols = page.getByTestId('run-board-column')
     await expect(cols).toHaveCount(3)
@@ -222,7 +190,7 @@ test.describe('需求进度看板（项目级）', () => {
   })
 
   test('额外列筛选失败状态，查看更多跳转运行列表', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'project-board', memory: '1', projectId: 'proj-1' })
+    await gotoBoardHarness(page, { width: 1280, start: 'board' })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
 
     await page.getByTestId('board-filter-failed').click()
@@ -238,9 +206,7 @@ test.describe('需求进度看板（项目级）', () => {
     await gotoBoardHarness(page, {
       width: 390,
       height: 844,
-      start: 'project-board',
-      memory: '1',
-      projectId: 'proj-1',
+      start: 'board',
     })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByText('看板需求-运行中')).toBeVisible()
@@ -268,42 +234,12 @@ test.describe('需求进度看板（项目级）', () => {
       await route.continue()
     })
 
-    await page.route('**/api/projects/*/token-stats**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          window: '30d',
-          bucketWidth: 'day',
-          timezone: 'UTC',
-          empty: true,
-          trend: [],
-          composition: {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-            total: 0,
-          },
-          workflows: [],
-        }),
-      })
-    })
-
     await page.route('**/api/runs**', async (route) => {
       if (route.request().method() !== 'GET') {
         await route.continue()
         return
       }
       const url = new URL(route.request().url())
-      if (!url.searchParams.get('projectId')) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'projectId required in e2e mock' }),
-        })
-        return
-      }
       const status = url.searchParams.get('status') || ''
       const pageSize = Number(url.searchParams.get('pageSize') || 20)
       pageSizeByStatus[status] = pageSize
@@ -352,12 +288,12 @@ test.describe('需求进度看板（项目级）', () => {
       })
     })
 
-    await page.goto('/board.html?start=project-board&memory=1&projectId=proj-1')
+    await page.goto('/board.html?start=board')
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('run-board-column-body')).toHaveCount(3)
 
-    expect(pageSizeByStatus.completed).toBe(20)
-    expect(pageSizeByStatus.running).toBe(100)
+    await expect.poll(() => pageSizeByStatus.completed).toBe(20)
+    await expect.poll(() => pageSizeByStatus.running).toBe(100)
 
     const completedCol = page.getByTestId('run-board-column').nth(2)
     const completedBody = completedCol.getByTestId('run-board-column-body')
@@ -411,42 +347,12 @@ test.describe('需求进度看板（项目级）', () => {
       await route.continue()
     })
 
-    await page.route('**/api/projects/*/token-stats**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({
-          window: '30d',
-          bucketWidth: 'day',
-          timezone: 'UTC',
-          empty: true,
-          trend: [],
-          composition: {
-            inputTokens: 0,
-            outputTokens: 0,
-            cacheReadTokens: 0,
-            cacheWriteTokens: 0,
-            total: 0,
-          },
-          workflows: [],
-        }),
-      })
-    })
-
     await page.route('**/api/runs**', async (route) => {
       if (route.request().method() !== 'GET') {
         await route.continue()
         return
       }
       const url = new URL(route.request().url())
-      if (!url.searchParams.get('projectId')) {
-        await route.fulfill({
-          status: 400,
-          contentType: 'application/json',
-          body: JSON.stringify({ error: 'projectId required in e2e mock' }),
-        })
-        return
-      }
       const status = url.searchParams.get('status') || ''
       const pageNum = Number(url.searchParams.get('page') || 1)
       const pageSize = Number(url.searchParams.get('pageSize') || 20)
@@ -536,7 +442,7 @@ test.describe('需求进度看板（项目级）', () => {
       })
     })
 
-    await page.goto('/board.html?start=project-board&memory=1&projectId=proj-1')
+    await page.goto('/board.html?start=board')
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
 
     const headers = page.getByTestId('run-board-column-header')
@@ -589,7 +495,7 @@ test.describe('需求进度看板（项目级）', () => {
   })
 
   test('列头模态与侧滑互斥；Dashboard 列头不可激活', async ({ page }) => {
-    await gotoBoardHarness(page, { width: 1280, start: 'project-board', memory: '1', projectId: 'proj-1' })
+    await gotoBoardHarness(page, { width: 1280, start: 'board' })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
 
     // Open card drawer first
@@ -614,7 +520,7 @@ test.describe('需求进度看板（项目级）', () => {
     await expect(page.getByText('运行摘要')).toHaveCount(0)
 
     // Home has no mini-board columns
-    await gotoBoardHarness(page, { width: 1280, start: 'dashboard', memory: '1', projectId: 'proj-1' })
+    await gotoBoardHarness(page, { width: 1280, start: 'dashboard' })
     await expect(page.getByTestId('dashboard-view')).toBeVisible({ timeout: 10_000 })
     await expect(page.getByTestId('home-composer')).toBeVisible()
     await expect(page.getByTestId('run-board-column')).toHaveCount(0)

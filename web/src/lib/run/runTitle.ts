@@ -1,8 +1,8 @@
 import { attachmentDisplayName } from '@/lib/shared/attachments'
 import type { ClarifyImage } from '@/lib/shared/types'
 
-/** Matches engine maxRunTitleRunes (Unicode code points). */
-const RUN_TITLE_MAX = 80
+/** Matches engine maxRunTitleRunes (Unicode code points). Explicit rename must reject past this, not clip. */
+export const RUN_TITLE_MAX = 80
 
 /** Trim and cap a launch title override. */
 export function clipRunTitle(raw: string, max = RUN_TITLE_MAX): string {

@@ -221,6 +221,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
+	runtime.ApplyCredentialBindings(env, projectCreds, projectID, agent.CredentialBindings, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
@@ -331,8 +332,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	s.mu.Lock()
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
-		codexAuthInjected: codexLogin,
-		codexAuthPath:     codexLiveAuthPath(backend, configRoot),
+		codexAuthInjected:     codexLogin,
+		codexAuthCredentialID: runtime.CredentialIDForWriteBack(projectID, envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
@@ -480,16 +482,19 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		return nil, nil, fmt.Errorf("reconnect acp: %w", err)
 	}
 	injected := ""
+	credentialID := ""
 	rejected := false
 	if ls != nil {
 		injected = ls.codexAuthInjected
+		credentialID = ls.codexAuthCredentialID
 		rejected = ls.codexAuthRejected
 	}
 	ls = &liveSandbox{
 		sb: sb, acp: acp,
-		codexAuthInjected: injected,
-		codexAuthPath:     codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
-		codexAuthRejected: rejected,
+		codexAuthInjected:     injected,
+		codexAuthCredentialID: credentialID,
+		codexAuthPath:         codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
+		codexAuthRejected:     rejected,
 	}
 	s.mu.Lock()
 	s.live[id] = ls
@@ -701,7 +706,12 @@ func (s *SandboxService) runInProgress(runID string) bool {
 // drops orphan managed sandboxes not tracked in the DB. Dropping a local row
 // always Destroy()s the gateway instance first so sandbox_gateway.sandboxes
 // (and the workload it protects) cannot outlive the platform list.
-func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
+//
+// adopted names run sandboxes the engine will reattach: they stay in use with
+// no destroy deadline. Run sandboxes are never Attach()ed here, because Attach
+// pushes a newer runtime bundle and restarts an idle bridge, which would drop
+// the agent session the engine is about to reconnect to.
+func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[string]bool) {
 	var rows []models.Sandbox
 	if err := s.db.Find(&rows).Error; err != nil {
 		return
@@ -714,21 +724,8 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 	protectedCorr := map[string]bool{}
 	for i := range rows {
 		row := &rows[i]
-		// A run-level shared container of a run that is still in progress is
-		// kept so the runtime coordinator can rehydrate it. Node-private
-		// containers, missing containers and those of finished runs are orphans.
 		if row.Purpose == "run" {
-			if row.Scope == runtimeScopeRun && s.runInProgress(row.RunID) && s.mgr.Status(ctx, row.Name) == "running" {
-				tracked[row.Name] = true
-				if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
-					s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
-						"status": "running", "host": sb.Host, "acp_port": sb.Port,
-						"code_server_port": sb.CodeServerPort, "updated_at": time.Now(),
-					})
-				}
-			} else {
-				s.destroyLocalSandbox(ctx, row)
-			}
+			s.reconcileRunSandbox(ctx, row, adopted[row.Name], tracked)
 			continue
 		}
 		// Young creating rows still use a placeholder Name; the gateway id is
@@ -772,6 +769,47 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context) {
 		}
 		_ = s.mgr.DestroyByName(ctx, sb.ID)
 		log.Info().Str("name", sb.ID).Msg("destroyed orphan sandbox container")
+	}
+}
+
+// reconcileRunSandbox keeps a live per-run node sandbox across a restart. An
+// adopted one is marked in use for the reattaching driver; any other keeps its
+// persisted leases (debug window, preview) or is retired like a finished node.
+// Missing or stopped containers are dropped.
+// A run-level shared container (Scope=run) of a run that is still in progress is
+// kept so the runtime coordinator can rehydrate it. Node-private containers (Scope=node),
+// missing containers and those of finished runs are orphans.
+func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
+	if s.mgr.Status(ctx, row.Name) != "running" {
+		s.destroyLocalSandbox(ctx, row)
+		return
+	}
+	// Only keep scope=run containers that are still in progress
+	if row.Scope == runtimeScopeRun && !s.runInProgress(row.RunID) {
+		s.destroyLocalSandbox(ctx, row)
+		return
+	}
+	// Node-private containers (Scope=node) are not kept across restart
+	if row.Scope != runtimeScopeRun {
+		s.destroyLocalSandbox(ctx, row)
+		return
+	}
+	tracked[row.Name] = true
+	if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
+		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
+			"status": "running", "host": sb.Host, "acp_port": sb.Port,
+			"code_server_port": sb.CodeServerPort, "updated_at": time.Now(),
+		})
+	}
+	if adopted {
+		s.mu.Lock()
+		s.runActive[row.Name] = true
+		s.mu.Unlock()
+		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Update("destroy_at", nil)
+		return
+	}
+	if row.DestroyAt == nil {
+		s.RetireRunSandbox(row.Name)
 	}
 }
 

@@ -1,8 +1,17 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = defineProps<{ name: string; size?: number | string }>()
 
 const paths: Record<string, string> = {
   dashboard: '<path d="M3 3h8v8H3zM13 3h8v5h-8zM13 12h8v9h-8zM3 13h8v8H3z"/>',
+  'home-start': '<path d="m3.5 10 7.3-6a1.9 1.9 0 0 1 2.4 0l7.3 6"/><path d="M5.5 8.4v10.1A1.5 1.5 0 0 0 7 20h3v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5h3a1.5 1.5 0 0 0 1.5-1.5V8.4"/>',
+  'new-request': '<path d="M12.5 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6.5"/><path d="m15.5 4.5 4 4M10 10l7.3-7.3a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L14 14l-5 1 1-5Z"/>',
+  'pending-chat': '<path d="M8 5h8a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4H9l-5 3V9a4 4 0 0 1 4-4Z"/><path d="M8.5 10h7M8.5 13.5h4.5"/>',
+  'pending-review': '<rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h3"/>',
+  'pending-approval': '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.5 4.7-5"/>',
+  'more-horizontal': '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  logout: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m4-12 4 4-4 4m-5-4h11"/>',
   chart: '<path d="M4 19V5M4 19h16M8 17V9M12 17V7M16 17v-5"/>',
   board: '<rect x="3" y="4" width="5" height="16"/><rect x="10" y="4" width="5" height="16"/><rect x="17" y="4" width="4" height="16"/>',
   workflow: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3"/>',
@@ -17,18 +26,25 @@ const paths: Record<string, string> = {
   trigger: '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  filter: '<path d="M4 5h16M7 12h10M10 19h4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   play: '<path d="M7 5l12 7-12 7z"/>',
   save: '<path d="M5 3h12l4 4v14H3V5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>',
   more: '<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5 12l5 5 9-11"/>',
+  'chat-send': '<path d="M12 18V6m-6 6 6-6 6 6"/>',
+  'chat-stop': '<rect x="7" y="7" width="10" height="10" rx="2"/>',
+  'chat-artifacts': '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M14 4v16"/>',
   alert: '<path d="M12 3l9 16H3z"/><path d="M12 9v5M12 17h.01"/>',
   'chevron-down': '<path d="M6 9l6 6 6-6"/>',
   'chevrons-down': '<path d="M6 5l6 6 6-6"/><path d="M6 11l6 6 6-6"/>',
   'chevron-left': '<path d="M15 6l-6 6 6 6"/>',
   'chevron-right': '<path d="M9 6l6 6-6 6"/>',
   'arrow-left': '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+  'arrow-right': '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  // ⇄ exchange: upstream ↔ downstream node handoff.
+  swap: '<path d="M7 4 3 8l4 4"/><path d="M3 8h13a5 5 0 0 1 5 5"/><path d="m17 20 4-4-4-4"/><path d="M21 16H8a5 5 0 0 1-5-5"/>',
   'arrow-up': '<path d="M12 19V5M5 12l7-7 7 7"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
   copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
@@ -74,26 +90,29 @@ const paths: Record<string, string> = {
   globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
   crosshair: '<circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
   tag: '<path d="M20.6 13.4 12 22l-8.6-8.6a5 5 0 0 1 0-7.1l.7-.7a5 5 0 0 1 7.1 0L12 6l.8-.8a5 5 0 0 1 7.1 0l.7.7a5 5 0 0 1 0 7.1z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
+  pin: '<path d="M14.4 2.8 21.2 9.6 16.8 14l1.2 4.4-3.2-2.4L9.6 21.2 8 15.2 2.8 12.8 12 6.4 14.4 2.8z"/>',
   star: '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   'star-filled': '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
   help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.2 2.4c-.8.3-1.2.8-1.2 1.6V14"/><circle cx="12" cy="17" r="1"/>',
   // Dedicated glyphs for the four workflow-artifact sandbox cards. Shared doc/terminal/globe stay unchanged.
   'stage-ide': '<rect x="3.2" y="3.6" width="17.6" height="16.8" rx="2"/><path d="M3.2 8h17.6"/><path d="M8.2 8v12.4"/><path d="M11 12.2h6"/><path d="M11 15.4h4"/>',
   'stage-terminal': '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2"/><path d="M7.1 9.3 10.3 12 7.1 14.7"/><path d="M12.2 14.8h4.6"/>',
-  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4c2.1 2.1 3.3 4.9 3.3 8s-1.2 5.9-3.3 8c-2.1-2.1-3.3-4.9-3.3-8s1.2-5.9 3.3-8z"/>',
+  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><ellipse cx="12" cy="12" rx="3.3" ry="8"/>',
   'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
 }
 
 /** Icons that render with solid fill (favorited star). */
-const filledNames = new Set(['star-filled', 'stop'])
+const filledNames = new Set(['star-filled', 'stop', 'pin', 'chat-stop'])
 
-const size = props.size ?? 18
-const body = paths[props.name] ?? paths.dot
-const filled = filledNames.has(props.name)
+const size = computed(() => props.size ?? 18)
+const body = computed(() => paths[props.name] ?? paths.dot)
+const filled = computed(() => filledNames.has(props.name))
 </script>
 
 <template>
   <svg
+    class="app-icon"
+    :data-icon="props.name"
     :width="size"
     :height="size"
     viewBox="0 0 24 24"

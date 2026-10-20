@@ -117,8 +117,6 @@ onMounted(() => void load())
     data-testid="project-cron-jobs-panel"
     :aria-busy="loading ? 'true' : 'false'"
   >
-    <h3 class="text-base font-semibold">{{ t('pages.projectDetail.cron.title') }}</h3>
-
     <div
       v-if="showRefreshProgress"
       class="h-[2px] overflow-hidden bg-line"
@@ -131,11 +129,11 @@ onMounted(() => void load())
     <div :class="showRefreshProgress ? 'opacity-[0.55]' : ''">
       <div
         v-if="showSkeleton"
-        class="rounded-lg overflow-x-auto border border-line"
+        class="overflow-x-auto border-y border-line/60"
         data-testid="cron-table-skeleton"
         aria-hidden="true"
       >
-        <table class="w-full min-w-[720px] text-left text-sm">
+        <table class="cron-table w-full min-w-[1380px] text-left text-sm">
           <thead class="bg-elevated text-xs text-txt3">
             <tr>
               <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
@@ -163,7 +161,7 @@ onMounted(() => void load())
         v-else-if="loadDenied"
         role="status"
         data-testid="cron-denied"
-        class="rounded-lg border border-warn/40 bg-warn/10 px-5 py-10 text-center"
+        class="px-5 py-10 text-center"
       >
         <Icon name="lock" :size="22" class="mx-auto mb-3 text-warn" />
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h3>
@@ -177,7 +175,7 @@ onMounted(() => void load())
         v-else-if="loadFailed"
         role="status"
         data-testid="cron-failed"
-        class="rounded-lg border border-err/40 bg-err/10 px-5 py-10 text-center"
+        class="px-5 py-10 text-center"
       >
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
         <p class="mt-1 text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
@@ -191,9 +189,9 @@ onMounted(() => void load())
         :title="t('pages.projectDetail.cron.emptyTitle')"
         :desc="t('pages.projectDetail.cron.emptyDesc')"
       />
-      <div v-else class="overflow-hidden rounded-lg border border-line">
+      <div v-else class="overflow-hidden border-y border-line/60">
         <div class="scroll-area overflow-x-auto">
-          <table class="w-full min-w-[720px] text-left text-sm" data-testid="cron-table">
+          <table class="cron-table w-full min-w-[1380px] text-left text-sm" data-testid="cron-table">
             <thead class="bg-elevated text-xs text-txt3">
               <tr>
                 <th class="px-3 py-2 font-medium whitespace-nowrap">{{ t('pages.projectDetail.cron.colName') }}</th>
@@ -263,3 +261,12 @@ onMounted(() => void load())
     </div>
   </div>
 </template>
+
+<style scoped>
+.cron-table { table-layout: auto; }
+.cron-table th, .cron-table td { white-space: nowrap; }
+.cron-table td:first-child { min-width: 220px; max-width: 300px; white-space: normal; }
+.cron-table td:nth-child(3) { min-width: 150px; }
+.cron-table td:nth-child(6), .cron-table td:nth-child(7) { min-width: 160px; }
+.cron-table td:nth-child(9) { min-width: 180px; max-width: 320px; white-space: normal; overflow-wrap: anywhere; }
+</style>

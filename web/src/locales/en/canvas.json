@@ -81,7 +81,7 @@
       "control": "Control",
       "collab": "Collaboration",
       "fromTemplate": "New from template",
-      "noAgents": "No Agents in this project yet",
+      "noAgents": "No Agents in this workspace yet",
       "noMatch": "No matching nodes",
       "dragHint": "Drag onto the canvas, or click and then click the canvas to place",
       "collapse": "Collapse panel",
@@ -177,7 +177,7 @@
       "outputHasOutgoing": "The output node cannot have outgoing connections",
       "unreachable": "No connection leads into this node",
       "noAgent": "No Agent selected",
-      "agentNotFound": "Agent \"{name}\" does not exist or is not in this project",
+      "agentNotFound": "Agent \"{name}\" does not exist or has been deleted",
       "agentNoCaps": "Agent {name} has not declared capabilities",
       "agentBadCaps": "Agent {name} has invalid capabilities: {reason}",
       "noGoal": "No goal set",
@@ -233,8 +233,8 @@
         "followEmpty": "The Agent has no model key yet; the run will fail",
         "nodeChip": "This node",
         "agentDefault": "Agent default",
-        "projectKeys": "Project model keys",
-        "empty": "No model keys in this project yet",
+        "projectKeys": "Workspace model keys",
+        "empty": "No model keys in this workspace yet",
         "manage": "Add or manage in the credential center",
         "staleTitle": "The selected model key is gone",
         "staleBody": "It was deleted or cleared. Pick another one",
@@ -258,7 +258,7 @@
       }
     },
     "topbar": {
-      "projects": "Projects",
+      "projects": "Workspace",
       "rename": "Click to rename",
       "saveError": "Save failed: {error}",
       "issuesNone": "No issues",
@@ -357,9 +357,15 @@
       "doneNote": "API runs will use this version."
     },
     "handoff": {
-      "title": "Handoff from {source}",
+      "chip": "Handoff",
+      "title": "Handoff notes",
       "platformTitle": "Platform handoff (upstream left none)",
+      "platformNote": "Written by the platform · upstream left no handoff",
+      "fromNode": "From the \"{source}\" node",
+      "fromNodeVisit": "From the \"{source}\" node · viewing visit {n}",
+      "visit": "Visit {n}",
       "aria": "Handoff from {source} to {target}",
+      "ariaCount": "Handoff from {source} to {target}, {n} visits",
       "close": "Close handoff"
     }
   }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AuditFilterDropdown, { type AuditDdOption } from '@/components/project/AuditFilterDropdown.vue'
+import Icon from '@/components/ui/Icon.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import { api } from '@/lib/api/api'
@@ -25,6 +26,7 @@ const props = defineProps<{
 
 const { t } = useI18n()
 const toast = useToast()
+const detailId = `audit-detail-${useId()}`
 const { isMobile } = useBreakpoint()
 
 type Mode = 'run' | 'all'
@@ -642,7 +644,7 @@ onUnmounted(() => {
   <div class="audit-panel" data-testid="project-audit-panel">
     <div
       v-if="denied || forceDenied"
-      class="rounded-lg flex min-h-0 flex-1 flex-col items-center justify-center gap-2 border border-dashed border-line bg-surface px-6 py-16 text-center"
+      class="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 py-16 text-center"
       data-testid="project-audit-denied"
     >
       <div class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.audit.deniedTitle') }}</div>
@@ -650,229 +652,45 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
-      <div class="filters" :class="{ 'filters-mobile': isMobile }" data-testid="project-audit-filters">
-        <!-- Mobile: collapsible filter summary (plan g2); search/export stay outside fold -->
-        <template v-if="isMobile">
-          <button
-            type="button"
-            class="filter-summary"
-            data-testid="project-audit-filter-summary"
-            :aria-expanded="filtersExpanded ? 'true' : 'false'"
-            @click="toggleFiltersExpanded"
-          >
-            <span class="sum-text">{{ filterSummaryText }}</span>
-            <span class="sum-action">
-              {{
-                filtersExpanded
-                  ? t('pages.projectDetail.audit.filterCollapse')
-                  : t('pages.projectDetail.audit.filterExpand')
-              }}
-            </span>
+      <p class="audit-intro">{{ t('pages.projectDetail.audit.description') }}</p>
+      <div class="audit-toolbar">
+        <div class="seg" role="group" :aria-label="t('pages.projectDetail.audit.title')" data-testid="project-audit-mode">
+          <button type="button" :class="{ on: mode === 'run' }" :aria-pressed="mode === 'run'" data-testid="project-audit-mode-run" @click="setMode('run')">
+            {{ t('pages.projectDetail.audit.modeRun') }}
           </button>
-
-          <div
-            v-show="filtersExpanded"
-            class="filters-editor"
-            data-testid="project-audit-filters-editor"
-          >
-            <AuditFilterDropdown
-              v-if="mode === 'run'"
-              :model-value="runId"
-              :label-key="'Run'"
-              :options="runDdOptions"
-              :searchable="true"
-              :block="true"
-              :empty-label="t('pages.projectDetail.audit.noRun')"
-              test-id="project-audit-run"
-              @update:model-value="onRunChange"
-            />
-            <AuditFilterDropdown
-              v-if="mode === 'run'"
-              :model-value="nodeId"
-              :label-key="t('pages.projectDetail.audit.colNode')"
-              :options="nodeDdOptions"
-              :searchable="true"
-              :block="true"
-              :empty-label="t('pages.projectDetail.audit.filterAll')"
-              test-id="project-audit-node"
-              @update:model-value="(v) => { nodeId = v; onFilterChange() }"
-            />
-            <AuditFilterDropdown
-              v-if="mode === 'all'"
-              :model-value="callerKind"
-              :label-key="t('pages.projectDetail.audit.colCaller')"
-              :options="callerDdOptions"
-              :block="true"
-              :empty-label="t('pages.projectDetail.audit.filterAll')"
-              test-id="project-audit-caller"
-              @update:model-value="(v) => { callerKind = v; onFilterChange() }"
-            />
-            <AuditFilterDropdown
-              :model-value="resource"
-              :label-key="t('pages.projectDetail.audit.colResource')"
-              :options="resourceDdOptions"
-              :searchable="true"
-              :block="true"
-              :empty-label="t('pages.projectDetail.audit.filterAll')"
-              :group-by="resGroup"
-              test-id="project-audit-resource"
-              @update:model-value="(v) => { resource = v; onFilterChange() }"
-            />
-            <AuditFilterDropdown
-              :model-value="timeWindow"
-              :label-key="t('pages.projectDetail.audit.filterTime')"
-              :options="timeDdOptions"
-              :block="true"
-              test-id="project-audit-time"
-              @update:model-value="onTimeChange"
-            />
+          <button type="button" :class="{ on: mode === 'all' }" :aria-pressed="mode === 'all'" data-testid="project-audit-mode-all" @click="setMode('all')">
+            {{ t('pages.projectDetail.audit.modeAll') }}
+          </button>
+        </div>
+        <div class="toolbar-end">
+          <div class="toolbar-stats" data-testid="project-audit-stats">
+            <span class="stat-chip" data-testid="project-audit-run-count">{{ t('pages.projectDetail.audit.statTotal') }} <b>{{ stats.total }}</b></span>
+            <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <b>{{ statOk }}</b></span>
+            <span class="stat-chip" :class="{ fail: stats.fail }">{{ t('pages.projectDetail.audit.statFail') }} <b>{{ stats.fail }}</b></span>
+            <span class="stat-chip">MCP <b>{{ stats.mcp }}</b></span>
           </div>
-
-          <div class="search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20l-3-3" />
-            </svg>
-            <input
-              v-model="search"
-              type="search"
-              :placeholder="t('pages.projectDetail.audit.searchPlaceholder')"
-              autocomplete="off"
-              data-testid="project-audit-search"
-              @input="onSearchInput"
-            />
-          </div>
-          <div class="seg" role="tablist" data-testid="project-audit-mode">
-            <button
-              type="button"
-              :class="{ on: mode === 'run' }"
-              data-testid="project-audit-mode-run"
-              @click="setMode('run')"
-            >
-              {{ t('pages.projectDetail.audit.modeRun') }}
-            </button>
-            <button
-              type="button"
-              :class="{ on: mode === 'all' }"
-              data-testid="project-audit-mode-all"
-              @click="setMode('all')"
-            >
-              {{ t('pages.projectDetail.audit.modeAll') }}
-            </button>
-          </div>
-          <div class="toolbar-end">
-            <div class="toolbar-stats" data-testid="project-audit-stats">
-              <span class="stat-chip" data-testid="project-audit-run-count">
-                {{ t('pages.projectDetail.audit.statTotal') }} <b>{{ stats.total }}</b>
-              </span>
-              <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <b>{{ statOk }}</b></span>
-              <span class="stat-chip" :class="{ fail: stats.fail }">{{ t('pages.projectDetail.audit.statFail') }} <b>{{ stats.fail }}</b></span>
-              <span class="stat-chip">MCP <b>{{ stats.mcp }}</b></span>
-            </div>
-            <button type="button" class="btn" data-testid="project-audit-export" @click="exportAudit">
-              {{ t('pages.projectDetail.audit.export') }}
-            </button>
-          </div>
-        </template>
-
-        <!-- Desktop: horizontal filters + wide table (plan g4.1) -->
-        <template v-else>
-          <div class="search">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <circle cx="11" cy="11" r="7" />
-              <path d="M20 20l-3-3" />
-            </svg>
-            <input
-              v-model="search"
-              type="search"
-              :placeholder="t('pages.projectDetail.audit.searchPlaceholder')"
-              autocomplete="off"
-              data-testid="project-audit-search"
-              @input="onSearchInput"
-            />
-          </div>
-
-          <AuditFilterDropdown
-            v-if="mode === 'run'"
-            :model-value="runId"
-            :label-key="'Run'"
-            :options="runDdOptions"
-            :searchable="true"
-            :width="280"
-            :empty-label="t('pages.projectDetail.audit.noRun')"
-            test-id="project-audit-run"
-            @update:model-value="onRunChange"
-          />
-          <AuditFilterDropdown
-            v-if="mode === 'run'"
-            :model-value="nodeId"
-            :label-key="t('pages.projectDetail.audit.colNode')"
-            :options="nodeDdOptions"
-            :searchable="true"
-            :empty-label="t('pages.projectDetail.audit.filterAll')"
-            test-id="project-audit-node"
-            @update:model-value="(v) => { nodeId = v; onFilterChange() }"
-          />
-          <AuditFilterDropdown
-            v-if="mode === 'all'"
-            :model-value="callerKind"
-            :label-key="t('pages.projectDetail.audit.colCaller')"
-            :options="callerDdOptions"
-            :empty-label="t('pages.projectDetail.audit.filterAll')"
-            test-id="project-audit-caller"
-            @update:model-value="(v) => { callerKind = v; onFilterChange() }"
-          />
-          <AuditFilterDropdown
-            :model-value="resource"
-            :label-key="t('pages.projectDetail.audit.colResource')"
-            :options="resourceDdOptions"
-            :searchable="true"
-            :width="280"
-            :empty-label="t('pages.projectDetail.audit.filterAll')"
-            :group-by="resGroup"
-            test-id="project-audit-resource"
-            @update:model-value="(v) => { resource = v; onFilterChange() }"
-          />
-          <AuditFilterDropdown
-            :model-value="timeWindow"
-            :label-key="t('pages.projectDetail.audit.filterTime')"
-            :options="timeDdOptions"
-            test-id="project-audit-time"
-            @update:model-value="onTimeChange"
-          />
-
-          <div class="seg" role="tablist" data-testid="project-audit-mode">
-            <button
-              type="button"
-              :class="{ on: mode === 'run' }"
-              data-testid="project-audit-mode-run"
-              @click="setMode('run')"
-            >
-              {{ t('pages.projectDetail.audit.modeRun') }}
-            </button>
-            <button
-              type="button"
-              :class="{ on: mode === 'all' }"
-              data-testid="project-audit-mode-all"
-              @click="setMode('all')"
-            >
-              {{ t('pages.projectDetail.audit.modeAll') }}
-            </button>
-          </div>
-          <div class="toolbar-end">
-            <div class="toolbar-stats" data-testid="project-audit-stats">
-              <span class="stat-chip" data-testid="project-audit-run-count">
-                {{ t('pages.projectDetail.audit.statTotal') }} <b>{{ stats.total }}</b>
-              </span>
-              <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <b>{{ statOk }}</b></span>
-              <span class="stat-chip" :class="{ fail: stats.fail }">{{ t('pages.projectDetail.audit.statFail') }} <b>{{ stats.fail }}</b></span>
-              <span class="stat-chip">MCP <b>{{ stats.mcp }}</b></span>
-            </div>
-            <button type="button" class="btn" data-testid="project-audit-export" @click="exportAudit">
-              {{ t('pages.projectDetail.audit.export') }}
-            </button>
-          </div>
-        </template>
+          <button type="button" class="btn export-btn" data-testid="project-audit-export" @click="exportAudit">
+            <Icon name="download" :size="14" />{{ t('pages.projectDetail.audit.export') }}
+          </button>
+        </div>
+      </div>
+      <div class="filters" :class="{ 'filters-mobile': isMobile }" data-testid="project-audit-filters">
+        <div class="search">
+          <Icon name="search" :size="14" />
+          <input v-model="search" type="search" :aria-label="t('pages.projectDetail.audit.filterSearch')" :placeholder="t('pages.projectDetail.audit.searchPlaceholder')" autocomplete="off" data-testid="project-audit-search" @input="onSearchInput" />
+        </div>
+        <button v-if="isMobile" type="button" class="filter-summary" data-testid="project-audit-filter-summary" :aria-expanded="filtersExpanded" @click="toggleFiltersExpanded">
+          <Icon name="filter" :size="14" />
+          <span class="sum-text">{{ filterSummaryText }}</span>
+          <span class="sum-action">{{ filtersExpanded ? t('pages.projectDetail.audit.filterCollapse') : t('pages.projectDetail.audit.filterExpand') }}</span>
+        </button>
+        <div v-show="!isMobile || filtersExpanded" class="filters-editor" :class="{ 'run-filters': mode === 'run' }" data-testid="project-audit-filters-editor">
+          <AuditFilterDropdown v-if="mode === 'run'" :model-value="runId" label-key="Run" :options="runDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.projectDetail.audit.noRun')" test-id="project-audit-run" @update:model-value="onRunChange" />
+          <AuditFilterDropdown v-if="mode === 'run'" :model-value="nodeId" :label-key="t('pages.projectDetail.audit.colNode')" :options="nodeDdOptions" searchable :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" test-id="project-audit-node" @update:model-value="(v) => { nodeId = v; onFilterChange() }" />
+          <AuditFilterDropdown v-if="mode === 'all'" :model-value="callerKind" :label-key="t('pages.projectDetail.audit.colCaller')" :options="callerDdOptions" :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" test-id="project-audit-caller" @update:model-value="(v) => { callerKind = v; onFilterChange() }" />
+          <AuditFilterDropdown :model-value="resource" :label-key="t('pages.projectDetail.audit.colResource')" :options="resourceDdOptions" searchable :width="320" :block="isMobile" :empty-label="t('pages.projectDetail.audit.filterAll')" :group-by="resGroup" test-id="project-audit-resource" @update:model-value="(v) => { resource = v; onFilterChange() }" />
+          <AuditFilterDropdown :model-value="timeWindow" :label-key="t('pages.projectDetail.audit.filterTime')" :options="timeDdOptions" :block="isMobile" test-id="project-audit-time" @update:model-value="onTimeChange" />
+        </div>
       </div>
 
       <div v-if="!isMobile && chips.length" class="chips" data-testid="project-audit-chips">
@@ -951,11 +769,13 @@ onUnmounted(() => {
           class="event-card"
           :class="{ open: openId === ev.id, fail: ev.outcome === 'fail' }"
           :data-testid="`project-audit-event-${ev.id}`"
+          :aria-expanded="openId === ev.id"
+          :aria-controls="`${detailId}-${ev.id}`"
           @click="toggleOpen(ev.id)"
         >
           <div class="ec-top">
-            <span class="ec-time mono">{{ fmtTime(ev.occurredAt) }}</span>
-            <span :class="ev.outcome === 'fail' ? 'bad' : 'ok'">{{ outcomeLabel(ev) }}</span>
+            <span class="ec-time mono" :title="ev.occurredAt">{{ fmtTime(ev.occurredAt) }}</span>
+            <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
           </div>
           <div class="ec-sum" :class="{ open: openId === ev.id }">{{ ev.summary }}</div>
           <div class="ec-row">
@@ -963,7 +783,7 @@ onUnmounted(() => {
             {{ nodeLabel(ev.nodeId) }}
             <span v-if="resourceAux(ev)" class="ec-aux">{{ resourceAux(ev) }}</span>
           </div>
-          <div v-if="openId === ev.id" class="ec-detail" @click.stop>
+          <div v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="ec-detail" @click.stop>
             <div>
               <span class="k">{{ t('pages.projectDetail.audit.colCaller') }}</span>
               {{ callerLabel(ev) }}
@@ -986,7 +806,7 @@ onUnmounted(() => {
               v-html="prettyPayload(ev.payload)"
             />
           </div>
-          <div class="ec-hint">
+          <div v-if="openId === ev.id" class="ec-hint">
             {{
               openId === ev.id
                 ? t('pages.projectDetail.audit.cardCollapseHint')
@@ -1002,6 +822,7 @@ onUnmounted(() => {
         data-testid="project-audit-list"
         data-layout="groups"
       >
+        <div class="audit-column-labels" aria-hidden="true"><span>{{ t('pages.projectDetail.audit.colTime') }}</span><span>{{ t('pages.projectDetail.audit.colSummary') }}</span><span>{{ t('pages.projectDetail.audit.colOutcome') }}</span></div>
         <div
           v-for="g in runGroups"
           :key="g.id"
@@ -1013,6 +834,8 @@ onUnmounted(() => {
           <button
             type="button"
             class="group-head"
+            :aria-expanded="isGroupOpen(g)"
+            :aria-controls="`${detailId}-group-${g.id}`"
             :data-testid="`project-audit-group-head-${g.id}`"
             @click="toggleGroup(g.id)"
           >
@@ -1020,8 +843,8 @@ onUnmounted(() => {
             <span class="group-meta">
               <span class="group-name">
                 <span class="node-dot" :class="g.type" />
-                {{ g.title }}
-                <span v-if="g.fullId" class="nid">{{ g.fullId }}</span>
+                <span class="group-title">{{ g.title }}</span>
+                <span v-if="g.fullId" class="nid" :title="g.fullId">{{ g.fullId }}</span>
               </span>
               <span class="group-sub">
                 {{ t('pages.projectDetail.audit.groupEvents', { n: g.events.length }) }}
@@ -1029,16 +852,17 @@ onUnmounted(() => {
             </span>
             <span class="group-counts">
               <span class="stat-chip ok">{{ t('pages.projectDetail.audit.statOk') }} <strong>{{ g.ok }}</strong></span>
-              <span class="stat-chip" :class="{ fail: g.fail }">{{ t('pages.projectDetail.audit.statFail') }} <strong>{{ g.fail }}</strong></span>
+              <span v-if="g.fail" class="stat-chip fail">{{ t('pages.projectDetail.audit.statFail') }} <strong>{{ g.fail }}</strong></span>
             </span>
           </button>
-          <div v-show="isGroupOpen(g)" class="group-body">
+          <div v-show="isGroupOpen(g)" :id="`${detailId}-group-${g.id}`" class="group-body">
             <table>
-              <thead>
+              <colgroup><col class="audit-time-col" /><col /><col class="audit-outcome-col" /></colgroup>
+              <thead class="sr-only">
                 <tr>
-                  <th style="width: 148px">{{ t('pages.projectDetail.audit.colTime') }}</th>
+                  <th>{{ t('pages.projectDetail.audit.colTime') }}</th>
                   <th>{{ t('pages.projectDetail.audit.colSummary') }}</th>
-                  <th style="width: 72px">{{ t('pages.projectDetail.audit.colOutcome') }}</th>
+                  <th>{{ t('pages.projectDetail.audit.colOutcome') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1050,17 +874,17 @@ onUnmounted(() => {
                     @click="toggleOpen(ev.id)"
                   >
                     <td>
-                      <div class="time-main mono">{{ fmtTime(ev.occurredAt) }}</div>
+                      <div class="time-main mono" :title="ev.occurredAt">{{ fmtTime(ev.occurredAt) }}</div>
                     </td>
                     <td class="summary">
-                      <div class="summary-main">{{ ev.summary }}</div>
-                      <div v-if="resourceAux(ev)" class="summary-aux">{{ resourceAux(ev) }}</div>
+                      <button type="button" class="summary-main" :title="ev.summary" :aria-expanded="openId === ev.id" :aria-controls="`${detailId}-${ev.id}`" @click.stop="toggleOpen(ev.id)">{{ ev.summary }}</button>
+                      <div v-if="resourceAux(ev)" class="summary-aux" :title="resourceAux(ev)">{{ resourceAux(ev) }}</div>
                     </td>
                     <td>
-                      <span :class="ev.outcome === 'fail' ? 'bad' : 'ok'">{{ outcomeLabel(ev) }}</span>
+                      <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
                     </td>
                   </tr>
-                  <tr v-if="openId === ev.id" class="detail">
+                  <tr v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="detail">
                     <td colspan="3">
                       <div class="detail-inner" @click.stop>
                         <div class="detail-meta">
@@ -1091,12 +915,13 @@ onUnmounted(() => {
         data-layout="table"
       >
         <table>
+          <colgroup><col class="audit-time-col" /><col class="audit-node-col" /><col /><col class="audit-outcome-col" /></colgroup>
           <thead>
             <tr>
-              <th style="width: 148px">{{ t('pages.projectDetail.audit.colTime') }}</th>
-              <th style="width: 140px">{{ t('pages.projectDetail.audit.colNode') }}</th>
+              <th>{{ t('pages.projectDetail.audit.colTime') }}</th>
+              <th>{{ t('pages.projectDetail.audit.colNode') }}</th>
               <th>{{ t('pages.projectDetail.audit.colSummary') }}</th>
-              <th style="width: 72px">{{ t('pages.projectDetail.audit.colOutcome') }}</th>
+              <th>{{ t('pages.projectDetail.audit.colOutcome') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -1108,20 +933,20 @@ onUnmounted(() => {
                 @click="toggleOpen(ev.id)"
               >
                 <td>
-                  <div class="time-main mono">{{ fmtTime(ev.occurredAt) }}</div>
+                  <div class="time-main mono" :title="ev.occurredAt">{{ fmtTime(ev.occurredAt) }}</div>
                 </td>
                 <td>
                   <span class="node">{{ nodeLabel(ev.nodeId) }}</span>
                 </td>
                 <td class="summary">
-                  <div class="summary-main">{{ ev.summary }}</div>
-                  <div v-if="resourceAux(ev)" class="summary-aux">{{ resourceAux(ev) }}</div>
+                  <button type="button" class="summary-main" :title="ev.summary" :aria-expanded="openId === ev.id" :aria-controls="`${detailId}-${ev.id}`" @click.stop="toggleOpen(ev.id)">{{ ev.summary }}</button>
+                  <div v-if="resourceAux(ev)" class="summary-aux" :title="resourceAux(ev)">{{ resourceAux(ev) }}</div>
                 </td>
                 <td>
-                  <span :class="ev.outcome === 'fail' ? 'bad' : 'ok'">{{ outcomeLabel(ev) }}</span>
+                  <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
                 </td>
               </tr>
-              <tr v-if="openId === ev.id" class="detail">
+              <tr v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="detail">
                 <td colspan="4">
                   <div class="detail-inner" @click.stop>
                     <div class="detail-meta">
@@ -1164,656 +989,885 @@ onUnmounted(() => {
 <style scoped>
 .audit-panel {
   display: flex;
-  flex-direction: column;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
+  container-type: inline-size;
 }
+
+.audit-intro {
+  flex: none;
+  margin: -6px 0 20px;
+  color: rgb(var(--c-txt3));
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.audit-toolbar {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  border-bottom: 1px solid rgb(var(--c-line));
+}
+
 .seg {
-  display: inline-flex;
-  background: rgb(var(--c-elevated));
-  padding: 3px;
-  gap: 2px;
-  border-radius: 8px;
+  display: flex;
+  align-self: stretch;
+  gap: 24px;
 }
+
 .seg button {
+  position: relative;
+  min-height: 42px;
+  padding: 0 0 12px;
   border: 0;
   background: transparent;
-  height: 28px;
-  padding: 0 12px;
+  color: rgb(var(--c-txt3));
   font: inherit;
-  font-size: 12px;
-  color: rgb(var(--c-txt2));
+  font-size: 13px;
   cursor: pointer;
-  font-weight: 500;
-  border-radius: 6px;
 }
+
 .seg button:hover {
   color: rgb(var(--c-txt));
 }
+
 .seg button.on {
-  background: rgb(var(--c-surface));
   color: rgb(var(--c-txt));
   font-weight: 600;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
 }
-.filters {
+
+.seg button.on::after {
+  position: absolute;
+  right: 0;
+  bottom: -1px;
+  left: 0;
+  height: 2px;
+  border-radius: 2px;
+  background: rgb(var(--c-accent));
+  content: '';
+}
+
+.toolbar-end {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-  padding: 12px 16px;
-  border-bottom: 1px solid rgb(var(--c-line));
+  gap: 20px;
+  padding-bottom: 10px;
 }
-.search {
-  flex: 1 1 180px;
-  min-width: 140px;
-  max-width: 280px;
-  height: 32px;
+
+.toolbar-stats {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
-  padding: 0 10px;
-  border-radius: 8px;
+  gap: 14px;
 }
-.search:focus-within {
-  border-color: rgb(var(--c-accent));
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.12);
+
+.stat-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  white-space: nowrap;
 }
-.search svg {
-  opacity: 0.4;
-  flex: 0 0 auto;
+
+.stat-chip b, .stat-chip strong {
   color: rgb(var(--c-txt2));
-}
-.search input {
-  flex: 1;
-  border: 0;
-  outline: none;
-  font: inherit;
-  background: transparent;
-  min-width: 0;
-  height: 30px;
   font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-chip.ok b, .stat-chip.ok strong {
+  color: rgb(var(--c-ok));
+}
+
+.stat-chip.fail, .stat-chip.fail b, .stat-chip.fail strong {
+  color: rgb(var(--c-err));
+}
+
+.btn {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-txt2));
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.btn:hover:not(:disabled) {
+  background: rgb(var(--c-elevated));
   color: rgb(var(--c-txt));
 }
+
+.btn:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+.filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 0;
+}
+
+.search {
+  display: flex;
+  min-width: 0;
+  max-width: 240px;
+  height: 34px;
+  flex: 1 1 190px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  background: rgb(var(--c-surface));
+}
+
+.search:focus-within {
+  border-color: rgb(var(--c-accent) / .65);
+  box-shadow: 0 0 0 2px rgb(var(--c-accent) / .1);
+}
+
+.search :deep(svg) {
+  flex: none;
+  color: rgb(var(--c-txt3));
+}
+
+.search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: rgb(var(--c-txt));
+  font: inherit;
+  font-size: 12px;
+}
+
 .search input::placeholder {
   color: rgb(var(--c-txt3));
 }
-.toolbar-end {
+
+.filters-editor {
   display: flex;
+  min-width: 0;
+  flex: 4 1 600px;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-left: auto;
-  flex-wrap: wrap;
 }
-.toolbar-stats {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
+
+.filters-editor :deep(.audit-dd) {
+  min-width: 0;
+  max-width: 100%;
 }
-.btn {
-  height: 32px;
-  padding: 0 12px;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
-  color: rgb(var(--c-txt));
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  white-space: nowrap;
-  border-radius: 8px;
+
+.filters-editor :deep(.audit-dd-trig) {
+  max-width: 100%;
 }
-.btn:hover:not(:disabled) {
-  background: rgb(var(--c-elevated));
-  border-color: rgb(var(--c-line-strong));
-}
-.btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
+
 .chips {
   display: flex;
+  flex: none;
   flex-wrap: wrap;
-  gap: 6px;
   align-items: center;
-  flex-shrink: 0;
-  padding: 0 16px 12px;
-  border-bottom: 1px solid rgb(var(--c-line));
+  gap: 6px;
+  padding: 0 0 14px;
 }
+
 .chip {
   display: inline-flex;
+  max-width: 100%;
+  min-height: 26px;
   align-items: center;
-  gap: 4px;
-  height: 24px;
-  padding: 0 4px 0 8px;
-  background: rgb(var(--c-elevated));
-  border: 1px solid rgb(var(--c-line));
+  gap: 5px;
+  padding: 3px 5px 3px 8px;
+  border-radius: 6px;
+  background: rgb(var(--c-accent) / .06);
+  color: rgb(var(--c-txt2));
   font-size: 11px;
-  color: rgb(var(--c-txt));
 }
+
 .chip em {
+  flex: none;
+  color: rgb(var(--c-txt3));
   font-style: normal;
-  color: rgb(var(--c-txt2));
-  font-weight: 500;
 }
+
 .chip b {
-  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
 .chip .x {
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
+  flex: none;
   border: 0;
+  border-radius: 4px;
   background: transparent;
-  color: rgb(var(--c-txt2));
+  color: rgb(var(--c-txt3));
+  font-size: 14px;
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
 }
+
 .chip .x:hover {
+  background: rgb(var(--c-accent) / .1);
   color: rgb(var(--c-txt));
-  background: rgb(var(--c-overlay));
 }
+
 .linkish {
+  padding: 3px 5px;
   border: 0;
   background: transparent;
-  color: rgb(var(--c-txt2));
+  color: rgb(var(--c-accent));
   font: inherit;
   font-size: 11px;
   cursor: pointer;
-  padding: 0 4px;
 }
-.linkish:hover {
-  color: rgb(var(--c-accent));
-}
-.stat-chip {
-  display: inline-flex;
-  gap: 4px;
-  align-items: center;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-elevated));
-  padding: 2px 8px;
-  font-size: 12px;
-  color: rgb(var(--c-txt2));
-}
-.stat-chip b,
-.stat-chip strong {
-  color: rgb(var(--c-txt));
-  font-weight: 600;
-}
-.stat-chip.ok b,
-.stat-chip.ok strong {
-  color: rgb(var(--c-ok));
-}
-.stat-chip.fail b,
-.stat-chip.fail strong {
-  color: rgb(var(--c-err));
-}
+
 .cap-hint {
-  margin: 0;
-  padding: 8px 16px;
-  font-size: 12px;
+  flex: none;
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-left: 2px solid rgb(var(--c-accent));
   color: rgb(var(--c-txt2));
-  border-bottom: 1px dashed rgb(var(--c-line-strong));
-  background: rgb(var(--c-accent-dim));
-  flex-shrink: 0;
+  background: rgb(var(--c-accent) / .04);
+  font-size: 12px;
+  line-height: 1.6;
 }
-.table-wrap {
+
+.table-wrap, .groups-wrap, .event-cards {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
+  background: rgb(var(--c-surface));
 }
-.groups-wrap {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  background: rgb(var(--c-base));
+
+.audit-column-labels {
+  display: grid;
+  grid-template-columns: 148px minmax(0,1fr) 96px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
 }
+
+.audit-column-labels > span {
+  padding: 0 10px;
+}
+
+.audit-column-labels > span:last-child {
+  text-align: right;
+}
+
 .group {
+  min-width: 0;
   border-bottom: 1px solid rgb(var(--c-line));
 }
+
 .group-head {
-  width: 100%;
   display: grid;
-  grid-template-columns: 18px 1fr auto;
-  gap: 10px;
+  width: 100%;
+  min-height: 50px;
+  grid-template-columns: 12px minmax(0,1fr) auto;
   align-items: center;
-  padding: 10px 14px;
-  background: rgb(var(--c-elevated));
-  border: none;
-  text-align: left;
+  gap: 10px;
+  padding: 11px 10px;
+  border: 0;
+  background: transparent;
   color: rgb(var(--c-txt));
-  cursor: pointer;
+  text-align: left;
   font: inherit;
+  cursor: pointer;
 }
+
 .group-head:hover {
-  background: rgb(var(--c-overlay));
+  background: rgb(var(--c-elevated) / .5);
 }
+
 .chev {
-  width: 0;
-  height: 0;
-  border-left: 5px solid rgb(var(--c-txt3));
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform 0.15s ease;
-  transform-origin: 40% 50%;
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid rgb(var(--c-txt3));
+  border-bottom: 1.5px solid rgb(var(--c-txt3));
+  transform: rotate(-45deg);
+  transition: transform .15s ease;
 }
+
 .group.open .chev {
-  transform: rotate(90deg);
-  border-left-color: rgb(var(--c-accent));
+  transform: rotate(45deg);
 }
+
 .group-meta {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
-}
-.group-name {
-  font-size: 13px;
-  font-weight: 600;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.group-name .nid {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-weight: 400;
-  font-size: 11px;
-  color: rgb(var(--c-txt3));
-}
-.node-dot {
-  width: 8px;
-  height: 8px;
-  flex-shrink: 0;
-  background: rgb(var(--c-txt3));
-}
-.node-dot.input,
-.node-dot.output {
-  background: rgb(var(--c-info));
-}
-.node-dot.clarify,
-.node-dot.implement,
-.node-dot.test_review,
-.node-dot.agent {
-  background: rgb(var(--c-accent));
-}
-.node-dot.human_gate {
-  background: rgb(var(--c-warn));
-}
-.node-dot.branch,
-.node-dot.set_var {
-  background: rgb(var(--c-txt2));
-}
-.node-dot.system {
-  background: rgb(var(--c-ok));
-}
-.group-sub {
-  font-size: 11.5px;
-  color: rgb(var(--c-txt3));
-}
-.group-counts {
-  display: flex;
-  gap: 6px;
-}
-.group-body {
-  background: rgb(var(--c-base));
-}
-.summary-main {
-  color: rgb(var(--c-txt));
-  font-size: 13px;
-  line-height: 1.4;
-}
-.summary-aux,
-.ec-aux {
-  color: rgb(var(--c-txt3));
-  font-size: 11.5px;
-  margin-top: 2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-table {
-  width: 100%;
-  border-collapse: separate;
-  border-spacing: 0;
-  min-width: 820px;
-}
-thead th {
-  position: sticky;
-  top: 0;
-  z-index: 2;
-  text-align: left;
-  padding: 9px 14px;
-  background: rgb(var(--c-elevated));
-  color: rgb(var(--c-txt2));
-  font-size: 11px;
-  font-weight: 600;
-  border-bottom: 1px solid rgb(var(--c-line));
-}
-td {
-  padding: 11px 14px;
-  border-bottom: 1px solid rgb(var(--c-line));
-  vertical-align: middle;
-  font-size: 13px;
-}
-tr.row {
-  cursor: pointer;
-}
-tr.row:hover td {
-  background: rgb(var(--c-elevated));
-}
-tr.row.open td {
-  background: rgb(var(--c-accent-dim));
-}
-tr.row.fail td:first-child {
-  box-shadow: inset 2px 0 0 rgb(var(--c-err));
-}
-tr.detail td {
-  padding: 0;
-  background: rgb(var(--c-elevated));
-  border-bottom: 1px solid rgb(var(--c-line));
-}
-.detail-inner {
-  padding: 12px 14px 14px;
-  margin-left: 2px;
-  border-left: 2px solid rgb(var(--c-accent));
-}
-.detail-meta {
-  font-size: 12px;
-  color: rgb(var(--c-txt2));
-  margin-bottom: 8px;
-  display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-}
-.detail-meta code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 11px;
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-surface));
-  border: 1px solid rgb(var(--c-line));
-  padding: 1px 5px;
-}
-.payload {
-  margin: 0;
-  padding: 10px 12px;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
-  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  white-space: pre-wrap;
-  word-break: break-word;
-  color: rgb(var(--c-txt2));
-  overflow-x: auto;
-}
-.mono {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: rgb(var(--c-txt2));
-}
-.time-main {
-  font-variant-numeric: tabular-nums;
-  color: rgb(var(--c-txt));
-  font-size: 12px;
-}
-.who {
-  color: rgb(var(--c-txt));
-  font-weight: 500;
-}
-.act {
-  font-size: 12px;
-  font-weight: 500;
-}
-.act.mcp {
-  color: #7c3aed;
-}
-.act.run {
-  color: #52525b;
-}
-.act.gate {
-  color: #b45309;
-}
-.act.cfg {
-  color: #2563eb;
-}
-.act.exp {
-  color: #db2777;
-}
-.res {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  font-size: 12px;
-  color: #71717a;
-}
-.node {
-  color: #52525b;
-  font-size: 12px;
-}
-.ok {
-  color: rgb(var(--c-ok));
-  font-size: 12px;
-  font-weight: 500;
-}
-.bad {
-  color: rgb(var(--c-err));
-  font-size: 12px;
-  font-weight: 500;
-}
-.summary {
-  color: rgb(var(--c-txt));
-}
-.list-placeholder {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
+  gap: 4px 12px;
 }
-.empty {
-  padding: 48px 16px;
-  text-align: center;
-  color: rgb(var(--c-txt2));
-}
-.empty .big {
-  font-size: 14px;
-  font-weight: 600;
-  color: rgb(var(--c-txt));
-  margin-bottom: 4px;
-}
-.col-run-hide :deep(.col-run),
-.col-node-hide :deep(.col-node) {
-  display: none;
-}
-.col-run-hide .col-run,
-.col-node-hide .col-node {
-  display: none;
-}
-.filter-summary {
+
+.group-name {
   display: flex;
+  min-width: 0;
   align-items: center;
   gap: 8px;
-  width: 100%;
-  min-height: 44px;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-elevated));
-  padding: 10px 12px;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  user-select: none;
+  font-size: 13px;
+  font-weight: 600;
 }
-.filter-summary .sum-text {
-  flex: 1;
-  min-width: 0;
-  font-size: 12px;
-  color: rgb(var(--c-txt));
+
+.group-title {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.filter-summary .sum-action {
-  flex: 0 0 auto;
-  font-size: 11px;
-  font-weight: 600;
-  color: rgb(var(--c-accent));
+
+.group-name .nid {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  color: rgb(var(--c-txt3));
+  font: 10px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.filters-editor {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  /* 与搜索同宽（f1/g2.3）：仅纵向内边距，避免左右 inset 缩窄触发器 */
-  padding: 10px 0;
-  border-top: 1px solid rgb(var(--c-line));
-  border-bottom: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-base));
+
+.node-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: rgb(var(--c-txt3));
 }
+
+.node-dot.input, .node-dot.output {
+  background: rgb(var(--c-info));
+}
+
+.node-dot.clarify, .node-dot.implement, .node-dot.test_review, .node-dot.agent {
+  background: rgb(var(--c-accent));
+}
+
+.node-dot.human_gate {
+  background: rgb(var(--c-warn));
+}
+
+.node-dot.system {
+  background: rgb(var(--c-ok));
+}
+
+.group-sub {
+  flex: none;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+}
+
+.group-counts {
+  display: flex;
+  flex: none;
+  gap: 12px;
+}
+
+.group-body {
+  min-width: 0;
+}
+
+table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.audit-time-col {
+  width: 148px;
+}
+
+.audit-node-col {
+  width: 140px;
+}
+
+.audit-outcome-col {
+  width: 96px;
+}
+
+thead:not(.sr-only) th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 9px 10px;
+  border-bottom: 1px solid rgb(var(--c-line));
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-txt3));
+  text-align: left;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+thead:not(.sr-only) th:last-child {
+  text-align: right;
+}
+
+td {
+  padding: 9px 10px;
+  border-bottom: 1px solid rgb(var(--c-line) / .55);
+  vertical-align: middle;
+  font-size: 12px;
+}
+
+.group tbody:last-child tr:last-child td {
+  border-bottom: 0;
+}
+
+tr.row {
+  cursor: pointer;
+}
+
+tr.row:hover td {
+  background: rgb(var(--c-elevated) / .5);
+}
+
+tr.row.open td {
+  background: rgb(var(--c-accent) / .045);
+}
+
+tr.row.fail td:first-child {
+  box-shadow: inset 2px 0 0 rgb(var(--c-err) / .65);
+}
+
+.summary {
+  min-width: 0;
+}
+
+.summary-main {
+  display: -webkit-box;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--c-txt));
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.65;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+tr.row.open .summary-main {
+  -webkit-line-clamp: unset;
+}
+
+.summary-aux {
+  margin-top: 1px;
+  overflow: hidden;
+  color: rgb(var(--c-txt3));
+  font: 10px/1.6 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mono {
+  color: rgb(var(--c-txt3));
+  font: 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.node {
+  display: -webkit-box;
+  overflow: hidden;
+  color: rgb(var(--c-txt2));
+  font-size: 11px;
+  line-height: 1.6;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+}
+
+.outcome {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.outcome i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.ok {
+  color: rgb(var(--c-ok));
+}
+
+.bad {
+  color: rgb(var(--c-err));
+}
+
+.event-chevron {
+  color: rgb(var(--c-txt3));
+  transition: transform .15s ease;
+}
+
+.event-chevron.expanded {
+  transform: rotate(180deg);
+}
+
+tr.detail td {
+  padding: 0;
+  border-bottom: 1px solid rgb(var(--c-line));
+}
+
+.detail-inner {
+  min-width: 0;
+  margin: 0 10px 14px 158px;
+  padding: 12px 0 0 14px;
+  border-left: 2px solid rgb(var(--c-accent) / .3);
+}
+
+.detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  margin-bottom: 12px;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.detail-meta span {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.detail-meta code, .ec-detail code {
+  color: rgb(var(--c-txt2));
+  font: 11px ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  overflow-wrap: anywhere;
+}
+
+.payload {
+  max-width: 100%;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid rgb(var(--c-line) / .6);
+  border-radius: 6px;
+  background: rgb(var(--c-elevated) / .45);
+  color: rgb(var(--c-txt2));
+  font: 11px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  overflow-x: auto;
+}
+
+.list-placeholder {
+  display: flex;
+  min-height: 150px;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.empty {
+  padding: 48px 16px;
+  color: rgb(var(--c-txt3));
+  text-align: center;
+  font-size: 12px;
+}
+
+.empty .big {
+  color: rgb(var(--c-txt));
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.filter-summary {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: rgb(var(--c-txt3));
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+
+.sum-text {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sum-action {
+  flex: none;
+  color: rgb(var(--c-accent));
+  font-size: 11px;
+}
+
 .filters-mobile {
   flex-direction: column;
+  flex-wrap: nowrap;
   align-items: stretch;
+  gap: 4px;
 }
+
 .filters-mobile .search {
-  max-width: none;
   width: 100%;
-  flex: 0 0 auto;
+  max-width: none;
   height: 44px;
   min-height: 44px;
+  flex: none;
 }
-.filters-mobile .search input {
-  height: 42px;
-}
-.filters-mobile .toolbar-end {
-  margin-left: 0;
+
+.filters-mobile .filters-editor {
+  display: grid;
   width: 100%;
-  flex: 0 0 auto;
+  flex: none;
+  grid-template-columns: repeat(2,minmax(0,1fr));
+  align-items: stretch;
+  gap: 8px;
+  padding: 8px 0;
 }
-.filters-mobile .toolbar-end .btn {
-  flex: 1;
-  width: 100%;
-  min-height: 44px;
-  height: auto;
+
+.filters-mobile .filters-editor :deep(.audit-dd:first-child), .filters-mobile .filters-editor.run-filters :deep(.audit-dd:last-child) {
+  grid-column: 1 / -1;
 }
-.filters-mobile .toolbar-stats {
-  width: 100%;
-}
-.filters-mobile .filter-summary {
-  flex: 0 0 auto;
-}
+
 .event-cards {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 12px 16px;
 }
+
 .event-card {
   display: block;
   width: 100%;
-  border: 1px solid rgb(var(--c-line));
-  background: rgb(var(--c-surface));
-  padding: 10px;
+  flex: none;
+  padding: 14px 2px;
+  border: 0;
+  border-bottom: 1px solid rgb(var(--c-line) / .65);
+  border-radius: 0;
+  background: transparent;
+  color: rgb(var(--c-txt));
   text-align: left;
   font: inherit;
-  color: inherit;
   cursor: pointer;
-  transition: border-color 0.15s ease, background 0.15s ease;
-  border-radius: 12px;
 }
+
 .event-card:hover {
-  border-color: rgb(var(--c-accent));
+  background: rgb(var(--c-elevated) / .4);
 }
+
 .event-card.open {
-  border-color: rgb(var(--c-accent));
-  background: rgb(var(--c-accent-dim));
+  background: rgb(var(--c-accent) / .035);
 }
+
 .event-card.fail {
-  box-shadow: inset 2px 0 0 rgb(var(--c-err));
+  box-shadow: inset 2px 0 0 rgb(var(--c-err) / .65);
+  padding-left: 10px;
 }
+
 .ec-top {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 4px;
 }
-.ec-time {
-  font-size: 11px;
-  color: #888;
-  font-variant-numeric: tabular-nums;
-}
-.ec-row {
-  font-size: 12px;
-  color: #333;
-  margin-top: 2px;
-}
-.ec-row .k,
-.ec-detail .k {
-  color: #888;
-}
+
 .ec-sum {
-  margin-top: 6px;
-  font-size: 12px;
-  color: #444;
   display: -webkit-box;
+  margin-top: 7px;
+  overflow: hidden;
+  color: rgb(var(--c-txt));
+  font-size: 13px;
+  line-height: 1.75;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow-wrap: anywhere;
 }
+
 .ec-sum.open {
   display: block;
   -webkit-line-clamp: unset;
 }
-.ec-detail {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px dashed #e5e5e5;
-  font-size: 12px;
-  color: #444;
-}
-.ec-detail div {
-  margin-top: 3px;
-}
-.ec-detail code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+.ec-row {
+  margin-top: 5px;
+  color: rgb(var(--c-txt2));
   font-size: 11px;
-  color: rgb(var(--c-txt));
-  background: #fff;
-  border: 1px solid rgb(var(--c-line));
-  padding: 1px 5px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
 }
+
+.ec-row .k {
+  margin-right: 5px;
+  color: rgb(var(--c-txt3));
+}
+
+.ec-aux {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  color: rgb(var(--c-txt3));
+  font: 10px/1.7 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-detail {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgb(var(--c-line));
+  color: rgb(var(--c-txt2));
+  font-size: 11px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+
+.ec-detail .k {
+  margin-right: 6px;
+  color: rgb(var(--c-txt3));
+}
+
 .ec-detail .payload {
-  margin-top: 8px;
+  margin-top: 10px;
+  text-align: left;
 }
+
 .ec-hint {
-  margin-top: 6px;
+  margin-top: 8px;
+  color: rgb(var(--c-txt3));
   font-size: 10px;
-  color: rgb(var(--c-accent));
 }
-@media (max-width: 767px) {
-  .filters:not(.filters-mobile) {
-    flex-direction: column;
-    align-items: stretch;
-  }
+
+.seg button:focus-visible, .btn:focus-visible, .linkish:focus-visible, .filter-summary:focus-visible, .group-head:focus-visible, .summary-main:focus-visible, .event-card:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .6);
+  outline-offset: -2px;
+  border-radius: 4px;
+}
+
+@container (max-width:780px) {
   .filters:not(.filters-mobile) .search {
     max-width: none;
-    width: 100%;
+    flex-basis: 100%;
   }
-  .filters:not(.filters-mobile) .toolbar-end {
-    margin-left: 0;
-    width: 100%;
+  .filters:not(.filters-mobile) .filters-editor {
+    flex-basis: 100%;
   }
-  .filters:not(.filters-mobile) .toolbar-end .btn {
-    flex: 1;
-    width: 100%;
+  .audit-toolbar {
+    gap: 10px;
+  }
+  .toolbar-end {
+    gap: 12px;
+  }
+  .toolbar-stats {
+    gap: 10px;
+  }
+  .group-name .nid {
+    max-width: 110px;
+  }
+  .detail-inner {
+    margin-left: 10px;
+  }
+  .audit-time-col {
+    width: 132px;
+  }
+  .audit-node-col {
+    width: 100px;
+  }
+  .audit-column-labels {
+    grid-template-columns: 132px minmax(0,1fr) 96px;
   }
 }
+
+@media (max-width:767px) {
+  .audit-intro {
+    margin-bottom: 16px;
+    font-size: 12px;
+  }
+  .audit-toolbar {
+    align-items: flex-start;
+  }
+  .seg {
+    gap: 18px;
+  }
+  .seg button {
+    min-height: 44px;
+    padding-bottom: 10px;
+    font-size: 12px;
+  }
+  .toolbar-end {
+    display: contents;
+  }
+  .toolbar-stats {
+    width: 100%;
+    order: 2;
+    padding-bottom: 12px;
+  }
+  .export-btn {
+    min-height: 44px;
+    margin-top: 2px;
+  }
+  .filters {
+    padding: 12px 0;
+  }
+  .chip .x {
+    min-width: 28px;
+    min-height: 28px;
+  }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .chev, .event-chevron {
+    transition: none;
+  }
+}
+
 :deep(.audit-mask) {
-  color: #b45309;
+  color: rgb(var(--c-warn));
 }
 </style>

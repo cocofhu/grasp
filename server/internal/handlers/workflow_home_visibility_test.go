@@ -53,6 +53,7 @@ func createPublishedWorkflow(t *testing.T, h *harness, name string) (id string, 
 func TestPatchWorkflowHomeVisibilityOnly(t *testing.T) {
 	h := newHarness(t)
 	id, before := createPublishedWorkflow(t, h, "HomeOnly")
+
 	if before["status"] != "published" {
 		t.Fatalf("precondition status=%v", before["status"])
 	}

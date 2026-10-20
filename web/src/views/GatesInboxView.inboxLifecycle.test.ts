@@ -19,9 +19,11 @@ const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
 }))
 
-const routeState = vi.hoisted(() => ({
-  query: {} as Record<string, string>,
-}))
+const routeState = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports
+  const { reactive } = require('vue') as typeof import('vue')
+  return reactive({ query: {} as Record<string, string> })
+})
 
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
@@ -259,10 +261,35 @@ function mountInbox() {
   })
 }
 
+/** The active pane identity stays testable without exposing technical IDs in the chat. */
+function activeDetail(wrapper: ReturnType<typeof mountInbox>) {
+  const detail = wrapper.find('[data-testid="inbox-active-detail"]')
+  return detail.exists()
+    ? { runId: detail.attributes('data-run-id'), nodeId: detail.attributes('data-node-id') }
+    : null
+}
+
 function inboxCallsFor(runId: string, nodeId: string, iteration = 1) {
   return mocks.inboxContext.mock.calls.filter(
     (c) => c[0] === runId && c[1] === nodeId && (c[2] ?? 1) === iteration,
   )
+}
+
+/** Sidebar row navigation: query selects the panel without a card column. */
+async function selectByQuery(runId: string, nodeId: string) {
+  routeState.query.run = runId
+  routeState.query.node = nodeId
+  await nextTick()
+  await flushPromises()
+}
+
+/** Tag watch is the remaining list reload; the inbox top-bar refresh control is gone. */
+async function reloadInboxList() {
+  routeState.query.tag = String((Number(routeState.query.tag) || 0) + 1)
+  await nextTick()
+  await flushPromises()
+  await nextTick()
+  await flushPromises()
 }
 
 beforeEach(async () => {
@@ -320,10 +347,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     // Select middle item b
-    const buttons = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate b'))
-    expect(buttons.length).toBeGreaterThan(0)
-    await buttons[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-b', 'gate-b')
 
     const before = inboxCallsFor('run-b', 'gate-b', 1).length
     expect(before).toBeGreaterThan(0)
@@ -338,7 +362,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(after).toBe(before)
 
     // Neighbor after removing middle b is c
-    expect(wrapper.text()).toContain('Gate c')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-c', nodeId: 'gate-c' })
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
 
     // WS status must not re-fetch processed triple
@@ -361,10 +385,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    const buttons = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate c'))
-    expect(buttons.length).toBeGreaterThan(0)
-    await buttons[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-c', 'gate-c')
 
     const before = inboxCallsFor('run-c', 'gate-c', 1).length
     expect(before).toBeGreaterThan(0)
@@ -376,7 +397,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBe(before)
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -457,8 +478,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
 
     expect(mocks.toastError).not.toHaveBeenCalled()
     // Ghost row removed; active moves to neighbor b
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     const callsForA = inboxCallsFor('run-a', 'gate-a', 1).length
     // Irrelevant status must not re-fetch the processed triple
     ws.emit('status')
@@ -487,8 +508,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before)
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -504,25 +525,25 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    const buttons = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate b'))
-    expect(buttons.length).toBeGreaterThan(0)
-    await buttons[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-b', 'gate-b')
 
     const before = inboxCallsFor('run-b', 'gate-b', 1).length
     expect(before).toBeGreaterThan(0)
 
-    // External removal (peek/apply path via manual refresh → loadList + syncActiveAfterApply)
+    // External removal: peek raises the update banner; apply reloads and picks the neighbor.
     list = [a, c]
-    const refreshBtn = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))
-    expect(refreshBtn).toBeTruthy()
-    await refreshBtn!.trigger('click')
+    await usePendingGates().peek()
+    await nextTick()
+    await flushPromises()
+    const applyBtn = wrapper.findAll('button').find((btn) => btn.text().includes('立即刷新'))
+    expect(applyBtn).toBeTruthy()
+    await applyBtn!.trigger('click')
     await flushPromises()
     await nextTick()
     await flushPromises()
 
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBe(before)
-    expect(wrapper.text()).toContain('Gate c')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-c', nodeId: 'gate-c' })
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -567,7 +588,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before)
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     wrapper.unmount()
   })
 
@@ -734,20 +755,16 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     // Intent leave: a gone before resume returns; neighbor b selected/fetched.
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
 
-    const buttonsC = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate c'))
-    expect(buttonsC.length).toBeGreaterThan(0)
-    expect(buttonsC[0].attributes('disabled')).toBeUndefined()
     const bCallsBefore = inboxCallsFor('run-b', 'gate-b', 1).length
-    await buttonsC[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-c', 'gate-c')
 
     // Per-triple gate: c is not in-flight — user may switch while a's resume pending.
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
-    expect(wrapper.text()).toContain('Gate c')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-c', nodeId: 'gate-c' })
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBe(bCallsBefore)
 
     list = [b, c]
@@ -757,8 +774,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Gate c')
-    expect(wrapper.text()).not.toContain('Gate a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-c', nodeId: 'gate-c' })
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
     wrapper.unmount()
   })
 
@@ -785,10 +802,10 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     // Leave at confirm initiation — list drops a; neighbor b is selected (its composer may mount).
-    expect(wrapper.text()).not.toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
-    expect(wrapper.text()).toContain('Run #b')
-    expect(wrapper.text()).not.toContain('Run #a')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)?.runId).toBe('run-b')
+    expect(activeDetail(wrapper)?.runId).not.toBe('run-a')
 
     list = [b]
     releaseReply({ status: 'ok' })
@@ -797,8 +814,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Clarify b')
-    expect(wrapper.text()).not.toContain('Clarify a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     expect(mocks.toastSuccess).toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -811,7 +828,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       nodeId: 'clarify-approve-1',
       iteration: 1,
       workflowName: 'wf',
-      label: 'Approve 1',
+      label: 'Run #same · clarify-approve-1',
       done: false,
       requestedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -822,7 +839,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       nodeId: 'clarify-approve-2',
       iteration: 1,
       workflowName: 'wf',
-      label: 'Approve 2',
+      label: 'Run #same · clarify-approve-2',
       done: false,
       requestedAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -851,7 +868,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     // First Approve left pending while reactReply(force) is still in flight.
-    expect(wrapper.text()).not.toContain('Approve 1')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-same', nodeId: 'clarify-approve-1' })
 
     // Engine advances: second Approve enters the list during the lock window.
     list = [approve2]
@@ -861,16 +878,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     expect(listLoads).toBeGreaterThan(1)
 
-    const buttons2 = wrapper.findAll('button').filter((btn) => btn.text().includes('Approve 2'))
-    expect(buttons2.length).toBeGreaterThan(0)
-    expect(buttons2[0].attributes('disabled')).toBeUndefined()
-
-    await buttons2[0].trigger('click')
-    await flushPromises()
+    await selectByQuery(runId, 'clarify-approve-2')
 
     expect(inboxCallsFor(runId, 'clarify-approve-2', 1).length).toBeGreaterThan(0)
-    expect(wrapper.text()).toContain('Approve 2')
-    expect(wrapper.text()).toContain('Run #same')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-same', nodeId: 'clarify-approve-2' })
+    expect(activeDetail(wrapper)?.runId).toBe('run-same')
 
     releaseReply({ status: 'ok' })
     await finishClick
@@ -878,8 +890,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Approve 2')
-    expect(wrapper.text()).not.toContain('Approve 1')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-same', nodeId: 'clarify-approve-2' })
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-same', nodeId: 'clarify-approve-1' })
     wrapper.unmount()
   })
 
@@ -906,8 +918,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
 
     // A left; B selected while A's reactReply still hangs.
-    expect(wrapper.text()).not.toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     expect(mocks.reactReply).toHaveBeenCalledTimes(1)
     expect(mocks.reactReply).toHaveBeenNthCalledWith(
       1,
@@ -938,7 +950,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
       false,
     )
-    expect(wrapper.text()).not.toContain('Clarify b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
 
     list = []
     replyResolvers[0]!({ status: 'ok' })
@@ -975,8 +987,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    expect(wrapper.text()).toContain('Clarify b')
-    expect(wrapper.text()).not.toContain('Clarify a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
 
     // A fails while B was briefly selected — restore A for retry and unlock the page.
     rejectA(new Error('confirm blew up'))
@@ -985,16 +997,15 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    expect(usePendingGates().displayedItems.value.map((it) => it.nodeId).sort()).toEqual([
+      'clarify-a',
+      'clarify-b',
+    ])
     expect(wrapper.find('[data-testid="clarify-send"]').exists()).toBe(true)
 
     // Neighbor B remains confirmable after failure unlock (no whole-page lock residue).
-    const buttonsB = wrapper.findAll('button').filter((btn) => btn.text().includes('Clarify b'))
-    expect(buttonsB.length).toBeGreaterThan(0)
-    await buttonsB[0]!.trigger('click')
-    await flushPromises()
-    await nextTick()
+    await selectByQuery('run-b', 'clarify-b')
 
     mocks.reactReply.mockResolvedValueOnce({ status: 'ok' })
     list = [a]
@@ -1013,8 +1024,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
       false,
     )
-    expect(wrapper.text()).not.toContain('Clarify b')
-    expect(wrapper.text()).toContain('Clarify a')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     wrapper.unmount()
   })
 
@@ -1034,7 +1045,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     // Restored for retry — a is back and selectable.
-    expect(wrapper.text()).toContain('Clarify a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     expect(wrapper.find('[data-testid="clarify-send"]').exists()).toBe(true)
 
     mocks.reactReply.mockResolvedValueOnce({ status: 'ok' })
@@ -1044,8 +1055,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     wrapper.unmount()
   })
 
@@ -1129,7 +1140,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
     )
     expect(inboxCallsFor('run-a', 'clarify-a', 1).length).toBe(afterReact)
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     wrapper.unmount()
   })
 
@@ -1151,15 +1162,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     // Still on a after rollback.
     expect(wrapper.find('[data-testid="resolve-btn"]').exists()).toBe(true)
 
-    const buttons = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate b'))
-    await buttons[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-b', 'gate-b')
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
 
     // Reselect a — refetch allowed after unmark.
-    const buttonsA = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate a'))
-    await buttonsA[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-a', 'gate-a')
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBeGreaterThan(before)
     wrapper.unmount()
   })
@@ -1184,8 +1191,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     // Local converge + unlock must happen even when submit refresh soft-fails.
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBeGreaterThan(0)
     expect(usePendingGates().totalCount.value).toBe(1)
 
@@ -1194,16 +1201,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const c = gateItem('c')
     list = [b, c]
     mocks.listGates.mockImplementation(async () => paged(list))
-    const refreshBtn = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))
-    expect(refreshBtn).toBeTruthy()
-    await refreshBtn!.trigger('click')
-    await flushPromises()
-    await nextTick()
+    await reloadInboxList()
 
-    const buttonsC = wrapper.findAll('button').filter((btn) => btn.text().includes('Gate c'))
-    expect(buttonsC.length).toBeGreaterThan(0)
-    await buttonsC[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-c', 'gate-c')
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -1227,8 +1227,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
 
     // Symmetric with gate: ghost gone, neighbor selected, lock released.
-    expect(wrapper.text()).not.toContain('Clarify a')
-    expect(wrapper.text()).toContain('Clarify b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     expect(inboxCallsFor('run-b', 'clarify-b', 1).length).toBeGreaterThan(0)
     expect(mocks.toastSuccess).toHaveBeenCalled()
     expect(usePendingGates().totalCount.value).toBe(1)
@@ -1236,17 +1236,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const c = clarifyItem('c')
     list = [b, c]
     mocks.listGates.mockImplementation(async () => paged(list))
-    const refreshBtn = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))
-    expect(refreshBtn).toBeTruthy()
-    expect(refreshBtn!.attributes('disabled')).toBeUndefined()
-    await refreshBtn!.trigger('click')
-    await flushPromises()
-    await nextTick()
+    await reloadInboxList()
 
-    const buttonsC = wrapper.findAll('button').filter((btn) => btn.text().includes('Clarify c'))
-    expect(buttonsC.length).toBeGreaterThan(0)
-    await buttonsC[0].trigger('click')
-    await flushPromises()
+    await selectByQuery('run-c', 'clarify-c')
     expect(inboxCallsFor('run-c', 'clarify-c', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -1272,19 +1264,10 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const resolveClick = wrapper.get('[data-testid="resolve-btn"]').trigger('click')
     await flushPromises()
 
-    // Intent leave already selected neighbor; refresh stays disabled while locked.
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
-
-    const refreshBtn = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))
-    expect(refreshBtn).toBeTruthy()
-    expect(refreshBtn!.attributes('disabled')).toBeDefined()
-
-    const listCallsBefore = mocks.listGates.mock.calls.length
-    // Even if a click is synthesized, processingLock short-circuits onManualRefresh.
-    await refreshBtn!.trigger('click')
-    await flushPromises()
-    expect(mocks.listGates.mock.calls.length).toBe(listCallsBefore)
+    // Intent leave already selected neighbor. The top-bar refresh control is gone;
+    // selection stays on the neighbor until resume converges.
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
 
     list = [b]
     releaseResume({ status: 'ok' })
@@ -1293,13 +1276,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).toContain('Gate b')
-    const refreshAfter = wrapper.findAll('button').find((btn) => btn.text().includes('刷新'))
-    expect(refreshAfter?.attributes('disabled')).toBeUndefined()
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     wrapper.unmount()
   })
 
-  it('approve success: list removes item, detail is not Run # - shell, counts sync', async () => {
+  it('approve success: list removes item, detail retains the selected neighbor identity, counts sync', async () => {
     const a = gateItem('a')
     const b = gateItem('b')
     let list: InboxItem[] = [a, b]
@@ -1315,16 +1296,16 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(wrapper.text()).not.toContain('Gate a')
-    expect(wrapper.text()).toContain('Gate b')
-    expect(wrapper.text()).not.toMatch(/Run #\s*-/)
-    expect(wrapper.text()).toContain('Run #b')
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
+    expect(wrapper.findAll('[data-testid="inbox-active-detail"]')).toHaveLength(1)
+    expect(activeDetail(wrapper)?.runId).toBe('run-b')
     expect(usePendingGates().totalCount.value).toBe(1)
     expect(usePendingGates().displayedItems.value.map((it) => it.nodeId)).toEqual(['gate-b'])
     wrapper.unmount()
   })
 
-  it('late overlapping listGates after unlock does not restore ghost or Run # - shell', async () => {
+  it('late overlapping listGates after unlock does not restore a ghost or empty detail pane', async () => {
     const only = gateItem('solo')
     let list: InboxItem[] = [only]
     mocks.listGates.mockImplementation(async () => paged(list))
@@ -1332,8 +1313,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const wrapper = mountInbox()
     await flushPromises()
     await nextTick()
-    expect(wrapper.text()).toContain('Gate solo')
-    expect(wrapper.text()).toContain('Run #solo')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-solo', nodeId: 'gate-solo' })
+    expect(activeDetail(wrapper)?.runId).toBe('run-solo')
 
     // Start a background loadList via filter watch; keep its snapshot pending.
     let releaseStale!: (value: ReturnType<typeof paged>) => void
@@ -1354,9 +1335,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    // Converged empty inbox — no Run # - shell, no ghost card.
-    expect(wrapper.text()).not.toContain('Gate solo')
-    expect(wrapper.text()).not.toMatch(/Run #\s*-/)
+    // Converged empty inbox — no active detail pane or ghost card.
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-solo', nodeId: 'gate-solo' })
+    expect(activeDetail(wrapper)).toBeNull()
     expect(wrapper.find('[data-testid="resolve-btn"]').exists()).toBe(false)
     expect(usePendingGates().totalCount.value).toBe(0)
 
@@ -1364,8 +1345,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     releaseStale(paged([only]))
     await flushPromises()
     await nextTick()
-    expect(wrapper.text()).not.toContain('Gate solo')
-    expect(wrapper.text()).not.toMatch(/Run #\s*-/)
+    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-solo', nodeId: 'gate-solo' })
+    expect(activeDetail(wrapper)).toBeNull()
     expect(usePendingGates().totalCount.value).toBe(0)
     wrapper.unmount()
   })
@@ -1637,10 +1618,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    const cards = wrapper.findAll('[data-testid="inbox-item-card"]')
-    expect(cards).toHaveLength(2)
-    expect(cards[0].find('button').attributes('aria-pressed')).toBe('false')
-    expect(cards[1].find('button').attributes('aria-pressed')).toBe('true')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(wrapper.find('[data-testid="inbox-item-card"]').exists()).toBe(false)
     expect(inboxCallsFor('run-b', 'clarify-b', 1).length).toBeGreaterThan(0)
     wrapper.unmount()
   })
@@ -1672,9 +1651,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-item-card"] button').attributes('aria-pressed')).toBe(
-      'true',
-    )
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-home', nodeId: 'ap' })
     const seedProp = wrapper.findComponent({ name: 'ReviewComposer' }).props('seedHumanText')
     expect(seedProp).toBe('把登录做清楚')
     expect(wrapper.findComponent({ name: 'ReviewComposer' }).props('seedHumanImages')).toEqual([
@@ -1732,7 +1709,6 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
     expect(wrapper.findComponent({ name: 'EmptyState' }).exists()).toBe(false)
-    expect(wrapper.find('[data-testid="inbox-item-card"]').attributes('data-starting')).toBe('true')
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
@@ -1772,9 +1748,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="inbox-item-card"] button').attributes('aria-pressed')).toBe(
-      'true',
-    )
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-home', nodeId: 'approve_7gl8' })
     expect(wrapper.findComponent({ name: 'ReviewComposer' }).props('seedHumanText')).toBe(
       '把登录做清楚',
     )
@@ -1796,9 +1770,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     usePendingGates().applyPending()
     await nextTick()
 
-    const card = wrapper.get('[data-testid="inbox-item-card"]')
-    expect(card.text()).toContain('待澄清')
-    expect(card.attributes('data-replying')).toBeUndefined()
+    const pending = () => usePendingGates().displayedItems.value.find((it) => it.nodeId === 'clarify-a')
+    expect(pending()?.state).not.toBe('replying')
     expect(usePendingGates().hasPendingUpdate.value).toBe(false)
 
     const ws = FakeWebSocket.instances.find((w) => w.url.includes('run-a'))
@@ -1809,9 +1782,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    expect(wrapper.get('[data-testid="inbox-item-card"]').attributes('data-replying')).toBe('true')
-    expect(wrapper.get('[data-testid="inbox-item-card"]').text()).toContain('正在回复中')
-    expect(wrapper.get('[data-testid="inbox-item-card"]').text()).not.toContain('待澄清')
+    expect(pending()?.state).toBe('replying')
     expect(usePendingGates().hasPendingUpdate.value).toBe(false)
     // Badge patch must not hard-reload context (would unmount live composer).
     expect(inboxCallsFor('run-a', 'clarify-a')).toHaveLength(contextCallsBeforeBusy)
@@ -1820,8 +1791,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     ws!.emit('review', { event: 'queue_state', nodeId: 'clarify-a', busy: false, waiting: 0 })
     await flushPromises()
     await nextTick()
-    expect(wrapper.get('[data-testid="inbox-item-card"]').attributes('data-replying')).toBeUndefined()
-    expect(wrapper.get('[data-testid="inbox-item-card"]').text()).toContain('待澄清')
+    expect(pending()?.state).not.toBe('replying')
     expect(usePendingGates().hasPendingUpdate.value).toBe(false)
     expect(inboxCallsFor('run-a', 'clarify-a')).toHaveLength(contextCallsBeforeBusy)
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
@@ -1838,7 +1808,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     usePendingGates().applyPending()
     await nextTick()
 
-    expect(wrapper.get('[data-testid="inbox-item-card"]').text()).toContain('待澄清')
+    const pending = () => usePendingGates().displayedItems.value.find((it) => it.nodeId === 'clarify-a')
+    expect(pending()?.state).not.toBe('replying')
     const contextCallsBeforeSend = inboxCallsFor('run-a', 'clarify-a').length
     expect(wrapper.find('[data-testid="clarify-turn"]').exists()).toBe(true)
 
@@ -1846,8 +1817,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    expect(wrapper.get('[data-testid="inbox-item-card"]').attributes('data-replying')).toBe('true')
-    expect(wrapper.get('[data-testid="inbox-item-card"]').text()).toContain('正在回复中')
+    expect(pending()?.state).toBe('replying')
     expect(usePendingGates().hasPendingUpdate.value).toBe(false)
     expect(inboxCallsFor('run-a', 'clarify-a')).toHaveLength(contextCallsBeforeSend)
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)

@@ -250,7 +250,7 @@ async function load() {
   try {
     const [listRes, proj] = await Promise.all([
       api.listProjectChannels(props.projectId),
-      api.getProject(props.projectId).catch(() => props.project),
+      api.getWorkspace().catch(() => props.project),
     ])
     channelList.value = listRes.items || []
     freeAgents.value = listRes.freeAgents || []
@@ -534,7 +534,7 @@ async function saveNotifyTargets() {
       defaultEvents: props.project.notifyPolicy?.defaultEvents || ['waiting_human', 'failed'],
       channelIds: [...notifySelected.value],
     }
-    const updated = await api.updateProject(props.projectId, { notifyPolicy })
+    const updated = await api.updateWorkspace({ notifyPolicy })
     emit('project-updated', updated)
     notifySelected.value = Array.isArray(updated.notifyPolicy?.channelIds)
       ? [...updated.notifyPolicy!.channelIds!]

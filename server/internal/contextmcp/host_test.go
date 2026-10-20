@@ -22,8 +22,8 @@ func setupContextDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("CtxMCP", "", nil)
+	p := models.Project{ID: models.DefaultProjectID, Name: "CtxMCP"}
+	err = db.Create(&p).Error
 	if err != nil {
 		t.Fatal(err)
 	}

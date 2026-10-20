@@ -25,6 +25,7 @@ export type FeedbackIndexDoc = {
 </script>
 
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
@@ -123,44 +124,46 @@ const countEntries = computed(() =>
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div v-if="!isIndex" class="space-y-3">
     <div class="flex flex-wrap items-center gap-2">
       <span
-        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium"
+        class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium"
         :class="kindMeta(doc?.kind).cls"
       >
         <Icon :name="kindMeta(doc?.kind).icon" :size="10" />
         {{ t(kindMeta(doc?.kind).labelKey) }}
       </span>
-      <code v-if="doc?.node?.id" class="font-mono text-[12px] text-txt">{{ doc.node.id }}</code>
-      <span class="text-[11px] text-txt3">
+      <code v-if="doc?.node?.id" class="font-mono text-[13px] text-txt">{{ doc.node.id }}</code>
+      <span class="text-[13px] text-txt3">
         {{ t('pages.product.feedback.iterRound', { i: doc?.iteration, r: doc?.latestRound ?? doc?.round }) }}
       </span>
-      <span v-if="doc?.actor?.name" class="text-[11px] text-txt3">{{ doc.actor.name }}</span>
-      <span v-if="doc?.at" class="ml-auto text-[10px] text-txt3">{{ fmtTime(doc.at) }}</span>
+      <span v-if="doc?.actor?.name" class="text-[13px] text-txt3">{{ doc.actor.name }}</span>
+      <span v-if="doc?.at" class="ml-auto text-[11px] text-txt3">{{ fmtTime(doc.at) }}</span>
     </div>
     <FeedbackRoundCard :doc="doc as FeedbackRoundDoc" />
-    <div v-if="doc?.index" class="text-[11px] text-txt3">
+    <div v-if="doc?.index" class="text-[13px] text-txt3">
       {{ t('pages.product.feedback.seeIndex', { name: doc.index }) }}
     </div>
   </div>
 
   <div v-else class="space-y-3">
-    <div class="flex flex-wrap items-center gap-2 text-[11px] text-txt3">
-      <span class="text-[12px] font-medium text-txt2">
+    <div class="flex flex-wrap items-center gap-2 text-[13px] text-txt3">
+      <span class="text-[13px] font-medium text-txt2">
         {{ t('pages.product.feedback.total', { n: index.totalRounds ?? rounds.length }) }}
       </span>
       <span
         v-for="[kind, n] in countEntries"
         :key="kind"
-        class="rounded-full border px-1.5 py-px text-[10px]"
+        class="rounded-full border px-1.5 py-px text-[11px]"
         :class="kindMeta(kind).cls"
       >
         {{ t(kindMeta(kind).labelKey) }} {{ n }}
       </span>
     </div>
 
-    <div v-if="!rounds.length" class="py-6 text-center text-[12px] text-txt3">
+    <div v-if="!rounds.length" class="py-6 text-center text-[13px] text-txt3">
       {{ t('pages.product.feedback.empty') }}
     </div>
 
@@ -180,26 +183,26 @@ const countEntries = computed(() =>
         >
           <div class="min-w-0 flex-1">
             <div class="flex flex-wrap items-center gap-2">
-              <span class="text-[10px] font-medium uppercase tracking-wide" :class="badgeClass(r).split(' ')[0]">
+              <span class="text-[11px] font-medium uppercase tracking-wide" :class="badgeClass(r).split(' ')[0]">
                 {{ t(kindMeta(r.kind).labelKey) }}
               </span>
-              <code class="font-mono text-[12px] text-txt">{{ r.node }}</code>
-              <span class="text-[10px] text-txt3">
+              <code class="font-mono text-[13px] text-txt">{{ r.node }}</code>
+              <span class="text-[11px] text-txt3">
                 {{ t('pages.product.feedback.iterRound', { i: r.iteration, r: r.round }) }}
               </span>
-              <span v-if="r.actor" class="text-[10px] text-txt3">{{ r.actor }}</span>
-              <span v-if="r.annotations" class="text-[10px] text-txt3">
+              <span v-if="r.actor" class="text-[11px] text-txt3">{{ r.actor }}</span>
+              <span v-if="r.annotations" class="text-[11px] text-txt3">
                 {{ t('pages.product.feedback.annotationCount', { n: r.annotations }) }}
               </span>
-              <span v-if="r.attachments" class="text-[10px] text-txt3">
+              <span v-if="r.attachments" class="text-[11px] text-txt3">
                 {{ t('pages.product.feedback.attachmentCount', { n: r.attachments }) }}
               </span>
-              <span v-if="r.interrupted" class="text-[10px] text-warn">
+              <span v-if="r.interrupted" class="text-[11px] text-warn">
                 {{ t('pages.product.feedback.interrupted') }}
               </span>
-              <span v-if="r.at" class="ml-auto text-[10px] text-txt3">{{ fmtTime(r.at) }}</span>
+              <span v-if="r.at" class="ml-auto text-[11px] text-txt3">{{ fmtTime(r.at) }}</span>
             </div>
-            <div class="mt-0.5 truncate text-[11px] text-txt2">{{ r.summary }}</div>
+            <div class="mt-0.5 truncate text-[13px] text-txt2">{{ r.summary }}</div>
           </div>
           <Icon
             name="chevron-down"
@@ -210,13 +213,13 @@ const countEntries = computed(() =>
         </button>
 
         <div v-if="expanded.has(i)" class="mt-2 border-l border-line pl-3">
-          <div v-if="!r.artifact" class="text-[11px] text-txt3">
+          <div v-if="!r.artifact" class="text-[13px] text-txt3">
             {{ t('pages.product.feedback.indexOnly') }}
           </div>
-          <div v-else-if="loading[r.artifact]" class="text-[11px] text-txt3">
+          <div v-else-if="loading[r.artifact]" class="text-[13px] text-txt3">
             {{ t('pages.product.feedback.loading') }}
           </div>
-          <div v-else-if="failed[r.artifact]" class="text-[11px] text-err">
+          <div v-else-if="failed[r.artifact]" class="text-[13px] text-err">
             {{ t('pages.product.feedback.loadFailed', { name: r.artifact }) }}
           </div>
           <FeedbackRoundCard v-else-if="loaded[r.artifact]" :doc="loaded[r.artifact]" />
@@ -224,4 +227,6 @@ const countEntries = computed(() =>
       </li>
     </ol>
   </div>
+
+  </ArtifactReportDocument>
 </template>

@@ -122,9 +122,6 @@ describe('ClarifiedRequirementView', () => {
     expect(wrapper.text()).toContain('指标:')
 
     const card = nfrCard(wrapper, 'n1')
-    expect(card.classes()).toEqual(
-      expect.arrayContaining(['rounded-lg', 'border', 'border-line', 'bg-base/40', 'p-2.5']),
-    )
     expect(card.classes()).not.toContain('flex')
 
     const [head, detailEl, metricEl] = nfrBlocks(wrapper, 'n1')

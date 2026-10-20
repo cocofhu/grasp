@@ -325,6 +325,7 @@ func TestWorkflowEndpoints(t *testing.T) {
 	var created map[string]any
 	json.Unmarshal(w.Body.Bytes(), &created)
 	id, _ := created["id"].(string)
+
 	if id == "" {
 		t.Fatal("no id")
 	}
@@ -583,6 +584,7 @@ func TestDeleteRun(t *testing.T) {
 
 	for _, status := range []string{"queued", "running", "waiting_human"} {
 		id := "del-blocked-" + status
+
 		h.db.Create(&models.Run{ID: id, WorkflowID: "wf-del", Status: status, StartedAt: now})
 		w := h.do(http.MethodDelete, "/api/runs/"+id, nil)
 		if w.Code != http.StatusConflict {
@@ -595,6 +597,7 @@ func TestDeleteRun(t *testing.T) {
 
 	for _, status := range []string{"completed", "failed", "cancelled"} {
 		id := "del-ok-" + status
+
 		h.db.Create(&models.Run{ID: id, WorkflowID: "wf-del", Status: status, StartedAt: now})
 		h.db.Create(&models.Artifact{ID: "art-" + id, RunID: id, Name: "doc", Content: "x", CreatedAt: now})
 		h.db.Create(&models.PreviewIssue{ID: "pi-" + id, RunID: id, NodeID: "p", Body: "x"})
@@ -714,6 +717,7 @@ func TestListArtifactsRunTitle(t *testing.T) {
 	byID := map[string]map[string]any{}
 	for _, it := range body.Items {
 		id, _ := it["id"].(string)
+
 		byID[id] = it
 	}
 	if got, _ := byID["art-titled"]["runTitle"].(string); got != "需求澄清 Run" {
@@ -1156,6 +1160,7 @@ func TestSandboxProxyErrorHandler(t *testing.T) {
 	}
 
 	id := uintToStr(row.ID)
+
 	assertFriendly(t, "/sandbox/"+id+"/", "IDE", dialIDE)
 	assertFriendly(t, "/sandbox-bridge/"+id+"/", "ACP", dialACP)
 }
@@ -1920,4 +1925,33 @@ func decodePageItems(b []byte, out *[]map[string]any) error {
 	}
 	*out = env.Items
 	return nil
+}
+
+// seedWorkspace configures the already-existing workspace directly. Project
+// creation is no longer a public fixture endpoint.
+func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
+	b, _ := json.Marshal(body)
+	var in struct {
+		Name        string                   `json:"name"`
+		Description string                   `json:"description"`
+		Variables   []models.ProjectVariable `json:"variables"`
+	}
+	_ = json.Unmarshal(b, &in)
+	p, err := hn.h.Projects.Workspace()
+	w := httptest.NewRecorder()
+	if err != nil {
+		w.WriteHeader(500)
+		return w
+	}
+	name := in.Name
+	if name == "" {
+		name = p.Name
+	}
+	p, err = hn.h.Projects.Update(p.ID, &name, &in.Description, &in.Variables, nil, nil)
+	if err != nil {
+		w.WriteHeader(400)
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})
+		return w
+	}
+	return hn.do(http.MethodGet, "/api/workspace", nil)
 }

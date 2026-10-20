@@ -9,8 +9,7 @@ import type { DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import { api, type Agent, type ProjectAgentsImportResult, type TeamBootstrapSession } from '@/lib/api/api'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { toProjectTreeNodes } from '@/lib/agent/agentProjectTree'
-import { childKey, parseTreeKey } from '@/components/ui/projectTree'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { downloadZip, validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useAgentImport } from '@/lib/agent/useAgentImport'
@@ -43,23 +42,11 @@ const { isMobile } = useBreakpoint()
 const route = useRoute()
 const router = useRouter()
 
-const scopedProjectId = computed(() => {
-  const raw = toValue(opts?.projectId)
-  return typeof raw === 'string' ? raw.trim() : ''
-})
-const embedded = computed(() => {
-  const e = toValue(opts?.embedded)
-  return e === true || !!scopedProjectId.value
-})
+const { workspaceId: scopedProjectId, workspace, ensureLoaded: loadWorkspace, reload: reloadWorkspace } = useWorkspaceContext()
+const embedded = computed(() => toValue(opts?.embedded) === true)
 const hideTeamCreate = computed(() => embedded.value)
 const showCreateTeam = computed(() => !hideTeamCreate.value)
-
-function filterAgentsByScope(list: Agent[] | null | undefined): Agent[] {
-  const all = list || []
-  const pid = scopedProjectId.value
-  if (!pid) return all
-  return all.filter((a) => a.projectId === pid)
-}
+function filterAgentsByScope(list: Agent[] | null | undefined): Agent[] { return list || [] }
 
 const AGENT_LIST_COLLAPSED_KEY = 'agent-studio-agent-list-collapsed'
 const SIDEBAR_EXPANDED_W = '280px'
@@ -177,11 +164,8 @@ function syncStudioQuery() {
 
 // Data / chat tester follow the last-saved project so unsaved draft edits
 // cannot hit APIs under the wrong project.
-const savedProjectId = computed(() => {
-  const a = agents.value.find((x) => x.name === activeName.value)
-  return a?.projectId || ''
-})
-const draftBindingDirty = computed(() => !!draft.value && draft.value.projectId !== savedProjectId.value)
+const savedProjectId = scopedProjectId
+const draftBindingDirty = computed(() => false)
 function projectNameById(id: string): string {
   return projects.value.find((p) => p.id === id)?.name || id
 }
@@ -256,9 +240,6 @@ const exporting = ref(false)
 const showBundleSecrets = ref(false)
 const pendingBundleExportProjectId = ref('')
 
-/** Header import: pick the target project first (standalone Studio only). */
-const showImportProjectPick = ref(false)
-const importProjectId = ref('')
 
 async function onBundleImported(_result: ProjectAgentsImportResult) {
   try {
@@ -360,28 +341,14 @@ function clearManageSearch() {
   manageSearch.value = ''
 }
 
-/** Projects shown in the tree: embedded Studio only lists its host project. */
-const treeProjects = computed(() => {
-  const pid = scopedProjectId.value
-  return pid ? projects.value.filter((p) => p.id === pid) : projects.value
-})
-const treeNodes = computed(() => toProjectTreeNodes(agents.value, treeProjects.value))
-const activeTreeKey = computed(() =>
-  activeName.value && savedProjectId.value ? childKey(savedProjectId.value, activeName.value) : '',
-)
-
-function onTreeSelect(key: string) {
-  const parsed = parseTreeKey(key)
-  if (parsed?.childId) chooseAgent(parsed.childId)
-}
-
-function onSheetTreeSelect(key: string) {
-  const parsed = parseTreeKey(key)
-  if (parsed?.childId) chooseAgentFromSheet(parsed.childId)
-}
+const treeProjects = computed(() => projects.value)
+const treeNodes = computed(() => agents.value.map((agent) => ({ id: agent.name, label: agent.name, icon: 'robot' })))
+const activeTreeKey = activeName
+function onTreeSelect(key: string) { chooseAgent(key) }
+function onSheetTreeSelect(key: string) { chooseAgentFromSheet(key) }
 
 function selectFirstAgent(opts?: { skipQuerySync?: boolean }) {
-  const first = treeNodes.value.find((n) => n.children?.length)?.children?.[0]
+  const first = treeNodes.value[0]
   if (first) select(first.id, opts)
 }
 
@@ -512,10 +479,10 @@ async function load() {
   loadFailed.value = false
   loadDenied.value = false
   try {
-    const [list, projList] = await Promise.all([api.listAgents(), api.listProjects()])
+    const [list, currentWorkspace] = await Promise.all([api.listAgents(), loadWorkspace()])
     if (!studioSeq.isCurrentSeq(localSeq)) return
     agents.value = filterAgentsByScope(list)
-    projects.value = (projList || []).map((p) => ({ id: p.id, name: p.name }))
+    projects.value = currentWorkspace ? [{ id: currentWorkspace.id, name: currentWorkspace.name }] : []
     applyingStudioQuery = true
     try {
       const qAgent = typeof route.query.agent === 'string' ? route.query.agent.trim() : ''
@@ -736,8 +703,9 @@ async function saveThenExport() {
   if (activeName.value) await doExport(activeName.value)
 }
 
-function onExportProject(projectId: string) {
-  if (exporting.value) return
+function onExportProject(_projectId?: string) {
+  const projectId = scopedProjectId.value
+  if (!projectId || exporting.value) return
   pendingBundleExportProjectId.value = projectId
   if (dirty.value && savedProjectId.value === projectId) {
     showUnsavedExport.value = true
@@ -770,33 +738,12 @@ async function confirmBundleSecrets() {
   }
 }
 
-function onImportProject(projectId: string) {
-  triggerProjectImport(projectId)
+function onImportProject(_projectId?: string) {
+  triggerImport()
 }
 
-/** Header import: embedded Studio imports into its project; standalone asks first. */
-function triggerImport() {
-  if (scopedProjectId.value) {
-    triggerProjectImport(scopedProjectId.value)
-    return
-  }
-  if (!projects.value.length) {
-    showToast(t('pages.agentStudio.project.noProjects'))
-    return
-  }
-  importProjectId.value = savedProjectId.value || projects.value[0].id
-  showImportProjectPick.value = true
-}
-
-function cancelImportProjectPick() {
-  showImportProjectPick.value = false
-}
-
-function confirmImportProjectPick() {
-  const pid = importProjectId.value
-  showImportProjectPick.value = false
-  if (pid) triggerProjectImport(pid)
-}
+/** Import directly into the single workspace. */
+function triggerImport() { if (scopedProjectId.value) triggerProjectImport(scopedProjectId.value) }
 
 const showCreateWizard = ref(false)
 const showTeamWizard = ref(false)
@@ -804,9 +751,9 @@ const teamBootstrapSessionId = ref('')
 /** Project prefilled in the create wizard (project row menu, or the current context). */
 const createAgentProjectId = ref('')
 
-function openCreateAgent(projectId?: string) {
+function openCreateAgent(_projectId?: string) {
   createAgentProjectId.value =
-    projectId || scopedProjectId.value || savedProjectId.value || treeProjects.value[0]?.id || ''
+    scopedProjectId.value
   showCreateWizard.value = true
 }
 
@@ -839,8 +786,8 @@ async function refreshAgentsList() {
 
 async function refreshProjects() {
   try {
-    const list = await api.listProjects()
-    projects.value = (list || []).map((p) => ({ id: p.id, name: p.name }))
+    await reloadWorkspace()
+    projects.value = workspace.value ? [{ id: workspace.value.id, name: workspace.value.name }] : []
   } catch {
     /* ignore */
   }
@@ -1155,10 +1102,6 @@ onBeforeUnmount(() => {
   showBatchConflict,
   batchConflictNames,
   triggerImport,
-  showImportProjectPick,
-  importProjectId,
-  cancelImportProjectPick,
-  confirmImportProjectPick,
   onImportDiscardCancel,
   onImportDiscardConfirm,
   onImportFileChange,

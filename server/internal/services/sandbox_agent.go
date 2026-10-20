@@ -37,8 +37,9 @@ func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 
 // SetCodexLoginWriteBack registers the project-credential update used when a
 // Codex sandbox's auth.json changes. The callback must not log the file body.
-func (s *SandboxService) SetCodexLoginWriteBack(fn func(projectID, content string) error) {
+func (s *SandboxService) SetCodexLoginWriteBack(fn func(projectID, credentialID, content string) error, identify func(projectID, envKey, value string) string) {
 	s.codexLoginWriteBack = fn
+	s.injectedCredentialID = identify
 }
 
 func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
@@ -62,7 +63,7 @@ func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projec
 		rejected = ls.codexAuthRejected
 	}
 	s.mu.Unlock()
-	if ls == nil || ls.sb == nil || ls.codexAuthPath == "" {
+	if ls == nil || ls.sb == nil || ls.codexAuthPath == "" || ls.codexAuthCredentialID == "" {
 		return
 	}
 	body, err := ls.sb.ReadFile(ctx, ls.codexAuthPath)
@@ -73,7 +74,7 @@ func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projec
 		}
 		return
 	}
-	if werr := s.codexLoginWriteBack(projectID, next); werr != nil {
+	if werr := s.codexLoginWriteBack(projectID, ls.codexAuthCredentialID, next); werr != nil {
 		log.Warn().Err(werr).Str("project", projectID).Uint("sandbox", id).Msg("codex login writeback failed")
 	}
 }
@@ -304,6 +305,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
+	runtime.ApplyCredentialBindings(env, projectCreds, projectID, agent.CredentialBindings, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil && strings.TrimSpace(projectID) != "" {
@@ -407,8 +409,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	s.mu.Lock()
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
-		codexAuthInjected: codexLogin,
-		codexAuthPath:     codexLiveAuthPath(backend, configRoot),
+		codexAuthInjected:     codexLogin,
+		codexAuthCredentialID: runtime.CredentialIDForWriteBack(projectID, envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Str("thread", threadID).

@@ -1,9 +1,7 @@
 {
   "route": {
-    "dashboard": "开始",
+    "dashboard": "新需求",
     "stats": "用量统计",
-    "projects": "项目",
-    "projectDetail": "项目详情",
     "workflows": "工作流",
     "workflowEditor": "画布编辑",
     "runs": "运行记录",
@@ -20,6 +18,20 @@
     "login": "登录",
     "publicGateApproval": "外部一次决策",
     "embedChat": "预览对话",
-    "embedArtifacts": "预览产物"
+    "embedArtifacts": "预览产物",
+    "embedImage": "图片预览",
+    "embedDemo": "预览放大",
+    "board": "看板",
+    "requirements": "需求草稿",
+    "assistant": "工作区助手",
+    "schedules": "定时任务",
+    "audit": "审计",
+    "sharedAgent": "Agent 默认配置",
+    "credentials": "凭据",
+    "variables": "共享变量",
+    "assistantSettings": "助手设置",
+    "notificationPolicy": "通知策略",
+    "externalMcp": "外部 MCP",
+    "workspaceInfo": "工作区信息"
   }
 }

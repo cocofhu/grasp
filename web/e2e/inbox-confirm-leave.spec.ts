@@ -275,11 +275,13 @@ async function openGates(page: Page, state: State) {
   await mockApis(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
   await page.goto('/tag-filter-ux.html?page=gates')
-  await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('heading', { name: '待办' })).toHaveCount(0)
 }
 
-function approveRow(page: Page) {
-  return page.locator('button').filter({ hasText: '确认后应离开待办' })
+/** Confirm leave by the active pane identity, independent of chat header copy. */
+function activeDetail(page: Page, runSuffix: string, nodeId: string) {
+  return page.locator(`[data-testid="inbox-active-detail"][data-run-id="run-${runSuffix}"][data-node-id="${nodeId}"]`)
 }
 
 test.describe('Inbox 确认发起即离开待办', () => {
@@ -296,7 +298,8 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    await approveRow(page).first().click()
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
+    await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: `${SHOT}/01-before-confirm.png`, fullPage: true })
@@ -304,7 +307,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await confirm.first().click()
 
     // Must leave before delayed reactReply resolves (plan g1.2 / ~3s SLA).
-    await expect(approveRow(page)).toHaveCount(0, { timeout: 1500 })
+    await expect(opened).toHaveCount(0, { timeout: 1500 })
     expect(state.replyResolved).toBe(false)
     // Approve composer gone; neighbor gate may still show its own 确认并流转 — that is OK.
     await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
@@ -314,7 +317,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await page.screenshot({ path: `${SHOT}/02-left-before-reply.png`, fullPage: true })
 
     await expect.poll(() => state.replyResolved, { timeout: 5000 }).toBe(true)
-    await expect(approveRow(page)).toHaveCount(0)
+    await expect(opened).toHaveCount(0)
     await page.screenshot({ path: `${SHOT}/03-after-reply-ok.png`, fullPage: true })
   })
 
@@ -331,15 +334,17 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    await approveRow(page).first().click()
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
+    await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
     await confirm.first().click()
 
     // First left; second auto-selected while first reply still pending.
-    await expect(approveRow(page)).toHaveCount(0, { timeout: 1500 })
+    await expect(opened).toHaveCount(0, { timeout: 1500 })
     expect(state.forceReplyCount).toBe(0)
-    await expect(page.getByText('第二个待确认')).toBeVisible({ timeout: 5000 })
+    const second = activeDetail(page, 'approve-b', 'approve_7gl7')
+    await expect(second).toBeVisible({ timeout: 5000 })
 
     const confirmB = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirmB.first()).toBeVisible({ timeout: 10_000 })
@@ -348,7 +353,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await confirmB.first().click()
 
     // Second must also leave before either delayed reply resolves (no global lock swallow).
-    await expect(page.getByText('第二个待确认')).toHaveCount(0, { timeout: 1500 })
+    await expect(second).toHaveCount(0, { timeout: 1500 })
     expect(state.forceReplyCount).toBeLessThan(2)
 
     await expect.poll(() => state.forceReplyCount, { timeout: 8000 }).toBe(2)
@@ -368,14 +373,15 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    await approveRow(page).first().click()
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
+    await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
     await confirm.first().click()
 
     // Brief leave then restore on failure (g1.3).
     await expect.poll(() => state.replyResolved, { timeout: 5000 }).toBe(true)
-    await expect(approveRow(page)).toHaveCount(1, { timeout: 5000 })
+    await expect(opened).toBeVisible({ timeout: 5000 })
     await expect(
       page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' })).first(),
     ).toBeVisible({ timeout: 5000 })
@@ -387,7 +393,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     state.replyResolved = false
     state.replyDelayMs = 100
     await page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' })).first().click()
-    await expect(approveRow(page)).toHaveCount(0, { timeout: 5000 })
+    await expect(opened).toHaveCount(0, { timeout: 5000 })
     await page.screenshot({ path: `${SHOT}/05-retry-left.png`, fullPage: true })
   })
 
@@ -404,15 +410,15 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    const gateRow = page.locator('button').filter({ hasText: '方案评审门禁' }).or(page.locator('button').filter({ hasText: '方案门禁' }))
-    await gateRow.first().click()
+    const gateTitle = page.getByText('方案评审门禁')
+    await expect(gateTitle).toBeVisible({ timeout: 15_000 })
     // Gate positive exit is labeled 确认并流转 (not bare 通过) in GateApproval.
     const pass = page.getByTestId('review-composer-pass').or(page.getByRole('button', { name: /确认并流转|通过/ }))
     await expect(pass.first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: `${SHOT}/06-gate-before.png`, fullPage: true })
     await pass.first().click()
 
-    await expect(gateRow).toHaveCount(0, { timeout: 1500 })
+    await expect(gateTitle).toHaveCount(0, { timeout: 1500 })
     expect(state.resumeResolved).toBe(false)
     await expect(page.getByText('邻居门禁', { exact: false }).or(page.getByText('邻居条目')).first()).toBeVisible()
     await page.screenshot({ path: `${SHOT}/07-gate-left-before-resume.png`, fullPage: true })

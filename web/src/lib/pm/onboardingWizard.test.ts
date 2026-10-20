@@ -207,13 +207,13 @@ describe('onboardingWizard', () => {
     const d = freshOnboardingDraft()
     d.apiKey = 'k'
     applyDefaultTeamNames(d.team, deriveOnboardingAgentNames('p1', '支付'))
-    expect(d.team.map((m) => m.name)).toEqual(['支付需求澄清', '支付实现', '支付测试评审', '支付交付'])
+    expect(d.team.map((m) => m.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
     d.team[1]!.model = ' gpt-5 '
     setTeamMemberEnabled(d.team, 'test_review', false)
     expect(assembleBootstrapBody(d).agents).toEqual([
-      { templateId: 'clarify', name: '支付需求澄清' },
-      { templateId: 'implement', name: '支付实现', model: 'gpt-5' },
-      { templateId: 'deliver', name: '支付交付' },
+      { templateId: 'clarify', name: '需求澄清' },
+      { templateId: 'implement', name: '实现', model: 'gpt-5' },
+      { templateId: 'deliver', name: '交付' },
     ])
   })
 
@@ -307,7 +307,7 @@ describe('onboardingWizard', () => {
   it('treats empty projects as eligible for onboarding CTA, including non-default', () => {
     expect(isEmptyProjectForOnboarding(0, [], DEFAULT_PROJECT_ID)).toBe(true)
     expect(isEmptyProjectForOnboarding(0, [], 'p1', '支付中台')).toBe(true)
-    expect(isEmptyProjectForOnboarding(0, [], 'p1', '')).toBe(false)
+    expect(isEmptyProjectForOnboarding(0, [], 'p1', '')).toBe(true)
     expect(isEmptyProjectForOnboarding(1, [], DEFAULT_PROJECT_ID)).toBe(false)
     expect(
       isEmptyProjectForOnboarding(0, [{ name: '实现', projectId: DEFAULT_PROJECT_ID }], DEFAULT_PROJECT_ID),
@@ -318,12 +318,12 @@ describe('onboardingWizard', () => {
     expect(isEmptyProjectForOnboarding(0, [{ name: '需求澄清', projectId: 'other' }], DEFAULT_PROJECT_ID)).toBe(false)
   })
 
-  it('derives agent names from the template labels with the project prefix', () => {
+  it('derives role names independently of historical workspace ID or name', () => {
     expect(ONBOARDING_AGENT_NAMES).toEqual(['需求澄清', '实现', '测试评审', '交付'])
     expect(sanitizeOnboardingPrefix('支付中台')).toBe('支付中台')
     expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, 'ignored')).toEqual([...ONBOARDING_AGENT_NAMES])
-    expect(deriveOnboardingAgentNames('p1', '支付中台')).toEqual(['支付中台需求澄清', '支付中台实现', '支付中台测试评审', '支付中台交付'])
-    expect(deriveOnboardingAgentNames('p1', '...')).toEqual([])
+    expect(deriveOnboardingAgentNames('p1', '支付中台')).toEqual([...ONBOARDING_AGENT_NAMES])
+    expect(deriveOnboardingAgentNames('p1', '...')).toEqual([...ONBOARDING_AGENT_NAMES])
     expect(Array.from(sanitizeOnboardingPrefix('长'.repeat(80))).length).toBe(54)
   })
 
@@ -331,7 +331,7 @@ describe('onboardingWizard', () => {
     expect(onboardingRoleNames('zh-CN')).toEqual([...ONBOARDING_AGENT_NAMES])
     expect(onboardingRoleNames('en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
     expect(deriveOnboardingAgentNames(DEFAULT_PROJECT_ID, '', 'en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
-    expect(deriveOnboardingAgentNames('p1', 'Payments', 'en')).toEqual(['PaymentsClarify', 'PaymentsImplement', 'PaymentsTestReview', 'PaymentsDeliver'])
+    expect(deriveOnboardingAgentNames('p1', 'Payments', 'en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
     const long = deriveOnboardingAgentNames('p1', 'x'.repeat(80), 'en')
     for (const name of [...long, ...onboardingRoleNames('en'), ...onboardingRoleNames('zh-CN')]) {
       expect(validateAgentName(name)).toBe('')
@@ -342,7 +342,7 @@ describe('onboardingWizard', () => {
     expect(isEmptyProjectForOnboarding(0, [{ name: 'Clarify', projectId: 'other' }], DEFAULT_PROJECT_ID)).toBe(false)
   })
 
-  it('createProject draft inherits app locale, not browser language (g1.2)', () => {
+  it('new draft can inherit app locale, not browser language (g1.2)', () => {
     locale.value = 'zh-CN'
     i18n.global.locale.value = 'zh-CN'
     vi.stubGlobal('navigator', { language: 'en-US' })
@@ -352,18 +352,18 @@ describe('onboardingWizard', () => {
     vi.unstubAllGlobals()
   })
 
-  it('auto-open keys on the default workflow, not on having been seen', () => {
+  it('auto-opens only in an empty workspace', () => {
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [])).toBe(true)
-    expect(shouldAutoOpenOnboarding('p1', [], [])).toBe(false)
+    expect(shouldAutoOpenOnboarding('p1', [], [])).toBe(true)
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: ONBOARDING_WORKFLOW_NAMES[0] }], [])).toBe(
       false,
     )
     // Unrelated workflows do not count as a finished first install.
-    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: '我的流程' }], [])).toBe(true)
+    expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [{ name: '我的流程' }], [])).toBe(false)
     // Neither do already-bound agents: bootstrap re-upserts them.
     expect(
       shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [{ name: '实现', projectId: DEFAULT_PROJECT_ID }]),
-    ).toBe(true)
+    ).toBe(false)
     // A fixed-name agent owned elsewhere would fail bootstrap, so stay closed.
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [{ name: '需求澄清', projectId: 'other' }])).toBe(false)
     expect(shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, [], [{ name: 'Clarify', projectId: 'other' }])).toBe(false)

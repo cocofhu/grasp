@@ -31,7 +31,7 @@ func (h *Handlers) sessionUser(c *gin.Context) (string, bool) {
 	return sess.Username, true
 }
 
-// GetPmLeader handles GET /api/projects/:id/pm-leader
+// GetPmLeader handles GET /api/workspace/pm-leader
 func (h *Handlers) GetPmLeader(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -45,7 +45,7 @@ func (h *Handlers) GetPmLeader(c *gin.Context) {
 	c.JSON(http.StatusOK, b)
 }
 
-// UpdatePmLeader handles PUT /api/projects/:id/pm-leader.
+// UpdatePmLeader handles PUT /api/workspace/pm-leader.
 // Any authenticated user may enable/rebind/disable (APIMiddleware).
 func (h *Handlers) UpdatePmLeader(c *gin.Context) {
 	if h.Pm == nil {
@@ -89,7 +89,7 @@ func (h *Handlers) UpdatePmLeader(c *gin.Context) {
 	c.JSON(http.StatusOK, b)
 }
 
-// ListPmMemories handles GET /api/projects/:id/pm/memories
+// ListPmMemories handles GET /api/workspace/pm/memories
 // Non-admin callers only see the bound PM Leader agent's memories.
 // Admins see the full project (optional ?agent= filter).
 func (h *Handlers) ListPmMemories(c *gin.Context) {
@@ -128,7 +128,7 @@ func (h *Handlers) ListPmMemories(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// ListPmThreads handles GET /api/projects/:id/pm/threads
+// ListPmThreads handles GET /api/workspace/pm/threads
 func (h *Handlers) ListPmThreads(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -143,10 +143,10 @@ func (h *Handlers) ListPmThreads(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"items": threads})
+	c.JSON(http.StatusOK, gin.H{"items": h.Pm.ThreadViews(threads)})
 }
 
-// CreatePmThread handles POST /api/projects/:id/pm/threads
+// CreatePmThread handles POST /api/workspace/pm/threads
 func (h *Handlers) CreatePmThread(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -170,10 +170,10 @@ func (h *Handlers) CreatePmThread(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, t)
+	c.JSON(http.StatusOK, h.Pm.ThreadView(t))
 }
 
-// GetPmThread handles GET /api/projects/:id/pm/threads/:tid
+// GetPmThread handles GET /api/workspace/pm/threads/:tid
 func (h *Handlers) GetPmThread(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -188,10 +188,10 @@ func (h *Handlers) GetPmThread(c *gin.Context) {
 		writePmErr(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, t)
+	c.JSON(http.StatusOK, h.Pm.ThreadView(t))
 }
 
-// DeletePmThread handles DELETE /api/projects/:id/pm/threads/:tid
+// DeletePmThread handles DELETE /api/workspace/pm/threads/:tid
 func (h *Handlers) DeletePmThread(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -229,7 +229,7 @@ func (h *Handlers) DeletePmThread(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "deleted"})
 }
 
-// ListPmMessages handles GET /api/projects/:id/pm/threads/:tid/messages
+// ListPmMessages handles GET /api/workspace/pm/threads/:tid/messages
 //
 // Query:
 //   - limit[=20]: newest-tail window of that size, oldest→newest, plus hasMore
@@ -266,7 +266,7 @@ func (h *Handlers) ListPmMessages(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": msgs, "hasMore": hasMore})
 }
 
-// AppendPmMessage handles POST /api/projects/:id/pm/threads/:tid/messages
+// AppendPmMessage handles POST /api/workspace/pm/threads/:tid/messages
 // Persists a user message (and optional attached context) before the client
 // streams via the sandbox WS.
 func (h *Handlers) AppendPmMessage(c *gin.Context) {
@@ -279,7 +279,7 @@ func (h *Handlers) AppendPmMessage(c *gin.Context) {
 		return
 	}
 	projectID, tid := c.Param("id"), c.Param("tid")
-	if _, err := h.Pm.RequireEnabled(projectID); err != nil {
+	if _, err := h.Pm.RequireSendEnabled(projectID); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -310,7 +310,7 @@ func (h *Handlers) AppendPmMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, msg)
 }
 
-// PatchPmMessage handles PATCH /api/projects/:id/pm/threads/:tid/messages/:mid
+// PatchPmMessage handles PATCH /api/workspace/pm/threads/:tid/messages/:mid
 // Marks or clears failure metadata on a message (used by failTurn / retryTurn).
 func (h *Handlers) PatchPmMessage(c *gin.Context) {
 	if h.Pm == nil {
@@ -322,7 +322,7 @@ func (h *Handlers) PatchPmMessage(c *gin.Context) {
 		return
 	}
 	projectID, tid, mid := c.Param("id"), c.Param("tid"), c.Param("mid")
-	if _, err := h.Pm.RequireEnabled(projectID); err != nil {
+	if _, err := h.Pm.RequireSendEnabled(projectID); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -346,7 +346,7 @@ func (h *Handlers) PatchPmMessage(c *gin.Context) {
 	c.JSON(http.StatusOK, msg)
 }
 
-// EnsurePmSandbox handles POST /api/projects/:id/pm/threads/:tid/sandbox
+// EnsurePmSandbox handles POST /api/workspace/pm/threads/:tid/sandbox
 // Opens or reuses the thread-bound PM consult sandbox and returns its view.
 func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 	if h.Pm == nil || h.Sbx == nil || h.PMMCP == nil {
@@ -358,7 +358,7 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		return
 	}
 	projectID, tid := c.Param("id"), c.Param("tid")
-	proj, err := h.Pm.RequireEnabled(projectID)
+	_, err := h.Pm.RequireSendEnabled(projectID)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -375,7 +375,7 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&body)
 
-	row, preamble, err := h.openPmSandbox(c.Request.Context(), projectID, tid, user, proj.PmLeaderAgent, body.AttachedContext, body.InjectHistory)
+	row, preamble, err := h.openPmSandbox(c.Request.Context(), projectID, tid, user, thread.AgentName, body.AttachedContext, body.InjectHistory)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -385,14 +385,14 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"sandbox":  row,
 			"preamble": preamble,
-			"thread":   thread,
+			"thread":   h.Pm.ThreadView(thread),
 		})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"sandbox":  view,
 		"preamble": preamble,
-		"thread":   thread,
+		"thread":   h.Pm.ThreadView(thread),
 	})
 }
 
@@ -451,7 +451,7 @@ func pmTurnPrompt(preamble, content string) string {
 	return preamble + "\n\n用户问题：" + content
 }
 
-// StartPmTurn handles POST /api/projects/:id/pm/threads/:tid/turns. It
+// StartPmTurn handles POST /api/workspace/pm/threads/:tid/turns. It
 // persists the user message (or reuses retryOf) and queues the turn; the
 // server readies the sandbox and streams progress on the thread WebSocket.
 func (h *Handlers) StartPmTurn(c *gin.Context) {
@@ -464,12 +464,13 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 		return
 	}
 	projectID, tid := c.Param("id"), c.Param("tid")
-	proj, err := h.Pm.RequireEnabled(projectID)
+	_, err := h.Pm.RequireSendEnabled(projectID)
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
-	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+	thread, err := h.Pm.RequireWritableThread(projectID, tid, user)
+	if err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -508,7 +509,7 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 		}
 	}
 
-	agent := proj.PmLeaderAgent
+	agent := thread.AgentName
 	attached := body.AttachedContext
 	content := userMsg.Content
 	waiting, err := h.PmTurns.Enqueue(tid, services.PmTurnRequest{
@@ -543,7 +544,7 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": userMsg, "waiting": waiting})
 }
 
-// CancelPmTurn handles POST /api/projects/:id/pm/threads/:tid/turns/cancel:
+// CancelPmTurn handles POST /api/workspace/pm/threads/:tid/turns/cancel:
 // stops the running turn and drops queued ones.
 func (h *Handlers) CancelPmTurn(c *gin.Context) {
 	if h.Pm == nil || h.PmTurns == nil {
@@ -587,10 +588,7 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 		return
 	}
 	projectID, tid := c.Param("id"), c.Param("tid")
-	if _, err := h.Pm.RequireEnabled(projectID); err != nil {
-		writePmErr(c, err)
-		return
-	}
+
 	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
 		writePmErr(c, err)
 		return
@@ -809,7 +807,7 @@ func (h *Handlers) unregisterPmPlatformTokens(token string) {
 	}
 }
 
-// ListProjectCronJobs handles GET /api/projects/:id/cron-jobs.
+// ListProjectCronJobs handles GET /api/workspace/cron-jobs.
 // Returns all AgentCronJob rows for the project (any agent); no agent filter.
 func (h *Handlers) ListProjectCronJobs(c *gin.Context) {
 	if h.Pm == nil {
@@ -827,7 +825,7 @@ func (h *Handlers) ListProjectCronJobs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// ListProjectNotifyReceipts handles GET /api/projects/:id/notify-receipts.
+// ListProjectNotifyReceipts handles GET /api/workspace/notify-receipts.
 func (h *Handlers) ListProjectNotifyReceipts(c *gin.Context) {
 	if h.RunNotify == nil {
 		c.JSON(http.StatusOK, gin.H{"items": []any{}})
@@ -845,7 +843,7 @@ func (h *Handlers) ListProjectNotifyReceipts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// PatchProjectCronJob handles PATCH /api/projects/:id/cron-jobs/:jobId.
+// PatchProjectCronJob handles PATCH /api/workspace/cron-jobs/:jobId.
 // Any authenticated user may toggle deliverToChannel (APIMiddleware / sessionUser);
 // memory writes stay admin-only.
 func (h *Handlers) PatchProjectCronJob(c *gin.Context) {
@@ -885,7 +883,7 @@ func (h *Handlers) PatchProjectCronJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
-// DeleteProjectCronJob handles DELETE /api/projects/:id/cron-jobs/:jobId.
+// DeleteProjectCronJob handles DELETE /api/workspace/cron-jobs/:jobId.
 // Any authenticated user may delete (aligned with PatchProjectCronJob / sessionUser).
 // Cross-project jobId returns 404. Cleanup matches Agent/MCP delete (runs + thread).
 func (h *Handlers) DeleteProjectCronJob(c *gin.Context) {

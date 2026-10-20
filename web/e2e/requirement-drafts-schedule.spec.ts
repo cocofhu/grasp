@@ -16,7 +16,7 @@ const MOCK_DRAFT = {
 }
 
 async function mockDraftApi(page: Page, onSchedulePatch?: () => void) {
-  await page.route('**/api/projects/proj-1/requirement-drafts**', async (route) => {
+  await page.route('**/api/workspace/requirement-drafts**', async (route) => {
     const req = route.request()
     const url = new URL(req.url())
     if (req.method() === 'GET') {
@@ -126,4 +126,32 @@ test('schedule block collapses on a narrow viewport (n2)', async ({ page }) => {
   await toggle.click()
   await expect(toggle).toHaveAttribute('aria-expanded', 'false')
   await expect(page.getByTestId('requirement-drafts-schedule-kind')).toBeHidden()
+})
+
+test('an embedded narrow workbench keeps dates and Markdown usable on a desktop viewport', async ({ page }) => {
+  await mockDraftApi(page)
+  await page.setViewportSize({ width: 1280, height: 1000 })
+  await page.goto('/requirement-drafts-schedule.html')
+  await page.locator('#app').evaluate((element) => { element.style.width = '420px' })
+  await page.getByTestId('requirement-drafts-view-edit').click()
+  await page.getByTestId('requirement-drafts-item-rd-1').click()
+
+  const date = page.getByTestId('requirement-drafts-schedule-start')
+  await expect.poll(async () => (await date.boundingBox())?.width || 0).toBeGreaterThan(300)
+  const body = page.getByTestId('requirement-drafts-body')
+  await body.scrollIntoViewIfNeeded()
+  await body.fill('# A draft kept through resizing')
+  await expect(page.getByTestId('requirement-drafts-mobile-switch')).toBeVisible()
+  await page.getByTestId('requirement-drafts-mobile-prev').click()
+  await expect(page.getByTestId('requirement-drafts-preview')).toContainText('A draft kept through resizing')
+  await expect(page.getByTestId('requirement-drafts-source-pane')).toBeHidden()
+  await page.getByTestId('requirement-drafts-mobile-src').click()
+  await expect(body).toHaveValue('# A draft kept through resizing')
+
+  await page.locator('#app').evaluate((element) => { element.style.width = '1100px' })
+  await expect(page.getByTestId('requirement-drafts-mobile-switch')).toHaveCount(0)
+  await expect(page.getByTestId('requirement-drafts-source-pane')).toBeVisible()
+  await expect(page.getByTestId('requirement-drafts-preview-pane')).toBeVisible()
+  await expect(page.getByTestId('requirement-drafts-sash')).toBeVisible()
+  await expect(body).toHaveValue('# A draft kept through resizing')
 })

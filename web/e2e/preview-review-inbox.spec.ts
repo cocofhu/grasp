@@ -5,6 +5,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { PAGE_CAPS, PREVIEW_REVIEW_CAPS } from '../src/test/capsFixtures'
 
 mkdirSync('/tmp/preview-review-inbox-screenshots', { recursive: true })
@@ -188,33 +189,36 @@ async function mockInboxApis(
       return
     }
 
-    if (method === 'GET' && (path === '/api/projects' || path.endsWith('/api/projects'))) {
+    if (method === 'GET' && path === '/api/workspace') {
       await route.fulfill({
-        json: [{ id: 'proj-1', name: 'Grasp', slug: 'grasp' }],
+        json: { id: 'proj-1', name: 'Grasp', description: '', variables: [] },
       })
       return
     }
 
     if (path.includes('/api/auth') || path.endsWith('/api/me')) {
-      await route.fulfill({ json: { username: 'admin', isAdmin: true } })
+      await route.fulfill({ json: { username: 'admin', is_admin: true, expires_at: '2099-01-01T00:00:00Z' } })
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/projects\/[^/]+\/run-tags/)) {
+    if (method === 'GET' && path === '/api/workspace/run-tags') {
       await route.fulfill({ json: { tags: [] } })
       return
     }
 
-    await route.fulfill({ status: 200, json: {} })
+    await route.fallback()
   })
 }
 
 async function openGates(page: Page, state: { inbox: InboxPayload; finished: boolean }) {
+  await installWorkspaceApiDefaults(page)
   await mockInboxApis(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/tag-filter-ux.html?page=gates')
-  await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+  await page.goto('/workspace-config.html?view=/gates')
+  await expect(page.getByTestId('nav-pending-row').first()).toBeVisible({ timeout: 15_000 })
 }
+
+const pendingRow = (page: Page, title: string) => page.getByTestId('nav-pending-row').filter({ hasText: title })
 
 test.describe('preview review in Gates Inbox', () => {
   test('仅预览复审：列表非空、徽章「待复审」、详情挂载应用预览舞台', async ({ page }) => {
@@ -224,14 +228,19 @@ test.describe('preview review in Gates Inbox', () => {
     }
     await openGates(page, state)
 
-    await expect(page.getByText('应用预览验收', { exact: false }).first()).toBeVisible()
-    await expect(page.getByText('预览工作流', { exact: false })).toBeVisible()
-    await expect(page.getByText('待复审', { exact: true }).first()).toBeVisible()
+    const preview = pendingRow(page, '应用预览验收')
+    await expect(preview).toBeVisible()
+    await expect(preview).toHaveAttribute('title', '应用预览验收 · 实现')
+    await expect(preview.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+    await preview.click()
 
-    // Sole item auto-selects; the registered port mounts the app preview stage.
+    // The conversation opens first; artifacts remain mounted behind their pane.
+    await expect(page.getByRole('button', { name: '确认并流转' })).toBeVisible()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
     await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible({ timeout: 15_000 })
     await expect(page.getByRole('tab', { name: '应用预览' })).toHaveAttribute('aria-selected', 'true')
-    await expect(page.getByRole('button', { name: '确认并流转' })).toBeVisible()
 
     await page.screenshot({ path: '/tmp/preview-review-inbox-screenshots/01-preview-only.png', fullPage: true })
   })
@@ -243,14 +252,26 @@ test.describe('preview review in Gates Inbox', () => {
     }
     await openGates(page, state)
 
-    await expect(page.getByText('人工门禁', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('待复审', { exact: true })).toHaveCount(2)
+    const gate = pendingRow(page, '方案门禁')
+    const preview = pendingRow(page, '应用预览验收')
+    const review = pendingRow(page, '视觉复审')
+    await expect(page.getByTestId('nav-pending-row')).toHaveCount(3)
+    await expect(gate).toHaveAttribute('title', '方案门禁 · 方案评审门禁')
+    await expect(gate.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--approval/)
+    for (const row of [preview, review]) {
+      await expect(row).toBeVisible()
+      await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+    }
 
-    // Click preview row and ensure stage mounts without dropping other list rows.
-    await page.locator('button').filter({ hasText: '应用预览验收' }).first().click()
+    // Open the selected review's artifacts without dropping other list rows.
+    await preview.click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
     await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText('人工门禁', { exact: true }).first()).toBeVisible()
-    await expect(page.getByText('待复审', { exact: true }).first()).toBeVisible()
+    await expect(gate).toBeVisible()
+    await expect(review).toBeVisible()
+    await expect(page.getByTestId('nav-pending-row')).toHaveCount(3)
 
     await page.screenshot({ path: '/tmp/preview-review-inbox-screenshots/02-coexist-badges.png', fullPage: true })
   })
@@ -262,15 +283,16 @@ test.describe('preview review in Gates Inbox', () => {
     }
     await openGates(page, state)
 
-    await page.locator('button').filter({ hasText: '应用预览验收' }).first().click()
+    await pendingRow(page, '应用预览验收').click()
     await expect(page.getByRole('button', { name: '确认并流转' })).toBeVisible({ timeout: 15_000 })
     await page.getByRole('button', { name: '确认并流转' }).click()
 
     // Item removed locally + refresh; gate remains.
-    await expect(page.locator('button').filter({ hasText: '应用预览验收' })).toHaveCount(0, {
+    await expect(pendingRow(page, '应用预览验收')).toHaveCount(0, {
       timeout: 10_000,
     })
-    await expect(page.getByText('人工门禁', { exact: true }).first()).toBeVisible()
+    await expect(pendingRow(page, '方案门禁')).toBeVisible()
+    await expect(pendingRow(page, '方案门禁').getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--approval/)
     expect(state.finished).toBe(true)
 
     await page.screenshot({ path: '/tmp/preview-review-inbox-screenshots/03-after-confirm.png', fullPage: true })

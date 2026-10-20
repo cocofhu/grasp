@@ -21,11 +21,10 @@ import { setLocale } from '@/lib/shared/locale'
 import { setTheme, type ThemeName } from '@/lib/shared/theme'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import { useToast } from '@/lib/composables/useToast'
-import { writeStoredProjectId } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
-  DEFAULT_PROJECT_ID,
   ONBOARDING_CLI_BACKENDS,
   ONBOARDING_GIT_TYPES,
   ONBOARDING_STEPS,
@@ -40,7 +39,6 @@ import {
   gitIdentityConfigured,
   repoConfigured,
   repoNameFromUrl,
-  sanitizeOnboardingPrefix,
   setTeamMemberEnabled,
   teamNameIssues,
   teamValid,
@@ -61,7 +59,7 @@ export type OnboardingCompletedResult = OnboardingBootstrapResult & {
 const props = withDefaults(
   defineProps<{
     open: boolean
-    /** Used for firstInstall/retry; empty for createProject until created. */
+    /** Internal workspace identity, resolved through the workspace context. */
     projectId?: string
     mode?: OnboardingMode
   }>(),
@@ -80,17 +78,16 @@ const { t } = useI18n()
 const toast = useToast()
 const router = useRouter()
 const launch = useWorkflowRunLaunch()
+const { workspaceId, ensureLoaded } = useWorkspaceContext()
 
 const draft = ref<OnboardingDraft>(freshOnboardingDraft())
 const creating = ref(false)
 const createError = ref('')
 const phase = ref<'wizard' | 'success'>('wizard')
 const result = ref<OnboardingBootstrapResult | null>(null)
-const createdProjectId = ref('')
 const stepAnimKey = ref(0)
 const keyError = ref(false)
 const modelError = ref(false)
-const projectNameError = ref('')
 const templates = ref<AgentTemplate[]>([])
 const templatesState = ref<'loading' | 'ready' | 'error'>('loading')
 const retryProjectName = ref('')
@@ -99,7 +96,6 @@ const leaving = ref(false)
 
 const steps = ONBOARDING_STEPS
 const wizardStepCount = steps.length - 1
-const isCreate = computed(() => (props.mode || 'firstInstall') === 'createProject')
 const activeIndex = computed(() => (phase.value === 'success' ? steps.length - 1 : draft.value.step))
 const currentStep = computed(() => steps[activeIndex.value] || steps[0]!)
 const languageOptions: { id: AppLocale; label: string; hint: string }[] = [
@@ -137,9 +133,8 @@ const summaryItems = computed(() => [
   { id: 'agents', label: 'Agent', value: t('pages.onboarding.workflow.agentsValue', { n: enabledTeam.value.length }), ok: true },
   { id: 'workflow', label: t('pages.onboarding.workflow.wfLabel'), value: t('pages.onboarding.workflow.wfValue'), ok: true, wide: true },
 ])
-const targetProjectId = computed(() => createdProjectId.value || (props.projectId || '').trim())
+const targetProjectId = workspaceId
 const wizardTitle = computed(() => {
-  if (isCreate.value) return t('pages.onboarding.titleCreate')
   if ((props.mode || 'firstInstall') === 'retry') return t('pages.onboarding.titleRetry')
   return t('pages.onboarding.title')
 })
@@ -151,8 +146,7 @@ const repoDirName = computed(() => repoNameFromUrl(draft.value.repoUrl))
 /** Names the server would derive; empty when the project name is not known yet. */
 const defaultAgentNames = computed<string[]>(() => {
   const lang = draft.value.language
-  if (isCreate.value) return deriveOnboardingAgentNames('new', draft.value.projectName, lang)
-  const pid = (props.projectId || DEFAULT_PROJECT_ID).trim() || DEFAULT_PROJECT_ID
+  const pid = workspaceId.value
   return deriveOnboardingAgentNames(pid, retryProjectName.value, lang)
 })
 const allowBlankNames = computed(() => defaultAgentNames.value.length === 0)
@@ -178,7 +172,7 @@ watch(
   () => props.open,
   (open) => {
     if (!open) return
-    const inheritAppLocale = isCreate.value
+    const inheritAppLocale = false
     draft.value = freshOnboardingDraft({ inheritAppLocale })
     // createProject must not overwrite the user's saved locale with browser/OS.
     if (!inheritAppLocale) {
@@ -188,10 +182,8 @@ watch(
     createError.value = ''
     phase.value = 'wizard'
     result.value = null
-    createdProjectId.value = ''
     keyError.value = false
     modelError.value = false
-    projectNameError.value = ''
     showTeamErrors.value = false
     leaving.value = false
     retryProjectName.value = ''
@@ -216,10 +208,11 @@ async function loadTemplates() {
 }
 
 async function loadRetryProjectName() {
-  const pid = (props.projectId || '').trim()
-  if (isCreate.value || !pid || pid === DEFAULT_PROJECT_ID) return
+  await ensureLoaded()
+  const pid = workspaceId.value
+  if (!pid) return
   try {
-    const proj = await api.getProject(pid)
+    const proj = await api.getWorkspace()
     retryProjectName.value = proj?.name || ''
   } catch {
     /* names stay blank; the server derives them */
@@ -297,25 +290,7 @@ function renameMember(m: OnboardingTeamMember, value: string) {
   m.nameEdited = true
 }
 
-function validateProjectName(): boolean {
-  const name = draft.value.projectName.trim()
-  if (!name) {
-    projectNameError.value = t('pages.onboarding.projectName.required')
-    toast.error(projectNameError.value)
-    return false
-  }
-  if (!sanitizeOnboardingPrefix(name)) {
-    projectNameError.value = t('pages.onboarding.projectName.invalid')
-    toast.error(projectNameError.value)
-    return false
-  }
-  projectNameError.value = ''
-  return true
-}
-
-function validatePrefs(): boolean {
-  return !isCreate.value || !!createdProjectId.value || validateProjectName()
-}
+function validatePrefs(): boolean { return true }
 
 function validateKey(): boolean {
   if (!draft.value.apiKey.trim()) {
@@ -378,7 +353,6 @@ function goNext() {
   }
   keyError.value = false
   modelError.value = false
-  projectNameError.value = ''
   draft.value.step = Math.min(draft.value.step + 1, wizardStepCount - 1)
   stepAnimKey.value++
 }
@@ -387,7 +361,6 @@ async function runBootstrap(projectId: string, body: ReturnType<typeof assembleB
   const res = await api.bootstrapProjectOnboarding(projectId, body)
   result.value = res
   phase.value = 'success'
-  writeStoredProjectId(projectId)
   toast.success(t('pages.onboarding.toastOk'))
   emit('completed', { ...res, projectId })
 }
@@ -409,24 +382,8 @@ async function submitBootstrap() {
   try {
     const body = assembleBootstrapBody(draft.value)
 
-    // create→bootstrap failure: keep same project id and only retry bootstrap (s3/f6).
-    if (createdProjectId.value) {
-      await runBootstrap(createdProjectId.value, body)
-      return
-    }
-
-    if (isCreate.value) {
-      const created = await api.createProject({
-        name: draft.value.projectName.trim(),
-        description: '',
-      })
-      // Remember id so a bootstrap failure retries bootstrap only — never create again (s3/f6).
-      createdProjectId.value = created.id
-      await runBootstrap(created.id, body)
-      return
-    }
-
-    const projectId = (props.projectId || '').trim()
+    await ensureLoaded()
+    const projectId = workspaceId.value
     if (!projectId) {
       createError.value = t('pages.onboarding.toastErr')
       toast.error(createError.value)
@@ -444,8 +401,7 @@ async function submitBootstrap() {
 function goToProject() {
   const id = targetProjectId.value
   if (!id) return
-  writeStoredProjectId(id)
-  void router.push({ path: `/projects/${id}` })
+  void router.push({ path: '/workflows' })
 }
 
 function finish() {
@@ -472,7 +428,6 @@ async function runOnce() {
 function editWorkflow() {
   const id = result.value?.workflowId
   if (!id) return
-  if (targetProjectId.value) writeStoredProjectId(targetProjectId.value)
   void router.push({ path: `/workflows/${id}/edit` })
   emit('close')
 }
@@ -652,32 +607,10 @@ function editWorkflow() {
 
                 <template v-if="currentStep.id === 'prefs'">
                   <p class="onb-lede">
-                    {{ t(isCreate ? 'pages.onboarding.prefsMetaCreate' : 'pages.onboarding.prefsMeta') }}
+                    {{ t('pages.onboarding.prefsMeta') }}
                   </p>
                   <div class="mt-7 space-y-7">
-                    <section v-if="isCreate" data-testid="onboarding-section-project">
-                      <label class="block">
-                        <span class="onb-label">{{ t('pages.onboarding.projectName.label') }} <span class="text-err">*</span></span>
-                        <input
-                          v-model="draft.projectName"
-                          type="text"
-                          autocomplete="off"
-                          class="onb-input"
-                          :class="{ 'is-invalid': projectNameError }"
-                          :placeholder="t('pages.onboarding.projectName.placeholder')"
-                          :disabled="!!createdProjectId"
-                          data-testid="onboarding-project-name"
-                          @input="projectNameError = ''"
-                        />
-                        <p class="onb-hint">
-                          {{ t('pages.onboarding.projectName.meta') }}
-                        </p>
-                        <p v-if="projectNameError" class="onb-error">
-                          {{ projectNameError }}
-                        </p>
-                      </label>
-                    </section>
-                    <section v-else data-testid="onboarding-section-language">
+                    <section data-testid="onboarding-section-language">
                       <div class="mt-4 grid gap-4 sm:grid-cols-2">
                         <div>
                           <div class="onb-label">

@@ -9,7 +9,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 
-	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -28,6 +27,9 @@ var (
 	ErrProjectHasWorkflows = errors.New("项目下仍有工作流，请先删除全部工作流")
 	// ErrSecretPlaceholderOnNewKey is returned when a new/renamed key is saved with only the mask.
 	ErrSecretPlaceholderOnNewKey = errors.New("新密钥或重命名的键不能使用打码占位值，请重新填写明文")
+	// ErrSecretPlaceholderOnPublicValue prevents a masked secret from becoming
+	// readable merely because its Secret flag was cleared.
+	ErrSecretPlaceholderOnPublicValue = errors.New("取消 Secret 后不能保留打码值，请重新填写公开值")
 	// ErrUnknownModelDisplayNameTooLong is returned when the alias exceeds 64 runes.
 	ErrUnknownModelDisplayNameTooLong = errors.New("显示名最多 64 个字符，请缩短后再保存。")
 )
@@ -202,15 +204,7 @@ func AggregatePlatformTokenBreakdown(byProject map[string]ProjectTokenBreakdown)
 // PlatformTokenBreakdown returns the cross-project Token summary for the
 // dashboard KPI (same semantics as summing each project's TokenBreakdown).
 func (s *ProjectService) PlatformTokenBreakdown() ProjectTokenBreakdown {
-	projects := s.List()
-	if len(projects) == 0 {
-		return ProjectTokenBreakdown{}
-	}
-	ids := make([]string, len(projects))
-	for i, p := range projects {
-		ids[i] = p.ID
-	}
-	return AggregatePlatformTokenBreakdown(s.TokenBreakdownByProjectIDs(ids))
+	return s.WorkspaceTokenBreakdown()
 }
 
 func (s *ProjectService) sumWorkflowTokensByProjectIDs(projectIDs []string) (sums map[string]int64, has map[string]struct{}) {
@@ -248,34 +242,7 @@ func (s *ProjectService) sumLedgerTokensByProjectIDs(projectIDs []string, source
 
 // Create inserts a new project.
 func (s *ProjectService) Create(name, description string, vars []models.ProjectVariable) (models.Project, error) {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return models.Project{}, ErrEmptyProjectName
-	}
-	if s.NameExists(name, "") {
-		return models.Project{}, ErrProjectNameExists
-	}
-	if vars == nil {
-		vars = []models.ProjectVariable{}
-	}
-	sanitizedVars, err := sanitizeProjectVars(vars)
-	if err != nil {
-		return models.Project{}, err
-	}
-	now := time.Now()
-	p := models.Project{
-		ID:           "proj-" + uuid.NewString()[:8],
-		Name:         name,
-		Description:  description,
-		Variables:    sanitizedVars,
-		NotifyPolicy: models.DefaultProjectNotifyPolicy(),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	if err := s.db.Create(&p).Error; err != nil {
-		return models.Project{}, err
-	}
-	return p, nil
+	return models.Project{}, ErrWorkspaceProtected
 }
 
 // Update patches name/description/variables/notifyPolicy/
@@ -325,50 +292,48 @@ func (s *ProjectService) Update(id string, name *string, description *string, va
 	return p, nil
 }
 
-// Delete removes a project when it has no workflows.
-// Requirement drafts for the project are hard-deleted in the same transaction
-// so they become unreachable after the project is gone.
-func (s *ProjectService) Delete(id string) error {
-	if _, ok := s.Get(id); !ok {
-		return ErrProjectNotFound
-	}
-	if s.WorkflowCount(id) > 0 {
-		return ErrProjectHasWorkflows
-	}
-	return s.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("project_id = ?", id).Delete(&models.RequirementDraft{}).Error; err != nil {
-			return err
-		}
-		if err := tx.Where("project_id = ?", id).Delete(&models.ProjectCredential{}).Error; err != nil {
-			return err
-		}
-		return tx.Delete(&models.Project{}, "id = ?", id).Error
-	})
-}
+// Delete refuses removing the sole workspace.
+func (s *ProjectService) Delete(id string) error { return ErrWorkspaceProtected }
 
 // VariablesForWorkflow returns the owning project's workflow variables (plaintext).
 func (s *ProjectService) VariablesForWorkflow(workflowID string) []models.ProjectVariable {
 	var wf models.WorkflowDef
-	if err := s.db.Select("project_id").First(&wf, "id = ?", workflowID).Error; err != nil || wf.ProjectID == "" {
+	if err := s.db.Select("project_id", "defaults").First(&wf, "id = ?", workflowID).Error; err != nil || wf.ProjectID == "" {
 		return nil
 	}
 	p, ok := s.Get(wf.ProjectID)
 	if !ok {
 		return nil
 	}
-	return p.Variables
+	if wf.Defaults == nil {
+		return p.Variables
+	}
+	vars := []models.ProjectVariable{}
+	if wf.Defaults.InheritWorkspace {
+		vars = append(vars, p.Variables...)
+	}
+	byName := map[string]int{}
+	for i, v := range vars {
+		byName[v.Name] = i
+	}
+	for _, v := range wf.Defaults.Variables {
+		if i, ok := byName[v.Name]; ok {
+			vars[i] = v
+		} else {
+			byName[v.Name] = len(vars)
+			vars = append(vars, v)
+		}
+	}
+	return vars
 }
 
 // DefaultProjectID returns the id of「默认项目」when present, else the oldest project.
 func (s *ProjectService) DefaultProjectID() string {
-	var p models.Project
-	if err := s.db.Where("id = ?", models.DefaultProjectID).First(&p).Error; err == nil {
-		return p.ID
+	p, err := s.Workspace()
+	if err != nil {
+		return ""
 	}
-	if err := s.db.Order("created_at asc").First(&p).Error; err == nil {
-		return p.ID
-	}
-	return ""
+	return p.ID
 }
 
 func sanitizeProjectVars(in []models.ProjectVariable) ([]models.ProjectVariable, error) {
@@ -417,7 +382,15 @@ func mergeProjectVars(existing, incoming []models.ProjectVariable) ([]models.Pro
 		}
 		if isSecretVarPlaceholder(v.Value) {
 			if old, ok := byName[n]; ok {
-				v.Value = old.Value
+				if old.Secret && !v.Secret {
+					if v.Value == SecretMask {
+						return nil, ErrSecretPlaceholderOnPublicValue
+					}
+					// Empty/nil is the editor's explicit clear when changing a
+					// secret to a public value; never reveal the stored secret.
+				} else {
+					v.Value = old.Value
+				}
 			} else if v.Value == SecretMask {
 				return nil, ErrSecretPlaceholderOnNewKey
 			}
@@ -469,4 +442,28 @@ func MaskedProjectVars(vars []models.ProjectVariable) []models.ProjectVariable {
 // FormatProjectHasWorkflowsError returns a stable API error string.
 func FormatProjectHasWorkflowsError(n int64) string {
 	return fmt.Sprintf("%s（%d）", ErrProjectHasWorkflows.Error(), n)
+}
+
+// WorkspaceTokenBreakdown includes historical events whose original workspace was removed.
+func (s *ProjectService) WorkspaceTokenBreakdown() ProjectTokenBreakdown {
+	var rows []models.TokenUsageEvent
+	s.db.Where("source IN ?", []string{models.TokenLedgerSourceWorkflow, models.TokenLedgerSourcePM}).Find(&rows)
+	var out ProjectTokenBreakdown
+	for _, r := range rows {
+		if out.Total == nil {
+			v := int64(0)
+			out.Total = &v
+		}
+		*out.Total += r.Total()
+		p := &out.Workflow
+		if r.Source == models.TokenLedgerSourcePM {
+			p = &out.PM
+		}
+		if *p == nil {
+			v := int64(0)
+			*p = &v
+		}
+		**p += r.Total()
+	}
+	return out
 }

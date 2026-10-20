@@ -28,6 +28,7 @@ function mountSelect(props: { modelValue?: 'high' | 'normal' | 'low'; disabled?:
 describe('HomePrioritySelect', () => {
   afterEach(() => {
     document.body.innerHTML = ''
+    vi.unstubAllGlobals()
   })
 
   // plan g1.1 — 32px chip trigger, default label 普通
@@ -108,6 +109,25 @@ describe('HomePrioritySelect', () => {
     wrapper.unmount()
   })
 
+  it.each(['Enter', ' ', 'ArrowDown'])('opens with %j without choosing or advancing an option', async (key) => {
+    const wrapper = mountSelect({})
+    const trigger = wrapper.get('[data-testid="home-priority-select-trigger"]').element as HTMLButtonElement
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    expect(document.querySelector('[data-testid="home-priority-select-panel"]')).toBeTruthy()
+    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    expect(document.querySelector('.home-priority-select__opt--active')?.getAttribute('data-priority')).toBe('normal')
+
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }))
+    await flushPromises()
+    trigger.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(wrapper.emitted('update:modelValue')).toEqual([['low']])
+    expect(document.querySelector('[data-testid="home-priority-select-panel"]')).toBeNull()
+    wrapper.unmount()
+  })
+
   // plan g1.3 — Escape closes and returns focus; outside click closes
   it('closes on Escape and restores focus to the trigger', async () => {
     const wrapper = mountSelect({})
@@ -155,6 +175,94 @@ describe('HomePrioritySelect', () => {
     const width = Number.parseInt(panel.style.width, 10)
     expect(left).toBeGreaterThanOrEqual(8)
     expect(left + width).toBeLessThanOrEqual(window.innerWidth - 8)
+    wrapper.unmount()
+  })
+
+  it('opens above the trigger near the bottom of a short viewport', async () => {
+    vi.stubGlobal('innerHeight', 300)
+    const wrapper = mountSelect({})
+    const trigger = wrapper.get('[data-testid="home-priority-select-trigger"]')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({
+      top: 232,
+      bottom: 264,
+      left: 40,
+      right: 120,
+      width: 80,
+      height: 32,
+      x: 40,
+      y: 232,
+      toJSON: () => ({}),
+    })
+    await trigger.trigger('click')
+    await flushPromises()
+    const panel = document.querySelector('[data-testid="home-priority-select-panel"]') as HTMLElement
+    const top = Number.parseInt(panel.style.top, 10)
+    const maxHeight = Number.parseInt(panel.style.maxHeight, 10)
+    expect(panel.getAttribute('data-placement')).toBe('above')
+    expect(top).toBeGreaterThanOrEqual(8)
+    expect(top + maxHeight).toBeLessThanOrEqual(226)
+    wrapper.unmount()
+  })
+
+  it('limits a below panel to the available viewport height', async () => {
+    vi.stubGlobal('innerHeight', 300)
+    const wrapper = mountSelect({})
+    const trigger = wrapper.get('[data-testid="home-priority-select-trigger"]')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue({
+      top: 100,
+      bottom: 132,
+      left: 40,
+      right: 120,
+      width: 80,
+      height: 32,
+      x: 40,
+      y: 100,
+      toJSON: () => ({}),
+    })
+    await trigger.trigger('click')
+    await flushPromises()
+    const panel = document.querySelector('[data-testid="home-priority-select-panel"]') as HTMLElement
+    expect(panel.getAttribute('data-placement')).toBe('below')
+    expect(Number.parseInt(panel.style.top, 10) + Number.parseInt(panel.style.maxHeight, 10)).toBe(292)
+    wrapper.unmount()
+  })
+
+  it('scrolls clipped keyboard options into the panel without scrolling the page', async () => {
+    const wrapper = mountSelect({})
+    const trigger = wrapper.get('[data-testid="home-priority-select-trigger"]')
+    await trigger.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const panel = document.querySelector('[data-testid="home-priority-select-panel"]') as HTMLElement
+    Object.defineProperty(panel, 'clientHeight', { configurable: true, value: 100 })
+    for (const [priority, top] of [['high', 55], ['normal', 100], ['low', 145]] as const) {
+      const option = panel.querySelector(`[data-priority="${priority}"].home-priority-select__opt`) as HTMLElement
+      Object.defineProperties(option, {
+        offsetTop: { configurable: true, value: top },
+        offsetHeight: { configurable: true, value: 35 },
+      })
+    }
+    const pageScroll = { x: window.scrollX, y: window.scrollY }
+    const scrollPage = vi.spyOn(window, 'scrollTo')
+
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    const low = panel.querySelector('[data-priority="low"].home-priority-select__opt') as HTMLElement
+    expect(low.classList.contains('home-priority-select__opt--active')).toBe(true)
+    expect(panel.scrollTop).toBe(80)
+    expect(low.offsetTop + low.offsetHeight).toBeLessThanOrEqual(panel.scrollTop + panel.clientHeight)
+
+    await trigger.trigger('keydown', { key: 'ArrowUp' })
+    await flushPromises()
+    expect(panel.scrollTop).toBe(80) // The normal option already fits.
+    await trigger.trigger('keydown', { key: 'ArrowUp' })
+    await flushPromises()
+    const high = panel.querySelector('[data-priority="high"].home-priority-select__opt') as HTMLElement
+    expect(high.classList.contains('home-priority-select__opt--active')).toBe(true)
+    expect(high.offsetTop).toBeGreaterThanOrEqual(panel.scrollTop)
+    expect(panel.scrollTop).toBe(55)
+    expect({ x: window.scrollX, y: window.scrollY }).toEqual(pageScroll)
+    expect(scrollPage).not.toHaveBeenCalled()
+    scrollPage.mockRestore()
     wrapper.unmount()
   })
 })

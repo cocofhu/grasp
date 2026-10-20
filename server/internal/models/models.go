@@ -36,19 +36,20 @@ type ProjectVariable struct {
 // Hash-based credentials (external MCP/workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
 type ProjectCredential struct {
-	ID        string         `gorm:"primaryKey" json:"id"`
-	ProjectID string         `gorm:"index" json:"projectId"`
-	Type      string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
-	Provider  string         `json:"provider,omitempty"`
-	Name      string         `json:"name"`
-	Target    string         `json:"target,omitempty"`
-	EnvKey    string         `gorm:"index" json:"envKey,omitempty"`
-	ValueEnc  string         `json:"-"`
-	Metadata  map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
-	Enabled   bool           `json:"enabled"`
-	RevokedAt *time.Time     `json:"revokedAt,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
-	UpdatedAt time.Time      `json:"updatedAt"`
+	ID          string         `gorm:"primaryKey" json:"id"`
+	ProjectID   string         `gorm:"index" json:"projectId"`
+	Type        string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Provider    string         `json:"provider,omitempty"`
+	Name        string         `json:"name"`
+	Target      string         `json:"target,omitempty"`
+	EnvKey      string         `gorm:"index" json:"envKey,omitempty"`
+	ValueEnc    string         `json:"-"`
+	BuiltinSlot string         `json:"builtinSlot,omitempty"`
+	Metadata    map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
+	Enabled     bool           `json:"enabled"`
+	RevokedAt   *time.Time     `json:"revokedAt,omitempty"`
+	CreatedAt   time.Time      `json:"createdAt"`
+	UpdatedAt   time.Time      `json:"updatedAt"`
 }
 
 // Project is a workspace that owns workflows and holds workflow variable
@@ -57,7 +58,7 @@ type ProjectCredential struct {
 // non-credential variables.
 type Project struct {
 	ID          string            `gorm:"primaryKey" json:"id"`
-	Name        string            `gorm:"uniqueIndex" json:"name"`
+	Name        string            `gorm:"size:191;uniqueIndex" json:"name"`
 	Description string            `json:"description"`
 	Variables   []ProjectVariable `gorm:"serializer:json" json:"variables"`
 	// PmLeaderEnabled toggles the project-level PM Leader consult entry.
@@ -90,11 +91,26 @@ type Project struct {
 
 // WorkflowDef is the editable workflow head. Graph/Name/Description always
 // equal the WorkflowVersion row numbered Version (the latest save).
+type WorkflowDefaults struct {
+	InheritWorkspace bool                    `json:"inheritWorkspace"`
+	Variables        []ProjectVariable       `json:"variables"`
+	NotifyPolicy     *ProjectNotifyPolicy    `json:"notifyPolicy,omitempty"`
+	GateAuto         *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
+}
+type WorkflowGateAutoPolicy struct {
+	Enabled     bool     `json:"enabled"`
+	AgentName   string   `json:"agentName"`
+	Variable    string   `json:"variable"`
+	Prompt      string   `json:"prompt"`
+	EnabledMcps []string `json:"enabledMcps"`
+}
+
 type WorkflowDef struct {
-	ID string `gorm:"primaryKey" json:"id"`
+	Defaults *WorkflowDefaults `gorm:"serializer:json" json:"defaults,omitempty"`
+	ID       string            `gorm:"primaryKey" json:"id"`
 	// ProjectID is required by the API/service layer.
 	ProjectID   string `gorm:"index;uniqueIndex:idx_wf_proj_name" json:"projectId"`
-	Name        string `gorm:"uniqueIndex:idx_wf_proj_name" json:"name"`
+	Name        string `gorm:"size:191;uniqueIndex:idx_wf_proj_name" json:"name"`
 	Description string `json:"description"`
 	// Version is the latest saved WorkflowVersion number.
 	Version int `json:"version"`
@@ -783,10 +799,10 @@ type PromptImage struct {
 //     the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID      uint   `gorm:"primaryKey" json:"id"`
-	Name    string `gorm:"uniqueIndex" json:"name"` // docker container name
-	Profile string `json:"profile"`                 // bound Agent name
-	Purpose string `json:"purpose"`                 // "test" | "run" | "agent"
+	ID             uint   `gorm:"primaryKey" json:"id"`
+	Name           string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
+	Profile        string `json:"profile"`                          // bound Agent name
+	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent"
 	// Scope identifies the lifecycle owner of a run sandbox: "run" is the
 	// container shared by compatible Agent nodes of the workflow run; "node" is
 	// a node-private container.
@@ -856,7 +872,7 @@ type SandboxLease struct {
 // git clone). Keyed by container name; run sandboxes also carry run/node ids.
 type SandboxLog struct {
 	ID        uint      `gorm:"primaryKey" json:"id"`
-	Name      string    `gorm:"uniqueIndex" json:"name"` // docker container name
+	Name      string    `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
 	RunID     string    `gorm:"index" json:"runId,omitempty"`
 	NodeID    string    `json:"nodeId,omitempty"`
 	Profile   string    `json:"profile,omitempty"`
@@ -998,8 +1014,8 @@ func AllModels() []any {
 	}
 }
 
-// DefaultProjectID is the stable id of the 「默认项目」 created on an empty database.
+// DefaultProjectID is the stable internal workspace id created on an empty database.
 const DefaultProjectID = "proj-default"
 
-// DefaultProjectName is the display name of the auto-created default project.
-const DefaultProjectName = "默认项目"
+// DefaultProjectName is the display name of a newly created workspace.
+const DefaultProjectName = "工作区"

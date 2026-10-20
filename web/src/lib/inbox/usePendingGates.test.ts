@@ -47,6 +47,10 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockReset()
     vi.mocked(api.listGates).mockResolvedValue(paged([]))
     usePendingGates().clearVisibleMembership()
+    usePendingGates().sidebarExtras.value = []
+    usePendingGates().startFailedKeys.value = []
+    usePendingGates().setActiveInboxKey(null)
+    usePendingGates().setSidebarExtras([])
     await usePendingGates().refresh({ mode: 'force' })
   })
 
@@ -238,6 +242,8 @@ describe('usePendingGates', () => {
     expect(pg.remoteItems.value).toHaveLength(1)
     expect(pg.totalCount.value).toBe(1)
     expect(pg.displayedItems.value[0].nodeId).toBe('node-2')
+    expect(pg.displayedItems.value.some((it) => it.nodeId === 'node-1')).toBe(false)
+    expect(pg.remoteItems.value.some((it) => it.nodeId === 'node-1')).toBe(false)
   })
 
   it('restoreItemLocally reinserts after removeItemLocally', async () => {
@@ -321,7 +327,7 @@ describe('usePendingGates', () => {
     expect('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined).toBeUndefined()
   })
 
-  it('peek passes live URL wf/projectId/tag to listGates (plan g2.2)', async () => {
+  it('peek passes workflow and tag while ignoring obsolete project query to listGates (plan g2.2)', async () => {
     const prev = window.location.search
     window.history.replaceState({}, '', '/gates?wf=wf-1&projectId=proj-b&tag=urgent')
     vi.mocked(api.listGates).mockClear()
@@ -331,9 +337,9 @@ describe('usePendingGates', () => {
     expect(api.listGates).toHaveBeenCalledWith(
       expect.objectContaining({
         page: 1,
-        pageSize: 20,
+        pageSize: 100,
         wf: 'wf-1',
-        projectId: 'proj-b',
+        projectId: undefined,
         tag: 'urgent',
       }),
     )
@@ -400,5 +406,67 @@ describe('usePendingGates', () => {
 
     expect(pg.hasPendingUpdate.value).toBe(false)
     expect(pg.pendingMeta.value).toBeNull()
+  })
+
+  it('pages through the full pending total so rows past 20 stay reachable', async () => {
+    const page1 = Array.from({ length: 20 }, (_, i) => gate(String(i + 1)))
+    const last = gate('21')
+    vi.mocked(api.listGates).mockImplementation(async (params?: { page?: number }) => {
+      if (params?.page === 2) {
+        return { items: [last], total: 21, page: 2, pageSize: 100, hasMore: false }
+      }
+      return { items: page1, total: 21, page: 1, pageSize: 100, hasMore: true }
+    })
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    expect(pg.displayedItems.value).toHaveLength(21)
+    expect(pg.count.value).toBe(21)
+    expect(pg.displayedItems.value.map((it) => it.nodeId)).toContain('node-21')
+    expect(api.listGates).toHaveBeenCalledWith(expect.objectContaining({ page: 1, pageSize: 100 }))
+    expect(api.listGates).toHaveBeenCalledWith(expect.objectContaining({ page: 2, pageSize: 100 }))
+  })
+
+  it('keeps paging after the server page cap of 100', async () => {
+    const all = Array.from({ length: 101 }, (_, i) => gate(String(i + 1)))
+    vi.mocked(api.listGates).mockClear()
+    vi.mocked(api.listGates).mockImplementation(async (params?: { page?: number; pageSize?: number }) => {
+      const page = params?.page ?? 1
+      const pageSize = params?.pageSize ?? 100
+      const start = (page - 1) * pageSize
+      const items = all.slice(start, start + pageSize)
+      return {
+        items,
+        total: all.length,
+        page,
+        pageSize,
+        hasMore: start + items.length < all.length,
+      }
+    })
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    expect(pg.displayedItems.value).toHaveLength(101)
+    expect(pg.displayedItems.value.at(-1)?.nodeId).toBe('node-101')
+    expect(api.listGates).toHaveBeenCalledTimes(2)
+  })
+
+  it('patchRunTitle renames every row of that run and leaves node labels and other runs', () => {
+    const pg = usePendingGates()
+    pg.displayedItems.value = [
+      { ...clarify('1'), runId: 'run-shared', runTitle: '旧' },
+      { ...clarify('2'), runId: 'run-shared', nodeId: 'node-2', runTitle: '旧' },
+      { ...clarify('3'), runId: 'run-other', runTitle: '别的' },
+    ]
+    pg.remoteItems.value = [{ ...clarify('1'), runId: 'run-shared', runTitle: '旧' }]
+    pg.sidebarExtras.value = [{ ...clarify('4'), runId: 'run-shared', nodeId: 'node-extra', runTitle: '旧' }]
+    pg.patchRunTitle('run-shared', '新名字')
+    expect(pg.displayedItems.value.map((it) => it.runTitle)).toEqual(['新名字', '新名字', '别的'])
+    expect(pg.displayedItems.value.map((it) => (it.type === 'clarify' ? it.label : it.title))).toEqual([
+      'Clarify 1',
+      'Clarify 2',
+      'Clarify 3',
+    ])
+    expect(pg.displayedItems.value.map((it) => it.nodeId)).toEqual(['node-1', 'node-2', 'node-3'])
+    expect(pg.remoteItems.value[0]?.runTitle).toBe('新名字')
+    expect(pg.sidebarExtras.value[0]?.runTitle).toBe('新名字')
   })
 })

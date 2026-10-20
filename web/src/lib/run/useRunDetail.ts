@@ -90,7 +90,7 @@ async function loadUnknownModelDisplayName(projectId?: string | null) {
   if (unknownAliasLoadedForProjectId === pid) return
 
   try {
-    const p = await api.getProject(pid)
+    const p = await api.getWorkspace()
     unknownModelDisplayName.value = p.unknownModelDisplayName || ''
     unknownAliasLoadedForProjectId = pid
   } catch {
@@ -260,9 +260,8 @@ const showRunFailureBanner = computed(() => !!runFailureReason.value)
 const CODEX_LOGIN_REPASTE_MARK = '请重新粘贴登录文件'
 /** Project credentials route when the run failed on a refused Codex login. */
 const runFailureCredentialsRoute = computed(() => {
-  const pid = wf.value.projectId
-  if (!pid || !runFailureReason.value.includes(CODEX_LOGIN_REPASTE_MARK)) return null
-  return { name: 'project-detail', params: { id: pid }, query: { tab: 'credentials' } }
+  if (!runFailureReason.value.includes(CODEX_LOGIN_REPASTE_MARK)) return null
+  return { path: '/settings/credentials' }
 })
 const { draft: clarifyDraft, attachments: clarifyAttachments, annotations: clarifyAnnotations } = useClarifyDraft(() => runId.value, () => selected.value)
 

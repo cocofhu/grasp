@@ -10,6 +10,7 @@ import { relTime } from '@/lib/shared/format'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import type { AgentTool } from '@/lib/shared/types'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import { renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
@@ -24,6 +25,8 @@ const props = withDefaults(
     completedAt?: string | null
     /** Tool calls of the current turn (name + status). */
     streamTools?: AgentTool[]
+    /** Exact run owning any artifact links shown by tools. */
+    runId?: string
   }>(),
   {
     thinking: false,
@@ -132,41 +135,42 @@ function onThoughtToggle(e: Event) {
 <template>
   <div
     v-if="showPanel"
-    class="mt-2 max-h-40 space-y-1.5 overflow-y-auto rounded border border-line bg-surface px-2 py-1.5 text-[12px] text-txt2"
+    class="min-w-0 space-y-3 py-2"
     data-testid="gate-react-stream"
   >
     <div
       v-if="streaming && !hasMessage && !hasThought"
-      class="inline-flex items-center gap-2 text-txt3"
+      class="chat-meta inline-flex items-center gap-2"
       data-testid="gate-busy-placeholder"
     >
-      <span class="typing-dots" aria-hidden="true"><i /><i /><i /></span>
+      <InboxMotionMark kind="pulse" />
       <span>{{ t('pages.clarify.thinkingBusy') }}</span>
     </div>
     <div
       v-else-if="streaming && hasThought && !hasMessage"
-      class="text-txt3"
+      class="chat-meta inline-flex items-center gap-2"
       data-testid="gate-busy-status"
     >
-      {{ t('pages.clarify.thinkingBusy') }}
+      <InboxMotionMark kind="pulse" />
+      <span>{{ t('pages.clarify.thinkingBusy') }}</span>
     </div>
     <div
       v-else-if="streaming && hasMessage"
-      class="gate-stream-outputting"
+      class="chat-meta"
       data-testid="gate-busy-status"
     >
-      {{ t('pages.clarify.outputting') }}
+      <span class="text-accent-2">{{ t('pages.clarify.outputting') }}</span>
     </div>
 
     <details
       v-if="hasThought"
-      class="rounded border border-line bg-base/60 text-[11.5px] text-txt3"
+      class="chat-meta min-w-0"
       data-testid="gate-react-thought"
       :open="thoughtOpen"
       @toggle="onThoughtToggle"
     >
       <summary
-        class="flex cursor-pointer select-none items-center gap-1 px-2 py-1 hover:text-txt2"
+        class="flex cursor-pointer select-none items-center gap-2 py-1.5 hover:text-accent-2"
         data-testid="gate-thought-summary"
       >
         <ThoughtSummaryStatus
@@ -175,26 +179,26 @@ function onThoughtToggle(e: Event) {
           :interrupted="!!interrupted && !streaming"
         />
       </summary>
-      <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2 pb-1.5 pt-1 font-mono leading-5 [overflow-wrap:anywhere]">
+      <div class="ml-1.5 whitespace-pre-wrap break-words border-l border-line/70 pl-3 pb-2 pt-1.5 text-[12px] leading-6 [overflow-wrap:anywhere]">
         {{ revealedThought }}
       </div>
     </details>
 
-    <AgentToolGroup v-if="streamTools.length" :tools="streamTools" :busy="streaming" />
+    <AgentToolGroup v-if="streamTools.length" :tools="streamTools" :busy="streaming" :run-id="runId" />
 
-    <div v-if="hasMessage" class="md" data-testid="gate-react-message">
+    <div v-if="hasMessage" class="chat-prose md" data-testid="gate-react-message">
       <StreamMarkdown :blocks="messageBlocks" /><span
         v-if="streaming"
         class="gate-stream-caret"
         data-testid="gate-stream-caret"
         aria-hidden="true"
       />
-      <span v-if="interrupted" class="ml-1 text-[10px] text-warn">interrupted</span>
+      <span v-if="interrupted" class="ml-1.5 text-[12px] text-warn">interrupted</span>
     </div>
 
     <div
       v-if="showCompleted"
-      class="flex items-center justify-between gap-2 border-t border-line pt-1.5 text-[11px] text-txt3"
+      class="chat-meta flex items-center justify-between gap-2 pt-1.5"
       data-testid="gate-turn-completed"
     >
       <span class="text-txt2">{{ t('pages.clarify.turnCompleted') }}</span>
@@ -204,50 +208,12 @@ function onThoughtToggle(e: Event) {
 </template>
 
 <style scoped>
-.typing-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.typing-dots i {
-  width: 5px;
-  height: 5px;
-  border-radius: 9999px;
-  background: #22d3ee;
-  animation: typing-bounce 1.2s infinite ease-in-out both;
-}
-.typing-dots i:nth-child(2) {
-  animation-delay: 0.16s;
-}
-.typing-dots i:nth-child(3) {
-  animation-delay: 0.32s;
-}
-@keyframes typing-bounce {
-  0%,
-  70%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.35;
-  }
-  35% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
-.gate-stream-outputting {
-  color: rgb(var(--c-accent-2));
-  background: var(--grad-logo);
-  background-size: var(--grad-logo-size);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 3.5s ease-in-out infinite;
-}
 .gate-stream-caret {
   display: inline-block;
-  width: 7px;
-  height: 1em;
-  margin-left: 2px;
+  width: 2px;
+  height: 1.1em;
+  margin-left: 4px;
+  border-radius: 1px;
   vertical-align: text-bottom;
   background: rgb(var(--c-accent));
   animation: gate-caret-blink 0.9s step-end infinite;
@@ -258,17 +224,8 @@ function onThoughtToggle(e: Event) {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .typing-dots i,
-  .gate-stream-outputting,
   .gate-stream-caret {
     animation: none !important;
-  }
-  .gate-stream-outputting {
-    color: rgb(var(--c-accent-2));
-    background: none;
-    -webkit-background-clip: unset;
-    background-clip: unset;
-    -webkit-text-fill-color: unset;
   }
 }
 </style>

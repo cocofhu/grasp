@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
+import SettingsRow from '@/components/settings/SettingsRow.vue'
 import Icon from '@/components/ui/Icon.vue'
 import { usePmChannelMulti } from '@/lib/pm/usePmChannelMulti'
 import type { Project } from '@/lib/shared/types'
@@ -97,13 +98,13 @@ const {
 </script>
 
 <template>
-  <div class="border-t border-line pt-4" data-testid="pm-channel-multi">
+  <div data-testid="pm-channel-multi">
     <div class="mb-3 flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <strong class="block text-sm font-medium text-txt">
+        <h2 class="m-0 text-[15px] font-semibold leading-6 text-txt">
           {{ t('pages.projectDetail.pm.channel.sectionTitle') }}
-        </strong>
-        <p class="m-0 mt-1 text-xs leading-snug text-txt3">
+        </h2>
+        <p class="m-0 mt-1 text-[13px] leading-5 text-txt3">
           {{ t('pages.projectDetail.pm.channel.sectionHint') }}
         </p>
       </div>
@@ -162,12 +163,12 @@ const {
         </AppButton>
       </div>
 
-      <div v-if="!channelList.length" class="rounded-lg border border-dashed border-line-strong p-3.5 text-xs text-txt3">
+      <div v-if="!channelList.length" class="py-4 text-[13px] text-txt3">
         {{ t('pages.projectDetail.pm.channel.listEmpty') }}
       </div>
-      <div v-else class="rounded-lg border border-line">
+      <div v-else class="border-y border-line/60">
         <div
-          class="grid grid-cols-[1fr_100px_140px_80px_120px] gap-3 border-b border-line bg-elevated px-3.5 py-2 text-[11px] uppercase tracking-wide text-txt3 max-md:grid-cols-2"
+          class="grid grid-cols-[1fr_100px_140px_80px_120px] gap-3 border-b border-line/60 py-2 text-[11px] uppercase tracking-wide text-txt3 max-md:grid-cols-2"
         >
           <span>{{ t('pages.projectDetail.pm.channel.colName') }}</span>
           <span>{{ t('pages.projectDetail.pm.channel.colRole') }}</span>
@@ -178,7 +179,7 @@ const {
         <div
           v-for="ch in channelList"
           :key="ch.id"
-          class="grid grid-cols-[1fr_100px_140px_80px_120px] items-center gap-3 border-b border-line px-3.5 py-3 last:border-b-0 hover:bg-elevated max-md:grid-cols-2"
+          class="grid grid-cols-[1fr_100px_140px_80px_120px] items-center gap-3 border-b border-line/60 py-4 last:border-b-0 max-md:grid-cols-2"
           data-testid="channel-row"
         >
           <div class="min-w-0">
@@ -258,7 +259,7 @@ const {
         </div>
       </div>
 
-      <div class="rounded-lg mt-3 border border-info/35 bg-info/10 px-3 py-2.5 text-xs leading-snug text-txt2">
+      <div class="mt-3 text-[13px] leading-5 text-txt3">
         <strong class="text-info">{{ t('pages.projectDetail.pm.channel.noteTitle') }}</strong>
         {{ t('pages.projectDetail.pm.channel.noteHint') }}
       </div>
@@ -288,14 +289,14 @@ const {
         </AppButton>
       </div>
 
-      <div v-if="!isNew && !editingId" class="rounded-lg border border-dashed border-line-strong p-3.5 text-xs text-txt3">
+      <div v-if="!isNew && !editingId" class="py-4 text-[13px] text-txt3">
         {{ t('pages.projectDetail.pm.channel.editEmpty') }}
       </div>
 
       <template v-else>
-        <div class="grid gap-4 lg:grid-cols-[1.15fr_.85fr]">
-          <div class="rounded-lg border border-line bg-surface p-4">
-            <h3 class="m-0 text-[13px] font-semibold text-txt">
+        <div class="space-y-7">
+          <div class="min-w-0">
+            <h3 class="m-0 text-[14px] font-semibold leading-5 text-txt">
               {{ t('pages.projectDetail.pm.channel.basicsTitle') }}
             </h3>
             <p class="m-0 mb-3.5 mt-1 text-xs text-txt2">
@@ -436,7 +437,7 @@ const {
             </div>
             <p
               v-if="saveError"
-              class="rounded-lg mt-2 border border-err/45 bg-err/10 px-3 py-2 text-xs text-err"
+              class="mt-2 text-[13px] leading-5 text-err"
               data-testid="channel-save-error"
             >
               {{ saveError }}
@@ -496,14 +497,14 @@ const {
               {{ t('pages.projectDetail.pm.channel.longConnHint') }}
             </p>
 
-            <div class="rounded-lg mt-3 border border-line p-3">
-              <label class="flex cursor-pointer items-center gap-2.5 text-[13px] text-txt">
+            <div class="mt-5 border-t border-line/60 pt-4">
+              <label class="flex cursor-pointer items-center justify-between gap-3 text-[13px] text-txt">
+                <span>{{ t('pages.projectDetail.pm.channel.cronDeliver') }}</span>
                 <AppSwitch
                   v-model="chCronDeliver"
                   data-testid="cron-deliver-enable"
                   :aria-label="t('pages.projectDetail.pm.channel.cronDeliver')"
                 />
-                <span>{{ t('pages.projectDetail.pm.channel.cronDeliver') }}</span>
               </label>
               <p class="mt-1.5 text-[11px] leading-snug text-txt3">
                 {{ t('pages.projectDetail.pm.channel.cronDeliverHintMulti') }}
@@ -566,59 +567,57 @@ const {
             </div>
           </div>
 
-          <div class="grid gap-4 content-start">
-            <div class="rounded-lg border border-line bg-surface p-4">
-              <h3 class="m-0 text-[13px] font-semibold text-txt">
+          <div class="space-y-7 border-t border-line/60 pt-5">
+            <div class="min-w-0">
+              <h3 class="m-0 text-[14px] font-semibold leading-5 text-txt">
                 {{ t('pages.projectDetail.pm.channel.sessionCapsTitle') }}
               </h3>
               <p class="m-0 mb-3 mt-1 text-xs text-txt2">
                 {{ t('pages.projectDetail.pm.channel.sessionCapsHint') }}
               </p>
-              <label class="flex cursor-pointer items-start gap-2.5 border-b border-line py-2.5 text-[13px]">
-                <AppSwitch v-model="chAllowMemoryWrite" class="mt-0.5" />
-                <span>
-                  <span class="block">{{ t('pages.projectDetail.pm.channel.allowMemoryWrite') }}</span>
-                  <span class="mt-0.5 block text-[11px] text-txt3">
-                    {{ t('pages.projectDetail.pm.channel.allowMemoryWriteHint') }}
-                  </span>
-                </span>
-              </label>
-              <label class="flex cursor-pointer items-start gap-2.5 py-2.5 text-[13px]">
-                <AppSwitch v-model="chAllowSchedulerWrite" class="mt-0.5" />
-                <span>
-                  <span class="block">{{ t('pages.projectDetail.pm.channel.allowSchedulerWrite') }}</span>
-                  <span class="mt-0.5 block text-[11px] text-txt3">
-                    {{ t('pages.projectDetail.pm.channel.allowSchedulerWriteHint') }}
-                  </span>
-                </span>
-              </label>
+              <SettingsRow
+                :label="t('pages.projectDetail.pm.channel.allowMemoryWrite')"
+                :description="t('pages.projectDetail.pm.channel.allowMemoryWriteHint')"
+                inline
+              >
+                <AppSwitch v-model="chAllowMemoryWrite" :aria-label="t('pages.projectDetail.pm.channel.allowMemoryWrite')" />
+              </SettingsRow>
+              <SettingsRow
+                :label="t('pages.projectDetail.pm.channel.allowSchedulerWrite')"
+                :description="t('pages.projectDetail.pm.channel.allowSchedulerWriteHint')"
+                class="border-t border-line/60"
+                inline
+              >
+                <AppSwitch v-model="chAllowSchedulerWrite" :aria-label="t('pages.projectDetail.pm.channel.allowSchedulerWrite')" />
+              </SettingsRow>
             </div>
 
-            <div class="rounded-lg border border-line bg-surface p-4">
-              <h3 class="m-0 text-[13px] font-semibold text-txt">
+            <div class="min-w-0">
+              <h3 class="m-0 text-[14px] font-semibold leading-5 text-txt">
                 {{ t('pages.projectDetail.pm.channel.channelMcpsTitle') }}
               </h3>
               <p class="m-0 mb-2 mt-1 text-xs text-txt2">
                 {{ t('pages.projectDetail.pm.channel.channelMcpsHint') }}
               </p>
-              <div class="rounded-lg mb-3 border border-info/35 bg-info/10 px-3 py-2 text-xs text-txt2">
+              <div class="mb-3 text-[13px] leading-5 text-txt3">
                 {{ t('pages.projectDetail.pm.channel.channelMcpsNote') }}
               </div>
-              <div class="grid gap-2">
-                <label
+              <div class="divide-y divide-line/60">
+                <SettingsRow
                   v-for="opt in PM_MCP_OPTIONS"
                   :key="opt.id"
-                  class="rounded-md flex cursor-pointer items-center justify-between gap-2 border border-line bg-base px-3 py-2.5 text-[13px]"
+                  :label="t(opt.labelKey)"
+                  inline
                 >
-                  <span class="flex items-center gap-2">
-                    <AppSwitch
-                      :model-value="chEnabledMcps.includes(opt.id)"
-                      @update:model-value="toggleChMcp(opt.id)"
-                    />
-                    <code class="font-mono text-[12px] text-accent-2">{{ opt.id }}</code>
-                  </span>
-                  <span class="text-[11px] text-txt3">{{ t(opt.labelKey) }}</span>
-                </label>
+                  <template #meta>
+                    <code class="font-mono text-[11px]">{{ opt.id }}</code>
+                  </template>
+                  <AppSwitch
+                    :model-value="chEnabledMcps.includes(opt.id)"
+                    :aria-label="opt.id"
+                    @update:model-value="toggleChMcp(opt.id)"
+                  />
+                </SettingsRow>
               </div>
             </div>
           </div>
@@ -633,20 +632,20 @@ const {
 
         <div
           v-if="formConnectionHint()"
-          class="mt-3 px-3 py-2 text-xs leading-snug"
+          class="mt-3 text-[13px] leading-5"
           :class="
             formConnectionHint()!.kind === 'ok'
-              ? 'border border-ok/35 bg-ok/10 text-ok'
+              ? 'text-ok'
               : formConnectionHint()!.kind === 'warn'
-                ? 'border border-warn/35 bg-warn/10 text-warn'
-                : 'border border-err/35 bg-err/10 text-err'
+                ? 'text-warn'
+                : 'text-err'
           "
           data-testid="channel-conn-hint"
         >
           {{ formConnectionHint()!.text }}
         </div>
 
-        <div class="mt-3 flex flex-wrap gap-2">
+        <div class="mt-5 flex flex-wrap justify-end gap-2">
           <AppButton variant="primary" :disabled="saving" data-testid="channel-save" @click="saveChannel">
             {{ saving ? t('common.buttons.saving') : t('pages.projectDetail.pm.channel.saveAndConnect') }}
           </AppButton>
@@ -691,7 +690,7 @@ const {
         </AppButton>
       </div>
 
-      <div class="rounded-lg mb-3 flex items-center justify-between gap-2 border border-line bg-surface px-3.5 py-3">
+      <div class="mb-3 flex items-center justify-between gap-3 border-b border-line/60 py-4">
         <div>
           <div class="text-[13px] font-medium text-txt">
             {{ t('pages.projectDetail.pm.channel.notifyPolicyTitle') }}
@@ -705,14 +704,14 @@ const {
         </span>
       </div>
 
-      <div v-if="!channelList.length" class="rounded-lg border border-dashed border-line-strong p-3.5 text-xs text-txt3">
+      <div v-if="!channelList.length" class="py-4 text-[13px] text-txt3">
         {{ t('pages.projectDetail.pm.channel.listEmpty') }}
       </div>
-      <div v-else class="rounded-lg border border-line">
+      <div v-else class="border-y border-line/60">
         <label
           v-for="ch in channelList"
           :key="ch.id"
-          class="flex cursor-pointer items-center gap-3 border-b border-line px-3.5 py-3 last:border-b-0"
+          class="flex cursor-pointer items-center gap-3 border-b border-line/60 py-4 last:border-b-0"
         >
           <input
             type="checkbox"
@@ -745,23 +744,23 @@ const {
 
       <div
         v-if="!notifySelected.length"
-        class="rounded-lg mt-2.5 border border-dashed border-line-strong bg-base p-3.5 text-xs text-txt3"
+        class="mt-3 text-[13px] leading-5 text-txt3"
         data-testid="notify-empty-hint"
       >
         {{ t('pages.projectDetail.pm.channel.notifyEmpty') }}
       </div>
 
-      <div class="rounded-lg mt-4 border border-line" data-testid="channel-deliver-log">
-        <div class="border-b border-line bg-elevated px-3.5 py-2 text-[13px] font-medium text-txt">
+      <div class="mt-7" data-testid="channel-deliver-log">
+        <div class="border-b border-line/60 pb-3 text-[14px] font-medium text-txt">
           {{ t('pages.projectDetail.pm.channel.deliverLogTitle') }}
         </div>
-        <div v-if="!notifyReceipts.length" class="px-3.5 py-3 text-xs text-txt3">
+        <div v-if="!notifyReceipts.length" class="py-4 text-[13px] text-txt3">
           {{ t('pages.projectDetail.pm.channel.deliverLogEmpty') }}
         </div>
         <div
           v-for="(rec, idx) in notifyReceipts"
           :key="idx"
-          class="flex items-start gap-2 border-b border-line px-3.5 py-2.5 last:border-b-0"
+          class="flex items-start gap-2 border-b border-line/60 py-3 last:border-b-0"
         >
           <span
             class="rounded-md shrink-0 border px-2 py-0.5 text-[11px]"
@@ -776,7 +775,7 @@ const {
         </div>
       </div>
 
-      <div class="rounded-lg mt-3 border border-warn/40 bg-warn/10 px-3 py-2.5 text-xs leading-snug text-txt2">
+      <div class="mt-3 text-[13px] leading-5 text-txt3">
         {{ t('pages.projectDetail.pm.channel.notifyFanoutHint') }}
       </div>
     </div>
