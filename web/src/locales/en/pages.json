@@ -3087,8 +3087,6 @@
       "retry": "Retry",
       "done": "Interaction complete — continuing",
       "closed": "Run ended — interaction closed",
-      "connecting": "Connecting…",
-      "connectingPulling": "Pulling image…",
       "connectingHint": "Connecting. You can start chatting shortly.",
       "connectingInputPlaceholder": "Connecting — input is temporarily unavailable",
       "connectingStageTitle": "Preparing the session",

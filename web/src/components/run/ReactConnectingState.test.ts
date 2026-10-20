@@ -59,7 +59,9 @@ describe('ReactConnectingState', () => {
   it('shows the Chinese staged loader with all actions disabled', async () => {
     vi.useFakeTimers()
     const wrapper = mountSidebar('zh-CN')
-    expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
+    // No meta row above the transcript (item 13): the boot loader is the only status.
+    expect(wrapper.find('[data-testid="react-connecting-pill"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('连接中…')
     expect(wrapper.text()).not.toContain('多轮 ReAct')
     expect(wrapper.text()).not.toContain('共 0 条')
     expect(wrapper.find('icon-stub[name="chat"]').exists()).toBe(false)
@@ -94,7 +96,8 @@ describe('ReactConnectingState', () => {
 
   it('shows the English connecting copy', () => {
     const wrapper = mountSidebar('en')
-    expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('Connecting')
+    expect(wrapper.find('[data-testid="react-connecting-pill"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-boot-title"]').text()).toBeTruthy()
     expect(wrapper.text()).not.toContain('Multi-turn ReAct')
     expect(wrapper.text()).not.toMatch(/\d+ messages/)
     expect(wrapper.get('[data-testid="react-connecting-input"]').attributes('placeholder')).toContain('Connecting')
@@ -132,8 +135,11 @@ describe('ReactConnectingState', () => {
         stubs: { Icon: true },
       },
     })
-    expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('正在拉取镜像')
-    expect(wrapper.text()).toContain('正在拉取镜像…')
+    expect(wrapper.find('[data-testid="react-connecting-pill"]').exists()).toBe(false)
+    await nextTick() // boot loader pins the pull step in onMounted
+    // Pulling is shown once, by the boot loader's pinned step.
+    expect(wrapper.get('[data-testid="clarify-boot-title"]').text()).toBe('正在拉取镜像…')
+    expect(wrapper.text().split('正在拉取镜像…')).toHaveLength(2)
     vi.advanceTimersByTime(10_400)
     await nextTick()
     expect(wrapper.text()).toContain('正在拉取镜像…')

@@ -3087,8 +3087,6 @@
       "retry": "重试",
       "done": "交互已完成，进入下一步",
       "closed": "该运行已结束，交互已关闭",
-      "connecting": "连接中…",
-      "connectingPulling": "正在拉取镜像…",
       "connectingHint": "连接中，稍后即可开始对话",
       "connectingInputPlaceholder": "连接中，暂不可输入",
       "connectingStageTitle": "正在准备会话",

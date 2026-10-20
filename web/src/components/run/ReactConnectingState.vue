@@ -89,8 +89,9 @@ onMounted(() => {
 
   <!--
     Same chat skeleton as ClarifyChat (centered transcript column + ComposerShell),
-    so starting → connecting → clarify/ReAct never swaps layout. Status lives in
-    the transcript; the composer is only disabled.
+    so starting → connecting → clarify/ReAct never swaps layout. No meta row above
+    the transcript: the boot loader is the only connecting status (it pins the
+    pull-image step when sandboxPhase is pulling); the composer is only disabled.
   -->
   <div
     v-else
@@ -100,13 +101,6 @@ onMounted(() => {
   >
     <div class="react-connecting-scroller scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="react-connecting-scroller">
       <div class="react-connecting-transcript">
-        <div class="chat-meta flex items-center gap-2">
-          <span data-testid="react-connecting-pill">{{
-            isPulling
-              ? t('pages.clarify.connectingPulling')
-              : t('pages.clarify.connecting')
-          }}</span>
-        </div>
         <div class="react-connecting-turn">
           <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" />
         </div>

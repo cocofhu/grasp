@@ -1796,7 +1796,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
+    expect(wrapper.find('[data-testid="react-connecting-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="clarify-boot-loader"]').exists()).toBe(true)
     expect(
       (wrapper.get('[data-testid="react-connecting-input"]').element as HTMLTextAreaElement)
         .disabled,
