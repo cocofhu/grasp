@@ -30,13 +30,20 @@ function latestStatus(nodeId: string): NodeRunStatus {
   return run.nodeRuns?.[nodeId]?.status || run.nodeExecutions?.[nodeId]?.at(-1)?.status || 'pending'
 }
 
+/** Empty status maps are "not loaded yet", not a run where every node is pending. */
+function hasRecordedStatus(run: Run | null | undefined): boolean {
+  if (!run) return false
+  if (Object.values(run.nodeRuns || {}).some((row) => row?.status)) return true
+  return Object.values(run.nodeExecutions || {}).some((list) => list?.some((row) => row?.status))
+}
+
 function iconOf(type: string) {
   return NODE_DEFS[type as keyof typeof NODE_DEFS]?.icon || 'agent'
 }
 
 const rows = computed(() => {
   const nodes = props.run?.nodes
-  if (!nodes?.length) return []
+  if (!nodes?.length || !hasRecordedStatus(props.run)) return []
   const current = String(props.currentNodeId || '').trim()
   return nodes.map((node) => ({
     id: node.id,

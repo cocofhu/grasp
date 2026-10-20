@@ -719,6 +719,10 @@ watch(
       false,
     )
     if (!pinEvent) return
+    // Split homes stay on the workflow until the user opens a card, or the
+    // conversation asks for a named artifact. An automatic pin must not
+    // replace that home or the preview this mode already remembers.
+    if (splitActive.value) return
     const canFocus = shouldFocusPinnedOrAutoTab({
       userMoved: userMoved.value,
       activeTab: activeTab.value,
@@ -770,6 +774,7 @@ watch(
     if (!prevMap || scope !== prevScope) return
     const { created, updated } = diffArtifactFingerprints(prevMap, nextMap)
     if (!created.length && !updated.length) return
+    if (splitActive.value) return
 
     const pinName = String(effectivePin.value || '').trim()
     const changed = [...created, ...updated]

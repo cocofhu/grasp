@@ -2099,6 +2099,80 @@ describe('ReactArtifactStage split drawer', () => {
     wrapper.unmount()
   })
 
+  it('keeps the artifact home when a clarify pin is already set', async () => {
+    const entry = ensureConversationDrawer('run-split')
+    entry!.split = true
+    entry!.mode = null
+    const page = art({
+      id: 'page',
+      name: 'page.html',
+      kind: 'html',
+      nodeId: 'clarify',
+      runId: 'run-split',
+      content: '<html>page</html>',
+    })
+    const note = art({ id: 'own', name: 'notes.md', kind: 'markdown', nodeId: 'clarify', runId: 'run-split' })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [page, note],
+        previewArtifact: 'page.html',
+        runId: 'run-split',
+        nodeId: 'clarify',
+        node: CLARIFY_NODE,
+        run: graphRun() as never,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    entry!.mode = 'artifacts'
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(true)
+    await wrapper.setProps({
+      previewArtifact: 'page.html',
+      artifacts: [note, { ...page, revision: 2, content: '<html>next</html>' }],
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="react-artifact-card-page.html"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-page.html"]').text()).toContain('网页预览')
+    expect(wrapper.get('[data-testid="react-artifact-tab-page.html"]').text()).not.toContain('产物')
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    stageLinksFor('run-split')?.openArtifact('notes.md')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-notes.md"]').text()).toContain('notes.md')
+    entry!.mode = null
+    await flushPromises()
+    entry!.mode = 'artifacts'
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-tab-notes.md"]').attributes('aria-selected')).toBe('true')
+    wrapper.unmount()
+  })
+
+  it('does not invent pending workflow rows when execution status is missing', async () => {
+    const entry = ensureConversationDrawer('run-split')
+    entry!.split = true
+    entry!.mode = 'artifacts'
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [],
+        runId: 'run-split',
+        nodeId: 'clarify',
+        run: { ...graphRun(), nodeRuns: {}, nodeExecutions: {} } as never,
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="stage-workflow-node"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="react-artifact-stage"]').text()).not.toContain('等待中')
+    wrapper.unmount()
+  })
+
   it('labels the current mark and empty state in English without a second Artifacts tab', async () => {
     const wrapper = mountSplit('artifacts', { locale: 'en', artifacts: [] })
     await flushPromises()
