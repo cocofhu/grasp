@@ -23,11 +23,50 @@ import {
   initStatusFilterFromStorage,
 } from '@/lib/composables/useStatusFilter'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
-import { fmtTime, fmtDuration, truncateText, formatTrigger } from '@/lib/shared/format'
+import { fmtTime, fmtDuration, truncateText, formatTrigger, relTime } from '@/lib/shared/format'
 import { displayRunTitle } from '@/lib/run/runTitle'
 import type { Run } from '@/lib/shared/types'
 
 const PAGE_SIZE = 20
+
+/** Row ⋯ menu (cancel / delete), teleported like WorkflowsView's more menu. */
+const openRowMenu = ref<string | null>(null)
+const rowMenuPos = ref<Record<string, string> | null>(null)
+function toggleRowMenu(id: string, e: MouseEvent) {
+  if (openRowMenu.value === id) { openRowMenu.value = null; return }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  rowMenuPos.value = { top: `${r.bottom + 4}px`, left: `${Math.max(8, r.right - 168)}px` }
+  openRowMenu.value = id
+}
+function closeRowMenu() { openRowMenu.value = null }
+function onRowMenuKey(e: KeyboardEvent) { if (e.key === 'Escape') closeRowMenu() }
+onMounted(() => {
+  document.addEventListener('click', closeRowMenu)
+  document.addEventListener('keydown', onRowMenuKey)
+})
+onUnmounted(() => {
+  document.removeEventListener('click', closeRowMenu)
+  document.removeEventListener('keydown', onRowMenuKey)
+})
+/** Queued runs have no startedAt yet; fall back to createdAt. */
+function startIso(r: Run) { return r.status === 'queued' ? r.createdAt ?? '' : r.startedAt }
+function showProgress(r: Run) { return r.status === 'running' || r.status === 'waiting_human' || r.status === 'failed' || r.status === 'cancelled' }
+/** Manual trigger / normal priority are the defaults, so only the exceptions are shown. */
+function nonDefaultTrigger(r: Run) { return r.trigger && r.trigger !== 'manual' ? formatTrigger(r.trigger) : '' }
+function nonDefaultPriority(r: Run) { return r.priority === 'high' || r.priority === 'low' }
+
+/** Desktop status segments; each maps onto the existing ?status= filter. */
+const STATUS_SEGMENTS = [
+  { id: 'all', labelKey: 'pages.runList.segAll', statuses: [] as string[] },
+  { id: 'active', labelKey: 'pages.runList.segActive', statuses: ['running', 'queued'] },
+  { id: 'waiting', labelKey: 'pages.runList.segWaiting', statuses: ['waiting_human'] },
+  { id: 'done', labelKey: 'pages.runList.segDone', statuses: ['completed'] },
+  { id: 'failed', labelKey: 'pages.runList.segFailed', statuses: ['failed', 'cancelled'] },
+]
+function segActive(seg: { statuses: string[] }) {
+  const cur = [...selectedStatuses.value].sort().join(',')
+  return cur === [...seg.statuses].sort().join(',')
+}
 const SKELETON_ROWS = 6
 
 /** Allowed run-list sort fields (must match API whitelist). */
@@ -446,22 +485,30 @@ onUnmounted(() => {
         <h2 class="text-lg font-semibold text-txt">{{ t('pages.runList.title') }}</h2>
         <p class="text-sm text-txt3">{{ t('pages.runList.subtitle') }}</p>
       </div>
-      <div class="flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center">
-        <TagFilter
-          v-model="selectedTags"
-          v-model:open="tagFilterOpen"
-        />
-        <StatusFilter
-          v-model="selectedStatuses"
-          v-model:open="statusFilterOpen"
-          :count="total"
-        />
-        <WorkflowFilter
-          v-model="selectedWf"
-          v-model:open="workflowFilterOpen"
-          :count="total"
-        />
+    </div>
+
+    <div v-if="!isMobile" class="run-toolbar" data-testid="run-list-toolbar">
+      <div class="flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+        <button
+          v-for="seg in STATUS_SEGMENTS"
+          :key="seg.id"
+          type="button"
+          class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+          :class="segActive(seg) ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+          :aria-pressed="segActive(seg)"
+          :data-testid="`run-seg-${seg.id}`"
+          @click="selectedStatuses = seg.statuses"
+        >{{ t(seg.labelKey) }}</button>
       </div>
+      <div class="flex items-center gap-2">
+        <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" />
+        <TagFilter v-model="selectedTags" v-model:open="tagFilterOpen" />
+      </div>
+    </div>
+    <div v-if="isMobile" class="mb-3 flex flex-col gap-2">
+      <TagFilter v-model="selectedTags" v-model:open="tagFilterOpen" />
+      <StatusFilter v-model="selectedStatuses" v-model:open="statusFilterOpen" :count="total" />
+      <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" :count="total" />
     </div>
 
     <!-- Mobile card list -->
@@ -637,14 +684,20 @@ onUnmounted(() => {
       <div class="min-h-0 flex-1 overflow-auto">
       <Transition name="ui-fade" mode="out-in">
       <div :key="listFadeKey" data-testid="run-list-fade-desktop">
-      <table class="w-full text-sm">
+      <table class="run-table w-full text-sm">
+        <colgroup>
+          <col />
+          <col style="width: 216px" />
+          <col style="width: 112px" />
+          <col style="width: 88px" />
+          <col style="width: 44px" />
+        </colgroup>
         <thead>
           <tr class="text-left text-[11px] uppercase tracking-wider text-txt3">
-            <th class="px-5 py-2.5 font-medium">{{ t('common.table.title') }}</th>
-            <th class="px-5 py-2.5 font-medium">{{ t('common.table.workflow') }}</th>
-            <th class="px-5 py-2.5 font-medium">{{ t('common.table.trigger') }}</th>
+            <th class="px-3 py-2.5 font-medium">{{ t('pages.runList.colRun') }}</th>
+            <th class="px-3 py-2.5 font-medium">{{ t('pages.runList.colStatus') }}</th>
             <th
-              class="px-5 py-2.5 font-medium"
+              class="whitespace-nowrap px-3 py-2.5 font-medium"
               :class="sortThClass('started_at')"
               role="columnheader"
               tabindex="0"
@@ -654,75 +707,25 @@ onUnmounted(() => {
               @keydown.space.prevent="applySortClick('started_at')"
             >
               <span class="th-inner">
-                {{ t('common.table.startTime') }}
+                {{ t('pages.runList.colStart') }}
                 <span class="sort-icon" aria-hidden="true">
                   <svg class="up" viewBox="0 0 10 10"><path fill="currentColor" d="M5 2 L9 7 H1 Z" /></svg>
                   <svg class="down" viewBox="0 0 10 10"><path fill="currentColor" d="M5 8 L1 3 H9 Z" /></svg>
                 </span>
               </span>
             </th>
-            <th class="w-0 min-w-[calc(8ch+2.5rem)] whitespace-nowrap px-5 py-2.5 font-medium">
-              <span class="inline-block min-w-[8ch]">{{ t('common.table.duration') }}</span>
-            </th>
-            <th class="px-5 py-2.5 font-medium">{{ t('common.table.progress') }}</th>
-            <th class="px-5 py-2.5 font-medium">{{ t('common.table.status') }}</th>
-            <th
-              class="px-5 py-2.5 font-medium"
-              :class="sortThClass('priority')"
-              role="columnheader"
-              tabindex="0"
-              :aria-sort="ariaSortFor('priority')"
-              @click="applySortClick('priority')"
-              @keydown.enter.prevent="applySortClick('priority')"
-              @keydown.space.prevent="applySortClick('priority')"
-            >
-              <span class="th-inner">
-                {{ t('common.table.priority') }}
-                <span class="sort-icon" aria-hidden="true">
-                  <svg class="up" viewBox="0 0 10 10"><path fill="currentColor" d="M5 2 L9 7 H1 Z" /></svg>
-                  <svg class="down" viewBox="0 0 10 10"><path fill="currentColor" d="M5 8 L1 3 H9 Z" /></svg>
-                </span>
-              </span>
-            </th>
-            <th class="px-5 py-2.5 font-medium">{{ t('pages.runList.tagsLabel') }}</th>
-            <th class="px-5 py-2.5 text-right font-medium">{{ t('common.table.actions') }}</th>
+            <th class="whitespace-nowrap px-3 py-2.5 text-right font-medium">{{ t('pages.runList.colDuration') }}</th>
+            <th class="px-3 py-2.5"><span class="sr-only">{{ t('common.table.actions') }}</span></th>
           </tr>
         </thead>
         <tbody>
           <template v-if="initialLoading">
             <tr v-for="n in SKELETON_ROWS" :key="'skel-' + n" class="border-t border-line/60">
-              <td class="px-5 py-3">
-                <div class="h-3.5 w-[90%] rounded bg-elevated animate-pulse" />
-                <div class="mt-1 h-2.5 w-[60%] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-[70%] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-[50%] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-[72px] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="w-0 min-w-[calc(8ch+2.5rem)] whitespace-nowrap px-5 py-3">
-                <div class="h-3 w-[8ch] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-[80%] rounded bg-elevated animate-pulse" />
-                <div class="mt-1 h-2.5 w-12 rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-14 rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-12 rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="h-3 w-[70%] rounded bg-elevated animate-pulse" />
-              </td>
-              <td class="px-5 py-3">
-                <div class="ml-auto h-3 w-12 rounded bg-elevated animate-pulse" />
-              </td>
+              <td class="px-3 py-3"><div class="h-3.5 w-[60%] rounded bg-elevated animate-pulse" /><div class="mt-1.5 h-2.5 w-[40%] rounded bg-elevated animate-pulse" /></td>
+              <td class="px-3 py-3"><div class="h-4 w-24 rounded bg-elevated animate-pulse" /></td>
+              <td class="px-3 py-3"><div class="h-3 w-16 rounded bg-elevated animate-pulse" /></td>
+              <td class="px-3 py-3"><div class="ml-auto h-3 w-[8ch] rounded bg-elevated animate-pulse" /></td>
+              <td />
             </tr>
           </template>
           <template v-else>
@@ -737,85 +740,67 @@ onUnmounted(() => {
                 role="link"
                 :data-href="href"
                 tabindex="0"
-                class="cursor-pointer border-t border-line/60 transition hover:bg-elevated active:bg-overlay"
+                class="run-row group cursor-pointer border-t border-line/60 transition hover:bg-elevated active:bg-overlay"
                 @click="navigate"
                 @keydown.enter.prevent="() => navigate()"
                 @mouseenter="prefetchRunDetail"
                 @touchstart.passive="prefetchRunDetail"
                 @pointerdown="prefetchRunDetail"
               >
-                <td class="max-w-[340px] px-5 py-3">
-                  <template v-if="runTitle(r)">
-                    <div
-                      class="max-w-[320px] truncate font-semibold text-txt"
-                      :title="runTitle(r).length > 60 ? runTitle(r) : undefined"
-                    >{{ truncateText(runTitle(r), 60) }}</div>
-                    <div class="mt-0.5 font-mono text-xs text-txt3">#{{ runIdShort(r.id) }}</div>
-                  </template>
-                  <span v-else class="font-mono text-[13px] font-medium text-txt3">#{{ runIdShort(r.id) }}</span>
+                <td class="min-w-0 px-3 py-2.5" data-testid="run-cell-main">
+                  <div class="flex min-w-0 items-center gap-2">
+                    <span class="min-w-0 truncate font-medium text-txt" :title="runTitle(r) || undefined">{{ runTitle(r) || '#' + runIdShort(r.id) }}</span>
+                    <PriorityBadge v-if="nonDefaultPriority(r)" :priority="r.priority" class="shrink-0" />
+                  </div>
+                  <div class="mt-0.5 flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-txt3">
+                    <span class="shrink-0 font-mono">#{{ runIdShort(r.id) }}</span>
+                    <span aria-hidden="true">·</span>
+                    <span class="min-w-0 truncate" :title="r.workflowName">{{ r.workflowName }}</span>
+                    <span v-if="r.workflowVersion" class="shrink-0">v{{ r.workflowVersion }}</span>
+                    <template v-if="nonDefaultTrigger(r)"><span aria-hidden="true">·</span><span class="shrink-0" data-testid="run-trigger">{{ nonDefaultTrigger(r) }}</span></template>
+                    <span v-for="tag in r.tags || []" :key="tag" class="chip shrink-0 py-0 text-[11px]">{{ tag }}</span>
+                  </div>
                 </td>
-                <td class="px-5 py-3 text-txt2">
-                  {{ r.workflowName }}
-                  <span v-if="r.workflowVersion" class="chip ml-1.5">v{{ r.workflowVersion }}</span>
-                </td>
-                <td class="px-5 py-3 text-txt3">{{ formatTrigger(r.trigger) }}</td>
-                <td class="px-5 py-3 text-txt3">
-                  <template v-if="r.status === 'queued'">
-                    {{ fmtTime(r.createdAt ?? '') }}
-                    <span class="ml-1 text-[10px] text-[#7B61FF]">{{ t('pages.runList.queued') }}</span>
-                  </template>
-                  <template v-else>{{ fmtTime(r.startedAt) }}</template>
-                </td>
-                <td class="w-0 min-w-[calc(8ch+2.5rem)] whitespace-nowrap px-5 py-3 tabular-nums text-txt3">
-                  <span class="inline-block min-w-[8ch]">{{ fmtDuration(r.durationSec) }}</span>
-                </td>
-                <td class="px-5 py-3">
-                  <div class="min-w-[148px] max-w-[168px]">
-                    <div class="flex items-center gap-2">
-                      <div class="h-1.5 w-20 shrink-0 overflow-hidden rounded-full bg-elevated">
-                        <div class="h-full rounded-full bg-accent" :style="{ width: r.progress * 100 + '%' }" />
+                <td class="px-3 py-2.5">
+                  <div class="flex items-center gap-2 whitespace-nowrap">
+                    <StatusPill :status="r.status" size="sm" />
+                    <template v-if="showProgress(r)">
+                      <div class="h-1 w-14 shrink-0 overflow-hidden rounded-full bg-elevated">
+                        <div class="h-full rounded-full" :class="r.status === 'failed' ? 'bg-err' : r.status === 'cancelled' ? 'bg-txt3' : 'bg-accent'" :style="{ width: r.progress * 100 + '%' }" />
                       </div>
-                      <span class="text-[11px] text-txt3">{{ Math.round(r.progress * 100) }}%</span>
+                      <span class="text-[11px] tabular-nums text-txt3">{{ Math.round(r.progress * 100) }}%</span>
+                    </template>
+                  </div>
+                  <div
+                    v-if="showNodeLabel(r)"
+                    :key="`${r.id}-${r.currentNodeLabel}`"
+                    class="node-label-fade mt-1 truncate text-[11px]"
+                    :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                    :title="r.currentNodeLabel!"
+                  >{{ r.currentNodeLabel }}</div>
+                </td>
+                <td class="whitespace-nowrap px-3 py-2.5 text-[13px] text-txt2" :title="fmtTime(startIso(r))" data-testid="run-cell-start">
+                  {{ startIso(r) ? relTime(startIso(r)) : '—' }}
+                </td>
+                <td class="whitespace-nowrap px-3 py-2.5 text-right text-[13px] tabular-nums text-txt3">{{ r.status === 'queued' ? '—' : fmtDuration(r.durationSec) }}</td>
+                <td class="px-3 py-2.5 text-right" data-testid="run-ops" @click.stop>
+                  <button
+                    v-if="canCancelRun(r) || canDeleteRun(r)"
+                    type="button"
+                    class="run-more inline-flex h-7 w-7 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
+                    :class="openRowMenu === r.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'"
+                    :aria-label="t('pages.runList.moreActions')"
+                    aria-haspopup="menu"
+                    :aria-expanded="openRowMenu === r.id"
+                    data-testid="run-more-btn"
+                    @click.stop="toggleRowMenu(r.id, $event)"
+                  ><Icon name="more" :size="16" /></button>
+                  <Teleport to="body">
+                    <div v-if="openRowMenu === r.id && rowMenuPos" :style="rowMenuPos" class="fixed z-[100] w-[168px] rounded-lg border border-line bg-surface p-1 shadow-lg" role="menu" data-testid="run-row-menu" @click.stop>
+                      <button v-if="canCancelRun(r)" type="button" role="menuitem" class="run-menu-action text-err" data-testid="cancel-run-btn" :disabled="cancellingRun && cancelTarget?.id === r.id" @click="closeRowMenu(); openCancelConfirm(r)"><Icon name="close" :size="14" />{{ t('pages.runList.cancelRun') }}</button>
+                      <button v-if="canDeleteRun(r)" type="button" role="menuitem" class="run-menu-action text-err" data-testid="delete-run-btn" :disabled="deletingRun && deleteTarget?.id === r.id" @click="closeRowMenu(); openDeleteConfirm(r)"><Icon name="trash" :size="14" />{{ t('pages.runList.deleteRun') }}</button>
                     </div>
-                    <div
-                      v-if="showNodeLabel(r)"
-                      :key="`${r.id}-${r.currentNodeLabel}`"
-                      class="node-label-fade mt-1 max-w-[148px] truncate text-[11px]"
-                      :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
-                      :title="r.currentNodeLabel!.length > 60 ? r.currentNodeLabel : undefined"
-                    >{{ truncateText(r.currentNodeLabel!, 60) }}</div>
-                  </div>
-                </td>
-                <td class="px-5 py-3"><StatusPill :status="r.status" size="sm" /></td>
-                <td class="px-5 py-3"><PriorityBadge :priority="r.priority" /></td>
-                <td class="px-5 py-3">
-                  <div class="flex flex-wrap gap-1.5">
-                    <span v-for="tag in r.tags || []" :key="tag" class="chip text-txt2">{{ tag }}</span>
-                  </div>
-                </td>
-                <td class="px-5 py-3 text-right" data-testid="run-ops" @click.stop>
-                  <AppButton
-                    v-if="canCancelRun(r)"
-                    data-testid="cancel-run-btn"
-                    variant="danger"
-                    size="sm"
-                    :disabled="cancellingRun && cancelTarget?.id === r.id"
-                    @click="openCancelConfirm(r)"
-                  >{{ t('common.buttons.cancel') }}</AppButton>
-                  <AppButton
-                    v-else-if="canDeleteRun(r)"
-                    data-testid="delete-run-btn"
-                    variant="danger"
-                    size="sm"
-                    :disabled="deletingRun && deleteTarget?.id === r.id"
-                    @click="openDeleteConfirm(r)"
-                  >{{ t('common.buttons.delete') }}</AppButton>
-                  <span
-                    v-else
-                    data-testid="run-ops-placeholder"
-                    class="select-none px-1 text-sm text-txt3/50"
-                    aria-hidden="true"
-                  >—</span>
+                  </Teleport>
                 </td>
               </tr>
             </RouterLink>
@@ -901,6 +886,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+.run-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+.run-table { table-layout: fixed; min-width: 640px; }
+.run-menu-action { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 8px; border-radius: 6px; padding: 8px 10px; text-align: left; font-size: 12px; }
+.run-menu-action:hover { background: rgb(var(--c-txt) / .045); }
 .table-loading {
   opacity: 0.55;
 }

@@ -1488,7 +1488,20 @@
       "deleteConfirm": "仅清理这一次 Run；删除成功后列表将刷新。",
       "deleteSuccess": "已删除运行，列表已刷新",
       "loadFailedTitle": "加载失败",
-      "loadFailedDesc": "无法加载运行记录，后台轮询将自动重试。筛选与翻页仍可使用。"
+      "loadFailedDesc": "无法加载运行记录，后台轮询将自动重试。筛选与翻页仍可使用。",
+      "segAll": "全部",
+      "segActive": "进行中",
+      "segWaiting": "待处理",
+      "segDone": "已完成",
+      "segFailed": "失败/取消",
+      "colRun": "运行",
+      "colStatus": "状态",
+      "colStart": "开始",
+      "colDuration": "耗时",
+      "cancelRun": "取消运行",
+      "deleteRun": "删除运行",
+      "filterStatus": "状态",
+      "moreActions": "更多操作"
     },
     "runDetail": {
       "title": "Run #{id}",

@@ -2,7 +2,7 @@
  * Acceptance E2E for DeleteRun UI on RunListView (mocked API).
  * Harness: run-list.html → RunListView at /runs.
  */
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 type RunStatus = 'queued' | 'running' | 'waiting_human' | 'completed' | 'failed' | 'cancelled'
 
@@ -89,6 +89,15 @@ async function openRunList(
   await expect(page.getByText('按工作流与状态筛选')).toBeVisible()
 }
 
+/** Desktop rows keep cancel / delete in a hover-revealed ⋯ menu (teleported to body). */
+async function openRowMenu(page: Page, row: Locator) {
+  await row.hover()
+  await row.getByTestId('run-more-btn').click()
+  const menu = page.getByTestId('run-row-menu')
+  await expect(menu).toBeVisible()
+  return menu
+}
+
 test.describe('RunListView delete run acceptance', () => {
   test('completed: delete confirm mentions not WorkflowDef, success stays on list', async ({ page }) => {
     let deletedId = ''
@@ -99,10 +108,13 @@ test.describe('RunListView delete run acceptance', () => {
     })
 
     const completedRow = page.locator('tr', { hasText: '已结束工作流' })
-    await expect(completedRow.getByTestId('delete-run-btn')).toBeVisible()
-    await expect(completedRow.getByTestId('cancel-run-btn')).toHaveCount(0)
+    // No inline red buttons in the row; actions live in the ⋯ menu.
+    await expect(completedRow.getByTestId('delete-run-btn')).toHaveCount(0)
+    let menu = await openRowMenu(page, completedRow)
+    await expect(menu.getByTestId('delete-run-btn')).toBeVisible()
+    await expect(menu.getByTestId('cancel-run-btn')).toHaveCount(0)
 
-    await completedRow.getByTestId('delete-run-btn').click()
+    await menu.getByTestId('delete-run-btn').click()
     await expect(page.getByText('确认删除该次运行？')).toBeVisible()
     await expect(page.getByText(/不会删除工作流定义/)).toBeVisible()
     await expect(page.getByText(/删除成功后列表将刷新/)).toBeVisible()
@@ -114,9 +126,11 @@ test.describe('RunListView delete run acceptance', () => {
       .getByRole('button', { name: '取消' })
       .click()
     await expect(page.getByText('确认删除该次运行？')).toHaveCount(0)
-    await expect(page.getByText('已结束工作流', { exact: true })).toBeVisible()
+    // title and workflow name share the run cell
+    await expect(page.getByText('已结束工作流', { exact: true }).first()).toBeVisible()
 
-    await completedRow.getByTestId('delete-run-btn').click()
+    menu = await openRowMenu(page, completedRow)
+    await menu.getByTestId('delete-run-btn').click()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect.poll(() => deletedId).toBe('run-completed')
     await expect(page.getByText('已结束工作流', { exact: true })).toHaveCount(0)
@@ -129,12 +143,16 @@ test.describe('RunListView delete run acceptance', () => {
     await openRunList(page)
 
     const runningRow = page.locator('tr', { hasText: '运行中工作流' })
-    await expect(runningRow.getByTestId('cancel-run-btn')).toBeVisible()
-    await expect(runningRow.getByTestId('delete-run-btn')).toHaveCount(0)
+    let menu = await openRowMenu(page, runningRow)
+    await expect(menu.getByTestId('cancel-run-btn')).toBeVisible()
+    await expect(menu.getByTestId('delete-run-btn')).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(page.getByTestId('run-row-menu')).toHaveCount(0)
 
     const cancelledRow = page.locator('tr', { hasText: '已取消工作流' })
-    await expect(cancelledRow.getByTestId('delete-run-btn')).toBeVisible()
-    await expect(cancelledRow.getByTestId('cancel-run-btn')).toHaveCount(0)
+    menu = await openRowMenu(page, cancelledRow)
+    await expect(menu.getByTestId('delete-run-btn')).toBeVisible()
+    await expect(menu.getByTestId('cancel-run-btn')).toHaveCount(0)
     await expect(cancelledRow.getByTestId('run-ops-placeholder')).toHaveCount(0)
   })
 
@@ -147,7 +165,7 @@ test.describe('RunListView delete run acceptance', () => {
     })
 
     const cancelledRow = page.locator('tr', { hasText: '已取消工作流' })
-    await cancelledRow.getByTestId('delete-run-btn').click()
+    await (await openRowMenu(page, cancelledRow)).getByTestId('delete-run-btn').click()
     await expect(page.getByText('确认删除该次运行？')).toBeVisible()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect.poll(() => deletedId).toBe('run-cancelled')
@@ -159,10 +177,11 @@ test.describe('RunListView delete run acceptance', () => {
   test('delete failure keeps row and shows error', async ({ page }) => {
     await openRunList(page, { deleteFailStatus: 409 })
     const failedRow = page.locator('tr', { hasText: '失败工作流' })
-    await failedRow.getByTestId('delete-run-btn').click()
+    await (await openRowMenu(page, failedRow)).getByTestId('delete-run-btn').click()
     await page.getByTestId('confirm-delete-run-btn').click()
     await expect(page.getByText('当前状态不可删除')).toBeVisible()
-    await expect(page.getByText('失败工作流', { exact: true })).toBeVisible()
+    // title and workflow name share the run cell
+    await expect(page.getByText('失败工作流', { exact: true }).first()).toBeVisible()
   })
 
   test('mobile cards: delete / cancel / cancelled parity', async ({ page }) => {

@@ -1488,7 +1488,20 @@
       "deleteConfirm": "Only this run is removed; the list will refresh after success.",
       "deleteSuccess": "Run deleted; list refreshed",
       "loadFailedTitle": "Failed to load runs",
-      "loadFailedDesc": "Could not fetch run history. Background polling will retry automatically. Filters and pagination remain available."
+      "loadFailedDesc": "Could not fetch run history. Background polling will retry automatically. Filters and pagination remain available.",
+      "segAll": "All",
+      "segActive": "Active",
+      "segWaiting": "Needs input",
+      "segDone": "Completed",
+      "segFailed": "Failed/cancelled",
+      "colRun": "Run",
+      "colStatus": "Status",
+      "colStart": "Started",
+      "colDuration": "Duration",
+      "cancelRun": "Cancel run",
+      "deleteRun": "Delete run",
+      "filterStatus": "Status",
+      "moreActions": "More actions"
     },
     "runDetail": {
       "title": "Run #{id}",
