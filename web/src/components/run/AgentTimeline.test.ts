@@ -24,15 +24,29 @@ function mountTimeline(props: Record<string, unknown>, slots: Record<string, str
 const order = (w: ReturnType<typeof mountTimeline>) =>
   Array.from(w.find('[data-testid="agent-timeline"]').element.children).map((el) => el.getAttribute('data-testid'))
 
+const startedAt = '2026-10-20T00:00:00.000Z'
+const endedAt = '2026-10-20T00:03:34.000Z'
+
 describe('AgentTimeline', () => {
-  it('renders steps in arrival order with consecutive tools folded', () => {
-    const w = mountTimeline({ completed: true })
-    expect(order(w)).toEqual(['agent-timeline-thought', 'agent-tool-group', 'agent-timeline-message', 'agent-tool-group', 'agent-timeline-message'])
-    expect(w.findAll('[data-testid="agent-tool-group"]')[0]!.text()).toContain('使用了 2 个工具')
+  it('renders steps in arrival order with consecutive tools folded', async () => {
+    const w = mountTimeline({ completed: true, startedAt, endedAt })
+    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message'])
+    expect(w.get('[data-testid="agent-timeline-elapsed"]').text()).toContain('用时 3m 34s')
+    expect(w.get('[data-testid="agent-timeline-elapsed"]').text()).not.toContain('使用了')
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="agent-timeline-message"]').map((m) => m.text())).toEqual(['second'])
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    const work = w.get('[data-testid="agent-timeline-work"]')
+    expect(Array.from(work.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
+      'agent-timeline-thought', 'agent-tool-group', 'agent-timeline-message', 'agent-tool-group',
+    ])
+    expect(work.findAll('[data-testid="agent-tool-group"]')[0]!.text()).toContain('使用了 2 个工具')
     const msgs = w.findAll('[data-testid="agent-timeline-message"]')
     expect(msgs[0]!.html()).toContain('<strong>bold</strong>')
+    expect(msgs.map((m) => m.text())).toEqual(['first bold', 'second'])
     expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
-    expect((w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(false)
+    expect(w.text()).not.toContain('已完成')
+    expect(w.text()).not.toContain('思考过程')
   })
 
   it('streams only the last message and keeps the caret on it', () => {
@@ -73,29 +87,41 @@ describe('AgentTimeline', () => {
     expect(details().open).toBe(false)
   })
 
-  it('remembers a thought the user opened', async () => {
-    const w = mountTimeline({ completed: true })
-    const el = w.find('[data-testid="agent-timeline-thought"]')
-    ;(el.element as HTMLDetailsElement).open = true
-    await el.trigger('toggle')
-    await w.setProps({ completed: true, parts: [...parts, { kind: 'message', text: 'third' }] })
-    expect((el.element as HTMLDetailsElement).open).toBe(true)
+  it('remembers a reply the user opened', async () => {
+    const w = mountTimeline({ completed: true, startedAt, endedAt })
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
+    await w.setProps({
+      completed: true,
+      startedAt,
+      endedAt,
+      parts: [...parts, { kind: 'tool', title: 'Grep', status: 'completed' }, { kind: 'message', text: 'third' }],
+    })
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
+    expect(w.findAll('[data-testid="agent-timeline-message"]').at(-1)!.text()).toBe('third')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    await w.setProps({ completed: true })
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
   })
 
   // plan coverage: g2.2 — timeline parts render thought and message in full.
-  it('renders long thought and message without a truncated suffix (g2.2)', () => {
+  it('renders long thought and message without a truncated suffix (g2.2)', async () => {
     const longThought = `${'思'.repeat(3000)}思考结尾END`
     const longMessage = `${'回'.repeat(3000)}结尾标记END`
     expect(new TextEncoder().encode(longThought).length).toBeGreaterThan(8000)
     expect(new TextEncoder().encode(longMessage).length).toBeGreaterThan(8000)
     const w = mountTimeline({
       completed: true,
+      startedAt,
+      endedAt,
       parts: [
         { kind: 'thought', text: longThought },
         { kind: 'message', text: longMessage },
       ],
     })
-    const thought = w.get('[data-testid="agent-timeline-thought"] .whitespace-pre-wrap')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    const thought = w.get('[data-testid="agent-timeline-thought"]')
     expect(thought.text()).toBe(longThought)
     expect(thought.text()).not.toContain('…(truncated)')
     expect(thought.text()).not.toContain('...(truncated)')
@@ -133,11 +159,105 @@ describe('AgentTimeline', () => {
   })
 
   it('follows expand-all, hides thoughts on request, and draws bare messages', () => {
-    const w = mountTimeline({ expanded: true, bare: true })
-    expect((w.find('[data-testid="agent-timeline-thought"]').element as HTMLDetailsElement).open).toBe(true)
+    const w = mountTimeline({ expanded: true, bare: true, startedAt, endedAt })
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
+    expect(w.find('[data-testid="agent-timeline-thought"]').text()).toContain('plan it')
     expect(w.findAll('[data-testid="agent-tool-list"]')).toHaveLength(2)
     expect(w.find('[data-testid="agent-timeline-message"]').classes()).not.toContain('rounded-lg')
-    const hidden = mountTimeline({ hideThought: true })
+    const hidden = mountTimeline({ hideThought: true, expanded: true, startedAt, endedAt })
     expect(hidden.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
+    expect(hidden.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+  })
+
+  it('keeps a plain elapsed line: no card, no tool count, body once under the rule', () => {
+    const w = mountTimeline({ completed: true, startedAt, endedAt })
+    const btn = w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(btn.element.tagName).toBe('BUTTON')
+    expect(btn.attributes('aria-expanded')).toBe('false')
+    expect(btn.classes().some((c) => c.startsWith('bg-'))).toBe(false)
+    expect(btn.text()).toBe('用时 3m 34s')
+    expect(btn.text()).not.toMatch(/使用了|已完成|个工具/)
+    const rule = w.get('[data-testid="agent-timeline-rule"]').element
+    const msg = w.get('[data-testid="agent-timeline-message"]').element
+    expect(rule.compareDocumentPosition(msg) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(w.findAll('[data-testid="agent-timeline-message"]')).toHaveLength(1)
+    const bg = getComputedStyle(btn.element).backgroundColor
+    expect(bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent' || bg === '').toBe(true)
+  })
+
+  it('does not invent a duration or fold a body-only reply', () => {
+    const missing = mountTimeline({ completed: true })
+    const btn = missing.get('[data-testid="agent-timeline-elapsed"]')
+    expect(btn.text()).not.toMatch(/用时|0s|分钟前/)
+    expect(missing.find('[data-testid="agent-timeline-rule"]').exists()).toBe(true)
+    const bare = mountTimeline({
+      completed: true,
+      startedAt,
+      endedAt,
+      parts: [{ kind: 'message', text: '只有正文' }],
+    })
+    expect(bare.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(bare.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(bare.get('[data-testid="agent-timeline-message"]').text()).toBe('只有正文')
+  })
+
+  it('does not fold while the reply is still streaming', () => {
+    const w = mountTimeline({ streaming: true, startedAt, endedAt })
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
+  })
+
+  it('writes failures on the elapsed line and prefers them over interrupted', async () => {
+    const failed = mountTimeline({
+      completed: true,
+      interrupted: true,
+      startedAt,
+      endedAt,
+      parts: [
+        { kind: 'tool', title: 'Read', status: 'failed', output: 'secret-out' },
+        { kind: 'tool', title: 'Shell', status: 'failed' },
+        { kind: 'message', text: '没做成' },
+      ],
+    })
+    const line = failed.get('[data-testid="agent-timeline-elapsed"]')
+    expect(line.text()).toContain('用时 3m 34s')
+    expect(line.text()).toContain('2 个失败')
+    expect(line.text()).not.toContain('已中断')
+    expect([...line.element.children].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'agent-timeline-elapsed-time',
+      'agent-timeline-elapsed-chevron',
+      'agent-timeline-elapsed-status',
+    ])
+    expect(failed.find('[data-testid="agent-tool-output"]').exists()).toBe(false)
+    expect(failed.get('[data-testid="agent-timeline-message"]').text()).toBe('没做成')
+    const stopped = mountTimeline({
+      interrupted: true,
+      startedAt: '2026-10-20T00:00:00.000Z',
+      endedAt: '2026-10-20T00:00:42.000Z',
+      parts: [
+        { kind: 'thought', text: '半截' },
+        { kind: 'message', text: '停在这里' },
+      ],
+    })
+    expect(stopped.get('[data-testid="agent-timeline-elapsed"]').text()).toContain('用时 42s')
+    expect(stopped.get('[data-testid="agent-timeline-elapsed"]').text()).toContain('已中断')
+    expect(stopped.text()).not.toContain('已完成')
+    const sub = mountTimeline({
+      completed: true,
+      startedAt: '2026-10-20T00:00:00.000Z',
+      endedAt: '2026-10-20T00:00:00.400Z',
+      parts: [
+        { kind: 'tool', title: 'Read', status: 'completed', durationMs: 9_999_000 },
+        { kind: 'message', text: '很快' },
+      ],
+    })
+    expect(sub.get('[data-testid="agent-timeline-elapsed"]').text()).toBe('用时 1s')
+  })
+
+  it('opens the fold when expand-all is on, ahead of the default collapse', () => {
+    const w = mountTimeline({ expanded: true, startedAt, endedAt })
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
+    expect(w.get('[data-testid="agent-timeline-elapsed"]').attributes('aria-expanded')).toBe('true')
   })
 })

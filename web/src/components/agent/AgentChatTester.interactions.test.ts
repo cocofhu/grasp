@@ -167,6 +167,35 @@ describe('AgentChatTester interactions', () => {
     expect(w.find('[data-testid="agent-chat-generating"]').exists()).toBe(false)
   })
 
+  it('folds a finished reply into one elapsed line', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-10-20T00:00:00.000Z'))
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'starting'
+    vm.openWs(3)
+    socket!.onopen?.()
+    await flushPromises()
+    vm.input = 'go'
+    vm.send()
+    frame('turn_begin', { item: { id: vm.queued[0].id } })
+    const up = (update: Record<string, unknown>) => frame('acp', { data: { type: 'session_update', update } })
+    up({ sessionUpdate: 'agent_thought_chunk', content: { text: 'plan' } })
+    up({ sessionUpdate: 'agent_message_chunk', content: { text: 'done' } })
+    vi.setSystemTime(new Date('2026-10-20T00:03:34.000Z'))
+    frame('turn_done')
+    await flushPromises()
+    const btn = w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(btn.text()).toContain('用时 3m 34s')
+    expect(w.get('[data-testid="tester-agent-message"]').text()).toContain('done')
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
+    await btn.trigger('click')
+    expect(w.get('[data-testid="agent-timeline-thought"]').text()).toContain('plan')
+    expect(w.text()).not.toContain('已完成')
+    vi.useRealTimers()
+    w.unmount()
+  })
+
   it('queues sends, applies live ACP frames, cancels, and handles socket events', async () => {
     const w = mountTester()
     const vm = w.vm as any
@@ -206,7 +235,10 @@ describe('AgentChatTester interactions', () => {
     expect(vm.status).toBe('ready')
     await flushPromises()
     expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
-    expect(w.text()).toContain('Hello')
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+    expect(w.find('[data-testid="tester-agent-message"]').exists()).toBe(false)
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(w.find('[data-testid="tester-agent-message"]').text()).toContain('Hello')
 
     vm.input = 'again'
     vm.send()
