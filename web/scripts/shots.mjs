@@ -47,9 +47,9 @@ const run = async () => {
     await sleep(500)
   }
 
-  // 03 project list (legacy /workflows redirects here; WorkflowListView retired)
-  await goto(page, '/projects')
-  await shot(page, '03-project-list.png')
+  // 03 workflow list
+  await goto(page, '/workflows')
+  await shot(page, '03-workflow-list.png')
 
   // 05 workflow canvas (FSM: prd-to-mr)
   await goto(page, '/workflows/prd-to-mr/edit')

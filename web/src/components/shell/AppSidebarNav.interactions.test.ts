@@ -43,8 +43,8 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.t
 import AppSidebarNav from './AppSidebarNav.vue'
 
 const favorites = [
-  { workflowId: 'w1', name: 'One', projectId: 'p', projectName: 'P', status: 'published', favoritedAt: 2 },
-  { workflowId: 'w2', name: 'Two', projectId: 'p', projectName: 'P', status: 'draft', favoritedAt: 1 },
+  { workflowId: 'w1', name: 'One', status: 'published', favoritedAt: 2 },
+  { workflowId: 'w2', name: 'Two', status: 'draft', favoritedAt: 1 },
 ]
 function mountNav() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...nav } } })

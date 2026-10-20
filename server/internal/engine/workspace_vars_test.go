@@ -10,7 +10,7 @@ func TestResolveStartVarsWorkspaceSeedAndOverride(t *testing.T) {
 	wsVars := []models.WorkspaceVariable{
 		{Name: "region", Type: "string", Value: "cn"},
 		{Name: "shared", Type: "string", Value: "from-workspace"},
-		{Name: "only_project", Type: "string", Value: "keep"},
+		{Name: "only_workspace", Type: "string", Value: "keep"},
 	}
 	g := models.Graph{
 		Variables: []models.Variable{
@@ -32,8 +32,8 @@ func TestResolveStartVarsWorkspaceSeedAndOverride(t *testing.T) {
 	if by["shared"] != "from-graph" {
 		t.Fatalf("shared override = %v", by["shared"])
 	}
-	if by["only_project"] != "keep" {
-		t.Fatalf("only_project = %v", by["only_project"])
+	if by["only_workspace"] != "keep" {
+		t.Fatalf("only_workspace = %v", by["only_workspace"])
 	}
 	if by["idea"] != "hello" {
 		t.Fatalf("idea = %v", by["idea"])

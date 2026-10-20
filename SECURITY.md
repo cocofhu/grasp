@@ -31,7 +31,7 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   APIs accept the token via `X-Gate-Share-Token` / JSON body — never path or
   query (so it is not copied into Referer or common access logs).
 - Scope is one Run + one `human_gate` node + the current pending iteration.
-  Holders cannot open projects, other runs/nodes, or authenticated `/api/*`.
+  Holders cannot open other runs/nodes, or authenticated `/api/*`.
 - Default TTL is 24h (1h / 8h / 24h / 72h / 7d). One active link per instance.
   Minting also stores a link-level `permissionPreset` (`full` default, or
   `react_only`). Preview.actions and public decide/reply/cancel/live share the

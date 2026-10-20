@@ -68,7 +68,7 @@ describe('AppSidebar', () => {
   it.each([
     ['/dashboard', '/dashboard'],
     ['/gates/run-1', '/dashboard'],
-    ['/workflows/project-1', '/workflows'],
+    ['/workflows/wf-1', '/workflows'],
     ['/runs/run-1', '/runs'],
   ])('labels the app rail and marks the current section for %s', (path, activeHref) => {
     routeState.path = path

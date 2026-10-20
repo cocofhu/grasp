@@ -59,8 +59,6 @@ const favMocks = vi.hoisted(() => {
         workflowId: string
         favoritedAt: number
         name: string
-        projectId: string
-        projectName: string
         status: 'draft' | 'published'
       }>
     >([]),
@@ -260,8 +258,6 @@ describe('AppSidebarNav', () => {
         workflowId: 'wf-1',
         favoritedAt: 1,
         name: '夜间回归',
-        projectId: 'p1',
-        projectName: 'checkout-service',
         status: 'published',
       },
     ]
@@ -291,7 +287,7 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
-  it('keeps workspace chrome and highlights projects on project routes', async () => {
+  it('keeps workspace chrome and highlights workflows on workflow routes', async () => {
     routeState.path = '/workflows'
     const list = mountNav()
     await flushPromises()
@@ -309,8 +305,8 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-back-home"]').exists()).toBe(false)
-    const projectLink = wrapper.find('[data-to="/workflows"]')
-    expect(projectLink.classes()).toContain('active')
+    const workflowsLink = wrapper.find('[data-to="/workflows"]')
+    expect(workflowsLink.classes()).toContain('active')
     expect(wrapper.find('[data-to="/runs"]').classes()).not.toContain('active')
     wrapper.unmount()
     vi.useRealTimers()
@@ -356,8 +352,6 @@ describe('AppSidebarNav', () => {
         workflowId: 'wf-1',
         favoritedAt: 1,
         name: '夜间回归',
-        projectId: 'p1',
-        projectName: 'checkout-service',
         status: 'published',
       },
     ]
@@ -633,8 +627,6 @@ describe('AppSidebarNav', () => {
         workflowId: 'wf-1',
         favoritedAt: 1,
         name: '夜间回归',
-        projectId: 'p1',
-        projectName: 'checkout',
         status: 'published',
       },
     ]

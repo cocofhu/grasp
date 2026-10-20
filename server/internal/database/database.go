@@ -3,7 +3,6 @@
 package database
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,12 +25,12 @@ import (
 // Open opens the database for the configured driver and migrates the schema.
 // SQLite is the zero-dependency default; MySQL is used when configured (driver
 // == "mysql" or a DSN is present, resolved in config.setDefaults).
-func Open(cfg config.DatabaseConfig, profilesRoot ...string) (*gorm.DB, error) {
+func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 	switch cfg.Driver {
 	case "mysql":
-		return openMySQL(cfg.DSN, profilesRoot...)
+		return openMySQL(cfg.DSN)
 	default:
-		return OpenSQLite(cfg.Path, profilesRoot...)
+		return OpenSQLite(cfg.Path)
 	}
 }
 
@@ -39,7 +38,7 @@ func Open(cfg config.DatabaseConfig, profilesRoot ...string) (*gorm.DB, error) {
 // timeout plus a single writer connection keep the concurrent FSM goroutines
 // and API readers from tripping over SQLite write locks. Exported so tests can
 // spin up a file/memory DB without constructing a full DatabaseConfig.
-func OpenSQLite(path string, profilesRoot ...string) (*gorm.DB, error) {
+func OpenSQLite(path string) (*gorm.DB, error) {
 	existing := false
 	if path != "" && path != ":memory:" && !strings.HasPrefix(path, "file:") {
 		display := path
@@ -61,7 +60,7 @@ func OpenSQLite(path string, profilesRoot ...string) (*gorm.DB, error) {
 	if existing {
 		backupSQLite(db, path, time.Now())
 	}
-	return finalize(db, profilesRoot...)
+	return finalize(db)
 }
 
 const sqliteBackupKeep = 3
@@ -183,7 +182,7 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 // openMySQL opens the MySQL database at dsn. Unlike SQLite it supports genuine
 // concurrent writers, so the FSM goroutines each get their own pooled
 // connection instead of being serialized behind a single one.
-func openMySQL(dsn string, profilesRoot ...string) (*gorm.DB, error) {
+func openMySQL(dsn string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("mysql driver selected but database.dsn is empty")
 	}
@@ -198,25 +197,15 @@ func openMySQL(dsn string, profilesRoot ...string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
-	return finalize(db, profilesRoot...)
+	return finalize(db)
 }
 
 func gormConfig() *gorm.Config {
 	return &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
 }
 
-// ErrLegacySchema reports a database or data directory created by a release
-// that still had multi-project storage. There is no upgrade path.
-var ErrLegacySchema = errors.New("检测到旧版数据库，请使用空库重新安装")
-
-// legacyTables are tables only the project-era schema created.
-var legacyTables = []string{"projects", "project_credentials", "project_audit_events", "project_memory_items", "project_external_mcp_settings", "project_mcp_api_keys"}
-
 // finalize runs the shared post-open steps (migrate + initial seed) for any driver.
-func finalize(db *gorm.DB, profilesRoot ...string) (*gorm.DB, error) {
-	if err := checkLegacy(db, profilesRoot...); err != nil {
-		return nil, err
-	}
+func finalize(db *gorm.DB) (*gorm.DB, error) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return nil, err
 	}
@@ -225,28 +214,6 @@ func finalize(db *gorm.DB, profilesRoot ...string) (*gorm.DB, error) {
 		return nil, err
 	}
 	return db, nil
-}
-
-// checkLegacy refuses to start on a project-era database or data directory.
-func checkLegacy(db *gorm.DB, profilesRoot ...string) error {
-	m := db.Migrator()
-	for _, t := range legacyTables {
-		if m.HasTable(t) {
-			return fmt.Errorf("%w (found table %s)", ErrLegacySchema, t)
-		}
-	}
-	for _, model := range models.AllModels() {
-		if m.HasTable(model) && m.HasColumn(model, "project_id") {
-			return fmt.Errorf("%w (found column project_id)", ErrLegacySchema)
-		}
-	}
-	if len(profilesRoot) > 0 && profilesRoot[0] != "" {
-		legacyShared := filepath.Join(filepath.Dir(profilesRoot[0]), "project-shared")
-		if _, err := os.Stat(legacyShared); err == nil {
-			return fmt.Errorf("%w (found directory %s)", ErrLegacySchema, legacyShared)
-		}
-	}
-	return nil
 }
 
 // createChannelIndexes adds the multi-channel uniqueness constraints that GORM

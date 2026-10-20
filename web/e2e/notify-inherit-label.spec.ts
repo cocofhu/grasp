@@ -1,7 +1,7 @@
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 /**
- * Temporary acceptance: en Inherit + nowrap; zh 跟随工作区; no Follow-project wording; mode patch.
+ * Temporary acceptance: en Inherit + nowrap; zh 跟随工作区; mode patch.
  * Uses the production workflow directory and workspace notification settings.
  */
 import { test, expect } from '@playwright/test'
@@ -171,7 +171,7 @@ function assertSingleLine(box: { height: number } | null, label: string) {
 }
 
 test.describe('Notify Inherit label acceptance', () => {
-  test('en desktop: compact Inherit selector, no Follow-project wording, mode patch', async ({ page }) => {
+  test('en desktop: compact Inherit selector, mode patch', async ({ page }) => {
     const harness = await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/workspace-config.html?view=/workflows&lang=en')
@@ -238,7 +238,7 @@ test.describe('Notify Inherit label acceptance', () => {
     await page.screenshot({ path: path.join(shotDir, '03-en-mobile-inherit.png'), fullPage: true })
   })
 
-  test('zh-CN: 跟随工作区 single-line; hint has no Follow-project wording', async ({ page }) => {
+  test('zh-CN: 跟随工作区 single-line', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
     await page.goto('/workspace-config.html?view=/settings/notification-policy')

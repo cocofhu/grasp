@@ -98,7 +98,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.Open(cfg.Database, cfg.Engine.ProfilesRoot)
+	db, err := database.Open(cfg.Database)
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}

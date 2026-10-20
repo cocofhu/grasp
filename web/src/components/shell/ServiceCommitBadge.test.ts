@@ -54,7 +54,7 @@ describe('ServiceCommitBadge', () => {
 
   it('does not render on non-dashboard routes', () => {
     serviceCommit.value = 'b01bb39'
-    for (const name of ['projects', 'runs', 'login', 'public-gate-approval', 'settings']) {
+    for (const name of ['workflows', 'runs', 'login', 'public-gate-approval', 'settings']) {
       route.name = name
       const wrapper = mountBadge()
       expect(wrapper.find('[data-testid="service-commit-badge"]').exists()).toBe(false)

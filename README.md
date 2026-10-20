@@ -21,8 +21,6 @@
 
 </div>
 
-Upgrading from a multi-project release is not supported: the server refuses to start on an old database or data directory. Start from an empty database and a fresh data directory.
-
 ## Why Grasp
 
 Over the past two years I built 150+ personal projects with coding agents, and two problems kept slowing me down:

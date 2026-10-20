@@ -367,7 +367,7 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 			continue
 		}
 
-		if isWorkflowDroppedProjectPlatformMCP(m.Name, m.URL) {
+		if isWorkflowDroppedPlatformMCP(m.Name, m.URL) {
 			continue
 		}
 		url := config.RewriteMisconfiguredMCPAdvertise(substVars(m.URL, vars))
@@ -387,7 +387,7 @@ func (c *acpProvider) resolvedMCPSpecs(req NodeReq) []sandbox.MCPServerSpec {
 	return out
 }
 
-func isWorkflowDroppedProjectPlatformMCP(name, url string) bool {
+func isWorkflowDroppedPlatformMCP(name, url string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "memory-store", "context-store", "task-scheduler":
 		return true

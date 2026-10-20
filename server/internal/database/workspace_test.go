@@ -1,60 +1,15 @@
 package database
 
 import (
-	"errors"
-	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestOpenRejectsLegacyProjectsTable(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy.db")
-	raw, err := openSQLiteConn(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error; err != nil {
-		t.Fatal(err)
-	}
-	_ = closeGorm(raw)
-	if _, err := OpenSQLite(path); !errors.Is(err, ErrLegacySchema) {
-		t.Fatalf("want ErrLegacySchema, got %v", err)
-	}
-}
-
-func TestOpenRejectsLegacyProjectIDColumn(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "legacy-col.db")
-	raw, err := openSQLiteConn(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := raw.Exec("CREATE TABLE workflow_defs (id TEXT PRIMARY KEY, project_id TEXT)").Error; err != nil {
-		t.Fatal(err)
-	}
-	_ = closeGorm(raw)
-	if _, err := OpenSQLite(path); !errors.Is(err, ErrLegacySchema) {
-		t.Fatalf("want ErrLegacySchema, got %v", err)
-	}
-}
-
-func TestOpenRejectsLegacySharedDirectory(t *testing.T) {
-	data := t.TempDir()
-	profiles := filepath.Join(data, "profiles")
-	if err := os.MkdirAll(filepath.Join(data, "project-shared"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := OpenSQLite(filepath.Join(data, "grasp.db"), profiles); !errors.Is(err, ErrLegacySchema) {
-		t.Fatalf("want ErrLegacySchema, got %v", err)
-	}
-}
-
 func TestOpenFreshSeedsWorkspaceAndReopens(t *testing.T) {
-	data := t.TempDir()
-	path := filepath.Join(data, "grasp.db")
-	profiles := filepath.Join(data, "profiles")
-	db, err := OpenSQLite(path, profiles)
+	path := filepath.Join(t.TempDir(), "grasp.db")
+	db, err := OpenSQLite(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +18,7 @@ func TestOpenFreshSeedsWorkspaceAndReopens(t *testing.T) {
 		t.Fatalf("workspace not seeded: %v", err)
 	}
 	_ = closeGorm(db)
-	db, err = OpenSQLite(path, profiles)
+	db, err = OpenSQLite(path)
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}

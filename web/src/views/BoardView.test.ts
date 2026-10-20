@@ -22,7 +22,7 @@ async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
   await router.push('/board?window=all&from=2020-01-01')
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
-  const wrapper = mount(BoardView, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs: { RunBoardPreviewDrawer: { name: 'RunBoardPreviewDrawer', props: ['open', 'run'], template: '<div v-if="open" data-testid="preview"><button @click="$emit(\'close\')">关闭</button></div>' }, RunBoardStatusListModal: { name: 'RunBoardStatusListModal', props: ['open', 'projectId', 'status'], template: '<div v-if="open" data-testid="status-list" />' } } } })
+  const wrapper = mount(BoardView, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs: { RunBoardPreviewDrawer: { name: 'RunBoardPreviewDrawer', props: ['open', 'run'], template: '<div v-if="open" data-testid="preview"><button @click="$emit(\'close\')">关闭</button></div>' }, RunBoardStatusListModal: { name: 'RunBoardStatusListModal', props: ['open', 'status'], template: '<div v-if="open" data-testid="status-list" />' } } } })
   mounted.push(wrapper)
   await flushPromises()
   return { wrapper, router }

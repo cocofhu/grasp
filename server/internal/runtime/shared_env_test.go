@@ -303,20 +303,20 @@ func TestSpecWorkspaceCredentialWinsOverRunEnv(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"CUSTOM_PROJECT_TOKEN":"agent","GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"env":{"CUSTOM_WORKSPACE_TOKEN":"agent","GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
 		opts: Options{
 			ProfilesRoot: root,
 			Credentials: func() map[string]string {
-				return map[string]string{"CUSTOM_PROJECT_TOKEN": "ui", "GRASP_CURSOR_API_KEY": "ui-key"}
+				return map[string]string{"CUSTOM_WORKSPACE_TOKEN": "ui", "GRASP_CURSOR_API_KEY": "ui-key"}
 			},
 			CredentialKeys: func() map[string]struct{} {
-				return map[string]struct{}{"CUSTOM_PROJECT_TOKEN": {}, "GRASP_CURSOR_API_KEY": {}}
+				return map[string]struct{}{"CUSTOM_WORKSPACE_TOKEN": {}, "GRASP_CURSOR_API_KEY": {}}
 			},
 			RunSandboxEnvForRun: func(string) []models.EnvEntry {
-				return []models.EnvEntry{{Key: "CUSTOM_PROJECT_TOKEN", Value: "run"}, {Key: "GRASP_CURSOR_API_KEY", Value: "run-key"}}
+				return []models.EnvEntry{{Key: "CUSTOM_WORKSPACE_TOKEN", Value: "run"}, {Key: "GRASP_CURSOR_API_KEY", Value: "run-key"}}
 			},
 		},
 		backend: BackendCursor,
@@ -325,7 +325,7 @@ func TestSpecWorkspaceCredentialWinsOverRunEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if spec.Env["CUSTOM_PROJECT_TOKEN"] != "ui" || spec.Env["GRASP_CURSOR_API_KEY"] != "ui-key" {
+	if spec.Env["CUSTOM_WORKSPACE_TOKEN"] != "ui" || spec.Env["GRASP_CURSOR_API_KEY"] != "ui-key" {
 		t.Fatalf("workspace credentials were shadowed: %#v", spec.Env)
 	}
 }
