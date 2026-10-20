@@ -2997,7 +2997,6 @@
       "nameExists": "Workflow name already exists"
     },
     "clarify": {
-      "header": "Agent Interaction · Multi-turn ReAct · {n} messages",
       "me": "Me",
       "myChoice": "My choices",
       "choicePrefix": "My choices:",
