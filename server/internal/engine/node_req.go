@@ -130,8 +130,15 @@ func (e *Engine) interpolate(c *execCtx, tmpl string) string {
 	if tmpl == "" {
 		return ""
 	}
+	return interpolateWith(e.evalContext(c, nil), tmpl)
+}
+
+// interpolateWith expands every {{expr}} of tmpl against ec.
+func interpolateWith(ec EvalContext, tmpl string) string {
+	if tmpl == "" {
+		return ""
+	}
 	out := tmpl
-	ec := e.evalContext(c, nil)
 	for {
 		i := strings.Index(out, "{{")
 		if i < 0 {

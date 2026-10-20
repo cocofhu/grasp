@@ -374,6 +374,10 @@ type RunVariable struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
 	Value any    `gorm:"serializer:json" json:"value"`
+	// Secret is carried over from a workspace variable flagged secret, so
+	// display-only derivations (conversation-chain task previews) can mask
+	// the value. Execution still sees the real value.
+	Secret bool `json:"secret,omitempty"`
 }
 
 // Artifact is a platform-stored run product written via the artifact-store MCP.
@@ -517,6 +521,11 @@ type ReactMessage struct {
 	// phase's start (the visit's start) and end (when the takeover settled).
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// GateNodeID marks a turn of a ReAct discussion opened from a pending
+	// human_gate (gate hot-revise). The turn is stored on the upstream
+	// producer's conversation; this tag lets read views attribute it to the
+	// gate instead.
+	GateNodeID string `json:"gateNodeId,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`

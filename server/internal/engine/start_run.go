@@ -295,7 +295,7 @@ func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []
 		if typ == "" {
 			typ = "string"
 		}
-		byName[v.Name] = models.RunVariable{Name: v.Name, Type: typ, Value: coerceVar(v.Value, typ)}
+		byName[v.Name] = models.RunVariable{Name: v.Name, Type: typ, Value: coerceVar(v.Value, typ), Secret: v.Secret}
 		order = append(order, v.Name)
 	}
 	for _, v := range g.Variables {
@@ -318,7 +318,9 @@ func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []
 		if _, exists := byName[v.Name]; !exists {
 			order = append(order, v.Name)
 		}
-		byName[v.Name] = models.RunVariable{Name: v.Name, Type: v.Type, Value: coerceVar(val, v.Type)}
+		// A graph variable overlaying a secret workspace variable stays
+		// secret (masking by name is the conservative choice).
+		byName[v.Name] = models.RunVariable{Name: v.Name, Type: v.Type, Value: coerceVar(val, v.Type), Secret: byName[v.Name].Secret}
 	}
 	out := make([]models.RunVariable, 0, len(order))
 	for _, name := range order {
