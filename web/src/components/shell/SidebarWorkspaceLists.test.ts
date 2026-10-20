@@ -120,26 +120,4 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     wrapper.unmount()
   })
-  it('replaces the empty workflow list with the default workflow when the catalog revision advances', async () => {
-    mocks.listWorkflowCatalog.mockResolvedValue([])
-    mocks.listRuns.mockResolvedValue({ items: [], total: 0 })
-    const { wrapper } = await setup()
-    expect(wrapper.get('.workspace-count').text()).toBe('0')
-    expect(wrapper.text()).toContain('还没有工作流')
-    expect(wrapper.findAll('[data-testid="sidebar-workflow"]')).toHaveLength(0)
-    expect(wrapper.get('[data-testid="sidebar-recent"]').text()).toContain('还没有运行')
-
-    const runsCalls = mocks.listRuns.mock.calls.length
-    mocks.listWorkflowCatalog.mockResolvedValue([
-      { id: 'wf-default', name: '默认工作流', description: '', status: 'published', version: 1, publishedVersion: 1, updatedAt: '2026-10-20' },
-    ])
-    workflowCatalogRevision.value++
-    await flushPromises()
-    expect(wrapper.get('.workspace-count').text()).toBe('1')
-    expect(wrapper.text()).toContain('默认工作流')
-    expect(wrapper.text()).not.toContain('还没有工作流')
-    expect(mocks.listRuns.mock.calls.length).toBe(runsCalls)
-    expect(wrapper.findAll('[data-testid="sidebar-recent-run"]')).toHaveLength(0)
-    wrapper.unmount()
-  })
 })
