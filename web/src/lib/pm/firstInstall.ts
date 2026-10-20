@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import { api } from '@/lib/api/api'
+import { invalidateWorkflowCatalog } from '@/lib/api/workflowCatalogEvents'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   shouldAutoOpenOnboarding,
@@ -13,7 +14,10 @@ import {
 export const onboardingOpen = ref(false)
 export const onboardingMode = ref<OnboardingMode>('firstInstall')
 
-/** Bumped after a successful bootstrap so open views can refetch. */
+/**
+ * Bumped after a successful bootstrap. Open workflow surfaces refetch via
+ * workflowCatalogRevision (advanced in markFirstInstallCompleted), not this stamp.
+ */
 export const firstInstallCompletedAt = ref(0)
 
 export function openFirstInstall(): void {
@@ -36,6 +40,8 @@ export function closeOnboarding(): void {
 
 export function markFirstInstallCompleted(): void {
   firstInstallCompletedAt.value = Date.now()
+  // First install and retry share this success event. Failure and cancel do not call it.
+  invalidateWorkflowCatalog()
 }
 
 let probe: Promise<void> | null = null

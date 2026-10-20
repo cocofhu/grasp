@@ -15,6 +15,7 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.e
 vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: ref(false) }) }))
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: vi.fn(), handleFileChange: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
+import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { useWorkflows } from './useWorkflows'
 const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false, notifyPolicy: { mode: 'inherit' as const, events: ['failed'] } }
 async function setup() {
@@ -120,6 +121,16 @@ describe('workspace workflow actions', () => {
     expect(logic.runTarget.value).toBeNull()
     expect(logic.copyModal.value).toBeNull()
     expect(mocks.error).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('reloads a mounted list when the workflow catalog revision advances', async () => {
+    mocks.listWorkflows.mockResolvedValueOnce([])
+    const { logic, wrapper } = await setup()
+    expect(logic.workflows.value).toHaveLength(0)
+    mocks.listWorkflows.mockResolvedValue([{ ...item, id: 'wf-default', name: '默认工作流', status: 'published' }])
+    workflowCatalogRevision.value++
+    await flushPromises()
+    expect(logic.workflows.value.map((row) => row.name)).toEqual(['默认工作流'])
     wrapper.unmount()
   })
 })
