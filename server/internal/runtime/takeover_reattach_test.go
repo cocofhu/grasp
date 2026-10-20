@@ -8,9 +8,11 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -115,4 +117,183 @@ func TestTakeoverAfterRunAbortDoesNotResurrectSession(t *testing.T) {
 	if parked || p.HasLiveSession(req.RunID, req.NodeID) {
 		t.Fatal("a session claimed by AbortRun must not be parked by a late takeover")
 	}
+}
+
+// gatedManager blocks Create until release is closed (a slow sandbox setup:
+// image pull / clone / ACP ready).
+type gatedManager struct {
+	*fakeManager
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (m *gatedManager) Create(ctx context.Context, spec sandbox.Spec) (*sandbox.Sandbox, error) {
+	select {
+	case m.entered <- struct{}{}:
+	default:
+	}
+	<-m.release
+	return m.fakeManager.Create(ctx, spec)
+}
+
+func gatedTakeoverProvider(t *testing.T, chat func(int) chatFunc) (*acpProvider, *gatedManager, NodeReq) {
+	p, fm, req := takeoverTestProvider(t, chat)
+	gm := &gatedManager{fakeManager: fm, entered: make(chan struct{}, 1), release: make(chan struct{})}
+	p.mgr = gm
+	return p, gm, req
+}
+
+// TestTakeoverAndCancelDuringSetupRetiresSession (GraspReview v2 N1): a
+// takeover and a run cancel both landing during sandbox setup — AbortRun runs
+// before anything is registered — must not leave a parked live session for
+// the aborted run.
+func TestTakeoverAndCancelDuringSetupRetiresSession(t *testing.T) {
+	p, gm, req := gatedTakeoverProvider(t, stallingChat)
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	errCh := make(chan error, 1)
+	go func() { _, err := p.RunAgent(ctx, req); errCh <- err }()
+	select {
+	case <-gm.entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("create never entered")
+	}
+	cancel(ErrNodeTakenOver)
+	p.AbortRun(req.RunID)
+	close(gm.release)
+	select {
+	case <-errCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunAgent did not return")
+	}
+	if p.HasLiveSession(req.RunID, req.NodeID) {
+		p.RetireSession(req.RunID, req.NodeID)
+		t.Fatal("parked session left behind for an aborted run")
+	}
+	p.mu.Lock()
+	_, live := p.live[reactKey(req)]
+	_, inflight := p.inflightACP[reactKey(req)]
+	p.mu.Unlock()
+	if live || inflight {
+		t.Fatalf("aborted run still registered: live=%v inflight=%v", live, inflight)
+	}
+	if b := gm.bridge(0); b != nil && b.promptAt(0) != "" {
+		t.Fatal("no prompt may be sent for an aborted run")
+	}
+}
+
+// TestRunAbortDuringPlainSetupDoesNotRun: the same window without a takeover
+// — the aborted run's fresh session is retired, never prompted.
+func TestRunAbortDuringPlainSetupDoesNotRun(t *testing.T) {
+	p, gm, req := gatedTakeoverProvider(t, stallingChat)
+	errCh := make(chan error, 1)
+	go func() { _, err := p.RunAgent(context.Background(), req); errCh <- err }()
+	<-gm.entered
+	p.AbortRun(req.RunID)
+	close(gm.release)
+	select {
+	case err := <-errCh:
+		if err == nil {
+			t.Fatal("aborted run must not succeed")
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("RunAgent did not return")
+	}
+	if b := gm.bridge(0); b != nil && b.promptAt(0) != "" {
+		t.Fatal("no prompt may be sent for an aborted run")
+	}
+	// A later attempt on the same run|node key (ResumeFrom) is unaffected.
+	gm.release = make(chan struct{})
+	close(gm.release)
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	go func() { _, err := p.RunAgent(ctx2, req); errCh <- err }()
+	waitFirstPromptOn(t, gm.fakeManager, 1)
+	cancel2()
+	select {
+	case <-errCh:
+	case <-time.After(10 * time.Second):
+		t.Fatal("second attempt did not return")
+	}
+}
+
+func waitFirstPromptOn(t *testing.T, mgr *fakeManager, i int) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if b := mgr.bridge(i); b != nil && b.promptAt(0) != "" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("no prompt reached bridge %d", i)
+}
+
+// TestTakeoverDuringFreshSetupPrimesFirstManualTurn (GraspReview v2 N2): a
+// takeover during a fresh setup does not park the never-prompted session;
+// the first manual turn rehydrates a sandbox primed with the node task.
+func TestTakeoverDuringFreshSetupPrimesFirstManualTurn(t *testing.T) {
+	p, gm, req := gatedTakeoverProvider(t, func(int) chatFunc {
+		return func(int) turnAction { return turnAction{narration: "ok"} }
+	})
+	ctx, cancel := context.WithCancelCause(context.Background())
+	defer cancel(nil)
+	errCh := make(chan error, 1)
+	go func() { _, err := p.RunAgent(ctx, req); errCh <- err }()
+	<-gm.entered
+	cancel(ErrNodeTakenOver)
+	close(gm.release)
+	if err := <-errCh; !errors.Is(err, ErrNodeTakenOver) {
+		t.Fatalf("err=%v", err)
+	}
+	if p.HasLiveSession(req.RunID, req.NodeID) {
+		t.Fatal("an unprimed fresh session must not be parked")
+	}
+	if b := gm.bridge(0); b != nil && b.promptAt(0) != "" {
+		t.Fatal("no auto prompt may be sent after the takeover")
+	}
+	req.Caps = models.ManualReviewCaps(req.Caps)
+	history := []models.ReactMessage{{Role: "agent", Text: "已中断自动执行…"}, {Role: "human", Text: "继续完成"}}
+	turn := p.ReviseInPlace(context.Background(), req, history, "继续完成", nil)
+	var prompts []string
+	for bi := 0; bi < gm.createCount(); bi++ {
+		b := gm.bridge(bi)
+		for i := 0; b.promptAt(i) != ""; i++ {
+			prompts = append(prompts, b.promptAt(i))
+		}
+	}
+	if !strings.Contains(strings.Join(prompts, "\n"), "work") {
+		t.Fatalf("first manual turn never primed the agent with the node task (turnErr=%v, prompts=%q)", turn.Err, prompts)
+	}
+	p.RetireSession(req.RunID, req.NodeID)
+}
+
+// TestTakeoverDuringReattachHandshakeCancelsSurvivorTurn (GraspReview v2 N3):
+// the survivor's still-running auto turn is cancelled by the park even when
+// the bridge's queue_state has not been observed yet.
+func TestTakeoverDuringReattachHandshakeCancelsSurvivorTurn(t *testing.T) {
+	b := &survivorBridge{running: "g-old"}
+	p, _, _, req := setupTakeoverReattach(t, b)
+	prev := abortTurnWait
+	abortTurnWait = 2 * time.Second
+	t.Cleanup(func() { abortTurnWait = prev })
+	ctx, cancel := context.WithCancelCause(context.Background())
+	cancel(ErrNodeTakenOver)
+	_, err := p.RunAgent(ctx, req)
+	if !errors.Is(err, ErrNodeTakenOver) || !p.HasLiveSession(req.RunID, req.NodeID) {
+		t.Fatalf("err=%v parked=%v", err, p.HasLiveSession(req.RunID, req.NodeID))
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		b.mu.Lock()
+		still := b.running
+		b.mu.Unlock()
+		if still == "" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("survivor auto turn %q still running after takeover", still)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	p.RetireSession(req.RunID, req.NodeID)
 }

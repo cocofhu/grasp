@@ -18,7 +18,33 @@ import (
 // drops it when the sandbox is torn down. acp may be nil for callers that only
 // need the event-log handle (react sessions already keep acp elsewhere).
 func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient) {
+	c.registerLiveUnlessAborted(req, sb, acp, c.runAbortEpoch(req.RunID))
+}
+
+// runAbortEpoch snapshots the run's AbortRun counter (see abortEpoch).
+func (c *acpProvider) runAbortEpoch(runID string) uint64 {
 	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.abortEpoch[runID]
+}
+
+// bumpAbortEpochLocked records an AbortRun; c.mu must be held.
+func (c *acpProvider) bumpAbortEpochLocked(runID string) {
+	if c.abortEpoch == nil {
+		c.abortEpoch = map[string]uint64{}
+	}
+	c.abortEpoch[runID]++
+}
+
+// registerLiveUnlessAborted is registerLive that refuses (false) when the run
+// was aborted since epoch was taken. Check and insert share one lock hold, so
+// an AbortRun either sees the registration (and tears it down) or is seen.
+func (c *acpProvider) registerLiveUnlessAborted(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, epoch uint64) bool {
+	c.mu.Lock()
+	if c.abortEpoch[req.RunID] != epoch {
+		c.mu.Unlock()
+		return false
+	}
 	key := reactKey(req)
 	c.live[key] = sb
 	if acp != nil {
@@ -32,6 +58,7 @@ func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbo
 	if c.timeline != nil && sb != nil {
 		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp, c.emit != nil))
 	}
+	return true
 }
 
 func (c *acpProvider) deregisterLive(req NodeReq) {
