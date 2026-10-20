@@ -312,6 +312,11 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 			out["logSummaryOrRef"] = info.LogSummaryOrRef
 		}
 	}
+	// Same derivation as the run list summary (ListRuns).
+	out["lastActivityAt"] = services.RunLastActivity(r)
+	if cn, ok := h.runCurrentNodes([]models.Run{r})[r.ID]; ok {
+		out["currentNode"] = cn
+	}
 	return out
 }
 

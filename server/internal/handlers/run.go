@@ -144,16 +144,14 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
 		return
 	}
-	current := h.Runs.CurrentNodes(runs)
+	current := h.runCurrentNodes(runs)
 	items := make([]gin.H, 0, len(runs))
 	for _, r := range runs {
 		cn, ok := current[r.ID]
 		item := runSummaryDTO(r, cn.Name)
 		item["lastActivityAt"] = services.RunLastActivity(r)
 		if ok {
-			item["currentNode"] = deriveCurrentNodeState(cn, func() bool {
-				return h.Eng != nil && h.Eng.ManualSessionBusy(r.ID, cn.ID)
-			})
+			item["currentNode"] = cn
 		}
 		items = append(items, item)
 	}
@@ -401,4 +399,19 @@ func deriveCurrentNodeState(cn services.CurrentNode, sessionBusy func() bool) se
 		cn.State = engine.NodeStateBusy
 	}
 	return cn
+}
+
+// runCurrentNodes is the single currentNode derivation shared by the run
+// list (runSummary) and the run detail: services.CurrentNodes plus the
+// engine-only busy upgrade of a manual session with a running turn.
+func (h *Handlers) runCurrentNodes(runs []models.Run) map[string]services.CurrentNode {
+	out := h.Runs.CurrentNodes(runs)
+	for id, cn := range out {
+		runID := id
+		nodeID := cn.ID
+		out[id] = deriveCurrentNodeState(cn, func() bool {
+			return h.Eng != nil && h.Eng.ManualSessionBusy(runID, nodeID)
+		})
+	}
+	return out
 }

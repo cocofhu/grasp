@@ -170,3 +170,62 @@ func TestListRunsLastActivityAndCurrentNode(t *testing.T) {
 		t.Fatalf("bogus sort: %d", w.Code)
 	}
 }
+
+// TestRunDetailCurrentNode: GET /runs/:id carries the same currentNode
+// {id,name,iteration,kind,mode,state} and lastActivityAt as the run list, and
+// the takeover conversation's opening turn exposes the auto-phase timeline.
+func TestRunDetailCurrentNode(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	g := takeoverHandlerGraph()
+	now := time.Now()
+	h.db.Create(&models.Run{ID: "d-auto", Status: "running", WorkflowID: "wf", Graph: g, StartedAt: now, LastActivityAt: &now})
+	h.db.Create(&models.StateRun{RunID: "d-auto", NodeID: "impl", Iteration: 1, Status: "running"})
+	h.db.Create(&models.Run{ID: "d-manual", Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: now})
+	h.db.Create(&models.StateRun{RunID: "d-manual", NodeID: "impl", Iteration: 2, Status: "waiting_human", Mode: "manual", TakenOverAt: &now})
+	h.db.Create(&models.ReactConversation{RunID: "d-manual", NodeID: "impl", Iteration: 2, Takeover: true,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "已中断自动执行", At: now.Format(time.RFC3339),
+			Events: []models.AcpEvent{{Kind: "thought", Text: "t"}, {Kind: "tool_call", Title: "edit"}}}}})
+	h.db.Create(&models.Run{ID: "d-done", Status: "completed", WorkflowID: "wf", Graph: g, StartedAt: now})
+
+	get := func(id string) map[string]any {
+		w := h.do("GET", "/api/runs/"+id, nil)
+		if w.Code != 200 {
+			t.Fatalf("get %s: %d %s", id, w.Code, w.Body)
+		}
+		var out map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	d := get("d-auto")
+	cn, _ := d["currentNode"].(map[string]any)
+	if cn["id"] != "impl" || cn["name"] != "实现" || cn["iteration"] != float64(1) || cn["kind"] != "agent" || cn["mode"] != "auto" || cn["state"] != "running" {
+		t.Fatalf("auto detail currentNode: %v", cn)
+	}
+	if ts, _ := d["lastActivityAt"].(string); ts == "" {
+		t.Fatal("detail must carry lastActivityAt")
+	}
+	d = get("d-manual")
+	cn, _ = d["currentNode"].(map[string]any)
+	if cn["kind"] != "takeover" || cn["mode"] != "manual" || cn["state"] != "waiting_human" || cn["iteration"] != float64(2) {
+		t.Fatalf("manual detail currentNode: %v", cn)
+	}
+	byNode, _ := d["clarifyByNode"].(map[string]any)
+	conv, _ := byNode["impl"].(map[string]any)
+	if conv["takeover"] != true {
+		t.Fatalf("clarifyByNode.impl.takeover: %v", conv)
+	}
+	turns, _ := conv["turns"].([]any)
+	if len(turns) != 1 {
+		t.Fatalf("turns: %v", conv["turns"])
+	}
+	evs, _ := turns[0].(map[string]any)["events"].([]any)
+	if len(evs) != 2 || evs[1].(map[string]any)["kind"] != "tool_call" {
+		t.Fatalf("opening turn events: %v", turns[0])
+	}
+	if _, ok := get("d-done")["currentNode"]; ok {
+		t.Fatal("terminal run carries no currentNode")
+	}
+}
