@@ -103,6 +103,9 @@ func isInotifyLimitError(err error) bool {
 //     mode=polling, interval=1s; update ConfigMap and confirm GetConfig() changes ~1–2s.
 //   - fsnotify healthy: info without mode=polling; ConfigMap update still hot-reloads.
 func WatchAndReload(ctx context.Context, path string, callbacks ...ReloadCallback) error {
+	// Read the hooks once: the watcher goroutine outlives this call and must
+	// not read the package-level vars again (tests swap them).
+	closeWatcher := watcherCloseFn
 	watcher, err := watcherNewFn()
 	if err != nil {
 		if isInotifyLimitError(err) {
@@ -115,7 +118,7 @@ func WatchAndReload(ctx context.Context, path string, callbacks ...ReloadCallbac
 	dir := filepath.Dir(path)
 	base := filepath.Base(path)
 	if err := watcherAddFn(watcher, dir); err != nil {
-		_ = watcherCloseFn(watcher)
+		_ = closeWatcher(watcher)
 		if isInotifyLimitError(err) {
 			startPollingReload(ctx, path, callbacks, err)
 			return nil
@@ -124,7 +127,7 @@ func WatchAndReload(ctx context.Context, path string, callbacks ...ReloadCallbac
 	}
 
 	go func() {
-		defer func() { _ = watcherCloseFn(watcher) }()
+		defer func() { _ = closeWatcher(watcher) }()
 		scheduler := &reloadScheduler{path: path, callbacks: callbacks}
 		defer scheduler.stop()
 		for {

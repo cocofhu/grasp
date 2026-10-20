@@ -65,9 +65,9 @@ func (p *backendProvider) Open(procCtx, handshakeCtx context.Context, opts provi
 	return p.Provider.Open(procCtx, handshakeCtx, opts, wrapped, perm)
 }
 
-func (p *Provider) Name() provider.Name              { return p.spec.AgentName }
-func (p *Provider) Runtime() string                  { return p.spec.Runtime }
-func (p *Provider) DefaultConfigRoot() string        { return p.spec.ConfigRoot }
+func (p *Provider) Name() provider.Name               { return p.spec.AgentName }
+func (p *Provider) Runtime() string                   { return p.spec.Runtime }
+func (p *Provider) DefaultConfigRoot() string         { return p.spec.ConfigRoot }
 func (p *Provider) Transport() provider.TransportKind { return provider.LongLived }
 
 func (p *Provider) AuthEnv(env []string) []string {

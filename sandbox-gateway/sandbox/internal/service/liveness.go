@@ -32,8 +32,9 @@ const (
 	clkTck = 100
 )
 
-// Sampling and heartbeat cadence. Vars so tests can shrink them.
-var (
+// Default sampling and heartbeat cadence. Each Bridge copies them into its
+// livenessSample / livenessBeat fields, which tests shrink per Bridge.
+const (
 	livenessSampleEvery    = 30 * time.Second
 	livenessHeartbeatEvery = 60 * time.Second
 )

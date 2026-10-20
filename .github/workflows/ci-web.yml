@@ -2,13 +2,22 @@ name: ci-web
 
 on:
   push:
+    branches: [main]
     paths: ["web/**", ".github/workflows/ci-web.yml", ".github/scripts/coverage-badge-color.sh", ".github/scripts/publish-coverage-badge.sh"]
   pull_request:
     paths: ["web/**", ".github/workflows/ci-web.yml", ".github/scripts/coverage-badge-color.sh", ".github/scripts/publish-coverage-badge.sh"]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   web:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     # contents:write only used to update the orphan coverage-badges branch endpoint.
     permissions:
       contents: write
@@ -70,6 +79,7 @@ jobs:
   # when this workflow runs (path-filtered; non-web PRs do not trigger ci-web).
   web-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
     defaults:
@@ -103,6 +113,7 @@ jobs:
   web-gate:
     name: web-gate
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     if: always()
     needs: [web, web-e2e]
     permissions:

@@ -4,6 +4,7 @@ name: ci-docs
 # PR: build only. Push to main: build then publish to cocofhu/approving-pages.
 on:
   push:
+    branches: [main]
     paths:
       - "docs/**"
       - ".github/workflows/ci-docs.yml"
@@ -14,9 +15,17 @@ on:
       - ".github/workflows/ci-docs.yml"
       - ".github/scripts/publish-pages.sh"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   docs:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
     defaults:

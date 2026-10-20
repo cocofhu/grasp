@@ -8,6 +8,7 @@ name: ci-sandbox
 # sandbox image build (aligned with publish-sandbox; push:false).
 on:
   push:
+    branches: [main]
     paths:
       - "sandbox-gateway/sandbox/**"
       - "sandbox-gateway/scripts/**"
@@ -28,9 +29,17 @@ on:
       - ".github/scripts/publish-coverage-badge.sh"
       - ".golangci.yml"
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   scripts:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: sandbox-gateway
@@ -119,6 +128,7 @@ jobs:
 
   static-js:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -141,6 +151,7 @@ jobs:
 
   sandbox-go:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # contents:write only used to update the orphan coverage-badges branch endpoint.
     permissions:
       contents: write

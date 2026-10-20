@@ -52,17 +52,17 @@ type stubSess struct {
 	id string
 }
 
-func (s *stubSess) SessionID() string                          { return s.id }
-func (s *stubSess) CWD() string                                { return "/tmp" }
-func (s *stubSess) FSRoot() string                             { return "/tmp" }
-func (s *stubSess) Info() provider.AgentInfo                   { return provider.AgentInfo{Name: "stub"} }
+func (s *stubSess) SessionID() string        { return s.id }
+func (s *stubSess) CWD() string              { return "/tmp" }
+func (s *stubSess) FSRoot() string           { return "/tmp" }
+func (s *stubSess) Info() provider.AgentInfo { return provider.AgentInfo{Name: "stub"} }
 func (s *stubSess) Prompt(context.Context, string, []provider.PromptImage) (provider.TurnResult, error) {
 	return provider.TurnResult{StopReason: "end_turn"}, nil
 }
-func (s *stubSess) ReportsUsage() bool                         { return false }
+func (s *stubSess) ReportsUsage() bool                              { return false }
 func (s *stubSess) CumulativeUsage() map[string]provider.TokenUsage { return nil }
-func (s *stubSess) Cancel() error                              { return nil }
-func (s *stubSess) Close() error                               { return nil }
+func (s *stubSess) Cancel() error                                   { return nil }
+func (s *stubSess) Close() error                                    { return nil }
 func (s *stubSess) Done() <-chan struct{} {
 	ch := make(chan struct{})
 	close(ch)
