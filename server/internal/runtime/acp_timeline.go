@@ -31,15 +31,20 @@ type acpTimelineStore struct {
 	// pull refreshes one node from its sandbox event log; a field so tests can
 	// count dials without a bridge.
 	pull func(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader)
+	// ingestEvery is the event-log poll cadence while a turn is running. A
+	// per-store field (not a package var) so a test can shorten it without
+	// racing ingest goroutines leaked by other tests' stores.
+	ingestEvery time.Duration
 }
 
-// timelineIngestEvery is the event-log poll cadence while a turn is running.
-var timelineIngestEvery = 2 * time.Second
+// timelineIngestEvery is the default event-log poll cadence.
+const timelineIngestEvery = 2 * time.Second
 
 func newAcpTimelineStore() *acpTimelineStore {
 	s := &acpTimelineStore{
-		entries: map[string]*acpTimelineEntry{},
-		ingest:  map[string]context.CancelFunc{},
+		entries:     map[string]*acpTimelineEntry{},
+		ingest:      map[string]context.CancelFunc{},
+		ingestEvery: timelineIngestEvery,
 	}
 	s.pull = s.refreshFromReader
 	return s
@@ -208,17 +213,17 @@ func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, pas
 	s.ingest[key] = cancel
 	s.mu.Unlock()
 
-	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy)
+	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy, s.ingestEvery)
 }
 
-func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool) {
+func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool, every time.Duration) {
 	// Keep one cookie for this ingest lifecycle; polling must not allocate a
 	// new bridge session (and hash the login secret) every two seconds.
 	reader := sandbox.NewEventLogReader(host, port, password)
 	// Immediate first pull so cold page loads see history without waiting.
 	s.pull(ctx, runID, nodeID, reader)
 
-	ticker := time.NewTicker(timelineIngestEvery)
+	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	wasBusy := false
 	for {
