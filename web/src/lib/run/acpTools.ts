@@ -52,6 +52,21 @@ export type TimelineBlock =
   | { kind: 'tools'; tools: AgentTool[]; key: string; last: boolean }
   | { kind: 'thought' | 'message'; text: string; key: string; last: boolean; index: number }
 
+/**
+ * A settled reply folds when it has process: a thought, a tool group, or more
+ * than one message. A single message stays bare. Thought hiding does not
+ * remove the fold; the caller omits thought text while rendering.
+ */
+export function timelineFolds(parts: readonly AgentPart[] | undefined): boolean {
+  const blocks = timelineBlocks(parts)
+  let messages = 0
+  for (const b of blocks) {
+    if (b.kind === 'thought' || b.kind === 'tools') return true
+    if (b.kind === 'message') messages++
+  }
+  return messages > 1
+}
+
 /** Groups consecutive tool steps into one block, keeping everything else in order. */
 export function timelineBlocks(parts: readonly AgentPart[] | undefined): TimelineBlock[] {
   const out: TimelineBlock[] = []

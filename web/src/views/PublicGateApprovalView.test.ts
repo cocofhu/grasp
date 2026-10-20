@@ -247,9 +247,11 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     const tl = w.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message',
+      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message',
     ])
     expect(w.findAll('[data-testid="agent-timeline"]')).toHaveLength(1)
+    expect(w.get('[data-testid="clarify-agent-message"]').text()).toContain('改好了')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
     await w.get('[data-testid="agent-tool-group-head"]').trigger('click')
     expect(w.find('[data-testid="agent-tool-summary"]').exists()).toBe(false)
     expect(w.find('[data-testid="agent-tool-row-toggle"]').exists()).toBe(false)

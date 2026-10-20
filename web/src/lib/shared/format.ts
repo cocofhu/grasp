@@ -29,6 +29,32 @@ export function fmtDuration(sec: number): string {
 }
 
 /**
+ * Wall-clock for one agent reply, same compact grammar as tool durations:
+ * 42s, 3m 34s, 4m, 1h 3m. Under a second is 1s. Empty when the value is unusable.
+ * The UI prefixes「用时」; this function does not.
+ */
+export function fmtTurnElapsed(sec: number): string {
+  if (!Number.isFinite(sec) || sec < 0) return ''
+  const whole = Math.round(sec)
+  const s = whole < 1 ? 1 : whole
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return s % 60 ? `${m}m ${s % 60}s` : `${m}m`
+  const h = Math.floor(m / 60)
+  const rem = m % 60
+  return rem ? `${h}h ${rem}m` : `${h}h`
+}
+
+/** Seconds between two ISO timestamps. Null when either is missing or end is before start. */
+export function wallClockSec(start?: string | null, end?: string | null): number | null {
+  if (!start || !end) return null
+  const a = Date.parse(start)
+  const b = Date.parse(end)
+  if (!Number.isFinite(a) || !Number.isFinite(b) || b < a) return null
+  return (b - a) / 1000
+}
+
+/**
  * Compact duration for Run stats KPI main values (Demo-aligned).
  * 0 → "0s"; ≥1h → two decimals + "h" (3703→1.03h); else one decimal + "m" (3458→57.6m).
  */

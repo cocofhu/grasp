@@ -3081,6 +3081,8 @@
         }
       },
       "turnCompleted": "已完成",
+      "turnElapsed": "用时 {time}",
+      "turnProcess": "本轮过程",
       "emptyFailTitle": "本轮没有输出",
       "emptyFailDesc": "助手本轮没有返回正文，可重试上一轮。",
       "retry": "重试",
@@ -3544,7 +3546,7 @@
       "execError": "执行失败",
       "locate": "在时间线查看",
       "turns": "{n} 轮",
-      "duration": "耗时 {time}",
+      "duration": "用时 {time}",
       "trace": {
         "transition": "流转到「{to}」",
         "transitionFailure": "走失败分支到「{to}」",

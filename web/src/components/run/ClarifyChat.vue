@@ -231,6 +231,7 @@ const {
   latestQuestions,
   latestQuestionAnswered,
   displayTurns,
+  outputBounds,
   attachNotice,
   sel,
   other,
@@ -714,6 +715,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :completed="showTurnCompleted(t)"
               :interrupted="!!t.interrupted"
               :run-id="runId"
+              :started-at="outputBounds(i).startedAt"
+              :ended-at="outputBounds(i).endedAt"
               message-test-id="clarify-agent-message"
               @reveal="scrollBottom()"
             >
@@ -804,15 +807,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :live-ref="liveCards.full.get(i)!"
               agent
             />
-            <!-- Restrained completion footnote (Demo); never for interrupted/error -->
-            <div
-              v-if="showTurnCompleted(t)"
-              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
-              data-testid="clarify-turn-completed"
-            >
-              <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
-              <span>{{ relTime(t.at) }}</span>
-            </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div
