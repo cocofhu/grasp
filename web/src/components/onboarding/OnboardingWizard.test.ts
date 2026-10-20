@@ -84,6 +84,19 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
+const CLI_MODELS = [
+  { id: 'composer-2.5', name: 'Composer 2.5', vendor: 'cursor', recommended: true, context: 200 },
+  { id: 'claude-sonnet-4-5', name: 'Claude Sonnet 4.5', vendor: 'anthropic', recommended: true },
+]
+const cliCatalogMocks = vi.hoisted(() => ({
+  load: vi.fn(async () => CLI_MODELS),
+  failed: vi.fn(() => false),
+}))
+vi.mock('@/lib/agent/cliCatalog', () => ({
+  loadCliModels: (...args: unknown[]) => cliCatalogMocks.load(...args),
+  cliCatalogFailed: (...args: unknown[]) => cliCatalogMocks.failed(...args),
+}))
+
 vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
   useWorkflowRunLaunch: () => ({ openLaunch: launchMocks.openLaunch }),
 }))
@@ -166,6 +179,24 @@ function activeStep(wrapper: Wrapper) {
   return wrapper.find('[data-active="1"]').attributes('data-testid')
 }
 
+/** Preferences → coding-tool path → key step. Cursor unless another backend is named. */
+async function goToCliKey(wrapper: Wrapper, backend = 'cursor') {
+  await next(wrapper)
+  await wrapper.find('[data-testid="onboarding-path-cli"]').trigger('click')
+  if (backend !== 'cursor') {
+    await wrapper.find(`[data-testid="onboarding-backend-${backend}"]`).trigger('click')
+  }
+  await next(wrapper)
+  expect(activeStep(wrapper)).toBe('onboarding-rail-key')
+}
+
+async function pickCliModel(wrapper: Wrapper, id: string) {
+  await wrapper.get('[data-testid="cli-model-trigger"]').trigger('click')
+  await flushPromises()
+  await wrapper.get(`[data-testid="cli-model-option-${id}"]`).trigger('click')
+  await flushPromises()
+}
+
 async function lastBody() {
   const { api } = await import('@/lib/api/api')
   const calls = vi.mocked(api.bootstrapOnboarding).mock.calls as unknown[][]
@@ -178,6 +209,10 @@ describe('OnboardingWizard', () => {
   beforeEach(async () => {
     localStorage.clear()
     vi.clearAllMocks()
+    cliCatalogMocks.load.mockReset()
+    cliCatalogMocks.load.mockResolvedValue(CLI_MODELS)
+    cliCatalogMocks.failed.mockReset()
+    cliCatalogMocks.failed.mockReturnValue(false)
     // Chinese UI by default; English cases switch explicitly.
     const { locale } = await import('@/lib/shared/locale')
     locale.value = 'zh-CN'
@@ -254,6 +289,7 @@ describe('OnboardingWizard', () => {
     await next(wrapper)
     await next(wrapper)
     expect(activeStep(wrapper)).toBe('onboarding-rail-key')
+    expect(wrapper.find('[data-testid="onboarding-cli-model"]').exists()).toBe(false)
 
     await wrapper.find('[data-testid="onboarding-api-key"]').setValue('sk-oc-demo')
     await next(wrapper)
@@ -504,6 +540,162 @@ describe('OnboardingWizard', () => {
   it('the storage escape hatch still suppresses auto-open', () => {
     suppressOnboarding()
     expect(shouldAutoOpenOnboarding([], [])).toBe(false)
+  })
+
+  it('coding-tool key step shows an optional model and still requires the key', async () => {
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    const model = wrapper.get('[data-testid="onboarding-cli-model"]')
+    const trigger = model.get('[data-testid="cli-model-trigger"]').text()
+    expect(trigger).toContain('pages.agentStudio.cliModel.auto')
+    expect(trigger).not.toContain('pages.agentStudio.cliModel.autoSub')
+    expect(model.text()).not.toContain('pages.agentStudio.cliModel.wizardHint')
+    expect(wrapper.text()).not.toContain('不确定就先用自动')
+    expect(wrapper.text()).not.toContain('由 Cursor 决定用哪个模型')
+
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-key')
+
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('crsr_key')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
+  })
+
+  it('shows the model picker for every coding tool, and Codex still requires the login file', async () => {
+    const wrapper = await mountWizard()
+    await next(wrapper)
+    await wrapper.find('[data-testid="onboarding-path-cli"]').trigger('click')
+    for (const id of ['cursor', 'claude_code', 'codebuddy', 'trae', 'codex']) {
+      await wrapper.find(`[data-testid="onboarding-backend-${id}"]`).trigger('click')
+      await next(wrapper)
+      expect(wrapper.find('[data-testid="onboarding-cli-model"]').exists()).toBe(true)
+      const trigger = wrapper.get('[data-testid="cli-model-trigger"]').text()
+      expect(trigger).toContain('pages.agentStudio.cliModel.auto')
+      expect(trigger).not.toContain('pages.agentStudio.cliModel.autoSub')
+      if (id === 'codex') {
+        expect(wrapper.find('textarea[data-testid="onboarding-api-key"]').exists()).toBe(true)
+      } else {
+        expect(wrapper.find('input[data-testid="onboarding-api-key"]').exists()).toBe(true)
+      }
+      await wrapper.find('[data-testid="onboarding-key-change"]').trigger('click')
+      expect(activeStep(wrapper)).toBe('onboarding-rail-model')
+    }
+
+    await wrapper.find('[data-testid="onboarding-backend-codex"]').trigger('click')
+    await next(wrapper)
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-key')
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('{"access_token":"x"}')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
+  })
+
+  it('keeps a model when the same tool is clicked again and clears it when the tool changes', async () => {
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    await pickCliModel(wrapper, 'composer-2.5')
+    expect(wrapper.get('[data-testid="cli-model-trigger"]').text()).toContain('Composer 2.5')
+
+    await wrapper.find('[data-testid="onboarding-key-change"]').trigger('click')
+    await wrapper.find('[data-testid="onboarding-backend-cursor"]').trigger('click')
+    await next(wrapper)
+    expect(wrapper.get('[data-testid="cli-model-trigger"]').text()).toContain('Composer 2.5')
+
+    await wrapper.find('[data-testid="onboarding-key-change"]').trigger('click')
+    await wrapper.find('[data-testid="onboarding-backend-claude_code"]').trigger('click')
+    await next(wrapper)
+    const cleared = wrapper.get('[data-testid="cli-model-trigger"]').text()
+    expect(cleared).toContain('pages.agentStudio.cliModel.auto')
+    expect(cleared).not.toContain('Composer 2.5')
+
+    await wrapper.find('[data-testid="onboarding-key-change"]').trigger('click')
+    await wrapper.find('[data-testid="onboarding-backend-cursor"]').trigger('click')
+    await next(wrapper)
+    const restored = wrapper.get('[data-testid="cli-model-trigger"]').text()
+    expect(restored).not.toContain('Composer 2.5')
+    expect(restored).toContain('pages.agentStudio.cliModel.auto')
+  })
+
+  it('accepts a typed model id when the catalog cannot be read', async () => {
+    cliCatalogMocks.load.mockResolvedValue([])
+    cliCatalogMocks.failed.mockReturnValue(true)
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    await wrapper.get('[data-testid="cli-model-trigger"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="cli-model-failed"]').exists()).toBe(true)
+    const search = wrapper.get('[data-testid="cli-model-search"]')
+    await search.setValue('my-private-model')
+    await search.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="cli-model-trigger"]').text()).toContain('my-private-model')
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('crsr_key')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
+  })
+
+  it('keeps a model id that is outside the catalog and still continues', async () => {
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    await wrapper.get('[data-testid="cli-model-trigger"]').trigger('click')
+    await flushPromises()
+    const search = wrapper.get('[data-testid="cli-model-search"]')
+    await search.setValue('my-private-model')
+    await search.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    const unlisted = wrapper.get('[data-testid="cli-model-unlisted"]').text()
+    expect(unlisted).toContain('my-private-model')
+    expect(unlisted).toContain('pages.agentStudio.cliModel.unlisted')
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('crsr_key')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-git')
+  })
+
+  it('puts the chosen model on the team placeholder, the preview, and cliModel', async () => {
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    await pickCliModel(wrapper, 'composer-2.5')
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('crsr_key')
+    await next(wrapper)
+    await fillIdentity(wrapper)
+    await next(wrapper)
+    expect(wrapper.get('[data-testid="onboarding-team-model-clarify"]').attributes('placeholder')).toBe(
+      'pages.onboarding.team.modelInherit',
+    )
+    await wrapper.find('[data-testid="onboarding-team-model-implement"]').setValue('gpt-5')
+    await next(wrapper)
+    expect(wrapper.get('[data-testid="onboarding-review-backend"]').text()).toContain('Cursor · composer-2.5')
+    await next(wrapper)
+    const body = await lastBody()
+    expect(body?.cliModel).toBe('composer-2.5')
+    expect(body).not.toHaveProperty('openCodeModel')
+    expect(body?.agents).toEqual(
+      expect.arrayContaining([
+        { templateId: 'clarify', name: '需求澄清' },
+        { templateId: 'implement', name: '实现', model: 'gpt-5' },
+      ]),
+    )
+  })
+
+  it('leaves auto off the preview and out of the bootstrap body', async () => {
+    const wrapper = await mountWizard()
+    await goToCliKey(wrapper)
+    await wrapper.find('[data-testid="onboarding-api-key"]').setValue('crsr_key')
+    await next(wrapper)
+    await fillIdentity(wrapper)
+    await next(wrapper)
+    expect(wrapper.get('[data-testid="onboarding-team-model-implement"]').attributes('placeholder')).toBe(
+      'pages.onboarding.team.modelPlaceholder',
+    )
+    await next(wrapper)
+    const review = wrapper.get('[data-testid="onboarding-review-backend"]').text()
+    expect(review).toContain('Cursor')
+    expect(review).not.toContain('composer-2.5')
+    expect(review).not.toContain('·')
+    await next(wrapper)
+    const body = await lastBody()
+    expect(body?.acpBackend).toBe('cursor')
+    expect(body).not.toHaveProperty('cliModel')
   })
 
   it('stays on the wizard and does not complete when bootstrap fails', async () => {

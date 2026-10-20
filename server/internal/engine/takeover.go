@@ -291,7 +291,7 @@ func (e *Engine) enterTakeover(c *execCtx, node *models.Node, res runtime.NodeRe
 			Msg("takeover settled after run ended / ownership moved; no manual session")
 		return out
 	}
-	e.seedTakeoverConversation(c.run.ID, node, c.iter[node.ID], res.OutputMd, res.Events)
+	e.seedTakeoverConversation(c.run.ID, node, c.iter[node.ID], res.OutputMd, res.Events, time.Now())
 	e.applyTakeoverCaps(c, node.ID)
 	e.host.SetActiveNode(c.run.ID, node.ID, c.graph.FindNode(node.ID).Caps)
 	e.host.SetActiveReview(c.run.ID, true)
@@ -324,8 +324,12 @@ func (e *Engine) closeTakeoverConversation(runID, nodeID string, iter int) {
 const takeoverOpening = "已中断自动执行，本节点转为人工接管（不会再自动执行）。可以继续对话让我修改；确认无误后点「确认并流转」进入下一节点。"
 
 // seedTakeoverConversation creates (or reopens) the visit's Takeover
-// conversation. Idempotent per (run, node, iteration).
-func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter int, narration string, events []models.AcpEvent) {
+// conversation. Idempotent per (run, node, iteration). The opening turn
+// carries the auto phase: its aggregated ACP events and its time span
+// (startedAt = the visit's start, endedAt = autoEnd). When events are present
+// the chat renders the auto timeline itself, so the narration is not
+// repeated in the text; without events the last auto narration is prepended.
+func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter int, narration string, events []models.AcpEvent, autoEnd time.Time) {
 	if iter < 1 {
 		iter = 1
 	}
@@ -339,12 +343,22 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 		}
 		return
 	}
+	auto := autoPhaseEvents(events)
 	text := takeoverOpening
-	if n := strings.TrimSpace(narration); n != "" {
+	if n := strings.TrimSpace(narration); n != "" && len(auto) == 0 {
 		text = n + "\n\n---\n" + takeoverOpening
 	}
+	opening := models.ReactMessage{Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Events: auto}
+	var sr models.StateRun
+	if e.db.Select("id", "started_at").Where("run_id = ? AND node_id = ? AND iteration = ?", runID, node.ID, iter).
+		Order("id desc").First(&sr).Error == nil && sr.StartedAt != nil {
+		start := *sr.StartedAt
+		opening.StartedAt = &start
+	}
+	end := autoEnd
+	opening.EndedAt = &end
 	conv = models.ReactConversation{RunID: runID, NodeID: node.ID, Iteration: iter, Takeover: true,
-		Messages: []models.ReactMessage{{Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Events: autoPhaseEvents(events)}}}
+		Messages: []models.ReactMessage{opening}}
 	logDB(e.db.Create(&conv), runID, "seed takeover conversation")
 }
 
@@ -404,7 +418,11 @@ func (e *Engine) reconcileManualVisit(run *models.Run, sr models.StateRun) {
 	node := run.Graph.FindNode(sr.NodeID)
 	if node != nil {
 		// Cold restart: continue from the visit's persisted timeline.
-		e.seedTakeoverConversation(run.ID, node, sr.Iteration, "", sr.Events)
+		ended := time.Now()
+		if sr.TakenOverAt != nil {
+			ended = *sr.TakenOverAt
+		}
+		e.seedTakeoverConversation(run.ID, node, sr.Iteration, "", sr.Events, ended)
 	}
 	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).
 		Updates(map[string]any{"status": "waiting_human", "output_md": "已转人工接管（控制面重启，沙箱需冷启动）"}), run.ID, "reconcile manual visit")

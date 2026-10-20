@@ -65,6 +65,7 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 // the broken sandbox so the caller can retry cleanly.
 func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeResult, err error) {
 	reattach := req.ReattachSandbox != ""
+	epoch := c.runAbortEpoch(req.RunID)
 	var (
 		sb   *sandbox.Sandbox
 		acp  *sandbox.ACPClient
@@ -110,12 +111,27 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 	}()
 	// Runs before the discard above, while the gateway still has the record.
 	defer func() { err = sb.ExplainLoss(ctx, err) }()
-	c.registerLive(req, sb, acp)
+	// The run was aborted (cancel / delete) while setup was in flight, before
+	// there was anything for AbortRun to tear down: retire the sandbox (defer
+	// above) instead of running — or parking — a session for a dead run.
+	if !c.registerLiveUnlessAborted(req, sb, acp, epoch) {
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("run aborted during sandbox setup; retiring the new session")
+		if errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+			return NodeResult{}, ErrNodeTakenOver
+		}
+		return NodeResult{}, errRunAbortedDuringSetup
+	}
 	defer func() {
 		if !parked {
 			c.deregisterLive(req)
 		}
 	}()
+	// noPark: the session never got the node prompt (fresh setup), so it
+	// must not be parked for the manual phase — the first manual turn would
+	// find a connected but unprimed agent. It is retired instead and the
+	// first manual turn rehydrates a primed sandbox.
+	noPark := false
 	// Runs first (LIFO): a user takeover cancels ctx with ErrNodeTakenOver.
 	// Park the still-live session for the manual phase instead of retiring
 	// or discarding it, and report the takeover rather than a chat failure.
@@ -123,13 +139,18 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		if parked || !errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
 			return
 		}
-		parked = c.parkTakenOver(req, sb, acp, home)
+		if !noPark {
+			parked = c.parkTakenOver(req, sb, acp, home, epoch)
+		}
 		err = ErrNodeTakenOver
 	}()
 
-	// Taken over during setup: park the fresh/attached session (deferred
-	// above) without sending a prompt or chasing the survivor turn.
+	// Taken over during setup: a reattached survivor already holds the node's
+	// context, so park it (deferred above) without resending the prompt; its
+	// in-flight auto turn is cancelled by the park. A fresh session has no
+	// context yet: retire it rather than parking an unprimed agent.
 	if errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+		noPark = !reattach
 		return NodeResult{}, ErrNodeTakenOver
 	}
 
@@ -522,6 +543,7 @@ func (c *acpProvider) AbortRun(runID string) {
 	prefix := runID + "|"
 	c.retireVisitorLanes(prefix)
 	c.mu.Lock()
+	c.bumpAbortEpochLocked(runID)
 	var sessionKeys []string
 	for k := range c.sessions {
 		if strings.HasPrefix(k, prefix) {
@@ -632,22 +654,30 @@ func nudgeRetries(req NodeReq, planRounds bool) int {
 // the manual phase continues in the same workspace. It returns false (and the
 // caller retires the sandbox as usual) when the ACP link is already gone; the
 // first manual turn then rehydrates a cold sandbox.
-func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) bool {
+func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, epoch uint64) bool {
 	if sb == nil || acp == nil || !acp.IsConnected() {
 		return false
 	}
-	// The chat loop already cancelled its own turn on ctx done; only chase a
-	// turn the bridge still reports (e.g. cancel not acknowledged).
+	// The chat loop already cancelled its own turn on ctx done; chase a turn
+	// the bridge still reports (e.g. cancel not acknowledged, or a survivor
+	// turn of a reattached sandbox). Right after a reattach handshake the
+	// bridge's queue_state may not have arrived yet: wait for it, and send
+	// the cancel anyway if it never becomes known.
 	acked := true
-	if st := acp.BridgeState(); st.Busy || st.Desynced {
+	st := acp.BridgeState()
+	if !st.Known {
+		st, _ = acp.WaitBridgeKnown(context.Background(), abortTurnWait)
+	}
+	if !st.Known || st.Busy || st.Desynced {
 		acked = acp.AbortRunning(abortTurnWait)
 	}
 	key := reactKey(req)
 	c.mu.Lock()
 	// AbortRun (run cancel / delete) owns teardown: once it has claimed
-	// this in-flight session (removed it from inflightACP) we must not
-	// resurrect it as a parked session.
-	if c.inflightACP[key] != acp {
+	// this in-flight session (removed it from inflightACP), or ran at all
+	// since this attempt started, we must not resurrect it as a parked
+	// session.
+	if c.inflightACP[key] != acp || c.abortEpoch[req.RunID] != epoch {
 		c.mu.Unlock()
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("takeover park skipped: session already torn down by run abort")
@@ -682,3 +712,7 @@ func takeoverTolerantCtx(ctx context.Context) (context.Context, func()) {
 
 // takeoverSnapshotWait bounds the event-log read after a takeover cancel.
 var takeoverSnapshotWait = 5 * time.Second
+
+// errRunAbortedDuringSetup: AbortRun ran while this attempt's sandbox was
+// being set up; the new session is retired, never run.
+var errRunAbortedDuringSetup = errors.New("run aborted during sandbox setup")

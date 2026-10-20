@@ -197,7 +197,12 @@ func TestTakeoverRunningAutoNodeBecomesManual(t *testing.T) {
 	if err := env.db.Where("run_id = ? AND node_id = ?", run.ID, "impl").First(&conv).Error; err != nil {
 		t.Fatalf("takeover conversation: %v", err)
 	}
-	if !conv.Takeover || conv.Done || len(conv.Messages) == 0 || !strings.Contains(conv.Messages[0].Text, "partial narration") {
+	// With the auto timeline attached, the narration is not repeated in
+	// the text (the chat renders the events); the auto phase's span is set.
+	if !conv.Takeover || conv.Done || len(conv.Messages) == 0 || conv.Messages[0].Text != takeoverOpening ||
+		strings.Contains(conv.Messages[0].Text, "partial narration") ||
+		conv.Messages[0].StartedAt == nil || conv.Messages[0].EndedAt == nil ||
+		conv.Messages[0].EndedAt.Before(*conv.Messages[0].StartedAt) {
 		t.Fatalf("bad takeover conversation: %+v", conv)
 	}
 	// The opening turn continues the auto phase's timeline.

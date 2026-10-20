@@ -108,13 +108,11 @@ func (lastTurnProvider) LiveNodeEvents(ctx context.Context, runID, nodeID string
 
 func TestPublicGateEventsWSSkipsStaleSeedWhenIdle(t *testing.T) {
 	h := newHarness(t)
-	old := h.h.Eng
+	// Swap the engine before the server starts and never write h.h.Eng back:
+	// the hijacked WebSocket handler can still be reading it after
+	// httptest.Server.Close returns. newHarness closes its own engine.
 	eng := engine.New(h.db, lastTurnProvider{}, h.host, h.h.Arts, 5)
 	h.h.Eng = eng
-	// Do not swap h.h.Eng back in Cleanup: the public WS handler goroutine
-	// may still read it (data race under -race). The harness is per-test
-	// and closes its own engine (old) itself.
-	_ = old
 	t.Cleanup(eng.Close)
 	seedInboxReview(t, h, "run-pub-idle", "research-idle", true)
 	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))

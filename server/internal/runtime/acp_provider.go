@@ -120,6 +120,13 @@ type acpProvider struct {
 	// in sessions). AbortRun closes these so Cancel-during-agent unblocks
 	// streamChat instead of waiting out the node budget.
 	inflightACP map[string]*sandbox.ACPClient
+	// abortEpoch counts AbortRun calls per run (guarded by mu). A RunAgent
+	// attempt snapshots it before sandbox setup; if it moved by the time the
+	// attempt would register / park its session, the run was aborted while
+	// setup was in flight (when AbortRun had nothing to tear down yet) and
+	// the attempt retires its sandbox instead. A later ResumeFrom of the same
+	// run|node key snapshots the new value, so it is unaffected.
+	abortEpoch map[string]uint64
 	// timeline holds platform-side ACP event snapshots while a node sandbox is
 	// live. nodeEvents reads this first; cold FetchEventLog is fallback only.
 	timeline *acpTimelineStore

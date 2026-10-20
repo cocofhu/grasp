@@ -512,6 +512,11 @@ type ReactMessage struct {
 	// of a takeover conversation carries it: the interrupted auto phase's
 	// timeline, so the chat continues it instead of showing bare narration.
 	Events []AcpEvent `json:"events,omitempty"`
+	// StartedAt / EndedAt bound the activity behind this turn when known.
+	// Today only a takeover's opening turn sets them: the interrupted auto
+	// phase's start (the visit's start) and end (when the takeover settled).
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`

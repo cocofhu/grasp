@@ -9,6 +9,7 @@ import {
   createBusySeedRetryController,
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
+import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
@@ -473,6 +474,7 @@ export function useRunDetailWs(opts: {
         m.type === 'react' ||
         m.type === 'artifact_edit'
       ) {
+        if (m.type === 'artifact_edit') notifyRunArtifactEdit()
         // Auto path: never hard load (g1.3). Busy → chrome patch + shared preview entry (g1.1 / g2.1).
         // patchRunChrome still merges a longer idle transcript so an empty Agent
         // panel is not frozen while this gate remains true (plan g1.3).

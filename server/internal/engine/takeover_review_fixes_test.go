@@ -197,6 +197,9 @@ func TestRestartAfterParkedTakeoverThenConfirm(t *testing.T) {
 	if n := r.Graph.FindNode("impl"); n == nil || n.Caps == nil || n.Caps.Review {
 		t.Fatalf("persisted graph leaked Review=true: %+v", n)
 	}
+	if sr := latestVisit(t, env.db, run.ID, "impl"); !sr.IsManual() || sr.Status != "completed" {
+		t.Fatalf("visit must end manual + completed: %+v", sr)
+	}
 }
 
 type fakeSkills map[string]services.Agent
@@ -356,5 +359,28 @@ func TestAutoPhaseEventsDropsPrompt(t *testing.T) {
 	}
 	if autoPhaseEvents([]models.AcpEvent{{Kind: "prompt"}}) != nil {
 		t.Fatal("prompt-only timeline must yield nil (omitted)")
+	}
+}
+
+// TestTakeoverOpeningTurnWithoutEventsKeepsNarration: without an auto
+// timeline the opening text still carries the last auto narration; the
+// span (startedAt / endedAt) is set either way.
+func TestTakeoverOpeningTurnWithoutEventsKeepsNarration(t *testing.T) {
+	env := setupTakeoverEngine(t, takeoverPlainGraph(capsPlain))
+	run := insertRunningVisit(t, env, models.NodeModeManual)
+	started := time.Now().Add(-time.Minute)
+	env.db.Model(&models.StateRun{}).Where("run_id = ?", run.ID).Update("started_at", started)
+	end := time.Now()
+	node := run.Graph.FindNode("impl")
+	env.eng.seedTakeoverConversation(run.ID, node, 1, "最后一条自动消息", []models.AcpEvent{{Kind: "prompt", Text: "sys"}}, end)
+	var conv models.ReactConversation
+	env.db.Where("run_id = ? AND node_id = ?", run.ID, "impl").First(&conv)
+	m := conv.Messages[0]
+	if m.Text != "最后一条自动消息\n\n---\n"+takeoverOpening || len(m.Events) != 0 {
+		t.Fatalf("opening turn: %+v", m)
+	}
+	if m.StartedAt == nil || !m.StartedAt.Equal(started.Truncate(time.Microsecond)) && m.StartedAt.Sub(started).Abs() > time.Second ||
+		m.EndedAt == nil || m.EndedAt.Sub(end).Abs() > time.Second {
+		t.Fatalf("span: %v .. %v", m.StartedAt, m.EndedAt)
 	}
 }

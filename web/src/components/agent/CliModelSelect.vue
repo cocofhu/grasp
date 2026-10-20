@@ -29,10 +29,16 @@ const props = withDefaults(
     /** full: list plus a detail pane. compact: list only, details inline. */
     variant?: 'full' | 'compact'
     disabled?: boolean
+    /**
+     * Hide the trigger subtitle under 「自动」.
+     * Onboarding uses this so the default state shows only that word.
+     * Agent studio and runtime config leave it off and keep the subtitle.
+     */
+    hideAutoSub?: boolean
     /** auto: empty is the CLI default. required: empty is not a choice — hide Auto until a model is picked. */
     emptyMode?: 'auto' | 'required'
   }>(),
-  { variant: 'full', disabled: false, emptyMode: 'auto' },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto' },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
@@ -315,7 +321,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
         </template>
         <template v-else-if="!modelValue">
           <span class="block truncate text-[13px] font-medium text-txt">{{ t('pages.agentStudio.cliModel.auto') }}</span>
-          <span class="block truncate text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.autoSub', { cli: cliLabel }) }}</span>
+          <span v-if="!hideAutoSub" class="block truncate text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.autoSub', { cli: cliLabel }) }}</span>
         </template>
         <template v-else-if="unlisted">
           <span class="block truncate text-[13px] font-medium text-txt">{{ t('pages.agentStudio.cliModel.unlistedName') }}</span>

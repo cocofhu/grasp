@@ -280,11 +280,11 @@ func (s *recordingSess) text(i int) string {
 	return s.texts[i]
 }
 
-func shrinkLiveness(t *testing.T, sample, beat time.Duration) {
-	t.Helper()
-	oldS, oldB := livenessSampleEvery, livenessHeartbeatEvery
-	livenessSampleEvery, livenessHeartbeatEvery = sample, beat
-	t.Cleanup(func() { livenessSampleEvery, livenessHeartbeatEvery = oldS, oldB })
+// shrinkLiveness speeds up b's watchdog sampling and heartbeat. It sets
+// fields on this Bridge only, so watchdogs of other tests' bridges that are
+// still winding down never observe the change.
+func shrinkLiveness(b *Bridge, sample, beat time.Duration) {
+	b.livenessSample, b.livenessBeat = sample, beat
 }
 
 func livenessData(f wsFrame) map[string]any {
@@ -296,9 +296,9 @@ func livenessData(f wsFrame) map[string]any {
 // A quiet Agent whose process tree keeps using CPU is not stopped; once the
 // CPU stops it is resumed once, then stopped as stuck.
 func TestWatchdogCPUKeepsQuietTurnAlive(t *testing.T) {
-	shrinkLiveness(t, 10*time.Millisecond, 25*time.Millisecond)
 	sess := &recordingSess{stubSess: stubSess{id: "s1"}, pids: []int{4242}}
 	b := newTestBridge(sess)
+	shrinkLiveness(b, 10*time.Millisecond, 25*time.Millisecond)
 	fs := &fakeSampler{step: time.Second}
 	b.sampler = fs
 	b.turnIdle, b.turnMax = 80*time.Millisecond, 0
