@@ -16,6 +16,7 @@ import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createClarifyChatAnchors } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
+import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
 import {
   isClarifyDemoEscapeMessage,
   placeClarifyDemoWindow,
@@ -493,6 +494,32 @@ onBeforeUnmount(() => {
   if (previewFocus.value) closePreviewFocus()
 })
 
+function choiceEchoes(index: number) {
+  const rows = parseChoiceSummary(displayTurns.value[index]?.text || '')
+  if (!rows) return []
+  let agentTurnIndex = -1
+  const questions: ReactQuestion[] = []
+  for (let j = index - 1; j >= 0; j--) {
+    const turn = displayTurns.value[j]
+    if (turn?.role === 'agent' && turn.questions?.length) {
+      agentTurnIndex = j
+      questions.push(...turn.questions)
+      break
+    }
+  }
+  return choiceEchoRows(rows, questions).map((echo) => ({ ...echo, agentTurnIndex }))
+}
+
+function turnColumnClass(t: ClarifyTurn, index: number): string {
+  if (t.role !== 'human') return 'w-full'
+  return choiceEchoes(index).some((echo) => echo.cards.length > 0) ? 'w-[88%] max-w-[88%]' : 'max-w-[88%]'
+}
+
+function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, agentTurnIndex: number) {
+  if (!question || agentTurnIndex < 0) return
+  openPreviewFocus(question, optionId, true, agentTurnIndex)
+}
+
 function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
   if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
   return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
@@ -557,7 +584,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         :data-chat-anchor="messageAnchorState.anchors[i]"
       >
         <span class="sr-only">{{ translate(t.role === 'human' ? 'pages.clarify.me' : 'pages.llmTranscript.speaker.agent') }}</span>
-        <div class="min-w-0" :class="t.role === 'human' ? 'max-w-[88%]' : 'w-full'">
+        <div class="min-w-0" :class="turnColumnClass(t, i)">
           <div v-if="t.images && t.images.length" class="mb-1.5 flex flex-wrap gap-1.5" :class="t.role === 'human' ? 'justify-end' : ''">
             <!-- human history: images → lightbox; non-images → filename chip -->
             <template v-if="t.role === 'human'">
@@ -633,15 +660,37 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             </div>
             <div class="min-w-0 max-w-full">
               <div
-                v-for="(row, ri) in parseChoiceSummary(t.text)!"
+                v-for="(echo, ri) in choiceEchoes(i)"
                 :key="ri"
                 class="chat-response-row min-w-0 max-w-full"
                 data-testid="clarify-choice-row"
               >
-                <div class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]">{{ row.q }}</div>
-                <div class="chat-response-answers flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1">
+                <div
+                  v-if="echo.showPrompt"
+                  class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]"
+                >{{ echo.prompt }}</div>
+                <div
+                  v-if="echo.cards.length"
+                  class="flex min-w-0 flex-col gap-2.5"
+                  data-testid="clarify-choice-demos"
+                >
+                  <ClarifyDemoFrame
+                    v-for="o in echo.cards"
+                    :key="o.id"
+                    :label="o.label"
+                    :html="o.demoHtml!"
+                    highlighted
+                    selected
+                    @enlarge="enlargeChoicePreview(echo.question, o.id, echo.agentTurnIndex)"
+                  />
+                </div>
+                <div
+                  v-if="echo.texts.length"
+                  class="chat-response-answers flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1"
+                  :class="echo.cards.length ? 'mt-2' : ''"
+                >
                   <span
-                    v-for="(a, ai) in row.answers"
+                    v-for="(a, ai) in echo.texts"
                     :key="ai"
                     class="min-w-0 max-w-full break-words text-txt [overflow-wrap:anywhere]"
                     data-testid="clarify-choice-answer"

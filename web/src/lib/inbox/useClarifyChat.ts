@@ -344,8 +344,9 @@ onBeforeUnmount(() => {
   thoughtPreview.reset()
 })
 
-/** zh-CN choice prefix; server-formatted replies (models.FormatChoiceReply) always use it. */
+/** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
 const CHOICE_PREFIX_ZH = '我的选择:'
+const CHOICE_PREFIX_EN = 'My choices:'
 const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
 /** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
 const FORM_PREFIX_ZH = '我的填写:'
@@ -359,12 +360,13 @@ const skipPrefix = computed(() => translate('pages.clarify.skipPrefix'))
 const skipUserReplyLabel = computed(() => translate('pages.clarify.skipUserReplyLabel'))
 
 function textHasChoicePrefix(text: string): boolean {
-  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH)
+  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH) || text.startsWith(CHOICE_PREFIX_EN)
 }
 
 function stripChoicePrefix(text: string): string {
   if (text.startsWith(choicePrefix.value)) return text.slice(choicePrefix.value.length)
   if (text.startsWith(CHOICE_PREFIX_ZH)) return text.slice(CHOICE_PREFIX_ZH.length)
+  if (text.startsWith(CHOICE_PREFIX_EN)) return text.slice(CHOICE_PREFIX_EN.length)
   return text
 }
 
@@ -1095,8 +1097,10 @@ function submitChoices() {
   sendMessage(text)
 }
 
-// A submitted "我的选择:" human turn is rendered as structured cards instead of
-// a raw markdown bullet list. Returns null for any other message.
+// A submitted "我的选择:" / "My choices:" human turn is rendered as structured
+// cards instead of a raw markdown bullet list. A bullet may wrap: lines that
+// do not start another "- " stay in the same item, then the first "→" splits
+// the prompt from answers. Returns null for any other message.
 interface ChoiceRow {
   q: string
   answers: string[]
@@ -1104,15 +1108,26 @@ interface ChoiceRow {
 function parseChoiceSummary(text: string): ChoiceRow[] | null {
   if (!text || !textHasChoicePrefix(text)) return null
   const bodyText = stripChoicePrefix(text)
-  const rows: ChoiceRow[] = []
+  const chunks: string[] = []
+  let buf: string[] | null = null
   for (const raw of bodyText.split('\n')) {
-    const line = raw.trim()
-    if (!line.startsWith('- ')) continue
-    const body = line.slice(2)
-    const idx = body.indexOf('→')
+    const line = raw.replace(/\r$/, '')
+    const trimmed = line.trim()
+    if (trimmed.startsWith('- ')) {
+      if (buf) chunks.push(buf.join('\n'))
+      buf = [trimmed.slice(2)]
+      continue
+    }
+    if (buf) buf.push(line)
+  }
+  if (buf) chunks.push(buf.join('\n'))
+
+  const rows: ChoiceRow[] = []
+  for (const chunk of chunks) {
+    const idx = chunk.indexOf('→')
     if (idx === -1) continue
-    const q = body.slice(0, idx).trim()
-    const answers = body
+    const q = chunk.slice(0, idx).trim()
+    const answers = chunk
       .slice(idx + 1)
       .split('、')
       .map((a) => a.trim())
