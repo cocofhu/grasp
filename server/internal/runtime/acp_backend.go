@@ -323,7 +323,7 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 				cfgHint = "opencode.json 或 settings.json"
 			}
 			return out, fmt.Errorf(
-				"鉴权未配置:请在项目凭据中配置 %s，或在项目共享 Agent 工作目录或该 Agent 工作目录添加 %s",
+				"鉴权未配置:请在工作区凭据中配置 %s，或在工作区共享 Agent 工作目录或该 Agent 工作目录添加 %s",
 				spec.credKey,
 				cfgHint,
 			)

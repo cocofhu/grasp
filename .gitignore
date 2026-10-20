@@ -47,7 +47,7 @@ server/config.yaml
 /release-evidence/
 
 # dev-compose 运行时数据根(docker-compose 里 ./data:/app/data),整棵树都不提交:
-#   profiles/ 与 project-shared/*/agent.json 含 API key 等密钥
+#   profiles/ 与 shared-agent/agent.json 含 API key 等密钥
 #   blobs/ 是附件与剪贴板图片等运行时产物
 #   platform-rules/ 是首启动从 server 内嵌 skills_embed/rules 落地的副本(供 UI 覆盖)
 /data/

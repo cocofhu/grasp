@@ -636,7 +636,7 @@ func (h *Handlers) buildPmPreamble(threadID string, attached *models.AttachedCon
 			return fmt.Sprintf("用户附加上下文：%s %s（%s）。请优先围绕该上下文，结合 PM MCP 工具作答。",
 				attached.Kind, attached.ID, attached.Label)
 		}
-		return "你是项目 PM Leader。请通过 pm-leader MCP 工具查询进度/记忆/会话上下文后作答；不要编造不存在的 Run/门禁/产物。一期禁止改写 Run/plan/门禁状态。"
+		return "你是工作区 PM Leader。请通过 pm-leader MCP 工具查询进度/记忆/会话上下文后作答；不要编造不存在的 Run/门禁/产物。一期禁止改写 Run/plan/门禁状态。"
 	}
 	var b strings.Builder
 	b.WriteString("以下是本线程已落库的近期对话（多轮上文主来源）。请结合 pm-leader MCP 拉取的最新进度与记忆作答。\n\n")

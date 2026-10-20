@@ -20,7 +20,7 @@ That document is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-ch
 ./start.sh dev -d      # source + HMR
 ```
 
-Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in Settings → Credentials; putting them in project-shared, Agent meta, or platform `sandbox.env` is rejected. Non-secret options such as sites and models may still go in Agent meta env (values may reference `${vars.<name>}`).
+Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in Settings → Credentials; putting them in the shared Agent config, Agent meta, or platform `sandbox.env` is rejected. Non-secret options such as sites and models may still go in Agent meta env (values may reference `${vars.<name>}`).
 
 ## Database and attachment lifecycle
 

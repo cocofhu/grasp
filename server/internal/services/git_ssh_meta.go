@@ -17,7 +17,7 @@ const (
 // ErrSecretEnvKey is returned when an Agent / shared Agent env carries a
 // secret key (envauth.SecretEnvKeys); secrets are configured only through
 // workspace credentials.
-var ErrSecretEnvKey = errors.New("密钥请在项目凭据中配置，环境变量不支持")
+var ErrSecretEnvKey = errors.New("密钥请在工作区凭据中配置，环境变量不支持")
 
 // RejectSecretEnvKeys fails when env declares any envauth.SecretEnvKeys entry.
 func RejectSecretEnvKeys(env map[string]string) error {

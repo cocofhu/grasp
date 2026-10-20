@@ -6,7 +6,7 @@ info:
     Minimal OpenAPI contract for platform list endpoints.
 
     **Pagination pattern (shared):** GET /api/artifacts, GET /api/runs,
-    GET /api/gates and GET /api/projects/{id}/audit always return the paginated
+    GET /api/gates and GET /api/workspace/audit always return the paginated
     envelope `{ items, total, page, pageSize, hasMore }` as implemented in
     `internal/handlers/pagination.go` (`parsePagination`, `paginatedResponse`).
     Omitted `page` / `pageSize` default to `1` / `20`; `maxPageSize=100`;
@@ -44,19 +44,13 @@ paths:
               schema:
                 $ref: '#/components/schemas/BaselineWorkflow'
         '400':
-          description: Empty name, missing project, or no repository URL
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Error'
-        '404':
-          description: Project not found
+          description: Empty name or no repository URL
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
         '409':
-          description: A workflow with the same name already exists in the project
+          description: A workflow with the same name already exists
           content:
             application/json:
               schema:
@@ -182,7 +176,7 @@ paths:
           Runs are ordered by `MAX(artifacts.created_at)` descending.
           When `q` is set, a Run qualifies if any of its artifacts match; the
           expand step drops `q` so non-matching files in that Run are still
-          returned (wf / project filters still apply).
+          returned (wf filters still apply).
 
         **Filtering:**
         - `wf`: restrict to a workflow ID, or `__unnamed__` for artifacts whose
@@ -278,20 +272,15 @@ paths:
               schema:
                 $ref: '#/components/schemas/Error'
 
-  /projects/{id}/agents/export:
+  /workspace/agents/export:
     get:
-      operationId: exportProjectAgents
+      operationId: exportWorkspaceAgents
       tags: [agents]
-      summary: Export every Agent of a project as one ZIP
+      summary: Export every workspace Agent as one ZIP
       description: |
-        Downloads a project package (`project.json` with `kind: project-agents`,
-        `schemaVersion: 1` + `agents/{name}/`) containing every Agent whose home
-        project is `id`. Filename is `<project name>-agents.zip`.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
+        Downloads a workspace package (`workspace.json` with
+        `kind: workspace-agents`, `schemaVersion: 1` + `agents/{name}/`)
+        containing every Agent. Filename is `<workspace name>-agents.zip`.
       responses:
         '200':
           description: ZIP attachment
@@ -304,25 +293,16 @@ paths:
           description: Package too large
         '401':
           description: Unauthenticated
-        '404':
-          description: Project not found
 
-  /projects/{id}/agents/import:
+  /workspace/agents/import:
     post:
-      operationId: importProjectAgents
+      operationId: importWorkspaceAgents
       tags: [agents]
-      summary: Import a project Agent package (atomic)
+      summary: Import a workspace Agent package (atomic)
       description: |
-        Multipart import of a `project-agents` ZIP (max 64MiB). Every imported
-        Agent is bound to project `id`. `mode` is `rename` (default, name
-        conflicts get a new name) or `overwrite` (only Agents already in this
-        project may be overwritten). Single-agent ZIPs are rejected. Failures
-        roll back the whole import.
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema: { type: string }
+        Multipart import of a `workspace-agents` ZIP (max 64MiB). `mode` is
+        `rename` (default, name conflicts get a new name) or `overwrite`.
+        Single-agent ZIPs are rejected. Failures roll back the whole import.
       requestBody:
         required: true
         content:
@@ -355,11 +335,9 @@ paths:
                     type: object
                     additionalProperties: { type: string }
         '400':
-          description: Invalid package, single-agent ZIP, oversize, foreign-project overwrite, or validation
+          description: Invalid package, single-agent ZIP, oversize, or validation
         '401':
           description: Unauthenticated
-        '404':
-          description: Project not found
 
   /agents/{name}/export:
     get:
@@ -395,16 +373,13 @@ paths:
           multipart/form-data:
             schema:
               type: object
-              required: [file, targetName, projectId]
+              required: [file, targetName]
               properties:
                 file:
                   type: string
                   format: binary
                 targetName:
                   type: string
-                projectId:
-                  type: string
-                  description: Home project of the imported Agent (required)
                 mode:
                   type: string
                   enum: [create, overwrite]
@@ -412,7 +387,7 @@ paths:
         '200':
           description: Imported agent
         '400':
-          description: Invalid ZIP, name, missing / unknown projectId, or agent.json without a valid acpBackend
+          description: Invalid ZIP, name, or agent.json without a valid acpBackend
         '401':
           description: Unauthenticated
 
@@ -488,14 +463,12 @@ components:
 
     CreateBaselineWorkflowRequest:
       type: object
-      required: [projectId, name, repos]
+      required: [name, repos]
       properties:
-        projectId:
-          type: string
         name:
           type: string
           minLength: 1
-          description: Required workflow display name; trimmed and unique within the project
+          description: Required workflow display name; trimmed and unique
         repos:
           type: array
           minItems: 1
@@ -512,11 +485,9 @@ components:
 
     BaselineWorkflow:
       type: object
-      required: [id, projectId, name, status]
+      required: [id, name, status]
       properties:
         id:
-          type: string
-        projectId:
           type: string
         name:
           type: string
@@ -561,7 +532,7 @@ components:
       type: object
       description: |
         Shared pagination envelope used by GET /api/artifacts, GET /api/runs,
-        GET /api/gates and GET /api/projects/{id}/audit (see pagination.go).
+        GET /api/gates and GET /api/workspace/audit (see pagination.go).
       properties:
         total:
           type: integer

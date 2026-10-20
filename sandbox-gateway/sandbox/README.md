@@ -140,8 +140,8 @@ docker run --privileged -d --add-host host.docker.internal:host-gateway \
 | `GITHUB_URL` | 空 | 自建 GitHub 的 `scheme+host`，用于匹配 repo host |
 | `GITLAB_TOKEN` | 空 | GitLab token；已配置则自动 `glab auth login` |
 | `GITLAB_URL` | 空 | GitLab 实例地址（自建建议显式配置；空则默认 `gitlab.com`。不会把 GitHub / `GITHUB_URL` host 当成 GitLab） |
-| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用）。经平台运行时 SSH 只来自项目凭据，由平台直接写入 `~/.ssh`，不走 env |
-| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底）。经平台运行时同样只来自项目凭据 |
+| `GIT_SSH_PRIVATE_KEY` | 空 | SSH 私钥内容，写入 `~/.ssh/id_rsa`（SSH clone 用）。经平台运行时 SSH 只来自工作区凭据，由平台直接写入 `~/.ssh`，不走 env |
+| `GIT_SSH_KNOWN_HOSTS` | 空 | SSH known_hosts 内容（SSH clone 时必填，禁用 accept-new 兜底）。经平台运行时同样只来自工作区凭据 |
 | `GIT_USER_NAME` | `sandbox` | 全局 `git config user.name` |
 | `GIT_USER_EMAIL` | `sandbox@localhost` | 全局 `git config user.email` |
 

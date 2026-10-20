@@ -132,7 +132,7 @@ func (h *Handlers) DeleteAgent(c *gin.Context) {
 	if h.Pm != nil {
 		if err := h.Pm.PurgeAgentEverywhere(name); err != nil {
 			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "清除 Agent 项目数据失败：" + err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "清除 Agent 工作区数据失败：" + err.Error()})
 			return
 		}
 	}

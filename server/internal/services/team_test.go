@@ -76,18 +76,18 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if !agentHasFilePath(pmAg, "rules/role.md") {
 		t.Fatalf("PM missing role.md files=%v", filePaths(pmAg))
 	}
-	if !agentHasFilePath(pmAg, "rules/project-context.md") {
-		t.Fatalf("PM missing project-context.md files=%v", filePaths(pmAg))
+	if !agentHasFilePath(pmAg, "rules/team-context.md") {
+		t.Fatalf("PM missing team-context.md files=%v", filePaths(pmAg))
 	}
 	if !agentHasFilePath(pmAg, "skills/pm-orchestrate/SKILL.md") {
 		t.Fatalf("PM missing orchestrate skill files=%v", filePaths(pmAg))
 	}
-	ctx := agentFileContent(pmAg, "rules/project-context.md")
+	ctx := agentFileContent(pmAg, "rules/team-context.md")
 	if !strings.Contains(ctx, "demo background for workflow team") {
-		t.Fatalf("project-context missing background: %q", ctx)
+		t.Fatalf("team-context missing background: %q", ctx)
 	}
 	if !strings.Contains(ctx, "alwaysApply: true") {
-		t.Fatalf("project-context should be alwaysApply: %q", ctx)
+		t.Fatalf("team-context should be alwaysApply: %q", ctx)
 	}
 	impl := "Demo实现"
 	ag, ok := skills.Get(impl)
@@ -98,7 +98,7 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		t.Fatalf("mcp=%+v", ag.MCP)
 	}
 	if !strings.Contains(ctx, "pm_list_workspace_agents") || strings.Contains(ctx, "组") {
-		t.Fatalf("project-context should describe workspace members only: %q", ctx)
+		t.Fatalf("team-context should describe workspace members only: %q", ctx)
 	}
 	for _, r := range cur.Resources {
 		if r.Kind != "workspace" && r.Kind != "agent" {

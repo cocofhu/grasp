@@ -443,8 +443,8 @@ func TestPrepareAuthEnv_NeitherConfigured(t *testing.T) {
 	if !strings.Contains(err.Error(), "settings.json") {
 		t.Fatalf("error should mention settings.json: %v", err)
 	}
-	if !strings.Contains(err.Error(), "项目共享") {
-		t.Fatalf("error should mention 项目共享: %v", err)
+	if !strings.Contains(err.Error(), "工作区共享") {
+		t.Fatalf("error should mention 工作区共享: %v", err)
 	}
 	if !strings.Contains(err.Error(), "GRASP_CLAUDE_API_KEY") {
 		t.Fatalf("error should mention env keys: %v", err)
@@ -662,8 +662,8 @@ func TestPrepareAuthEnv_NeitherLayerNorEnv(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected auth error when neither layer has settings.json")
 	}
-	if !strings.Contains(err.Error(), "项目共享") {
-		t.Fatalf("error should mention 项目共享: %v", err)
+	if !strings.Contains(err.Error(), "工作区共享") {
+		t.Fatalf("error should mention 工作区共享: %v", err)
 	}
 	if !strings.Contains(err.Error(), "settings.json") {
 		t.Fatalf("error should mention settings.json: %v", err)

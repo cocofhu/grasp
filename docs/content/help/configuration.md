@@ -20,7 +20,7 @@ Grasp 平台服务配置以 YAML / 环境变量为主（本地示例见 `server/
 ./start.sh dev -d      # 源码 + HMR
 ```
 
-镜像 tag / digest、网关与沙箱相关变量见 `.env.example`。Agent 侧 API key、GitHub / GitLab Token、SSH 等只能保存到工作区凭据设置；写进项目共享、Agent meta 或平台 `sandbox.env` 会被拒绝。站点、模型等非敏感项仍可放在 Agent meta env（值可引用 `${vars.<name>}`）。
+镜像 tag / digest、网关与沙箱相关变量见 `.env.example`。Agent 侧 API key、GitHub / GitLab Token、SSH 等只能保存到工作区凭据设置；写进共享 Agent 配置、Agent meta 或平台 `sandbox.env` 会被拒绝。站点、模型等非敏感项仍可放在 Agent meta env（值可引用 `${vars.<name>}`）。
 
 ## 数据库与附件同生命周期
 

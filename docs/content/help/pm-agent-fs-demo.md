@@ -4,7 +4,7 @@
 
 1. 确认工作区助手设置已启用 `pm-agent-fs`（默认启用）。
 2. 准备工作区内的多个 Agent。
-3. Leader 会话调用 `pm_list_project_agents`，确认自身 relation=`self`、其他工作区成员 relation=`other`。
+3. Leader 会话调用 `pm_list_workspace_agents`，确认自身 relation=`self`、其他工作区成员 relation=`other`。
 4. 调用 `pm_fs_write`：`agentName=<工作区另一 Agent>`，`path=AGENTS.md`（或 `rules/...`），`content=...`，**必填 `reason`**（非空变更原因），写入可识别内容。
 5. 可选：调用 `pm_fs_history` / `pm_fs_diff` 查看版本；`pm_fs_restore` 可整树回滚（也必填 reason）。
 6. 打开 Agent Studio → 选中该 Agent → **刷新或重新打开**「Agent 工作目录」，右侧可见版本历史面板；对照内容一致。

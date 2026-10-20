@@ -9,10 +9,10 @@ description: PM Leader 编排检查清单：编制确认、任务分派、门禁
 
 ## 编制
 
-1. 已读 `rules/project-context.md`，理解目标、技术栈与仓库诉求
-2. `pm_list_project_agents` 显示：4 名工程师（需求澄清 / 实现 / 测试评审 / 交付）均属于本项目
-3. 若缺人：用模板创建（自动归属本项目）；已存在同名则跳过并报告，不覆盖
-4. 项目 PM Leader 绑定指向你；`pm-agent-fs` 等 MCP 可用
+1. 已读 `rules/team-context.md`，理解目标、技术栈与仓库诉求
+2. `pm_list_workspace_agents` 显示：4 名工程师（需求澄清 / 实现 / 测试评审 / 交付）均已就位
+3. 若缺人：用模板创建；已存在同名则跳过并报告，不覆盖
+4. 工作区 PM Leader 绑定指向你；`pm-agent-fs` 等 MCP 可用
 
 ## 分派
 
@@ -30,5 +30,4 @@ description: PM Leader 编排检查清单：编制确认、任务分派、门禁
 
 - [ ] 未代替工程师调用其唯一 `set_*` 交付
 - [ ] 未用 `write_artifact` 假装完成节点
-- [ ] 未跨项目操作
-- [ ] 对用户的状态说明与 `pm_list_project_agents` / 工作流实况一致
+- [ ] 对用户的状态说明与 `pm_list_workspace_agents` / 工作流实况一致

@@ -10,7 +10,7 @@ set -e
 #   不依赖当前 clone 仓库属于哪个平台。
 #   HTTPS clone 仍按仓库 URL 的 host 匹配（github.com→GITHUB_TOKEN; gitlab.com→GITLAB_TOKEN;
 #           自建实例通过 GITHUB_URL / GITLAB_URL 与 repo host 精确匹配）。
-#   SSH   — 平台从项目凭据注入 ~/.ssh（单独运行镜像时可用 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
+#   SSH   — 平台从工作区凭据注入 ~/.ssh（单独运行镜像时可用 env GIT_SSH_*）；id_rsa 600；known_hosts 按行追加。
 # 主要环境变量：WORKSPACE_DIR, ROOT_PASSWORD, CODE_SERVER_PORT, SSH_KEY, SKIP_INNER_DOCKER,
 #   GIT_REPOS(多仓 name|url|branch),
 #   GITHUB_TOKEN, GITHUB_URL, GITLAB_TOKEN, GITLAB_URL, GIT_SSH_PRIVATE_KEY, GIT_SSH_KNOWN_HOSTS（仅单独运行镜像）,
@@ -191,7 +191,7 @@ setup_https_credentials() {
 
     echo "startup.sh: HTTPS clone 未找到匹配凭据 (host=${host})" >&2
     echo "  支持: GitHub (GITHUB_TOKEN) / GitLab (GITLAB_TOKEN + GITLAB_URL); 自建实例配 GITHUB_URL / GITLAB_URL" >&2
-    echo "  其它托管商请改用 SSH: 在项目凭据中配置 SSH 私钥 + known_hosts" >&2
+    echo "  其它托管商请改用 SSH: 在工作区凭据中配置 SSH 私钥 + known_hosts" >&2
     return 1
 }
 
@@ -209,11 +209,11 @@ setup_ssh_credentials() {
     fi
 
     if [ "$has_key" != "1" ] && [ -z "$GIT_SSH_PRIVATE_KEY" ]; then
-        echo "startup.sh: SSH repo_url 需要私钥 (项目凭据注入或 GIT_SSH_PRIVATE_KEY; host=${host:-unknown})" >&2
+        echo "startup.sh: SSH repo_url 需要私钥 (工作区凭据注入或 GIT_SSH_PRIVATE_KEY; host=${host:-unknown})" >&2
         return 1
     fi
     if [ "$has_hosts" != "1" ] && [ -z "$GIT_SSH_KNOWN_HOSTS" ]; then
-        echo "startup.sh: SSH repo_url 需要 known_hosts (项目凭据注入或 GIT_SSH_KNOWN_HOSTS; host=${host:-unknown})" >&2
+        echo "startup.sh: SSH repo_url 需要 known_hosts (工作区凭据注入或 GIT_SSH_KNOWN_HOSTS; host=${host:-unknown})" >&2
         echo "  获取指纹示例: ssh-keyscan -t ed25519,rsa ${host}" >&2
         return 1
     fi

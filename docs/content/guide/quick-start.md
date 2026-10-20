@@ -58,7 +58,7 @@ Agent / workspace 与 SQLite 持久在仓库根 `.localdata` 宿主机目录（b
 
 ## 下一步
 
-- 登录后进入工作区时，按第一次安装引导在工作区凭据设置 配置 **ACP 后端、API Token、Git 凭据**（Git 可跳过）。运行时密钥只来自工作区凭据。完成后生成 **综合项目组** 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。全系统只使用一个工作区，侧栏列出全部工作流，原配置入口统一收进设置。
+- 登录后进入工作区时，按第一次安装引导在工作区凭据设置 配置 **ACP 后端、API Token、Git 凭据**（Git 可跳过）。运行时密钥只来自工作区凭据。完成后生成一组内置 Agent 与已发布的 **默认工作流**（仓库 URL 在启动 Run 时填写）。全系统只使用一个工作区，侧栏列出全部工作流，原配置入口统一收进设置。
 - [核心概念](../concepts/) — FSM、gate、sandbox、artifact
 - [配置摘要](../../help/configuration/) — 指向完整 `CONFIGURATION.md`
 - [网关摘要](../../help/gateway/) — 指向 `GATEWAY.md`

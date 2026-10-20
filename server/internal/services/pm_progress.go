@@ -30,7 +30,7 @@ func (p *PmProgress) OverallProgress() map[string]any {
 	if len(runs) == 0 {
 		return map[string]any{
 			"empty":   true,
-			"message": "项目下暂无工作流运行记录。可先运行工作流后再咨询进度。",
+			"message": "工作区暂无工作流运行记录。可先运行工作流后再咨询进度。",
 		}
 	}
 	byStatus := map[string]int{}

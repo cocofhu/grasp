@@ -316,7 +316,7 @@ func (h *Host) jobOwned(sess *Session, id string) bool {
 
 func toolSchemas() []map[string]any {
 	return []map[string]any{
-		platformmcp.Tool("list_jobs", "列出当前 Agent 在本项目下的定时任务。", nil),
+		platformmcp.Tool("list_jobs", "列出当前 Agent 在工作区内的定时任务。", nil),
 		platformmcp.Tool("list_job_runs", "列出某任务的执行历史。", map[string]any{
 			"jobId": map[string]any{"type": "string"},
 			"limit": map[string]any{"type": "number"},
@@ -327,7 +327,7 @@ func toolSchemas() []map[string]any {
 			"scheduleKind":     map[string]any{"type": "string", "description": "at|every|cron"},
 			"scheduleExpr":     map[string]any{"type": "string"},
 			"timezone":         map[string]any{"type": "string", "description": "IANA timezone, e.g. Asia/Shanghai"},
-			"deliverToChannel": map[string]any{"type": "boolean", "description": "任务结果是否推送到项目绑定的外部渠道"},
+			"deliverToChannel": map[string]any{"type": "boolean", "description": "任务结果是否推送到工作区绑定的外部渠道"},
 		}),
 		platformmcp.Tool("update_job", "更新定时任务。", map[string]any{
 			"jobId":            map[string]any{"type": "string"},

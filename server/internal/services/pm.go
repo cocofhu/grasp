@@ -13,7 +13,7 @@ import (
 
 var (
 	// ErrPmLeaderDisabled is returned when consult APIs are called while PM Leader is off.
-	ErrPmLeaderDisabled = errors.New("项目管理未启用")
+	ErrPmLeaderDisabled = errors.New("PM Leader 未启用")
 	// ErrPmLeaderNoAgent is returned when enabling without a bound agent, or the agent is missing.
 	ErrPmLeaderNoAgent = errors.New("未绑定可用 Agent，请先到 Agent 配置中心准备后再绑定")
 	// ErrPmLeaderAgentMissing is returned when the bound agent was deleted.

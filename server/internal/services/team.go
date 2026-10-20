@@ -354,7 +354,7 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 	}
 	s.appendEvent(sessionID, "ok", "PM Leader bound")
 
-	s.appendEvent(sessionID, "warn", "inject Prompt（项目背景）:\n"+truncateRunes(req.Background, 400))
+	s.appendEvent(sessionID, "warn", "inject Prompt（团队背景）:\n"+truncateRunes(req.Background, 400))
 	s.appendEvent(sessionID, "warn", fmt.Sprintf("provision %d engineers from templates (inherit mcp/env)", len(TeamEngineerTemplates)))
 
 	for _, role := range TeamEngineerTemplates {
@@ -667,21 +667,21 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 		tmpl.MCP = DefaultPlatformMCP()
 	}
 
-	tmpl.Files = upsertAgentFile(tmpl.Files, "rules/project-context.md", teamPMProjectContextMarkdown(req))
+	tmpl.Files = upsertAgentFile(tmpl.Files, "rules/team-context.md", teamPMContextMarkdown(req))
 	if strings.TrimSpace(req.CustomConfig) != "" {
 		tmpl.Files = upsertAgentFile(tmpl.Files, agentAuthConfigFileName(backend), strings.TrimSpace(req.CustomConfig))
 	}
 	return tmpl, nil
 }
 
-func teamPMProjectContextMarkdown(req normalizedTeamReq) string {
+func teamPMContextMarkdown(req normalizedTeamReq) string {
 	var b strings.Builder
 	b.WriteString("---\n")
-	b.WriteString("description: 本项目背景与建团编制（始终应用；由创建 Agent 团队写入）\n")
+	b.WriteString("description: 团队背景与建团编制（始终应用；由创建 Agent 团队写入）\n")
 	b.WriteString("alwaysApply: true\n")
 	b.WriteString("---\n\n")
-	b.WriteString("# 项目上下文 · " + req.PMName + "\n\n")
-	b.WriteString("## 项目背景（建团 Prompt）\n\n")
+	b.WriteString("# 团队上下文 · " + req.PMName + "\n\n")
+	b.WriteString("## 团队背景（建团 Prompt）\n\n")
 	b.WriteString(strings.TrimSpace(req.Background))
 	b.WriteString("\n\n## 编制约定\n\n")
 	b.WriteString("- 命名前缀：`" + req.Prefix + "`\n")

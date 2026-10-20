@@ -107,11 +107,13 @@ All notable public-release changes are documented here.
 - **Single workspace:** removes project selection and project management. The
   compact sidebar lists every workflow without search; workflow search stays on
   the management page. Board, drafts, assistant, and shared configuration have
-  dedicated pages and Settings entries. Existing installations use an offline
-  plan/apply/verify/rollback tool that preserves history and converts differing
-  defaults into ordinary workflow overrides and Agent credential bindings.
-  Project API and external MCP addresses are replaced by workspace endpoints.
-  See [upgrade instructions](server/WORKSPACE_MIGRATION.md) before deployment.
+  dedicated pages and Settings entries. Project APIs, `projectId` parameters
+  and project MCP addresses are removed in favour of workspace endpoints
+  (`/api/workspace`, `/mcp/workspace`); the PM tool is now
+  `pm_list_workspace_agents` and Agent bundles use `workspace.json`.
+  **Breaking:** there is no upgrade path from multi-project releases. The
+  server refuses to start on an old database or data directory; reinstall on
+  an empty database.
 
 - **HTML preview toolbar:** removes the repeated file-information row and puts
   copy and download immediately before the enlarge control. Version selection
