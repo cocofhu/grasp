@@ -70,6 +70,18 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     w.unmount()
   })
 
+  it('keeps an empty workspace model on auto without a follow choice', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
+    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    expect(w.get('[data-testid="cli-model-command"] code').text()).toBe('cursor-agent')
+    w.unmount()
+  })
+
   it('sets the workspace default model, clears it on a backend switch and saves it', async () => {
     mocks.getConfig.mockResolvedValue({ ...cfg, env: { ACP_BRIDGE_MODEL: 'composer-2.5' } })
     const w = mountPanel()
