@@ -11,10 +11,13 @@ const props = withDefaults(
     mode?: 'stage' | 'sidebar'
     /** Gateway lifecycle while inbox starting (e.g. pulling). */
     sandboxPhase?: string | null
+    /** Boot record key (runId:nodeId:iteration) driving the checklist. */
+    bootKey?: string | null
   }>(),
   {
     mode: 'sidebar',
     sandboxPhase: null,
+    bootKey: null,
   },
 )
 
@@ -102,7 +105,7 @@ onMounted(() => {
     <div class="react-connecting-scroller scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="react-connecting-scroller">
       <div class="react-connecting-transcript">
         <div class="react-connecting-turn">
-          <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" />
+          <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" :boot-key="bootKey" />
         </div>
       </div>
     </div>

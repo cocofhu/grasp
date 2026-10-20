@@ -106,6 +106,7 @@
       "acpUnpack.ts",
       "applyLiveWsAcpPage.ts",
       "artifactGroups.ts",
+      "bootRecord.ts",
       "busySeedRetry.ts",
       "canvasLayout.ts",
       "canvasPath.ts",
@@ -223,7 +224,7 @@
     "composables": 18,
     "inbox": 33,
     "pm": 7,
-    "run": 58,
+    "run": 59,
     "shared": 39,
     "workflow": 3,
     "workspace": 5

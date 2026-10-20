@@ -141,6 +141,7 @@ const {
   startFailedActive,
   activeStarting,
   startingSandboxPhase,
+  startingBootKey,
   incomingGhostConfirmInFlight,
   STARTING_POLL_MS,
   STARTING_POLL_MAX_TICKS,
@@ -359,6 +360,7 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               mode="stage"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
             <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
             <ReactArtifactStage
@@ -380,6 +382,7 @@ const listFadeKey = computed(() =>
             <ReactConnectingState
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
             <ReviewComposer
               v-else
@@ -470,6 +473,7 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               mode="stage"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
                 <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
                 <ReactArtifactStage
@@ -491,6 +495,7 @@ const listFadeKey = computed(() =>
                 <ReactConnectingState
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
                 <ReviewComposer
                   v-else

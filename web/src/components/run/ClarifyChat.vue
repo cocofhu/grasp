@@ -6,6 +6,8 @@ import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
+import ClarifyBootLoader from './ClarifyBootLoader.vue'
+import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
@@ -79,6 +81,11 @@ const props = withDefaults(
     seedHumanImages: () => [],
   },
 )
+
+// This node visit's boot (connecting checklist) → one folded row above the first reply.
+const bootRecordKey = computed(() => makeBootKey(props.runId, props.nodeId, props.iteration))
+const bootSummary = computed(() => !!getBootRecord(bootRecordKey.value)?.live)
+const bootSummaryAt = computed(() => displayTurns.value.findIndex((x) => x.role === 'agent'))
 
 /** Live request text written for the agent; the Live card already tells the user. */
 function isLiveCardText(t: ClarifyTurn): boolean {
@@ -721,6 +728,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
+      <ClarifyBootLoader
+        v-if="bootSummary && i === bootSummaryAt"
+        phase="done"
+        variant="inline"
+        :boot-key="bootRecordKey"
+      />
       <div
         v-if="!isEmptyLiveTurn(t)"
         class="clarify-turn flex"
@@ -1349,6 +1362,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </div>
       </template>
+      <ClarifyBootLoader
+        v-if="bootSummary && bootSummaryAt < 0"
+        phase="done"
+        variant="inline"
+        :boot-key="bootRecordKey"
+      />
       <div v-if="thinking && !validating && liveAgentIdx < 0" class="chat-meta flex items-center gap-2 pl-9">
         <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
