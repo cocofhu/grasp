@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { toRefs } from 'vue'
+import { computed, toRefs } from 'vue'
 import { useGateApprovalCtx } from './gateApprovalContext'
 import Icon from '../../ui/Icon.vue'
 import ParagraphInput from '../../ui/ParagraphInput.vue'
@@ -117,6 +117,30 @@ const {
   onSidebarAction,
   renderMarkdown,
 } = s
+
+/**
+ * Cold exit (no live ReAct session) uses the chat composer: the first gate.form
+ * field (e.g.「评审意见」) is the ComposerShell input; any further fields stay
+ * as labelled inputs above it.
+ */
+const coldFormKey = computed(() =>
+  !canReactRevise.value && !shouldHideGateForm.value && gate.value.form?.length ? gate.value.form[0].key : null,
+)
+const labelledFormFields = computed(() => (gate.value.form ?? []).filter((f) => f.key !== coldFormKey.value))
+/** Cold centred column (plain text body like the chat transcript) on desktop, non-fill bodies. */
+const coldColumn = computed(() => !canReactRevise.value && !useFillLayout.value && !isMobile.value)
+/** Same help copy as the hot-path lines, as one footer hint for the cold composer. */
+const coldHint = computed(() => {
+  if (isColdSession.value) return helpColdText.value
+  if (usesPreviewIssues.value && openPreviewIssueCount.value === 0) {
+    return `${t('pages.clarify.confirmFlow')} ${t('pages.gateApproval.helpApproveDetail')} · ${t('pages.reviewComposer.send')} ${helpReviseDetailNoIssuesText.value}`
+  }
+  if (usesPreviewIssues.value && openPreviewIssueCount.value >= 1) return helpReviseWithIssuesText.value
+  if (canEditProducts.value) {
+    return `${t('pages.clarify.confirmFlow')} ${t('pages.gateApproval.helpApproveDetail')} · ${t('pages.reviewComposer.send')} ${t('pages.gateApproval.helpReviseDetail')}`
+  }
+  return ''
+})
 </script>
 
 <template>
@@ -289,7 +313,7 @@ const {
           ref="gateStageEl"
           data-review-annotate-stage
           :class="[
-            useFillLayout ? 'scroll-area min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4' : 'card p-4',
+            useFillLayout ? 'scroll-area min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-4' : coldColumn ? 'mx-auto w-full max-w-[760px] px-1 py-2' : 'card p-4',
             isMobile && !useFillLayout ? 'overflow-x-hidden' : '',
           ]"
         >
@@ -325,11 +349,15 @@ const {
       />
 
       <div
-        class="shrink-0 border-t border-line p-4 safe-area-bottom"
-        :class="isMobile ? 'sticky bottom-0 z-10 bg-surface/95 backdrop-blur' : ''"
+        class="shrink-0 safe-area-bottom"
+        :class="[
+          isMobile ? 'sticky bottom-0 z-10 bg-surface/95 backdrop-blur' : '',
+          canReactRevise ? 'border-t border-line p-4' : isMobile ? 'p-3' : 'mx-auto w-full max-w-[800px] px-4 pb-4 pt-2',
+        ]"
+        data-testid="gate-desktop-footer"
       >
-        <div v-if="gate.form?.length && !shouldHideGateForm" class="mb-3 space-y-3">
-          <div v-for="f in gate.form" :key="f.key">
+        <div v-if="labelledFormFields.length && !shouldHideGateForm" class="mb-3 space-y-3">
+          <div v-for="f in labelledFormFields" :key="f.key">
             <label class="label">{{ f.label }} <span v-if="f.required" class="text-err">*</span></label>
             <ParagraphInput
               v-model:text="formText[f.key]"
@@ -352,6 +380,7 @@ const {
           <Icon name="spinner" :size="14" class="animate-spin text-accent" />
           {{ t('pages.gateApproval.loadingPreviewIssues') }}
         </div>
+        <GateApprovalColdActions v-else-if="!canReactRevise" layout="desktop" :form-key="coldFormKey" :hint="coldHint" />
         <div v-else>
           <p
             v-if="isColdSession"
@@ -389,8 +418,7 @@ const {
             <b class="font-medium text-txt2">{{ t('pages.reviewComposer.send') }}</b>
             {{ t('pages.gateApproval.helpReviseDetail') }}
           </p>
-          <GateApprovalComposer v-if="canReactRevise" class="mb-3" />
-          <GateApprovalColdActions v-else layout="desktop" />
+          <GateApprovalComposer class="mb-3" />
         </div>
       </div>
   </div>

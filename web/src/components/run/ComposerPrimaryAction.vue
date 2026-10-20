@@ -37,7 +37,9 @@ const props = withDefaults(defineProps<{
   testid?: string
   /** Leave a hand-off for the next instance on unmount (the connecting skeleton). */
   handoffOut?: boolean
-}>(), { disabled: false, busy: false, title: undefined, testid: undefined, handoffOut: false })
+  /** Confirm-shaped exits other than 确认并流转 (cold gate: 退回 arrow, in-flight spinner). Default per kind. */
+  icon?: string
+}>(), { disabled: false, busy: false, title: undefined, testid: undefined, handoffOut: false, icon: undefined })
 
 const emit = defineEmits<{ click: [kind: ComposerPrimaryKind] }>()
 const el = ref<HTMLButtonElement | null>(null)
@@ -46,6 +48,9 @@ const el = ref<HTMLButtonElement | null>(null)
 const held = ref<ComposerPrimaryKind | null>(freshHandoff()?.kind ?? null)
 const shownKind = computed<ComposerPrimaryKind>(() => held.value ?? props.kind)
 const shownDisabled = computed(() => held.value != null || props.disabled)
+const iconName = computed(() =>
+  props.icon ?? (shownKind.value === 'stop' ? 'chat-stop' : shownKind.value === 'confirm' ? 'check' : props.busy ? 'spinner' : 'chat-send'),
+)
 
 function reduceMotion(): boolean {
   return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
@@ -92,10 +97,10 @@ onBeforeUnmount(() => {
   >
     <Transition name="composer-primary-icon" mode="out-in">
       <Icon
-        :key="shownKind + (busy ? '-busy' : '')"
-        :name="shownKind === 'stop' ? 'chat-stop' : shownKind === 'confirm' ? 'check' : busy ? 'spinner' : 'chat-send'"
+        :key="shownKind + (busy ? '-busy' : '') + (icon ?? '')"
+        :name="iconName"
         :size="shownKind === 'confirm' ? 13 : shownKind === 'stop' ? 16 : 18"
-        :class="busy && shownKind === 'send' ? 'animate-spin motion-reduce:animate-none' : ''"
+        :class="iconName === 'spinner' ? 'animate-spin motion-reduce:animate-none' : ''"
       />
     </Transition>
     <span v-if="shownKind === 'confirm'">{{ label }}</span>

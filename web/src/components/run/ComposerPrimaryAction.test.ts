@@ -56,3 +56,17 @@ describe('ComposerPrimaryAction', () => {
     expect(next.get('button').attributes('data-kind')).toBe('confirm')
   })
 })
+
+describe('ComposerPrimaryAction icon override', () => {
+  it('uses the icon prop for confirm-shaped exits and spins a spinner', async () => {
+    const { mount } = await import('@vue/test-utils')
+    const { default: C } = await import('./ComposerPrimaryAction.vue')
+    const back = mount(C, { props: { kind: 'confirm', label: '退回修改', icon: 'arrow-left' } })
+    expect(back.find('[data-kind="confirm"]').exists()).toBe(true)
+    expect(back.html()).toContain('退回修改')
+    const spin = mount(C, { props: { kind: 'confirm', label: '批准中…', icon: 'spinner', busy: true } })
+    expect(spin.find('.animate-spin').exists()).toBe(true)
+    const plain = mount(C, { props: { kind: 'confirm', label: '确认并流转' } })
+    expect(plain.find('.animate-spin').exists()).toBe(false)
+  })
+})
