@@ -208,6 +208,11 @@ type Run struct {
 	StartedAt   time.Time                 `json:"startedAt"`
 	DurationSec int                       `json:"durationSec"`
 	CreatedAt   time.Time                 `json:"-"`
+	// LastActivityAt is the latest user/agent activity on the run (node
+	// enter/exit, status change, conversation turns, ACP events — the latter
+	// debounced). nil on rows that predate the column; readers fall back to
+	// started_at / created_at.
+	LastActivityAt *time.Time `gorm:"index" json:"lastActivityAt,omitempty"`
 }
 
 const (
@@ -334,6 +339,12 @@ type StateRun struct {
 	Attempt      int               `json:"attempt"`
 	StartedAt    *time.Time        `json:"startedAt,omitempty"`
 	DurationSec  int               `json:"durationSec"`
+	// Mode is auto (default) or manual. A user takeover flips this visit to
+	// manual for good: the same (run, node, iteration) never returns to auto.
+	// Empty is treated as auto for rows that predate the column.
+	Mode string `gorm:"default:auto" json:"mode,omitempty"`
+	// TakenOverAt is when the user interrupted this auto visit (nil = never).
+	TakenOverAt *time.Time `json:"takenOverAt,omitempty"`
 	// ArtifactBaseRev is each live artifact's revision when this execution
 	// started. A conclusion counts as written on this visit only when the
 	// live revision moves past that baseline. ArtifactBaseSet distinguishes
@@ -456,6 +467,9 @@ type ReactConversation struct {
 	Messages  []ReactMessage `gorm:"serializer:json" json:"turns"`
 	// PreviewArtifact is the artifact name pinned by set_artifact_preview for the ReAct UI.
 	PreviewArtifact string `json:"previewArtifact,omitempty"`
+	// Takeover marks a manual session opened by interrupting an auto visit;
+	// it is driven through the review path regardless of the node's caps.
+	Takeover bool `json:"takeover,omitempty"`
 }
 
 // Turns returns the transcript as a non-nil slice so JSON clients always get [].
@@ -975,3 +989,12 @@ const WorkspaceID = "default"
 
 // DefaultWorkspaceName is the display name of a newly created workspace.
 const DefaultWorkspaceName = "工作区"
+
+// Node visit modes (StateRun.Mode).
+const (
+	NodeModeAuto   = "auto"
+	NodeModeManual = "manual"
+)
+
+// IsManual reports whether this visit was taken over by the user.
+func (s StateRun) IsManual() bool { return s.Mode == NodeModeManual }

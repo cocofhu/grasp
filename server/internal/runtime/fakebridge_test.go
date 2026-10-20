@@ -38,6 +38,9 @@ type turnAction struct {
 	stopReason string
 	// heartbeat sends one {op:liveness} frame before the reply.
 	heartbeat bool
+	// ackCancel (with stall) answers a later {op:cancel} with the stalled
+	// turn's prompt_done, like a real bridge confirming the abort.
+	ackCancel bool
 }
 
 // chatFunc returns the action for the turn-th chat on a given sandbox (0-based).
@@ -55,10 +58,11 @@ type fakeBridge struct {
 	token  string
 	chat   chatFunc
 
-	mu      sync.Mutex
-	turns   int
-	prompts []string // every chat prompt received (for rehydrate-prime assertions)
-	images  []int    // image attachment count per chat turn
+	mu        sync.Mutex
+	stalledOp string // opId of a stalled ackCancel turn awaiting {op:cancel}
+	turns     int
+	prompts   []string // every chat prompt received (for rehydrate-prime assertions)
+	images    []int    // image attachment count per chat turn
 }
 
 var fakeUpgrader = websocket.Upgrader{
@@ -120,7 +124,14 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 		case "connect":
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "fake-session"})
 		case "cancel":
-			// fire-and-forget, no ack
+			// fire-and-forget, no ack — unless a stalled ackCancel turn waits.
+			b.mu.Lock()
+			op := b.stalledOp
+			b.stalledOp = ""
+			b.mu.Unlock()
+			if op != "" {
+				_ = conn.WriteJSON(withOpID(promptDoneFrame(), op))
+			}
 		case "chat":
 			b.mu.Lock()
 			turn := b.turns
@@ -156,6 +167,11 @@ func (b *fakeBridge) applyTurn(conn *websocket.Conn, act turnAction, opID string
 		return true
 	}
 	if act.stall {
+		if act.ackCancel {
+			b.mu.Lock()
+			b.stalledOp = opID
+			b.mu.Unlock()
+		}
 		return true // no frames; the client's idle watchdog trips
 	}
 	for name, content := range act.produces {

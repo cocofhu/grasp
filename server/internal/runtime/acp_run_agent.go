@@ -108,6 +108,16 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			c.deregisterLive(req)
 		}
 	}()
+	// Runs first (LIFO): a user takeover cancels ctx with ErrNodeTakenOver.
+	// Park the still-live session for the manual phase instead of retiring
+	// or discarding it, and report the takeover rather than a chat failure.
+	defer func() {
+		if parked || !errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+			return
+		}
+		parked = c.parkTakenOver(req, sb, acp, home)
+		err = ErrNodeTakenOver
+	}()
 
 	seeded := c.upstreamArtifacts(req)
 	chatCtx, cancel := c.turnCtx(ctx, req)
@@ -593,4 +603,30 @@ func nudgeRetries(req NodeReq, planRounds bool) int {
 		return req.Caps.MaxRounds
 	}
 	return defaultNudgeRetries
+}
+
+// parkTakenOver stops the bridge's in-flight turn and parks the node's live
+// sandbox + ACP session under reactKey, exactly like KeepAliveForReview, so
+// the manual phase continues in the same workspace. It returns false (and the
+// caller retires the sandbox as usual) when the ACP link is already gone; the
+// first manual turn then rehydrates a cold sandbox.
+func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) bool {
+	if sb == nil || acp == nil || !acp.IsConnected() {
+		return false
+	}
+	// The chat loop already cancelled its own turn on ctx done; only chase a
+	// turn the bridge still reports (e.g. cancel not acknowledged).
+	acked := true
+	if st := acp.BridgeState(); st.Busy || st.Desynced {
+		acked = acp.AbortRunning(abortTurnWait)
+	}
+	key := reactKey(req)
+	c.mu.Lock()
+	c.sessions[key] = &reactSession{sb: sb, acp: acp, home: home}
+	c.live[key] = sb
+	delete(c.inflightACP, key)
+	c.mu.Unlock()
+	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Bool("abort_acked", acked).
+		Msg("parked live session after user takeover")
+	return true
 }
