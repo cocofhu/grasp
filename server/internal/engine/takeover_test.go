@@ -200,6 +200,10 @@ func TestTakeoverRunningAutoNodeBecomesManual(t *testing.T) {
 	if !conv.Takeover || conv.Done || len(conv.Messages) == 0 || !strings.Contains(conv.Messages[0].Text, "partial narration") {
 		t.Fatalf("bad takeover conversation: %+v", conv)
 	}
+	// The opening turn continues the auto phase's timeline.
+	if evs := conv.Messages[0].Events; len(evs) != 3 || evs[0].Kind != "thought" || evs[1].Kind != "tool_call" {
+		t.Fatalf("opening turn must carry the auto-phase events: %+v", evs)
+	}
 	env.provider.mu.Lock()
 	parks, calls := env.provider.takeoverParks, env.provider.runAgentCalls["impl"]
 	env.provider.mu.Unlock()

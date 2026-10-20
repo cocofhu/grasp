@@ -188,6 +188,13 @@ func (e *Engine) TakeoverNode(runID, nodeID string, iteration int) (TakeoverResu
 
 	e.autoMu.Lock()
 	ar := e.autoRunsMap()[autoKey(runID, nodeID)]
+	if ar != nil && ar.iter == sr.Iteration && ar.state == autoTaken {
+		// A concurrent request (double click / second tab) already won this
+		// visit's takeover between our pre-lock read and the lock: idempotent.
+		e.autoMu.Unlock()
+		res.Iteration, res.Status, res.State = sr.Iteration, TakeoverStatusAlreadyManual, NodeStateStopping
+		return res, nil
+	}
 	if ar == nil || ar.iter != sr.Iteration || ar.state != autoRunning {
 		e.autoMu.Unlock()
 		return refuse(TakeoverNodeFinishing, "节点正在结算或切换，请刷新后重试")
@@ -202,9 +209,19 @@ func (e *Engine) TakeoverNode(runID, nodeID string, iteration int) (TakeoverResu
 			return res, upd.Error
 		}
 		var again models.StateRun
-		if e.db.First(&again, sr.ID).Error == nil && again.IsManual() {
+		if e.db.First(&again, sr.ID).Error == nil && again.IsManual() &&
+			(again.Status == "running" || again.Status == "waiting_human") {
 			res.Iteration, res.Status, res.State = again.Iteration, TakeoverStatusAlreadyManual, NodeStateStopping
+			if again.Status == "waiting_human" {
+				res.State = NodeStateWaitingHuman
+			}
 			return res, nil
+		}
+		// The CAS lost to a run cancel / failure that settled the visit:
+		// report the terminal run, not a retryable "finishing".
+		if st := e.runStatus(runID); st != "running" && st != "waiting_human" {
+			cur.RunStatus = st
+			return refuse(TakeoverRunNotRunning, "运行未在执行中: "+st)
 		}
 		return refuse(TakeoverNodeFinishing, "节点正在结算或切换，请刷新后重试")
 	}
@@ -245,22 +262,52 @@ func (e *Engine) publishTakeover(runID, nodeID string, iteration int, state stri
 // a paused outcome, so executeFrom parks the run at waiting_human. It never
 // yields failed / retryable, whatever RunAgent returned.
 func (e *Engine) enterTakeover(c *execCtx, node *models.Node, res runtime.NodeResult, runErr error) nodeOutcome {
-	e.seedTakeoverConversation(c.run.ID, node, c.iter[node.ID], res.OutputMd)
+	out := nodeOutcome{status: "paused", outputMd: "已中断自动执行，转人工接管…", outputs: res.Outputs,
+		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel, takeover: true}
+	// The run was cancelled / failed (or this driver lost exec ownership)
+	// while the taken-over agent was unwinding: executeFrom drops this
+	// outcome, so open no manual session and leave the MCP host alone —
+	// finish() already unregistered the run.
+	if st := e.runStatus(c.run.ID); (st != "running" && st != "waiting_human") || !e.isExecOwner(c.run.ID, c.execGen) {
+		log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).Str("run_status", st).
+			Msg("takeover settled after run ended / ownership moved; no manual session")
+		return out
+	}
+	e.seedTakeoverConversation(c.run.ID, node, c.iter[node.ID], res.OutputMd, res.Events)
 	e.applyTakeoverCaps(c, node.ID)
+	e.host.SetActiveNode(c.run.ID, node.ID, c.graph.FindNode(node.ID).Caps)
 	e.host.SetActiveReview(c.run.ID, true)
 	if runErr != nil && !errors.Is(runErr, runtime.ErrNodeTakenOver) {
 		log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).Err(runErr).
 			Msg("takeover won over a RunAgent error; visit stays manual")
 	}
-	return nodeOutcome{status: "paused", outputMd: "已中断自动执行，转人工接管…", outputs: res.Outputs,
-		events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel, takeover: true}
+	return out
+}
+
+// rollbackTakeover undoes enterTakeover's side effects when executeFrom drops
+// the takeover outcome (run cancelled / exec ownership lost in the window
+// after enterTakeover's own check): clear the MCP review phase and close the
+// conversation so no open manual session dangles on a dead visit.
+func (e *Engine) rollbackTakeover(runID, nodeID string, iter int) {
+	e.host.SetActiveReview(runID, false)
+	e.closeTakeoverConversation(runID, nodeID, iter)
+}
+
+// closeTakeoverConversation marks the visit's open Takeover conversation done.
+func (e *Engine) closeTakeoverConversation(runID, nodeID string, iter int) {
+	if iter < 1 {
+		iter = 1
+	}
+	logDB(e.db.Model(&models.ReactConversation{}).
+		Where("run_id = ? AND node_id = ? AND iteration = ? AND takeover = ? AND done = ?", runID, nodeID, iter, true, false).
+		Update("done", true), runID, "close dropped takeover conversation")
 }
 
 const takeoverOpening = "已中断自动执行，本节点转为人工接管（不会再自动执行）。可以继续对话让我修改；确认无误后点「确认并流转」进入下一节点。"
 
 // seedTakeoverConversation creates (or reopens) the visit's Takeover
 // conversation. Idempotent per (run, node, iteration).
-func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter int, narration string) {
+func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter int, narration string, events []models.AcpEvent) {
 	if iter < 1 {
 		iter = 1
 	}
@@ -279,7 +326,7 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 		text = n + "\n\n---\n" + takeoverOpening
 	}
 	conv = models.ReactConversation{RunID: runID, NodeID: node.ID, Iteration: iter, Takeover: true,
-		Messages: []models.ReactMessage{{Role: "agent", Text: text, At: time.Now().Format(time.RFC3339)}}}
+		Messages: []models.ReactMessage{{Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Events: autoPhaseEvents(events)}}}
 	logDB(e.db.Create(&conv), runID, "seed takeover conversation")
 }
 
@@ -299,9 +346,7 @@ func (e *Engine) applyTakeoverCaps(c *execCtx, nodeID string) {
 		return
 	}
 	c.takeoverCaps[nodeID] = node.Caps
-	clone := *node.Caps
-	clone.Review = true
-	node.Caps = &clone
+	node.Caps = models.ManualReviewCaps(node.Caps)
 }
 
 // restoreTakeoverCaps undoes applyTakeoverCaps when a new visit starts: the
@@ -317,8 +362,7 @@ func (e *Engine) restoreTakeoverCaps(c *execCtx, node *models.Node) {
 // visit is a live manual one (loadCtx).
 func (e *Engine) applyManualVisits(c *execCtx, states []models.StateRun) {
 	for _, s := range states {
-		if s.IsManual() && s.Iteration == c.iter[s.NodeID] &&
-			(s.Status == "running" || s.Status == "waiting_human") {
+		if models.ManualVisitLive(s, c.iter[s.NodeID]) {
 			e.applyTakeoverCaps(c, s.NodeID)
 		}
 	}
@@ -341,7 +385,8 @@ func (e *Engine) IsTakeoverVisit(runID, nodeID string) bool {
 func (e *Engine) reconcileManualVisit(run *models.Run, sr models.StateRun) {
 	node := run.Graph.FindNode(sr.NodeID)
 	if node != nil {
-		e.seedTakeoverConversation(run.ID, node, sr.Iteration, "")
+		// Cold restart: continue from the visit's persisted timeline.
+		e.seedTakeoverConversation(run.ID, node, sr.Iteration, "", sr.Events)
 	}
 	logDB(e.db.Model(&models.StateRun{}).Where("id = ?", sr.ID).
 		Updates(map[string]any{"status": "waiting_human", "output_md": "已转人工接管（控制面重启，沙箱需冷启动）"}), run.ID, "reconcile manual visit")
@@ -395,10 +440,18 @@ func (e *Engine) touchActivity(runID string, force bool) {
 	t := e.activity()
 	t.mu.Lock()
 	now := t.now()
-	if last, ok := t.last[runID]; ok && !force && now.Sub(last) < activityDebounce {
+	last, ok := t.last[runID]
+	if ok && !force && now.Sub(last) < activityDebounce {
 		t.mu.Unlock()
 		return
 	}
+	t.mu.Unlock()
+	if !ok && terminalRunStatus(e.runStatus(runID)) {
+		// A late ACP frame / save after finish() forgot the run: neither
+		// stamp a finished run nor re-grow the debounce map for it.
+		return
+	}
+	t.mu.Lock()
 	t.last[runID] = now
 	t.mu.Unlock()
 	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).UpdateColumn("last_activity_at", now), runID, "touch activity")
@@ -426,3 +479,24 @@ func isActivityEvent(events []models.AcpEvent) bool {
 // load-modify-Save of a StateRun omits them so a stale copy loaded before a
 // concurrent takeover can never write mode back to auto.
 var stateRunTakeoverCols = []string{"mode", "taken_over_at"}
+
+func terminalRunStatus(st string) bool {
+	return st == "completed" || st == "failed" || st == "cancelled"
+}
+
+// autoPhaseEvents is the auto phase's timeline as carried on the takeover
+// conversation's opening turn: the aggregated ACP events minus the auto
+// prompt itself (the platform's full agent prompt, not a chat turn).
+func autoPhaseEvents(events []models.AcpEvent) []models.AcpEvent {
+	out := make([]models.AcpEvent, 0, len(events))
+	for _, ev := range events {
+		if ev.Kind == "prompt" {
+			continue
+		}
+		out = append(out, ev)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}

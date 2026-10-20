@@ -507,6 +507,11 @@ type ReactMessage struct {
 	// Live marks a human turn produced by a Live variant request; the chat
 	// renders a Live card for it (state comes from the LiveSession row).
 	Live *LiveRef `json:"live,omitempty"`
+	// Events is the aggregated ACP timeline (thinking, tool calls, messages)
+	// behind this turn when the platform has it. Today only the opening turn
+	// of a takeover conversation carries it: the interrupted auto phase's
+	// timeline, so the chat continues it instead of showing bare narration.
+	Events []AcpEvent `json:"events,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`
@@ -998,3 +1003,25 @@ const (
 
 // IsManual reports whether this visit was taken over by the user.
 func (s StateRun) IsManual() bool { return s.Mode == NodeModeManual }
+
+// ManualVisitLive reports whether sr is a live taken-over visit: manual, the
+// node's latest iteration, and still running (unwinding) or waiting_human.
+// Such a visit is driven through the review path (see ManualReviewCaps).
+func ManualVisitLive(sr StateRun, latestIter int) bool {
+	return sr.IsManual() && sr.Iteration == latestIter &&
+		(sr.Status == "running" || sr.Status == "waiting_human")
+}
+
+// ManualReviewCaps is the effective capability view of a live taken-over
+// visit: a clone with Review=true, so every reader (engine, MCP host, share
+// links, embed) treats the session exactly like a post-run review. It never
+// mutates caps and returns caps unchanged for nil / clarify / already-review.
+// The clone must never be persisted into a run graph.
+func ManualReviewCaps(caps *AgentCapabilities) *AgentCapabilities {
+	if caps == nil || caps.Clarify() || caps.Review {
+		return caps
+	}
+	clone := *caps
+	clone.Review = true
+	return &clone
+}

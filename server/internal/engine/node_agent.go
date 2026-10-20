@@ -43,7 +43,16 @@ func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	req := e.nodeReq(c, node)
 	req.ReattachSandbox, c.reattachSandbox = c.reattachSandbox, ""
 	ctx, ar := e.beginAutoAgent(c, node)
+	settled := false
+	defer func() {
+		// A panicking provider must not leave the visit registered as
+		// takeover-able (nor leak its cancel func).
+		if !settled {
+			e.settleAutoAgent(c.run.ID, node.ID, ar)
+		}
+	}()
 	res, err := e.provider.RunAgent(ctx, req)
+	settled = true
 	if e.settleAutoAgent(c.run.ID, node.ID, ar) {
 		return e.enterTakeover(c, node, res, err)
 	}

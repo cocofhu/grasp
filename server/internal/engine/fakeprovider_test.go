@@ -175,6 +175,8 @@ type fakeProvider struct {
 	runIgnoreCancel bool
 	takeoverParks   int
 	runAgentCalls   map[string]int
+	// runPanic makes RunAgent panic for the node (S7 settle-on-panic test).
+	runPanic map[string]bool
 }
 
 // nextStructuredBody returns the reserved-artifact body to write for nodeID on
@@ -307,6 +309,10 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 		f.runAgentCalls = map[string]int{}
 	}
 	f.runAgentCalls[req.NodeID]++
+	if f.runPanic[req.NodeID] {
+		f.mu.Unlock()
+		panic("fake provider panic")
+	}
 	hold := f.runHold[req.NodeID]
 	started := f.runStarted
 	ignore := f.runIgnoreCancel
@@ -326,7 +332,10 @@ func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runti
 				f.mu.Lock()
 				f.takeoverParks++
 				f.mu.Unlock()
-				return runtime.NodeResult{OutputMd: "partial narration"}, runtime.ErrNodeTakenOver
+				return runtime.NodeResult{OutputMd: "partial narration", Events: []models.AcpEvent{
+					{Kind: "thought", Text: "auto thinking"},
+					{Kind: "tool_call", Title: "edit main.go"},
+					{Kind: "message", Text: "partial narration"}}}, runtime.ErrNodeTakenOver
 			}
 			return runtime.NodeResult{}, ctx.Err()
 		}

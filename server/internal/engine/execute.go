@@ -363,6 +363,10 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			// A new visit always starts in auto, even after a takeover of
 			// the previous one.
 			e.restoreTakeoverCaps(c, node)
+			// …and outside any review phase: a review / takeover session of an
+			// earlier visit (e.g. one dropped by a cancel) must not leak
+			// InReviewPhase into this auto visit. enterReview re-arms it.
+			e.host.SetActiveReview(runID, false)
 			e.refreshReviewFlag(c, node)
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
 			e.startNodeRun(c, node)
@@ -375,6 +379,11 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).
 				Msg("execute stopped: lost exec ownership while node was in flight")
+			if outcome.takeover {
+				// Another driver may own the run now: close only this visit's
+				// conversation, leave the shared MCP flags to that driver.
+				e.closeTakeoverConversation(runID, node.ID, c.iter[node.ID])
+			}
 			e.recordDroppedOutcomeUsage(c, node, outcome, models.TokenLedgerStatusCancelled)
 			return
 		}
@@ -383,6 +392,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "run " + st + " during node; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("status", st).
 				Msg("execute stopped: run became terminal while node was in flight")
+			if outcome.takeover {
+				e.rollbackTakeover(runID, node.ID, c.iter[node.ID])
+			}
 			status := models.TokenLedgerStatusCancelled
 			if st == "failed" {
 				status = models.TokenLedgerStatusFailed

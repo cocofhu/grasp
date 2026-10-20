@@ -70,13 +70,21 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		acp  *sandbox.ACPClient
 		home string
 	)
+	// The sandbox handshake (create / attach / exec / ACP connect) is not
+	// cancelled by a user takeover: a takeover landing mid-handshake would
+	// otherwise make attachSandbox treat the cancelled Connect as a broken
+	// sandbox and destroy the very workspace the takeover means to keep.
+	// The takeover is honoured right after setup (see below). Plain ctx
+	// cancels keep their old behaviour.
+	setupCtx, setupDone := takeoverTolerantCtx(ctx)
+	defer setupDone()
 	if reattach {
 		// Keep the visit's node_complete mark: the agent may have reported it
 		// before the restart (RestoreOutcomeFromArtifact recovers it).
-		sb, acp, err = c.attachSandbox(ctx, req)
+		sb, acp, err = c.attachSandbox(setupCtx, req)
 	} else {
 		c.host.ClearOutcome(req.RunID, req.NodeID)
-		sb, acp, home, err = c.openSandbox(ctx, req)
+		sb, acp, home, err = c.openSandbox(setupCtx, req)
 	}
 	if err != nil {
 		return NodeResult{}, err
@@ -119,6 +127,12 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 		err = ErrNodeTakenOver
 	}()
 
+	// Taken over during setup: park the fresh/attached session (deferred
+	// above) without sending a prompt or chasing the survivor turn.
+	if errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+		return NodeResult{}, ErrNodeTakenOver
+	}
+
 	seeded := c.upstreamArtifacts(req)
 	chatCtx, cancel := c.turnCtx(ctx, req)
 	defer cancel()
@@ -137,7 +151,15 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			keepForDebug = false
 		}
 		absorbChat(&usage, &usageByModel, nil, chatRes)
-		events := c.snapshotEvents(ctx, sb, turnEvents)
+		snapCtx := ctx
+		if errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+			// The takeover cancelled ctx; still read the auto phase's
+			// timeline so the manual conversation can continue it.
+			var stop context.CancelFunc
+			snapCtx, stop = context.WithTimeout(context.WithoutCancel(ctx), takeoverSnapshotWait)
+			defer stop()
+		}
+		events := c.snapshotEvents(snapCtx, sb, turnEvents)
 		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
@@ -622,6 +644,15 @@ func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandb
 	}
 	key := reactKey(req)
 	c.mu.Lock()
+	// AbortRun (run cancel / delete) owns teardown: once it has claimed
+	// this in-flight session (removed it from inflightACP) we must not
+	// resurrect it as a parked session.
+	if c.inflightACP[key] != acp {
+		c.mu.Unlock()
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("takeover park skipped: session already torn down by run abort")
+		return false
+	}
 	c.sessions[key] = &reactSession{sb: sb, acp: acp, home: home}
 	c.live[key] = sb
 	delete(c.inflightACP, key)
@@ -630,3 +661,24 @@ func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandb
 		Msg("parked live session after user takeover")
 	return true
 }
+
+// takeoverTolerantCtx is ctx for the sandbox handshake: it ignores a cancel
+// whose cause is ErrNodeTakenOver but still follows any other cancel (and
+// carries ctx's values). Engine ctxs only ever get cancelled by a takeover
+// today, so in practice this is context.WithoutCancel for that cause.
+func takeoverTolerantCtx(ctx context.Context) (context.Context, func()) {
+	if ctx.Done() == nil {
+		return ctx, func() {}
+	}
+	out, cancel := context.WithCancelCause(context.WithoutCancel(ctx))
+	follow := func() {
+		if !errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
+			cancel(context.Cause(ctx))
+		}
+	}
+	stop := context.AfterFunc(ctx, follow)
+	return out, func() { stop(); cancel(nil) }
+}
+
+// takeoverSnapshotWait bounds the event-log read after a takeover cancel.
+var takeoverSnapshotWait = 5 * time.Second
