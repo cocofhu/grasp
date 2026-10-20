@@ -3138,7 +3138,11 @@
       "queueEditBlocked": "附件过大，无法将当前草稿移入队列后再编辑。请先处理附件。",
       "queueEditLost": "当前草稿已入队，但未能定位要编辑的队列项。请从队列中再次点击铅笔。",
       "queueAttachmentBadge": "附件×{n}",
-      "queueAnnotationBadge": "批注"
+      "queueAnnotationBadge": "批注",
+      "observeInputPlaceholder": "自动运行中，停止后可接管对话",
+      "observeStoppingPlaceholder": "正在停止…",
+      "observeStop": "停止并转人工",
+      "observeStopTitle": "停止自动执行，本节点转为人工接管"
     },
     "reviewComposer": {
       "sendClarify": "发送回复",
@@ -4301,6 +4305,18 @@
       "noMatchingArtifact": "当前结果页没有同名文件。",
       "loading": "正在加载产物…",
       "deletedArtifact": "该产物已删除。"
+    },
+    "runLive": {
+      "loading": "加载运行…",
+      "loadFailed": "加载运行失败",
+      "takeoverFailed": "停止失败：{msg}",
+      "not_auto_node": "该节点不是自动执行节点，无法停止",
+      "node_not_current": "节点已不在执行，已刷新",
+      "node_finishing": "节点正在结束，已刷新",
+      "run_not_running": "运行已不在执行中",
+      "server_halting": "服务正在停机，请稍后重试",
+      "run_not_found": "运行不存在",
+      "node_not_found": "节点不存在"
     }
   }
 }

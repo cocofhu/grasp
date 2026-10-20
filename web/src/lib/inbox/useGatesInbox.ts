@@ -58,6 +58,8 @@ import {
   knownInboxProcessingLock,
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { notifyRecentActivity, runLivePath } from '@/lib/run/recentRuns'
+import { runningAutoNodeId } from '@/lib/run/runLive'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -1402,6 +1404,8 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       return
     }
     if (m.type === 'review') {
+      // Sidebar「最近」has no channel of its own: relay turn boundaries.
+      if (m.event === 'turn_begin' || m.event === 'turn_done' || m.event === 'error') notifyRecentActivity()
       if (m.event === 'turn_begin') clarifyLiveBusy.value = true
       if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
         clarifyLiveBusy.value = !!m.busy
@@ -1435,6 +1439,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
       return
     }
+    if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
     if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
       // Ignore events for runs that no longer match the current pending active item.
       if (!active.value || active.value.runId !== runId) return
@@ -2005,6 +2010,10 @@ async function onClarifySend(
         activeRunLoadError.value = false
       }
       endProcessingIntent(submittedItem)
+      if (finished) notifyRecentActivity()
+      if (finished && submittedItem.type === 'clarify' && submittedItem.takeover) {
+        void followRunAfterTakeoverConfirm(submittedItem.runId, submittedItem.nodeId)
+      }
       if (finished) {
         clarifyConfirmError.value = null
         toast.success(
@@ -2020,7 +2029,35 @@ async function onClarifySend(
   // Ordinary turn enqueue returns before the turn finishes — keep live
   // queue/stream bubbles (clarify + review shared session UX). No force refresh.
   // Optimistic: this page's send is sessionBusy; WS queue_state confirms/clears.
-  if (ok) patchVisibleCardBusy(it.runId, it.nodeId, true)
+  if (ok) {
+    patchVisibleCardBusy(it.runId, it.nodeId, true)
+    notifyRecentActivity()
+  }
+}
+
+/**
+ * A taken-over node was confirmed: the next node starts automatically again.
+ * Follow the run into its live view while the user is still on this page.
+ */
+const FOLLOW_TAKEOVER_TRIES = 12
+const FOLLOW_TAKEOVER_STEP_MS = 500
+async function followRunAfterTakeoverConfirm(runId: string, fromNodeId: string) {
+  for (let i = 0; i < FOLLOW_TAKEOVER_TRIES; i++) {
+    if (route.path !== '/gates') return
+    try {
+      const r = await api.getRun(runId)
+      if (route.path !== '/gates') return
+      const next = runningAutoNodeId(r)
+      if (next && next !== fromNodeId) {
+        await router.push({ path: runLivePath(runId), query: { node: next } })
+        return
+      }
+      if (r.status !== 'running' && r.status !== 'queued') return
+    } catch {
+      /* transient: retry */
+    }
+    await new Promise((resolve) => setTimeout(resolve, FOLLOW_TAKEOVER_STEP_MS))
+  }
 }
 
 // Review: confirm product & advance (same contract as RunDetailView.onClarifyFinish).

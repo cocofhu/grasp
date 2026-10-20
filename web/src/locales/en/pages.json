@@ -3138,7 +3138,11 @@
       "queueEditBlocked": "An attachment is too large to move the current draft onto the queue. Fix attachments first.",
       "queueEditLost": "Draft was queued, but the item to edit could not be found. Click the pencil on the queue row again.",
       "queueAttachmentBadge": "Files×{n}",
-      "queueAnnotationBadge": "Note"
+      "queueAnnotationBadge": "Note",
+      "observeInputPlaceholder": "Running automatically. Stop to take over the chat",
+      "observeStoppingPlaceholder": "Stopping…",
+      "observeStop": "Stop and take over",
+      "observeStopTitle": "Stop the automatic run and take this node over"
     },
     "reviewComposer": {
       "sendClarify": "Send reply",
@@ -4301,6 +4305,18 @@
       "noMatchingArtifact": "There are no files with this exact name on this results page.",
       "loading": "Loading artifact…",
       "deletedArtifact": "This artifact has been deleted."
+    },
+    "runLive": {
+      "loading": "Loading run…",
+      "loadFailed": "Failed to load run",
+      "takeoverFailed": "Stop failed: {msg}",
+      "not_auto_node": "This node is not an automatic node and cannot be stopped",
+      "node_not_current": "The node is no longer running; refreshed",
+      "node_finishing": "The node is finishing; refreshed",
+      "run_not_running": "The run is no longer running",
+      "server_halting": "The server is shutting down. Try again later",
+      "run_not_found": "Run not found",
+      "node_not_found": "Node not found"
     }
   }
 }
