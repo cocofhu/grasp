@@ -697,8 +697,11 @@ describe('ClarifyChat', () => {
     // Same opening hint only as placeholder — not copied into empty-hint / scroller (g2.2).
     expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).toContain('先说明本次要做的目标')
     expect(wrapper.find('[data-testid="clarify-approve-empty-hint"]').text()).not.toContain(openingHint)
-    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).toContain('共 0 条')
-    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain(openingHint)
+    const scroller = wrapper.find('[data-testid="clarify-scroller"]').text()
+    expect(scroller).not.toContain('多轮 ReAct')
+    expect(scroller).not.toContain('共 0 条')
+    expect(scroller).not.toContain('Agent交互')
+    expect(scroller).not.toContain(openingHint)
     wrapper.unmount()
   })
 

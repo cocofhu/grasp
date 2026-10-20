@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "js-yaml": "^4.3.2",
-    "markdown-it": "^14.3.2"
+    "markdown-it": "^14.3.3"
   },
   "engines": {
     "node": ">=20"

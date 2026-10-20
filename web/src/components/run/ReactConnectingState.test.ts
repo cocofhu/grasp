@@ -60,6 +60,9 @@ describe('ReactConnectingState', () => {
     vi.useFakeTimers()
     const wrapper = mountSidebar('zh-CN')
     expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
+    expect(wrapper.text()).not.toContain('多轮 ReAct')
+    expect(wrapper.text()).not.toContain('共 0 条')
+    expect(wrapper.find('icon-stub[name="chat"]').exists()).toBe(false)
     expect(wrapper.get('icon-stub[name="spinner"]').exists()).toBe(true)
     const titles = [
       '正在准备工作环境…',
@@ -87,6 +90,8 @@ describe('ReactConnectingState', () => {
   it('shows the English connecting copy', () => {
     const wrapper = mountSidebar('en')
     expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('Connecting')
+    expect(wrapper.text()).not.toContain('Multi-turn ReAct')
+    expect(wrapper.text()).not.toMatch(/\d+ messages/)
     expect(wrapper.get('[data-testid="react-connecting-input"]').attributes('placeholder')).toContain('Connecting')
   })
 
