@@ -66,6 +66,9 @@ func (e *Engine) RecentTurns(runID string) map[string][]models.AcpEvent {
 // in the sandbox (queried on demand via LiveNodeEvents) and the final snapshot
 // is persisted by saveState — this is purely the live push channel.
 func (e *Engine) publishAcp(runID, nodeID string, events []models.AcpEvent, busy bool) {
+	if isActivityEvent(events) {
+		e.touchActivity(runID, false)
+	}
 	msg, err := json.Marshal(map[string]any{
 		"type": "acp", "runId": runID, "nodeId": nodeID, "events": events, "busy": busy,
 	})
@@ -99,6 +102,7 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 		Iteration: c.iter[node.ID], Status: "running", StartedAt: &now, Attempt: c.run.Attempt,
 		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
 	}), c.run.ID, "startNodeRun")
+	e.touchActivity(c.run.ID, true)
 }
 
 // execCtx is the in-memory execution context, rebuildable from the DB so a
@@ -128,6 +132,9 @@ type execCtx struct {
 	// reattachSandbox is the live sandbox the current node continues in after
 	// a control-plane restart; consumed by the first agent call.
 	reattachSandbox string
+	// takeoverCaps holds the original caps of nodes whose live visit was
+	// taken over (their in-memory caps are a Review=true clone).
+	takeoverCaps map[string]*models.AgentCapabilities
 }
 
 // lockResume serializes resume operations for a given key (runID:nodeID),
@@ -177,6 +184,7 @@ func (e *Engine) loadCtx(runID string) (*execCtx, error) {
 			c.nodeOutputs[s.NodeID] = s.Outputs
 		}
 	}
+	e.applyManualVisits(c, states)
 	e.mu.Lock()
 	c.token = e.tokens[runID]
 	e.mu.Unlock()
@@ -352,6 +360,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				e.snapshotCheckpoint(c, node.ID)
 			}
 			c.iter[node.ID]++
+			// A new visit always starts in auto, even after a takeover of
+			// the previous one.
+			e.restoreTakeoverCaps(c, node)
 			e.refreshReviewFlag(c, node)
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
 			e.startNodeRun(c, node)
@@ -389,7 +400,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 
 			if e.pauseStillPending(runID, node) {
 				if e.finish(runID, "waiting_human") {
-
+					if outcome.takeover {
+						e.publishTakeover(runID, node.ID, c.iter[node.ID], NodeStateWaitingHuman)
+					}
 					e.fireGateAutoInvoke(c, node)
 					e.fireClarifyFirstMessage(c, node)
 					e.fireRunNotify(c, node, models.NotifyKindWaitingHuman)

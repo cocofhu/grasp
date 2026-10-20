@@ -222,7 +222,8 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 	if sr.StartedAt != nil {
 		sr.DurationSec = int(now.Sub(*sr.StartedAt).Seconds())
 	}
-	logDB(e.db.Save(&sr), c.run.ID, "save state_run")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "save state_run")
+	e.touchActivity(c.run.ID, true)
 }
 
 // flushMcpCalls appends the buffered built-in MCP tool-call trace onto a node's
@@ -241,7 +242,7 @@ func (e *Engine) flushMcpCalls(runID, nodeID string) {
 		return
 	}
 	sr.McpCalls = append(sr.McpCalls, calls...)
-	logDB(e.db.Save(&sr), runID, "flush mcp calls")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "flush mcp calls")
 }
 
 // flushTokenUsage merges a react mid-turn token delta onto the latest StateRun
@@ -267,7 +268,7 @@ func (e *Engine) flushTokenUsage(runID, nodeID string, delta *models.TokenUsage,
 	})
 	sr.Usage = models.AddTokenUsage(sr.Usage, delta)
 	sr.UsageByModel = models.AddTokenUsageByModel(sr.UsageByModel, byModel)
-	logDB(e.db.Save(&sr), runID, "flush token usage")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "flush token usage")
 }
 
 // recordTokenUsage appends a workflow usage delta to the token ledger.

@@ -822,6 +822,9 @@ func (e *Engine) publishReview(runID, nodeID, event string, extra map[string]any
 // run-detail / inbox surfaces (which switch on review/acp) never mix them into
 // the node's own dialogue; only the public share filter unwraps them.
 func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[string]any) {
+	if lane == "" {
+		e.touchActivity(runID, false)
+	}
 	payload := map[string]any{
 		"type": "review", "runId": runID, "nodeId": nodeID, "event": event,
 	}
