@@ -87,6 +87,10 @@ func (c *sharedSandboxCoordinator) managed(runID string) bool {
 // first creator has connected or failed, then reuse the resulting container
 // when its fingerprint equals theirs; otherwise errSharedSandboxIncompatible is
 // returned without waiting for the lease.
+// sharedAcquireWaitHook, when set (tests only), runs when acquire starts
+// waiting for another caller's create.
+var sharedAcquireWaitHook func(runID string)
+
 func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID, fingerprint string, create func() (sharedCreateResult, error)) (*sharedLease, error) {
 	if c == nil || strings.TrimSpace(runID) == "" {
 		return nil, errors.New("共享沙箱需要 run_id")
@@ -150,6 +154,9 @@ func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID, fingerpri
 			return nil, errors.New("运行已结束，共享沙箱不可用")
 		}
 	} else {
+		if sharedAcquireWaitHook != nil {
+			sharedAcquireWaitHook(runID)
+		}
 		select {
 		case <-ready:
 		case <-ctx.Done():
@@ -157,9 +164,16 @@ func (c *sharedSandboxCoordinator) acquire(ctx context.Context, runID, fingerpri
 		}
 		c.mu.Lock()
 		ok := entry.sb != nil && !entry.finalized
+		terminal := entry.finalized || c.terminal[runID]
 		c.mu.Unlock()
 		if !ok {
-			return nil, errors.New("共享沙箱不可用")
+			if terminal {
+				return nil, errors.New("运行已结束，共享沙箱不可用")
+			}
+			// The creator's create() failed (its node gets that error).
+			// The entry is gone, so this waiter becomes the next creator
+			// instead of failing with an error that is not its own.
+			return c.acquire(ctx, runID, fingerprint, create)
 		}
 	}
 	c.mu.Lock()
