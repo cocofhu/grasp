@@ -16,7 +16,7 @@ func TestAuditMaskAndRecord(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectAuditService(db)
+	s := NewAuditService(db)
 
 	masked := MaskAuditPayload(map[string]any{
 		"API_TOKEN": "super-secret",
@@ -35,11 +35,10 @@ func TestAuditMaskAndRecord(t *testing.T) {
 	}
 
 	s.Record(AuditRecord{
-		ProjectID:    "proj-a",
 		Actor:        ActorFromUsername("alice"),
-		Action:       models.AuditActionProjectConfig,
-		ResourceType: "project",
-		ResourceID:   "proj-a",
+		Action:       models.AuditActionWorkspaceConfig,
+		ResourceType: "workspace",
+		ResourceID:   "workspace",
 		Outcome:      models.AuditOutcomeOK,
 		Summary:      "update vars",
 		Payload: map[string]any{
@@ -48,7 +47,6 @@ func TestAuditMaskAndRecord(t *testing.T) {
 		},
 	})
 	s.Record(AuditRecord{
-		ProjectID:    "proj-a",
 		Actor:        SystemActor(),
 		Action:       models.AuditActionRunStart,
 		ResourceType: "run",
@@ -57,27 +55,15 @@ func TestAuditMaskAndRecord(t *testing.T) {
 		Summary:      "cron start",
 		Payload:      map[string]any{"trigger": "cron"},
 	})
-	s.Record(AuditRecord{
-		ProjectID:    "proj-b",
-		Actor:        ActorFromUsername("bob"),
-		Action:       models.AuditActionProjectConfig,
-		ResourceType: "project",
-		ResourceID:   "proj-b",
-		Outcome:      models.AuditOutcomeOK,
-		Summary:      "other project",
-	})
 
-	items, total, err := s.ListPage(AuditListFilter{ProjectID: "proj-a", Page: 1, PageSize: 20})
+	items, total, err := s.ListPage(AuditListFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if total != 2 || len(items) != 2 {
-		t.Fatalf("proj-a isolation: total=%d len=%d", total, len(items))
+		t.Fatalf("list: total=%d len=%d", total, len(items))
 	}
 	for _, ev := range items {
-		if ev.ProjectID != "proj-a" {
-			t.Fatalf("leaked project %s", ev.ProjectID)
-		}
 		raw, _ := json.Marshal(ev.Payload)
 		if strings.Contains(string(raw), "should-mask") || strings.Contains(string(raw), "super-secret") {
 			t.Fatalf("plaintext secret in payload: %s", raw)
@@ -85,13 +71,13 @@ func TestAuditMaskAndRecord(t *testing.T) {
 		if ev.Action == models.AuditActionRunStart && !ev.Unattributable {
 			t.Fatalf("system actor should be unattributable: %#v", ev)
 		}
-		if ev.Action == models.AuditActionProjectConfig && (ev.Actor != "alice" || ev.Unattributable) {
+		if ev.Action == models.AuditActionWorkspaceConfig && (ev.Actor != "alice" || ev.Unattributable) {
 			t.Fatalf("alice attribution: %#v", ev)
 		}
 	}
 
 	from := time.Now().Add(-1 * time.Hour)
-	_, total24, err := s.ListPage(AuditListFilter{ProjectID: "proj-a", From: &from, Page: 1, PageSize: 20})
+	_, total24, err := s.ListPage(AuditListFilter{From: &from, Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,12 +92,12 @@ func TestAuditMaskAndRecord(t *testing.T) {
 }
 
 func TestFormatAuditText(t *testing.T) {
-	txt := FormatAuditText([]models.ProjectAuditEvent{{
-		Actor: "alice", Action: "project.config", ResourceType: "project", ResourceID: "p1",
+	txt := FormatAuditText([]models.AuditEvent{{
+		Actor: "alice", Action: "workspace.config", ResourceType: "workspace", ResourceID: "workspace",
 		Outcome: "ok", Summary: "upd", OccurredAt: time.Now(),
 		Payload: map[string]any{"token": SecretMask},
 	}})
-	if !strings.Contains(txt, "alice") || !strings.Contains(txt, "project.config") {
+	if !strings.Contains(txt, "alice") || !strings.Contains(txt, "workspace.config") {
 		t.Fatalf("text export missing fields: %s", txt)
 	}
 }
@@ -121,30 +107,25 @@ func TestListFacetsRunsAndResources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectAuditService(db)
+	s := NewAuditService(db)
 
 	s.Record(AuditRecord{
-		ProjectID: "proj-f", Actor: ActorFromUsername("alice"),
+		Actor:  ActorFromUsername("alice"),
 		Action: models.AuditActionRunStart, ResourceType: "run", ResourceID: "run-1",
 		RunID: "run-1", Outcome: models.AuditOutcomeOK, Summary: "start",
 	})
 	s.Record(AuditRecord{
-		ProjectID: "proj-f", Actor: ActorFromUsername("alice"),
+		Actor:  ActorFromUsername("alice"),
 		Action: models.AuditActionRunCancel, ResourceType: "run", ResourceID: "run-1",
 		RunID: "run-1", Outcome: models.AuditOutcomeOK, Summary: "cancel",
 	})
 	s.Record(AuditRecord{
-		ProjectID: "proj-f", Actor: ActorFromUsername("bob"),
+		Actor:  ActorFromUsername("bob"),
 		Action: models.AuditActionMCPCall, ResourceType: "mcp", ResourceID: "tool.a",
 		RunID: "run-1", NodeID: "research", Outcome: models.AuditOutcomeOK, Summary: "mcp",
 	})
-	s.Record(AuditRecord{
-		ProjectID: "proj-other", Actor: ActorFromUsername("carol"),
-		Action: models.AuditActionRunStart, ResourceType: "run", ResourceID: "run-x",
-		RunID: "run-x", Outcome: models.AuditOutcomeOK, Summary: "other",
-	})
 
-	facets, err := s.ListFacets(AuditListFilter{ProjectID: "proj-f"})
+	facets, err := s.ListFacets(AuditListFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +137,7 @@ func TestListFacetsRunsAndResources(t *testing.T) {
 		t.Fatalf("resources want 2 got %#v", facets.Resources)
 	}
 
-	scoped, err := s.ListFacets(AuditListFilter{ProjectID: "proj-f", RunID: "run-1"})
+	scoped, err := s.ListFacets(AuditListFilter{RunID: "run-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,31 +154,31 @@ func TestListFilterByRunIDIncludesMCP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectAuditService(db)
+	s := NewAuditService(db)
 
 	s.Record(AuditRecord{
-		ProjectID: "p", Actor: SystemActor(),
+		Actor:  SystemActor(),
 		Action: models.AuditActionRunStart, ResourceType: "run", ResourceID: "run-a",
 		RunID: "run-a", Outcome: models.AuditOutcomeOK, Summary: "start",
 	})
 	s.Record(AuditRecord{
-		ProjectID: "p", Actor: SystemActor(),
+		Actor:  SystemActor(),
 		Action: models.AuditActionMCPCall, ResourceType: "mcp", ResourceID: "read_artifact",
 		RunID: "run-a", NodeID: "research", Outcome: models.AuditOutcomeOK, Summary: "mcp read",
 	})
 	s.Record(AuditRecord{
-		ProjectID: "p", Actor: SystemActor(),
+		Actor:  SystemActor(),
 		Action: models.AuditActionMCPCall, ResourceType: "mcp", ResourceID: "other",
 		RunID: "run-b", Outcome: models.AuditOutcomeOK, Summary: "other run mcp",
 	})
-	// Project-level MCP without runId must not appear under selected run.
+	// Workspace-level MCP without runId must not appear under selected run.
 	s.Record(AuditRecord{
-		ProjectID: "p", Actor: SystemActor(),
+		Actor:  SystemActor(),
 		Action: models.AuditActionMCPCall, ResourceType: "mcp", ResourceID: "list_artifacts",
-		Outcome: models.AuditOutcomeOK, Summary: "project mcp",
+		Outcome: models.AuditOutcomeOK, Summary: "workspace mcp",
 	})
 
-	items, total, err := s.ListPage(AuditListFilter{ProjectID: "p", RunID: "run-a", Page: 1, PageSize: 50})
+	items, total, err := s.ListPage(AuditListFilter{RunID: "run-a", Page: 1, PageSize: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +201,7 @@ func TestListFilterByRunIDIncludesMCP(t *testing.T) {
 		t.Fatal("expected mcp.call in run-a list")
 	}
 
-	stats, err := s.CountStats(AuditListFilter{ProjectID: "p", RunID: "run-a"})
+	stats, err := s.CountStats(AuditListFilter{RunID: "run-a"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +210,7 @@ func TestListFilterByRunIDIncludesMCP(t *testing.T) {
 	}
 
 	narrowed, nTotal, err := s.ListPage(AuditListFilter{
-		ProjectID: "p", RunID: "run-a", Resource: "mcp/read_artifact", Page: 1, PageSize: 20,
+		RunID: "run-a", Resource: "mcp/read_artifact", Page: 1, PageSize: 20,
 	})
 	if err != nil {
 		t.Fatal(err)

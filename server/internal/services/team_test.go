@@ -26,15 +26,15 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+	if err := db.Create(&models.Workspace{ID: models.WorkspaceID, Name: models.DefaultWorkspaceName}).Error; err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
+	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, pm, nil)
+	team := NewTeamService(workspace, skills, pm, nil)
 	setCredentialKey(t)
 	team.SharedAgent = NewSharedAgentService(filepath.Join(root, "shared"))
-	team.Credentials = NewProjectCredentialService(db)
+	team.Credentials = NewCredentialService(db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		Prefix:     "Demo",
@@ -94,14 +94,11 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	if !ok {
 		t.Fatalf("missing %s", impl)
 	}
-	if ag.ProjectID != cur.ProjectID {
-		t.Fatalf("projectId=%s want %s", ag.ProjectID, cur.ProjectID)
-	}
 	if len(ag.MCP) == 0 || ag.MCP[0].Name != "artifact-store" {
 		t.Fatalf("mcp=%+v", ag.MCP)
 	}
-	if !strings.Contains(ctx, "pm_list_project_agents") || strings.Contains(ctx, "组") {
-		t.Fatalf("project-context should describe project members only: %q", ctx)
+	if !strings.Contains(ctx, "pm_list_workspace_agents") || strings.Contains(ctx, "组") {
+		t.Fatalf("project-context should describe workspace members only: %q", ctx)
 	}
 	for _, r := range cur.Resources {
 		if r.Kind != "workspace" && r.Kind != "agent" {
@@ -165,21 +162,16 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+	if err := db.Create(&models.Workspace{ID: models.WorkspaceID, Name: models.DefaultWorkspaceName}).Error; err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
+	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, pm, nil)
+	team := NewTeamService(workspace, skills, pm, nil)
 
-	p, err := projects.CreateFixture("P1", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
 	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
 		TemplateID: "implement",
 		Name:       "X实现工程师",
-		ProjectID:  p.ID,
 		AcpBackend: "cursor",
 		MCP:        DefaultPlatformMCP(),
 	})
@@ -189,65 +181,10 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
 		TemplateID: "implement",
 		Name:       "X实现工程师",
-		ProjectID:  p.ID,
 		AcpBackend: "cursor",
 	})
 	if !errors.Is(err, ErrTeamAgentConflict) {
 		t.Fatalf("want conflict, got %v", err)
-	}
-}
-
-func TestCreateAgentFromTemplate_SessionScopeDenied(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open("file:team_scope_session_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.AutoMigrate(models.AllModels()...); err != nil {
-		t.Fatal(err)
-	}
-	root := t.TempDir()
-	skills := NewAgentService(filepath.Join(root, "profiles"))
-	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
-		t.Fatal(err)
-	}
-	projects := NewProjectService(db)
-	pm := NewPmService(db, skills)
-	team := NewTeamService(projects, skills, pm, nil)
-
-	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix:     "Sc",
-		PMName:     "Sc项目经理",
-		Background: "scope test",
-		AcpBackend: "cursor",
-		MCP:        DefaultPlatformMCP(),
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var cur TeamBootstrapSession
-	for i := 0; i < 80; i++ {
-		cur, err = team.GetSession(sess.ID)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if cur.Status == "ready" || cur.Status == "failed" {
-			break
-		}
-		time.Sleep(25 * time.Millisecond)
-	}
-	if cur.Status != "ready" {
-		t.Fatalf("status=%s err=%s", cur.Status, cur.Error)
-	}
-
-	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
-		SessionID:  cur.ID,
-		TemplateID: "implement",
-		Name:       "Other实现工程师",
-		ProjectID:  "not-" + cur.ProjectID,
-		AcpBackend: "cursor",
-	})
-	if !errors.Is(err, ErrTeamScopeDenied) {
-		t.Fatalf("want project mismatch, got %v", err)
 	}
 }
 
@@ -259,7 +196,7 @@ type fakeTeamSandbox struct {
 	mu        sync.Mutex
 }
 
-func (f *fakeTeamSandbox) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec, projectID string) (*models.Sandbox, error) {
+func (f *fakeTeamSandbox) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error) {
 	if f.openErr != nil {
 		return nil, f.openErr
 	}
@@ -290,10 +227,10 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+	if err := db.Create(&models.Workspace{ID: models.WorkspaceID, Name: models.DefaultWorkspaceName}).Error; err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
+	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
 
 	fake := &fakeTeamSandbox{
@@ -305,7 +242,7 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 			{Sandbox: models.Sandbox{ID: 42, Status: "running"}},
 		},
 	}
-	team := NewTeamService(projects, skills, pm, fake)
+	team := NewTeamService(workspace, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		Prefix:     "Pu",
@@ -367,10 +304,10 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
-	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+	if err := db.Create(&models.Workspace{ID: models.WorkspaceID, Name: models.DefaultWorkspaceName}).Error; err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
+	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
 
 	fake := &fakeTeamSandbox{
@@ -380,7 +317,7 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 			{Sandbox: models.Sandbox{ID: 7, Status: "error", Error: "pull denied"}},
 		},
 	}
-	team := NewTeamService(projects, skills, pm, fake)
+	team := NewTeamService(workspace, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
 		Prefix:     "Er",

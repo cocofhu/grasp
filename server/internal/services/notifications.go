@@ -201,7 +201,7 @@ func (s *NotificationService) MarkAllRead(username string) error {
 }
 
 func (s *NotificationService) buildEnrichedList(username string, enabledAt time.Time) ([]notificationEnriched, error) {
-	runs := s.runs.List([]string{"completed", "failed"}, "", "", "started_at", "desc")
+	runs := s.runs.List([]string{"completed", "failed"}, "", "started_at", "desc")
 	ids := make([]string, 0, len(runs))
 	enriched := make([]notificationEnriched, 0, len(runs))
 	for _, r := range runs {

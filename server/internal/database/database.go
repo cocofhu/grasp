@@ -1,9 +1,9 @@
 // Package database opens the configured store (SQLite or MySQL), runs
-// migrations, and creates the default project on an empty database.
+// migrations, and seeds the singleton workspace.
 package database
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -205,79 +205,53 @@ func gormConfig() *gorm.Config {
 	return &gorm.Config{Logger: logger.Default.LogMode(logger.Silent)}
 }
 
+// ErrLegacySchema reports a database or data directory created by a release
+// that still had multi-project storage. There is no upgrade path.
+var ErrLegacySchema = errors.New("检测到旧版数据库，请使用空库重新安装")
+
+// legacyTables are tables only the project-era schema created.
+var legacyTables = []string{"projects", "project_credentials", "project_audit_events", "project_memory_items", "project_external_mcp_settings", "project_mcp_api_keys"}
+
 // finalize runs the shared post-open steps (migrate + initial seed) for any driver.
 func finalize(db *gorm.DB, profilesRoot ...string) (*gorm.DB, error) {
-	workspaceID := ""
-	if db.Migrator().HasTable(&models.Project{}) {
-		var n int64
-		if err := db.Model(&models.Project{}).Count(&n).Error; err != nil {
-			return nil, err
-		}
-		if n > 1 {
-			return nil, fmt.Errorf("workspace migration required: %d projects; run workspace-migrate offline", n)
-		}
-		if n == 1 {
-			var p models.Project
-			if err := db.First(&p).Error; err != nil {
-				return nil, err
-			}
-			workspaceID = p.ID
-		}
-	}
-	if len(profilesRoot) > 0 {
-		if err := checkWorkspaceFiles(profilesRoot[0], workspaceID); err != nil {
-			return nil, err
-		}
+	if err := checkLegacy(db, profilesRoot...); err != nil {
+		return nil, err
 	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return nil, err
 	}
 	createChannelIndexes(db)
-	if err := ensureDefaultProject(db); err != nil {
+	if err := ensureWorkspace(db); err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-// Inspect identity metadata before schema/seed mutations. Shared-only or corrupt
-// file installations must not be mistaken for a new, empty workspace.
-func checkWorkspaceFiles(profilesRoot, workspaceID string) error {
-	for _, root := range []string{profilesRoot, filepath.Join(filepath.Dir(profilesRoot), "project-shared")} {
-		entries, err := os.ReadDir(root)
-		if err != nil && !os.IsNotExist(err) {
-			return err
+// checkLegacy refuses to start on a project-era database or data directory.
+func checkLegacy(db *gorm.DB, profilesRoot ...string) error {
+	m := db.Migrator()
+	for _, t := range legacyTables {
+		if m.HasTable(t) {
+			return fmt.Errorf("%w (found table %s)", ErrLegacySchema, t)
 		}
-		for _, e := range entries {
-			if !e.IsDir() {
-				continue
-			}
-			if workspaceID == "" {
-				return fmt.Errorf("workspace migration required: configuration files exist without a workspace")
-			}
-			if root != profilesRoot {
-				if e.Name() != workspaceID {
-					return fmt.Errorf("workspace migration required: shared configuration belongs to a missing workspace")
-				}
-				continue
-			}
-			body, err := os.ReadFile(filepath.Join(root, e.Name(), "agent.json"))
-			if err != nil {
-				return fmt.Errorf("workspace migration required: unreadable Agent identity %q", e.Name())
-			}
-			var identity struct {
-				ProjectID string `json:"projectId"`
-			}
-			if json.Unmarshal(body, &identity) != nil || strings.TrimSpace(identity.ProjectID) != workspaceID {
-				return fmt.Errorf("workspace migration required: Agent %q has no valid workspace identity", e.Name())
-			}
+	}
+	for _, model := range models.AllModels() {
+		if m.HasTable(model) && m.HasColumn(model, "project_id") {
+			return fmt.Errorf("%w (found column project_id)", ErrLegacySchema)
+		}
+	}
+	if len(profilesRoot) > 0 && profilesRoot[0] != "" {
+		legacyShared := filepath.Join(filepath.Dir(profilesRoot[0]), "project-shared")
+		if _, err := os.Stat(legacyShared); err == nil {
+			return fmt.Errorf("%w (found directory %s)", ErrLegacySchema, legacyShared)
 		}
 	}
 	return nil
 }
 
 // createChannelIndexes adds the multi-channel uniqueness constraints that GORM
-// tags cannot express portably: at most one primary channel per project and
-// at most one channel per non-empty agent_name.
+// tags cannot express portably: at most one primary channel and at most one
+// channel per non-empty agent_name.
 func createChannelIndexes(db *gorm.DB) {
 	switch db.Dialector.Name() {
 	case "mysql":
@@ -286,70 +260,25 @@ func createChannelIndexes(db *gorm.DB) {
 		// Errors (index already exists) are ignored; ChannelConfigService also
 		// enforces both rules inside its transactions.
 		_ = db.Exec(`CREATE UNIQUE INDEX udx_channel_configs_primary ON channel_configs
-			((CASE WHEN is_primary = 1 THEN project_id ELSE NULL END))`).Error
+			((CASE WHEN is_primary = 1 THEN 1 ELSE NULL END))`).Error
 		_ = db.Exec(`CREATE UNIQUE INDEX udx_channel_configs_agent_name ON channel_configs
 			((CASE WHEN agent_name IS NOT NULL AND agent_name != '' THEN agent_name ELSE NULL END))`).Error
 	default:
 		_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS udx_channel_configs_agent_name
 			ON channel_configs (agent_name) WHERE agent_name != '' AND agent_name IS NOT NULL`).Error
 		_ = db.Exec(`CREATE UNIQUE INDEX IF NOT EXISTS udx_channel_configs_primary
-			ON channel_configs (project_id) WHERE is_primary = 1`).Error
+			ON channel_configs (is_primary) WHERE is_primary = 1`).Error
 	}
 }
 
-// ensureDefaultProject seeds the sole workspace only on an empty installation.
-func ensureDefaultProject(db *gorm.DB) error {
-	var count int64
-	if err := db.Model(&models.Project{}).Count(&count).Error; err != nil {
-		return err
-	}
-	if count > 1 {
-		return fmt.Errorf("workspace migration required: found %d projects; run workspace-migrate offline", count)
-	}
-	if count == 1 {
-		var p models.Project
-		if err := db.First(&p).Error; err != nil {
-			return err
-		}
-		for _, model := range []any{&models.WorkflowDef{}, &models.ProjectCredential{}, &models.Artifact{}, &models.ProjectMemoryItem{}, &models.ChatThread{}, &models.AgentCronJob{}, &models.ChannelConfig{}, &models.RequirementDraft{}, &models.ProjectExternalMcpSettings{}} {
-			var n int64
-			if err := db.Model(model).Where("project_id IS NULL OR project_id <> ?", p.ID).Count(&n).Error; err != nil {
-				return err
-			}
-			if n != 0 {
-				return fmt.Errorf("workspace migration required: active resources reference a missing workspace")
-			}
-		}
-		var n int64
-		if err := db.Model(&models.Sandbox{}).Where("project_id <> '' AND project_id <> ?", p.ID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n > 0 {
-			return fmt.Errorf("workspace migration required: sandbox references a missing workspace")
-		}
-		if err := db.Model(&models.ProjectMcpApiKey{}).Where("revoked_at IS NULL AND project_id <> ?", p.ID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n > 0 {
-			return fmt.Errorf("workspace migration required: active API key references a missing workspace")
-		}
-		return nil
-	}
-	for _, model := range []any{&models.WorkflowDef{}, &models.ProjectCredential{}, &models.Artifact{}, &models.Sandbox{}, &models.ProjectMemoryItem{}, &models.ChatThread{}, &models.AgentCronJob{}, &models.ChannelConfig{}, &models.RequirementDraft{}, &models.ProjectExternalMcpSettings{}, &models.ProjectMcpApiKey{}, &models.ProjectAuditEvent{}, &models.TokenUsageEvent{}} {
-		var n int64
-		if err := db.Model(model).Count(&n).Error; err != nil {
-			return err
-		}
-		if n != 0 {
-			return fmt.Errorf("workspace migration required: resources exist without a workspace")
-		}
-	}
+// ensureWorkspace seeds the singleton workspace row.
+func ensureWorkspace(db *gorm.DB) error {
 	now := time.Now()
-	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Project{
-		ID:           models.DefaultProjectID,
-		Name:         models.DefaultProjectName,
-		Variables:    []models.ProjectVariable{},
-		NotifyPolicy: models.DefaultProjectNotifyPolicy(),
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Workspace{
+		ID:           models.WorkspaceID,
+		Name:         models.DefaultWorkspaceName,
+		Variables:    []models.WorkspaceVariable{},
+		NotifyPolicy: models.DefaultWorkspaceNotifyPolicy(),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}).Error

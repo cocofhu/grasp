@@ -13,15 +13,15 @@ func TestPmThreadAvailabilityFollowsOriginalAgentAndPreservesHistory(t *testing.
 	agents := NewAgentService(t.TempDir())
 	pm := NewPmService(db, agents)
 	for _, name := range []string{"original", "new-default"} {
-		if err := agents.Save(Agent{Name: name, ProjectID: models.DefaultProjectID, AcpBackend: AcpBackendCursor}); err != nil {
+		if err := agents.Save(Agent{Name: name, AcpBackend: AcpBackendCursor}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	enabled, current := true, "new-default"
-	if _, err := pm.UpdateBinding(models.DefaultProjectID, &enabled, &current, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&enabled, &current, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	thread, err := pm.CreateThread(models.DefaultProjectID, "alice", "Retained conversation", "original", models.ChatThreadKindUser)
+	thread, err := pm.CreateThread("alice", "Retained conversation", "original", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,10 +31,10 @@ func TestPmThreadAvailabilityFollowsOriginalAgentAndPreservesHistory(t *testing.
 	if err = agents.Delete(current); err != nil {
 		t.Fatal(err)
 	}
-	if _, err = pm.RequireEnabled(models.DefaultProjectID); !errors.Is(err, ErrPmLeaderAgentMissing) {
+	if _, err = pm.RequireEnabled(); !errors.Is(err, ErrPmLeaderAgentMissing) {
 		t.Fatalf("new threads require the default Agent: %v", err)
 	}
-	if _, err = pm.RequireSendEnabled(models.DefaultProjectID); err != nil {
+	if _, err = pm.RequireSendEnabled(); err != nil {
 		t.Fatal("missing default blocked existing thread", err)
 	}
 	view := pm.ThreadView(thread)
@@ -44,7 +44,7 @@ func TestPmThreadAvailabilityFollowsOriginalAgentAndPreservesHistory(t *testing.
 	if err = agents.Delete("original"); err != nil {
 		t.Fatal(err)
 	}
-	threads, err := pm.ListThreads(models.DefaultProjectID, "alice")
+	threads, err := pm.ListThreads("alice")
 	if err != nil || len(threads) != 1 {
 		t.Fatalf("history disappeared: %+v %v", threads, err)
 	}
@@ -56,34 +56,31 @@ func TestPmThreadAvailabilityFollowsOriginalAgentAndPreservesHistory(t *testing.
 	if err != nil || len(messages) != 1 || messages[0].Content != "Retained reply" {
 		t.Fatalf("message history lost: %+v %v", messages, err)
 	}
-	if _, err = pm.GetThread(models.DefaultProjectID, thread.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
+	if _, err = pm.GetThread(thread.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
 		t.Fatal("availability bypassed owner permission", err)
 	}
-	if err = agents.Save(Agent{Name: "original", ProjectID: models.DefaultProjectID, AcpBackend: AcpBackendCursor}); err != nil {
+	if err = agents.Save(Agent{Name: "original", AcpBackend: AcpBackendCursor}); err != nil {
 		t.Fatal(err)
 	}
 	if !pm.ThreadViews(threads)[0].AgentAvailable {
 		t.Fatal("repaired Agent remained unavailable")
 	}
 	enabled = false
-	if _, err = pm.UpdateBinding(models.DefaultProjectID, &enabled, nil, nil, nil, nil); err != nil {
+	if _, err = pm.UpdateBinding(&enabled, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !pm.ThreadView(thread).AgentAvailable {
 		t.Fatal("send switch changed Agent existence")
 	}
-	if _, err = pm.RequireSendEnabled(models.DefaultProjectID); !errors.Is(err, ErrPmLeaderDisabled) {
+	if _, err = pm.RequireSendEnabled(); !errors.Is(err, ErrPmLeaderDisabled) {
 		t.Fatal("send switch bypassed", err)
 	}
 }
 
-func TestPmThreadAvailabilityFailsClosedWithoutMatchingAgentIdentity(t *testing.T) {
+func TestPmThreadAvailabilityFailsClosedWithoutAgent(t *testing.T) {
 	pm := NewPmService(newTestDB(t), NewAgentService(t.TempDir()))
-	if err := pm.skills.Save(Agent{Name: "foreign", ProjectID: "another", AcpBackend: AcpBackendCursor}); err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"", "missing", "foreign"} {
-		view := pm.ThreadView(models.ChatThread{AgentName: name, ProjectID: models.DefaultProjectID})
+	for _, name := range []string{"", "missing"} {
+		view := pm.ThreadView(models.ChatThread{AgentName: name})
 		if view.AgentAvailable || view.AgentError == "" {
 			t.Fatalf("unavailable identity=%+v", view)
 		}

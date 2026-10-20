@@ -7,7 +7,7 @@ import (
 )
 
 func TestApplyAgentCredentialChoiceUsesOnlyTheSelectedRow(t *testing.T) {
-	resolve := func(_, id string) (string, string, bool) {
+	resolve := func(id string) (string, string, bool) {
 		switch id {
 		case "work":
 			return "GRASP_CURSOR_API_KEY", "work-key", true
@@ -19,7 +19,7 @@ func TestApplyAgentCredentialChoiceUsesOnlyTheSelectedRow(t *testing.T) {
 	}
 	env := map[string]string{"GRASP_CURSOR_API_KEY": "other", "GITHUB_TOKEN": "other"}
 	creds := map[string]string{"GRASP_CURSOR_API_KEY": "other", "GITHUB_TOKEN": "other"}
-	ApplyAgentCredentialChoice(env, creds, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:        "cursor",
 		AiCredentialID: "work",
 	}, resolve)
@@ -30,7 +30,7 @@ func TestApplyAgentCredentialChoiceUsesOnlyTheSelectedRow(t *testing.T) {
 		t.Fatal("unselected git key changed")
 	}
 
-	ApplyAgentCredentialChoice(env, creds, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:        "cursor",
 		AiCredentialID: "missing",
 	}, resolve)
@@ -38,7 +38,7 @@ func TestApplyAgentCredentialChoiceUsesOnlyTheSelectedRow(t *testing.T) {
 		t.Fatal("missing selection fell back to another cursor key")
 	}
 
-	ApplyAgentCredentialChoice(env, creds, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:           "cursor",
 		GitCredentialType: "github_https",
 		GitCredentialID:   "gh",
@@ -51,19 +51,19 @@ func TestApplyAgentCredentialChoiceUsesOnlyTheSelectedRow(t *testing.T) {
 	}
 }
 
-func TestEmptySelectionDropsKeyWhenProjectCredsOmitIt(t *testing.T) {
-	resolve := func(_, _ string) (string, string, bool) { return "", "", false }
+func TestEmptySelectionDropsKeyWhenWorkspaceCredsOmitIt(t *testing.T) {
+	resolve := func(string) (string, string, bool) { return "", "", false }
 	env := map[string]string{"GRASP_CURSOR_API_KEY": "builtin-key"}
-	ApplyAgentCredentialChoice(env, map[string]string{}, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, map[string]string{}, AgentCredentialChoice{
 		Backend: "cursor",
 	}, resolve)
 	if _, ok := env["GRASP_CURSOR_API_KEY"]; ok {
-		t.Fatal("empty selection kept a cursor key that project credentials no longer provide")
+		t.Fatal("empty selection kept a cursor key that workspace credentials no longer provide")
 	}
 
 	env = map[string]string{"GRASP_CURSOR_API_KEY": "only-slot"}
 	creds := map[string]string{"GRASP_CURSOR_API_KEY": "only-slot"}
-	ApplyAgentCredentialChoice(env, creds, "p", AgentCredentialChoice{Backend: "cursor"}, resolve)
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{Backend: "cursor"}, resolve)
 	if env["GRASP_CURSOR_API_KEY"] != "only-slot" {
 		t.Fatalf("single slot was cleared: %v", env)
 	}
@@ -157,10 +157,10 @@ func TestMismatchedOrEmptySharedIDKeepsEmptySelection(t *testing.T) {
 	ai, _ := MergeCodingCredentialIDs("claude_code", "", "", "shared-cursor", "", kind)
 	env := map[string]string{envauth.EnvClaudeAPIKey: "only-claude"}
 	creds := map[string]string{envauth.EnvClaudeAPIKey: "only-claude"}
-	ApplyAgentCredentialChoice(env, creds, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:        "claude_code",
 		AiCredentialID: ai,
-	}, func(_, id string) (string, string, bool) {
+	}, func(id string) (string, string, bool) {
 		if id == "shared-cursor" {
 			return envauth.EnvCursorAPIKey, "cursor-secret", true
 		}
@@ -176,20 +176,20 @@ func TestMismatchedOrEmptySharedIDKeepsEmptySelection(t *testing.T) {
 	ai, _ = MergeCodingCredentialIDs("cursor", "", "", "gone", "", kind)
 	stale := map[string]string{envauth.EnvCursorAPIKey: "only-cursor"}
 	staleCreds := map[string]string{envauth.EnvCursorAPIKey: "only-cursor"}
-	ApplyAgentCredentialChoice(stale, staleCreds, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(stale, staleCreds, AgentCredentialChoice{
 		Backend:        "cursor",
 		AiCredentialID: ai,
-	}, func(_, _ string) (string, string, bool) { return "", "", false })
+	}, func(string) (string, string, bool) { return "", "", false })
 	if stale[envauth.EnvCursorAPIKey] != "only-cursor" {
 		t.Fatalf("stale shared id cleared the single slot: %v", stale)
 	}
 
 	ai, _ = MergeCodingCredentialIDs("cursor", "", "", "", "", kind)
 	many := map[string]string{envauth.EnvCursorAPIKey: "other-alias"}
-	ApplyAgentCredentialChoice(many, map[string]string{}, "p", AgentCredentialChoice{
+	ApplyAgentCredentialChoice(many, map[string]string{}, AgentCredentialChoice{
 		Backend:        "cursor",
 		AiCredentialID: ai,
-	}, func(_, id string) (string, string, bool) {
+	}, func(id string) (string, string, bool) {
 		if id == "other" {
 			return envauth.EnvCursorAPIKey, "other-alias", true
 		}

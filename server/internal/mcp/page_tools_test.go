@@ -139,7 +139,7 @@ func TestPageClickValidatesArgs(t *testing.T) {
 func TestPageInputTextNotRecorded(t *testing.T) {
 	h, tok, b := pageHost(t, capsClarify, true)
 	var audited map[string]any
-	h.SetProjectAuditHook(func(_, _, _ string, args map[string]any, _ string, _ bool) { audited = args })
+	h.SetAuditHook(func(_, _, _ string, args map[string]any, _ string, _ bool) { audited = args })
 	call(t, h, "r1", tok, `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"page_input","arguments":{"index":0,"state_id":"p1:3","text":"hunter2"}}}`)
 	if b.calls[0].Args["text"] != "hunter2" {
 		t.Fatal("page must receive the text")

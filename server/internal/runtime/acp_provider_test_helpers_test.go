@@ -5,7 +5,7 @@ import (
 	"github.com/cocofhu/grasp/internal/mcp"
 )
 
-// testAuthCredentials holds a fake project credential for every ACP backend.
+// testAuthCredentials holds a fake workspace credential for every ACP backend.
 var testAuthCredentials = map[string]string{
 	envauth.EnvCursorAPIKey:    "fake",
 	envauth.EnvClaudeAPIKey:    "fake",
@@ -14,16 +14,16 @@ var testAuthCredentials = map[string]string{
 	envauth.EnvOpenCodeAPIKey:  "fake",
 }
 
-// withTestCredentials supplies testAuthCredentials as project credentials
+// withTestCredentials supplies testAuthCredentials as workspace credentials
 // unless the test configured its own.
 func withTestCredentials(opts Options) Options {
-	if opts.ProjectCredentialsForProject == nil {
-		opts.ProjectCredentialsForProject = testCredentials
+	if opts.Credentials == nil {
+		opts.Credentials = testCredentials
 	}
 	return opts
 }
 
-func testCredentials(string) map[string]string {
+func testCredentials() map[string]string {
 	out := make(map[string]string, len(testAuthCredentials))
 	for k, v := range testAuthCredentials {
 		out[k] = v

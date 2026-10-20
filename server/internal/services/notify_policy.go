@@ -7,18 +7,18 @@ import (
 )
 
 // ResolveNotifyEvents returns the effective event set for a workflow under a
-// project policy. Aligns with Demo page.html resolveEvents:
+// workspace policy. Aligns with Demo page.html resolveEvents:
 //
 //	enabled=false → empty (hard close)
 //	mode=off      → empty
 //	mode=custom   → workflow events (may be empty)
-//	inherit/else  → project defaultEvents
+//	inherit/else  → workspace defaultEvents
 //
 // waiting_human, failed, and completed may be delivered when present in the
 // resolved set; unknown kinds are stripped. DefaultEvents still default to
 // waiting_human+failed (completed is opt-in).
-func ResolveNotifyEvents(project models.ProjectNotifyPolicy, workflow models.WorkflowNotifyPolicy) []string {
-	if !project.IsEnabled() {
+func ResolveNotifyEvents(ws models.WorkspaceNotifyPolicy, workflow models.WorkflowNotifyPolicy) []string {
+	if !ws.IsEnabled() {
 		return nil
 	}
 	var raw []string
@@ -28,7 +28,7 @@ func ResolveNotifyEvents(project models.ProjectNotifyPolicy, workflow models.Wor
 	case models.NotifyModeCustom:
 		raw = append([]string(nil), workflow.Events...)
 	default: // inherit
-		raw = project.EffectiveDefaultEvents()
+		raw = ws.EffectiveDefaultEvents()
 	}
 	return filterP0NotifyEvents(raw)
 }
@@ -59,14 +59,14 @@ func filterP0NotifyEvents(in []string) []string {
 	return out
 }
 
-// NormalizeProjectNotifyPolicy sanitizes a project policy for persistence.
+// NormalizeWorkspaceNotifyPolicy sanitizes a workspace policy for persistence.
 // Nil Enabled defaults to true; nil DefaultEvents defaults to waiting_human+failed
 // (completed is not added automatically). Known kinds including completed may be
 // stored; unknown kinds are stripped. Template fields: whitespace-only is trimmed
 // to ""; empty is NOT rewritten to the default QQ body.
 // ChannelIDs is the explicit target list, de-duped & trimmed; nil is stored as
 // empty ("deliver to none").
-func NormalizeProjectNotifyPolicy(p models.ProjectNotifyPolicy) models.ProjectNotifyPolicy {
+func NormalizeWorkspaceNotifyPolicy(p models.WorkspaceNotifyPolicy) models.WorkspaceNotifyPolicy {
 	if p.Enabled == nil {
 		on := true
 		p.Enabled = &on

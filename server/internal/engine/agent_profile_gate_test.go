@@ -10,12 +10,12 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-func TestCheckAgentProfileProject(t *testing.T) {
+func TestCheckAgentProfile(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "skill-gate.db"))
 	if err != nil {
 		t.Fatalf("db: %v", err)
 	}
-	wf := models.WorkflowDef{ID: "wf-sp", ProjectID: models.DefaultProjectID, Name: "SP", Graph: models.Graph{}}
+	wf := models.WorkflowDef{ID: "wf-sp", Name: "SP", Graph: models.Graph{}}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("wf: %v", err)
 	}
@@ -25,11 +25,8 @@ func TestCheckAgentProfileProject(t *testing.T) {
 	}
 
 	skills := services.NewAgentService(t.TempDir())
-	if err := skills.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "ok", ProjectID: models.DefaultProjectID}); err != nil {
+	if err := skills.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "ok"}); err != nil {
 		t.Fatalf("save ok: %v", err)
-	}
-	if err := skills.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "foreign", ProjectID: "other"}); err != nil {
-		t.Fatalf("save foreign: %v", err)
 	}
 
 	// Minimal engine — avoid New() which requires a non-nil MCP host.
@@ -38,28 +35,21 @@ func TestCheckAgentProfileProject(t *testing.T) {
 
 	t.Run("empty skipped", func(t *testing.T) {
 		n := &models.Node{ID: "n", Label: "空", Config: map[string]any{"agent_profile": ""}}
-		if err := eng.checkAgentProfileProject(c, n); err != nil {
+		if err := eng.checkAgentProfile(c, n); err != nil {
 			t.Fatalf("unexpected: %v", err)
 		}
 	})
 
-	t.Run("same project ok", func(t *testing.T) {
+	t.Run("existing agent ok", func(t *testing.T) {
 		n := &models.Node{ID: "n", Label: "实现", Config: map[string]any{"agent_profile": "ok"}}
-		if err := eng.checkAgentProfileProject(c, n); err != nil {
+		if err := eng.checkAgentProfile(c, n); err != nil {
 			t.Fatalf("unexpected: %v", err)
-		}
-	})
-
-	t.Run("foreign allowed for shared extend", func(t *testing.T) {
-		n := &models.Node{ID: "n", Label: "执行 Agent", Config: map[string]any{"agent_profile": "foreign"}}
-		if err := eng.checkAgentProfileProject(c, n); err != nil {
-			t.Fatalf("foreign agent referenced by workflow should pass: %v", err)
 		}
 	})
 
 	t.Run("deleted", func(t *testing.T) {
 		n := &models.Node{ID: "n", Label: "N", Config: map[string]any{"agent_profile": "ghost"}}
-		err := eng.checkAgentProfileProject(c, n)
+		err := eng.checkAgentProfile(c, n)
 		if err == nil || !strings.Contains(err.Error(), "已删除") {
 			t.Fatalf("got %v", err)
 		}
@@ -68,7 +58,7 @@ func TestCheckAgentProfileProject(t *testing.T) {
 	t.Run("nil skills skipped", func(t *testing.T) {
 		eng2 := &Engine{db: db, skills: nil}
 		n := &models.Node{ID: "n", Label: "N", Config: map[string]any{"agent_profile": "ghost"}}
-		if err := eng2.checkAgentProfileProject(c, n); err != nil {
+		if err := eng2.checkAgentProfile(c, n); err != nil {
 			t.Fatalf("unexpected: %v", err)
 		}
 	})

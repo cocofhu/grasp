@@ -3,8 +3,6 @@ package handlers_test
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 // TestPatchWorkflowNotifyPolicyOnly covers review v1: notify-only PATCH must
@@ -14,7 +12,7 @@ func TestPatchWorkflowNotifyPolicyOnly(t *testing.T) {
 	h := newHarness(t)
 
 	body := map[string]any{
-		"name": "NotifyOnly", "projectId": models.DefaultProjectID, "description": "v1",
+		"name": "NotifyOnly", "description": "v1",
 		"nodes": []map[string]any{
 			{
 				"id": "in", "type": "input", "label": "Start",

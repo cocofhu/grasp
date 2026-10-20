@@ -8,10 +8,7 @@ func TestCredentialBindingsDoNotFallBackAndPreserveUnboundDefaults(t *testing.T)
 	wrong := "other-kind"
 	env := map[string]string{"CUSTOM": "default", "DISABLED": "default", "REVOKED": "default", "WRONG": "default", "INHERITED": "keep", "GRASP_RUN_ID": "workspace"}
 	creds := map[string]string{"CUSTOM": "default", "DISABLED": "default", "REVOKED": "default", "WRONG": "default"}
-	ApplyCredentialBindings(env, creds, "workspace", map[string]*string{"CUSTOM": &good, "DISABLED": nil, "REVOKED": &bad, "WRONG": &wrong, "GRASP_RUN_ID": &good}, func(pid, id string) (string, string, bool) {
-		if pid != "workspace" {
-			t.Fatal("wrong workspace")
-		}
+	ApplyCredentialBindings(env, creds, map[string]*string{"CUSTOM": &good, "DISABLED": nil, "REVOKED": &bad, "WRONG": &wrong, "GRASP_RUN_ID": &good}, func(id string) (string, string, bool) {
 		switch id {
 		case good:
 			return "CUSTOM", "selected", true
@@ -34,10 +31,10 @@ func TestCredentialBindingsDoNotFallBackAndPreserveUnboundDefaults(t *testing.T)
 }
 
 func TestCredentialWriteBackIdentityFollowsSelectionWithoutFallback(t *testing.T) {
-	resolve := func(projectID, id string) (string, string, bool) {
-		return "CODEX_LOGIN", "injected", projectID == "workspace" && id == "selected"
+	resolve := func(id string) (string, string, bool) {
+		return "CODEX_LOGIN", "injected", id == "selected"
 	}
-	inherited := func(_, _, _ string) string { return "default" }
+	inherited := func(_, _ string) string { return "default" }
 	selected, stale := "selected", "revoked"
 	for _, tc := range []struct {
 		name     string
@@ -53,7 +50,7 @@ func TestCredentialWriteBackIdentityFollowsSelectionWithoutFallback(t *testing.T
 		{"revoked binding", "selected", map[string]*string{"CODEX_LOGIN": &stale}, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := CredentialIDForWriteBack("workspace", "CODEX_LOGIN", "injected", tc.choice, tc.bindings, resolve, inherited)
+			got := CredentialIDForWriteBack("CODEX_LOGIN", "injected", tc.choice, tc.bindings, resolve, inherited)
 			if got != tc.want {
 				t.Fatalf("identity=%q want %q", got, tc.want)
 			}

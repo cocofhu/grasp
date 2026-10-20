@@ -132,20 +132,11 @@ func (c *acpProvider) agentConfig(profile string) agentFile {
 	return f
 }
 
-// projectIDForReq resolves the extend source project for a workflow node.
-func (c *acpProvider) projectIDForReq(req NodeReq) string {
-	if c.opts.ProjectIDForWorkflow == nil || req.WorkflowID == "" {
-		return ""
-	}
-	return strings.TrimSpace(c.opts.ProjectIDForWorkflow(req.WorkflowID))
-}
-
 func (c *acpProvider) sharedView(req NodeReq) (SharedAgentView, bool) {
-	pid := c.projectIDForReq(req)
-	if pid == "" || c.opts.SharedAgentForProject == nil {
+	if req.WorkflowID == "" || c.opts.SharedAgent == nil {
 		return SharedAgentView{}, false
 	}
-	return c.opts.SharedAgentForProject(pid), true
+	return c.opts.SharedAgent(), true
 }
 
 func (c *acpProvider) sharedWorkDir(req NodeReq) string {
@@ -162,15 +153,15 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	if !ok {
 		return agent
 	}
-	return overlayAgentFile(shared, agent, c.credentialKind(c.projectIDForReq(req)))
+	return overlayAgentFile(shared, agent, c.credentialKind())
 }
 
-func (c *acpProvider) credentialKind(projectID string) CredentialKindFunc {
-	if c == nil || c.opts.SelectedCredentialForProject == nil || strings.TrimSpace(projectID) == "" {
+func (c *acpProvider) credentialKind() CredentialKindFunc {
+	if c == nil || c.opts.SelectedCredential == nil {
 		return nil
 	}
 	return func(id string) (string, bool) {
-		key, _, ok := c.opts.SelectedCredentialForProject(projectID, id)
+		key, _, ok := c.opts.SelectedCredential(id)
 		return key, ok
 	}
 }
@@ -230,18 +221,18 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 // The name is used only to gate the convention doc rule and as the UI default.
 const reservedArtifactStore = "artifact-store"
 
-// gitToken resolves GITLAB_TOKEN from project credentials. It gates optional
+// gitToken resolves GITLAB_TOKEN from workspace credentials. It gates optional
 // MR creation; empty means "no credentials, skip MR".
 func (c *acpProvider) gitToken(req NodeReq) string {
-	return c.projectCredential(req, envauth.EnvGitLabToken)
+	return c.workspaceCredential(envauth.EnvGitLabToken)
 }
 
 // gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. The
-// project credential wins; otherwise derive from the node's repo URL only when
+// workspace credential wins; otherwise derive from the node's repo URL only when
 // GITLAB_TOKEN is configured and the repo is not GitHub (avoids a misconfigured
 // token on GitHub).
 func (c *acpProvider) gitLabURL(req NodeReq) string {
-	if v := c.projectCredential(req, "GITLAB_URL"); v != "" {
+	if v := c.workspaceCredential("GITLAB_URL"); v != "" {
 		return v
 	}
 	repo := c.nodeRepoURL(req)
@@ -255,11 +246,11 @@ func (c *acpProvider) gitLabURL(req NodeReq) string {
 	return ""
 }
 
-func (c *acpProvider) projectCredential(req NodeReq, key string) string {
-	if c.opts.ProjectCredentialsForProject == nil {
+func (c *acpProvider) workspaceCredential(key string) string {
+	if c.opts.Credentials == nil {
 		return ""
 	}
-	return strings.TrimSpace(c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))[key])
+	return strings.TrimSpace(c.opts.Credentials()[key])
 }
 
 // mcpVars are the run-scoped template variables substituted into the Agent's
@@ -293,9 +284,8 @@ func (c *acpProvider) templateVars(req NodeReq) map[string]string {
 	// Credential references are available only to user-authored MCP templates;
 	// they are intentionally kept out of mcpVars so they cannot become global
 	// sandbox environment keys.
-	if c.opts.ProjectCredentialReferences != nil {
-		pid := c.projectIDForReq(req)
-		for k, v := range c.opts.ProjectCredentialReferences(pid) {
+	if c.opts.CredentialReferences != nil {
+		for k, v := range c.opts.CredentialReferences() {
 			if _, exists := base[k]; !exists {
 				base[k] = v
 			}

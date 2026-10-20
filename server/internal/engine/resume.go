@@ -155,37 +155,34 @@ func (e *Engine) resumeGateLocked(runID, nodeID, action string, form map[string]
 	e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "exit"})
 	log.Info().Str("run_id", runID).Str("node_id", nodeID).Str("transition", "resume").Msg("gate resumed")
 
-	// Project audit: gate decision with real Session actor when provided.
-	if projectID := services.ResolveProjectIDForRun(e.db, runID); projectID != "" {
-		rec := services.AuditRecord{
-			ProjectID:    projectID,
-			Actor:        services.ActorFromUsername(reviewer),
-			Action:       models.AuditActionGateDecide,
-			ResourceType: "gate",
-			ResourceID:   nodeID,
-			RunID:        runID,
-			NodeID:       nodeID,
-			Outcome:      models.AuditOutcomeOK,
-			Summary:      "gate " + action,
-			Payload: map[string]any{
-				"runId":  runID,
-				"action": action,
-				"nodeId": nodeID,
-				"form":   form,
-			},
-		}
-		if opts.callerKind != "" {
-			rec.CallerKind = opts.callerKind
-			if opts.externalName != "" {
-				rec.Payload["externalName"] = opts.externalName
-			}
-			rec.Payload["external"] = true
-			if opts.callerKind == models.CallerKindExternal {
-				rec.Summary = "external gate " + action
-			}
-		}
-		e.recordAudit(rec)
+	// Audit: gate decision with real Session actor when provided.
+	rec := services.AuditRecord{
+		Actor:        services.ActorFromUsername(reviewer),
+		Action:       models.AuditActionGateDecide,
+		ResourceType: "gate",
+		ResourceID:   nodeID,
+		RunID:        runID,
+		NodeID:       nodeID,
+		Outcome:      models.AuditOutcomeOK,
+		Summary:      "gate " + action,
+		Payload: map[string]any{
+			"runId":  runID,
+			"action": action,
+			"nodeId": nodeID,
+			"form":   form,
+		},
 	}
+	if opts.callerKind != "" {
+		rec.CallerKind = opts.callerKind
+		if opts.externalName != "" {
+			rec.Payload["externalName"] = opts.externalName
+		}
+		rec.Payload["external"] = true
+		if opts.callerKind == models.CallerKindExternal {
+			rec.Summary = "external gate " + action
+		}
+	}
+	e.recordAudit(rec)
 
 	e.recordGateFeedback(c, node, gate, action, form, reviewer, opts)
 
@@ -463,7 +460,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	if node == nil || (!node.Caps.Clarify() && !isReviewNode(node)) {
 		return errors.New("react node not found")
 	}
-	if err := e.checkAgentProfileProject(c, node); err != nil {
+	if err := e.checkAgentProfile(c, node); err != nil {
 		return err
 	}
 	// Reply to the LATEST conversation for this node (highest iteration): a

@@ -8,7 +8,7 @@
 // Precedence: explicit env > config file > code defaults.
 // High-sensitivity secrets (e.g. gateway_api_key) should be injected via K8s
 // Secret env overrides, not ConfigMap / image. ACP and Git host credentials
-// are not platform config; they live in project credentials.
+// are not platform config; they live in workspace credentials.
 package config
 
 import (
@@ -362,12 +362,12 @@ func parse(path string) (*Config, error) {
 }
 
 // rejectSandboxSecretEnv keeps credentials out of platform-wide sandbox env:
-// they are injected per project from project credentials only.
+// they are injected from workspace credentials only.
 func rejectSandboxSecretEnv(c *Config) error {
 	for field, env := range map[string]map[string]string{"sandbox.env": c.Sandbox.Env, "sandbox.acp_env": c.Sandbox.AcpEnv} {
 		for k := range env {
 			if envauth.IsSecretEnvKey(k) {
-				return fmt.Errorf("%s: %s must be configured as a project credential", field, k)
+				return fmt.Errorf("%s: %s must be configured as a workspace credential", field, k)
 			}
 		}
 	}

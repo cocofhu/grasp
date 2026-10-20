@@ -210,21 +210,17 @@ func (e *Engine) finish(runID, status string) bool {
 		case "cancelled":
 			action = models.AuditActionRunCancelled
 		}
-		projectID := services.ResolveProjectIDForRun(e.db, runID)
-		if projectID != "" {
-			e.recordAudit(services.AuditRecord{
-				ProjectID:    projectID,
-				Actor:        services.SystemActor(),
-				CallerKind:   models.CallerKindSystem,
-				Action:       action,
-				ResourceType: "run",
-				ResourceID:   runID,
-				RunID:        runID,
-				Outcome:      models.AuditOutcomeOK,
-				Summary:      "run " + status,
-				Payload:      map[string]any{"status": status, "trigger": "engine", "runId": runID},
-			})
-		}
+		e.recordAudit(services.AuditRecord{
+			Actor:        services.SystemActor(),
+			CallerKind:   models.CallerKindSystem,
+			Action:       action,
+			ResourceType: "run",
+			ResourceID:   runID,
+			RunID:        runID,
+			Outcome:      models.AuditOutcomeOK,
+			Summary:      "run " + status,
+			Payload:      map[string]any{"status": status, "trigger": "engine", "runId": runID},
+		})
 	}
 	msg, _ := json.Marshal(map[string]any{"type": "status", "runId": runID, "status": status})
 	e.broker.Publish(runID, msg)

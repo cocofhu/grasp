@@ -5,34 +5,21 @@ import (
 	"errors"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestWorkspaceCatalogAndHistoricalAuditHaveNoProjectFilter(t *testing.T) {
+func TestWorkspaceCatalogHidesGraphAndSecrets(t *testing.T) {
 	h := newHarness(t)
 	if response := h.do("GET", "/api/workspace/token-stats", nil); response.Code != 404 {
 		t.Fatalf("removed board analytics endpoint = %d", response.Code)
 	}
-	if err := h.db.Create(&models.WorkflowDef{ID: "catalog", ProjectID: models.DefaultProjectID, Name: "Unsaved graph", Version: 2, PublishedVersion: 1, Graph: models.Graph{Variables: []models.Variable{{Name: "sensitive", Value: "never-in-catalog"}}}, Defaults: &models.WorkflowDefaults{Variables: []models.ProjectVariable{{Name: "token", Secret: true, Value: "never-in-catalog"}}}}).Error; err != nil {
+	if err := h.db.Create(&models.WorkflowDef{ID: "catalog", Name: "Unsaved graph", Version: 2, PublishedVersion: 1, Graph: models.Graph{Variables: []models.Variable{{Name: "sensitive", Value: "never-in-catalog"}}}, Defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "token", Secret: true, Value: "never-in-catalog"}}}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	w := h.do("GET", "/api/workflows/catalog", nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"status":"draft"`) || strings.Contains(w.Body.String(), "never-in-catalog") || strings.Contains(w.Body.String(), `"nodes"`) || strings.Contains(w.Body.String(), `"defaults"`) {
 		t.Fatalf("catalog=%d %s", w.Code, w.Body)
-	}
-	if err := h.db.Create(&models.ProjectAuditEvent{ProjectID: "deleted-origin", Actor: "admin", Action: "migration-history", CreatedAt: time.Now()}).Error; err != nil {
-		t.Fatal(err)
-	}
-	w = h.do("GET", "/api/workspace/audit?time=all", nil)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), "deleted-origin") {
-		t.Fatalf("historical origin hidden: %d %s", w.Code, w.Body)
-	}
-	for _, path := range []string{"/api/workflows/catalog?projectId=foreign", "/api/workspace?projectId=" + models.DefaultProjectID + "&projectId=foreign"} {
-		if w = h.do("GET", path, nil); w.Code != 400 {
-			t.Fatalf("foreign scope=%d %s", w.Code, w.Body)
-		}
 	}
 }
 
@@ -63,7 +50,7 @@ func TestWorkspaceMaintenanceReportsPendingDrain(t *testing.T) {
 
 func TestWorkflowDefaultsSecretFlagCannotRevealStoredValue(t *testing.T) {
 	h := newHarness(t)
-	wf := models.WorkflowDef{ID: "secret-defaults", ProjectID: models.DefaultProjectID, Name: "Private defaults", Version: 1, Defaults: &models.WorkflowDefaults{Variables: []models.ProjectVariable{{Name: "TOKEN", Secret: true, Value: "private-original-token"}}}}
+	wf := models.WorkflowDef{ID: "secret-defaults", Name: "Private defaults", Version: 1, Defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true, Value: "private-original-token"}}}}
 	if err := h.db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}

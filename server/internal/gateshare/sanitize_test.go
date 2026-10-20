@@ -168,7 +168,6 @@ func TestSanitizeUpstreamKeepsThesisWithoutRunID(t *testing.T) {
 		"summary":"把临时页做成审批工作台",
 		"goals":["三区布局","ReAct 复审"],
 		"runId":"run-secret",
-		"projectId":"p1",
 		"url":"http://127.0.0.1/api/blobs/x"
 	}`
 	up := SanitizeUpstream("clarified_requirement.json", raw)
@@ -186,7 +185,7 @@ func TestSanitizeUpstreamKeepsThesisWithoutRunID(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(b)
-	if strings.Contains(s, "run-secret") || strings.Contains(s, "127.0.0.1") || strings.Contains(s, "projectId") {
+	if strings.Contains(s, "run-secret") || strings.Contains(s, "127.0.0.1") {
 		t.Fatalf("upstream leak: %s", s)
 	}
 }

@@ -25,11 +25,11 @@ func TestRunListPage(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	page, total, err := s.ListPage(nil, "wf", "", 1, 2)
+	page, total, err := s.ListPage(nil, "wf", 1, 2)
 	if err != nil || total != 3 || len(page) != 2 {
 		t.Fatalf("page=%d total=%d err=%v", len(page), total, err)
 	}
-	page2, total2, err := s.ListPage(nil, "wf", "", 2, 2)
+	page2, total2, err := s.ListPage(nil, "wf", 2, 2)
 	if err != nil || total2 != 3 || len(page2) != 1 {
 		t.Fatalf("page2=%d total2=%d err=%v", len(page2), total2, err)
 	}
@@ -53,7 +53,7 @@ func TestRunListPageReportsDBError(t *testing.T) {
 	if err := sqlDB.Close(); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.ListPage(nil, "", "", 1, 20); err == nil {
+	if _, _, err := s.ListPage(nil, "", 1, 20); err == nil {
 		t.Fatal("expected error from closed database")
 	}
 	if err := s.Ping(context.Background()); err == nil {

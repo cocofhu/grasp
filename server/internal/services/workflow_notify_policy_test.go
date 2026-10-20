@@ -16,7 +16,6 @@ func TestUpdateNotifyPolicyDoesNotDemotePublished(t *testing.T) {
 
 	wf := models.WorkflowDef{
 		ID:               "wf-notify-only",
-		ProjectID:        models.DefaultProjectID,
 		Name:             "SelfIter",
 		Version:          3,
 		PublishedVersion: 3,

@@ -66,8 +66,8 @@ func (s *DashboardService) PlatformStatus(ctx context.Context, q PlatformStatusQ
 	// Cheap counts always fresh; today-token path may hit cache.
 	running, queued := s.countRunStatuses()
 	var cumulative *int64
-	if s.projects != nil {
-		cumulative = s.projects.PlatformTokenBreakdown().Total
+	if s.workspace != nil {
+		cumulative = s.workspace.TokenBreakdown().Total
 	}
 
 	today, err := s.cachedTodayTokens(ctx, tzLabel, loc, now)

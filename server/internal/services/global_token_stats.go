@@ -19,21 +19,18 @@ const (
 	// TokenStatsWindowCustom is echoed when an explicit from/to range is used.
 	TokenStatsWindowCustom = "custom"
 
-	globalTokenStatsTopProjects  = 10
 	globalTokenStatsTopModels    = 10
 	globalTokenStatsTopWorkflows = 10
 	globalTokenStatsTopRuns      = 20
 
 	// tokenStatsMaxHourSpan caps hour-granularity trends (bucket count guard).
 	tokenStatsMaxHourSpan = 14 * 24 * time.Hour
-
-	globalUnassignedProjectName = "未归属项目"
 )
 
 // ErrInvalidTokenStatsRange is returned for malformed from/to query values.
 var ErrInvalidTokenStatsRange = errors.New("invalid token-stats range")
 
-// GlobalTokenStatsQuery filters cross-project token aggregation.
+// GlobalTokenStatsQuery filters token aggregation.
 type GlobalTokenStatsQuery struct {
 	Window           string // 24h|7d|30d|90d|all (ignored when From is set)
 	From             string // optional local date YYYY-MM-DD (inclusive)
@@ -44,7 +41,6 @@ type GlobalTokenStatsQuery struct {
 	Source           string // all|workflow|pm|studio
 	Status           string // ok|failed|cancelled
 	Phase            string // production|interactive|chat
-	ProjectID        string
 	ModelKey         string
 	WorkflowID       string
 	NodeType         string
@@ -65,7 +61,6 @@ type GlobalTokenStatsKPI struct {
 	PmTotal          int64    `json:"pmTotal"`
 	StudioTotal      int64    `json:"studioTotal"`
 	FailedTotal      int64    `json:"failedTotal"`
-	ProjectCount     int      `json:"projectCount"`
 	RunCount         int      `json:"runCount"`
 	ThreadCount      int      `json:"threadCount"`
 	ModelCount       int      `json:"modelCount"`
@@ -80,27 +75,10 @@ type GlobalTokenStatsKPI struct {
 	UnpricedTotal int64    `json:"unpricedTotal"`
 }
 
-// GlobalTokenStatsProjectRow is one project breakdown row.
-type GlobalTokenStatsProjectRow struct {
-	ProjectID        string   `json:"projectId"`
-	Name             string   `json:"name"`
-	Total            int64    `json:"total"`
-	InputTokens      int64    `json:"inputTokens"`
-	OutputTokens     int64    `json:"outputTokens"`
-	CacheReadTokens  int64    `json:"cacheReadTokens"`
-	CacheWriteTokens int64    `json:"cacheWriteTokens"`
-	Cost             float64  `json:"cost"`
-	RunCount         int      `json:"runCount"`
-	Deleted          bool     `json:"deleted,omitempty"`
-	DeltaPct         *float64 `json:"deltaPct,omitempty"`
-}
-
 // GlobalTokenStatsRunRow is a Top-N run consumption row.
 type GlobalTokenStatsRunRow struct {
 	RunID            string    `json:"runId"`
 	Title            string    `json:"title"`
-	ProjectID        string    `json:"projectId"`
-	ProjectName      string    `json:"projectName"`
 	WorkflowID       string    `json:"workflowId,omitempty"`
 	WorkflowName     string    `json:"workflowName"`
 	ModelKey         string    `json:"modelKey"`
@@ -130,31 +108,24 @@ type GlobalTokenStatsNamedBucket struct {
 	Other            bool    `json:"other,omitempty"`
 }
 
-// GlobalTokenStatsHeatmap is model×project matrix (TopN + other).
-type GlobalTokenStatsHeatmap struct {
-	Rows []string  `json:"rows"`
-	Cols []string  `json:"cols"`
-	Grid [][]int64 `json:"grid"`
-}
-
-// GlobalTokenStatsTreeNode is one node of the project→workflow→nodeType tree.
+// GlobalTokenStatsTreeNode is one node of the source/workflow→nodeType tree.
 type GlobalTokenStatsTreeNode struct {
 	Key      string                     `json:"key"`
 	Name     string                     `json:"name"`
-	Kind     string                     `json:"kind"` // project|workflow|pm|studio|nodeType
+	Kind     string                     `json:"kind"` // workflow|pm|studio|nodeType
 	Value    int64                      `json:"value"`
 	Cost     float64                    `json:"cost,omitempty"`
 	Children []GlobalTokenStatsTreeNode `json:"children,omitempty"`
 }
 
-// GlobalTokenStatsSeries is a multi-line trend group (Top projects/models).
+// GlobalTokenStatsSeries is a multi-line trend group (Top models).
 type GlobalTokenStatsSeries struct {
 	Key   string             `json:"key"`
 	Name  string             `json:"name"`
 	Trend []TokenStatsBucket `json:"trend"`
 }
 
-// GlobalTokenStatsFilterOption is a dropdown option for project/model filters.
+// GlobalTokenStatsFilterOption is a dropdown option for model/workflow filters.
 type GlobalTokenStatsFilterOption struct {
 	Key  string `json:"key"`
 	Name string `json:"name"`
@@ -162,7 +133,6 @@ type GlobalTokenStatsFilterOption struct {
 
 // GlobalTokenStatsFilterOptions lists available filter values in the window.
 type GlobalTokenStatsFilterOptions struct {
-	Projects  []GlobalTokenStatsFilterOption `json:"projects"`
 	Models    []GlobalTokenStatsFilterOption `json:"models"`
 	Workflows []GlobalTokenStatsFilterOption `json:"workflows"`
 	NodeTypes []GlobalTokenStatsFilterOption `json:"nodeTypes"`
@@ -186,25 +156,18 @@ type GlobalTokenStatsResult struct {
 	Trend          []TokenStatsBucket            `json:"trend"`
 	PrevTrend      []TokenStatsBucket            `json:"prevTrend"`
 	Composition    TokenStatsComposition         `json:"composition"`
-	Projects       []GlobalTokenStatsProjectRow  `json:"projects"`
 	ModelRanking   []TokenStatsModel             `json:"modelRanking"`
 	NodeTypes      []GlobalTokenStatsNamedBucket `json:"nodeTypes"`
 	Sources        []GlobalTokenStatsNamedBucket `json:"sources"`
 	Statuses       []GlobalTokenStatsNamedBucket `json:"statuses"`
 	Phases         []GlobalTokenStatsNamedBucket `json:"phases"`
 	Workflows      []TokenStatsWorkflow          `json:"workflows"`
-	Heatmap        GlobalTokenStatsHeatmap       `json:"heatmap"`
 	WeekHour       [][]int64                     `json:"weekHour"`
 	Tree           []GlobalTokenStatsTreeNode    `json:"tree"`
 	TopRuns        []GlobalTokenStatsRunRow      `json:"topRuns"`
-	ProjectTrends  []GlobalTokenStatsSeries      `json:"projectTrends"`
 	ModelTrends    []GlobalTokenStatsSeries      `json:"modelTrends"`
 	UnpricedModels []string                      `json:"unpricedModels"`
 	FilterOptions  GlobalTokenStatsFilterOptions `json:"filterOptions"`
-}
-
-type globalProjOpt struct {
-	id, name string
 }
 
 type globalTokenUsageRow struct {
@@ -212,8 +175,6 @@ type globalTokenUsageRow struct {
 	ts           time.Time
 	usage        models.TokenUsage
 	byModel      models.TokenUsageByModel
-	projectID    string
-	projectName  string
 	runID        string
 	runTitle     string
 	workflowID   string
@@ -235,8 +196,8 @@ type windowSlice struct {
 	hasStart bool
 }
 
-// GlobalTokenStats aggregates ledger usage across all projects with optional filters.
-func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStatsQuery) (GlobalTokenStatsResult, error) {
+// GlobalTokenStats aggregates ledger usage with optional filters.
+func (s *WorkspaceService) GlobalTokenStats(ctx context.Context, q GlobalTokenStatsQuery) (GlobalTokenStatsResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -280,14 +241,8 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 		return GlobalTokenStatsResult{}, err
 	}
 
-	unknownAliases := map[string]string{}
-	liveProjects := map[string]struct{}{}
-	for _, p := range s.List() {
-		unknownAliases[p.ID] = ResolveUnknownModelDisplayName(p.UnknownModelDisplayName)
-		liveProjects[p.ID] = struct{}{}
-	}
+	unknownAlias := s.unknownModelAlias()
 
-	projSeen := map[string]globalProjOpt{}
 	modelSeen := map[string]string{}
 	wfSeen := map[string]string{}
 	nodeTypeSeen := map[string]string{}
@@ -298,17 +253,17 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 		if err := ctx.Err(); err != nil {
 			return GlobalTokenStatsResult{}, ErrTokenStatsTimeout
 		}
-		u, ok := filterGlobalRowUsage(row, q, sourceFilter, modelFilter, unknownAliases)
+		u, ok := filterGlobalRowUsage(row, q, sourceFilter, modelFilter, unknownAlias)
 		if !ok || u.Total() <= 0 {
 			continue
 		}
 		row.usage = u
 		if row.byModel != nil && modelFilter != "" {
-			narrowGlobalRowByModel(&row, modelFilter, unknownAliases)
+			narrowGlobalRowByModel(&row, modelFilter, unknownAlias)
 		}
 		row.cost, row.priced = 0, true
 		for mk, b := range row.byModel {
-			effective := rebucketGlobalModelKey(mk, row.projectID, unknownAliases)
+			effective := rebucketGlobalModelKey(mk, unknownAlias)
 			if mk != "" {
 				modelSeen[effective] = effective
 			}
@@ -321,7 +276,6 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 			row.cost += c
 		}
 		filtered = append(filtered, row)
-		projSeen[row.projectID] = globalProjOpt{id: row.projectID, name: row.projectName}
 		if row.workflowID != "" {
 			wfSeen[row.workflowID] = row.workflowName
 		}
@@ -329,7 +283,7 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 			nodeTypeSeen[row.nodeType] = row.nodeType
 		}
 	}
-	filterOptions := buildFilterOptions(projSeen, modelSeen, wfSeen, nodeTypeSeen)
+	filterOptions := buildFilterOptions(modelSeen, wfSeen, nodeTypeSeen)
 
 	rangeOut := GlobalTokenStatsRange{End: curWin.end}
 	if curWin.hasStart {
@@ -345,18 +299,15 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 		Empty:          true,
 		Trend:          []TokenStatsBucket{},
 		PrevTrend:      []TokenStatsBucket{},
-		Projects:       []GlobalTokenStatsProjectRow{},
 		ModelRanking:   []TokenStatsModel{},
 		NodeTypes:      []GlobalTokenStatsNamedBucket{},
 		Sources:        []GlobalTokenStatsNamedBucket{},
 		Statuses:       []GlobalTokenStatsNamedBucket{},
 		Phases:         []GlobalTokenStatsNamedBucket{},
 		Workflows:      []TokenStatsWorkflow{},
-		Heatmap:        GlobalTokenStatsHeatmap{Rows: []string{}, Cols: []string{}, Grid: [][]int64{}},
 		WeekHour:       emptyWeekHour(),
 		Tree:           []GlobalTokenStatsTreeNode{},
 		TopRuns:        []GlobalTokenStatsRunRow{},
-		ProjectTrends:  []GlobalTokenStatsSeries{},
 		ModelTrends:    []GlobalTokenStatsSeries{},
 		UnpricedModels: []string{},
 		FilterOptions:  filterOptions,
@@ -377,30 +328,15 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 		return base, nil
 	}
 
-	curAgg := aggregateGlobalRows(curRows, loc, bucketWidth, nowLocal, curWin, unknownAliases)
-	prevAgg := aggregateGlobalRows(prevRows, loc, bucketWidth, nowLocal, prevWin, unknownAliases)
+	curAgg := aggregateGlobalRows(curRows, loc, bucketWidth, nowLocal, curWin, unknownAlias)
+	prevAgg := aggregateGlobalRows(prevRows, loc, bucketWidth, nowLocal, prevWin, unknownAlias)
 
 	kpi := buildGlobalKPI(curAgg, prevAgg)
 	trend := bucketsFromAgg(curAgg.buckets, trendEnd, curWin, bucketWidth)
 	prevNow := plan.prevEnd
 	prevTrend := bucketsFromAgg(prevAgg.buckets, prevNow, prevWin, bucketWidth)
 
-	projRows, projTrends := buildProjectStats(curAgg, prevAgg, globalTokenStatsTopProjects)
-	for i := range projRows {
-		if projRows[i].ProjectID == "" {
-			projRows[i].Name = globalUnassignedProjectName
-			continue
-		}
-		if _, ok := liveProjects[projRows[i].ProjectID]; !ok {
-			projRows[i].Deleted = true
-		}
-	}
-	for i := range projTrends {
-		if projTrends[i].Key == "" {
-			projTrends[i].Name = globalUnassignedProjectName
-		}
-	}
-	modelRank, modelTrends := buildGlobalModelStats(curAgg, prevAgg, unknownAliases, globalTokenStatsTopModels)
+	modelRank, modelTrends := buildGlobalModelStats(curAgg, prevAgg, unknownAlias, globalTokenStatsTopModels)
 	unpricedList := make([]string, 0, len(unpriced))
 	for k := range unpriced {
 		if _, ok := curAgg.models[k]; ok {
@@ -415,18 +351,15 @@ func (s *ProjectService) GlobalTokenStats(ctx context.Context, q GlobalTokenStat
 	out.Trend = trend
 	out.PrevTrend = prevTrend
 	out.Composition = curAgg.composition
-	out.Projects = projRows
 	out.ModelRanking = modelRank
 	out.NodeTypes = namedBucketsFromAgg(curAgg.nodeTypes, nil)
 	out.Sources = namedBucketsFromAgg(curAgg.sources, nil)
 	out.Statuses = namedBucketsFromAgg(curAgg.statuses, nil)
 	out.Phases = namedBucketsFromAgg(curAgg.phases, nil)
 	out.Workflows = buildGlobalWorkflowRank(curAgg)
-	out.Heatmap = buildHeatmap(curAgg, globalTokenStatsTopModels, globalTokenStatsTopProjects)
 	out.WeekHour = curAgg.weekHour
 	out.Tree = buildTokenTree(curAgg)
-	out.TopRuns = buildTopRuns(curAgg, unknownAliases, globalTokenStatsTopRuns)
-	out.ProjectTrends = projTrends
+	out.TopRuns = buildTopRuns(curAgg, unknownAlias, globalTokenStatsTopRuns)
 	out.ModelTrends = modelTrends
 	out.UnpricedModels = unpricedList
 	return out, nil
@@ -550,7 +483,7 @@ func buildPrevWindowSlice(cur windowSlice, spec tokenStatsWindowSpec) windowSlic
 	return windowSlice{start: prevStart, end: prevEnd, hasStart: true}
 }
 
-func globalModelFilterUsage(row globalTokenUsageRow, modelKey string, unknownAliases map[string]string) (models.TokenUsage, bool) {
+func globalModelFilterUsage(row globalTokenUsageRow, modelKey string, unknownAlias string) (models.TokenUsage, bool) {
 	if row.byModel == nil {
 		return models.TokenUsage{}, false
 	}
@@ -564,7 +497,7 @@ func globalModelFilterUsage(row globalTokenUsageRow, modelKey string, unknownAli
 		matched = true
 	}
 	if b, ok := row.byModel[models.TokenUsageModelUnknown]; ok && modelKey != models.TokenUsageModelUnknown {
-		if rebucketGlobalModelKey(models.TokenUsageModelUnknown, row.projectID, unknownAliases) == modelKey {
+		if rebucketGlobalModelKey(models.TokenUsageModelUnknown, unknownAlias) == modelKey {
 			usage.InputTokens += b.InputTokens
 			usage.OutputTokens += b.OutputTokens
 			usage.CacheReadTokens += b.CacheReadTokens
@@ -578,8 +511,8 @@ func globalModelFilterUsage(row globalTokenUsageRow, modelKey string, unknownAli
 	return usage, true
 }
 
-func narrowGlobalRowByModel(row *globalTokenUsageRow, modelKey string, unknownAliases map[string]string) {
-	u, ok := globalModelFilterUsage(*row, modelKey, unknownAliases)
+func narrowGlobalRowByModel(row *globalTokenUsageRow, modelKey string, unknownAlias string) {
+	u, ok := globalModelFilterUsage(*row, modelKey, unknownAlias)
 	if !ok {
 		return
 	}
@@ -596,10 +529,7 @@ func narrowGlobalRowByModel(row *globalTokenUsageRow, modelKey string, unknownAl
 	row.byModel = models.TokenUsageByModel{modelKey: merged}
 }
 
-func filterGlobalRowUsage(row globalTokenUsageRow, q GlobalTokenStatsQuery, source, modelKey string, unknownAliases map[string]string) (models.TokenUsage, bool) {
-	if pid := strings.TrimSpace(q.ProjectID); pid != "" && row.projectID != pid {
-		return models.TokenUsage{}, false
-	}
+func filterGlobalRowUsage(row globalTokenUsageRow, q GlobalTokenStatsQuery, source, modelKey string, unknownAlias string) (models.TokenUsage, bool) {
 	if source != GlobalTokenStatsSourceAll && row.source != source {
 		return models.TokenUsage{}, false
 	}
@@ -619,7 +549,7 @@ func filterGlobalRowUsage(row globalTokenUsageRow, q GlobalTokenStatsQuery, sour
 		return models.TokenUsage{}, false
 	}
 	if modelKey != "" {
-		return globalModelFilterUsage(row, modelKey, unknownAliases)
+		return globalModelFilterUsage(row, modelKey, unknownAlias)
 	}
 	return row.usage, true
 }
@@ -655,7 +585,6 @@ type globalAgg struct {
 	cost         float64
 	unpricedTot  int64
 	events       int
-	projects     map[string]*globalProjectAgg
 	models       map[string]*tokenModelAgg
 	modelCost    map[string]float64
 	nodeTypes    map[string]*namedAgg
@@ -665,22 +594,11 @@ type globalAgg struct {
 	workflows    map[string]*globalWorkflowAgg
 	wfNames      map[string]string
 	runs         map[string]*globalRunAgg
-	projBuckets  map[string]map[string]*tokenBucketAgg
 	modelBuckets map[string]map[string]*tokenBucketAgg
-	heat         map[string]map[string]int64 // modelKey → projectID → total
 	runSet       map[string]struct{}
 	threadSet    map[string]struct{}
 	weekHour     [][]int64
-	tree         map[string]*treeAgg // projectID → subtree
-}
-
-type globalProjectAgg struct {
-	name                  string
-	total                 int64
-	input, output         int64
-	cacheRead, cacheWrite int64
-	cost                  float64
-	runs                  map[string]struct{}
+	tree         *treeAgg
 }
 
 type globalWorkflowAgg struct {
@@ -691,14 +609,14 @@ type globalWorkflowAgg struct {
 }
 
 type globalRunAgg struct {
-	runID, title, projectID, projectName, workflowID, workflowName string
-	total                                                          int64
-	input, output, cacheRead, cacheWrite                           int64
-	cost                                                           float64
-	modelTotals                                                    map[string]int64
-	nodes                                                          map[string]struct{}
-	failed, cancelled                                              bool
-	firstAt                                                        time.Time
+	runID, title, workflowID, workflowName string
+	total                                  int64
+	input, output, cacheRead, cacheWrite   int64
+	cost                                   float64
+	modelTotals                            map[string]int64
+	nodes                                  map[string]struct{}
+	failed, cancelled                      bool
+	firstAt                                time.Time
 }
 
 type namedAgg struct {
@@ -741,12 +659,12 @@ func (t *treeAgg) child(key, name, kind string) *treeAgg {
 	return c
 }
 
-// rebucketGlobalModelKey merges per-project unknown usage into the configured default model.
-func rebucketGlobalModelKey(mk, projectID string, unknownAliases map[string]string) string {
+// rebucketGlobalModelKey merges unknown usage into the configured default model.
+func rebucketGlobalModelKey(mk string, unknownAlias string) string {
 	if mk != models.TokenUsageModelUnknown {
 		return mk
 	}
-	alias := strings.TrimSpace(unknownAliases[projectID])
+	alias := strings.TrimSpace(unknownAlias)
 	if IsConfiguredUnknownAlias(alias) {
 		return alias
 	}
@@ -766,10 +684,9 @@ func isoWeekday(t time.Time) int {
 	return (int(t.Weekday()) + 6) % 7
 }
 
-func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketWidth string, nowLocal time.Time, win windowSlice, unknownAliases map[string]string) *globalAgg {
+func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketWidth string, nowLocal time.Time, win windowSlice, unknownAlias string) *globalAgg {
 	agg := &globalAgg{
 		buckets:      map[string]*tokenBucketAgg{},
-		projects:     map[string]*globalProjectAgg{},
 		models:       map[string]*tokenModelAgg{},
 		modelCost:    map[string]float64{},
 		nodeTypes:    map[string]*namedAgg{},
@@ -779,13 +696,11 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 		workflows:    map[string]*globalWorkflowAgg{},
 		wfNames:      map[string]string{},
 		runs:         map[string]*globalRunAgg{},
-		projBuckets:  map[string]map[string]*tokenBucketAgg{},
 		modelBuckets: map[string]map[string]*tokenBucketAgg{},
-		heat:         map[string]map[string]int64{},
 		runSet:       map[string]struct{}{},
 		threadSet:    map[string]struct{}{},
 		weekHour:     emptyWeekHour(),
-		tree:         map[string]*treeAgg{},
+		tree:         &treeAgg{},
 	}
 	for _, row := range rows {
 		local := row.ts.In(loc)
@@ -837,37 +752,6 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			namedAddTo(agg.nodeTypes, row.nodeType, row)
 		}
 
-		pa := agg.projects[row.projectID]
-		if pa == nil {
-			pa = &globalProjectAgg{name: row.projectName, runs: map[string]struct{}{}}
-			agg.projects[row.projectID] = pa
-		}
-		if pa.name == "" {
-			pa.name = row.projectName
-		}
-		pa.total += total
-		pa.input += row.usage.InputTokens
-		pa.output += row.usage.OutputTokens
-		pa.cacheRead += row.usage.CacheReadTokens
-		pa.cacheWrite += row.usage.CacheWriteTokens
-		pa.cost += row.cost
-		if row.runID != "" {
-			pa.runs[row.runID] = struct{}{}
-		}
-
-		pb := agg.projBuckets[row.projectID]
-		if pb == nil {
-			pb = map[string]*tokenBucketAgg{}
-			agg.projBuckets[row.projectID] = pb
-		}
-		pbk := pb[key]
-		if pbk == nil {
-			pbk = &tokenBucketAgg{}
-			pb[key] = pbk
-		}
-		addUsageToBucket(pbk, row.usage, row.source)
-		pbk.cost += row.cost
-
 		addTreeRow(agg.tree, row)
 
 		if row.source == TokenStatsKindWorkflow && row.workflowID != "" {
@@ -894,7 +778,6 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			if ra == nil {
 				ra = &globalRunAgg{
 					runID: row.runID, title: row.runTitle,
-					projectID: row.projectID, projectName: row.projectName,
 					workflowID: row.workflowID, workflowName: row.workflowName,
 					modelTotals: map[string]int64{}, nodes: map[string]struct{}{},
 					firstAt: row.ts,
@@ -929,7 +812,7 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			if tot <= 0 {
 				continue
 			}
-			targetKey := rebucketGlobalModelKey(mk, row.projectID, unknownAliases)
+			targetKey := rebucketGlobalModelKey(mk, unknownAlias)
 			ma := agg.models[targetKey]
 			if ma == nil {
 				ma = &tokenModelAgg{}
@@ -962,13 +845,6 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			mbk.cacheWrite += bu.CacheWriteTokens
 			mbk.workflow += tot
 
-			hm := agg.heat[targetKey]
-			if hm == nil {
-				hm = map[string]int64{}
-				agg.heat[targetKey] = hm
-			}
-			hm[row.projectID] += tot
-
 			if ra != nil {
 				ra.modelTotals[targetKey] += tot
 			}
@@ -997,15 +873,8 @@ func namedAddTo(m map[string]*namedAgg, key string, row globalTokenUsageRow) {
 	n.add(row.usage, row.cost)
 }
 
-func addTreeRow(tree map[string]*treeAgg, row globalTokenUsageRow) {
-	p := tree[row.projectID]
-	if p == nil {
-		p = &treeAgg{name: row.projectName, kind: "project"}
-		tree[row.projectID] = p
-	}
+func addTreeRow(p *treeAgg, row globalTokenUsageRow) {
 	total := row.usage.Total()
-	p.total += total
-	p.cost += row.cost
 	var mid *treeAgg
 	switch row.source {
 	case TokenStatsKindPM:
@@ -1041,21 +910,11 @@ func buildTokenTree(cur *globalAgg) []GlobalTokenStatsTreeNode {
 		})
 		return n
 	}
-	out := make([]GlobalTokenStatsTreeNode, 0, len(cur.tree))
-	for pid, t := range cur.tree {
-		n := walk(pid, t)
-		if pid == "" {
-			n.Name = globalUnassignedProjectName
-		}
-		out = append(out, n)
+	root := walk("", cur.tree)
+	if root.Children == nil {
+		return []GlobalTokenStatsTreeNode{}
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Value != out[j].Value {
-			return out[i].Value > out[j].Value
-		}
-		return out[i].Key < out[j].Key
-	})
-	return out
+	return root.Children
 }
 
 func namedBucketsFromAgg(m map[string]*namedAgg, names map[string]string) []GlobalTokenStatsNamedBucket {
@@ -1147,7 +1006,6 @@ func buildGlobalKPI(cur, prev *globalAgg) GlobalTokenStatsKPI {
 		PmTotal:          cur.pmTot,
 		StudioTotal:      cur.studioTot,
 		FailedTotal:      cur.failedTot,
-		ProjectCount:     len(cur.projects),
 		RunCount:         len(cur.runSet),
 		ThreadCount:      len(cur.threadSet),
 		ModelCount:       len(cur.models),
@@ -1176,50 +1034,7 @@ func buildGlobalKPI(cur, prev *globalAgg) GlobalTokenStatsKPI {
 	return kpi
 }
 
-func buildProjectStats(cur, prev *globalAgg, topN int) ([]GlobalTokenStatsProjectRow, []GlobalTokenStatsSeries) {
-	type item struct {
-		id string
-		p  *globalProjectAgg
-	}
-	list := make([]item, 0, len(cur.projects))
-	for id, p := range cur.projects {
-		list = append(list, item{id: id, p: p})
-	}
-	sort.Slice(list, func(i, j int) bool {
-		if list[i].p.total != list[j].p.total {
-			return list[i].p.total > list[j].p.total
-		}
-		return list[i].id < list[j].id
-	})
-
-	rows := make([]GlobalTokenStatsProjectRow, 0, len(list))
-	series := make([]GlobalTokenStatsSeries, 0, topN)
-	for i, it := range list {
-		p := it.p
-		row := GlobalTokenStatsProjectRow{
-			ProjectID: it.id, Name: p.name, Total: p.total,
-			InputTokens: p.input, OutputTokens: p.output,
-			CacheReadTokens: p.cacheRead, CacheWriteTokens: p.cacheWrite,
-			Cost: p.cost, RunCount: len(p.runs),
-		}
-		if prev != nil {
-			if pp, ok := prev.projects[it.id]; ok && pp.total > 0 {
-				delta := (float64(p.total-pp.total) / float64(pp.total)) * 100
-				row.DeltaPct = &delta
-			}
-		}
-		rows = append(rows, row)
-		if i < topN {
-			series = append(series, GlobalTokenStatsSeries{
-				Key: it.id, Name: p.name,
-				Trend: projectTrendFromBuckets(cur.projBuckets[it.id]),
-			})
-		}
-	}
-	return rows, series
-}
-
-func projectTrendFromBuckets(buckets map[string]*tokenBucketAgg) []TokenStatsBucket {
+func trendFromBuckets(buckets map[string]*tokenBucketAgg) []TokenStatsBucket {
 	if len(buckets) == 0 {
 		return []TokenStatsBucket{}
 	}
@@ -1243,7 +1058,7 @@ func projectTrendFromBuckets(buckets map[string]*tokenBucketAgg) []TokenStatsBuc
 	return out
 }
 
-func buildGlobalModelStats(cur, prev *globalAgg, unknownAliases map[string]string, topN int) ([]TokenStatsModel, []GlobalTokenStatsSeries) {
+func buildGlobalModelStats(cur, prev *globalAgg, unknownAlias string, topN int) ([]TokenStatsModel, []GlobalTokenStatsSeries) {
 	_, ranking := buildModelStats(cur.models, "")
 	topKeys := make(map[string]struct{}, len(ranking))
 	for i := range ranking {
@@ -1277,16 +1092,13 @@ func buildGlobalModelStats(cur, prev *globalAgg, unknownAliases map[string]strin
 		}
 		name := m.Name
 		if m.Unknown {
-			for _, alias := range unknownAliases {
-				if IsConfiguredUnknownAlias(alias) {
-					name = alias
-					break
-				}
+			if IsConfiguredUnknownAlias(unknownAlias) {
+				name = unknownAlias
 			}
 		}
 		series = append(series, GlobalTokenStatsSeries{
 			Key: m.ModelKey, Name: name,
-			Trend: projectTrendFromBuckets(cur.modelBuckets[m.ModelKey]),
+			Trend: trendFromBuckets(cur.modelBuckets[m.ModelKey]),
 		})
 	}
 	return ranking, series
@@ -1349,129 +1161,7 @@ func setWorkflowParts(row *TokenStatsWorkflow, agg *globalWorkflowAgg) {
 	row.Cost = agg.cost
 }
 
-func buildHeatmap(cur *globalAgg, topModels, topProjects int) GlobalTokenStatsHeatmap {
-	type mItem struct {
-		key, name string
-		total     int64
-	}
-	type pItem struct {
-		id, name string
-		total    int64
-	}
-
-	modelList := make([]mItem, 0, len(cur.models))
-	for k, a := range cur.models {
-		if a == nil {
-			continue
-		}
-		modelList = append(modelList, mItem{key: k, name: k, total: a.total})
-	}
-	sort.Slice(modelList, func(i, j int) bool {
-		if modelList[i].total != modelList[j].total {
-			return modelList[i].total > modelList[j].total
-		}
-		return modelList[i].key < modelList[j].key
-	})
-
-	projList := make([]pItem, 0, len(cur.projects))
-	for id, p := range cur.projects {
-		name := p.name
-		if id == "" {
-			name = globalUnassignedProjectName
-		}
-		projList = append(projList, pItem{id: id, name: name, total: p.total})
-	}
-	sort.Slice(projList, func(i, j int) bool {
-		if projList[i].total != projList[j].total {
-			return projList[i].total > projList[j].total
-		}
-		return projList[i].id < projList[j].id
-	})
-
-	modelKeys := make([]string, 0, topModels+1)
-	modelNames := make([]string, 0, topModels+1)
-	var modelOther int64
-	for i, m := range modelList {
-		if i < topModels {
-			modelKeys = append(modelKeys, m.key)
-			modelNames = append(modelNames, m.name)
-		} else {
-			modelOther += m.total
-		}
-	}
-	if modelOther > 0 {
-		modelKeys = append(modelKeys, "_other")
-		modelNames = append(modelNames, "other")
-	}
-
-	projIDs := make([]string, 0, topProjects+1)
-	projNames := make([]string, 0, topProjects+1)
-	var projOtherID string
-	for i, p := range projList {
-		if i < topProjects {
-			projIDs = append(projIDs, p.id)
-			projNames = append(projNames, p.name)
-		} else if projOtherID == "" {
-			projOtherID = "_other"
-		}
-	}
-
-	grid := make([][]int64, len(modelKeys))
-	for mi, mk := range modelKeys {
-		row := make([]int64, len(projIDs)+boolToInt(projOtherID != ""))
-		for pi, pid := range projIDs {
-			if mk == "_other" {
-				var sum int64
-				for j, m := range modelList {
-					if j >= topModels {
-						if hm, ok := cur.heat[m.key]; ok {
-							sum += hm[pid]
-						}
-					}
-				}
-				row[pi] = sum
-			} else if hm, ok := cur.heat[mk]; ok {
-				row[pi] = hm[pid]
-			}
-		}
-		if projOtherID != "" {
-			idx := len(projIDs)
-			var sum int64
-			for j, p := range projList {
-				if j >= topProjects {
-					if mk == "_other" {
-						for jj, m := range modelList {
-							if jj >= topModels {
-								if hm, ok := cur.heat[m.key]; ok {
-									sum += hm[p.id]
-								}
-							}
-						}
-					} else if hm, ok := cur.heat[mk]; ok {
-						sum += hm[p.id]
-					}
-				}
-			}
-			row[idx] = sum
-		}
-		grid[mi] = row
-	}
-
-	cols := projNames
-	if projOtherID != "" {
-		cols = append(cols, "other")
-	}
-	return GlobalTokenStatsHeatmap{Rows: modelNames, Cols: cols, Grid: grid}
-}
-
-func boolToInt(b bool) int {
-	if b {
-		return 1
-	}
-	return 0
-}
-
-func buildTopRuns(cur *globalAgg, unknownAliases map[string]string, topN int) []GlobalTokenStatsRunRow {
+func buildTopRuns(cur *globalAgg, unknownAlias string, topN int) []GlobalTokenStatsRunRow {
 	list := make([]*globalRunAgg, 0, len(cur.runs))
 	for _, r := range cur.runs {
 		list = append(list, r)
@@ -1496,7 +1186,7 @@ func buildTopRuns(cur *globalAgg, unknownAliases map[string]string, topN int) []
 		}
 		name := topKey
 		if topKey == models.TokenUsageModelUnknown {
-			name = unknownAliases[it.projectID]
+			name = unknownAlias
 			if name == "" {
 				name = models.TokenUsageModelUnknownDisplay
 			}
@@ -1517,7 +1207,6 @@ func buildTopRuns(cur *globalAgg, unknownAliases map[string]string, topN int) []
 		}
 		out = append(out, GlobalTokenStatsRunRow{
 			RunID: it.runID, Title: title,
-			ProjectID: it.projectID, ProjectName: it.projectName,
 			WorkflowID: it.workflowID, WorkflowName: it.workflowName,
 			ModelKey: topKey, ModelName: name,
 			Total: it.total, InputTokens: it.input, OutputTokens: it.output,
@@ -1528,16 +1217,8 @@ func buildTopRuns(cur *globalAgg, unknownAliases map[string]string, topN int) []
 	return out
 }
 
-func buildFilterOptions(projects map[string]globalProjOpt, models map[string]string, workflows map[string]string, nodeTypes map[string]string) GlobalTokenStatsFilterOptions {
-	pList := make([]GlobalTokenStatsFilterOption, 0, len(projects))
-	for _, p := range projects {
-		if p.id == "" {
-			continue
-		}
-		pList = append(pList, GlobalTokenStatsFilterOption{Key: p.id, Name: orDefault(p.name, p.id)})
-	}
+func buildFilterOptions(models map[string]string, workflows map[string]string, nodeTypes map[string]string) GlobalTokenStatsFilterOptions {
 	return GlobalTokenStatsFilterOptions{
-		Projects:  sortOptions(pList),
 		Models:    sortOptions(optionsFromMap(models)),
 		Workflows: sortOptions(disambiguateOptions(optionsFromMap(workflows))),
 		NodeTypes: sortOptions(optionsFromMap(nodeTypes)),
@@ -1575,4 +1256,13 @@ func sortOptions(list []GlobalTokenStatsFilterOption) []GlobalTokenStatsFilterOp
 		return list[i].Key < list[j].Key
 	})
 	return list
+}
+
+// unknownModelAlias is the workspace's configured display model for unknown usage.
+func (s *WorkspaceService) unknownModelAlias() string {
+	ws, err := loadWorkspace(s.db)
+	if err != nil {
+		return ResolveUnknownModelDisplayName("")
+	}
+	return ResolveUnknownModelDisplayName(ws.UnknownModelDisplayName)
 }

@@ -16,7 +16,7 @@ func TestGlobalTokenStatsEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 
 	syncTokenLedger(t, db)
@@ -38,7 +38,7 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	must := func(v any) {
 		t.Helper()
 		if err := db.Create(v).Error; err != nil {
@@ -53,11 +53,11 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.CreateFixture("GlobalStats", "", nil)
+	_, err = s.CreateFixture("GlobalStats", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-g", ProjectID: proj.ID, Name: "main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-g", Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-g1", WorkflowID: "wf-g", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Global Run"})
 	must(&models.StateRun{
@@ -84,11 +84,8 @@ func TestGlobalTokenStatsAggregation(t *testing.T) {
 	if len(res.Trend) == 0 {
 		t.Fatal("expected trend buckets")
 	}
-	if len(res.Projects) == 0 {
-		t.Fatal("expected project rows")
-	}
-	if res.Projects[0].CacheReadTokens != 10 || res.Projects[0].CacheWriteTokens != 5 {
-		t.Fatalf("expected project cache tokens 10/5, got %d/%d", res.Projects[0].CacheReadTokens, res.Projects[0].CacheWriteTokens)
+	if res.KPI.CacheReadTokens != 10 || res.KPI.CacheWriteTokens != 5 {
+		t.Fatalf("expected cache tokens 10/5, got %d/%d", res.KPI.CacheReadTokens, res.KPI.CacheWriteTokens)
 	}
 	if len(res.TopRuns) == 0 || res.TopRuns[0].RunID != "run-g1" {
 		t.Fatalf("expected top run run-g1, got %+v", res.TopRuns)
@@ -100,7 +97,7 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	must := func(v any) {
 		t.Helper()
 		if err := db.Create(v).Error; err != nil {
@@ -115,14 +112,14 @@ func TestGlobalTokenStatsModelRebucketByDefaultModel(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.CreateFixture("Grasp", "", nil)
+	_, err = s.CreateFixture("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(proj.ID, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-rb", ProjectID: proj.ID, Name: "main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-rb", Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-rb1", WorkflowID: "wf-rb", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Rebucket Run"})
 	must(&models.StateRun{
@@ -177,7 +174,7 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	must := func(v any) {
 		t.Helper()
 		if err := db.Create(v).Error; err != nil {
@@ -192,14 +189,14 @@ func TestGlobalTokenStatsModelFilterAfterRebucket(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 
-	proj, err := s.CreateFixture("Grasp", "", nil)
+	_, err = s.CreateFixture("Grasp", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Update(proj.ID, nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
+	if _, err := s.Update(nil, nil, nil, nil, aliasPtr("kimi-k3")); err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-rbf", ProjectID: proj.ID, Name: "main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-rbf", Name: "main", Version: 1})
 	dayIn := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
 	must(&models.Run{ID: "run-rbf1", WorkflowID: "wf-rbf", WorkflowName: "main", Status: "completed", StartedAt: dayIn, Title: "Rebucket Filter Run"})
 	must(&models.StateRun{
@@ -261,7 +258,7 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	must := func(v any) {
 		t.Helper()
 		if err := db.Create(v).Error; err != nil {
@@ -274,11 +271,11 @@ func TestGlobalTokenStats24hPrevWindowDelta(t *testing.T) {
 	}
 	ptr := func(tt time.Time) *time.Time { return &tt }
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC) // 20:00 Shanghai
-	proj, err := s.CreateFixture("G24h", "", nil)
+	_, err = s.CreateFixture("G24h", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	must(&models.WorkflowDef{ID: "wf-g24", ProjectID: proj.ID, Name: "main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf-g24", Name: "main", Version: 1})
 
 	// Previous 24h: [Jul 23 20:00, Jul 24 20:00) Shanghai — 100 tokens at Jul 24 10:00.
 	prevTS := time.Date(2026, 7, 24, 10, 0, 0, 0, loc).UTC()
@@ -334,7 +331,7 @@ func TestGlobalTokenStats24hEmptyWindow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	if _, err := s.CreateFixture("EmptyG24h", "", nil); err != nil {
 		t.Fatal(err)
@@ -358,7 +355,7 @@ func TestGlobalTokenStatsOmitsWindowDefaultsAll(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	syncTokenLedger(t, db)
 	res, err := s.GlobalTokenStats(context.Background(), GlobalTokenStatsQuery{
@@ -406,7 +403,7 @@ func TestGlobalTokenStatsRankRowsIncludeTokenParts(t *testing.T) {
 		cur.wfNames[workflowID] = workflowID
 	}
 
-	modelRows, _ := buildGlobalModelStats(cur, nil, nil, globalTokenStatsTopModels)
+	modelRows, _ := buildGlobalModelStats(cur, nil, "", globalTokenStatsTopModels)
 	assertTokenPartsMatchModelTotals(t, modelRows)
 	if len(modelRows) != 11 || !modelRows[len(modelRows)-1].Other {
 		t.Fatalf("expected model Top10 + other, got %+v", modelRows)
@@ -442,7 +439,7 @@ func assertTokenPartsMatchWorkflowTotals(t *testing.T, rows []TokenStatsWorkflow
 func aliasPtr(s string) *string { return &s }
 
 func TestTokenStatsWorkflowFilterDistinguishesDuplicateNames(t *testing.T) {
-	opts := buildFilterOptions(nil, nil, map[string]string{"wf-a": "构建发布", "wf-b": "构建发布", "wf-c": "Other"}, nil)
+	opts := buildFilterOptions(nil, map[string]string{"wf-a": "构建发布", "wf-b": "构建发布", "wf-c": "Other"}, nil)
 	names := map[string]string{}
 	for _, o := range opts.Workflows {
 		names[o.Key] = o.Name

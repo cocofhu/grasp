@@ -14,8 +14,8 @@ import (
 // callPrdManager dispatches pm-prd-manager tools. First cut: list / get / create.
 // Later update / status / delete / progress-summary tools should be added here
 // (and in toolSchemas) without changing RequirementDraft semantics.
-func (h *Host) callPrdManager(projectID, token, name string, args map[string]any) (any, bool) {
-	if _, ok := h.SessionFor(projectID, token); !ok {
+func (h *Host) callPrdManager(token, name string, args map[string]any) (any, bool) {
+	if _, ok := h.SessionFor(token); !ok {
 		return map[string]any{"error": "unauthorized"}, true
 	}
 	h.mu.RLock()
@@ -24,23 +24,20 @@ func (h *Host) callPrdManager(projectID, token, name string, args map[string]any
 	if drafts == nil {
 		return map[string]any{"error": "requirement draft service unavailable"}, true
 	}
-	// Ignore any caller-supplied projectId; scope is the PM session project only.
-	_ = platformmcp.StrArg(args, "projectId")
-
 	switch name {
 	case "pm_list_requirement_drafts":
-		return h.pmListRequirementDrafts(drafts, projectID, args)
+		return h.pmListRequirementDrafts(drafts, args)
 	case "pm_get_requirement_draft":
-		return h.pmGetRequirementDraft(drafts, projectID, args)
+		return h.pmGetRequirementDraft(drafts, args)
 	case "pm_create_requirement_draft":
-		return h.pmCreateRequirementDraft(drafts, projectID, args)
+		return h.pmCreateRequirementDraft(drafts, args)
 	default:
 		return map[string]any{"error": "unknown tool: " + name}, true
 	}
 }
 
-func (h *Host) pmListRequirementDrafts(drafts *services.RequirementDraftService, projectID string, args map[string]any) (any, bool) {
-	rows, err := drafts.List(projectID, services.RequirementDraftListFilter{
+func (h *Host) pmListRequirementDrafts(drafts *services.RequirementDraftService, args map[string]any) (any, bool) {
+	rows, err := drafts.List(services.RequirementDraftListFilter{
 		Status: platformmcp.StrArg(args, "status"),
 		Query:  platformmcp.StrArg(args, "query"),
 	})
@@ -54,19 +51,19 @@ func (h *Host) pmListRequirementDrafts(drafts *services.RequirementDraftService,
 	return map[string]any{"items": items}, false
 }
 
-func (h *Host) pmGetRequirementDraft(drafts *services.RequirementDraftService, projectID string, args map[string]any) (any, bool) {
+func (h *Host) pmGetRequirementDraft(drafts *services.RequirementDraftService, args map[string]any) (any, bool) {
 	draftID := strings.TrimSpace(platformmcp.StrArg(args, "draftId"))
 	if draftID == "" {
 		return map[string]any{"error": "draftId is required"}, true
 	}
-	row, err := drafts.Get(projectID, draftID)
+	row, err := drafts.Get(draftID)
 	if err != nil {
 		return requirementDraftToolError(err)
 	}
 	return requirementDraftFull(row), false
 }
 
-func (h *Host) pmCreateRequirementDraft(drafts *services.RequirementDraftService, projectID string, args map[string]any) (any, bool) {
+func (h *Host) pmCreateRequirementDraft(drafts *services.RequirementDraftService, args map[string]any) (any, bool) {
 	title := strings.TrimSpace(platformmcp.StrArg(args, "title"))
 	body := ""
 	if _, ok := args["bodyMarkdown"]; ok {
@@ -74,7 +71,7 @@ func (h *Host) pmCreateRequirementDraft(drafts *services.RequirementDraftService
 	}
 	needUpdate := title != "" || body != ""
 
-	row, err := drafts.Create(projectID, services.RequirementDraftCreateInput{})
+	row, err := drafts.Create(services.RequirementDraftCreateInput{})
 	if err != nil {
 		return requirementDraftToolError(err)
 	}
@@ -85,10 +82,10 @@ func (h *Host) pmCreateRequirementDraft(drafts *services.RequirementDraftService
 	if appliedTitle == "" {
 		appliedTitle = services.DefaultRequirementDraftTitle
 	}
-	updated, err := drafts.UpdateContent(projectID, row.ID, appliedTitle, body)
+	updated, err := drafts.UpdateContent(row.ID, appliedTitle, body)
 	if err != nil {
-		if delErr := drafts.Delete(projectID, row.ID); delErr != nil {
-			log.Error().Err(delErr).Str("project_id", projectID).Str("draft_id", row.ID).
+		if delErr := drafts.Delete(row.ID); delErr != nil {
+			log.Error().Err(delErr).Str("draft_id", row.ID).
 				Msg("failed to roll back requirement draft after UpdateContent error")
 		}
 		return requirementDraftToolError(err)
@@ -133,8 +130,6 @@ func requirementDraftToolError(err error) (any, bool) {
 		return map[string]any{"error": err.Error()}, true
 	case errors.Is(err, services.ErrRequirementDraftBodyTooLong):
 		return map[string]any{"error": err.Error()}, true
-	case errors.Is(err, services.ErrProjectNotFound):
-		return map[string]any{"error": "project not found"}, true
 	default:
 		return map[string]any{"error": err.Error()}, true
 	}

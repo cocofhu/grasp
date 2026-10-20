@@ -143,14 +143,14 @@ func TestStartingClarifyRespectsWorkflowFilter(t *testing.T) {
 	s := NewRunService(db)
 	now := time.Now().UTC().Truncate(time.Second)
 
-	db.Create(&models.WorkflowDef{ID: "wf-a", Name: "A", ProjectID: "proj-1"})
-	db.Create(&models.WorkflowDef{ID: "wf-b", Name: "B", ProjectID: "proj-2"})
+	db.Create(&models.WorkflowDef{ID: "wf-a", Name: "A"})
+	db.Create(&models.WorkflowDef{ID: "wf-b", Name: "B"})
 	db.Create(&models.Run{ID: "run-a", WorkflowID: "wf-a", Status: "running", StartedAt: now, Graph: approveGraph()})
 	db.Create(&models.StateRun{RunID: "run-a", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running"})
 	db.Create(&models.Run{ID: "run-b", WorkflowID: "wf-b", Status: "running", StartedAt: now, Graph: approveGraph()})
 	db.Create(&models.StateRun{RunID: "run-b", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running"})
 
-	items, total := s.PendingInboxItems("wf-a", "", nil, 0, 0)
+	items, total := s.PendingInboxItems("wf-a", nil, 0, 0)
 	if total != 1 || len(items) != 1 {
 		t.Fatalf("workflow filter total=%d len=%d", total, len(items))
 	}
@@ -158,11 +158,8 @@ func TestStartingClarifyRespectsWorkflowFilter(t *testing.T) {
 		t.Fatalf("workflow filter returned %+v", items[0])
 	}
 
-	items, total = s.PendingInboxItems("", "proj-2", nil, 0, 0)
-	if total != 1 || len(items) != 1 {
-		t.Fatalf("project filter total=%d len=%d", total, len(items))
-	}
-	if items[0].(ClarifyInboxItem).RunID != "run-b" {
-		t.Fatalf("project filter returned %+v", items[0])
+	items, total = s.PendingInboxItems("", nil, 0, 0)
+	if total != 2 || len(items) != 2 {
+		t.Fatalf("unfiltered total=%d len=%d", total, len(items))
 	}
 }

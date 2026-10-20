@@ -21,10 +21,6 @@ var (
 	ErrArtifactRunNotTerminal = errors.New("cannot delete artifact: owning run has not ended")
 )
 
-// ErrArtifactNoProject is returned by Save when neither the run's workflow nor
-// a sandbox bound to the run id identifies an owning project.
-var ErrArtifactNoProject = errors.New("artifact has no owning project")
-
 func escapeLikePattern(s string) string {
 	s = strings.ReplaceAll(s, `\`, `\\`)
 	s = strings.ReplaceAll(s, `%`, `\%`)
@@ -80,12 +76,8 @@ func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (strin
 
 	var run models.Run
 	s.db.Select("workflow_id", "workflow_name").Limit(1).Find(&run, "id = ?", runID)
-	projectID, err := s.resolveProjectID(runID, run.WorkflowID)
-	if err != nil {
-		return "", err
-	}
 	a := models.Artifact{
-		ID: "art-" + uuid.NewString()[:8], RunID: runID, NodeID: nodeID, ProjectID: projectID,
+		ID: "art-" + uuid.NewString()[:8], RunID: runID, NodeID: nodeID,
 		WorkflowID: run.WorkflowID, WorkflowName: run.WorkflowName, Name: name, Kind: kind,
 		SizeBytes: len(content), Content: content, CreatedAt: now, UpdatedAt: now, Revision: 1,
 	}
@@ -93,28 +85,6 @@ func (s *ArtifactService) Save(runID, nodeID, name, kind, content string) (strin
 		return "", err
 	}
 	return a.ID, nil
-}
-
-// resolveProjectID picks the owning project: the run's workflow project, else
-// the project of the sandbox bound to a synthetic (test / agent session) run id.
-func (s *ArtifactService) resolveProjectID(runID, workflowID string) (string, error) {
-	var ids []string
-	if workflowID != "" {
-		if err := s.db.Model(&models.WorkflowDef{}).Where("id = ? AND project_id <> ''", workflowID).
-			Limit(1).Pluck("project_id", &ids).Error; err != nil {
-			return "", err
-		}
-	}
-	if len(ids) == 0 && runID != "" {
-		if err := s.db.Model(&models.Sandbox{}).Where("run_id = ? AND project_id <> ''", runID).
-			Order("id DESC").Limit(1).Pluck("project_id", &ids).Error; err != nil {
-			return "", err
-		}
-	}
-	if len(ids) == 0 {
-		return "", fmt.Errorf("%w (run %q)", ErrArtifactNoProject, runID)
-	}
-	return ids[0], nil
 }
 
 // GetRecord returns the full artifact row for a run+name lookup.
@@ -205,11 +175,9 @@ func (s *ArtifactService) DeleteForRuns(runIDs ...string) error {
 	return s.db.Delete(&models.Artifact{}, "run_id IN ?", runIDs).Error
 }
 
-// ArtifactFilter scopes artifact list queries. ProjectID is required; Session
-// selects workflow-less artifacts (Agent test / session runs) and is exclusive
-// with WorkflowID.
+// ArtifactFilter scopes artifact list queries. Session selects workflow-less
+// artifacts (Agent test / session runs) and is exclusive with WorkflowID.
 type ArtifactFilter struct {
-	ProjectID  string
 	WorkflowID string
 	Session    bool
 	Q          string
@@ -217,13 +185,10 @@ type ArtifactFilter struct {
 
 func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 	query := s.db.Table("artifacts").
-		Select(`artifacts.id, artifacts.run_id, artifacts.node_id, artifacts.project_id, artifacts.workflow_id, artifacts.workflow_name,
+		Select(`artifacts.id, artifacts.run_id, artifacts.node_id, artifacts.workflow_id, artifacts.workflow_name,
 			artifacts.name, artifacts.kind, artifacts.size_bytes, artifacts.created_at, artifacts.updated_at, artifacts.revision,
 			runs.title as run_title`).
 		Joins("LEFT JOIN runs ON runs.id = artifacts.run_id")
-	if f.ProjectID != "" {
-		query = query.Where("artifacts.project_id = ?", f.ProjectID)
-	}
 	if f.Session {
 		query = query.Where("(artifacts.workflow_id IS NULL OR artifacts.workflow_id = '')")
 	} else if f.WorkflowID != "" {
@@ -240,7 +205,7 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 	return query
 }
 
-// AllPage returns a page of a project's artifacts plus total count.
+// AllPage returns a page of artifacts plus total count.
 func (s *ArtifactService) AllPage(f ArtifactFilter, page, pageSize int) ([]models.Artifact, int64) {
 	base := s.allQuery(f)
 	var total int64
@@ -296,58 +261,43 @@ func (s *ArtifactService) AllPageByRun(f ArtifactFilter, page, pageSize int) ([]
 	return arts, total
 }
 
-// ArtifactTreeWorkflow is one workflow bucket under a project in the tree.
+// ArtifactTreeWorkflow is one workflow bucket of the artifact tree.
 type ArtifactTreeWorkflow struct {
 	WorkflowID   string `json:"workflowId"`
 	WorkflowName string `json:"workflowName"`
 	Count        int64  `json:"count"`
 }
 
-// ArtifactTreeProject is one project bucket of GET /artifacts/tree.
-type ArtifactTreeProject struct {
-	ProjectID    string                 `json:"projectId"`
-	ProjectName  string                 `json:"projectName"`
+// ArtifactTree is the GET /artifacts/tree payload.
+type ArtifactTree struct {
 	Count        int64                  `json:"count"`
 	Workflows    []ArtifactTreeWorkflow `json:"workflows"`
 	SessionCount int64                  `json:"sessionCount"`
 }
 
-// Tree aggregates artifact counts per project and workflow. Only projects that
-// own artifacts are returned, ordered by project name; workflows by name.
-func (s *ArtifactService) Tree() ([]ArtifactTreeProject, error) {
-	type bucket struct {
-		ProjectID    string
-		ProjectName  string
-		WorkflowID   string
-		WorkflowName string
-		Count        int64
-	}
-	var buckets []bucket
+// Tree aggregates artifact counts per workflow, ordered by workflow name.
+// Workflow-less artifacts are counted in SessionCount.
+func (s *ArtifactService) Tree() (ArtifactTree, error) {
+	var buckets []ArtifactTreeWorkflow
 	err := s.db.Table("artifacts").
-		Select(`artifacts.project_id AS project_id, projects.name AS project_name,
-			COALESCE(artifacts.workflow_id, '') AS workflow_id,
+		Select(`COALESCE(artifacts.workflow_id, '') AS workflow_id,
 			COALESCE(MAX(workflow_defs.name), MAX(artifacts.workflow_name), '') AS workflow_name,
 			COUNT(*) AS count`).
-		Joins("LEFT JOIN projects ON projects.id = artifacts.project_id").
 		Joins("LEFT JOIN workflow_defs ON workflow_defs.id = artifacts.workflow_id").
-		Group("artifacts.project_id, projects.name, COALESCE(artifacts.workflow_id, '')").
-		Order("projects.name, project_id, workflow_name").
+		Group("COALESCE(artifacts.workflow_id, '')").
+		Order("workflow_name").
 		Scan(&buckets).Error
 	if err != nil {
-		return nil, err
+		return ArtifactTree{}, err
 	}
-	out := []ArtifactTreeProject{}
+	out := ArtifactTree{Workflows: []ArtifactTreeWorkflow{}}
 	for _, b := range buckets {
-		if len(out) == 0 || out[len(out)-1].ProjectID != b.ProjectID {
-			out = append(out, ArtifactTreeProject{ProjectID: b.ProjectID, ProjectName: b.ProjectName, Workflows: []ArtifactTreeWorkflow{}})
-		}
-		p := &out[len(out)-1]
-		p.Count += b.Count
+		out.Count += b.Count
 		if b.WorkflowID == "" {
-			p.SessionCount += b.Count
+			out.SessionCount += b.Count
 			continue
 		}
-		p.Workflows = append(p.Workflows, ArtifactTreeWorkflow{WorkflowID: b.WorkflowID, WorkflowName: b.WorkflowName, Count: b.Count})
+		out.Workflows = append(out.Workflows, b)
 	}
 	return out, nil
 }

@@ -27,46 +27,46 @@ import (
 
 // Handlers bundles dependencies for route handlers.
 type Handlers struct {
-	Maintenance        func(context.Context, bool) (map[string]any, error)
-	WF                 *services.WorkflowService
-	Projects           *services.ProjectService
-	Runs               *services.RunService
-	Arts               *services.ArtifactService
-	APIKeys            *services.APIKeyService
-	Agents             *services.AgentService
-	SharedAgent        *services.SharedAgentService
-	Dash               *services.DashboardService
-	Sbx                *services.SandboxService
-	SbxChats           *services.SandboxChats
-	Eng                *engine.Engine
-	MCP                *mcp.Host
-	Pm                 *services.PmService
-	PmProgress         *services.PmProgress
-	PmTurns            *services.PmTurnRunner
-	PMMCP              *pmmcp.Host
-	MemoryMCP          *memorymcp.Host
-	ContextMCP         *contextmcp.Host
-	SchedulerMCP       *schedulermcp.Host
-	Preview            *services.PreviewService
-	Issues             *services.IssueService
-	RequirementDrafts  *services.RequirementDraftService
-	Notifications      *services.NotificationService
-	Settings           *services.SettingsService
-	Shutdown           *shutdown.Coordinator
-	Auth               *auth.Service
-	Channels           *services.ChannelConfigService
-	RunNotify          *services.RunNotifyService
-	Browser            *browser.Service
-	Audit              *services.ProjectAuditService
-	ExternalMcp        *services.ProjectExternalMcpService
-	ProjectMcpKeys     *services.ProjectMcpApiKeyService
-	ProjectCredentials *services.ProjectCredentialService
-	Onboarding         *services.OnboardingService
-	GateShare          *gateshare.Service
-	GateShareNonces    *gateshare.NonceStore
-	GateShareTickets   *gateshare.TicketStore
-	GateShareSessions  *gateshare.PreviewSessionHub
-	GateShareLimiter   *gateshare.IPLimiter
+	Maintenance       func(context.Context, bool) (map[string]any, error)
+	WF                *services.WorkflowService
+	Workspace         *services.WorkspaceService
+	Runs              *services.RunService
+	Arts              *services.ArtifactService
+	APIKeys           *services.APIKeyService
+	Agents            *services.AgentService
+	SharedAgent       *services.SharedAgentService
+	Dash              *services.DashboardService
+	Sbx               *services.SandboxService
+	SbxChats          *services.SandboxChats
+	Eng               *engine.Engine
+	MCP               *mcp.Host
+	Pm                *services.PmService
+	PmProgress        *services.PmProgress
+	PmTurns           *services.PmTurnRunner
+	PMMCP             *pmmcp.Host
+	MemoryMCP         *memorymcp.Host
+	ContextMCP        *contextmcp.Host
+	SchedulerMCP      *schedulermcp.Host
+	Preview           *services.PreviewService
+	Issues            *services.IssueService
+	RequirementDrafts *services.RequirementDraftService
+	Notifications     *services.NotificationService
+	Settings          *services.SettingsService
+	Shutdown          *shutdown.Coordinator
+	Auth              *auth.Service
+	Channels          *services.ChannelConfigService
+	RunNotify         *services.RunNotifyService
+	Browser           *browser.Service
+	Audit             *services.AuditService
+	ExternalMcp       *services.ExternalMcpService
+	McpKeys           *services.WorkspaceMcpApiKeyService
+	Credentials       *services.CredentialService
+	Onboarding        *services.OnboardingService
+	GateShare         *gateshare.Service
+	GateShareNonces   *gateshare.NonceStore
+	GateShareTickets  *gateshare.TicketStore
+	GateShareSessions *gateshare.PreviewSessionHub
+	GateShareLimiter  *gateshare.IPLimiter
 	// Embed backs the preview-page chat drawer (tickets + bearer sessions).
 	Embed *embed.Store
 	// PageBridge relays page_* tool commands to drawers that allow them.
@@ -77,10 +77,10 @@ type Handlers struct {
 	// X-Forwarded-Host; advertise host is not used for CSRF).
 	PublicAdvertise string
 	Team            *services.TeamService
-	// CanViewProjectAudit optionally overrides the default audit ACL
-	// (is_admin OR authenticated user who can UpdateProject). Tests use this
+	// CanViewAudit optionally overrides the default audit ACL
+	// (is_admin OR authenticated user who can UpdateWorkspace). Tests use this
 	// to simulate a read-only member denial while production keeps the hook nil.
-	CanViewProjectAudit func(username, projectID string) bool
+	CanViewAudit func(username string) bool
 	// InjectBundles serves ConfigHome .tgz for gateway SANDBOX_INJECT (no session auth).
 	InjectBundles *sandbox.BundleStore
 	// Blobs serves externalized attachment bytes (GET /api/blobs/:id).

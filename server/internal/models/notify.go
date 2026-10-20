@@ -23,16 +23,16 @@ const (
 	NotifyModeCustom  = "custom"
 )
 
-// ProjectNotifyPolicy is the project-level Run→IM notification default.
+// WorkspaceNotifyPolicy is the workspace-level Run→IM notification default.
 // Enabled=nil means default ON (hard-close only when explicitly false).
 // DefaultEvents=nil means the product default [waiting_human, failed]; an
 // explicit empty slice means "no default events".
 // ChannelIDs is the explicit 0~N fan-out target list (may include primary).
-// Empty ChannelIDs means do not deliver project notify to any channel
+// Empty ChannelIDs means do not deliver workspace notify to any channel
 // (independent of per-channel cron deliver targets).
 // WaitingHumanTemplate / FailedTemplate / CompletedTemplate are optional full
 // message bodies; trim-empty means fall back to FormatRunNotifyMessage.
-type ProjectNotifyPolicy struct {
+type WorkspaceNotifyPolicy struct {
 	Enabled              *bool    `json:"enabled"`
 	DefaultEvents        []string `json:"defaultEvents"`
 	ChannelIDs           []string `json:"channelIds"`
@@ -47,28 +47,28 @@ type WorkflowNotifyPolicy struct {
 	Events []string `json:"events,omitempty"`
 }
 
-// DefaultProjectNotifyPolicy returns the product default used for new projects.
-func DefaultProjectNotifyPolicy() ProjectNotifyPolicy {
+// DefaultWorkspaceNotifyPolicy returns the product default used for a new workspace.
+func DefaultWorkspaceNotifyPolicy() WorkspaceNotifyPolicy {
 	on := true
-	return ProjectNotifyPolicy{
+	return WorkspaceNotifyPolicy{
 		Enabled:       &on,
 		DefaultEvents: []string{NotifyKindWaitingHuman, NotifyKindFailed},
 		ChannelIDs:    []string{},
 	}
 }
 
-// IsEnabled reports whether the project kill-switch allows delivery.
+// IsEnabled reports whether the workspace kill-switch allows delivery.
 // Unset Enabled (nil) means on; only an explicit false hard-closes delivery.
-func (p ProjectNotifyPolicy) IsEnabled() bool {
+func (p WorkspaceNotifyPolicy) IsEnabled() bool {
 	if p.Enabled == nil {
 		return true
 	}
 	return *p.Enabled
 }
 
-// EffectiveDefaultEvents returns the project default event set.
+// EffectiveDefaultEvents returns the workspace default event set.
 // nil DefaultEvents → product default; non-nil (incl. empty) is respected.
-func (p ProjectNotifyPolicy) EffectiveDefaultEvents() []string {
+func (p WorkspaceNotifyPolicy) EffectiveDefaultEvents() []string {
 	if p.DefaultEvents == nil {
 		return []string{NotifyKindWaitingHuman, NotifyKindFailed}
 	}

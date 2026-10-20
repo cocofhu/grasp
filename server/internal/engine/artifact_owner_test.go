@@ -7,7 +7,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// seedArtifactOwner makes runID resolve to models.DefaultProjectID in
+// seedArtifactOwner makes runID resolve to the workspace in
 // ArtifactService.Save. A stored run gets a WorkflowDef (and a WorkflowID if
 // it had none); a run id without a row gets a test Sandbox bound to it.
 func seedArtifactOwner(t *testing.T, db *gorm.DB, runID string) {
@@ -18,7 +18,7 @@ func seedArtifactOwner(t *testing.T, db *gorm.DB, runID string) {
 	}
 	if run.ID == "" {
 		if err := db.Create(&models.Sandbox{
-			Name: "sb-" + runID, Purpose: "test", RunID: runID, ProjectID: models.DefaultProjectID,
+			Name: "sb-" + runID, Purpose: "test", RunID: runID,
 		}).Error; err != nil {
 			t.Fatalf("seed sandbox for %s: %v", runID, err)
 		}
@@ -33,10 +33,10 @@ func seedArtifactOwner(t *testing.T, db *gorm.DB, runID string) {
 	seedWorkflowForRun(t, db, run.WorkflowID)
 }
 
-// seedWorkflowForRun ensures a WorkflowDef with wfID exists in the default project.
+// seedWorkflowForRun ensures a WorkflowDef with wfID exists.
 func seedWorkflowForRun(t *testing.T, db *gorm.DB, wfID string) {
 	t.Helper()
-	wf := models.WorkflowDef{ID: wfID, ProjectID: models.DefaultProjectID, Name: wfID}
+	wf := models.WorkflowDef{ID: wfID, Name: wfID}
 	if err := db.Where("id = ?", wfID).FirstOrCreate(&wf).Error; err != nil {
 		t.Fatalf("seed workflow %s: %v", wfID, err)
 	}

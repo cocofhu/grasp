@@ -26,17 +26,17 @@ func (h *Handlers) auditActorFromContext(c *gin.Context) services.AuditActor {
 	return services.ActorFromUsername(sess.Username)
 }
 
-// canViewProjectAudit reports whether the caller may list/export project audit.
-// Product rule: is_admin OR users who can manage project config (UpdateProject).
-// Today any authenticated user can UpdateProject; tests may override via
-// CanViewProjectAudit to simulate a read-only denial.
-func (h *Handlers) canViewProjectAudit(c *gin.Context, projectID string) bool {
-	if h.CanViewProjectAudit != nil {
+// canViewAudit reports whether the caller may list/export audit.
+// Product rule: is_admin OR users who can manage workspace config (UpdateWorkspace).
+// Today any authenticated user can UpdateWorkspace; tests may override via
+// CanViewAudit to simulate a read-only denial.
+func (h *Handlers) canViewAudit(c *gin.Context) bool {
+	if h.CanViewAudit != nil {
 		username := ""
 		if sess, ok := auth.GetSession(c); ok && sess != nil {
 			username = sess.Username
 		}
-		return h.CanViewProjectAudit(username, projectID)
+		return h.CanViewAudit(username)
 	}
 	if h.Auth == nil {
 		return true
@@ -48,21 +48,13 @@ func (h *Handlers) canViewProjectAudit(c *gin.Context, projectID string) bool {
 	if h.Auth.IsAdmin(sess.Username) {
 		return true
 	}
-	// Equivalent to "can UpdateProject": any authenticated user today.
+	// Equivalent to "can UpdateWorkspace": any authenticated user today.
 	return true
 }
 
-func (h *Handlers) requireProjectAuditAccess(c *gin.Context, projectID string) bool {
-	if h.Projects == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
-		return false
-	}
-	if _, ok := h.Projects.Get(projectID); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return false
-	}
-	if !h.canViewProjectAudit(c, projectID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: cannot view project audit"})
+func (h *Handlers) requireAuditAccess(c *gin.Context) bool {
+	if !h.canViewAudit(c) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "forbidden: cannot view audit"})
 		return false
 	}
 	return true
@@ -88,7 +80,7 @@ func parseAuditTimeWindow(raw string) (from *time.Time, to *time.Time) {
 	}
 }
 
-func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (services.AuditListFilter, bool) {
+func (h *Handlers) parseAuditListFilter(c *gin.Context) (services.AuditListFilter, bool) {
 	from, to := parseAuditTimeWindow(c.DefaultQuery("time", "24h"))
 	// Optional explicit from/to override window presets.
 	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
@@ -112,7 +104,6 @@ func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (servi
 		return services.AuditListFilter{}, false
 	}
 	return services.AuditListFilter{
-		ProjectID:  "",
 		From:       from,
 		To:         to,
 		Actor:      c.Query("actor"),
@@ -127,7 +118,7 @@ func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (servi
 	}, true
 }
 
-func auditEventDTO(ev models.ProjectAuditEvent) gin.H {
+func auditEventDTO(ev models.AuditEvent) gin.H {
 	resource := ev.ResourceType
 	if ev.ResourceID != "" {
 		if resource != "" {
@@ -138,7 +129,6 @@ func auditEventDTO(ev models.ProjectAuditEvent) gin.H {
 	}
 	return gin.H{
 		"id":             ev.ID,
-		"projectId":      ev.ProjectID,
 		"occurredAt":     ev.OccurredAt,
 		"actor":          ev.Actor,
 		"unattributable": ev.Unattributable,
@@ -157,7 +147,7 @@ func auditEventDTO(ev models.ProjectAuditEvent) gin.H {
 
 // parseAuditFacetsFilter parses time (+ optional runId / from / to) for facets.
 // Action-namespace cascade is no longer used.
-func (h *Handlers) parseAuditFacetsFilter(c *gin.Context, projectID string) (services.AuditListFilter, bool) {
+func (h *Handlers) parseAuditFacetsFilter(c *gin.Context) (services.AuditListFilter, bool) {
 	from, to := parseAuditTimeWindow(c.DefaultQuery("time", "24h"))
 	if raw := strings.TrimSpace(c.Query("from")); raw != "" {
 		t, err := time.Parse(time.RFC3339, raw)
@@ -176,25 +166,23 @@ func (h *Handlers) parseAuditFacetsFilter(c *gin.Context, projectID string) (ser
 		to = &t
 	}
 	return services.AuditListFilter{
-		ProjectID: "",
-		From:      from,
-		To:        to,
-		RunID:     c.Query("runId"),
+		From:  from,
+		To:    to,
+		RunID: c.Query("runId"),
 	}, true
 }
 
-// ListProjectAuditFacets returns Run / node / resource options for dual-mode filters.
+// ListAuditFacets returns Run / node / resource options for dual-mode filters.
 // GET /api/workspace/audit/facets
-func (h *Handlers) ListProjectAuditFacets(c *gin.Context) {
+func (h *Handlers) ListAuditFacets(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})
 		return
 	}
-	projectID := c.Param("id")
-	if !h.requireProjectAuditAccess(c, projectID) {
+	if !h.requireAuditAccess(c) {
 		return
 	}
-	f, ok := h.parseAuditFacetsFilter(c, projectID)
+	f, ok := h.parseAuditFacetsFilter(c)
 	if !ok {
 		return
 	}
@@ -207,18 +195,17 @@ func (h *Handlers) ListProjectAuditFacets(c *gin.Context) {
 	c.JSON(http.StatusOK, facets)
 }
 
-// ListProjectAudit returns a paginated project audit timeline.
+// ListAudit returns a paginated audit timeline.
 // GET /api/workspace/audit
-func (h *Handlers) ListProjectAudit(c *gin.Context) {
+func (h *Handlers) ListAudit(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})
 		return
 	}
-	projectID := c.Param("id")
-	if !h.requireProjectAuditAccess(c, projectID) {
+	if !h.requireAuditAccess(c) {
 		return
 	}
-	f, ok := h.parseAuditListFilter(c, projectID)
+	f, ok := h.parseAuditListFilter(c)
 	if !ok {
 		return
 	}
@@ -247,16 +234,15 @@ func (h *Handlers) ListProjectAudit(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-// ExportProjectAudit exports matching audit events as JSON or plain text and
+// ExportAudit exports matching audit events as JSON or plain text and
 // records an audit.export meta-event on success.
 // GET /api/workspace/audit/export?format=json|text
-func (h *Handlers) ExportProjectAudit(c *gin.Context) {
+func (h *Handlers) ExportAudit(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})
 		return
 	}
-	projectID := c.Param("id")
-	if !h.requireProjectAuditAccess(c, projectID) {
+	if !h.requireAuditAccess(c) {
 		return
 	}
 	format := strings.ToLower(strings.TrimSpace(c.DefaultQuery("format", "json")))
@@ -267,7 +253,7 @@ func (h *Handlers) ExportProjectAudit(c *gin.Context) {
 	if format == "txt" {
 		format = "text"
 	}
-	f, ok := h.parseAuditListFilter(c, projectID)
+	f, ok := h.parseAuditListFilter(c)
 	if !ok {
 		return
 	}
@@ -278,7 +264,7 @@ func (h *Handlers) ExportProjectAudit(c *gin.Context) {
 		return
 	}
 
-	filename := fmt.Sprintf("project-%s-audit.%s", sanitizeFilename(projectID), map[string]string{"json": "json", "text": "txt"}[format])
+	filename := fmt.Sprintf("workspace-audit.%s", map[string]string{"json": "json", "text": "txt"}[format])
 	var body []byte
 	var contentType string
 	if format == "json" {
@@ -314,7 +300,6 @@ func (h *Handlers) ExportProjectAudit(c *gin.Context) {
 		"to":         f.To,
 	}
 	h.Audit.Record(services.AuditRecord{
-		ProjectID:    projectID,
 		Actor:        actor,
 		Action:       models.AuditActionAuditExport,
 		ResourceType: "audit",

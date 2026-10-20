@@ -143,14 +143,14 @@ type inboxEntry struct {
 // AllPendingInboxItems merges unresolved gates and pending (non-auto) react
 // clarifications on alive runs, sorted newest-first by sortAt.
 func (s *RunService) AllPendingInboxItems() []any {
-	items, _ := s.PendingInboxItems("", "", nil, 0, 0)
+	items, _ := s.PendingInboxItems("", nil, 0, 0)
 	return items
 }
 
 // PendingInboxItems returns merged inbox items sorted newest-first. When limit > 0
 // the result is sliced to [offset:offset+limit]; total is always the full count.
-func (s *RunService) PendingInboxItems(wf, projectID string, tags []string, offset, limit int) ([]any, int) {
-	entries := s.pendingInboxEntries(wf, projectID, tags)
+func (s *RunService) PendingInboxItems(wf string, tags []string, offset, limit int) ([]any, int) {
+	entries := s.pendingInboxEntries(wf, tags)
 	total := len(entries)
 	if limit > 0 {
 		end := offset + limit
@@ -169,10 +169,10 @@ func (s *RunService) PendingInboxItems(wf, projectID string, tags []string, offs
 	return out, total
 }
 
-func (s *RunService) pendingInboxEntries(wf, projectID string, tags []string) []inboxEntry {
-	gates := s.pendingGatesFiltered(wf, projectID, tags)
-	clarifies := s.pendingClarificationsFiltered(wf, projectID, tags)
-	clarifies = append(clarifies, s.startingClarifiesFiltered(wf, projectID, tags)...)
+func (s *RunService) pendingInboxEntries(wf string, tags []string) []inboxEntry {
+	gates := s.pendingGatesFiltered(wf, tags)
+	clarifies := s.pendingClarificationsFiltered(wf, tags)
+	clarifies = append(clarifies, s.startingClarifiesFiltered(wf, tags)...)
 
 	runIDs := make([]string, 0, len(gates)+len(clarifies))
 	seen := map[string]bool{}
@@ -229,12 +229,10 @@ func (s *RunService) runMetaByIDs(runIDs []string) map[string]runInboxMeta {
 	return out
 }
 
-func (s *RunService) pendingGatesFiltered(wf, projectID string, tags []string) []models.Gate {
+func (s *RunService) pendingGatesFiltered(wf string, tags []string) []models.Gate {
 	q := pendingGateScope(s.db)
 	if wf != "" {
 		q = q.Where("runs.workflow_id = ?", wf)
-	} else if projectID != "" {
-		q = q.Where("runs.workflow_id IN (?)", s.db.Model(&models.WorkflowDef{}).Select("id").Where("project_id = ?", projectID))
 	}
 	q = applyRunTagsFilter(q, "runs.tags", tags)
 	var gates []models.Gate
@@ -242,36 +240,21 @@ func (s *RunService) pendingGatesFiltered(wf, projectID string, tags []string) [
 	return gates
 }
 
-func (s *RunService) pendingClarificationsFiltered(wf, projectID string, tags []string) []ClarifyInboxItem {
-	return s.filterClarifyByWorkflow(s.pendingClarifications(tags), wf, projectID)
+func (s *RunService) pendingClarificationsFiltered(wf string, tags []string) []ClarifyInboxItem {
+	return s.filterClarifyByWorkflow(s.pendingClarifications(tags), wf)
 }
 
-func (s *RunService) startingClarifiesFiltered(wf, projectID string, tags []string) []ClarifyInboxItem {
-	return s.filterClarifyByWorkflow(s.startingClarifies(tags), wf, projectID)
+func (s *RunService) startingClarifiesFiltered(wf string, tags []string) []ClarifyInboxItem {
+	return s.filterClarifyByWorkflow(s.startingClarifies(tags), wf)
 }
 
-func (s *RunService) filterClarifyByWorkflow(clarifies []ClarifyInboxItem, wf, projectID string) []ClarifyInboxItem {
-	if wf == "" && projectID == "" {
+func (s *RunService) filterClarifyByWorkflow(clarifies []ClarifyInboxItem, wf string) []ClarifyInboxItem {
+	if wf == "" {
 		return clarifies
-	}
-	var projectWFs map[string]struct{}
-	if wf == "" && projectID != "" {
-		var ids []string
-		s.db.Model(&models.WorkflowDef{}).Where("project_id = ?", projectID).Pluck("id", &ids)
-		projectWFs = make(map[string]struct{}, len(ids))
-		for _, id := range ids {
-			projectWFs[id] = struct{}{}
-		}
 	}
 	out := make([]ClarifyInboxItem, 0, len(clarifies))
 	for _, c := range clarifies {
-		if wf != "" {
-			if c.WorkflowID == wf {
-				out = append(out, c)
-			}
-			continue
-		}
-		if _, ok := projectWFs[c.WorkflowID]; ok {
+		if c.WorkflowID == wf {
 			out = append(out, c)
 		}
 	}

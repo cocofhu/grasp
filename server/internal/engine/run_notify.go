@@ -12,11 +12,9 @@ import (
 // RunNotifyEvent carries confirmed waiting_human / failed context for an
 // optional async IM side-effect. Engine never blocks on handlers.
 type RunNotifyEvent struct {
-	ProjectID    string
 	RunID        string
 	WorkflowID   string
 	WorkflowName string
-	ProjectName  string
 	NodeID       string
 	NodeLabel    string
 	Iteration    int
@@ -52,32 +50,19 @@ func (e *Engine) fireRunNotify(c *execCtx, node *models.Node, kind string) {
 		return
 	}
 	var wf models.WorkflowDef
-	if err := e.db.Select("project_id", "name").Where("id = ?", c.run.WorkflowID).First(&wf).Error; err != nil {
+	if err := e.db.Select("name").Where("id = ?", c.run.WorkflowID).First(&wf).Error; err != nil {
 		log.Warn().Err(err).Str("run_id", c.run.ID).Str("workflow", c.run.WorkflowID).
 			Msg("run-notify: resolve workflow failed")
 		return
-	}
-	projectID := strings.TrimSpace(wf.ProjectID)
-	if projectID == "" {
-		log.Warn().Str("run_id", c.run.ID).Str("workflow", c.run.WorkflowID).
-			Msg("run-notify: workflow has empty project_id")
-		return
-	}
-	projectName := ""
-	var project models.Project
-	if err := e.db.Select("name").Where("id = ?", projectID).First(&project).Error; err == nil {
-		projectName = project.Name
 	}
 	wfName := wf.Name
 	if wfName == "" {
 		wfName = c.run.WorkflowName
 	}
 	ev := RunNotifyEvent{
-		ProjectID:    projectID,
 		RunID:        c.run.ID,
 		WorkflowID:   c.run.WorkflowID,
 		WorkflowName: wfName,
-		ProjectName:  projectName,
 		NodeID:       node.ID,
 		NodeLabel:    node.Label,
 		Iteration:    iter,

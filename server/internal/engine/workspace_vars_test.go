@@ -6,10 +6,10 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestResolveStartVarsProjectSeedAndOverride(t *testing.T) {
-	project := []models.ProjectVariable{
+func TestResolveStartVarsWorkspaceSeedAndOverride(t *testing.T) {
+	wsVars := []models.WorkspaceVariable{
 		{Name: "region", Type: "string", Value: "cn"},
-		{Name: "shared", Type: "string", Value: "from-project"},
+		{Name: "shared", Type: "string", Value: "from-workspace"},
 		{Name: "only_project", Type: "string", Value: "keep"},
 	}
 	g := models.Graph{
@@ -18,7 +18,7 @@ func TestResolveStartVarsProjectSeedAndOverride(t *testing.T) {
 			{Name: "idea", Type: "string", Ask: true, Required: true},
 		},
 	}
-	out, err := resolveStartVars(g, map[string]any{"idea": "hello"}, project)
+	out, err := resolveStartVars(g, map[string]any{"idea": "hello"}, wsVars)
 	if err != nil {
 		t.Fatal(err)
 	}

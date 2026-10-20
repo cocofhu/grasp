@@ -25,7 +25,7 @@ var HomeBaseDir string
 // ConfigHomeSpec describes how to assemble a per-node config home (e.g.
 // /root/.cursor, /root/.claude) for an ACP backend.
 type ConfigHomeSpec struct {
-	// BaseWorkDirSrc, when set, is copied first (project shared Agent workspace).
+	// BaseWorkDirSrc, when set, is copied first (workspace shared Agent directory).
 	// Agent WorkDirSrc then overlays same-relative paths.
 	BaseWorkDirSrc string
 	// WorkDirSrc, when set, is the agent's working directory on the host
@@ -91,7 +91,7 @@ func BuildConfigHome(spec ConfigHomeSpec) (string, error) {
 		return "", err
 	}
 
-	// First lay down project-shared workspace (extend), then agent workspace
+	// First lay down workspace-shared workspace (extend), then agent workspace
 	// (overlay). The embedded base rules + mcp.json layer on top so they can't
 	// be silently dropped by the agent.
 	if spec.BaseWorkDirSrc != "" {

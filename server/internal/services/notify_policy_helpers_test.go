@@ -2,11 +2,11 @@ package services
 
 import "github.com/cocofhu/grasp/internal/models"
 
-// notifyPoliciesEqual compares two project policies for change detection.
+// notifyPoliciesEqual compares two workspace policies for change detection.
 // Test-only helper (production persists via Normalize + field writes).
-func notifyPoliciesEqual(a, b models.ProjectNotifyPolicy) bool {
-	a = NormalizeProjectNotifyPolicy(a)
-	b = NormalizeProjectNotifyPolicy(b)
+func notifyPoliciesEqual(a, b models.WorkspaceNotifyPolicy) bool {
+	a = NormalizeWorkspaceNotifyPolicy(a)
+	b = NormalizeWorkspaceNotifyPolicy(b)
 	if a.IsEnabled() != b.IsEnabled() {
 		return false
 	}

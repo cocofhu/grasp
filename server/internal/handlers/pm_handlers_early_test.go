@@ -16,8 +16,7 @@ import (
 
 func TestPmThreadChatEarlyFailures(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 
 	hn.h.PmTurns = nil
 	w := hn.do(http.MethodGet, "/api/workspace/pm/threads/any/chat", nil)
@@ -33,8 +32,7 @@ func TestPmThreadChatEarlyFailures(t *testing.T) {
 }
 
 func TestPmMessagesHandlersBranches(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "msgs"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
@@ -71,18 +69,17 @@ func TestPmHandlersRequireAuthWhenEnabled(t *testing.T) {
 	pm := services.NewPmService(db, nil)
 	h := &handlers.Handlers{Pm: pm, Auth: authSvc}
 	r := gin.New()
-	r.GET("/api/projects/:id/pm/threads/:tid/messages", h.ListPmMessages)
+	r.GET("/api/workspace/pm/threads/:tid/messages", h.ListPmMessages)
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/projects/p1/pm/threads/t1/messages", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/workspace/pm/threads/t1/messages", nil))
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("unauth list messages: %d", w.Code)
 	}
 }
 
 func TestAppendPmMessageInvalidJSON(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "bad-json"})
 	tid := jsonField(w.Body.String(), "id")
 	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", "not-json")

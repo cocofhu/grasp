@@ -21,7 +21,7 @@ func TestParseVcsMessageReasonSpaces(t *testing.T) {
 func TestWorkspaceVcsBaselineAndWrite(t *testing.T) {
 	root := t.TempDir()
 	s := NewAgentService(root)
-	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "coder", ProjectID: "p1"}); err != nil {
+	if err := s.Save(Agent{AcpBackend: AcpBackendCursor, Name: "coder"}); err != nil {
 		t.Fatal(err)
 	}
 	sha, err := s.WriteWorkspaceFileVcs("coder", "AGENTS.md", "# hi", WorkspaceWriteOpts{

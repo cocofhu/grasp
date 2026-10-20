@@ -15,7 +15,7 @@ func TestTokenStatsLedgerEndpoints(t *testing.T) {
 	now := time.Now().UTC()
 	if err := hn.db.Create(&models.TokenUsageEvent{
 		CreatedAt: now.Add(-time.Hour), Source: models.TokenLedgerSourceStudio, Status: models.TokenLedgerStatusOK,
-		ProjectID: "p-x", ProjectName: "X", ModelKey: "m1", InputTokens: 2_000_000,
+		ModelKey: "m1", InputTokens: 2_000_000,
 	}).Error; err != nil {
 		t.Fatal(err)
 	}

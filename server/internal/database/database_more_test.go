@@ -47,33 +47,27 @@ func TestOpenSQLiteBacksUpExistingDBAndKeepsThree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var p models.Project
-	if err := restored.First(&p, "id = ?", models.DefaultProjectID).Error; err != nil {
+	var p models.Workspace
+	if err := restored.First(&p, "id = ?", models.WorkspaceID).Error; err != nil {
 		t.Fatalf("backup must contain data: %v", err)
 	}
 }
 
-func TestEnsureDefaultProjectOnlyOnEmptyDB(t *testing.T) {
+func TestEnsureWorkspaceSeedsSingletonIdempotently(t *testing.T) {
 	db, err := OpenSQLite(filepath.Join(t.TempDir(), "default.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var p models.Project
-	if err := db.First(&p, "id = ?", models.DefaultProjectID).Error; err != nil {
-		t.Fatalf("default project missing on fresh db: %v", err)
-	}
-	db.Exec("DELETE FROM projects")
-	now := time.Now()
-	if err := db.Create(&models.Project{
-		ID: "custom", Name: "Custom", Variables: []models.ProjectVariable{},
-		CreatedAt: now, UpdatedAt: now,
-	}).Error; err != nil {
+	if err := db.Model(&models.Workspace{}).Where("id = ?", models.WorkspaceID).
+		Update("name", "Renamed").Error; err != nil {
 		t.Fatal(err)
 	}
-	ensureDefaultProject(db)
-	var n int64
-	db.Model(&models.Project{}).Count(&n)
-	if n != 1 {
-		t.Fatalf("ensureDefaultProject must not create when projects exist, got %d", n)
+	if err := ensureWorkspace(db); err != nil {
+		t.Fatal(err)
+	}
+	var ws []models.Workspace
+	db.Find(&ws)
+	if len(ws) != 1 || ws[0].ID != models.WorkspaceID || ws[0].Name != "Renamed" {
+		t.Fatalf("ensureWorkspace must keep the existing singleton, got %+v", ws)
 	}
 }

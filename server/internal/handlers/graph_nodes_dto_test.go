@@ -15,7 +15,7 @@ func TestGraphNodesDTOCapsSnapshot(t *testing.T) {
 	h := newHarness(t)
 
 	body := map[string]any{
-		"name": "WF", "projectId": models.DefaultProjectID,
+		"name": "WF",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "label": "开始"},
 			{"id": "impl", "type": "agent", "label": "实现"},

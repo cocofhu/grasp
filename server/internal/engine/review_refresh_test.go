@@ -22,7 +22,7 @@ func (s *switchableAgents) Get(name string) (services.Agent, bool) {
 	if !ok {
 		return services.Agent{}, false
 	}
-	return services.Agent{Name: name, ProjectID: models.DefaultProjectID, Capabilities: c.Clone()}, true
+	return services.Agent{Name: name, Capabilities: c.Clone()}, true
 }
 
 func (s *switchableAgents) setReview(name string, on bool) {

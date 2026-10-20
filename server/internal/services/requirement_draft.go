@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	// ErrRequirementDraftNotFound is returned when a draft id is missing in the project.
+	// ErrRequirementDraftNotFound is returned when a draft id is missing.
 	ErrRequirementDraftNotFound = errors.New("requirement draft not found")
 	// ErrRequirementDraftEmptyTitle is returned when save title trims to empty.
 	ErrRequirementDraftEmptyTitle = errors.New("title must not be empty")
@@ -55,7 +55,7 @@ var (
 
 var dateOnlyRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
 
-// RequirementDraftService persists project-scoped requirement drafts.
+// RequirementDraftService persists requirement drafts.
 type RequirementDraftService struct {
 	db *gorm.DB
 }
@@ -93,12 +93,9 @@ type RequirementDraftScheduleInput struct {
 	ParentID **string // nil = unchanged; *nil = clear; *id = set
 }
 
-// List returns drafts for a project ordered by updated_at DESC.
-func (s *RequirementDraftService) List(projectID string, f RequirementDraftListFilter) ([]models.RequirementDraft, error) {
-	if err := s.requireProject(projectID); err != nil {
-		return nil, err
-	}
-	q := s.db.Where("project_id = ?", projectID)
+// List returns drafts ordered by updated_at DESC.
+func (s *RequirementDraftService) List(f RequirementDraftListFilter) ([]models.RequirementDraft, error) {
+	q := s.db
 	switch strings.TrimSpace(f.Status) {
 	case "", "all":
 		// no status filter
@@ -122,13 +119,10 @@ func (s *RequirementDraftService) List(projectID string, f RequirementDraftListF
 	return rows, nil
 }
 
-// Get returns one draft scoped to projectID.
-func (s *RequirementDraftService) Get(projectID, id string) (models.RequirementDraft, error) {
-	if err := s.requireProject(projectID); err != nil {
-		return models.RequirementDraft{}, err
-	}
+// Get returns one draft.
+func (s *RequirementDraftService) Get(id string) (models.RequirementDraft, error) {
 	var row models.RequirementDraft
-	err := s.db.Where("id = ? AND project_id = ?", id, projectID).First(&row).Error
+	err := s.db.Where("id = ?", id).First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return models.RequirementDraft{}, ErrRequirementDraftNotFound
 	}
@@ -140,10 +134,7 @@ func (s *RequirementDraftService) Get(projectID, id string) (models.RequirementD
 }
 
 // Create inserts a new open draft. Empty input creates an unscheduled requirement.
-func (s *RequirementDraftService) Create(projectID string, in RequirementDraftCreateInput) (models.RequirementDraft, error) {
-	if err := s.requireProject(projectID); err != nil {
-		return models.RequirementDraft{}, err
-	}
+func (s *RequirementDraftService) Create(in RequirementDraftCreateInput) (models.RequirementDraft, error) {
 	kind := strings.TrimSpace(in.Kind)
 	if kind == "" {
 		kind = models.RequirementDraftKindRequirement
@@ -199,7 +190,6 @@ func (s *RequirementDraftService) Create(projectID string, in RequirementDraftCr
 	now := time.Now()
 	row := models.RequirementDraft{
 		ID:           "rd-" + uuid.NewString()[:8],
-		ProjectID:    projectID,
 		Title:        title,
 		BodyMarkdown: "",
 		Status:       models.RequirementDraftStatusOpen,
@@ -211,7 +201,7 @@ func (s *RequirementDraftService) Create(projectID string, in RequirementDraftCr
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	if err := s.validateParentAssignment(projectID, row.ID, parentID, false); err != nil {
+	if err := s.validateParentAssignment(row.ID, parentID, false); err != nil {
 		return models.RequirementDraft{}, err
 	}
 	if err := s.db.Create(&row).Error; err != nil {
@@ -222,8 +212,8 @@ func (s *RequirementDraftService) Create(projectID string, in RequirementDraftCr
 }
 
 // UpdateContent updates title + body (explicit save). Title must trim non-empty.
-func (s *RequirementDraftService) UpdateContent(projectID, id, title, body string) (models.RequirementDraft, error) {
-	row, err := s.Get(projectID, id)
+func (s *RequirementDraftService) UpdateContent(id, title, body string) (models.RequirementDraft, error) {
+	row, err := s.Get(id)
 	if err != nil {
 		return models.RequirementDraft{}, err
 	}
@@ -249,8 +239,8 @@ func (s *RequirementDraftService) UpdateContent(projectID, id, title, body strin
 
 // UpdateStatus toggles or sets status to open|done and refreshes updatedAt.
 // Does not change progress.
-func (s *RequirementDraftService) UpdateStatus(projectID, id, status string) (models.RequirementDraft, error) {
-	row, err := s.Get(projectID, id)
+func (s *RequirementDraftService) UpdateStatus(id, status string) (models.RequirementDraft, error) {
+	row, err := s.Get(id)
 	if err != nil {
 		return models.RequirementDraft{}, err
 	}
@@ -268,8 +258,8 @@ func (s *RequirementDraftService) UpdateStatus(projectID, id, status string) (mo
 }
 
 // UpdateSchedule writes kind / dates / progress / parent without touching title/body/status.
-func (s *RequirementDraftService) UpdateSchedule(projectID, id string, in RequirementDraftScheduleInput) (models.RequirementDraft, error) {
-	row, err := s.Get(projectID, id)
+func (s *RequirementDraftService) UpdateSchedule(id string, in RequirementDraftScheduleInput) (models.RequirementDraft, error) {
+	row, err := s.Get(id)
 	if err != nil {
 		return models.RequirementDraft{}, err
 	}
@@ -312,7 +302,7 @@ func (s *RequirementDraftService) UpdateSchedule(projectID, id string, in Requir
 
 	// Kind conversion date mapping (clarified rules).
 	if kind != row.Kind {
-		hasChildren, err := s.hasChildren(projectID, row.ID)
+		hasChildren, err := s.hasChildren(row.ID)
 		if err != nil {
 			return models.RequirementDraft{}, err
 		}
@@ -355,7 +345,7 @@ func (s *RequirementDraftService) UpdateSchedule(projectID, id string, in Requir
 		return models.RequirementDraft{}, ErrRequirementDraftDueBeforeStart
 	}
 
-	if err := s.validateParentAssignment(projectID, row.ID, parentID, true); err != nil {
+	if err := s.validateParentAssignment(row.ID, parentID, true); err != nil {
 		return models.RequirementDraft{}, err
 	}
 
@@ -373,13 +363,10 @@ func (s *RequirementDraftService) UpdateSchedule(projectID, id string, in Requir
 }
 
 // Delete hard-removes a draft; children are promoted to top-level (parent_id cleared).
-func (s *RequirementDraftService) Delete(projectID, id string) error {
-	if err := s.requireProject(projectID); err != nil {
-		return err
-	}
+func (s *RequirementDraftService) Delete(id string) error {
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var row models.RequirementDraft
-		err := tx.Where("id = ? AND project_id = ?", id, projectID).First(&row).Error
+		err := tx.Where("id = ?", id).First(&row).Error
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrRequirementDraftNotFound
 		}
@@ -387,11 +374,11 @@ func (s *RequirementDraftService) Delete(projectID, id string) error {
 			return err
 		}
 		if err := tx.Model(&models.RequirementDraft{}).
-			Where("project_id = ? AND parent_id = ?", projectID, id).
+			Where("parent_id = ?", id).
 			Update("parent_id", nil).Error; err != nil {
 			return err
 		}
-		res := tx.Where("id = ? AND project_id = ?", id, projectID).Delete(&models.RequirementDraft{})
+		res := tx.Where("id = ?", id).Delete(&models.RequirementDraft{})
 		if res.Error != nil {
 			return res.Error
 		}
@@ -402,15 +389,15 @@ func (s *RequirementDraftService) Delete(projectID, id string) error {
 	})
 }
 
-func (s *RequirementDraftService) hasChildren(projectID, id string) (bool, error) {
+func (s *RequirementDraftService) hasChildren(id string) (bool, error) {
 	var n int64
 	err := s.db.Model(&models.RequirementDraft{}).
-		Where("project_id = ? AND parent_id = ?", projectID, id).
+		Where("parent_id = ?", id).
 		Count(&n).Error
 	return n > 0, err
 }
 
-func (s *RequirementDraftService) validateParentAssignment(projectID, selfID string, parentID *string, checkSelfChildren bool) error {
+func (s *RequirementDraftService) validateParentAssignment(selfID string, parentID *string, checkSelfChildren bool) error {
 	if parentID == nil || strings.TrimSpace(*parentID) == "" {
 		return nil
 	}
@@ -419,7 +406,7 @@ func (s *RequirementDraftService) validateParentAssignment(projectID, selfID str
 		return ErrRequirementDraftInvalidParent
 	}
 	if checkSelfChildren {
-		hasChildren, err := s.hasChildren(projectID, selfID)
+		hasChildren, err := s.hasChildren(selfID)
 		if err != nil {
 			return err
 		}
@@ -429,7 +416,7 @@ func (s *RequirementDraftService) validateParentAssignment(projectID, selfID str
 		}
 	}
 	var parent models.RequirementDraft
-	err := s.db.Where("id = ? AND project_id = ?", pid, projectID).First(&parent).Error
+	err := s.db.Where("id = ?", pid).First(&parent).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return ErrRequirementDraftInvalidParent
 	}
@@ -478,15 +465,4 @@ func normalizeDraft(row *models.RequirementDraft) {
 	if row.Progress > 100 {
 		row.Progress = 100
 	}
-}
-
-func (s *RequirementDraftService) requireProject(projectID string) error {
-	var n int64
-	if err := s.db.Model(&models.Project{}).Where("id = ?", projectID).Count(&n).Error; err != nil {
-		return err
-	}
-	if n == 0 {
-		return ErrProjectNotFound
-	}
-	return nil
 }

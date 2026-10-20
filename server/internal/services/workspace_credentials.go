@@ -27,10 +27,10 @@ func validCredentialEnvKey(k string) bool {
 	return credentialEnvKeyPattern.MatchString(k) && !envauth.IsPlatformReservedEnvKey(k)
 }
 
-// overlayProjectCredentialEnv applies resolved project credentials onto env.
+// overlayCredentialEnv applies resolved workspace credentials onto env.
 // Platform-reserved keys are skipped so a credential can never replace run
 // coordinates or platform MCP tokens.
-func overlayProjectCredentialEnv(env, creds map[string]string) {
+func overlayCredentialEnv(env, creds map[string]string) {
 	for k, v := range creds {
 		k = strings.TrimSpace(k)
 		if k == "" || envauth.IsPlatformReservedEnvKey(k) {
@@ -40,10 +40,10 @@ func overlayProjectCredentialEnv(env, creds map[string]string) {
 	}
 }
 
-// ProjectCredentialInput is the write shape used by the project credential API.
+// CredentialInput is the write shape used by the credential API.
 // Value is optional on update: an omitted/blank value keeps the current secret
 // unless Clear is true. The service never returns Value.
-type ProjectCredentialInput struct {
+type CredentialInput struct {
 	Type       string         `json:"type"`
 	Provider   string         `json:"provider"`
 	Name       string         `json:"name"`
@@ -57,11 +57,10 @@ type ProjectCredentialInput struct {
 	Clear      bool           `json:"clear"`
 }
 
-// ProjectCredentialView is safe for API/UI use. Masked is derived from the
+// CredentialView is safe for API/UI use. Masked is derived from the
 // encrypted value and never contains any plaintext.
-type ProjectCredentialView struct {
+type CredentialView struct {
 	ID         string         `json:"id"`
-	ProjectID  string         `json:"projectId"`
 	Type       string         `json:"type"`
 	Provider   string         `json:"provider,omitempty"`
 	Name       string         `json:"name"`
@@ -80,8 +79,7 @@ type ProjectCredentialView struct {
 }
 
 var (
-	ErrCredentialNotFound   = errors.New("project credential not found")
-	ErrCredentialProject    = errors.New("project id required")
+	ErrCredentialNotFound   = errors.New("credential not found")
 	ErrCredentialType       = errors.New("credential type is required")
 	ErrCredentialName       = errors.New("credential name is required")
 	ErrCredentialTarget     = errors.New("custom credential target is required")
@@ -98,27 +96,15 @@ type CredentialAliasTakenError struct{ Alias string }
 func (e *CredentialAliasTakenError) Error() string { return ErrCredentialAliasTaken.Error() }
 func (e *CredentialAliasTakenError) Unwrap() error { return ErrCredentialAliasTaken }
 
-// ProjectCredentialService persists encrypted project credentials and resolves
+// CredentialService persists encrypted workspace credentials and resolves
 // UI values for runtime injection.
-type ProjectCredentialService struct{ db *gorm.DB }
+type CredentialService struct{ db *gorm.DB }
 
-func NewProjectCredentialService(db *gorm.DB) *ProjectCredentialService {
-	return &ProjectCredentialService{db: db}
+func NewCredentialService(db *gorm.DB) *CredentialService {
+	return &CredentialService{db: db}
 }
 
-func (s *ProjectCredentialService) ensureProject(projectID string) error {
-	if strings.TrimSpace(projectID) == "" {
-		return ErrCredentialProject
-	}
-	var p models.Project
-	err := s.db.Select("id").First(&p, "id = ?", projectID).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return ErrProjectNotFound
-	}
-	return err
-}
-
-// validCredentialType lists the types stored in ProjectCredential. Channel,
+// validCredentialType lists the types stored in Credential. Channel,
 // external MCP and workflow keys are read-only adapter views over their own
 // services and cannot be created here.
 func validCredentialType(t string) bool {
@@ -130,7 +116,7 @@ func validCredentialType(t string) bool {
 	}
 }
 
-func defaultCredentialEnvKey(in ProjectCredentialInput) string {
+func defaultCredentialEnvKey(in CredentialInput) string {
 	t := strings.ToLower(strings.TrimSpace(in.Type))
 	p := strings.ToLower(strings.TrimSpace(in.Provider))
 	switch t {
@@ -162,16 +148,16 @@ func defaultCredentialEnvKey(in ProjectCredentialInput) string {
 	return ""
 }
 
-func credentialView(row models.ProjectCredential) ProjectCredentialView {
-	return ProjectCredentialView{
-		ID: row.ID, ProjectID: row.ProjectID, Type: row.Type, Provider: row.Provider,
+func credentialView(row models.Credential) CredentialView {
+	return CredentialView{
+		ID: row.ID, Type: row.Type, Provider: row.Provider,
 		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
 		Masked: func() string {
 			if strings.TrimSpace(row.ValueEnc) == "" {
 				return ""
 			}
 			return "••••••••"
-		}(), Source: "project", Configured: strings.TrimSpace(row.ValueEnc) != "",
+		}(), Source: "workspace", Configured: strings.TrimSpace(row.ValueEnc) != "",
 		Enabled: row.Enabled, RevokedAt: row.RevokedAt, Metadata: safeCredentialMetadata(row.Metadata),
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
@@ -218,67 +204,37 @@ const (
 	builtinNameSSHHosts   = "SSH Hosts"
 )
 
-// builtinCredentialSlot is one fixed project credential row plus the display
-// names previously written for that same slot.
-type builtinCredentialSlot struct {
-	row    models.ProjectCredential
-	legacy []string
-}
+func builtinCredentialID(slot string) string { return "cred-builtin-" + slot }
 
-func builtinCredentialSlots(projectID string) []builtinCredentialSlot {
-	return []builtinCredentialSlot{
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-cursor", Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey}, legacy: []string{"Cursor API Key", "cursor API Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-claude", Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey}, legacy: []string{"Claude Code API Key", "claude_code API Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-codebuddy", Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey}, legacy: []string{"CodeBuddy API Key", "codebuddy API Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-trae", Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey}, legacy: []string{"Trae API Token", "trae API Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-opencode", Type: "ai", Provider: "opencode", Name: builtinNameOpenCode, EnvKey: envauth.EnvOpenCodeAPIKey}, legacy: []string{"OpenCode API Key", "opencode API Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-codex", Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile}, legacy: []string{"Codex Login File"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-github", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken}, legacy: []string{"GitHub HTTPS Token"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-gitlab", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken}, legacy: []string{"GitLab HTTPS Token"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-gitlab-url", Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-ssh-key", Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey}, legacy: []string{"Git SSH Private Key"}},
-		{row: models.ProjectCredential{ID: "cred-" + projectID + "-ssh-hosts", Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts}, legacy: []string{"Git SSH Known Hosts"}},
+func builtinCredentialRows() []models.Credential {
+	return []models.Credential{
+		{ID: builtinCredentialID("cursor"), Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey},
+		{ID: builtinCredentialID("claude"), Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey},
+		{ID: builtinCredentialID("codebuddy"), Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
+		{ID: builtinCredentialID("trae"), Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
+		{ID: builtinCredentialID("opencode"), Type: "ai", Provider: "opencode", Name: builtinNameOpenCode, EnvKey: envauth.EnvOpenCodeAPIKey},
+		{ID: builtinCredentialID("codex"), Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
+		{ID: builtinCredentialID("github"), Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
+		{ID: builtinCredentialID("gitlab"), Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
+		{ID: builtinCredentialID("gitlab-url"), Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL"},
+		{ID: builtinCredentialID("ssh-key"), Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey},
+		{ID: builtinCredentialID("ssh-hosts"), Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts},
 	}
-}
-
-func legacyBuiltinName(name string, legacy []string) bool {
-	name = strings.TrimSpace(name)
-	for _, old := range legacy {
-		if name == old {
-			return true
-		}
-	}
-	return false
 }
 
 // ensureDefaultRows creates empty, stable slots for the built-in credentials
-// shown by the project UI. Empty rows do not affect runtime resolution and are
-// not a migration of legacy environment values. A built-in slot whose name is
-// still a previous default is renamed to the short product name; any other
-// name is left as the user wrote it.
-func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
-	for _, slot := range builtinCredentialSlots(projectID) {
-		row := slot.row
-		var existing models.ProjectCredential
-		err := s.db.Where("id = ?", row.ID).First(&existing).Error
-		if err == nil {
-			if existing.BuiltinSlot == "" {
-				if err := s.db.Model(&models.ProjectCredential{}).Where("id = ?", existing.ID).UpdateColumn("builtin_slot", row.EnvKey).Error; err != nil {
-					return err
-				}
-			}
-			if legacyBuiltinName(existing.Name, slot.legacy) {
-				if err := s.db.Model(&models.ProjectCredential{}).Where("id = ?", existing.ID).UpdateColumn("name", row.Name).Error; err != nil {
-					return err
-				}
-			}
-			continue
-		}
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
+// shown by the workspace UI. Empty rows do not affect runtime resolution.
+func (s *CredentialService) ensureDefaultRows() error {
+	for _, row := range builtinCredentialRows() {
+		var n int64
+		if err := s.db.Model(&models.Credential{}).Where("id = ?", row.ID).Count(&n).Error; err != nil {
 			return err
 		}
+		if n > 0 {
+			continue
+		}
 		now := time.Now()
-		row.ProjectID, row.Enabled, row.CreatedAt, row.UpdatedAt = projectID, true, now, now
+		row.Enabled, row.CreatedAt, row.UpdatedAt = true, now, now
 		row.BuiltinSlot = row.EnvKey
 		if err := s.db.Create(&row).Error; err != nil && !strings.Contains(strings.ToLower(err.Error()), "unique") {
 			return err
@@ -287,18 +243,15 @@ func (s *ProjectCredentialService) ensureDefaultRows(projectID string) error {
 	return nil
 }
 
-func (s *ProjectCredentialService) List(projectID string) ([]ProjectCredentialView, error) {
-	if err := s.ensureProject(projectID); err != nil {
+func (s *CredentialService) List() ([]CredentialView, error) {
+	if err := s.ensureDefaultRows(); err != nil {
 		return nil, err
 	}
-	if err := s.ensureDefaultRows(projectID); err != nil {
+	var rows []models.Credential
+	if err := s.db.Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	var rows []models.ProjectCredential
-	if err := s.db.Where("project_id = ?", projectID).Order("created_at desc").Find(&rows).Error; err != nil {
-		return nil, err
-	}
-	out := make([]ProjectCredentialView, 0, len(rows))
+	out := make([]CredentialView, 0, len(rows))
 	for _, row := range rows {
 		v := credentialView(row)
 		out = append(out, v)
@@ -308,80 +261,74 @@ func (s *ProjectCredentialService) List(projectID string) ([]ProjectCredentialVi
 
 // Create stores a new encrypted credential. Plaintext is accepted only on
 // write and is never returned by this service.
-func (s *ProjectCredentialService) Create(projectID string, in ProjectCredentialInput) (ProjectCredentialView, error) {
-	if err := s.ensureProject(projectID); err != nil {
-		return ProjectCredentialView{}, err
-	}
+func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	in.Type = strings.ToLower(strings.TrimSpace(in.Type))
 	in.Provider = strings.TrimSpace(in.Provider)
 	in.Name = strings.TrimSpace(in.Name)
 	in.EnvKey = strings.TrimSpace(in.EnvKey)
 	if in.Type == "" || !validCredentialType(in.Type) {
-		return ProjectCredentialView{}, ErrCredentialType
+		return CredentialView{}, ErrCredentialType
 	}
 	if in.Name == "" {
-		return ProjectCredentialView{}, ErrCredentialName
+		return CredentialView{}, ErrCredentialName
 	}
 	if in.EnvKey == "" {
 		in.EnvKey = defaultCredentialEnvKey(in)
 	}
 	if !validCredentialEnvKey(in.EnvKey) {
-		return ProjectCredentialView{}, ErrCredentialEnvKey
+		return CredentialView{}, ErrCredentialEnvKey
 	}
 	if in.Type == "custom" && strings.TrimSpace(in.EnvKey) == "" && strings.TrimSpace(in.Target) == "" && strings.TrimSpace(in.TargetID) == "" {
-		return ProjectCredentialView{}, ErrCredentialTarget
+		return CredentialView{}, ErrCredentialTarget
 	}
 	if strings.TrimSpace(in.Value) == "" {
-		return ProjectCredentialView{}, errors.New("credential value is required")
+		return CredentialView{}, errors.New("credential value is required")
 	}
-	taken, ok, err := s.credentialAliasTaken(projectID, in.EnvKey, in.Name, "")
+	taken, ok, err := s.credentialAliasTaken(in.EnvKey, in.Name, "")
 	if err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	if ok {
-		return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
+		return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
 	}
 	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, true); err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	enc, err := crypto.Encrypt(in.Value)
 	if err != nil {
-		return ProjectCredentialView{}, fmt.Errorf("encrypt credential: %w", err)
+		return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
 	}
 	target := strings.TrimSpace(in.Target)
 	if target == "" {
 		target = strings.TrimSpace(in.TargetID)
 	}
 	now := time.Now()
-	row := models.ProjectCredential{ID: "cred-" + uuid.NewString()[:12], ProjectID: projectID,
+	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
 		EnvKey: in.EnvKey, ValueEnc: enc, Metadata: safeCredentialMetadata(in.Metadata),
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
 	if err := s.db.Create(&row).Error; err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	return credentialView(row), nil
 }
 
 // Update edits metadata and optionally rotates/clears the secret.
-func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCredentialInput) (ProjectCredentialView, error) {
-	if err := s.ensureProject(projectID); err != nil {
-		return ProjectCredentialView{}, err
-	}
-	var row models.ProjectCredential
-	if err := s.db.Where("id = ? AND project_id = ?", strings.TrimSpace(id), projectID).First(&row).Error; err != nil {
+func (s *CredentialService) Update(id string, in CredentialInput) (CredentialView, error) {
+	var row models.Credential
+	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ProjectCredentialView{}, ErrCredentialNotFound
+			return CredentialView{}, ErrCredentialNotFound
 		}
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	if v := strings.TrimSpace(in.Type); v != "" {
 		v = strings.ToLower(v)
 		if !validCredentialType(v) {
-			return ProjectCredentialView{}, ErrCredentialType
+			return CredentialView{}, ErrCredentialType
 		}
 		row.Type = v
 	}
@@ -402,15 +349,15 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 		row.EnvKey = strings.TrimSpace(in.EnvKey)
 	}
 	if !validCredentialEnvKey(row.EnvKey) {
-		return ProjectCredentialView{}, ErrCredentialEnvKey
+		return CredentialView{}, ErrCredentialEnvKey
 	}
 	if nameChanged {
-		taken, ok, err := s.credentialAliasTaken(projectID, row.EnvKey, row.Name, row.ID)
+		taken, ok, err := s.credentialAliasTaken(row.EnvKey, row.Name, row.ID)
 		if err != nil {
-			return ProjectCredentialView{}, err
+			return CredentialView{}, err
 		}
 		if ok {
-			return ProjectCredentialView{}, &CredentialAliasTakenError{Alias: taken}
+			return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
 		}
 	}
 	if in.Metadata != nil {
@@ -419,7 +366,7 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 			provider = strings.TrimSpace(in.Provider)
 		}
 		if err := validateOpenCodeMetadata(provider, in.Metadata, true); err != nil {
-			return ProjectCredentialView{}, err
+			return CredentialView{}, err
 		}
 		row.Metadata = safeCredentialMetadata(in.Metadata)
 	}
@@ -427,7 +374,7 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 		row.Enabled = *in.Enabled
 	}
 	if row.Type == "custom" && strings.TrimSpace(row.EnvKey) == "" && strings.TrimSpace(row.Target) == "" {
-		return ProjectCredentialView{}, ErrCredentialTarget
+		return CredentialView{}, ErrCredentialTarget
 	}
 	if row.RevokedAt != nil && in.Enabled == nil && strings.TrimSpace(in.Value) != "" {
 		row.RevokedAt = nil
@@ -435,7 +382,7 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	}
 	if !in.Clear && in.Value != "" {
 		if err := rejectCodexLoginValue(row.Provider, row.EnvKey, in.Value); err != nil {
-			return ProjectCredentialView{}, err
+			return CredentialView{}, err
 		}
 	}
 	if in.Clear {
@@ -443,50 +390,44 @@ func (s *ProjectCredentialService) Update(projectID, id string, in ProjectCreden
 	} else if strings.TrimSpace(in.Value) != "" {
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
-			return ProjectCredentialView{}, fmt.Errorf("encrypt credential: %w", err)
+			return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
 		}
 		row.ValueEnc = enc
 	}
 	row.UpdatedAt = time.Now()
 	if err := s.db.Save(&row).Error; err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	return credentialView(row), nil
 }
 
 // SetByEnvKey creates or rotates the credential slot identified by envKey.
-// It is used by onboarding so newly submitted secrets land in the project
+// It is used by onboarding so newly submitted secrets land in the workspace
 // credential store instead of being written to shared Agent env.
-func (s *ProjectCredentialService) SetByEnvKey(projectID string, in ProjectCredentialInput) (ProjectCredentialView, error) {
+func (s *CredentialService) SetByEnvKey(in CredentialInput) (CredentialView, error) {
 	key := strings.TrimSpace(in.EnvKey)
 	if key == "" {
-		return ProjectCredentialView{}, errors.New("credential env key is required")
+		return CredentialView{}, errors.New("credential env key is required")
 	}
 	// Materialize built-in slots before lookup so onboarding and API writes
 	// update the stable UI row instead of creating a duplicate binding.
-	if err := s.ensureProject(projectID); err != nil {
-		return ProjectCredentialView{}, err
+	if err := s.ensureDefaultRows(); err != nil {
+		return CredentialView{}, err
 	}
-	if err := s.ensureDefaultRows(projectID); err != nil {
-		return ProjectCredentialView{}, err
-	}
-	var row models.ProjectCredential
-	err := s.db.Where("project_id = ? AND env_key = ?", projectID, key).Order("created_at asc").First(&row).Error
+	var row models.Credential
+	err := s.db.Where("env_key = ?", key).Order("created_at asc").First(&row).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return s.Create(projectID, in)
+		return s.Create(in)
 	}
 	if err != nil {
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
-	return s.Update(projectID, row.ID, in)
+	return s.Update(row.ID, in)
 }
 
-func (s *ProjectCredentialService) Revoke(projectID, id string) error {
-	if err := s.ensureProject(projectID); err != nil {
-		return err
-	}
+func (s *CredentialService) Revoke(id string) error {
 	now := time.Now()
-	res := s.db.Model(&models.ProjectCredential{}).Where("id = ? AND project_id = ?", id, projectID).
+	res := s.db.Model(&models.Credential{}).Where("id = ?", id).
 		Updates(map[string]any{"revoked_at": now, "enabled": false, "updated_at": now})
 	if res.Error != nil {
 		return res.Error
@@ -498,23 +439,20 @@ func (s *ProjectCredentialService) Revoke(projectID, id string) error {
 }
 
 // Clear removes a credential from use. Built-in slots keep their row so the
-// project page still has a place to configure them. An extra model-vendor key
+// workspace page still has a place to configure them. An extra model-vendor key
 // is deleted so the row disappears. Callers that track an Agent selection
 // should forget that id after a successful clear.
-func (s *ProjectCredentialService) Clear(projectID, id string) error {
-	if err := s.ensureProject(projectID); err != nil {
-		return err
-	}
+func (s *CredentialService) Clear(id string) error {
 	id = strings.TrimSpace(id)
-	var row models.ProjectCredential
-	if err := s.db.Where("id = ? AND project_id = ?", id, projectID).First(&row).Error; err != nil {
+	var row models.Credential
+	if err := s.db.Where("id = ?", id).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return ErrCredentialNotFound
 		}
 		return err
 	}
-	if isOpenCodeModelCredentialRow(row) && row.ID != defaultOpenCodeCredentialID(projectID) {
-		return s.db.Delete(&models.ProjectCredential{}, "id = ? AND project_id = ?", row.ID, projectID).Error
+	if isOpenCodeModelCredentialRow(row) && row.ID != builtinCredentialID("opencode") {
+		return s.db.Delete(&models.Credential{}, "id = ?", row.ID).Error
 	}
 	row.ValueEnc = ""
 	row.RevokedAt = nil
@@ -527,16 +465,13 @@ func (s *ProjectCredentialService) Clear(projectID, id string) error {
 }
 
 // Get returns one credential view. The secret is never included.
-func (s *ProjectCredentialService) Get(projectID, id string) (ProjectCredentialView, error) {
-	if err := s.ensureProject(projectID); err != nil {
-		return ProjectCredentialView{}, err
-	}
-	var row models.ProjectCredential
-	if err := s.db.Where("id = ? AND project_id = ?", strings.TrimSpace(id), projectID).First(&row).Error; err != nil {
+func (s *CredentialService) Get(id string) (CredentialView, error) {
+	var row models.Credential
+	if err := s.db.Where("id = ?", strings.TrimSpace(id)).First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ProjectCredentialView{}, ErrCredentialNotFound
+			return CredentialView{}, ErrCredentialNotFound
 		}
-		return ProjectCredentialView{}, err
+		return CredentialView{}, err
 	}
 	return credentialView(row), nil
 }
@@ -544,13 +479,9 @@ func (s *ProjectCredentialService) Get(projectID, id string) (ProjectCredentialV
 // ResolveEnv decrypts active runtime credentials. Service-only credentials are
 // deliberately excluded so channel/API authentication can never leak into a
 // sandbox environment.
-func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]string {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND enabled = ? AND revoked_at IS NULL", projectID, true).Order("updated_at desc").Find(&rows).Error != nil {
+func (s *CredentialService) ResolveEnv() map[string]string {
+	var rows []models.Credential
+	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Order("updated_at desc").Find(&rows).Error != nil {
 		return nil
 	}
 	out := map[string]string{}
@@ -612,7 +543,7 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 		if strings.TrimSpace(row.ValueEnc) != "" {
 			dec, err := crypto.Decrypt(row.ValueEnc)
 			if err != nil {
-				log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+				log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable workspace credential")
 			}
 			v = dec
 		}
@@ -637,12 +568,12 @@ func (s *ProjectCredentialService) ResolveEnv(projectID string) map[string]strin
 
 // InjectedCredentialID identifies an unambiguous inherited secret without ever
 // exposing it. Explicit Agent selections are resolved before this fallback.
-func (s *ProjectCredentialService) InjectedCredentialID(projectID, envKey, value string) string {
-	if value == "" || s.ResolveEnv(projectID)[envKey] != value {
+func (s *CredentialService) InjectedCredentialID(envKey, value string) string {
+	if value == "" || s.ResolveEnv()[envKey] != value {
 		return ""
 	}
-	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL", projectID, envKey, true).Find(&rows).Error != nil {
+	var rows []models.Credential
+	if s.db.Where("env_key = ? AND enabled = ? AND revoked_at IS NULL", envKey, true).Find(&rows).Error != nil {
 		return ""
 	}
 	id := ""
@@ -664,12 +595,12 @@ func (s *ProjectCredentialService) InjectedCredentialID(projectID, envKey, value
 
 // WriteBackCodexLoginCredential refreshes precisely the injected credential.
 // Revocation, clearing and deletion while a sandbox runs are never undone.
-func (s *ProjectCredentialService) WriteBackCodexLoginCredential(projectID, credentialID, content string) error {
+func (s *CredentialService) WriteBackCodexLoginCredential(credentialID, content string) error {
 	if err := runtime.ValidateCodexLoginFile(content); err != nil {
 		return err
 	}
-	var row models.ProjectCredential
-	if err := s.db.Where("id = ? AND project_id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL AND value_enc <> ''", credentialID, projectID, envauth.EnvCodexAuthFile, true).First(&row).Error; err != nil {
+	var row models.Credential
+	if err := s.db.Where("id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL AND value_enc <> ''", credentialID, envauth.EnvCodexAuthFile, true).First(&row).Error; err != nil {
 		return err
 	}
 	previous, err := crypto.Decrypt(row.ValueEnc)
@@ -683,7 +614,7 @@ func (s *ProjectCredentialService) WriteBackCodexLoginCredential(projectID, cred
 	if err != nil {
 		return err
 	}
-	result := s.db.Model(&models.ProjectCredential{}).Where("id = ? AND project_id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, projectID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now()})
+	result := s.db.Model(&models.Credential{}).Where("id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now()})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -701,14 +632,14 @@ func credentialAliasKey(name string) string {
 // the same env key (the kind) already uses this name. Comparison trims and
 // ignores case. exceptID is the row being renamed. A query error is returned
 // to the caller; it is not treated as "alias available".
-func (s *ProjectCredentialService) credentialAliasTaken(projectID, envKey, name, exceptID string) (string, bool, error) {
+func (s *CredentialService) credentialAliasTaken(envKey, name, exceptID string) (string, bool, error) {
 	envKey = strings.TrimSpace(envKey)
 	want := credentialAliasKey(name)
 	if envKey == "" || want == "" {
 		return "", false, nil
 	}
-	var rows []models.ProjectCredential
-	if err := s.db.Where("project_id = ? AND env_key = ?", projectID, envKey).Find(&rows).Error; err != nil {
+	var rows []models.Credential
+	if err := s.db.Where("env_key = ?", envKey).Find(&rows).Error; err != nil {
 		return "", false, err
 	}
 	for _, row := range rows {
@@ -722,7 +653,7 @@ func (s *ProjectCredentialService) credentialAliasTaken(projectID, envKey, name,
 	return "", false, nil
 }
 
-func credentialEnvRow(row models.ProjectCredential) bool {
+func credentialEnvRow(row models.Credential) bool {
 	switch strings.ToLower(strings.TrimSpace(row.Type)) {
 	case "ai", "git", "ssh", "mcp", "custom":
 	default:
@@ -738,20 +669,19 @@ func credentialEnvRow(row models.ProjectCredential) bool {
 // ResolveSelectedValue returns one credential's env key and plaintext.
 // An unknown, cleared, or empty secret returns ok=false and never substitutes
 // another row of the same kind.
-func (s *ProjectCredentialService) ResolveSelectedValue(projectID, credentialID string) (string, string, bool) {
-	projectID = strings.TrimSpace(projectID)
+func (s *CredentialService) ResolveSelectedValue(credentialID string) (string, string, bool) {
 	credentialID = strings.TrimSpace(credentialID)
-	if s == nil || s.db == nil || projectID == "" || credentialID == "" {
+	if s == nil || s.db == nil || credentialID == "" {
 		return "", "", false
 	}
-	var row models.ProjectCredential
-	err := s.db.Where("id = ? AND project_id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, projectID, true).First(&row).Error
+	var row models.Credential
+	err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, true).First(&row).Error
 	if err != nil || strings.TrimSpace(row.ValueEnc) == "" {
 		return "", "", false
 	}
 	dec, err := crypto.Decrypt(row.ValueEnc)
 	if err != nil || strings.TrimSpace(dec) == "" {
-		log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable project credential")
+		log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable workspace credential")
 		return "", "", false
 	}
 	return strings.TrimSpace(row.EnvKey), dec, true
@@ -815,19 +745,15 @@ func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {
 	}
 }
 
-// CredentialEnvKeys returns the environment keys bound by active project
+// CredentialEnvKeys returns the environment keys bound by active workspace
 // credentials that carry a value. Callers use this set
-// to prevent a per-run environment snapshot from shadowing a project
+// to prevent a per-run environment snapshot from shadowing a workspace
 // credential binding. Empty built-in slots (materialized just by opening the
 // UI) are excluded so they do not silently block Run env values.
 // The values themselves are intentionally not resolved here.
-func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[string]struct{} {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND enabled = ? AND revoked_at IS NULL", projectID, true).Find(&rows).Error != nil {
+func (s *CredentialService) CredentialEnvKeys() map[string]struct{} {
+	var rows []models.Credential
+	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Find(&rows).Error != nil {
 		return nil
 	}
 	out := make(map[string]struct{})
@@ -846,13 +772,9 @@ func (s *ProjectCredentialService) CredentialEnvKeys(projectID string) map[strin
 }
 
 // ResolveReferences returns credential-id substitutions for MCP templates.
-func (s *ProjectCredentialService) ResolveReferences(projectID string) map[string]string {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return nil
-	}
-	var rows []models.ProjectCredential
-	if s.db.Where("project_id = ? AND enabled = ? AND revoked_at IS NULL", projectID, true).Find(&rows).Error != nil {
+func (s *CredentialService) ResolveReferences() map[string]string {
+	var rows []models.Credential
+	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Find(&rows).Error != nil {
 		return nil
 	}
 	out := map[string]string{}
@@ -870,11 +792,7 @@ func (s *ProjectCredentialService) ResolveReferences(projectID string) map[strin
 	return out
 }
 
-func defaultOpenCodeCredentialID(projectID string) string {
-	return "cred-" + strings.TrimSpace(projectID) + "-opencode"
-}
-
-func isOpenCodeModelCredentialRow(row models.ProjectCredential) bool {
+func isOpenCodeModelCredentialRow(row models.Credential) bool {
 	return strings.EqualFold(strings.TrimSpace(row.Type), "ai") && strings.EqualFold(strings.TrimSpace(row.Provider), "opencode")
 }
 
@@ -908,20 +826,19 @@ func validateOpenCodeMetadata(provider string, metadata map[string]any, required
 // ResolveOpenCodeCredential returns env for the one credential id an Agent
 // selected. An empty, unknown, cleared, or non-model-vendor id returns nil
 // and never falls back to another key of the same kind.
-func (s *ProjectCredentialService) ResolveOpenCodeCredential(projectID, credentialID string) map[string]string {
-	projectID = strings.TrimSpace(projectID)
+func (s *CredentialService) ResolveOpenCodeCredential(credentialID string) map[string]string {
 	credentialID = strings.TrimSpace(credentialID)
-	if projectID == "" || credentialID == "" || s == nil || s.db == nil {
+	if credentialID == "" || s == nil || s.db == nil {
 		return nil
 	}
-	var row models.ProjectCredential
-	err := s.db.Where("id = ? AND project_id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, projectID, true).First(&row).Error
+	var row models.Credential
+	err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, true).First(&row).Error
 	if err != nil || !isOpenCodeModelCredentialRow(row) || strings.TrimSpace(row.ValueEnc) == "" {
 		return nil
 	}
 	dec, err := crypto.Decrypt(row.ValueEnc)
 	if err != nil || strings.TrimSpace(dec) == "" {
-		log.Warn().Err(err).Str("project", projectID).Str("credential", row.ID).Msg("skip undecryptable opencode credential")
+		log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable opencode credential")
 		return nil
 	}
 	out := map[string]string{runtime.EnvGraspOpenCodeAPIKey: dec}

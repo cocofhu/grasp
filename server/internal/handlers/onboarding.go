@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -11,22 +10,21 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BootstrapProjectOnboarding handles POST /api/workspace/bootstrap-onboarding.
-// Any project: shared auth, the chosen built-in template Agents, 默认工作流.
+// BootstrapOnboarding handles POST /api/workspace/bootstrap-onboarding.
+// Writes shared auth, the chosen built-in template Agents, 默认工作流.
 // It never starts a Run. Missing apiKey or an invalid team → 400 with no partial
 // resources created.
-func (h *Handlers) BootstrapProjectOnboarding(c *gin.Context) {
+func (h *Handlers) BootstrapOnboarding(c *gin.Context) {
 	if h.Onboarding == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "onboarding unavailable"})
 		return
 	}
-	projectID := strings.TrimSpace(c.Param("id"))
 	var req services.OnboardingBootstrapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	result, err := h.Onboarding.Bootstrap(projectID, req)
+	result, err := h.Onboarding.Bootstrap(req)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrOnboardingAPIKeyRequired),
@@ -34,10 +32,6 @@ func (h *Handlers) BootstrapProjectOnboarding(c *gin.Context) {
 			errors.Is(err, services.ErrInvalidAcpBackend),
 			errors.Is(err, services.ErrOnboardingInvalidTeam):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, services.ErrOnboardingProjectNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
-		case errors.Is(err, services.ErrOnboardingAgentConflict):
-			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		case isSecretsKeyErr(err):
 			writeSecretsKeyErr(c, err)
 		default:
@@ -59,18 +53,12 @@ func (h *Handlers) CreateWorkflowFromBaseline(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if !h.resolveWorkspaceID(c, &req.ProjectID) {
-		return
-	}
 	wf, err := h.Onboarding.CreateFromBaseline(req)
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrEmptyWorkflowName),
-			errors.Is(err, services.ErrWorkflowProjectRequired),
 			errors.Is(err, services.ErrBaselineReposRequired):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, services.ErrWorkflowProjectNotFound):
-			c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrWorkflowNameExists):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
@@ -79,7 +67,6 @@ func (h *Handlers) CreateWorkflowFromBaseline(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkflowCreate,
 		ResourceType: "workflow",

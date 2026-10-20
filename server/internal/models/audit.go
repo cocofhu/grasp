@@ -2,12 +2,11 @@ package models
 
 import "time"
 
-// ProjectAuditEvent is an append-only, project-scoped operation audit record.
+// AuditEvent is an append-only operation audit record.
 // Managers must not Update/Delete via public API; only List/Export are exposed.
-type ProjectAuditEvent struct {
+type AuditEvent struct {
 	ID             string    `gorm:"primaryKey" json:"id"`
-	ProjectID      string    `gorm:"index:idx_audit_proj_occurred,priority:1;index:idx_audit_proj_run,priority:1;index" json:"projectId"`
-	OccurredAt     time.Time `gorm:"index:idx_audit_proj_occurred,priority:2;index" json:"occurredAt"`
+	OccurredAt     time.Time `gorm:"index" json:"occurredAt"`
 	Actor          string    `gorm:"index" json:"actor"`
 	Unattributable bool      `json:"unattributable"`
 	// CallerKind is the product-facing attribution class: pm | apikey | system | external.
@@ -17,7 +16,7 @@ type ProjectAuditEvent struct {
 	ResourceID   string `gorm:"index" json:"resourceId"`
 	// RunID / NodeID are first-class filter fields (elevated from payload).
 	// Empty means the event is not associated with a run/node — never fabricate.
-	RunID     string         `gorm:"index:idx_audit_proj_run,priority:2;index" json:"runId"`
+	RunID     string         `gorm:"index" json:"runId"`
 	NodeID    string         `gorm:"index" json:"nodeId"`
 	Outcome   string         `json:"outcome"` // ok | fail
 	Summary   string         `json:"summary"`
@@ -35,7 +34,7 @@ const (
 
 // Audit action namespaces (aligned with Demo filters).
 const (
-	AuditActionProjectConfig   = "project.config"
+	AuditActionWorkspaceConfig = "workspace.config"
 	AuditActionWorkflowCreate  = "workflow.create"
 	AuditActionWorkflowUpdate  = "workflow.update"
 	AuditActionWorkflowDelete  = "workflow.delete"

@@ -3,14 +3,12 @@ package handlers_test
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 func createPublishedWorkflow(t *testing.T, h *harness, name string) (id string, dto map[string]any) {
 	t.Helper()
 	body := map[string]any{
-		"name": name, "projectId": models.DefaultProjectID, "description": "v1",
+		"name": name, "description": "v1",
 		"nodes": []map[string]any{
 			{
 				"id": "in", "type": "input", "label": "Start",
@@ -104,7 +102,7 @@ func TestSaveWorkflowOmitsShowOnHomePreservesTrue(t *testing.T) {
 	}
 
 	put := map[string]any{
-		"name": "KeepHome", "projectId": models.DefaultProjectID, "description": "renamed subtitle",
+		"name": "KeepHome", "description": "renamed subtitle",
 		"nodes": []map[string]any{
 			{
 				"id": "in", "type": "input", "label": "Start",
@@ -152,7 +150,7 @@ func TestSaveWorkflowOmitsShowOnHomePreservesTrue(t *testing.T) {
 func TestCreateWorkflowIgnoresShowOnHomeTrue(t *testing.T) {
 	h := newHarness(t)
 	body := map[string]any{
-		"name": "ForceOn", "projectId": models.DefaultProjectID,
+		"name":       "ForceOn",
 		"showOnHome": true,
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "label": "Start", "position": map[string]any{"x": 0, "y": 0}, "config": map[string]any{}},

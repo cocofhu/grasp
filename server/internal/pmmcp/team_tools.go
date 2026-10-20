@@ -14,9 +14,6 @@ func (h *Host) callTeamTools(sess *Session, skill *services.AgentService, name s
 	if team == nil {
 		return map[string]any{"error": "team service unavailable"}, true
 	}
-	if strings.TrimSpace(sess.ProjectID) == "" {
-		return map[string]any{"error": "session missing project"}, true
-	}
 	if strings.TrimSpace(sess.AgentName) == "" {
 		return map[string]any{"error": "pm leader not bound"}, true
 	}
@@ -35,13 +32,9 @@ func (h *Host) callTeamTools(sess *Session, skill *services.AgentService, name s
 		if !ok {
 			return map[string]any{"error": "leader agent not found"}, true
 		}
-		if !services.AgentProjectMatches(leader, sess.ProjectID) {
-			return map[string]any{"error": "leader not bound to session project"}, true
-		}
 		created, err := team.CreateAgentFromTemplate(services.CreateFromTemplateArgs{
 			TemplateID:  templateID,
 			Name:        agentName,
-			ProjectID:   sess.ProjectID,
 			AcpBackend:  leader.AcpBackend,
 			GitCredType: leader.GitCredentialType,
 			MCP:         leader.MCP,

@@ -36,13 +36,13 @@ func TestEscapeLikeAndInboxHelpers(t *testing.T) {
 func TestArtifactAllPage(t *testing.T) {
 	db := newTestDB(t)
 	arts := NewArtifactService(db)
-	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "W"})
+	db.Create(&models.WorkflowDef{ID: "wf", Name: "W"})
 	db.Create(&models.Run{ID: "r-art", WorkflowID: "wf", WorkflowName: "W", Title: "Run Title", Status: "succeeded"})
 	id, err := arts.Save("r-art", "n", "a.md", "markdown", "hi")
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, total := arts.AllPage(ArtifactFilter{ProjectID: "p1", WorkflowID: "wf"}, 1, 10)
+	page, total := arts.AllPage(ArtifactFilter{WorkflowID: "wf"}, 1, 10)
 	if total < 1 || len(page) < 1 {
 		t.Fatalf("AllPage: total=%d n=%d", total, len(page))
 	}
@@ -61,14 +61,11 @@ func TestArtifactAllPage(t *testing.T) {
 	if !ok || rec.Content != "hi" {
 		t.Fatalf("GetByID should include Content: %+v ok=%v", rec, ok)
 	}
-	if a := page[0]; a.ProjectID != "p1" {
-		t.Fatalf("AllPage project_id: got %q", a.ProjectID)
-	}
-	if _, total = arts.AllPage(ArtifactFilter{ProjectID: "p1", Q: "a_"}, 1, 10); total != 0 {
+	if _, total = arts.AllPage(ArtifactFilter{Q: "a_"}, 1, 10); total != 0 {
 		t.Fatalf("LIKE wildcard must be escaped, total=%d", total)
 	}
-	if _, total = arts.AllPage(ArtifactFilter{ProjectID: "p-other"}, 1, 10); total != 0 {
-		t.Fatalf("other project must not see artifacts, total=%d", total)
+	if _, total = arts.AllPage(ArtifactFilter{}, 1, 10); total != 1 {
+		t.Fatalf("unfiltered page total=%d", total)
 	}
 }
 
@@ -77,22 +74,22 @@ func TestArtifactAllPageByRun(t *testing.T) {
 	arts := NewArtifactService(db)
 	now := time.Now()
 
-	// Three runs under wf (project p1); run-new has two artifacts (newest latestAt).
+	// Three runs under wf; run-new has two artifacts (newest latestAt).
 	db.Create(&models.Run{ID: "run-old", WorkflowID: "wf", WorkflowName: "W", Title: "Old Run", Status: "succeeded"})
 	db.Create(&models.Run{ID: "run-mid", WorkflowID: "wf", WorkflowName: "W", Title: "Mid Run", Status: "succeeded"})
 	db.Create(&models.Run{ID: "run-new", WorkflowID: "wf", WorkflowName: "W", Title: "New Run", Status: "succeeded"})
 	db.Create(&models.Run{ID: "run-other", WorkflowID: "wf-b", WorkflowName: "B", Title: "Other WF", Status: "succeeded"})
 	db.Create(&models.Run{ID: "run-loose", WorkflowID: "", WorkflowName: "", Title: "Loose", Status: "succeeded"})
 
-	db.Create(&models.Artifact{ID: "a-old", ProjectID: "p1", RunID: "run-old", WorkflowID: "wf", NodeID: "n", Name: "old.md", CreatedAt: now.Add(-3 * time.Hour)})
-	db.Create(&models.Artifact{ID: "a-mid", ProjectID: "p1", RunID: "run-mid", WorkflowID: "wf", NodeID: "n", Name: "mid.md", CreatedAt: now.Add(-2 * time.Hour)})
-	db.Create(&models.Artifact{ID: "a-new1", ProjectID: "p1", RunID: "run-new", WorkflowID: "wf", NodeID: "plan", Name: "plan.json", CreatedAt: now.Add(-time.Hour)})
-	db.Create(&models.Artifact{ID: "a-new2", ProjectID: "p1", RunID: "run-new", WorkflowID: "wf", NodeID: "research", Name: "research.json", CreatedAt: now})
-	db.Create(&models.Artifact{ID: "a-other", ProjectID: "p1", RunID: "run-other", WorkflowID: "wf-b", NodeID: "n", Name: "other.md", CreatedAt: now})
-	db.Create(&models.Artifact{ID: "a-loose", ProjectID: "p1", RunID: "run-loose", WorkflowID: "", NodeID: "n", Name: "loose.md", CreatedAt: now})
+	db.Create(&models.Artifact{ID: "a-old", RunID: "run-old", WorkflowID: "wf", NodeID: "n", Name: "old.md", CreatedAt: now.Add(-3 * time.Hour)})
+	db.Create(&models.Artifact{ID: "a-mid", RunID: "run-mid", WorkflowID: "wf", NodeID: "n", Name: "mid.md", CreatedAt: now.Add(-2 * time.Hour)})
+	db.Create(&models.Artifact{ID: "a-new1", RunID: "run-new", WorkflowID: "wf", NodeID: "plan", Name: "plan.json", CreatedAt: now.Add(-time.Hour)})
+	db.Create(&models.Artifact{ID: "a-new2", RunID: "run-new", WorkflowID: "wf", NodeID: "research", Name: "research.json", CreatedAt: now})
+	db.Create(&models.Artifact{ID: "a-other", RunID: "run-other", WorkflowID: "wf-b", NodeID: "n", Name: "other.md", CreatedAt: now})
+	db.Create(&models.Artifact{ID: "a-loose", RunID: "run-loose", WorkflowID: "", NodeID: "n", Name: "loose.md", CreatedAt: now})
 
 	// Page size 2 Runs: newest two are run-new + run-mid; total Run count = 3 under wf.
-	page1, total := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1", WorkflowID: "wf"}, 1, 2)
+	page1, total := arts.AllPageByRun(ArtifactFilter{WorkflowID: "wf"}, 1, 2)
 	if total != 3 {
 		t.Fatalf("AllPageByRun total want 3 Runs, got %d", total)
 	}
@@ -114,7 +111,7 @@ func TestArtifactAllPageByRun(t *testing.T) {
 		t.Fatalf("run-new whole-Run want 2 arts on page1, got %d", newCount)
 	}
 
-	page2, total2 := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1", WorkflowID: "wf"}, 2, 2)
+	page2, total2 := arts.AllPageByRun(ArtifactFilter{WorkflowID: "wf"}, 2, 2)
 	if total2 != 3 {
 		t.Fatalf("page2 total want 3, got %d", total2)
 	}
@@ -130,7 +127,7 @@ func TestArtifactAllPageByRun(t *testing.T) {
 	}
 
 	// Search hits research.json only → still returns whole run-new (plan.json too).
-	hit, hitTotal := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1", WorkflowID: "wf", Q: "research"}, 1, 20)
+	hit, hitTotal := arts.AllPageByRun(ArtifactFilter{WorkflowID: "wf", Q: "research"}, 1, 20)
 	if hitTotal != 1 {
 		t.Fatalf("search total want 1 Run, got %d", hitTotal)
 	}
@@ -153,18 +150,18 @@ func TestArtifactAllPageByRun(t *testing.T) {
 	}
 
 	// Session filter: workflow-less artifacts only.
-	session, sTotal := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1", Session: true}, 1, 20)
+	session, sTotal := arts.AllPageByRun(ArtifactFilter{Session: true}, 1, 20)
 	if sTotal != 1 || len(session) != 1 || session[0].Name != "loose.md" {
 		t.Fatalf("session: total=%d arts=%v", sTotal, artifactNames(session))
 	}
 
-	// Project-wide: every run in p1.
-	if _, pTotal := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1"}, 1, 20); pTotal != 5 {
-		t.Fatalf("project-wide want 5 Runs, got %d", pTotal)
+	// Workspace-wide: every run.
+	if _, pTotal := arts.AllPageByRun(ArtifactFilter{}, 1, 20); pTotal != 5 {
+		t.Fatalf("workspace-wide want 5 Runs, got %d", pTotal)
 	}
 
 	// Empty search.
-	empty, eTotal := arts.AllPageByRun(ArtifactFilter{ProjectID: "p1", WorkflowID: "wf", Q: "zzznomatch999"}, 1, 20)
+	empty, eTotal := arts.AllPageByRun(ArtifactFilter{WorkflowID: "wf", Q: "zzznomatch999"}, 1, 20)
 	if eTotal != 0 || len(empty) != 0 {
 		t.Fatalf("no match want 0, got total=%d n=%d", eTotal, len(empty))
 	}

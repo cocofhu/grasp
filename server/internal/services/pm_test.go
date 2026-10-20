@@ -29,17 +29,17 @@ func TestPmBindingEnableRequiresAgent(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	p, err := NewProjectService(db).CreateFixture("P1", "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("P1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	en := true
-	if _, err := pm.UpdateBinding(p.ID, &en, nil, nil, nil, nil); !errors.Is(err, ErrPmLeaderNoAgent) {
+	if _, err := pm.UpdateBinding(&en, nil, nil, nil, nil); !errors.Is(err, ErrPmLeaderNoAgent) {
 		t.Fatalf("want ErrPmLeaderNoAgent, got %v", err)
 	}
 	agent := "demo-agent"
 	// without agent on disk still fails
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, nil, nil, nil); !errors.Is(err, ErrPmLeaderNoAgent) {
+	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); !errors.Is(err, ErrPmLeaderNoAgent) {
 		t.Fatalf("want ErrPmLeaderNoAgent for missing agent, got %v", err)
 	}
 }
@@ -48,31 +48,31 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	pm.SetBlobStore(blob.NewMemory())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("MemProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("MemProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := pm.UpsertMemory(p.ID, "agent", "背景", "我们用 Go", "admin", "alice")
+	item, err := pm.UpsertMemory("agent", "背景", "我们用 Go", "admin", "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if item.Title != "背景" {
 		t.Fatal(item)
 	}
-	items, err := pm.ListMemories(p.ID, "")
+	items, err := pm.ListMemories("")
 	if err != nil || len(items) != 1 {
 		t.Fatalf("list=%v err=%v", items, err)
 	}
-	ta, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	ta, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	tb, err := pm.CreateThread(p.ID, "bob", "", "agent", "user")
+	tb, err := pm.CreateThread("bob", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.GetThread(p.ID, ta.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
+	if _, err := pm.GetThread(ta.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
 		t.Fatalf("bob must not see alice thread: %v", err)
 	}
 	if _, err := pm.AppendMessage(ta.ID, "user", "进度如何？", nil, nil, nil); err != nil {
@@ -98,11 +98,11 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 	if len(msgs[1].Images) != 1 || msgs[1].Images[0].Ref == "" || msgs[1].Images[0].Data != "" {
 		t.Fatalf("listed message missing blob ref: %+v", msgs[1])
 	}
-	bobThreads, _ := pm.ListThreads(p.ID, "bob")
+	bobThreads, _ := pm.ListThreads("bob")
 	if len(bobThreads) != 1 || bobThreads[0].ID != tb.ID {
 		t.Fatalf("bob threads=%v", bobThreads)
 	}
-	n, err := pm.ClearMemoriesForAgent(p.ID, "agent")
+	n, err := pm.ClearMemoriesForAgent("agent")
 	if err != nil || n != 1 {
 		t.Fatalf("clear n=%d err=%v", n, err)
 	}
@@ -111,28 +111,28 @@ func TestPmMemoryAndThreadIsolation(t *testing.T) {
 func TestPmRequireEnabled(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("EnProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("EnProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.RequireEnabled(p.ID); !errors.Is(err, ErrPmLeaderDisabled) {
+	if _, err := pm.RequireEnabled(); !errors.Is(err, ErrPmLeaderDisabled) {
 		t.Fatalf("got %v", err)
 	}
 	agent := "x"
 	en := true
 	// skills nil → agent existence skipped
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.RequireEnabled(p.ID); err != nil {
+	if _, err := pm.RequireEnabled(); err != nil {
 		t.Fatal(err)
 	}
 	dis := false
-	if _, err := pm.UpdateBinding(p.ID, &dis, nil, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&dis, nil, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.RequireEnabled(p.ID); !errors.Is(err, ErrPmLeaderDisabled) {
+	if _, err := pm.RequireEnabled(); !errors.Is(err, ErrPmLeaderDisabled) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -140,12 +140,12 @@ func TestPmRequireEnabled(t *testing.T) {
 func TestPmMessageFailureAndRecentFilter(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("FailProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("FailProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	th, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,12 +209,12 @@ func TestPmMessageFailureAndRecentFilter(t *testing.T) {
 func TestPmDraftCheckpoint(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("DraftProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("DraftProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	th, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,42 +269,42 @@ func TestPmDraftCheckpoint(t *testing.T) {
 func TestPmMemoryAgentIsolation(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("IsoMem", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("IsoMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := pm.UpsertMemory(p.ID, "agent-a", "A记", "secret-a", "agent", "a")
+	a, err := pm.UpsertMemory("agent-a", "A记", "secret-a", "agent", "a")
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := pm.UpsertMemory(p.ID, "agent-b", "B记", "secret-b", "agent", "b")
+	b, err := pm.UpsertMemory("agent-b", "B记", "secret-b", "agent", "b")
 	if err != nil {
 		t.Fatal(err)
 	}
-	onlyA, err := pm.ListMemories(p.ID, "agent-a")
+	onlyA, err := pm.ListMemories("agent-a")
 	if err != nil || len(onlyA) != 1 || onlyA[0].ID != a.ID {
 		t.Fatalf("agent-a list=%v err=%v", onlyA, err)
 	}
-	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", b.ID); !errors.Is(err, ErrPmMemoryNotFound) {
+	if err := pm.DeleteMemoryForAgent("agent-a", b.ID); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("cross-agent delete should fail: %v", err)
 	}
-	if _, err := pm.GetMemory(p.ID, "agent-a", b.ID); !errors.Is(err, ErrPmMemoryNotFound) {
+	if _, err := pm.GetMemory("agent-a", b.ID); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("cross-agent get should fail: %v", err)
 	}
-	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", a.ID); err != nil {
+	if err := pm.DeleteMemoryForAgent("agent-a", a.ID); err != nil {
 		t.Fatal(err)
 	}
-	left, _ := pm.ListMemories(p.ID, "")
+	left, _ := pm.ListMemories("")
 	if len(left) != 1 || left[0].ID != b.ID {
 		t.Fatalf("after scoped delete left=%v", left)
 	}
 
-	n, err := pm.ClearMemoriesForAgent(p.ID, "agent-b")
+	n, err := pm.ClearMemoriesForAgent("agent-b")
 	if err != nil || n != 1 {
 		t.Fatalf("clear agent-b n=%d err=%v", n, err)
 	}
-	all, _ := pm.ListMemories(p.ID, "")
+	all, _ := pm.ListMemories("")
 	if len(all) != 0 {
 		t.Fatalf("pm memories left=%v", all)
 	}
@@ -331,21 +331,21 @@ func TestNormalizePmEnabledMcps(t *testing.T) {
 func TestUpdateBindingEmptyEnabledMcpsPersists(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("EmptyMcps", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("EmptyMcps", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	en := true
 	agent := "agent-a"
-	b, err := pm.UpdateBinding(p.ID, &en, &agent, []string{}, nil, nil)
+	b, err := pm.UpdateBinding(&en, &agent, []string{}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(b.EnabledMcps) != 0 {
 		t.Fatalf("update want empty, got %v", b.EnabledMcps)
 	}
-	b2, err := pm.GetBinding(p.ID)
+	b2, err := pm.GetBinding()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -357,18 +357,18 @@ func TestUpdateBindingEmptyEnabledMcpsPersists(t *testing.T) {
 func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("SearchMem", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("SearchMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(p.ID, "agent-a", "A记", "alpha-keyword", "agent", "a"); err != nil {
+	if _, err := pm.UpsertMemory("agent-a", "A记", "alpha-keyword", "agent", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(p.ID, "agent-b", "B记", "alpha-keyword", "agent", "b"); err != nil {
+	if _, err := pm.UpsertMemory("agent-b", "B记", "alpha-keyword", "agent", "b"); err != nil {
 		t.Fatal(err)
 	}
-	hits, err := pm.SearchMemories(p.ID, "agent-a", "alpha", 10)
+	hits, err := pm.SearchMemories("agent-a", "alpha", 10)
 	if err != nil || len(hits) != 1 {
 		t.Fatalf("hits=%v err=%v", hits, err)
 	}
@@ -380,37 +380,37 @@ func TestPmMemorySearchAndBackfillLegacy(t *testing.T) {
 func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("ChProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("ChProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	base := time.Now().UTC().Truncate(time.Second)
-	webOlder, err := pm.CreateThread(p.ID, "alice", "Web 旧", "agent", "user")
+	webOlder, err := pm.CreateThread("alice", "Web 旧", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	guild, err := pm.CreateThread(p.ID, "qq:guild:ch1", "频道会话", "agent", "user")
+	guild, err := pm.CreateThread("qq:guild:ch1", "频道会话", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	group, err := pm.CreateThread(p.ID, "qq:group:g1", "群会话", "agent", "user")
+	group, err := pm.CreateThread("qq:group:g1", "群会话", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	c2c, err := pm.CreateThread(p.ID, "qq:c2c:u1", "   ", "agent", "user")
+	c2c, err := pm.CreateThread("qq:c2c:u1", "   ", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wecom, err := pm.CreateThread(p.ID, "wecom:c2c:zhangsan", "企微会话", "agent", "user")
+	wecom, err := pm.CreateThread("wecom:c2c:zhangsan", "企微会话", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.CreateCronThread(p.ID, "agent", "cron job"); err != nil {
+	if _, err := pm.CreateCronThread("agent", "cron job"); err != nil {
 		t.Fatal(err)
 	}
-	webNewer, err := pm.CreateThread(p.ID, "alice", "Web 新", "agent", "user")
+	webNewer, err := pm.CreateThread("alice", "Web 新", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +430,7 @@ func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 		}
 	}
 
-	listed, err := pm.ListThreads(p.ID, "alice")
+	listed, err := pm.ListThreads("alice")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -463,26 +463,26 @@ func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	}
 
 	// Synthetic qq: lookup stays owner-only (ChannelBridge).
-	onlyGuild, err := pm.ListThreads(p.ID, "qq:guild:ch1")
+	onlyGuild, err := pm.ListThreads("qq:guild:ch1")
 	if err != nil || len(onlyGuild) != 1 || onlyGuild[0].ID != guild.ID {
 		t.Fatalf("synthetic list=%+v err=%v", onlyGuild, err)
 	}
 
 	// Bob (other member) can read channel threads.
-	got, err := pm.GetThread(p.ID, guild.ID, "bob")
+	got, err := pm.GetThread(guild.ID, "bob")
 	if err != nil || got.ID != guild.ID {
 		t.Fatalf("bob read channel: %+v err=%v", got, err)
 	}
 	// Bob cannot read alice web thread.
-	if _, err := pm.GetThread(p.ID, webNewer.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
+	if _, err := pm.GetThread(webNewer.ID, "bob"); !errors.Is(err, ErrPmThreadNotFound) {
 		t.Fatalf("bob must not read alice web: %v", err)
 	}
 
 	// Write/delete rejected for channel.
-	if _, err := pm.RequireWritableThread(p.ID, guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
+	if _, err := pm.RequireWritableThread(guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
 		t.Fatalf("want ErrPmChannelReadOnly, got %v", err)
 	}
-	if err := pm.DeleteThread(p.ID, guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
+	if err := pm.DeleteThread(guild.ID, "alice"); !errors.Is(err, ErrPmChannelReadOnly) {
 		t.Fatalf("delete channel: %v", err)
 	}
 	if _, err := pm.GetThreadByID(guild.ID); err != nil {
@@ -490,10 +490,10 @@ func TestPmChannelThreadListMergeAndACL(t *testing.T) {
 	}
 
 	// Own web thread remains writable/deletable.
-	if _, err := pm.RequireWritableThread(p.ID, webNewer.ID, "alice"); err != nil {
+	if _, err := pm.RequireWritableThread(webNewer.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if err := pm.DeleteThread(p.ID, webNewer.ID, "alice"); err != nil {
+	if err := pm.DeleteThread(webNewer.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
 }

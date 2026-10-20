@@ -59,7 +59,7 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 
 	old, neu := "research-agent", "research-pro"
 	wf := &models.WorkflowDef{
-		ID: "wf-multi", ProjectID: models.DefaultProjectID, Name: "Multi",
+		ID: "wf-multi", Name: "Multi",
 		Graph: graphWithProfiles(map[string]string{
 			"research":  old,
 			"preview":   old,
@@ -81,7 +81,7 @@ func TestRenameAgentProfileRefs_multiNodeTypesExactReplace(t *testing.T) {
 
 	// Unrelated workflow must stay untouched.
 	other := &models.WorkflowDef{
-		ID: "wf-other", ProjectID: models.DefaultProjectID, Name: "Other",
+		ID: "wf-other", Name: "Other",
 		Graph: graphWithProfiles(map[string]string{"plan": "planner"}),
 	}
 	if err := s.Save(other); err != nil {
@@ -150,7 +150,7 @@ func TestRenameAgentProfileRefs_versionOnlyCountsAndSkipsRun(t *testing.T) {
 
 	old, neu := "legacy-agent", "fresh-agent"
 	wf := &models.WorkflowDef{
-		ID: "wf-ver", ProjectID: models.DefaultProjectID, Name: "VerOnly",
+		ID: "wf-ver", Name: "VerOnly",
 		Graph: graphWithProfiles(map[string]string{"react": old}),
 	}
 	if err := s.Save(wf); err != nil {
@@ -161,8 +161,7 @@ func TestRenameAgentProfileRefs_versionOnlyCountsAndSkipsRun(t *testing.T) {
 	}
 	// Current Def no longer references old name; Version snapshot still does.
 	upd := &models.WorkflowDef{
-		ProjectID: models.DefaultProjectID,
-		ID:        "wf-ver", Name: "VerOnly",
+		ID: "wf-ver", Name: "VerOnly",
 		Graph: graphWithProfiles(map[string]string{"react": "orchestrator"}),
 	}
 	if err := s.Save(upd); err != nil {
@@ -219,7 +218,7 @@ func TestRenameAgentProfileRefs_keepsPublishedAndDraftStatus(t *testing.T) {
 	old, neu := "a1", "a2"
 
 	pub := &models.WorkflowDef{
-		ID: "wf-pub", ProjectID: models.DefaultProjectID, Name: "Pub",
+		ID: "wf-pub", Name: "Pub",
 		Graph: graphWithProfiles(map[string]string{"test": old}),
 	}
 	if err := s.Save(pub); err != nil {
@@ -232,7 +231,7 @@ func TestRenameAgentProfileRefs_keepsPublishedAndDraftStatus(t *testing.T) {
 	pubVer := published.Version
 
 	draft := &models.WorkflowDef{
-		ID: "wf-draft2", ProjectID: models.DefaultProjectID, Name: "Draft",
+		ID: "wf-draft2", Name: "Draft",
 		Graph: graphWithProfiles(map[string]string{"review": old}),
 	}
 	if err := s.Save(draft); err != nil {
@@ -272,7 +271,7 @@ func TestRenameAgentProfileRefs_failHookAbortsTransaction(t *testing.T) {
 	s := NewWorkflowService(db)
 	old, neu := "x", "y"
 	wf := &models.WorkflowDef{
-		ID: "wf-fail", ProjectID: models.DefaultProjectID, Name: "Fail",
+		ID: "wf-fail", Name: "Fail",
 		Graph: graphWithProfiles(map[string]string{"visual": old}),
 	}
 	if err := s.Save(wf); err != nil {

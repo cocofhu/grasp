@@ -324,14 +324,13 @@ func (h *Handlers) GateReactCancel(c *gin.Context) {
 
 func (h *Handlers) ListGates(c *gin.Context) {
 	wf := c.Query("wf")
-	projectID := c.Query("projectId")
 	tags := parseRunTags(append(c.QueryArray("tag"), c.Query("tag"))...)
 	pg, ok := parsePagination(c)
 	if !ok {
 		return
 	}
 	offset := (pg.Page - 1) * pg.PageSize
-	items, total := h.Runs.PendingInboxItems(wf, projectID, tags, offset, pg.PageSize)
+	items, total := h.Runs.PendingInboxItems(wf, tags, offset, pg.PageSize)
 	h.attachInboxReplying(items)
 	if h.GateShare != nil {
 		h.GateShare.AttachInboxStatus(items)

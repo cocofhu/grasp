@@ -12,7 +12,6 @@ import (
 
 func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
 	shared := SharedAgentConfig{
-		ProjectID:  "proj-a",
 		AcpBackend: AcpBackendClaudeCode,
 		Env: map[string]string{
 			"SHARED": "from-shared",
@@ -30,7 +29,6 @@ func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
 	}
 	agent := Agent{
 		Name:       "demo",
-		ProjectID:  "proj-agent",
 		AcpBackend: AcpBackendCursor,
 		Env: map[string]string{
 			"BOTH":       "agent-val",
@@ -47,9 +45,6 @@ func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
 		Layout: AgentLayout{ConfigRoot: "/root/.cursor"},
 	}
 	got := ExtendOverlay(shared, agent)
-	if got.ProjectID != "proj-agent" {
-		t.Fatalf("projectId = %q", got.ProjectID)
-	}
 	if got.AcpBackend != AcpBackendCursor {
 		t.Fatalf("acpBackend = %q", got.AcpBackend)
 	}
@@ -120,18 +115,10 @@ func TestExtendOverlay_SharedModelOnlyForSameCLI(t *testing.T) {
 	}
 }
 
-func TestExtendOverlay_KeepsAgentProjectID(t *testing.T) {
-	got := ExtendOverlay(SharedAgentConfig{ProjectID: "proj-a"}, Agent{Name: "x", ProjectID: "proj-agent"})
-	if got.ProjectID != "proj-agent" {
-		t.Fatalf("keep agent projectId = %q", got.ProjectID)
-	}
-}
-
 func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	svc := NewSharedAgentService(root)
 	cfg := SharedAgentConfig{
-		ProjectID:  "proj-1",
 		AcpBackend: AcpBackendCursor,
 		Env:        map[string]string{"K1": "v1"},
 		Files:      []AgentFile{{Path: "AGENTS.md", Content: "hello"}},
@@ -140,18 +127,18 @@ func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	if err := svc.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	got := svc.Get("proj-1")
+	got := svc.Get()
 	if got.Env["K1"] != "v1" {
 		t.Fatalf("env = %#v", got.Env)
 	}
 	if len(got.Files) != 1 || got.Files[0].Content != "hello" {
 		t.Fatalf("files = %#v", got.Files)
 	}
-	wd := svc.WorkDir("proj-1")
+	wd := svc.WorkDir()
 	if wd == "" || filepath.Base(wd) != WorkDirName {
 		t.Fatalf("WorkDir = %q", wd)
 	}
-	empty := svc.Get("missing")
+	empty := NewSharedAgentService(t.TempDir()).Get()
 	if empty.Env == nil || len(empty.Files) != 0 {
 		t.Fatalf("missing should be empty valid: %#v", empty)
 	}
@@ -160,7 +147,6 @@ func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 func TestSharedAgentCredentialIDsRoundTripAndClear(t *testing.T) {
 	svc := NewSharedAgentService(t.TempDir())
 	cfg := SharedAgentConfig{
-		ProjectID:            "proj-1",
 		AcpBackend:           AcpBackendCursor,
 		AiCredentialID:       "cred-cursor",
 		OpenCodeCredentialID: "cred-oc",
@@ -169,11 +155,11 @@ func TestSharedAgentCredentialIDsRoundTripAndClear(t *testing.T) {
 	if err := svc.Save(cfg); err != nil {
 		t.Fatal(err)
 	}
-	got := svc.Get("proj-1")
+	got := svc.Get()
 	if got.AiCredentialID != "cred-cursor" || got.OpenCodeCredentialID != "cred-oc" {
 		t.Fatalf("ids = %q %q", got.AiCredentialID, got.OpenCodeCredentialID)
 	}
-	raw, err := os.ReadFile(filepath.Join(svc.Root(), sanitizeProjectID("proj-1"), "agent.json"))
+	raw, err := os.ReadFile(filepath.Join(svc.Root(), "agent.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,16 +167,16 @@ func TestSharedAgentCredentialIDsRoundTripAndClear(t *testing.T) {
 		t.Fatalf("shared config stored a secret: %s", raw)
 	}
 
-	svc.ClearCredentialSelection("proj-1", "cred-cursor")
-	got = svc.Get("proj-1")
+	svc.ClearCredentialSelection("cred-cursor")
+	got = svc.Get()
 	if got.AiCredentialID != "" {
 		t.Fatalf("ai id still set: %q", got.AiCredentialID)
 	}
 	if got.OpenCodeCredentialID != "cred-oc" {
 		t.Fatalf("other slot changed: %q", got.OpenCodeCredentialID)
 	}
-	svc.ClearCredentialSelection("proj-1", "cred-oc")
-	got = svc.Get("proj-1")
+	svc.ClearCredentialSelection("cred-oc")
+	got = svc.Get()
 	if got.OpenCodeCredentialID != "" {
 		t.Fatalf("opencode id still set: %q", got.OpenCodeCredentialID)
 	}
@@ -227,7 +213,7 @@ func TestExtendOverlayCredentialPriority(t *testing.T) {
 	sharedUsed := ExtendOverlayWithKind(SharedAgentConfig{
 		AcpBackend:     AcpBackendCursor,
 		AiCredentialID: "shared-cursor",
-	}, Agent{Name: "demo", ProjectID: "p"}, kind)
+	}, Agent{Name: "demo"}, kind)
 	if sharedUsed.AiCredentialID != "shared-cursor" {
 		t.Fatalf("shared fallback = %q", sharedUsed.AiCredentialID)
 	}

@@ -14,7 +14,7 @@ import (
 )
 
 func (h *Handlers) ListWorkflows(c *gin.Context) {
-	wfs := h.WF.List(c.Query("projectId"))
+	wfs := h.WF.List()
 	snaps := h.WF.PublishedSnapshots(wfs)
 	out := make([]gin.H, 0, len(wfs))
 	for _, wf := range wfs {
@@ -44,7 +44,6 @@ func (h *Handlers) GetWorkflow(c *gin.Context) {
 type workflowBody struct {
 	Defaults     *models.WorkflowDefaults     `json:"defaults,omitempty"`
 	ID           string                       `json:"id"`
-	ProjectID    string                       `json:"projectId"`
 	Name         string                       `json:"name"`
 	Description  string                       `json:"description"`
 	NeedsRepo    bool                         `json:"needsRepo"`
@@ -70,14 +69,11 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 		isCreate = true
 	}
 
-	if !h.resolveWorkspaceID(c, &b.ProjectID) {
-		return
-	}
 	graph := models.Graph{Nodes: b.Nodes, Edges: b.Edges, Variables: b.Variables}
 	services.LiftInputVariables(&graph)
 
 	wf := models.WorkflowDef{
-		Defaults: b.Defaults, ID: b.ID, ProjectID: b.ProjectID, Name: b.Name, Description: b.Description, NeedsRepo: b.NeedsRepo,
+		Defaults: b.Defaults, ID: b.ID, Name: b.Name, Description: b.Description, NeedsRepo: b.NeedsRepo,
 		Graph: graph,
 	}
 	if b.NotifyPolicy != nil {
@@ -100,13 +96,10 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 	if err := h.WF.Save(&wf); err != nil {
 		switch {
 		case errors.Is(err, services.ErrEmptyWorkflowName),
-			errors.Is(err, services.ErrWorkflowProjectRequired),
-			errors.Is(err, services.ErrWorkflowProjectNotFound),
 			errors.Is(err, services.ErrSecretPlaceholderOnNewKey),
 			errors.Is(err, services.ErrSecretPlaceholderOnPublicValue):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		case errors.Is(err, services.ErrWorkflowNameExists),
-			errors.Is(err, services.ErrWorkflowProjectImmutable):
+		case errors.Is(err, services.ErrWorkflowNameExists):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 		default:
 			_ = c.Error(err)
@@ -121,7 +114,6 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 		summary = "create workflow"
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       action,
 		ResourceType: "workflow",
@@ -163,7 +155,6 @@ func (h *Handlers) PatchWorkflowNotifyPolicy(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkflowUpdate,
 		ResourceType: "workflow",
@@ -208,7 +199,6 @@ func (h *Handlers) PatchWorkflowHomeVisibility(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkflowUpdate,
 		ResourceType: "workflow",
@@ -235,7 +225,6 @@ func (h *Handlers) PublishWorkflow(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkflowPublish,
 		ResourceType: "workflow",
@@ -276,7 +265,7 @@ func (h *Handlers) ImportWorkflow(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "无法读取请求体"})
 		return
 	}
-	wf, err := h.WF.Import(raw, c.Query("projectId"))
+	wf, err := h.WF.Import(raw)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -303,7 +292,6 @@ func (h *Handlers) RestoreWorkflowVersion(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    wf.ProjectID,
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionWorkflowUpdate,
 		ResourceType: "workflow",
@@ -317,19 +305,15 @@ func (h *Handlers) RestoreWorkflowVersion(c *gin.Context) {
 
 func (h *Handlers) DeleteWorkflow(c *gin.Context) {
 	id := c.Param("id")
-	projectID := ""
-	if wf, ok := h.WF.Get(id); ok {
-		projectID = wf.ProjectID
-	}
+	_, existed := h.WF.Get(id)
 	actor := h.auditActorFromContext(c)
 	if err := h.WF.Delete(id); err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	if projectID != "" {
+	if existed {
 		h.recordAudit(services.AuditRecord{
-			ProjectID:    projectID,
 			Actor:        actor,
 			Action:       models.AuditActionWorkflowDelete,
 			ResourceType: "workflow",
@@ -389,4 +373,12 @@ func (h *Handlers) CopyWorkflow(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, workflowDTO(wf))
+}
+
+func (h *Handlers) ListWorkflowCatalog(c *gin.Context) {
+	out := make([]gin.H, 0)
+	for _, wf := range h.WF.Catalog() {
+		out = append(out, gin.H{"id": wf.ID, "name": wf.Name, "description": wf.Description, "status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion, "needsRepo": wf.NeedsRepo, "showOnHome": wf.ShowOnHome, "updatedAt": wf.UpdatedAt, "lastRunAt": wf.LastRunAt})
+	}
+	c.JSON(http.StatusOK, out)
 }

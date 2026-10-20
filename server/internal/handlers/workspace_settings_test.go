@@ -9,15 +9,10 @@ import (
 	"github.com/cocofhu/grasp/internal/tokenledger/ledgertest"
 )
 
-func TestWorkspaceSettingsAndRemovedProjectCRUD(t *testing.T) {
+func TestWorkspaceSettings(t *testing.T) {
 	h := newHarness(t)
-	for _, method := range []string{"GET", "POST", "DELETE"} {
-		if w := h.do(method, "/api/projects", nil); w.Code != 404 {
-			t.Fatalf("old project route %s = %d", method, w.Code)
-		}
-	}
 	w := h.do("GET", "/api/workspace", nil)
-	if w.Code != 200 || jsonField(w.Body.String(), "id") != models.DefaultProjectID {
+	if w.Code != 200 || jsonField(w.Body.String(), "name") != models.DefaultWorkspaceName {
 		t.Fatal(w.Body.String())
 	}
 	w = h.do("PUT", "/api/workspace", map[string]any{"name": "Workspace", "description": "updated", "variables": []map[string]any{{"name": "TOKEN", "type": "string", "secret": true, "value": "sensitive"}}})
@@ -38,22 +33,22 @@ func TestWorkspaceSettingsAndRemovedProjectCRUD(t *testing.T) {
 
 func TestWorkspaceCannotBeDeletedWithWorkflows(t *testing.T) {
 	h := newHarness(t)
-	if err := h.db.Create(&models.WorkflowDef{ID: "protected", ProjectID: models.DefaultProjectID, Name: "protected"}).Error; err != nil {
+	if err := h.db.Create(&models.WorkflowDef{ID: "protected", Name: "protected"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	if w := h.do("DELETE", "/api/workspace", nil); w.Code != 404 {
 		t.Fatal(w.Body.String())
 	}
-	if _, ok := h.h.Projects.Get(models.DefaultProjectID); !ok {
-		t.Fatal("workspace deleted")
+	if _, err := h.h.Workspace.Workspace(); err != nil {
+		t.Fatalf("workspace deleted: %v", err)
 	}
 }
 
 func TestWorkspaceUnavailableFailsClosed(t *testing.T) {
 	h := newHarness(t)
-	h.h.Projects = nil
+	h.h.Workspace = nil
 	for _, method := range []string{"GET", "PUT"} {
-		if w := h.do(method, "/api/workspace", nil); w.Code != 409 {
+		if w := h.do(method, "/api/workspace", nil); w.Code != 500 {
 			t.Fatalf("missing workspace %s: %d", method, w.Code)
 		}
 	}
@@ -74,17 +69,16 @@ func jsonField(body, key string) string {
 	return rest[:j]
 }
 
-func TestProjectTotalTokensInListAndGet(t *testing.T) {
+func TestWorkspaceTotalTokens(t *testing.T) {
 	hn := newHarness(t)
 
-	w := hn.seedWorkspace(map[string]any{"name": "TokProj", "description": "d"})
+	w := hn.seedWorkspace(map[string]any{"name": "TokWorkspace", "description": "d"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `"totalTokens":null`) {
-		t.Fatalf("create should return null totalTokens: %s", w.Body.String())
+		t.Fatalf("update should return null totalTokens: %s", w.Body.String())
 	}
-	id := jsonField(w.Body.String(), "id")
 
 	w = hn.do("GET", "/api/workspace", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":null`) {
@@ -97,7 +91,7 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(hn.db.Create(&models.WorkflowDef{ID: "wf-tok", ProjectID: id, Name: "w", Version: 1}).Error)
+	must(hn.db.Create(&models.WorkflowDef{ID: "wf-tok", Name: "w", Version: 1}).Error)
 	must(hn.db.Create(&models.Run{ID: "run-tok", WorkflowID: "wf-tok", Status: "completed"}).Error)
 	must(hn.db.Create(&models.StateRun{
 		RunID: "run-tok", NodeID: "n1", Status: "completed",
@@ -109,10 +103,5 @@ func TestProjectTotalTokensInListAndGet(t *testing.T) {
 	w = hn.do("GET", "/api/workspace", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
 		t.Fatalf("get with usage: %d %s", w.Code, w.Body.String())
-	}
-
-	w = hn.do("GET", "/api/workspace", nil)
-	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"totalTokens":128400`) {
-		t.Fatalf("list with usage: %d %s", w.Code, w.Body.String())
 	}
 }

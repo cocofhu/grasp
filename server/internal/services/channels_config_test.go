@@ -18,22 +18,16 @@ func setChannelKey(t *testing.T) {
 	t.Setenv(crypto.SecretsKeyEnv, base64.StdEncoding.EncodeToString(k))
 }
 
-func newChannelSvc(t *testing.T) (*ChannelConfigService, string) {
+func newChannelSvc(t *testing.T) *ChannelConfigService {
 	t.Helper()
-	db := newTestDB(t)
-	p, err := NewProjectService(db).CreateFixture("ChanProj", "", nil)
-	if err != nil {
-		t.Fatalf("create project: %v", err)
-	}
-	return NewChannelConfigService(db), p.ID
+	return NewChannelConfigService(newTestDB(t))
 }
 
-func validInput(projectID string) ChannelConfigInput {
+func validInput() ChannelConfigInput {
 	return ChannelConfigInput{
 		Type:      "qq",
 		Name:      "QQ Bot",
 		Enabled:   true,
-		ProjectID: projectID,
 		AgentName: "pm-agent",
 		AppID:     "app-123",
 		AppSecret: "the-secret",
@@ -42,19 +36,19 @@ func validInput(projectID string) ChannelConfigInput {
 
 func TestChannelCreateAndList(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
+	svc := newChannelSvc(t)
 
 	var changed int
 	svc.SetOnChange(func() { changed++ })
 
-	dto, err := svc.Create(validInput(pid))
+	dto, err := svc.Create(validInput())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if !dto.AppSecretSet {
 		t.Error("AppSecretSet should be true after create")
 	}
-	if dto.ProjectID != pid || dto.AppID != "app-123" {
+	if dto.AppID != "app-123" {
 		t.Errorf("unexpected dto: %+v", dto)
 	}
 
@@ -74,39 +68,27 @@ func TestChannelCreateAndList(t *testing.T) {
 
 func TestChannelCreateRejectsBadInput(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
+	svc := newChannelSvc(t)
 
-	bad := validInput(pid)
+	bad := validInput()
 	bad.Type = "slack"
 	if _, err := svc.Create(bad); err != ErrChannelTypeUnsupported {
 		t.Errorf("unsupported type: got %v", err)
 	}
 
-	noProj := validInput(pid)
-	noProj.ProjectID = ""
-	if _, err := svc.Create(noProj); err != ErrChannelProjectRequired {
-		t.Errorf("missing project: got %v", err)
-	}
-
-	missingProj := validInput(pid)
-	missingProj.ProjectID = "does-not-exist"
-	if _, err := svc.Create(missingProj); err != ErrProjectNotFound {
-		t.Errorf("nonexistent project: got %v", err)
-	}
-
-	noApp := validInput(pid)
+	noApp := validInput()
 	noApp.AppID = ""
 	if _, err := svc.Create(noApp); err != ErrChannelAppIDRequired {
 		t.Errorf("missing appId: got %v", err)
 	}
 
-	noSecret := validInput(pid)
+	noSecret := validInput()
 	noSecret.AppSecret = ""
 	if _, err := svc.Create(noSecret); err != ErrChannelSecretRequired {
 		t.Errorf("missing secret: got %v", err)
 	}
 
-	blankName := validInput(pid)
+	blankName := validInput()
 	blankName.Name = "   "
 	if _, err := svc.Create(blankName); err != ErrChannelNameRequired {
 		t.Errorf("blank name: got %v", err)
@@ -115,8 +97,8 @@ func TestChannelCreateRejectsBadInput(t *testing.T) {
 
 func TestChannelCreateWeComAndFreeze(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	in := validInput(pid)
+	svc := newChannelSvc(t)
+	in := validInput()
 	in.Type = "wecom"
 	in.AppID = "aibot_omega_01"
 	dto, err := svc.Create(in)
@@ -151,48 +133,48 @@ func TestChannelCreateWeComAndFreeze(t *testing.T) {
 
 func TestChannelWeComBotIDConflict(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	in := validInput(pid)
+	svc := newChannelSvc(t)
+	in := validInput()
 	in.Type = "wecom"
 	in.AppID = "aibot_taken_global"
 	in.AgentName = "agent-a"
 	if _, err := svc.Create(in); err != nil {
 		t.Fatalf("first: %v", err)
 	}
-	in2 := validInput(pid)
+	in2 := validInput()
 	in2.Type = "wecom"
 	in2.AppID = "aibot_taken_global"
 	in2.AgentName = "agent-b"
 	if _, err := svc.Create(in2); err != ErrChannelBotIDExists {
 		t.Fatalf("dup botid: got %v want ErrChannelBotIDExists", err)
 	}
-	if !strings.Contains(ErrChannelBotIDExists.Error(), "BotID 已被其它项目/渠道占用") {
+	if !strings.Contains(ErrChannelBotIDExists.Error(), "BotID 已被其它渠道占用") {
 		t.Fatalf("copy=%q", ErrChannelBotIDExists.Error())
 	}
 }
 
 func TestChannelDuplicateAppID(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	if _, err := svc.Create(validInput(pid)); err != nil {
+	svc := newChannelSvc(t)
+	if _, err := svc.Create(validInput()); err != nil {
 		t.Fatalf("first create: %v", err)
 	}
-	if _, err := svc.Create(validInput(pid)); err != ErrChannelAppIDExists {
+	if _, err := svc.Create(validInput()); err != ErrChannelAppIDExists {
 		t.Fatalf("duplicate appId: got %v want ErrChannelAppIDExists", err)
 	}
 }
 
 func TestChannelUpdateKeepsSecretWhenBlank(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	dto, err := svc.Create(validInput(pid))
+	svc := newChannelSvc(t)
+	dto, err := svc.Create(validInput())
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	before, _ := svc.ListRaw()
 	origEnc := before[0].AppSecretEnc
 
-	upd := validInput(pid)
+	upd := validInput()
 	upd.Name = "Renamed"
 	upd.AppSecret = "" // keep existing
 	if _, err := svc.Update(dto.ID, upd); err != nil {
@@ -220,25 +202,25 @@ func TestChannelUpdateKeepsSecretWhenBlank(t *testing.T) {
 
 func TestChannelCreateWithoutKeyFails(t *testing.T) {
 	t.Setenv(crypto.SecretsKeyEnv, "")
-	svc, pid := newChannelSvc(t)
-	if _, err := svc.Create(validInput(pid)); err != ErrChannelSecretKeyMissing {
+	svc := newChannelSvc(t)
+	if _, err := svc.Create(validInput()); err != ErrChannelSecretKeyMissing {
 		t.Fatalf("without secrets key: got %v want ErrChannelSecretKeyMissing", err)
 	}
 }
 
 func TestChannelCreateInvalidKeyFails(t *testing.T) {
 	t.Setenv(crypto.SecretsKeyEnv, "not-base64!!")
-	svc, pid := newChannelSvc(t)
-	if _, err := svc.Create(validInput(pid)); err != ErrChannelSecretKeyInvalid {
+	svc := newChannelSvc(t)
+	if _, err := svc.Create(validInput()); err != ErrChannelSecretKeyInvalid {
 		t.Fatalf("invalid secrets key: got %v want ErrChannelSecretKeyInvalid", err)
 	}
 }
 
 func TestChannelCronDeliverTargetRequired(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
+	svc := newChannelSvc(t)
 
-	in := validInput(pid)
+	in := validInput()
 	in.CronDeliver = true
 	in.CronDeliverTarget = ""
 	if _, err := svc.Create(in); err != ErrChannelCronTargetRequired {
@@ -284,9 +266,9 @@ func TestValidCronDeliverTarget(t *testing.T) {
 
 func TestChannelCreateFeishuTypeAndRegion(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
+	svc := newChannelSvc(t)
 
-	in := validInput(pid)
+	in := validInput()
 	in.Type = "feishu"
 	in.Name = "飞书 Channel"
 	in.IsPrimary = false
@@ -311,8 +293,8 @@ func TestChannelCreateFeishuTypeAndRegion(t *testing.T) {
 
 func TestChannelCreateDefaultFeishuRegionCN(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	in := validInput(pid)
+	svc := newChannelSvc(t)
+	in := validInput()
 	in.Type = "feishu"
 	in.Name = "飞书 Channel"
 	dto, err := svc.Create(in)
@@ -326,8 +308,8 @@ func TestChannelCreateDefaultFeishuRegionCN(t *testing.T) {
 
 func TestChannelCreateDingTalkStripsWebhookAndRobotCode(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
-	in := validInput(pid)
+	svc := newChannelSvc(t)
+	in := validInput()
 	in.Type = "dingtalk"
 	in.Name = "钉钉 Channel"
 	in.AppID = "ding-app-1"
@@ -357,9 +339,9 @@ func TestChannelCreateDingTalkStripsWebhookAndRobotCode(t *testing.T) {
 
 func TestChannelMultiPrimarySecondary(t *testing.T) {
 	setChannelKey(t)
-	svc, pid := newChannelSvc(t)
+	svc := newChannelSvc(t)
 
-	primaryIn := validInput(pid)
+	primaryIn := validInput()
 	primaryIn.AgentName = "agent-primary"
 	primaryIn.IsPrimary = true
 	primary, err := svc.Create(primaryIn)
@@ -370,7 +352,7 @@ func TestChannelMultiPrimarySecondary(t *testing.T) {
 		t.Fatalf("channel created with isPrimary should be primary")
 	}
 
-	secIn := validInput(pid)
+	secIn := validInput()
 	secIn.AppID = "app-456"
 	secIn.AgentName = "agent-secondary"
 	sec, err := svc.Create(secIn)
@@ -381,7 +363,7 @@ func TestChannelMultiPrimarySecondary(t *testing.T) {
 		t.Fatalf("second channel should be secondary")
 	}
 
-	list, err := svc.ListByProject(pid)
+	list, err := svc.List()
 	if err != nil || len(list) != 2 {
 		t.Fatalf("list: %v n=%d", err, len(list))
 	}
@@ -390,7 +372,7 @@ func TestChannelMultiPrimarySecondary(t *testing.T) {
 	}
 
 	// Cannot bind taken agent.
-	secIn2 := validInput(pid)
+	secIn2 := validInput()
 	secIn2.AppID = "app-789"
 	secIn2.AgentName = "agent-primary"
 	if _, err := svc.Create(secIn2); err != ErrChannelAgentTaken {

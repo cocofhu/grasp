@@ -113,10 +113,10 @@ func ResolveConfigRoot(backend AcpBackend, layoutConfigRoot string) string {
 	return DefaultConfigRoot(backend)
 }
 
-// authSpec maps the project credential key of a backend onto the env var its
+// authSpec maps the workspace credential key of a backend onto the env var its
 // in-container CLI reads.
 type authSpec struct {
-	credKey string // project credential env key (envauth preset)
+	credKey string // workspace credential env key (envauth preset)
 	cliKey  string // env var the bridge CLI reads
 }
 
@@ -177,7 +177,7 @@ func AuthConfigFileExists(workDirSrc string, backend AcpBackend) bool {
 
 // ResolveSettingsWorkDir picks which workspace root's settings.json wins for the
 // auth gate, matching BuildConfigHome layering: Agent overlay if present, else
-// project-shared extend. Empty sharedWorkDir falls back to the Agent directory only.
+// workspace-shared extend. Empty sharedWorkDir falls back to the Agent directory only.
 func ResolveSettingsWorkDir(agentWorkDir, sharedWorkDir string) string {
 	return ResolveAuthWorkDir(agentWorkDir, sharedWorkDir, BackendCursor)
 }
@@ -198,7 +198,7 @@ func ResolveAuthWorkDir(agentWorkDir, sharedWorkDir string, backend AcpBackend) 
 
 // PrepareAuthEnv merges auth keys from workspace settings.json.env into env
 // (explicit env wins, including empty overrides), then normalizes via mergeAuthEnv.
-// Optional sharedWorkDir is the project-shared Agent workspace (extend layer);
+// Optional sharedWorkDir is the workspace-shared Agent workspace (extend layer);
 // when the Agent directory has no settings.json, the shared root is used instead.
 // When settings.json exists in either layer, the auth gate passes without requiring
 // Env keys; content is left to the backend/CLI.
@@ -303,7 +303,7 @@ func mergeSettingsAuthIntoEnv(env, settingsAuth map[string]string) map[string]st
 	return out
 }
 
-// mergeAuthEnv copies the project credential key onto the CLI key read by the
+// mergeAuthEnv copies the workspace credential key onto the CLI key read by the
 // sandbox bridge. When requireAuth is false (workspace settings.json
 // exists), missing keys do not error; region normalization still applies.
 func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (map[string]string, error) {

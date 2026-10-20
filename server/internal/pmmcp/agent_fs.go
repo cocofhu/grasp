@@ -8,8 +8,8 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-func (h *Host) callAgentFS(projectID, token, name string, args map[string]any) (any, bool) {
-	sess, ok := h.SessionFor(projectID, token)
+func (h *Host) callAgentFS(token, name string, args map[string]any) (any, bool) {
+	sess, ok := h.SessionFor(token)
 	if !ok {
 		return map[string]any{"error": "unauthorized"}, true
 	}
@@ -21,8 +21,8 @@ func (h *Host) callAgentFS(projectID, token, name string, args map[string]any) (
 	}
 
 	switch name {
-	case "pm_list_project_agents":
-		return services.ListProjectAgents(skill.List(), sess.ProjectID, sess.AgentName), false
+	case "pm_list_workspace_agents":
+		return services.ListWorkspaceAgents(skill.List(), sess.AgentName), false
 
 	case "pm_list_agent_templates", "pm_create_agent_from_template":
 		return h.callTeamTools(sess, skill, name, args)
@@ -147,17 +147,13 @@ func (h *Host) workspaceWriteOpts(sess *Session) services.WorkspaceWriteOpts {
 	return services.WorkspaceWriteOpts{Author: author, Source: source}
 }
 
-// authorizeAgentFSTarget allows PM to manage any agent bound to the same project (incl. self).
+// authorizeAgentFSTarget allows PM to manage any existing agent (incl. self).
 func (h *Host) authorizeAgentFSTarget(sess *Session, skill *services.AgentService, target string) (errMsg string, deny bool) {
 	if strings.TrimSpace(sess.AgentName) == "" {
 		return "pm leader not bound", true
 	}
-	ag, ok := skill.Get(target)
-	if !ok {
+	if !skill.Exists(target) {
 		return "agent not found: " + target, true
-	}
-	if !services.AgentProjectMatches(ag, sess.ProjectID) {
-		return "agent not in project: " + target, true
 	}
 	return "", false
 }

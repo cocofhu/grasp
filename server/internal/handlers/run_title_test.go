@@ -14,7 +14,7 @@ func TestStartRunAcceptsTitleOverride(t *testing.T) {
 	h := newHarness(t)
 	reposJSON := `[{"name":"approving","url":"https://git.example/approving.git"}]`
 	if err := h.h.WF.Save(&models.WorkflowDef{
-		ID: "wf-title", ProjectID: models.DefaultProjectID, Name: "WF Title",
+		ID: "wf-title", Name: "WF Title",
 		Graph: models.Graph{
 			Variables: []models.Variable{{Name: "repos", Type: "repos", Ask: true, Value: reposJSON}},
 			Nodes:     []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
@@ -49,7 +49,7 @@ func TestStartRunAcceptsTitleOverride(t *testing.T) {
 func TestStartRunPersistsFirstMessage(t *testing.T) {
 	h := newHarness(t)
 	if err := h.h.WF.Save(&models.WorkflowDef{
-		ID: "wf-first", ProjectID: models.DefaultProjectID, Name: "WF First",
+		ID: "wf-first", Name: "WF First",
 		Graph: models.Graph{
 			Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 			Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},
@@ -88,7 +88,7 @@ func TestStartRunPersistsFirstMessage(t *testing.T) {
 func TestStartRunIgnoresBlankFirstMessage(t *testing.T) {
 	h := newHarness(t)
 	if err := h.h.WF.Save(&models.WorkflowDef{
-		ID: "wf-blank", ProjectID: models.DefaultProjectID, Name: "WF Blank",
+		ID: "wf-blank", Name: "WF Blank",
 		Graph: models.Graph{
 			Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 			Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},

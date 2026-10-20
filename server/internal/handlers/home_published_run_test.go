@@ -18,7 +18,7 @@ func TestHomeUsesPublishedSnapshotNotDraftHead(t *testing.T) {
 	draft.Nodes[0].Label = "draft-head"
 
 	wf := models.WorkflowDef{
-		ID: "wf-home", ProjectID: models.DefaultProjectID,
+		ID:   "wf-home",
 		Name: "草稿名", Description: "草稿说明",
 		Version: 2, PublishedVersion: 1, ShowOnHome: true,
 		Graph: draft,
@@ -37,7 +37,7 @@ func TestHomeUsesPublishedSnapshotNotDraftHead(t *testing.T) {
 		t.Fatal(err)
 	}
 	never := models.WorkflowDef{
-		ID: "wf-never", ProjectID: models.DefaultProjectID,
+		ID:   "wf-never",
 		Name: "从未发布", Version: 1, PublishedVersion: 0, ShowOnHome: true,
 		Graph: published,
 	}

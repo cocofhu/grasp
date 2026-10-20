@@ -9,12 +9,12 @@ import (
 func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("DelThread", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("DelThread", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "t1", "agent-a", "user")
+	th, err := pm.CreateThread("alice", "t1", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 	if err != nil || counts[th.ID] != 1 {
 		t.Fatalf("counts=%v err=%v", counts, err)
 	}
-	if err := pm.DeleteThread(p.ID, th.ID, "alice"); err != nil {
+	if err := pm.DeleteThread(th.ID, "alice"); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pm.GetThreadByID(th.ID); err == nil {
@@ -46,12 +46,12 @@ func TestPmThreadDeleteAndLookupHelpers(t *testing.T) {
 func TestPmDeleteThreadByID(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("DelByID", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("DelByID", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "cron")
+	th, err := pm.CreateCronThread("agent-a", "cron")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,15 +68,15 @@ func TestBuildAgentAndPmMCPSpecs(t *testing.T) {
 	t.Cleanup(func() { config.StoreConfig(prev) })
 	config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "http://localhost:8080"}})
 
-	specs := BuildAgentPlatformMCPSpecs("proj-1", "agent-a", "tok-1")
+	specs := BuildAgentPlatformMCPSpecs("agent-a", "tok-1")
 	if len(specs) == 0 {
 		t.Fatal("agent platform specs")
 	}
-	pmSpecs := BuildPmRoleMCPSpecs("proj-1", "tok-1", []string{"pm-workflow-read", "pm-progress"})
+	pmSpecs := BuildPmRoleMCPSpecs("tok-1", []string{"pm-workflow-read", "pm-progress"})
 	if len(pmSpecs) < 2 {
 		t.Fatalf("pm role specs=%v", pmSpecs)
 	}
-	all := append(BuildAgentPlatformMCPSpecs("proj-1", "agent-a", "tok-1"), BuildPmRoleMCPSpecs("proj-1", "tok-1", []string{"pm-workflow-read"})...)
+	all := append(BuildAgentPlatformMCPSpecs("agent-a", "tok-1"), BuildPmRoleMCPSpecs("tok-1", []string{"pm-workflow-read"})...)
 	if len(all) == 0 {
 		t.Fatal("pm platform specs")
 	}
@@ -92,12 +92,12 @@ func TestEffectivePmEnabledMcpsDirect(t *testing.T) {
 func TestPmUpsertDraftBranches(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("DraftBranch", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("DraftBranch", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	th, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}

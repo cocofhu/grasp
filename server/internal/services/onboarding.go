@@ -24,10 +24,6 @@ const (
 var (
 	// ErrOnboardingAPIKeyRequired is returned when bootstrap is called without an API key.
 	ErrOnboardingAPIKeyRequired = errors.New("apiKey is required")
-	// ErrOnboardingProjectNotFound is returned when the project id does not exist.
-	ErrOnboardingProjectNotFound = errors.New("project not found")
-	// ErrOnboardingAgentConflict is returned when a fixed-name agent already belongs to another project.
-	ErrOnboardingAgentConflict = errors.New("onboarding agent already bound to another project")
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
 	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
 	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
@@ -93,39 +89,29 @@ type BaselineRepo struct {
 
 // CreateBaselineWorkflowRequest is the body for POST /api/workflows/from-baseline.
 type CreateBaselineWorkflowRequest struct {
-	ProjectID string         `json:"projectId"`
-	Name      string         `json:"name"`
-	Repos     []BaselineRepo `json:"repos"`
+	Name  string         `json:"name"`
+	Repos []BaselineRepo `json:"repos"`
 }
 
 // OnboardingService bootstraps first-install auth + the built-in Agents + 默认工作流.
 type OnboardingService struct {
-	Projects    *ProjectService
 	Skills      *AgentService
 	SharedAgent *SharedAgentService
 	WF          *WorkflowService
-	Credentials *ProjectCredentialService
+	Credentials *CredentialService
 }
 
 // NewOnboardingService wires dependencies. credentials receives every secret the
 // wizard submits (AI key, Git tokens, SSH).
-func NewOnboardingService(projects *ProjectService, skills *AgentService, shared *SharedAgentService, wf *WorkflowService, credentials *ProjectCredentialService) *OnboardingService {
-	return &OnboardingService{Projects: projects, Skills: skills, SharedAgent: shared, WF: wf, Credentials: credentials}
+func NewOnboardingService(skills *AgentService, shared *SharedAgentService, wf *WorkflowService, credentials *CredentialService) *OnboardingService {
+	return &OnboardingService{Skills: skills, SharedAgent: shared, WF: wf, Credentials: credentials}
 }
 
 // CreateFromBaseline clones the embedded first-install workflow into a new
 // published workflow. It does not modify the existing onboarding workflow.
 func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest) (models.WorkflowDef, error) {
-	projectID := strings.TrimSpace(req.ProjectID)
-	if projectID == "" {
-		return models.WorkflowDef{}, ErrWorkflowProjectRequired
-	}
-	proj, ok := s.Projects.Get(projectID)
-	if !ok {
-		return models.WorkflowDef{}, ErrWorkflowProjectNotFound
-	}
 	name := strings.TrimSpace(req.Name)
-	if err := s.WF.validateWorkflowName(name, "", projectID); err != nil {
+	if err := s.WF.validateWorkflowName(name, ""); err != nil {
 		return models.WorkflowDef{}, err
 	}
 	repos := normalizeBaselineRepos(req.Repos)
@@ -140,19 +126,7 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if err := envelope.Graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
-	defID := strings.TrimSpace(s.Projects.DefaultProjectID())
-	if defID == "" {
-		defID = models.DefaultProjectID
-	}
-	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
-	if err != nil {
-		return models.WorkflowDef{}, err
-	}
-	if err := s.checkOnboardingAgentConflicts(projectID, plan.AgentNames); err != nil {
-		return models.WorkflowDef{}, err
-	}
-	assignOnboardingAgentProfiles(&envelope.Graph, plan.NameMap)
-	created, err := s.ensureBaselineAgents(projectID, plan.NameMap)
+	created, err := s.ensureBaselineAgents()
 	if err != nil {
 		return models.WorkflowDef{}, err
 	}
@@ -164,7 +138,6 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 
 	wf := models.WorkflowDef{
 		ID:          "wf-" + uuid.NewString()[:8],
-		ProjectID:   projectID,
 		Name:        name,
 		Description: "从默认基线创建。仓库可在启动运行时调整。",
 		NeedsRepo:   true,
@@ -190,20 +163,17 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	return published, nil
 }
 
-// ensureBaselineAgents creates the project's fixed-name template Agents that do
-// not exist yet, using the project's shared Agent backend. Existing Agents are
-// left untouched. It returns the names it created.
-func (s *OnboardingService) ensureBaselineAgents(projectID string, nameMap map[string]string) ([]string, error) {
+// ensureBaselineAgents creates the fixed-name template Agents that do not exist
+// yet, using the shared Agent backend. Existing Agents are left untouched. It
+// returns the names it created.
+func (s *OnboardingService) ensureBaselineAgents() ([]string, error) {
 	backend := ""
 	if s.SharedAgent != nil {
-		backend = NormalizeAcpBackend(s.SharedAgent.Get(projectID).AcpBackend)
+		backend = NormalizeAcpBackend(s.SharedAgent.Get().AcpBackend)
 	}
 	var created []string
 	for _, role := range TeamEngineerTemplates {
-		name := nameMap[role.RoleLabelZH]
-		if name == "" {
-			continue
-		}
+		name := role.RoleLabelZH
 		if _, ok := s.Skills.Get(name); ok {
 			continue
 		}
@@ -219,14 +189,13 @@ func (s *OnboardingService) ensureBaselineAgents(projectID string, nameMap map[s
 			b = AcpBackendCursor
 		}
 		tmpl.Name = name
-		tmpl.ProjectID = projectID
 		tmpl.AcpBackend = b
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(b)
 		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
 			tmpl.Layout.WorkspaceDir = DefaultWorkspaceDir
 		}
 		if b == AcpBackendOpenCode {
-			tmpl.OpenCodeCredentialID = defaultOpenCodeCredentialID(projectID)
+			tmpl.OpenCodeCredentialID = builtinCredentialID("opencode")
 		}
 		if err := s.Skills.Save(tmpl); err != nil {
 			return nil, s.dropAgents(created, fmt.Errorf("save agent %s: %w", name, err))
@@ -287,36 +256,14 @@ func applyBaselineRepos(graph *models.Graph, repos []BaselineRepo) {
 }
 
 // Bootstrap writes shared-agent env auth, saves the install-group agents, and publishes
-// 默认工作流. Allowed on any project: default keeps the template names; others derive names
-// from the project name. Idempotent within a project. Cross-project name conflicts
-// are rejected with ErrOnboardingAgentConflict. It never starts a Run. Missing
-// apiKey rejects without creating resources.
-func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapRequest) (OnboardingBootstrapResult, error) {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return OnboardingBootstrapResult{}, ErrOnboardingProjectNotFound
-	}
+// 默认工作流. Idempotent. It never starts a Run. Missing apiKey rejects without
+// creating resources.
+func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (OnboardingBootstrapResult, error) {
 	apiKey := strings.TrimSpace(req.APIKey)
 	if apiKey == "" {
 		return OnboardingBootstrapResult{}, ErrOnboardingAPIKeyRequired
 	}
-	proj, ok := s.Projects.Get(projectID)
-	if !ok {
-		return OnboardingBootstrapResult{}, ErrOnboardingProjectNotFound
-	}
-	defID := ""
-	if s.Projects != nil {
-		defID = strings.TrimSpace(s.Projects.DefaultProjectID())
-	}
-	if defID == "" {
-		defID = models.DefaultProjectID
-	}
-
 	loc := onboardingLocaleFor(req.Language)
-	plan, err := BuildOnboardingNamePlan(projectID, proj.Name, defID)
-	if err != nil {
-		return OnboardingBootstrapResult{}, err
-	}
 
 	backend, err := ParseAcpBackend(req.AcpBackend)
 	if err != nil {
@@ -324,19 +271,13 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 	}
 	region := strings.TrimSpace(req.Region)
 
-	team, err := resolveOnboardingTeam(req.Agents, plan.NameMap)
+	team, err := resolveOnboardingTeam(req.Agents)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
-	teamNames := make([]string, 0, len(team))
 	nameMap := make(map[string]string, len(team))
 	for _, m := range team {
-		teamNames = append(teamNames, m.Name)
 		nameMap[m.Role.RoleLabelZH] = m.Name
-	}
-
-	if err := s.checkOnboardingAgentConflicts(projectID, teamNames); err != nil {
-		return OnboardingBootstrapResult{}, err
 	}
 
 	envelope, err := loadDefaultWorkflowEnvelope()
@@ -358,7 +299,6 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 			return OnboardingBootstrapResult{}, err
 		}
 		tmpl.Name = m.Name
-		tmpl.ProjectID = projectID
 		tmpl.AcpBackend = backend
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 		if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {
@@ -374,12 +314,12 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 			tmpl.Env[runtime.EnvACPBridgeModel] = m.Model
 		}
 		if backend == AcpBackendOpenCode {
-			tmpl.OpenCodeCredentialID = defaultOpenCodeCredentialID(projectID)
+			tmpl.OpenCodeCredentialID = builtinCredentialID("opencode")
 		}
 		templates = append(templates, tmpl)
 	}
 
-	if err := s.writeProjectAuth(projectID, backend, apiKey, region, req); err != nil {
+	if err := s.writeWorkspaceAuth(backend, apiKey, region, req); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 
@@ -393,7 +333,7 @@ func (s *OnboardingService) Bootstrap(projectID string, req OnboardingBootstrapR
 
 	applyOnboardingRepo(&envelope.Graph, req.RepoURL, req.RepoBranch)
 
-	wf, err := s.upsertDefaultWorkflow(projectID, envelope)
+	wf, err := s.upsertDefaultWorkflow(envelope)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -420,8 +360,8 @@ type onboardingTeamMember struct {
 }
 
 // resolveOnboardingTeam turns the wizard's choices into the Agents to save, in
-// workflow order. Empty choices keep every template with its derived name.
-func resolveOnboardingTeam(choices []OnboardingAgentChoice, derived map[string]string) ([]onboardingTeamMember, error) {
+// workflow order. Empty choices keep every template with its template name.
+func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMember, error) {
 	picked := map[string]OnboardingAgentChoice{}
 	for _, c := range choices {
 		id := strings.TrimSpace(c.TemplateID)
@@ -447,7 +387,7 @@ func resolveOnboardingTeam(choices []OnboardingAgentChoice, derived map[string]s
 		if len(choices) > 0 && !ok {
 			continue
 		}
-		name := derived[role.RoleLabelZH]
+		name := role.RoleLabelZH
 		if custom := strings.TrimSpace(c.Name); custom != "" {
 			normalized, err := NormalizeAndValidateAgentName(custom)
 			if err != nil {
@@ -562,35 +502,20 @@ func dropOnboardingAgentNode(g *models.Graph, nodeID string) {
 	}
 }
 
-func (s *OnboardingService) checkOnboardingAgentConflicts(projectID string, agentNames []string) error {
-	for _, name := range agentNames {
-		existing, ok := s.Skills.Get(name)
-		if !ok {
-			continue
-		}
-		owner := strings.TrimSpace(existing.ProjectID)
-		if owner != projectID {
-			return fmt.Errorf("%w: %s owned by project %s", ErrOnboardingAgentConflict, name, owner)
-		}
-	}
-	return nil
-}
-
-func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region string, req OnboardingBootstrapRequest) error {
+func (s *OnboardingService) writeWorkspaceAuth(backend, apiKey, region string, req OnboardingBootstrapRequest) error {
 	if s.SharedAgent == nil {
 		return fmt.Errorf("shared agent service unavailable")
 	}
 	if s.Credentials == nil {
-		return fmt.Errorf("project credential service unavailable")
+		return fmt.Errorf("credential service unavailable")
 	}
-	cfg := s.SharedAgent.Get(projectID)
+	cfg := s.SharedAgent.Get()
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
 	}
-	cfg.ProjectID = projectID
 	cfg.AcpBackend = backend
 	primaryKey := primaryAuthEnvKey(backend)
-	creds := []ProjectCredentialInput{
+	creds := []CredentialInput{
 		{Type: "ai", Provider: backend, Name: aiCredentialName(backend), EnvKey: primaryKey, Value: apiKey},
 		{Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: "GITHUB_TOKEN", Value: req.GitHubToken},
 		{Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: "GITLAB_TOKEN", Value: req.GitLabToken},
@@ -603,7 +528,7 @@ func (s *OnboardingService) writeProjectAuth(projectID, backend, apiKey, region 
 		if in.Value == "" {
 			continue
 		}
-		if _, err := s.Credentials.SetByEnvKey(projectID, in); err != nil {
+		if _, err := s.Credentials.SetByEnvKey(in); err != nil {
 			return err
 		}
 		delete(cfg.Env, in.EnvKey)
@@ -676,14 +601,14 @@ func agentAuthConfigFileName(backend string) string {
 	return "settings.json"
 }
 
-func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope models.ExportEnvelope) (models.WorkflowDef, error) {
+func (s *OnboardingService) upsertDefaultWorkflow(envelope models.ExportEnvelope) (models.WorkflowDef, error) {
 	graph := envelope.Graph
 	if err := graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
 
 	var existing *models.WorkflowDef
-	for _, wf := range s.WF.List(projectID) {
+	for _, wf := range s.WF.List() {
 		if isOnboardingWorkflowName(wf.Name) {
 			full, ok := s.WF.Get(wf.ID)
 			if !ok {
@@ -706,7 +631,6 @@ func (s *OnboardingService) upsertDefaultWorkflow(projectID string, envelope mod
 	}
 	wf := models.WorkflowDef{
 		ID:          uuid.NewString(),
-		ProjectID:   projectID,
 		Name:        envelope.Name,
 		Description: desc,
 		NeedsRepo:   true,
@@ -742,7 +666,7 @@ func applyOnboardingRepo(graph *models.Graph, url, branch string) {
 
 // applyOnboardingAgentRegion writes the Studio-managed region env key into an
 // Agent env map for backends that require it (CodeBuddy / Trae). Empty region
-// falls back to the same defaults as writeProjectAuth / web regionPolicy.
+// falls back to the same defaults as writeWorkspaceAuth / web regionPolicy.
 func applyOnboardingAgentRegion(env map[string]string, backend, region string) {
 	if env == nil {
 		return

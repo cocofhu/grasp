@@ -17,13 +17,13 @@ import (
 // MaxAuditPayloadBytes caps serialized payload size while keeping structure.
 const MaxAuditPayloadBytes = 16 * 1024
 
-// ProjectAuditService writes and queries append-only project audit events.
+// AuditService writes and queries append-only audit events.
 // Writes are fail-open: persistence errors are logged and do not fail callers.
-type ProjectAuditService struct{ db *gorm.DB }
+type AuditService struct{ db *gorm.DB }
 
-// NewProjectAuditService builds the service.
-func NewProjectAuditService(db *gorm.DB) *ProjectAuditService {
-	return &ProjectAuditService{db: db}
+// NewAuditService builds the service.
+func NewAuditService(db *gorm.DB) *AuditService {
+	return &AuditService{db: db}
 }
 
 // AuditActor is the attributed operator for an event.
@@ -51,7 +51,6 @@ func SystemActor() AuditActor {
 
 // AuditRecord is the input for a single append-only event.
 type AuditRecord struct {
-	ProjectID    string
 	Actor        AuditActor
 	CallerKind   string // pm | apikey | system | external; empty → inferred from Actor
 	Action       string
@@ -66,8 +65,8 @@ type AuditRecord struct {
 }
 
 // Record appends a masked audit event. Fail-open on DB errors.
-func (s *ProjectAuditService) Record(rec AuditRecord) {
-	if s == nil || s.db == nil || strings.TrimSpace(rec.ProjectID) == "" {
+func (s *AuditService) Record(rec AuditRecord) {
+	if s == nil || s.db == nil {
 		return
 	}
 	actor := rec.Actor
@@ -84,9 +83,8 @@ func (s *ProjectAuditService) Record(rec AuditRecord) {
 	}
 	payload := MaskAuditPayload(rec.Payload)
 	runID, nodeID := elevateRunNode(rec.RunID, rec.NodeID, rec.ResourceType, rec.ResourceID, payload)
-	ev := models.ProjectAuditEvent{
+	ev := models.AuditEvent{
 		ID:             "aud-" + uuid.NewString()[:12],
-		ProjectID:      rec.ProjectID,
 		OccurredAt:     at,
 		Actor:          actor.Username,
 		Unattributable: actor.Unattributable,
@@ -103,9 +101,8 @@ func (s *ProjectAuditService) Record(rec AuditRecord) {
 	}
 	if err := s.db.Create(&ev).Error; err != nil {
 		log.Warn().Err(err).
-			Str("project_id", rec.ProjectID).
 			Str("action", rec.Action).
-			Msg("project audit write failed (fail-open)")
+			Msg("audit write failed (fail-open)")
 	}
 }
 
@@ -152,9 +149,8 @@ func payloadString(p map[string]any, keys ...string) string {
 	return ""
 }
 
-// AuditListFilter holds query filters for project audit listing/export.
+// AuditListFilter holds query filters for audit listing/export.
 type AuditListFilter struct {
-	ProjectID  string
 	From       *time.Time
 	To         *time.Time
 	Actor      string // exact actor username
@@ -169,11 +165,11 @@ type AuditListFilter struct {
 }
 
 // ListPage returns a page of audit events (newest first) plus total count.
-func (s *ProjectAuditService) ListPage(f AuditListFilter) ([]models.ProjectAuditEvent, int64, error) {
+func (s *AuditService) ListPage(f AuditListFilter) ([]models.AuditEvent, int64, error) {
 	if s == nil || s.db == nil {
 		return nil, 0, fmt.Errorf("audit unavailable")
 	}
-	q := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f)
+	q := s.applyFilter(s.db.Model(&models.AuditEvent{}), f)
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, err
@@ -189,8 +185,8 @@ func (s *ProjectAuditService) ListPage(f AuditListFilter) ([]models.ProjectAudit
 	if size > 100 {
 		size = 100
 	}
-	var items []models.ProjectAuditEvent
-	err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	var items []models.AuditEvent
+	err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Order("occurred_at desc, id desc").
 		Offset((page - 1) * size).
 		Limit(size).
@@ -199,7 +195,7 @@ func (s *ProjectAuditService) ListPage(f AuditListFilter) ([]models.ProjectAudit
 		return nil, 0, err
 	}
 	if items == nil {
-		items = []models.ProjectAuditEvent{}
+		items = []models.AuditEvent{}
 	}
 	return items, total, nil
 }
@@ -212,24 +208,24 @@ type AuditListStats struct {
 }
 
 // CountStats returns total / MCP / fail counts for the filter.
-func (s *ProjectAuditService) CountStats(f AuditListFilter) (AuditListStats, error) {
+func (s *AuditService) CountStats(f AuditListFilter) (AuditListStats, error) {
 	empty := AuditListStats{}
 	if s == nil || s.db == nil {
 		return empty, fmt.Errorf("audit unavailable")
 	}
-	base := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f)
+	base := s.applyFilter(s.db.Model(&models.AuditEvent{}), f)
 	var total int64
 	if err := base.Count(&total).Error; err != nil {
 		return empty, err
 	}
 	var mcp int64
-	if err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	if err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("action = ? OR action LIKE ?", models.AuditActionMCPCall, "mcp.%").
 		Count(&mcp).Error; err != nil {
 		return empty, err
 	}
 	var fail int64
-	if err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	if err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("outcome = ?", models.AuditOutcomeFail).
 		Count(&fail).Error; err != nil {
 		return empty, err
@@ -238,15 +234,15 @@ func (s *ProjectAuditService) CountStats(f AuditListFilter) (AuditListStats, err
 }
 
 // ListAllMatching returns all events matching the filter (capped) for export.
-func (s *ProjectAuditService) ListAllMatching(f AuditListFilter, limit int) ([]models.ProjectAuditEvent, error) {
+func (s *AuditService) ListAllMatching(f AuditListFilter, limit int) ([]models.AuditEvent, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("audit unavailable")
 	}
 	if limit <= 0 || limit > 5000 {
 		limit = 5000
 	}
-	var items []models.ProjectAuditEvent
-	err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	var items []models.AuditEvent
+	err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Order("occurred_at desc, id desc").
 		Limit(limit).
 		Find(&items).Error
@@ -254,7 +250,7 @@ func (s *ProjectAuditService) ListAllMatching(f AuditListFilter, limit int) ([]m
 		return nil, err
 	}
 	if items == nil {
-		items = []models.ProjectAuditEvent{}
+		items = []models.AuditEvent{}
 	}
 	return items, nil
 }
@@ -288,7 +284,7 @@ type AuditFacets struct {
 }
 
 // ListFacets returns Run list (time window) and nodes/resources for an optional Run.
-func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error) {
+func (s *AuditService) ListFacets(f AuditListFilter) (AuditFacets, error) {
 	empty := AuditFacets{
 		Runs: []AuditFacetRun{}, Nodes: []AuditFacetNode{},
 		Resources: []AuditFacetResource{},
@@ -296,11 +292,7 @@ func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error)
 	if s == nil || s.db == nil {
 		return empty, fmt.Errorf("audit unavailable")
 	}
-	base := AuditListFilter{
-		ProjectID: f.ProjectID,
-		From:      f.From,
-		To:        f.To,
-	}
+	base := AuditListFilter{From: f.From, To: f.To}
 
 	runs, err := s.listFacetRuns(base)
 	if err != nil {
@@ -323,10 +315,10 @@ func (s *ProjectAuditService) ListFacets(f AuditListFilter) (AuditFacets, error)
 	}, nil
 }
 
-func (s *ProjectAuditService) listFacetRuns(base AuditListFilter) ([]AuditFacetRun, error) {
-	var events []models.ProjectAuditEvent
+func (s *AuditService) listFacetRuns(base AuditListFilter) ([]AuditFacetRun, error) {
+	var events []models.AuditEvent
 	// Newest-first scan then de-dupe: avoids dialect issues with MAX()+Scan into time.Time.
-	err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), base).
+	err := s.applyFilter(s.db.Model(&models.AuditEvent{}), base).
 		Where("run_id <> ''").
 		Select("run_id, occurred_at").
 		Order("occurred_at desc").
@@ -363,14 +355,14 @@ func shortRunID(id string) string {
 	return short
 }
 
-func (s *ProjectAuditService) runFacetSub(base AuditListFilter, runID string) string {
+func (s *AuditService) runFacetSub(base AuditListFilter, runID string) string {
 	f := base
 	f.RunID = runID
 	var mcp, fail int64
-	_ = s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	_ = s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("action = ? OR action LIKE ?", models.AuditActionMCPCall, "mcp.%").
 		Count(&mcp).Error
-	_ = s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	_ = s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("outcome = ?", models.AuditOutcomeFail).
 		Count(&fail).Error
 	parts := []string{}
@@ -385,12 +377,12 @@ func (s *ProjectAuditService) runFacetSub(base AuditListFilter, runID string) st
 	return strings.Join(parts, " · ")
 }
 
-func (s *ProjectAuditService) listFacetNodes(f AuditListFilter) ([]AuditFacetNode, error) {
+func (s *AuditService) listFacetNodes(f AuditListFilter) ([]AuditFacetNode, error) {
 	if strings.TrimSpace(f.RunID) == "" {
 		return []AuditFacetNode{}, nil
 	}
 	var ids []string
-	err := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	err := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("node_id <> '' AND node_id <> ?", "run").
 		Select("node_id").
 		Group("node_id").
@@ -406,13 +398,13 @@ func (s *ProjectAuditService) listFacetNodes(f AuditListFilter) ([]AuditFacetNod
 	return out, nil
 }
 
-func (s *ProjectAuditService) listFacetResources(f AuditListFilter) ([]AuditFacetResource, error) {
+func (s *AuditService) listFacetResources(f AuditListFilter) ([]AuditFacetResource, error) {
 	type resRow struct {
 		ResourceType string
 		ResourceID   string
 	}
 	var rows []resRow
-	resQ := s.applyFilter(s.db.Model(&models.ProjectAuditEvent{}), f).
+	resQ := s.applyFilter(s.db.Model(&models.AuditEvent{}), f).
 		Where("resource_type <> '' OR resource_id <> ''").
 		Select("resource_type, resource_id").
 		Group("resource_type, resource_id").
@@ -439,10 +431,7 @@ func (s *ProjectAuditService) listFacetResources(f AuditListFilter) ([]AuditFace
 	return resources, nil
 }
 
-func (s *ProjectAuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
-	if f.ProjectID != "" {
-		q = q.Where("project_id = ?", f.ProjectID)
-	}
+func (s *AuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.DB {
 	if f.From != nil {
 		q = q.Where("occurred_at >= ?", *f.From)
 	}
@@ -495,9 +484,9 @@ func (s *ProjectAuditService) applyFilter(q *gorm.DB, f AuditListFilter) *gorm.D
 }
 
 // FormatAuditText renders events as human-readable plain text.
-func FormatAuditText(events []models.ProjectAuditEvent) string {
+func FormatAuditText(events []models.AuditEvent) string {
 	var b strings.Builder
-	b.WriteString("=== Grasp Project Audit Export ===\n")
+	b.WriteString("=== Grasp Audit Export ===\n")
 	b.WriteString(fmt.Sprintf("Exported: %s\n", time.Now().Format(time.RFC3339)))
 	b.WriteString(fmt.Sprintf("Count: %d\n\n", len(events)))
 	for i, ev := range events {
@@ -607,7 +596,7 @@ func maskValue(v any, depth int, scanValues bool) any {
 
 func isSensitiveKey(key string) bool {
 	k := strings.ToLower(strings.ReplaceAll(key, "-", "_"))
-	// Bare "value" is not treated as sensitive: project vars nest {name,value,secret}
+	// Bare "value" is not treated as sensitive: workspace vars nest {name,value,secret}
 	// and are masked via MaskProjectVarsForAudit before entering the payload tree.
 	for _, h := range sensitiveKeyHints {
 		if strings.Contains(k, h) {
@@ -617,8 +606,8 @@ func isSensitiveKey(key string) bool {
 	return false
 }
 
-// MaskProjectVarsForAudit returns variables with secret values replaced.
-func MaskProjectVarsForAudit(vars []models.ProjectVariable) []map[string]any {
+// MaskWorkspaceVarsForAudit returns variables with secret values replaced.
+func MaskWorkspaceVarsForAudit(vars []models.WorkspaceVariable) []map[string]any {
 	out := make([]map[string]any, 0, len(vars))
 	for _, v := range vars {
 		val := v.Value
@@ -645,28 +634,4 @@ func MaskSandboxEnvForAudit(env []models.EnvEntry) []map[string]any {
 		})
 	}
 	return out
-}
-
-// ResolveProjectIDForWorkflow looks up project ownership for a workflow.
-func ResolveProjectIDForWorkflow(db *gorm.DB, workflowID string) string {
-	if db == nil || workflowID == "" {
-		return ""
-	}
-	var wf models.WorkflowDef
-	if err := db.Select("project_id").First(&wf, "id = ?", workflowID).Error; err != nil {
-		return ""
-	}
-	return wf.ProjectID
-}
-
-// ResolveProjectIDForRun resolves project via run → workflow.
-func ResolveProjectIDForRun(db *gorm.DB, runID string) string {
-	if db == nil || runID == "" {
-		return ""
-	}
-	var run models.Run
-	if err := db.Select("workflow_id").First(&run, "id = ?", runID).Error; err != nil {
-		return ""
-	}
-	return ResolveProjectIDForWorkflow(db, run.WorkflowID)
 }

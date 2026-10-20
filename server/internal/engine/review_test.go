@@ -38,7 +38,7 @@ func setupReviewEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 		t.Fatalf("open db: %v", err)
 	}
 	g := reviewGraph()
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "review-wf", Name: "review-wf", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "review-wf", Name: "review-wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}
@@ -342,7 +342,7 @@ func setupGateReactEngine(t *testing.T) (*Engine, *gorm.DB, *fakeProvider) {
 		t.Fatalf("open db: %v", err)
 	}
 	g := gateReactGraph()
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "gate-react-wf", Name: "gate-react-wf", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "gate-react-wf", Name: "gate-react-wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}

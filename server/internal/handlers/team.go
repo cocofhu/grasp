@@ -24,11 +24,10 @@ func (h *Handlers) BootstrapAgentTeam(c *gin.Context) {
 	if err != nil {
 		status := http.StatusBadRequest
 		switch {
-		case errors.Is(err, services.ErrTeamAgentConflict), errors.Is(err, services.ErrProjectNameExists):
+		case errors.Is(err, services.ErrTeamAgentConflict):
 			status = http.StatusConflict
 		case errors.Is(err, services.ErrTeamValidation), errors.Is(err, services.ErrInvalidAgentName),
-			errors.Is(err, services.ErrInvalidAcpBackend),
-			errors.Is(err, services.ErrEmptyProjectName):
+			errors.Is(err, services.ErrInvalidAcpBackend):
 			status = http.StatusBadRequest
 		default:
 			status = http.StatusInternalServerError

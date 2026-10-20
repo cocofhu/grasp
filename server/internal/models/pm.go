@@ -5,15 +5,14 @@ import (
 	"time"
 )
 
-// ProjectMemoryItem is one long-term memory entry scoped to a project + agent.
+// MemoryItem is one long-term memory entry scoped to an agent.
 // Human edits/clears go through Agent Studio (any authenticated user);
 // agents write via memory-store MCP (source=agent).
-type ProjectMemoryItem struct {
-	ID        string `gorm:"primaryKey" json:"id"`
-	ProjectID string `gorm:"index;uniqueIndex:idx_pm_mem_proj_agent_title" json:"projectId"`
-	// AgentName isolates memories per Agent within a project.
-	AgentName string    `gorm:"index;uniqueIndex:idx_pm_mem_proj_agent_title" json:"agentName"`
-	Title     string    `gorm:"size:191;uniqueIndex:idx_pm_mem_proj_agent_title" json:"title"`
+type MemoryItem struct {
+	ID string `gorm:"primaryKey" json:"id"`
+	// AgentName isolates memories per Agent.
+	AgentName string    `gorm:"index;uniqueIndex:idx_mem_agent_title" json:"agentName"`
+	Title     string    `gorm:"size:191;uniqueIndex:idx_mem_agent_title" json:"title"`
 	Content   string    `json:"content"`
 	Source    string    `json:"source"` // agent | user | admin | system
 	UpdatedBy string    `json:"updatedBy"`
@@ -21,15 +20,14 @@ type ProjectMemoryItem struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
-// ChatThread is a consult thread under a project.
+// ChatThread is a consult thread in the workspace.
 // Human UI lists by UserID. MCP context-store visibility is the caller's
 // user threads plus the agent's cron threads (not other users' consults).
 type ChatThread struct {
-	ID        string `gorm:"primaryKey" json:"id"`
-	ProjectID string `gorm:"index" json:"projectId"`
-	UserID    string `gorm:"index" json:"userId"`
+	ID     string `gorm:"primaryKey" json:"id"`
+	UserID string `gorm:"index" json:"userId"`
 	// AgentName is the PM Agent that owns this conversation for MCP isolation.
-	// Preserved when the project rebinds to another Agent.
+	// Preserved when the workspace rebinds to another Agent.
 	AgentName string `gorm:"index" json:"agentName,omitempty"`
 	// Kind: user (interactive) | cron (scheduler-owned exclusive thread).
 	Kind  string `gorm:"index" json:"kind,omitempty"`
@@ -119,7 +117,6 @@ type ChatTurnDraft struct {
 type AgentCronJob struct {
 	ID           string `gorm:"primaryKey" json:"id"`
 	AgentName    string `gorm:"index" json:"agentName"`
-	ProjectID    string `gorm:"index" json:"projectId"`
 	ThreadID     string `gorm:"index" json:"threadId"`
 	Name         string `json:"name"`
 	Prompt       string `json:"prompt"`
@@ -143,7 +140,7 @@ type AgentCronJob struct {
 }
 
 // ChannelConfig is an external IM channel binding managed via the admin WebUI.
-// A project may have multiple QQ channels (one primary + zero or more secondary).
+// The workspace may have multiple QQ channels (one primary + zero or more secondary).
 // Each channel binds exactly one Agent for inbound turns; AppID stays globally
 // unique. The design is channel-agnostic: Type selects the adapter, and Config
 // carries adapter-specific extras.
@@ -156,18 +153,16 @@ type ChannelConfig struct {
 	Name string `json:"name"`
 	// Enabled toggles whether the Manager starts an adapter for this row.
 	Enabled bool `gorm:"index" json:"enabled"`
-	// ProjectID is the project this bot serves.
-	ProjectID string `gorm:"index" json:"projectId"`
 	// AgentName is the PM Agent that answers inbound turns on this channel.
 	// At most one channel per Agent (enforced in service + partial unique index).
 	AgentName string `gorm:"index" json:"agentName"`
-	// IsPrimary marks the project's primary channel (at most one per project).
-	// Its agent mirrors Project.PmLeaderAgent for Web/gate paths; secondary
+	// IsPrimary marks the workspace's primary channel (at most one).
+	// Its agent mirrors Workspace.PmLeaderAgent for Web/gate paths; secondary
 	// channels have equal channel capabilities.
 	IsPrimary bool `gorm:"index" json:"isPrimary"`
 	// EnabledMcps lists platform PM role MCP ids for channel turns only
 	// (pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs / pm-prd-manager).
-	// nil → defaults; explicit empty → none. Web/gate still use Project.PmEnabledMcps.
+	// nil → defaults; explicit empty → none. Web/gate still use Workspace.PmEnabledMcps.
 	EnabledMcps []string `gorm:"serializer:json" json:"enabledMcps,omitempty"`
 	// AppID is the bot's public app id (unique across configs).
 	AppID string `gorm:"index" json:"appId"`
@@ -177,7 +172,7 @@ type ChannelConfig struct {
 	// (0 → platform default). Applies only to channel/cron turns, not workflow nodes.
 	TurnTimeoutSeconds int `json:"turnTimeoutSeconds"`
 	// CronDeliver marks this channel as the cron result push target for its
-	// bound Agent's jobs (not a project-wide singleton).
+	// bound Agent's jobs (not a workspace-wide singleton).
 	CronDeliver bool `json:"cronDeliver"`
 	// CronDeliverTarget is the push destination as "scene:conversationId"
 	// (e.g. "guild:123", "group:openid", "c2c:openid").

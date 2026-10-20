@@ -83,7 +83,7 @@ func extractPmCitations(text string) []models.ProgressCitation {
 	return out
 }
 
-// SetCitationDeps wires project-scoped existence checks used before AppendMessage.
+// SetCitationDeps wires existence checks used before AppendMessage.
 // Nil deps are fail-closed: shape-valid candidates are dropped rather than written.
 func (r *PmTurnRunner) SetCitationDeps(runs *RunService, arts *ArtifactService, wf *WorkflowService) {
 	r.mu.Lock()
@@ -99,32 +99,24 @@ func (r *PmTurnRunner) citationDeps() (*RunService, *ArtifactService, *WorkflowS
 	return r.runs, r.arts, r.wf
 }
 
-// filterAndEnrichCitations drops citations that fail project-scoped existence
+// filterAndEnrichCitations drops citations that fail existence
 // checks (fail-closed on missing deps / lookup errors) and fills SummarySnippet
 // for survivors. Message body writing is unaffected by failures here.
 func (r *PmTurnRunner) filterAndEnrichCitations(threadID string, citations []models.ProgressCitation) []models.ProgressCitation {
 	if len(citations) == 0 {
 		return nil
 	}
-	projectID := ""
 	if r.pm != nil {
-		if thr, err := r.pm.GetThreadByID(threadID); err == nil {
-			projectID = thr.ProjectID
-		} else {
+		if _, err := r.pm.GetThreadByID(threadID); err != nil {
 			log.Warn().Err(err).Str("thread", threadID).
 				Msg("pm citation filter: thread lookup failed; dropping citations")
 			return nil
 		}
 	}
-	if projectID == "" {
-		log.Warn().Str("thread", threadID).
-			Msg("pm citation filter: empty project; dropping citations")
-		return nil
-	}
 
 	runs, arts, wf := r.citationDeps()
 	if runs == nil {
-		log.Warn().Str("thread", threadID).Str("project", projectID).
+		log.Warn().Str("thread", threadID).
 			Msg("pm citation filter: run service unavailable; dropping citations")
 		return nil
 	}
@@ -133,7 +125,7 @@ func (r *PmTurnRunner) filterAndEnrichCitations(threadID string, citations []mod
 	out := make([]models.ProgressCitation, 0, len(citations))
 	for _, c := range citations {
 		if time.Now().After(deadline) {
-			log.Warn().Str("thread", threadID).Str("project", projectID).
+			log.Warn().Str("thread", threadID).
 				Str("type", c.Type).Str("target", c.TargetID).
 				Msg("pm citation filter: timeout budget exceeded; dropping remaining")
 			break
@@ -143,9 +135,9 @@ func (r *PmTurnRunner) filterAndEnrichCitations(threadID string, citations []mod
 				Msg("pm citation filter: invalid shape dropped")
 			continue
 		}
-		ok, snippet := r.existsCitationInProject(projectID, c, runs, arts, wf)
+		ok, snippet := r.existsCitation(c, runs, arts, wf)
 		if !ok {
-			log.Info().Str("thread", threadID).Str("project", projectID).
+			log.Info().Str("thread", threadID).
 				Str("type", c.Type).Str("target", c.TargetID).
 				Msg("pm citation filter: target missing or unverifiable; dropped")
 			continue
@@ -158,8 +150,7 @@ func (r *PmTurnRunner) filterAndEnrichCitations(threadID string, citations []mod
 	return out
 }
 
-func (r *PmTurnRunner) existsCitationInProject(
-	projectID string,
+func (r *PmTurnRunner) existsCitation(
 	c models.ProgressCitation,
 	runs *RunService,
 	arts *ArtifactService,
@@ -167,21 +158,21 @@ func (r *PmTurnRunner) existsCitationInProject(
 ) (ok bool, snippet string) {
 	switch strings.ToLower(c.Type) {
 	case "run":
-		return existRunCitation(projectID, c.TargetID, runs)
+		return existRunCitation(c.TargetID, runs)
 	case "workflow":
-		return existWorkflowCitation(projectID, c.TargetID, wf)
+		return existWorkflowCitation(c.TargetID, wf)
 	case "artifact":
-		return existArtifactCitation(projectID, c.TargetID, arts, runs)
+		return existArtifactCitation(c.TargetID, arts, runs)
 	case "gate":
-		return existGateCitation(projectID, c.TargetID, runs)
+		return existGateCitation(c.TargetID, runs)
 	case "plan":
-		return existPlanCitation(projectID, c.TargetID, runs, arts)
+		return existPlanCitation(c.TargetID, runs, arts)
 	default:
 		return false, ""
 	}
 }
 
-func existRunCitation(projectID, runID string, runs *RunService) (bool, string) {
+func existRunCitation(runID string, runs *RunService) (bool, string) {
 	if runs == nil {
 		return false, ""
 	}
@@ -189,21 +180,15 @@ func existRunCitation(projectID, runID string, runs *RunService) (bool, string) 
 	if !found {
 		return false, ""
 	}
-	if !runBelongsToProject(runs, projectID, run) {
-		return false, ""
-	}
 	return true, runCitationSnippet(run)
 }
 
-func existWorkflowCitation(projectID, wfID string, wf *WorkflowService) (bool, string) {
+func existWorkflowCitation(wfID string, wf *WorkflowService) (bool, string) {
 	if wf == nil {
 		return false, ""
 	}
 	def, found := wf.Get(wfID)
 	if !found {
-		return false, ""
-	}
-	if projectID != "" && def.ProjectID != projectID {
 		return false, ""
 	}
 	snippet := strings.TrimSpace(def.Name)
@@ -213,7 +198,7 @@ func existWorkflowCitation(projectID, wfID string, wf *WorkflowService) (bool, s
 	return true, snippet
 }
 
-func existArtifactCitation(projectID, target string, arts *ArtifactService, runs *RunService) (bool, string) {
+func existArtifactCitation(target string, arts *ArtifactService, runs *RunService) (bool, string) {
 	if arts == nil {
 		return false, ""
 	}
@@ -222,19 +207,14 @@ func existArtifactCitation(projectID, target string, arts *ArtifactService, runs
 		if !found {
 			return false, ""
 		}
-		if runs != nil {
-			if run, ok := runs.Get(a.RunID); ok && !runBelongsToProject(runs, projectID, run) {
-				return false, ""
-			}
-		}
 		name := strings.TrimSpace(a.Name)
 		if name == "" {
 			name = target
 		}
 		return true, name
 	}
-	// Name lookup within project scope.
-	items, _ := arts.AllPage(ArtifactFilter{ProjectID: projectID, Q: target}, 1, 50)
+	// Name lookup.
+	items, _ := arts.AllPage(ArtifactFilter{Q: target}, 1, 50)
 	for _, a := range items {
 		if strings.EqualFold(a.Name, target) {
 			return true, a.Name
@@ -243,13 +223,13 @@ func existArtifactCitation(projectID, target string, arts *ArtifactService, runs
 	return false, ""
 }
 
-func existGateCitation(projectID, target string, runs *RunService) (bool, string) {
+func existGateCitation(target string, runs *RunService) (bool, string) {
 	if runs == nil {
 		return false, ""
 	}
 	runID, nodeID, _ := strings.Cut(target, ":")
 	run, found := runs.Get(runID)
-	if !found || !runBelongsToProject(runs, projectID, run) {
+	if !found {
 		return false, ""
 	}
 	if nodeID == "" {
@@ -276,7 +256,7 @@ func existGateCitation(projectID, target string, runs *RunService) (bool, string
 	return false, ""
 }
 
-func existPlanCitation(projectID, target string, runs *RunService, arts *ArtifactService) (bool, string) {
+func existPlanCitation(target string, runs *RunService, arts *ArtifactService) (bool, string) {
 	if runs == nil || arts == nil {
 		return false, ""
 	}
@@ -287,7 +267,7 @@ func existPlanCitation(projectID, target string, runs *RunService, arts *Artifac
 	}
 	if runID != "" {
 		run, found := runs.Get(runID)
-		if !found || !runBelongsToProject(runs, projectID, run) {
+		if !found {
 			return false, ""
 		}
 		if planHasGoalID(arts, runID, planID) {
@@ -295,8 +275,8 @@ func existPlanCitation(projectID, target string, runs *RunService, arts *Artifac
 		}
 		return false, ""
 	}
-	// Bare plan id: scan recent project runs for a matching plan.json goal.
-	recent := runs.List(nil, "", projectID)
+	// Bare plan id: scan recent runs for a matching plan.json goal.
+	recent := runs.List(nil, "")
 	limit := 30
 	if len(recent) < limit {
 		limit = len(recent)
@@ -350,19 +330,6 @@ func planContainsID(plan map[string]any, want string) bool {
 			if sid == want {
 				return true
 			}
-		}
-	}
-	return false
-}
-
-func runBelongsToProject(runs *RunService, projectID string, run models.Run) bool {
-	if projectID == "" || runs == nil {
-		return false
-	}
-	scoped := runs.List(nil, run.WorkflowID, projectID)
-	for _, x := range scoped {
-		if x.ID == run.ID {
-			return true
 		}
 	}
 	return false

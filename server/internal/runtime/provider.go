@@ -61,28 +61,25 @@ type Options struct {
 	// ProfilesRoot is where agent_profile rules live (<root>/<profile>/rules.md),
 	// copied into the per-node /root/.cursor mount.
 	ProfilesRoot string
-	// SharedAgentForProject, when set, returns the current project's shared
-	// Agent baseline used as the extend layer before overlaying the Agent.
-	// Wired for workflow Run sandboxes and project-context chat tests only —
-	// Agent Studio interactive tests must leave it unused.
-	SharedAgentForProject func(projectID string) SharedAgentView
-	// ProjectCredentialsForProject resolves project credential environment
-	// values, the only source of secret keys in the sandbox env.
-	ProjectCredentialsForProject func(projectID string) map[string]string
-	// ProjectCredentialKeysForProject returns registered credential bindings,
-	// including empty slots. Run-scoped env entries cannot shadow these keys.
-	ProjectCredentialKeysForProject func(projectID string) map[string]struct{}
-	// ProjectCredentialReferences resolves ${credential:<id>} placeholders in
-	// MCP headers/command/env without exposing values as global environment keys.
-	ProjectCredentialReferences func(projectID string) map[string]string
-	// OpenCodeCredentialForProject resolves the single model-vendor credential
-	// selected by an Agent. A missing id returns nil and must not fall back.
-	OpenCodeCredentialForProject func(projectID, credentialID string) map[string]string
-	// SelectedCredentialForProject resolves one coding-backend or Git credential
-	// the Agent picked. A missing id returns ok=false and must not fall back.
-	SelectedCredentialForProject func(projectID, credentialID string) (envKey, value string, ok bool)
-	// ProjectIDForWorkflow resolves workflow → owning project for extend.
-	ProjectIDForWorkflow func(workflowID string) string
+	// SharedAgent, when set, returns the workspace shared Agent baseline used
+	// as the extend layer before overlaying the Agent. Applied to workflow
+	// nodes only — Agent Studio interactive tests must not get it.
+	SharedAgent func() SharedAgentView
+	// Credentials resolves workspace credential environment values, the only
+	// source of secret keys in the sandbox env.
+	Credentials func() map[string]string
+	// CredentialKeys returns registered credential bindings, including empty
+	// slots. Run-scoped env entries cannot shadow these keys.
+	CredentialKeys func() map[string]struct{}
+	// CredentialReferences resolves ${credential:<id>} placeholders in MCP
+	// headers/command/env without exposing values as global environment keys.
+	CredentialReferences func() map[string]string
+	// OpenCodeCredential resolves the single model-vendor credential selected
+	// by an Agent. A missing id returns nil and must not fall back.
+	OpenCodeCredential func(credentialID string) map[string]string
+	// SelectedCredential resolves one coding-backend or Git credential the
+	// Agent picked. A missing id returns ok=false and must not fall back.
+	SelectedCredential SelectedCredentialFunc
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
@@ -99,14 +96,14 @@ type Options struct {
 	// a gateway absent from its catalog can be declared with an adapter instead
 	// of failing at run time. Nil keeps the conservative `custom`-only behavior.
 	OpenCodeCatalog OpenCodeCatalog
-	// WriteBackCodexLoginFile replaces the project's Codex login file when a
+	// WriteBackCodexLoginFile replaces the workspace Codex login file when a
 	// run's auth.json changed. Nil skips write-back (tests). The callback must
 	// not log the file body.
-	WriteBackCodexLoginFile func(projectID, credentialID, content string) error
-	InjectedCredentialID    func(projectID, envKey, value string) string
+	WriteBackCodexLoginFile func(credentialID, content string) error
+	InjectedCredentialID    func(envKey, value string) string
 }
 
-// SharedAgentView is the runtime-facing slice of project shared Agent config
+// SharedAgentView is the runtime-facing slice of the shared Agent config
 // needed for extend→overlay (avoids importing services into every call site).
 type SharedAgentView struct {
 	AcpBackend           string

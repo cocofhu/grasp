@@ -27,8 +27,6 @@ type TokenUsageEventRow struct {
 	Source           string    `json:"source"`
 	Phase            string    `json:"phase,omitempty"`
 	Status           string    `json:"status"`
-	ProjectID        string    `json:"projectId,omitempty"`
-	ProjectName      string    `json:"projectName,omitempty"`
 	WorkflowID       string    `json:"workflowId,omitempty"`
 	WorkflowName     string    `json:"workflowName,omitempty"`
 	RunID            string    `json:"runId,omitempty"`
@@ -56,7 +54,7 @@ type TokenUsageEventsResult struct {
 }
 
 // TokenUsageEvents lists ledger rows in the current window under the stats filters.
-func (s *ProjectService) TokenUsageEvents(ctx context.Context, q TokenUsageEventsQuery) (TokenUsageEventsResult, error) {
+func (s *WorkspaceService) TokenUsageEvents(ctx context.Context, q TokenUsageEventsQuery) (TokenUsageEventsResult, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -86,10 +84,7 @@ func (s *ProjectService) TokenUsageEvents(ctx context.Context, q TokenUsageEvent
 	}
 	rows = filterRowsByWindow(rows, plan.cur, loc)
 
-	unknownAliases := map[string]string{}
-	for _, p := range s.List() {
-		unknownAliases[p.ID] = ResolveUnknownModelDisplayName(p.UnknownModelDisplayName)
-	}
+	unknownAlias := s.unknownModelAlias()
 	source := strings.TrimSpace(q.Source)
 	if source == "" {
 		source = GlobalTokenStatsSourceAll
@@ -99,18 +94,17 @@ func (s *ProjectService) TokenUsageEvents(ctx context.Context, q TokenUsageEvent
 
 	items := make([]TokenUsageEventRow, 0, len(rows))
 	for _, row := range rows {
-		u, ok := filterGlobalRowUsage(row, q.GlobalTokenStatsQuery, source, modelFilter, unknownAliases)
+		u, ok := filterGlobalRowUsage(row, q.GlobalTokenStatsQuery, source, modelFilter, unknownAlias)
 		if !ok || u.Total() <= 0 {
 			continue
 		}
 		var mk string
 		for k := range row.byModel {
-			mk = rebucketGlobalModelKey(k, row.projectID, unknownAliases)
+			mk = rebucketGlobalModelKey(k, unknownAlias)
 		}
 		cost, priced := pricing.Cost(mk, u)
 		items = append(items, TokenUsageEventRow{
 			ID: row.id, At: row.ts.In(loc), Source: row.source, Phase: row.phase, Status: row.status,
-			ProjectID: row.projectID, ProjectName: orDefault(row.projectName, globalUnassignedProjectName),
 			WorkflowID: row.workflowID, WorkflowName: row.workflowName,
 			RunID: row.runID, RunTitle: row.runTitle, NodeID: row.nodeID, NodeType: row.nodeType,
 			ThreadID: row.threadID, ModelKey: mk, Total: u.Total(),

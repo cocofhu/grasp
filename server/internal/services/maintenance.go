@@ -35,12 +35,9 @@ func (s *GateAutoInvokeService) BeginMaintenance() { s.mu.Lock(); s.maintenance 
 func (s *GateAutoInvokeService) PendingMaintenance() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	n := 0
-	for _, q := range s.queues {
-		n += len(q.tasks)
-		if q.busy {
-			n++
-		}
+	n := len(s.queue.tasks)
+	if s.queue.busy {
+		n++
 	}
 	return n
 }
@@ -71,7 +68,7 @@ func (s *SandboxService) PrepareWorkspaceMaintenance(ctx context.Context) error 
 				if s.codexLoginWriteBack == nil {
 					return fmt.Errorf("Codex login writeback unavailable for sandbox %d", row.ID)
 				}
-				if err := s.codexLoginWriteBack(row.ProjectID, ls.codexAuthCredentialID, next); err != nil {
+				if err := s.codexLoginWriteBack(ls.codexAuthCredentialID, next); err != nil {
 					return fmt.Errorf("persist Codex login before retiring sandbox %d: %w", row.ID, err)
 				}
 			}

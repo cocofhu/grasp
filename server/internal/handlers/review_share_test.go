@@ -14,7 +14,7 @@ func seedInboxReview(t *testing.T, h *harness, runID, nodeID string, withArtifac
 	t.Helper()
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
-		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "review-" + runID,
+		ID: "wf-" + runID, Name: "review-" + runID,
 		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
@@ -343,7 +343,7 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 	t.Helper()
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
-		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "preview-" + runID,
+		ID: "wf-" + runID, Name: "preview-" + runID,
 		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
@@ -464,7 +464,7 @@ func seedInboxClarify(t *testing.T, h *harness, runID, nodeID string) {
 	t.Helper()
 	now := time.Now()
 	h.db.Create(&models.WorkflowDef{
-		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "clarify-" + runID,
+		ID: "wf-" + runID, Name: "clarify-" + runID,
 		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{

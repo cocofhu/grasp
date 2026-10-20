@@ -14,7 +14,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 )
 
-func setupExternalMcpHarness(t *testing.T) (*harness, string) {
+func setupExternalMcpHarness(t *testing.T) *harness {
 	t.Helper()
 	hn := newHarness(t)
 	enableAdmin(t)
@@ -27,19 +27,17 @@ func setupExternalMcpHarness(t *testing.T) (*harness, string) {
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
 	hn.h.PMMCP.SetAuditRecorder(hn.h.Audit.Record)
-	hn.h.ExternalMcp = services.NewProjectExternalMcpService(hn.db, "")
-	hn.h.ProjectMcpKeys = services.NewProjectMcpApiKeyService(hn.db)
+	hn.h.ExternalMcp = services.NewExternalMcpService(hn.db)
+	hn.h.McpKeys = services.NewWorkspaceMcpApiKeyService(hn.db)
 
 	w := hn.seedWorkspace(map[string]any{"name": "ExtMCP"})
 	if w.Code != http.StatusOK {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
+		t.Fatalf("configure workspace: %d %s", w.Code, w.Body.String())
 	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	return hn, proj["id"].(string)
+	return hn
 }
 
-func postExternalMcpRPC(hn *harness, pid, mcpID, bearer string, body []byte) *httptest.ResponseRecorder {
+func postExternalMcpRPC(hn *harness, mcpID, bearer string, body []byte) *httptest.ResponseRecorder {
 	req := httptest.NewRequest(http.MethodPost, "/mcp/workspace/"+mcpID, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearer)
@@ -50,7 +48,7 @@ func postExternalMcpRPC(hn *harness, pid, mcpID, bearer string, body []byte) *ht
 
 // plan_coverage leaves: g1.3 REST CRUD, g2.1 route+auth, g4.1 revoke immediate 401.
 func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
-	hn, pid := setupExternalMcpHarness(t)
+	hn := setupExternalMcpHarness(t)
 
 	w := hn.do(http.MethodGet, "/api/workspace/external-mcp", nil)
 	if w.Code != http.StatusOK {
@@ -89,7 +87,7 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/list",
 	})
-	resp := postExternalMcpRPC(hn, pid, "pm-progress", plain, body)
+	resp := postExternalMcpRPC(hn, "pm-progress", plain, body)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("tools/list: %d %s", resp.Code, resp.Body.String())
 	}
@@ -98,7 +96,7 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("revoke: %d %s", w.Code, w.Body.String())
 	}
-	resp = postExternalMcpRPC(hn, pid, "pm-progress", plain, body)
+	resp = postExternalMcpRPC(hn, "pm-progress", plain, body)
 	if resp.Code != http.StatusUnauthorized {
 		t.Fatalf("revoked key want 401 got %d", resp.Code)
 	}
@@ -106,7 +104,7 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 
 // plan_coverage leaves: g2.1 disabled 403, g2.2 unenabled pack 404.
 func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
-	hn, pid := setupExternalMcpHarness(t)
+	hn := setupExternalMcpHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
 	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
@@ -120,7 +118,7 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	plain := created["key"].(string)
 
-	resp := postExternalMcpRPC(hn, pid, "pm-progress", plain, body)
+	resp := postExternalMcpRPC(hn, "pm-progress", plain, body)
 	if resp.Code != http.StatusForbidden {
 		t.Fatalf("disabled want 403 got %d", resp.Code)
 	}
@@ -131,7 +129,7 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatal(w.Body.String())
 	}
-	resp = postExternalMcpRPC(hn, pid, "pm-workflow-write", plain, body)
+	resp = postExternalMcpRPC(hn, "pm-workflow-write", plain, body)
 	if resp.Code != http.StatusNotFound {
 		t.Fatalf("unenabled pack call status = %d %s", resp.Code, resp.Body.String())
 	}
@@ -142,31 +140,8 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 	}
 }
 
-// plan_coverage: g4.1 — project A key must not authorize project B external MCP.
-func TestExternalMcpForeignKeyRejected(t *testing.T) {
-	h, _ := setupExternalMcpHarness(t)
-	if err := h.db.Create(&models.Project{ID: "foreign", Name: "Foreign"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	key, err := h.h.ProjectMcpKeys.Create("foreign", "foreign-key")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = h.db.Delete(&models.Project{}, "id = ?", "foreign").Error; err != nil {
-		t.Fatal(err)
-	}
-	w := h.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{"enabled": true, "enabledPacks": []string{"pm-progress"}})
-	if w.Code != 200 {
-		t.Fatal(w.Body.String())
-	}
-	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
-	if w := postExternalMcpRPC(h, "", "pm-progress", key.Plaintext, body); w.Code != 401 {
-		t.Fatalf("foreign key accepted: %d %s", w.Code, w.Body.String())
-	}
-}
-
 func TestExternalMcpAuditExternalCallerKind(t *testing.T) {
-	hn, pid := setupExternalMcpHarness(t)
+	hn := setupExternalMcpHarness(t)
 
 	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-progress"},
@@ -183,12 +158,12 @@ func TestExternalMcpAuditExternalCallerKind(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "pm_get_progress", "arguments": map[string]any{}},
 	})
-	resp := postExternalMcpRPC(hn, pid, "pm-progress", plain, body)
+	resp := postExternalMcpRPC(hn, "pm-progress", plain, body)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("tools/list: %d %s", resp.Code, resp.Body.String())
 	}
 
-	items, total, err := hn.h.Audit.ListPage(services.AuditListFilter{ProjectID: pid, Page: 1, PageSize: 20})
+	items, total, err := hn.h.Audit.ListPage(services.AuditListFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +194,7 @@ func wireExternalAgentFS(t *testing.T, hn *harness) {
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, hn.h.WF, hn.h.Runs, hn.h.Arts, nil)
 	hn.h.PMMCP.SetAuditRecorder(hn.h.Audit.Record)
-	team := services.NewTeamService(hn.h.Projects, skill, pm, nil)
+	team := services.NewTeamService(hn.h.Workspace, skill, pm, nil)
 	hn.h.PMMCP.SetAgents(skill)
 	hn.h.PMMCP.SetTeam(team)
 }
@@ -253,19 +228,19 @@ func externalToolCallResult(t *testing.T, body []byte) (result map[string]any, i
 // plan_coverage: g2.2 / g4.1 — RestoreExternal injects PmLeaderAgent so pm-agent-fs works;
 // unbound leader returns distinguishable "pm leader not bound".
 func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
-	hn, pid := setupExternalMcpHarness(t)
+	hn := setupExternalMcpHarness(t)
 
 	wireExternalAgentFS(t, hn)
 
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-leader", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-leader"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "member-a", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "member-a"}); err != nil {
 		t.Fatal(err)
 	}
 	en := true
 	leader := "pm-leader"
-	if _, err := hn.h.Pm.UpdateBinding(pid, &en, &leader, nil, nil, nil); err != nil {
+	if _, err := hn.h.Pm.UpdateBinding(&en, &leader, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -287,7 +262,7 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 			"arguments": map[string]any{"agentName": "member-a", "path": "."},
 		},
 	})
-	resp := postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, listBody)
+	resp := postExternalMcpRPC(hn, "pm-agent-fs", plain, listBody)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("pm_fs_list status=%d %s", resp.Code, resp.Body.String())
 	}
@@ -301,30 +276,30 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 
 	membersBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/call",
-		"params": map[string]any{"name": "pm_list_project_agents", "arguments": map[string]any{}},
+		"params": map[string]any{"name": "pm_list_workspace_agents", "arguments": map[string]any{}},
 	})
-	resp = postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, membersBody)
+	resp = postExternalMcpRPC(hn, "pm-agent-fs", plain, membersBody)
 	if resp.Code != http.StatusOK {
-		t.Fatalf("pm_list_project_agents status=%d %s", resp.Code, resp.Body.String())
+		t.Fatalf("pm_list_workspace_agents status=%d %s", resp.Code, resp.Body.String())
 	}
 	result, isErr, raw = externalToolCallResult(t, resp.Body.Bytes())
 	if isErr {
-		t.Fatalf("pm_list_project_agents isError raw=%s", raw)
+		t.Fatalf("pm_list_workspace_agents isError raw=%s", raw)
 	}
-	if result["self"] != "pm-leader" || result["projectId"] != pid {
-		t.Fatalf("project agents result=%v", result)
+	if result["self"] != "pm-leader" {
+		t.Fatalf("workspace agents result=%v", result)
 	}
 	if agents, _ := result["agents"].([]any); len(agents) != 2 {
-		t.Fatalf("project agents=%v", result["agents"])
+		t.Fatalf("workspace agents=%v", result["agents"])
 	}
 }
 
 func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
-	hn, pid := setupExternalMcpHarness(t)
+	hn := setupExternalMcpHarness(t)
 
 	wireExternalAgentFS(t, hn)
 
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "orphan", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "orphan"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -346,7 +321,7 @@ func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 			"arguments": map[string]any{"agentName": "orphan", "path": "."},
 		},
 	})
-	resp := postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, listBody)
+	resp := postExternalMcpRPC(hn, "pm-agent-fs", plain, listBody)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status=%d %s", resp.Code, resp.Body.String())
 	}
@@ -366,7 +341,7 @@ func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 			"arguments": map[string]any{},
 		},
 	})
-	resp = postExternalMcpRPC(hn, pid, "pm-agent-fs", plain, teamBody)
+	resp = postExternalMcpRPC(hn, "pm-agent-fs", plain, teamBody)
 	result, isErr, raw = externalToolCallResult(t, resp.Body.Bytes())
 	if !isErr {
 		t.Fatalf("team tool want isError, got %v raw=%s", result, raw)

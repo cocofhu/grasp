@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupContextDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project) {
+func setupContextDB(t *testing.T) (*gorm.DB, *services.PmService, models.Workspace) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:contextmcp_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -22,7 +22,7 @@ func setupContextDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p := models.Project{ID: models.DefaultProjectID, Name: "CtxMCP"}
+	p := models.Workspace{ID: models.WorkspaceID, Name: "CtxMCP"}
 	err = db.Create(&p).Error
 	if err != nil {
 		t.Fatal(err)
@@ -61,20 +61,20 @@ func ctxToolText(t *testing.T, resp []byte) (string, bool) {
 }
 
 func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
-	_, pm, p := setupContextDB(t)
-	ta, err := pm.CreateThread(p.ID, "alice", "A会话", "agent-a", models.ChatThreadKindUser)
+	_, pm, _ := setupContextDB(t)
+	ta, err := pm.CreateThread("alice", "A会话", "agent-a", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
-	taOther, err := pm.CreateThread(p.ID, "carol", "C会话", "agent-a", models.ChatThreadKindUser)
+	taOther, err := pm.CreateThread("carol", "C会话", "agent-a", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
-	tb, err := pm.CreateThread(p.ID, "bob", "B会话", "agent-b", models.ChatThreadKindUser)
+	tb, err := pm.CreateThread("bob", "B会话", "agent-b", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cronTh, err := pm.CreateCronThread(p.ID, "agent-a", "定时会话")
+	cronTh, err := pm.CreateCronThread("agent-a", "定时会话")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,16 +93,13 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 
 	h := NewHost(pm)
 	tokA := platformmcp.NewToken()
-	h.Restore(tokA, p.ID, "agent-a", ta.ID, "alice")
-	if _, ok := h.Authorize(p.ID, tokA); !ok {
+	h.Restore(tokA, "agent-a", ta.ID, "alice")
+	if _, ok := h.Authorize(tokA); !ok {
 		t.Fatal("authorize")
-	}
-	if _, ok := h.Authorize("other", tokA); ok {
-		t.Fatal("other project")
 	}
 
 	listBody, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	st, resp := h.ServeRPC(p.ID, tokA, listBody)
+	st, resp := h.ServeRPC(tokA, listBody)
 	if st != 200 {
 		t.Fatalf("tools/list %d", st)
 	}
@@ -115,7 +112,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		}
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(2, "list_conversations", nil))
+	st, resp = h.ServeRPC(tokA, ctxToolCall(2, "list_conversations", nil))
 	text, isErr := ctxToolText(t, resp)
 	if isErr {
 		t.Fatal(text)
@@ -127,7 +124,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatalf("list must not include other agents/users: %s", text)
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(3, "get_messages", map[string]any{
+	st, resp = h.ServeRPC(tokA, ctxToolCall(3, "get_messages", map[string]any{
 		"conversationId": tb.ID,
 	}))
 	text, isErr = ctxToolText(t, resp)
@@ -135,7 +132,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatalf("cross-agent get_messages want not found, got isErr=%v %s", isErr, text)
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(3, "get_messages", map[string]any{
+	st, resp = h.ServeRPC(tokA, ctxToolCall(3, "get_messages", map[string]any{
 		"conversationId": taOther.ID,
 	}))
 	text, isErr = ctxToolText(t, resp)
@@ -143,7 +140,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatalf("cross-user get_messages want not found, got isErr=%v %s", isErr, text)
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(4, "get_messages", map[string]any{
+	st, resp = h.ServeRPC(tokA, ctxToolCall(4, "get_messages", map[string]any{
 		"conversationId": ta.ID,
 	}))
 	text, isErr = ctxToolText(t, resp)
@@ -151,20 +148,20 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 		t.Fatalf("own messages: %s", text)
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(5, "get_current_conversation", nil))
+	st, resp = h.ServeRPC(tokA, ctxToolCall(5, "get_current_conversation", nil))
 	text, isErr = ctxToolText(t, resp)
 	if isErr || !strings.Contains(text, ta.ID) {
 		t.Fatalf("current: %s", text)
 	}
 
 	h.SetAttached(tokA, &models.AttachedContext{Kind: "run", ID: "run-1", Label: "demo"})
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(6, "get_attached_context", nil))
+	st, resp = h.ServeRPC(tokA, ctxToolCall(6, "get_attached_context", nil))
 	text, isErr = ctxToolText(t, resp)
 	if isErr || !strings.Contains(text, "run-1") {
 		t.Fatalf("attached: %s", text)
 	}
 
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(7, "search_messages", map[string]any{"query": "hello"}))
+	st, resp = h.ServeRPC(tokA, ctxToolCall(7, "search_messages", map[string]any{"query": "hello"}))
 	text, isErr = ctxToolText(t, resp)
 	if isErr {
 		t.Fatal(text)
@@ -175,7 +172,7 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 	if !strings.Contains(text, "hello-cron") {
 		t.Fatalf("search should include cron thread: %s", text)
 	}
-	st, resp = h.ServeRPC(p.ID, tokA, ctxToolCall(8, "search_messages", map[string]any{"query": ""}))
+	st, resp = h.ServeRPC(tokA, ctxToolCall(8, "search_messages", map[string]any{"query": ""}))
 	text, isErr = ctxToolText(t, resp)
 	if !isErr {
 		t.Fatalf("empty query should error: %s", text)
@@ -184,17 +181,17 @@ func TestContextMCPAuthToolsAndIsolation(t *testing.T) {
 }
 
 func TestContextMCPRestoreAndUnregister(t *testing.T) {
-	_, pm, p := setupContextDB(t)
+	_, pm, _ := setupContextDB(t)
 	h := NewHost(pm)
 	tok := platformmcp.NewToken()
-	h.Restore(tok, p.ID, "agent-a", "thr-1", "alice")
-	h.Restore(tok, p.ID, "agent-a", "thr-1", "alice")
-	h.Restore("", p.ID, "agent-a", "thr-1", "alice")
-	if _, ok := h.Authorize(p.ID, tok); !ok {
+	h.Restore(tok, "agent-a", "thr-1", "alice")
+	h.Restore(tok, "agent-a", "thr-1", "alice")
+	h.Restore("", "agent-a", "thr-1", "alice")
+	if _, ok := h.Authorize(tok); !ok {
 		t.Fatal("restored token")
 	}
 	h.Unregister(tok)
-	if _, ok := h.Authorize(p.ID, tok); ok {
+	if _, ok := h.Authorize(tok); ok {
 		t.Fatal("unregistered")
 	}
 }

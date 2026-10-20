@@ -25,7 +25,7 @@ type channelBody struct {
 	CronDeliver        bool           `json:"cronDeliver"`
 	CronDeliverTarget  string         `json:"cronDeliverTarget"`
 	Config             map[string]any `json:"config"`
-	// SyncPmLeader confirms updating Project.PmLeaderAgent on primary rebind.
+	// SyncPmLeader confirms updating Workspace.PmLeaderAgent on primary rebind.
 	SyncPmLeader bool `json:"syncPmLeader"`
 }
 
@@ -35,10 +35,9 @@ type channelDeleteBody struct {
 	SyncPmLeader     bool   `json:"syncPmLeader"`
 }
 
-func (b channelBody) toInput(projectID string) services.ChannelConfigInput {
+func (b channelBody) toInput() services.ChannelConfigInput {
 	in := services.ChannelConfigInput{
-		Type: strings.TrimSpace(strings.ToLower(b.Type)), Name: b.Name, Enabled: b.Enabled, ProjectID: projectID,
-		IsPrimary: b.IsPrimary,
+		Type: strings.TrimSpace(strings.ToLower(b.Type)), Name: b.Name, Enabled: b.Enabled, IsPrimary: b.IsPrimary,
 		AgentName: b.AgentName, EnabledMcps: b.EnabledMcps,
 		AppID: b.AppID, AppSecret: b.AppSecret, TurnTimeoutSeconds: b.TurnTimeoutSeconds,
 		CronDeliver: b.CronDeliver, CronDeliverTarget: b.CronDeliverTarget, Config: b.Config,
@@ -47,13 +46,13 @@ func (b channelBody) toInput(projectID string) services.ChannelConfigInput {
 	return in
 }
 
-// ListProjectChannels handles GET /api/workspace/channels.
-func (h *Handlers) ListProjectChannels(c *gin.Context) {
+// ListChannels handles GET /api/workspace/channels.
+func (h *Handlers) ListChannels(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
 		return
 	}
-	items, err := h.Channels.ListByProject(c.Param("id"))
+	items, err := h.Channels.List()
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -62,12 +61,12 @@ func (h *Handlers) ListProjectChannels(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"items":                items,
 		"secretsKeyConfigured": crypto.Available(),
-		"freeAgents":           h.Channels.ListFreeAgents(c.Param("id"), ""),
+		"freeAgents":           h.Channels.ListFreeAgents(""),
 	})
 }
 
-// CreateProjectChannel handles POST /api/workspace/channels.
-func (h *Handlers) CreateProjectChannel(c *gin.Context) {
+// CreateChannel handles POST /api/workspace/channels.
+func (h *Handlers) CreateChannel(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
 		return
@@ -77,19 +76,18 @@ func (h *Handlers) CreateProjectChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	dto, err := h.Channels.Create(b.toInput(c.Param("id")))
+	dto, err := h.Channels.Create(b.toInput())
 	if err != nil {
 		writeChannelErr(c, err)
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionChannel,
 		ResourceType: "channel",
 		ResourceID:   dto.ID,
 		Outcome:      models.AuditOutcomeOK,
-		Summary:      "create project channel",
+		Summary:      "create channel",
 		Payload: map[string]any{
 			"type": dto.Type, "enabled": dto.Enabled, "appId": dto.AppID,
 			"agentName": dto.AgentName, "isPrimary": dto.IsPrimary,
@@ -98,8 +96,8 @@ func (h *Handlers) CreateProjectChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
-// UpdateProjectChannel handles PUT /api/workspace/channels/:channelId.
-func (h *Handlers) UpdateProjectChannel(c *gin.Context) {
+// UpdateChannel handles PUT /api/workspace/channels/:channelId.
+func (h *Handlers) UpdateChannel(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
 		return
@@ -109,20 +107,19 @@ func (h *Handlers) UpdateProjectChannel(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	in := b.toInput(c.Param("id"))
+	in := b.toInput()
 	dto, err := h.Channels.Update(c.Param("channelId"), in)
 	if err != nil {
 		writeChannelErr(c, err)
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionChannel,
 		ResourceType: "channel",
 		ResourceID:   dto.ID,
 		Outcome:      models.AuditOutcomeOK,
-		Summary:      "update project channel",
+		Summary:      "update channel",
 		Payload: map[string]any{
 			"type": dto.Type, "enabled": dto.Enabled, "appId": dto.AppID,
 			"agentName": dto.AgentName, "isPrimary": dto.IsPrimary,
@@ -131,8 +128,8 @@ func (h *Handlers) UpdateProjectChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
-// DeleteProjectChannelByID handles DELETE /api/workspace/channels/:channelId.
-func (h *Handlers) DeleteProjectChannelByID(c *gin.Context) {
+// DeleteChannel handles DELETE /api/workspace/channels/:channelId.
+func (h *Handlers) DeleteChannel(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
 		return
@@ -150,13 +147,12 @@ func (h *Handlers) DeleteProjectChannelByID(c *gin.Context) {
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionChannel,
 		ResourceType: "channel",
 		ResourceID:   c.Param("channelId"),
 		Outcome:      models.AuditOutcomeOK,
-		Summary:      "delete project channel",
+		Summary:      "delete channel",
 		Payload: map[string]any{
 			"deleted": true, "newPrimaryId": opts.NewPrimaryID,
 			"confirmNoPrimary": opts.ConfirmNoPrimary,
@@ -174,9 +170,7 @@ func writeChannelErr(c *gin.Context, err error) {
 		errors.Is(err, services.ErrChannelAgentTaken),
 		errors.Is(err, services.ErrChannelDualPrimary):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
-	case errors.Is(err, services.ErrProjectNotFound),
-		errors.Is(err, services.ErrChannelProjectRequired),
-		errors.Is(err, services.ErrChannelAppIDRequired),
+	case errors.Is(err, services.ErrChannelAppIDRequired),
 		errors.Is(err, services.ErrChannelSecretRequired),
 		errors.Is(err, services.ErrChannelSecretKeyMissing),
 		errors.Is(err, services.ErrChannelSecretKeyInvalid),
@@ -188,7 +182,7 @@ func writeChannelErr(c *gin.Context, err error) {
 		errors.Is(err, services.ErrChannelCronTargetRequired),
 		errors.Is(err, services.ErrChannelCronTargetInvalid),
 		errors.Is(err, services.ErrChannelAgentRequired),
-		errors.Is(err, services.ErrChannelAgentNotInProject),
+		errors.Is(err, services.ErrChannelAgentNotFound),
 		errors.Is(err, services.ErrChannelAgentUnavailable),
 		errors.Is(err, services.ErrChannelPromoteForbidden),
 		errors.Is(err, services.ErrChannelDeletePrimaryNeedsAck),

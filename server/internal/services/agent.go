@@ -179,11 +179,7 @@ func DefaultConfigRootForBackend(backend string) string {
 // Agent is a reusable, user-defined Agent identity: a working directory (file
 // tree) plus the MCP servers and environment variables it runs with.
 type Agent struct {
-	Name string `json:"name"`
-	// ProjectID is the Agent's single home project (required). Switching it
-	// purges the Agent's data under the old project (see
-	// PmService.PurgeAgentProjectData).
-	ProjectID          string             `json:"projectId,omitempty"`
+	Name               string             `json:"name"`
 	CredentialBindings map[string]*string `json:"credentialBindings,omitempty"`
 	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex).
 	// Required on save.
@@ -191,10 +187,10 @@ type Agent struct {
 	// GitCredentialType is the Agent-level credential contract selected in Studio.
 	// Runtime writes GitHub/GitLab/SSH by "configured → write"; this field is UI hint only.
 	GitCredentialType string `json:"gitCredentialType,omitempty"`
-	// OpenCodeCredentialID is the project credential this Agent uses for OpenCode.
-	// The secret stays in the project credential store; this is only the selection.
+	// OpenCodeCredentialID is the workspace credential this Agent uses for OpenCode.
+	// The secret stays in the workspace credential store; this is only the selection.
 	OpenCodeCredentialID string `json:"openCodeCredentialId,omitempty"`
-	// AiCredentialID is the project credential this Agent uses for a non-OpenCode
+	// AiCredentialID is the workspace credential this Agent uses for a non-OpenCode
 	// coding backend. Empty keeps the legacy single slot. A set id injects only
 	// that row and does not fall back when it is missing.
 	AiCredentialID string `json:"aiCredentialId,omitempty"`
@@ -220,7 +216,6 @@ type Agent struct {
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
-	ProjectID            string                    `json:"projectId,omitempty"`
 	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	AcpBackend           string                    `json:"acpBackend,omitempty"`
 	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
@@ -287,7 +282,6 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 	}
 	return Agent{
 		Name:                 name,
-		ProjectID:            strings.TrimSpace(cfg.ProjectID),
 		CredentialBindings:   cfg.CredentialBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
@@ -433,7 +427,6 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
 	cfg := agentConfig{
-		ProjectID:            strings.TrimSpace(a.ProjectID),
 		CredentialBindings:   a.CredentialBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(a.GitCredentialType),
@@ -527,19 +520,15 @@ func (s *AgentService) Rename(old, newName string) error {
 	return nil
 }
 
-// ClearOpenCodeCredentialSelection forgets the choice on every Agent in the
-// project that pointed at credentialID. A cleared credential must not keep
-// running as if it were still selected.
-func (s *AgentService) ClearOpenCodeCredentialSelection(projectID, credentialID string) {
-	projectID = strings.TrimSpace(projectID)
+// ClearOpenCodeCredentialSelection forgets the choice on every Agent that
+// pointed at credentialID. A cleared credential must not keep running as if it
+// were still selected.
+func (s *AgentService) ClearOpenCodeCredentialSelection(credentialID string) {
 	credentialID = strings.TrimSpace(credentialID)
-	if projectID == "" || credentialID == "" {
+	if credentialID == "" {
 		return
 	}
 	for _, a := range s.List() {
-		if strings.TrimSpace(a.ProjectID) != projectID {
-			continue
-		}
 		cleared := false
 		if strings.TrimSpace(a.OpenCodeCredentialID) == credentialID {
 			a.OpenCodeCredentialID = ""

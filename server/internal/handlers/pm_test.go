@@ -25,15 +25,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	hn.h.PmProgress = progress
 	hn.h.PMMCP = pmmcp.NewHost(pm, progress, nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.seedWorkspace(map[string]any{"name": "PMProj"})
-	if w.Code != 200 {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
-	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "no-such-agent",
 	})
 	if w.Code != http.StatusConflict {
@@ -62,7 +54,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 		t.Fatalf("create thread while disabled want 409 got %d %s", w.Code, w.Body.String())
 	}
 
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-demo", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-demo"}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
 	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
@@ -130,7 +122,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	}
 }
 
-func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmService, pid, tid string) {
+func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmService, tid string) {
 	t.Helper()
 	enableAdmin(t)
 	pm = services.NewPmService(hn.db, hn.h.Agents)
@@ -138,17 +130,10 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.seedWorkspace(map[string]any{"name": name})
-	if w.Code != 200 {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid = proj["id"].(string)
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-" + name, ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-" + name}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-" + name,
 	})
 	if w.Code != 200 {
@@ -160,13 +145,12 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 	}
 	var thr map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
-	return pm, pid, thr["id"].(string)
+	return pm, thr["id"].(string)
 }
 
 func TestStartPmTurnValidatesAndMarksRejected(t *testing.T) {
 	hn := newHarness(t)
-	pm, pid, tid := setupPmTurnThread(t, hn, "TurnReject")
-	_ = pid
+	pm, tid := setupPmTurnThread(t, hn, "TurnReject")
 	hn.h.PmTurns = services.NewPmTurnRunner(pm, nil)
 	base := "/api/workspace/pm/threads/" + tid
 
@@ -211,8 +195,7 @@ func (stubPmChat) Cancel(uint) {}
 
 func TestStartPmTurnQueuesAndRetry(t *testing.T) {
 	hn := newHarness(t)
-	pm, pid, tid := setupPmTurnThread(t, hn, "TurnQueue")
-	_ = pid
+	pm, tid := setupPmTurnThread(t, hn, "TurnQueue")
 	hn.fg.FailCreate = true
 	runner := services.NewPmTurnRunner(pm, nil)
 	runner.SetChatterForTest(stubPmChat{})
@@ -282,17 +265,8 @@ func TestPmLeaderNonAdminForbidden(t *testing.T) {
 	hn.h.Pm = pm
 	hn.h.PMMCP = pmmcp.NewHost(pm, services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts), nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.seedWorkspace(map[string]any{"name": "NoAdminProj"})
-	if w.Code != 200 {
-		t.Fatalf("create: %d", w.Code)
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-	_ = pid
-
 	// Non-admin may enable/disable PM Leader binding.
-	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": false,
 	})
 	if w.Code != http.StatusOK {
@@ -308,27 +282,19 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 	hn.h.Pm = pm
 	hn.h.PMMCP = pmmcp.NewHost(pm, services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts), nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.seedWorkspace(map[string]any{"name": "MemScopeProj"})
-	if w.Code != 200 {
-		t.Fatalf("create: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
-	if _, err := pm.UpsertMemory(pid, "agent-a", "A", "secret-a", "agent", "a"); err != nil {
+	if _, err := pm.UpsertMemory("agent-a", "A", "secret-a", "agent", "a"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(pid, "agent-b", "B", "secret-b", "agent", "b"); err != nil {
+	if _, err := pm.UpsertMemory("agent-b", "B", "secret-b", "agent", "b"); err != nil {
 		t.Fatal(err)
 	}
 	en := true
 	agentA := "agent-a"
-	if _, err := pm.UpdateBinding(pid, &en, &agentA, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agentA, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	w = hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
 	if w.Code != 200 {
 		t.Fatalf("admin list: %d %s", w.Code, w.Body.String())
 	}
@@ -375,7 +341,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 
 	empty := ""
 	dis := false
-	if _, err := pm.UpdateBinding(pid, &dis, &empty, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&dis, &empty, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	w = hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
@@ -398,16 +364,7 @@ func TestUpdatePmLeaderEnabledMcps(t *testing.T) {
 	pm := services.NewPmService(hn.db, nil)
 	hn.h.Pm = pm
 
-	w := hn.seedWorkspace(map[string]any{"name": "McpBindProj"})
-	if w.Code != 200 {
-		t.Fatalf("create: %d", w.Code)
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-	_ = pid
-
-	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "agent-a",
 		"enabledMcps": []string{"pm-progress", "memory-store", "pm-workflow-read"},
 	})
@@ -452,45 +409,24 @@ func TestUpdatePmLeaderEnabledMcps(t *testing.T) {
 	}
 }
 
-func TestProjectCronJobsListAndPatch(t *testing.T) {
+func TestWorkspaceCronJobsListAndPatch(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
 
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.seedWorkspace(map[string]any{"name": "CronProjA"})
-	if w.Code != 200 {
-		t.Fatalf("create a: %d %s", w.Code, w.Body.String())
-	}
-	var projA map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projA)
-	pidA := projA["id"].(string)
-
-	w = hn.seedWorkspace(map[string]any{"name": "CronProjB"})
-	if w.Code != 200 {
-		t.Fatalf("create b: %d", w.Code)
-	}
-	var projB map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := "foreign"
-
 	now := time.Now().UTC()
 	jobs := []models.AgentCronJob{
 		{
-			ID: "cron-a1", AgentName: "agent-a", ProjectID: pidA, ThreadID: "th-a1",
+			ID: "cron-a1", AgentName: "agent-a", ThreadID: "th-a1",
 			Name: "每日汇报", Prompt: "汇报", ScheduleKind: "cron", ScheduleExpr: "0 9 * * *",
 			Enabled: true, DeliverToChannel: false, CreatedAt: now, UpdatedAt: now.Add(time.Minute),
 		},
 		{
-			ID: "cron-a2", AgentName: "agent-b", ProjectID: pidA, ThreadID: "th-a2",
+			ID: "cron-a2", AgentName: "agent-b", ThreadID: "th-a2",
 			Name: "每周扫描", Prompt: "扫描", ScheduleKind: "every", ScheduleExpr: "7d",
 			Enabled: true, DeliverToChannel: true, CreatedAt: now, UpdatedAt: now,
-		},
-		{
-			ID: "cron-b1", AgentName: "agent-a", ProjectID: pidB, ThreadID: "th-b1",
-			Name: "其他项目", Prompt: "x", ScheduleKind: "at", ScheduleExpr: now.Format(time.RFC3339),
-			Enabled: true, DeliverToChannel: false, CreatedAt: now, UpdatedAt: now,
 		},
 	}
 	for i := range jobs {
@@ -499,7 +435,7 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 		}
 	}
 
-	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("list: %d %s", w.Code, w.Body.String())
 	}
@@ -508,7 +444,7 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
 	if len(list.Items) != 2 {
-		t.Fatalf("want 2 jobs for project A, got %d", len(list.Items))
+		t.Fatalf("want 2 jobs, got %d", len(list.Items))
 	}
 	if list.Items[0].ID != "cron-a1" {
 		t.Fatalf("want updated_at desc first cron-a1, got %s", list.Items[0].ID)
@@ -516,21 +452,9 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 	agents := map[string]bool{}
 	for _, j := range list.Items {
 		agents[j.AgentName] = true
-		if j.ProjectID != pidA {
-			t.Fatalf("cross-project leak: %+v", j)
-		}
 	}
 	if !agents["agent-a"] || !agents["agent-b"] {
 		t.Fatalf("want both agents, got %v", agents)
-	}
-
-	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
-	if w.Code != 200 {
-		t.Fatalf("list b: %d", w.Code)
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &list)
-	if len(list.Items) != 2 {
-		t.Fatalf("workspace must keep both agents: %+v", list.Items)
 	}
 
 	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-a1", map[string]any{
@@ -553,32 +477,24 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 		t.Fatal("deliverToChannel not persisted")
 	}
 
-	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-b1", map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-missing", map[string]any{
 		"deliverToChannel": true,
 	})
 	if w.Code != http.StatusNotFound {
-		t.Fatalf("cross-project patch want 404 got %d %s", w.Code, w.Body.String())
+		t.Fatalf("missing job patch want 404 got %d %s", w.Code, w.Body.String())
 	}
 }
 
-func TestProjectCronJobsPatchAllowedForNonAdmin(t *testing.T) {
+func TestWorkspaceCronJobsPatchAllowedForNonAdmin(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
 
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.seedWorkspace(map[string]any{"name": "CronNoAdmin"})
-	if w.Code != 200 {
-		t.Fatalf("create: %d", w.Code)
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
 	now := time.Now().UTC()
 	job := models.AgentCronJob{
-		ID: "cron-na1", AgentName: "agent-a", ProjectID: pid, ThreadID: "th-na1",
+		ID: "cron-na1", AgentName: "agent-a", ThreadID: "th-na1",
 		Name: "任务", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, DeliverToChannel: false, CreatedAt: now, UpdatedAt: now,
 	}
@@ -595,7 +511,7 @@ func TestProjectCronJobsPatchAllowedForNonAdmin(t *testing.T) {
 	cfg.Auth.Users = users
 	config.StoreConfig(cfg)
 
-	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("non-admin list want 200 got %d", w.Code)
 	}
@@ -621,32 +537,16 @@ func TestProjectCronJobsPatchAllowedForNonAdmin(t *testing.T) {
 	}
 }
 
-func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
+func TestWorkspaceCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
 
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.seedWorkspace(map[string]any{"name": "CronDelA"})
-	if w.Code != 200 {
-		t.Fatalf("create a: %d %s", w.Code, w.Body.String())
-	}
-	var projA map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projA)
-	pidA := projA["id"].(string)
-
-	w = hn.seedWorkspace(map[string]any{"name": "CronDelB"})
-	if w.Code != 200 {
-		t.Fatalf("create b: %d", w.Code)
-	}
-	var projB map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := "foreign"
-
 	now := time.Now().UTC()
 	thread := models.ChatThread{
-		ID: "th-del-1", ProjectID: pidA, UserID: "system", AgentName: "agent-a",
+		ID: "th-del-1", UserID: "system", AgentName: "agent-a",
 		Kind: "cron", Title: "cron thread", CreatedAt: now, UpdatedAt: now,
 	}
 	if err := hn.db.Create(&thread).Error; err != nil {
@@ -665,7 +565,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 		t.Fatalf("seed draft: %v", err)
 	}
 	job := models.AgentCronJob{
-		ID: "cron-del-1", AgentName: "agent-a", ProjectID: pidA, ThreadID: thread.ID,
+		ID: "cron-del-1", AgentName: "agent-a", ThreadID: thread.ID,
 		Name: "待删任务", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, DeliverToChannel: false, CreatedAt: now, UpdatedAt: now,
 	}
@@ -678,25 +578,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 	if err := hn.db.Create(&run).Error; err != nil {
 		t.Fatalf("seed run: %v", err)
 	}
-	other := models.AgentCronJob{
-		ID: "cron-del-other", AgentName: "agent-a", ProjectID: pidB, ThreadID: "th-other",
-		Name: "其他项目", Prompt: "x", ScheduleKind: "every", ScheduleExpr: "1h",
-		Enabled: true, CreatedAt: now, UpdatedAt: now,
-	}
-	if err := hn.db.Create(&other).Error; err != nil {
-		t.Fatalf("seed other: %v", err)
-	}
-
-	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-other", nil)
-	if w.Code != http.StatusNotFound {
-		t.Fatalf("cross-project delete want 404 got %d %s", w.Code, w.Body.String())
-	}
-	var stillOther models.AgentCronJob
-	if err := hn.db.Where("id = ?", "cron-del-other").First(&stillOther).Error; err != nil {
-		t.Fatalf("cross-project delete must not remove other job: %v", err)
-	}
-
-	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-1", nil)
+	w := hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-1", nil)
 	if w.Code != 200 {
 		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
 	}
@@ -747,24 +629,16 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 	}
 }
 
-func TestProjectCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
+func TestWorkspaceCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
 	hn := newHarness(t)
 	enableAdmin(t)
 
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.seedWorkspace(map[string]any{"name": "CronDelNoAdmin"})
-	if w.Code != 200 {
-		t.Fatalf("create: %d", w.Code)
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-
 	now := time.Now().UTC()
 	job := models.AgentCronJob{
-		ID: "cron-del-na1", AgentName: "agent-a", ProjectID: pid, ThreadID: "",
+		ID: "cron-del-na1", AgentName: "agent-a", ThreadID: "",
 		Name: "任务", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, DeliverToChannel: false, CreatedAt: now, UpdatedAt: now,
 	}
@@ -781,7 +655,7 @@ func TestProjectCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
 	cfg.Auth.Users = users
 	config.StoreConfig(cfg)
 
-	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-na1", nil)
+	w := hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-na1", nil)
 	if w.Code != 200 {
 		t.Fatalf("non-admin delete want 200 got %d %s", w.Code, w.Body.String())
 	}
@@ -790,7 +664,7 @@ func TestProjectCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
 	}
 }
 
-func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
+func setupPmEnabledHarness(t *testing.T) *harness {
 	t.Helper()
 	hn := newHarness(t)
 	enableAdmin(t)
@@ -799,30 +673,21 @@ func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
 	hn.h.Pm = pm
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
-	w := hn.seedWorkspace(map[string]any{"name": "PmHTTP"})
-	if w.Code != 200 {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
 
-	// A PM Leader must have this project as its home project (Agent↔project binding).
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ProjectID: pid}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
-	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-agent",
 	})
 	if w.Code != 200 {
 		t.Fatalf("enable pm: %d %s", w.Code, w.Body.String())
 	}
-	return hn, pid, ""
+	return hn
 }
 
 func TestPmThreadCRUDAndMessages(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 
 	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "进度"})
 	if w.Code != 200 {
@@ -872,8 +737,7 @@ func TestPmThreadCRUDAndMessages(t *testing.T) {
 }
 
 func TestPatchPmMessageFailureMetadata(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "patch"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
@@ -910,26 +774,18 @@ func TestPmThreadDisabledReturnsConflict(t *testing.T) {
 	enableAdmin(t)
 	pm := services.NewPmService(hn.db, nil)
 	hn.h.Pm = pm
-	w := hn.seedWorkspace(map[string]any{"name": "DisabledPM"})
-	if w.Code != 200 {
-		t.Fatal(w.Body.String())
-	}
-	var proj map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &proj)
-	pid := proj["id"].(string)
-	_ = pid
-	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{})
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("disabled thread create want 409 got %d", w.Code)
 	}
 }
 
 func TestPmChannelThreadWriteDeleteForbidden(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
+	hn := setupPmEnabledHarness(t)
 
 	hn.h.PmTurns = services.NewPmTurnRunner(hn.h.Pm, hn.h.Sbx)
 
-	channel, err := hn.h.Pm.CreateThread(pid, "qq:guild:ch1", "频道会话", "pm-agent", "user")
+	channel, err := hn.h.Pm.CreateThread("qq:guild:ch1", "频道会话", "pm-agent", "user")
 	if err != nil {
 		t.Fatalf("create channel thread: %v", err)
 	}

@@ -19,11 +19,11 @@ type fakeRunDeliverer struct {
 	err   error
 }
 
-func (f *fakeRunDeliverer) DeliverRunNotify(projectID, text string, channelIDs []string) error {
+func (f *fakeRunDeliverer) DeliverRunNotify(text string, channelIDs []string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	_ = channelIDs
-	f.calls = append(f.calls, projectID+"|"+text)
+	f.calls = append(f.calls, text)
 	return f.err
 }
 
@@ -42,19 +42,19 @@ func setupRunNotifyDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	if err := db.AutoMigrate(
-		&models.Project{}, &models.WorkflowDef{}, &models.NotifyDeliveryReceipt{},
+		&models.Workspace{}, &models.WorkflowDef{}, &models.NotifyDeliveryReceipt{},
 	); err != nil {
 		t.Fatal(err)
 	}
 	return db
 }
 
-func seedNotifyProject(t *testing.T, db *gorm.DB, enabled bool, events []string, wfMode string, wfEvents []string) (models.Project, models.WorkflowDef) {
+func seedNotifyWorkspace(t *testing.T, db *gorm.DB, enabled bool, events []string, wfMode string, wfEvents []string) (models.Workspace, models.WorkflowDef) {
 	t.Helper()
-	p := models.Project{
-		ID:   "proj-n1",
+	p := models.Workspace{
+		ID:   models.WorkspaceID,
 		Name: "Demo",
-		NotifyPolicy: models.ProjectNotifyPolicy{
+		NotifyPolicy: models.WorkspaceNotifyPolicy{
 			Enabled: boolPtr(enabled), DefaultEvents: events,
 			ChannelIDs: []string{"chn-primary"},
 		},
@@ -63,7 +63,7 @@ func seedNotifyProject(t *testing.T, db *gorm.DB, enabled bool, events []string,
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Version: 1, PublishedVersion: 1,
+		ID: "wf-n1", Name: "自我迭代", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: wfMode, Events: wfEvents},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -74,12 +74,12 @@ func seedNotifyProject(t *testing.T, db *gorm.DB, enabled bool, events []string,
 
 func TestAttemptDeliver_claimAndDedup(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"waiting_human", "failed"}, "custom", []string{"waiting_human", "failed"})
+	seedNotifyWorkspace(t, db, true, []string{"waiting_human", "failed"}, "custom", []string{"waiting_human", "failed"})
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "https://app.example")
 
 	ev := RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-1", WorkflowID: "wf-n1",
+		RunID: "run-1", WorkflowID: "wf-n1",
 		NodeID: "gate", NodeLabel: "门禁", Iteration: 1, Kind: "waiting_human",
 	}
 	svc.AttemptDeliver(ev)
@@ -98,11 +98,11 @@ func TestAttemptDeliver_claimAndDedup(t *testing.T) {
 
 func TestAttemptDeliver_policyMissNoClaim(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"failed"}, "inherit", nil)
+	seedNotifyWorkspace(t, db, true, []string{"failed"}, "inherit", nil)
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-2", WorkflowID: "wf-n1",
+		RunID: "run-2", WorkflowID: "wf-n1",
 		NodeID: "gate", Iteration: 1, Kind: "waiting_human",
 	})
 	if d.count() != 0 {
@@ -115,11 +115,11 @@ func TestAttemptDeliver_policyMissNoClaim(t *testing.T) {
 
 func TestAttemptDeliver_hardClose(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, false, []string{"waiting_human", "failed"}, "custom", []string{"waiting_human", "failed"})
+	seedNotifyWorkspace(t, db, false, []string{"waiting_human", "failed"}, "custom", []string{"waiting_human", "failed"})
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-3", WorkflowID: "wf-n1",
+		RunID: "run-3", WorkflowID: "wf-n1",
 		NodeID: "n", Iteration: 1, Kind: "failed",
 	})
 	if d.count() != 0 || svc.HasClaimedForTest("run-3", "n", 1, "failed") {
@@ -135,15 +135,15 @@ func TestAttemptDeliver_workspaceSwitchSilencesWorkflowDefaults(t *testing.T) {
 	}{{"workspace off", false, 0}, {"workspace on", true, 1}} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupRunNotifyDB(t)
-			_, wf := seedNotifyProject(t, db, tc.workspace, []string{"waiting_human"}, "inherit", nil)
+			_, wf := seedNotifyWorkspace(t, db, tc.workspace, []string{"waiting_human"}, "inherit", nil)
 			on := true
-			wf.Defaults = &models.WorkflowDefaults{NotifyPolicy: &models.ProjectNotifyPolicy{Enabled: &on, DefaultEvents: []string{"failed"}, ChannelIDs: []string{"chn-wf"}}}
+			wf.Defaults = &models.WorkflowDefaults{NotifyPolicy: &models.WorkspaceNotifyPolicy{Enabled: &on, DefaultEvents: []string{"failed"}, ChannelIDs: []string{"chn-wf"}}}
 			if err := db.Save(&wf).Error; err != nil {
 				t.Fatal(err)
 			}
 			d := &fakeRunDeliverer{}
 			svc := NewRunNotifyService(db, d, "")
-			svc.AttemptDeliver(RunNotifyEvent{ProjectID: "proj-n1", RunID: "run-ws", WorkflowID: wf.ID, NodeID: "n", Iteration: 1, Kind: "failed"})
+			svc.AttemptDeliver(RunNotifyEvent{RunID: "run-ws", WorkflowID: wf.ID, NodeID: "n", Iteration: 1, Kind: "failed"})
 			if d.count() != tc.want {
 				t.Fatalf("calls=%d want %d", d.count(), tc.want)
 			}
@@ -153,11 +153,11 @@ func TestAttemptDeliver_workspaceSwitchSilencesWorkflowDefaults(t *testing.T) {
 
 func TestAttemptDeliver_noTargetStillClaims(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"failed"}, "custom", []string{"failed"})
+	seedNotifyWorkspace(t, db, true, []string{"failed"}, "custom", []string{"failed"})
 	d := &fakeRunDeliverer{err: ErrRunNotifyNoTarget}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-4", WorkflowID: "wf-n1",
+		RunID: "run-4", WorkflowID: "wf-n1",
 		NodeID: "impl", Iteration: 2, Kind: "failed",
 	})
 	if d.count() != 1 {
@@ -168,7 +168,7 @@ func TestAttemptDeliver_noTargetStillClaims(t *testing.T) {
 	}
 	// Second attempt must not re-send
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-4", WorkflowID: "wf-n1",
+		RunID: "run-4", WorkflowID: "wf-n1",
 		NodeID: "impl", Iteration: 2, Kind: "failed",
 	})
 	if d.count() != 1 {
@@ -178,11 +178,11 @@ func TestAttemptDeliver_noTargetStillClaims(t *testing.T) {
 
 func TestAttemptDeliver_sendFailNoRetry(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"failed"}, "inherit", nil)
+	seedNotifyWorkspace(t, db, true, []string{"failed"}, "inherit", nil)
 	d := &fakeRunDeliverer{err: errors.New("qq down")}
 	svc := NewRunNotifyService(db, d, "")
 	ev := RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-5", WorkflowID: "wf-n1",
+		RunID: "run-5", WorkflowID: "wf-n1",
 		NodeID: "x", Iteration: 1, Kind: "failed",
 	}
 	svc.AttemptDeliver(ev)
@@ -194,11 +194,11 @@ func TestAttemptDeliver_sendFailNoRetry(t *testing.T) {
 
 func TestAttemptDeliver_missingNodeContext(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"failed"}, "inherit", nil)
+	seedNotifyWorkspace(t, db, true, []string{"failed"}, "inherit", nil)
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-6", WorkflowID: "wf-n1",
+		RunID: "run-6", WorkflowID: "wf-n1",
 		Kind: "failed", // no node / iteration
 	})
 	if d.count() != 0 {
@@ -230,10 +230,10 @@ func containsAll(s string, parts ...string) bool {
 
 func TestFormatRunNotifyMessage_defaultWaitingHuman(t *testing.T) {
 	got := FormatRunNotifyMessage(RunNotifyEvent{
-		ProjectName: "Demo", WorkflowName: "自我迭代", RunID: "run-1",
+		WorkspaceName: "Demo", WorkflowName: "自我迭代", RunID: "run-1",
 		NodeID: "gate", NodeLabel: "门禁", Kind: "waiting_human",
 	}, "https://app.example")
-	want := "【Grasp】等待人工处理\n项目：Demo\n工作流：自我迭代\nRun：run-1\n节点：门禁\n打开：https://app.example/runs/run-1"
+	want := "【Grasp】等待人工处理\n工作区：Demo\n工作流：自我迭代\nRun：run-1\n节点：门禁\n打开：https://app.example/runs/run-1"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -241,9 +241,9 @@ func TestFormatRunNotifyMessage_defaultWaitingHuman(t *testing.T) {
 
 func TestFormatRunNotifyMessage_omitsNodeLineWhenEmpty(t *testing.T) {
 	got := FormatRunNotifyMessage(RunNotifyEvent{
-		ProjectName: "P", WorkflowName: "W", RunID: "r", Kind: "failed",
+		WorkspaceName: "P", WorkflowName: "W", RunID: "r", Kind: "failed",
 	}, "")
-	want := "【Grasp】运行失败\n项目：P\n工作流：W\nRun：r\n打开：/runs/r"
+	want := "【Grasp】运行失败\n工作区：P\n工作流：W\nRun：r\n打开：/runs/r"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}
@@ -251,7 +251,7 @@ func TestFormatRunNotifyMessage_omitsNodeLineWhenEmpty(t *testing.T) {
 
 func TestRenderRunNotifyMessage_emptyAndWhitespaceFallback(t *testing.T) {
 	ev := RunNotifyEvent{
-		ProjectName: "Demo", WorkflowName: "WF", RunID: "run-x",
+		WorkspaceName: "Demo", WorkflowName: "WF", RunID: "run-x",
 		NodeID: "n1", NodeLabel: "节点A", Kind: "waiting_human",
 	}
 	base := "https://app.example"
@@ -266,10 +266,10 @@ func TestRenderRunNotifyMessage_emptyAndWhitespaceFallback(t *testing.T) {
 
 func TestRenderRunNotifyMessage_customSixKeys(t *testing.T) {
 	ev := RunNotifyEvent{
-		ProjectName: "Demo", WorkflowName: "WF", RunID: "run-x",
+		WorkspaceName: "Demo", WorkflowName: "WF", RunID: "run-x",
 		NodeID: "n1", NodeLabel: "节点A", Kind: "failed",
 	}
-	tmpl := "【Grasp】{title}\n{project}/{workflow}\n{run_id} · {node}\n{link}"
+	tmpl := "【Grasp】{title}\n{workspace}/{workflow}\n{run_id} · {node}\n{link}"
 	got := RenderRunNotifyMessage(ev, "https://app.example", tmpl)
 	want := "【Grasp】运行失败\nDemo/WF\nrun-x · 节点A\nhttps://app.example/runs/run-x"
 	if got != want {
@@ -279,7 +279,7 @@ func TestRenderRunNotifyMessage_customSixKeys(t *testing.T) {
 
 func TestRenderRunNotifyMessage_customEmptyNodeKeepsLine(t *testing.T) {
 	ev := RunNotifyEvent{
-		ProjectName: "P", WorkflowName: "W", RunID: "r", Kind: "waiting_human",
+		WorkspaceName: "P", WorkflowName: "W", RunID: "r", Kind: "waiting_human",
 	}
 	tmpl := "节点：{node}\n打开：{link}"
 	got := RenderRunNotifyMessage(ev, "", tmpl)
@@ -291,7 +291,7 @@ func TestRenderRunNotifyMessage_customEmptyNodeKeepsLine(t *testing.T) {
 
 func TestReplaceRunNotifyPlaceholders_unknownKept(t *testing.T) {
 	got := ReplaceRunNotifyPlaceholders(
-		"hi {project} {unknown} {title}",
+		"hi {workspace} {unknown} {title}",
 		"P", "W", "r", "n", "L", "T",
 	)
 	want := "hi P {unknown} T"
@@ -302,12 +302,12 @@ func TestReplaceRunNotifyPlaceholders_unknownKept(t *testing.T) {
 
 func TestAttemptDeliver_usesCustomTemplate(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	p := models.Project{
-		ID: "proj-n1", Name: "Demo",
-		NotifyPolicy: models.ProjectNotifyPolicy{
+	p := models.Workspace{
+		ID: models.WorkspaceID, Name: "Demo",
+		NotifyPolicy: models.WorkspaceNotifyPolicy{
 			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:        []string{"waiting_human", "failed"},
-			WaitingHumanTemplate: "WAIT {project} {run_id} {title}",
+			WaitingHumanTemplate: "WAIT {workspace} {run_id} {title}",
 			FailedTemplate:       "FAIL {workflow} {node}",
 		},
 	}
@@ -315,7 +315,7 @@ func TestAttemptDeliver_usesCustomTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "自我迭代", Version: 1, PublishedVersion: 1,
+		ID: "wf-n1", Name: "自我迭代", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -325,33 +325,33 @@ func TestAttemptDeliver_usesCustomTemplate(t *testing.T) {
 	svc := NewRunNotifyService(db, d, "https://app.example")
 
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-tpl", WorkflowID: "wf-n1",
+		RunID: "run-tpl", WorkflowID: "wf-n1",
 		NodeID: "gate", NodeLabel: "门禁", Iteration: 1, Kind: "waiting_human",
 	})
 	if d.count() != 1 {
 		t.Fatalf("calls=%d", d.count())
 	}
-	if d.calls[0] != "proj-n1|WAIT Demo run-tpl 等待人工处理" {
+	if d.calls[0] != "WAIT Demo run-tpl 等待人工处理" {
 		t.Fatalf("unexpected waiting text: %s", d.calls[0])
 	}
 
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-tpl2", WorkflowID: "wf-n1",
+		RunID: "run-tpl2", WorkflowID: "wf-n1",
 		NodeID: "impl", NodeLabel: "实现", Iteration: 1, Kind: "failed",
 	})
 	if d.count() != 2 {
 		t.Fatalf("calls=%d", d.count())
 	}
-	if d.calls[1] != "proj-n1|FAIL 自我迭代 实现" {
+	if d.calls[1] != "FAIL 自我迭代 实现" {
 		t.Fatalf("unexpected failed text: %s", d.calls[1])
 	}
 }
 
 func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	p := models.Project{
-		ID: "proj-n1", Name: "Demo",
-		NotifyPolicy: models.ProjectNotifyPolicy{
+	p := models.Workspace{
+		ID: models.WorkspaceID, Name: "Demo",
+		NotifyPolicy: models.WorkspaceNotifyPolicy{
 			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:        []string{"waiting_human", "failed"},
 			WaitingHumanTemplate: "CUSTOM_WAIT {run_id}",
@@ -362,7 +362,7 @@ func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Version: 1, PublishedVersion: 1,
+		ID: "wf-n1", Name: "WF", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -372,17 +372,17 @@ func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 	svc := NewRunNotifyService(db, d, "")
 
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "r1", WorkflowID: "wf-n1",
+		RunID: "r1", WorkflowID: "wf-n1",
 		NodeID: "a", NodeLabel: "A", Iteration: 1, Kind: "waiting_human",
 	})
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "r2", WorkflowID: "wf-n1",
+		RunID: "r2", WorkflowID: "wf-n1",
 		NodeID: "b", NodeLabel: "B", Iteration: 1, Kind: "failed",
 	})
 	if d.count() != 2 {
 		t.Fatalf("calls=%d", d.count())
 	}
-	if d.calls[0] != "proj-n1|CUSTOM_WAIT r1" {
+	if d.calls[0] != "CUSTOM_WAIT r1" {
 		t.Fatalf("waiting should use custom: %s", d.calls[0])
 	}
 	if !strings.Contains(d.calls[1], "【Grasp】运行失败") || !strings.Contains(d.calls[1], "节点：B") {
@@ -392,12 +392,12 @@ func TestAttemptDeliver_kindsIndependent(t *testing.T) {
 
 func TestAttemptDeliver_completedOptInAndDedup(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"waiting_human", "failed", "completed"}, "inherit", nil)
+	seedNotifyWorkspace(t, db, true, []string{"waiting_human", "failed", "completed"}, "inherit", nil)
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "https://app.example")
 
 	ev := RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-done", WorkflowID: "wf-n1",
+		RunID: "run-done", WorkflowID: "wf-n1",
 		NodeID: "output_end", NodeLabel: "结束", Iteration: 1, Kind: models.NotifyKindCompleted,
 	}
 	svc.AttemptDeliver(ev)
@@ -416,11 +416,11 @@ func TestAttemptDeliver_completedOptInAndDedup(t *testing.T) {
 
 func TestAttemptDeliver_completedPolicyMiss(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"waiting_human", "failed"}, "inherit", nil)
+	seedNotifyWorkspace(t, db, true, []string{"waiting_human", "failed"}, "inherit", nil)
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-off", WorkflowID: "wf-n1",
+		RunID: "run-off", WorkflowID: "wf-n1",
 		NodeID: "output", Iteration: 1, Kind: models.NotifyKindCompleted,
 	})
 	if d.count() != 0 {
@@ -433,11 +433,11 @@ func TestAttemptDeliver_completedPolicyMiss(t *testing.T) {
 
 func TestAttemptDeliver_completedSentinelNode(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	seedNotifyProject(t, db, true, []string{"completed"}, "custom", []string{"completed"})
+	seedNotifyWorkspace(t, db, true, []string{"completed"}, "custom", []string{"completed"})
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "https://app.example")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "run-empty", WorkflowID: "wf-n1",
+		RunID: "run-empty", WorkflowID: "wf-n1",
 		Kind: models.NotifyKindCompleted, // no node — coerce sentinel
 	})
 	if d.count() != 1 {
@@ -457,9 +457,9 @@ func TestAttemptDeliver_completedSentinelNode(t *testing.T) {
 
 func TestAttemptDeliver_completedCustomTemplate(t *testing.T) {
 	db := setupRunNotifyDB(t)
-	p := models.Project{
-		ID: "proj-n1", Name: "Demo",
-		NotifyPolicy: models.ProjectNotifyPolicy{
+	p := models.Workspace{
+		ID: models.WorkspaceID, Name: "Demo",
+		NotifyPolicy: models.WorkspaceNotifyPolicy{
 			ChannelIDs: []string{"chn-primary"}, Enabled: boolPtr(true),
 			DefaultEvents:     []string{"completed"},
 			CompletedTemplate: "DONE {title} {run_id} {node}",
@@ -469,7 +469,7 @@ func TestAttemptDeliver_completedCustomTemplate(t *testing.T) {
 		t.Fatal(err)
 	}
 	wf := models.WorkflowDef{
-		ID: "wf-n1", ProjectID: p.ID, Name: "WF", Version: 1, PublishedVersion: 1,
+		ID: "wf-n1", Name: "WF", Version: 1, PublishedVersion: 1,
 		NotifyPolicy: models.WorkflowNotifyPolicy{Mode: "inherit"},
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -478,10 +478,10 @@ func TestAttemptDeliver_completedCustomTemplate(t *testing.T) {
 	d := &fakeRunDeliverer{}
 	svc := NewRunNotifyService(db, d, "")
 	svc.AttemptDeliver(RunNotifyEvent{
-		ProjectID: "proj-n1", RunID: "r-c", WorkflowID: "wf-n1",
+		RunID: "r-c", WorkflowID: "wf-n1",
 		NodeID: "out", NodeLabel: "结束", Iteration: 1, Kind: models.NotifyKindCompleted,
 	})
-	if d.count() != 1 || d.calls[0] != "proj-n1|DONE 运行完成 r-c 结束" {
+	if d.count() != 1 || d.calls[0] != "DONE 运行完成 r-c 结束" {
 		t.Fatalf("unexpected: %v", d.calls)
 	}
 }
@@ -497,10 +497,10 @@ func TestRunNotifyTitle_completed(t *testing.T) {
 
 func TestFormatRunNotifyMessage_completedDefault(t *testing.T) {
 	got := FormatRunNotifyMessage(RunNotifyEvent{
-		ProjectName: "Demo", WorkflowName: "自我迭代", RunID: "run-1",
+		WorkspaceName: "Demo", WorkflowName: "自我迭代", RunID: "run-1",
 		NodeID: "output_end", NodeLabel: "结束", Kind: models.NotifyKindCompleted,
 	}, "https://app.example")
-	want := "【Grasp】运行完成\n项目：Demo\n工作流：自我迭代\nRun：run-1\n节点：结束\n打开：https://app.example/runs/run-1?node=output_end&tab=output"
+	want := "【Grasp】运行完成\n工作区：Demo\n工作流：自我迭代\nRun：run-1\n节点：结束\n打开：https://app.example/runs/run-1?node=output_end&tab=output"
 	if got != want {
 		t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 	}

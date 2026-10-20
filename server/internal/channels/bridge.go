@@ -18,15 +18,15 @@ import (
 // MCPTokenHooks provides platform MCP token binding for channel turns.
 // Memory/scheduler WriteAllowed follow SessionCaps from ChannelConfig (default
 // off). pm-workflow write access is controlled by whether pm-workflow-write is
-// enabled for the project. Injected from main.go so this package stays free of
+// enabled for the workspace. Injected from main.go so this package stays free of
 // MCP hosts.
 type MCPTokenHooks struct {
 	// Register mints a shared token and returns the platform MCP inject specs
 	// for a fresh sandbox open. caps gate memory/scheduler writes for this turn.
-	Register func(projectID, threadID, userID, agent string, enabledMcps []string, caps SessionCaps) (token string, specs []sandbox.MCPServerSpec)
+	Register func(threadID, userID, agent string, enabledMcps []string, caps SessionCaps) (token string, specs []sandbox.MCPServerSpec)
 	// RestoreOnReuse rebinds the reused sandbox's existing token using the
 	// latest caps (so config changes apply on the next turn without reconnect).
-	RestoreOnReuse func(projectID, threadID, userID, agent, token string, enabledMcps []string, caps SessionCaps)
+	RestoreOnReuse func(threadID, userID, agent, token string, enabledMcps []string, caps SessionCaps)
 	// Unregister drops a token (used when discarding a freshly minted token
 	// after a sandbox reuse, or on open failure).
 	Unregister func(token string)
@@ -36,8 +36,7 @@ type MCPTokenHooks struct {
 type ResolvedChannel struct {
 	ID          string
 	Type        string
-	ProjectID   string
-	AgentName   string        // channel-bound PM Agent (not Project.PmLeader)
+	AgentName   string        // channel-bound PM Agent (not the workspace PM Leader)
 	EnabledMcps []string      // platform PM role MCPs for this channel turn only
 	TurnTimeout time.Duration // 0 → runner default
 	Caps        SessionCaps   // from latest ChannelConfig; applied each turn
@@ -73,11 +72,11 @@ func SyntheticUserID(channelType string, scene Scene, conversationID string) str
 }
 
 // HasSpoken reports whether the synthetic identity has source=channel inbound.
-func (b *ChannelBridge) HasSpoken(projectID, syntheticUserID string) bool {
+func (b *ChannelBridge) HasSpoken(syntheticUserID string) bool {
 	if b == nil || b.pm == nil {
 		return false
 	}
-	return b.pm.HasChannelInbound(projectID, syntheticUserID)
+	return b.pm.HasChannelInbound(syntheticUserID)
 }
 
 // Handle runs one full Work turn and returns the assistant reply for Reply to
@@ -87,7 +86,7 @@ func (b *ChannelBridge) Handle(ctx context.Context, rc ResolvedChannel, in Inbou
 	if b.pm == nil || b.sbx == nil || b.turns == nil {
 		return Reply{}, fmt.Errorf("channel bridge unavailable")
 	}
-	if _, err := b.pm.RequireEnabled(rc.ProjectID); err != nil {
+	if _, err := b.pm.RequireEnabled(); err != nil {
 		return Reply{}, err
 	}
 	agent := strings.TrimSpace(rc.AgentName)
@@ -97,15 +96,14 @@ func (b *ChannelBridge) Handle(ctx context.Context, rc ResolvedChannel, in Inbou
 	enabledMcps := rc.EnabledMcps
 	userID := SyntheticUserID(rc.Type, in.Scene, in.ConversationID)
 
-	thread, err := b.ensureThread(rc.ProjectID, userID, agent, in)
+	thread, err := b.ensureThread(userID, agent, in)
 	if err != nil {
 		return Reply{}, err
 	}
 
-	token, specs := b.hooks.Register(rc.ProjectID, thread.ID, userID, agent, enabledMcps, rc.Caps)
+	token, specs := b.hooks.Register(thread.ID, userID, agent, enabledMcps, rc.Caps)
 	row, reused, err := b.sbx.OpenAgentSandbox(ctx, services.AgentSandboxOpenOpts{
 		Profile:       agent,
-		ProjectID:     rc.ProjectID,
 		ThreadID:      thread.ID,
 		SharedToken:   token,
 		PlatformSpecs: specs,
@@ -124,7 +122,7 @@ func (b *ChannelBridge) Handle(ctx context.Context, rc ResolvedChannel, in Inbou
 		}
 		token = row.Token
 		if b.hooks.RestoreOnReuse != nil {
-			b.hooks.RestoreOnReuse(rc.ProjectID, thread.ID, userID, agent, token, enabledMcps, rc.Caps)
+			b.hooks.RestoreOnReuse(thread.ID, userID, agent, token, enabledMcps, rc.Caps)
 		}
 	}
 	if err := b.pm.BindSandbox(thread.ID, row.ID); err != nil {
@@ -246,8 +244,8 @@ func (b *ChannelBridge) forwardProgress(ctx context.Context, threadID string, on
 	}
 }
 
-func (b *ChannelBridge) ensureThread(projectID, userID, agent string, in InboundMessage) (models.ChatThread, error) {
-	threads, err := b.pm.ListThreads(projectID, userID)
+func (b *ChannelBridge) ensureThread(userID, agent string, in InboundMessage) (models.ChatThread, error) {
+	threads, err := b.pm.ListThreads(userID)
 	if err != nil {
 		return models.ChatThread{}, err
 	}
@@ -260,7 +258,7 @@ func (b *ChannelBridge) ensureThread(projectID, userID, agent string, in Inbound
 		}
 	}
 	title := channelThreadTitle(in)
-	return b.pm.CreateThread(projectID, userID, title, agent, models.ChatThreadKindUser)
+	return b.pm.CreateThread(userID, title, agent, models.ChatThreadKindUser)
 }
 
 func (b *ChannelBridge) waitReady(ctx context.Context, id uint) (*models.Sandbox, error) {

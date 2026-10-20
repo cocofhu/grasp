@@ -17,9 +17,9 @@ type EnvEntry struct {
 	Secret bool   `json:"secret,omitempty"`
 }
 
-// ProjectVariable is a project-level workflow variable definition (vars.* namespace).
+// WorkspaceVariable is a workspace-level workflow variable definition (vars.* namespace).
 // Shape aligns with Variable, plus an optional Secret flag for read masking.
-type ProjectVariable struct {
+type WorkspaceVariable struct {
 	Name     string `json:"name"`
 	Type     string `json:"type"` // string | paragraph | number | bool | select
 	Value    any    `json:"value,omitempty"`
@@ -31,13 +31,12 @@ type ProjectVariable struct {
 	Secret   bool   `json:"secret,omitempty"`
 }
 
-// ProjectCredential is a project-scoped secret managed from the project UI.
+// Credential is a workspace secret managed from the settings UI.
 // ValueEnc is AES-GCM ciphertext and is never serialized to API responses.
 // Hash-based credentials (external MCP/workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
-type ProjectCredential struct {
+type Credential struct {
 	ID          string         `gorm:"primaryKey" json:"id"`
-	ProjectID   string         `gorm:"index" json:"projectId"`
 	Type        string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
 	Provider    string         `json:"provider,omitempty"`
 	Name        string         `json:"name"`
@@ -52,16 +51,16 @@ type ProjectCredential struct {
 	UpdatedAt   time.Time      `json:"updatedAt"`
 }
 
-// Project is a workspace that owns workflows and holds workflow variable
-// defaults. ProjectCredential is the project-level secret store; shared Agent
+// Workspace is a workspace that owns workflows and holds workflow variable
+// defaults. Credential is the workspace secret store; shared Agent
 // env holds non-secret sandbox env. Run.SandboxEnv is the per-run snapshot for
 // non-credential variables.
-type Project struct {
-	ID          string            `gorm:"primaryKey" json:"id"`
-	Name        string            `gorm:"size:191;uniqueIndex" json:"name"`
-	Description string            `json:"description"`
-	Variables   []ProjectVariable `gorm:"serializer:json" json:"variables"`
-	// PmLeaderEnabled toggles the project-level PM Leader consult entry.
+type Workspace struct {
+	ID          string              `gorm:"primaryKey" json:"-"`
+	Name        string              `gorm:"size:191" json:"name"`
+	Description string              `json:"description"`
+	Variables   []WorkspaceVariable `gorm:"serializer:json" json:"variables"`
+	// PmLeaderEnabled toggles the workspace-level PM Leader consult entry.
 	PmLeaderEnabled bool `json:"pmLeaderEnabled"`
 	// PmLeaderAgent is the bound Agent config name (agent_profile). Empty when
 	// unbound. Enabling requires a non-empty, existing agent name.
@@ -70,7 +69,7 @@ type Project struct {
 	// nil/omitted → defaults; explicit empty slice → none.
 	// nil/unset means both enabled by default; explicit empty disables all.
 	PmEnabledMcps []string `gorm:"serializer:json" json:"pmEnabledMcps,omitempty"`
-	// PmGateAutoVar is the project variable name that gates "auto-invoke PM on
+	// PmGateAutoVar is the workspace variable name that gates "auto-invoke PM on
 	// human gates". Empty disables the capability. Runtime requires the named
 	// var to exist in the run and be truthy; save-time existence/type checks
 	// are intentionally not enforced.
@@ -78,10 +77,10 @@ type Project struct {
 	// PmGateAutoPrompt is an optional prompt appended after the system default
 	// gate-auto guidance when invoking the PM Leader.
 	PmGateAutoPrompt string `json:"gateAutoPrompt,omitempty"`
-	// NotifyPolicy is the project-level Run→IM notification default
-	// (enabled kill-switch + defaultEvents). See ProjectNotifyPolicy.
-	NotifyPolicy ProjectNotifyPolicy `gorm:"serializer:json" json:"notifyPolicy"`
-	// UnknownModelDisplayName is an optional project-level display alias for the
+	// NotifyPolicy is the workspace-level Run→IM notification default
+	// (enabled kill-switch + defaultEvents). See WorkspaceNotifyPolicy.
+	NotifyPolicy WorkspaceNotifyPolicy `gorm:"serializer:json" json:"notifyPolicy"`
+	// UnknownModelDisplayName is an optional workspace-level display alias for the
 	// 「未知/未分桶」token bucket. Empty means use the default label. Does not
 	// change persisted UsageByModel keys or merge with real model buckets.
 	UnknownModelDisplayName string    `json:"unknownModelDisplayName,omitempty"`
@@ -93,8 +92,8 @@ type Project struct {
 // equal the WorkflowVersion row numbered Version (the latest save).
 type WorkflowDefaults struct {
 	InheritWorkspace bool                    `json:"inheritWorkspace"`
-	Variables        []ProjectVariable       `json:"variables"`
-	NotifyPolicy     *ProjectNotifyPolicy    `json:"notifyPolicy,omitempty"`
+	Variables        []WorkspaceVariable     `json:"variables"`
+	NotifyPolicy     *WorkspaceNotifyPolicy  `json:"notifyPolicy,omitempty"`
 	GateAuto         *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
 }
 type WorkflowGateAutoPolicy struct {
@@ -106,12 +105,10 @@ type WorkflowGateAutoPolicy struct {
 }
 
 type WorkflowDef struct {
-	Defaults *WorkflowDefaults `gorm:"serializer:json" json:"defaults,omitempty"`
-	ID       string            `gorm:"primaryKey" json:"id"`
-	// ProjectID is required by the API/service layer.
-	ProjectID   string `gorm:"index;uniqueIndex:idx_wf_proj_name" json:"projectId"`
-	Name        string `gorm:"size:191;uniqueIndex:idx_wf_proj_name" json:"name"`
-	Description string `json:"description"`
+	Defaults    *WorkflowDefaults `gorm:"serializer:json" json:"defaults,omitempty"`
+	ID          string            `gorm:"primaryKey" json:"id"`
+	Name        string            `gorm:"size:191;uniqueIndex:idx_wf_name" json:"name"`
+	Description string            `json:"description"`
 	// Version is the latest saved WorkflowVersion number.
 	Version int `json:"version"`
 	// PublishedVersion is the version /v1 API runs execute; 0 = never published.
@@ -373,7 +370,6 @@ type Artifact struct {
 	ID           string    `gorm:"primaryKey" json:"id"`
 	RunID        string    `gorm:"index" json:"runId"`
 	NodeID       string    `json:"nodeId"`
-	ProjectID    string    `gorm:"index" json:"projectId"`
 	WorkflowID   string    `gorm:"index" json:"workflowId"`
 	WorkflowName string    `json:"workflowName"`
 	Name         string    `json:"name"`
@@ -811,13 +807,12 @@ type Sandbox struct {
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
-	// agent-{project}-{thread} id used by platform MCP token binding, and
-	// ProjectID / ThreadID identify the session thread.
+	// agent-{thread} id used by platform MCP token binding, and ThreadID
+	// identifies the session thread.
 	RunID        string `json:"runId,omitempty"`
 	WorkflowID   string `json:"workflowId,omitempty"`
 	WorkflowName string `json:"workflowName,omitempty"`
 	NodeID       string `json:"nodeId,omitempty"`
-	ProjectID    string `json:"projectId,omitempty"`
 	ThreadID     string `json:"threadId,omitempty"`
 	Token        string `json:"-"`
 	// HomeDir is the host cursor-home dir bind-mounted at /root/.cursor (run
@@ -949,15 +944,15 @@ type PreviewIssue struct {
 // AllModels lists every table for AutoMigrate.
 func AllModels() []any {
 	return []any{
-		&Project{},
+		&Workspace{},
 		&WorkflowDef{}, &WorkflowVersion{}, &Run{}, &StateRun{},
 		&RunVariable{}, &Artifact{}, &ArtifactVersion{}, &Gate{}, &ReactConversation{},
 		&Sandbox{}, &SandboxLog{}, &Setting{}, &Session{}, &WorkflowAPIKey{},
 		&RunPreviewPort{}, &PreviewIssue{}, &FeedbackEvent{},
-		&ProjectMemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
+		&MemoryItem{}, &ChatThread{}, &ChatMessage{}, &ChatTurnDraft{},
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
-		&ProjectAuditEvent{},
-		&ProjectCredential{},
+		&AuditEvent{},
+		&Credential{},
 		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},
@@ -968,15 +963,15 @@ func AllModels() []any {
 		&RequirementDraft{},
 		&NotificationRead{},
 		&NotificationBaseline{},
-		&ProjectExternalMcpSettings{},
-		&ProjectMcpApiKey{},
+		&ExternalMcpSettings{},
+		&WorkspaceMcpApiKey{},
 		&LiveSession{},
 		&TokenUsageEvent{},
 	}
 }
 
-// DefaultProjectID is the stable internal workspace id created on an empty database.
-const DefaultProjectID = "proj-default"
+// WorkspaceID is the primary key of the singleton workspace row.
+const WorkspaceID = "default"
 
-// DefaultProjectName is the display name of a newly created workspace.
-const DefaultProjectName = "工作区"
+// DefaultWorkspaceName is the display name of a newly created workspace.
+const DefaultWorkspaceName = "工作区"

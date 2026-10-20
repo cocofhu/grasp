@@ -36,7 +36,6 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		mcp = []services.MCPServer{}
 	}
 	return gin.H{
-		"projectId":            cfg.ProjectID,
 		"acpBackend":           cfg.AcpBackend,
 		"gitCredentialType":    cfg.GitCredentialType,
 		"aiCredentialId":       cfg.AiCredentialID,
@@ -48,29 +47,19 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 	}
 }
 
-// GetProjectSharedAgent returns the project's shared Agent baseline (empty OK).
-func (h *Handlers) GetProjectSharedAgent(c *gin.Context) {
-	if h.Projects == nil || h.SharedAgent == nil {
+// GetSharedAgent returns the shared Agent baseline (empty OK).
+func (h *Handlers) GetSharedAgent(c *gin.Context) {
+	if h.SharedAgent == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
-	pid := c.Param("id")
-	if _, ok := h.Projects.Get(pid); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return
-	}
-	c.JSON(http.StatusOK, sharedAgentDTO(h.SharedAgent.Get(pid)))
+	c.JSON(http.StatusOK, sharedAgentDTO(h.SharedAgent.Get()))
 }
 
-// PutProjectSharedAgent replaces the project's shared Agent baseline.
-func (h *Handlers) PutProjectSharedAgent(c *gin.Context) {
-	if h.Projects == nil || h.SharedAgent == nil {
+// PutSharedAgent replaces the shared Agent baseline.
+func (h *Handlers) PutSharedAgent(c *gin.Context) {
+	if h.SharedAgent == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "shared agent unavailable"})
-		return
-	}
-	pid := c.Param("id")
-	if _, ok := h.Projects.Get(pid); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
 	var b sharedAgentBody
@@ -79,7 +68,6 @@ func (h *Handlers) PutProjectSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
-		ProjectID:            pid,
 		AcpBackend:           b.AcpBackend,
 		GitCredentialType:    b.GitCredentialType,
 		AiCredentialID:       strings.TrimSpace(b.AiCredentialID),
@@ -101,19 +89,14 @@ func (h *Handlers) PutProjectSharedAgent(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, sharedAgentDTO(h.SharedAgent.Get(pid)))
+	c.JSON(http.StatusOK, sharedAgentDTO(h.SharedAgent.Get()))
 }
 
-// CreateProjectSharedAgentTest starts a chat-test sandbox with extend→overlay
-// against the current project shared config + a chosen Agent.
-func (h *Handlers) CreateProjectSharedAgentTest(c *gin.Context) {
-	if h.Projects == nil || h.SharedAgent == nil || h.Sbx == nil || h.Agents == nil {
+// CreateSharedAgentTest starts a chat-test sandbox with extend→overlay
+// against the shared config + a chosen Agent.
+func (h *Handlers) CreateSharedAgentTest(c *gin.Context) {
+	if h.SharedAgent == nil || h.Sbx == nil || h.Agents == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "shared agent test unavailable"})
-		return
-	}
-	pid := c.Param("id")
-	if _, ok := h.Projects.Get(pid); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
 		return
 	}
 	var b struct {
@@ -135,10 +118,10 @@ func (h *Handlers) CreateProjectSharedAgentTest(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "agent not found"})
 		return
 	}
-	shared := h.SharedAgent.Get(pid)
-	effective := services.ExtendOverlayWithKind(shared, agent, h.sharedCredentialKind(pid))
+	shared := h.SharedAgent.Get()
+	effective := services.ExtendOverlayWithKind(shared, agent, h.sharedCredentialKind())
 	repos := resolveTestRepos(b.Repos, b.RepoURL)
-	row, err := h.Sbx.OpenWithEffective(c.Request.Context(), agentName, pid, repos, effective, h.SharedAgent.WorkDir(pid))
+	row, err := h.Sbx.OpenWithEffective(c.Request.Context(), agentName, repos, effective, h.SharedAgent.WorkDir())
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -146,12 +129,12 @@ func (h *Handlers) CreateProjectSharedAgentTest(c *gin.Context) {
 	c.JSON(http.StatusOK, row)
 }
 
-func (h *Handlers) sharedCredentialKind(projectID string) runtime.CredentialKindFunc {
-	if h == nil || h.ProjectCredentials == nil || strings.TrimSpace(projectID) == "" {
+func (h *Handlers) sharedCredentialKind() runtime.CredentialKindFunc {
+	if h == nil || h.Credentials == nil {
 		return nil
 	}
 	return func(id string) (string, bool) {
-		key, _, ok := h.ProjectCredentials.ResolveSelectedValue(projectID, id)
+		key, _, ok := h.Credentials.ResolveSelectedValue(id)
 		return key, ok
 	}
 }

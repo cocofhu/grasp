@@ -33,7 +33,6 @@ func isProtectedPush(p CronPushItem) bool {
 
 // CronPushItem is a timed push waiting for a conversation idle slot.
 type CronPushItem struct {
-	ProjectID string
 	AgentName string // cron: bound Agent for re-lookup
 	ChannelID string // explicit channel id for re-lookup on flush
 	Scene     Scene
@@ -86,7 +85,6 @@ func (m *Manager) enqueuePush(key string, item CronPushItem) {
 				return
 			}
 			log.Warn().
-				Str("project", item.ProjectID).
 				Str("category", item.Category).
 				Str("kind", string(item.Kind)).
 				Msg("cron push queue full; dropping compressible unchanged")
@@ -103,7 +101,6 @@ func (m *Manager) enqueuePush(key string, item CronPushItem) {
 		if len(q.pending) >= pushQueueDepth {
 			// High-priority full: keep latest failed/changed — never silent-drop newest.
 			log.Error().
-				Str("project", item.ProjectID).
 				Str("category", item.Category).
 				Str("kind", string(item.Kind)).
 				Str("text", truncateRunes(item.Text, 80)).
@@ -120,7 +117,6 @@ func (m *Manager) enqueuePush(key string, item CronPushItem) {
 			// when the incoming item is itself a run notification (at-most-once claim).
 			if isProtectedPush(item) {
 				log.Warn().
-					Str("project", item.ProjectID).
 					Str("category", item.Category).
 					Int("depth", len(q.pending)).
 					Msg("push queue over depth to retain run_notify (non-droppable)")
@@ -134,7 +130,6 @@ func (m *Manager) enqueuePush(key string, item CronPushItem) {
 				return
 			}
 			log.Error().
-				Str("project", item.ProjectID).
 				Str("category", item.Category).
 				Msg("push queue full of protected run_notify; soft-overflow for incoming cron item")
 			q.pending = append(q.pending, item)

@@ -20,7 +20,7 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p, err := legacyProjectFixture(db, "MCPProj")
+	_, err = workspaceFixture(db)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,22 +28,19 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 	progress := services.NewPmProgress(pm, services.NewRunService(db), services.NewArtifactService(db))
 	h := NewHost(pm, progress, nil, nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-1", "alice", "agent", tok)
-	if !h.Authorize(p.ID, tok) {
+	h.Restore("thr-1", "alice", "agent", tok)
+	if !h.Authorize(tok) {
 		t.Fatal("authorize")
 	}
-	if h.Authorize(p.ID, "bad") {
+	if h.Authorize("bad") {
 		t.Fatal("bad token")
-	}
-	if h.Authorize("other", tok) {
-		t.Fatal("other project")
 	}
 
 	initBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "initialize",
 		"params": map[string]any{"protocolVersion": "2024-11-05"},
 	})
-	st, resp := h.ServeRPC(p.ID, MCPProgress, tok, initBody)
+	st, resp := h.ServeRPC(MCPProgress, tok, initBody)
 	if st != 200 {
 		t.Fatalf("init status=%d body=%s", st, resp)
 	}
@@ -51,7 +48,7 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 	listBody, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 2, "method": "tools/list",
 	})
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, listBody)
+	st, resp = h.ServeRPC(MCPProgress, tok, listBody)
 	if st != 200 {
 		t.Fatalf("list status=%d", st)
 	}
@@ -71,15 +68,15 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
 		"params": map[string]any{"name": "pm_get_progress", "arguments": map[string]any{}},
 	})
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, callBody)
+	st, resp = h.ServeRPC(MCPProgress, tok, callBody)
 	if st != 200 {
 		t.Fatalf("call status=%d body=%s", st, resp)
 	}
-	if !h.Authorize(p.ID, tok) {
+	if !h.Authorize(tok) {
 		t.Fatal("still auth")
 	}
 	h.Unregister(tok)
-	if h.Authorize(p.ID, tok) {
+	if h.Authorize(tok) {
 		t.Fatal("unregistered")
 	}
 }
@@ -112,14 +109,14 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p, err := legacyProjectFixture(db, "WriteWF")
+	_, err = workspaceFixture(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "agent"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-workflow-write"}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-workflow-write"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	wf := services.NewWorkflowService(db)
@@ -136,7 +133,7 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tok := platformmcp.NewToken()
-			h.Restore(p.ID, "thr-"+tc.name, tc.userID, agent, tok)
+			h.Restore("thr-"+tc.name, tc.userID, agent, tok)
 			body, _ := json.Marshal(map[string]any{
 				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 				"params": map[string]any{
@@ -144,7 +141,7 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 					"arguments": map[string]any{"workflowId": "wf-missing"},
 				},
 			})
-			_, resp := h.ServeRPC(p.ID, MCPWorkflowWrite, tok, body)
+			_, resp := h.ServeRPC(MCPWorkflowWrite, tok, body)
 			if !contains(string(resp), "workflow not found") {
 				t.Fatalf("want workflow-not-found: %s", resp)
 			}
@@ -160,19 +157,19 @@ func TestPmWorkflowWriteRejectedWhenDisabled(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p, err := legacyProjectFixture(db, "NoWrite")
+	_, err = workspaceFixture(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "agent"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-progress"}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-progress"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), services.NewWorkflowService(db), nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr", "alice", agent, tok)
+	h.Restore("thr", "alice", agent, tok)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{
@@ -180,7 +177,7 @@ func TestPmWorkflowWriteRejectedWhenDisabled(t *testing.T) {
 			"arguments": map[string]any{"name": "x"},
 		},
 	})
-	st, resp := h.ServeRPC(p.ID, MCPWorkflowWrite, tok, body)
+	st, resp := h.ServeRPC(MCPWorkflowWrite, tok, body)
 	if st != 404 || !contains(string(resp), "mcp disabled") {
 		t.Fatalf("want disabled mcp: %d %s", st, resp)
 	}
@@ -192,16 +189,16 @@ func TestFilterSafeToolUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
-	p, _ := legacyProjectFixture(db, "X")
+	_, _ = workspaceFixture(db)
 	pm := services.NewPmService(db, nil)
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "t", "u", "agent", tok)
+	h.Restore("t", "u", "agent", tok)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "write_artifact", "arguments": map[string]any{}},
 	})
-	_, resp := h.ServeRPC(p.ID, MCPProgress, tok, body)
+	_, resp := h.ServeRPC(MCPProgress, tok, body)
 	if !json.Valid(resp) {
 		t.Fatal(string(resp))
 	}

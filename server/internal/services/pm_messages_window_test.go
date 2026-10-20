@@ -12,12 +12,12 @@ import (
 func TestListMessagesWindowTailAndBefore(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("WinProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("WinProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "tail", "agent-a", "user")
+	th, err := pm.CreateThread("alice", "tail", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestListMessagesWindowTailAndBefore(t *testing.T) {
 	}
 
 	// Exactly 20: hasMore=false.
-	th2, err := pm.CreateThread(p.ID, "alice", "exact", "agent-a", "user")
+	th2, err := pm.CreateThread("alice", "exact", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +99,7 @@ func TestListMessagesWindowTailAndBefore(t *testing.T) {
 	}
 
 	// Empty thread.
-	th3, err := pm.CreateThread(p.ID, "alice", "empty", "agent-a", "user")
+	th3, err := pm.CreateThread("alice", "empty", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}

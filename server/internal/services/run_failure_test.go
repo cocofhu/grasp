@@ -127,7 +127,7 @@ func TestTruncateLogSummary(t *testing.T) {
 }
 
 func TestArtifactSummaryFailedEmptyStillReturnsError(t *testing.T) {
-	p, db, pid, wfID := setupPmProgressFixtures(t)
+	p, db, _, wfID := setupPmProgressFixtures(t)
 	db.Create(&models.Run{
 		ID: "run-empty-fail", WorkflowID: wfID, WorkflowName: "Pipeline",
 		Status: "failed", Progress: 0.05, Title: "Early fail", StartedAt: time.Now(),
@@ -137,7 +137,7 @@ func TestArtifactSummaryFailedEmptyStillReturnsError(t *testing.T) {
 		Error: "sandbox setup failed: create timeout",
 	})
 
-	got := p.ArtifactSummary(pid, "run-empty-fail", 5)
+	got := p.ArtifactSummary("run-empty-fail", 5)
 	if got["empty"] != true {
 		t.Fatalf("expected empty artifacts: %+v", got)
 	}
@@ -151,8 +151,8 @@ func TestArtifactSummaryFailedEmptyStillReturnsError(t *testing.T) {
 }
 
 func TestArtifactSummarySuccessOmitsFailureFields(t *testing.T) {
-	p, _, pid, _ := setupPmProgressFixtures(t)
-	got := p.ArtifactSummary(pid, "run-a", 5)
+	p, _, _, _ := setupPmProgressFixtures(t)
+	got := p.ArtifactSummary("run-a", 5)
 	if got["empty"] != false {
 		t.Fatalf("artifacts: %+v", got)
 	}

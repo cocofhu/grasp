@@ -18,71 +18,65 @@ import (
 )
 
 const (
-	ProjectAgentsBundleKind          = "project-agents"
-	ProjectAgentsBundleSchemaVersion = 1
-	ProjectAgentsBundleMaxBytes      = 64 << 20 // 64 MiB
-	projectAgentsManifestName        = "project.json"
+	WorkspaceAgentsBundleKind          = "workspace-agents"
+	WorkspaceAgentsBundleSchemaVersion = 1
+	WorkspaceAgentsBundleMaxBytes      = 64 << 20 // 64 MiB
+	workspaceAgentsManifestName        = "workspace.json"
 )
 
 var (
-	ErrProjectBundleTooLarge        = errors.New("项目 Agent 包超过 64MiB 上限")
-	ErrProjectBundleMissingManifest = errors.New("ZIP 缺少 project.json，无法识别为项目 Agent 包")
-	ErrProjectBundleSingleAgent     = errors.New("这是单 Agent ZIP，项目级导入仅接受项目 Agent 包，请改用顶栏「导入」")
-	ErrProjectBundleInvalidKind     = errors.New("project.json kind 无效，须为 project-agents")
-	ErrProjectBundleBadSchema       = errors.New("不支持的 project.json schemaVersion")
-	ErrProjectBundleInvalidZip      = errors.New("ZIP 格式非法或已损坏")
-	ErrProjectBundleRootAgentJSON   = errors.New("项目 Agent 包根目录不得包含 agent.json")
-	ErrProjectBundleNestedZip       = errors.New("项目 Agent 包不得包含嵌套 ZIP")
-	ErrProjectBundleForeignAgent    = errors.New("同名 Agent 属于其他项目，无法覆盖")
+	ErrWorkspaceBundleTooLarge        = errors.New("工作区 Agent 包超过 64MiB 上限")
+	ErrWorkspaceBundleMissingManifest = errors.New("ZIP 缺少 workspace.json，无法识别为工作区 Agent 包")
+	ErrWorkspaceBundleSingleAgent     = errors.New("这是单 Agent ZIP，工作区导入仅接受工作区 Agent 包，请改用顶栏「导入」")
+	ErrWorkspaceBundleInvalidKind     = errors.New("workspace.json kind 无效，须为 workspace-agents")
+	ErrWorkspaceBundleBadSchema       = errors.New("不支持的 workspace.json schemaVersion")
+	ErrWorkspaceBundleInvalidZip      = errors.New("ZIP 格式非法或已损坏")
+	ErrWorkspaceBundleRootAgentJSON   = errors.New("工作区 Agent 包根目录不得包含 agent.json")
+	ErrWorkspaceBundleNestedZip       = errors.New("工作区 Agent 包不得包含嵌套 ZIP")
 )
 
-// projectAgentsManifest is the root project.json inside a project package.
-type projectAgentsManifest struct {
+// workspaceAgentsManifest is the root workspace.json inside a workspace package.
+type workspaceAgentsManifest struct {
 	Kind          string   `json:"kind"`
 	SchemaVersion int      `json:"schemaVersion"`
 	ExportedAt    string   `json:"exportedAt"`
 	AgentNames    []string `json:"agentNames"`
 }
 
-// ImportProjectAgentsMode selects batch rename vs overwrite.
-type ImportProjectAgentsMode string
+// ImportWorkspaceAgentsMode selects batch rename vs overwrite.
+type ImportWorkspaceAgentsMode string
 
 const (
-	ImportProjectAgentsRename    ImportProjectAgentsMode = "rename"
-	ImportProjectAgentsOverwrite ImportProjectAgentsMode = "overwrite"
+	ImportWorkspaceAgentsRename    ImportWorkspaceAgentsMode = "rename"
+	ImportWorkspaceAgentsOverwrite ImportWorkspaceAgentsMode = "overwrite"
 )
 
-// ImportProjectAgentsResult is returned after a successful project import.
-type ImportProjectAgentsResult struct {
+// ImportWorkspaceAgentsResult is returned after a successful workspace import.
+type ImportWorkspaceAgentsResult struct {
 	Created     []string          `json:"created,omitempty"`
 	Overwritten []string          `json:"overwritten,omitempty"`
 	Renamed     map[string]string `json:"renamed,omitempty"`
 }
 
-// projectAgentNames lists Agents whose home project is projectID, sorted.
-func (s *AgentService) projectAgentNames(projectID string) []string {
+// agentNames lists every Agent name, sorted.
+func (s *AgentService) agentNames() []string {
 	names := []string{}
 	for _, a := range s.List() {
-		if AgentProjectMatches(a, projectID) {
-			names = append(names, a.Name)
-		}
+		names = append(names, a.Name)
 	}
 	sort.Strings(names)
 	return names
 }
 
-// ExportProjectAgentsZIP builds a project package with every Agent of projectID.
-func (s *AgentService) ExportProjectAgentsZIP(projectID string) ([]byte, error) {
-	if strings.TrimSpace(projectID) == "" {
-		return nil, ErrAgentProjectRequired
-	}
+// ExportWorkspaceAgentsZIP builds a workspace package with every Agent.
+func (s *AgentService) ExportWorkspaceAgentsZIP() ([]byte, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	names := s.projectAgentNames(projectID)
-	manifest := projectAgentsManifest{
-		Kind:          ProjectAgentsBundleKind,
-		SchemaVersion: ProjectAgentsBundleSchemaVersion,
+	names := s.agentNames()
+	manifest := workspaceAgentsManifest{
+		Kind:          WorkspaceAgentsBundleKind,
+		SchemaVersion: WorkspaceAgentsBundleSchemaVersion,
 		ExportedAt:    time.Now().UTC().Format(time.RFC3339),
 		AgentNames:    names,
 	}
@@ -93,7 +87,7 @@ func (s *AgentService) ExportProjectAgentsZIP(projectID string) ([]byte, error) 
 
 	buf := &bytes.Buffer{}
 	zw := zip.NewWriter(buf)
-	w, err := zw.CreateHeader(&zip.FileHeader{Name: projectAgentsManifestName, Method: zip.Store})
+	w, err := zw.CreateHeader(&zip.FileHeader{Name: workspaceAgentsManifestName, Method: zip.Store})
 	if err != nil {
 		_ = zw.Close()
 		return nil, err
@@ -112,31 +106,27 @@ func (s *AgentService) ExportProjectAgentsZIP(projectID string) ([]byte, error) 
 		return nil, err
 	}
 	out := buf.Bytes()
-	if len(out) > ProjectAgentsBundleMaxBytes {
-		return nil, ErrProjectBundleTooLarge
+	if len(out) > WorkspaceAgentsBundleMaxBytes {
+		return nil, ErrWorkspaceBundleTooLarge
 	}
 	return out, nil
 }
 
-// ImportProjectAgentsZIP imports a project package; every Agent is written
-// with projectId = projectID. The whole import rolls back on any failure.
-func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode ImportProjectAgentsMode) (result ImportProjectAgentsResult, err error) {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return ImportProjectAgentsResult{}, ErrAgentProjectRequired
-	}
-	if int64(len(raw)) > ProjectAgentsBundleMaxBytes {
-		return ImportProjectAgentsResult{}, ErrProjectBundleTooLarge
+// ImportWorkspaceAgentsZIP imports a workspace package. The whole import rolls
+// back on any failure.
+func (s *AgentService) ImportWorkspaceAgentsZIP(raw []byte, mode ImportWorkspaceAgentsMode) (result ImportWorkspaceAgentsResult, err error) {
+	if int64(len(raw)) > WorkspaceAgentsBundleMaxBytes {
+		return ImportWorkspaceAgentsResult{}, ErrWorkspaceBundleTooLarge
 	}
 	switch mode {
-	case ImportProjectAgentsRename, ImportProjectAgentsOverwrite:
+	case ImportWorkspaceAgentsRename, ImportWorkspaceAgentsOverwrite:
 	default:
-		return ImportProjectAgentsResult{}, fmt.Errorf("invalid import mode %q", mode)
+		return ImportWorkspaceAgentsResult{}, fmt.Errorf("invalid import mode %q", mode)
 	}
 
 	zr, err := zip.NewReader(bytes.NewReader(raw), int64(len(raw)))
 	if err != nil {
-		return ImportProjectAgentsResult{}, fmt.Errorf("%w: %v", ErrProjectBundleInvalidZip, err)
+		return ImportWorkspaceAgentsResult{}, fmt.Errorf("%w: %v", ErrWorkspaceBundleInvalidZip, err)
 	}
 	hasManifest, hasRootAgent := false, false
 	for _, f := range zr.File {
@@ -145,40 +135,38 @@ func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode
 			continue
 		}
 		switch name {
-		case projectAgentsManifestName:
+		case workspaceAgentsManifestName:
 			hasManifest = true
 		case "agent.json":
 			hasRootAgent = true
 		}
 		if strings.HasSuffix(strings.ToLower(name), ".zip") && strings.HasPrefix(name, "agents/") {
-			return ImportProjectAgentsResult{}, ErrProjectBundleNestedZip
+			return ImportWorkspaceAgentsResult{}, ErrWorkspaceBundleNestedZip
 		}
 	}
 	if !hasManifest {
 		if hasRootAgent {
-			return ImportProjectAgentsResult{}, ErrProjectBundleSingleAgent
+			return ImportWorkspaceAgentsResult{}, ErrWorkspaceBundleSingleAgent
 		}
-		return ImportProjectAgentsResult{}, ErrProjectBundleMissingManifest
+		return ImportWorkspaceAgentsResult{}, ErrWorkspaceBundleMissingManifest
 	}
 	if hasRootAgent {
-		return ImportProjectAgentsResult{}, ErrProjectBundleRootAgentJSON
+		return ImportWorkspaceAgentsResult{}, ErrWorkspaceBundleRootAgentJSON
 	}
-	manifest, err := readProjectAgentsManifest(zr)
+	manifest, err := readWorkspaceAgentsManifest(zr)
 	if err != nil {
-		return ImportProjectAgentsResult{}, err
+		return ImportWorkspaceAgentsResult{}, err
 	}
 	exports, err := parseBundleAgents(raw, manifest.AgentNames)
 	if err != nil {
-		return ImportProjectAgentsResult{}, err
+		return ImportWorkspaceAgentsResult{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	existing := map[string]Agent{}
 	existingNames := map[string]struct{}{}
 	for _, a := range s.List() {
-		existing[a.Name] = a
 		existingNames[a.Name] = struct{}{}
 	}
 
@@ -192,26 +180,23 @@ func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode
 			continue
 		}
 		finalName := origName
-		if prev, exists := existing[origName]; exists {
-			if mode == ImportProjectAgentsRename {
+		if _, exists := existingNames[origName]; exists {
+			if mode == ImportWorkspaceAgentsRename {
 				normalized, nerr := NormalizeAndValidateAgentName(SuggestAgentRename(origName, existingNames))
 				if nerr != nil {
-					return ImportProjectAgentsResult{}, fmt.Errorf("无法为 %q 生成合法重命名：%w", origName, nerr)
+					return ImportWorkspaceAgentsResult{}, fmt.Errorf("无法为 %q 生成合法重命名：%w", origName, nerr)
 				}
 				finalName = normalized
 				renamed[origName] = finalName
 				created = append(created, finalName)
 				existingNames[finalName] = struct{}{}
 			} else {
-				if !AgentProjectMatches(prev, projectID) {
-					return ImportProjectAgentsResult{}, fmt.Errorf("%w：%s", ErrProjectBundleForeignAgent, origName)
-				}
 				overwritten = append(overwritten, origName)
 			}
 		} else {
 			normalized, nerr := NormalizeAndValidateAgentName(origName)
 			if nerr != nil {
-				return ImportProjectAgentsResult{}, fmt.Errorf("包内 Agent 名称无效 %q：%w", origName, nerr)
+				return ImportWorkspaceAgentsResult{}, fmt.Errorf("包内 Agent 名称无效 %q：%w", origName, nerr)
 			}
 			finalName = normalized
 			created = append(created, finalName)
@@ -220,14 +205,14 @@ func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode
 		nameMap[origName] = finalName
 	}
 
-	snapDir, err := os.MkdirTemp("", "project-agents-import-*")
+	snapDir, err := os.MkdirTemp("", "workspace-agents-import-*")
 	if err != nil {
-		return ImportProjectAgentsResult{}, err
+		return ImportWorkspaceAgentsResult{}, err
 	}
 	defer func() { _ = os.RemoveAll(snapDir) }()
 	for _, name := range overwritten {
 		if err := copyDir(filepath.Join(s.root, sanitize(name)), filepath.Join(snapDir, sanitize(name))); err != nil {
-			return ImportProjectAgentsResult{}, fmt.Errorf("快照 Agent %q 失败：%w", name, err)
+			return ImportWorkspaceAgentsResult{}, fmt.Errorf("快照 Agent %q 失败：%w", name, err)
 		}
 	}
 
@@ -254,19 +239,19 @@ func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode
 		parsed, ok := exports[strings.TrimSpace(origName)]
 		if !ok {
 			importErr = fmt.Errorf("包内缺少 Agent %q 的快照", origName)
-			return ImportProjectAgentsResult{}, fmt.Errorf("导入失败，已整次回滚：%w", importErr)
+			return ImportWorkspaceAgentsResult{}, fmt.Errorf("导入失败，已整次回滚：%w", importErr)
 		}
 		zipMode := ImportZIPCreate
-		if mode == ImportProjectAgentsOverwrite && containsString(overwritten, finalName) {
+		if mode == ImportWorkspaceAgentsOverwrite && containsString(overwritten, finalName) {
 			zipMode = ImportZIPOverwrite
 		}
-		if _, err := s.applyAgentExport(parsed.export, parsed.files, finalName, projectID, zipMode); err != nil {
+		if _, err := s.applyAgentExport(parsed.export, parsed.files, finalName, zipMode); err != nil {
 			importErr = err
-			return ImportProjectAgentsResult{}, fmt.Errorf("导入失败，已整次回滚：%w", err)
+			return ImportWorkspaceAgentsResult{}, fmt.Errorf("导入失败，已整次回滚：%w", err)
 		}
 	}
 
-	return ImportProjectAgentsResult{
+	return ImportWorkspaceAgentsResult{
 		Created:     created,
 		Overwritten: overwritten,
 		Renamed:     renamed,
@@ -274,7 +259,7 @@ func (s *AgentService) ImportProjectAgentsZIP(raw []byte, projectID string, mode
 }
 
 // stripTokenKeysFromEnvMap drops secret keys so a packaged Agent template can
-// be saved; secrets belong in project credentials.
+// be saved; secrets belong in workspace credentials.
 func stripTokenKeysFromEnvMap(env map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range envauth.StripSecretEnvKeys(env) {
@@ -290,33 +275,33 @@ type parsedBundleAgent struct {
 	files  []AgentFile
 }
 
-func readProjectAgentsManifest(zr *zip.Reader) (projectAgentsManifest, error) {
-	var manifest projectAgentsManifest
+func readWorkspaceAgentsManifest(zr *zip.Reader) (workspaceAgentsManifest, error) {
+	var manifest workspaceAgentsManifest
 	for _, f := range zr.File {
-		if strings.TrimPrefix(filepath.ToSlash(f.Name), "./") != projectAgentsManifestName {
+		if strings.TrimPrefix(filepath.ToSlash(f.Name), "./") != workspaceAgentsManifestName {
 			continue
 		}
 		rc, err := f.Open()
 		if err != nil {
-			return manifest, fmt.Errorf("无法读取 project.json：%v", err)
+			return manifest, fmt.Errorf("无法读取 workspace.json：%v", err)
 		}
 		b, err := io.ReadAll(rc)
 		_ = rc.Close()
 		if err != nil {
-			return manifest, fmt.Errorf("无法读取 project.json：%v", err)
+			return manifest, fmt.Errorf("无法读取 workspace.json：%v", err)
 		}
 		if err := json.Unmarshal(b, &manifest); err != nil {
-			return manifest, fmt.Errorf("project.json 格式无效：%v", err)
+			return manifest, fmt.Errorf("workspace.json 格式无效：%v", err)
 		}
-		if strings.TrimSpace(manifest.Kind) != ProjectAgentsBundleKind {
-			return manifest, ErrProjectBundleInvalidKind
+		if strings.TrimSpace(manifest.Kind) != WorkspaceAgentsBundleKind {
+			return manifest, ErrWorkspaceBundleInvalidKind
 		}
-		if manifest.SchemaVersion != ProjectAgentsBundleSchemaVersion {
-			return manifest, fmt.Errorf("%w：%d", ErrProjectBundleBadSchema, manifest.SchemaVersion)
+		if manifest.SchemaVersion != WorkspaceAgentsBundleSchemaVersion {
+			return manifest, fmt.Errorf("%w：%d", ErrWorkspaceBundleBadSchema, manifest.SchemaVersion)
 		}
 		return manifest, nil
 	}
-	return manifest, ErrProjectBundleMissingManifest
+	return manifest, ErrWorkspaceBundleMissingManifest
 }
 
 func parseBundleAgents(raw []byte, names []string) (map[string]parsedBundleAgent, error) {

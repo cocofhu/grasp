@@ -27,20 +27,13 @@ type platformMCPWire struct {
 	skills    *services.AgentService
 }
 
-// agentBoundToProject is true when the Agent exists and its home project equals
-// projectID. Agents of other projects must not receive memory/context/
-// scheduler tokens for this project.
-func (w *platformMCPWire) agentBoundToProject(projectID, agent string) bool {
-	projectID = strings.TrimSpace(projectID)
+// agentExists gates platform MCP tokens on a live Agent.
+func (w *platformMCPWire) agentExists(agent string) bool {
 	agent = strings.TrimSpace(agent)
-	if projectID == "" || agent == "" || w.skills == nil {
+	if agent == "" || w.skills == nil {
 		return false
 	}
-	ag, ok := w.skills.Get(agent)
-	if !ok {
-		return false
-	}
-	return services.AgentProjectMatches(ag, projectID)
+	return w.skills.Exists(agent)
 }
 
 func (w *platformMCPWire) unregister(token string) {
@@ -72,31 +65,31 @@ func (w *platformMCPWire) clearSandboxRef(threadID string) {
 
 // registerCron mints a shared token for a cron execution. Memory writes are
 // allowed; scheduler write tools stay off. PM role MCPs are attached only when
-// the agent is the project's bound PM Leader.
-func (w *platformMCPWire) registerCron(projectID, threadID, agent string) (string, []sandbox.MCPServerSpec) {
-	if !w.agentBoundToProject(projectID, agent) {
-		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("cron platform MCP skipped: agent home project mismatch")
+// the agent is the bound PM Leader.
+func (w *platformMCPWire) registerCron(threadID, agent string) (string, []sandbox.MCPServerSpec) {
+	if !w.agentExists(agent) {
+		log.Warn().Str("agent", agent).
+			Msg("cron platform MCP skipped: agent not found")
 		return "", nil
 	}
 	tok := platformmcp.NewToken()
 	if w.memory != nil {
-		w.memory.Restore(tok, projectID, agent, threadID, "cron", true)
+		w.memory.Restore(tok, agent, threadID, "cron", true)
 	}
 	if w.context != nil {
-		w.context.Restore(tok, projectID, agent, threadID, "cron")
+		w.context.Restore(tok, agent, threadID, "cron")
 	}
 	if w.scheduler != nil {
-		w.scheduler.Restore(tok, projectID, agent, threadID, "cron", false)
+		w.scheduler.Restore(tok, agent, threadID, "cron", false)
 	}
-	specs := services.BuildAgentPlatformMCPSpecs(projectID, agent, tok)
+	specs := services.BuildAgentPlatformMCPSpecs(agent, tok)
 	if w.pmSvc != nil {
-		if binding, err := w.pmSvc.GetBinding(projectID); err == nil &&
+		if binding, err := w.pmSvc.GetBinding(); err == nil &&
 			binding.Enabled && binding.AgentConfigRef == agent {
 			if w.pm != nil {
-				w.pm.Restore(projectID, threadID, "cron", agent, tok)
+				w.pm.Restore(threadID, "cron", agent, tok)
 			}
-			specs = append(specs, services.BuildPmRoleMCPSpecs(projectID, tok, binding.EnabledMcps)...)
+			specs = append(specs, services.BuildPmRoleMCPSpecs(tok, binding.EnabledMcps)...)
 		}
 	}
 	return tok, specs
@@ -105,77 +98,77 @@ func (w *platformMCPWire) registerCron(projectID, threadID, agent string) (strin
 // registerChannel mints a shared token for an IM channel turn. Memory/scheduler
 // write gates follow caps from ChannelConfig (default off for unauthenticated
 // channel senders). Platform PM role MCP specs + session AllowedMcps come from
-// the channel's EnabledMcps (not Project.PmEnabledMcps).
-func (w *platformMCPWire) registerChannel(projectID, threadID, userID, agent string, enabledMcps []string, caps channels.SessionCaps) (string, []sandbox.MCPServerSpec) {
+// the channel's EnabledMcps (not Workspace.PmEnabledMcps).
+func (w *platformMCPWire) registerChannel(threadID, userID, agent string, enabledMcps []string, caps channels.SessionCaps) (string, []sandbox.MCPServerSpec) {
 	if w.pm == nil {
 		return "", nil
 	}
-	if !w.agentBoundToProject(projectID, agent) {
-		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("channel platform MCP skipped: agent home project mismatch")
+	if !w.agentExists(agent) {
+		log.Warn().Str("agent", agent).
+			Msg("channel platform MCP skipped: agent not found")
 		return "", nil
 	}
 	tok := platformmcp.NewToken()
-	w.pm.RestoreWithMcps(projectID, threadID, userID, agent, tok, enabledMcps)
+	w.pm.RestoreWithMcps(threadID, userID, agent, tok, enabledMcps)
 	if w.memory != nil {
-		w.memory.Restore(tok, projectID, agent, threadID, userID, caps.AllowMemoryWrite)
+		w.memory.Restore(tok, agent, threadID, userID, caps.AllowMemoryWrite)
 	}
 	if w.context != nil {
-		w.context.Restore(tok, projectID, agent, threadID, userID)
+		w.context.Restore(tok, agent, threadID, userID)
 	}
 	if w.scheduler != nil {
-		w.scheduler.Restore(tok, projectID, agent, threadID, userID, caps.AllowSchedulerWrite)
+		w.scheduler.Restore(tok, agent, threadID, userID, caps.AllowSchedulerWrite)
 	}
 	// Inject the full default PM role set so expanding Channel.EnabledMcps on a
 	// reused sandbox takes effect via session AllowedMcps without recreating
 	// the container; ServeRPC still gates by the channel list.
 	specs := append(
-		services.BuildAgentPlatformMCPSpecs(projectID, agent, tok),
-		services.BuildPmRoleMCPSpecs(projectID, tok, nil)...,
+		services.BuildAgentPlatformMCPSpecs(agent, tok),
+		services.BuildPmRoleMCPSpecs(tok, nil)...,
 	)
 	return tok, specs
 }
 
-func (w *platformMCPWire) restoreChannel(projectID, threadID, userID, agent, token string, enabledMcps []string, caps channels.SessionCaps) {
-	if !w.agentBoundToProject(projectID, agent) {
-		log.Warn().Str("project", projectID).Str("agent", agent).
-			Msg("channel platform MCP restore skipped: agent home project mismatch")
+func (w *platformMCPWire) restoreChannel(threadID, userID, agent, token string, enabledMcps []string, caps channels.SessionCaps) {
+	if !w.agentExists(agent) {
+		log.Warn().Str("agent", agent).
+			Msg("channel platform MCP restore skipped: agent not found")
 		return
 	}
 	if w.pm != nil {
 		// Re-bind AllowedMcps from the latest Channel.EnabledMcps so permission
 		// changes apply on the next reused-sandbox turn.
-		w.pm.RestoreWithMcps(projectID, threadID, userID, agent, token, enabledMcps)
+		w.pm.RestoreWithMcps(threadID, userID, agent, token, enabledMcps)
 	}
 	if w.memory != nil {
-		w.memory.Restore(token, projectID, agent, threadID, userID, caps.AllowMemoryWrite)
+		w.memory.Restore(token, agent, threadID, userID, caps.AllowMemoryWrite)
 	}
 	if w.context != nil {
-		w.context.Restore(token, projectID, agent, threadID, userID)
+		w.context.Restore(token, agent, threadID, userID)
 	}
 	if w.scheduler != nil {
-		w.scheduler.Restore(token, projectID, agent, threadID, userID, caps.AllowSchedulerWrite)
+		w.scheduler.Restore(token, agent, threadID, userID, caps.AllowSchedulerWrite)
 	}
 }
 
 // registerPMPolicy authorizes an ordinary per-workflow PM policy explicitly.
-func (w *platformMCPWire) registerPMPolicy(projectID, threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec) {
-	if !w.agentBoundToProject(projectID, agent) {
+func (w *platformMCPWire) registerPMPolicy(threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec) {
+	if !w.agentExists(agent) {
 		return "", nil
 	}
 	token := platformmcp.NewToken()
 	if w.memory != nil {
-		w.memory.Restore(token, projectID, agent, threadID, "system", true)
+		w.memory.Restore(token, agent, threadID, "system", true)
 	}
 	if w.context != nil {
-		w.context.Restore(token, projectID, agent, threadID, "system")
+		w.context.Restore(token, agent, threadID, "system")
 	}
 	if w.scheduler != nil {
-		w.scheduler.Restore(token, projectID, agent, threadID, "system", false)
+		w.scheduler.Restore(token, agent, threadID, "system", false)
 	}
 	if w.pm != nil {
-		w.pm.RestoreWithMcps(projectID, threadID, "system", agent, token, services.EffectivePmEnabledMcps(enabledMcps))
+		w.pm.RestoreWithMcps(threadID, "system", agent, token, services.EffectivePmEnabledMcps(enabledMcps))
 	}
-	specs := services.BuildAgentPlatformMCPSpecs(projectID, agent, token)
-	return token, append(specs, services.BuildPmRoleMCPSpecs(projectID, token, enabledMcps)...)
+	specs := services.BuildAgentPlatformMCPSpecs(agent, token)
+	return token, append(specs, services.BuildPmRoleMCPSpecs(token, enabledMcps)...)
 }

@@ -1,5 +1,5 @@
 // Package tokenledger writes the append-only token_usage_events ledger that
-// backs every token analytics surface (global /stats, project board, topbar).
+// backs every token analytics surface (global /stats, workspace board, topbar).
 package tokenledger
 
 import (
@@ -13,14 +13,12 @@ import (
 
 // Entry is one usage report to be recorded. Usage / ByModel are the delta for
 // this report (not a running total). Missing snapshot fields (workflow, run
-// title, project) are resolved from RunID / ThreadID at write time.
+// title) are resolved from RunID / ThreadID at write time.
 type Entry struct {
 	At           time.Time
 	Source       string
 	Phase        string
 	Status       string
-	ProjectID    string
-	ProjectName  string
 	WorkflowID   string
 	WorkflowName string
 	RunID        string
@@ -82,7 +80,6 @@ func Rows(e Entry) []models.TokenUsageEvent {
 			Source:           e.Source,
 			Phase:            e.Phase,
 			Status:           status,
-			ProjectID:        e.ProjectID,
 			WorkflowID:       e.WorkflowID,
 			WorkflowName:     e.WorkflowName,
 			RunID:            e.RunID,
@@ -140,8 +137,6 @@ func Record(db *gorm.DB, e Entry) {
 }
 
 func applyMeta(r *models.TokenUsageEvent, e Entry) {
-	r.ProjectID = e.ProjectID
-	r.ProjectName = e.ProjectName
 	r.WorkflowID = e.WorkflowID
 	r.WorkflowName = e.WorkflowName
 	r.RunTitle = e.RunTitle
@@ -161,27 +156,6 @@ func resolve(db *gorm.DB, e *Entry) {
 			if e.RunTitle == "" {
 				e.RunTitle = run.Title
 			}
-		}
-	}
-	if e.ProjectID == "" && e.WorkflowID != "" {
-		var wf models.WorkflowDef
-		if err := db.Select("id", "project_id").Where("id = ?", e.WorkflowID).
-			Limit(1).Find(&wf).Error; err == nil {
-			e.ProjectID = wf.ProjectID
-		}
-	}
-	if e.ProjectID == "" && e.ThreadID != "" {
-		var th models.ChatThread
-		if err := db.Select("id", "project_id").Where("id = ?", e.ThreadID).
-			Limit(1).Find(&th).Error; err == nil {
-			e.ProjectID = th.ProjectID
-		}
-	}
-	if e.ProjectID != "" && e.ProjectName == "" {
-		var p models.Project
-		if err := db.Select("id", "name").Where("id = ?", e.ProjectID).
-			Limit(1).Find(&p).Error; err == nil && p.ID != "" {
-			e.ProjectName = p.Name
 		}
 	}
 }

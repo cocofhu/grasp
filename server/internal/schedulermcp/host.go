@@ -20,7 +20,6 @@ import (
 // Session binds a task-scheduler token.
 type Session struct {
 	Token     string
-	ProjectID string
 	AgentName string
 	ThreadID  string
 	UserID    string
@@ -42,7 +41,7 @@ func NewHost(db *gorm.DB, pm *services.PmService) *Host {
 	return &Host{sessions: map[string]*Session{}, db: db, pm: pm}
 }
 
-// SetAuditRecorder wires project-scoped audit recording for task-scheduler tools.
+// SetAuditRecorder wires audit recording for task-scheduler tools.
 func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 	h.mu.Lock()
 	h.audit = fn
@@ -50,14 +49,14 @@ func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 }
 
 // Restore rebinds a token.
-func (h *Host) Restore(tok, projectID, agentName, threadID, userID string, writeAllowed bool) {
+func (h *Host) Restore(tok, agentName, threadID, userID string, writeAllowed bool) {
 	if strings.TrimSpace(tok) == "" {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sessions[tok] = &Session{
-		Token: tok, ProjectID: projectID, AgentName: agentName,
+		Token: tok, AgentName: agentName,
 		ThreadID: threadID, UserID: userID, WriteAllowed: writeAllowed,
 	}
 }
@@ -131,7 +130,7 @@ func (h *Host) auditToolCall(sess *Session, tool string, args map[string]any, re
 	h.mu.RLock()
 	fn := h.audit
 	h.mu.RUnlock()
-	if fn == nil || sess == nil || sess.ProjectID == "" || tool == "" {
+	if fn == nil || sess == nil || tool == "" {
 		return
 	}
 	outcome := models.AuditOutcomeOK
@@ -139,7 +138,6 @@ func (h *Host) auditToolCall(sess *Session, tool string, args map[string]any, re
 		outcome = models.AuditOutcomeFail
 	}
 	fn(services.AuditRecord{
-		ProjectID:    sess.ProjectID,
 		Actor:        services.ActorFromUsername(sess.UserID),
 		Action:       models.AuditActionMCPCall,
 		ResourceType: "mcp",
@@ -160,7 +158,7 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 	switch name {
 	case "list_jobs":
 		var jobs []models.AgentCronJob
-		if err := h.db.Where("agent_name = ? AND project_id = ?", sess.AgentName, sess.ProjectID).
+		if err := h.db.Where("agent_name = ?", sess.AgentName).
 			Order("updated_at desc").Find(&jobs).Error; err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
@@ -196,7 +194,7 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 	case "run_job_now":
 		id := platformmcp.StrArg(args, "jobId")
 		var job models.AgentCronJob
-		if err := h.db.Where("id = ? AND agent_name = ? AND project_id = ?", id, sess.AgentName, sess.ProjectID).
+		if err := h.db.Where("id = ? AND agent_name = ?", id, sess.AgentName).
 			First(&job).Error; err != nil {
 			return map[string]any{"error": "job not found"}, true
 		}
@@ -234,14 +232,13 @@ func (h *Host) createJob(sess *Session, args map[string]any) (any, bool) {
 		return map[string]any{"error": err.Error()}, true
 	}
 	title := "定时：" + name
-	th, err := h.pm.CreateCronThread(sess.ProjectID, sess.AgentName, title)
+	th, err := h.pm.CreateCronThread(sess.AgentName, title)
 	if err != nil {
 		return map[string]any{"error": err.Error()}, true
 	}
 	now := time.Now()
 	job := models.AgentCronJob{
-		ID: "cron-" + uuid.NewString()[:12], AgentName: sess.AgentName, ProjectID: sess.ProjectID,
-		ThreadID: th.ID, Name: name, Prompt: prompt, ScheduleKind: kind, ScheduleExpr: expr,
+		ID: "cron-" + uuid.NewString()[:12], AgentName: sess.AgentName, ThreadID: th.ID, Name: name, Prompt: prompt, ScheduleKind: kind, ScheduleExpr: expr,
 		Timezone: timezone, Enabled: true, DeliverToChannel: platformmcp.BoolArg(args, "deliverToChannel"),
 		NextRunAt: &next, CreatedAt: now, UpdatedAt: now,
 	}
@@ -255,7 +252,7 @@ func (h *Host) createJob(sess *Session, args map[string]any) (any, bool) {
 func (h *Host) updateJob(sess *Session, args map[string]any) (any, bool) {
 	id := platformmcp.StrArg(args, "jobId")
 	var job models.AgentCronJob
-	if err := h.db.Where("id = ? AND agent_name = ? AND project_id = ?", id, sess.AgentName, sess.ProjectID).
+	if err := h.db.Where("id = ? AND agent_name = ?", id, sess.AgentName).
 		First(&job).Error; err != nil {
 		return map[string]any{"error": "job not found"}, true
 	}
@@ -297,7 +294,7 @@ func (h *Host) updateJob(sess *Session, args map[string]any) (any, bool) {
 func (h *Host) deleteJob(sess *Session, args map[string]any) (any, bool) {
 	id := platformmcp.StrArg(args, "jobId")
 	var job models.AgentCronJob
-	if err := h.db.Where("id = ? AND agent_name = ? AND project_id = ?", id, sess.AgentName, sess.ProjectID).
+	if err := h.db.Where("id = ? AND agent_name = ?", id, sess.AgentName).
 		First(&job).Error; err != nil {
 		return map[string]any{"error": "job not found"}, true
 	}
@@ -312,7 +309,7 @@ func (h *Host) deleteJob(sess *Session, args map[string]any) (any, bool) {
 func (h *Host) jobOwned(sess *Session, id string) bool {
 	var n int64
 	h.db.Model(&models.AgentCronJob{}).
-		Where("id = ? AND agent_name = ? AND project_id = ?", id, sess.AgentName, sess.ProjectID).
+		Where("id = ? AND agent_name = ?", id, sess.AgentName).
 		Count(&n)
 	return n > 0
 }

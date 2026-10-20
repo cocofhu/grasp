@@ -14,7 +14,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.Project) {
+func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.Workspace) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:pmmcp_more_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -23,14 +23,14 @@ func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p, err := legacyProjectFixture(db, "MoreMCP")
+	p, err := workspaceFixture(db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "agent-a"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{MCPProgress, MCPWorkflowRead, MCPWorkflowWrite}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{MCPProgress, MCPWorkflowRead, MCPWorkflowWrite}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	wf := services.NewWorkflowService(db)
@@ -40,55 +40,56 @@ func setupPmMCPHost(t *testing.T) (*gorm.DB, *services.PmService, *Host, models.
 }
 
 func TestPmMCPSessionHelpers(t *testing.T) {
-	_, _, h, p := setupPmMCPHost(t)
+	_, _, h, _ := setupPmMCPHost(t)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-1", "alice", "agent-a", tok)
-	h.Restore(p.ID, "thr-1", "alice", "agent-a", tok)
-	got, ok := h.TokenForThread(p.ID, "thr-1")
+	h.Restore("thr-1", "alice", "agent-a", tok)
+	h.Restore("thr-1", "alice", "agent-a", tok)
+	got, ok := h.TokenForThread("thr-1")
 	if !ok || got != tok {
 		t.Fatalf("TokenForThread=%q ok=%v", got, ok)
 	}
 	h.SetAttached(tok, &models.AttachedContext{Kind: "run", ID: "r1"})
-	sess, ok := h.SessionFor(p.ID, tok)
+	sess, ok := h.SessionFor(tok)
 	if !ok || sess.Attached == nil || sess.Attached.ID != "r1" {
 		t.Fatalf("SessionFor attached=%v", sess)
 	}
-	h.UnregisterThread(p.ID, "thr-1")
-	if _, ok := h.TokenForThread(p.ID, "thr-1"); ok {
+	h.UnregisterThread("thr-1")
+	if _, ok := h.TokenForThread("thr-1"); ok {
 		t.Fatal("thread should be unregistered")
 	}
-	h.Restore(p.ID, "thr-1", "alice", "agent-a", "")
+	h.Restore("thr-1", "alice", "agent-a", "")
 }
 
 func TestPmMCPServeRPCBranches(t *testing.T) {
-	db, pm, h, p := setupPmMCPHost(t)
+	_, pm, h, _ := setupPmMCPHost(t)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-rpc", "alice", "agent-a", tok)
-	st, _ := h.ServeRPC(p.ID, MCPProgress, "bad", []byte(`{}`))
+	h.Restore("thr-rpc", "alice", "agent-a", tok)
+	st, _ := h.ServeRPC(MCPProgress, "bad", []byte(`{}`))
 	if st != 401 {
 		t.Fatalf("unauth: %d", st)
 	}
-	st, body := h.ServeRPC(p.ID, "unknown-mcp", tok, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	st, body := h.ServeRPC("unknown-mcp", tok, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if st != 404 || !strings.Contains(string(body), "unknown mcp") {
 		t.Fatalf("unknown mcp: %d %s", st, body)
 	}
 
-	disabled, err := legacyProjectFixture(db, "NoMCP")
-	if err != nil {
-		t.Fatal(err)
-	}
 	empty := []string{}
-	if _, err := pm.UpdateBinding(disabled.ID, nil, nil, empty, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(nil, nil, empty, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	tok2 := platformmcp.NewToken()
-	h.Restore(disabled.ID, "t", "u", "agent-a", tok2)
-	st, body = h.ServeRPC(disabled.ID, MCPProgress, tok2, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
+	h.Restore("t", "u", "agent-a", tok2)
+	st, body = h.ServeRPC(MCPProgress, tok2, []byte(`{"jsonrpc":"2.0","id":1,"method":"ping"}`))
 	if st != 404 || !strings.Contains(string(body), "disabled") {
 		t.Fatalf("disabled mcp: %d %s", st, body)
 	}
 
-	st, _ = h.ServeRPC(p.ID, MCPProgress, tok, []byte(`{`))
+	en := true
+	agent := "agent-a"
+	if _, err := pm.UpdateBinding(&en, &agent, []string{MCPProgress, MCPWorkflowRead, MCPWorkflowWrite}, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	st, _ = h.ServeRPC(MCPProgress, tok, []byte(`{`))
 	if st != 400 {
 		t.Fatalf("parse error: %d", st)
 	}
@@ -97,42 +98,42 @@ func TestPmMCPServeRPCBranches(t *testing.T) {
 		"jsonrpc": "2.0", "id": 1, "method": "initialize",
 		"params": map[string]any{"protocolVersion": "2025-01-01"},
 	})
-	st, resp := h.ServeRPC(p.ID, MCPProgress, tok, initBody)
+	st, resp := h.ServeRPC(MCPProgress, tok, initBody)
 	if st != 200 || !strings.Contains(string(resp), "2025-01-01") {
 		t.Fatalf("initialize: %d %s", st, resp)
 	}
 
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`))
+	st, resp = h.ServeRPC(MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":2,"method":"ping"}`))
 	if st != 200 {
 		t.Fatalf("ping: %d %s", st, resp)
 	}
 
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
+	st, resp = h.ServeRPC(MCPProgress, tok, []byte(`{"jsonrpc":"2.0","method":"notifications/initialized"}`))
 	if st != 202 || len(resp) != 0 {
 		t.Fatalf("notification: %d %s", st, resp)
 	}
 
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":3,"method":"nope"}`))
+	st, resp = h.ServeRPC(MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":3,"method":"nope"}`))
 	if st != 200 || !strings.Contains(string(resp), "method not found") {
 		t.Fatalf("unknown method: %d %s", st, resp)
 	}
 
-	st, resp = h.ServeRPC(p.ID, MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":"bad"}`))
+	st, resp = h.ServeRPC(MCPProgress, tok, []byte(`{"jsonrpc":"2.0","id":4,"method":"tools/call","params":"bad"}`))
 	if st != 200 || !strings.Contains(string(resp), "invalid tools/call params") {
 		t.Fatalf("bad tools/call params: %d %s", st, resp)
 	}
 }
 
 func TestPmMCPProgressTools(t *testing.T) {
-	_, _, h, p := setupPmMCPHost(t)
+	_, _, h, _ := setupPmMCPHost(t)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-tools", "alice", "agent-a", tok)
+	h.Restore("thr-tools", "alice", "agent-a", tok)
 	call := func(name string, args map[string]any) (int, []byte) {
 		b, _ := json.Marshal(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": name, "arguments": args},
 		})
-		return h.ServeRPC(p.ID, MCPProgress, tok, b)
+		return h.ServeRPC(MCPProgress, tok, b)
 	}
 	for _, tool := range []string{
 		"pm_get_progress", "pm_list_blockers", "pm_get_plan_summary",
@@ -150,14 +151,14 @@ func TestPmMCPProgressTools(t *testing.T) {
 }
 
 func TestPmMCPWorkflowList(t *testing.T) {
-	_, _, h, p := setupPmMCPHost(t)
+	_, _, h, _ := setupPmMCPHost(t)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-wf", "alice", "agent-a", tok)
+	h.Restore("thr-wf", "alice", "agent-a", tok)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "pm_list_workflows", "arguments": map[string]any{}},
 	})
-	st, resp := h.ServeRPC(p.ID, MCPWorkflowRead, tok, body)
+	st, resp := h.ServeRPC(MCPWorkflowRead, tok, body)
 	if st != 200 || strings.Contains(string(resp), `"isError":true`) {
 		t.Fatalf("list workflows: %d %s", st, resp)
 	}
@@ -208,11 +209,11 @@ func (f *fakePmEngine) Cancel(runID string) error {
 }
 
 func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
-	db, pm, _, p := setupPmMCPHost(t)
+	db, pm, _, _ := setupPmMCPHost(t)
 	wf := services.NewWorkflowService(db)
 	g := models.Graph{Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}}}
 	wfDef := &models.WorkflowDef{
-		ID: "wf-pm-mcp", ProjectID: p.ID, Name: "PM MCP WF", Graph: g,
+		ID: "wf-pm-mcp", Name: "PM MCP WF", Graph: g,
 	}
 	if err := wf.Save(wfDef); err != nil {
 		t.Fatal(err)
@@ -221,13 +222,13 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 	rs := services.NewRunService(db)
 	h := NewHost(pm, services.NewPmProgress(pm, rs, nil), wf, rs, services.NewArtifactService(db), eng)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-wf2", "alice", "agent-a", tok)
+	h.Restore("thr-wf2", "alice", "agent-a", tok)
 	call := func(mcpID, name string, args map[string]any) (int, []byte) {
 		b, _ := json.Marshal(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": name, "arguments": args},
 		})
-		return h.ServeRPC(p.ID, mcpID, tok, b)
+		return h.ServeRPC(mcpID, tok, b)
 	}
 	okCall := func(mcpID, name string, args map[string]any) []byte {
 		t.Helper()
@@ -304,7 +305,7 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 		t.Fatalf("illegal trigger must not call engine (calls %d → %d)", beforeIllegal, eng.startCalls)
 	}
 
-	// --- resume_gate / cancel_run go through a real run so project check passes ---
+	// --- resume_gate / cancel_run go through a real run ---
 	if err := rs.DB().Create(&models.Run{ID: "run-1", WorkflowID: wfDef.ID, Status: "waiting_human"}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -320,30 +321,19 @@ func TestPmMCPWorkflowToolsWithEngine(t *testing.T) {
 		t.Fatalf("cancel not forwarded: %q", eng.cancelled)
 	}
 
-	// --- not found + cross-project rejection ---
+	// --- not found ---
 	if st, resp := call(MCPWorkflowRead, "pm_get_workflow", map[string]any{"workflowId": "missing"}); st != 200 || !strings.Contains(string(resp), `"isError":true`) {
 		t.Fatalf("missing wf: %d %s", st, resp)
-	}
-	otherProj, err := legacyProjectFixture(db, "OtherProj")
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherWF := &models.WorkflowDef{ID: "wf-other", ProjectID: otherProj.ID, Name: "Other", Graph: g}
-	if err := wf.Save(otherWF); err != nil {
-		t.Fatal(err)
-	}
-	if st, resp := call(MCPWorkflowWrite, "pm_delete_workflow", map[string]any{"workflowId": otherWF.ID}); st != 200 || !strings.Contains(string(resp), `"isError":true`) {
-		t.Fatalf("cross-project delete should be rejected: %d %s", st, resp)
 	}
 }
 
 func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
-	db, pm, _, p := setupPmMCPHost(t)
+	db, pm, _, _ := setupPmMCPHost(t)
 	wf := services.NewWorkflowService(db)
 	rs := services.NewRunService(db)
 	arts := services.NewArtifactService(db)
 	wfDef := &models.WorkflowDef{
-		ID: "wf-pm-art", ProjectID: p.ID, Name: "PM Artifact WF",
+		ID: "wf-pm-art", Name: "PM Artifact WF",
 		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "agent"}, {ID: "out", Type: "output"}}},
 	}
 	if err := wf.Save(wfDef); err != nil {
@@ -361,13 +351,13 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 	eng := &fakePmEngine{waiting: 2}
 	h := NewHost(pm, services.NewPmProgress(pm, rs, arts), wf, rs, arts, eng)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-react", "alice", "agent-a", tok)
+	h.Restore("thr-react", "alice", "agent-a", tok)
 	call := func(mcpID, name string, args map[string]any) (int, []byte) {
 		b, _ := json.Marshal(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": name, "arguments": args},
 		})
-		return h.ServeRPC(p.ID, mcpID, tok, b)
+		return h.ServeRPC(mcpID, tok, b)
 	}
 	readToolJSON := func(resp []byte) string {
 		t.Helper()
@@ -436,29 +426,6 @@ func TestPmMCPGetArtifactAndReactReply(t *testing.T) {
 		t.Fatalf("oversized limit should clamp to %d: %s", pmGetArtifactMaxLimit, artifactJSON)
 	}
 
-	otherProj, err := legacyProjectFixture(db, "OtherProjArtifact")
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherWF := &models.WorkflowDef{
-		ID: "wf-other-art", ProjectID: otherProj.ID, Name: "Other Artifact WF",
-		Graph: models.Graph{Nodes: []models.Node{{ID: "visual", Type: "agent"}}},
-	}
-	if err := wf.Save(otherWF); err != nil {
-		t.Fatal(err)
-	}
-	if err := rs.DB().Create(&models.Run{ID: "run-other", WorkflowID: otherWF.ID, Status: "waiting_human"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	otherArtifactID, err := arts.Save("run-other", "visual", "page.html", "html", "secret")
-	if err != nil {
-		t.Fatal(err)
-	}
-	st, resp = call(MCPWorkflowRead, "pm_get_artifact", map[string]any{"artifactId": otherArtifactID})
-	if st != 200 || !strings.Contains(string(resp), `"isError":true`) || !strings.Contains(string(resp), "artifact not found") {
-		t.Fatalf("cross-project artifact should be rejected: %d %s", st, resp)
-	}
-
 	st, resp = call(MCPWorkflowWrite, "pm_react_reply", map[string]any{
 		"runId":  "run-own",
 		"nodeId": "visual",
@@ -513,12 +480,12 @@ func TestParseReactAnnotations(t *testing.T) {
 }
 
 func TestPmMCPStartCancelWritesRunAudit(t *testing.T) {
-	db, pm, _, p := setupPmMCPHost(t)
-	auditSvc := services.NewProjectAuditService(db)
+	db, pm, _, _ := setupPmMCPHost(t)
+	auditSvc := services.NewAuditService(db)
 	wf := services.NewWorkflowService(db)
 	g := models.Graph{Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}}}
 	wfDef := &models.WorkflowDef{
-		ID: "wf-pm-audit", ProjectID: p.ID, Name: "PM Audit WF", Graph: g,
+		ID: "wf-pm-audit", Name: "PM Audit WF", Graph: g,
 	}
 	if err := wf.Save(wfDef); err != nil {
 		t.Fatal(err)
@@ -528,14 +495,14 @@ func TestPmMCPStartCancelWritesRunAudit(t *testing.T) {
 	h := NewHost(pm, services.NewPmProgress(pm, rs, nil), wf, rs, services.NewArtifactService(db), eng)
 	h.SetAuditRecorder(auditSvc.Record)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-audit", "alice", "agent-a", tok)
+	h.Restore("thr-audit", "alice", "agent-a", tok)
 	call := func(name string, args map[string]any) {
 		t.Helper()
 		b, _ := json.Marshal(map[string]any{
 			"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 			"params": map[string]any{"name": name, "arguments": args},
 		})
-		st, resp := h.ServeRPC(p.ID, MCPWorkflowWrite, tok, b)
+		st, resp := h.ServeRPC(MCPWorkflowWrite, tok, b)
 		if st != 200 || strings.Contains(string(resp), `"isError":true`) {
 			t.Fatalf("%s: %d %s", name, st, resp)
 		}
@@ -547,7 +514,7 @@ func TestPmMCPStartCancelWritesRunAudit(t *testing.T) {
 	}
 	call("pm_cancel_run", map[string]any{"runId": "run-cancel-audit"})
 
-	items, total, err := auditSvc.ListPage(services.AuditListFilter{ProjectID: p.ID, Page: 1, PageSize: 50})
+	items, total, err := auditSvc.ListPage(services.AuditListFilter{Page: 1, PageSize: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +550,7 @@ func TestPmMCPStartCancelWritesRunAudit(t *testing.T) {
 	}
 }
 
-func legacyProjectFixture(db *gorm.DB, name string) (models.Project, error) {
-	p := models.Project{ID: "fixture-" + name, Name: name}
-	return p, db.Create(&p).Error
+func workspaceFixture(db *gorm.DB) (models.Workspace, error) {
+	w := models.Workspace{ID: models.WorkspaceID, Name: models.DefaultWorkspaceName}
+	return w, db.FirstOrCreate(&w, "id = ?", w.ID).Error
 }

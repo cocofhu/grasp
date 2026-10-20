@@ -41,14 +41,14 @@ func TestWorkflowServiceCRUDPublishRestore(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	if got := s.List(""); len(got) != 0 {
+	if got := s.List(); len(got) != 0 {
 		t.Fatalf("expected empty list, got %d", len(got))
 	}
 	if _, ok := s.Get("nope"); ok {
 		t.Fatal("Get on missing should be false")
 	}
 
-	wf := &models.WorkflowDef{ID: "wf1", ProjectID: models.DefaultProjectID, Name: "Demo", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf1", Name: "Demo", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -70,7 +70,7 @@ func TestWorkflowServiceCRUDPublishRestore(t *testing.T) {
 	if !ok || got.Name != "Demo v2" {
 		t.Fatalf("get after update: %+v ok=%v", got, ok)
 	}
-	if len(s.List("")) != 1 {
+	if len(s.List()) != 1 {
 		t.Fatal("list should have one")
 	}
 
@@ -122,7 +122,7 @@ func TestWorkflowPublishInvalidGraph(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 	// A graph missing an output node fails Validate.
-	bad := &models.WorkflowDef{ID: "bad", ProjectID: models.DefaultProjectID, Name: "Bad", Graph: models.Graph{
+	bad := &models.WorkflowDef{ID: "bad", Name: "Bad", Graph: models.Graph{
 		Nodes: []models.Node{{ID: "in", Type: "input"}},
 	}}
 	if err := s.Save(bad); err != nil {
@@ -137,24 +137,24 @@ func TestWorkflowNameValidation(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf1 := &models.WorkflowDef{ID: "wf1", ProjectID: models.DefaultProjectID, Name: "Demo", Graph: validGraph()}
+	wf1 := &models.WorkflowDef{ID: "wf1", Name: "Demo", Graph: validGraph()}
 	if err := s.Save(wf1); err != nil {
 		t.Fatal(err)
 	}
 
 	for _, name := range []string{"", "   ", "\t"} {
-		err := s.Save(&models.WorkflowDef{ID: "wf-new", ProjectID: models.DefaultProjectID, Name: name, Graph: validGraph()})
+		err := s.Save(&models.WorkflowDef{ID: "wf-new", Name: name, Graph: validGraph()})
 		if !errors.Is(err, ErrEmptyWorkflowName) {
 			t.Fatalf("name %q: want ErrEmptyWorkflowName, got %v", name, err)
 		}
 	}
 
-	err := s.Save(&models.WorkflowDef{ID: "wf2", ProjectID: models.DefaultProjectID, Name: "Demo", Graph: validGraph()})
+	err := s.Save(&models.WorkflowDef{ID: "wf2", Name: "Demo", Graph: validGraph()})
 	if !errors.Is(err, ErrWorkflowNameExists) {
 		t.Fatalf("duplicate: want ErrWorkflowNameExists, got %v", err)
 	}
 
-	wfDemo := &models.WorkflowDef{ID: "wf-demo", ProjectID: models.DefaultProjectID, Name: "demo", Graph: validGraph()}
+	wfDemo := &models.WorkflowDef{ID: "wf-demo", Name: "demo", Graph: validGraph()}
 	if err := s.Save(wfDemo); err != nil {
 		t.Fatalf("case variant: %v", err)
 	}
@@ -167,15 +167,6 @@ func TestWorkflowNameValidation(t *testing.T) {
 	wf1.Name = "demo"
 	if err := s.Save(wf1); !errors.Is(err, ErrWorkflowNameExists) {
 		t.Fatalf("rename conflict: want ErrWorkflowNameExists, got %v", err)
-	}
-}
-
-func TestWorkflowSaveRequiresProjectID(t *testing.T) {
-	db := newTestDB(t)
-	s := NewWorkflowService(db)
-	err := s.Save(&models.WorkflowDef{ID: "wf-no-proj", Name: "X", Graph: validGraph()})
-	if !errors.Is(err, ErrWorkflowProjectRequired) {
-		t.Fatalf("want ErrWorkflowProjectRequired, got %v", err)
 	}
 }
 
@@ -203,7 +194,7 @@ func TestWorkflowCopy(t *testing.T) {
 	s := NewWorkflowService(db)
 
 	src := &models.WorkflowDef{
-		ID: "wf-src", ProjectID: models.DefaultProjectID, Name: "工作流 A", Description: "desc", NeedsRepo: true,
+		ID: "wf-src", Name: "工作流 A", Description: "desc", NeedsRepo: true,
 		Graph: validGraph(),
 	}
 	if err := s.Save(src); err != nil {
@@ -267,7 +258,7 @@ func TestWorkflowCopy(t *testing.T) {
 func TestWorkflowDeleteCascades(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
-	wf := &models.WorkflowDef{ID: "wf", ProjectID: models.DefaultProjectID, Name: "W", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf", Name: "W", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +336,7 @@ func TestRunDeleteCascadesAndKeepsWorkflow(t *testing.T) {
 	runSvc := NewRunService(db)
 	keySvc := NewAPIKeyService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-del-run", ProjectID: models.DefaultProjectID, Name: "KeepMe", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-del-run", Name: "KeepMe", Graph: validGraph()}
 	if err := wfSvc.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +533,7 @@ func TestRunServiceListSortWhitelist(t *testing.T) {
 	// Default / empty args: same hybrid-time DESC as TestRunServiceListMixedSort.
 	defaultWant := []string{"run-queued", "run-low", "run-normal", "run-high"}
 	for _, args := range [][]string{nil, {"", ""}, {"duration", "desc"}, {"priority", "up"}, {"started_at", ""}, {"", "desc"}} {
-		got := s.List(nil, "", "", args...)
+		got := s.List(nil, "", args...)
 		if idsOf(got) == nil {
 			t.Fatalf("args %#v: empty result", args)
 		}
@@ -553,7 +544,7 @@ func TestRunServiceListSortWhitelist(t *testing.T) {
 		}
 	}
 
-	prioDesc := s.List(nil, "", "", "priority", "desc")
+	prioDesc := s.List(nil, "", "priority", "desc")
 	// Same priority: id DESC → run-queued before run-normal.
 	wantPrioDesc := []string{"run-high", "run-queued", "run-normal", "run-low"}
 	for i, id := range wantPrioDesc {
@@ -562,7 +553,7 @@ func TestRunServiceListSortWhitelist(t *testing.T) {
 		}
 	}
 
-	prioAsc := s.List(nil, "", "", "priority", "asc")
+	prioAsc := s.List(nil, "", "priority", "asc")
 	wantPrioAsc := []string{"run-low", "run-queued", "run-normal", "run-high"}
 	for i, id := range wantPrioAsc {
 		if prioAsc[i].ID != id {
@@ -571,7 +562,7 @@ func TestRunServiceListSortWhitelist(t *testing.T) {
 	}
 
 	// started_at ASC: hybrid key ascending (oldest first).
-	startedAsc := s.List(nil, "", "", "started_at", "asc")
+	startedAsc := s.List(nil, "", "started_at", "asc")
 	wantStartedAsc := []string{"run-high", "run-normal", "run-low", "run-queued"}
 	for i, id := range wantStartedAsc {
 		if startedAsc[i].ID != id {
@@ -579,7 +570,7 @@ func TestRunServiceListSortWhitelist(t *testing.T) {
 		}
 	}
 
-	startedDesc := s.List(nil, "", "", "started_at", "desc")
+	startedDesc := s.List(nil, "", "started_at", "desc")
 	for i, id := range defaultWant {
 		if startedDesc[i].ID != id {
 			t.Fatalf("started_at desc index %d: got %s, want %s (full: %v)", i, startedDesc[i].ID, id, idsOf(startedDesc))
@@ -602,9 +593,9 @@ func TestRunServiceListPageSortGlobalOrder(t *testing.T) {
 		})
 	}
 
-	page1, total, _ := s.ListPage(nil, "", "", 1, 2, "priority", "desc")
-	page2, _, _ := s.ListPage(nil, "", "", 2, 2, "priority", "desc")
-	page3, _, _ := s.ListPage(nil, "", "", 3, 2, "priority", "desc")
+	page1, total, _ := s.ListPage(nil, "", 1, 2, "priority", "desc")
+	page2, _, _ := s.ListPage(nil, "", 2, 2, "priority", "desc")
+	page3, _, _ := s.ListPage(nil, "", 3, 2, "priority", "desc")
 	if total != 6 {
 		t.Fatalf("total=%d, want 6", total)
 	}
@@ -695,7 +686,7 @@ func idsOf(runs []models.Run) []string {
 
 func TestArtifactService(t *testing.T) {
 	db := newTestDB(t)
-	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "WF"})
+	db.Create(&models.WorkflowDef{ID: "wf", Name: "WF"})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf", WorkflowName: "WF"})
 	s := NewArtifactService(db)
 
@@ -731,7 +722,7 @@ func TestArtifactService(t *testing.T) {
 			t.Fatalf("ByRun meta incomplete: %+v", a)
 		}
 	}
-	all, total := s.AllPage(ArtifactFilter{ProjectID: "p1"}, 1, 10)
+	all, total := s.AllPage(ArtifactFilter{}, 1, 10)
 	if total != 2 || len(all) != 2 {
 		t.Fatal("all")
 	}
@@ -758,7 +749,7 @@ func TestArtifactService(t *testing.T) {
 func TestArtifactServiceDeleteByID(t *testing.T) {
 	db := newTestDB(t)
 	s := NewArtifactService(db)
-	db.Create(&models.WorkflowDef{ID: "wf", ProjectID: "p1", Name: "WF"})
+	db.Create(&models.WorkflowDef{ID: "wf", Name: "WF"})
 
 	if err := s.DeleteByID("ghost"); !errors.Is(err, ErrArtifactNotFound) {
 		t.Fatalf("missing id: %v", err)
@@ -821,14 +812,14 @@ func TestArtifactServiceDeleteByID(t *testing.T) {
 
 func TestDashboardService(t *testing.T) {
 	db := newTestDB(t)
-	projects := NewProjectService(db)
-	s := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	s := NewDashboardService(db, workspace)
 	db.Create(&models.Run{ID: "a", Status: "running"})
 	db.Create(&models.Run{ID: "b", Status: "waiting_human"})
 	db.Create(&models.Run{ID: "c", Status: "failed"})
 	db.Create(&models.Run{ID: "d", Status: "completed"})
 	db.Create(&models.Run{ID: "e", Status: "completed"})
-	db.Create(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf"})
+	db.Create(&models.WorkflowDef{ID: "wf"})
 	db.Create(&models.Artifact{ID: "art", RunID: "a", Name: "n"})
 
 	st := s.Compute()
@@ -838,7 +829,7 @@ func TestDashboardService(t *testing.T) {
 	if st.Workflows != 1 || st.Artifacts != 1 {
 		t.Fatalf("stats counts: %+v", st)
 	}
-	// No project Usage → Token fields stay null (not 0).
+	// No workspace usage → Token fields stay null (not 0).
 	if st.TotalTokens != nil || st.WorkflowTokens != nil || st.PMTokens != nil {
 		t.Fatalf("expected null tokens without usage, got total=%v wf=%v pm=%v",
 			st.TotalTokens, st.WorkflowTokens, st.PMTokens)

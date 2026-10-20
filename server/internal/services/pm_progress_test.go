@@ -12,13 +12,13 @@ import (
 func setupPmProgressFixtures(t *testing.T) (*PmProgress, *gorm.DB, string, string) {
 	t.Helper()
 	db := setupPmDB(t)
-	ps := NewProjectService(db)
+	ps := NewWorkspaceService(db)
 	p, err := ps.CreateFixture("ProgProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wfSvc := NewWorkflowService(db)
-	wf := &models.WorkflowDef{ID: "wf-prog", ProjectID: p.ID, Name: "Pipeline", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-prog", Name: "Pipeline", Graph: validGraph()}
 	if err := wfSvc.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -43,20 +43,16 @@ func setupPmProgressFixtures(t *testing.T) (*PmProgress, *gorm.DB, string, strin
 	return NewPmProgress(pm, runs, arts), db, p.ID, wf.ID
 }
 
-func TestPmProgressOverallEmptyAndUnavailable(t *testing.T) {
-	p, _, pid, _ := setupPmProgressFixtures(t)
-	if got := p.OverallProgress("no-project"); got["empty"] != true {
-		t.Fatalf("unknown project: %+v", got)
-	}
+func TestPmProgressOverallUnavailable(t *testing.T) {
 	nilRuns := NewPmProgress(nil, nil, nil)
-	if got := nilRuns.OverallProgress(pid); got["empty"] != true {
+	if got := nilRuns.OverallProgress(); got["empty"] != true {
 		t.Fatalf("nil runs: %+v", got)
 	}
 }
 
 func TestPmProgressOverallProgress(t *testing.T) {
-	p, _, pid, _ := setupPmProgressFixtures(t)
-	got := p.OverallProgress(pid)
+	p, _, _, _ := setupPmProgressFixtures(t)
+	got := p.OverallProgress()
 	if got["empty"] != false || got["totalRuns"] != 3 {
 		t.Fatalf("overall: %+v", got)
 	}
@@ -75,9 +71,9 @@ func TestPmProgressOverallProgress(t *testing.T) {
 }
 
 func TestPmProgressListBlockers(t *testing.T) {
-	p, db, pid, wfID := setupPmProgressFixtures(t)
+	p, db, _, wfID := setupPmProgressFixtures(t)
 	db.Create(&models.Gate{RunID: "run-b", NodeID: "gate-1", WorkflowID: wfID, Resolved: false, RequestedAt: time.Now()})
-	got := p.ListBlockers(pid)
+	got := p.ListBlockers()
 	if got["empty"] != false {
 		t.Fatalf("blockers empty: %+v", got)
 	}
@@ -85,9 +81,8 @@ func TestPmProgressListBlockers(t *testing.T) {
 	if !ok || len(blockers) < 1 {
 		t.Fatalf("blockers: %+v", got)
 	}
-	// Empty project with no waiting runs.
-	other, _ := NewProjectService(db).CreateFixture("Empty", "", nil)
-	got2 := p.ListBlockers(other.ID)
+	db.Model(&models.Run{}).Where("status = ?", "waiting_human").Update("status", "completed")
+	got2 := p.ListBlockers()
 	if got2["empty"] != true {
 		t.Fatalf("no blockers: %+v", got2)
 	}
@@ -95,14 +90,14 @@ func TestPmProgressListBlockers(t *testing.T) {
 }
 
 func TestPmProgressPlanSummary(t *testing.T) {
-	p, _, pid, _ := setupPmProgressFixtures(t)
-	if got := p.PlanSummary(pid, ""); got["empty"] != true {
+	p, _, _, _ := setupPmProgressFixtures(t)
+	if got := p.PlanSummary(""); got["empty"] != true {
 		t.Fatalf("missing runId: %+v", got)
 	}
-	if got := p.PlanSummary(pid, "ghost-run"); got["empty"] != true {
+	if got := p.PlanSummary("ghost-run"); got["empty"] != true {
 		t.Fatalf("bad run: %+v", got)
 	}
-	got := p.PlanSummary(pid, "run-a")
+	got := p.PlanSummary("run-a")
 	if got["empty"] != false || got["runId"] != "run-a" {
 		t.Fatalf("plan: %+v", got)
 	}
@@ -110,42 +105,42 @@ func TestPmProgressPlanSummary(t *testing.T) {
 	if !ok || counts["done"] != 1 || counts["pending"] != 1 {
 		t.Fatalf("statusCounts: %+v", counts)
 	}
-	if got := p.PlanSummary(pid, "run-b"); got["empty"] != true {
+	if got := p.PlanSummary("run-b"); got["empty"] != true {
 		t.Fatalf("no plan.json: %+v", got)
 	}
 }
 
 func TestPmProgressPlanSummaryInvalidJSON(t *testing.T) {
-	p, db, pid, _ := setupPmProgressFixtures(t)
+	p, db, _, _ := setupPmProgressFixtures(t)
 	arts := NewArtifactService(db)
 	arts.Save("run-f", "", "plan.json", "json", "not-json{{{")
-	got := p.PlanSummary(pid, "run-f")
+	got := p.PlanSummary("run-f")
 	if got["empty"] != false || got["rawPreview"] == nil {
 		t.Fatalf("invalid json preview: %+v", got)
 	}
 }
 
 func TestPmProgressArtifactSummary(t *testing.T) {
-	p, _, pid, _ := setupPmProgressFixtures(t)
-	got := p.ArtifactSummary(pid, "run-a", 5)
+	p, _, _, _ := setupPmProgressFixtures(t)
+	got := p.ArtifactSummary("run-a", 5)
 	if got["empty"] != false {
 		t.Fatalf("artifacts: %+v", got)
 	}
-	if got := p.ArtifactSummary(pid, "", 1); got["empty"] != false {
-		t.Fatalf("project page: %+v", got)
+	if got := p.ArtifactSummary("", 1); got["empty"] != false {
+		t.Fatalf("workspace page: %+v", got)
 	}
-	if got := p.ArtifactSummary(pid, "ghost", 5); got["empty"] != true {
+	if got := p.ArtifactSummary("ghost", 5); got["empty"] != true {
 		t.Fatalf("bad run artifacts: %+v", got)
 	}
 	nilArts := NewPmProgress(nil, NewRunService(setupPmDB(t)), nil)
-	if got := nilArts.ArtifactSummary(pid, "run-a", 5); got["empty"] != true {
+	if got := nilArts.ArtifactSummary("run-a", 5); got["empty"] != true {
 		t.Fatalf("nil arts: %+v", got)
 	}
 }
 
 func TestPmProgressRiskTrends(t *testing.T) {
-	p, db, pid, _ := setupPmProgressFixtures(t)
-	got := p.RiskTrends(pid)
+	p, db, _, _ := setupPmProgressFixtures(t)
+	got := p.RiskTrends()
 	if got["empty"] != false || got["failed"] != 1 || got["waitingHuman"] != 1 {
 		t.Fatalf("risk: %+v", got)
 	}
@@ -153,18 +148,18 @@ func TestPmProgressRiskTrends(t *testing.T) {
 	if !ok || len(signals) == 0 {
 		t.Fatalf("signals: %+v", signals)
 	}
-	other, _ := NewProjectService(db).CreateFixture("RiskEmpty", "", nil)
-	if got := p.RiskTrends(other.ID); got["empty"] != true {
+	db.Where("1 = 1").Delete(&models.Run{})
+	if got := p.RiskTrends(); got["empty"] != true {
 		t.Fatalf("empty risk: %+v", got)
 	}
 }
 
 func TestPmProgressCompareRuns(t *testing.T) {
-	p, _, pid, wfID := setupPmProgressFixtures(t)
-	if got := p.CompareRuns(pid, "", 3); got["empty"] != true {
+	p, _, _, wfID := setupPmProgressFixtures(t)
+	if got := p.CompareRuns("", 3); got["empty"] != true {
 		t.Fatalf("missing wf: %+v", got)
 	}
-	got := p.CompareRuns(pid, wfID, 2)
+	got := p.CompareRuns(wfID, 2)
 	if got["empty"] != false {
 		t.Fatalf("compare: %+v", got)
 	}
@@ -176,7 +171,7 @@ func TestPmProgressCompareRuns(t *testing.T) {
 	if !ok || len(diffs) == 0 {
 		t.Fatalf("diffs: %+v", diffs)
 	}
-	if got := p.CompareRuns(pid, "wf-missing", 3); got["empty"] != true {
+	if got := p.CompareRuns("wf-missing", 3); got["empty"] != true {
 		t.Fatalf("missing wf runs: %+v", got)
 	}
 }
@@ -204,28 +199,28 @@ func TestPmProgressHelpers(t *testing.T) {
 
 func TestPmProgressNilServices(t *testing.T) {
 	nilP := NewPmProgress(nil, nil, nil)
-	if got := nilP.ListBlockers("x"); got["empty"] != true {
+	if got := nilP.ListBlockers(); got["empty"] != true {
 		t.Fatalf("nil list blockers: %+v", got)
 	}
-	if got := nilP.PlanSummary("p", "r"); got["empty"] != true {
+	if got := nilP.PlanSummary("r"); got["empty"] != true {
 		t.Fatalf("nil arts plan: %+v", got)
 	}
-	if got := nilP.ArtifactSummary("p", "", 10); got["empty"] != true {
+	if got := nilP.ArtifactSummary("", 10); got["empty"] != true {
 		t.Fatalf("nil arts summary: %+v", got)
 	}
-	if got := nilP.RiskTrends("x"); got["empty"] != true {
+	if got := nilP.RiskTrends(); got["empty"] != true {
 		t.Fatalf("nil risk: %+v", got)
 	}
-	if got := nilP.CompareRuns("x", "", 5); got["empty"] != true {
+	if got := nilP.CompareRuns("", 5); got["empty"] != true {
 		t.Fatalf("empty wf: %+v", got)
 	}
-	if got := nilP.CompareRuns("x", "wf", 5); got["empty"] != true {
+	if got := nilP.CompareRuns("wf", 5); got["empty"] != true {
 		t.Fatalf("nil compare: %+v", got)
 	}
 }
 
 func TestPmProgressCompareRunsVersionDiff(t *testing.T) {
-	p, db, pid, wfID := setupPmProgressFixtures(t)
+	p, db, _, wfID := setupPmProgressFixtures(t)
 	now := time.Now()
 	db.Create(&models.Run{
 		ID: "run-v2", WorkflowID: wfID, WorkflowName: "Pipeline", Status: "completed",
@@ -235,7 +230,7 @@ func TestPmProgressCompareRunsVersionDiff(t *testing.T) {
 		ID: "run-v1", WorkflowID: wfID, WorkflowName: "Pipeline", Status: "failed",
 		Progress: 0.5, Title: "V1", StartedAt: now.Add(-time.Hour), WorkflowVersion: 1,
 	})
-	got := p.CompareRuns(pid, wfID, 5)
+	got := p.CompareRuns(wfID, 5)
 	diffs, ok := got["diffHighlights"].([]string)
 	if !ok || len(diffs) == 0 {
 		t.Fatalf("diffs: %+v", got)
@@ -243,7 +238,7 @@ func TestPmProgressCompareRunsVersionDiff(t *testing.T) {
 }
 
 func TestPmProgressListBlockersGateAndClarify(t *testing.T) {
-	p, db, pid, wfID := setupPmProgressFixtures(t)
+	p, db, _, wfID := setupPmProgressFixtures(t)
 	now := time.Now()
 	db.Create(&models.Gate{
 		RunID: "run-b", NodeID: "gate-1", WorkflowID: wfID, WorkflowName: "Pipeline",
@@ -257,7 +252,7 @@ func TestPmProgressListBlockersGateAndClarify(t *testing.T) {
 		RunID: "run-clarify", NodeID: "react", Iteration: 1, Done: false,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "hi", At: now.Format(time.RFC3339)}},
 	})
-	got := p.ListBlockers(pid)
+	got := p.ListBlockers()
 	blockers, ok := got["blockers"].([]map[string]any)
 	if !ok || len(blockers) < 2 {
 		t.Fatalf("blockers: %+v", got)

@@ -26,7 +26,6 @@ func setSecretsKey(t *testing.T) {
 func TestBootstrapOnboardingAPI(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
-	pid := models.DefaultProjectID
 
 	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
 		"acpBackend": "cursor",
@@ -47,7 +46,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 
 	w = hn.seedWorkspace(map[string]any{"name": "BootProj"})
 	if w.Code != http.StatusOK {
-		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
+		t.Fatalf("configure workspace: %d %s", w.Code, w.Body.String())
 	}
 	other := jsonField(w.Body.String(), "id")
 	_ = other
@@ -99,7 +98,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 		t.Fatalf("workflow id changed")
 	}
 
-	w = hn.do("GET", "/api/workflows?projectId="+pid, nil)
+	w = hn.do("GET", "/api/workflows", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list wf: %d", w.Code)
 	}
@@ -111,7 +110,6 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
-	pid := models.DefaultProjectID
 
 	if w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
 		"acpBackend": "cursor",
@@ -121,24 +119,21 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	}
 
 	if w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"projectId": pid,
-		"name":      "Empty repositories",
-		"repos":     []map[string]any{{"url": ""}},
+		"name":  "Empty repositories",
+		"repos": []map[string]any{{"url": ""}},
 	}); w.Code != http.StatusBadRequest {
 		t.Fatalf("empty repos: %d %s", w.Code, w.Body.String())
 	}
 
 	if w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"projectId": pid,
-		"name":      "　 ",
-		"repos":     []map[string]any{{"url": "https://github.com/acme/app.git"}},
+		"name":  "　 ",
+		"repos": []map[string]any{{"url": "https://github.com/acme/app.git"}},
 	}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), services.ErrEmptyWorkflowName.Error()) {
 		t.Fatalf("empty name: %d %s", w.Code, w.Body.String())
 	}
 
 	w := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"projectId": pid,
-		"name":      "  Requirements pipeline  ",
+		"name": "  Requirements pipeline  ",
 		"repos": []map[string]any{
 			{"url": "https://github.com/acme/app.git", "name": "", "branch": "main"},
 			{"url": "https://gitlab.com/acme/app.git", "name": ""},
@@ -174,7 +169,6 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 		t.Fatalf("persisted from-baseline: %#v", fetched)
 	}
 	ignored := hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"projectId":  pid,
 		"name":       "Client cannot hide",
 		"showOnHome": false,
 		"repos":      []map[string]any{{"url": "https://github.com/acme/other.git"}},
@@ -208,15 +202,14 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	}
 
 	w = hn.do("POST", "/api/workflows/from-baseline", map[string]any{
-		"projectId": pid,
-		"name":      "Requirements pipeline",
-		"repos":     []map[string]any{{"url": "https://github.com/acme/app.git"}},
+		"name":  "Requirements pipeline",
+		"repos": []map[string]any{{"url": "https://github.com/acme/app.git"}},
 	})
 	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), services.ErrWorkflowNameExists.Error()) {
 		t.Fatalf("duplicate workflow name not rejected: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do("GET", "/api/workflows?projectId="+pid, nil)
+	w = hn.do("GET", "/api/workflows", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), services.OnboardingWorkflowName) {
 		t.Fatalf("default workflow was overwritten: %d %s", w.Code, w.Body.String())
 	}
@@ -225,11 +218,9 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
 	hn := newHarness(t)
 	t.Setenv(crypto.SecretsKeyEnv, "")
-	creds := services.NewProjectCredentialService(hn.db)
-	hn.h.ProjectCredentials = creds
+	creds := services.NewCredentialService(hn.db)
+	hn.h.Credentials = creds
 	hn.h.Onboarding.Credentials = creds
-	pid := models.DefaultProjectID
-	_ = pid
 	for path, body := range map[string]map[string]any{
 		"/api/workspace/bootstrap-onboarding": {"acpBackend": "cursor", "apiKey": "crsr_test"},
 		"/api/workspace/credentials":          {"type": "custom", "name": "x", "envKey": "X_TOKEN", "value": "v"},
@@ -244,10 +235,10 @@ func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
 	}
 }
 
-func TestBootstrapOnboardingWritesSSHToProjectCredentials(t *testing.T) {
+func TestBootstrapOnboardingWritesSSHToWorkspaceCredentials(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
-	pid := models.DefaultProjectID
+	_ = models.WorkspaceID
 
 	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
 		"acpBackend":    "cursor",
@@ -258,9 +249,9 @@ func TestBootstrapOnboardingWritesSSHToProjectCredentials(t *testing.T) {
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
 	}
-	env := hn.h.Onboarding.Credentials.ResolveEnv(pid)
+	env := hn.h.Onboarding.Credentials.ResolveEnv()
 	if !strings.Contains(env[services.EnvGitSSHPrivateKey], "OPENSSH") || env[services.EnvGitSSHKnownHosts] != "git.example.com ssh-ed25519 AAAA" {
-		t.Fatalf("project credentials = %v", env)
+		t.Fatalf("workspace credentials = %v", env)
 	}
 	var res services.OnboardingBootstrapResult
 	_ = json.Unmarshal(w.Body.Bytes(), &res)

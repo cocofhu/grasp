@@ -13,44 +13,43 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// projectForAgents resolves :id for the project-level Agent endpoints.
-func (h *Handlers) projectForAgents(c *gin.Context) (models.Project, bool) {
-	if h.Projects == nil || h.Agents == nil {
+// workspaceForAgents loads the workspace for the workspace-level Agent endpoints.
+func (h *Handlers) workspaceForAgents(c *gin.Context) (models.Workspace, bool) {
+	if h.Workspace == nil || h.Agents == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "agent service unavailable"})
-		return models.Project{}, false
+		return models.Workspace{}, false
 	}
-	p, ok := h.Projects.Get(c.Param("id"))
-	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "project not found"})
-		return models.Project{}, false
+	p, err := h.Workspace.Workspace()
+	if err != nil {
+		writeWorkspaceErr(c, err)
+		return models.Workspace{}, false
 	}
 	return p, true
 }
 
-// ExportProjectAgents streams a ZIP with every Agent of the project.
-func (h *Handlers) ExportProjectAgents(c *gin.Context) {
-	p, ok := h.projectForAgents(c)
+// ExportWorkspaceAgents streams a ZIP with every Agent.
+func (h *Handlers) ExportWorkspaceAgents(c *gin.Context) {
+	p, ok := h.workspaceForAgents(c)
 	if !ok {
 		return
 	}
-	raw, err := h.Agents.ExportProjectAgentsZIP(p.ID)
+	raw, err := h.Agents.ExportWorkspaceAgentsZIP()
 	if err != nil {
-		writeProjectAgentsError(c, err)
+		writeWorkspaceAgentsError(c, err)
 		return
 	}
 	name := services.SanitizeDownloadFilename(p.Name)
 	if name == "" {
-		name = services.SanitizeDownloadFilename(p.ID)
+		name = "workspace"
 	}
 	c.Header("Content-Type", "application/zip")
 	c.Header("Content-Disposition", contentDispositionAttachment(name+"-agents.zip"))
 	c.Data(http.StatusOK, "application/zip", raw)
 }
 
-// ImportProjectAgents accepts a multipart project package and imports it atomically.
-func (h *Handlers) ImportProjectAgents(c *gin.Context) {
-	p, ok := h.projectForAgents(c)
-	if !ok {
+// ImportWorkspaceAgents accepts a multipart workspace package and imports it atomically.
+func (h *Handlers) ImportWorkspaceAgents(c *gin.Context) {
+	if _, ok := h.workspaceForAgents(c); !ok {
 		return
 	}
 	file, err := c.FormFile("file")
@@ -58,9 +57,9 @@ func (h *Handlers) ImportProjectAgents(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
 		return
 	}
-	mode := services.ImportProjectAgentsMode(strings.TrimSpace(c.PostForm("mode")))
+	mode := services.ImportWorkspaceAgentsMode(strings.TrimSpace(c.PostForm("mode")))
 	if mode == "" {
-		mode = services.ImportProjectAgentsRename
+		mode = services.ImportWorkspaceAgentsRename
 	}
 	f, err := file.Open()
 	if err != nil {
@@ -68,35 +67,33 @@ func (h *Handlers) ImportProjectAgents(c *gin.Context) {
 		return
 	}
 	defer func() { _ = f.Close() }()
-	raw, err := io.ReadAll(io.LimitReader(f, services.ProjectAgentsBundleMaxBytes+1))
+	raw, err := io.ReadAll(io.LimitReader(f, services.WorkspaceAgentsBundleMaxBytes+1))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if int64(len(raw)) > services.ProjectAgentsBundleMaxBytes {
-		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrProjectBundleTooLarge.Error()})
+	if int64(len(raw)) > services.WorkspaceAgentsBundleMaxBytes {
+		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrWorkspaceBundleTooLarge.Error()})
 		return
 	}
-	result, err := h.Agents.ImportProjectAgentsZIP(raw, p.ID, mode)
+	result, err := h.Agents.ImportWorkspaceAgentsZIP(raw, mode)
 	if err != nil {
-		writeProjectAgentsError(c, err)
+		writeWorkspaceAgentsError(c, err)
 		return
 	}
 	c.JSON(http.StatusOK, result)
 }
 
-func writeProjectAgentsError(c *gin.Context, err error) {
+func writeWorkspaceAgentsError(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrAgentProjectRequired),
-		errors.Is(err, services.ErrProjectBundleTooLarge),
-		errors.Is(err, services.ErrProjectBundleMissingManifest),
-		errors.Is(err, services.ErrProjectBundleSingleAgent),
-		errors.Is(err, services.ErrProjectBundleInvalidKind),
-		errors.Is(err, services.ErrProjectBundleBadSchema),
-		errors.Is(err, services.ErrProjectBundleInvalidZip),
-		errors.Is(err, services.ErrProjectBundleRootAgentJSON),
-		errors.Is(err, services.ErrProjectBundleNestedZip),
-		errors.Is(err, services.ErrProjectBundleForeignAgent),
+	case errors.Is(err, services.ErrWorkspaceBundleTooLarge),
+		errors.Is(err, services.ErrWorkspaceBundleMissingManifest),
+		errors.Is(err, services.ErrWorkspaceBundleSingleAgent),
+		errors.Is(err, services.ErrWorkspaceBundleInvalidKind),
+		errors.Is(err, services.ErrWorkspaceBundleBadSchema),
+		errors.Is(err, services.ErrWorkspaceBundleInvalidZip),
+		errors.Is(err, services.ErrWorkspaceBundleRootAgentJSON),
+		errors.Is(err, services.ErrWorkspaceBundleNestedZip),
 		errors.Is(err, services.ErrInvalidAgentName),
 		errors.Is(err, services.ErrInvalidAcpBackend),
 		errors.Is(err, services.ErrSecretEnvKey):
@@ -104,7 +101,7 @@ func writeProjectAgentsError(c *gin.Context, err error) {
 	default:
 		msg := err.Error()
 		if strings.Contains(msg, "导入失败，已整次回滚") ||
-			strings.Contains(msg, "project.json") ||
+			strings.Contains(msg, "workspace.json") ||
 			strings.Contains(msg, "1MiB") ||
 			strings.Contains(msg, "invalid import mode") {
 			c.JSON(http.StatusBadRequest, gin.H{"error": msg})

@@ -10,7 +10,7 @@ import (
 func TestStartRunRejectsInvalidTags(t *testing.T) {
 	h := newHarness(t)
 	if err := h.h.WF.Save(&models.WorkflowDef{
-		ID: "wf-tags", ProjectID: models.DefaultProjectID, Name: "WF Tags",
+		ID: "wf-tags", Name: "WF Tags",
 		Graph: models.Graph{
 			Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 			Edges: []models.Edge{{ID: "e1", Source: "in", Target: "out"}},

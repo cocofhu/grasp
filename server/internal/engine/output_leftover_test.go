@@ -52,10 +52,6 @@ func leftoverGraphWithClarify(autoOn bool) models.Graph {
 
 func seedLeftoverRun(t *testing.T, eng *Engine, runID string, g models.Graph, outs map[string]map[string]any) (*execCtx, *models.Node) {
 	t.Helper()
-	if err := eng.db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", models.DefaultProjectID).Error; err != nil {
-		t.Fatalf("bind project: %v", err)
-	}
 	run := &models.Run{
 		ID:              runID,
 		WorkflowID:      "wf",
@@ -222,7 +218,7 @@ func TestExecOutputLeftoverDraftHappyPath(t *testing.T) {
 	}
 
 	svc := services.NewRequirementDraftService(db)
-	draft, err := svc.Get(models.DefaultProjectID, id)
+	draft, err := svc.Get(id)
 	if err != nil {
 		t.Fatalf("get draft: %v", err)
 	}
@@ -247,7 +243,7 @@ func TestExecOutputLeftoverDraftHappyPath(t *testing.T) {
 	}
 
 	var n int64
-	if err := db.Model(&models.RequirementDraft{}).Where("project_id = ?", models.DefaultProjectID).Count(&n).Error; err != nil {
+	if err := db.Model(&models.RequirementDraft{}).Count(&n).Error; err != nil {
 		t.Fatal(err)
 	}
 	if n != 1 {
@@ -299,7 +295,7 @@ func TestExecOutputLeftoverWithClarifiedSpec(t *testing.T) {
 		t.Fatalf("missing draft: %#v", oc.outputs)
 	}
 	svc := services.NewRequirementDraftService(db)
-	draft, err := svc.Get(models.DefaultProjectID, id)
+	draft, err := svc.Get(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,7 +334,7 @@ func TestExecOutputLeftoverRawInputNoClarify(t *testing.T) {
 	c.run.Inputs = map[string]any{"feature": long + "\n第二行保留"}
 	oc := eng.execOutput(c, node)
 	id, _ := oc.outputs[leftoverDraftIDKey].(string)
-	draft, err := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	draft, err := services.NewRequirementDraftService(db).Get(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -367,7 +363,7 @@ func TestExecOutputLeftoverFailedCaseOnly(t *testing.T) {
 	if id == "" {
 		t.Fatalf("failed case should create draft: %#v", oc.outputs)
 	}
-	draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	draft, _ := services.NewRequirementDraftService(db).Get(id)
 	if !strings.Contains(draft.BodyMarkdown, "仅失败用例") {
 		t.Fatalf("body missing case name:\n%s", draft.BodyMarkdown)
 	}
@@ -394,7 +390,7 @@ func TestExecOutputLeftoverOpenQuestionOnly(t *testing.T) {
 	if id == "" {
 		t.Fatalf("open question should create draft: %#v", oc.outputs)
 	}
-	draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	draft, _ := services.NewRequirementDraftService(db).Get(id)
 	body := draft.BodyMarkdown
 	if !strings.Contains(body, "是否支持短信验证？") || !strings.Contains(body, "需求规格") {
 		t.Fatalf("body:\n%s", body)
@@ -420,7 +416,7 @@ func TestExecOutputLeftoverSurvivesWorkflowDelete(t *testing.T) {
 	oc := eng.execOutput(c, node)
 	id, _ := oc.outputs[leftoverDraftIDKey].(string)
 	svc := services.NewRequirementDraftService(db)
-	before, err := svc.Get(models.DefaultProjectID, id)
+	before, err := svc.Get(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -436,7 +432,7 @@ func TestExecOutputLeftoverSurvivesWorkflowDelete(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	after, err := svc.Get(models.DefaultProjectID, id)
+	after, err := svc.Get(id)
 	if err != nil {
 		t.Fatalf("draft must survive workflow delete: %v", err)
 	}
@@ -567,7 +563,7 @@ func TestExecOutputLeftoverDedupSameRun(t *testing.T) {
 		t.Fatalf("first create failed: %#v", oc1.outputs)
 	}
 	svc := services.NewRequirementDraftService(db)
-	first, err := svc.Get(models.DefaultProjectID, id1)
+	first, err := svc.Get(id1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -587,7 +583,7 @@ func TestExecOutputLeftoverDedupSameRun(t *testing.T) {
 	if id2 != id1 {
 		t.Fatalf("dedup want %s got %s", id1, id2)
 	}
-	second, err := svc.Get(models.DefaultProjectID, id1)
+	second, err := svc.Get(id1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,8 +610,7 @@ func TestExecOutputLeftoverWriteFailureStillCompleted(t *testing.T) {
 		"test1": {"test_result_json": `{"summary":"s","defects":[{"title":"a"}]}`},
 	}
 	c, node := seedLeftoverRun(t, eng, "run-leftover-fail", g, outs)
-	if err := eng.db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", "").Error; err != nil {
+	if err := eng.db.Migrator().DropTable(&models.RequirementDraft{}); err != nil {
 		t.Fatal(err)
 	}
 	oc := eng.execOutput(c, node)
@@ -717,7 +712,7 @@ func TestExecOutputLeftoverFromArtifactStoreFullText(t *testing.T) {
 	if id == "" {
 		t.Fatalf("missing draft: %#v", oc.outputs)
 	}
-	draft, err := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	draft, err := services.NewRequirementDraftService(db).Get(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -799,7 +794,7 @@ func TestExecOutputLeftoverExtraArtifactsAndMissingSkipped(t *testing.T) {
 
 	oc := eng.execOutput(c, node)
 	id, _ := oc.outputs[leftoverDraftIDKey].(string)
-	draft, err := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+	draft, err := services.NewRequirementDraftService(db).Get(id)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -856,7 +851,7 @@ func TestExecOutputLeftoverNoArtifactsKeepsSnapshotFallback(t *testing.T) {
 		c, node := seedLeftoverRun(t, eng, "run-leftover-snap", g, outs)
 		oc := eng.execOutput(c, node)
 		id, _ := oc.outputs[leftoverDraftIDKey].(string)
-		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		draft, _ := services.NewRequirementDraftService(db).Get(id)
 		body := draft.BodyMarkdown
 		if strings.Contains(body, "## 产物全文") {
 			t.Fatalf("no artifacts should not write 产物全文:\n%s", body)
@@ -876,7 +871,7 @@ func TestExecOutputLeftoverNoArtifactsKeepsSnapshotFallback(t *testing.T) {
 		c.run.Inputs = map[string]any{}
 		oc := eng.execOutput(c, node)
 		id, _ := oc.outputs[leftoverDraftIDKey].(string)
-		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		draft, _ := services.NewRequirementDraftService(db).Get(id)
 		body := draft.BodyMarkdown
 		if strings.Contains(body, "## 产物全文") {
 			t.Fatal("no 产物全文")
@@ -900,7 +895,7 @@ func TestExecOutputLeftoverNoArtifactsKeepsSnapshotFallback(t *testing.T) {
 		c.run.Inputs = map[string]any{"feature": long}
 		oc := eng.execOutput(c, node)
 		id, _ := oc.outputs[leftoverDraftIDKey].(string)
-		draft, _ := services.NewRequirementDraftService(db).Get(models.DefaultProjectID, id)
+		draft, _ := services.NewRequirementDraftService(db).Get(id)
 		body := draft.BodyMarkdown
 		if strings.Contains(body, "## 产物全文") {
 			t.Fatal("no 产物全文")

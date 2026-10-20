@@ -42,13 +42,6 @@ ROOT="$PWD"
 
 Matching workflows: `ci-server`, `ci-gateway`, `ci-sandbox` (sandbox-go job).
 
-`ci-server` also starts a disposable MySQL 8.4 service and explicitly runs
-`TestMySQLMigration` to verify workspace merge, integrity checks and rollback.
-For a local run, set `GRASP_WORKSPACE_MIGRATION_TEST_DSN` to an empty disposable
-database named `grasp_workspace_migration_test`, then run
-`go test ./internal/workspacemigration/ -count=1 -run '^TestMySQLMigration$' -v`
-from `server/`. The test rejects other database names and nonempty databases.
-
 **Workflows and shell** — always-on [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 (every pull request and push to `main`, no path filter). These do not replace
 module tests or coverage.

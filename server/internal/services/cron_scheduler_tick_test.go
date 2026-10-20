@@ -12,18 +12,18 @@ import (
 func TestCronSchedulerTickClaimsDueJob(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronTick", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronTick", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时")
+	th, err := pm.CreateCronThread("agent-a", "定时")
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	job := models.AgentCronJob{
-		ID: "cron-tick-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-tick-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "n", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
@@ -32,7 +32,7 @@ func TestCronSchedulerTickClaimsDueJob(t *testing.T) {
 	}
 
 	hooks := CronTokenHooks{
-		Register: func(projectID, threadID, agentName string) (string, []sandbox.MCPServerSpec) {
+		Register: func(threadID, agentName string) (string, []sandbox.MCPServerSpec) {
 			return "tok", nil
 		},
 		Unregister: func(token string) {},

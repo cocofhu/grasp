@@ -13,7 +13,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupSchedDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project) {
+func setupSchedDB(t *testing.T) (*gorm.DB, *services.PmService, models.Workspace) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:schedmcp_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -22,7 +22,7 @@ func setupSchedDB(t *testing.T) (*gorm.DB, *services.PmService, models.Project) 
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p := models.Project{ID: models.DefaultProjectID, Name: "SchedMCP"}
+	p := models.Workspace{ID: models.WorkspaceID, Name: "SchedMCP"}
 	err = db.Create(&p).Error
 	if err != nil {
 		t.Fatal(err)
@@ -61,10 +61,10 @@ func schedToolText(t *testing.T, resp []byte) (string, bool) {
 }
 
 func TestSchedulerMCPAuthAndWriteGate(t *testing.T) {
-	db, pm, p := setupSchedDB(t)
+	db, pm, _ := setupSchedDB(t)
 	h := NewHost(db, pm)
 	tok := platformmcp.NewToken()
-	h.Restore(tok, p.ID, "agent-a", "thr", "u", false)
+	h.Restore(tok, "agent-a", "thr", "u", false)
 	st, resp := h.ServeRPC("agent-b", tok, schedToolCall(1, "list_jobs", nil))
 	if st != 401 {
 		t.Fatalf("wrong agent want 401 got %d %s", st, resp)
@@ -82,12 +82,12 @@ func TestSchedulerMCPAuthAndWriteGate(t *testing.T) {
 }
 
 func TestSchedulerMCPCRUDAndCrossAgent(t *testing.T) {
-	db, pm, p := setupSchedDB(t)
+	db, pm, _ := setupSchedDB(t)
 	h := NewHost(db, pm)
 	tokA := platformmcp.NewToken()
-	h.Restore(tokA, p.ID, "agent-a", "thr-a", "alice", true)
+	h.Restore(tokA, "agent-a", "thr-a", "alice", true)
 	tokB := platformmcp.NewToken()
-	h.Restore(tokB, p.ID, "agent-b", "thr-b", "bob", true)
+	h.Restore(tokB, "agent-b", "thr-b", "bob", true)
 	st, resp := h.ServeRPC("agent-a", tokA, schedToolCall(1, "create_job", map[string]any{
 		"name": "daily", "prompt": "做日报",
 		"scheduleKind": "cron", "scheduleExpr": "0 9 * * *",
@@ -155,10 +155,10 @@ func TestSchedulerMCPCRUDAndCrossAgent(t *testing.T) {
 }
 
 func TestSchedulerMCPUpdateRunNowAndRuns(t *testing.T) {
-	db, pm, p := setupSchedDB(t)
+	db, pm, _ := setupSchedDB(t)
 	h := NewHost(db, pm)
 	tok := platformmcp.NewToken()
-	h.Restore(tok, p.ID, "agent-a", "thr-a", "alice", true)
+	h.Restore(tok, "agent-a", "thr-a", "alice", true)
 	_, resp := h.ServeRPC("agent-a", tok, schedToolCall(1, "create_job", map[string]any{
 		"name": "hourly", "prompt": "巡检",
 		"scheduleKind": "every", "scheduleExpr": "1h",
@@ -215,7 +215,7 @@ func TestSchedulerMCPUpdateRunNowAndRuns(t *testing.T) {
 
 	tokB := platformmcp.NewToken()
 
-	h.Restore(tokB, p.ID, "agent-b", "thr-b", "bob", true)
+	h.Restore(tokB, "agent-b", "thr-b", "bob", true)
 	_, resp = h.ServeRPC("agent-b", tokB, schedToolCall(5, "list_job_runs", map[string]any{"jobId": job.ID}))
 	text, isErr = schedToolText(t, resp)
 	if !isErr || !strings.Contains(text, "not found") {

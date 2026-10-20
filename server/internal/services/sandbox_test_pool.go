@@ -23,17 +23,17 @@ import (
 )
 
 // findReusable returns an existing interactive test sandbox for the same agent
-// profile and project with an empty-workspace (no repo) that can be reused, preferring a
+// profile with an empty-workspace (no repo) that can be reused, preferring a
 // live/running container. A row still "creating" is returned as-is (the UI will
 // poll it to running). "running" rows are only reused when the container is
 // actually alive; stale rows are skipped so the caller creates a fresh one.
 // Returns nil when nothing suitable exists. Callers only invoke this for the
 // no-repo case (repo-backed sandboxes always get a fresh workspace).
-func (s *SandboxService) findReusable(ctx context.Context, profile, projectID string) *models.Sandbox {
+func (s *SandboxService) findReusable(ctx context.Context, profile string) *models.Sandbox {
 	var rows []models.Sandbox
 	if err := s.db.
-		Where("purpose = ? AND profile = ? AND repo_url = ? AND project_id = ? AND status IN ?",
-			"test", profile, "", projectID, []string{"running", "creating", "pulling"}).
+		Where("purpose = ? AND profile = ? AND repo_url = ? AND status IN ?",
+			"test", profile, "", []string{"running", "creating", "pulling"}).
 		Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil
 	}
@@ -58,16 +58,13 @@ func (s *SandboxService) findReusable(ctx context.Context, profile, projectID st
 // List to observe the transition. repos empty/nil = empty workspace.
 // Existing live sandboxes for the same agent are reused when no repos are
 // configured (see findReusable); any configured clone list forces a fresh sandbox.
-func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec, projectID string) (*models.Sandbox, error) {
+func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error) {
 	agent, ok := s.skills.Get(profile)
 	if !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
-	// Data ownership follows the Agent's home project, not the UI-selected one.
-	_ = projectID
-	projectID = strings.TrimSpace(agent.ProjectID)
 	// Merge SharedAgent so team bootstrap / Open paths inject shared SSH meta.
-	agent = s.effectiveAgent(agent, projectID)
+	agent = s.effectiveAgent(agent)
 	// Reuse an existing test sandbox bound to the same agent when one is still
 	// alive, instead of spinning up a fresh container every time. The chat path
 	// (ensureConnected) transparently re-attaches if the live ACP connection was
@@ -76,11 +73,11 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	// Skip reuse when any repos are configured: the caller wants those clones
 	// in a fresh workspace, so always create a new sandbox for them.
 	if len(repos) == 0 {
-		if row := s.findReusable(ctx, profile, projectID); row != nil {
+		if row := s.findReusable(ctx, profile); row != nil {
 			at := time.Now().Add(s.TTL())
 			s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
 			row.DestroyAt = &at
-			log.Info().Str("name", row.Name).Str("profile", profile).Str("project", projectID).Uint("id", row.ID).Msg("reusing existing test sandbox")
+			log.Info().Str("name", row.Name).Str("profile", profile).Uint("id", row.ID).Msg("reusing existing test sandbox")
 			return row, nil
 		}
 	}
@@ -97,25 +94,24 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 
 	row := &models.Sandbox{
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
-		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token, ProjectID: projectID,
+		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		s.host.UnregisterRun(runID)
 		return nil, err
 	}
-	log.Info().Str("name", name).Str("profile", profile).Str("project", projectID).Uint("id", row.ID).Msg("test sandbox creating")
-	go s.startContainer(row.ID, name, profile, projectID, runID, token, repos, agent, "")
+	log.Info().Str("name", name).Str("profile", profile).Uint("id", row.ID).Msg("test sandbox creating")
+	go s.startContainer(row.ID, name, profile, runID, token, repos, agent, "")
 	return row, nil
 }
 
 // OpenWithEffective is like Open but injects a pre-merged effective Agent
-// (project shared extend → Agent overlay) and optionally overlays shared
-// workspace files under BaseWorkDirSrc. Used by project-context chat tests.
-func (s *SandboxService) OpenWithEffective(ctx context.Context, profile, projectID string, repos []sandbox.RepoSpec, effective Agent, sharedWorkDir string) (*models.Sandbox, error) {
+// (shared extend → Agent overlay) and optionally overlays shared workspace
+// files under BaseWorkDirSrc. Used by shared-context chat tests.
+func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, repos []sandbox.RepoSpec, effective Agent, sharedWorkDir string) (*models.Sandbox, error) {
 	if _, ok := s.skills.Get(profile); !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
-	projectID = strings.TrimSpace(projectID)
 	if maxN := s.MaxTestSandboxes(); s.activeCount() >= maxN {
 		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
@@ -126,15 +122,15 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile, project
 
 	row := &models.Sandbox{
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
-		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token, ProjectID: projectID,
+		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		s.host.UnregisterRun(runID)
 		return nil, err
 	}
-	log.Info().Str("name", name).Str("profile", profile).Str("project", projectID).
-		Uint("id", row.ID).Msg("project-context test sandbox creating")
-	go s.startContainer(row.ID, name, profile, projectID, runID, token, repos, effective, sharedWorkDir)
+	log.Info().Str("name", name).Str("profile", profile).
+		Uint("id", row.ID).Msg("shared-context test sandbox creating")
+	go s.startContainer(row.ID, name, profile, runID, token, repos, effective, sharedWorkDir)
 	return row, nil
 }
 
@@ -150,14 +146,14 @@ func firstTestRepoURL(repos []sandbox.RepoSpec) string {
 // record to running. Any failure flips it to "error" (with a short TTL so the
 // idle sweeper reclaims the dead row). Runs on a detached context since the
 // originating HTTP request has already returned.
-func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID, token string, repos []sandbox.RepoSpec, agent Agent, sharedWorkDir string) {
+func (s *SandboxService) startContainer(id uint, name, profile, runID, token string, repos []sandbox.RepoSpec, agent Agent, sharedWorkDir string) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("test sandbox start failed")
-		s.unregisterTestScheduler(projectID, token)
+		s.unregisterTestScheduler(token)
 		s.host.UnregisterRun(runID)
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
@@ -176,13 +172,13 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	}()
 
 	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
-	vars := runtime.MergeEnvIntoTemplateVars(s.testMcpVars(runID, token, projectID, profile), agentEnv)
-	specs := s.buildTestSandboxSpecs(projectID, profile, runID, token, agent, vars)
+	vars := runtime.MergeEnvIntoTemplateVars(s.testMcpVars(runID, token, profile), agentEnv)
+	specs := s.buildTestSandboxSpecs(profile, runID, token, agent, vars)
 
 	env := map[string]string{}
 	for k, v := range s.env {
 		if envauth.IsSecretEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in workspace credentials")
 			continue
 		}
 		env[k] = v
@@ -199,12 +195,12 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 			env[k] = v
 		}
 	}
-	// Project UI credentials are the highest-priority source; apply after the
+	// Workspace credentials are the highest-priority source; apply after the
 	// Agent/template vars above so test sandboxes match workflow precedence.
-	var projectCreds map[string]string
-	if s.projectCredentials != nil {
-		projectCreds = s.projectCredentials(projectID)
-		overlayProjectCredentialEnv(env, projectCreds)
+	var creds map[string]string
+	if s.credentials != nil {
+		creds = s.credentials()
+		overlayCredentialEnv(env, creds)
 	}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
@@ -212,16 +208,16 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		return
 	}
 	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
-		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
+		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(agent.OpenCodeCredentialID))
 	}
-	runtime.ApplyAgentCredentialChoice(env, projectCreds, projectID, runtime.AgentCredentialChoice{
+	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
 		Backend:              string(backend),
 		GitCredentialType:    agent.GitCredentialType,
 		AiCredentialID:       agent.AiCredentialID,
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
-	runtime.ApplyCredentialBindings(env, projectCreds, projectID, agent.CredentialBindings, s.selectedCredential)
+	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
@@ -285,7 +281,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		ConfigRoot:   configRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyProjectSSHToSpec(&spec, projectCreds)
+	ApplySSHCredentialsToSpec(&spec, creds)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -325,7 +321,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		acp.Close()
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
-		s.unregisterTestScheduler(projectID, token)
+		s.unregisterTestScheduler(token)
 		s.host.UnregisterRun(runID)
 		return
 	}
@@ -333,7 +329,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
 		codexAuthInjected:     codexLogin,
-		codexAuthCredentialID: runtime.CredentialIDForWriteBack(projectID, envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthCredentialID: runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
 		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
@@ -357,7 +353,7 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 		return
 	}
 	var row models.Sandbox
-	_ = s.db.Select("id", "project_id", "thread_id").Where("id = ?", id).Limit(1).Find(&row).Error
+	_ = s.db.Select("id", "thread_id").Where("id = ?", id).Limit(1).Find(&row).Error
 	status := models.TokenLedgerStatusOK
 	if err != nil {
 		status = models.TokenLedgerStatusFailed
@@ -367,7 +363,7 @@ func (s *SandboxService) recordStudioUsage(id uint, usage *models.TokenUsage, by
 	}
 	tokenledger.Record(s.db, tokenledger.Entry{
 		Source: models.TokenLedgerSourceStudio, Phase: models.TokenLedgerPhaseChat, Status: status,
-		ProjectID: row.ProjectID, SandboxID: id, Usage: usage, ByModel: byModel,
+		SandboxID: id, Usage: usage, ByModel: byModel,
 	})
 }
 
@@ -455,8 +451,8 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	if agent.Layout.ConfigRoot != "" {
 		sb.ConfigRoot = agent.Layout.ConfigRoot
 	}
-	specs := s.buildTestSandboxSpecs(row.ProjectID, row.Profile, row.RunID, row.Token, agent,
-		s.testMcpVars(row.RunID, row.Token, row.ProjectID, row.Profile))
+	specs := s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent,
+		s.testMcpVars(row.RunID, row.Token, row.Profile))
 	// Rebuild + SSH-sync ConfigHome so remote pods missing mcp.json/rules
 	// (hostPath ignored by K8s gateway) heal on reconnect.
 	if s.mgr != nil {
@@ -511,7 +507,7 @@ func (s *SandboxService) Stop(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法停止")
 	}
-	s.writeBackLiveCodex(ctx, id, row.ProjectID)
+	s.writeBackLiveCodex(ctx, id)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -528,7 +524,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
-	s.writeBackLiveCodex(ctx, id, row.ProjectID)
+	s.writeBackLiveCodex(ctx, id)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
@@ -537,10 +533,10 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	}
 	if isAgentSandboxPurpose(row.Purpose) {
 		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(row.ProjectID, row.ThreadID, row.Token)
+			s.agentOnDestroy(row.ThreadID, row.Token)
 		}
 	} else if row.Purpose == "test" {
-		s.unregisterTestScheduler(row.ProjectID, row.Token)
+		s.unregisterTestScheduler(row.Token)
 		if row.RunID != "" {
 			s.host.UnregisterRun(row.RunID)
 		}
@@ -618,14 +614,14 @@ func (s *SandboxService) ShutdownAllTestSandboxes(ctx context.Context, force boo
 		if force {
 			s.Cancel(row.ID)
 		}
-		s.writeBackLiveCodex(ctx, row.ID, row.ProjectID)
+		s.writeBackLiveCodex(ctx, row.ID)
 		s.teardownLive(row.ID)
 		s.archiveLog(ctx, row.Name)
 		_ = s.mgr.DestroyByName(ctx, row.Name)
 		if row.HomeDir != "" {
 			_ = os.RemoveAll(row.HomeDir)
 		}
-		s.unregisterTestScheduler(row.ProjectID, row.Token)
+		s.unregisterTestScheduler(row.Token)
 		if row.RunID != "" {
 			s.host.UnregisterRun(row.RunID)
 		}
@@ -781,7 +777,7 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 // destroyLocalSandbox tears down the gateway instance (by Name and by
 // grasp.name correlation) then deletes the local list row.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
-	s.writeBackLiveCodex(ctx, row.ID, row.ProjectID)
+	s.writeBackLiveCodex(ctx, row.ID)
 	s.archiveLog(ctx, row.Name)
 	_ = s.mgr.DestroyByName(ctx, row.Name)
 	// Placeholder Name cannot address the real gateway id; also destroy by
@@ -858,11 +854,10 @@ func (s *SandboxService) mcpVars(runID, token string) map[string]string {
 	}
 }
 
-func (s *SandboxService) testMcpVars(runID, token, projectID, profile string) map[string]string {
+func (s *SandboxService) testMcpVars(runID, token, profile string) map[string]string {
 	vars := s.mcpVars(runID, token)
-	projectID = strings.TrimSpace(projectID)
 	profile = strings.TrimSpace(profile)
-	if projectID == "" || profile == "" {
+	if profile == "" {
 		return vars
 	}
 	base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/")
@@ -875,19 +870,18 @@ func (s *SandboxService) testMcpVars(runID, token, projectID, profile string) ma
 	return vars
 }
 
-func (s *SandboxService) buildTestSandboxSpecs(projectID, profile, runID, token string, agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
+func (s *SandboxService) buildTestSandboxSpecs(profile, runID, token string, agent Agent, vars map[string]string) []sandbox.MCPServerSpec {
 	mcpVars := vars
-	if s.projectCredentialReferences != nil {
+	if s.credentialReferences != nil {
 		// Resolve credential references only while rendering MCP configuration;
 		// do not copy their plaintext values into the sandbox environment.
-		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.credentialReferences(), vars)
 	}
 	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
+	if strings.TrimSpace(profile) == "" {
 		return specs
 	}
-	s.registerTestScheduler(projectID, profile, runID, token)
+	s.registerTestScheduler(profile, runID, token)
 	if sched := BuildTestSchedulerMCPSpec(profile, token); sched.Name != "" {
 		specs = dedupeMCPByName(append(specs, sched))
 	}

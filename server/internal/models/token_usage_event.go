@@ -26,16 +26,14 @@ const (
 // TokenUsageEvent is one append-only token-consumption ledger row. Every LLM
 // usage report (workflow node save/flush, PM turn, Studio chat) writes one row
 // per model bucket, so analytics can GROUP BY any dimension without joining
-// through mutable workflow/project rows. Name fields are snapshots taken at
-// write time and survive workflow/project deletion.
+// through mutable workflow rows. Name fields are snapshots taken at
+// write time and survive workflow deletion.
 type TokenUsageEvent struct {
 	ID           uint      `gorm:"primaryKey" json:"id"`
 	CreatedAt    time.Time `gorm:"index" json:"createdAt"`
 	Source       string    `gorm:"index;size:16" json:"source"`
 	Phase        string    `gorm:"size:32" json:"phase,omitempty"`
 	Status       string    `gorm:"index;size:16" json:"status"`
-	ProjectID    string    `gorm:"index" json:"projectId,omitempty"`
-	ProjectName  string    `json:"projectName,omitempty"`
 	WorkflowID   string    `gorm:"index" json:"workflowId,omitempty"`
 	WorkflowName string    `json:"workflowName,omitempty"`
 	RunID        string    `gorm:"index" json:"runId,omitempty"`

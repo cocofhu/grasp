@@ -8,7 +8,7 @@ import (
 )
 
 // IsDeniedRunSandboxEnvKey reports keys that must not appear in a StartRun
-// run-scoped sandbox env snapshot: secret keys (project credentials only),
+// run-scoped sandbox env snapshot: secret keys (workspace credentials only),
 // ApplyPasswords, mcpVars reserved keys, and manager injects
 // (AGENT_PROVIDER / CONFIG_ROOT / SSH_KEY / GIT_REPOS). Callers reject the whole
 // start when any such key is present (no silent drop).

@@ -1022,17 +1022,11 @@ func (e *Engine) maybeWriteLeftoverDraft(c *execCtx, node *models.Node, outputs 
 		return
 	}
 
-	projectID := services.ResolveProjectIDForRun(e.db, c.run.ID)
-	if projectID == "" {
-		outputs[leftoverDraftErrKey] = "无法解析工作流所属项目，跳过遗留草稿"
-		return
-	}
-
 	title := buildLeftoverDraftTitle(c.run.WorkflowName, c.run.ID)
 	body := buildLeftoverDraftBody(c, bundle, e.store)
 	drafts := services.NewRequirementDraftService(e.db)
 
-	created, err := drafts.Create(projectID, services.RequirementDraftCreateInput{
+	created, err := drafts.Create(services.RequirementDraftCreateInput{
 		Kind:  models.RequirementDraftKindRequirement,
 		Title: title,
 	})
@@ -1040,7 +1034,7 @@ func (e *Engine) maybeWriteLeftoverDraft(c *execCtx, node *models.Node, outputs 
 		outputs[leftoverDraftErrKey] = "创建需求草稿失败: " + err.Error()
 		return
 	}
-	saved, err := drafts.UpdateContent(projectID, created.ID, title, body)
+	saved, err := drafts.UpdateContent(created.ID, title, body)
 	if err != nil {
 		// Body may still be over limit after soft truncate; fail-open with id if created.
 		outputs[leftoverDraftIDKey] = created.ID

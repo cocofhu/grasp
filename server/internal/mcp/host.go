@@ -158,9 +158,9 @@ type Host struct {
 	afterWrite AfterWriteFunc
 	// artifactPreview pins a run artifact onto the react conversation (set_artifact_preview).
 	artifactPreview ArtifactPreviewFunc
-	// projectAudit records structured, redacted MCP tool calls into project audit.
-	// Nil ⇒ no project audit (debug McpCalls still recorded separately).
-	projectAudit ProjectAuditHook
+	// auditHook records structured, redacted MCP tool calls into the workspace audit log.
+	// Nil ⇒ no audit (debug McpCalls still recorded separately).
+	auditHook AuditHook
 	// pageBridge runs page_* tools on the turn owner's direct preview page.
 	// Nil ⇒ page tools are unlisted and fail.
 	pageBridge PageBridge
@@ -184,9 +184,9 @@ type AfterWriteFunc func(runID, nodeID, name, content, kind string)
 // ArtifactPreviewFunc pins an existing artifact name onto a react conversation.
 type ArtifactPreviewFunc func(runID, nodeID, name string) error
 
-// ProjectAuditHook records a project-scoped MCP tool invocation (already
+// AuditHook records an MCP tool invocation (already
 // intended for redaction by the implementation). nodeID is ActiveNode at call time.
-type ProjectAuditHook func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool)
+type AuditHook func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool)
 
 // RunTokenSource resolves a run's persisted MCP token and whether the run still
 // has a live sandbox. ok is false when the run is unknown.
@@ -244,10 +244,10 @@ func (h *Host) SetArtifactPreviewHook(fn ArtifactPreviewFunc) {
 	h.mu.Unlock()
 }
 
-// SetProjectAuditHook wires project-scoped MCP audit recording.
-func (h *Host) SetProjectAuditHook(fn ProjectAuditHook) {
+// SetAuditHook wires MCP audit recording.
+func (h *Host) SetAuditHook(fn AuditHook) {
 	h.mu.Lock()
-	h.projectAudit = fn
+	h.auditHook = fn
 	h.mu.Unlock()
 }
 

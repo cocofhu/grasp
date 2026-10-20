@@ -11,25 +11,23 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestWriteProjectErrBranches(t *testing.T) {
+func TestWriteWorkspaceErrBranches(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cases := []struct {
 		err  error
 		code int
 	}{
-		{services.ErrEmptyProjectName, http.StatusBadRequest},
+		{services.ErrEmptyWorkspaceName, http.StatusBadRequest},
 		{services.ErrSecretPlaceholderOnNewKey, http.StatusBadRequest},
 		{services.ErrSecretPlaceholderOnPublicValue, http.StatusBadRequest},
 		{services.ErrUnknownModelDisplayNameTooLong, http.StatusBadRequest},
-		{services.ErrProjectNameExists, http.StatusConflict},
-		{services.ErrProjectNotFound, http.StatusNotFound},
-		{services.ErrProjectHasWorkflows, http.StatusConflict},
+		{services.ErrWorkspaceMissing, http.StatusNotFound},
 		{errors.New("boom"), http.StatusInternalServerError},
 	}
 	for _, tc := range cases {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
-		writeProjectErr(c, tc.err)
+		writeWorkspaceErr(c, tc.err)
 		if w.Code != tc.code {
 			t.Fatalf("%v: got %d want %d body=%s", tc.err, w.Code, tc.code, w.Body.String())
 		}

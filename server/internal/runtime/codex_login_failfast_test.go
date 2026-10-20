@@ -37,7 +37,7 @@ func TestRunAgentCodexLoginRejectedFailsFast(t *testing.T) {
 func codexSetup(t *testing.T, turn func(int) turnAction) (*acpProvider, *fakeManager, NodeReq) {
 	t.Helper()
 	p, _, _, mgr, _, req := setupProviderBackend(t, BackendCodex, func(int) chatFunc { return turn })
-	p.opts.ProjectCredentialsForProject = func(string) map[string]string {
+	p.opts.Credentials = func() map[string]string {
 		return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
 	}
 	return p, mgr, req

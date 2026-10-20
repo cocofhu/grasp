@@ -32,7 +32,7 @@ func TestListWorkflowsReturnsDTOs(t *testing.T) {
 func TestSaveWorkflowValidationAndConflict(t *testing.T) {
 	h := newHarness(t)
 	w := h.do(http.MethodPost, "/api/workflows", map[string]any{
-		"name": "NoProject",
+		"name": "FirstSave",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "label": "S"},
 			{"id": "out", "type": "output", "label": "E"},
@@ -40,11 +40,11 @@ func TestSaveWorkflowValidationAndConflict(t *testing.T) {
 		"edges": []map[string]any{{"id": "e", "source": "in", "target": "out"}},
 	})
 	if w.Code != http.StatusOK {
-		t.Fatalf("missing projectId: %d %s", w.Code, w.Body.String())
+		t.Fatalf("first save: %d %s", w.Code, w.Body.String())
 	}
 
 	body := map[string]any{
-		"name": "DupName", "projectId": models.DefaultProjectID,
+		"name": "DupName",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "label": "S"},
 			{"id": "out", "type": "output", "label": "E"},
@@ -251,45 +251,17 @@ func TestCopyWorkflowInvalidBody(t *testing.T) {
 	}
 }
 
-func TestSaveWorkflowProjectErrors(t *testing.T) {
-	h := newHarness(t)
-	w := h.do(http.MethodPost, "/api/workflows", map[string]any{
-		"name": "BadProject", "projectId": "ghost-project",
-		"nodes": []map[string]any{
-			{"id": "in", "type": "input", "label": "S"},
-			{"id": "out", "type": "output", "label": "E"},
-		},
-		"edges": []map[string]any{{"id": "e", "source": "in", "target": "out"}},
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("unknown project: %d %s", w.Code, w.Body.String())
-	}
-
-	seedPublishedWorkflow(t, h, "wf-immut")
-	w = h.do(http.MethodPut, "/api/workflows/wf-immut", map[string]any{
-		"id": "wf-immut", "name": "Moved", "projectId": "other-project",
-		"nodes": []map[string]any{
-			{"id": "in", "type": "input", "label": "S"},
-			{"id": "out", "type": "output", "label": "E"},
-		},
-		"edges": []map[string]any{{"id": "e", "source": "in", "target": "out"}},
-	})
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("immutable project: %d %s", w.Code, w.Body.String())
-	}
-}
-
 func TestListGatesBareAndArtifactsPaged(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()
 	h.db.Create(&models.Run{ID: "run-gate-bare", Status: "waiting_human", WorkflowID: "wf-1", StartedAt: now})
 	h.db.Create(&models.Gate{RunID: "run-gate-bare", NodeID: "gate", Title: "G", RequestedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-page", RunID: "run-gate-bare", Name: "a.md", Kind: "markdown", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-page", RunID: "run-gate-bare", Name: "a.md", Kind: "markdown", CreatedAt: now})
 
 	if w := h.do(http.MethodGet, "/api/gates", nil); w.Code != http.StatusOK {
 		t.Fatalf("bare gates: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do(http.MethodGet, "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=5", nil); w.Code != http.StatusOK {
+	if w := h.do(http.MethodGet, "/api/artifacts?page=1&pageSize=5", nil); w.Code != http.StatusOK {
 		t.Fatalf("paged artifacts: %d %s", w.Code, w.Body.String())
 	}
 }
@@ -317,7 +289,7 @@ func TestImportAgentBadZip(t *testing.T) {
 func TestSaveWorkflowEmptyName(t *testing.T) {
 	h := newHarness(t)
 	w := h.do(http.MethodPost, "/api/workflows", map[string]any{
-		"name": "   ", "projectId": models.DefaultProjectID,
+		"name": "   ",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "label": "S"},
 			{"id": "out", "type": "output", "label": "E"},
@@ -426,7 +398,6 @@ func TestImportAgentDefaultMode(t *testing.T) {
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
 	_ = mw.WriteField("targetName", "ImportedDefaultMode")
-	_ = mw.WriteField("projectId", models.DefaultProjectID)
 	fw, _ := mw.CreateFormFile("file", "agent.zip")
 	_, _ = fw.Write(zipBytes)
 	_ = mw.Close()

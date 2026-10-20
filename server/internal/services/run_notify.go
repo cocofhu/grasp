@@ -17,7 +17,7 @@ import (
 // missing/invalid targets as a soft no-op (return nil or a sentinel) and must
 // not abort the whole fan-out when one target fails.
 type RunNotifyDeliverer interface {
-	DeliverRunNotify(projectID, text string, channelIDs []string) error
+	DeliverRunNotify(text string, channelIDs []string) error
 }
 
 // ErrRunNotifyNoTarget is returned (and swallowed) when no QQ target is bound.
@@ -25,16 +25,15 @@ var ErrRunNotifyNoTarget = errors.New("no run-notify delivery target")
 
 // RunNotifyEvent is the Engine → service payload for a lifecycle side-effect.
 type RunNotifyEvent struct {
-	ProjectID    string
-	RunID        string
-	WorkflowID   string
-	WorkflowName string
-	ProjectName  string
-	NodeID       string
-	NodeLabel    string
-	Iteration    int
-	Kind         string // waiting_human | failed | completed
-	DeepLinkBase string // PublicAdvertise; empty → relative /runs/{id}
+	RunID         string
+	WorkflowID    string
+	WorkflowName  string
+	WorkspaceName string
+	NodeID        string
+	NodeLabel     string
+	Iteration     int
+	Kind          string // waiting_human | failed | completed
+	DeepLinkBase  string // PublicAdvertise; empty → relative /runs/{id}
 }
 
 // RunNotifyService resolves policy, claims the receipt key, then delivers.
@@ -90,15 +89,15 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 		return
 	}
 
-	project, workflow, ok := s.loadPolicy(ev)
+	ws, workflow, ok := s.loadPolicy(ev)
 	if !ok {
 		return
 	}
-	if workflow.Defaults != nil && workflow.Defaults.NotifyPolicy != nil && project.NotifyPolicy.IsEnabled() {
+	if workflow.Defaults != nil && workflow.Defaults.NotifyPolicy != nil && ws.NotifyPolicy.IsEnabled() {
 		// The workspace master switch also silences workflow overrides.
-		project.NotifyPolicy = *workflow.Defaults.NotifyPolicy
+		ws.NotifyPolicy = *workflow.Defaults.NotifyPolicy
 	}
-	events := ResolveNotifyEvents(project.NotifyPolicy, workflow.NotifyPolicy)
+	events := ResolveNotifyEvents(ws.NotifyPolicy, workflow.NotifyPolicy)
 	if !NotifyEventAllowed(events, kind) {
 		log.Debug().Str("run_id", ev.RunID).Str("kind", kind).
 			Strs("resolved", events).Msg("run-notify: policy miss")
@@ -107,9 +106,9 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 
 	// Empty ChannelIDs ⇒ do not deliver (and do not claim). Distinct from
 	// Enabled=false which already returned via ResolveNotifyEvents.
-	channelIDs := NormalizeNotifyChannelIDs(project.NotifyPolicy.ChannelIDs)
+	channelIDs := NormalizeNotifyChannelIDs(ws.NotifyPolicy.ChannelIDs)
 	if len(channelIDs) == 0 {
-		log.Debug().Str("run_id", ev.RunID).Str("project", project.ID).
+		log.Debug().Str("run_id", ev.RunID).
 			Msg("run-notify: empty channelIds — no-op before claim")
 		return
 	}
@@ -127,8 +126,8 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 		return
 	}
 
-	if ev.ProjectName == "" {
-		ev.ProjectName = project.Name
+	if ev.WorkspaceName == "" {
+		ev.WorkspaceName = ws.Name
 	}
 	if ev.WorkflowName == "" {
 		ev.WorkflowName = workflow.Name
@@ -138,24 +137,23 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 		// QQ clients cannot open relative /runs/{id}; ops must set PublicAdvertise.
 		log.Warn().
 			Str("run_id", ev.RunID).
-			Str("project", project.ID).
 			Msg("run-notify: PublicAdvertise empty — deep link will be relative /runs/{id}")
 	}
-	text := RenderRunNotifyMessage(ev, base, templateForKind(project.NotifyPolicy, kind))
+	text := RenderRunNotifyMessage(ev, base, templateForKind(ws.NotifyPolicy, kind))
 	if s.deliver == nil {
 		log.Info().Str("run_id", ev.RunID).Str("kind", kind).
 			Msg("run-notify: no deliverer — no-op after claim")
 		return
 	}
-	if err := s.deliver.DeliverRunNotify(project.ID, text, channelIDs); err != nil {
+	if err := s.deliver.DeliverRunNotify(text, channelIDs); err != nil {
 		// P0: claim already held; persist visible reason and do not retry.
 		s.markReceipt(ev.RunID, ev.NodeID, ev.Iteration, kind, "failed", err.Error())
 		if errors.Is(err, ErrRunNotifyNoTarget) {
-			log.Info().Str("run_id", ev.RunID).Str("project", project.ID).
+			log.Info().Str("run_id", ev.RunID).
 				Msg("run-notify: no channel target — no-op after claim")
 			return
 		}
-		log.Warn().Err(err).Str("run_id", ev.RunID).Str("project", project.ID).
+		log.Warn().Err(err).Str("run_id", ev.RunID).
 			Msg("run-notify: send failed after claim (no retry)")
 		return
 	}
@@ -171,16 +169,14 @@ func (s *RunNotifyService) markReceipt(runID, nodeID string, iteration int, kind
 		Updates(map[string]any{"status": status, "error": errText}).Error
 }
 
-// ListReceipts returns recent run-notify delivery records for a project
-// (matched via runs.project_id). Newest first, capped at 50.
-func (s *RunNotifyService) ListReceipts(projectID string) ([]models.NotifyDeliveryReceipt, error) {
+// ListReceipts returns recent run-notify delivery records. Newest first,
+// capped at 50.
+func (s *RunNotifyService) ListReceipts() ([]models.NotifyDeliveryReceipt, error) {
 	if s == nil || s.db == nil {
 		return nil, nil
 	}
 	var rows []models.NotifyDeliveryReceipt
-	err := s.db.Joins("JOIN runs ON runs.id = notify_delivery_receipts.run_id").
-		Joins("JOIN workflow_defs ON workflow_defs.id = runs.workflow_id").
-		Where("workflow_defs.project_id = ?", strings.TrimSpace(projectID)).
+	err := s.db.
 		Order("notify_delivery_receipts.created_at desc").Limit(50).Find(&rows).Error
 	return rows, err
 }
@@ -192,31 +188,27 @@ func (s *RunNotifyService) deepLinkBase(ev RunNotifyEvent) string {
 	return s.deepLink
 }
 
-func (s *RunNotifyService) loadPolicy(ev RunNotifyEvent) (models.Project, models.WorkflowDef, bool) {
+func (s *RunNotifyService) loadPolicy(ev RunNotifyEvent) (models.Workspace, models.WorkflowDef, bool) {
 	var wf models.WorkflowDef
 	wfID := strings.TrimSpace(ev.WorkflowID)
 	if wfID == "" {
 		var run models.Run
 		if err := s.db.Select("workflow_id").First(&run, "id = ?", ev.RunID).Error; err != nil {
 			log.Warn().Err(err).Str("run_id", ev.RunID).Msg("run-notify: load run failed")
-			return models.Project{}, models.WorkflowDef{}, false
+			return models.Workspace{}, models.WorkflowDef{}, false
 		}
 		wfID = run.WorkflowID
 	}
 	if err := s.db.First(&wf, "id = ?", wfID).Error; err != nil {
 		log.Warn().Err(err).Str("workflow", wfID).Msg("run-notify: load workflow failed")
-		return models.Project{}, models.WorkflowDef{}, false
+		return models.Workspace{}, models.WorkflowDef{}, false
 	}
-	projectID := strings.TrimSpace(ev.ProjectID)
-	if projectID == "" {
-		projectID = wf.ProjectID
+	ws, err := loadWorkspace(s.db)
+	if err != nil {
+		log.Warn().Err(err).Msg("run-notify: load workspace failed")
+		return models.Workspace{}, models.WorkflowDef{}, false
 	}
-	var project models.Project
-	if err := s.db.First(&project, "id = ?", projectID).Error; err != nil {
-		log.Warn().Err(err).Str("project", projectID).Msg("run-notify: load project failed")
-		return models.Project{}, models.WorkflowDef{}, false
-	}
-	return project, wf, true
+	return ws, wf, true
 }
 
 // claimReceipt inserts the unique receipt. Returns claimed=false on duplicate.
@@ -251,15 +243,15 @@ func isUniqueViolation(err error) bool {
 
 // Run notify template placeholders (locked; UI chips + frontend preview share this set).
 const (
-	NotifyPlaceholderProject  = "{project}"
-	NotifyPlaceholderWorkflow = "{workflow}"
-	NotifyPlaceholderRunID    = "{run_id}"
-	NotifyPlaceholderNode     = "{node}"
-	NotifyPlaceholderLink     = "{link}"
-	NotifyPlaceholderTitle    = "{title}"
+	NotifyPlaceholderWorkspace = "{workspace}"
+	NotifyPlaceholderWorkflow  = "{workflow}"
+	NotifyPlaceholderRunID     = "{run_id}"
+	NotifyPlaceholderNode      = "{node}"
+	NotifyPlaceholderLink      = "{link}"
+	NotifyPlaceholderTitle     = "{title}"
 )
 
-func templateForKind(p models.ProjectNotifyPolicy, kind string) string {
+func templateForKind(p models.WorkspaceNotifyPolicy, kind string) string {
 	switch kind {
 	case models.NotifyKindWaitingHuman:
 		return p.WaitingHumanTemplate
@@ -299,9 +291,9 @@ func RunNotifyNodeDisplay(ev RunNotifyEvent) string {
 
 // ReplaceRunNotifyPlaceholders performs literal six-key replacement.
 // Unknown placeholders are left as-is; never panics.
-func ReplaceRunNotifyPlaceholders(tmpl string, project, workflow, runID, node, link, title string) string {
+func ReplaceRunNotifyPlaceholders(tmpl string, workspace, workflow, runID, node, link, title string) string {
 	replacer := strings.NewReplacer(
-		NotifyPlaceholderProject, project,
+		NotifyPlaceholderWorkspace, workspace,
 		NotifyPlaceholderWorkflow, workflow,
 		NotifyPlaceholderRunID, runID,
 		NotifyPlaceholderNode, node,
@@ -317,9 +309,9 @@ func RenderRunNotifyMessage(ev RunNotifyEvent, base, template string) string {
 	if strings.TrimSpace(template) == "" {
 		return FormatRunNotifyMessage(ev, base)
 	}
-	projectName := strings.TrimSpace(ev.ProjectName)
-	if projectName == "" {
-		projectName = "—"
+	wsName := strings.TrimSpace(ev.WorkspaceName)
+	if wsName == "" {
+		wsName = "—"
 	}
 	wfName := strings.TrimSpace(ev.WorkflowName)
 	if wfName == "" {
@@ -328,17 +320,17 @@ func RenderRunNotifyMessage(ev RunNotifyEvent, base, template string) string {
 	node := RunNotifyNodeDisplay(ev) // custom path: empty stays empty (no line delete)
 	link := runDeepLink(base, ev.RunID, ev.Kind, ev.NodeID)
 	title := RunNotifyTitle(ev.Kind)
-	return ReplaceRunNotifyPlaceholders(template, projectName, wfName, ev.RunID, node, link, title)
+	return ReplaceRunNotifyPlaceholders(template, wsName, wfName, ev.RunID, node, link, title)
 }
 
 // FormatRunNotifyMessage builds the QQ body (independent of FormatCronPush).
-// Empty/missing project templates must call this path for zero regression
+// Empty/missing workspace templates must call this path for zero regression
 // (including omitting the whole「节点：」line when node display is empty).
 func FormatRunNotifyMessage(ev RunNotifyEvent, base string) string {
 	title := RunNotifyTitle(ev.Kind)
-	projectName := strings.TrimSpace(ev.ProjectName)
-	if projectName == "" {
-		projectName = "—"
+	wsName := strings.TrimSpace(ev.WorkspaceName)
+	if wsName == "" {
+		wsName = "—"
 	}
 	wfName := strings.TrimSpace(ev.WorkflowName)
 	if wfName == "" {
@@ -353,8 +345,8 @@ func FormatRunNotifyMessage(ev RunNotifyEvent, base string) string {
 	b.WriteString("【Grasp】")
 	b.WriteString(title)
 	b.WriteByte('\n')
-	b.WriteString("项目：")
-	b.WriteString(projectName)
+	b.WriteString("工作区：")
+	b.WriteString(wsName)
 	b.WriteByte('\n')
 	b.WriteString("工作流：")
 	b.WriteString(wfName)

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -18,21 +17,16 @@ type externalMcpUpdateBody struct {
 	EnabledPacks []string `json:"enabledPacks"`
 }
 
-type createProjectMcpKeyBody struct {
+type createMcpKeyBody struct {
 	Name string `json:"name"`
 }
 
-func (h *Handlers) GetProjectExternalMcp(c *gin.Context) {
-	projectID := c.Param("id")
+func (h *Handlers) GetExternalMcp(c *gin.Context) {
 	if h.ExternalMcp == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
 	}
-	if _, ok := h.Projects.Get(projectID); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return
-	}
-	view, err := h.ExternalMcp.Get(projectID)
+	view, err := h.ExternalMcp.Get()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -40,8 +34,7 @@ func (h *Handlers) GetProjectExternalMcp(c *gin.Context) {
 	c.JSON(http.StatusOK, externalMcpSettingsDTO(view))
 }
 
-func (h *Handlers) UpdateProjectExternalMcp(c *gin.Context) {
-	projectID := c.Param("id")
+func (h *Handlers) UpdateExternalMcp(c *gin.Context) {
 	if h.ExternalMcp == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
@@ -51,53 +44,39 @@ func (h *Handlers) UpdateProjectExternalMcp(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	view, err := h.ExternalMcp.Update(projectID, body.Enabled, body.EnabledPacks)
+	view, err := h.ExternalMcp.Update(body.Enabled, body.EnabledPacks)
 	if err != nil {
-		if errors.Is(err, services.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, externalMcpSettingsDTO(view))
 }
 
-func (h *Handlers) ListProjectMcpKeys(c *gin.Context) {
-	projectID := c.Param("id")
-	if h.ProjectMcpKeys == nil {
+func (h *Handlers) ListMcpKeys(c *gin.Context) {
+	if h.McpKeys == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
 	}
-	if _, ok := h.Projects.Get(projectID); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-		return
-	}
-	keys := h.ProjectMcpKeys.List(projectID)
+	keys := h.McpKeys.List()
 	out := make([]gin.H, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, projectMcpKeyDTO(k))
+		out = append(out, mcpKeyDTO(k))
 	}
 	c.JSON(http.StatusOK, out)
 }
 
-func (h *Handlers) CreateProjectMcpKey(c *gin.Context) {
-	projectID := c.Param("id")
-	if h.ProjectMcpKeys == nil {
+func (h *Handlers) CreateMcpKey(c *gin.Context) {
+	if h.McpKeys == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
 	}
-	var body createProjectMcpKeyBody
+	var body createMcpKeyBody
 	if err := c.ShouldBindJSON(&body); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	res, err := h.ProjectMcpKeys.Create(projectID, body.Name)
+	res, err := h.McpKeys.Create(body.Name)
 	if err != nil {
-		if errors.Is(err, services.ErrProjectNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
-			return
-		}
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -110,14 +89,13 @@ func (h *Handlers) CreateProjectMcpKey(c *gin.Context) {
 	})
 }
 
-func (h *Handlers) RevokeProjectMcpKey(c *gin.Context) {
-	projectID := c.Param("id")
+func (h *Handlers) RevokeMcpKey(c *gin.Context) {
 	keyID := c.Param("keyId")
-	if h.ProjectMcpKeys == nil {
+	if h.McpKeys == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
 	}
-	if !h.ProjectMcpKeys.Revoke(projectID, keyID) {
+	if !h.McpKeys.Revoke(keyID) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "not found"})
 		return
 	}
@@ -130,7 +108,7 @@ func (h *Handlers) ExternalMCPRPC(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "workspace maintenance"})
 		return
 	}
-	if h.PMMCP == nil || h.ExternalMcp == nil || h.ProjectMcpKeys == nil {
+	if h.PMMCP == nil || h.ExternalMcp == nil || h.McpKeys == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "external mcp unavailable"})
 		return
 	}
@@ -138,24 +116,23 @@ func (h *Handlers) ExternalMCPRPC(c *gin.Context) {
 		c.Status(http.StatusOK)
 		return
 	}
-	projectID := strings.TrimSpace(c.Param("projectId"))
 	mcpID := strings.TrimSpace(c.Param("mcpId"))
-	if !h.ExternalMcp.IsEnabled(projectID) {
+	if !h.ExternalMcp.IsEnabled() {
 		c.Data(http.StatusForbidden, "application/json", platformmcp.MustJSON(platformmcp.RPCResponse{
 			JSONRPC: "2.0",
-			Error:   &platformmcp.RPCError{Code: -32003, Message: "external mcp disabled for project"},
+			Error:   &platformmcp.RPCError{Code: -32003, Message: "external mcp disabled"},
 		}))
 		return
 	}
 	plain := bearer(c.GetHeader("Authorization"))
-	keyProjectID, keyID, keyName, ok := h.ProjectMcpKeys.ValidateBearer(plain)
-	if !ok || keyProjectID != projectID {
+	keyID, keyName, ok := h.McpKeys.ValidateBearer(plain)
+	if !ok {
 		status, resp := platformmcp.Unauthorized()
 		c.Data(status, "application/json", resp)
 		return
 	}
-	enabledPacks := h.ExternalMcp.EnabledPacks(projectID)
-	token := h.PMMCP.RestoreExternal(projectID, keyID, keyName, enabledPacks)
+	enabledPacks := h.ExternalMcp.EnabledPacks()
+	token := h.PMMCP.RestoreExternal(keyID, keyName, enabledPacks)
 	if token == "" {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "session init failed"})
 		return
@@ -165,7 +142,7 @@ func (h *Handlers) ExternalMCPRPC(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read body"})
 		return
 	}
-	status, resp := h.PMMCP.ServeRPC(projectID, mcpID, token, body)
+	status, resp := h.PMMCP.ServeRPC(mcpID, token, body)
 	if resp == nil {
 		c.Status(status)
 		return
@@ -173,7 +150,7 @@ func (h *Handlers) ExternalMCPRPC(c *gin.Context) {
 	c.Data(status, "application/json", resp)
 }
 
-func externalMcpSettingsDTO(v services.ProjectExternalMcpSettingsView) gin.H {
+func externalMcpSettingsDTO(v services.ExternalMcpSettingsView) gin.H {
 	packs := v.EnabledPacks
 	if packs == nil {
 		packs = []string{}
@@ -189,7 +166,7 @@ func externalMcpSettingsDTO(v services.ProjectExternalMcpSettingsView) gin.H {
 	return out
 }
 
-func projectMcpKeyDTO(k models.ProjectMcpApiKey) gin.H {
+func mcpKeyDTO(k models.WorkspaceMcpApiKey) gin.H {
 	return gin.H{
 		"id":         k.ID,
 		"name":       k.Name,

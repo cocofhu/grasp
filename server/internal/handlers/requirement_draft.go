@@ -36,15 +36,14 @@ type patchRequirementDraftScheduleBody struct {
 	ParentID *string `json:"parentId"`
 }
 
-// ListRequirementDrafts returns project-scoped drafts.
+// ListRequirementDrafts returns requirement drafts.
 // Query: status=open|done|all (default all), q=title substring.
 func (h *Handlers) ListRequirementDrafts(c *gin.Context) {
 	if h.RequirementDrafts == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "requirement drafts unavailable"})
 		return
 	}
-	projectID := c.Param("id")
-	items, err := h.RequirementDrafts.List(projectID, services.RequirementDraftListFilter{
+	items, err := h.RequirementDrafts.List(services.RequirementDraftListFilter{
 		Status: c.DefaultQuery("status", "all"),
 		Query:  c.Query("q"),
 	})
@@ -55,13 +54,13 @@ func (h *Handlers) ListRequirementDrafts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// GetRequirementDraft returns one draft within the project.
+// GetRequirementDraft returns one requirement draft.
 func (h *Handlers) GetRequirementDraft(c *gin.Context) {
 	if h.RequirementDrafts == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "requirement drafts unavailable"})
 		return
 	}
-	item, err := h.RequirementDrafts.Get(c.Param("id"), c.Param("draftId"))
+	item, err := h.RequirementDrafts.Get(c.Param("draftId"))
 	if err != nil {
 		writeRequirementDraftErr(c, err)
 		return
@@ -78,7 +77,7 @@ func (h *Handlers) CreateRequirementDraft(c *gin.Context) {
 	var body createRequirementDraftBody
 	// Body is optional: an empty POST creates a requirement.
 	_ = c.ShouldBindJSON(&body)
-	item, err := h.RequirementDrafts.Create(c.Param("id"), services.RequirementDraftCreateInput{
+	item, err := h.RequirementDrafts.Create(services.RequirementDraftCreateInput{
 		Kind:     body.Kind,
 		Title:    body.Title,
 		StartAt:  body.StartAt,
@@ -112,7 +111,7 @@ func (h *Handlers) UpdateRequirementDraft(c *gin.Context) {
 	if body.BodyMarkdown != nil {
 		md = *body.BodyMarkdown
 	}
-	item, err := h.RequirementDrafts.UpdateContent(c.Param("id"), c.Param("draftId"), *body.Title, md)
+	item, err := h.RequirementDrafts.UpdateContent(c.Param("draftId"), *body.Title, md)
 	if err != nil {
 		writeRequirementDraftErr(c, err)
 		return
@@ -131,7 +130,7 @@ func (h *Handlers) PatchRequirementDraftStatus(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	item, err := h.RequirementDrafts.UpdateStatus(c.Param("id"), c.Param("draftId"), strings.TrimSpace(body.Status))
+	item, err := h.RequirementDrafts.UpdateStatus(c.Param("draftId"), strings.TrimSpace(body.Status))
 	if err != nil {
 		writeRequirementDraftErr(c, err)
 		return
@@ -166,7 +165,7 @@ func (h *Handlers) PatchRequirementDraftSchedule(c *gin.Context) {
 	}
 	// Re-check: if key was present as null, ParentID is nil and we skip — OK for partial patch.
 	// Frontend always sends parentId when changing parent ("" to clear).
-	item, err := h.RequirementDrafts.UpdateSchedule(c.Param("id"), c.Param("draftId"), in)
+	item, err := h.RequirementDrafts.UpdateSchedule(c.Param("draftId"), in)
 	if err != nil {
 		writeRequirementDraftErr(c, err)
 		return
@@ -180,7 +179,7 @@ func (h *Handlers) DeleteRequirementDraft(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "requirement drafts unavailable"})
 		return
 	}
-	if err := h.RequirementDrafts.Delete(c.Param("id"), c.Param("draftId")); err != nil {
+	if err := h.RequirementDrafts.Delete(c.Param("draftId")); err != nil {
 		writeRequirementDraftErr(c, err)
 		return
 	}
@@ -189,8 +188,6 @@ func (h *Handlers) DeleteRequirementDraft(c *gin.Context) {
 
 func writeRequirementDraftErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrProjectNotFound):
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrRequirementDraftNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrRequirementDraftEmptyTitle),

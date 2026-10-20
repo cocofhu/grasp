@@ -199,9 +199,8 @@ func TestCodexSpecInstallsLoginFile(t *testing.T) {
 	}
 	host := mcp.NewHost(newMemStore())
 	p := newBaseACPProvider(host, Options{
-		ProfilesRoot:         root,
-		ProjectIDForWorkflow: func(string) string { return "proj-1" },
-		ProjectCredentialsForProject: func(string) map[string]string {
+		ProfilesRoot: root,
+		Credentials: func() map[string]string {
 			return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
 		},
 	}, BackendCodex).(*acpProvider)
@@ -242,9 +241,8 @@ func TestCodexSpecInstallsLoginFile(t *testing.T) {
 	}
 
 	missing := newBaseACPProvider(host, Options{
-		ProfilesRoot:         root,
-		ProjectIDForWorkflow: func(string) string { return "proj-1" },
-		ProjectCredentialsForProject: func(string) map[string]string {
+		ProfilesRoot: root,
+		Credentials: func() map[string]string {
 			return map[string]string{}
 		},
 	}, BackendCodex).(*acpProvider)

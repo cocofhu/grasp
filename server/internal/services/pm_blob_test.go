@@ -12,12 +12,12 @@ func TestAppendMessageExternalizesImages(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	pm.SetBlobStore(blob.NewMemory())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("BlobProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("BlobProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	th, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}

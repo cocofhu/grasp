@@ -56,11 +56,10 @@ func TestRestartReattach(t *testing.T) {
 	s := newStack(t)
 	s.up()
 
-	projectID := s.workspaceID()
 	model := s.pickModel()
 	t.Logf("using deepseek model %s", model)
 	s.onboard(apiKey, model)
-	wfID := s.createWorkflow(projectID)
+	wfID := s.createWorkflow()
 
 	marker := "E2E-" + randHex(6)
 	runA := s.startRun(wfID, marker)
@@ -289,17 +288,6 @@ func (s *stack) mustDo(method, path string, body, out any) {
 	}
 }
 
-func (s *stack) workspaceID() string {
-	var p struct {
-		ID string `json:"id"`
-	}
-	s.mustDo(http.MethodGet, "/api/workspace", nil, &p)
-	if p.ID == "" {
-		s.t.Fatal("workspace id is empty")
-	}
-	return p.ID
-}
-
 func (s *stack) pickModel() string {
 	var res struct {
 		Models []struct {
@@ -350,13 +338,13 @@ func (s *stack) onboard(apiKey, model string) {
 	s.mustDo(http.MethodPut, "/api/agents/e2e-dev", agent, nil)
 }
 
-func (s *stack) createWorkflow(projectID string) string {
+func (s *stack) createWorkflow() string {
 	prompt := fmt.Sprintf("Use your shell tool to run exactly this one command and wait for it to finish:\n\n"+
 		"sleep %d && echo {{vars.marker}} > /tmp/e2e-marker.txt && cat /tmp/e2e-marker.txt\n\n"+
 		"Do not run anything else. When it has printed the marker, call node_complete with status "+
 		"\"success\" and a summary that contains the printed marker text.", sleepSeconds)
 	wf := map[string]any{
-		"projectId": projectID, "name": "e2e-restart-" + randHex(3),
+		"name":      "e2e-restart-" + randHex(3),
 		"variables": []map[string]any{{"name": "marker", "type": "string", "ask": true, "required": true, "editable": true}},
 		"nodes": []map[string]any{
 			{"id": "input", "type": "input", "label": "input"},

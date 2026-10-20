@@ -390,7 +390,7 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
-		ProjectCredentialsForProject: func(string) map[string]string {
+		Credentials: func() map[string]string {
 			return map[string]string{"GITLAB_TOKEN": "cred-tok", "GRASP_CURSOR_API_KEY": "test-key"}
 		},
 	}).(*acpProvider)
@@ -549,7 +549,7 @@ func TestEnsurePushedAndDetectPush(t *testing.T) {
 	defer restore()
 
 	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{ProjectCredentialsForProject: func(string) map[string]string {
+	p := newACPProvider(host, Options{Credentials: func() map[string]string {
 		return map[string]string{"GITLAB_TOKEN": "gl-token"}
 	}}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}

@@ -65,7 +65,7 @@ func TestSanitizeStripsInternalURLs(t *testing.T) {
 	if strings.Contains(desc, "127.0.0.1") || strings.Contains(desc, "/api/runs") || strings.Contains(desc, "blob:") {
 		t.Fatalf("desc leaked: %s", desc)
 	}
-	st := SanitizeStructured("clarified_requirement.json", `{"title":"T","runId":"run-1","projectId":"p","goals":["g1"],"env":{"K":"v"}}`)
+	st := SanitizeStructured("clarified_requirement.json", `{"title":"T","runId":"run-1","goals":["g1"],"env":{"K":"v"}}`)
 	if st["title"] != "T" {
 		t.Fatalf("title: %+v", st)
 	}

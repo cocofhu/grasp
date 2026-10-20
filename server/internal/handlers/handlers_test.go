@@ -72,12 +72,12 @@ func newHarness(t *testing.T) *harness {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sbx := services.NewSandboxService(db, mgr, skills, host, services.SandboxOptions{
 		Max: 2, TTL: time.Minute,
-		ProjectCredentials: func(string) map[string]string {
+		Credentials: func() map[string]string {
 			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}
 		},
 	})
 	eng := engine.New(db, fakeProvider{}, host, arts, 5)
-	auditSvc := services.NewProjectAuditService(db)
+	auditSvc := services.NewAuditService(db)
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
 		auditSvc.Record(rec)
 	})
@@ -121,18 +121,18 @@ func newHarness(t *testing.T) *harness {
 	}
 	config.StoreConfig(cfg)
 	authSvc := auth.NewService(db, config.GetConfig)
-	projectSvc := services.NewProjectService(db)
+	workspaceSvc := services.NewWorkspaceService(db)
 	wfSvc := services.NewWorkflowService(db)
 	sharedAgent := services.NewSharedAgentService(t.TempDir())
 	h := &handlers.Handlers{
 		WF:                wfSvc,
-		Projects:          projectSvc,
+		Workspace:         workspaceSvc,
 		Runs:              services.NewRunService(db),
 		Arts:              arts,
 		APIKeys:           services.NewAPIKeyService(db),
 		Agents:            skills,
 		SharedAgent:       sharedAgent,
-		Dash:              services.NewDashboardService(db, projectSvc),
+		Dash:              services.NewDashboardService(db, workspaceSvc),
 		Sbx:               sbx,
 		SbxChats:          services.NewSandboxChats(sbx),
 		Eng:               eng,
@@ -140,7 +140,7 @@ func newHarness(t *testing.T) *harness {
 		Auth:              authSvc,
 		Issues:            services.NewIssueService(db),
 		Audit:             auditSvc,
-		Onboarding:        services.NewOnboardingService(projectSvc, skills, sharedAgent, wfSvc, services.NewProjectCredentialService(db)),
+		Onboarding:        services.NewOnboardingService(skills, sharedAgent, wfSvc, services.NewCredentialService(db)),
 		GateShare:         gateShareSvc,
 		GateShareNonces:   gateshare.NewNonceStore(db),
 		GateShareTickets:  gateShareTickets,
@@ -311,7 +311,7 @@ func TestWorkflowEndpoints(t *testing.T) {
 	}
 	// Create.
 	body := map[string]any{
-		"name": "WF", "projectId": models.DefaultProjectID,
+		"name": "WF",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input"},
 			{"id": "out", "type": "output"},
@@ -451,7 +451,7 @@ func TestRunPriorityEndpoints(t *testing.T) {
 	g := models.Graph{
 		Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}},
 	}
-	h.db.Create(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-pri", Name: "pri", Version: 1, PublishedVersion: 1, Graph: g})
+	h.db.Create(&models.WorkflowDef{ID: "wf-pri", Name: "pri", Version: 1, PublishedVersion: 1, Graph: g})
 	h.db.Create(&models.Run{
 		ID: "rp-q", Status: "queued", Priority: models.PriorityNormal, StartedAt: now, Graph: g,
 	})
@@ -525,7 +525,7 @@ func TestGateAndArtifactEndpoints(t *testing.T) {
 		Messages: []models.ReactMessage{{Role: "agent", Text: "hi", At: now.Format(time.RFC3339)}},
 	})
 	h.db.Create(&models.StateRun{RunID: "r1", NodeID: "react", Iteration: 1, Status: "waiting_human"})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art1", RunID: "r1", Name: "doc", Content: "hello", Kind: "markdown"})
+	h.db.Create(&models.Artifact{ID: "art1", RunID: "r1", Name: "doc", Content: "hello", Kind: "markdown"})
 
 	w := h.do("GET", "/api/gates", nil)
 	if w.Code != 200 {
@@ -545,7 +545,7 @@ func TestGateAndArtifactEndpoints(t *testing.T) {
 	if !types["gate"] || !types["clarify"] {
 		t.Fatalf("missing union types: %+v", items)
 	}
-	if w := h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID, nil); w.Code != 200 {
+	if w := h.do("GET", "/api/artifacts", nil); w.Code != 200 {
 		t.Fatalf("artifacts: %d", w.Code)
 	}
 	if w := h.do("GET", "/api/artifacts/art1/content", nil); w.Code != 200 {
@@ -651,7 +651,7 @@ func TestDeleteArtifact(t *testing.T) {
 		artID := "art-" + status
 		h.db.Create(&models.Run{ID: runID, Status: status, StartedAt: now})
 		h.db.Create(&models.Artifact{
-			ProjectID: models.DefaultProjectID, ID: artID, RunID: runID, Name: "doc.md", Content: "x-" + status, Kind: "markdown", CreatedAt: now,
+			ID: artID, RunID: runID, Name: "doc.md", Content: "x-" + status, Kind: "markdown", CreatedAt: now,
 		})
 		w := h.do(http.MethodDelete, "/api/artifacts/"+artID, nil)
 		if w.Code != http.StatusNoContent {
@@ -675,9 +675,9 @@ func TestDeleteArtifact(t *testing.T) {
 	// Unrelated artifact still listed / readable.
 	h.db.Create(&models.Run{ID: "run-keep", Status: "completed", StartedAt: now})
 	h.db.Create(&models.Artifact{
-		ProjectID: models.DefaultProjectID, ID: "art-keep", RunID: "run-keep", Name: "keep.md", Content: "stay", Kind: "markdown", CreatedAt: now,
+		ID: "art-keep", RunID: "run-keep", Name: "keep.md", Content: "stay", Kind: "markdown", CreatedAt: now,
 	})
-	w := h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID, nil)
+	w := h.do("GET", "/api/artifacts", nil)
 	if w.Code != 200 {
 		t.Fatalf("list: %d", w.Code)
 	}
@@ -697,11 +697,11 @@ func TestListArtifactsRunTitle(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{ID: "run-titled", Title: "需求澄清 Run", StartedAt: now})
 	h.db.Create(&models.Run{ID: "run-empty", StartedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-titled", RunID: "run-titled", Name: "a.json", Kind: "json", CreatedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-empty", RunID: "run-empty", Name: "b.json", Kind: "json", CreatedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-orphan", RunID: "run-deleted", Name: "c.json", Kind: "json", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-titled", RunID: "run-titled", Name: "a.json", Kind: "json", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-empty", RunID: "run-empty", Name: "b.json", Kind: "json", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-orphan", RunID: "run-deleted", Name: "c.json", Kind: "json", CreatedAt: now})
 
-	w := h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID, nil)
+	w := h.do("GET", "/api/artifacts", nil)
 	if w.Code != 200 {
 		t.Fatalf("artifacts: %d", w.Code)
 	}
@@ -745,16 +745,16 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("create no name: %d", w.Code)
 	}
 	// Create ok.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1", "projectId": models.DefaultProjectID}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 201 {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
 	// Conflict.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1", "projectId": models.DefaultProjectID}); w.Code != 409 {
+	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 409 {
 		t.Fatalf("conflict: %d", w.Code)
 	}
 	// optional templateId copies a built-in Agent's workspace and capabilities
 	if w := h.do("POST", "/api/agents", map[string]any{
-		"name": "qa-test", "templateId": "test_review", "acpBackend": "cursor", "projectId": models.DefaultProjectID,
+		"name": "qa-test", "templateId": "test_review", "acpBackend": "cursor",
 	}); w.Code != 201 {
 		t.Fatalf("create test_review template: %d %s", w.Code, w.Body)
 	}
@@ -772,12 +772,12 @@ func TestAgentEndpoints(t *testing.T) {
 		}
 	}
 	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
-		"name": "bad-tpl", "templateId": "nope", "projectId": models.DefaultProjectID,
+		"name": "bad-tpl", "templateId": "nope",
 	}); w.Code != 400 {
 		t.Fatalf("unknown templateId: %d", w.Code)
 	}
 	// Blank regression: no templateId still works
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "blank-ok", "projectId": models.DefaultProjectID}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "blank-ok"}); w.Code != 201 {
 		t.Fatalf("blank create: %d %s", w.Code, w.Body)
 	}
 	// Templates list exposes the four built-in Agents
@@ -805,7 +805,7 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("get missing: %d", w.Code)
 	}
 	// Save (PUT).
-	if w := h.do("PUT", "/api/agents/a1", map[string]any{"acpBackend": "cursor", "name": "a1", "projectId": models.DefaultProjectID}); w.Code != 200 {
+	if w := h.do("PUT", "/api/agents/a1", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 200 {
 		t.Fatalf("save: %d", w.Code)
 	}
 	if w := h.do("PUT", "/api/agents/a1", "bad"); w.Code != 400 {
@@ -916,7 +916,7 @@ func TestWorkflowInputVariablesLift(t *testing.T) {
 	// An input node carrying a `variables` block in config exercises the
 	// editor-DTO lift into Graph.Variables.
 	body := map[string]any{
-		"name": "WFV", "projectId": models.DefaultProjectID,
+		"name": "WFV",
 		"nodes": []map[string]any{
 			{"id": "in", "type": "input", "config": map[string]any{
 				"variables": []map[string]any{{"name": "idea", "type": "string", "ask": true}},
@@ -1631,11 +1631,11 @@ func TestListArtifactsPaginationAndWf(t *testing.T) {
 	h.db.Create(&models.Run{ID: "run-art", WorkflowID: "wf-a", WorkflowName: "A", Title: "Plan Sprint"})
 	h.db.Create(&models.Run{ID: "run-art2", WorkflowID: "wf-b", WorkflowName: "B", Title: "Other Run"})
 	h.db.Create(&models.Run{ID: "run-u", WorkflowID: "", WorkflowName: "", Title: "Loose Run"})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-1", RunID: "run-art", WorkflowID: "wf-a", NodeID: "plan", Name: "plan.json", CreatedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-2", RunID: "run-art2", WorkflowID: "wf-b", NodeID: "research", Name: "b.json", CreatedAt: now.Add(time.Second)})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-u", RunID: "run-u", WorkflowID: "", NodeID: "implement", Name: "unnamed.json", CreatedAt: now.Add(2 * time.Second)})
+	h.db.Create(&models.Artifact{ID: "art-1", RunID: "run-art", WorkflowID: "wf-a", NodeID: "plan", Name: "plan.json", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-2", RunID: "run-art2", WorkflowID: "wf-b", NodeID: "research", Name: "b.json", CreatedAt: now.Add(time.Second)})
+	h.db.Create(&models.Artifact{ID: "art-u", RunID: "run-u", WorkflowID: "", NodeID: "implement", Name: "unnamed.json", CreatedAt: now.Add(2 * time.Second)})
 
-	w := h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=1&workflowId=wf-a", nil)
+	w := h.do("GET", "/api/artifacts?page=1&pageSize=1&workflowId=wf-a", nil)
 	if w.Code != 200 {
 		t.Fatalf("paged artifacts: %d", w.Code)
 	}
@@ -1649,7 +1649,7 @@ func TestListArtifactsPaginationAndWf(t *testing.T) {
 		t.Fatalf("wf total want 1, got %v", body["total"])
 	}
 
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=20&workflowId=wf-a&q=plan", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=20&workflowId=wf-a&q=plan", nil)
 	if w.Code != 200 {
 		t.Fatalf("q search: %d", w.Code)
 	}
@@ -1663,7 +1663,7 @@ func TestListArtifactsPaginationAndWf(t *testing.T) {
 		t.Fatalf("q search name want plan.json, got %v", first["name"])
 	}
 
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=20&workflowId=wf-a&q=Sprint", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=20&workflowId=wf-a&q=Sprint", nil)
 	if w.Code != 200 {
 		t.Fatalf("q run title search: %d", w.Code)
 	}
@@ -1672,7 +1672,7 @@ func TestListArtifactsPaginationAndWf(t *testing.T) {
 		t.Fatalf("q run title total want 1, got %v", body["total"])
 	}
 
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=20&session=1", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=20&session=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("unnamed wf: %d", w.Code)
 	}
@@ -1686,7 +1686,7 @@ func TestListArtifactsPaginationAndWf(t *testing.T) {
 		t.Fatalf("__unnamed__ name want unnamed.json, got %v", first["name"])
 	}
 
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=20&workflowId=wf-a&q=zzznomatch999", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=20&workflowId=wf-a&q=zzznomatch999", nil)
 	if w.Code != 200 {
 		t.Fatalf("q no match: %d", w.Code)
 	}
@@ -1709,12 +1709,12 @@ func TestListArtifactsGroupByRun(t *testing.T) {
 	h.db.Create(&models.Run{ID: "run-a", WorkflowID: "wf-a", WorkflowName: "A", Title: "Run A"})
 	h.db.Create(&models.Run{ID: "run-b", WorkflowID: "wf-a", WorkflowName: "A", Title: "Run B"})
 	// run-a: two artifacts; newer than run-b's single artifact.
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-a1", RunID: "run-a", WorkflowID: "wf-a", NodeID: "plan", Name: "plan.json", CreatedAt: now.Add(-time.Minute)})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-a2", RunID: "run-a", WorkflowID: "wf-a", NodeID: "research", Name: "research.json", CreatedAt: now})
-	h.db.Create(&models.Artifact{ProjectID: models.DefaultProjectID, ID: "art-b1", RunID: "run-b", WorkflowID: "wf-a", NodeID: "plan", Name: "other.json", CreatedAt: now.Add(-time.Hour)})
+	h.db.Create(&models.Artifact{ID: "art-a1", RunID: "run-a", WorkflowID: "wf-a", NodeID: "plan", Name: "plan.json", CreatedAt: now.Add(-time.Minute)})
+	h.db.Create(&models.Artifact{ID: "art-a2", RunID: "run-a", WorkflowID: "wf-a", NodeID: "research", Name: "research.json", CreatedAt: now})
+	h.db.Create(&models.Artifact{ID: "art-b1", RunID: "run-b", WorkflowID: "wf-a", NodeID: "plan", Name: "other.json", CreatedAt: now.Add(-time.Hour)})
 
 	// Default path (no groupBy): pageSize=1 still means 1 artifact row.
-	w := h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=1&workflowId=wf-a", nil)
+	w := h.do("GET", "/api/artifacts?page=1&pageSize=1&workflowId=wf-a", nil)
 	if w.Code != 200 {
 		t.Fatalf("default page: %d", w.Code)
 	}
@@ -1728,7 +1728,7 @@ func TestListArtifactsGroupByRun(t *testing.T) {
 	}
 
 	// groupBy=run: pageSize=1 → 1 Run, but whole-Run expands to 2 items for run-a.
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=1&workflowId=wf-a&groupBy=run", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=1&workflowId=wf-a&groupBy=run", nil)
 	if w.Code != 200 {
 		t.Fatalf("groupBy=run: %d %s", w.Code, w.Body.String())
 	}
@@ -1746,7 +1746,7 @@ func TestListArtifactsGroupByRun(t *testing.T) {
 		}
 	}
 
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=2&pageSize=1&workflowId=wf-a&groupBy=run", nil)
+	w = h.do("GET", "/api/artifacts?page=2&pageSize=1&workflowId=wf-a&groupBy=run", nil)
 	json.Unmarshal(w.Body.Bytes(), &body)
 	items = body["items"].([]any)
 	if len(items) != 1 || items[0].(map[string]any)["runId"] != "run-b" {
@@ -1754,7 +1754,7 @@ func TestListArtifactsGroupByRun(t *testing.T) {
 	}
 
 	// Search hit research.json → whole run-a (plan.json included); total=1 Run.
-	w = h.do("GET", "/api/artifacts?projectId="+models.DefaultProjectID+"&page=1&pageSize=20&workflowId=wf-a&groupBy=run&q=research", nil)
+	w = h.do("GET", "/api/artifacts?page=1&pageSize=20&workflowId=wf-a&groupBy=run&q=research", nil)
 	json.Unmarshal(w.Body.Bytes(), &body)
 	if int(body["total"].(float64)) != 1 {
 		t.Fatalf("search Run total want 1, got %v", body["total"])
@@ -1927,17 +1927,16 @@ func decodePageItems(b []byte, out *[]map[string]any) error {
 	return nil
 }
 
-// seedWorkspace configures the already-existing workspace directly. Project
-// creation is no longer a public fixture endpoint.
+// seedWorkspace configures the singleton workspace directly.
 func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
 	b, _ := json.Marshal(body)
 	var in struct {
-		Name        string                   `json:"name"`
-		Description string                   `json:"description"`
-		Variables   []models.ProjectVariable `json:"variables"`
+		Name        string                     `json:"name"`
+		Description string                     `json:"description"`
+		Variables   []models.WorkspaceVariable `json:"variables"`
 	}
 	_ = json.Unmarshal(b, &in)
-	p, err := hn.h.Projects.Workspace()
+	p, err := hn.h.Workspace.Workspace()
 	w := httptest.NewRecorder()
 	if err != nil {
 		w.WriteHeader(500)
@@ -1947,7 +1946,7 @@ func (hn *harness) seedWorkspace(body any) *httptest.ResponseRecorder {
 	if name == "" {
 		name = p.Name
 	}
-	p, err = hn.h.Projects.Update(p.ID, &name, &in.Description, &in.Variables, nil, nil)
+	p, err = hn.h.Workspace.Update(&name, &in.Description, &in.Variables, nil, nil)
 	if err != nil {
 		w.WriteHeader(400)
 		_ = json.NewEncoder(w).Encode(map[string]any{"error": err.Error()})

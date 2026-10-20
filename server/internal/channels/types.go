@@ -105,7 +105,6 @@ type AdapterConfig struct {
 	ID        string
 	Type      string
 	Name      string
-	ProjectID string
 	AppID     string
 	AppSecret string // decrypted
 	Config    map[string]any

@@ -3,8 +3,6 @@ package handlers_test
 import (
 	"encoding/json"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 // TestSaveWorkflowStatusGuard covers f6/f7: after publish, PUT with no graph
@@ -16,7 +14,7 @@ func TestSaveWorkflowStatusGuard(t *testing.T) {
 	h := newHarness(t)
 
 	body := map[string]any{
-		"name": "Guard", "projectId": models.DefaultProjectID, "description": "",
+		"name": "Guard", "description": "",
 		"nodes": []map[string]any{
 			{
 				"id": "in", "type": "input", "label": "Start",

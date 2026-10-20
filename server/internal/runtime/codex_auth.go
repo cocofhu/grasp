@@ -35,7 +35,7 @@ var (
 	ErrCodexLoginFileEmpty = errors.New("Codex 登录文件不能为空")
 	// ErrCodexLoginFileAPIKey rejects an API key or an API-key-mode login file.
 	ErrCodexLoginFileAPIKey = errors.New("Codex 使用 ChatGPT 登录文件，不接受 API Key。用 API Key 接 OpenAI 请改用 OpenCode")
-	// ErrCodexLoginFileMissing is returned before the CLI starts when the project
+	// ErrCodexLoginFileMissing is returned before the CLI starts when the workspace
 	// has no Codex login file.
 	ErrCodexLoginFileMissing = errors.New("缺少 Codex 登录文件：请在项目凭据中粘贴 ChatGPT 登录文件（本机 ~/.codex/auth.json）")
 	// ErrCodexLoginRejected marks a node attempt whose Codex login was refused

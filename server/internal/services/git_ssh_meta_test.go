@@ -9,17 +9,17 @@ import (
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
-func TestApplyProjectSSHToSpecUsesOnlyProjectCredentials(t *testing.T) {
+func TestApplySSHCredentialsToSpecUsesOnlyWorkspaceCredentials(t *testing.T) {
 	spec := &sandbox.Spec{Env: map[string]string{
 		EnvGitSSHPrivateKey: "env-key",
 		EnvGitSSHKnownHosts: "env-hosts",
 		"KEEP":              "1",
 	}}
-	ApplyProjectSSHToSpec(spec, map[string]string{
-		EnvGitSSHPrivateKey: "project-key",
-		EnvGitSSHKnownHosts: "project-hosts",
+	ApplySSHCredentialsToSpec(spec, map[string]string{
+		EnvGitSSHPrivateKey: "workspace-key",
+		EnvGitSSHKnownHosts: "workspace-hosts",
 	})
-	if spec.SSHPrivateKey != "project-key" || spec.SSHKnownHosts != "project-hosts" {
+	if spec.SSHPrivateKey != "workspace-key" || spec.SSHKnownHosts != "workspace-hosts" {
 		t.Fatalf("spec ssh = %q / %q", spec.SSHPrivateKey, spec.SSHKnownHosts)
 	}
 	if _, ok := spec.Env[EnvGitSSHPrivateKey]; ok {
@@ -30,7 +30,7 @@ func TestApplyProjectSSHToSpecUsesOnlyProjectCredentials(t *testing.T) {
 	}
 
 	bare := &sandbox.Spec{Env: map[string]string{EnvGitSSHPrivateKey: "env-key"}}
-	ApplyProjectSSHToSpec(bare, nil)
+	ApplySSHCredentialsToSpec(bare, nil)
 	if bare.SSHPrivateKey != "" {
 		t.Fatalf("env value must not be injected: %q", bare.SSHPrivateKey)
 	}
@@ -49,12 +49,12 @@ func TestRejectSecretEnvKeys(t *testing.T) {
 func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 	svc := NewAgentService(t.TempDir())
 	for _, k := range envauth.SecretEnvKeys() {
-		err := svc.Save(Agent{AcpBackend: AcpBackendCursor, Name: "secret-agent", ProjectID: "p1", Env: map[string]string{k: "x"}})
+		err := svc.Save(Agent{AcpBackend: AcpBackendCursor, Name: "secret-agent", Env: map[string]string{k: "x"}})
 		if !errors.Is(err, ErrSecretEnvKey) {
 			t.Fatalf("%s: err=%v", k, err)
 		}
 	}
-	if err := svc.Save(Agent{AcpBackend: AcpBackendCursor, Name: "secret-agent", ProjectID: "p1", Env: map[string]string{"GITLAB_URL": "https://gl"}}); err != nil {
+	if err := svc.Save(Agent{AcpBackend: AcpBackendCursor, Name: "secret-agent", Env: map[string]string{"GITLAB_URL": "https://gl"}}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -62,7 +62,7 @@ func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 func TestSharedAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 	svc := NewSharedAgentService(t.TempDir())
 	for _, k := range []string{EnvGitSSHKnownHosts, "GITLAB_TOKEN", "GRASP_CLAUDE_API_KEY"} {
-		err := svc.Save(SharedAgentConfig{ProjectID: "p1", Env: map[string]string{k: "h"}})
+		err := svc.Save(SharedAgentConfig{Env: map[string]string{k: "h"}})
 		if !errors.Is(err, ErrSecretEnvKey) {
 			t.Fatalf("%s: err=%v", k, err)
 		}

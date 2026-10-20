@@ -22,12 +22,6 @@ var (
 	ErrWorkflowNameExists = errors.New("工作流名称已存在")
 	// ErrWorkflowNotFound is returned when the requested workflow does not exist.
 	ErrWorkflowNotFound = errors.New("workflow not found")
-	// ErrWorkflowProjectRequired is returned when creating a workflow without projectId.
-	ErrWorkflowProjectRequired = errors.New("必须指定所属项目")
-	// ErrWorkflowProjectImmutable is returned when an update tries to change projectId.
-	ErrWorkflowProjectImmutable = errors.New("工作流归属项目创建后不可变更")
-	// ErrWorkflowProjectNotFound is returned when projectId does not exist.
-	ErrWorkflowProjectNotFound = errors.New("所属项目不存在")
 )
 
 // WorkflowService manages workflow definitions, versions, and publishing.
@@ -39,18 +33,13 @@ type WorkflowService struct {
 // NewWorkflowService builds the service.
 func NewWorkflowService(db *gorm.DB) *WorkflowService { return &WorkflowService{db: db} }
 
-// SetAgents wires the Agent catalog used by agent_profile project validation.
+// SetAgents wires the Agent catalog used by agent_profile validation.
 func (s *WorkflowService) SetAgents(skills AgentGetter) { s.skills = skills }
 
-// List returns all workflow definitions (without heavy graph bodies).
-// When projectID is non-empty, results are scoped to that project.
-func (s *WorkflowService) List(projectID string) []models.WorkflowDef {
+// List returns all workflow definitions.
+func (s *WorkflowService) List() []models.WorkflowDef {
 	var wfs []models.WorkflowDef
-	q := s.db.Order("updated_at desc")
-	if projectID != "" {
-		q = q.Where("project_id = ?", projectID)
-	}
-	q.Find(&wfs)
+	s.db.Order("updated_at desc").Find(&wfs)
 	return wfs
 }
 
@@ -63,11 +52,11 @@ func (s *WorkflowService) Get(id string) (models.WorkflowDef, bool) {
 	return wf, true
 }
 
-// NameExists reports whether any workflow in the same project (excluding
-// excludeID when non-empty) uses name with exact string equality (case-sensitive).
-func (s *WorkflowService) NameExists(name, excludeID, projectID string) bool {
+// NameExists reports whether any workflow (excluding excludeID when non-empty)
+// uses name with exact string equality (case-sensitive).
+func (s *WorkflowService) NameExists(name, excludeID string) bool {
 	var count int64
-	q := s.db.Model(&models.WorkflowDef{}).Where("name = ? AND project_id = ?", name, projectID)
+	q := s.db.Model(&models.WorkflowDef{}).Where("name = ?", name)
 	if excludeID != "" {
 		q = q.Where("id != ?", excludeID)
 	}
@@ -75,29 +64,20 @@ func (s *WorkflowService) NameExists(name, excludeID, projectID string) bool {
 	return count > 0
 }
 
-func (s *WorkflowService) validateWorkflowName(name, excludeID, projectID string) error {
+func (s *WorkflowService) validateWorkflowName(name, excludeID string) error {
 	if strings.TrimSpace(name) == "" {
 		return ErrEmptyWorkflowName
 	}
-	if projectID == "" {
-		return ErrWorkflowProjectRequired
-	}
-	if s.NameExists(name, excludeID, projectID) {
+	if s.NameExists(name, excludeID) {
 		return ErrWorkflowNameExists
 	}
 	return nil
 }
 
-func (s *WorkflowService) listNamesInProject(projectID string) []string {
+func (s *WorkflowService) listNames() []string {
 	var names []string
-	s.db.Model(&models.WorkflowDef{}).Where("project_id = ?", projectID).Pluck("name", &names)
+	s.db.Model(&models.WorkflowDef{}).Pluck("name", &names)
 	return names
-}
-
-func (s *WorkflowService) projectExists(projectID string) bool {
-	var n int64
-	s.db.Model(&models.Project{}).Where("id = ?", projectID).Count(&n)
-	return n > 0
 }
 
 // SuggestCopyName returns a unique copy name following the page.html algorithm:
@@ -124,7 +104,7 @@ func (s *WorkflowService) CopyPreview(id string) (suggestedName, sourceName, sou
 	if !ok {
 		return "", "", "", ErrWorkflowNotFound
 	}
-	return SuggestCopyName(src.Name, s.listNamesInProject(src.ProjectID)), src.Name, src.ID, nil
+	return SuggestCopyName(src.Name, s.listNames()), src.Name, src.ID, nil
 }
 
 func deepCopyGraph(g models.Graph) (models.Graph, error) {
@@ -149,7 +129,7 @@ func (s *WorkflowService) Copy(sourceID, name string) (models.WorkflowDef, error
 		if !ok {
 			return ErrWorkflowNotFound
 		}
-		if err := svc.validateWorkflowName(name, "", src.ProjectID); err != nil {
+		if err := svc.validateWorkflowName(name, ""); err != nil {
 			return err
 		}
 		graph, err := deepCopyGraph(src.Graph)
@@ -159,7 +139,6 @@ func (s *WorkflowService) Copy(sourceID, name string) (models.WorkflowDef, error
 		now := time.Now()
 		newWF = models.WorkflowDef{
 			ID:          "wf-" + uuid.NewString()[:8],
-			ProjectID:   src.ProjectID,
 			Name:        name,
 			Description: src.Description,
 			NeedsRepo:   src.NeedsRepo,
@@ -209,13 +188,12 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 // such as NeedsRepo / ShowOnHome / NotifyPolicy still persist); any content
 // change appends Version+1 with the given source in one transaction.
 // The incoming Version/PublishedVersion are ignored: the service owns them.
-// ProjectID is required on create and immutable on update.
 func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 	var existing models.WorkflowDef
 	if err := s.db.First(&existing, "id = ?", wf.ID).Error; err != nil {
 		if wf.Defaults != nil {
 			cp := *wf.Defaults
-			vars, err := sanitizeProjectVars(cp.Variables)
+			vars, err := sanitizeWorkspaceVars(cp.Variables)
 			if err != nil {
 				return err
 			}
@@ -224,13 +202,7 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 		}
 		wf.CreatedAt = time.Now()
 		wf.UpdatedAt = wf.CreatedAt
-		if strings.TrimSpace(wf.ProjectID) == "" {
-			return ErrWorkflowProjectRequired
-		}
-		if !s.projectExists(wf.ProjectID) {
-			return ErrWorkflowProjectNotFound
-		}
-		if err := s.validateWorkflowName(wf.Name, wf.ID, wf.ProjectID); err != nil {
+		if err := s.validateWorkflowName(wf.Name, wf.ID); err != nil {
 			return err
 		}
 		if err := s.validateGraph(wf); err != nil {
@@ -246,23 +218,19 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 			return createWorkflowWithHead(tx, wf, source)
 		})
 	}
-	if wf.ProjectID != "" && wf.ProjectID != existing.ProjectID {
-		return ErrWorkflowProjectImmutable
-	}
 	if wf.Defaults == nil {
 		wf.Defaults = existing.Defaults
 	}
-	wf.ProjectID = existing.ProjectID
-	if err := s.validateWorkflowName(wf.Name, wf.ID, wf.ProjectID); err != nil {
+	if err := s.validateWorkflowName(wf.Name, wf.ID); err != nil {
 		return err
 	}
 	if wf.Defaults != nil {
 		cp := *wf.Defaults
-		var old []models.ProjectVariable
+		var old []models.WorkspaceVariable
 		if existing.Defaults != nil {
 			old = existing.Defaults.Variables
 		}
-		vars, err := mergeProjectVars(old, cp.Variables)
+		vars, err := mergeWorkspaceVars(old, cp.Variables)
 		if err != nil {
 			return err
 		}
@@ -503,7 +471,7 @@ func (s *WorkflowService) Restore(id string, version int) (models.WorkflowDef, e
 		return wf, nil
 	}
 	if name != wf.Name {
-		if err := s.validateWorkflowName(name, wf.ID, wf.ProjectID); err != nil {
+		if err := s.validateWorkflowName(name, wf.ID); err != nil {
 			return wf, err
 		}
 	}
@@ -654,7 +622,7 @@ func (s *WorkflowService) validateGraph(wf *models.WorkflowDef) error {
 	if s.skills == nil {
 		return nil
 	}
-	return ValidateAgentProfilesProject(s.skills, wf.ProjectID, wf.Graph)
+	return ValidateAgentProfiles(s.skills, wf.Graph)
 }
 
 // AgentGetter looks up an Agent by name (AgentService.Get).
@@ -662,16 +630,12 @@ type AgentGetter interface {
 	Get(name string) (Agent, bool)
 }
 
-// ValidateAgentProfilesProject rejects non-empty agent_profile refs that are
-// missing or belong to another project: the run takes credentials from the
-// workflow's project but the backend from the Agent, so a foreign Agent can
-// pair a backend with credentials the project does not have. Empty
-// agent_profile is skipped; an empty projectID skips the ownership check.
-func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models.Graph) error {
+// ValidateAgentProfiles rejects non-empty agent_profile refs whose Agent does
+// not exist. Empty agent_profile is skipped.
+func ValidateAgentProfiles(skills AgentGetter, g models.Graph) error {
 	if skills == nil {
 		return nil
 	}
-	projectID = strings.TrimSpace(projectID)
 	var bad []string
 	for _, n := range g.Nodes {
 		if n.Config == nil {
@@ -685,13 +649,8 @@ func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models
 		if label == "" {
 			label = n.ID
 		}
-		agent, ok := skills.Get(profile)
-		if !ok {
+		if _, ok := skills.Get(profile); !ok {
 			bad = append(bad, fmt.Sprintf("%s → %s（已删除）", label, profile))
-			continue
-		}
-		if projectID != "" && strings.TrimSpace(agent.ProjectID) != projectID {
-			bad = append(bad, fmt.Sprintf("%s → %s（属于其他项目）", label, profile))
 		}
 	}
 	if len(bad) == 0 {
@@ -703,6 +662,6 @@ func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models
 // Catalog reads navigation metadata without graph bodies.
 func (s *WorkflowService) Catalog() []models.WorkflowDef {
 	var rows []models.WorkflowDef
-	s.db.Select("id", "project_id", "name", "description", "version", "published_version", "needs_repo", "show_on_home", "updated_at", "last_run_at").Order("updated_at desc, id asc").Find(&rows)
+	s.db.Select("id", "name", "description", "version", "published_version", "needs_repo", "show_on_home", "updated_at", "last_run_at").Order("updated_at desc, id asc").Find(&rows)
 	return rows
 }

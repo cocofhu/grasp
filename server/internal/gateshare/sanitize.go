@@ -230,7 +230,7 @@ func sanitizeJSONValue(v any, depth int) any {
 			if strings.Contains(lk, "token") || strings.Contains(lk, "secret") ||
 				strings.Contains(lk, "password") || strings.Contains(lk, "apikey") ||
 				strings.Contains(lk, "env") || lk == "runid" || lk == "run_id" ||
-				lk == "projectid" || lk == "project_id" || lk == "workflowid" ||
+				lk == "workflowid" ||
 				lk == "workflow_id" || lk == "workflow_name" || lk == "workflowname" ||
 				strings.Contains(lk, "member") || lk == "url" || lk == "href" ||
 				strings.Contains(lk, "blob") {

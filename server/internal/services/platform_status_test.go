@@ -17,8 +17,8 @@ func TestPlatformStatus_emptyNullAndTrueZero(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	dash := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	dash := NewDashboardService(db, workspace)
 
 	loc := time.FixedZone("UTC+8", 8*3600)
 	now := time.Date(2026, 8, 12, 14, 7, 0, 0, loc)
@@ -68,8 +68,8 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	dash := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	dash := NewDashboardService(db, workspace)
 
 	loc := time.FixedZone("UTC+8", 8*3600)
 	now := time.Date(2026, 8, 12, 14, 7, 0, 0, loc)
@@ -80,11 +80,11 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 		}
 	}
 
-	p, err := projects.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustCreate(&models.WorkflowDef{ID: "wf1", ProjectID: p.ID, Name: "w", Version: 1})
+	mustCreate(&models.WorkflowDef{ID: "wf1", Name: "w", Version: 1})
 
 	morning := time.Date(2026, 8, 12, 11, 22, 0, 0, loc)
 	mustCreate(&models.Run{ID: "run-a", WorkflowID: "wf1", Status: "completed", StartedAt: morning.UTC(), CreatedAt: morning.UTC()})
@@ -141,8 +141,8 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	dash := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	dash := NewDashboardService(db, workspace)
 	loc := time.FixedZone("UTC+8", 8*3600)
 	mustCreate := func(v any) {
 		t.Helper()
@@ -151,11 +151,11 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 		}
 	}
 
-	p, err := projects.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustCreate(&models.WorkflowDef{ID: "wf1", ProjectID: p.ID, Name: "w", Version: 1})
+	mustCreate(&models.WorkflowDef{ID: "wf1", Name: "w", Version: 1})
 
 	day1 := time.Date(2026, 8, 11, 12, 2, 0, 0, loc)
 	mustCreate(&models.Run{ID: "run-d1", WorkflowID: "wf1", Status: "completed", StartedAt: day1.UTC(), CreatedAt: day1.UTC()})
@@ -188,8 +188,8 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	dash := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	dash := NewDashboardService(db, workspace)
 	loc := time.FixedZone("UTC+8", 8*3600)
 	now := time.Date(2026, 8, 12, 14, 7, 0, 0, loc)
 	mustCreate := func(v any) {
@@ -198,11 +198,11 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p, err := projects.CreateFixture("P", "", nil)
+	_, err = workspace.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mustCreate(&models.WorkflowDef{ID: "wf1", ProjectID: p.ID, Name: "w", Version: 1})
+	mustCreate(&models.WorkflowDef{ID: "wf1", Name: "w", Version: 1})
 	ts := time.Date(2026, 8, 12, 14, 6, 0, 0, loc).UTC()
 	mustCreate(&models.Run{ID: "run1", WorkflowID: "wf1", Status: "completed", StartedAt: ts, CreatedAt: ts})
 	mustCreate(&models.StateRun{
@@ -253,8 +253,8 @@ func TestPlatformStatus_singleflightMerges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	dash := NewDashboardService(db, projects)
+	workspace := NewWorkspaceService(db)
+	dash := NewDashboardService(db, workspace)
 	now := time.Date(2026, 8, 12, 14, 7, 0, 0, time.UTC)
 
 	var started int32

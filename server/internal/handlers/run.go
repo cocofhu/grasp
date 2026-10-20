@@ -23,7 +23,7 @@ type startRunBody struct {
 	// sandbox once that node parks, so the caller can navigate away at once.
 	FirstMessage *models.CompositeText `json:"firstMessage"`
 	// PublishedSnapshot selects the home-page start: execute PublishedVersion
-	// instead of the latest saved head. Editor, project, and sidebar starts omit it.
+	// instead of the latest saved head. Editor, home, and sidebar starts omit it.
 	PublishedSnapshot bool `json:"publishedSnapshot"`
 }
 
@@ -54,7 +54,7 @@ func (h *Handlers) StartRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if wf, ok := h.WF.Get(c.Param("id")); ok && wf.ProjectID != "" {
+	if _, ok := h.WF.Get(c.Param("id")); ok {
 		payload := map[string]any{
 			"workflowId": c.Param("id"),
 			"trigger":    trigger,
@@ -65,7 +65,6 @@ func (h *Handlers) StartRun(c *gin.Context) {
 			payload["env"] = services.MaskSandboxEnvForAudit(run.SandboxEnv)
 		}
 		h.recordAudit(services.AuditRecord{
-			ProjectID:    wf.ProjectID,
 			Actor:        h.auditActorFromContext(c),
 			Action:       models.AuditActionRunStart,
 			ResourceType: "run",
@@ -133,13 +132,12 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 	statuses := parseRunStatuses(c.Query("status"))
 	tags := parseRunTags(append(c.QueryArray("tag"), c.Query("tag"))...)
 	wf := c.Query("wf")
-	projectID := c.Query("projectId")
 	sort, order := parseRunListSort(c.Query("sort"), c.Query("order"))
 	pg, ok := parsePagination(c)
 	if !ok {
 		return
 	}
-	runs, total, err := h.Runs.ListPageByTags(statuses, wf, projectID, tags, pg.Page, pg.PageSize, sort, order)
+	runs, total, err := h.Runs.ListPageByTags(statuses, wf, tags, pg.Page, pg.PageSize, sort, order)
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
@@ -192,25 +190,16 @@ func (h *Handlers) CancelRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	projectID := ""
-	if h.WF != nil {
-		if wf, wOk := h.WF.Get(run.WorkflowID); wOk {
-			projectID = wf.ProjectID
-		}
-	}
-	if projectID != "" {
-		h.recordAudit(services.AuditRecord{
-			ProjectID:    projectID,
-			Actor:        actor,
-			Action:       models.AuditActionRunCancel,
-			ResourceType: "run",
-			ResourceID:   runID,
-			RunID:        runID,
-			Outcome:      models.AuditOutcomeOK,
-			Summary:      "cancel run",
-			Payload:      map[string]any{"workflowId": run.WorkflowID, "runId": runID},
-		})
-	}
+	h.recordAudit(services.AuditRecord{
+		Actor:        actor,
+		Action:       models.AuditActionRunCancel,
+		ResourceType: "run",
+		ResourceID:   runID,
+		RunID:        runID,
+		Outcome:      models.AuditOutcomeOK,
+		Summary:      "cancel run",
+		Payload:      map[string]any{"workflowId": run.WorkflowID, "runId": runID},
+	})
 	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
 }
 

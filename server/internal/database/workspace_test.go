@@ -1,90 +1,91 @@
 package database
 
 import (
-	"github.com/cocofhu/grasp/internal/models"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestWorkspaceStartupPreservesCustomIDAndRejectsMultipleBeforeMigration(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "workspace.db")
-	db, err := OpenSQLite(path)
+func TestOpenRejectsLegacyProjectsTable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	raw, err := openSQLiteConn(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Model(&models.Project{}).Where("id = ?", models.DefaultProjectID).Update("id", "custom-id").Error; err != nil {
+	if err := raw.Exec("CREATE TABLE projects (id TEXT PRIMARY KEY)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = closeGorm(db); err != nil {
-		t.Fatal(err)
-	}
-	db, err = OpenSQLite(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var p models.Project
-	if err = db.First(&p).Error; err != nil || p.ID != "custom-id" {
-		t.Fatalf("custom workspace lost: %+v %v", p, err)
-	}
-	if err = db.Create(&models.Project{ID: "second", Name: "Second"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	_ = closeGorm(db)
-	if _, err = OpenSQLite(path); err == nil {
-		t.Fatal("multiple projects silently accepted")
+	_ = closeGorm(raw)
+	if _, err := OpenSQLite(path); !errors.Is(err, ErrLegacySchema) {
+		t.Fatalf("want ErrLegacySchema, got %v", err)
 	}
 }
 
-func TestWorkspaceFilePreflightRejectsOrphansAndInvalidIdentity(t *testing.T) {
-	profiles := filepath.Join(t.TempDir(), "profiles")
-	shared := filepath.Join(filepath.Dir(profiles), "project-shared", "removed")
-	if err := os.MkdirAll(shared, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := checkWorkspaceFiles(profiles, ""); err == nil {
-		t.Fatal("shared-only installation treated as empty")
-	}
-	if err := checkWorkspaceFiles(profiles, "canonical"); err == nil {
-		t.Fatal("foreign shared configuration adopted")
-	}
-	if err := os.Rename(shared, filepath.Join(filepath.Dir(shared), "canonical")); err != nil {
-		t.Fatal(err)
-	}
-	agent := filepath.Join(profiles, "agent")
-	if err := os.MkdirAll(agent, 0700); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(agent, "agent.json"), []byte(`{"projectId":"removed"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := checkWorkspaceFiles(profiles, "canonical"); err == nil {
-		t.Fatal("foreign Agent configuration adopted")
-	}
-	if err := os.WriteFile(filepath.Join(agent, "agent.json"), []byte(`{"projectId":"canonical"}`), 0600); err != nil {
-		t.Fatal(err)
-	}
-	if err := checkWorkspaceFiles(profiles, "canonical"); err != nil {
-		t.Fatal(err)
-	}
-}
-func TestWorkspaceStartupDoesNotSeedOverOrphanResources(t *testing.T) {
-	db, err := OpenSQLiteTest(filepath.Join(t.TempDir(), "orphans.db"))
+func TestOpenRejectsLegacyProjectIDColumn(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-col.db")
+	raw, err := openSQLiteConn(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Delete(&models.Project{}, "id = ?", models.DefaultProjectID).Error; err != nil {
+	if err := raw.Exec("CREATE TABLE workflow_defs (id TEXT PRIMARY KEY, project_id TEXT)").Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = db.Create(&models.Artifact{ID: "orphan", ProjectID: "gone"}).Error; err != nil {
+	_ = closeGorm(raw)
+	if _, err := OpenSQLite(path); !errors.Is(err, ErrLegacySchema) {
+		t.Fatalf("want ErrLegacySchema, got %v", err)
+	}
+}
+
+func TestOpenRejectsLegacySharedDirectory(t *testing.T) {
+	data := t.TempDir()
+	profiles := filepath.Join(data, "profiles")
+	if err := os.MkdirAll(filepath.Join(data, "project-shared"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err = ensureDefaultProject(db); err == nil {
-		t.Fatal("orphan resources were treated as empty installation")
+	if _, err := OpenSQLite(filepath.Join(data, "grasp.db"), profiles); !errors.Is(err, ErrLegacySchema) {
+		t.Fatalf("want ErrLegacySchema, got %v", err)
+	}
+}
+
+func TestOpenFreshSeedsWorkspaceAndReopens(t *testing.T) {
+	data := t.TempDir()
+	path := filepath.Join(data, "grasp.db")
+	profiles := filepath.Join(data, "profiles")
+	db, err := OpenSQLite(path, profiles)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ws models.Workspace
+	if err := db.First(&ws, "id = ?", models.WorkspaceID).Error; err != nil {
+		t.Fatalf("workspace not seeded: %v", err)
+	}
+	_ = closeGorm(db)
+	db, err = OpenSQLite(path, profiles)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
 	}
 	var n int64
-	db.Model(&models.Project{}).Count(&n)
-	if n != 0 {
-		t.Fatal("seeded an invented workspace")
+	db.Model(&models.Workspace{}).Count(&n)
+	if n != 1 {
+		t.Fatalf("want 1 workspace, got %d", n)
+	}
+}
+
+func TestPrimaryChannelIndexIsGlobal(t *testing.T) {
+	db, err := OpenSQLite(filepath.Join(t.TempDir(), "idx.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('a', 'a', 'qq', 1)").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('b', 'b', 'qq', 1)").Error; err == nil {
+		t.Fatal("second primary channel must violate the unique index")
+	}
+	if err := db.Exec("INSERT INTO channel_configs (id, name, type, is_primary) VALUES ('c', 'c', 'qq', 0)").Error; err != nil {
+		t.Fatalf("secondary channel: %v", err)
 	}
 }

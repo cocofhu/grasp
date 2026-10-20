@@ -8,32 +8,20 @@ import (
 	"testing"
 )
 
-func TestWorkspaceRejectsCreationDeletionAndAmbiguousScope(t *testing.T) {
+func TestWorkspaceMissingRowReportsError(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "workspace.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := NewProjectService(db)
-	if _, err = svc.Create("another", "", nil); !errors.Is(err, ErrWorkspaceProtected) {
+	svc := NewWorkspaceService(db)
+	if ws, err := svc.Workspace(); err != nil || ws.ID != models.WorkspaceID {
+		t.Fatalf("%+v %v", ws, err)
+	}
+	if err = db.Delete(&models.Workspace{}, "id = ?", models.WorkspaceID).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.Delete(models.DefaultProjectID); !errors.Is(err, ErrWorkspaceProtected) {
+	if _, err = svc.Workspace(); !errors.Is(err, ErrWorkspaceMissing) {
 		t.Fatal(err)
-	}
-	if id, err := svc.ResolveWorkspaceID(""); err != nil || id != models.DefaultProjectID {
-		t.Fatalf("%s %v", id, err)
-	}
-	if _, err = svc.ResolveWorkspaceID("foreign"); !errors.Is(err, ErrWorkspaceScope) {
-		t.Fatal(err)
-	}
-	if err = db.Create(&models.Project{ID: "legacy", Name: "Legacy"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if _, err = svc.Workspace(); !errors.Is(err, ErrWorkspaceMigrationRequired) {
-		t.Fatal(err)
-	}
-	if svc.DefaultProjectID() != "" {
-		t.Fatal("ambiguous workspace must not fall back")
 	}
 }
 
@@ -42,16 +30,16 @@ func TestWorkflowDefaultsKeepSecretMetadataAndGraphIndependentInheritance(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	projects := NewProjectService(db)
-	vars := []models.ProjectVariable{{Name: "global", Type: "string", Value: "global"}, {Name: "token", Type: "string", Value: "workspace-token", Secret: true}}
-	if _, err = projects.Update(models.DefaultProjectID, nil, nil, &vars, nil, nil); err != nil {
+	workspace := NewWorkspaceService(db)
+	vars := []models.WorkspaceVariable{{Name: "global", Type: "string", Value: "global"}, {Name: "token", Type: "string", Value: "workspace-token", Secret: true}}
+	if _, err = workspace.Update(nil, nil, &vars, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	wf := models.WorkflowDef{ID: "defaults", ProjectID: models.DefaultProjectID, Name: "Defaults", Defaults: &models.WorkflowDefaults{InheritWorkspace: true, Variables: []models.ProjectVariable{{Name: "token", Type: "string", Value: "workflow-token", Secret: true}}}}
+	wf := models.WorkflowDef{ID: "defaults", Name: "Defaults", Defaults: &models.WorkflowDefaults{InheritWorkspace: true, Variables: []models.WorkspaceVariable{{Name: "token", Type: "string", Value: "workflow-token", Secret: true}}}}
 	if err = db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
-	effective := projects.VariablesForWorkflow(wf.ID)
+	effective := workspace.VariablesForWorkflow(wf.ID)
 	if len(effective) != 2 || effective[1].Value != "workflow-token" || !effective[1].Secret {
 		t.Fatalf("effective = %+v", effective)
 	}
@@ -59,7 +47,7 @@ func TestWorkflowDefaultsKeepSecretMetadataAndGraphIndependentInheritance(t *tes
 	if err = db.Save(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
-	effective = projects.VariablesForWorkflow(wf.ID)
+	effective = workspace.VariablesForWorkflow(wf.ID)
 	if len(effective) != 1 || effective[0].Name != "token" {
 		t.Fatalf("inheritance disabled = %+v", effective)
 	}
@@ -70,7 +58,7 @@ func TestWorkflowCatalogNeverLoadsGraphOrDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wf := models.WorkflowDef{ID: "catalog", ProjectID: models.DefaultProjectID, Name: "Draft", Version: 2, PublishedVersion: 1, Graph: models.Graph{Variables: []models.Variable{{Name: "secret", Value: "sensitive"}}}, Defaults: &models.WorkflowDefaults{Variables: []models.ProjectVariable{{Name: "token", Value: "sensitive", Secret: true}}}}
+	wf := models.WorkflowDef{ID: "catalog", Name: "Draft", Version: 2, PublishedVersion: 1, Graph: models.Graph{Variables: []models.Variable{{Name: "secret", Value: "sensitive"}}}, Defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "token", Value: "sensitive", Secret: true}}}}
 	if err = db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -86,11 +74,11 @@ func TestWorkflowDefaultsCannotExposeMaskedSecretWhenClearingFlag(t *testing.T) 
 		t.Fatal(err)
 	}
 	svc := NewWorkflowService(db)
-	wf := models.WorkflowDef{ID: "secret-defaults", ProjectID: models.DefaultProjectID, Name: "Secret defaults", Defaults: &models.WorkflowDefaults{Variables: []models.ProjectVariable{{Name: "TOKEN", Type: "string", Secret: true, Value: "private-token"}}}}
+	wf := models.WorkflowDef{ID: "secret-defaults", Name: "Secret defaults", Defaults: &models.WorkflowDefaults{Variables: []models.WorkspaceVariable{{Name: "TOKEN", Type: "string", Secret: true, Value: "private-token"}}}}
 	if err := svc.Save(&wf); err != nil {
 		t.Fatal(err)
 	}
-	wf.Defaults.Variables = MaskedProjectVars(wf.Defaults.Variables)
+	wf.Defaults.Variables = MaskedWorkspaceVars(wf.Defaults.Variables)
 	wf.Defaults.Variables[0].Secret = false
 	if err := svc.Save(&wf); !errors.Is(err, ErrSecretPlaceholderOnPublicValue) {
 		t.Fatalf("masked secret was exposed: %v", err)

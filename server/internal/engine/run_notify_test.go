@@ -65,14 +65,6 @@ func TestRunNotifyOnWaitingHuman(t *testing.T) {
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
-	proj := models.Project{ID: "proj-run-notify", Name: "Notify", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Create(&proj).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", proj.ID).Error; err != nil {
-		t.Fatal(err)
-	}
 
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
@@ -108,14 +100,6 @@ func TestRunNotifyOnNodeFailed(t *testing.T) {
 	}
 	eng, db, prov := setupEngineGraphP(t, g)
 	prov.failLeft = map[string]int{"boom": 99}
-	proj := models.Project{ID: "proj-run-fail", Name: "Fail", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Create(&proj).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", proj.ID).Error; err != nil {
-		t.Fatal(err)
-	}
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
 	run, err := eng.StartRun("wf", nil, "test")
@@ -147,16 +131,13 @@ func TestRunNotifyFailRunNoNodeSkipped(t *testing.T) {
 }
 
 func TestFireRunNotifyDirect(t *testing.T) {
-	eng, db, _ := setupEngineGraphP(t, models.Graph{
+	eng, _, _ := setupEngineGraphP(t, models.Graph{
 		Nodes: []models.Node{
 			{ID: "input", Type: "input"},
 			{ID: "gate", Type: "human_gate", Label: "G"},
 		},
 		Edges: []models.Edge{{ID: "e1", Source: "input", Target: "gate"}},
 	})
-	proj := models.Project{ID: "proj-direct", Name: "D", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	_ = db.Create(&proj)
-	_ = db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Update("project_id", proj.ID)
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
 	c := &execCtx{
@@ -165,7 +146,7 @@ func TestFireRunNotifyDirect(t *testing.T) {
 	}
 	eng.fireRunNotify(c, &models.Node{ID: "gate", Label: "G", Type: "human_gate"}, models.NotifyKindWaitingHuman)
 	evs := rec.wait(t, 1)
-	if evs[0].Iteration != 2 || evs[0].ProjectID != "proj-direct" {
+	if evs[0].Iteration != 2 {
 		t.Fatalf("%+v", evs[0])
 	}
 }
@@ -181,14 +162,6 @@ func TestRunNotifyOnCompleted(t *testing.T) {
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
-	proj := models.Project{ID: "proj-run-done", Name: "Done", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Create(&proj).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", proj.ID).Error; err != nil {
-		t.Fatal(err)
-	}
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
 	run, err := eng.StartRun("wf", nil, "test")
@@ -213,9 +186,6 @@ func TestFireCompletedRunNotifySentinel(t *testing.T) {
 	eng, db, _ := setupEngineGraphP(t, models.Graph{
 		Nodes: []models.Node{{ID: "input", Type: "input", Label: "输入"}},
 	})
-	proj := models.Project{ID: "proj-sentinel", Name: "S", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	_ = db.Create(&proj)
-	_ = db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Update("project_id", proj.ID)
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
 	run := models.Run{ID: "run-sentinel", WorkflowID: "wf", WorkflowName: "W", Status: "completed"}
@@ -239,9 +209,6 @@ func TestFireCompletedRunNotifyGraphFallback(t *testing.T) {
 			{ID: "output", Type: "output", Label: "结束"},
 		},
 	})
-	proj := models.Project{ID: "proj-graph-fb", Name: "G", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	_ = db.Create(&proj)
-	_ = db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Update("project_id", proj.ID)
 	rec := &recordingRunNotify{}
 	eng.SetRunNotifier(rec)
 	run := models.Run{

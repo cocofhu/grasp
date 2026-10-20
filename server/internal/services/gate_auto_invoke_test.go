@@ -37,7 +37,6 @@ func TestGateAutoVarTruthy(t *testing.T) {
 
 func TestBuildGateAutoPromptAppendsUserPrompt(t *testing.T) {
 	task := GateAutoTask{
-		ProjectID:  "proj1",
 		RunID:      "run1",
 		WorkflowID: "wf1",
 		NodeID:     "gate",
@@ -55,7 +54,6 @@ func TestBuildGateAutoPromptAppendsUserPrompt(t *testing.T) {
 	}
 	got := BuildGateAutoPrompt(task, "")
 	for _, needle := range []string{
-		"projectId: proj1",
 		"runId: run1",
 		"nodeId: gate",
 		"gateId: 42",
@@ -88,12 +86,12 @@ func TestBuildGateAutoPromptAppendsUserPrompt(t *testing.T) {
 func TestUpdateBindingGateAutoFields(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoCfg", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoCfg", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
@@ -101,7 +99,7 @@ func TestUpdateBindingGateAutoFields(t *testing.T) {
 	agent := "pm-agent"
 	varName := "pm_auto_gate"
 	prompt := "decide carefully"
-	b, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-workflow-write"}, &varName, &prompt)
+	b, err := pm.UpdateBinding(&en, &agent, []string{"pm-workflow-write"}, &varName, &prompt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +109,7 @@ func TestUpdateBindingGateAutoFields(t *testing.T) {
 	// Save without existence check: nonsense var name is allowed.
 	bogus := "does_not_exist_yet"
 	emptyPrompt := ""
-	b2, err := pm.UpdateBinding(p.ID, nil, nil, nil, &bogus, &emptyPrompt)
+	b2, err := pm.UpdateBinding(nil, nil, nil, &bogus, &emptyPrompt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +118,7 @@ func TestUpdateBindingGateAutoFields(t *testing.T) {
 	}
 	// Empty var name disables capability.
 	off := ""
-	b3, err := pm.UpdateBinding(p.ID, nil, nil, nil, &off, nil)
+	b3, err := pm.UpdateBinding(nil, nil, nil, &off, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,54 +130,54 @@ func TestUpdateBindingGateAutoFields(t *testing.T) {
 func TestGateAutoEnqueuePreconditions(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoPre", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoPre", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
 	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
 
 	base := GateAutoTask{
-		ProjectID: p.ID, RunID: "run1", NodeID: "g", GateID: 1,
+		RunID: "run1", NodeID: "g", GateID: 1,
 		Vars: map[string]any{"pm_auto_gate": true},
 	}
 
 	// No config var → not enqueued.
 	svc.Enqueue(base)
-	if svc.QueueLenForTest(p.ID) != 0 || svc.BusyForTest(p.ID) {
+	if svc.QueueLenForTest() != 0 || svc.BusyForTest() {
 		t.Fatal("empty gateAutoVar must not enqueue")
 	}
 
 	en := true
 	agent := "pm-agent"
 	varName := "pm_auto_gate"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-progress"}, &varName, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-progress"}, &varName, nil); err != nil {
 		t.Fatal(err)
 	}
 	svc.Enqueue(base)
-	if svc.QueueLenForTest(p.ID) != 0 {
+	if svc.QueueLenForTest() != 0 {
 		t.Fatal("missing pm-workflow-write must not enqueue")
 	}
 
-	if _, err := pm.UpdateBinding(p.ID, nil, nil, []string{"pm-workflow-write"}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(nil, nil, []string{"pm-workflow-write"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	// Var false → not enqueued.
 	falseTask := base
 	falseTask.Vars = map[string]any{"pm_auto_gate": false}
 	svc.Enqueue(falseTask)
-	if svc.QueueLenForTest(p.ID) != 0 {
+	if svc.QueueLenForTest() != 0 {
 		t.Fatal("false var must not enqueue")
 	}
 	// Missing var key → not enqueued.
 	miss := base
 	miss.Vars = map[string]any{}
 	svc.Enqueue(miss)
-	if svc.QueueLenForTest(p.ID) != 0 {
+	if svc.QueueLenForTest() != 0 {
 		t.Fatal("missing var must not enqueue")
 	}
 
@@ -187,33 +185,33 @@ func TestGateAutoEnqueuePreconditions(t *testing.T) {
 	svc.Enqueue(base)
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if !svc.BusyForTest(p.ID) && svc.QueueLenForTest(p.ID) == 0 {
+		if !svc.BusyForTest() && svc.QueueLenForTest() == 0 {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if svc.BusyForTest(p.ID) || svc.QueueLenForTest(p.ID) != 0 {
+	if svc.BusyForTest() || svc.QueueLenForTest() != 0 {
 		t.Fatalf("worker should finish degrade path; busy=%v len=%d",
-			svc.BusyForTest(p.ID), svc.QueueLenForTest(p.ID))
+			svc.BusyForTest(), svc.QueueLenForTest())
 	}
 }
 
 func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoSkip", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoSkip", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
 	en := true
 	agent := "pm-agent"
 	varName := "pm_auto_gate"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-workflow-write"}, &varName, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-workflow-write"}, &varName, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -229,21 +227,21 @@ func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 	turns := NewPmTurnRunner(pm, nil)
 	svc := NewGateAutoInvokeService(db, pm, nil, turns, CronTokenHooks{})
 	svc.Enqueue(GateAutoTask{
-		ProjectID: p.ID, RunID: "run-skip", NodeID: "gate", GateID: gate.ID,
+		RunID: "run-skip", NodeID: "gate", GateID: gate.ID,
 		Vars: map[string]any{"pm_auto_gate": true},
 	})
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		if !svc.BusyForTest(p.ID) {
+		if !svc.BusyForTest() {
 			break
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	if svc.BusyForTest(p.ID) {
+	if svc.BusyForTest() {
 		t.Fatal("resolved gate should skip without hanging")
 	}
 	// No message appended (no thread activity required).
-	threads, _ := pm.ListThreadsForAgent(p.ID, agent)
+	threads, _ := pm.ListThreadsForAgent(agent)
 	for _, th := range threads {
 		msgs, _ := pm.ListMessages(th.ID)
 		if len(msgs) != 0 {
@@ -255,34 +253,34 @@ func TestGateAutoSkipResolvedBeforeSend(t *testing.T) {
 func TestResolveMainThreadPrefersWritableUser(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoThread", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoThread", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
 	en := true
 	agent := "pm-agent"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := pm.CreateThread(p.ID, "qq:guild:ch1", "频道", agent, models.ChatThreadKindUser); err != nil {
+	if _, err := pm.CreateThread("qq:guild:ch1", "频道", agent, models.ChatThreadKindUser); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.CreateCronThread(p.ID, agent, "cron"); err != nil {
+	if _, err := pm.CreateCronThread(agent, "cron"); err != nil {
 		t.Fatal(err)
 	}
-	human, err := pm.CreateThread(p.ID, "alice", "主会话", agent, models.ChatThreadKindUser)
+	human, err := pm.CreateThread("alice", "主会话", agent, models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
-	got, err := svc.resolveMainThread(p.ID)
+	got, err := svc.resolveMainThread()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,32 +292,32 @@ func TestResolveMainThreadPrefersWritableUser(t *testing.T) {
 func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoFlip", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoFlip", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
 	en := true
 	agent := "pm-agent"
 	varName := "pm_auto_gate"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-workflow-write"}, &varName, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-workflow-write"}, &varName, nil); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
 
 	ok, reason := svc.shouldEnqueue(GateAutoTask{
-		ProjectID: p.ID, RunID: "r", NodeID: "g1", GateID: 1,
+		RunID: "r", NodeID: "g1", GateID: 1,
 		Vars: map[string]any{"pm_auto_gate": false},
 	})
 	if ok || reason != "var_missing_or_not_truthy" {
 		t.Fatalf("false var: ok=%v reason=%s", ok, reason)
 	}
 	ok, reason = svc.shouldEnqueue(GateAutoTask{
-		ProjectID: p.ID, RunID: "r", NodeID: "g2", GateID: 2,
+		RunID: "r", NodeID: "g2", GateID: 2,
 		Vars: map[string]any{"pm_auto_gate": true},
 	})
 	if !ok {
@@ -330,22 +328,22 @@ func TestGateAutoEnqueueFollowsVarFlip(t *testing.T) {
 func TestResolveMainThreadCreatesWhenAbsent(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("GateAutoCreateThr", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("GateAutoCreateThr", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent", ProjectID: p.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "pm-agent"}); err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, skills)
 	en := true
 	agent := "pm-agent"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
-	got, err := svc.resolveMainThread(p.ID)
+	got, err := svc.resolveMainThread()
 	if err != nil {
 		t.Fatal(err)
 	}

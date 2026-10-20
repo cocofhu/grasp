@@ -16,26 +16,26 @@ func TestRunServiceListByTagsANDExactMatch(t *testing.T) {
 	db.Create(&models.Run{ID: "run-one", Status: "running", WorkflowID: "wf-1", Tags: []string{"bugfix"}, StartedAt: base.Add(2 * time.Second), CreatedAt: base})
 	db.Create(&models.Run{ID: "run-substring", Status: "running", WorkflowID: "wf-1", Tags: []string{"bugfix"}, StartedAt: base.Add(time.Second), CreatedAt: base})
 
-	got := s.ListByTags(nil, "", "", []string{"bugfix", "spike"})
+	got := s.ListByTags(nil, "", []string{"bugfix", "spike"})
 	if len(got) != 1 || got[0].ID != "run-both" {
 		t.Fatalf("AND tags result = %v, want [run-both]", idsOf(got))
 	}
 
-	got = s.ListByTags(nil, "", "", []string{"bug"})
+	got = s.ListByTags(nil, "", []string{"bug"})
 	if len(got) != 0 {
 		t.Fatalf("substring tag should not match: %v", idsOf(got))
 	}
 }
 
-func TestProjectRunTags(t *testing.T) {
+func TestWorkspaceRunTags(t *testing.T) {
 	db := newTestDB(t)
 	s := NewRunService(db)
-	db.Create(&models.WorkflowDef{ID: "wf-1", ProjectID: "proj-1", Name: "WF 1", Graph: validGraph()})
-	db.Create(&models.WorkflowDef{ID: "wf-2", ProjectID: "proj-1", Name: "WF 2", Graph: validGraph()})
+	db.Create(&models.WorkflowDef{ID: "wf-1", Name: "WF 1", Graph: validGraph()})
+	db.Create(&models.WorkflowDef{ID: "wf-2", Name: "WF 2", Graph: validGraph()})
 	db.Create(&models.Run{ID: "r1", WorkflowID: "wf-1", Status: "completed", Tags: []string{"bugfix", "spike"}})
 	db.Create(&models.Run{ID: "r2", WorkflowID: "wf-2", Status: "completed", Tags: []string{"release", "bugfix"}})
 
-	got := s.ProjectRunTags("proj-1")
+	got := s.RunTags()
 	want := []string{"bugfix", "release", "spike"}
 	if len(got) != len(want) {
 		t.Fatalf("len=%d want %d (%v)", len(got), len(want), got)

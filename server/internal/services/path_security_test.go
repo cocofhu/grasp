@@ -76,7 +76,7 @@ func TestImportZIPRejectsAbsolutePath(t *testing.T) {
 	s := NewAgentService(t.TempDir())
 	meta := []byte(`{"name":"x","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"/tmp/evil.txt": []byte("bad")})
-	if _, err := s.ImportZIP(raw, "x", "p1", ImportZIPCreate); err == nil {
+	if _, err := s.ImportZIP(raw, "x", ImportZIPCreate); err == nil {
 		t.Fatal("expected absolute path rejection")
 	}
 }

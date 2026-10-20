@@ -27,15 +27,15 @@ func TestTestMcpVarsScheduler(t *testing.T) {
 	defer config.StoreConfig(nil)
 	s := &SandboxService{mcpEndpoint: "http://spa.example.com"}
 
-	vars := s.testMcpVars("run1", "tok", "proj-x", "agent-a")
+	vars := s.testMcpVars("run1", "tok", "agent-a")
 	if vars["GRASP_SCHEDULER_TOKEN"] != "tok" {
 		t.Fatalf("token = %q", vars["GRASP_SCHEDULER_TOKEN"])
 	}
 	if vars["GRASP_SCHEDULER_URL"] == "" {
 		t.Fatalf("scheduler url missing: %+v", vars)
 	}
-	noProj := s.testMcpVars("run1", "tok", "", "agent-a")
-	if _, ok := noProj["GRASP_SCHEDULER_URL"]; ok {
-		t.Fatalf("no project should omit scheduler url: %+v", noProj)
+	noProfile := s.testMcpVars("run1", "tok", "")
+	if _, ok := noProfile["GRASP_SCHEDULER_URL"]; ok {
+		t.Fatalf("no profile should omit scheduler url: %+v", noProfile)
 	}
 }

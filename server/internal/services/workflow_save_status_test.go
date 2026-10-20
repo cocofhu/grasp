@@ -17,7 +17,7 @@ func TestSaveIdenticalContentIsNoop(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-same", ProjectID: models.DefaultProjectID, Name: "S", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-same", Name: "S", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -27,7 +27,7 @@ func TestSaveIdenticalContentIsNoop(t *testing.T) {
 	before, _ := s.Get("wf-same")
 
 	time.Sleep(2 * time.Millisecond)
-	upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-same", Name: "S", Version: 99, Graph: validGraph()}
+	upd := &models.WorkflowDef{ID: "wf-same", Name: "S", Version: 99, Graph: validGraph()}
 	if err := s.Save(upd); err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestSaveContentChangeAppendsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-graph", ProjectID: models.DefaultProjectID, Name: "G", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-graph", Name: "G", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestSaveContentChangeAppendsVersion(t *testing.T) {
 		func(w *models.WorkflowDef) { w.Description = "d" },
 	} {
 		cur, _ := s.Get("wf-graph")
-		upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: cur.ID, Name: cur.Name, Description: cur.Description, Graph: cur.Graph}
+		upd := &models.WorkflowDef{ID: cur.ID, Name: cur.Name, Description: cur.Description, Graph: cur.Graph}
 		mutate(upd)
 		if err := s.Save(upd); err != nil {
 			t.Fatalf("save %d: %v", i, err)
@@ -88,14 +88,14 @@ func TestSaveSettingsOnlyKeepsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-meta", ProjectID: models.DefaultProjectID, Name: "M", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-meta", Name: "M", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.Publish("wf-meta"); err != nil {
 		t.Fatal(err)
 	}
-	upd := &models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-meta", Name: "M", NeedsRepo: true, Graph: validGraph()}
+	upd := &models.WorkflowDef{ID: "wf-meta", Name: "M", NeedsRepo: true, Graph: validGraph()}
 	if err := s.Save(upd); err != nil {
 		t.Fatal(err)
 	}
@@ -112,13 +112,13 @@ func TestSaveAsRecordsSource(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-pm", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-pm", Name: "P", Graph: validGraph()}
 	if err := s.SaveAs(wf, models.VersionSourcePM); err != nil {
 		t.Fatal(err)
 	}
 	g := validGraph()
 	g.Nodes[0].Label = "by pm"
-	if err := s.SaveAs(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-pm", Name: "P", Graph: g}, models.VersionSourcePM); err != nil {
+	if err := s.SaveAs(&models.WorkflowDef{ID: "wf-pm", Name: "P", Graph: g}, models.VersionSourcePM); err != nil {
 		t.Fatal(err)
 	}
 	for _, v := range s.Versions("wf-pm") {
@@ -132,13 +132,13 @@ func TestPublishStampsVersionRow(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-pub", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-pub", Name: "P", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
 	g := validGraph()
 	g.Nodes[0].Label = "v2"
-	if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-pub", Name: "P", Graph: g}); err != nil {
+	if err := s.Save(&models.WorkflowDef{ID: "wf-pub", Name: "P", Graph: g}); err != nil {
 		t.Fatal(err)
 	}
 	pub, err := s.Publish("wf-pub")
@@ -164,13 +164,13 @@ func TestRestoreAppendsVersion(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-r", ProjectID: models.DefaultProjectID, Name: "R", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-r", Name: "R", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
 	g := validGraph()
 	g.Nodes[0].Label = "v2"
-	if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-r", Name: "R", Graph: g}); err != nil {
+	if err := s.Save(&models.WorkflowDef{ID: "wf-r", Name: "R", Graph: g}); err != nil {
 		t.Fatal(err)
 	}
 	got, err := s.Restore("wf-r", 1)
@@ -194,7 +194,7 @@ func TestPruneKeepsPublishedAndRunReferencedVersions(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-prune", ProjectID: models.DefaultProjectID, Name: "P", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-prune", Name: "P", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -204,7 +204,7 @@ func TestPruneKeepsPublishedAndRunReferencedVersions(t *testing.T) {
 	save := func(i int) {
 		g := validGraph()
 		g.Nodes[0].Label = fmt.Sprintf("rev %d", i)
-		if err := s.Save(&models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf-prune", Name: "P", Graph: g}); err != nil {
+		if err := s.Save(&models.WorkflowDef{ID: "wf-prune", Name: "P", Graph: g}); err != nil {
 			t.Fatal(err)
 		}
 	}

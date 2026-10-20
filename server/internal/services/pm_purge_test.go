@@ -8,45 +8,40 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-func TestPurgeAgentProjectData(t *testing.T) {
+func TestPurgeAgentEverywhere(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	ps := NewProjectService(db)
-	pA, err := ps.CreateFixture("ProjA", "", nil)
-	if err != nil {
+	ps := NewWorkspaceService(db)
+	if _, err := ps.CreateFixture("Purge", "", nil); err != nil {
 		t.Fatal(err)
 	}
-	pB, err := ps.CreateFixture("ProjB", "", nil)
-	if err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-x"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-x", ProjectID: pA.ID}); err != nil {
-		t.Fatal(err)
-	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-y", ProjectID: pA.ID}); err != nil {
+	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "agent-y"}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := pm.UpsertMemory(pA.ID, "agent-x", "X记", "x-content", "agent", "x"); err != nil {
+	if _, err := pm.UpsertMemory("agent-x", "X记", "x-content", "agent", "x"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(pA.ID, "agent-y", "Y记", "y-content", "agent", "y"); err != nil {
+	if _, err := pm.UpsertMemory("agent-y", "Y记", "y-content", "agent", "y"); err != nil {
 		t.Fatal(err)
 	}
-	thX, err := pm.CreateThread(pA.ID, "alice", "x-thread", "agent-x", models.ChatThreadKindUser)
+	thX, err := pm.CreateThread("alice", "x-thread", "agent-x", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pm.AppendMessage(thX.ID, "user", "hello", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	thY, err := pm.CreateThread(pA.ID, "bob", "y-thread", "agent-y", models.ChatThreadKindUser)
+	thY, err := pm.CreateThread("bob", "y-thread", "agent-y", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}
 	jobX := models.AgentCronJob{
-		ID: "job-x", AgentName: "agent-x", ProjectID: pA.ID, ThreadID: thX.ID,
+		ID: "job-x", AgentName: "agent-x", ThreadID: thX.ID,
 		Name: "tick", Prompt: "do", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, CreatedAt: time.Now(), UpdatedAt: time.Now(),
 	}
@@ -60,34 +55,30 @@ func TestPurgeAgentProjectData(t *testing.T) {
 	}
 	en := true
 	agent := "agent-x"
-	if _, err := pm.UpdateBinding(pA.ID, &en, &agent, nil, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(pB.ID, "agent-x", "XB", "keep", "agent", "x"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := pm.PurgeAgentProjectData(pA.ID, "agent-x"); err != nil {
+	if _, err := pm.UpsertMemory("agent-x", "XB", "keep", "agent", "x"); err != nil {
 		t.Fatal(err)
 	}
 
-	memA, _ := pm.ListMemories(pA.ID, "agent-x")
-	if len(memA) != 0 {
-		t.Fatalf("agent-x memories under A should be gone: %v", memA)
+	if err := pm.PurgeAgentEverywhere("agent-x"); err != nil {
+		t.Fatal(err)
 	}
-	memY, _ := pm.ListMemories(pA.ID, "agent-y")
+
+	memX, _ := pm.ListMemories("agent-x")
+	if len(memX) != 0 {
+		t.Fatalf("agent-x memories should be gone: %v", memX)
+	}
+	memY, _ := pm.ListMemories("agent-y")
 	if len(memY) != 1 {
 		t.Fatalf("agent-y memories must survive: %v", memY)
 	}
-	memB, _ := pm.ListMemories(pB.ID, "agent-x")
-	if len(memB) != 1 {
-		t.Fatalf("agent-x memories under B must survive: %v", memB)
-	}
-	threadsX, _ := pm.ListThreadsForAgent(pA.ID, "agent-x")
+	threadsX, _ := pm.ListThreadsForAgent("agent-x")
 	if len(threadsX) != 0 {
-		t.Fatalf("agent-x threads under A should be gone: %v", threadsX)
+		t.Fatalf("agent-x threads should be gone: %v", threadsX)
 	}
-	threadsY, _ := pm.ListThreadsForAgent(pA.ID, "agent-y")
+	threadsY, _ := pm.ListThreadsForAgent("agent-y")
 	if len(threadsY) != 1 || threadsY[0].ID != thY.ID {
 		t.Fatalf("agent-y thread must survive: %v", threadsY)
 	}
@@ -96,7 +87,7 @@ func TestPurgeAgentProjectData(t *testing.T) {
 	if jobs != 0 {
 		t.Fatalf("job-x should be deleted")
 	}
-	b, err := pm.GetBinding(pA.ID)
+	b, err := pm.GetBinding()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,54 +96,24 @@ func TestPurgeAgentProjectData(t *testing.T) {
 	}
 }
 
-func TestUpdateBindingRequiresAgentHomeProject(t *testing.T) {
-	db := setupPmDB(t)
-	skills := NewAgentService(t.TempDir())
-	pm := NewPmService(db, skills)
-	ps := NewProjectService(db)
-	pA, err := ps.CreateFixture("BindA", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	pB, err := ps.CreateFixture("BindB", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "home-b", ProjectID: pB.ID}); err != nil {
-		t.Fatal(err)
-	}
-	en := true
-	agent := "home-b"
-	if _, err := pm.UpdateBinding(pA.ID, &en, &agent, nil, nil, nil); !errors.Is(err, ErrPmLeaderProjectMismatch) {
-		t.Fatalf("want ErrPmLeaderProjectMismatch, got %v", err)
-	}
-	if err := skills.Save(Agent{AcpBackend: AcpBackendCursor, Name: "home-a", ProjectID: pA.ID}); err != nil {
-		t.Fatal(err)
-	}
-	agent = "home-a"
-	if _, err := pm.UpdateBinding(pA.ID, &en, &agent, nil, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestUpdateMemoryForAgentScoped(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("MemScope", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("MemScope", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := pm.UpsertMemory(p.ID, "agent-a", "T", "old", "admin", "u")
+	a, err := pm.UpsertMemory("agent-a", "T", "old", "admin", "u")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = pm.UpdateMemoryForAgent(p.ID, "agent-b", a.ID, "T2", "hijack", "u")
+	_, err = pm.UpdateMemoryForAgent("agent-b", a.ID, "T2", "hijack", "u")
 	if !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("want not found for other agent, got %v", err)
 	}
-	got, err := pm.UpdateMemoryForAgent(p.ID, "agent-a", a.ID, "T2", "new", "u")
+	got, err := pm.UpdateMemoryForAgent("agent-a", a.ID, "T2", "new", "u")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,32 +126,23 @@ func TestRenameAgentScopedData(t *testing.T) {
 	db := setupPmDB(t)
 	skills := NewAgentService(t.TempDir())
 	pm := NewPmService(db, skills)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("RenameHome", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("RenameHome", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.UpsertMemory(p.ID, "old-name", "T", "c", "admin", "u"); err != nil {
+	if _, err := pm.UpsertMemory("old-name", "T", "c", "admin", "u"); err != nil {
 		t.Fatal(err)
 	}
 	if err := pm.RenameAgentScopedData("old-name", "new-name"); err != nil {
 		t.Fatal(err)
 	}
-	mem, _ := pm.ListMemories(p.ID, "new-name")
+	mem, _ := pm.ListMemories("new-name")
 	if len(mem) != 1 {
 		t.Fatalf("renamed memories: %v", mem)
 	}
-	old, _ := pm.ListMemories(p.ID, "old-name")
+	old, _ := pm.ListMemories("old-name")
 	if len(old) != 0 {
 		t.Fatalf("old name should be empty: %v", old)
-	}
-}
-
-func TestAgentProjectMatches(t *testing.T) {
-	if !AgentProjectMatches(Agent{AcpBackend: AcpBackendCursor, ProjectID: "p1"}, "p1") {
-		t.Fatal("expected match")
-	}
-	if AgentProjectMatches(Agent{AcpBackend: AcpBackendCursor, ProjectID: "p1"}, "p2") {
-		t.Fatal("expected mismatch")
 	}
 }

@@ -16,7 +16,6 @@ func (a gateAutoEngineAdapter) NotifyGatePaused(ev engine.GateAutoInvokeEvent) {
 		return
 	}
 	a.svc.Enqueue(services.GateAutoTask{
-		ProjectID:   ev.ProjectID,
 		RunID:       ev.RunID,
 		WorkflowID:  ev.WorkflowID,
 		NodeID:      ev.NodeID,

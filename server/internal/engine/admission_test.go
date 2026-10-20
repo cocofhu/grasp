@@ -172,8 +172,7 @@ func setupBlockingEngineDual(t *testing.T, maxRuns int) (*Engine, *gorm.DB, *blo
 	t.Helper()
 	eng, db, _ := setupEngineGraphP(t, slowGraph())
 	if err := db.Create(&models.WorkflowDef{
-		ProjectID: models.DefaultProjectID,
-		ID:        "wf-gate", Name: "wf-gate", Version: 1, PublishedVersion: 1, Graph: gateThenWorkGraph(),
+		ID: "wf-gate", Name: "wf-gate", Version: 1, PublishedVersion: 1, Graph: gateThenWorkGraph(),
 	}).Error; err != nil {
 		t.Fatalf("create gate workflow: %v", err)
 	}
@@ -181,8 +180,7 @@ func setupBlockingEngineDual(t *testing.T, maxRuns int) (*Engine, *gorm.DB, *blo
 		t.Fatalf("create gate version: %v", err)
 	}
 	if err := db.Create(&models.WorkflowDef{
-		ProjectID: models.DefaultProjectID,
-		ID:        "wf-work-gate", Name: "wf-work-gate", Version: 1, PublishedVersion: 1, Graph: workThenGateGraph(),
+		ID: "wf-work-gate", Name: "wf-work-gate", Version: 1, PublishedVersion: 1, Graph: workThenGateGraph(),
 	}).Error; err != nil {
 		t.Fatalf("create work-then-gate workflow: %v", err)
 	}

@@ -73,7 +73,7 @@ func graphNodesDTO(g models.Graph) []gin.H {
 func workflowDTO(wf models.WorkflowDef, published ...*models.WorkflowVersion) gin.H {
 	policy := services.NormalizeWorkflowNotifyPolicy(wf.NotifyPolicy)
 	out := gin.H{
-		"id": wf.ID, "projectId": wf.ProjectID, "name": wf.Name, "description": wf.Description,
+		"id": wf.ID, "name": wf.Name, "description": wf.Description,
 		"status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion,
 		"defaults":     maskedWorkflowDefaults(wf.Defaults),
 		"needsRepo":    wf.NeedsRepo,
@@ -102,15 +102,15 @@ func publishedSnapshotDTO(wf models.WorkflowDef, published []*models.WorkflowVer
 	}
 }
 
-// projectDTO shapes a project for the frontend with secret values masked.
+// workspaceDTO shapes the workspace for the frontend with secret values masked.
 // totalTokens is nil when no Usage has been reported (UI "—");
 // a non-nil 0 means usage was reported and sums to zero.
-// workflowTokens / pmTokens expose the source split for the project Token tip.
-func projectDTO(p models.Project, workflowCount int64, tokens services.ProjectTokenBreakdown) gin.H {
-	policy := services.NormalizeProjectNotifyPolicy(p.NotifyPolicy)
+// workflowTokens / pmTokens expose the source split for the workspace Token tip.
+func workspaceDTO(p models.Workspace, workflowCount int64, tokens services.WorkspaceTokenBreakdown) gin.H {
+	policy := services.NormalizeWorkspaceNotifyPolicy(p.NotifyPolicy)
 	return gin.H{
-		"id": p.ID, "name": p.Name, "description": p.Description,
-		"variables":               services.MaskedProjectVars(p.Variables),
+		"name": p.Name, "description": p.Description,
+		"variables":               services.MaskedWorkspaceVars(p.Variables),
 		"workflowCount":           workflowCount,
 		"totalTokens":             tokens.Total,
 		"workflowTokens":          tokens.Workflow,
@@ -313,6 +313,6 @@ func maskedWorkflowDefaults(d *models.WorkflowDefaults) *models.WorkflowDefaults
 		return nil
 	}
 	cp := *d
-	cp.Variables = services.MaskedProjectVars(d.Variables)
+	cp.Variables = services.MaskedWorkspaceVars(d.Variables)
 	return &cp
 }

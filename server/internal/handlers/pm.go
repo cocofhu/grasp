@@ -37,7 +37,7 @@ func (h *Handlers) GetPmLeader(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
 		return
 	}
-	b, err := h.Pm.GetBinding(c.Param("id"))
+	b, err := h.Pm.GetBinding()
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -67,17 +67,15 @@ func (h *Handlers) UpdatePmLeader(c *gin.Context) {
 	if body.EnabledMcps != nil {
 		mcps = body.EnabledMcps
 	}
-	b, err := h.Pm.UpdateBinding(c.Param("id"), body.Enabled, body.AgentConfigRef, mcps, body.GateAutoVar, body.GateAutoPrompt)
+	b, err := h.Pm.UpdateBinding(body.Enabled, body.AgentConfigRef, mcps, body.GateAutoVar, body.GateAutoPrompt)
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
-		Action:       models.AuditActionProjectConfig,
+		Action:       models.AuditActionWorkspaceConfig,
 		ResourceType: "pm",
-		ResourceID:   c.Param("id"),
 		Outcome:      models.AuditOutcomeOK,
 		Summary:      "update PM Leader",
 		Payload: map[string]any{
@@ -91,7 +89,7 @@ func (h *Handlers) UpdatePmLeader(c *gin.Context) {
 
 // ListPmMemories handles GET /api/workspace/pm/memories
 // Non-admin callers only see the bound PM Leader agent's memories.
-// Admins see the full project (optional ?agent= filter).
+// Admins see every memory (optional ?agent= filter).
 func (h *Handlers) ListPmMemories(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -100,7 +98,6 @@ func (h *Handlers) ListPmMemories(c *gin.Context) {
 	if _, ok := h.sessionUser(c); !ok {
 		return
 	}
-	projectID := c.Param("id")
 	agentFilter := strings.TrimSpace(c.Query("agent"))
 	isAdmin := h.Auth == nil
 	if h.Auth != nil {
@@ -109,18 +106,18 @@ func (h *Handlers) ListPmMemories(c *gin.Context) {
 		}
 	}
 	if !isAdmin {
-		b, err := h.Pm.GetBinding(projectID)
+		b, err := h.Pm.GetBinding()
 		if err != nil {
 			writePmErr(c, err)
 			return
 		}
 		agentFilter = strings.TrimSpace(b.AgentConfigRef)
 		if agentFilter == "" {
-			c.JSON(http.StatusOK, gin.H{"items": []models.ProjectMemoryItem{}})
+			c.JSON(http.StatusOK, gin.H{"items": []models.MemoryItem{}})
 			return
 		}
 	}
-	items, err := h.Pm.ListMemories(projectID, agentFilter)
+	items, err := h.Pm.ListMemories(agentFilter)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -138,7 +135,7 @@ func (h *Handlers) ListPmThreads(c *gin.Context) {
 	if !ok {
 		return
 	}
-	threads, err := h.Pm.ListThreads(c.Param("id"), user)
+	threads, err := h.Pm.ListThreads(user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -156,7 +153,7 @@ func (h *Handlers) CreatePmThread(c *gin.Context) {
 	if !ok {
 		return
 	}
-	proj, err := h.Pm.RequireEnabled(c.Param("id"))
+	proj, err := h.Pm.RequireEnabled()
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -165,7 +162,7 @@ func (h *Handlers) CreatePmThread(c *gin.Context) {
 		Title string `json:"title"`
 	}
 	_ = c.ShouldBindJSON(&body)
-	t, err := h.Pm.CreateThread(c.Param("id"), user, body.Title, proj.PmLeaderAgent, models.ChatThreadKindUser)
+	t, err := h.Pm.CreateThread(user, body.Title, proj.PmLeaderAgent, models.ChatThreadKindUser)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -183,7 +180,7 @@ func (h *Handlers) GetPmThread(c *gin.Context) {
 	if !ok {
 		return
 	}
-	t, err := h.Pm.GetThread(c.Param("id"), c.Param("tid"), user)
+	t, err := h.Pm.GetThread(c.Param("tid"), user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -201,8 +198,8 @@ func (h *Handlers) DeletePmThread(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
-	t, err := h.Pm.RequireWritableThread(projectID, tid, user)
+	tid := c.Param("tid")
+	t, err := h.Pm.RequireWritableThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -216,13 +213,13 @@ func (h *Handlers) DeletePmThread(c *gin.Context) {
 		}
 	}
 	if h.PMMCP != nil {
-		if tok, ok := h.PMMCP.TokenForThread(projectID, tid); ok {
+		if tok, ok := h.PMMCP.TokenForThread(tid); ok {
 			h.unregisterPmPlatformTokens(tok)
 		} else {
-			h.PMMCP.UnregisterThread(projectID, tid)
+			h.PMMCP.UnregisterThread(tid)
 		}
 	}
-	if err := h.Pm.DeleteThread(projectID, tid, user); err != nil {
+	if err := h.Pm.DeleteThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -243,7 +240,7 @@ func (h *Handlers) ListPmMessages(c *gin.Context) {
 	if !ok {
 		return
 	}
-	if _, err := h.Pm.GetThread(c.Param("id"), c.Param("tid"), user); err != nil {
+	if _, err := h.Pm.GetThread(c.Param("tid"), user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -278,12 +275,12 @@ func (h *Handlers) AppendPmMessage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
-	if _, err := h.Pm.RequireSendEnabled(projectID); err != nil {
+	tid := c.Param("tid")
+	if _, err := h.Pm.RequireSendEnabled(); err != nil {
 		writePmErr(c, err)
 		return
 	}
-	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -321,12 +318,12 @@ func (h *Handlers) PatchPmMessage(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid, mid := c.Param("id"), c.Param("tid"), c.Param("mid")
-	if _, err := h.Pm.RequireSendEnabled(projectID); err != nil {
+	tid, mid := c.Param("tid"), c.Param("mid")
+	if _, err := h.Pm.RequireSendEnabled(); err != nil {
 		writePmErr(c, err)
 		return
 	}
-	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -357,13 +354,13 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
-	_, err := h.Pm.RequireSendEnabled(projectID)
+	tid := c.Param("tid")
+	_, err := h.Pm.RequireSendEnabled()
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
-	thread, err := h.Pm.RequireWritableThread(projectID, tid, user)
+	thread, err := h.Pm.RequireWritableThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -375,7 +372,7 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 	}
 	_ = c.ShouldBindJSON(&body)
 
-	row, preamble, err := h.openPmSandbox(c.Request.Context(), projectID, tid, user, thread.AgentName, body.AttachedContext, body.InjectHistory)
+	row, preamble, err := h.openPmSandbox(c.Request.Context(), tid, user, thread.AgentName, body.AttachedContext, body.InjectHistory)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -398,16 +395,15 @@ func (h *Handlers) EnsurePmSandbox(c *gin.Context) {
 
 // openPmSandbox opens or reuses the thread-bound consult sandbox, wires its
 // platform MCP tokens and returns the history preamble when requested.
-func (h *Handlers) openPmSandbox(ctx context.Context, projectID, tid, user, agent string, attached *models.AttachedContext, injectHistory bool) (*models.Sandbox, string, error) {
-	binding, _ := h.Pm.GetBinding(projectID)
-	token := h.registerPmPlatformTokens(projectID, tid, user, agent, binding.EnabledMcps)
+func (h *Handlers) openPmSandbox(ctx context.Context, tid, user, agent string, attached *models.AttachedContext, injectHistory bool) (*models.Sandbox, string, error) {
+	binding, _ := h.Pm.GetBinding()
+	token := h.registerPmPlatformTokens(tid, user, agent, binding.EnabledMcps)
 	specs := append(
-		services.BuildAgentPlatformMCPSpecs(projectID, agent, token),
-		services.BuildPmRoleMCPSpecs(projectID, token, binding.EnabledMcps)...,
+		services.BuildAgentPlatformMCPSpecs(agent, token),
+		services.BuildPmRoleMCPSpecs(token, binding.EnabledMcps)...,
 	)
 	row, reused, err := h.Sbx.OpenAgentSandbox(ctx, services.AgentSandboxOpenOpts{
 		Profile:       agent,
-		ProjectID:     projectID,
 		ThreadID:      tid,
 		SharedToken:   token,
 		PlatformSpecs: specs,
@@ -421,7 +417,7 @@ func (h *Handlers) openPmSandbox(ctx context.Context, projectID, tid, user, agen
 	if reused {
 		h.unregisterPmPlatformTokens(token)
 		token = row.Token
-		h.restorePmPlatformTokens(projectID, tid, user, agent, token, binding.EnabledMcps)
+		h.restorePmPlatformTokens(tid, user, agent, token, binding.EnabledMcps)
 	}
 	if attached != nil {
 		h.PMMCP.SetAttached(token, attached)
@@ -463,13 +459,13 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
-	_, err := h.Pm.RequireSendEnabled(projectID)
+	tid := c.Param("tid")
+	_, err := h.Pm.RequireSendEnabled()
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
-	thread, err := h.Pm.RequireWritableThread(projectID, tid, user)
+	thread, err := h.Pm.RequireWritableThread(tid, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -517,7 +513,7 @@ func (h *Handlers) StartPmTurn(c *gin.Context) {
 		Text:      content,
 		Images:    userMsg.Images,
 		Prepare: func(ctx context.Context, setPhase func(string)) (uint, string, error) {
-			row, preamble, err := h.openPmSandbox(ctx, projectID, tid, user, agent, attached, true)
+			row, preamble, err := h.openPmSandbox(ctx, tid, user, agent, attached, true)
 			if err != nil {
 				return 0, "", err
 			}
@@ -555,8 +551,8 @@ func (h *Handlers) CancelPmTurn(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
-	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+	tid := c.Param("tid")
+	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -587,9 +583,9 @@ func (h *Handlers) PmThreadChat(c *gin.Context) {
 	if !ok {
 		return
 	}
-	projectID, tid := c.Param("id"), c.Param("tid")
+	tid := c.Param("tid")
 
-	if _, err := h.Pm.RequireWritableThread(projectID, tid, user); err != nil {
+	if _, err := h.Pm.RequireWritableThread(tid, user); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -668,7 +664,7 @@ func (h *Handlers) buildPmPreamble(threadID string, attached *models.AttachedCon
 	return b.String()
 }
 
-// PMMCPRPC handles POST/GET/DELETE /mcp/pm/:projectId and /mcp/pm/:projectId/:mcpId
+// PMMCPRPC handles POST/GET/DELETE /mcp/pm/:mcpId
 func (h *Handlers) PMMCPRPC(c *gin.Context) {
 	if h.PMMCP == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "pm mcp unavailable"})
@@ -678,7 +674,6 @@ func (h *Handlers) PMMCPRPC(c *gin.Context) {
 		c.Status(http.StatusOK)
 		return
 	}
-	projectID := c.Param("projectId")
 	mcpID := c.Param("mcpId")
 	token := bearer(c.GetHeader("Authorization"))
 	body, err := io.ReadAll(c.Request.Body)
@@ -686,7 +681,7 @@ func (h *Handlers) PMMCPRPC(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read body"})
 		return
 	}
-	status, resp := h.PMMCP.ServeRPC(projectID, mcpID, token, body)
+	status, resp := h.PMMCP.ServeRPC(mcpID, token, body)
 	if resp == nil {
 		c.Status(status)
 		return
@@ -694,23 +689,23 @@ func (h *Handlers) PMMCPRPC(c *gin.Context) {
 	c.Data(status, "application/json", resp)
 }
 
-// MemoryMCPRPC handles /mcp/memory-store/:projectId
+// MemoryMCPRPC handles /mcp/memory-store
 func (h *Handlers) MemoryMCPRPC(c *gin.Context) {
-	h.servePlatformMCP(c, func(projectID, token string, body []byte) (int, []byte) {
+	h.servePlatformMCP(c, func(token string, body []byte) (int, []byte) {
 		if h.MemoryMCP == nil {
 			return http.StatusServiceUnavailable, nil
 		}
-		return h.MemoryMCP.ServeRPC(projectID, token, body)
+		return h.MemoryMCP.ServeRPC(token, body)
 	})
 }
 
-// ContextMCPRPC handles /mcp/context-store/:projectId
+// ContextMCPRPC handles /mcp/context-store
 func (h *Handlers) ContextMCPRPC(c *gin.Context) {
-	h.servePlatformMCP(c, func(projectID, token string, body []byte) (int, []byte) {
+	h.servePlatformMCP(c, func(token string, body []byte) (int, []byte) {
 		if h.ContextMCP == nil {
 			return http.StatusServiceUnavailable, nil
 		}
-		return h.ContextMCP.ServeRPC(projectID, token, body)
+		return h.ContextMCP.ServeRPC(token, body)
 	})
 }
 
@@ -739,19 +734,18 @@ func (h *Handlers) SchedulerMCPRPC(c *gin.Context) {
 	c.Data(status, "application/json", resp)
 }
 
-func (h *Handlers) servePlatformMCP(c *gin.Context, fn func(projectID, token string, body []byte) (int, []byte)) {
+func (h *Handlers) servePlatformMCP(c *gin.Context, fn func(token string, body []byte) (int, []byte)) {
 	if c.Request.Method == http.MethodGet || c.Request.Method == http.MethodDelete {
 		c.Status(http.StatusOK)
 		return
 	}
-	projectID := c.Param("projectId")
 	token := bearer(c.GetHeader("Authorization"))
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "read body"})
 		return
 	}
-	status, resp := fn(projectID, token, body)
+	status, resp := fn(token, body)
 	if resp == nil {
 		c.Status(status)
 		return
@@ -759,36 +753,36 @@ func (h *Handlers) servePlatformMCP(c *gin.Context, fn func(projectID, token str
 	c.Data(status, "application/json", resp)
 }
 
-func (h *Handlers) registerPmPlatformTokens(projectID, threadID, userID, agent string, enabledMcps []string) string {
+func (h *Handlers) registerPmPlatformTokens(threadID, userID, agent string, enabledMcps []string) string {
 	// enabledMcps is applied when building inject specs (BuildPmRoleMCPSpecs), not at token register time.
 	_ = enabledMcps
 	// Authenticated PM consult: memory/scheduler writes on. Workflow write tools
-	// follow project EnabledMcps via BuildPmRoleMCPSpecs.
+	// follow workspace EnabledMcps via BuildPmRoleMCPSpecs.
 	token := platformmcp.NewToken()
-	h.PMMCP.Restore(projectID, threadID, userID, agent, token)
+	h.PMMCP.Restore(threadID, userID, agent, token)
 	if h.MemoryMCP != nil {
-		h.MemoryMCP.Restore(token, projectID, agent, threadID, userID, true)
+		h.MemoryMCP.Restore(token, agent, threadID, userID, true)
 	}
 	if h.ContextMCP != nil {
-		h.ContextMCP.Restore(token, projectID, agent, threadID, userID)
+		h.ContextMCP.Restore(token, agent, threadID, userID)
 	}
 	if h.SchedulerMCP != nil {
-		h.SchedulerMCP.Restore(token, projectID, agent, threadID, userID, true)
+		h.SchedulerMCP.Restore(token, agent, threadID, userID, true)
 	}
 	return token
 }
 
-func (h *Handlers) restorePmPlatformTokens(projectID, threadID, userID, agent, token string, enabledMcps []string) {
+func (h *Handlers) restorePmPlatformTokens(threadID, userID, agent, token string, enabledMcps []string) {
 	_ = enabledMcps
-	h.PMMCP.Restore(projectID, threadID, userID, agent, token)
+	h.PMMCP.Restore(threadID, userID, agent, token)
 	if h.MemoryMCP != nil {
-		h.MemoryMCP.Restore(token, projectID, agent, threadID, userID, true)
+		h.MemoryMCP.Restore(token, agent, threadID, userID, true)
 	}
 	if h.ContextMCP != nil {
-		h.ContextMCP.Restore(token, projectID, agent, threadID, userID)
+		h.ContextMCP.Restore(token, agent, threadID, userID)
 	}
 	if h.SchedulerMCP != nil {
-		h.SchedulerMCP.Restore(token, projectID, agent, threadID, userID, true)
+		h.SchedulerMCP.Restore(token, agent, threadID, userID, true)
 	}
 }
 
@@ -807,9 +801,9 @@ func (h *Handlers) unregisterPmPlatformTokens(token string) {
 	}
 }
 
-// ListProjectCronJobs handles GET /api/workspace/cron-jobs.
-// Returns all AgentCronJob rows for the project (any agent); no agent filter.
-func (h *Handlers) ListProjectCronJobs(c *gin.Context) {
+// ListCronJobs handles GET /api/workspace/cron-jobs.
+// Returns all AgentCronJob rows (any agent); no agent filter.
+func (h *Handlers) ListCronJobs(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
 		return
@@ -817,7 +811,7 @@ func (h *Handlers) ListProjectCronJobs(c *gin.Context) {
 	if _, ok := h.sessionUser(c); !ok {
 		return
 	}
-	items, err := h.Pm.ListCronJobs(c.Param("id"))
+	items, err := h.Pm.ListCronJobs()
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -825,8 +819,8 @@ func (h *Handlers) ListProjectCronJobs(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// ListProjectNotifyReceipts handles GET /api/workspace/notify-receipts.
-func (h *Handlers) ListProjectNotifyReceipts(c *gin.Context) {
+// ListNotifyReceipts handles GET /api/workspace/notify-receipts.
+func (h *Handlers) ListNotifyReceipts(c *gin.Context) {
 	if h.RunNotify == nil {
 		c.JSON(http.StatusOK, gin.H{"items": []any{}})
 		return
@@ -834,7 +828,7 @@ func (h *Handlers) ListProjectNotifyReceipts(c *gin.Context) {
 	if _, ok := h.sessionUser(c); !ok {
 		return
 	}
-	items, err := h.RunNotify.ListReceipts(c.Param("id"))
+	items, err := h.RunNotify.ListReceipts()
 	if err != nil {
 		_ = c.Error(err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -843,10 +837,10 @@ func (h *Handlers) ListProjectNotifyReceipts(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"items": items})
 }
 
-// PatchProjectCronJob handles PATCH /api/workspace/cron-jobs/:jobId.
+// PatchCronJob handles PATCH /api/workspace/cron-jobs/:jobId.
 // Any authenticated user may toggle deliverToChannel (APIMiddleware / sessionUser);
 // memory writes stay admin-only.
-func (h *Handlers) PatchProjectCronJob(c *gin.Context) {
+func (h *Handlers) PatchCronJob(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
 		return
@@ -865,13 +859,12 @@ func (h *Handlers) PatchProjectCronJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "deliverToChannel required"})
 		return
 	}
-	job, err := h.Pm.PatchCronJobDeliver(c.Param("id"), c.Param("jobId"), *body.DeliverToChannel)
+	job, err := h.Pm.PatchCronJobDeliver(c.Param("jobId"), *body.DeliverToChannel)
 	if err != nil {
 		writePmErr(c, err)
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionCron,
 		ResourceType: "cron",
@@ -883,10 +876,10 @@ func (h *Handlers) PatchProjectCronJob(c *gin.Context) {
 	c.JSON(http.StatusOK, job)
 }
 
-// DeleteProjectCronJob handles DELETE /api/workspace/cron-jobs/:jobId.
-// Any authenticated user may delete (aligned with PatchProjectCronJob / sessionUser).
-// Cross-project jobId returns 404. Cleanup matches Agent/MCP delete (runs + thread).
-func (h *Handlers) DeleteProjectCronJob(c *gin.Context) {
+// DeleteCronJob handles DELETE /api/workspace/cron-jobs/:jobId.
+// Any authenticated user may delete (aligned with PatchCronJob / sessionUser).
+// Unknown jobId returns 404. Cleanup matches Agent/MCP delete (runs + thread).
+func (h *Handlers) DeleteCronJob(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
 		return
@@ -894,12 +887,11 @@ func (h *Handlers) DeleteProjectCronJob(c *gin.Context) {
 	if _, ok := h.sessionUser(c); !ok {
 		return
 	}
-	if err := h.Pm.DeleteCronJob(c.Param("id"), c.Param("jobId")); err != nil {
+	if err := h.Pm.DeleteCronJob(c.Param("jobId")); err != nil {
 		writePmErr(c, err)
 		return
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    c.Param("id"),
 		Actor:        h.auditActorFromContext(c),
 		Action:       models.AuditActionCron,
 		ResourceType: "cron",
@@ -913,7 +905,7 @@ func (h *Handlers) DeleteProjectCronJob(c *gin.Context) {
 
 func writePmErr(c *gin.Context, err error) {
 	switch {
-	case errors.Is(err, services.ErrProjectNotFound),
+	case errors.Is(err, services.ErrWorkspaceMissing),
 		errors.Is(err, services.ErrPmThreadNotFound),
 		errors.Is(err, services.ErrPmMemoryNotFound),
 		errors.Is(err, services.ErrPmCronJobNotFound),
@@ -921,8 +913,7 @@ func writePmErr(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrPmLeaderDisabled),
 		errors.Is(err, services.ErrPmLeaderNoAgent),
-		errors.Is(err, services.ErrPmLeaderAgentMissing),
-		errors.Is(err, services.ErrPmLeaderProjectMismatch):
+		errors.Is(err, services.ErrPmLeaderAgentMissing):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrPmAdminRequired),
 		errors.Is(err, services.ErrPmChannelReadOnly):

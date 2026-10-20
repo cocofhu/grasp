@@ -8,7 +8,7 @@ import (
 
 // AgentCredentialChoice is the one credential an Agent picked for its coding
 // backend and, separately, for its Git method. An empty id keeps the legacy
-// single-slot injection when projectCreds still carries that key. When the
+// single-slot injection when creds still carries that key. When the
 // key is absent — a second row of that kind exists, or the chosen row was
 // cleared — the empty id removes the key instead of falling back. A non-empty
 // id replaces that kind and never falls back to another row.
@@ -22,9 +22,9 @@ type AgentCredentialChoice struct {
 
 // SelectedCredentialFunc returns one credential's env key and plaintext.
 // ok is false when the id is unknown, cleared, or has no secret.
-type SelectedCredentialFunc func(projectID, credentialID string) (envKey, value string, ok bool)
+type SelectedCredentialFunc func(credentialID string) (envKey, value string, ok bool)
 
-// CredentialKindFunc reports the env key stored on one project credential.
+// CredentialKindFunc reports the env key stored on one workspace credential.
 // ok is false when the id is unknown, revoked, cleared, or has no secret.
 // Implementations must not log the secret; this callback does not receive it.
 type CredentialKindFunc func(credentialID string) (envKey string, ok bool)
@@ -59,7 +59,7 @@ func pickCredentialSlot(agentID, sharedID, expected string, kindOf CredentialKin
 	return sharedID
 }
 
-// CredentialEnvKeyForBackend is the project-credential env key for a coding
+// CredentialEnvKeyForBackend is the workspace-credential env key for a coding
 // backend. OpenCode is selected through its own resolver and returns empty.
 func CredentialEnvKeyForBackend(backend string) string {
 	switch AcpBackend(strings.TrimSpace(backend)) {
@@ -78,7 +78,7 @@ func CredentialEnvKeyForBackend(backend string) string {
 	}
 }
 
-// CredentialEnvKeyForGit is the project-credential env key for a Git method.
+// CredentialEnvKeyForGit is the workspace-credential env key for a Git method.
 func CredentialEnvKeyForGit(gitType string) string {
 	switch strings.TrimSpace(gitType) {
 	case "github_https":
@@ -93,12 +93,12 @@ func CredentialEnvKeyForGit(gitType string) string {
 }
 
 // ApplyAgentCredentialChoice writes the Agent's chosen credentials into env
-// and the project credential map used for SSH files. A set id removes that
+// and the credential map used for SSH files. A set id removes that
 // kind's key first, so a stale or cleared row cannot leave another secret in
-// place. An empty id leaves a key that projectCreds still provides (the only
-// slot of that kind). If projectCreds omits the key, the empty id deletes it
+// place. An empty id leaves a key that creds still provides (the only
+// slot of that kind). If creds omits the key, the empty id deletes it
 // so a cleared selection cannot keep or restore another row's secret.
-func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID string, choice AgentCredentialChoice, resolve SelectedCredentialFunc) {
+func ApplyAgentCredentialChoice(env, creds map[string]string, choice AgentCredentialChoice, resolve SelectedCredentialFunc) {
 	if resolve == nil {
 		return
 	}
@@ -109,14 +109,14 @@ func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID s
 			return
 		}
 		if id == "" {
-			if projectCreds != nil {
-				if _, ok := projectCreds[expected]; !ok {
+			if creds != nil {
+				if _, ok := creds[expected]; !ok {
 					delete(env, expected)
 				}
 			}
 			return
 		}
-		key, value, ok := resolve(projectID, id)
+		key, value, ok := resolve(id)
 		matched := ok && strings.TrimSpace(key) == expected && strings.TrimSpace(value) != ""
 		if env != nil {
 			delete(env, expected)
@@ -124,10 +124,10 @@ func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID s
 				env[expected] = value
 			}
 		}
-		if projectCreds != nil {
-			delete(projectCreds, expected)
+		if creds != nil {
+			delete(creds, expected)
 			if matched {
-				projectCreds[expected] = value
+				creds[expected] = value
 			}
 		}
 	}
@@ -142,7 +142,7 @@ func ApplyAgentCredentialChoice(env, projectCreds map[string]string, projectID s
 
 // ApplyCredentialBindings applies explicit per-Agent choices after inherited defaults.
 // A missing binding inherits; nil and unresolved IDs explicitly remove the value.
-func ApplyCredentialBindings(env, creds map[string]string, projectID string, bindings map[string]*string, resolve SelectedCredentialFunc) {
+func ApplyCredentialBindings(env, creds map[string]string, bindings map[string]*string, resolve SelectedCredentialFunc) {
 	for key, id := range bindings {
 		key = strings.TrimSpace(key)
 		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
@@ -153,7 +153,7 @@ func ApplyCredentialBindings(env, creds map[string]string, projectID string, bin
 		if id == nil || resolve == nil {
 			continue
 		}
-		actual, value, ok := resolve(projectID, strings.TrimSpace(*id))
+		actual, value, ok := resolve(strings.TrimSpace(*id))
 		if ok && actual == key && strings.TrimSpace(value) != "" {
 			if env != nil {
 				env[key] = value
@@ -167,7 +167,7 @@ func ApplyCredentialBindings(env, creds map[string]string, projectID string, bin
 
 // CredentialIDForWriteBack records the same row selected for injection. Explicit
 // disables and invalid choices never acquire an inherited credential identity.
-func CredentialIDForWriteBack(projectID, envKey, value, selected string, bindings map[string]*string, resolve SelectedCredentialFunc, inherited func(projectID, envKey, value string) string) string {
+func CredentialIDForWriteBack(envKey, value, selected string, bindings map[string]*string, resolve SelectedCredentialFunc, inherited func(envKey, value string) string) string {
 	if id, explicit := bindings[envKey]; explicit {
 		if id == nil {
 			return ""
@@ -179,7 +179,7 @@ func CredentialIDForWriteBack(projectID, envKey, value, selected string, binding
 	}
 	if selected = strings.TrimSpace(selected); selected != "" {
 		if resolve != nil {
-			key, actual, ok := resolve(projectID, selected)
+			key, actual, ok := resolve(selected)
 			if ok && key == envKey && actual == value && value != "" {
 				return selected
 			}
@@ -187,7 +187,7 @@ func CredentialIDForWriteBack(projectID, envKey, value, selected string, binding
 		return ""
 	}
 	if inherited != nil && value != "" {
-		return inherited(projectID, envKey, value)
+		return inherited(envKey, value)
 	}
 	return ""
 }

@@ -17,24 +17,22 @@ import (
 
 // CronTokenHooks registers/unregisters shared MCP tokens for a cron execution.
 type CronTokenHooks struct {
-	RegisterPM func(projectID, threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec)
-	Register   func(projectID, threadID, agent string) (token string, specs []sandbox.MCPServerSpec)
+	RegisterPM func(threadID, agent string, enabledMcps []string) (string, []sandbox.MCPServerSpec)
+	Register   func(threadID, agent string) (token string, specs []sandbox.MCPServerSpec)
 	Unregister func(token string)
 }
 
 // CronDelivery is a structured deliverToChannel result for the unified QQ
 // egress (changed / unchanged / failed).
 type CronDelivery struct {
-	ProjectID string
-	// AgentName routes delivery to the Channel bound to this Agent (not
-	// "latest channel in project").
+	// AgentName routes delivery to the Channel bound to this Agent.
 	AgentName string
 	Category  string // job name / pr / daily — used for minimal templates
 	Kind      string // changed | unchanged | failed (empty → classify from Text)
 	Text      string
 }
 
-// ChannelDeliverer pushes a cron result to a project's configured channel.
+// ChannelDeliverer pushes a cron result to the Agent's configured channel.
 // Implemented by channels.Manager and injected via SetChannelDeliverer.
 // DeliverCron is the coordinated egress (busy → silent push queue, idle → immediate).
 type ChannelDeliverer interface {
@@ -189,22 +187,16 @@ func (s *CronScheduler) execute(ctx context.Context, job *models.AgentCronJob) {
 		run.Error = "scheduler runtime unavailable"
 		return
 	}
-	ag, ok := s.sbx.skills.Get(job.AgentName)
-	if !ok {
+	if _, ok := s.sbx.skills.Get(job.AgentName); !ok {
 		run.Status = "skipped"
 		run.Error = "agent unavailable"
 		return
 	}
-	if !AgentProjectMatches(ag, job.ProjectID) {
-		run.Status = "skipped"
-		run.Error = "agent home project mismatch"
-		return
-	}
 
-	token, specs := s.hooks.Register(job.ProjectID, job.ThreadID, job.AgentName)
+	token, specs := s.hooks.Register(job.ThreadID, job.AgentName)
 	if token == "" || len(specs) == 0 {
 		run.Status = "skipped"
-		run.Error = "agent home project mismatch"
+		run.Error = "agent session unavailable"
 		return
 	}
 	defer func() {
@@ -213,7 +205,7 @@ func (s *CronScheduler) execute(ctx context.Context, job *models.AgentCronJob) {
 		}
 	}()
 
-	row, err := s.sbx.OpenAgentSandboxFresh(ctx, job.AgentName, job.ProjectID, job.ThreadID, token, specs)
+	row, err := s.sbx.OpenAgentSandboxFresh(ctx, job.AgentName, job.ThreadID, token, specs)
 	if err != nil {
 		run.Status = "error"
 		run.Error = err.Error()
@@ -295,7 +287,6 @@ func (s *CronScheduler) deliverCronFailure(job *models.AgentCronJob, reason stri
 		text = "执行失败"
 	}
 	d := CronDelivery{
-		ProjectID: job.ProjectID,
 		AgentName: job.AgentName,
 		Category:  category,
 		Kind:      "failed",
@@ -336,7 +327,6 @@ func (s *CronScheduler) maybeDeliver(job *models.AgentCronJob, userMsg models.Ch
 		category = "cron"
 	}
 	d := CronDelivery{
-		ProjectID: job.ProjectID,
 		AgentName: job.AgentName,
 		Category:  category,
 		Kind:      kind,

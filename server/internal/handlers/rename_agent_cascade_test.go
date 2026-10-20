@@ -28,7 +28,7 @@ func TestRenameAgent_cascadesWorkflowAndReturnsCount(t *testing.T) {
 		},
 	}
 	wf := &models.WorkflowDef{
-		ID: "wf-cascade", ProjectID: models.DefaultProjectID, Name: "Cascade", Graph: g,
+		ID: "wf-cascade", Name: "Cascade", Graph: g,
 	}
 	if err := hn.h.WF.Save(wf); err != nil {
 		t.Fatal(err)
@@ -80,12 +80,7 @@ func TestRenameAgent_workflowCascadeFailureRollsBackSkillPm(t *testing.T) {
 	hn.h.Pm = services.NewPmService(hn.db, skills)
 
 	seedAgent(t, hn, "old-agent")
-	a, _ := skills.Get("old-agent")
-	a.ProjectID = models.DefaultProjectID
-	if err := skills.Save(a); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := hn.h.Pm.UpsertMemory(models.DefaultProjectID, "old-agent", "T", "c", "admin", "u"); err != nil {
+	if _, err := hn.h.Pm.UpsertMemory("old-agent", "T", "c", "admin", "u"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -104,11 +99,11 @@ func TestRenameAgent_workflowCascadeFailureRollsBackSkillPm(t *testing.T) {
 	if hn.h.Agents.Exists("new-agent") {
 		t.Fatal("new-agent directory should not remain after rollback")
 	}
-	mem, _ := hn.h.Pm.ListMemories(models.DefaultProjectID, "old-agent")
+	mem, _ := hn.h.Pm.ListMemories("old-agent")
 	if len(mem) != 1 {
 		t.Fatalf("pm memories should be back under old-agent, got %d", len(mem))
 	}
-	memNew, _ := hn.h.Pm.ListMemories(models.DefaultProjectID, "new-agent")
+	memNew, _ := hn.h.Pm.ListMemories("new-agent")
 	if len(memNew) != 0 {
 		t.Fatalf("pm memories leaked under new-agent: %d", len(memNew))
 	}

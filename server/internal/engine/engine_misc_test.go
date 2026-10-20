@@ -234,10 +234,10 @@ func (liveEventProvider) LiveNodeEventsPage(ctx context.Context, runID, nodeID, 
 	return []models.AcpEvent{{Kind: "message", Text: "page"}}, "next", false, true, nil
 }
 
-func TestLiveNodeEventsPageAndProjectVarsLookup(t *testing.T) {
+func TestLiveNodeEventsPageAndWorkspaceVarsLookup(t *testing.T) {
 	eng, _, p := setupEngineGraphP(t, reactOnlyGraph())
-	eng.SetProjectVarsLookup(func(workflowID string) []models.ProjectVariable {
-		return []models.ProjectVariable{{Name: "seed", Value: "v"}}
+	eng.SetWorkspaceVarsLookup(func(workflowID string) []models.WorkspaceVariable {
+		return []models.WorkspaceVariable{{Name: "seed", Value: "v"}}
 	})
 	eng.provider = liveEventProvider{p}
 	ev, cur, more, ok, err := eng.LiveNodeEventsPage(context.Background(), "r", "n", "", 10)

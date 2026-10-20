@@ -9,77 +9,77 @@ import (
 func boolPtr(v bool) *bool { return &v }
 
 func TestResolveNotifyEvents(t *testing.T) {
-	def := models.DefaultProjectNotifyPolicy()
+	def := models.DefaultWorkspaceNotifyPolicy()
 	cases := []struct {
 		name     string
-		project  models.ProjectNotifyPolicy
+		ws       models.WorkspaceNotifyPolicy
 		workflow models.WorkflowNotifyPolicy
 		want     []string
 	}{
 		{
 			name:     "hard close ignores custom",
-			project:  models.ProjectNotifyPolicy{Enabled: boolPtr(false), DefaultEvents: []string{"waiting_human", "failed"}},
+			ws:       models.WorkspaceNotifyPolicy{Enabled: boolPtr(false), DefaultEvents: []string{"waiting_human", "failed"}},
 			workflow: models.WorkflowNotifyPolicy{Mode: "custom", Events: []string{"waiting_human", "failed"}},
 			want:     nil,
 		},
 		{
 			name:     "mode off",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{Mode: "off", Events: []string{"waiting_human"}},
 			want:     nil,
 		},
 		{
 			name:     "inherit defaults",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{Mode: "inherit"},
 			want:     []string{"waiting_human", "failed"},
 		},
 		{
 			name:     "empty mode equals inherit",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{},
 			want:     []string{"waiting_human", "failed"},
 		},
 		{
 			name:     "custom subset failed only",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{Mode: "custom", Events: []string{"failed"}},
 			want:     []string{"failed"},
 		},
 		{
 			name:     "custom empty set",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{Mode: "custom", Events: []string{}},
 			want:     nil,
 		},
 		{
 			name:     "completed kept when opted in",
-			project:  models.ProjectNotifyPolicy{Enabled: boolPtr(true), DefaultEvents: []string{"waiting_human", "failed", "completed"}},
+			ws:       models.WorkspaceNotifyPolicy{Enabled: boolPtr(true), DefaultEvents: []string{"waiting_human", "failed", "completed"}},
 			workflow: models.WorkflowNotifyPolicy{Mode: "inherit"},
 			want:     []string{"waiting_human", "failed", "completed"},
 		},
 		{
 			name:     "custom completed only",
-			project:  def,
+			ws:       def,
 			workflow: models.WorkflowNotifyPolicy{Mode: "custom", Events: []string{"completed"}},
 			want:     []string{"completed"},
 		},
 		{
-			name:     "nil project defaults enabled with waiting+failed",
-			project:  models.ProjectNotifyPolicy{},
+			name:     "nil workspace defaults enabled with waiting+failed",
+			ws:       models.WorkspaceNotifyPolicy{},
 			workflow: models.WorkflowNotifyPolicy{Mode: "inherit"},
 			want:     []string{"waiting_human", "failed"},
 		},
 		{
-			name:     "explicit empty project defaults",
-			project:  models.ProjectNotifyPolicy{Enabled: boolPtr(true), DefaultEvents: []string{}},
+			name:     "explicit empty workspace defaults",
+			ws:       models.WorkspaceNotifyPolicy{Enabled: boolPtr(true), DefaultEvents: []string{}},
 			workflow: models.WorkflowNotifyPolicy{Mode: "inherit"},
 			want:     nil,
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := ResolveNotifyEvents(tc.project, tc.workflow)
+			got := ResolveNotifyEvents(tc.ws, tc.workflow)
 			if !stringSlicesEqual(got, tc.want) {
 				t.Fatalf("got %#v want %#v", got, tc.want)
 			}
@@ -88,7 +88,7 @@ func TestResolveNotifyEvents(t *testing.T) {
 }
 
 func TestNotifyPoliciesEqual_includesTemplates(t *testing.T) {
-	base := models.ProjectNotifyPolicy{
+	base := models.WorkspaceNotifyPolicy{
 		Enabled: boolPtr(true), DefaultEvents: []string{"waiting_human", "failed"},
 	}
 	if !notifyPoliciesEqual(base, base) {
@@ -111,8 +111,8 @@ func TestNotifyPoliciesEqual_includesTemplates(t *testing.T) {
 	}
 }
 
-func TestNormalizeProjectNotifyPolicy_trimsTemplates(t *testing.T) {
-	got := NormalizeProjectNotifyPolicy(models.ProjectNotifyPolicy{
+func TestNormalizeWorkspaceNotifyPolicy_trimsTemplates(t *testing.T) {
+	got := NormalizeWorkspaceNotifyPolicy(models.WorkspaceNotifyPolicy{
 		WaitingHumanTemplate: "  hi  ",
 		FailedTemplate:       "\n\t",
 		CompletedTemplate:    " \n",

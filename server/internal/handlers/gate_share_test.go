@@ -25,7 +25,7 @@ func seedHumanGate(t *testing.T, h *harness, runID, nodeID string, actions []mod
 		}
 	}
 	h.db.Create(&models.WorkflowDef{
-		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "share-" + runID,
+		ID: "wf-" + runID, Name: "share-" + runID,
 		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
@@ -49,7 +49,7 @@ func seedHumanGate(t *testing.T, h *harness, runID, nodeID string, actions []mod
 		RunID: runID, NodeID: nodeID, Iteration: 1, Status: "waiting_human",
 	})
 	h.h.Arts.Save(runID, "visual", "page.html", "html", `<html><body><a href="/api/blobs/abc">x</a><p>ok</p></body></html>`)
-	h.h.Arts.Save(runID, "visual", "clarified_requirement.json", "json", `{"title":"外部一次审批","goals":["g1"],"runId":"should-hide","projectId":"p"}`)
+	h.h.Arts.Save(runID, "visual", "clarified_requirement.json", "json", `{"title":"外部一次审批","goals":["g1"],"runId":"should-hide"}`)
 }
 
 func parseJSON(t *testing.T, w *httptest.ResponseRecorder) map[string]any {
@@ -208,7 +208,7 @@ func TestGateShareNoStandardActionAndUsedCannotRecreate(t *testing.T) {
 		t.Fatalf("conflict: %d %s", dec3.Code, dec3.Body.String())
 	}
 
-	var evs []models.ProjectAuditEvent
+	var evs []models.AuditEvent
 	h2.db.Where("action IN ?", []string{models.AuditActionGateShareCreate, models.AuditActionGateShareUse, models.AuditActionGateDecide}).Find(&evs)
 	raw, _ := json.Marshal(evs)
 	if bytes.Contains(raw, []byte(token)) {
@@ -678,7 +678,7 @@ func TestGateSharePreviewDoesNotLeakOtherNodeArtifacts(t *testing.T) {
 	now := time.Now()
 	runID, nodeID := "run-share-leak", "hg-leak"
 	h.db.Create(&models.WorkflowDef{
-		ID: "wf-" + runID, ProjectID: models.DefaultProjectID, Name: "share-" + runID,
+		ID: "wf-" + runID, Name: "share-" + runID,
 		Version: 1, PublishedVersion: 1,
 	})
 	h.db.Create(&models.Run{
@@ -951,7 +951,7 @@ func TestPublicGatePreviewOmitsUpstreamDocAndSupportsOnDemandUpstream(t *testing
 		t.Fatalf("on-demand upstream must include doc: %+v", full)
 	}
 	raw, _ := json.Marshal(fullUp)
-	if strings.Contains(string(raw), "should-hide") || strings.Contains(string(raw), "projectId") {
+	if strings.Contains(string(raw), "should-hide") {
 		t.Fatalf("on-demand upstream leaked: %s", raw)
 	}
 }

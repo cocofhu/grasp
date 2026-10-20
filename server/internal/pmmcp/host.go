@@ -19,9 +19,9 @@ import (
 )
 
 // MCP ids. Workflow tools are split into a read-only surface and a write
-// surface so a project can grant one without the other. pm-agent-fs exposes
-// project member listing + host-side agent workspace FS (not Run sandbox). pm-prd-manager
-// exposes project requirement drafts (list / get / create in the first cut).
+// surface so a workspace can grant one without the other. pm-agent-fs exposes
+// Agent listing + host-side agent workspace FS (not Run sandbox). pm-prd-manager
+// exposes requirement drafts (list / get / create in the first cut).
 const (
 	MCPProgress      = "pm-progress"
 	MCPWorkflowRead  = "pm-workflow-read"
@@ -35,28 +35,27 @@ const (
 	pmGetArtifactMaxLimit     = 65536
 )
 
-// Session binds a PM MCP token to a project consult context.
+// Session binds a PM MCP token to a consult context.
 type Session struct {
 	Token     string
-	ProjectID string
 	ThreadID  string
 	UserID    string
 	AgentName string
 	Attached  *models.AttachedContext
-	// AllowedMcps, when non-nil, overrides Project.PmEnabledMcps for ServeRPC
-	// authorization (channel turns). nil keeps the Web/gate project binding check.
+	// AllowedMcps, when non-nil, overrides Workspace.PmEnabledMcps for ServeRPC
+	// authorization (channel turns). nil keeps the Web/gate workspace binding check.
 	AllowedMcps []string
-	// External marks sessions created for project external MCP (Bearer API key).
+	// External marks sessions created for external MCP (Bearer API key).
 	External   bool
 	ApiKeyID   string
 	ApiKeyName string
 }
 
-// Host manages project-scoped PM MCP sessions and tool dispatch.
+// Host manages PM MCP sessions and tool dispatch.
 type Host struct {
 	mu       sync.RWMutex
 	sessions map[string]*Session // token -> session
-	byKey    map[string]string   // projectID|threadID -> token
+	byThread map[string]string   // threadID -> token
 
 	pm       *services.PmService
 	progress *services.PmProgress
@@ -84,7 +83,7 @@ type engineOps interface {
 func NewHost(pm *services.PmService, progress *services.PmProgress, wf *services.WorkflowService, runs *services.RunService, arts *services.ArtifactService, eng engineOps) *Host {
 	return &Host{
 		sessions: map[string]*Session{},
-		byKey:    map[string]string{},
+		byThread: map[string]string{},
 		pm:       pm,
 		progress: progress,
 		wf:       wf,
@@ -117,7 +116,7 @@ func (h *Host) SetRequirementDrafts(drafts *services.RequirementDraftService) {
 	h.mu.Unlock()
 }
 
-// SetAuditRecorder wires project-scoped audit recording for PM MCP tools.
+// SetAuditRecorder wires audit recording for PM MCP tools.
 func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 	h.mu.Lock()
 	h.audit = fn
@@ -134,27 +133,26 @@ func (h *Host) recordAudit(rec services.AuditRecord) {
 }
 
 // Restore re-binds an existing token.
-func (h *Host) Restore(projectID, threadID, userID, agentName, token string) {
+func (h *Host) Restore(threadID, userID, agentName, token string) {
 	if strings.TrimSpace(token) == "" {
 		return
 	}
-	_ = h.restore(projectID, threadID, userID, agentName, token, nil)
+	_ = h.restore(threadID, userID, agentName, token, nil)
 }
 
-// RestoreExternal binds or refreshes an external MCP session for a project API key.
+// RestoreExternal binds or refreshes an external MCP session for an API key.
 // enabledPacks must already be filtered; may be empty (no tools exposed).
-// AgentName is filled from the project's PmLeaderAgent so pm-agent-fs / team tools
+// AgentName is filled from the workspace PmLeaderAgent so pm-agent-fs / team tools
 // authorize like an internal PM session; when unbound, AgentName stays empty and
 // those tools return "pm leader not bound" (not a silent empty name).
-func (h *Host) RestoreExternal(projectID, apiKeyID, apiKeyName string, enabledPacks []string) string {
-	projectID = strings.TrimSpace(projectID)
+func (h *Host) RestoreExternal(apiKeyID, apiKeyName string, enabledPacks []string) string {
 	apiKeyID = strings.TrimSpace(apiKeyID)
-	if projectID == "" || apiKeyID == "" {
+	if apiKeyID == "" {
 		return ""
 	}
 	agentName := ""
 	if h.pm != nil {
-		if b, err := h.pm.GetBinding(projectID); err == nil {
+		if b, err := h.pm.GetBinding(); err == nil {
 			agentName = strings.TrimSpace(b.AgentConfigRef)
 		}
 	}
@@ -163,13 +161,11 @@ func (h *Host) RestoreExternal(projectID, apiKeyID, apiKeyName string, enabledPa
 	allowed := append([]string{}, enabledPacks...)
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	key := projectID + "|" + threadID
-	if old, ok := h.byKey[key]; ok && old != token {
+	if old, ok := h.byThread[threadID]; ok && old != token {
 		delete(h.sessions, old)
 	}
 	h.sessions[token] = &Session{
 		Token:       token,
-		ProjectID:   projectID,
 		ThreadID:    threadID,
 		UserID:      "external-mcp",
 		AgentName:   agentName,
@@ -178,12 +174,12 @@ func (h *Host) RestoreExternal(projectID, apiKeyID, apiKeyName string, enabledPa
 		ApiKeyID:    apiKeyID,
 		ApiKeyName:  strings.TrimSpace(apiKeyName),
 	}
-	h.byKey[key] = token
+	h.byThread[threadID] = token
 	return token
 }
 
 // RestoreWithMcps re-binds a token with an explicit AllowedMcps override.
-func (h *Host) RestoreWithMcps(projectID, threadID, userID, agentName, token string, enabledMcps []string) {
+func (h *Host) RestoreWithMcps(threadID, userID, agentName, token string, enabledMcps []string) {
 	if strings.TrimSpace(token) == "" {
 		return
 	}
@@ -191,21 +187,20 @@ func (h *Host) RestoreWithMcps(projectID, threadID, userID, agentName, token str
 	if enabledMcps != nil && len(allowed) == 0 {
 		allowed = []string{}
 	}
-	_ = h.restore(projectID, threadID, userID, agentName, token, allowed)
+	_ = h.restore(threadID, userID, agentName, token, allowed)
 }
 
-func (h *Host) restore(projectID, threadID, userID, agentName, tok string, allowedMcps []string) string {
-	key := projectID + "|" + threadID
+func (h *Host) restore(threadID, userID, agentName, tok string, allowedMcps []string) string {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if old, ok := h.byKey[key]; ok && old != tok {
+	if old, ok := h.byThread[threadID]; ok && old != tok {
 		delete(h.sessions, old)
 	}
 	h.sessions[tok] = &Session{
-		Token: tok, ProjectID: projectID, ThreadID: threadID, UserID: userID, AgentName: agentName,
+		Token: tok, ThreadID: threadID, UserID: userID, AgentName: agentName,
 		AllowedMcps: allowedMcps,
 	}
-	h.byKey[key] = tok
+	h.byThread[threadID] = tok
 	return tok
 }
 
@@ -214,27 +209,26 @@ func (h *Host) Unregister(token string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if s, ok := h.sessions[token]; ok {
-		delete(h.byKey, s.ProjectID+"|"+s.ThreadID)
+		delete(h.byThread, s.ThreadID)
 		delete(h.sessions, token)
 	}
 }
 
-// UnregisterThread drops the session bound to project+thread.
-func (h *Host) UnregisterThread(projectID, threadID string) {
+// UnregisterThread drops the session bound to a thread.
+func (h *Host) UnregisterThread(threadID string) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	key := projectID + "|" + threadID
-	if tok, ok := h.byKey[key]; ok {
+	if tok, ok := h.byThread[threadID]; ok {
 		delete(h.sessions, tok)
-		delete(h.byKey, key)
+		delete(h.byThread, threadID)
 	}
 }
 
-// TokenForThread returns the active token for project+thread when present.
-func (h *Host) TokenForThread(projectID, threadID string) (string, bool) {
+// TokenForThread returns the active token for a thread when present.
+func (h *Host) TokenForThread(threadID string) (string, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	tok, ok := h.byKey[projectID+"|"+threadID]
+	tok, ok := h.byThread[threadID]
 	return tok, ok
 }
 
@@ -247,20 +241,20 @@ func (h *Host) SetAttached(token string, attached *models.AttachedContext) {
 	}
 }
 
-// Authorize reports whether token is valid for projectID.
-func (h *Host) Authorize(projectID, token string) bool {
+// Authorize reports whether token is a live session.
+func (h *Host) Authorize(token string) bool {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	s, ok := h.sessions[token]
-	return ok && s.ProjectID == projectID
+	_, ok := h.sessions[token]
+	return ok
 }
 
 // SessionFor returns the session for a token when authorized.
-func (h *Host) SessionFor(projectID, token string) (*Session, bool) {
+func (h *Host) SessionFor(token string) (*Session, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	s, ok := h.sessions[token]
-	if !ok || s.ProjectID != projectID {
+	if !ok {
 		return nil, false
 	}
 	cp := *s
@@ -269,8 +263,8 @@ func (h *Host) SessionFor(projectID, token string) (*Session, bool) {
 
 // ServeRPC handles one JSON-RPC message for mcpId
 // (pm-progress | pm-workflow-read | pm-workflow-write | pm-agent-fs | pm-prd-manager).
-func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int, resp []byte) {
-	if !h.Authorize(projectID, token) {
+func (h *Host) ServeRPC(mcpID, token string, body []byte) (status int, resp []byte) {
+	if !h.Authorize(token) {
 		return platformmcp.Unauthorized()
 	}
 	mcpID = strings.TrimSpace(mcpID)
@@ -281,17 +275,17 @@ func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int
 		})
 	}
 	// Enforce enabledMcps: channel sessions carry AllowedMcps; Web/gate fall
-	// back to Project.PmEnabledMcps. Fail closed when the binding cannot be
-	// loaded so a missing project never widens access.
+	// back to Workspace.PmEnabledMcps. Fail closed when the binding cannot be
+	// loaded so a load failure never widens access.
 	var allowedList []string
-	if sess, ok := h.SessionFor(projectID, token); ok && sess.AllowedMcps != nil {
+	if sess, ok := h.SessionFor(token); ok && sess.AllowedMcps != nil {
 		allowedList = sess.AllowedMcps
 	} else if h.pm != nil {
-		b, err := h.pm.GetBinding(projectID)
+		b, err := h.pm.GetBinding()
 		if err != nil {
 			return 404, platformmcp.MustJSON(platformmcp.RPCResponse{
 				JSONRPC: "2.0",
-				Error:   &platformmcp.RPCError{Code: -32004, Message: "mcp unavailable for project: " + mcpID},
+				Error:   &platformmcp.RPCError{Code: -32004, Message: "mcp unavailable: " + mcpID},
 			})
 		}
 		allowedList = b.EnabledMcps
@@ -307,13 +301,13 @@ func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int
 		if !allowed {
 			return 404, platformmcp.MustJSON(platformmcp.RPCResponse{
 				JSONRPC: "2.0",
-				Error:   &platformmcp.RPCError{Code: -32004, Message: "mcp disabled for project: " + mcpID},
+				Error:   &platformmcp.RPCError{Code: -32004, Message: "mcp disabled: " + mcpID},
 			})
 		}
 	}
 	var req platformmcp.RPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		log.Warn().Err(err).Str("project_id", projectID).Msg("pm mcp rpc parse error")
+		log.Warn().Err(err).Msg("pm mcp rpc parse error")
 		return platformmcp.ParseError()
 	}
 	switch req.Method {
@@ -341,8 +335,8 @@ func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int
 		if err := json.Unmarshal(req.Params, &p); err != nil {
 			return platformmcp.Fail(req, -32602, "invalid tools/call params")
 		}
-		result, isErr := h.callTool(projectID, token, mcpID, p.Name, p.Arguments)
-		h.auditToolCall(projectID, token, mcpID, p.Name, p.Arguments, result, isErr)
+		result, isErr := h.callTool(token, mcpID, p.Name, p.Arguments)
+		h.auditToolCall(token, mcpID, p.Name, p.Arguments, result, isErr)
 		return platformmcp.Ok(req, platformmcp.ToolResult(result, isErr))
 	default:
 		if platformmcp.IsNotification(req) {
@@ -352,8 +346,8 @@ func (h *Host) ServeRPC(projectID, mcpID, token string, body []byte) (status int
 	}
 }
 
-func (h *Host) callTool(projectID, token, mcpID, name string, args map[string]any) (any, bool) {
-	if _, ok := h.SessionFor(projectID, token); !ok {
+func (h *Host) callTool(token, mcpID, name string, args map[string]any) (any, bool) {
+	if _, ok := h.SessionFor(token); !ok {
 		return map[string]any{"error": "unauthorized"}, true
 	}
 	if args == nil {
@@ -361,28 +355,28 @@ func (h *Host) callTool(projectID, token, mcpID, name string, args map[string]an
 	}
 	switch mcpID {
 	case MCPProgress:
-		return h.callProgress(projectID, name, args)
+		return h.callProgress(name, args)
 	case MCPWorkflowRead:
-		return h.callWorkflowRead(projectID, name, args)
+		return h.callWorkflowRead(name, args)
 	case MCPWorkflowWrite:
-		return h.callWorkflowWrite(projectID, token, name, args)
+		return h.callWorkflowWrite(token, name, args)
 	case MCPAgentFS:
-		return h.callAgentFS(projectID, token, name, args)
+		return h.callAgentFS(token, name, args)
 	case MCPPrdManager:
-		return h.callPrdManager(projectID, token, name, args)
+		return h.callPrdManager(token, name, args)
 	default:
 		return map[string]any{"error": "unknown mcp"}, true
 	}
 }
 
-func (h *Host) auditToolCall(projectID, token, mcpID, tool string, args map[string]any, result any, isErr bool) {
-	if strings.TrimSpace(projectID) == "" || tool == "" {
+func (h *Host) auditToolCall(token, mcpID, tool string, args map[string]any, result any, isErr bool) {
+	if tool == "" {
 		return
 	}
 	actor := services.SystemActor()
 	callerKind := ""
 	summary := "mcp " + mcpID + "/" + tool
-	if sess, ok := h.SessionFor(projectID, token); ok {
+	if sess, ok := h.SessionFor(token); ok {
 		if sess.External {
 			callerKind = models.CallerKindExternal
 			actor = services.AuditActor{Username: "external-mcp:" + sess.ApiKeyName, Unattributable: false}
@@ -406,13 +400,12 @@ func (h *Host) auditToolCall(projectID, token, mcpID, tool string, args map[stri
 		"result":    resultPayload,
 		"isError":   isErr,
 	}
-	if sess, ok := h.SessionFor(projectID, token); ok && sess.External {
+	if sess, ok := h.SessionFor(token); ok && sess.External {
 		payload["external"] = true
 		payload["apiKeyId"] = sess.ApiKeyID
 		payload["apiKeyName"] = sess.ApiKeyName
 	}
 	h.recordAudit(services.AuditRecord{
-		ProjectID:    projectID,
 		Actor:        actor,
 		CallerKind:   callerKind,
 		Action:       models.AuditActionMCPCall,
@@ -424,34 +417,21 @@ func (h *Host) auditToolCall(projectID, token, mcpID, tool string, args map[stri
 	})
 }
 
-// workflowInProject loads a workflow and enforces it belongs to projectID.
-func (h *Host) workflowInProject(projectID, id string) (models.WorkflowDef, bool) {
+func (h *Host) findWorkflow(id string) (models.WorkflowDef, bool) {
 	if h.wf == nil {
 		return models.WorkflowDef{}, false
 	}
-	w, ok := h.wf.Get(id)
-	if !ok || w.ProjectID != projectID {
-		return models.WorkflowDef{}, false
-	}
-	return w, true
+	return h.wf.Get(id)
 }
 
-// runInProject loads a run and enforces its workflow belongs to projectID.
-func (h *Host) runInProject(projectID, runID string) (models.Run, bool) {
+func (h *Host) findRun(runID string) (models.Run, bool) {
 	if h.runs == nil {
 		return models.Run{}, false
 	}
-	r, ok := h.runs.Get(runID)
-	if !ok {
-		return models.Run{}, false
-	}
-	if _, ok := h.workflowInProject(projectID, r.WorkflowID); !ok {
-		return models.Run{}, false
-	}
-	return r, true
+	return h.runs.Get(runID)
 }
 
-func (h *Host) artifactInProject(projectID, artifactID string) (models.Artifact, bool) {
+func (h *Host) findArtifact(artifactID string) (models.Artifact, bool) {
 	if h.arts == nil {
 		return models.Artifact{}, false
 	}
@@ -460,13 +440,13 @@ func (h *Host) artifactInProject(projectID, artifactID string) (models.Artifact,
 		return models.Artifact{}, false
 	}
 	if strings.TrimSpace(art.RunID) != "" {
-		if _, ok := h.runInProject(projectID, art.RunID); !ok {
+		if _, ok := h.findRun(art.RunID); !ok {
 			return models.Artifact{}, false
 		}
 		return art, true
 	}
 	if strings.TrimSpace(art.WorkflowID) != "" {
-		if _, ok := h.workflowInProject(projectID, art.WorkflowID); !ok {
+		if _, ok := h.findWorkflow(art.WorkflowID); !ok {
 			return models.Artifact{}, false
 		}
 		return art, true
@@ -516,33 +496,33 @@ func parseGraphArgs(args map[string]any) (graph models.Graph, present bool, err 
 	return graph, true, nil
 }
 
-func (h *Host) callProgress(projectID, name string, args map[string]any) (any, bool) {
+func (h *Host) callProgress(name string, args map[string]any) (any, bool) {
 	switch name {
 	case "pm_get_progress":
-		return h.progress.OverallProgress(projectID), false
+		return h.progress.OverallProgress(), false
 	case "pm_list_blockers":
-		return h.progress.ListBlockers(projectID), false
+		return h.progress.ListBlockers(), false
 	case "pm_get_plan_summary":
-		return h.progress.PlanSummary(projectID, platformmcp.StrArg(args, "runId")), false
+		return h.progress.PlanSummary(platformmcp.StrArg(args, "runId")), false
 	case "pm_get_artifact_summary":
-		return h.progress.ArtifactSummary(projectID, platformmcp.StrArg(args, "runId"), platformmcp.IntArg(args, "limit", 20)), false
+		return h.progress.ArtifactSummary(platformmcp.StrArg(args, "runId"), platformmcp.IntArg(args, "limit", 20)), false
 	case "pm_get_risk_trends":
-		return h.progress.RiskTrends(projectID), false
+		return h.progress.RiskTrends(), false
 	case "pm_compare_runs":
-		return h.progress.CompareRuns(projectID, platformmcp.StrArg(args, "workflowId"), platformmcp.IntArg(args, "limit", 5)), false
+		return h.progress.CompareRuns(platformmcp.StrArg(args, "workflowId"), platformmcp.IntArg(args, "limit", 5)), false
 	default:
 		return map[string]any{"error": "unknown tool: " + name}, true
 	}
 }
 
 // callWorkflowRead serves the read-only pm-workflow-read tools.
-func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (any, bool) {
+func (h *Host) callWorkflowRead(name string, args map[string]any) (any, bool) {
 	if h.wf == nil {
 		return map[string]any{"error": "workflow service unavailable"}, true
 	}
 	switch name {
 	case "pm_list_workflows":
-		list := h.wf.List(projectID)
+		list := h.wf.List()
 		rows := make([]map[string]any, 0, len(list))
 		for _, w := range list {
 			rows = append(rows, map[string]any{
@@ -552,7 +532,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 		}
 		return map[string]any{"workflows": rows, "count": len(rows)}, false
 	case "pm_get_workflow":
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -561,7 +541,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 			"description": w.Description, "needsRepo": w.NeedsRepo,
 		}, false
 	case "pm_get_workflow_graph":
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -569,7 +549,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 			"id": w.ID, "nodes": w.Graph.Nodes, "edges": w.Graph.Edges, "variables": w.Graph.Variables,
 		}, false
 	case "pm_list_versions":
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -583,14 +563,14 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 		if wfID == "" {
 			return map[string]any{"error": "workflowId required"}, true
 		}
-		if _, ok := h.workflowInProject(projectID, wfID); !ok {
+		if _, ok := h.findWorkflow(wfID); !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
 		limit := platformmcp.IntArg(args, "limit", 10)
 		if limit <= 0 {
 			limit = 10
 		}
-		runs := h.runs.List(nil, wfID, projectID)
+		runs := h.runs.List(nil, wfID)
 		if len(runs) > limit {
 			runs = runs[:limit]
 		}
@@ -615,7 +595,7 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 			return map[string]any{"error": "run service unavailable"}, true
 		}
 		limit := platformmcp.IntArg(args, "limit", 50)
-		items, total := h.runs.PendingInboxItems("", projectID, nil, 0, limit)
+		items, total := h.runs.PendingInboxItems("", nil, 0, limit)
 		if h.eng != nil {
 			services.AttachInboxReplyingState(items, func(runID, nodeID string) bool {
 				waiting, thinking := h.eng.ReviewSessionState(runID, nodeID)
@@ -644,12 +624,12 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 		var art models.Artifact
 		var ok bool
 		if artifactID != "" {
-			art, ok = h.artifactInProject(projectID, artifactID)
+			art, ok = h.findArtifact(artifactID)
 		} else {
 			if runID == "" || nameArg == "" {
 				return map[string]any{"error": "artifactId or runId+name required"}, true
 			}
-			if _, runOK := h.runInProject(projectID, runID); !runOK {
+			if _, runOK := h.findRun(runID); !runOK {
 				return map[string]any{"error": "run not found"}, true
 			}
 			art, ok = h.arts.GetRecord(runID, nameArg)
@@ -691,11 +671,10 @@ func (h *Host) callWorkflowRead(projectID, name string, args map[string]any) (an
 	}
 }
 
-// callWorkflowWrite serves the mutating pm-workflow-write tools. All targets
-// are enforced to belong to the session's project. Access is gated by whether
-// pm-workflow-write is enabled for the project (see ServeRPC), not by session
+// callWorkflowWrite serves the mutating pm-workflow-write tools. Access is
+// gated by whether pm-workflow-write is enabled (see ServeRPC), not by session
 // trust level.
-func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]any) (any, bool) {
+func (h *Host) callWorkflowWrite(token, name string, args map[string]any) (any, bool) {
 	if h.wf == nil {
 		return map[string]any{"error": "workflow service unavailable"}, true
 	}
@@ -711,7 +690,6 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		}
 		wf := &models.WorkflowDef{
 			ID:          "wf-" + uuid.NewString()[:8],
-			ProjectID:   projectID,
 			Name:        wfName,
 			Description: platformmcp.StrArg(args, "description"),
 			NeedsRepo:   platformmcp.BoolArg(args, "needsRepo"),
@@ -722,7 +700,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		}
 		return map[string]any{"id": wf.ID, "name": wf.Name, "status": wf.Status(), "version": wf.Version}, false
 	case "pm_update_workflow":
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -749,7 +727,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		}
 		return map[string]any{"id": w.ID, "name": w.Name, "status": w.Status(), "version": w.Version}, false
 	case "pm_copy_workflow":
-		if _, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId")); !ok {
+		if _, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId")); !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
 		out, err := h.wf.Copy(platformmcp.StrArg(args, "workflowId"), platformmcp.StrArg(args, "name"))
@@ -758,7 +736,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		}
 		return map[string]any{"id": out.ID, "name": out.Name, "status": out.Status(), "version": out.Version}, false
 	case "pm_delete_workflow":
-		if _, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId")); !ok {
+		if _, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId")); !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
 		if err := h.wf.Delete(platformmcp.StrArg(args, "workflowId")); err != nil {
@@ -766,7 +744,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		}
 		return map[string]any{"id": platformmcp.StrArg(args, "workflowId"), "deleted": true}, false
 	case "pm_publish_workflow":
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -779,7 +757,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 		if h.eng == nil {
 			return map[string]any{"error": "engine unavailable"}, true
 		}
-		w, ok := h.workflowInProject(projectID, platformmcp.StrArg(args, "workflowId"))
+		w, ok := h.findWorkflow(platformmcp.StrArg(args, "workflowId"))
 		if !ok {
 			return map[string]any{"error": "workflow not found"}, true
 		}
@@ -804,7 +782,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			return map[string]any{"error": err.Error()}, true
 		}
 		actor := services.SystemActor()
-		if sess, ok := h.SessionFor(projectID, token); ok {
+		if sess, ok := h.SessionFor(token); ok {
 			actor = services.ActorFromUsername(sess.UserID)
 		}
 		payload := map[string]any{
@@ -818,7 +796,6 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			payload["env"] = services.MaskSandboxEnvForAudit(run.SandboxEnv)
 		}
 		h.recordAudit(services.AuditRecord{
-			ProjectID:    projectID,
 			Actor:        actor,
 			Action:       models.AuditActionRunStart,
 			ResourceType: "run",
@@ -834,7 +811,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			return map[string]any{"error": "engine unavailable"}, true
 		}
 		runID := platformmcp.StrArg(args, "runId")
-		if _, ok := h.runInProject(projectID, runID); !ok {
+		if _, ok := h.findRun(runID); !ok {
 			return map[string]any{"error": "run not found"}, true
 		}
 		nodeID := strings.TrimSpace(platformmcp.StrArg(args, "nodeId"))
@@ -851,7 +828,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			return map[string]any{"error": "engine unavailable"}, true
 		}
 		runID := platformmcp.StrArg(args, "runId")
-		if _, ok := h.runInProject(projectID, runID); !ok {
+		if _, ok := h.findRun(runID); !ok {
 			return map[string]any{"error": "run not found"}, true
 		}
 		nodeID := strings.TrimSpace(platformmcp.StrArg(args, "nodeId"))
@@ -878,7 +855,7 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			return map[string]any{"error": "engine unavailable"}, true
 		}
 		runID := platformmcp.StrArg(args, "runId")
-		run, ok := h.runInProject(projectID, runID)
+		run, ok := h.findRun(runID)
 		if !ok {
 			return map[string]any{"error": "run not found"}, true
 		}
@@ -886,11 +863,10 @@ func (h *Host) callWorkflowWrite(projectID, token, name string, args map[string]
 			return map[string]any{"error": err.Error()}, true
 		}
 		actor := services.SystemActor()
-		if sess, sOk := h.SessionFor(projectID, token); sOk {
+		if sess, sOk := h.SessionFor(token); sOk {
 			actor = services.ActorFromUsername(sess.UserID)
 		}
 		h.recordAudit(services.AuditRecord{
-			ProjectID:    projectID,
 			Actor:        actor,
 			Action:       models.AuditActionRunCancel,
 			ResourceType: "run",
@@ -910,28 +886,28 @@ func toolSchemas(mcpID string) []map[string]any {
 	switch mcpID {
 	case MCPPrdManager:
 		return []map[string]any{
-			platformmcp.Tool("pm_list_requirement_drafts", "列出当前项目需求草稿摘要（不含正文）。可选 status：open|done|all（未传等价全部）；可选 query 按标题子串过滤。", map[string]any{
+			platformmcp.Tool("pm_list_requirement_drafts", "列出工作区需求草稿摘要（不含正文）。可选 status：open|done|all（未传等价全部）；可选 query 按标题子串过滤。", map[string]any{
 				"status": map[string]any{"type": "string", "description": "open|done|all；省略或 all 返回全部"},
 				"query":  map[string]any{"type": "string", "description": "标题子串（不搜正文）"},
 			}),
-			platformmcp.Tool("pm_get_requirement_draft", "按 draftId 读取当前项目需求草稿全文（含 bodyMarkdown）。", map[string]any{
+			platformmcp.Tool("pm_get_requirement_draft", "按 draftId 读取工作区需求草稿全文（含 bodyMarkdown）。", map[string]any{
 				"draftId": map[string]any{"type": "string", "description": "需求草稿 id"},
 			}),
-			platformmcp.Tool("pm_create_requirement_draft", "在当前项目创建一条 open 需求草稿。可选 title / bodyMarkdown；缺省或空白标题为「未命名需求」。", map[string]any{
+			platformmcp.Tool("pm_create_requirement_draft", "在工作区创建一条 open 需求草稿。可选 title / bodyMarkdown；缺省或空白标题为「未命名需求」。", map[string]any{
 				"title":        map[string]any{"type": "string", "description": "标题；省略、空或仅空白时使用「未命名需求」"},
 				"bodyMarkdown": map[string]any{"type": "string", "description": "Markdown 正文；可省略"},
 			}),
 		}
 	case MCPAgentFS:
 		return []map[string]any{
-			platformmcp.Tool("pm_list_project_agents", "列出当前项目的全部 Agent 成员（name、acpBackend、relation：self 为当前 PM 自身，other 为同项目其他成员）。只读。", nil),
+			platformmcp.Tool("pm_list_workspace_agents", "列出工作区的全部 Agent 成员（name、acpBackend、relation：self 为当前 PM 自身，other 为工作区其他成员）。只读。", nil),
 			platformmcp.Tool("pm_list_agent_templates", "列出内置工程师角色模板（id、中文角色名、简介），用于组建团队。", nil),
-			platformmcp.Tool("pm_create_agent_from_template", "从模板创建工程师 Agent（同项目；默认继承 Leader 的 mcp/env；禁止覆盖重名）。", map[string]any{
+			platformmcp.Tool("pm_create_agent_from_template", "从模板创建工程师 Agent（默认继承 Leader 的 mcp/env；禁止覆盖重名）。", map[string]any{
 				"templateId": map[string]any{"type": "string", "description": "模板 id，如 implement / clarify"},
 				"name":       map[string]any{"type": "string", "description": "新 Agent 名称，如 Grasp实现工程师"},
 			}),
 			platformmcp.Tool("pm_fs_list", "列出授权 Agent 的 host 侧 workspace 目录（非 Run 沙箱）。", map[string]any{
-				"agentName": map[string]any{"type": "string", "description": "目标 Agent 名（同项目任意成员或自身）"},
+				"agentName": map[string]any{"type": "string", "description": "目标 Agent 名（工作区任意成员或自身）"},
 				"path":      map[string]any{"type": "string", "description": "workspace 相对目录，空或省略表示根"},
 			}),
 			platformmcp.Tool("pm_fs_read", "读取授权 Agent workspace 内文件（单文件硬上限 1MiB）。", map[string]any{
@@ -975,7 +951,7 @@ func toolSchemas(mcpID string) []map[string]any {
 		}
 	case MCPWorkflowRead:
 		return []map[string]any{
-			platformmcp.Tool("pm_list_workflows", "列出当前项目下的工作流。", nil),
+			platformmcp.Tool("pm_list_workflows", "列出工作区内的工作流。", nil),
 			platformmcp.Tool("pm_get_workflow", "获取工作流元数据（不含完整 Graph）。", map[string]any{
 				"workflowId": map[string]any{"type": "string"},
 			}),
@@ -989,10 +965,10 @@ func toolSchemas(mcpID string) []map[string]any {
 				"workflowId": map[string]any{"type": "string"},
 				"limit":      map[string]any{"type": "number"},
 			}),
-			platformmcp.Tool("pm_list_pending_gates", "列出当前项目待审批的门禁/澄清项。", map[string]any{
+			platformmcp.Tool("pm_list_pending_gates", "列出工作区待审批的门禁/澄清项。", map[string]any{
 				"limit": map[string]any{"type": "number"},
 			}),
-			platformmcp.Tool("pm_get_artifact", "按 artifactId 或 runId+name 读取当前项目产物全文片段；支持 offset/limit 分页并返回截断信息。", map[string]any{
+			platformmcp.Tool("pm_get_artifact", "按 artifactId 或 runId+name 读取工作区产物全文片段；支持 offset/limit 分页并返回截断信息。", map[string]any{
 				"artifactId": map[string]any{"type": "string", "description": "优先使用；与 runId+name 同时提供时以 artifactId 为准"},
 				"runId":      map[string]any{"type": "string"},
 				"name":       map[string]any{"type": "string"},
@@ -1002,7 +978,7 @@ func toolSchemas(mcpID string) []map[string]any {
 		}
 	case MCPWorkflowWrite:
 		return []map[string]any{
-			platformmcp.Tool("pm_create_workflow", "在当前项目创建工作流草稿，可附带完整 Graph。", map[string]any{
+			platformmcp.Tool("pm_create_workflow", "在工作区创建工作流草稿，可附带完整 Graph。", map[string]any{
 				"name":        map[string]any{"type": "string"},
 				"description": map[string]any{"type": "string"},
 				"needsRepo":   map[string]any{"type": "boolean"},
@@ -1019,7 +995,7 @@ func toolSchemas(mcpID string) []map[string]any {
 				"edges":       map[string]any{"type": "array"},
 				"variables":   map[string]any{"type": "array"},
 			}),
-			platformmcp.Tool("pm_copy_workflow", "在当前项目内复制工作流。", map[string]any{
+			platformmcp.Tool("pm_copy_workflow", "在工作区内复制工作流。", map[string]any{
 				"workflowId": map[string]any{"type": "string"},
 				"name":       map[string]any{"type": "string"},
 			}),
@@ -1074,12 +1050,12 @@ func toolSchemas(mcpID string) []map[string]any {
 		}
 	default:
 		return []map[string]any{
-			platformmcp.Tool("pm_get_progress", "聚合项目下全部工作流/Run 的整体进度概览。", nil),
+			platformmcp.Tool("pm_get_progress", "聚合工作区全部工作流/Run 的整体进度概览。", nil),
 			platformmcp.Tool("pm_list_blockers", "列出当前阻塞（waiting_human / 门禁 / 澄清等待）。", nil),
 			platformmcp.Tool("pm_get_plan_summary", "解读某次 Run 的 plan.json 完成度与未完成项。", map[string]any{
 				"runId": map[string]any{"type": "string"},
 			}),
-			platformmcp.Tool("pm_get_artifact_summary", "摘要某次 Run 或项目近期产物要点。", map[string]any{
+			platformmcp.Tool("pm_get_artifact_summary", "摘要某次 Run 或工作区近期产物要点。", map[string]any{
 				"runId": map[string]any{"type": "string"},
 				"limit": map[string]any{"type": "number"},
 			}),

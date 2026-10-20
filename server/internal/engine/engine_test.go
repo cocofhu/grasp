@@ -30,8 +30,7 @@ func setupEngine(t *testing.T) (*Engine, *gorm.DB) {
 	// Self-contained: insert the test workflow directly (no seed dependency)
 	// and drive it with a deterministic test-double provider (no Docker).
 	wf := models.WorkflowDef{
-		ProjectID: models.DefaultProjectID,
-		ID:        "clarify-to-design", Name: "clarify-to-design", Version: 1, PublishedVersion: 1,
+		ID: "clarify-to-design", Name: "clarify-to-design", Version: 1, PublishedVersion: 1,
 		Graph: testClarifyGraph(),
 	}
 	if err := db.Create(&wf).Error; err != nil {
@@ -206,7 +205,7 @@ func setupEngineGraph(t *testing.T, g models.Graph) (*Engine, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}

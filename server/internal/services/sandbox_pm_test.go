@@ -10,17 +10,16 @@ func TestOpenForPM(t *testing.T) {
 	ds := &dockerState{failRun: true}
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
-	bindTestAgentHome(t, s, "agentA", "p1")
-	row, reused, err := s.OpenForPM(ctx, "agentA", "p1", "thr-pm", "tok", nil)
+	row, reused, err := s.OpenForPM(ctx, "agentA", "thr-pm", "tok", nil)
 	if err != nil || reused || row == nil {
 		t.Fatalf("OpenForPM: row=%+v reused=%v err=%v", row, reused, err)
 	}
-	row2, err := s.OpenAgentSandboxFresh(ctx, "agentA", "p1", "thr-fresh2", "tok", nil)
+	row2, err := s.OpenAgentSandboxFresh(ctx, "agentA", "thr-fresh2", "tok", nil)
 	if err != nil || row2 == nil {
 		t.Fatalf("OpenAgentSandboxFresh: %v", err)
 	}
 	called := false
-	s.SetAgentSandboxDestroyHook(func(projectID, threadID, token string) { called = true })
+	s.SetAgentSandboxDestroyHook(func(threadID, token string) { called = true })
 	s.SetAgentSandboxDestroyHook(nil)
 	_ = called
 }

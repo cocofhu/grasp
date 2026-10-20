@@ -26,7 +26,6 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 
 type agentBody struct {
 	Name                 string                    `json:"name"`
-	ProjectID            string                    `json:"projectId"`
 	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	TemplateID           string                    `json:"templateId"`
 	AcpBackend           string                    `json:"acpBackend"`
@@ -45,27 +44,12 @@ type agentBody struct {
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		Name: name, ProjectID: strings.TrimSpace(b.ProjectID), CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
+		Name: name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
 		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
 		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID),
 		Files:                b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
-}
-
-// validateAgentProjectBinding requires a home project that exists.
-func (h *Handlers) validateAgentProjectBinding(agent services.Agent) error {
-	projectID := strings.TrimSpace(agent.ProjectID)
-	if projectID == "" {
-		return services.ErrAgentProjectRequired
-	}
-	if h.Projects == nil {
-		return errors.New("项目管理服务不可用，无法校验所属项目")
-	}
-	if _, ok := h.Projects.Get(projectID); !ok {
-		return errors.New("所属项目不存在")
-	}
-	return nil
 }
 
 // agentSaveStatus maps Agent save errors to HTTP status.
@@ -93,9 +77,6 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		c.JSON(http.StatusConflict, gin.H{"error": "agent already exists"})
 		return
 	}
-	if !h.resolveWorkspaceID(c, &b.ProjectID) {
-		return
-	}
 	agent := b.toAgent(name)
 
 	templateID := strings.TrimSpace(b.TemplateID)
@@ -108,10 +89,6 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 
 	if len(agent.MCP) == 0 {
 		agent.MCP = services.DefaultPlatformMCP()
-	}
-	if err := h.validateAgentProjectBinding(agent); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
 	}
 	if err := h.Agents.Save(agent); err != nil {
 		_ = c.Error(err)
@@ -129,18 +106,7 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 		return
 	}
 	name := c.Param("name")
-	oldProjectID := ""
-	if prev, ok := h.Agents.Get(name); ok {
-		oldProjectID = strings.TrimSpace(prev.ProjectID)
-	}
-	if !h.resolveWorkspaceID(c, &b.ProjectID) {
-		return
-	}
 	agent := b.toAgent(name)
-	if err := h.validateAgentProjectBinding(agent); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	if err := services.RejectSecretEnvKeys(agent.Env); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -148,15 +114,6 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 	if _, err := services.ParseAcpBackend(agent.AcpBackend); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-
-	newProjectID := strings.TrimSpace(agent.ProjectID)
-	if oldProjectID != "" && oldProjectID != newProjectID && h.Pm != nil {
-		if err := h.Pm.PurgeAgentProjectData(oldProjectID, name); err != nil {
-			_ = c.Error(err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "清除旧项目数据失败：" + err.Error()})
-			return
-		}
 	}
 	reason := strings.TrimSpace(b.Reason)
 	if reason == "" {
@@ -295,14 +252,6 @@ func (h *Handlers) ImportAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "targetName is required"})
 		return
 	}
-	projectID := strings.TrimSpace(c.PostForm("projectId"))
-	if !h.resolveWorkspaceID(c, &projectID) {
-		return
-	}
-	if err := h.validateAgentProjectBinding(services.Agent{ProjectID: projectID}); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	mode := services.ImportZIPMode(strings.TrimSpace(c.PostForm("mode")))
 	if mode == "" {
 		mode = services.ImportZIPCreate
@@ -329,18 +278,7 @@ func (h *Handlers) ImportAgent(c *gin.Context) {
 		return
 	}
 
-	if mode == services.ImportZIPOverwrite && h.Pm != nil {
-		if prev, ok := h.Agents.Get(targetName); ok {
-			if old := strings.TrimSpace(prev.ProjectID); old != "" && old != projectID {
-				if err := h.Pm.PurgeAgentProjectData(old, targetName); err != nil {
-					_ = c.Error(err)
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "清除旧项目数据失败：" + err.Error()})
-					return
-				}
-			}
-		}
-	}
-	agent, err := h.Agents.ImportZIP(raw, targetName, projectID, mode)
+	agent, err := h.Agents.ImportZIP(raw, targetName, mode)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

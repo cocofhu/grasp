@@ -9,14 +9,12 @@ import (
 type fakeDeliverer struct {
 	calls        int
 	cronCalls    int
-	project      string
 	text         string
 	lastDelivery CronDelivery
 }
 
-func (f *fakeDeliverer) Deliver(projectID, text string) error {
+func (f *fakeDeliverer) Deliver(text string) error {
 	f.calls++
-	f.project = projectID
 	f.text = text
 	return nil
 }
@@ -24,20 +22,15 @@ func (f *fakeDeliverer) Deliver(projectID, text string) error {
 func (f *fakeDeliverer) DeliverCron(d CronDelivery) error {
 	f.cronCalls++
 	f.lastDelivery = d
-	f.project = d.ProjectID
 	f.text = d.Text
 	return nil
 }
 
-func setupCronDeliver(t *testing.T) (*CronScheduler, *PmService, models.ChatThread, models.ChatMessage, string) {
+func setupCronDeliver(t *testing.T) (*CronScheduler, *PmService, models.ChatThread, models.ChatMessage) {
 	t.Helper()
 	db := newTestDB(t)
 	pm := NewPmService(db, nil)
-	p, err := NewProjectService(db).CreateFixture("CronProj", "", nil)
-	if err != nil {
-		t.Fatalf("create project: %v", err)
-	}
-	thread, err := pm.CreateThread(p.ID, "cron-user", "T", "agent", models.ChatThreadKindUser)
+	thread, err := pm.CreateThread("cron-user", "T", "agent", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatalf("create thread: %v", err)
 	}
@@ -49,22 +42,19 @@ func setupCronDeliver(t *testing.T) (*CronScheduler, *PmService, models.ChatThre
 		t.Fatalf("append assistant: %v", err)
 	}
 	sched := NewCronScheduler(db, pm, nil, nil, CronTokenHooks{})
-	return sched, pm, thread, userMsg, p.ID
+	return sched, pm, thread, userMsg
 }
 
 func TestMaybeDeliverPushesWhenEnabled(t *testing.T) {
-	sched, _, thread, userMsg, pid := setupCronDeliver(t)
+	sched, _, thread, userMsg := setupCronDeliver(t)
 	fd := &fakeDeliverer{}
 	sched.SetChannelDeliverer(fd)
 
-	job := &models.AgentCronJob{ID: "j1", ProjectID: pid, ThreadID: thread.ID, Name: "hourly-pr", DeliverToChannel: true}
+	job := &models.AgentCronJob{ID: "j1", ThreadID: thread.ID, Name: "hourly-pr", DeliverToChannel: true}
 	sched.maybeDeliver(job, userMsg)
 
 	if fd.cronCalls != 1 {
 		t.Fatalf("expected 1 DeliverCron, got %d (legacy Deliver=%d)", fd.cronCalls, fd.calls)
-	}
-	if fd.project != pid {
-		t.Errorf("delivered to project %q want %q", fd.project, pid)
 	}
 	if fd.lastDelivery.Text != "done: result text" {
 		t.Errorf("delivered text = %q", fd.lastDelivery.Text)
@@ -81,13 +71,13 @@ func TestMaybeDeliverPushesWhenEnabled(t *testing.T) {
 }
 
 func TestMaybeDeliverClassifiesUnchanged(t *testing.T) {
-	sched, pm, thread, userMsg, pid := setupCronDeliver(t)
+	sched, pm, thread, userMsg := setupCronDeliver(t)
 	if _, err := pm.AppendMessage(thread.ID, "assistant", "PR：无变化", nil, nil, nil); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	fd := &fakeDeliverer{}
 	sched.SetChannelDeliverer(fd)
-	job := &models.AgentCronJob{ID: "j1", ProjectID: pid, ThreadID: thread.ID, Name: "每小时PR", DeliverToChannel: true}
+	job := &models.AgentCronJob{ID: "j1", ThreadID: thread.ID, Name: "每小时PR", DeliverToChannel: true}
 	sched.maybeDeliver(job, userMsg)
 	if fd.cronCalls != 1 || fd.lastDelivery.Kind != "unchanged" {
 		t.Fatalf("got cronCalls=%d kind=%q", fd.cronCalls, fd.lastDelivery.Kind)
@@ -95,13 +85,13 @@ func TestMaybeDeliverClassifiesUnchanged(t *testing.T) {
 }
 
 func TestMaybeDeliverClassifiesFailed(t *testing.T) {
-	sched, pm, thread, userMsg, pid := setupCronDeliver(t)
+	sched, pm, thread, userMsg := setupCronDeliver(t)
 	if _, err := pm.AppendMessage(thread.ID, "assistant", "检查失败：无权访问", nil, nil, nil); err != nil {
 		t.Fatalf("append: %v", err)
 	}
 	fd := &fakeDeliverer{}
 	sched.SetChannelDeliverer(fd)
-	job := &models.AgentCronJob{ID: "j1", ProjectID: pid, ThreadID: thread.ID, Name: "日报", DeliverToChannel: true}
+	job := &models.AgentCronJob{ID: "j1", ThreadID: thread.ID, Name: "日报", DeliverToChannel: true}
 	sched.maybeDeliver(job, userMsg)
 	if fd.cronCalls != 1 || fd.lastDelivery.Kind != "failed" {
 		t.Fatalf("got cronCalls=%d kind=%q", fd.cronCalls, fd.lastDelivery.Kind)
@@ -109,11 +99,11 @@ func TestMaybeDeliverClassifiesFailed(t *testing.T) {
 }
 
 func TestMaybeDeliverSkipsWhenDisabled(t *testing.T) {
-	sched, _, thread, userMsg, pid := setupCronDeliver(t)
+	sched, _, thread, userMsg := setupCronDeliver(t)
 	fd := &fakeDeliverer{}
 	sched.SetChannelDeliverer(fd)
 
-	job := &models.AgentCronJob{ID: "j1", ProjectID: pid, ThreadID: thread.ID, DeliverToChannel: false}
+	job := &models.AgentCronJob{ID: "j1", ThreadID: thread.ID, DeliverToChannel: false}
 	sched.maybeDeliver(job, userMsg)
 
 	if fd.cronCalls != 0 || fd.calls != 0 {
@@ -122,20 +112,20 @@ func TestMaybeDeliverSkipsWhenDisabled(t *testing.T) {
 }
 
 func TestMaybeDeliverNoDelivererIsNoop(t *testing.T) {
-	sched, _, thread, userMsg, pid := setupCronDeliver(t)
-	job := &models.AgentCronJob{ID: "j1", ProjectID: pid, ThreadID: thread.ID, DeliverToChannel: true}
+	sched, _, thread, userMsg := setupCronDeliver(t)
+	job := &models.AgentCronJob{ID: "j1", ThreadID: thread.ID, DeliverToChannel: true}
 	// No deliverer set — must not panic.
 	sched.maybeDeliver(job, userMsg)
 }
 
 func TestDeliverCronFailureOnTimeout(t *testing.T) {
 	// review v3: turn timeout / start failure must push Kind=failed via DeliverCron.
-	sched, _, thread, _, pid := setupCronDeliver(t)
+	sched, _, thread, _ := setupCronDeliver(t)
 	fd := &fakeDeliverer{}
 	sched.SetChannelDeliverer(fd)
 
 	job := &models.AgentCronJob{
-		ID: "j-timeout", ProjectID: pid, ThreadID: thread.ID,
+		ID: "j-timeout", ThreadID: thread.ID,
 		Name: "每小时PR", DeliverToChannel: true,
 	}
 	sched.deliverCronFailure(job, "回合超时")

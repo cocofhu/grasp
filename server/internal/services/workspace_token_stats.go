@@ -300,7 +300,7 @@ type tokenModelAgg struct {
 // Top10 + other ranking. 「未知/未分桶」is a normal bucket: it competes by
 // total, appears in ranking only when it ranks in Top10, and is otherwise
 // folded into other. other.Unknown is always false.
-// unknownAlias (project UnknownModelDisplayName) only replaces Name for the
+// unknownAlias (workspace UnknownModelDisplayName) only replaces Name for the
 // unknown row; ModelKey stays TokenUsageModelUnknown and Unknown stays true.
 func buildModelStats(totals map[string]*tokenModelAgg, unknownAlias string) (composition []TokenStatsModel, ranking []TokenStatsModel) {
 	unknownName := ResolveUnknownModelDisplayName(unknownAlias)

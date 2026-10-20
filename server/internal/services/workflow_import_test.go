@@ -97,13 +97,13 @@ func TestWorkflowImportCreatesDraft(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
 
-	existing := &models.WorkflowDef{ID: "wf-x", ProjectID: models.DefaultProjectID, Name: "工作流 A", Graph: validGraph()}
+	existing := &models.WorkflowDef{ID: "wf-x", Name: "工作流 A", Graph: validGraph()}
 	if err := s.Save(existing); err != nil {
 		t.Fatal(err)
 	}
 
 	raw := envelopeJSON(validEnvelope("工作流 A"))
-	imported, err := s.Import(raw, "")
+	imported, err := s.Import(raw)
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -135,8 +135,8 @@ func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T
 	db := newTestDB(t)
 	svc := NewWorkflowService(db)
 	env := validEnvelope("Configured")
-	env.Defaults = &models.WorkflowDefaults{InheritWorkspace: false, Variables: []models.ProjectVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.ProjectNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
-	wf, err := svc.Import(envelopeJSON(env), "")
+	env.Defaults = &models.WorkflowDefaults{InheritWorkspace: false, Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.WorkspaceNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
+	wf, err := svc.Import(envelopeJSON(env))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +149,7 @@ func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T
 		t.Fatalf("copy defaults=%+v %v", copy.Defaults, err)
 	}
 	env.Defaults.Variables[0].Value = SecretMask
-	if _, err = svc.Import(envelopeJSON(env), ""); !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
+	if _, err = svc.Import(envelopeJSON(env)); !errors.Is(err, ErrSecretPlaceholderOnNewKey) {
 		t.Fatalf("masked secret accepted: %v", err)
 	}
 }
@@ -157,7 +157,7 @@ func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T
 func TestWorkflowVersionGraph(t *testing.T) {
 	db := newTestDB(t)
 	s := NewWorkflowService(db)
-	wf := &models.WorkflowDef{ID: "wf-v", ProjectID: models.DefaultProjectID, Name: "V", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-v", Name: "V", Graph: validGraph()}
 	if err := s.Save(wf); err != nil {
 		t.Fatal(err)
 	}

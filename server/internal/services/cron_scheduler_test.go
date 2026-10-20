@@ -33,18 +33,18 @@ func TestCronSchedulerSettingsClamp(t *testing.T) {
 func TestCronSchedulerClaimRelease(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronClaim", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronClaim", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时任务")
+	th, err := pm.CreateCronThread("agent-a", "定时任务")
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	job := models.AgentCronJob{
-		ID: "cron-claim-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-claim-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "n", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
 	}
@@ -69,19 +69,19 @@ func TestCronSchedulerClaimRelease(t *testing.T) {
 func TestCronSchedulerStaleClaimReclaim(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronStale", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronStale", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时")
+	th, err := pm.CreateCronThread("agent-a", "定时")
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	staleAt := now.Add(-2 * time.Hour)
 	job := models.AgentCronJob{
-		ID: "cron-stale-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-stale-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "n", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
 		ClaimedAt: &staleAt, ClaimOwner: "dead-owner",
@@ -149,12 +149,12 @@ func TestCronSchedulerShanghaiNextRunAtDueAt0200Z(t *testing.T) {
 	// text compare next_run_at <= now wait until ~10:00Z. Fixed path must be due at 02:00Z.
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronShanghaiDue", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronShanghaiDue", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时")
+	th, err := pm.CreateCronThread("agent-a", "定时")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestCronSchedulerShanghaiNextRunAtDueAt0200Z(t *testing.T) {
 
 	created := from
 	job := models.AgentCronJob{
-		ID: "cron-shanghai-due-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-shanghai-due-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "shanghai-10", Prompt: "p", ScheduleKind: "cron", ScheduleExpr: "0 10 * * *",
 		Timezone: "Asia/Shanghai", Enabled: true, NextRunAt: &next, CreatedAt: created, UpdatedAt: created,
 	}
@@ -204,18 +204,18 @@ func TestCronSchedulerShanghaiNextRunAtDueAt0200Z(t *testing.T) {
 func TestCronSchedulerFinishJobUsesCronExpr(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronNext", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronNext", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时")
+	th, err := pm.CreateCronThread("agent-a", "定时")
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 7, 21, 8, 30, 0, 0, time.UTC)
 	job := models.AgentCronJob{
-		ID: "cron-next-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-next-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "n", Prompt: "p", ScheduleKind: "cron", ScheduleExpr: "0 9 * * *",
 		Timezone: "UTC", Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
 		ClaimedAt: &now, ClaimOwner: "test",
@@ -244,18 +244,18 @@ func TestCronSchedulerFinishJobUsesCronExpr(t *testing.T) {
 func TestCronSchedulerExecuteUnavailable(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CronExec", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CronExec", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateCronThread(p.ID, "agent-a", "定时")
+	th, err := pm.CreateCronThread("agent-a", "定时")
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Now()
 	job := models.AgentCronJob{
-		ID: "cron-exec-1", AgentName: "agent-a", ProjectID: p.ID, ThreadID: th.ID,
+		ID: "cron-exec-1", AgentName: "agent-a", ThreadID: th.ID,
 		Name: "n", Prompt: "p", ScheduleKind: "every", ScheduleExpr: "1h",
 		Enabled: true, NextRunAt: &now, CreatedAt: now, UpdatedAt: now,
 		ClaimedAt: &now, ClaimOwner: "test",

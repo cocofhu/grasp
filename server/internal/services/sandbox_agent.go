@@ -23,7 +23,7 @@ const SandboxPurposeAgent = "agent"
 
 // AgentSandboxDestroyHook is invoked when a thread-bound agent sandbox is
 // destroyed so MCP session tokens (and thread sandbox refs) can be revoked.
-type AgentSandboxDestroyHook func(projectID, threadID, token string)
+type AgentSandboxDestroyHook func(threadID, token string)
 
 // SetAgentSandboxDestroyHook registers cleanup for purpose=agent|pm sandboxes.
 func (s *SandboxService) SetAgentSandboxDestroyHook(fn AgentSandboxDestroyHook) {
@@ -35,9 +35,9 @@ func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 	s.testScheduler = h
 }
 
-// SetCodexLoginWriteBack registers the project-credential update used when a
+// SetCodexLoginWriteBack registers the workspace-credential update used when a
 // Codex sandbox's auth.json changes. The callback must not log the file body.
-func (s *SandboxService) SetCodexLoginWriteBack(fn func(projectID, credentialID, content string) error, identify func(projectID, envKey, value string) string) {
+func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error, identify func(envKey, value string) string) {
 	s.codexLoginWriteBack = fn
 	s.injectedCredentialID = identify
 }
@@ -52,8 +52,8 @@ func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
 // writeBackLiveCodex reads auth.json before the container is destroyed. A read
 // failure, an unchanged file, or a confirmed login refusal keeps the previous
 // credential. The body is not logged.
-func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projectID string) {
-	if s.codexLoginWriteBack == nil || strings.TrimSpace(projectID) == "" {
+func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint) {
+	if s.codexLoginWriteBack == nil {
 		return
 	}
 	s.mu.Lock()
@@ -74,8 +74,8 @@ func (s *SandboxService) writeBackLiveCodex(ctx context.Context, id uint, projec
 		}
 		return
 	}
-	if werr := s.codexLoginWriteBack(projectID, ls.codexAuthCredentialID, next); werr != nil {
-		log.Warn().Err(werr).Str("project", projectID).Uint("sandbox", id).Msg("codex login writeback failed")
+	if werr := s.codexLoginWriteBack(ls.codexAuthCredentialID, next); werr != nil {
+		log.Warn().Err(werr).Uint("sandbox", id).Msg("codex login writeback failed")
 	}
 }
 
@@ -97,14 +97,14 @@ func (s *SandboxService) noteLiveCodexAuth(id uint, result *sandbox.ChatResult, 
 	s.mu.Unlock()
 }
 
-func (s *SandboxService) registerTestScheduler(projectID, profile, runID, token string) {
-	if s.testScheduler.Register != nil && strings.TrimSpace(projectID) != "" {
-		s.testScheduler.Register(projectID, profile, runID, token)
+func (s *SandboxService) registerTestScheduler(profile, runID, token string) {
+	if s.testScheduler.Register != nil {
+		s.testScheduler.Register(profile, runID, token)
 	}
 }
 
-func (s *SandboxService) unregisterTestScheduler(projectID, token string) {
-	if s.testScheduler.Unregister != nil && strings.TrimSpace(projectID) != "" && token != "" {
+func (s *SandboxService) unregisterTestScheduler(token string) {
+	if s.testScheduler.Unregister != nil && token != "" {
 		s.testScheduler.Unregister(token)
 	}
 }
@@ -114,7 +114,6 @@ func (s *SandboxService) unregisterTestScheduler(projectID, token string) {
 // the caller; this API itself is role-agnostic.
 type AgentSandboxOpenOpts struct {
 	Profile       string
-	ProjectID     string
 	ThreadID      string
 	SharedToken   string
 	PlatformSpecs []sandbox.MCPServerSpec
@@ -138,13 +137,8 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	if !ok {
 		return nil, false, fmt.Errorf("agent %q not found", profile)
 	}
-	home := strings.TrimSpace(agent.ProjectID)
-	runtimePID := strings.TrimSpace(opts.ProjectID)
-	if home != runtimePID {
-		return nil, false, fmt.Errorf("agent %q 主项目为 %q，与运行项目 %q 不一致", profile, home, runtimePID)
-	}
 	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
-	agent = s.effectiveAgent(agent, runtimePID)
+	agent = s.effectiveAgent(agent)
 
 	if opts.Reuse {
 		var existing models.Sandbox
@@ -178,30 +172,29 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 			prefix = "agentcron"
 		}
 	}
-	runID := prefix + "-" + sanitizeID(opts.ProjectID) + "-" + sanitizeID(threadID)
+	runID := prefix + "-" + sanitizeID(threadID)
 	if !opts.Reuse {
 		runID += "-" + fmt.Sprintf("%d", time.Now().UnixNano()%1e9)
 	}
 	name := sandbox.NewContainerName()
 	row := &models.Sandbox{
 		Name: name, Profile: profile, Purpose: SandboxPurposeAgent, Status: "creating",
-		RunID: runID, Token: opts.SharedToken, ProjectID: opts.ProjectID, ThreadID: threadID,
+		RunID: runID, Token: opts.SharedToken, ThreadID: threadID,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, false, err
 	}
 	log.Info().Str("name", name).Str("profile", profile).Str("thread", threadID).
 		Bool("reuse", opts.Reuse).Uint("id", row.ID).Msg("agent sandbox creating")
-	go s.startAgentContainer(row.ID, name, profile, opts.ProjectID, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent)
+	go s.startAgentContainer(row.ID, name, profile, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent)
 	return row, false, nil
 }
 
 // OpenAgentSandboxFresh always creates a new agent sandbox (no thread reuse).
 // Used by cron and other one-shot agent turns.
-func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, projectID, threadID, sharedToken string, platformSpecs []sandbox.MCPServerSpec) (*models.Sandbox, error) {
+func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, threadID, sharedToken string, platformSpecs []sandbox.MCPServerSpec) (*models.Sandbox, error) {
 	row, _, err := s.OpenAgentSandbox(ctx, AgentSandboxOpenOpts{
 		Profile:       profile,
-		ProjectID:     projectID,
 		ThreadID:      threadID,
 		SharedToken:   sharedToken,
 		PlatformSpecs: platformSpecs,
@@ -211,7 +204,7 @@ func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, pro
 	return row, err
 }
 
-func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent) {
+func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
@@ -219,7 +212,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
 		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(projectID, threadID, sharedToken)
+			s.agentOnDestroy(threadID, sharedToken)
 		}
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
@@ -255,11 +248,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	agentEnv := envauth.StripSecretEnvKeys(agent.Env)
 	vars = runtime.MergeEnvIntoTemplateVars(vars, agentEnv)
 	mcpVars := vars
-	if s.projectCredentialReferences != nil {
+	if s.credentialReferences != nil {
 		// Credential references are scoped to user-authored MCP templates. Keep
 		// them out of vars so the ordinary sandbox environment never receives
 		// these values as global keys.
-		mcpVars = runtime.MergeEnvIntoTemplateVars(s.projectCredentialReferences(projectID), vars)
+		mcpVars = runtime.MergeEnvIntoTemplateVars(s.credentialReferences(), vars)
 	}
 	specs := filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
 	specs = append(specs, platformSpecs...)
@@ -268,7 +261,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	env := map[string]string{}
 	for k, v := range s.env {
 		if envauth.IsSecretEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in workspace credentials")
 			continue
 		}
 		env[k] = v
@@ -282,13 +275,13 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	for k, v := range vars {
 		env[k] = v
 	}
-	// Project UI credentials are the highest-priority source. Apply them after
+	// Workspace credentials are the highest-priority source. Apply them after
 	// template/Agent vars so interactive, PM and cron sandboxes match workflow
 	// resolver precedence.
-	var projectCreds map[string]string
-	if s.projectCredentials != nil {
-		projectCreds = s.projectCredentials(projectID)
-		overlayProjectCredentialEnv(env, projectCreds)
+	var creds map[string]string
+	if s.credentials != nil {
+		creds = s.credentials()
+		overlayCredentialEnv(env, creds)
 	}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
@@ -296,20 +289,20 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		return
 	}
 	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
-		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(projectID, agent.OpenCodeCredentialID))
+		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(agent.OpenCodeCredentialID))
 	}
-	runtime.ApplyAgentCredentialChoice(env, projectCreds, projectID, runtime.AgentCredentialChoice{
+	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
 		Backend:              string(backend),
 		GitCredentialType:    agent.GitCredentialType,
 		AiCredentialID:       agent.AiCredentialID,
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
-	runtime.ApplyCredentialBindings(env, projectCreds, projectID, agent.CredentialBindings, s.selectedCredential)
+	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
-	if s.shared != nil && strings.TrimSpace(projectID) != "" {
-		sharedWorkDir = s.shared.WorkDir(projectID)
+	if s.shared != nil {
+		sharedWorkDir = s.shared.WorkDir()
 	}
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
@@ -355,7 +348,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	if backend == runtime.BackendCodex {
 		env["CODEX_HOME"] = configRoot
 	}
-	env["GRASP_PROJECT_ID"] = projectID
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID
 	sandbox.ApplyPasswords(env, sharedToken)
@@ -369,7 +361,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		ConfigRoot:   configRoot,
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
-	ApplyProjectSSHToSpec(&spec, projectCreds)
+	ApplySSHCredentialsToSpec(&spec, creds)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -402,7 +394,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
 		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(projectID, threadID, sharedToken)
+			s.agentOnDestroy(threadID, sharedToken)
 		}
 		return
 	}
@@ -410,7 +402,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, projectID, 
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
 		codexAuthInjected:     codexLogin,
-		codexAuthCredentialID: runtime.CredentialIDForWriteBack(projectID, envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthCredentialID: runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
 		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
@@ -431,21 +423,15 @@ func isAgentSandboxPurpose(p string) bool {
 	return p == SandboxPurposeAgent
 }
 
-// AgentProjectMatches reports whether the Agent's home project equals projectID.
-func AgentProjectMatches(a Agent, projectID string) bool {
-	home := strings.TrimSpace(a.ProjectID)
-	return home != "" && home == strings.TrimSpace(projectID)
-}
-
-// IsProjectPlatformMCP reports whether a single MCP entry is a project-scoped
+// IsAgentPlatformMCP reports whether a single MCP entry is an Agent-session
 // platform MCP (memory/context/scheduler) by name or URL path.
-func IsProjectPlatformMCP(name, url string) bool {
+func IsAgentPlatformMCP(name, url string) bool {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case MemoryStoreMCP, ContextStoreMCP, TaskSchedulerMCP:
 		return true
 	}
-	return strings.Contains(url, "/mcp/memory-store/") ||
-		strings.Contains(url, "/mcp/context-store/") ||
+	return strings.Contains(url, "/mcp/memory-store") ||
+		strings.Contains(url, "/mcp/context-store") ||
 		strings.Contains(url, "/mcp/task-scheduler/")
 }
 
@@ -468,7 +454,7 @@ func filterAgentPlatformMCP(in []sandbox.MCPServerSpec) []sandbox.MCPServerSpec 
 			continue
 		}
 		if strings.Contains(sp.URL, "/mcp/runs/") || strings.Contains(sp.URL, "/mcp/pm/") ||
-			strings.Contains(sp.URL, "/mcp/memory-store/") || strings.Contains(sp.URL, "/mcp/context-store/") ||
+			strings.Contains(sp.URL, "/mcp/memory-store") || strings.Contains(sp.URL, "/mcp/context-store") ||
 			strings.Contains(sp.URL, "/mcp/task-scheduler/") {
 			continue
 		}
@@ -518,7 +504,7 @@ func BuildTestSchedulerMCPSpec(agentName, sharedToken string) sandbox.MCPServerS
 
 // BuildAgentPlatformMCPSpecs builds role-agnostic platform MCP inject specs
 // (memory-store / context-store / task-scheduler) for any Agent session.
-func BuildAgentPlatformMCPSpecs(projectID, agentName, sharedToken string) []sandbox.MCPServerSpec {
+func BuildAgentPlatformMCPSpecs(agentName, sharedToken string) []sandbox.MCPServerSpec {
 	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
 	if base == "" || sharedToken == "" || strings.TrimSpace(agentName) == "" {
 		return nil
@@ -526,8 +512,8 @@ func BuildAgentPlatformMCPSpecs(projectID, agentName, sharedToken string) []sand
 	auth := map[string]string{"Authorization": "Bearer " + sharedToken}
 	escapedAgent := url.PathEscape(agentName)
 	return []sandbox.MCPServerSpec{
-		{Name: MemoryStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/memory-store/" + projectID), Headers: auth},
-		{Name: ContextStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/context-store/" + projectID), Headers: auth},
+		{Name: MemoryStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/memory-store"), Headers: auth},
+		{Name: ContextStoreMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/context-store"), Headers: auth},
 		{Name: TaskSchedulerMCP, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/task-scheduler/" + escapedAgent), Headers: auth},
 	}
 }
@@ -535,7 +521,7 @@ func BuildAgentPlatformMCPSpecs(projectID, agentName, sharedToken string) []sand
 // BuildPmRoleMCPSpecs builds PM-only role MCP specs (pm-progress / pm-workflow-read /
 // pm-workflow-write / pm-agent-fs / pm-prd-manager).
 // nil enabledMcps means defaults; an explicit empty list injects none.
-func BuildPmRoleMCPSpecs(projectID, sharedToken string, enabledMcps []string) []sandbox.MCPServerSpec {
+func BuildPmRoleMCPSpecs(sharedToken string, enabledMcps []string) []sandbox.MCPServerSpec {
 	base := strings.TrimRight(config.ResolveMCPAdvertise(""), "/")
 	if base == "" || sharedToken == "" {
 		return nil
@@ -545,7 +531,7 @@ func BuildPmRoleMCPSpecs(projectID, sharedToken string, enabledMcps []string) []
 	out := make([]sandbox.MCPServerSpec, 0, len(enabledMcps))
 	for _, id := range enabledMcps {
 		out = append(out, sandbox.MCPServerSpec{
-			Name: id, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/pm/" + projectID + "/" + id), Headers: auth,
+			Name: id, URL: config.RewriteMisconfiguredMCPAdvertise(base + "/mcp/pm/" + id), Headers: auth,
 		})
 	}
 	return out

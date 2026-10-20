@@ -29,7 +29,6 @@ const (
 
 // GateAutoTask is one pending gate-auto invoke (process-local queue item).
 type GateAutoTask struct {
-	ProjectID   string
 	RunID       string
 	WorkflowID  string
 	NodeID      string
@@ -44,13 +43,13 @@ type GateAutoTask struct {
 	EnqueuedAt  time.Time
 }
 
-type gateAutoProjectQueue struct {
+type gateAutoQueue struct {
 	tasks []GateAutoTask
 	busy  bool
 }
 
 // GateAutoInvokeService decides, queues, and starts PM turns for gate pauses.
-// Queue is process-local and serial per projectId. Failures only log;
+// Queue is process-local and serial. Failures only log;
 // they never finish(failed) the run or resolve the Gate.
 type GateAutoInvokeService struct {
 	db    *gorm.DB
@@ -60,30 +59,28 @@ type GateAutoInvokeService struct {
 	hooks CronTokenHooks
 
 	mu          sync.Mutex
-	queues      map[string]*gateAutoProjectQueue
+	queue       gateAutoQueue
 	maintenance bool
 }
 
 // NewGateAutoInvokeService builds the gate-auto invoker. hooks may reuse cron
-// token registration (PM role MCPs when agent is the project PM Leader).
+// token registration (PM role MCPs when agent is the PM Leader).
 func NewGateAutoInvokeService(db *gorm.DB, pm *PmService, sbx *SandboxService, turns *PmTurnRunner, hooks CronTokenHooks) *GateAutoInvokeService {
 	return &GateAutoInvokeService{
 		db: db, pm: pm, sbx: sbx, turns: turns, hooks: hooks,
-		queues: map[string]*gateAutoProjectQueue{},
 	}
 }
 
 // Enqueue evaluates trigger preconditions and, when met, appends the task to
-// the per-project serial queue. Safe to call from Engine's fire-and-forget path.
+// the serial queue. Safe to call from Engine's fire-and-forget path.
 func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 	if s == nil || s.pm == nil {
 		return
 	}
-	task.ProjectID = strings.TrimSpace(task.ProjectID)
 	task.RunID = strings.TrimSpace(task.RunID)
 	task.NodeID = strings.TrimSpace(task.NodeID)
-	if task.ProjectID == "" || task.RunID == "" || task.NodeID == "" || task.GateID == 0 {
-		log.Warn().Str("project", task.ProjectID).Str("run", task.RunID).
+	if task.RunID == "" || task.NodeID == "" || task.GateID == 0 {
+		log.Warn().Str("run", task.RunID).
 			Str("node", task.NodeID).Uint("gate", task.GateID).
 			Msg("gate-auto: skip enqueue (incomplete task)")
 		return
@@ -93,7 +90,7 @@ func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 	}
 	ok, reason := s.shouldEnqueue(task)
 	if !ok {
-		log.Info().Str("project", task.ProjectID).Str("run", task.RunID).
+		log.Info().Str("run", task.RunID).
 			Str("node", task.NodeID).Uint("gate", task.GateID).
 			Str("reason", reason).Msg("gate-auto: not enqueued")
 		return
@@ -103,29 +100,25 @@ func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 		s.mu.Unlock()
 		return
 	}
-	q := s.queues[task.ProjectID]
-	if q == nil {
-		q = &gateAutoProjectQueue{}
-		s.queues[task.ProjectID] = q
-	}
+	q := &s.queue
 	q.tasks = append(q.tasks, task)
 	start := !q.busy
 	if start {
 		q.busy = true
 	}
 	s.mu.Unlock()
-	log.Info().Str("project", task.ProjectID).Str("run", task.RunID).
+	log.Info().Str("run", task.RunID).
 		Str("node", task.NodeID).Uint("gate", task.GateID).
 		Bool("worker_started", start).Msg("gate-auto: enqueued")
 	if start {
-		go s.drain(task.ProjectID)
+		go s.drain()
 	}
 }
 
 func (s *GateAutoInvokeService) shouldEnqueue(task GateAutoTask) (bool, string) {
-	p, ok := s.effectiveProject(task)
+	p, ok := s.effectiveWorkspace(task)
 	if !ok {
-		return false, "project_not_found"
+		return false, "workspace_not_found"
 	}
 	varName := strings.TrimSpace(p.PmGateAutoVar)
 	if varName == "" {
@@ -191,9 +184,9 @@ func gateAutoTruthy(v any) bool {
 	}
 }
 
-func (s *GateAutoInvokeService) drain(projectID string) {
+func (s *GateAutoInvokeService) drain() {
 	for {
-		task, ok := s.pop(projectID)
+		task, ok := s.pop()
 		if !ok {
 			return
 		}
@@ -201,14 +194,12 @@ func (s *GateAutoInvokeService) drain(projectID string) {
 	}
 }
 
-func (s *GateAutoInvokeService) pop(projectID string) (GateAutoTask, bool) {
+func (s *GateAutoInvokeService) pop() (GateAutoTask, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	q := s.queues[projectID]
-	if q == nil || len(q.tasks) == 0 {
-		if q != nil {
-			q.busy = false
-		}
+	q := &s.queue
+	if len(q.tasks) == 0 {
+		q.busy = false
 		return GateAutoTask{}, false
 	}
 	task := q.tasks[0]
@@ -217,7 +208,7 @@ func (s *GateAutoInvokeService) pop(projectID string) (GateAutoTask, bool) {
 }
 
 func (s *GateAutoInvokeService) process(task GateAutoTask) {
-	logEv := log.Info().Str("project", task.ProjectID).Str("run", task.RunID).
+	logEv := log.Info().Str("run", task.RunID).
 		Str("node", task.NodeID).Uint("gate", task.GateID)
 
 	resolved, err := s.gateResolved(task.GateID)
@@ -236,13 +227,13 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 		return
 	}
 
-	p, ok := s.effectiveProject(task)
+	p, ok := s.effectiveWorkspace(task)
 	if !ok {
 		return
 	}
-	thread, err := s.resolveMainThreadAgent(task.ProjectID, p.PmLeaderAgent)
+	thread, err := s.resolveMainThreadAgent(p.PmLeaderAgent)
 	if err != nil {
-		log.Warn().Err(err).Str("project", task.ProjectID).
+		log.Warn().Err(err).
 			Msg("gate-auto: resolve main thread failed; degrade to human")
 		return
 	}
@@ -252,9 +243,9 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 		return
 	}
 
-	p, ok = s.effectiveProject(task)
+	p, ok = s.effectiveWorkspace(task)
 	if !ok {
-		log.Warn().Str("project", task.ProjectID).Msg("gate-auto: project gone before send")
+		log.Warn().Msg("gate-auto: workspace gone before send")
 		return
 	}
 	if allowed, _ := s.shouldEnqueue(task); !allowed || thread.AgentName != p.PmLeaderAgent {
@@ -264,7 +255,7 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 	prompt := BuildGateAutoPrompt(task, p.PmGateAutoPrompt)
 
 	if s.sbx == nil || s.turns == nil || (s.hooks.Register == nil && s.hooks.RegisterPM == nil) {
-		log.Warn().Str("project", task.ProjectID).
+		log.Warn().
 			Msg("gate-auto: runtime unavailable; degrade to human")
 		return
 	}
@@ -273,12 +264,12 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 	var token string
 	var specs []sandbox.MCPServerSpec
 	if s.hooks.RegisterPM != nil {
-		token, specs = s.hooks.RegisterPM(task.ProjectID, thread.ID, p.PmLeaderAgent, p.PmEnabledMcps)
+		token, specs = s.hooks.RegisterPM(thread.ID, p.PmLeaderAgent, p.PmEnabledMcps)
 	} else {
-		token, specs = s.hooks.Register(task.ProjectID, thread.ID, p.PmLeaderAgent)
+		token, specs = s.hooks.Register(thread.ID, p.PmLeaderAgent)
 	}
 	if token == "" || len(specs) == 0 {
-		log.Warn().Str("project", task.ProjectID).Str("agent", p.PmLeaderAgent).
+		log.Warn().Str("agent", p.PmLeaderAgent).
 			Msg("gate-auto: MCP register failed; degrade to human")
 		return
 	}
@@ -288,14 +279,14 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 		}
 	}()
 
-	row, err := s.sbx.OpenAgentSandboxFresh(ctx, p.PmLeaderAgent, task.ProjectID, thread.ID, token, specs)
+	row, err := s.sbx.OpenAgentSandboxFresh(ctx, p.PmLeaderAgent, thread.ID, token, specs)
 	if err != nil {
-		log.Warn().Err(err).Str("project", task.ProjectID).Str("thread", thread.ID).
+		log.Warn().Err(err).Str("thread", thread.ID).
 			Msg("gate-auto: open sandbox failed; degrade to human")
 		return
 	}
 	if !s.waitSandboxRunning(ctx, row.ID) {
-		log.Warn().Uint("sandbox", row.ID).Str("project", task.ProjectID).
+		log.Warn().Uint("sandbox", row.ID).
 			Msg("gate-auto: sandbox not ready; degrade to human")
 		s.destroySandbox(ctx, row.ID)
 		return
@@ -340,16 +331,16 @@ func (s *GateAutoInvokeService) gateResolved(gateID uint) (bool, error) {
 	return gate.Resolved, nil
 }
 
-func (s *GateAutoInvokeService) resolveMainThread(projectID string) (models.ChatThread, error) {
-	p, ok := s.pm.project(projectID)
-	if !ok {
-		return models.ChatThread{}, ErrProjectNotFound
+func (s *GateAutoInvokeService) resolveMainThread() (models.ChatThread, error) {
+	p, err := loadWorkspace(s.pm.db)
+	if err != nil {
+		return models.ChatThread{}, err
 	}
-	return s.resolveMainThreadAgent(projectID, p.PmLeaderAgent)
+	return s.resolveMainThreadAgent(p.PmLeaderAgent)
 }
-func (s *GateAutoInvokeService) resolveMainThreadAgent(projectID, agent string) (models.ChatThread, error) {
+func (s *GateAutoInvokeService) resolveMainThreadAgent(agent string) (models.ChatThread, error) {
 	agent = strings.TrimSpace(agent)
-	threads, err := s.pm.ListThreadsForAgent(projectID, agent)
+	threads, err := s.pm.ListThreadsForAgent(agent)
 	if err != nil {
 		return models.ChatThread{}, err
 	}
@@ -362,7 +353,7 @@ func (s *GateAutoInvokeService) resolveMainThreadAgent(projectID, agent string) 
 		}
 		return t, nil // ListThreadsForAgent is updated_at desc
 	}
-	return s.pm.CreateThread(projectID, gateAutoThreadUser, gateAutoThreadTitle, agent, models.ChatThreadKindUser)
+	return s.pm.CreateThread(gateAutoThreadUser, gateAutoThreadTitle, agent, models.ChatThreadKindUser)
 }
 
 func (s *GateAutoInvokeService) waitThreadIdle(threadID string, gateID uint) bool {
@@ -437,9 +428,6 @@ func (s *GateAutoInvokeService) destroySandbox(ctx context.Context, id uint) {
 func BuildGateAutoPrompt(task GateAutoTask, userPrompt string) string {
 	var b strings.Builder
 	b.WriteString("[system] Gate auto-decide\n")
-	b.WriteString("projectId: ")
-	b.WriteString(task.ProjectID)
-	b.WriteByte('\n')
 	b.WriteString("runId: ")
 	b.WriteString(task.RunID)
 	b.WriteByte('\n')
@@ -546,28 +534,23 @@ func formatGateAutoVars(vars map[string]any) string {
 	return "{ " + strings.Join(parts, ", ") + " }"
 }
 
-// QueueLenForTest returns pending queue length for a project (tests only).
-func (s *GateAutoInvokeService) QueueLenForTest(projectID string) int {
+// QueueLenForTest returns pending queue length (tests only).
+func (s *GateAutoInvokeService) QueueLenForTest() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	q := s.queues[projectID]
-	if q == nil {
-		return 0
-	}
-	return len(q.tasks)
+	return len(s.queue.tasks)
 }
 
-// BusyForTest reports whether the project worker is marked busy (tests only).
-func (s *GateAutoInvokeService) BusyForTest(projectID string) bool {
+// BusyForTest reports whether the worker is marked busy (tests only).
+func (s *GateAutoInvokeService) BusyForTest() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	q := s.queues[projectID]
-	return q != nil && q.busy
+	return s.queue.busy
 }
 
-func (s *GateAutoInvokeService) effectiveProject(task GateAutoTask) (models.Project, bool) {
-	p, ok := s.pm.project(task.ProjectID)
-	if !ok {
+func (s *GateAutoInvokeService) effectiveWorkspace(task GateAutoTask) (models.Workspace, bool) {
+	p, err := loadWorkspace(s.pm.db)
+	if err != nil {
 		return p, false
 	}
 	var wf models.WorkflowDef

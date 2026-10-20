@@ -1,7 +1,6 @@
 package services
 
 import (
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -32,18 +31,18 @@ type SandboxService struct {
 	mgr    *sandbox.Manager
 	skills *AgentService
 	host   *mcp.Host
-	// shared is optional project SharedAgent baseline (SSH meta / Token env).
+	// shared is the optional SharedAgent baseline (SSH meta / Token env).
 	// When set, Open / OpenAgentSandbox merge via ExtendOverlay before inject.
 	shared *SharedAgentService
 
-	profilesRoot                string
-	mcpEndpoint                 string
-	env                         map[string]string
-	projectCredentials          func(projectID string) map[string]string
-	projectCredentialReferences func(projectID string) map[string]string
-	openCodeCredential          func(projectID, credentialID string) map[string]string
-	selectedCredential          func(projectID, credentialID string) (string, string, bool)
-	chatTimeout                 time.Duration
+	profilesRoot         string
+	mcpEndpoint          string
+	env                  map[string]string
+	credentials          func() map[string]string
+	credentialReferences func() map[string]string
+	openCodeCredential   func(credentialID string) map[string]string
+	selectedCredential   runtime.SelectedCredentialFunc
+	chatTimeout          time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
 	// than guarded by s.mu — avoiding any lock-reentrancy at the read points.
@@ -73,15 +72,15 @@ type SandboxService struct {
 	testScheduler TestSchedulerHooks
 	// openCodeCatalog resolves whether OpenCode knows a provider id natively.
 	openCodeCatalog runtime.OpenCodeCatalog
-	// codexLoginWriteBack stores a refreshed Codex auth.json into the project
+	// codexLoginWriteBack stores a refreshed Codex auth.json into the workspace
 	// credential. Nil skips write-back. The callback must not log the file body.
-	codexLoginWriteBack  func(projectID, credentialID, content string) error
-	injectedCredentialID func(projectID, envKey, value string) string
+	codexLoginWriteBack  func(credentialID, content string) error
+	injectedCredentialID func(envKey, value string) string
 }
 
 // TestSchedulerHooks wires purpose=test scheduler session lifecycle.
 type TestSchedulerHooks struct {
-	Register   func(projectID, profile, runID, token string)
+	Register   func(profile, runID, token string)
 	Unregister func(token string)
 }
 
@@ -119,19 +118,19 @@ type SandboxOptions struct {
 	// MaxRetention caps lease-extended run sandbox lifetime. 0 = 24h.
 	MaxRetention time.Duration
 	Max          int
-	// SharedAgent optional project baseline used by Open / OpenAgentSandbox.
+	// SharedAgent optional baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
-	// ProjectCredentials resolves UI-managed project credential environment
-	// values for interactive, PM, cron, and project-context sandboxes.
-	ProjectCredentials func(projectID string) map[string]string
-	// ProjectCredentialReferences resolves ${credential:<id>} values for MCP
+	// Credentials resolves UI-managed workspace credential environment values
+	// for interactive, PM, cron, and chat-test sandboxes.
+	Credentials func() map[string]string
+	// CredentialReferences resolves ${credential:<id>} values for MCP
 	// templates without placing those values in the process environment.
-	ProjectCredentialReferences func(projectID string) map[string]string
+	CredentialReferences func() map[string]string
 	// OpenCodeCredential resolves the model-vendor key selected by one Agent.
-	OpenCodeCredential func(projectID, credentialID string) map[string]string
+	OpenCodeCredential func(credentialID string) map[string]string
 	// SelectedCredential resolves one non-OpenCode credential the Agent picked.
 	// A missing id returns ok=false and must not fall back to another row.
-	SelectedCredential func(projectID, credentialID string) (envKey, value string, ok bool)
+	SelectedCredential runtime.SelectedCredentialFunc
 	// OpenCodeCatalog lets a gateway absent from OpenCode's provider catalog be
 	// declared with an adapter in opencode.json. Nil keeps `custom`-only.
 	OpenCodeCatalog runtime.OpenCodeCatalog
@@ -172,19 +171,19 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	}
 	s := &SandboxService{
 		db: db, mgr: mgr, skills: skills, host: host,
-		shared:                      opts.SharedAgent,
-		profilesRoot:                opts.ProfilesRoot,
-		mcpEndpoint:                 opts.MCPEndpoint,
-		env:                         opts.Env,
-		projectCredentials:          opts.ProjectCredentials,
-		projectCredentialReferences: opts.ProjectCredentialReferences,
-		openCodeCredential:          opts.OpenCodeCredential,
-		selectedCredential:          opts.SelectedCredential,
-		chatTimeout:                 opts.ChatTimeout,
-		openCodeCatalog:             opts.OpenCodeCatalog,
-		live:                        map[uint]*liveSandbox{},
-		runActive:                   map[string]bool{},
-		lastTouch:                   map[uint]time.Time{},
+		shared:               opts.SharedAgent,
+		profilesRoot:         opts.ProfilesRoot,
+		mcpEndpoint:          opts.MCPEndpoint,
+		env:                  opts.Env,
+		credentials:          opts.Credentials,
+		credentialReferences: opts.CredentialReferences,
+		openCodeCredential:   opts.OpenCodeCredential,
+		selectedCredential:   opts.SelectedCredential,
+		chatTimeout:          opts.ChatTimeout,
+		openCodeCatalog:      opts.OpenCodeCatalog,
+		live:                 map[uint]*liveSandbox{},
+		runActive:            map[string]bool{},
+		lastTouch:            map[uint]time.Time{},
 	}
 	if opts.MaxRetention <= 0 {
 		opts.MaxRetention = 24 * time.Hour
@@ -196,7 +195,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	return s
 }
 
-// SetSharedAgent wires the project SharedAgent baseline (SSH meta / Token env).
+// SetSharedAgent wires the SharedAgent baseline (SSH meta / Token env).
 // Nil-safe; used by Open / OpenAgentSandbox ExtendOverlay before inject.
 func (s *SandboxService) SetSharedAgent(shared *SharedAgentService) {
 	if s == nil {
@@ -205,28 +204,21 @@ func (s *SandboxService) SetSharedAgent(shared *SharedAgentService) {
 	s.shared = shared
 }
 
-// effectiveAgent merges SharedAgent under Agent when a project id is known
-// (opts / Agent.ProjectID). Satisfies SSH 选源 Agent meta → Shared meta → env.
-func (s *SandboxService) effectiveAgent(agent Agent, projectID string) Agent {
+// effectiveAgent merges SharedAgent under Agent. Satisfies SSH 选源
+// Agent meta → Shared meta → env.
+func (s *SandboxService) effectiveAgent(agent Agent) Agent {
 	if s == nil || s.shared == nil {
 		return agent
 	}
-	pid := strings.TrimSpace(projectID)
-	if pid == "" {
-		pid = strings.TrimSpace(agent.ProjectID)
-	}
-	if pid == "" {
-		return agent
-	}
-	return ExtendOverlayWithKind(s.shared.Get(pid), agent, s.credentialKind(pid))
+	return ExtendOverlayWithKind(s.shared.Get(), agent, s.credentialKind())
 }
 
-func (s *SandboxService) credentialKind(projectID string) runtime.CredentialKindFunc {
-	if s == nil || s.selectedCredential == nil || strings.TrimSpace(projectID) == "" {
+func (s *SandboxService) credentialKind() runtime.CredentialKindFunc {
+	if s == nil || s.selectedCredential == nil {
 		return nil
 	}
 	return func(id string) (string, bool) {
-		key, _, ok := s.selectedCredential(projectID, id)
+		key, _, ok := s.selectedCredential(id)
 		return key, ok
 	}
 }

@@ -19,33 +19,33 @@ import (
 func TestPmMemoryUpdateDeleteAndPagination(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CRUDMem", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CRUDMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item, err := pm.UpsertMemory(p.ID, "agent-a", "标题", "内容一", "admin", "alice")
+	item, err := pm.UpsertMemory("agent-a", "标题", "内容一", "admin", "alice")
 	if err != nil {
 		t.Fatal(err)
 	}
-	updated, err := pm.UpdateMemoryForAgent(p.ID, "agent-a", item.ID, "新标题", "内容二", "bob")
+	updated, err := pm.UpdateMemoryForAgent("agent-a", item.ID, "新标题", "内容二", "bob")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.Title != "新标题" || updated.Content != "内容二" {
 		t.Fatalf("updated=%+v", updated)
 	}
-	if _, err := pm.UpdateMemoryForAgent(p.ID, "agent-a", "missing", "x", "y", "bob"); !errors.Is(err, ErrPmMemoryNotFound) {
+	if _, err := pm.UpdateMemoryForAgent("agent-a", "missing", "x", "y", "bob"); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("update missing: %v", err)
 	}
-	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", item.ID); err != nil {
+	if err := pm.DeleteMemoryForAgent("agent-a", item.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err := pm.DeleteMemoryForAgent(p.ID, "agent-a", item.ID); !errors.Is(err, ErrPmMemoryNotFound) {
+	if err := pm.DeleteMemoryForAgent("agent-a", item.ID); !errors.Is(err, ErrPmMemoryNotFound) {
 		t.Fatalf("delete twice: %v", err)
 	}
 
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent-a", "user")
+	th, err := pm.CreateThread("alice", "", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,22 +67,22 @@ func TestPmMemoryUpdateDeleteAndPagination(t *testing.T) {
 func TestPmSearchMessagesAndFailDraft(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("SearchMsg", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("SearchMsg", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "会话", "agent-a", "user")
+	th, err := pm.CreateThread("alice", "会话", "agent-a", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pm.AppendMessage(th.ID, "user", "查找关键字 alpha", nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pm.SearchMessages(p.ID, "agent-a", "alice", "", 5); err == nil {
+	if _, err := pm.SearchMessages("agent-a", "alice", "", 5); err == nil {
 		t.Fatal("empty query should fail")
 	}
-	hits, err := pm.SearchMessages(p.ID, "agent-a", "alice", "alpha", 5)
+	hits, err := pm.SearchMessages("agent-a", "alice", "alpha", 5)
 	if err != nil || len(hits) != 1 {
 		t.Fatalf("hits=%v err=%v", hits, err)
 	}
@@ -110,12 +110,12 @@ func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	ds := &dockerState{acpPort: port}
 	sbx := newSandboxService(t, db, ds)
 	pm := NewPmService(db, nil)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("TurnProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("TurnProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agentA", "user")
+	th, err := pm.CreateThread("alice", "", "agentA", "user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	row, err := sbx.Open(ctx, "agentA", nil, p.ID)
+	row, err := sbx.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open sandbox: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	defer hang.Close()
 	ds2 := &dockerState{acpPort: hang.port}
 	sbx2 := newSandboxService(t, db, ds2)
-	row2, err := sbx2.Open(ctx, "agentA", nil, p.ID)
+	row2, err := sbx2.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -71,7 +71,7 @@ type LinkInvalidationHook func(tokenHashes []string)
 // Service manages GateShareLink lifecycle.
 type Service struct {
 	db           *gorm.DB
-	audit        *services.ProjectAuditService
+	audit        *services.AuditService
 	onInvalidate LinkInvalidationHook
 	embedLookup  EmbedLookup
 }
@@ -104,7 +104,7 @@ func ValidCredentialShape(s string) bool {
 }
 
 // NewService builds the share-link service.
-func NewService(db *gorm.DB, audit *services.ProjectAuditService) *Service {
+func NewService(db *gorm.DB, audit *services.AuditService) *Service {
 	return &Service{db: db, audit: audit}
 }
 
@@ -789,10 +789,6 @@ func (s *Service) recordShareAudit(run models.Run, gate models.Gate, action, act
 	if s == nil || s.audit == nil {
 		return
 	}
-	projectID := services.ResolveProjectIDForRun(s.db, run.ID)
-	if projectID == "" {
-		return
-	}
 	payload := map[string]any{
 		"runId":     run.ID,
 		"nodeId":    gate.NodeID,
@@ -802,7 +798,6 @@ func (s *Service) recordShareAudit(run models.Run, gate models.Gate, action, act
 		payload[k] = v
 	}
 	s.audit.Record(services.AuditRecord{
-		ProjectID:    projectID,
 		Actor:        services.ActorFromUsername(actor),
 		Action:       action,
 		ResourceType: "gate_share",
@@ -818,10 +813,6 @@ func (s *Service) recordShareAudit(run models.Run, gate models.Gate, action, act
 // RecordUseAudit writes gate.share.use (no plaintext token).
 func (s *Service) RecordUseAudit(runID, nodeID, action, externalName, maskedIP, uaSummary string, createdAt, expiresAt time.Time, revokedAt, usedAt *time.Time) {
 	if s == nil || s.audit == nil {
-		return
-	}
-	projectID := services.ResolveProjectIDForRun(s.db, runID)
-	if projectID == "" {
 		return
 	}
 	name := strings.TrimSpace(externalName)
@@ -845,7 +836,6 @@ func (s *Service) RecordUseAudit(runID, nodeID, action, externalName, maskedIP, 
 		payload["usedAt"] = *usedAt
 	}
 	s.audit.Record(services.AuditRecord{
-		ProjectID:    projectID,
 		Actor:        services.SystemActor(),
 		CallerKind:   models.CallerKindExternal,
 		Action:       models.AuditActionGateShareUse,

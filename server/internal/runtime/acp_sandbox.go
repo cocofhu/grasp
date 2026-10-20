@@ -385,11 +385,11 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	repos := resolveRepos(req)
 	env := map[string]string{}
 
-	// Secrets come only from project credentials: platform sandbox.env and
+	// Secrets come only from workspace credentials: platform sandbox.env and
 	// Agent/shared env never supply envauth.SecretEnvKeys.
 	for k, v := range c.opts.Env {
 		if envauth.IsSecretEnvKey(k) {
-			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in project credentials")
+			log.Warn().Str("key", k).Msg("dropped secret key from platform sandbox.env; configure it in workspace credentials")
 			continue
 		}
 		env[k] = v
@@ -401,13 +401,13 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
 		env[k] = substVars(v, vars)
 	}
-	// Project credentials are the only secret source. They are resolved only
-	// for the owning project and never copied into persisted Agent config.
+	// Workspace credentials are the only secret source. They are never copied
+	// into persisted Agent config.
 	// Platform-reserved keys from mcpVars are re-applied below and still win.
-	var projectCreds map[string]string
-	if c.opts.ProjectCredentialsForProject != nil {
-		projectCreds = c.opts.ProjectCredentialsForProject(c.projectIDForReq(req))
-		for k, v := range projectCreds {
+	var creds map[string]string
+	if c.opts.Credentials != nil {
+		creds = c.opts.Credentials()
+		for k, v := range creds {
 			k = strings.TrimSpace(k)
 			if k != "" {
 				env[k] = v
@@ -415,8 +415,8 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 	}
 	protectedCredentialKeys := map[string]struct{}{}
-	if c.opts.ProjectCredentialKeysForProject != nil {
-		protectedCredentialKeys = c.opts.ProjectCredentialKeysForProject(c.projectIDForReq(req))
+	if c.opts.CredentialKeys != nil {
+		protectedCredentialKeys = c.opts.CredentialKeys()
 	}
 	// Run-scoped StartRun snapshot overlays shared + Agent for user-可控 keys.
 	// Empty string values intentionally override. Must stay before mergeAuthEnv /
@@ -433,22 +433,22 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
-	// The selected model-vendor credential wins over a merged project env and
+	// The selected model-vendor credential wins over merged workspace credentials and
 	// over the run snapshot. An empty selection injects nothing.
-	if c.backend == BackendOpenCode && c.opts.OpenCodeCredentialForProject != nil {
-		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredentialForProject(c.projectIDForReq(req), agentCfg.OpenCodeCredentialID))
+	if c.backend == BackendOpenCode && c.opts.OpenCodeCredential != nil {
+		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredential(agentCfg.OpenCodeCredentialID))
 	}
-	ApplyAgentCredentialChoice(env, projectCreds, c.projectIDForReq(req), AgentCredentialChoice{
+	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:              string(c.backend),
 		GitCredentialType:    agentCfg.GitCredentialType,
 		AiCredentialID:       agentCfg.AiCredentialID,
 		GitCredentialID:      agentCfg.GitCredentialID,
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
-	}, c.opts.SelectedCredentialForProject)
-	ApplyCredentialBindings(env, projectCreds, c.projectIDForReq(req), agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject)
+	}, c.opts.SelectedCredential)
+	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
-	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
+	// Align auth gate with buildConfigHome BaseWorkDirSrc (workspace-shared workspace).
 	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
 		return sandbox.Spec{}, err
@@ -491,7 +491,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		return sandbox.Spec{}, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(c.projectIDForReq(req), envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject, c.opts.InjectedCredentialID))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredential, c.opts.InjectedCredentialID))
 	}
 	spec := sandbox.Spec{
 		Image:        resolveProviderImage(c.opts, c.backend),
@@ -500,8 +500,8 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		ConfigRoot:   layout.ConfigRoot,
 		WorkspaceDir: layout.WorkspaceDir,
 	}
-	// SSH comes only from project credentials.
-	sandbox.ApplySSHCredentials(&spec, projectCreds["GIT_SSH_PRIVATE_KEY"], projectCreds["GIT_SSH_KNOWN_HOSTS"])
+	// SSH comes only from workspace credentials.
+	sandbox.ApplySSHCredentials(&spec, creds["GIT_SSH_PRIVATE_KEY"], creds["GIT_SSH_KNOWN_HOSTS"])
 	return spec, nil
 }
 
@@ -524,7 +524,7 @@ func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 	}
 }
 
-// settleCodexLogin writes a changed auth.json back to the same project credential
+// settleCodexLogin writes a changed auth.json back to the same workspace credential
 // after a Codex run. A login rejection, an unreadable sandbox, or an unchanged
 // file leaves the previous credential in place. The file body is not logged.
 func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr error, events []models.AcpEvent) error {
@@ -551,9 +551,8 @@ func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr 
 	if c.opts.WriteBackCodexLoginFile == nil || state.credentialID == "" {
 		return runErr
 	}
-	pid := c.projectIDForReq(req)
-	if err := c.opts.WriteBackCodexLoginFile(pid, state.credentialID, next); err != nil {
-		log.Warn().Err(err).Str("project", pid).Str("run", req.RunID).Msg("codex login writeback failed")
+	if err := c.opts.WriteBackCodexLoginFile(state.credentialID, next); err != nil {
+		log.Warn().Err(err).Str("run", req.RunID).Msg("codex login writeback failed")
 	}
 	return runErr
 }

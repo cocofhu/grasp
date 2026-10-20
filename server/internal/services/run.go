@@ -76,15 +76,13 @@ func applyRunTagsFilter(q *gorm.DB, column string, tags []string) *gorm.DB {
 	return q
 }
 
-func (s *RunService) listQuery(statuses []string, wf, projectID string, tags []string) *gorm.DB {
+func (s *RunService) listQuery(statuses []string, wf string, tags []string) *gorm.DB {
 	q := s.db.Model(&models.Run{})
 	if len(statuses) > 0 {
 		q = q.Where("status IN ?", statuses)
 	}
 	if wf != "" {
 		q = q.Where("workflow_id = ?", wf)
-	} else if projectID != "" {
-		q = q.Where("workflow_id IN (?)", s.db.Model(&models.WorkflowDef{}).Select("id").Where("project_id = ?", projectID))
 	}
 	q = applyRunTagsFilter(q, "runs.tags", tags)
 	return q
@@ -92,38 +90,38 @@ func (s *RunService) listQuery(statuses []string, wf, projectID string, tags []s
 
 // List returns runs, newest first by default. Queued runs have zero StartedAt
 // (waiting time is excluded from duration), so they sort by created_at; all
-// other statuses sort by started_at. Optional statuses (OR) and wf/projectId
-// filter with AND semantics (wf wins over projectId when both set).
+// other statuses sort by started_at. Optional statuses (OR) and wf filter
+// with AND semantics.
 //
 // Optional trailing sortOrder is [sort, order]. Allowed sort: started_at|priority;
 // allowed order: asc|desc. Both must be valid as a pair; otherwise the default
 // hybrid-time DESC + id DESC is kept. Omitted args keep the default.
-func (s *RunService) List(statuses []string, wf, projectID string, sortOrder ...string) []models.Run {
-	return s.ListByTags(statuses, wf, projectID, nil, sortOrder...)
+func (s *RunService) List(statuses []string, wf string, sortOrder ...string) []models.Run {
+	return s.ListByTags(statuses, wf, nil, sortOrder...)
 }
 
-func (s *RunService) ListByTags(statuses []string, wf, projectID string, tags []string, sortOrder ...string) []models.Run {
+func (s *RunService) ListByTags(statuses []string, wf string, tags []string, sortOrder ...string) []models.Run {
 	sort, order := parseSortOrderArgs(sortOrder)
 	var runs []models.Run
-	if err := s.listQuery(statuses, wf, projectID, tags).
+	if err := s.listQuery(statuses, wf, tags).
 		Order(runListOrderBy(sort, order)).
 		Find(&runs).Error; err != nil {
-		log.Error().Err(err).Str("workflow_id", wf).Str("project_id", projectID).Msg("list runs failed")
+		log.Error().Err(err).Str("workflow_id", wf).Msg("list runs failed")
 	}
 	return runs
 }
 
 // ListPage returns a page of runs plus the total matching count.
 // Optional trailing sortOrder is [sort, order]; see List for whitelist rules.
-func (s *RunService) ListPage(statuses []string, wf, projectID string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
-	return s.ListPageByTags(statuses, wf, projectID, nil, page, pageSize, sortOrder...)
+func (s *RunService) ListPage(statuses []string, wf string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
+	return s.ListPageByTags(statuses, wf, nil, page, pageSize, sortOrder...)
 }
 
 // ListPageByTags is ListPage with a tag filter. A database error is returned
 // rather than an empty page, so an unreadable store is not shown as "no runs".
-func (s *RunService) ListPageByTags(statuses []string, wf, projectID string, tags []string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
+func (s *RunService) ListPageByTags(statuses []string, wf string, tags []string, page, pageSize int, sortOrder ...string) ([]models.Run, int64, error) {
 	sort, order := parseSortOrderArgs(sortOrder)
-	q := s.listQuery(statuses, wf, projectID, tags)
+	q := s.listQuery(statuses, wf, tags)
 	var total int64
 	if err := q.Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count runs: %w", err)
@@ -257,15 +255,10 @@ func (s *RunService) Conversations(runID string) []models.ReactConversation {
 // DB exposes the underlying handle for handlers needing ad-hoc queries.
 func (s *RunService) DB() *gorm.DB { return s.db }
 
-func (s *RunService) ProjectRunTags(projectID string) []string {
-	projectID = strings.TrimSpace(projectID)
-	if projectID == "" {
-		return []string{}
-	}
+// RunTags returns every distinct run tag.
+func (s *RunService) RunTags() []string {
 	var rows []models.Run
-	s.db.Model(&models.Run{}).
-		Where("workflow_id IN (?)", s.db.Model(&models.WorkflowDef{}).Select("id").Where("project_id = ?", projectID)).
-		Find(&rows)
+	s.db.Model(&models.Run{}).Select("tags").Find(&rows)
 	seen := make(map[string]struct{})
 	out := make([]string, 0)
 	for _, row := range rows {

@@ -15,7 +15,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *services.AgentService) {
+func setupAgentFSHost(t *testing.T) (token string, h *Host, skill *services.AgentService) {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:pmmcp_agent_fs_"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
@@ -24,41 +24,36 @@ func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *se
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	p, err := legacyProjectFixture(db, "AgentFSProj")
-	if err != nil {
+	if _, err := workspaceFixture(db); err != nil {
 		t.Fatal(err)
 	}
 	root := t.TempDir()
 	skill = services.NewAgentService(root)
 	for _, name := range []string{"leader", "alice", "bob", "outsider"} {
-		if err := skill.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: name, ProjectID: p.ID}); err != nil {
+		if err := skill.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: name}); err != nil {
 			t.Fatal(err)
 		}
-	}
-	// Cross-project agent
-	if err := skill.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "otherproj", ProjectID: "other-project"}); err != nil {
-		t.Fatal(err)
 	}
 	pm := services.NewPmService(db, skill)
 	en := true
 	agent := "leader"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-agent-fs"}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-agent-fs"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	h = NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	h.SetAgents(skill)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "thr-fs", "alice-user", "leader", tok)
-	return p.ID, tok, h, skill
+	h.Restore("thr-fs", "alice-user", "leader", tok)
+	return tok, h, skill
 }
 
-func callAgentFSTool(t *testing.T, h *Host, projectID, token, tool string, args map[string]any) (status int, result map[string]any, isError bool, raw string) {
+func callAgentFSTool(t *testing.T, h *Host, token, tool string, args map[string]any) (status int, result map[string]any, isError bool, raw string) {
 	t.Helper()
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": tool, "arguments": args},
 	})
-	st, resp := h.ServeRPC(projectID, MCPAgentFS, token, body)
+	st, resp := h.ServeRPC(MCPAgentFS, token, body)
 	raw = string(resp)
 	var rpc struct {
 		Result struct {
@@ -83,14 +78,14 @@ func callAgentFSTool(t *testing.T, h *Host, projectID, token, tool string, args 
 	return st, result, isError, raw
 }
 
-func TestPmListProjectAgentsRelations(t *testing.T) {
-	pid, tok, h, _ := setupAgentFSHost(t)
-	st, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_list_project_agents", map[string]any{})
+func TestPmListWorkspaceAgentsRelations(t *testing.T) {
+	tok, h, _ := setupAgentFSHost(t)
+	st, result, isErr, raw := callAgentFSTool(t, h, tok, "pm_list_workspace_agents", map[string]any{})
 	if st != 200 || isErr {
 		t.Fatalf("status=%d isErr=%v raw=%s", st, isErr, raw)
 	}
-	if result["self"] != "leader" || result["projectId"] != pid {
-		t.Fatalf("self/projectId wrong raw=%s", raw)
+	if result["self"] != "leader" {
+		t.Fatalf("self wrong raw=%s", raw)
 	}
 	agents, _ := result["agents"].([]any)
 	rel := map[string]string{}
@@ -101,15 +96,15 @@ func TestPmListProjectAgentsRelations(t *testing.T) {
 	if rel["leader"] != "self" || rel["alice"] != "other" || rel["bob"] != "other" || rel["outsider"] != "other" {
 		t.Fatalf("relations=%v", rel)
 	}
-	if _, leaked := rel["otherproj"]; leaked || len(rel) != 4 {
-		t.Fatalf("cross-project agent leaked: %v", rel)
+	if len(rel) != 4 {
+		t.Fatalf("relations=%v", rel)
 	}
 }
 
 func TestPmFSDirectIndirectSelfWrite(t *testing.T) {
-	pid, tok, h, skill := setupAgentFSHost(t)
+	tok, h, skill := setupAgentFSHost(t)
 	for _, agent := range []string{"leader", "alice", "bob"} {
-		st, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+		st, result, isErr, raw := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 			"agentName": agent,
 			"path":      "AGENTS.md",
 			"content":   "edited-by-leader:" + agent,
@@ -123,42 +118,40 @@ func TestPmFSDirectIndirectSelfWrite(t *testing.T) {
 			t.Fatalf("%s disk=%q err=%v", agent, got, err)
 		}
 		// agent.json must stay untouched (MCP/meta preserved)
-		cfg := skill.Get // compile check
-		_ = cfg
 		ag, ok := skill.Get(agent)
-		if !ok || ag.ProjectID != pid {
-			t.Fatalf("%s project lost", agent)
+		if !ok || ag.Name != agent {
+			t.Fatalf("%s meta lost", agent)
 		}
 		b, _ := os.ReadFile(filepath.Join(skill.WorkDir(agent), "..", "agent.json"))
-		if !strings.Contains(string(b), `"projectId"`) {
-			t.Fatalf("agent.json missing projectId for %s: %s", agent, b)
+		if !strings.Contains(string(b), `"acpBackend"`) {
+			t.Fatalf("agent.json missing acpBackend for %s: %s", agent, b)
 		}
 	}
 }
 
-func TestPmFSRejectNonReportAndCrossProject(t *testing.T) {
-	pid, tok, h, _ := setupAgentFSHost(t)
-	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+func TestPmFSAllowsNonReportRejectsMissing(t *testing.T) {
+	tok, h, _ := setupAgentFSHost(t)
+	_, result, isErr, _ := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "outsider",
 		"path":      "AGENTS.md",
 		"content":   "nope",
 		"reason":    "test",
 	})
 	if isErr {
-		t.Fatalf("same-project outsider should be allowed: %v", result)
+		t.Fatalf("non-report member should be allowed: %v", result)
 	}
-	_, result, isErr, _ = callAgentFSTool(t, h, pid, tok, "pm_fs_read", map[string]any{
-		"agentName": "otherproj",
+	_, result, isErr, _ = callAgentFSTool(t, h, tok, "pm_fs_read", map[string]any{
+		"agentName": "ghost",
 		"path":      "AGENTS.md",
 	})
-	if !isErr || !strings.Contains(result["error"].(string), "not in project") {
-		t.Fatalf("cross-project: %v", result)
+	if !isErr || !strings.Contains(result["error"].(string), "agent not found") {
+		t.Fatalf("missing agent: %v", result)
 	}
 }
 
 func TestPmFSPathEscapeRejected(t *testing.T) {
-	pid, tok, h, _ := setupAgentFSHost(t)
-	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	tok, h, _ := setupAgentFSHost(t)
+	_, result, isErr, _ := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "../escape.md",
 		"content":   "x",
@@ -175,30 +168,30 @@ func TestPmFSDisabledMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
-	p, _ := legacyProjectFixture(db, "Off")
+	_, _ = workspaceFixture(db)
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "leader"
-	if _, err := pm.UpdateBinding(p.ID, &en, &agent, []string{"pm-progress"}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{"pm-progress"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()
-	h.Restore(p.ID, "t", "u", agent, tok)
+	h.Restore("t", "u", agent, tok)
 	body, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "pm_list_project_agents", "arguments": map[string]any{}},
+		"params": map[string]any{"name": "pm_list_workspace_agents", "arguments": map[string]any{}},
 	})
-	st, resp := h.ServeRPC(p.ID, MCPAgentFS, tok, body)
+	st, resp := h.ServeRPC(MCPAgentFS, tok, body)
 	if st != 404 || !strings.Contains(string(resp), "mcp disabled") {
 		t.Fatalf("want disabled: %d %s", st, resp)
 	}
 }
 
 func TestPmFSTooLargeRejected(t *testing.T) {
-	pid, tok, h, _ := setupAgentFSHost(t)
+	tok, h, _ := setupAgentFSHost(t)
 	big := strings.Repeat("x", services.WorkspaceFileMaxBytes+1)
-	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	_, result, isErr, _ := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "big.md",
 		"content":   big,
@@ -210,15 +203,15 @@ func TestPmFSTooLargeRejected(t *testing.T) {
 }
 
 func TestPmFSListDeleteMkdirRename(t *testing.T) {
-	pid, tok, h, skill := setupAgentFSHost(t)
-	callAgentFSTool(t, h, pid, tok, "pm_fs_mkdir", map[string]any{"agentName": "bob", "path": "rules", "reason": "mkdir test"})
-	_, _, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	tok, h, skill := setupAgentFSHost(t)
+	callAgentFSTool(t, h, tok, "pm_fs_mkdir", map[string]any{"agentName": "bob", "path": "rules", "reason": "mkdir test"})
+	_, _, isErr, raw := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "bob", "path": "rules/a.md", "content": "rule-a", "reason": "write rule",
 	})
 	if isErr {
 		t.Fatal(raw)
 	}
-	_, result, isErr, raw := callAgentFSTool(t, h, pid, tok, "pm_fs_list", map[string]any{
+	_, result, isErr, raw := callAgentFSTool(t, h, tok, "pm_fs_list", map[string]any{
 		"agentName": "bob", "path": "rules",
 	})
 	if isErr {
@@ -228,7 +221,7 @@ func TestPmFSListDeleteMkdirRename(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("entries=%v", result)
 	}
-	_, _, isErr, raw = callAgentFSTool(t, h, pid, tok, "pm_fs_rename", map[string]any{
+	_, _, isErr, raw = callAgentFSTool(t, h, tok, "pm_fs_rename", map[string]any{
 		"agentName": "bob", "path": "rules/a.md", "toPath": "rules/b.md", "reason": "rename",
 	})
 	if isErr {
@@ -238,7 +231,7 @@ func TestPmFSListDeleteMkdirRename(t *testing.T) {
 	if err != nil || got != "rule-a" {
 		t.Fatalf("rename disk=%q err=%v", got, err)
 	}
-	_, _, isErr, raw = callAgentFSTool(t, h, pid, tok, "pm_fs_delete", map[string]any{
+	_, _, isErr, raw = callAgentFSTool(t, h, tok, "pm_fs_delete", map[string]any{
 		"agentName": "bob", "path": "rules", "reason": "cleanup",
 	})
 	if isErr {
@@ -250,8 +243,8 @@ func TestPmFSListDeleteMkdirRename(t *testing.T) {
 }
 
 func TestPmFSReasonRequired(t *testing.T) {
-	pid, tok, h, skill := setupAgentFSHost(t)
-	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	tok, h, skill := setupAgentFSHost(t)
+	_, result, isErr, _ := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "AGENTS.md",
 		"content":   "x",
@@ -265,8 +258,8 @@ func TestPmFSReasonRequired(t *testing.T) {
 }
 
 func TestPmFSHistoryDiffRestore(t *testing.T) {
-	pid, tok, h, skill := setupAgentFSHost(t)
-	_, result, isErr, _ := callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	tok, h, skill := setupAgentFSHost(t)
+	_, result, isErr, _ := callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice",
 		"path":      "AGENTS.md",
 		"content":   "v1",
@@ -279,18 +272,18 @@ func TestPmFSHistoryDiffRestore(t *testing.T) {
 	if sha == "" {
 		t.Fatal("missing sha")
 	}
-	_, result, isErr, _ = callAgentFSTool(t, h, pid, tok, "pm_fs_history", map[string]any{"agentName": "alice"})
+	_, result, isErr, _ = callAgentFSTool(t, h, tok, "pm_fs_history", map[string]any{"agentName": "alice"})
 	if isErr || result["revisions"] == nil {
 		t.Fatalf("history: %v", result)
 	}
-	_, result, isErr, _ = callAgentFSTool(t, h, pid, tok, "pm_fs_diff", map[string]any{"agentName": "alice", "sha": sha})
+	_, result, isErr, _ = callAgentFSTool(t, h, tok, "pm_fs_diff", map[string]any{"agentName": "alice", "sha": sha})
 	if isErr {
 		t.Fatalf("diff: %v", result)
 	}
-	_, _, isErr, _ = callAgentFSTool(t, h, pid, tok, "pm_fs_write", map[string]any{
+	_, _, isErr, _ = callAgentFSTool(t, h, tok, "pm_fs_write", map[string]any{
 		"agentName": "alice", "path": "AGENTS.md", "content": "v2", "reason": "update",
 	})
-	_, result, isErr, _ = callAgentFSTool(t, h, pid, tok, "pm_fs_restore", map[string]any{
+	_, result, isErr, _ = callAgentFSTool(t, h, tok, "pm_fs_restore", map[string]any{
 		"agentName": "alice", "sha": sha, "reason": "rollback test",
 	})
 	if isErr {
@@ -303,9 +296,9 @@ func TestPmFSHistoryDiffRestore(t *testing.T) {
 }
 
 func TestPmAgentFSToolsList(t *testing.T) {
-	pid, tok, h, _ := setupAgentFSHost(t)
+	tok, h, _ := setupAgentFSHost(t)
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	st, resp := h.ServeRPC(pid, MCPAgentFS, tok, body)
+	st, resp := h.ServeRPC(MCPAgentFS, tok, body)
 	if st != 200 {
 		t.Fatalf("status=%d", st)
 	}
@@ -320,7 +313,7 @@ func TestPmAgentFSToolsList(t *testing.T) {
 		names[tool["name"].(string)] = true
 	}
 	for _, want := range []string{
-		"pm_list_project_agents", "pm_fs_list", "pm_fs_read", "pm_fs_write", "pm_fs_delete", "pm_fs_mkdir", "pm_fs_rename",
+		"pm_list_workspace_agents", "pm_fs_list", "pm_fs_read", "pm_fs_write", "pm_fs_delete", "pm_fs_mkdir", "pm_fs_rename",
 		"pm_fs_history", "pm_fs_diff", "pm_fs_restore",
 	} {
 		if !names[want] {

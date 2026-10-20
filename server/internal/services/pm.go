@@ -18,9 +18,6 @@ var (
 	ErrPmLeaderNoAgent = errors.New("未绑定可用 Agent，请先到 Agent 配置中心准备后再绑定")
 	// ErrPmLeaderAgentMissing is returned when the bound agent was deleted.
 	ErrPmLeaderAgentMissing = errors.New("绑定的 Agent 已删除或不可用，请管理员重新绑定")
-	// ErrPmLeaderProjectMismatch is returned when the agent's home project is not
-	// this project. A PM Leader must have the consult project as its home.
-	ErrPmLeaderProjectMismatch = errors.New("该 Agent 的主项目不是本项目，请先在 Agent Studio 将其主项目设为本项目")
 	// ErrPmMemoryNotFound is returned when a memory item is missing.
 	ErrPmMemoryNotFound = errors.New("记忆条目不存在")
 	// ErrPmThreadNotFound is returned when a chat thread is missing or not owned.
@@ -33,7 +30,7 @@ var (
 	ErrPmMessageInvalidRole = errors.New("仅支持标记用户消息的失败状态")
 	// ErrPmAdminRequired is returned for admin-only memory / admin paths (not PM Leader bind).
 	ErrPmAdminRequired = errors.New("需要平台管理员权限")
-	// ErrPmCronJobNotFound is returned when a cron job is missing for the project.
+	// ErrPmCronJobNotFound is returned when a cron job is missing.
 	ErrPmCronJobNotFound = errors.New("定时任务不存在")
 	// ErrPmChannelReadOnly is returned when a Web client tries to write/delete a channel thread.
 	ErrPmChannelReadOnly = errors.New("渠道会话为只读，不可当普通 Web 线程编辑或删除")
@@ -94,7 +91,7 @@ func validPmFailKind(kind string) bool {
 	}
 }
 
-// PmService manages project PM Leader binding, memory, and chat persistence.
+// PmService manages PM Leader binding, memory, and chat persistence.
 type PmService struct {
 	blobs  blob.Store
 	db     *gorm.DB
@@ -163,13 +160,13 @@ func EffectivePmEnabledMcps(stored []string) []string {
 	return FilterPmEnabledMcps(stored)
 }
 
-const pmLeaderAclNote = "记忆请在已绑定主项目的 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。"
+const pmLeaderAclNote = "记忆请在 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。"
 
-// GetBinding returns the PM Leader binding for a project.
-func (s *PmService) GetBinding(projectID string) (PmLeaderBinding, error) {
-	p, ok := s.project(projectID)
-	if !ok {
-		return PmLeaderBinding{}, ErrProjectNotFound
+// GetBinding returns the PM Leader binding.
+func (s *PmService) GetBinding() (PmLeaderBinding, error) {
+	p, err := loadWorkspace(s.db)
+	if err != nil {
+		return PmLeaderBinding{}, err
 	}
 	b := PmLeaderBinding{
 		Enabled:        p.PmLeaderEnabled,
@@ -187,13 +184,9 @@ func (s *PmService) GetBinding(projectID string) (PmLeaderBinding, error) {
 		return b, nil
 	}
 	if s.skills != nil {
-		ag, ok := s.skills.Get(p.PmLeaderAgent)
-		if !ok {
+		if _, ok := s.skills.Get(p.PmLeaderAgent); !ok {
 			b.AgentAvailable = false
 			b.AgentError = ErrPmLeaderAgentMissing.Error()
-		} else if !AgentProjectMatches(ag, projectID) {
-			b.AgentAvailable = false
-			b.AgentError = ErrPmLeaderProjectMismatch.Error()
 		} else {
 			b.AgentAvailable = true
 		}
@@ -207,22 +200,16 @@ func (s *PmService) GetBinding(projectID string) (PmLeaderBinding, error) {
 // Enabling requires a resolvable agent. gateAutoVar/gateAutoPrompt are optional
 // patches (nil = leave unchanged); empty string clears. Variable existence/type
 // is not validated at save time.
-func (s *PmService) UpdateBinding(projectID string, enabled *bool, agent *string, enabledMcps []string, gateAutoVar, gateAutoPrompt *string) (PmLeaderBinding, error) {
-	var p models.Project
-	if err := s.db.First(&p, "id = ?", projectID).Error; err != nil {
-		return PmLeaderBinding{}, ErrProjectNotFound
+func (s *PmService) UpdateBinding(enabled *bool, agent *string, enabledMcps []string, gateAutoVar, gateAutoPrompt *string) (PmLeaderBinding, error) {
+	p, err := loadWorkspace(s.db)
+	if err != nil {
+		return PmLeaderBinding{}, err
 	}
 	if agent != nil {
 		name := strings.TrimSpace(*agent)
-		if name != "" {
-			if s.skills != nil {
-				ag, ok := s.skills.Get(name)
-				if !ok {
-					return PmLeaderBinding{}, ErrPmLeaderNoAgent
-				}
-				if strings.TrimSpace(ag.ProjectID) != projectID {
-					return PmLeaderBinding{}, ErrPmLeaderProjectMismatch
-				}
+		if name != "" && s.skills != nil {
+			if _, ok := s.skills.Get(name); !ok {
+				return PmLeaderBinding{}, ErrPmLeaderNoAgent
 			}
 		}
 		p.PmLeaderAgent = name
@@ -243,12 +230,8 @@ func (s *PmService) UpdateBinding(projectID string, enabled *bool, agent *string
 				return PmLeaderBinding{}, ErrPmLeaderNoAgent
 			}
 			if s.skills != nil {
-				ag, ok := s.skills.Get(p.PmLeaderAgent)
-				if !ok {
+				if _, ok := s.skills.Get(p.PmLeaderAgent); !ok {
 					return PmLeaderBinding{}, ErrPmLeaderNoAgent
-				}
-				if strings.TrimSpace(ag.ProjectID) != projectID {
-					return PmLeaderBinding{}, ErrPmLeaderProjectMismatch
 				}
 			}
 		}
@@ -258,47 +241,35 @@ func (s *PmService) UpdateBinding(projectID string, enabled *bool, agent *string
 	if err := s.db.Save(&p).Error; err != nil {
 		return PmLeaderBinding{}, err
 	}
-	return s.GetBinding(projectID)
+	return s.GetBinding()
 }
 
-// RequireEnabled checks the project has PM Leader on with a usable agent.
-func (s *PmService) RequireEnabled(projectID string) (models.Project, error) {
-	p, ok := s.project(projectID)
-	if !ok {
-		return models.Project{}, ErrProjectNotFound
+// RequireEnabled checks the workspace has PM Leader on with a usable agent.
+func (s *PmService) RequireEnabled() (models.Workspace, error) {
+	p, err := loadWorkspace(s.db)
+	if err != nil {
+		return models.Workspace{}, err
 	}
 	if !p.PmLeaderEnabled {
-		return models.Project{}, ErrPmLeaderDisabled
+		return models.Workspace{}, ErrPmLeaderDisabled
 	}
 	if strings.TrimSpace(p.PmLeaderAgent) == "" {
-		return models.Project{}, ErrPmLeaderNoAgent
+		return models.Workspace{}, ErrPmLeaderNoAgent
 	}
 	if s.skills != nil {
-		ag, ok := s.skills.Get(p.PmLeaderAgent)
-		if !ok {
-			return models.Project{}, ErrPmLeaderAgentMissing
-		}
-		if strings.TrimSpace(ag.ProjectID) != projectID {
-			return models.Project{}, ErrPmLeaderProjectMismatch
+		if _, ok := s.skills.Get(p.PmLeaderAgent); !ok {
+			return models.Workspace{}, ErrPmLeaderAgentMissing
 		}
 	}
 	return p, nil
 }
 
-func (s *PmService) project(id string) (models.Project, bool) {
-	var p models.Project
-	if err := s.db.First(&p, "id = ?", id).Error; err != nil {
-		return models.Project{}, false
-	}
-	return p, true
-}
-
 // RequireSendEnabled checks the workspace switch independently of the default
 // Agent. Existing threads resolve their own AgentName.
-func (s *PmService) RequireSendEnabled(projectID string) (models.Project, error) {
-	p, ok := s.project(projectID)
-	if !ok {
-		return p, ErrProjectNotFound
+func (s *PmService) RequireSendEnabled() (models.Workspace, error) {
+	p, err := loadWorkspace(s.db)
+	if err != nil {
+		return p, err
 	}
 	if !p.PmLeaderEnabled {
 		return p, ErrPmLeaderDisabled

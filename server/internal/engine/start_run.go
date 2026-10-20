@@ -132,7 +132,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		return nil, err
 	}
 	graph.Nodes = append([]models.Node(nil), graph.Nodes...)
-	if err := e.snapshotCaps(&graph, def.ProjectID); err != nil {
+	if err := e.snapshotCaps(&graph); err != nil {
 		return nil, err
 	}
 	if !models.ValidPriorityInt(priority) {
@@ -153,13 +153,13 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 	if err != nil {
 		return nil, fmt.Errorf("ingest launch attachments: %w", err)
 	}
-	// Resolve the live value of every global variable: project defaults first,
+	// Resolve the live value of every global variable: workspace defaults first,
 	// then Graph.Variables + launcher-submitted Ask values (latter wins on name).
-	var projectVars []models.ProjectVariable
-	if e.projectVarsLookup != nil {
-		projectVars = e.projectVarsLookup(def.ID)
+	var workspaceVars []models.WorkspaceVariable
+	if e.workspaceVarsLookup != nil {
+		workspaceVars = e.workspaceVarsLookup(def.ID)
 	}
-	seeded, err := resolveStartVars(graph, inputs, projectVars)
+	seeded, err := resolveStartVars(graph, inputs, workspaceVars)
 	if err != nil {
 		return nil, err
 	}
@@ -278,16 +278,16 @@ func (e *Engine) UpdateRunTitle(runID, title string) (*models.Run, error) {
 }
 
 // resolveStartVars computes the initial live value of every declared global
-// variable. Project variables are seeded first; Graph.Variables then overlay
+// variable. Workspace variables are seeded first; Graph.Variables then overlay
 // (and Ask vars take submitted values). Required Ask variables must end up
 // non-blank. Submitted values are coerced to the variable's type so
 // guards/templates see numbers and bools, not strings from the launch form.
-// Every variable is persisted under the single {{vars.x}} namespace. Project
+// Every variable is persisted under the single {{vars.x}} namespace. Workspace
 // seed alone does not inject values into the container OS environ.
-func resolveStartVars(g models.Graph, submitted map[string]any, projectVars []models.ProjectVariable) ([]models.RunVariable, error) {
-	byName := make(map[string]models.RunVariable, len(projectVars)+len(g.Variables))
-	order := make([]string, 0, len(projectVars)+len(g.Variables))
-	for _, v := range projectVars {
+func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []models.WorkspaceVariable) ([]models.RunVariable, error) {
+	byName := make(map[string]models.RunVariable, len(workspaceVars)+len(g.Variables))
+	order := make([]string, 0, len(workspaceVars)+len(g.Variables))
+	for _, v := range workspaceVars {
 		if v.Name == "" {
 			continue
 		}
@@ -488,12 +488,10 @@ func coerceVar(v any, t string) any {
 // snapshotCaps copies each Agent node's capabilities from its Agent onto the
 // run graph, so a run keeps the permissions it started with even if the Agent
 // is edited later. Without an Agent catalog (tests) pre-set caps are kept.
-// Agents of another project are rejected (empty projectID skips the check).
-func (e *Engine) snapshotCaps(g *models.Graph, projectID string) error {
+func (e *Engine) snapshotCaps(g *models.Graph) error {
 	if e.skills == nil {
 		return nil
 	}
-	projectID = strings.TrimSpace(projectID)
 	for i := range g.Nodes {
 		n := &g.Nodes[i]
 		if n.Type != "agent" {
@@ -506,9 +504,6 @@ func (e *Engine) snapshotCaps(g *models.Graph, projectID string) error {
 		agent, ok := e.skills.Get(profile)
 		if !ok {
 			return fmt.Errorf("节点 %s 的 Agent %s 不存在", n.ID, profile)
-		}
-		if projectID != "" && strings.TrimSpace(agent.ProjectID) != projectID {
-			return fmt.Errorf("节点 %s 的 Agent %s 不属于本项目，请在工作流中改选本项目的 Agent", n.ID, profile)
 		}
 		if agent.Capabilities == nil {
 			return fmt.Errorf("Agent %s 未声明能力", profile)

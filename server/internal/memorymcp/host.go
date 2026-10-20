@@ -13,10 +13,9 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Session binds a memory-store token to project + agent (+ optional thread).
+// Session binds a memory-store token to an agent (+ optional thread).
 type Session struct {
 	Token     string
-	ProjectID string
 	AgentName string
 	ThreadID  string
 	UserID    string
@@ -37,7 +36,7 @@ func NewHost(pm *services.PmService) *Host {
 	return &Host{sessions: map[string]*Session{}, pm: pm}
 }
 
-// SetAuditRecorder wires project-scoped audit recording for memory-store tools.
+// SetAuditRecorder wires audit recording for memory-store tools.
 func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 	h.mu.Lock()
 	h.audit = fn
@@ -45,14 +44,14 @@ func (h *Host) SetAuditRecorder(fn func(services.AuditRecord)) {
 }
 
 // Restore rebinds an existing token.
-func (h *Host) Restore(tok, projectID, agentName, threadID, userID string, write bool) {
+func (h *Host) Restore(tok, agentName, threadID, userID string, write bool) {
 	if strings.TrimSpace(tok) == "" {
 		return
 	}
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.sessions[tok] = &Session{
-		Token: tok, ProjectID: projectID, AgentName: agentName,
+		Token: tok, AgentName: agentName,
 		ThreadID: threadID, UserID: userID, WriteAllowed: write,
 	}
 }
@@ -64,12 +63,12 @@ func (h *Host) Unregister(token string) {
 	delete(h.sessions, token)
 }
 
-// Authorize checks token for project.
-func (h *Host) Authorize(projectID, token string) (*Session, bool) {
+// Authorize resolves a session token.
+func (h *Host) Authorize(token string) (*Session, bool) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	s, ok := h.sessions[token]
-	if !ok || s.ProjectID != projectID {
+	if !ok {
 		return nil, false
 	}
 	cp := *s
@@ -77,14 +76,14 @@ func (h *Host) Authorize(projectID, token string) (*Session, bool) {
 }
 
 // ServeRPC handles one JSON-RPC message.
-func (h *Host) ServeRPC(projectID, token string, body []byte) (int, []byte) {
-	sess, ok := h.Authorize(projectID, token)
+func (h *Host) ServeRPC(token string, body []byte) (int, []byte) {
+	sess, ok := h.Authorize(token)
 	if !ok {
 		return platformmcp.Unauthorized()
 	}
 	var req platformmcp.RPCRequest
 	if err := json.Unmarshal(body, &req); err != nil {
-		log.Warn().Err(err).Str("project_id", projectID).Msg("memory-store rpc parse error")
+		log.Warn().Err(err).Msg("memory-store rpc parse error")
 		return platformmcp.ParseError()
 	}
 	switch req.Method {
@@ -127,7 +126,7 @@ func (h *Host) auditToolCall(sess *Session, tool string, args map[string]any, re
 	h.mu.RLock()
 	fn := h.audit
 	h.mu.RUnlock()
-	if fn == nil || sess == nil || sess.ProjectID == "" || tool == "" {
+	if fn == nil || sess == nil || tool == "" {
 		return
 	}
 	outcome := models.AuditOutcomeOK
@@ -135,7 +134,6 @@ func (h *Host) auditToolCall(sess *Session, tool string, args map[string]any, re
 		outcome = models.AuditOutcomeFail
 	}
 	fn(services.AuditRecord{
-		ProjectID:    sess.ProjectID,
 		Actor:        services.ActorFromUsername(sess.UserID),
 		Action:       models.AuditActionMCPCall,
 		ResourceType: "mcp",
@@ -156,7 +154,7 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 	agent := sess.AgentName
 	switch name {
 	case "list_memories":
-		items, err := h.pm.ListMemories(sess.ProjectID, agent)
+		items, err := h.pm.ListMemories(agent)
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
@@ -176,13 +174,13 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 		if id == "" {
 			return map[string]any{"error": "id required"}, true
 		}
-		item, err := h.pm.GetMemory(sess.ProjectID, agent, id)
+		item, err := h.pm.GetMemory(agent, id)
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
 		return item, false
 	case "search_memories":
-		rows, err := h.pm.SearchMemories(sess.ProjectID, agent, platformmcp.StrArg(args, "query"), platformmcp.IntArg(args, "limit", 20))
+		rows, err := h.pm.SearchMemories(agent, platformmcp.StrArg(args, "query"), platformmcp.IntArg(args, "limit", 20))
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true
 		}
@@ -191,7 +189,7 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 		if !sess.WriteAllowed {
 			return map[string]any{"error": "当前渠道未允许写入记忆"}, true
 		}
-		item, err := h.pm.UpsertMemory(sess.ProjectID, agent,
+		item, err := h.pm.UpsertMemory(agent,
 			platformmcp.StrArg(args, "title"), platformmcp.StrArg(args, "content"),
 			"agent", sess.UserID)
 		if err != nil {
@@ -205,19 +203,19 @@ func (h *Host) callTool(sess *Session, name string, args map[string]any) (any, b
 		id := platformmcp.StrArg(args, "id")
 		title := platformmcp.StrArg(args, "title")
 		if id != "" {
-			if err := h.pm.DeleteMemoryForAgent(sess.ProjectID, agent, id); err != nil {
+			if err := h.pm.DeleteMemoryForAgent(agent, id); err != nil {
 				return map[string]any{"error": err.Error()}, true
 			}
 			return map[string]any{"deleted": true, "id": id}, false
 		}
 		if title != "" {
-			items, err := h.pm.ListMemories(sess.ProjectID, agent)
+			items, err := h.pm.ListMemories(agent)
 			if err != nil {
 				return map[string]any{"error": err.Error()}, true
 			}
 			for _, it := range items {
 				if it.Title == title {
-					if err := h.pm.DeleteMemoryForAgent(sess.ProjectID, agent, it.ID); err != nil {
+					if err := h.pm.DeleteMemoryForAgent(agent, it.ID); err != nil {
 						return map[string]any{"error": err.Error()}, true
 					}
 					return map[string]any{"deleted": true, "id": it.ID}, false

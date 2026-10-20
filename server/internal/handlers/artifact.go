@@ -14,7 +14,6 @@ import (
 // workflowId narrows to one workflow, session=1 to workflow-less artifacts.
 func (h *Handlers) ListArtifacts(c *gin.Context) {
 	f := services.ArtifactFilter{
-		ProjectID:  "",
 		WorkflowID: c.Query("workflowId"),
 		Session:    c.Query("session") == "1",
 		Q:          c.Query("q"),
@@ -36,7 +35,7 @@ func (h *Handlers) ListArtifacts(c *gin.Context) {
 	c.JSON(http.StatusOK, paginatedResponse(arts, int(total), pg.Page, pg.PageSize))
 }
 
-// ArtifactTree returns per-project / per-workflow artifact counts for the
+// ArtifactTree returns per-workflow artifact counts for the
 // Artifacts page sidebar.
 func (h *Handlers) ArtifactTree(c *gin.Context) {
 	tree, err := h.Arts.Tree()
@@ -59,7 +58,7 @@ func (h *Handlers) ArtifactContent(c *gin.Context) {
 	content := a.Content
 	etag := engine.ArtifactETag(content, a.SizeBytes, a.UpdatedAt)
 	out := gin.H{
-		"id": a.ID, "runId": a.RunID, "nodeId": a.NodeID, "projectId": a.ProjectID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName,
+		"id": a.ID, "runId": a.RunID, "nodeId": a.NodeID, "workflowId": a.WorkflowID, "workflowName": a.WorkflowName,
 		"name": a.Name, "kind": a.Kind, "sizeBytes": a.SizeBytes,
 		"createdAt": a.CreatedAt, "content": content, "etag": etag,
 	}

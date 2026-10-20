@@ -3,25 +3,23 @@ package handlers
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rs/zerolog/log"
 )
 
-// resolveAgentProject loads the Agent and returns its home project id (404 if missing).
-func (h *Handlers) resolveAgentProject(c *gin.Context) (name, projectID string, ok bool) {
+// resolveAgentName returns the :name Agent (404 if missing).
+func (h *Handlers) resolveAgentName(c *gin.Context) (name string, ok bool) {
 	name = c.Param("name")
-	agent, exists := h.Agents.Get(name)
-	if !exists {
+	if !h.Agents.Exists(name) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "agent not found"})
-		return "", "", false
+		return "", false
 	}
-	return name, strings.TrimSpace(agent.ProjectID), true
+	return name, true
 }
 
 // requireAgentMemoryAccess allows any authenticated user to manage Studio Agent data
-// (memories, threads, cron job writes) of its home project.
+// (memories, threads, cron job writes).
 func (h *Handlers) requireAgentMemoryAccess(c *gin.Context) bool {
 	_, ok := h.sessionUser(c)
 	return ok
@@ -35,11 +33,11 @@ func (h *Handlers) ListAgentMemories(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	items, err := h.Pm.ListMemories(projectID, name)
+	items, err := h.Pm.ListMemories(name)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -59,7 +57,7 @@ func (h *Handlers) UpsertAgentMemory(c *gin.Context) {
 	if !ok {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
@@ -71,7 +69,7 @@ func (h *Handlers) UpsertAgentMemory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item, err := h.Pm.UpsertMemory(projectID, name, body.Title, body.Content, "user", user)
+	item, err := h.Pm.UpsertMemory(name, body.Title, body.Content, "user", user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -91,7 +89,7 @@ func (h *Handlers) UpdateAgentMemory(c *gin.Context) {
 	if !ok {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
@@ -103,7 +101,7 @@ func (h *Handlers) UpdateAgentMemory(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	item, err := h.Pm.UpdateMemoryForAgent(projectID, name, c.Param("mid"), body.Title, body.Content, user)
+	item, err := h.Pm.UpdateMemoryForAgent(name, c.Param("mid"), body.Title, body.Content, user)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -119,11 +117,11 @@ func (h *Handlers) DeleteAgentMemory(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	if err := h.Pm.DeleteMemoryForAgent(projectID, name, c.Param("mid")); err != nil {
+	if err := h.Pm.DeleteMemoryForAgent(name, c.Param("mid")); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -138,11 +136,11 @@ func (h *Handlers) ClearAgentMemories(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	n, err := h.Pm.ClearMemoriesForAgent(projectID, name)
+	n, err := h.Pm.ClearMemoriesForAgent(name)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -158,11 +156,11 @@ func (h *Handlers) ListAgentThreads(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	threads, err := h.Pm.ListThreadsForAgent(projectID, name)
+	threads, err := h.Pm.ListThreadsForAgent(name)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -189,11 +187,11 @@ func (h *Handlers) GetAgentThreadMessages(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	if _, err := h.Pm.GetThreadForAgent(projectID, name, c.Param("tid")); err != nil {
+	if _, err := h.Pm.GetThreadForAgent(name, c.Param("tid")); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -215,11 +213,11 @@ func (h *Handlers) DeleteAgentThread(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	if err := h.Pm.DeleteThreadForAgent(projectID, name, c.Param("tid")); err != nil {
+	if err := h.Pm.DeleteThreadForAgent(name, c.Param("tid")); err != nil {
 		writePmErr(c, err)
 		return
 	}
@@ -227,7 +225,7 @@ func (h *Handlers) DeleteAgentThread(c *gin.Context) {
 }
 
 // ListAgentCronJobs handles GET /api/agents/:name/cron-jobs.
-// Any authenticated user may list (aligned with ListProjectCronJobs).
+// Any authenticated user may list (aligned with ListCronJobs).
 func (h *Handlers) ListAgentCronJobs(c *gin.Context) {
 	if h.Pm == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "pm unavailable"})
@@ -236,11 +234,11 @@ func (h *Handlers) ListAgentCronJobs(c *gin.Context) {
 	if _, ok := h.sessionUser(c); !ok {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	items, err := h.Pm.ListCronJobsForAgent(projectID, name)
+	items, err := h.Pm.ListCronJobsForAgent(name)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -256,7 +254,7 @@ func (h *Handlers) PatchAgentCronJob(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
@@ -272,7 +270,7 @@ func (h *Handlers) PatchAgentCronJob(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "enabled or deliverToChannel required"})
 		return
 	}
-	job, err := h.Pm.PatchCronJobForAgent(projectID, name, c.Param("jobId"), body.Enabled, body.DeliverToChannel)
+	job, err := h.Pm.PatchCronJobForAgent(name, c.Param("jobId"), body.Enabled, body.DeliverToChannel)
 	if err != nil {
 		writePmErr(c, err)
 		return
@@ -288,11 +286,11 @@ func (h *Handlers) DeleteAgentCronJob(c *gin.Context) {
 	if !h.requireAgentMemoryAccess(c) {
 		return
 	}
-	name, projectID, ok := h.resolveAgentProject(c)
+	name, ok := h.resolveAgentName(c)
 	if !ok {
 		return
 	}
-	if err := h.Pm.DeleteCronJobForAgent(projectID, name, c.Param("jobId")); err != nil {
+	if err := h.Pm.DeleteCronJobForAgent(name, c.Param("jobId")); err != nil {
 		writePmErr(c, err)
 		return
 	}

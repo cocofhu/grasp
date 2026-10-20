@@ -290,7 +290,7 @@ func TestPendingInboxItemsFilterByTags(t *testing.T) {
 	})
 	db.Create(&models.StateRun{RunID: "run-gate-one", NodeID: "gate", Iteration: 0, Status: "waiting_human"})
 
-	items, total := s.PendingInboxItems("", "", []string{"bugfix", "spike"}, 0, 0)
+	items, total := s.PendingInboxItems("", []string{"bugfix", "spike"}, 0, 0)
 	if total != 1 || len(items) != 1 {
 		t.Fatalf("items=%d total=%d", len(items), total)
 	}
@@ -524,7 +524,7 @@ func TestPendingInboxExcludesTransferred(t *testing.T) {
 		RunID: "run-review-gone", NodeID: "research", Iteration: 1, Status: "waiting_human",
 	})
 
-	items, total := s.PendingInboxItems("", "", nil, 0, 0)
+	items, total := s.PendingInboxItems("", nil, 0, 0)
 	if total != 2 || len(items) != 2 {
 		t.Fatalf("expected 2 live items (gate+clarify), total=%d len=%d items=%#v", total, len(items), items)
 	}

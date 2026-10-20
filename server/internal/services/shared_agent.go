@@ -13,11 +13,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// SharedAgentConfig is the project-level Agent baseline used as the extend layer
-// at startup (workflow Run + project-context chat test). Shape mirrors Agent
-// without a Name; identity is ProjectID. Empty config is valid.
+// SharedAgentConfig is the workspace Agent baseline used as the extend layer
+// at startup (workflow Run + chat test). Shape mirrors Agent without a Name.
+// Empty config is valid.
 type SharedAgentConfig struct {
-	ProjectID            string            `json:"projectId"`
 	AcpBackend           string            `json:"acpBackend,omitempty"`
 	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
 	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
@@ -28,7 +27,7 @@ type SharedAgentConfig struct {
 	Layout               AgentLayout       `json:"layout"`
 }
 
-// sharedAgentDisk mirrors agent.json under data/project-shared/<projectId>/.
+// sharedAgentDisk mirrors agent.json under data/shared-agent/.
 type sharedAgentDisk struct {
 	AcpBackend           string            `json:"acpBackend,omitempty"`
 	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
@@ -39,23 +38,23 @@ type sharedAgentDisk struct {
 	Layout               *AgentLayout      `json:"layout,omitempty"`
 }
 
-// SharedAgentService persists per-project shared Agent baselines on disk:
+// SharedAgentService persists the shared Agent baseline on disk:
 //
-//	<root>/<projectId>/workspace/**  -- shared working-dir tree
-//	<root>/<projectId>/agent.json    -- mcp / env / layout / meta
+//	<root>/workspace/**  -- shared working-dir tree
+//	<root>/agent.json    -- mcp / env / layout / meta
 type SharedAgentService struct {
 	root string
 	mu   sync.Mutex
 }
 
 // DefaultSharedAgentRoot derives the shared-config root next to profiles
-// (data/profiles → data/project-shared).
+// (data/profiles → data/shared-agent).
 func DefaultSharedAgentRoot(profilesRoot string) string {
 	profilesRoot = strings.TrimSpace(profilesRoot)
 	if profilesRoot == "" {
 		profilesRoot = "data/profiles"
 	}
-	return filepath.Join(filepath.Dir(profilesRoot), "project-shared")
+	return filepath.Join(filepath.Dir(profilesRoot), "shared-agent")
 }
 
 // NewSharedAgentService builds the service. root empty → DefaultSharedAgentRoot("").
@@ -70,24 +69,9 @@ func NewSharedAgentService(root string) *SharedAgentService {
 // Root returns the on-disk root.
 func (s *SharedAgentService) Root() string { return s.root }
 
-// Get returns the shared config for a project. Missing dir → empty valid config.
-func (s *SharedAgentService) Get(projectID string) SharedAgentConfig {
-	pid := sanitizeProjectID(projectID)
-	out := SharedAgentConfig{
-		ProjectID: strings.TrimSpace(projectID),
-		Env:       map[string]string{},
-		Files:     []AgentFile{},
-		MCP:       []MCPServer{},
-	}
-	if pid == "" {
-		return out
-	}
-	dir := filepath.Join(s.root, pid)
-	if _, err := os.Stat(dir); err != nil {
-		out.Layout = AgentLayout{}.withDefaults()
-		return out
-	}
-	cfg := s.readConfig(pid)
+// Get returns the shared config. Missing files → empty valid config.
+func (s *SharedAgentService) Get() SharedAgentConfig {
+	cfg := s.readConfig()
 	layout := AgentLayout{}
 	if cfg.Layout != nil {
 		layout = *cfg.Layout
@@ -104,31 +88,34 @@ func (s *SharedAgentService) Get(projectID string) SharedAgentConfig {
 	if env == nil {
 		env = map[string]string{}
 	}
+	files := s.readFiles()
+	if files == nil {
+		files = []AgentFile{}
+	}
+	mcps := cfg.MCP
+	if mcps == nil {
+		mcps = []MCPServer{}
+	}
 	return SharedAgentConfig{
-		ProjectID:            strings.TrimSpace(projectID),
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
 		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
-		Files:                s.readFiles(pid),
-		MCP:                  cfg.MCP,
+		Files:                files,
+		MCP:                  mcps,
 		Env:                  env,
 		Layout:               layout,
 	}
 }
 
-// Save writes the shared config for a project (full replace of workspace + agent.json).
+// Save writes the shared config (full replace of workspace + agent.json).
 func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	pid := sanitizeProjectID(cfg.ProjectID)
-	if pid == "" {
-		return fmt.Errorf("invalid project id")
-	}
 	if err := RejectSecretEnvKeys(cfg.Env); err != nil {
 		return err
 	}
-	dir := filepath.Join(s.root, pid)
+	dir := s.root
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -186,12 +173,8 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 }
 
 // WorkDir returns the shared workspace path when it exists.
-func (s *SharedAgentService) WorkDir(projectID string) string {
-	pid := sanitizeProjectID(projectID)
-	if pid == "" {
-		return ""
-	}
-	d := filepath.Join(s.root, pid, WorkDirName)
+func (s *SharedAgentService) WorkDir() string {
+	d := filepath.Join(s.root, WorkDirName)
 	if fi, err := os.Stat(d); err == nil && fi.IsDir() {
 		return d
 	}
@@ -206,7 +189,6 @@ func (c SharedAgentConfig) AsAgent() Agent {
 	}
 	return Agent{
 		Name:                 "",
-		ProjectID:            strings.TrimSpace(c.ProjectID),
 		AcpBackend:           c.AcpBackend,
 		GitCredentialType:    c.GitCredentialType,
 		AiCredentialID:       c.AiCredentialID,
@@ -236,7 +218,6 @@ func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 		Capabilities:         agent.Capabilities,
-		ProjectID:            strings.TrimSpace(agent.ProjectID),
 		AcpBackend:           pickNonEmpty(agent.AcpBackend, base.AcpBackend),
 		GitCredentialType:    pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
 		Files:                mergeFiles(base.Files, agent.Files),
@@ -263,18 +244,17 @@ func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime
 // ClearCredentialSelection forgets a shared generic-credential pointer that
 // still names credentialID. Clearing or revoking the credential must not leave
 // a stale id that injection would treat as an explicit choice.
-func (s *SharedAgentService) ClearCredentialSelection(projectID, credentialID string) {
+func (s *SharedAgentService) ClearCredentialSelection(credentialID string) {
 	if s == nil {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	pid := sanitizeProjectID(projectID)
 	credentialID = strings.TrimSpace(credentialID)
-	if pid == "" || credentialID == "" {
+	if credentialID == "" {
 		return
 	}
-	path := filepath.Join(s.root, pid, "agent.json")
+	path := filepath.Join(s.root, "agent.json")
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return
@@ -300,7 +280,7 @@ func (s *SharedAgentService) ClearCredentialSelection(projectID, credentialID st
 		return
 	}
 	if err := os.WriteFile(path, out, 0o644); err != nil {
-		log.Warn().Err(err).Str("project", pid).Str("credential", credentialID).Msg("clear shared credential selection")
+		log.Warn().Err(err).Str("credential", credentialID).Msg("clear shared credential selection")
 	}
 }
 
@@ -371,9 +351,9 @@ func mergeLayout(base, overlay AgentLayout) AgentLayout {
 	}
 }
 
-func (s *SharedAgentService) readConfig(pid string) sharedAgentDisk {
+func (s *SharedAgentService) readConfig() sharedAgentDisk {
 	var cfg sharedAgentDisk
-	b, err := os.ReadFile(filepath.Join(s.root, pid, "agent.json"))
+	b, err := os.ReadFile(filepath.Join(s.root, "agent.json"))
 	if err != nil {
 		return cfg
 	}
@@ -381,15 +361,6 @@ func (s *SharedAgentService) readConfig(pid string) sharedAgentDisk {
 	return cfg
 }
 
-func (s *SharedAgentService) readFiles(pid string) []AgentFile {
-	return readTreeIfDir(filepath.Join(s.root, pid, WorkDirName))
-}
-
-func sanitizeProjectID(id string) string {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return ""
-	}
-	// Reuse agent-name sanitizer: strips path separators / unsafe runes.
-	return sanitize(id)
+func (s *SharedAgentService) readFiles() []AgentFile {
+	return readTreeIfDir(filepath.Join(s.root, WorkDirName))
 }

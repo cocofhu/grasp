@@ -86,12 +86,12 @@ type Engine struct {
 	pendingReattach  []reattachInfo
 	adoptedSandboxes map[string]bool
 
-	// projectVarsLookup, when set, returns project-level workflow variables for
-	// a workflow so StartRun can seed them into vars.* before Graph.Variables
-	// and launch inputs overlay. Optional (nil = no project seed).
-	projectVarsLookup func(workflowID string) []models.ProjectVariable
+	// workspaceVarsLookup, when set, returns workspace-level workflow variables
+	// for a workflow so StartRun can seed them into vars.* before Graph.Variables
+	// and launch inputs overlay. Optional (nil = no workspace seed).
+	workspaceVarsLookup func(workflowID string) []models.WorkspaceVariable
 
-	// auditRecorder, when set, receives project-scoped lifecycle events
+	// auditRecorder, when set, receives lifecycle events
 	// (run terminal states, gate decisions). Fail-open is the recorder's job.
 	auditRecorder func(rec services.AuditRecord)
 
@@ -130,7 +130,7 @@ type Engine struct {
 	// never drive a page.
 	pageHub *pagebridge.Hub
 
-	// skills looks up Agents for same-project agent_profile runtime gate.
+	// skills looks up Agents for the agent_profile runtime gate.
 	skills SkillLookup
 
 	// blobs externalizes PromptImage bytes (optional in unit tests).
@@ -183,7 +183,7 @@ func (e *Engine) SetMaxConcurrent(n int) {
 }
 
 // SkillLookup is the narrow Agent catalog port used by the agent_profile
-// project gate. Composition root injects *services.AgentService.
+// gate. Composition root injects *services.AgentService.
 type SkillLookup interface {
 	Get(name string) (services.Agent, bool)
 }
@@ -194,16 +194,16 @@ type IssueResolver interface {
 	MarkResolvedByNode(runID, nodeID string) error
 }
 
-// SetAgents wires the Agent catalog used by the agent_profile project gate.
+// SetAgents wires the Agent catalog used by the agent_profile gate.
 func (e *Engine) SetAgents(skills SkillLookup) { e.skills = skills }
 
 // MaxConcurrent returns the current concurrency cap.
 func (e *Engine) MaxConcurrent() int { return e.sem.Limit() }
 
-// SetProjectVarsLookup wires the lookup used by StartRun to seed project-level
+// SetWorkspaceVarsLookup wires the lookup used by StartRun to seed workspace-level
 // workflow variables into the run's vars.* namespace.
-func (e *Engine) SetProjectVarsLookup(fn func(workflowID string) []models.ProjectVariable) {
-	e.projectVarsLookup = fn
+func (e *Engine) SetWorkspaceVarsLookup(fn func(workflowID string) []models.WorkspaceVariable) {
+	e.workspaceVarsLookup = fn
 }
 
 // ShareLinkRevoker invalidates unused temporary approval links.
@@ -218,7 +218,7 @@ func (e *Engine) SetShareRevoker(r ShareLinkRevoker) {
 	e.shareRevoker = r
 }
 
-// SetAuditRecorder wires project audit recording for run lifecycle / gate events.
+// SetAuditRecorder wires audit recording for run lifecycle / gate events.
 func (e *Engine) SetAuditRecorder(fn func(rec services.AuditRecord)) {
 	e.auditRecorder = fn
 }

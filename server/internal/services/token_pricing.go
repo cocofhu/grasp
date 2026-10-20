@@ -100,10 +100,10 @@ func SaveTokenPricing(db *gorm.DB, p TokenPricing) (TokenPricing, error) {
 }
 
 // TokenPricing returns the current price table.
-func (s *ProjectService) TokenPricing() TokenPricing { return LoadTokenPricing(s.db) }
+func (s *WorkspaceService) TokenPricing() TokenPricing { return LoadTokenPricing(s.db) }
 
 // SaveTokenPricing validates and persists the price table.
-func (s *ProjectService) SaveTokenPricing(p TokenPricing) (TokenPricing, error) {
+func (s *WorkspaceService) SaveTokenPricing(p TokenPricing) (TokenPricing, error) {
 	return SaveTokenPricing(s.db, p)
 }
 

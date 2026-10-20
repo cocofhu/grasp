@@ -31,11 +31,6 @@ func (s *PmService) threadAgentAvailability(thread models.ChatThread) threadAgen
 	if !s.skills.Exists(name) {
 		return threadAgentAvailability{errorText: "会话的 Agent 已删除或不可用"}
 	}
-	// The thread list needs identity metadata, not the Agent's workspace files.
-	config := s.skills.readConfig(name)
-	if !AgentProjectMatches(Agent{ProjectID: config.ProjectID}, thread.ProjectID) {
-		return threadAgentAvailability{errorText: "会话 Agent 不属于当前工作区"}
-	}
 	return threadAgentAvailability{available: true}
 }
 
@@ -48,10 +43,9 @@ func (s *PmService) ThreadView(thread models.ChatThread) PmChatThread {
 // availability across requests, so deletions and repairs are reflected promptly.
 func (s *PmService) ThreadViews(threads []models.ChatThread) []PmChatThread {
 	out := make([]PmChatThread, 0, len(threads))
-	type identity struct{ workspaceID, agentName string }
-	resolved := make(map[identity]threadAgentAvailability)
+	resolved := make(map[string]threadAgentAvailability)
 	for _, thread := range threads {
-		key := identity{thread.ProjectID, strings.TrimSpace(thread.AgentName)}
+		key := strings.TrimSpace(thread.AgentName)
 		availability, ok := resolved[key]
 		if !ok {
 			availability = s.threadAgentAvailability(thread)

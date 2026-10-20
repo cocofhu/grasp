@@ -77,14 +77,14 @@ func TestValidPmCitationShape(t *testing.T) {
 
 func TestFilterAndEnrichCitationsFailClosedAndSnippet(t *testing.T) {
 	db := setupPmDB(t)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CiteProj", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CiteProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wfSvc := NewWorkflowService(db)
 	wfID := "wf-abcd1234"
-	wf := &models.WorkflowDef{ID: wfID, ProjectID: p.ID, Name: "Clarify Flow", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: wfID, Name: "Clarify Flow", Graph: validGraph()}
 	if err := wfSvc.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func TestFilterAndEnrichCitationsFailClosedAndSnippet(t *testing.T) {
 	})
 
 	pm := NewPmService(db, nil)
-	thr, err := pm.CreateThread(p.ID, "u1", "t", "pm", "chat")
+	thr, err := pm.CreateThread("u1", "t", "pm", "chat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,13 +151,13 @@ func TestFilterAndEnrichCitationsFailClosedAndSnippet(t *testing.T) {
 
 func TestFilterAndEnrichCitationsUnavailableDepsDropAll(t *testing.T) {
 	db := setupPmDB(t)
-	ps := NewProjectService(db)
-	p, err := ps.CreateFixture("CiteFail", "", nil)
+	ps := NewWorkspaceService(db)
+	_, err := ps.CreateFixture("CiteFail", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	pm := NewPmService(db, nil)
-	thr, err := pm.CreateThread(p.ID, "u1", "t", "pm", "chat")
+	thr, err := pm.CreateThread("u1", "t", "pm", "chat")
 	if err != nil {
 		t.Fatal(err)
 	}

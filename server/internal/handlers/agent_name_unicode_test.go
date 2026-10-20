@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
 
@@ -15,9 +14,8 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 
 	// Create with screenshot sample Chinese name → 201.
 	w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
-		"name":      "Approve需求澄清视觉研发",
-		"projectId": models.DefaultProjectID,
-		"files":     []any{},
+		"name":  "Approve需求澄清视觉研发",
+		"files": []any{},
 	})
 	if w.Code != 201 {
 		t.Fatalf("create chinese: %d %s", w.Code, w.Body.String())

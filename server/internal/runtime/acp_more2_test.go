@@ -90,7 +90,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://mcp.local",
-		ProjectCredentialsForProject: func(string) map[string]string {
+		Credentials: func() map[string]string {
 			return map[string]string{"GITLAB_TOKEN": "tok"}
 		},
 	}).(*acpProvider)
@@ -108,7 +108,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	if !strings.Contains(s, `"type":"http"`) {
 		t.Fatalf("mcpServers HTTP entry missing type:http (codebuddy skips url-only): %s", s)
 	}
-	// gitToken resolves from project credentials.
+	// gitToken resolves from workspace credentials.
 	if tok := p.gitToken(req); tok != "tok" {
 		t.Errorf("gitToken = %q, want tok", tok)
 	}

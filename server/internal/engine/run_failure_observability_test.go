@@ -102,22 +102,14 @@ func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
 	}
 
 	// (c) ArtifactSummary + pm_list_runs
-	proj := models.Project{ID: "obs-fail", Name: "ObsFail"}
-	err = db.Create(&proj).Error
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Update("project_id", proj.ID).Error; err != nil {
-		t.Fatal(err)
-	}
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "agent-a"
-	if _, err := pm.UpdateBinding(proj.ID, &en, &agent, []string{pmmcp.MCPProgress, pmmcp.MCPWorkflowRead}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, []string{pmmcp.MCPProgress, pmmcp.MCPWorkflowRead}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	progress := services.NewPmProgress(pm, rs, arts)
-	summary := progress.ArtifactSummary(proj.ID, run.ID, 10)
+	summary := progress.ArtifactSummary(run.ID, 10)
 	sumErr, _ := summary["error"].(string)
 	if sumErr == "" {
 		t.Fatalf("ArtifactSummary missing error: %+v", summary)
@@ -129,7 +121,7 @@ func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
 
 	host := pmmcp.NewHost(pm, progress, services.NewWorkflowService(db), rs, arts, eng)
 	tok := platformmcp.NewToken()
-	host.Restore(proj.ID, "thr-obs", "tester", "agent-a", tok)
+	host.Restore("thr-obs", "tester", "agent-a", tok)
 	req, _ := json.Marshal(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{
@@ -137,7 +129,7 @@ func TestResearchEarlyFailureThreeChannelsNonEmpty(t *testing.T) {
 			"arguments": map[string]any{"workflowId": "wf", "limit": 5},
 		},
 	})
-	st, resp := host.ServeRPC(proj.ID, pmmcp.MCPWorkflowRead, tok, req)
+	st, resp := host.ServeRPC(pmmcp.MCPWorkflowRead, tok, req)
 	if st != 200 {
 		t.Fatalf("pm_list_runs status=%d body=%s", st, resp)
 	}

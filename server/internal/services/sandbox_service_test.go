@@ -67,7 +67,7 @@ func newSandboxService(t *testing.T, db *gorm.DB, ds *dockerState) *SandboxServi
 		TTL:          time.Minute,
 		RunTTL:       time.Minute,
 		Max:          2,
-		ProjectCredentials: func(string) map[string]string {
+		Credentials: func() map[string]string {
 			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key", "GRASP_OPENCODE_API_KEY": "sk-test"}
 		},
 	})
@@ -635,7 +635,7 @@ func TestSandboxOpenPaths(t *testing.T) {
 	ctx := context.Background()
 
 	// Unknown agent.
-	if _, err := s.Open(ctx, "ghost", nil, ""); err == nil {
+	if _, err := s.Open(ctx, "ghost", nil); err == nil {
 		t.Fatal("open unknown agent should error")
 	}
 
@@ -643,7 +643,7 @@ func TestSandboxOpenPaths(t *testing.T) {
 	reuse := &models.Sandbox{Name: "grasp-sb-reuse", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
 	db.Create(reuse)
 	ds.setStatus(reuse.Name, "running")
-	row, err := s.Open(ctx, "agentA", nil, "")
+	row, err := s.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open reuse: %v", err)
 	}
@@ -654,7 +654,7 @@ func TestSandboxOpenPaths(t *testing.T) {
 	// Cap reached: fill with repo-backed running sandboxes (not reusable) up to max.
 	db.Model(&models.Sandbox{}).Where("id = ?", reuse.ID).Update("repo_url", "http://repo")
 	db.Create(&models.Sandbox{Name: "grasp-sb-x2", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: "http://repo2"})
-	if _, err := s.Open(ctx, "agentA", nil, ""); err == nil {
+	if _, err := s.Open(ctx, "agentA", nil); err == nil {
 		t.Fatal("open at cap should error")
 	}
 }
@@ -878,7 +878,7 @@ func TestSandboxFindReusable(t *testing.T) {
 	live := &models.Sandbox{Name: "grasp-sb-reuse", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
 	db.Create(live)
 	ds.setStatus(live.Name, "running")
-	got, err := s.Open(ctx, "agentA", nil, "")
+	got, err := s.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open reuse: %v", err)
 	}
@@ -890,45 +890,15 @@ func TestSandboxFindReusable(t *testing.T) {
 	db.Where("1 = 1").Delete(&models.Sandbox{})
 	creating := &models.Sandbox{Name: "grasp-sb-creating", Purpose: "test", Profile: "agentA", Status: "creating", RepoURL: ""}
 	db.Create(creating)
-	if r := s.findReusable(ctx, "agentA", ""); r == nil || r.ID != creating.ID {
+	if r := s.findReusable(ctx, "agentA"); r == nil || r.ID != creating.ID {
 		t.Fatalf("expected creating fallback, got %+v", r)
 	}
 	// A running row whose container is actually gone is NOT reused.
 	db.Where("1 = 1").Delete(&models.Sandbox{})
 	stale := &models.Sandbox{Name: "grasp-sb-stale", Purpose: "test", Profile: "agentA", Status: "running", RepoURL: ""}
 	db.Create(stale) // no ds.setStatus -> docker reports not_found
-	if r := s.findReusable(ctx, "agentA", ""); r != nil {
+	if r := s.findReusable(ctx, "agentA"); r != nil {
 		t.Fatalf("stale running row should not be reused, got %+v", r)
-	}
-}
-
-func TestSandboxFindReusableProjectScope(t *testing.T) {
-	db := newTestDB(t)
-	ds := &dockerState{}
-	s := newSandboxService(t, db, ds)
-	ctx := context.Background()
-
-	liveA := &models.Sandbox{
-		Name: "grasp-sb-proj-a", Purpose: "test", Profile: "agentA",
-		Status: "running", RepoURL: "", ProjectID: "proj-a",
-	}
-	liveB := &models.Sandbox{
-		Name: "grasp-sb-proj-b", Purpose: "test", Profile: "agentA",
-		Status: "running", RepoURL: "", ProjectID: "proj-b",
-	}
-	db.Create(liveA)
-	db.Create(liveB)
-	ds.setStatus(liveA.Name, "running")
-	ds.setStatus(liveB.Name, "running")
-
-	if r := s.findReusable(ctx, "agentA", "proj-a"); r == nil || r.ID != liveA.ID {
-		t.Fatalf("expected proj-a sandbox, got %+v", r)
-	}
-	if r := s.findReusable(ctx, "agentA", "proj-b"); r == nil || r.ID != liveB.ID {
-		t.Fatalf("expected proj-b sandbox, got %+v", r)
-	}
-	if r := s.findReusable(ctx, "agentA", "proj-c"); r != nil {
-		t.Fatalf("unexpected reuse for unknown project: %+v", r)
 	}
 }
 
@@ -941,9 +911,9 @@ func TestBuildTestSandboxSpecsSchedulerInject(t *testing.T) {
 	registered := false
 	unregistered := false
 	s.SetTestSchedulerHooks(TestSchedulerHooks{
-		Register: func(projectID, profile, runID, token string) {
-			if projectID != "proj-x" || profile != "agentA" || runID != "run1" || token != "tok" {
-				t.Fatalf("register mismatch: %q %q %q %q", projectID, profile, runID, token)
+		Register: func(profile, runID, token string) {
+			if profile != "agentA" || runID != "run1" || token != "tok" {
+				t.Fatalf("register mismatch: %q %q %q", profile, runID, token)
 			}
 			registered = true
 		},
@@ -957,8 +927,8 @@ func TestBuildTestSandboxSpecsSchedulerInject(t *testing.T) {
 	agent := Agent{
 		MCP: []MCPServer{{Name: "task-scheduler", URL: "${GRASP_SCHEDULER_URL}"}},
 	}
-	vars := s.testMcpVars("run1", "tok", "proj-x", "agentA")
-	specs := s.buildTestSandboxSpecs("proj-x", "agentA", "run1", "tok", agent, vars)
+	vars := s.testMcpVars("run1", "tok", "agentA")
+	specs := s.buildTestSandboxSpecs("agentA", "run1", "tok", agent, vars)
 	if !registered {
 		t.Fatal("expected scheduler register hook")
 	}
@@ -968,13 +938,13 @@ func TestBuildTestSandboxSpecsSchedulerInject(t *testing.T) {
 	if vars["GRASP_SCHEDULER_URL"] == "" || vars["GRASP_SCHEDULER_TOKEN"] != "tok" {
 		t.Fatalf("vars = %+v", vars)
 	}
-	s.unregisterTestScheduler("proj-x", "tok")
+	s.unregisterTestScheduler("tok")
 	if !unregistered {
 		t.Fatal("expected scheduler unregister hook")
 	}
-	empty := s.buildTestSandboxSpecs("", "agentA", "run1", "tok", agent, s.testMcpVars("run1", "tok", "", "agentA"))
+	empty := s.buildTestSandboxSpecs("", "run1", "tok", agent, s.testMcpVars("run1", "tok", ""))
 	if len(empty) != 0 {
-		t.Fatalf("no project should not inject scheduler, got %+v", empty)
+		t.Fatalf("no profile should not inject scheduler, got %+v", empty)
 	}
 }
 
@@ -989,7 +959,7 @@ func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	ds.setStatus(live.Name, "running")
 
 	repos := []sandbox.RepoSpec{{Name: "web", URL: "https://h/web.git"}}
-	got, err := s.Open(ctx, "agentA", repos, "")
+	got, err := s.Open(ctx, "agentA", repos)
 	if err != nil {
 		t.Fatalf("open with repos: %v", err)
 	}
@@ -1001,7 +971,7 @@ func TestSandboxOpenReposSkipReuse(t *testing.T) {
 	}
 
 	// Empty repos list still reuses.
-	got2, err := s.Open(ctx, "agentA", nil, "")
+	got2, err := s.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open empty: %v", err)
 	}
@@ -1198,7 +1168,7 @@ func TestSandboxOpenLifecycle(t *testing.T) {
 	ctx := context.Background()
 
 	// Open creates a "creating" row and launches the background container.
-	row, err := s.Open(ctx, "agentA", nil, "")
+	row, err := s.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}
@@ -1258,7 +1228,7 @@ func TestSandboxOpenWithEffectiveKeepsNormalizedOpenCodeModel(t *testing.T) {
 		},
 	}
 	row, err := s.OpenWithEffective(
-		context.Background(), "agentA", "proj-1", nil, effective, t.TempDir(),
+		context.Background(), "agentA", nil, effective, t.TempDir(),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -1311,7 +1281,7 @@ func TestSandboxOpenCreateFailure(t *testing.T) {
 	s := newSandboxService(t, db, ds)
 	ctx := context.Background()
 
-	row, err := s.Open(ctx, "agentA", nil, "")
+	row, err := s.Open(ctx, "agentA", nil)
 	if err != nil {
 		t.Fatalf("open: %v", err)
 	}

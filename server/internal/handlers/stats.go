@@ -14,7 +14,7 @@ import (
 // Query: window=24h|7d|30d|90d|all (default all), from/to=YYYY-MM-DD (custom
 // range, overrides window), granularity=hour|day|week, timezone,
 // utcOffsetMinutes, source=all|workflow|pm|studio, status=ok|failed|cancelled,
-// phase=production|interactive|chat, projectId, modelKey, workflowId, nodeType, runId.
+// phase=production|interactive|chat, modelKey, workflowId, nodeType, runId.
 func parseGlobalTokenStatsQuery(c *gin.Context) (services.GlobalTokenStatsQuery, bool) {
 	return parseTokenStatsQuery(c, services.TokenStatsWindowAll)
 }
@@ -34,7 +34,6 @@ func parseTokenStatsQuery(c *gin.Context, defaultWindow string) (services.Global
 		Source:      c.DefaultQuery("source", services.GlobalTokenStatsSourceAll),
 		Status:      strings.TrimSpace(c.Query("status")),
 		Phase:       strings.TrimSpace(c.Query("phase")),
-		ProjectID:   strings.TrimSpace(c.Query("projectId")),
 		ModelKey:    strings.TrimSpace(c.Query("modelKey")),
 		WorkflowID:  strings.TrimSpace(c.Query("workflowId")),
 		NodeType:    strings.TrimSpace(c.Query("nodeType")),
@@ -70,15 +69,15 @@ func writeTokenStatsError(c *gin.Context, err error) {
 
 // GetGlobalTokenStats returns workspace-wide token analytics for /stats.
 func (h *Handlers) GetGlobalTokenStats(c *gin.Context) {
-	if h.Projects == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
+	if h.Workspace == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
 		return
 	}
 	q, ok := parseGlobalTokenStatsQuery(c)
 	if !ok {
 		return
 	}
-	result, err := h.Projects.GlobalTokenStats(c.Request.Context(), q)
+	result, err := h.Workspace.GlobalTokenStats(c.Request.Context(), q)
 	if err != nil {
 		writeTokenStatsError(c, err)
 		return
@@ -89,8 +88,8 @@ func (h *Handlers) GetGlobalTokenStats(c *gin.Context) {
 // ListTokenUsageEvents pages raw ledger rows (drill-down detail) under the
 // same filters as GetGlobalTokenStats. Extra query: page, pageSize, sort.
 func (h *Handlers) ListTokenUsageEvents(c *gin.Context) {
-	if h.Projects == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
+	if h.Workspace == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
 		return
 	}
 	q, ok := parseGlobalTokenStatsQuery(c)
@@ -99,7 +98,7 @@ func (h *Handlers) ListTokenUsageEvents(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	size, _ := strconv.Atoi(c.DefaultQuery("pageSize", "50"))
-	result, err := h.Projects.TokenUsageEvents(c.Request.Context(), services.TokenUsageEventsQuery{
+	result, err := h.Workspace.TokenUsageEvents(c.Request.Context(), services.TokenUsageEventsQuery{
 		GlobalTokenStatsQuery: q, Page: page, PageSize: size, Sort: c.Query("sort"),
 	})
 	if err != nil {
@@ -111,17 +110,17 @@ func (h *Handlers) ListTokenUsageEvents(c *gin.Context) {
 
 // GetTokenPricing returns the model price table used for cost estimation.
 func (h *Handlers) GetTokenPricing(c *gin.Context) {
-	if h.Projects == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
+	if h.Workspace == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
 		return
 	}
-	c.JSON(http.StatusOK, h.Projects.TokenPricing())
+	c.JSON(http.StatusOK, h.Workspace.TokenPricing())
 }
 
 // UpdateTokenPricing replaces the model price table (admin only).
 func (h *Handlers) UpdateTokenPricing(c *gin.Context) {
-	if h.Projects == nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "projects unavailable"})
+	if h.Workspace == nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "workspace unavailable"})
 		return
 	}
 	if !h.requireAdmin(c) {
@@ -132,7 +131,7 @@ func (h *Handlers) UpdateTokenPricing(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid body"})
 		return
 	}
-	out, err := h.Projects.SaveTokenPricing(body)
+	out, err := h.Workspace.SaveTokenPricing(body)
 	if err != nil {
 		if errors.Is(err, services.ErrInvalidTokenPricing) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})

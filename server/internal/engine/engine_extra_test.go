@@ -24,7 +24,7 @@ func setupEngineGraphP(t *testing.T, g models.Graph) (*Engine, *gorm.DB, *fakePr
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "wf", Name: "wf", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatalf("create workflow: %v", err)
 	}

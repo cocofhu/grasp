@@ -39,7 +39,7 @@ func TestReviewReplySyncsOutputsAndBodyMd(t *testing.T) {
 			{ID: "e2", Source: "page", Target: "output"},
 		},
 	}
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "vr-sync", Name: "vr-sync", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "vr-sync", Name: "vr-sync", Version: 1, PublishedVersion: 1, Graph: g}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -357,7 +357,7 @@ func TestReviewReplyFailureDoesNotSyncOutputs(t *testing.T) {
 			{ID: "e2", Source: "page", Target: "output"},
 		},
 	}
-	wf := models.WorkflowDef{ProjectID: models.DefaultProjectID, ID: "vr-fail", Name: "vr-fail", Version: 1, PublishedVersion: 1, Graph: g}
+	wf := models.WorkflowDef{ID: "vr-fail", Name: "vr-fail", Version: 1, PublishedVersion: 1, Graph: g}
 	db.Create(&wf)
 	db.Create(&models.WorkflowVersion{WorkflowID: wf.ID, Version: 1, Graph: g})
 	arts := services.NewArtifactService(db)

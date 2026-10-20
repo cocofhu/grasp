@@ -435,7 +435,7 @@ func (th *pmThread) execute(ctx context.Context, q *PmTurnRequest) (bool, error)
 
 	citations := r.filterAndEnrichCitations(th.id, extractPmCitations(text))
 	// Persist Usage only on successful finalize. Append failure must not silently
-	// count toward project totals (usage stays off the message).
+	// count toward workspace totals (usage stays off the message).
 	if _, aerr := r.pm.AppendMessageSource(th.id, "assistant", text, "", citations, nil, nil, usage, usageByModel); aerr != nil {
 		log.Warn().Err(aerr).Str("thread", th.id).Msg("pm turn finalize append failed")
 		r.recordUsage(th.id, sandboxID, usage, usageByModel, models.TokenLedgerStatusFailed)

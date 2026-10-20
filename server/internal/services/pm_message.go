@@ -229,7 +229,7 @@ func (s *PmService) GetMessagesPage(threadID string, limit, offset int) ([]model
 }
 
 // SearchMessages finds messages visible to a context-store session by keyword.
-func (s *PmService) SearchMessages(projectID, agentName, userID, q string, limit int) ([]map[string]any, error) {
+func (s *PmService) SearchMessages(agentName, userID, q string, limit int) ([]map[string]any, error) {
 	q = strings.TrimSpace(q)
 	if q == "" {
 		return nil, fmt.Errorf("query required")
@@ -237,7 +237,7 @@ func (s *PmService) SearchMessages(projectID, agentName, userID, q string, limit
 	if limit <= 0 {
 		limit = 20
 	}
-	threads, err := s.ListConversationsForAgent(projectID, agentName, userID)
+	threads, err := s.ListConversationsForAgent(agentName, userID)
 	if err != nil {
 		return nil, err
 	}

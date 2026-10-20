@@ -20,8 +20,6 @@ type prdManagerFixture struct {
 	pm     *services.PmService
 	drafts *services.RequirementDraftService
 	h      *Host
-	proj   models.Project
-	other  models.Project
 	token  string
 	audits []services.AuditRecord
 }
@@ -35,37 +33,29 @@ func setupPrdManagerHost(t *testing.T, enabled []string) *prdManagerFixture {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	proj, err := legacyProjectFixture(db, "PrdProj")
-	if err != nil {
-		t.Fatal(err)
-	}
-	other, err := legacyProjectFixture(db, "OtherPrd")
-	if err != nil {
+	if _, err := workspaceFixture(db); err != nil {
 		t.Fatal(err)
 	}
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "leader"
-	if _, err := pm.UpdateBinding(proj.ID, &en, &agent, enabled, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := pm.UpdateBinding(other.ID, &en, &agent, []string{MCPPrdManager}, nil, nil); err != nil {
+	if _, err := pm.UpdateBinding(&en, &agent, enabled, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	drafts := services.NewRequirementDraftService(db)
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	h.SetRequirementDrafts(drafts)
-	fx := &prdManagerFixture{db: db, pm: pm, drafts: drafts, h: h, proj: proj, other: other}
+	fx := &prdManagerFixture{db: db, pm: pm, drafts: drafts, h: h}
 	h.SetAuditRecorder(func(rec services.AuditRecord) {
 		fx.audits = append(fx.audits, rec)
 	})
 	tok := platformmcp.NewToken()
-	h.Restore(proj.ID, "thr-prd", "alice", "leader", tok)
+	h.Restore("thr-prd", "alice", "leader", tok)
 	fx.token = tok
 	return fx
 }
 
-func callPrdTool(t *testing.T, h *Host, projectID, token, tool string, args map[string]any) (status int, result map[string]any, isError bool, raw string) {
+func callPrdTool(t *testing.T, h *Host, token, tool string, args map[string]any) (status int, result map[string]any, isError bool, raw string) {
 	t.Helper()
 	if args == nil {
 		args = map[string]any{}
@@ -74,7 +64,7 @@ func callPrdTool(t *testing.T, h *Host, projectID, token, tool string, args map[
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": tool, "arguments": args},
 	})
-	st, resp := h.ServeRPC(projectID, MCPPrdManager, token, body)
+	st, resp := h.ServeRPC(MCPPrdManager, token, body)
 	raw = string(resp)
 	var rpc struct {
 		Result struct {
@@ -102,7 +92,7 @@ func callPrdTool(t *testing.T, h *Host, projectID, token, tool string, args map[
 func TestPrdManagerToolsList(t *testing.T) {
 	fx := setupPrdManagerHost(t, []string{MCPPrdManager})
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	st, resp := fx.h.ServeRPC(fx.proj.ID, MCPPrdManager, fx.token, body)
+	st, resp := fx.h.ServeRPC(MCPPrdManager, fx.token, body)
 	if st != 200 {
 		t.Fatalf("status=%d body=%s", st, resp)
 	}
@@ -137,47 +127,40 @@ func TestPrdManagerToolsList(t *testing.T) {
 
 func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 	fx := setupPrdManagerHost(t, []string{MCPPrdManager})
-	openA, err := fx.drafts.Create(fx.proj.ID, services.RequirementDraftCreateInput{})
+	openA, err := fx.drafts.Create(services.RequirementDraftCreateInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.drafts.UpdateContent(fx.proj.ID, openA.ID, "Alpha open", "BODY-ALPHA"); err != nil {
+	if _, err := fx.drafts.UpdateContent(openA.ID, "Alpha open", "BODY-ALPHA"); err != nil {
 		t.Fatal(err)
 	}
-	openB, err := fx.drafts.Create(fx.proj.ID, services.RequirementDraftCreateInput{})
+	openB, err := fx.drafts.Create(services.RequirementDraftCreateInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.drafts.UpdateContent(fx.proj.ID, openB.ID, "Beta open", "BODY-BETA"); err != nil {
+	if _, err := fx.drafts.UpdateContent(openB.ID, "Beta open", "BODY-BETA"); err != nil {
 		t.Fatal(err)
 	}
-	done, err := fx.drafts.Create(fx.proj.ID, services.RequirementDraftCreateInput{})
+	done, err := fx.drafts.Create(services.RequirementDraftCreateInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.drafts.UpdateContent(fx.proj.ID, done.ID, "Alpha done", "BODY-DONE"); err != nil {
+	if _, err := fx.drafts.UpdateContent(done.ID, "Alpha done", "BODY-DONE"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.drafts.UpdateStatus(fx.proj.ID, done.ID, models.RequirementDraftStatusDone); err != nil {
-		t.Fatal(err)
-	}
-	otherDraft, err := fx.drafts.Create(fx.other.ID, services.RequirementDraftCreateInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fx.drafts.UpdateContent(fx.other.ID, otherDraft.ID, "Other secret", "LEAK"); err != nil {
+	if _, err := fx.drafts.UpdateStatus(done.ID, models.RequirementDraftStatusDone); err != nil {
 		t.Fatal(err)
 	}
 
-	st, result, isErr, raw := callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{})
+	st, result, isErr, raw := callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{})
 	if st != 200 || isErr {
 		t.Fatalf("list all: status=%d isErr=%v raw=%s", st, isErr, raw)
 	}
 	items := mustItems(t, result)
 	if len(items) != 3 {
-		t.Fatalf("want 3 current-project drafts, got %d raw=%s", len(items), raw)
+		t.Fatalf("want 3 drafts, got %d raw=%s", len(items), raw)
 	}
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "all"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "all"})
 	if st != 200 || isErr {
 		t.Fatalf("list status=all: status=%d isErr=%v raw=%s", st, isErr, raw)
 	}
@@ -191,12 +174,9 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 		if _, ok := item["createdAt"]; !ok {
 			t.Fatalf("list must include createdAt: %#v", item)
 		}
-		if item["id"] == otherDraft.ID {
-			t.Fatalf("list leaked other project draft: %#v", item)
-		}
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "open"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "open"})
 	if st != 200 || isErr {
 		t.Fatalf("list open: %s", raw)
 	}
@@ -204,7 +184,7 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 		t.Fatalf("open want 2 got %d raw=%s", n, raw)
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "done"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "done"})
 	if st != 200 || isErr {
 		t.Fatalf("list done: %s", raw)
 	}
@@ -213,7 +193,7 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 		t.Fatalf("done items=%#v", doneItems)
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"query": "Alpha"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"query": "Alpha"})
 	if st != 200 || isErr {
 		t.Fatalf("list query: %s", raw)
 	}
@@ -221,7 +201,7 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 		t.Fatalf("query Alpha want 2 got %d raw=%s", n, raw)
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "closed"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"status": "closed"})
 	if st != 200 || !isErr {
 		t.Fatalf("illegal status should be isError: status=%d isErr=%v raw=%s", st, isErr, raw)
 	}
@@ -229,7 +209,7 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 		t.Fatalf("illegal status error=%s", raw)
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_list_requirement_drafts", map[string]any{"query": "no-such-title"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_list_requirement_drafts", map[string]any{"query": "no-such-title"})
 	if st != 200 || isErr {
 		t.Fatalf("empty filter must not be error: %s", raw)
 	}
@@ -238,26 +218,18 @@ func TestPrdManagerListFiltersAndProjection(t *testing.T) {
 	}
 }
 
-func TestPrdManagerGetAndIsolation(t *testing.T) {
+func TestPrdManagerGet(t *testing.T) {
 	fx := setupPrdManagerHost(t, []string{MCPPrdManager})
-	row, err := fx.drafts.Create(fx.proj.ID, services.RequirementDraftCreateInput{})
+	row, err := fx.drafts.Create(services.RequirementDraftCreateInput{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := fx.drafts.UpdateContent(fx.proj.ID, row.ID, "Mine", "FULL-BODY"); err != nil {
-		t.Fatal(err)
-	}
-	foreign, err := fx.drafts.Create(fx.other.ID, services.RequirementDraftCreateInput{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := fx.drafts.UpdateContent(fx.other.ID, foreign.ID, "Foreign", "SECRET-BODY"); err != nil {
+	if _, err := fx.drafts.UpdateContent(row.ID, "Mine", "FULL-BODY"); err != nil {
 		t.Fatal(err)
 	}
 
-	st, result, isErr, raw := callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_get_requirement_draft", map[string]any{
-		"draftId":   row.ID,
-		"projectId": fx.other.ID,
+	st, result, isErr, raw := callPrdTool(t, fx.h, fx.token, "pm_get_requirement_draft", map[string]any{
+		"draftId": row.ID,
 	})
 	if st != 200 || isErr {
 		t.Fatalf("get own: %s", raw)
@@ -267,7 +239,7 @@ func TestPrdManagerGetAndIsolation(t *testing.T) {
 	}
 
 	before := len(fx.audits)
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_get_requirement_draft", map[string]any{"draftId": "rd-missing"})
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_get_requirement_draft", map[string]any{"draftId": "rd-missing"})
 	if st != 200 || !isErr {
 		t.Fatalf("missing should be isError: %s", raw)
 	}
@@ -275,24 +247,13 @@ func TestPrdManagerGetAndIsolation(t *testing.T) {
 		t.Fatalf("missing err=%s", raw)
 	}
 	assertMCPCall(t, fx.audits[before:], "pm_get_requirement_draft", true)
-
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_get_requirement_draft", map[string]any{"draftId": foreign.ID})
-	if st != 200 || !isErr {
-		t.Fatalf("cross-project should be isError: %s", raw)
-	}
-	if strings.Contains(raw, "SECRET-BODY") || strings.Contains(raw, "Foreign") {
-		t.Fatalf("must not leak other project draft: %s", raw)
-	}
-	if !strings.Contains(raw, "requirement draft not found") {
-		t.Fatalf("cross-project err=%s", raw)
-	}
 }
 
 func TestPrdManagerCreateAndRollback(t *testing.T) {
 	fx := setupPrdManagerHost(t, []string{MCPPrdManager})
 
 	before := len(fx.audits)
-	st, result, isErr, raw := callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_create_requirement_draft", map[string]any{})
+	st, result, isErr, raw := callPrdTool(t, fx.h, fx.token, "pm_create_requirement_draft", map[string]any{})
 	if st != 200 || isErr {
 		t.Fatalf("create empty: %s", raw)
 	}
@@ -305,7 +266,7 @@ func TestPrdManagerCreateAndRollback(t *testing.T) {
 	emptyID, _ := result["id"].(string)
 	assertMCPCall(t, fx.audits[before:], "pm_create_requirement_draft", false)
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_create_requirement_draft", map[string]any{
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_create_requirement_draft", map[string]any{
 		"title":        "New PRD",
 		"bodyMarkdown": "# hello",
 	})
@@ -313,12 +274,12 @@ func TestPrdManagerCreateAndRollback(t *testing.T) {
 		t.Fatalf("create with content: %s", raw)
 	}
 	createdID, _ := result["id"].(string)
-	st, got, isErr, raw := callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_get_requirement_draft", map[string]any{"draftId": createdID})
+	st, got, isErr, raw := callPrdTool(t, fx.h, fx.token, "pm_get_requirement_draft", map[string]any{"draftId": createdID})
 	if st != 200 || isErr || got["title"] != "New PRD" || got["bodyMarkdown"] != "# hello" {
 		t.Fatalf("roundtrip get=%#v raw=%s", got, raw)
 	}
 
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_create_requirement_draft", map[string]any{
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_create_requirement_draft", map[string]any{
 		"bodyMarkdown": "only-body",
 	})
 	if st != 200 || isErr {
@@ -333,7 +294,7 @@ func TestPrdManagerCreateAndRollback(t *testing.T) {
 	if utf8.RuneCountInString(tooLong) <= services.MaxRequirementDraftTitleRunes {
 		t.Fatal("fixture title not over limit")
 	}
-	st, result, isErr, raw = callPrdTool(t, fx.h, fx.proj.ID, fx.token, "pm_create_requirement_draft", map[string]any{
+	st, result, isErr, raw = callPrdTool(t, fx.h, fx.token, "pm_create_requirement_draft", map[string]any{
 		"title": tooLong,
 	})
 	if st != 200 || !isErr {
@@ -341,7 +302,7 @@ func TestPrdManagerCreateAndRollback(t *testing.T) {
 	}
 	assertMCPCall(t, fx.audits[before:], "pm_create_requirement_draft", true)
 
-	listed, err := fx.drafts.List(fx.proj.ID, services.RequirementDraftListFilter{})
+	listed, err := fx.drafts.List(services.RequirementDraftListFilter{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -362,12 +323,12 @@ func TestPrdManagerCreateAndRollback(t *testing.T) {
 func TestPrdManagerDisabledAndUnavailable(t *testing.T) {
 	fx := setupPrdManagerHost(t, []string{MCPProgress})
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	st, resp := fx.h.ServeRPC(fx.proj.ID, MCPPrdManager, fx.token, body)
+	st, resp := fx.h.ServeRPC(MCPPrdManager, fx.token, body)
 	if st != 404 || !strings.Contains(string(resp), "mcp disabled") {
 		t.Fatalf("disabled: %d %s", st, resp)
 	}
 	before := len(fx.audits)
-	st, resp = fx.h.ServeRPC(fx.proj.ID, MCPPrdManager, fx.token, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pm_list_requirement_drafts","arguments":{}}}`))
+	st, resp = fx.h.ServeRPC(MCPPrdManager, fx.token, []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"pm_list_requirement_drafts","arguments":{}}}`))
 	if st != 404 || !strings.Contains(string(resp), "mcp disabled") {
 		t.Fatalf("disabled call: %d %s", st, resp)
 	}
@@ -377,7 +338,7 @@ func TestPrdManagerDisabledAndUnavailable(t *testing.T) {
 
 	fx2 := setupPrdManagerHost(t, []string{MCPPrdManager})
 	fx2.h.SetRequirementDrafts(nil)
-	st, result, isErr, raw := callPrdTool(t, fx2.h, fx2.proj.ID, fx2.token, "pm_list_requirement_drafts", nil)
+	st, result, isErr, raw := callPrdTool(t, fx2.h, fx2.token, "pm_list_requirement_drafts", nil)
 	if st != 200 || !isErr || !strings.Contains(raw, "requirement draft service unavailable") {
 		t.Fatalf("unavailable: status=%d isErr=%v result=%#v raw=%s", st, isErr, result, raw)
 	}

@@ -209,9 +209,9 @@ func TestPeekMcpCallsAndHostHooks(t *testing.T) {
 
 	called := false
 	h.SetAfterWriteArtifact(func(runID, nodeID, name, content, kind string) { called = true })
-	h.SetProjectAuditHook(func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool) {})
+	h.SetAuditHook(func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool) {})
 	h.SetArtifactPreviewHook(func(runID, nodeID, name string) error { return nil })
-	if h.afterWrite == nil || h.projectAudit == nil || h.artifactPreview == nil {
+	if h.afterWrite == nil || h.auditHook == nil || h.artifactPreview == nil {
 		t.Fatal("host hooks should be wired")
 	}
 	_ = called

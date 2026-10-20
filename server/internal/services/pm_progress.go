@@ -9,7 +9,7 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// PmProgress aggregates project-scoped progress facts for the PM MCP.
+// PmProgress aggregates progress facts for the PM MCP.
 type PmProgress struct {
 	pm   *PmService
 	runs *RunService
@@ -21,12 +21,12 @@ func NewPmProgress(pm *PmService, runs *RunService, arts *ArtifactService) *PmPr
 	return &PmProgress{pm: pm, runs: runs, arts: arts}
 }
 
-// OverallProgress summarizes runs across all workflows in the project.
-func (p *PmProgress) OverallProgress(projectID string) map[string]any {
+// OverallProgress summarizes runs across all workflows.
+func (p *PmProgress) OverallProgress() map[string]any {
 	if p.runs == nil {
 		return map[string]any{"empty": true, "message": "进度服务不可用"}
 	}
-	runs := p.runs.List(nil, "", projectID)
+	runs := p.runs.List(nil, "")
 	if len(runs) == 0 {
 		return map[string]any{
 			"empty":   true,
@@ -58,13 +58,13 @@ func (p *PmProgress) OverallProgress(projectID string) map[string]any {
 	return out
 }
 
-// ListBlockers returns waiting_human runs and pending gates for the project.
-func (p *PmProgress) ListBlockers(projectID string) map[string]any {
+// ListBlockers returns waiting_human runs and pending gates.
+func (p *PmProgress) ListBlockers() map[string]any {
 	if p.runs == nil {
 		return map[string]any{"empty": true, "blockers": []any{}, "message": "进度服务不可用"}
 	}
-	runs := p.runs.List([]string{"waiting_human"}, "", projectID)
-	gates, _ := p.runs.PendingInboxItems("", projectID, nil, 0, 100)
+	runs := p.runs.List([]string{"waiting_human"}, "")
+	gates, _ := p.runs.PendingInboxItems("", nil, 0, 100)
 	blockers := make([]map[string]any, 0)
 	now := time.Now()
 	for _, r := range runs {
@@ -112,12 +112,12 @@ func (p *PmProgress) ListBlockers(projectID string) map[string]any {
 }
 
 // PlanSummary reads plan.json artifact content for a run when present.
-func (p *PmProgress) PlanSummary(projectID, runID string) map[string]any {
+func (p *PmProgress) PlanSummary(runID string) map[string]any {
 	if runID == "" {
 		return map[string]any{"empty": true, "message": "请提供 runId"}
 	}
-	if !p.runBelongs(projectID, runID) {
-		return map[string]any{"empty": true, "message": "Run 不存在或不属于该项目"}
+	if !p.runExists(runID) {
+		return map[string]any{"empty": true, "message": "Run 不存在"}
 	}
 	if p.arts == nil {
 		return map[string]any{"empty": true, "message": "产物服务不可用"}
@@ -140,8 +140,8 @@ func (p *PmProgress) PlanSummary(projectID, runID string) map[string]any {
 	}
 }
 
-// ArtifactSummary lists recent artifacts for a run or project.
-func (p *PmProgress) ArtifactSummary(projectID, runID string, limit int) map[string]any {
+// ArtifactSummary lists recent artifacts for a run or the workspace.
+func (p *PmProgress) ArtifactSummary(runID string, limit int) map[string]any {
 	if limit <= 0 {
 		limit = 20
 	}
@@ -150,12 +150,12 @@ func (p *PmProgress) ArtifactSummary(projectID, runID string, limit int) map[str
 	}
 	var items []models.Artifact
 	if runID != "" {
-		if !p.runBelongs(projectID, runID) {
-			return map[string]any{"empty": true, "message": "Run 不存在或不属于该项目"}
+		if !p.runExists(runID) {
+			return map[string]any{"empty": true, "message": "Run 不存在"}
 		}
 		items = p.arts.ByRun(runID)
 	} else {
-		items, _ = p.arts.AllPage(ArtifactFilter{ProjectID: projectID}, 1, limit)
+		items, _ = p.arts.AllPage(ArtifactFilter{}, 1, limit)
 	}
 	if len(items) == 0 {
 		out := map[string]any{"empty": true, "message": "暂无产物"}
@@ -204,11 +204,11 @@ func (p *PmProgress) attachRunFailure(out map[string]any, runID string) {
 }
 
 // RiskTrends scans recent runs for failures, repeated waiting, stagnation.
-func (p *PmProgress) RiskTrends(projectID string) map[string]any {
+func (p *PmProgress) RiskTrends() map[string]any {
 	if p.runs == nil {
 		return map[string]any{"empty": true, "message": "进度服务不可用"}
 	}
-	runs := p.runs.List(nil, "", projectID)
+	runs := p.runs.List(nil, "")
 	if len(runs) == 0 {
 		return map[string]any{"empty": true, "message": "历史数据不足，无法评估风险趋势"}
 	}
@@ -241,7 +241,7 @@ func (p *PmProgress) RiskTrends(projectID string) map[string]any {
 }
 
 // CompareRuns contrasts the latest N runs of the same workflow.
-func (p *PmProgress) CompareRuns(projectID, workflowID string, limit int) map[string]any {
+func (p *PmProgress) CompareRuns(workflowID string, limit int) map[string]any {
 	if limit <= 0 {
 		limit = 5
 	}
@@ -251,7 +251,7 @@ func (p *PmProgress) CompareRuns(projectID, workflowID string, limit int) map[st
 	if workflowID == "" {
 		return map[string]any{"empty": true, "message": "请提供 workflowId"}
 	}
-	runs := p.runs.List(nil, workflowID, projectID)
+	runs := p.runs.List(nil, workflowID)
 	if len(runs) == 0 {
 		return map[string]any{"empty": true, "message": "该工作流暂无运行记录，无法对比"}
 	}
@@ -284,22 +284,12 @@ func (p *PmProgress) CompareRuns(projectID, workflowID string, limit int) map[st
 	}
 }
 
-func (p *PmProgress) runBelongs(projectID, runID string) bool {
+func (p *PmProgress) runExists(runID string) bool {
 	if p.runs == nil || runID == "" {
 		return false
 	}
-	r, ok := p.runs.Get(runID)
-	if !ok {
-		return false
-	}
-	// Scope via listing: ensure the run appears under project filter.
-	scoped := p.runs.List(nil, r.WorkflowID, projectID)
-	for _, x := range scoped {
-		if x.ID == runID {
-			return true
-		}
-	}
-	return false
+	_, ok := p.runs.Get(runID)
+	return ok
 }
 
 func distinctWorkflows(runs []models.Run) []map[string]any {

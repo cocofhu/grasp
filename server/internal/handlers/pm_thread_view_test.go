@@ -23,7 +23,7 @@ func assertPmThreadAvailability(t *testing.T, thread map[string]any, agent strin
 }
 
 func TestPmThreadResponsesExposeOriginalAgentAvailability(t *testing.T) {
-	h, workspaceID, _ := setupPmEnabledHarness(t)
+	h := setupPmEnabledHarness(t)
 	created := h.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "Original Agent conversation"})
 	if created.Code != http.StatusOK {
 		t.Fatal(created.Body.String())
@@ -35,7 +35,7 @@ func TestPmThreadResponsesExposeOriginalAgentAvailability(t *testing.T) {
 	assertPmThreadAvailability(t, thread, "pm-agent", true)
 	threadID := thread["id"].(string)
 	base := "/api/workspace/pm/threads/" + threadID
-	if err := h.h.Agents.Save(services.Agent{Name: "new-default", ProjectID: workspaceID, AcpBackend: services.AcpBackendCursor}); err != nil {
+	if err := h.h.Agents.Save(services.Agent{Name: "new-default", AcpBackend: services.AcpBackendCursor}); err != nil {
 		t.Fatal(err)
 	}
 	if response := h.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{"agentConfigRef": "new-default"}); response.Code != http.StatusOK {
@@ -101,8 +101,8 @@ func TestPmThreadResponsesExposeOriginalAgentAvailability(t *testing.T) {
 }
 
 func TestPmThreadResponsesRetainHistoryWhenOriginalAgentIsUnavailable(t *testing.T) {
-	h, workspaceID, _ := setupPmEnabledHarness(t)
-	thread, err := h.h.Pm.CreateThread(workspaceID, "admin", "Retained history", "missing-original", models.ChatThreadKindUser)
+	h := setupPmEnabledHarness(t)
+	thread, err := h.h.Pm.CreateThread("admin", "Retained history", "missing-original", models.ChatThreadKindUser)
 	if err != nil {
 		t.Fatal(err)
 	}

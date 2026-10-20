@@ -72,7 +72,7 @@ func ValidateImport(raw []byte) (models.ExportEnvelope, error) {
 		return models.ExportEnvelope{}, err
 	}
 	if env.Defaults != nil {
-		vars, err := mergeProjectVars(nil, env.Defaults.Variables)
+		vars, err := mergeWorkspaceVars(nil, env.Defaults.Variables)
 		if err != nil {
 			return models.ExportEnvelope{}, err
 		}
@@ -82,23 +82,15 @@ func ValidateImport(raw []byte) (models.ExportEnvelope, error) {
 }
 
 // Import creates a new draft workflow from a validated import envelope.
-// Import creates a draft workflow from an export envelope into projectID.
-// When projectID is empty, the platform default project is used.
-func (s *WorkflowService) Import(raw []byte, projectID string) (models.WorkflowDef, error) {
+func (s *WorkflowService) Import(raw []byte) (models.WorkflowDef, error) {
 	env, err := ValidateImport(raw)
 	if err != nil {
 		return models.WorkflowDef{}, err
 	}
-	if strings.TrimSpace(projectID) == "" {
-		projectID = NewProjectService(s.db).DefaultProjectID()
-	}
-	if projectID == "" || !s.projectExists(projectID) {
-		return models.WorkflowDef{}, ErrWorkflowProjectNotFound
-	}
 	var newWF models.WorkflowDef
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		svc := &WorkflowService{db: tx}
-		name := SuggestCopyName(env.Name, svc.listNamesInProject(projectID))
+		name := SuggestCopyName(env.Name, svc.listNames())
 		graph, err := deepCopyGraph(env.Graph)
 		if err != nil {
 			return err
@@ -106,7 +98,6 @@ func (s *WorkflowService) Import(raw []byte, projectID string) (models.WorkflowD
 		now := time.Now()
 		newWF = models.WorkflowDef{
 			ID:          "wf-" + uuid.NewString()[:8],
-			ProjectID:   projectID,
 			Name:        name,
 			Description: env.Description,
 			NeedsRepo:   env.NeedsRepo,

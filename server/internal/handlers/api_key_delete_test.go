@@ -3,8 +3,6 @@ package handlers_test
 import (
 	"net/http"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/models"
 )
 
 func TestCreateAPIKeyBranches(t *testing.T) {
@@ -32,7 +30,7 @@ func TestCreateAPIKeyBranches(t *testing.T) {
 func TestDeleteWorkflowAndAgentOK(t *testing.T) {
 	hn := newHarness(t)
 	w := hn.do("POST", "/api/workflows", map[string]any{
-		"name": "to-del", "projectId": models.DefaultProjectID,
+		"name":  "to-del",
 		"nodes": []any{}, "edges": []any{},
 	})
 	if w.Code != http.StatusOK {

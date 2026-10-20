@@ -185,11 +185,11 @@ func main() {
 		log.Fatal().Err(err).Msg("blob store init failed")
 	}
 
-	projectSvc := services.NewProjectService(db)
-	auditSvc := services.NewProjectAuditService(db)
-	externalMcpSvc := services.NewProjectExternalMcpService(db, cfg.Server.MCPAdvertise)
-	projectMcpKeySvc := services.NewProjectMcpApiKeyService(db)
-	projectCredentialSvc := services.NewProjectCredentialService(db)
+	workspaceSvc := services.NewWorkspaceService(db)
+	auditSvc := services.NewAuditService(db)
+	externalMcpSvc := services.NewExternalMcpService(db)
+	mcpKeySvc := services.NewWorkspaceMcpApiKeyService(db)
+	credentialSvc := services.NewCredentialService(db)
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
 	// One snapshot of OpenCode's provider catalog, shared by the pickers and by
 	// every path that generates opencode.json, so both agree on which vendor ids
@@ -211,15 +211,8 @@ func main() {
 		Runtime:              runtimeBundle,
 		Blobs:                blobStore,
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
-		ProjectIDForWorkflow: func(workflowID string) string {
-			var wf models.WorkflowDef
-			if err := db.Select("project_id").First(&wf, "id = ?", workflowID).Error; err != nil {
-				return ""
-			}
-			return wf.ProjectID
-		},
-		SharedAgentForProject: func(projectID string) runtime.SharedAgentView {
-			cfg := sharedAgentSvc.Get(projectID)
+		SharedAgent: func() runtime.SharedAgentView {
+			cfg := sharedAgentSvc.Get()
 			mcp := make([]runtime.SharedMCPView, 0, len(cfg.MCP))
 			for _, m := range cfg.MCP {
 				mcp = append(mcp, runtime.SharedMCPView{
@@ -236,14 +229,14 @@ func main() {
 				Layout: runtime.SharedLayoutView{
 					ConfigRoot: cfg.Layout.ConfigRoot, WorkspaceDir: cfg.Layout.WorkspaceDir,
 				},
-				WorkDir: sharedAgentSvc.WorkDir(projectID),
+				WorkDir: sharedAgentSvc.WorkDir(),
 			}
 		},
-		ProjectCredentialsForProject:    projectCredentialSvc.ResolveEnv,
-		ProjectCredentialKeysForProject: projectCredentialSvc.CredentialEnvKeys,
-		ProjectCredentialReferences:     projectCredentialSvc.ResolveReferences,
-		OpenCodeCredentialForProject:    projectCredentialSvc.ResolveOpenCodeCredential,
-		SelectedCredentialForProject:    projectCredentialSvc.ResolveSelectedValue,
+		Credentials:          credentialSvc.ResolveEnv,
+		CredentialKeys:       credentialSvc.CredentialEnvKeys,
+		CredentialReferences: credentialSvc.ResolveReferences,
+		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
+		SelectedCredential:   credentialSvc.ResolveSelectedValue,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -253,13 +246,13 @@ func main() {
 		},
 		PublicAdvertise:         cfg.Server.PublicAdvertise,
 		OpenCodeCatalog:         openCodeCatalog,
-		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginCredential,
-		InjectedCredentialID:    projectCredentialSvc.InjectedCredentialID,
+		WriteBackCodexLoginFile: credentialSvc.WriteBackCodexLoginCredential,
+		InjectedCredentialID:    credentialSvc.InjectedCredentialID,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
-	eng.SetProjectVarsLookup(func(workflowID string) []models.ProjectVariable {
-		return projectSvc.VariablesForWorkflow(workflowID)
+	eng.SetWorkspaceVarsLookup(func(workflowID string) []models.WorkspaceVariable {
+		return workspaceSvc.VariablesForWorkflow(workflowID)
 	})
 	eng.SetAuditRecorder(func(rec services.AuditRecord) {
 		auditSvc.Record(rec)
@@ -292,11 +285,7 @@ func main() {
 		go eng.RetireVisitorLanesForTokenHashes(tokenHashes)
 	})
 	eng.SetShareRevoker(gateShareSvc)
-	host.SetProjectAuditHook(func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool) {
-		projectID := services.ResolveProjectIDForRun(db, runID)
-		if projectID == "" {
-			return
-		}
+	host.SetAuditHook(func(runID, nodeID, tool string, args map[string]any, resultText string, isError bool) {
 		outcome := models.AuditOutcomeOK
 		if isError {
 			outcome = models.AuditOutcomeFail
@@ -311,7 +300,6 @@ func main() {
 			node = ""
 		}
 		auditSvc.Record(services.AuditRecord{
-			ProjectID:    projectID,
 			Actor:        services.SystemActor(), // MCP host has no Session
 			CallerKind:   models.CallerKindSystem,
 			Action:       models.AuditActionMCPCall,
@@ -339,9 +327,6 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
-	if err := projectSvc.ValidateWorkspaceAgents(agentSvc); err != nil {
-		log.Fatal().Err(err).Msg("Agent ownership requires offline workspace migration")
-	}
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
@@ -356,21 +341,21 @@ func main() {
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
-		ProfilesRoot:                cfg.Engine.ProfilesRoot,
-		MCPEndpoint:                 cfg.Server.MCPAdvertise,
-		Env:                         cfg.Sandbox.Env,
-		TTL:                         cfg.TestSandboxTTL(),
-		RunTTL:                      cfg.RunSandboxTTL(),
-		MaxRetention:                cfg.RunSandboxMaxRetention(),
-		Max:                         cfg.Sandbox.MaxTestSandboxes,
-		SharedAgent:                 sharedAgentSvc,
-		ProjectCredentials:          projectCredentialSvc.ResolveEnv,
-		ProjectCredentialReferences: projectCredentialSvc.ResolveReferences,
-		OpenCodeCredential:          projectCredentialSvc.ResolveOpenCodeCredential,
-		SelectedCredential:          projectCredentialSvc.ResolveSelectedValue,
-		OpenCodeCatalog:             openCodeCatalog,
+		ProfilesRoot:         cfg.Engine.ProfilesRoot,
+		MCPEndpoint:          cfg.Server.MCPAdvertise,
+		Env:                  cfg.Sandbox.Env,
+		TTL:                  cfg.TestSandboxTTL(),
+		RunTTL:               cfg.RunSandboxTTL(),
+		MaxRetention:         cfg.RunSandboxMaxRetention(),
+		Max:                  cfg.Sandbox.MaxTestSandboxes,
+		SharedAgent:          sharedAgentSvc,
+		Credentials:          credentialSvc.ResolveEnv,
+		CredentialReferences: credentialSvc.ResolveReferences,
+		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
+		SelectedCredential:   credentialSvc.ResolveSelectedValue,
+		OpenCodeCatalog:      openCodeCatalog,
 	})
-	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginCredential, projectCredentialSvc.InjectedCredentialID)
+	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential, credentialSvc.InjectedCredentialID)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -444,13 +429,13 @@ func main() {
 	// Raise the per-turn deadline well above the legacy 90s so channel/cron and
 	// interactive PM turns are not truncated (aligns with the sandbox chat cap).
 	pmTurns.SetTurnDeadline(pmTurnDeadline)
-	sbxSvc.SetAgentSandboxDestroyHook(func(projectID, threadID, token string) {
+	sbxSvc.SetAgentSandboxDestroyHook(func(threadID, token string) {
 		mcpWire.unregister(token)
 		mcpWire.clearSandboxRef(threadID)
 	})
 	sbxSvc.SetTestSchedulerHooks(services.TestSchedulerHooks{
-		Register: func(projectID, profile, runID, token string) {
-			schedulerMCP.Restore(token, projectID, profile, runID, "test", false)
+		Register: func(profile, runID, token string) {
+			schedulerMCP.Restore(token, profile, runID, "test", false)
 		},
 		Unregister: schedulerMCP.Unregister,
 	})
@@ -467,10 +452,9 @@ func main() {
 	eng.SetGateAutoInvoker(gateAutoEngineAdapter{svc: gateAutoSvc})
 	runNotifySvc := services.NewRunNotifyService(db, nil, cfg.Server.PublicAdvertise)
 	eng.SetRunNotifier(runNotifyEngineAdapter{svc: runNotifySvc})
-	// External IM channels (QQ today; extensible). One bot binds one project +
-	// its PM Leader. Configs are DB-managed via the admin WebUI and hot-reloaded.
+	// External IM channels (QQ today; extensible). Each bot binds one Agent. Configs are DB-managed via the admin WebUI and hot-reloaded.
 	// Memory/scheduler writes follow ChannelConfig session caps (default off).
-	// pm-workflow-write is controlled by project EnabledMcps — enable it only
+	// pm-workflow-write is controlled by channel EnabledMcps — enable it only
 	// when channel-side mutations are desired.
 	channelHooks := channels.MCPTokenHooks{
 		Register:       mcpWire.registerChannel,
@@ -496,52 +480,52 @@ func main() {
 	cronSched.Start(sweeperCtx)
 
 	h := &handlers.Handlers{
-		WF:                 wfSvc,
-		Projects:           projectSvc,
-		Runs:               runSvc,
-		Arts:               artifactSvc,
-		APIKeys:            services.NewAPIKeyService(db),
-		Agents:             agentSvc,
-		SharedAgent:        sharedAgentSvc,
-		Dash:               services.NewDashboardService(db, projectSvc),
-		Sbx:                sbxSvc,
-		SbxChats:           services.NewSandboxChats(sbxSvc),
-		Preview:            previewSvc,
-		Issues:             issueSvc,
-		RequirementDrafts:  requirementDraftSvc,
-		Notifications:      notificationSvc,
-		Eng:                eng,
-		MCP:                host,
-		Pm:                 pmSvc,
-		PmProgress:         pmProgress,
-		PmTurns:            pmTurns,
-		PMMCP:              pmMCP,
-		MemoryMCP:          memoryMCP,
-		ContextMCP:         contextMCP,
-		SchedulerMCP:       schedulerMCP,
-		Settings:           settingsSvc,
-		Shutdown:           coord,
-		Auth:               authSvc,
-		Channels:           channelSvc,
-		RunNotify:          runNotifySvc,
-		Browser:            browserSvc,
-		Audit:              auditSvc,
-		ExternalMcp:        externalMcpSvc,
-		ProjectMcpKeys:     projectMcpKeySvc,
-		ProjectCredentials: projectCredentialSvc,
-		GateShare:          gateShareSvc,
-		GateShareNonces:    gateshare.NewNonceStore(db),
-		GateShareTickets:   gateShareTickets,
-		Embed:              embedStore,
-		PageBridge:         pageHub,
-		GateShareSessions:  gateShareSessions,
-		GateShareLimiter:   gateshare.NewIPLimiter(),
-		PublicAdvertise:    cfg.Server.PublicAdvertise,
-		InjectBundles:      injectStore,
-		Blobs:              blobStore,
-		Onboarding:         services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, projectCredentialSvc),
-		Team:               services.NewTeamService(projectSvc, agentSvc, pmSvc, sbxSvc),
-		OpenCodeCatalog:    openCodeCatalog,
+		WF:                wfSvc,
+		Workspace:         workspaceSvc,
+		Runs:              runSvc,
+		Arts:              artifactSvc,
+		APIKeys:           services.NewAPIKeyService(db),
+		Agents:            agentSvc,
+		SharedAgent:       sharedAgentSvc,
+		Dash:              services.NewDashboardService(db, workspaceSvc),
+		Sbx:               sbxSvc,
+		SbxChats:          services.NewSandboxChats(sbxSvc),
+		Preview:           previewSvc,
+		Issues:            issueSvc,
+		RequirementDrafts: requirementDraftSvc,
+		Notifications:     notificationSvc,
+		Eng:               eng,
+		MCP:               host,
+		Pm:                pmSvc,
+		PmProgress:        pmProgress,
+		PmTurns:           pmTurns,
+		PMMCP:             pmMCP,
+		MemoryMCP:         memoryMCP,
+		ContextMCP:        contextMCP,
+		SchedulerMCP:      schedulerMCP,
+		Settings:          settingsSvc,
+		Shutdown:          coord,
+		Auth:              authSvc,
+		Channels:          channelSvc,
+		RunNotify:         runNotifySvc,
+		Browser:           browserSvc,
+		Audit:             auditSvc,
+		ExternalMcp:       externalMcpSvc,
+		McpKeys:           mcpKeySvc,
+		Credentials:       credentialSvc,
+		GateShare:         gateShareSvc,
+		GateShareNonces:   gateshare.NewNonceStore(db),
+		GateShareTickets:  gateShareTickets,
+		Embed:             embedStore,
+		PageBridge:        pageHub,
+		GateShareSessions: gateShareSessions,
+		GateShareLimiter:  gateshare.NewIPLimiter(),
+		PublicAdvertise:   cfg.Server.PublicAdvertise,
+		InjectBundles:     injectStore,
+		Blobs:             blobStore,
+		Onboarding:        services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
+		Team:              services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
+		OpenCodeCatalog:   openCodeCatalog,
 	}
 	var maintenancePrepared atomic.Bool
 	var maintenanceMu sync.Mutex
@@ -572,7 +556,7 @@ func main() {
 		return state, nil
 	}
 	h.Team.SharedAgent = sharedAgentSvc
-	h.Team.Credentials = projectCredentialSvc
+	h.Team.Credentials = credentialSvc
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)
 	}

@@ -67,14 +67,6 @@ func TestGateAutoInvokeOnHumanGatePause(t *testing.T) {
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
-	proj := models.Project{ID: "proj-gate-auto", Name: "GateAuto", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Create(&proj).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").
-		Update("project_id", proj.ID).Error; err != nil {
-		t.Fatal(err)
-	}
 
 	rec := newRecordingGateAuto()
 	eng.SetGateAutoInvoker(rec)
@@ -86,7 +78,7 @@ func TestGateAutoInvokeOnHumanGatePause(t *testing.T) {
 	waitRunStatus(t, db, run.ID, "waiting_human")
 	evs := rec.wait(t, 1)
 	ev := evs[0]
-	if ev.ProjectID != proj.ID || ev.RunID != run.ID || ev.NodeID != "gate" || ev.NodeType != "human_gate" {
+	if ev.RunID != run.ID || ev.NodeID != "gate" || ev.NodeType != "human_gate" {
 		t.Fatalf("event=%+v", ev)
 	}
 	if ev.GateID == 0 || ev.GateTitle != "设计评审" {
@@ -143,11 +135,6 @@ func TestGateAutoInvokeSkipsReviewAgent(t *testing.T) {
 		},
 	}
 	eng, db, _ := setupEngineGraphP(t, g)
-	proj := models.Project{ID: "proj-app-preview", Name: "AppPrev", CreatedAt: time.Now(), UpdatedAt: time.Now()}
-	if err := db.Create(&proj).Error; err != nil {
-		t.Fatal(err)
-	}
-	_ = db.Model(&models.WorkflowDef{}).Where("id = ?", "wf").Update("project_id", proj.ID)
 	rec := newRecordingGateAuto()
 	eng.SetGateAutoInvoker(rec)
 

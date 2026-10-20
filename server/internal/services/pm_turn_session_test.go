@@ -73,11 +73,11 @@ func newPmTurnFixture(t *testing.T) *pmTurnFixture {
 	t.Helper()
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
-	p, err := NewProjectService(db).CreateFixture("TurnProj-"+uuid.NewString()[:8], "", nil)
+	_, err := NewWorkspaceService(db).CreateFixture("TurnProj-"+uuid.NewString()[:8], "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	th, err := pm.CreateThread(p.ID, "alice", "", "agent", "user")
+	th, err := pm.CreateThread("alice", "", "agent", "user")
 	if err != nil {
 		t.Fatal(err)
 	}

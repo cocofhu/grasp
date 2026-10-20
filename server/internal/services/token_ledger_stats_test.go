@@ -27,25 +27,21 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
-	live, err := s.CreateFixture("Live", "", nil)
-	if err != nil {
-		t.Fatal(err)
-	}
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC) // Saturday
 	at := time.Date(2026, 7, 24, 9, 30, 0, 0, time.UTC)  // Friday 09:xx UTC
 	seedLedger(t, db,
 		models.TokenUsageEvent{CreatedAt: at, Source: "workflow", Phase: "production", Status: "ok",
-			ProjectID: live.ID, ProjectName: "Live", WorkflowID: "wf1", WorkflowName: "main",
+			WorkflowID: "wf1", WorkflowName: "main",
 			RunID: "r1", RunTitle: "Run 1", NodeID: "n1", NodeType: "agent", ModelKey: "m-priced",
 			InputTokens: 1_000_000, OutputTokens: 500_000},
 		models.TokenUsageEvent{CreatedAt: at, Source: "workflow", Phase: "interactive", Status: "failed",
-			ProjectID: live.ID, ProjectName: "Live", WorkflowID: "wf1", WorkflowName: "main",
+			WorkflowID: "wf1", WorkflowName: "main",
 			RunID: "r1", NodeID: "n2", NodeType: "clarify", ModelKey: "m-free", InputTokens: 100},
 		models.TokenUsageEvent{CreatedAt: at, Source: "studio", Phase: "chat", Status: "ok",
-			ProjectID: live.ID, ProjectName: "Live", SandboxID: 3, ModelKey: "m-priced", CacheReadTokens: 1_000_000},
+			SandboxID: 3, ModelKey: "m-priced", CacheReadTokens: 1_000_000},
 		models.TokenUsageEvent{CreatedAt: at, Source: "pm", Phase: "chat", Status: "cancelled",
-			ProjectID: "p-deleted", ProjectName: "Gone", ThreadID: "th1", ModelKey: "m-priced", OutputTokens: 10},
+			ThreadID: "th1", ModelKey: "m-priced", OutputTokens: 10},
 	)
 	if _, err := s.SaveTokenPricing(TokenPricing{Currency: "usd", Models: map[string]TokenModelPrice{
 		"m-priced": {Input: 2, Output: 10, CacheRead: 0.5},
@@ -96,19 +92,10 @@ func TestGlobalTokenStatsLedgerDimensionsAndCost(t *testing.T) {
 		t.Fatalf("weekHour[Fri][9]=%d want %d", res.WeekHour[4][9], k.Total)
 	}
 
-	var deleted *GlobalTokenStatsProjectRow
-	for i := range res.Projects {
-		if res.Projects[i].ProjectID == "p-deleted" {
-			deleted = &res.Projects[i]
-		}
-	}
-	if deleted == nil || !deleted.Deleted || deleted.Name != "Gone" {
-		t.Fatalf("deleted project row=%+v", deleted)
-	}
 	if len(res.TopRuns) != 1 || res.TopRuns[0].Status != "failed" || res.TopRuns[0].NodeCount != 2 || res.TopRuns[0].ModelKey != "m-priced" {
 		t.Fatalf("topRuns=%+v", res.TopRuns)
 	}
-	if len(res.Tree) != 2 || res.Tree[0].Key != live.ID || len(res.Tree[0].Children) != 2 {
+	if len(res.Tree) != 3 || res.Tree[0].Key != "wf1" || len(res.Tree[0].Children) != 2 {
 		t.Fatalf("tree=%+v", res.Tree)
 	}
 
@@ -147,7 +134,7 @@ func TestGlobalTokenStatsCustomRangeAndGranularity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	seedLedger(t, db,
 		models.TokenUsageEvent{CreatedAt: time.Date(2026, 7, 10, 3, 0, 0, 0, time.UTC), Source: "workflow", Status: "ok", ModelKey: "m", InputTokens: 10},
@@ -205,16 +192,16 @@ func TestTokenUsageEventsPagingAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := NewProjectService(db)
+	s := NewWorkspaceService(db)
 	now := time.Date(2026, 7, 25, 12, 0, 0, 0, time.UTC)
 	var rows []models.TokenUsageEvent
 	for i := 0; i < 5; i++ {
 		rows = append(rows, models.TokenUsageEvent{
 			CreatedAt: now.Add(-time.Duration(i) * time.Hour), Source: "workflow", Status: "ok",
-			ProjectID: "p1", RunID: "r1", ModelKey: "m", InputTokens: int64(10 * (i + 1)),
+			RunID: "r1", ModelKey: "m", InputTokens: int64(10 * (i + 1)),
 		})
 	}
-	rows = append(rows, models.TokenUsageEvent{CreatedAt: now, Source: "pm", Status: "ok", ProjectID: "p2", ModelKey: "m", InputTokens: 999})
+	rows = append(rows, models.TokenUsageEvent{CreatedAt: now, Source: "pm", Status: "ok", ModelKey: "m", InputTokens: 999})
 	seedLedger(t, db, rows...)
 
 	page, err := s.TokenUsageEvents(context.Background(), TokenUsageEventsQuery{
@@ -234,7 +221,7 @@ func TestTokenUsageEventsPagingAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if byTotal.Total != 6 || byTotal.Items[0].Total != 999 || byTotal.Items[0].ProjectName != globalUnassignedProjectName {
+	if byTotal.Total != 6 || byTotal.Items[0].Total != 999 {
 		t.Fatalf("byTotal=%+v", byTotal)
 	}
 }

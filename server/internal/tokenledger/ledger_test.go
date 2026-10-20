@@ -55,7 +55,7 @@ func TestRowsLegacyFlatUsageAndExplicitZero(t *testing.T) {
 	}
 }
 
-func TestRecordResolvesRunWorkflowAndProject(t *testing.T) {
+func TestRecordResolvesRunWorkflowAndWorkspace(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_record.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -66,8 +66,7 @@ func TestRecordResolvesRunWorkflowAndProject(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	must(&models.Project{ID: "p1", Name: "Alpha"})
-	must(&models.WorkflowDef{ID: "wf1", ProjectID: "p1", Name: "main", Version: 1})
+	must(&models.WorkflowDef{ID: "wf1", Name: "main", Version: 1})
 	must(&models.Run{ID: "r1", WorkflowID: "wf1", WorkflowName: "main", Title: "Run One", Status: "running"})
 
 	tokenledger.Record(db, tokenledger.Entry{
@@ -83,7 +82,7 @@ func TestRecordResolvesRunWorkflowAndProject(t *testing.T) {
 		t.Fatalf("rows=%d", len(rows))
 	}
 	r := rows[0]
-	if r.ProjectID != "p1" || r.ProjectName != "Alpha" || r.WorkflowID != "wf1" || r.RunTitle != "Run One" {
+	if r.WorkflowID != "wf1" || r.RunTitle != "Run One" {
 		t.Fatalf("metadata not resolved: %+v", r)
 	}
 	if r.Status != models.TokenLedgerStatusFailed || r.Total() != 12 {
@@ -91,15 +90,12 @@ func TestRecordResolvesRunWorkflowAndProject(t *testing.T) {
 	}
 }
 
-func TestRecordResolvesThreadProject(t *testing.T) {
+func TestRecordThreadEvent(t *testing.T) {
 	db, err := database.OpenSQLiteTest(filepath.Join(t.TempDir(), "ledger_thread.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&models.Project{ID: "p2", Name: "Beta"}).Error; err != nil {
-		t.Fatal(err)
-	}
-	if err := db.Create(&models.ChatThread{ID: "th1", ProjectID: "p2", UserID: "u", Title: "t"}).Error; err != nil {
+	if err := db.Create(&models.ChatThread{ID: "th1", UserID: "u", Title: "t"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	tokenledger.Record(db, tokenledger.Entry{Source: models.TokenLedgerSourcePM, ThreadID: "th1",
@@ -108,7 +104,7 @@ func TestRecordResolvesThreadProject(t *testing.T) {
 	if err := db.First(&r).Error; err != nil {
 		t.Fatal(err)
 	}
-	if r.ProjectID != "p2" || r.ProjectName != "Beta" || r.Status != models.TokenLedgerStatusCancelled {
+	if r.ThreadID != "th1" || r.Status != models.TokenLedgerStatusCancelled {
 		t.Fatalf("row=%+v", r)
 	}
 }

@@ -14,7 +14,6 @@ func TestShowOnHomeDefaultsFalseOnCreate(t *testing.T) {
 
 	wf := &models.WorkflowDef{
 		ID:         "wf-home-new",
-		ProjectID:  models.DefaultProjectID,
 		Name:       "HomeNew",
 		Graph:      validGraph(),
 		ShowOnHome: true, // client cannot force-on via create Save
@@ -33,7 +32,6 @@ func TestShowOnHomeDefaultsFalseOnCreate(t *testing.T) {
 	// Seed a legacy row without the field (zero value) — reads as hidden.
 	legacy := models.WorkflowDef{
 		ID:               "wf-home-legacy",
-		ProjectID:        models.DefaultProjectID,
 		Name:             "Legacy",
 		Version:          1,
 		PublishedVersion: 1,
@@ -60,7 +58,6 @@ func TestUpdateShowOnHomeDoesNotDemotePublished(t *testing.T) {
 
 	wf := models.WorkflowDef{
 		ID:               "wf-home-only",
-		ProjectID:        models.DefaultProjectID,
 		Name:             "HomeOnly",
 		Version:          3,
 		PublishedVersion: 3,
@@ -118,7 +115,7 @@ func TestCopyAndImportResetShowOnHome(t *testing.T) {
 	svc := NewWorkflowService(db)
 
 	src := &models.WorkflowDef{
-		ID: "wf-home-src", ProjectID: models.DefaultProjectID, Name: "工作流 Home",
+		ID: "wf-home-src", Name: "工作流 Home",
 		Graph: validGraph(),
 	}
 	if err := svc.Save(src); err != nil {
@@ -139,7 +136,7 @@ func TestCopyAndImportResetShowOnHome(t *testing.T) {
 		t.Fatal("copy inherited showOnHome")
 	}
 
-	imported, err := svc.Import(envelopeJSON(validEnvelope("Imported Home")), models.DefaultProjectID)
+	imported, err := svc.Import(envelopeJSON(validEnvelope("Imported Home")))
 	if err != nil {
 		t.Fatalf("Import: %v", err)
 	}
@@ -153,7 +150,7 @@ func TestSavePreservesShowOnHomeWhenSet(t *testing.T) {
 	db := newTestDB(t)
 	svc := NewWorkflowService(db)
 
-	wf := &models.WorkflowDef{ID: "wf-home-save", ProjectID: models.DefaultProjectID, Name: "Keep", Graph: validGraph()}
+	wf := &models.WorkflowDef{ID: "wf-home-save", Name: "Keep", Graph: validGraph()}
 	if err := svc.Save(wf); err != nil {
 		t.Fatal(err)
 	}
@@ -165,8 +162,7 @@ func TestSavePreservesShowOnHomeWhenSet(t *testing.T) {
 	}
 
 	upd := &models.WorkflowDef{
-		ProjectID: models.DefaultProjectID,
-		ID:        "wf-home-save", Name: "Keep", Graph: validGraph(), ShowOnHome: true,
+		ID: "wf-home-save", Name: "Keep", Graph: validGraph(), ShowOnHome: true,
 	}
 	if err := svc.Save(upd); err != nil {
 		t.Fatal(err)

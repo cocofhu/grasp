@@ -113,7 +113,7 @@ func (h *Handlers) V1StartRun(c *gin.Context) {
 		return
 	}
 	if h.WF != nil {
-		if wf, ok := h.WF.Get(wfID); ok && wf.ProjectID != "" {
+		if _, ok := h.WF.Get(wfID); ok {
 			trigger := run.Trigger
 			if trigger == "" {
 				trigger = b.Trigger
@@ -128,7 +128,6 @@ func (h *Handlers) V1StartRun(c *gin.Context) {
 				payload["env"] = services.MaskSandboxEnvForAudit(run.SandboxEnv)
 			}
 			h.recordAudit(services.AuditRecord{
-				ProjectID:    wf.ProjectID,
 				Actor:        services.SystemActor(), // V1 API Key path has no Session
 				CallerKind:   models.CallerKindAPIKey,
 				Action:       models.AuditActionRunStart,
@@ -217,25 +216,16 @@ func (h *Handlers) V1CancelRun(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	projectID := ""
-	if h.WF != nil {
-		if wf, wOk := h.WF.Get(run.WorkflowID); wOk {
-			projectID = wf.ProjectID
-		}
-	}
-	if projectID != "" {
-		h.recordAudit(services.AuditRecord{
-			ProjectID:    projectID,
-			Actor:        services.SystemActor(), // V1 API Key path has no Session
-			CallerKind:   models.CallerKindAPIKey,
-			Action:       models.AuditActionRunCancel,
-			ResourceType: "run",
-			ResourceID:   runID,
-			RunID:        runID,
-			Outcome:      models.AuditOutcomeOK,
-			Summary:      "cancel run (v1 api)",
-			Payload:      map[string]any{"workflowId": run.WorkflowID, "source": "v1_api", "runId": runID},
-		})
-	}
+	h.recordAudit(services.AuditRecord{
+		Actor:        services.SystemActor(), // V1 API Key path has no Session
+		CallerKind:   models.CallerKindAPIKey,
+		Action:       models.AuditActionRunCancel,
+		ResourceType: "run",
+		ResourceID:   runID,
+		RunID:        runID,
+		Outcome:      models.AuditOutcomeOK,
+		Summary:      "cancel run (v1 api)",
+		Payload:      map[string]any{"workflowId": run.WorkflowID, "source": "v1_api", "runId": runID},
+	})
 	c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
 }

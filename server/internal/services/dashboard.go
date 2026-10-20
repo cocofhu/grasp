@@ -11,8 +11,8 @@ import (
 // DashboardService computes summary statistics for the dashboard
 // and the lightweight platform-status payload for AppTopbar.
 type DashboardService struct {
-	db       *gorm.DB
-	projects *ProjectService
+	db        *gorm.DB
+	workspace *WorkspaceService
 
 	// Process-local cache for today token totals (platform-status hot path).
 	statusMu       sync.Mutex
@@ -22,9 +22,9 @@ type DashboardService struct {
 	loadPlatformUsageHook func()
 }
 
-// NewDashboardService builds the service. projects may be nil (Token fields stay null).
-func NewDashboardService(db *gorm.DB, projects *ProjectService) *DashboardService {
-	return &DashboardService{db: db, projects: projects}
+// NewDashboardService builds the service. workspace may be nil (Token fields stay null).
+func NewDashboardService(db *gorm.DB, workspace *WorkspaceService) *DashboardService {
+	return &DashboardService{db: db, workspace: workspace}
 }
 
 // Stats is the dashboard summary payload.
@@ -56,8 +56,8 @@ func (s *DashboardService) Compute() Stats {
 	s.db.Model(&models.WorkflowDef{}).Count(&st.Workflows)
 	s.db.Model(&models.Artifact{}).Count(&st.Artifacts)
 
-	if s.projects != nil {
-		bd := s.projects.PlatformTokenBreakdown()
+	if s.workspace != nil {
+		bd := s.workspace.TokenBreakdown()
 		st.TotalTokens = bd.Total
 		st.WorkflowTokens = bd.Workflow
 		st.PMTokens = bd.PM

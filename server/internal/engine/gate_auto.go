@@ -11,7 +11,6 @@ import (
 // GateAutoInvokeEvent carries the gate-pause context for an optional async
 // side-effect (e.g. auto-invoke PM Leader). Engine never blocks on handlers.
 type GateAutoInvokeEvent struct {
-	ProjectID   string
 	RunID       string
 	WorkflowID  string
 	NodeID      string
@@ -45,18 +44,6 @@ func (e *Engine) fireGateAutoInvoke(c *execCtx, node *models.Node) {
 	if node.Type != "human_gate" {
 		return
 	}
-	var wf models.WorkflowDef
-	if err := e.db.Select("project_id").Where("id = ?", c.run.WorkflowID).First(&wf).Error; err != nil {
-		log.Warn().Err(err).Str("run_id", c.run.ID).Str("workflow", c.run.WorkflowID).
-			Msg("gate-auto: resolve project failed")
-		return
-	}
-	projectID := strings.TrimSpace(wf.ProjectID)
-	if projectID == "" {
-		log.Warn().Str("run_id", c.run.ID).Str("workflow", c.run.WorkflowID).
-			Msg("gate-auto: workflow has empty project_id")
-		return
-	}
 	var gate models.Gate
 	if err := e.db.Where("run_id = ? AND node_id = ?", c.run.ID, node.ID).
 		Order("iteration desc, id desc").First(&gate).Error; err != nil {
@@ -73,7 +60,6 @@ func (e *Engine) fireGateAutoInvoke(c *execCtx, node *models.Node) {
 	}
 	actionsCopy := append([]models.GateAction(nil), gate.Actions...)
 	ev := GateAutoInvokeEvent{
-		ProjectID:   projectID,
 		RunID:       c.run.ID,
 		WorkflowID:  c.run.WorkflowID,
 		NodeID:      node.ID,

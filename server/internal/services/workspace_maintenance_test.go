@@ -16,7 +16,7 @@ import (
 func TestCronMaintenanceWaitsForClaimToBecomeActive(t *testing.T) {
 	db := setupPmDB(t)
 	now := time.Now().Add(-time.Minute)
-	job := models.AgentCronJob{ID: "maintenance-race", ProjectID: models.DefaultProjectID, Enabled: true, NextRunAt: &now, ScheduleKind: "every", ScheduleExpr: "1h"}
+	job := models.AgentCronJob{ID: "maintenance-race", Enabled: true, NextRunAt: &now, ScheduleKind: "every", ScheduleExpr: "1h"}
 	if err := db.Create(&job).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -81,41 +81,41 @@ func TestCronMaintenanceWaitsForClaimToBecomeActive(t *testing.T) {
 func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	svc := NewProjectCredentialService(db)
+	svc := NewCredentialService(db)
 	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"original","refresh_token":"refresh"}}`
 	refreshed := `{"auth_mode":"chatgpt","tokens":{"access_token":"refreshed","refresh_token":"refresh"}}`
-	first, err := svc.Create(models.DefaultProjectID, ProjectCredentialInput{Type: "ai", Provider: "codex", Name: "First", Value: login})
+	first, err := svc.Create(CredentialInput{Type: "ai", Provider: "codex", Name: "First", Value: login})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := svc.Create(models.DefaultProjectID, ProjectCredentialInput{Type: "ai", Provider: "codex", Name: "Second", Value: login})
+	second, err := svc.Create(CredentialInput{Type: "ai", Provider: "codex", Name: "Second", Value: login})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if id := svc.InjectedCredentialID(models.DefaultProjectID, envauth.EnvCodexAuthFile, login); id != "" {
+	if id := svc.InjectedCredentialID(envauth.EnvCodexAuthFile, login); id != "" {
 		t.Fatal("ambiguous inherited credential was selected")
 	}
-	if err = svc.WriteBackCodexLoginCredential(models.DefaultProjectID, second.ID, refreshed); err != nil {
+	if err = svc.WriteBackCodexLoginCredential(second.ID, refreshed); err != nil {
 		t.Fatal(err)
 	}
-	_, got, ok := svc.ResolveSelectedValue(models.DefaultProjectID, first.ID)
+	_, got, ok := svc.ResolveSelectedValue(first.ID)
 	if !ok || got != login {
 		t.Fatal("refresh overwrote another credential")
 	}
-	_, got, ok = svc.ResolveSelectedValue(models.DefaultProjectID, second.ID)
+	_, got, ok = svc.ResolveSelectedValue(second.ID)
 	if !ok || got != refreshed {
 		t.Fatal("refresh did not update selected credential")
 	}
-	if err = svc.Revoke(models.DefaultProjectID, second.ID); err != nil {
+	if err = svc.Revoke(second.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.WriteBackCodexLoginCredential(models.DefaultProjectID, second.ID, login); err == nil {
+	if err = svc.WriteBackCodexLoginCredential(second.ID, login); err == nil {
 		t.Fatal("revoked credential revived")
 	}
-	if err = svc.Clear(models.DefaultProjectID, first.ID); err != nil {
+	if err = svc.Clear(first.ID); err != nil {
 		t.Fatal(err)
 	}
-	if err = svc.WriteBackCodexLoginCredential(models.DefaultProjectID, first.ID, refreshed); err == nil {
+	if err = svc.WriteBackCodexLoginCredential(first.ID, refreshed); err == nil {
 		t.Fatal("cleared credential revived")
 	}
 }
@@ -147,16 +147,16 @@ func TestWorkflowGatePolicyUsesOrdinaryOverrideAndStopsAdmission(t *testing.T) {
 	db := newTestDB(t)
 	pm := NewPmService(db, NewAgentService(t.TempDir()))
 	svc := NewGateAutoInvokeService(db, pm, nil, nil, CronTokenHooks{})
-	wf := models.WorkflowDef{ID: "override", ProjectID: models.DefaultProjectID, Name: "override", Defaults: &models.WorkflowDefaults{GateAuto: &models.WorkflowGateAutoPolicy{Enabled: true, AgentName: "reviewer", Variable: "approve", Prompt: "inspect", EnabledMcps: []string{"pm-workflow-write"}}}}
+	wf := models.WorkflowDef{ID: "override", Name: "override", Defaults: &models.WorkflowDefaults{GateAuto: &models.WorkflowGateAutoPolicy{Enabled: true, AgentName: "reviewer", Variable: "approve", Prompt: "inspect", EnabledMcps: []string{"pm-workflow-write"}}}}
 	if err := db.Create(&wf).Error; err != nil {
 		t.Fatal(err)
 	}
-	p, ok := svc.effectiveProject(GateAutoTask{ProjectID: models.DefaultProjectID, WorkflowID: wf.ID})
+	p, ok := svc.effectiveWorkspace(GateAutoTask{WorkflowID: wf.ID})
 	if !ok || p.PmLeaderAgent != "reviewer" || p.PmGateAutoVar != "approve" || !p.PmLeaderEnabled {
 		t.Fatalf("override=%+v %v", p, ok)
 	}
 	svc.BeginMaintenance()
-	svc.Enqueue(GateAutoTask{ProjectID: models.DefaultProjectID, WorkflowID: wf.ID, Vars: map[string]any{"approve": true}})
+	svc.Enqueue(GateAutoTask{WorkflowID: wf.ID, Vars: map[string]any{"approve": true}})
 	if svc.PendingMaintenance() != 0 {
 		t.Fatal("maintenance accepted new gate task")
 	}

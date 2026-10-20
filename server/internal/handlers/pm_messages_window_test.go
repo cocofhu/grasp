@@ -11,8 +11,7 @@ import (
 )
 
 func TestListPmMessagesTailWindowAndBefore(t *testing.T) {
-	hn, pid, _ := setupPmEnabledHarness(t)
-	_ = pid
+	hn := setupPmEnabledHarness(t)
 	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "window"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())

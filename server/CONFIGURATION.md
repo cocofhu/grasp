@@ -7,7 +7,7 @@ Runtime precedence is explicit environment variable > YAML file > built-in
 default. Sensitive values must not enter images, repositories, or public logs.
 
 Git host credentials for sandboxes (`GITHUB_*` / `GITLAB_*` / SSH) are
-configured as project credentials, not in this platform config table.
+configured as workspace credentials, not in this platform config table.
 
 | Environment variable | YAML path | Type | Default | Property | Description |
 | --- | --- | --- | --- | --- | --- |

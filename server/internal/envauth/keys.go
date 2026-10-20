@@ -2,7 +2,7 @@ package envauth
 
 import "strings"
 
-// Env keys written by the built-in project credential presets. Each ACP
+// Env keys written by the built-in workspace credential presets. Each ACP
 // backend has exactly one credential key; runtime maps it onto the CLI key.
 const (
 	EnvCursorAPIKey    = "GRASP_CURSOR_API_KEY"
@@ -10,7 +10,7 @@ const (
 	EnvCodeBuddyAPIKey = "GRASP_CODEBUDDY_API_KEY"
 	EnvTraeAPIKey      = "GRASP_TRAE_API_KEY"
 	EnvOpenCodeAPIKey  = "GRASP_OPENCODE_API_KEY"
-	// EnvCodexAuthFile is the project-credential slot for a ChatGPT login file
+	// EnvCodexAuthFile is the workspace-credential slot for a ChatGPT login file
 	// (~/.codex/auth.json). It is a secret identity key only: the file body is
 	// written to the sandbox as auth.json and must not be injected as an env var.
 	EnvCodexAuthFile    = "GRASP_CODEX_AUTH_JSON"
@@ -27,7 +27,7 @@ var cliAuthEnvKeys = []string{
 	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY",
 }
 
-// credentialEnvKeys are the secret preset keys of project credentials.
+// credentialEnvKeys are the secret preset keys of workspace credentials.
 var credentialEnvKeys = []string{
 	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey, EnvCodexAuthFile,
 	EnvGitHubToken, EnvGitLabToken, EnvGitSSHPrivateKey, EnvGitSSHKnownHosts,
@@ -43,7 +43,7 @@ func IsPlatformAuthEnvKey(k string) bool {
 	return false
 }
 
-// SecretEnvKeys lists env keys that may only be supplied by project
+// SecretEnvKeys lists env keys that may only be supplied by workspace
 // credentials: the credential preset keys plus the CLI auth keys they map to.
 // Agent env, shared Agent env, run env and platform sandbox.env never carry them.
 func SecretEnvKeys() []string {

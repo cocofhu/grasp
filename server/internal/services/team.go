@@ -22,8 +22,6 @@ var (
 	ErrTeamAgentConflict = errors.New("agent name already exists")
 	// ErrTeamSessionNotFound is returned when a bootstrap session id is unknown.
 	ErrTeamSessionNotFound = errors.New("team bootstrap session not found")
-	// ErrTeamScopeDenied is returned when a scoped MCP call violates session bounds.
-	ErrTeamScopeDenied = errors.New("team bootstrap scope denied")
 )
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
@@ -60,7 +58,6 @@ type TeamBootstrapSession struct {
 	ID        string `json:"id"`
 	Status    string `json:"status"` // starting|running|pulling|ready|failed
 	Error     string `json:"error,omitempty"`
-	ProjectID string `json:"projectId,omitempty"`
 	PMAgent   string `json:"pmAgent,omitempty"`
 	SandboxID string `json:"sandboxId,omitempty"`
 	// SandboxStatus mirrors gateway/local sandbox lifecycle (pulling|creating|running|error).
@@ -76,20 +73,20 @@ type TeamBootstrapSession struct {
 
 // TeamSandbox is the SandboxService surface used by team bootstrap (g3.3).
 type TeamSandbox interface {
-	Open(ctx context.Context, profile string, repos []sandbox.RepoSpec, projectID string) (*models.Sandbox, error)
+	Open(ctx context.Context, profile string, repos []sandbox.RepoSpec) (*models.Sandbox, error)
 	GetView(ctx context.Context, id uint) (*SandboxView, error)
 }
 
 // TeamService orchestrates Create Agent Team bootstrap + scoped template creates.
 type TeamService struct {
-	Projects *ProjectService
-	Skills   *AgentService
-	Pm       *PmService
-	Sbx      TeamSandbox
-	// SharedAgent and Credentials receive the bootstrap API key (project
+	Workspace *WorkspaceService
+	Skills    *AgentService
+	Pm        *PmService
+	Sbx       TeamSandbox
+	// SharedAgent and Credentials receive the bootstrap API key (workspace
 	// credential) and backend region/provider env (shared Agent env).
 	SharedAgent *SharedAgentService
-	Credentials *ProjectCredentialService
+	Credentials *CredentialService
 
 	mu         sync.Mutex
 	sessions   map[string]*TeamBootstrapSession
@@ -97,9 +94,9 @@ type TeamService struct {
 }
 
 // NewTeamService wires dependencies (Sbx may be nil in unit tests).
-func NewTeamService(projects *ProjectService, skills *AgentService, pm *PmService, sbx TeamSandbox) *TeamService {
+func NewTeamService(workspace *WorkspaceService, skills *AgentService, pm *PmService, sbx TeamSandbox) *TeamService {
 	return &TeamService{
-		Projects:   projects,
+		Workspace:  workspace,
 		Skills:     skills,
 		Pm:         pm,
 		Sbx:        sbx,
@@ -188,26 +185,25 @@ func (s *TeamService) Retry(ctx context.Context, sessionID string) (TeamBootstra
 }
 
 type normalizedTeamReq struct {
-	ProjectName  string
-	Prefix       string
-	PMName       string
-	Background   string
-	AcpBackend   string
-	APIKey       string
-	CustomConfig string
-	Region       string
-	GitURL       string
-	GitCredType  string
-	MCP          []MCPServer
-	Env          map[string]string
+	WorkspaceName string
+	Prefix        string
+	PMName        string
+	Background    string
+	AcpBackend    string
+	APIKey        string
+	CustomConfig  string
+	Region        string
+	GitURL        string
+	GitCredType   string
+	MCP           []MCPServer
+	Env           map[string]string
 }
 
 func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeamReq, error) {
-	workspace, err := s.Projects.Workspace()
+	workspace, err := s.Workspace.Workspace()
 	if err != nil {
 		return normalizedTeamReq{}, err
 	}
-	projectName := workspace.Name
 	prefix := strings.TrimSpace(req.Prefix)
 	pmName := strings.TrimSpace(req.PMName)
 	background := strings.TrimSpace(req.Background)
@@ -246,42 +242,41 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		env["GIT_REPOS"] = "${vars.repos}"
 	}
 	return normalizedTeamReq{
-		ProjectName:  projectName,
-		Prefix:       prefix,
-		PMName:       pmName,
-		Background:   background,
-		AcpBackend:   backend,
-		APIKey:       strings.TrimSpace(req.APIKey),
-		CustomConfig: strings.TrimSpace(req.CustomConfig),
-		Region:       strings.TrimSpace(req.Region),
-		GitURL:       strings.TrimSpace(req.GitURL),
-		GitCredType:  strings.TrimSpace(req.GitCredType),
-		MCP:          mcp,
-		Env:          env,
+		WorkspaceName: workspace.Name,
+		Prefix:        prefix,
+		PMName:        pmName,
+		Background:    background,
+		AcpBackend:    backend,
+		APIKey:        strings.TrimSpace(req.APIKey),
+		CustomConfig:  strings.TrimSpace(req.CustomConfig),
+		Region:        strings.TrimSpace(req.Region),
+		GitURL:        strings.TrimSpace(req.GitURL),
+		GitCredType:   strings.TrimSpace(req.GitCredType),
+		MCP:           mcp,
+		Env:           env,
 	}, nil
 }
 
-// writeProjectAuth stores the bootstrap API key as a project credential and
+// writeWorkspaceAuth stores the bootstrap API key as a workspace credential and
 // the backend's non-secret env (region / OpenCode provider) in shared Agent env.
-func (s *TeamService) writeProjectAuth(projectID string, req normalizedTeamReq) error {
+func (s *TeamService) writeWorkspaceAuth(req normalizedTeamReq) error {
 	if req.APIKey == "" || req.CustomConfig != "" {
 		return nil
 	}
 	if s.SharedAgent == nil || s.Credentials == nil {
-		return fmt.Errorf("shared agent / project credential service unavailable")
+		return fmt.Errorf("shared agent / credential service unavailable")
 	}
 	backend := NormalizeAcpBackend(req.AcpBackend)
-	if _, err := s.Credentials.SetByEnvKey(projectID, ProjectCredentialInput{
+	if _, err := s.Credentials.SetByEnvKey(CredentialInput{
 		Type: "ai", Provider: backend, Name: aiCredentialName(backend),
 		EnvKey: primaryAuthEnvKey(backend), Value: req.APIKey,
 	}); err != nil {
 		return err
 	}
-	cfg := s.SharedAgent.Get(projectID)
+	cfg := s.SharedAgent.Get()
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
 	}
-	cfg.ProjectID = projectID
 	switch backend {
 	case AcpBackendCodeBuddy:
 		region := req.Region
@@ -313,28 +308,27 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		s.appendEvent(sessionID, "err", err.Error())
 	}
 
-	s.appendEvent(sessionID, "sys", "preparing workspace "+req.ProjectName)
-	proj, err := s.Projects.Workspace()
+	s.appendEvent(sessionID, "sys", "preparing workspace "+req.WorkspaceName)
+	ws, err := s.Workspace.Workspace()
 	if err != nil {
 		fail(err)
 		return
 	}
 	if len(s.Skills.List()) == 0 {
-		if err := s.writeProjectAuth(proj.ID, req); err != nil {
-			fail(fmt.Errorf("write project auth: %w", err))
+		if err := s.writeWorkspaceAuth(req); err != nil {
+			fail(fmt.Errorf("write workspace auth: %w", err))
 			return
 		}
 	}
 	s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
-		sess.ProjectID = proj.ID
 		sess.Status = "running"
 	})
-	s.addResource(sessionID, "workspace", proj.Name, proj.ID)
-	s.appendEvent(sessionID, "ok", "workspace ready: "+proj.ID)
+	s.addResource(sessionID, "workspace", ws.Name, "")
+	s.appendEvent(sessionID, "ok", "workspace ready: "+ws.Name)
 
 	// Create PM agent
 	s.appendEvent(sessionID, "sys", "creating PM "+req.PMName)
-	pmAgent, err := s.buildPMAgent(req, proj.ID)
+	pmAgent, err := s.buildPMAgent(req)
 	if err != nil {
 		fail(err)
 		return
@@ -352,8 +346,8 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 
 	enabled := true
 	mcps := append([]string{}, DefaultPmEnabledMcps...)
-	if !proj.PmLeaderEnabled && proj.PmLeaderAgent == "" {
-		if _, err := s.Pm.UpdateBinding(proj.ID, &enabled, &req.PMName, mcps, nil, nil); err != nil {
+	if !ws.PmLeaderEnabled && ws.PmLeaderAgent == "" {
+		if _, err := s.Pm.UpdateBinding(&enabled, &req.PMName, mcps, nil, nil); err != nil {
 			fail(fmt.Errorf("bind PM Leader: %w", err))
 			return
 		}
@@ -365,12 +359,10 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
-		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name+"\nproject="+proj.ID)
+		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			SessionID:    sessionID,
 			TemplateID:   role.ID,
 			Name:         name,
-			ProjectID:    proj.ID,
 			AcpBackend:   req.AcpBackend,
 			GitCredType:  req.GitCredType,
 			MCP:          req.MCP,
@@ -401,24 +393,20 @@ func (s *TeamService) runRetry(ctx context.Context, sessionID string, req normal
 		fail(err)
 		return
 	}
-	// No project yet → full bootstrap.
-	if strings.TrimSpace(cur.ProjectID) == "" {
+	// PM not created yet → full bootstrap.
+	if strings.TrimSpace(cur.PMAgent) == "" {
 		s.runBootstrap(ctx, sessionID, req)
 		return
 	}
 	s.setStatus(sessionID, "running", "")
 	s.appendEvent(sessionID, "sys", "retry: continue engineer provision (skip existing)")
 
-	projID := cur.ProjectID
-
 	for _, role := range TeamEngineerTemplates {
 		name := EngineerDisplayName(req.Prefix, role.RoleLabelZH)
-		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name+"\nproject="+projID)
+		s.appendEvent(sessionID, "mcp", "pm_create_agent_from_template\ntemplate="+role.ID+"\nname="+name)
 		created, err := s.CreateAgentFromTemplate(CreateFromTemplateArgs{
-			SessionID:    sessionID,
 			TemplateID:   role.ID,
 			Name:         name,
-			ProjectID:    projID,
 			AcpBackend:   req.AcpBackend,
 			GitCredType:  req.GitCredType,
 			MCP:          req.MCP,
@@ -477,7 +465,7 @@ func (s *TeamService) finishBootstrap(ctx context.Context, sessionID string, req
 		if req.GitURL != "" {
 			repos = sandbox.ReposFromURL(req.GitURL)
 		}
-		sb, err := s.Sbx.Open(ctx, pmName, repos, cur.ProjectID)
+		sb, err := s.Sbx.Open(ctx, pmName, repos)
 		if err != nil {
 			// Quota / missing agent: roster is already created; surface a warn and still finish
 			// ready so the user can open Studio. Pull/create failures after Open are failed below.
@@ -567,10 +555,8 @@ func (s *TeamService) waitTeamSandboxReady(ctx context.Context, sessionID string
 
 // CreateFromTemplateArgs is used by MCP and bootstrap.
 type CreateFromTemplateArgs struct {
-	SessionID    string
 	TemplateID   string
 	Name         string
-	ProjectID    string
 	AcpBackend   string
 	GitCredType  string
 	MCP          []MCPServer
@@ -578,7 +564,6 @@ type CreateFromTemplateArgs struct {
 	Region       string
 	CustomConfig string
 	SkipIfExists bool
-	// When SessionID is set, scope checks apply.
 }
 
 // CreateAgentFromTemplate creates one engineer from an embedded template.
@@ -597,22 +582,11 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		}
 		return Agent{}, fmt.Errorf("%w: %s", ErrTeamAgentConflict, name)
 	}
-	projectID := strings.TrimSpace(args.ProjectID)
-	if projectID == "" {
-		return Agent{}, fmt.Errorf("%w: projectId is required", ErrTeamValidation)
-	}
-	if args.SessionID != "" {
-		if err := s.assertSessionProject(args.SessionID, projectID); err != nil {
-			return Agent{}, err
-		}
-	}
-
 	tmpl, err := loadTeamAgentTemplate(role.EmbedName)
 	if err != nil {
 		return Agent{}, err
 	}
 	tmpl.Name = name
-	tmpl.ProjectID = projectID
 	backend := tmpl.AcpBackend
 	if strings.TrimSpace(args.AcpBackend) != "" {
 		if backend, err = ParseAcpBackend(args.AcpBackend); err != nil {
@@ -658,13 +632,12 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 	return tmpl, nil
 }
 
-func (s *TeamService) buildPMAgent(req normalizedTeamReq, projectID string) (Agent, error) {
+func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	tmpl, err := loadTeamAgentTemplate(TeamPMEmbedName)
 	if err != nil {
 		return Agent{}, err
 	}
 	tmpl.Name = req.PMName
-	tmpl.ProjectID = projectID
 	backend := req.AcpBackend
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
@@ -712,7 +685,7 @@ func teamPMProjectContextMarkdown(req normalizedTeamReq) string {
 	b.WriteString(strings.TrimSpace(req.Background))
 	b.WriteString("\n\n## 编制约定\n\n")
 	b.WriteString("- 命名前缀：`" + req.Prefix + "`\n")
-	b.WriteString(fmt.Sprintf("- 工作区：`%s`（你与 %d 名工程师在此协作）\n", req.ProjectName, len(TeamEngineerTemplates)))
+	b.WriteString(fmt.Sprintf("- 工作区：`%s`（你与 %d 名工程师在此协作）\n", req.WorkspaceName, len(TeamEngineerTemplates)))
 	b.WriteString("- PM：`" + req.PMName + "`\n")
 	b.WriteString("- 工程师命名：`{前缀}{角色}`（" + teamRoleLabels() + "）\n\n")
 	if req.GitURL != "" {
@@ -720,7 +693,7 @@ func teamPMProjectContextMarkdown(req normalizedTeamReq) string {
 		b.WriteString("- Git URL：`" + req.GitURL + "`\n\n")
 	}
 	b.WriteString("## 工作方式\n\n")
-	b.WriteString("先 `pm_list_project_agents` 确认编制，再按工作流分派工程师；缺人时用模板补齐，勿覆盖重名。\n")
+	b.WriteString("先 `pm_list_workspace_agents` 确认编制，再按工作流分派工程师；缺人时用模板补齐，勿覆盖重名。\n")
 	return b.String()
 }
 
@@ -733,17 +706,6 @@ func upsertAgentFile(files []AgentFile, path, content string) []AgentFile {
 		}
 	}
 	return append(files, AgentFile{Path: path, Content: content})
-}
-
-func (s *TeamService) assertSessionProject(sessionID, projectID string) error {
-	sess, err := s.GetSession(sessionID)
-	if err != nil {
-		return err
-	}
-	if sess.ProjectID == "" || sess.ProjectID != strings.TrimSpace(projectID) {
-		return fmt.Errorf("%w: projectId mismatch", ErrTeamScopeDenied)
-	}
-	return nil
 }
 
 func (s *TeamService) appendEvent(id, kind, message string) {
