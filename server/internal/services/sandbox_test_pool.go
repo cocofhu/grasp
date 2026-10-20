@@ -776,32 +776,16 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 // adopted one is marked in use for the reattaching driver; any other keeps its
 // persisted leases (debug window, preview) or is retired like a finished node.
 // Missing or stopped containers are dropped.
-// A run-level shared container (Scope=run) of a run that is still in progress is
-// kept so the runtime coordinator can rehydrate it. Node-private containers (Scope=node),
-// missing containers and those of finished runs are orphans.
 func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sandbox, adopted bool, tracked map[string]bool) {
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		s.destroyLocalSandbox(ctx, row)
 		return
 	}
-	// Only keep scope=run containers that are still in progress
-	if row.Scope == runtimeScopeRun && !s.runInProgress(row.RunID) {
-		s.destroyLocalSandbox(ctx, row)
-		return
-	}
-	// Node-private containers (Scope=node) are not kept across restart
-	if row.Scope != runtimeScopeRun {
-		s.destroyLocalSandbox(ctx, row)
-		return
-	}
 	tracked[row.Name] = true
-	if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
-		s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).Updates(map[string]any{
-			"status": "running", "host": sb.Host, "acp_port": sb.Port,
-			"code_server_port": sb.CodeServerPort, "updated_at": time.Now(),
-		})
-	}
-	if adopted {
+	// The run-level shared container of a run still in progress outlives any
+	// one node: keep it with no deadline so the runtime coordinator can
+	// rehydrate it when the next node of the run starts.
+	if adopted || (row.Scope == runtimeScopeRun && s.runInProgress(row.RunID)) {
 		s.mu.Lock()
 		s.runActive[row.Name] = true
 		s.mu.Unlock()

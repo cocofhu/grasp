@@ -799,10 +799,10 @@ type PromptImage struct {
 //     the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
-	Profile        string `json:"profile"`                          // bound Agent name
-	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent"
+	ID      uint   `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
+	Profile string `json:"profile"`                          // bound Agent name
+	Purpose string `json:"purpose"`                          // "test" | "run" | "agent"
 	// Scope identifies the lifecycle owner of a run sandbox: "run" is the
 	// container shared by compatible Agent nodes of the workflow run; "node" is
 	// a node-private container.

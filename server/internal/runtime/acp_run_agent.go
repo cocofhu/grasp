@@ -67,6 +67,15 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 // sandbox (kept for the debug TTL); on a retryable fault it discards (destroys)
 // the broken sandbox so the caller can retry cleanly.
 func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeResult, err error) {
+	if req.ReattachSandbox != "" && c.isSharedRunSandbox(req.RunID, req.ReattachSandbox) {
+		// The run's shared container hosts every node's bridge chat, so the
+		// single-sandbox reattach (default chat + container-wide event log)
+		// does not apply. Re-enter the node through the coordinator instead:
+		// it rehydrates the same container, keeping the run's workspace.
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", req.ReattachSandbox).
+			Msg("restart: re-entering node in the run's shared sandbox")
+		req.ReattachSandbox = ""
+	}
 	reattach := req.ReattachSandbox != ""
 	var (
 		sb   *sandbox.Sandbox
@@ -641,8 +650,8 @@ func (c *acpProvider) teardownDetachedRunSandbox(runID string, keepPreview bool)
 		return
 	}
 	var sb *sandbox.Sandbox
-	if attacher, ok := c.mgr.(sandboxAttacher); ok {
-		sb, _ = attacher.AttachNoEnsure(context.Background(), info.Name)
+	if attacher, ok := c.mgr.(sandboxRunAttacher); ok {
+		sb, _ = attacher.Attach(context.Background(), info.Name)
 	}
 	c.teardownSharedSandbox(info.Name, sb, info.HomeDir, keepPreview)
 }
@@ -697,4 +706,18 @@ func nudgeRetries(req NodeReq, planRounds bool) int {
 		return req.Caps.MaxRounds
 	}
 	return defaultNudgeRetries
+}
+
+// isSharedRunSandbox reports whether name is the run's durable shared
+// container (as opposed to a node-private one).
+func (c *acpProvider) isSharedRunSandbox(runID, name string) bool {
+	if c.coordinator == nil || strings.TrimSpace(runID) == "" || name == "" {
+		return false
+	}
+	lookup, ok := c.registry.(RunSandboxLookup)
+	if !ok {
+		return false
+	}
+	info, found := lookup.FindRunSandbox(runID)
+	return found && info.Name == name
 }

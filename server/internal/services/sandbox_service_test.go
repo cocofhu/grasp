@@ -194,9 +194,10 @@ func TestNodeScopeRunSandboxStaysOutOfBinding(t *testing.T) {
 	}
 }
 
-// After a restart only the shared container of a run still in progress is
-// kept for rehydration.
-func TestSandboxReconcileKeepsOnlyInProgressSharedRunSandbox(t *testing.T) {
+// After a restart the shared container of a run still in progress is kept in
+// use (no deadline) for rehydration; other live run containers are retired
+// onto their leases like a finished node.
+func TestSandboxReconcileKeepsInProgressSharedRunSandbox(t *testing.T) {
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
@@ -211,17 +212,25 @@ func TestSandboxReconcileKeepsOnlyInProgressSharedRunSandbox(t *testing.T) {
 		ds.setStatus(row.Name, "running")
 	}
 
-	s.ReconcileOnStartup(context.Background(), map[string]bool{})
+	s.ReconcileOnStartup(context.Background(), nil)
 
-	if !ds.fg.Has("gw-shared-live") {
-		t.Fatal("in-progress run's shared container must survive restart")
+	var live models.Sandbox
+	if err := db.Where("name = ?", "gw-shared-live").First(&live).Error; err != nil || !ds.fg.Has("gw-shared-live") {
+		t.Fatalf("in-progress run's shared container must survive restart: %v", err)
+	}
+	if live.DestroyAt != nil {
+		t.Fatalf("in-progress shared container must have no deadline, got %v", live.DestroyAt)
+	}
+	if !s.isBusyRow(&live) {
+		t.Fatal("in-progress shared container must be marked in use")
 	}
 	for _, name := range []string{"gw-private-live", "gw-shared-done"} {
-		if ds.fg.Has(name) {
-			t.Fatalf("%s should be destroyed on restart", name)
+		var row models.Sandbox
+		if err := db.Where("name = ?", name).First(&row).Error; err != nil {
+			t.Fatalf("%s row: %v", name, err)
 		}
-		if err := db.Where("name = ?", name).First(&models.Sandbox{}).Error; err != gorm.ErrRecordNotFound {
-			t.Fatalf("%s row should be gone", name)
+		if row.DestroyAt == nil {
+			t.Fatalf("%s should be retired with a deadline", name)
 		}
 	}
 }

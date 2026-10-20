@@ -173,6 +173,11 @@ All notable public-release changes are documented here.
   `127.0.0.1:<app port>`. Sandboxes on an older runtime bundle keep the old
   behavior until the bundle updates.
 
+- **Shared sandbox compatibility and recovery:** an Agent node joins the run's shared sandbox only when its backend, image, Agent config home (rules, skills, MCP, settings), container env, and credentials match; otherwise it runs in its own private container as before. Each node's bridge chat uses that node's model. A failed turn (idle, stuck, dropped connection) keeps the shared workspace when the container is still healthy and only replaces the generation when it is not. A node parked for review releases the lease so later nodes can run before the gate. Codex nodes that reuse the container refresh their login file. On server restart only the shared container of a run still in progress is kept; private node containers and finished runs are destroyed, and Cancel after restart cleans up a detached shared container.
+- **Shared sandbox AbortRun keeps preview:** with a run-level coordinator, Cancel/Abort retires the shared container when preview keepalive is healthy (including KeepAliveForReview parked sessions) instead of Destroying it; connect/chat failures release the lease without discarding the generation; a create raced with AbortRun cleans up the orphaned container and ConfigHome.
+- **Shared sandbox node env overlay:** sequential Agent nodes with different credentials reuse one run-level sandbox; node secrets are injected per ACP session and cleared on chat teardown, and platform-reserved keys cannot be overridden.
+- **Run-level shared workflow sandboxes:** Agent nodes in one workflow run now reuse one isolated workspace with serialized leases, independent bridge chats, durable generation/replacement records, restart recovery, and one terminal cleanup.
+
 ## 2.2.0 — 2026-10-15
 
 <img src="media/yume-mark.png" alt="Black-and-white ghost cat, the Grasp mascot" width="120" />
@@ -238,10 +243,6 @@ All notable public-release changes are documented here.
   another project. If the clarify node's sandbox fails to start, the run is
   marked failed. A sandbox config or credential error is not retried. The
   start-run dialog accepts an optional first message (#787).
-- **Shared sandbox compatibility and recovery:** an Agent node joins the run's shared sandbox only when its backend, image, Agent config home (rules, skills, MCP, settings), container env, and credentials match; otherwise it runs in its own private container as before. Each node's bridge chat uses that node's model. A failed turn (idle, stuck, dropped connection) keeps the shared workspace when the container is still healthy and only replaces the generation when it is not. A node parked for review releases the lease so later nodes can run before the gate. Codex nodes that reuse the container refresh their login file. On server restart only the shared container of a run still in progress is kept; private node containers and finished runs are destroyed, and Cancel after restart cleans up a detached shared container.
-- **Shared sandbox AbortRun keeps preview:** with a run-level coordinator, Cancel/Abort retires the shared container when preview keepalive is healthy (including KeepAliveForReview parked sessions) instead of Destroying it; connect/chat failures release the lease without discarding the generation; a create raced with AbortRun cleans up the orphaned container and ConfigHome.
-- **Shared sandbox node env overlay:** sequential Agent nodes with different credentials reuse one run-level sandbox; node secrets are injected per ACP session and cleared on chat teardown, and platform-reserved keys cannot be overridden.
-- **Run-level shared workflow sandboxes:** Agent nodes in one workflow run now reuse one isolated workspace with serialized leases, independent bridge chats, durable generation/replacement records, restart recovery, and one terminal cleanup.
 - Default `./start.sh` / `.env.example` / `compose.release.yaml` pins GHCR
   images to `*:2.2.0`.
 

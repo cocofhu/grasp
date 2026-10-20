@@ -455,8 +455,8 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 		return res, false, 0
 	}
 	prev := max(info.Generation, 1)
-	if attacher, ok := c.mgr.(sandboxAttacher); ok {
-		if sb, err := attacher.AttachNoEnsure(ctx, info.Name); err == nil {
+	if attacher, ok := c.mgr.(sandboxRunAttacher); ok {
+		if sb, err := attacher.Attach(ctx, info.Name); err == nil {
 			if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 30*time.Second); werr == nil {
 				return sharedCreateResult{sb: sb, home: info.HomeDir, fingerprint: info.EnvFingerprint, generation: prev}, true, prev
 			}
@@ -469,6 +469,12 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 	c.deregisterRunSandbox(info.Name)
 	removeHome(info.HomeDir)
 	return res, false, prev + 1
+}
+
+// sandboxRunAttacher is the optional manager capability to re-open a
+// container by its gateway id (refreshing its runtime bundle).
+type sandboxRunAttacher interface {
+	Attach(context.Context, string) (*sandbox.Sandbox, error)
 }
 
 func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
@@ -658,8 +664,8 @@ func (c *acpProvider) specLayered(req NodeReq, shared, materialize bool) (layere
 		GitCredentialID:      agentCfg.GitCredentialID,
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
 	}, c.opts.SelectedCredentialForProject)
-	markChangedKeys(agentEnvKeys, beforeCred, env)
 	ApplyCredentialBindings(env, projectCreds, c.projectIDForReq(req), agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject)
+	markChangedKeys(agentEnvKeys, beforeCred, env)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
