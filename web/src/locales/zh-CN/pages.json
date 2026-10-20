@@ -4281,6 +4281,8 @@
       "artifacts": "产物",
       "openArtifacts": "打开产物",
       "closeArtifacts": "关闭产物",
+      "openArtifactsUnread": "打开产物，{n} 项未查看",
+      "openArtifactsUnreadCap": "打开产物，99 项及以上未查看",
       "backToChat": "返回聊天",
       "resizePanel": "调整产物预览宽度",
       "chooseArtifact": "在这里查看产物",

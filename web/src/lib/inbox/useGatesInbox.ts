@@ -3,6 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
+import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
@@ -1438,6 +1439,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // Ignore events for runs that no longer match the current pending active item.
       if (!active.value || active.value.runId !== runId) return
       if (isProcessedTriple(active.value) || !isActiveStillInList()) return
+      if (m.type === 'artifact_edit') notifyRunArtifactEdit()
       // Starting card: a run transition is exactly the signal we wait for — the
       // approve node has parked, so the list row loses `state: starting` and the
       // rebind reloads the context with the real transcript.

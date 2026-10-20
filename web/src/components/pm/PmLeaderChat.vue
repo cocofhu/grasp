@@ -6,9 +6,15 @@ import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import CitationCard from '@/components/pm/CitationCard.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import ArtifactUnreadMark from '@/components/chat/ArtifactUnreadMark.vue'
 import ConversationWorkspace from '@/components/chat/ConversationWorkspace.vue'
 import ConversationArtifactBrowser from '@/components/chat/ConversationArtifactBrowser.vue'
 import { provideConversationArtifacts, type ConversationArtifactTarget } from '@/lib/chat/conversationArtifacts'
+import {
+  artifactButtonAriaLabel,
+  createCitationUnreadState,
+  reduceArtifactCitationUnread,
+} from '@/lib/chat/artifactUnread'
 import ArtifactLoadingPane from '@/components/run/ArtifactLoadingPane.vue'
 import TokenUsageByModelTip from '@/components/ui/TokenUsageByModelTip.vue'
 import { usePmLeaderChat } from '@/lib/pm/usePmLeaderChat'
@@ -153,6 +159,24 @@ const artifactTarget = ref<ConversationArtifactTarget | null>(null)
 const conversationScope = computed(() => `pm:${activeId.value || 'new'}`)
 provideConversationArtifacts({ open(target) { artifactTarget.value = target; artifactOpen.value = true } })
 watch(conversationScope, () => { artifactOpen.value = false; artifactTarget.value = null })
+const citationUnread = ref(createCitationUnreadState())
+watch(
+  () => ({
+    threadId: activeId.value || '',
+    panelOpen: artifactOpen.value,
+    loading: messagesLoading.value,
+    messages: messages.value,
+  }),
+  (event) => {
+    citationUnread.value = reduceArtifactCitationUnread(citationUnread.value, event)
+  },
+)
+const artifactButtonLabel = computed(() => artifactButtonAriaLabel(artifactOpen.value, citationUnread.value.count, {
+  open: t('pages.conversationWorkspace.openArtifacts'),
+  close: t('pages.conversationWorkspace.closeArtifacts'),
+  unread: (count) => t('pages.conversationWorkspace.openArtifactsUnread', { n: count }),
+  cap: t('pages.conversationWorkspace.openArtifactsUnreadCap'),
+}))
 
 const messageNavigation = computed(() => {
   const items: Array<{ id: string; title: string; preview: string }> = []
@@ -327,7 +351,7 @@ function showConversationHistory() { artifactOpen.value = false }
         </div>
         <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</span>
         <AppButton v-if="!isMobile && artifactOpen && threads.length" size="sm" variant="ghost" icon="chat" data-testid="pm-chat-show-threads" @click="showConversationHistory">{{ t('pages.workspace.pm.threads') }}</AppButton>
-        <AppButton class="pm-header-action" size="sm" variant="ghost" icon="chat-artifacts" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" @click="artifactOpen = !artifactOpen">{{ t('pages.artifacts.title') }}</AppButton>
+        <AppButton class="pm-header-action" size="sm" variant="ghost" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" :aria-label="artifactButtonLabel" @click="artifactOpen = !artifactOpen"><span class="inline-flex items-center gap-[7px]"><ArtifactUnreadMark :count="citationUnread.count" :panel-open="artifactOpen"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.artifacts.title') }}</span></AppButton>
         <AppButton
           size="sm"
           variant="ghost"
