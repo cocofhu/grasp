@@ -471,7 +471,7 @@ onUnmounted(() => {
       :class="{ 'table-loading': showTableLoading }"
     >
       <template v-if="initialLoading">
-        <div class="card flex min-h-0 flex-1 flex-col overflow-hidden p-2">
+        <div class="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-line/60 p-2">
           <div class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto">
             <div
               v-for="n in SKELETON_ROWS"
@@ -496,7 +496,7 @@ onUnmounted(() => {
       </template>
       <div
         v-else-if="loadFailed"
-        class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto border-t border-line/60 px-5 py-10 text-center"
         data-testid="run-list-load-failed"
       >
         <div class="text-[13px] font-medium text-txt">{{ t('pages.runList.loadFailedTitle') }}</div>
@@ -505,11 +505,11 @@ onUnmounted(() => {
       </div>
       <div
         v-else-if="!runs.length"
-        class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center text-[13px] text-txt3"
+        class="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto border-t border-line/60 px-5 py-10 text-center text-[13px] text-txt3"
       >
         {{ emptyMessage }}
       </div>
-      <div v-else class="card flex min-h-0 flex-1 flex-col overflow-hidden">
+      <div v-else class="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-line/60">
         <Transition name="ui-fade" mode="out-in">
         <div :key="listFadeKey" class="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2" data-testid="run-list-fade">
         <!--
@@ -609,7 +609,7 @@ onUnmounted(() => {
     <!-- Desktop table -->
     <div
       v-else-if="loadFailed"
-      class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center"
+      class="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto border-t border-line/60 px-5 py-10 text-center"
       :class="{ 'table-loading': showTableLoading }"
       data-testid="run-list-load-failed"
     >
@@ -621,7 +621,7 @@ onUnmounted(() => {
     <!-- Desktop: empty / no matching -->
     <div
       v-else-if="!runs.length && !initialLoading"
-      class="card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto px-5 py-10 text-center text-[13px] text-txt3"
+      class="flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto border-t border-line/60 px-5 py-10 text-center text-[13px] text-txt3"
       :class="{ 'table-loading': showTableLoading }"
     >
       {{ emptyMessage }}
@@ -630,8 +630,9 @@ onUnmounted(() => {
     <!-- Desktop table (loading skeleton or rows) -->
     <div
       v-else
-      class="card flex min-h-0 flex-1 flex-col overflow-hidden"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden"
       :class="{ 'table-loading': showTableLoading }"
+      data-testid="run-list-table"
     >
       <div class="min-h-0 flex-1 overflow-auto">
       <Transition name="ui-fade" mode="out-in">
@@ -689,7 +690,7 @@ onUnmounted(() => {
         </thead>
         <tbody>
           <template v-if="initialLoading">
-            <tr v-for="n in SKELETON_ROWS" :key="'skel-' + n" class="border-t border-line">
+            <tr v-for="n in SKELETON_ROWS" :key="'skel-' + n" class="border-t border-line/60">
               <td class="px-5 py-3">
                 <div class="h-3.5 w-[90%] rounded bg-elevated animate-pulse" />
                 <div class="mt-1 h-2.5 w-[60%] rounded bg-elevated animate-pulse" />
@@ -736,7 +737,7 @@ onUnmounted(() => {
                 role="link"
                 :data-href="href"
                 tabindex="0"
-                class="cursor-pointer border-t border-line transition hover:bg-elevated active:bg-overlay"
+                class="cursor-pointer border-t border-line/60 transition hover:bg-elevated active:bg-overlay"
                 @click="navigate"
                 @keydown.enter.prevent="() => navigate()"
                 @mouseenter="prefetchRunDetail"
@@ -904,11 +905,22 @@ onUnmounted(() => {
   opacity: 0.55;
 }
 
+/* Flat page table (same structure as 用量统计): page-coloured sticky header with a
+   bottom rule, first/last columns flush with the page header instead of a card inset. */
 thead th {
   position: sticky;
   top: 0;
   z-index: 2;
-  background: rgb(var(--c-elevated));
+  background: rgb(var(--c-surface));
+  box-shadow: inset 0 -1px 0 rgb(var(--c-line));
+}
+table th:first-child,
+table td:first-child {
+  padding-left: 0;
+}
+table th:last-child,
+table td:last-child {
+  padding-right: 0;
 }
 
 @keyframes nodeLabelFadeIn {
