@@ -63,7 +63,10 @@ describe('ReactConnectingState', () => {
     expect(wrapper.text()).not.toContain('多轮 ReAct')
     expect(wrapper.text()).not.toContain('共 0 条')
     expect(wrapper.find('icon-stub[name="chat"]').exists()).toBe(false)
-    expect(wrapper.get('icon-stub[name="spinner"]').exists()).toBe(true)
+    // Status sits in the transcript column with the chat pulse mark, not a centered spinner.
+    expect(wrapper.find('icon-stub[name="spinner"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="clarify-boot-loader"]').attributes('data-variant')).toBe('inline')
+    expect(wrapper.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
     const titles = [
       '正在准备工作环境…',
       '正在启动 Agent…',
@@ -221,5 +224,20 @@ describe('ReactConnectingState', () => {
     expect(wrapper.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="clarify-boot-progress"]').exists()).toBe(true)
+  })
+
+  it('sidebar connecting uses the chat skeleton: transcript column + disabled ComposerShell', () => {
+    const wrapper = mountSidebar('zh-CN')
+    const root = wrapper.get('[data-testid="react-connecting-sidebar"]')
+    expect(root.classes()).toContain('chat-thread')
+    expect(wrapper.find('.react-connecting-transcript [data-testid="clarify-boot-loader"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="react-connecting-actions"] [data-testid="composer-shell"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="react-connecting-input-row"]').classes()).toContain('chat-composer')
+    const input = wrapper.get('[data-testid="react-connecting-input"]')
+    expect(input.classes()).toContain('chat-input')
+    expect((input.element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(wrapper.get('[data-testid="react-connecting-send"]').classes()).toContain('chat-action-primary')
+    expect(wrapper.get('[data-testid="react-connecting-confirm"]').classes()).toContain('chat-action-confirm')
+    expect((wrapper.get('[data-testid="react-connecting-attach"]').element as HTMLButtonElement).disabled).toBe(true)
   })
 })

@@ -1843,7 +1843,7 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('streaming agent keeps bottom time without 已完成 footnote', async () => {
+    it('streaming agent shows a tail status instead of bottom time / 已完成', async () => {
       const wrapper = mountChat({ draft: '请复审' })
       await clickSend(wrapper)
       const vm = wrapper.vm as unknown as {
@@ -1860,8 +1860,53 @@ describe('ClarifyChat', () => {
 
       expect(wrapper.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-stream-caret"]').exists()).toBe(true)
-      // human + streaming agent both keep bottom time channel
-      expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(2)
+      // Only the human keeps its time; the running agent has a tail status instead.
+      expect(wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length).toBe(1)
+      const tail = wrapper.get('[data-turn-role="agent"] [data-testid="clarify-busy-status"]')
+      expect(tail.attributes('data-state')).toBe('outputting')
+      expect(tail.text()).toContain('输出中')
+      wrapper.unmount()
+    })
+
+    it('mid-turn tools: tail shows 思考中… after the last step, no 已完成 / time until turn_done', async () => {
+      const wrapper = mountChat({ draft: '请复审' })
+      await clickSend(wrapper)
+      const vm = wrapper.vm as unknown as {
+        applyReviewFrame: (f: Record<string, unknown>) => void
+        applyAcpEvents: (e: Record<string, unknown>[], nodeId?: string) => void
+      }
+      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '请复审' } })
+      const parts = [
+        { kind: 'thought', text: '先读文件' },
+        { kind: 'message', text: '先对齐需求。' },
+        { kind: 'tool', title: '读取文件', status: 'completed' },
+        { kind: 'thought', text: '再搜代码' },
+        { kind: 'tool', title: '搜索代码', status: 'completed' },
+      ]
+      vm.applyAcpEvents([
+        { kind: 'thought', text: '再搜代码' },
+        { kind: 'message', text: '先对齐需求。' },
+        { kind: 'tool_call', title: '读取文件', status: 'completed' },
+        { kind: 'tool_call', title: '搜索代码', status: 'completed' },
+        { kind: 'timeline', parts },
+      ], 'react-1')
+      await flushPromises()
+      const agent = wrapper.get('[data-turn-role="agent"]')
+      expect(agent.text()).not.toContain('已完成')
+      expect(agent.find('[data-testid="clarify-turn-bottom-time"]').exists()).toBe(false)
+      const tail = agent.get('[data-testid="clarify-busy-status"]')
+      expect(tail.attributes('data-state')).toBe('thinking')
+      expect(tail.text()).toContain('思考中')
+      // The status is the last thing in the reply (after the newest tool group).
+      const html = agent.html()
+      expect(html.lastIndexOf('clarify-busy-status')).toBeGreaterThan(html.lastIndexOf('agent-tool-group'))
+
+      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      await flushPromises()
+      const done = wrapper.get('[data-turn-role="agent"]')
+      expect(done.find('[data-testid="clarify-busy-status"]').exists()).toBe(false)
+      // Finished turn folds into the elapsed line (#843).
+      expect(done.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
       wrapper.unmount()
     })
 

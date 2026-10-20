@@ -186,6 +186,7 @@ const {
   applyReviewFrame,
   applyAcpEvents,
   agentHasMessage,
+  agentTailOutputting,
   agentThoughtDisplay,
   isThoughtOpen,
   onThoughtToggle,
@@ -851,23 +852,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <InboxMotionMark kind="pulse" />
               <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
-            <!-- Status: 思考中… (has thought, no message yet) -->
-            <div
-              v-else-if="t.streaming && t.thought && !agentHasMessage(t)"
-              class="chat-meta mb-1.5 inline-flex items-center gap-2 font-normal"
-              data-testid="clarify-busy-status"
-            >
-              <InboxMotionMark kind="pulse" />
-              <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
-            </div>
-            <!-- Status: 输出中 (shimmer) while streaming message -->
-            <div
-              v-else-if="t.streaming && agentHasMessage(t)"
-              class="clarify-outputting chat-meta mb-1.5 font-normal"
-              data-testid="clarify-busy-status"
-            >
-              {{ translate('pages.clarify.outputting') }}
-            </div>
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
               v-if="t.parts?.length && !isRetryableFailedAgent(t)"
@@ -1311,8 +1295,25 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             interrupted
           </div>
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
+          <!--
+            Turn still running: the live status sits at the end of the reply (where
+            the next step will appear), never only at the top. Same pulse +
+            思考中… / shimmer 输出中 styles as before.
+          -->
           <div
-            v-if="!showTurnCompleted(t)"
+            v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
+            class="chat-meta mt-1 inline-flex items-center gap-2 font-normal"
+            :class="agentTailOutputting(t) ? 'clarify-outputting' : ''"
+            data-testid="clarify-busy-status"
+            :data-state="agentTailOutputting(t) ? 'outputting' : 'thinking'"
+            role="status"
+          >
+            <InboxMotionMark v-if="!agentTailOutputting(t)" kind="pulse" />
+            <span>{{ agentTailOutputting(t) ? translate('pages.clarify.outputting') : translate('pages.clarify.thinkingBusy') }}</span>
+          </div>
+          <!-- No timestamp until the turn has ended. -->
+          <div
+            v-else-if="!showTurnCompleted(t) && !(t.role === 'agent' && t.streaming)"
             class="chat-meta mt-1"
             :class="t.role === 'human' ? 'text-right' : ''"
             data-testid="clarify-turn-bottom-time"

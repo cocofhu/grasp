@@ -2,16 +2,21 @@
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
+import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 
 // phase:
 //  - 'pending'  节点尚未进入澄清(队列中),静态等待提示
 //  - 'starting' 已进入,正在创建沙箱 / 建立 ACP / 生成第一轮问题,展示分阶段动效
 // sandboxPhase: gateway-driven lifecycle when known ('pulling' | 'creating' | …).
 // When 'pulling', pin the pull-image step instead of cycling (plan g3.1 / f5).
-const props = defineProps<{
+// variant 'inline': rendered as a status row inside the chat transcript (same
+// pulse + chat-meta style as ClarifyChat's 思考中… placeholder), so connecting
+// uses the same chat skeleton as the live conversation.
+const props = withDefaults(defineProps<{
   phase: 'pending' | 'starting'
   sandboxPhase?: string | null
-}>()
+  variant?: 'center' | 'inline'
+}>(), { sandboxPhase: null, variant: 'center' })
 
 const { t } = useI18n()
 
@@ -70,6 +75,32 @@ onBeforeUnmount(stopCycling)
 
 <template>
   <div
+    v-if="variant === 'inline' && phase === 'starting'"
+    class="flex min-w-0 flex-col items-start gap-1"
+    data-testid="clarify-boot-loader"
+    data-variant="inline"
+    :data-sandbox-phase="sandboxPhase || ''"
+  >
+    <div class="chat-meta inline-flex items-center gap-2.5 py-2" role="status">
+      <InboxMotionMark kind="pulse" />
+      <Transition name="startfade" mode="out-in">
+        <span :key="step" data-testid="clarify-boot-title">{{ STARTING_STEPS[step].title }}</span>
+      </Transition>
+    </div>
+    <Transition name="startfade" mode="out-in">
+      <p :key="'h' + step" class="chat-meta m-0 text-txt3">{{ STARTING_STEPS[step].hint }}</p>
+    </Transition>
+    <div class="mt-1.5 flex items-center gap-1.5" data-testid="clarify-boot-progress">
+      <span
+        v-for="(_, i) in STARTING_STEPS"
+        :key="i"
+        class="h-1.5 rounded-full transition-all duration-300"
+        :class="i === step ? 'w-5 bg-n-clarify' : i < step ? 'w-1.5 bg-n-clarify/50' : 'w-1.5 bg-line'"
+      />
+    </div>
+  </div>
+  <div
+    v-else
     class="flex h-full flex-col items-center justify-center gap-3 px-6 text-center"
     data-testid="clarify-boot-loader"
     :data-sandbox-phase="sandboxPhase || ''"
