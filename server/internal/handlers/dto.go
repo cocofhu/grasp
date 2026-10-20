@@ -167,6 +167,9 @@ func reactConversationDTO(conv models.ReactConversation) gin.H {
 	if name := strings.TrimSpace(conv.PreviewArtifact); name != "" {
 		out["previewArtifact"] = name
 	}
+	if conv.Takeover {
+		out["takeover"] = true
+	}
 	return out
 }
 
@@ -206,6 +209,10 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 			// can only show the right visit when this payload still carries
 			// that visit's JSON. Log events stay free of those bodies.
 			"outputs": cloneOutputs(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": previewPromptEvents(s.Events), "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
+			"mode": stateRunMode(s),
+		}
+		if s.TakenOverAt != nil {
+			nr["takenOverAt"] = s.TakenOverAt
 		}
 		// Nullable usage: omit when nil so clients treat missing as "—" (not 0).
 		if s.Usage != nil {
@@ -315,4 +322,12 @@ func maskedWorkflowDefaults(d *models.WorkflowDefaults) *models.WorkflowDefaults
 	cp := *d
 	cp.Variables = services.MaskedWorkspaceVars(d.Variables)
 	return &cp
+}
+
+// stateRunMode is the visit's auto|manual mode ("" on old rows = auto).
+func stateRunMode(s models.StateRun) string {
+	if s.IsManual() {
+		return models.NodeModeManual
+	}
+	return models.NodeModeAuto
 }

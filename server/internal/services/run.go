@@ -40,6 +40,8 @@ func runListOrderBy(sort, order string) string {
 		return "CASE WHEN status = 'queued' THEN created_at ELSE started_at END " + dir + ", id DESC"
 	case "priority":
 		return "priority " + dir + ", id DESC"
+	case "last_activity":
+		return "COALESCE(last_activity_at, CASE WHEN status = 'queued' THEN created_at ELSE started_at END) " + dir + ", id DESC"
 	default:
 		return defaultRunListOrder
 	}

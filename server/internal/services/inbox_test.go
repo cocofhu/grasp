@@ -653,3 +653,14 @@ func TestLatestMessageAt(t *testing.T) {
 		t.Fatal("fallback when no messages")
 	}
 }
+
+// TestClarifyInboxKindTakeover: a taken-over auto node is filed as review.
+func TestClarifyInboxKindTakeover(t *testing.T) {
+	auto := &models.Node{Type: "agent", Caps: testAutoCaps}
+	if got := clarifyInboxKindFor(auto, models.ReactConversation{Takeover: true}); got != "review" {
+		t.Fatalf("takeover kind=%q", got)
+	}
+	if got := clarifyInboxKindFor(auto, models.ReactConversation{}); got != "clarify" {
+		t.Fatalf("plain kind=%q", got)
+	}
+}

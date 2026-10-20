@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -143,10 +144,18 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
 		return
 	}
-	labels := h.Runs.CurrentNodeLabels(runs)
+	current := h.Runs.CurrentNodes(runs)
 	items := make([]gin.H, 0, len(runs))
 	for _, r := range runs {
-		items = append(items, runSummaryDTO(r, labels[r.ID]))
+		cn, ok := current[r.ID]
+		item := runSummaryDTO(r, cn.Name)
+		item["lastActivityAt"] = services.RunLastActivity(r)
+		if ok {
+			item["currentNode"] = deriveCurrentNodeState(cn, func() bool {
+				return h.Eng != nil && h.Eng.ManualSessionBusy(r.ID, cn.ID)
+			})
+		}
+		items = append(items, item)
 	}
 	c.JSON(http.StatusOK, paginatedResponse(items, int(total), pg.Page, pg.PageSize))
 }
@@ -157,7 +166,7 @@ func parseRunListSort(sort, order string) (string, string) {
 	sort = strings.TrimSpace(sort)
 	order = strings.ToLower(strings.TrimSpace(order))
 	switch sort {
-	case "started_at", "priority":
+	case "started_at", "priority", "last_activity":
 	default:
 		return "", ""
 	}
@@ -381,4 +390,15 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"events": []models.AcpEvent{}, "nextCursor": "", "hasMore": false, "live": false})
+}
+
+// deriveCurrentNodeState upgrades a parked manual node (waiting_human) to
+// busy while its manual session (review / takeover / clarify) has a turn
+// running in the bridge; the UI offers Stop for busy. Auto (running) and
+// stopping states are never busy.
+func deriveCurrentNodeState(cn services.CurrentNode, sessionBusy func() bool) services.CurrentNode {
+	if cn.Mode == models.NodeModeManual && cn.State == engine.NodeStateWaitingHuman && sessionBusy() {
+		cn.State = engine.NodeStateBusy
+	}
+	return cn
 }
