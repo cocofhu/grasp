@@ -229,6 +229,7 @@ const derivedPaths = computed(() => {
       </div>
       <CliRuntimeCard
         v-if="showCliRuntime"
+        :key="agentName"
         :draft="draft"
         :inherited-model="inheritedModel"
         :focus-tick="focusModelTick"
