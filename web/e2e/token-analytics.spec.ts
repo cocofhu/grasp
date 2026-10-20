@@ -170,7 +170,7 @@ test.describe('Global token analytics', () => {
 
     await page.getByTestId('token-drill-apply').click()
     await expect(modal).toHaveCount(0)
-    await expect(page.getByTestId('token-analytics-filter-model')).toHaveValue('m1')
+    await expect(page.getByTestId('token-analytics-filter-model').getByRole('combobox')).toHaveText('Model')
     expect(errors).toEqual([])
   })
 })

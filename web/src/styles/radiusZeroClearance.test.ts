@@ -73,16 +73,14 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/class="[^"]*\brounded-lg\b[^"]*border/)
   })
 
-  it('TokenAnalyticsView filter selects and clear use control rounded', () => {
+  it('TokenAnalyticsView filter selects and clear use the shared controls', () => {
     const src = read('views/TokenAnalyticsView.vue')
-    for (const id of ['model', 'workflow', 'node-type', 'status']) {
-      expect(src).toMatch(
-        new RegExp(`class="[^"]*\\brounded\\b[^"]*\\bborder border-line\\b[^"]*"\\s+data-testid="token-analytics-filter-${id}"`),
-      )
+    // AppSelect / AppButton own the control radius (rounded-md) for every filter.
+    for (const id of ['model', 'workflow', 'node-type', 'status', 'phase']) {
+      expect(src).toMatch(new RegExp(`<AppSelect[^>]*data-testid="token-analytics-filter-${id}"`))
     }
-    expect(src).toMatch(
-      /<button[^>]*class="[^"]*\brounded\b[^"]*"[^>]*@click="clearFilters"/,
-    )
+    expect(src).not.toMatch(/<select\b/)
+    expect(src).toMatch(/<AppButton[^>]*data-testid="token-analytics-clear"[^>]*@click="clearFilters"/)
   })
 
   it('LoginView login card uses shell radius rounded-xl', () => {

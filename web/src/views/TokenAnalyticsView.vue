@@ -18,6 +18,8 @@ import { truncateText } from '@/lib/shared/format'
 import { TOKEN_PART_COLORS, TOKEN_PART_KEYS } from '@/components/token-analytics/tokenStatsShared'
 import { useToast } from '@/lib/composables/useToast'
 import { useAuth } from '@/lib/composables/useAuth'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import TokenChartCard from '@/components/token-analytics/TokenChartCard.vue'
 import TokenDrillDownModal from '@/components/token-analytics/TokenDrillDownModal.vue'
 import TokenPricingModal from '@/components/token-analytics/TokenPricingModal.vue'
@@ -132,6 +134,31 @@ function setRange(field: 'from' | 'to', value: string) {
   }
   filters.value = next
 }
+
+const granularityOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.granularity.auto') },
+  ...(['hour', 'day', 'week'] as const).map((g) => ({ value: g, label: t(`pages.tokenAnalytics.granularity.${g}`) })),
+])
+const modelOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.modelAll') },
+  ...(data.value?.filterOptions.models ?? []).map((m) => ({ value: m.key, label: m.name })),
+])
+const workflowOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.workflowAll') },
+  ...(data.value?.filterOptions.workflows ?? []).map((w) => ({ value: w.key, label: w.name })),
+])
+const nodeTypeOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.nodeTypeAll') },
+  ...(data.value?.filterOptions.nodeTypes ?? []).map((n) => ({ value: n.key, label: n.name })),
+])
+const statusOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.statusAll') },
+  ...(['ok', 'failed', 'cancelled'] as const).map((s) => ({ value: s, label: statusLabel(t, s) })),
+])
+const phaseOptions = computed(() => [
+  { value: '', label: t('pages.tokenAnalytics.phaseAll') },
+  ...(['production', 'interactive', 'chat'] as const).map((p) => ({ value: p, label: phaseLabel(t, p) })),
+])
 
 function setFilter<K extends keyof TokenStatsFilters>(key: K, value: TokenStatsFilters[K]) {
   filters.value = { ...filters.value, [key]: value }
@@ -587,38 +614,28 @@ watch(() => JSON.stringify(filters.value), () => void load())
       <div class="usage-content">
         <header class="usage-page-header" data-testid="token-analytics-header">
           <div class="min-w-0">
-            <h1 class="m-0 flex items-center gap-3 text-xl font-semibold tracking-tight text-txt">
+            <h1 class="m-0 flex items-center gap-3 text-lg font-semibold text-txt">
               {{ t('pages.tokenAnalytics.title') }}
               <span v-if="loading && data" class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" data-testid="token-analytics-refreshing" :aria-label="t('pages.tokenAnalytics.loading')" />
             </h1>
-            <p class="usage-page-description">{{ t('pages.tokenAnalytics.subtitle') }}</p>
+            <p class="m-0 text-[13px] leading-6 text-txt3">{{ t('pages.tokenAnalytics.subtitle') }}</p>
           </div>
           <div class="usage-page-actions">
-            <button
-              type="button"
-              class="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-txt2 hover:bg-elevated"
-              data-testid="token-analytics-pricing"
-              @click="pricingOpen = true"
-            >
+            <AppButton variant="outline" size="sm" data-testid="token-analytics-pricing" @click="pricingOpen = true">
               {{ t('pages.tokenAnalytics.pricing.button') }}
-            </button>
-            <button
-              type="button"
-              class="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-xs text-txt2 hover:bg-elevated"
-              data-testid="token-analytics-refresh"
-              @click="retry"
-            >
+            </AppButton>
+            <AppButton variant="outline" size="sm" data-testid="token-analytics-refresh" @click="retry">
               {{ t('pages.tokenAnalytics.refresh') }}
-            </button>
+            </AppButton>
           </div>
         </header>
 
         <section class="usage-controls" :aria-label="t('pages.tokenAnalytics.analysisRange')" data-testid="token-analytics-controls">
-          <div class="usage-period-row" data-testid="token-analytics-period">
+          <div class="usage-control-row" data-testid="token-analytics-period">
             <span class="usage-control-label">{{ t('pages.tokenAnalytics.timeRange') }}</span>
-            <div class="usage-period-controls">
+            <div class="usage-control-items">
               <div
-                class="flex gap-1 rounded-lg bg-elevated p-1"
+                class="usage-seg flex gap-1 rounded-lg bg-elevated p-1"
                 role="group"
                 :aria-label="t('pages.board.tokenStats.windowAria')"
                 data-testid="token-analytics-window"
@@ -627,71 +644,68 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   v-for="w in WINDOWS"
                   :key="w"
                   type="button"
-                  class="rounded px-2.5 py-1.5 text-xs"
-                  :class="filters.window === w ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3'"
+                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  :class="filters.window === w ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-window-${w}`"
                   :aria-pressed="filters.window === w"
                   @click="selectWindow(w)"
                 >
                   {{ t(`pages.board.tokenStats.windows.${w}`) }}
                 </button>
-              </div>
-              <div class="flex items-center gap-1 rounded-lg bg-elevated p-1">
                 <button
                   type="button"
-                  class="rounded px-2.5 py-1.5 text-xs"
-                  :class="filters.window === 'custom' ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3'"
+                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  :class="filters.window === 'custom' ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   data-testid="token-analytics-window-custom"
+                  :aria-pressed="filters.window === 'custom'"
                   @click="selectCustomWindow"
                 >
                   {{ t('pages.tokenAnalytics.windowCustom') }}
                 </button>
-                <template v-if="filters.window === 'custom'">
-                  <input
-                    type="date"
-                    class="rounded border border-line bg-surface px-1.5 py-1 text-xs text-txt2"
-                    :value="filters.from"
-                    :max="filters.to || undefined"
-                    :aria-label="t('pages.tokenAnalytics.rangeFrom')"
-                    data-testid="token-analytics-range-from"
-                    @change="setRange('from', ($event.target as HTMLInputElement).value)"
-                  />
-                  <span class="text-xs text-txt3">–</span>
-                  <input
-                    type="date"
-                    class="rounded border border-line bg-surface px-1.5 py-1 text-xs text-txt2"
-                    :value="filters.to"
-                    :min="filters.from || undefined"
-                    :aria-label="t('pages.tokenAnalytics.rangeTo')"
-                    data-testid="token-analytics-range-to"
-                    @change="setRange('to', ($event.target as HTMLInputElement).value)"
-                  />
-                </template>
               </div>
-              <select
-                class="rounded-lg border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                :value="filters.granularity"
+              <div v-if="filters.window === 'custom'" class="flex items-center gap-1.5">
+                <input
+                  type="date"
+                  class="usage-date-input rounded-md border border-line bg-base px-3 text-[12px] text-txt outline-none transition hover:border-line-strong focus:border-accent"
+                  :value="filters.from"
+                  :max="filters.to || undefined"
+                  :aria-label="t('pages.tokenAnalytics.rangeFrom')"
+                  data-testid="token-analytics-range-from"
+                  @change="setRange('from', ($event.target as HTMLInputElement).value)"
+                />
+                <span class="text-xs text-txt3">–</span>
+                <input
+                  type="date"
+                  class="usage-date-input rounded-md border border-line bg-base px-3 text-[12px] text-txt outline-none transition hover:border-line-strong focus:border-accent"
+                  :value="filters.to"
+                  :min="filters.from || undefined"
+                  :aria-label="t('pages.tokenAnalytics.rangeTo')"
+                  data-testid="token-analytics-range-to"
+                  @change="setRange('to', ($event.target as HTMLInputElement).value)"
+                />
+              </div>
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.granularity"
+                :options="granularityOptions"
                 :aria-label="t('pages.tokenAnalytics.granularity.aria')"
                 data-testid="token-analytics-granularity"
-                @change="setFilter('granularity', ($event.target as HTMLSelectElement).value as TokenStatsFilters['granularity'])"
-              >
-                <option value="">{{ t('pages.tokenAnalytics.granularity.auto') }}</option>
-                <option value="hour">{{ t('pages.tokenAnalytics.granularity.hour') }}</option>
-                <option value="day">{{ t('pages.tokenAnalytics.granularity.day') }}</option>
-                <option value="week">{{ t('pages.tokenAnalytics.granularity.week') }}</option>
-              </select>
+                @update:model-value="setFilter('granularity', $event as TokenStatsFilters['granularity'])"
+              />
             </div>
           </div>
           <div class="usage-filter-rows" data-testid="token-analytics-filters">
-            <div class="usage-source-row">
-              <span class="usage-control-label">{{ t('pages.tokenAnalytics.sourceLabel') }}</span>
-              <div class="flex min-w-0 flex-wrap items-center gap-1.5" role="group" :aria-label="t('pages.tokenAnalytics.sourceLabel')">
+          <div class="usage-control-row">
+            <span class="usage-control-label">{{ t('pages.tokenAnalytics.sourceLabel') }}</span>
+            <div class="usage-control-items">
+              <div class="usage-seg flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.tokenAnalytics.sourceLabel')">
                 <button
                   v-for="s in SOURCES"
                   :key="s"
                   type="button"
-                  class="chip border px-2.5 py-1.5 text-xs"
-                  :class="filters.source === s ? 'border-accent/40 bg-accent-dim font-semibold text-accent-2' : 'border-line bg-surface text-txt2'"
+                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  :class="filters.source === s ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-source-${s}`"
                   :aria-pressed="filters.source === s"
                   @click="setFilter('source', s)"
@@ -700,78 +714,74 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 </button>
               </div>
             </div>
-            <div class="usage-dimension-row">
-              <span class="usage-control-label">{{ t('pages.tokenAnalytics.dimensionsLabel') }}</span>
-              <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2">
-                <select
-                  :value="filters.modelKey"
-                  class="max-w-[180px] rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                  data-testid="token-analytics-filter-model"
-                  :aria-label="t('pages.tokenAnalytics.modelAll')"
-                  @change="setFilter('modelKey', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="">{{ t('pages.tokenAnalytics.modelAll') }}</option>
-                  <option v-for="m in data?.filterOptions.models || []" :key="m.key" :value="m.key">{{ m.name }}</option>
-                </select>
-                <select
-                  :value="filters.workflowId"
-                  class="max-w-[180px] rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                  data-testid="token-analytics-filter-workflow"
-                  :aria-label="t('pages.tokenAnalytics.workflowAll')"
-                  @change="setFilter('workflowId', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="">{{ t('pages.tokenAnalytics.workflowAll') }}</option>
-                  <option v-for="w in data?.filterOptions.workflows || []" :key="w.key" :value="w.key">{{ w.name }}</option>
-                </select>
-                <select
-                  :value="filters.nodeType"
-                  class="max-w-[160px] rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                  data-testid="token-analytics-filter-node-type"
-                  :aria-label="t('pages.tokenAnalytics.nodeTypeAll')"
-                  @change="setFilter('nodeType', ($event.target as HTMLSelectElement).value)"
-                >
-                  <option value="">{{ t('pages.tokenAnalytics.nodeTypeAll') }}</option>
-                  <option v-for="n in data?.filterOptions.nodeTypes || []" :key="n.key" :value="n.key">{{ n.name }}</option>
-                </select>
-                <select
-                  :value="filters.status"
-                  class="rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                  data-testid="token-analytics-filter-status"
-                  :aria-label="t('pages.tokenAnalytics.statusAll')"
-                  @change="setFilter('status', ($event.target as HTMLSelectElement).value as TokenStatsFilters['status'])"
-                >
-                  <option value="">{{ t('pages.tokenAnalytics.statusAll') }}</option>
-                  <option v-for="s in (['ok', 'failed', 'cancelled'] as const)" :key="s" :value="s">{{ statusLabel(t, s) }}</option>
-                </select>
-                <select
-                  :value="filters.phase"
-                  class="rounded border border-line bg-surface px-2 py-1.5 text-xs text-txt2"
-                  data-testid="token-analytics-filter-phase"
-                  :aria-label="t('pages.tokenAnalytics.phaseAll')"
-                  @change="setFilter('phase', ($event.target as HTMLSelectElement).value as TokenStatsFilters['phase'])"
-                >
-                  <option value="">{{ t('pages.tokenAnalytics.phaseAll') }}</option>
-                  <option v-for="p in (['production', 'interactive', 'chat'] as const)" :key="p" :value="p">{{ phaseLabel(t, p) }}</option>
-                </select>
-                <span
-                  v-if="filters.runId"
-                  class="chip flex items-center gap-1 border border-accent/40 bg-accent-dim px-2.5 py-1.5 text-xs text-accent-2"
-                  data-testid="token-analytics-filter-run"
-                >
-                  {{ t('pages.tokenAnalytics.drill.dims.run') }}：{{ filters.runId.slice(0, 8) }}
-                  <button type="button" :aria-label="t('pages.tokenAnalytics.clearFilters')" @click="setFilter('runId', '')">×</button>
-                </span>
-                <button
-                  type="button"
-                  class="rounded border border-line bg-surface px-2.5 py-1.5 text-xs text-txt2"
-                  :class="filterCount ? '' : 'opacity-60'"
-                  data-testid="token-analytics-clear"
-                  @click="clearFilters"
-                >
-                  {{ t('pages.tokenAnalytics.clearFilters') }}<span v-if="filterCount"> ({{ filterCount }})</span>
-                </button>
-              </div>
+          </div>
+          <div class="usage-control-row" data-testid="token-analytics-dimensions">
+            <span class="usage-control-label">{{ t('pages.tokenAnalytics.dimensionsLabel') }}</span>
+            <div class="usage-control-items">
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.modelKey"
+                :options="modelOptions"
+                :aria-label="t('pages.tokenAnalytics.modelAll')"
+                data-testid="token-analytics-filter-model"
+                @update:model-value="setFilter('modelKey', $event)"
+              />
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.workflowId"
+                :options="workflowOptions"
+                :aria-label="t('pages.tokenAnalytics.workflowAll')"
+                data-testid="token-analytics-filter-workflow"
+                @update:model-value="setFilter('workflowId', $event)"
+              />
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.nodeType"
+                :options="nodeTypeOptions"
+                :aria-label="t('pages.tokenAnalytics.nodeTypeAll')"
+                data-testid="token-analytics-filter-node-type"
+                @update:model-value="setFilter('nodeType', $event)"
+              />
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.status"
+                :options="statusOptions"
+                :aria-label="t('pages.tokenAnalytics.statusAll')"
+                data-testid="token-analytics-filter-status"
+                @update:model-value="setFilter('status', $event as TokenStatsFilters['status'])"
+              />
+              <AppSelect
+                class="usage-select"
+                size="sm"
+                :model-value="filters.phase"
+                :options="phaseOptions"
+                :aria-label="t('pages.tokenAnalytics.phaseAll')"
+                data-testid="token-analytics-filter-phase"
+                @update:model-value="setFilter('phase', $event as TokenStatsFilters['phase'])"
+              />
+              <span
+                v-if="filters.runId"
+                class="chip border-accent/40 bg-accent-dim px-2.5 py-1.5 text-accent-2"
+                data-testid="token-analytics-filter-run"
+              >
+                {{ t('pages.tokenAnalytics.drill.dims.run') }}：{{ filters.runId.slice(0, 8) }}
+                <button type="button" :aria-label="t('pages.tokenAnalytics.clearFilters')" @click="setFilter('runId', '')">×</button>
+              </span>
+              <AppButton
+                variant="ghost"
+                size="sm"
+                :disabled="!filterCount"
+                data-testid="token-analytics-clear"
+                @click="clearFilters"
+              >
+                {{ t('pages.tokenAnalytics.clearFilters') }}<span v-if="filterCount"> ({{ filterCount }})</span>
+              </AppButton>
             </div>
+          </div>
           </div>
         </section>
 
@@ -816,13 +826,13 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   <button
                     v-if="data.unpricedModels?.length"
                     type="button"
-                    class="mt-0.5 text-[11px] text-warn hover:underline"
+                    class="mt-0.5 block text-left text-[11px] text-warn hover:underline"
                     @click="pricingOpen = true"
                   >{{ t('pages.tokenAnalytics.kpiCostUnpricedModels', { n: data.unpricedModels.length }) }}</button>
                 </template>
                 <template v-else>
                   <div class="mt-1 text-[15px] font-semibold text-txt3">{{ t('pages.tokenAnalytics.kpiCostUnpriced') }}</div>
-                  <button type="button" class="mt-1 text-[11px] text-accent-2 hover:underline" @click="pricingOpen = true">
+                  <button type="button" class="mt-1 block text-left text-[11px] text-accent-2 hover:underline" @click="pricingOpen = true">
                     {{ t('pages.tokenAnalytics.kpiCostConfigure') }}
                   </button>
                 </template>
@@ -901,7 +911,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
               </div>
               <button
                 type="button"
-                class="usage-metric text-left transition-colors enabled:hover:bg-elevated/50"
+                class="usage-metric flex flex-col items-stretch justify-start text-left transition-colors enabled:hover:bg-elevated/50"
                 data-testid="token-analytics-kpi-failed"
                 :disabled="!data.kpi.failedTotal"
                 @click="openDrill([{ dim: 'status', key: 'failed', name: statusLabel(t, 'failed') }])"
@@ -1218,17 +1228,10 @@ watch(() => JSON.stringify(filters.value), () => void load())
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 24px;
-}
-.usage-page-description {
-  max-width: 760px;
-  margin: 8px 0 0;
-  color: rgb(var(--c-txt3));
-  font-size: 13px;
-  line-height: 1.7;
+  margin-bottom: 20px;
 }
 .usage-page-actions,
-.usage-period-controls {
+.usage-control-items {
   display: flex;
   min-width: 0;
   flex-wrap: wrap;
@@ -1239,12 +1242,13 @@ watch(() => JSON.stringify(filters.value), () => void load())
   flex-shrink: 0;
 }
 .usage-controls {
-  padding: 18px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 0;
   border-block: 1px solid rgb(var(--c-line) / 0.6);
 }
-.usage-period-row,
-.usage-source-row,
-.usage-dimension-row {
+.usage-control-row {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -1257,17 +1261,24 @@ watch(() => JSON.stringify(filters.value), () => void load())
   font-size: 12px;
   line-height: 20px;
 }
-.usage-period-controls > div {
+.usage-control-items {
+  flex: 1 1 auto;
+}
+.usage-seg {
   max-width: 100%;
   flex-wrap: wrap;
+}
+.usage-select {
+  min-width: 132px;
+  max-width: 200px;
+}
+.usage-date-input {
+  height: 36px;
 }
 .usage-filter-rows {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: 1px solid rgb(var(--c-line) / 0.6);
+  gap: 12px;
 }
 .usage-overview,
 .usage-analysis-section {
@@ -1296,7 +1307,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
 .usage-kpi-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  border-block: 1px solid rgb(var(--c-line) / 0.6);
+  border-top: 1px solid rgb(var(--c-line) / 0.6);
 }
 .usage-metric {
   min-width: 0;
@@ -1311,7 +1322,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
   border-top: 1px solid rgb(var(--c-line) / 0.6);
 }
 .usage-primary-trend {
-  margin-top: 24px;
+  margin-top: 0;
 }
 .usage-composition-card,
 .usage-detail-card {
@@ -1357,11 +1368,9 @@ watch(() => JSON.stringify(filters.value), () => void load())
   .usage-content { padding-bottom: 24px; }
   .usage-page-header { flex-direction: column; gap: 16px; margin-bottom: 20px; }
   .usage-controls { padding: 16px 0; }
-  .usage-period-row,
-  .usage-source-row,
-  .usage-dimension-row { flex-direction: column; align-items: stretch; gap: 8px; }
+  .usage-control-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .usage-control-label { width: auto; }
-  .usage-dimension-row select { max-width: 100%; min-width: 0; flex: 1 1 130px; }
+  .usage-select { max-width: 100%; min-width: 0; flex: 1 1 130px; }
   .usage-kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .usage-metric:nth-child(n) { border-left: 1px solid rgb(var(--c-line) / 0.6); border-top: 1px solid rgb(var(--c-line) / 0.6); }
   .usage-metric:nth-child(2n + 1) { border-left: 0; }

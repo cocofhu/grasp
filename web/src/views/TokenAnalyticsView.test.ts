@@ -3,6 +3,7 @@ import { createI18n } from 'vue-i18n'
 import { mount, flushPromises } from '@vue/test-utils'
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import TokenAnalyticsView from './TokenAnalyticsView.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import nav from '@/locales/zh-CN/nav.json'
@@ -359,7 +360,7 @@ describe('TokenAnalyticsView', () => {
       expect.objectContaining({ workflowId: 'w1' }),
       expect.anything(),
     )
-    expect((wrapper.find('[data-testid="token-analytics-filter-workflow"]').element as HTMLSelectElement).value).toBe('w1')
+    expect(wrapper.findComponent<typeof AppSelect>('[data-testid="token-analytics-filter-workflow"]').props('modelValue')).toBe('w1')
     wrapper.unmount()
   })
 
@@ -522,7 +523,8 @@ describe('TokenAnalyticsView', () => {
     const to = wrapper.find('[data-testid="token-analytics-range-to"]')
     ;(to.element as HTMLInputElement).value = '2026-07-03'
     await to.trigger('change')
-    await wrapper.find('[data-testid="token-analytics-granularity"]').setValue('hour')
+    wrapper.findComponent<typeof AppSelect>('[data-testid="token-analytics-granularity"]').vm.$emit('update:modelValue', 'hour')
+    await flushPromises()
     await wrapper.find('[data-testid="token-analytics-source-studio"]').trigger('click')
     await flushPromises()
     expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
@@ -596,7 +598,7 @@ describe('TokenAnalyticsView', () => {
     expect(barOption.series[0]?.data.map((d) => d.drill?.[0]?.dim)).toEqual(['phase', 'phase'])
     expect(barOption.series[0]?.data.map((d) => d.drill?.[0]?.key)).toEqual(['production', 'chat'])
     vi.mocked(api.getGlobalTokenStats).mockClear()
-    await comparable.find('[data-testid="token-analytics-filter-phase"]').setValue('chat')
+    comparable.findComponent<typeof AppSelect>('[data-testid="token-analytics-filter-phase"]').vm.$emit('update:modelValue', 'chat')
     await flushPromises()
     expect(api.getGlobalTokenStats).toHaveBeenLastCalledWith(
       expect.objectContaining({ phase: 'chat' }),
@@ -767,7 +769,8 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const group = wrapper.find('[data-testid="token-analytics-window"]')
     const labels = group.findAll('button').map((b) => b.text())
-    expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史'])
+    // 自定义 is the last segment of the same control (one segmented style for every range).
+    expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
     expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
     expect(wrapper.find('[data-testid="token-analytics-window-all"]').text()).toBe('全部历史')
     expect(wrapper.find('[data-testid="token-analytics-window-30d"]').classes()).not.toContain('bg-surface')
@@ -785,14 +788,17 @@ describe('TokenAnalyticsView', () => {
     expect(filters.text()).toContain('来源：全部')
     expect(filters.text()).toContain('模型：全部')
     const sourceAll = filters.findAll('button').find((b) => b.text() === '来源：全部')
-    expect(sourceAll?.classes()).toContain('bg-accent-dim')
+    // Source uses the same segmented style as the time range.
+    expect(sourceAll?.classes()).toContain('bg-surface')
     expect(filters.text()).toContain('工作流：全部')
     expect(filters.text()).toContain('节点类型：全部')
     expect(filters.text()).toContain('状态：全部')
     expect(filters.text()).toContain('阶段：全部')
-    const selects = filters.findAll('select')
+    // Every dimension filter is the shared AppSelect, not a native <select>.
+    expect(filters.findAll('select')).toHaveLength(0)
+    const selects = filters.findAllComponents(AppSelect)
     expect(selects).toHaveLength(5)
-    for (const sel of selects) expect((sel.element as HTMLSelectElement).value).toBe('')
+    for (const sel of selects) expect(sel.props('modelValue')).toBe('')
     wrapper.unmount()
   })
 
@@ -801,7 +807,8 @@ describe('TokenAnalyticsView', () => {
     await flushPromises()
     const group = wrapper.find('[data-testid="token-analytics-window"]')
     const labels = group.findAll('button').map((b) => b.text())
-    expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史'])
+    // 自定义 is the last segment of the same control (one segmented style for every range).
+    expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
     expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
 
     vi.mocked(api.getGlobalTokenStats).mockClear()
