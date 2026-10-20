@@ -24,6 +24,18 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 		c.coordinator.reopen(req.RunID)
 	}
 	c.resetNodeBudget(req)
+	if req.ReattachSandbox != "" && c.isSharedRunSandbox(req.RunID, req.ReattachSandbox) {
+		// The run's shared container hosts every node's bridge chat, so the
+		// single-sandbox reattach (default chat + container-wide event log)
+		// does not apply. Re-enter the node through the coordinator instead:
+		// it re-attaches the same container, keeping the run's workspace, and
+		// every attempt first stops what the previous process left running
+		// on this node's chat.
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", req.ReattachSandbox).
+			Msg("restart: re-entering node in the run's shared sandbox")
+		req.ReattachSandbox = ""
+		req.reenterShared = true
+	}
 	key := reactKey(req)
 	c.stuckNotes.Delete(key)
 	defer c.stuckNotes.Delete(key)
@@ -67,15 +79,6 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 // sandbox (kept for the debug TTL); on a retryable fault it discards (destroys)
 // the broken sandbox so the caller can retry cleanly.
 func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeResult, err error) {
-	if req.ReattachSandbox != "" && c.isSharedRunSandbox(req.RunID, req.ReattachSandbox) {
-		// The run's shared container hosts every node's bridge chat, so the
-		// single-sandbox reattach (default chat + container-wide event log)
-		// does not apply. Re-enter the node through the coordinator instead:
-		// it rehydrates the same container, keeping the run's workspace.
-		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", req.ReattachSandbox).
-			Msg("restart: re-entering node in the run's shared sandbox")
-		req.ReattachSandbox = ""
-	}
 	reattach := req.ReattachSandbox != ""
 	var (
 		sb   *sandbox.Sandbox

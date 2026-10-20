@@ -414,7 +414,7 @@ func (c *acpProvider) connectSandbox(ctx context.Context, req NodeReq, sb *sandb
 		WithBridgeModel(model).
 		WithEnv(sanitizeNodeEnvOverlay(overlay))
 	if nodeChat {
-		created, err := acp.CreateChat(ctx, "run/"+safeSessionPart(req.RunID)+"/"+safeSessionPart(req.NodeID), model)
+		created, err := acp.CreateChat(ctx, nodeChatTitle(req), model)
 		if err != nil {
 			acp.CloseOwnedChat(context.Background())
 			acp.Close()
@@ -482,6 +482,13 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (*sand
 		reason = sharedReplacementReason
 	}
 	c.registerRunSandbox(req, lease.sb, lease.home, sandboxScopeRun, lease.generation, reason, lease.fingerprint)
+	if req.reenterShared {
+		if err := c.settleStaleNodeChats(ctx, req, lease.sb); err != nil {
+			c.coordinator.release(lease)
+			c.forgetCodexLogin(codexLoginKey(req))
+			return nil, nil, "", err
+		}
+	}
 	acp, err := c.connectSandbox(ctx, req, lease.sb, ls.model, true, ls.overlay)
 	if err != nil {
 		// Connect/chat failures are node-scoped: release the lease so a
@@ -507,8 +514,16 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 		return res, false, 0
 	}
 	prev := max(info.Generation, 1)
-	if attacher, ok := c.mgr.(sandboxRunAttacher); ok {
-		if sb, err := attacher.Attach(ctx, info.Name); err == nil {
+	// AttachNoEnsure: Attach would push a newer runtime bundle and restart an
+	// idle bridge, dropping the chats of a turn still running. Neither fills
+	// the bridge password or ConfigRoot, which come from the platform record.
+	if attacher, ok := c.mgr.(sandboxAttacher); ok {
+		if sb, err := attacher.AttachNoEnsure(ctx, info.Name); err == nil {
+			sb.Password = info.Token
+			if sb.Password == "" {
+				sb.Password = req.Token
+			}
+			sb.ConfigRoot = c.agentLayout(models.AgentProfile(req.Config), c.effectiveAgent(req)).ConfigRoot
 			if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 30*time.Second); werr == nil {
 				return sharedCreateResult{sb: sb, home: info.HomeDir, fingerprint: info.EnvFingerprint, generation: prev}, true, prev
 			}
@@ -523,10 +538,61 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 	return res, false, prev + 1
 }
 
-// sandboxRunAttacher is the optional manager capability to re-open a
-// container by its gateway id (refreshing its runtime bundle).
-type sandboxRunAttacher interface {
-	Attach(context.Context, string) (*sandbox.Sandbox, error)
+// nodeChatTitle names a node's bridge chat in the run's shared container.
+func nodeChatTitle(req NodeReq) string {
+	return "run/" + safeSessionPart(req.RunID) + "/" + safeSessionPart(req.NodeID)
+}
+
+// staleTurnCancelWait bounds the graceful cancel of a pre-restart turn before
+// its chat is deleted (which stops the agent regardless).
+var staleTurnCancelWait = 10 * time.Second
+
+// settleStaleNodeChats stops what a previous control-plane process left on
+// this node's chat in the shared container before the node's prompt is sent
+// again: the bridge keeps chats across WebSocket loss, so the old turn would
+// otherwise keep running next to the new one in the same workspace. Each
+// matching chat's queue_state is read and its running turn cancelled, then
+// the chat is deleted. The new chat cannot adopt the old turn's result (its
+// events are not on the default chat #823's reattach reads), so the main
+// prompt is resent on a fresh chat afterwards.
+func (c *acpProvider) settleStaleNodeChats(ctx context.Context, req NodeReq, sb *sandbox.Sandbox) error {
+	title := nodeChatTitle(req)
+	chats, err := sandbox.ListChats(ctx, sb.Host, sb.Port, sb.Password)
+	if err != nil {
+		return fmt.Errorf("%w: list chats before re-entry: %v", errSandboxSetup, err)
+	}
+	for _, ch := range chats {
+		if ch.Title != title || ch.ID == "" {
+			continue
+		}
+		if ch.Busy {
+			c.cancelStaleTurn(ctx, req, sb, ch.ID)
+		}
+		if err := sandbox.DeleteChat(ctx, sb.Host, sb.Port, sb.Password, ch.ID); err != nil {
+			return fmt.Errorf("%w: close pre-restart chat %s: %v", errSandboxSetup, ch.ID, err)
+		}
+		log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("chat", ch.ID).
+			Msg("restart: closed the node's pre-restart chat in the shared sandbox")
+	}
+	return nil
+}
+
+// cancelStaleTurn connects to chatID and cancels the turn its queue_state
+// reports running. Best effort: deleting the chat stops it in any case.
+func (c *acpProvider) cancelStaleTurn(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, chatID string) {
+	acp := sb.ACP().WithSession(sb.WorkspaceDir, c.mcpServers(req)).WithChat(chatID)
+	if err := acp.Connect(ctx); err != nil {
+		return
+	}
+	defer acp.Close()
+	st, ok := acp.WaitBridgeKnown(ctx, reattachKnownWait)
+	if !ok || st.RunningOpID == "" {
+		return
+	}
+	if !acp.CancelTurnAndWait(st.RunningOpID, staleTurnCancelWait) {
+		log.Warn().Str("run", req.RunID).Str("node", req.NodeID).Str("op", st.RunningOpID).
+			Msg("restart: pre-restart turn did not confirm cancel; deleting its chat")
+	}
 }
 
 func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {

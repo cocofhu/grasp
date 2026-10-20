@@ -46,6 +46,32 @@ func CreateChat(ctx context.Context, host string, port int, password, title stri
 	return info.ID, nil
 }
 
+// ChatSummary is one bridge chat as listed by GET /api/chats.
+type ChatSummary struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Busy  bool   `json:"busy"`
+}
+
+// ListChats returns the bridge's open chats (default chat included).
+func ListChats(ctx context.Context, host string, port int, password string) ([]ChatSummary, error) {
+	resp, err := chatRequest(ctx, http.MethodGet, host, port, password, "/api/chats", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _, _ = io.Copy(io.Discard, resp.Body); _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list chats: status %d", resp.StatusCode)
+	}
+	var out struct {
+		Chats []ChatSummary `json:"chats"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
+		return nil, fmt.Errorf("list chats: %w", err)
+	}
+	return out.Chats, nil
+}
+
 // DeleteChat ends a chat created by CreateChat. A chat already gone is not an error.
 func DeleteChat(ctx context.Context, host string, port int, password, chatID string) error {
 	chatID = strings.TrimSpace(chatID)

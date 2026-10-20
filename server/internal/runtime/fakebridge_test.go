@@ -63,6 +63,19 @@ type fakeBridge struct {
 	chatAPI      bool
 	chatModels   []string // model of every created chat
 	chatsDeleted int
+	// openChats are the chats GET /api/chats lists (created or seeded).
+	openChats []fakeChat
+	// staleRunning maps a chat id to the op a previous client left running.
+	staleRunning map[string]string
+	// journal records chat-level actions in order: "cancel:<op>",
+	// "delete:<chat>", "prompt:<chat>".
+	journal []string
+}
+
+type fakeChat struct {
+	ID    string `json:"id"`
+	Title string `json:"title"`
+	Busy  bool   `json:"busy"`
 }
 
 func (b *fakeBridge) serveChats(w http.ResponseWriter, r *http.Request) {
@@ -73,15 +86,34 @@ func (b *fakeBridge) serveChats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		chats := append([]fakeChat(nil), b.openChats...)
+		for i := range chats {
+			chats[i].Busy = b.staleRunning[chats[i].ID] != ""
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"chats": chats})
 	case http.MethodPost:
 		var body struct {
+			Title string `json:"title"`
 			Model string `json:"model"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		b.chatModels = append(b.chatModels, body.Model)
-		_ = json.NewEncoder(w).Encode(map[string]string{"id": fmt.Sprintf("chat-%d", len(b.chatModels))})
+		id := fmt.Sprintf("chat-%d", len(b.chatModels))
+		b.openChats = append(b.openChats, fakeChat{ID: id, Title: body.Title})
+		_ = json.NewEncoder(w).Encode(map[string]string{"id": id})
 	case http.MethodDelete:
 		b.chatsDeleted++
+		id := strings.TrimPrefix(r.URL.Path, "/api/chats/")
+		kept := b.openChats[:0]
+		for _, ch := range b.openChats {
+			if ch.ID != id {
+				kept = append(kept, ch)
+			}
+		}
+		b.openChats = kept
+		delete(b.staleRunning, id)
+		b.journal = append(b.journal, "delete:"+id)
 		w.WriteHeader(http.StatusOK)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -142,6 +174,7 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer conn.Close()
+	chatID := r.URL.Query().Get("chat")
 	for {
 		_, msg, err := conn.ReadMessage()
 		if err != nil {
@@ -154,10 +187,30 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 		switch fmt.Sprint(m["op"]) {
 		case "connect":
 			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "fake-session"})
+			b.mu.Lock()
+			stale := b.staleRunning[chatID]
+			b.mu.Unlock()
+			if stale != "" {
+				_ = conn.WriteJSON(map[string]any{"op": "queue_state", "busy": true, "queue_length": 0, "running": map[string]any{"opId": stale}})
+			}
 		case "cancel":
-			// fire-and-forget, no ack
+			// fire-and-forget for scripted turns; a stale turn left by a
+			// previous client acknowledges like the real bridge.
+			op, _ := m["opId"].(string)
+			b.mu.Lock()
+			stale := b.staleRunning[chatID]
+			if stale != "" && op == stale {
+				delete(b.staleRunning, chatID)
+				b.journal = append(b.journal, "cancel:"+op)
+			}
+			b.mu.Unlock()
+			if stale != "" && op == stale {
+				_ = conn.WriteJSON(map[string]any{"op": "event", "opId": op, "data": map[string]any{"type": "prompt_done", "stopReason": "cancelled"}})
+				_ = conn.WriteJSON(map[string]any{"op": "queue_state", "busy": false, "queue_length": 0, "running": nil})
+			}
 		case "chat":
 			b.mu.Lock()
+			b.journal = append(b.journal, "prompt:"+chatID)
 			turn := b.turns
 			b.turns++
 			content, _ := m["content"].(string)
@@ -434,4 +487,22 @@ func newTestProviderBackend(t *testing.T, host *mcp.Host, opts Options, mgr sand
 	reg := &countingRegistry{}
 	p.registry = reg
 	return p, reg
+}
+
+// seedStaleChat registers a chat a previous control-plane process opened and
+// left running opID on.
+func (b *fakeBridge) seedStaleChat(id, title, opID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.openChats = append(b.openChats, fakeChat{ID: id, Title: title})
+	if b.staleRunning == nil {
+		b.staleRunning = map[string]string{}
+	}
+	b.staleRunning[id] = opID
+}
+
+func (b *fakeBridge) journalCopy() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]string(nil), b.journal...)
 }

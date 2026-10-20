@@ -165,6 +165,10 @@ type NodeReq struct {
 	// control-plane restart. RunAgent's first attempt reconnects to it and
 	// waits for the agent's turn instead of creating a sandbox.
 	ReattachSandbox string
+	// reenterShared marks a node re-entered in the run's shared container
+	// after a control-plane restart: the bridge may still run the turn the
+	// previous process sent on this node's chat.
+	reenterShared bool
 }
 
 // GitInfo is the VCS-agnostic push detection result.
