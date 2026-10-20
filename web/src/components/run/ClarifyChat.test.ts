@@ -442,9 +442,9 @@ describe('ClarifyChat', () => {
     await clickSend(wrapper)
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
-    const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
-    expect(confirmBtn.exists()).toBe(true)
-    expect((confirmBtn.element as HTMLButtonElement).disabled).toBe(true)
+    // Busy: the single primary is 停止; 确认并流转 returns once the session is idle.
+    expect(wrapper.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(wrapper.findAll('.composer-primary')).toHaveLength(1)
     expect(wrapper.find('[data-testid="clarify-confirm-hint"]').text()).toContain(
       '接受当前已落盘产物并流转（不触发 Agent）',
     )
@@ -888,17 +888,17 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('keeps send and confirm together inside the input toolbar', async () => {
+  it('keeps the single primary action inside the input toolbar', async () => {
     const wrapper = mountChat({ sendLabel: '发送澄清回复' })
     const inputRow = wrapper.get('[data-testid="clarify-input-row"]')
     const actionRow = wrapper.get('[data-testid="clarify-action-row"]')
     expect(inputRow.find('[data-testid="clarify-input"]').exists()).toBe(true)
     expect(inputRow.find('[data-testid="clarify-attach-btn"]').exists()).toBe(true)
-    expect(inputRow.find('[data-testid="clarify-send-label"]').exists()).toBe(true)
-    expect(actionRow.find('[data-testid="clarify-send-label"]').exists()).toBe(true)
     expect(actionRow.get('[data-testid="clarify-confirm-flow"]').text()).toContain('确认并流转')
     expect(inputRow.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(true)
+    expect(actionRow.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="composer-shell-footer"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="clarify-input"]').setValue('补充')
     const send = actionRow.get('[data-testid="clarify-send-label"]')
     expect(send.attributes('aria-label')).toBe('发送澄清回复')
     expect(send.attributes('title')).toBe('发送澄清回复')
@@ -920,12 +920,10 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('idle empty draft keeps a faded send icon beside the enabled confirm button', () => {
+  it('idle empty draft shows only the enabled confirm button', () => {
     const wrapper = mountChat({ sendLabel: '发送回复' })
-    const send = wrapper.get('[data-testid="clarify-send-label"]')
-    expect((send.element as HTMLButtonElement).disabled).toBe(true)
-    expect(send.attributes('aria-label')).toBe('发送回复')
-    expect(send.text()).not.toMatch(/发送/)
+    expect(wrapper.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
+    expect(wrapper.findAll('.composer-primary')).toHaveLength(1)
     expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
     const confirm = wrapper.get('[data-testid="clarify-action-row"]').get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.text()).toContain('确认并流转')
@@ -952,15 +950,15 @@ describe('ClarifyChat', () => {
     { content: 'annotation', props: { annotateEnabled: true, annotations: [{ label: '标题', jsonPath: 'title' }] } },
   ])('preserves unsent $content and hides confirm until it is cleared', async ({ props }) => {
     const wrapper = mountChat()
-    const previousConfirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
+    const primary = wrapper.get('.composer-primary').element
     await wrapper.setProps(props)
     const modelEvents = ['update:draft', 'update:attachments', 'update:annotations']
     const updatesBefore = modelEvents.map((event) => wrapper.emitted(event)?.length ?? 0)
     expectConfirmHidden(wrapper)
-
-    // A stale reference from before the visibility change must not finish a draft.
-    await previousConfirm.trigger('click')
-    await flushPromises()
+    // Same button morphs into 发送 — never a second button, never a finish.
+    expect(wrapper.findAll('.composer-primary')).toHaveLength(1)
+    expect(wrapper.get('.composer-primary').element).toBe(primary)
+    expect(wrapper.get('.composer-primary').attributes('data-kind')).toBe('send')
 
     expect(wrapper.emitted('finish')).toBeUndefined()
     expect(wrapper.emitted('send')).toBeUndefined()
@@ -978,7 +976,7 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('returns focus to the input when an external draft update hides the focused confirm action', async () => {
+  it('keeps focus on the morphing primary when an external draft turns confirm into send', async () => {
     const wrapper = mountChat()
     const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
     ;(confirm.element as HTMLButtonElement).focus()
@@ -988,7 +986,9 @@ describe('ClarifyChat', () => {
     await flushPromises()
     expectConfirmHidden(wrapper)
     const input = wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement
-    expect(document.activeElement).toBe(input)
+    // The focused button is the same element, now 发送 — focus is not dropped.
+    expect(document.activeElement).toBe(confirm.element)
+    expect(confirm.attributes('data-kind')).toBe('send')
     expect(input.value).toBe('外部恢复的草稿')
     expect(wrapper.emitted('finish')).toBeUndefined()
     expect(wrapper.emitted('send')).toBeUndefined()
@@ -1000,7 +1000,7 @@ describe('ClarifyChat', () => {
     const confirm = wrapper.get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.isVisible()).toBe(true)
     expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
-    expect((wrapper.get('[data-testid="clarify-send-icon"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.find('[data-testid="clarify-send-icon"]').exists()).toBe(false)
     await confirm.trigger('click')
     expect(wrapper.emitted('finish')).toHaveLength(1)
     expect(wrapper.emitted('send')).toBeUndefined()
@@ -1030,10 +1030,14 @@ describe('ClarifyChat', () => {
     await flushPromises()
     expect(wrapper.emitted('finish')).toBeUndefined()
     expect(send.attributes('aria-busy')).toBeUndefined()
-    expect(send.attributes('aria-label')).toBe(pages.pages.reviewComposer.send)
-    expect(send.attributes('title')).toBe(pages.pages.reviewComposer.send)
-    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
-    expect((send.element as HTMLButtonElement).disabled).toBe(accepted)
+    // Accepted: the draft is gone, so the same button morphs into 确认并流转.
+    expect(send.attributes('data-kind')).toBe(accepted ? 'confirm' : 'send')
+    if (!accepted) {
+      expect(send.attributes('aria-label')).toBe(pages.pages.reviewComposer.send)
+      expect(send.attributes('title')).toBe(pages.pages.reviewComposer.send)
+      expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
+      expect((send.element as HTMLButtonElement).disabled).toBe(false)
+    }
     const input = wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement
     expect(input.value).toBe(accepted ? '' : '1')
     if (accepted) {
@@ -1098,6 +1102,66 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
+  describe('single primary action (button-states.md)', () => {
+    const kinds = (w: ReturnType<typeof mountChat>) => {
+      const all = w.get('[data-testid="clarify-action-row"]').findAll('.composer-primary')
+      expect(all).toHaveLength(1)
+      // No legacy secondary primaries next to it.
+      expect(w.get('[data-testid="clarify-action-row"]').findAll('.chat-action-stop, .chat-action-primary, .chat-action-confirm')).toHaveLength(1)
+      const b = all[0]!
+      return { kind: b.attributes('data-kind'), disabled: (b.element as HTMLButtonElement).disabled }
+    }
+
+    it('idle, no draft, finishable → 确认并流转', () => {
+      const w = mountChat()
+      expect(kinds(w)).toEqual({ kind: 'confirm', disabled: false })
+      w.unmount()
+    })
+
+    it('idle, no draft, finish hidden → disabled 发送', () => {
+      const w = mountChat({ hideFinish: true })
+      expect(kinds(w)).toEqual({ kind: 'send', disabled: true })
+      w.unmount()
+    })
+
+    it('finishDisabled → disabled 确认并流转', async () => {
+      const w = mountChat()
+      await w.setProps({ finishDisabled: true })
+      expect(kinds(w)).toEqual({ kind: 'confirm', disabled: true })
+      w.unmount()
+    })
+
+    it('draft → 发送; send in flight → spinner 发送; busy → 停止; busy + draft → 发送; turn done → 确认并流转', async () => {
+      let complete!: (ok: boolean) => void
+      const sendRequest = vi.fn(() => new Promise<boolean>((resolve) => { complete = resolve }))
+      const w = mountChat({ sendRequest })
+      const el = w.get('.composer-primary').element
+      await w.get('[data-testid="clarify-input"]').setValue('第一句')
+      expect(kinds(w)).toEqual({ kind: 'send', disabled: false })
+      await w.get('.composer-primary').trigger('click')
+      expect(kinds(w)).toEqual({ kind: 'send', disabled: true })
+      expect(w.get('.composer-primary').attributes('aria-busy')).toBe('true')
+      complete(true)
+      await flushPromises()
+      const vm = w.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void; applyAcpEvents: (e: unknown[], n?: string) => void }
+      vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '第一句' } })
+      vm.applyAcpEvents([{ kind: 'message', text: '处理中' }], 'react-1')
+      await flushPromises()
+      expect(kinds(w)).toEqual({ kind: 'stop', disabled: false })
+      await w.get('[data-testid="clarify-input"]').setValue('再补一句')
+      expect(kinds(w)).toEqual({ kind: 'send', disabled: false })
+      await w.get('[data-testid="clarify-input"]').setValue('')
+      expect(kinds(w)).toEqual({ kind: 'stop', disabled: false })
+      vm.applyReviewFrame({ event: 'turn_done', nodeId: 'react-1' })
+      vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: false })
+      await flushPromises()
+      expect(kinds(w)).toEqual({ kind: 'confirm', disabled: false })
+      // Every state above reused one button element (morph, not swap).
+      expect(w.get('.composer-primary').element).toBe(el)
+      w.unmount()
+    })
+  })
+
   it('busy empty composer shows only the stop icon titled Cancel', async () => {
     const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
     await clickSend(wrapper)
@@ -1112,21 +1176,24 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('busy composer with a new draft shows stop and send side by side', async () => {
+  it('busy composer with a new draft shows only send; Esc still stops', async () => {
     const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
     await clickSend(wrapper)
     await wrapper.find('[data-testid="clarify-input"]').setValue('再写一句')
     await flushPromises()
     const toolbar = wrapper.get('[data-testid="clarify-action-row"]')
-    const cancel = toolbar.get('[data-testid="clarify-review-cancel"]')
+    expect(toolbar.find('[data-testid="clarify-review-cancel"]').exists()).toBe(false)
+    expect(toolbar.findAll('.composer-primary')).toHaveLength(1)
     const send = toolbar.get('[data-testid="clarify-send-label"]')
     expect((send.element as HTMLButtonElement).disabled).toBe(false)
-    expect(cancel.element.compareDocumentPosition(send.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await wrapper.get('[data-testid="clarify-input"]').trigger('keydown', { key: 'Escape' })
+    expect(wrapper.emitted('cancel')).toBeTruthy()
+    expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('再写一句')
     wrapper.unmount()
   })
 
   it('review mode send icon uses the shared send copy in zh and en', () => {
-    const zh = mountChat({ reviewMode: true })
+    const zh = mountChat({ reviewMode: true, draft: '修订' })
     expect(zh.get('[data-testid="clarify-send-icon"]').attributes('aria-label')).toBe('发送')
     expect(zh.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
     zh.unmount()
@@ -1145,6 +1212,7 @@ describe('ClarifyChat', () => {
         done: false,
         active: true,
         reviewMode: true,
+        draft: 'revise',
       },
       global: { plugins: [i18n], stubs: { Icon: true, ClarifyDemoFrame: true } },
     })
@@ -2434,9 +2502,8 @@ describe('ClarifyChat', () => {
       expect(wrapper.text()).toContain('Agent 正在思考下一轮')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
       expect(vm.isSessionBusy()).toBe(true)
-      expect((wrapper.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
-        true,
-      )
+      // One primary only: busy shows 停止, so 确认并流转 is not rendered.
+      expect(wrapper.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
       wrapper.unmount()
     })
 
@@ -2471,9 +2538,8 @@ describe('ClarifyChat', () => {
       expect(wrapper.text()).toContain('Agent 正在思考下一轮')
       expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
       expect(vm.isSessionBusy()).toBe(true)
-      expect((wrapper.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
-        true,
-      )
+      // One primary only: busy shows 停止, so 确认并流转 is not rendered.
+      expect(wrapper.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
 
       vm.applyReviewFrame({
         event: 'queue_state',

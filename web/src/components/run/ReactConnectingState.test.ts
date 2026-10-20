@@ -87,7 +87,9 @@ describe('ReactConnectingState', () => {
     expect(input.attributes('placeholder')).toBe('连接中，暂不可输入')
     expect((input.element as HTMLTextAreaElement).disabled).toBe(true)
     expect((wrapper.get('[data-testid="react-connecting-send"]').element as HTMLButtonElement).disabled).toBe(true)
-    expect((wrapper.get('[data-testid="react-connecting-confirm"]').element as HTMLButtonElement).disabled).toBe(true)
+    // State #1: exactly one primary action, a disabled 发送 (no 确认并流转 while connecting).
+    expect(wrapper.findAll('.composer-primary')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="react-connecting-confirm"]').exists()).toBe(false)
   })
 
   it('shows the English connecting copy', () => {
@@ -237,7 +239,8 @@ describe('ReactConnectingState', () => {
     expect(input.classes()).toContain('chat-input')
     expect((input.element as HTMLTextAreaElement).disabled).toBe(true)
     expect(wrapper.get('[data-testid="react-connecting-send"]').classes()).toContain('chat-action-primary')
-    expect(wrapper.get('[data-testid="react-connecting-confirm"]').classes()).toContain('chat-action-confirm')
+    expect(wrapper.get('[data-testid="react-connecting-send"]').attributes('data-kind')).toBe('send')
+    expect(wrapper.findAll('.composer-primary')).toHaveLength(1)
     expect((wrapper.get('[data-testid="react-connecting-attach"]').element as HTMLButtonElement).disabled).toBe(true)
   })
 })

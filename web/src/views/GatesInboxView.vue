@@ -415,7 +415,6 @@ const listFadeKey = computed(() =>
           <template #sidebar>
             <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
             />
             <ReviewComposer
@@ -527,7 +526,6 @@ const listFadeKey = computed(() =>
               <template #sidebar>
                 <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
             />
                 <ReviewComposer

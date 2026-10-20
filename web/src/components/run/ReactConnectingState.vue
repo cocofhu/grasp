@@ -4,17 +4,16 @@ import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ComposerShell from './ComposerShell.vue'
+import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
 
 const props = withDefaults(
   defineProps<{
     mode?: 'stage' | 'sidebar'
-    showConfirm?: boolean
     /** Gateway lifecycle while inbox starting (e.g. pulling). */
     sandboxPhase?: string | null
   }>(),
   {
     mode: 'sidebar',
-    showConfirm: true,
     sandboxPhase: null,
   },
 )
@@ -136,25 +135,14 @@ onMounted(() => {
           </button>
         </template>
         <template #toolbar-end>
-          <button
-            type="button"
+          <!-- State #1 (button-states.md): one disabled 发送; ClarifyChat morphs it on hand-off. -->
+          <ComposerPrimaryAction
+            kind="send"
             disabled
-            class="chat-action-button chat-action-primary"
-            :aria-label="t('pages.reviewComposer.send')"
-            data-testid="react-connecting-send"
-          >
-            <Icon name="chat-send" :size="18" />
-          </button>
-          <button
-            v-if="showConfirm"
-            type="button"
-            disabled
-            class="chat-action-confirm h-9 shrink-0 inline-flex"
-            data-testid="react-connecting-confirm"
-          >
-            <Icon name="check" :size="13" />
-            {{ t('pages.clarify.confirmFlow') }}
-          </button>
+            :label="t('pages.reviewComposer.send')"
+            testid="react-connecting-send"
+            handoff-out
+          />
         </template>
       </ComposerShell>
     </div>

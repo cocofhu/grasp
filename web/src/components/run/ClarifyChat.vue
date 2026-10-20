@@ -40,7 +40,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
-import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
+import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -318,19 +318,47 @@ function openImagePreview(images: ClarifyImage[], index: number) {
 /** Clarify passes its own reply copy; review uses the shared send copy. */
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
-const showHotConfirm = computed(() => !props.hideFinish && !composerBlocksConfirm.value)
-const confirmActionMotion = useComposerActionMotion()
-const confirmPresence = ref<HTMLElement | null>(null)
 const abortConfirmButton = ref<HTMLButtonElement | null>(null)
-watch([showHotConfirm, composerBlocksConfirm], ([showing, blocked]) => {
-  // Keep focus in the composer when either confirmation action disappears.
-  const active = document.activeElement
-  const leavingConfirm = !showing && confirmPresence.value?.contains(active)
-  const leavingAbort = blocked && !!abortConfirmButton.value && active === abortConfirmButton.value
-  if (leavingConfirm || leavingAbort) {
+watch(composerBlocksConfirm, (blocked) => {
+  // Keep focus in the composer when the abort-and-confirm action disappears.
+  if (blocked && !!abortConfirmButton.value && document.activeElement === abortConfirmButton.value) {
     void nextTick(() => textareaRef.value?.focus({ preventScroll: true }))
   }
 }, { flush: 'pre' })
+
+/**
+ * The composer shows exactly one primary action (fix-post-launch/button-states.md):
+ * draft or send in flight → 发送; session busy → 停止 (Esc also stops);
+ * finishable → 确认并流转; otherwise a disabled 发送.
+ */
+const primaryKind = computed<ComposerPrimaryKind>(() => {
+  if (composerSending.value || hasComposerDraft()) return 'send'
+  if (sessionBusy.value) return 'stop'
+  if (!props.hideFinish) return 'confirm'
+  return 'send'
+})
+const primaryDisabled = computed(() => {
+  if (primaryKind.value === 'stop') return false
+  if (primaryKind.value === 'confirm') return confirmDisabled.value
+  return composerSending.value || !hasComposerDraft()
+})
+const primaryLabel = computed(() => {
+  if (primaryKind.value === 'stop') return 'Cancel'
+  if (primaryKind.value === 'confirm') {
+    return validating.value ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow')
+  }
+  return composerSending.value ? translate('common.buttons.sending') : clarifySendAria.value
+})
+const primaryTestid = computed(() => {
+  if (primaryKind.value === 'stop') return 'clarify-review-cancel'
+  if (primaryKind.value === 'confirm') return 'clarify-confirm-flow'
+  return props.sendLabel ? 'clarify-send-label' : 'clarify-send-icon'
+})
+function onPrimary(kind: ComposerPrimaryKind) {
+  if (kind === 'stop') cancelReview()
+  else if (kind === 'confirm') finishEarly()
+  else send()
+}
 
 /**
  * Where each session's interactive card goes: under the first agent reply
@@ -1462,60 +1490,15 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <slot name="composer-controls" :compact="true" />
         </template>
         <template #toolbar-end>
-          <button
-            v-if="sessionBusy"
-            type="button"
-            class="chat-action-button chat-action-stop"
-            data-testid="clarify-review-cancel"
-            title="Cancel"
-            aria-label="Cancel"
-            @click="cancelReview"
-          >
-            <Icon name="chat-stop" :size="16" />
-          </button>
-          <button
-            v-if="!sessionBusy || hasComposerDraft()"
-            type="button"
-            class="chat-action-button chat-action-primary"
-            :data-testid="sendLabel ? 'clarify-send-label' : 'clarify-send-icon'"
-            :title="composerSending ? translate('common.buttons.sending') : clarifySendAria"
-            :aria-label="composerSending ? translate('common.buttons.sending') : clarifySendAria"
-            :aria-busy="composerSending ? 'true' : undefined"
-            :disabled="composerSending || !hasComposerDraft()"
-            @click="send"
-          >
-            <Icon :name="composerSending ? 'spinner' : 'chat-send'" :size="18" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
-          </button>
-          <Transition
-            :css="false"
-            @enter="confirmActionMotion.enter"
-            @leave="confirmActionMotion.leave"
-            @enter-cancelled="confirmActionMotion.cancel"
-            @leave-cancelled="confirmActionMotion.cancel"
-          >
-            <span
-              v-if="!hideFinish"
-              v-show="showHotConfirm"
-              ref="confirmPresence"
-              class="clarify-confirm-presence"
-              :inert="!showHotConfirm"
-              :aria-hidden="!showHotConfirm ? 'true' : undefined"
-            >
-              <span class="clarify-confirm-presence__inner">
-                <button
-                  type="button"
-                  class="chat-action-confirm clarify-confirm-integrated h-9 shrink-0 inline-flex"
-                  data-testid="clarify-confirm-flow"
-                  :disabled="confirmDisabled || !showHotConfirm"
-                  :title="translate('pages.clarify.confirmFlowTitle')"
-                  @click="finishEarly"
-                >
-                  <Icon name="check" :size="13" />
-                  {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow') }}
-                </button>
-              </span>
-            </span>
-          </Transition>
+          <ComposerPrimaryAction
+            :kind="primaryKind"
+            :disabled="primaryDisabled"
+            :busy="primaryKind === 'send' && composerSending"
+            :label="primaryLabel"
+            :title="primaryKind === 'confirm' ? translate('pages.clarify.confirmFlowTitle') : undefined"
+            :testid="primaryTestid"
+            @click="onPrimary"
+          />
         </template>
         <template v-if="reviewMode" #hint>
           <p
@@ -1666,26 +1649,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   [data-testid="clarify-option-btn"],
   [data-testid="clarify-other-row"],
   [data-testid="clarify-form-input"] { min-height: 44px; }
-}
-.clarify-confirm-integrated {
-  max-width: 100%;
-  padding-inline: 10px;
-  font-size: 12px;
-}
-.clarify-confirm-presence {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 100%;
-  /* Include the adjacent 6px flex gap in the animated width. */
-  margin-inline-start: -6px;
-}
-.clarify-confirm-presence__inner {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 100%;
-  padding-inline-start: 6px;
 }
 
 /* Placeholder must wrap to the textarea width — UA default often clips the 2nd line. */

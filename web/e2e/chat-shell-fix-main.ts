@@ -88,7 +88,7 @@ const App = defineComponent({
       h(ReviewShell, { scopeKey: 'harness', runId: 'run-1', hostConfirmFlow: false, class: 'min-h-0 flex-1' }, {
         stage: () => h('div', { class: 'p-6 text-sm text-txt3' }, '产物'),
         sidebar: () => connecting.value
-          ? h(ReactConnectingState, { showConfirm: true })
+          ? h(ReactConnectingState)
           : h(ClarifyChat, { ref: chat, runId: 'run-1', nodeId: 'clarify', iteration: 1, turns: turns.value, done: false, active: true, reviewMode: false, class: 'min-h-0 flex-1' }),
       }),
     ])
