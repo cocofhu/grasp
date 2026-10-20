@@ -573,9 +573,10 @@ function isoStamp(v: unknown): string {
 function rebuildTurnsFromFrames(events: any[]): Turn[] {
   const rebuilt: Turn[] = []
   let agent: Turn | null = null
-  const newAgent = (id: string) => {
-    agent = { id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
-    rebuilt.push(agent)
+  const newAgent = (id: string): Turn => {
+    const turn: Turn = { id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
+    rebuilt.push(turn)
+    return turn
   }
   for (const raw of events) {
     const frame = typeof raw === 'string' ? parseFrame(raw) : raw
@@ -598,16 +599,16 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
             ? urls.map((u) => ({ url: u, data: '', mimeType: inferImageMimeFromUrl(u) }))
             : undefined,
         })
-        newAgent(`${id}:reply`)
+        agent = newAgent(`${id}:reply`)
         const started = isoStamp(ev.at)
-        if (started && agent) agent.startedAt = started
+        if (started) agent.startedAt = started
       }
     } else if (ev.type === 'turn_end' || ev.type === 'prompt_end') {
       const ended = isoStamp(ev.at)
       if (ended && agent) agent.endedAt = ended
     } else if (ev.type === 'session_update' && ev.update) {
-      if (!agent) newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
-      applyAcp(ev, agent!)
+      if (!agent) agent = newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
+      applyAcp(ev, agent)
     }
   }
   const last = rebuilt[rebuilt.length - 1]
