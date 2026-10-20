@@ -111,10 +111,11 @@ func TestPublicGateEventsWSSkipsStaleSeedWhenIdle(t *testing.T) {
 	old := h.h.Eng
 	eng := engine.New(h.db, lastTurnProvider{}, h.host, h.h.Arts, 5)
 	h.h.Eng = eng
-	t.Cleanup(func() {
-		eng.Close()
-		h.h.Eng = old
-	})
+	// Do not swap h.h.Eng back in Cleanup: the public WS handler goroutine
+	// may still read it (data race under -race). The harness is per-test
+	// and closes its own engine (old) itself.
+	_ = old
+	t.Cleanup(eng.Close)
 	seedInboxReview(t, h, "run-pub-idle", "research-idle", true)
 	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
