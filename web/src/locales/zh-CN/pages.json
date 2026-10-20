@@ -44,8 +44,6 @@
       "timeRange": "时间范围",
       "sourceLabel": "来源",
       "dimensionsLabel": "细分",
-      "expandAnalysis": "展开分析",
-      "collapseAnalysis": "收起分析",
       "unknownBadge": "未知",
       "sections": {
         "overview": "用量概览",
@@ -53,7 +51,6 @@
         "breakdown": "构成与排行",
         "breakdownHint": "按来源、模型和工作流查看消耗分布，点击图表可继续下钻。",
         "patterns": "时段与执行分析",
-        "patternsHint": "结合时间、节点和运行状态，了解消耗如何分布。",
         "details": "模型与运行明细",
         "detailsHint": "核对模型用量和高消耗运行，可查看调用记录或导出 CSV。"
       },

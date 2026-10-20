@@ -998,11 +998,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
 
           </section>
 
-          <details class="usage-analysis-section usage-advanced-analysis" data-testid="token-analytics-patterns">
-            <summary class="usage-advanced-summary">
-              <span class="usage-section-heading"><span class="usage-advanced-title">{{ t('pages.tokenAnalytics.sections.patterns') }}</span><span class="usage-advanced-hint">{{ t('pages.tokenAnalytics.sections.patternsHint') }}</span></span>
-              <span class="usage-advanced-action"><span class="usage-advanced-show">{{ t('pages.tokenAnalytics.expandAnalysis') }}</span><span class="usage-advanced-hide">{{ t('pages.tokenAnalytics.collapseAnalysis') }}</span><span class="usage-advanced-chevron" aria-hidden="true">⌄</span></span>
-            </summary>
+          <section class="usage-analysis-section usage-patterns" :aria-label="t('pages.tokenAnalytics.sections.patterns')" data-testid="token-analytics-patterns">
             <div class="usage-chart-grid grid grid-cols-1 gap-5 xl:grid-cols-2">
               <TokenChartCard
                 :heading-level="3"
@@ -1056,8 +1052,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 <VChart :option="treeOption" autoresize class="h-full w-full" @click="onChartClick" />
               </div>
             </TokenChartCard>
-
-          </details>
+          </section>
 
           <section id="tables" class="usage-analysis-section" aria-labelledby="usage-tables-title" data-testid="token-analytics-details">
             <div class="usage-section-heading"><h2 id="usage-tables-title">{{ t('pages.tokenAnalytics.sections.details') }}</h2><p>{{ t('pages.tokenAnalytics.sections.detailsHint') }}</p></div>
@@ -1334,28 +1329,6 @@ watch(() => JSON.stringify(filters.value), () => void load())
 .usage-analysis-section > .usage-detail-card:last-child {
   margin-bottom: 0;
 }
-.usage-advanced-analysis {
-  padding: 18px 0;
-  border-block: 1px solid rgb(var(--c-line) / 0.6);
-}
-.usage-advanced-summary {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  cursor: pointer;
-  list-style: none;
-}
-.usage-advanced-summary::-webkit-details-marker { display: none; }
-.usage-advanced-summary .usage-section-heading { margin: 0; }
-.usage-advanced-title { font-size: 16px; font-weight: 600; line-height: 24px; }
-.usage-advanced-hint { color: rgb(var(--c-txt3)); font-size: 12px; line-height: 20px; }
-.usage-advanced-action { display: inline-flex; flex-shrink: 0; align-items: center; gap: 8px; color: rgb(var(--c-txt3)); font-size: 12px; }
-.usage-advanced-analysis > .usage-chart-grid { margin-top: 20px; }
-.usage-advanced-hide { display: none; }
-.usage-advanced-analysis[open] .usage-advanced-show { display: none; }
-.usage-advanced-analysis[open] .usage-advanced-hide { display: inline; }
-.usage-advanced-analysis[open] .usage-advanced-chevron { transform: rotate(180deg); }
 .usage-table-grid table {
   min-width: 640px;
 }

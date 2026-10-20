@@ -44,8 +44,6 @@
       "timeRange": "Time range",
       "sourceLabel": "Source",
       "dimensionsLabel": "Details",
-      "expandAnalysis": "Explore",
-      "collapseAnalysis": "Collapse",
       "unknownBadge": "Unknown",
       "sections": {
         "overview": "Usage overview",
@@ -53,7 +51,6 @@
         "breakdown": "Composition and rankings",
         "breakdownHint": "Compare sources, models and workflows. Select a chart element to explore its records.",
         "patterns": "Timing and execution",
-        "patternsHint": "Explore usage across time, node types and run states.",
         "details": "Model and run details",
         "detailsHint": "Review model usage and high-consumption runs, open call records or export CSV."
       },
