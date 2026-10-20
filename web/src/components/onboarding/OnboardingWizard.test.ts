@@ -506,6 +506,19 @@ describe('OnboardingWizard', () => {
     expect(shouldAutoOpenOnboarding([], [])).toBe(false)
   })
 
+  it('stays on the wizard and does not complete when bootstrap fails', async () => {
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.bootstrapOnboarding).mockRejectedValueOnce(new Error('bootstrap failed'))
+    const wrapper = await mountWizard()
+    await walkToTeam(wrapper)
+    await next(wrapper)
+    await next(wrapper)
+    expect(wrapper.emitted('completed')).toBeFalsy()
+    expect(wrapper.emitted('close')).toBeFalsy()
+    expect(wrapper.find('[data-testid="onboarding-success"]').exists()).toBe(false)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-workflow')
+  })
+
   it('retry continues in the workspace from the preferences step', async () => {
     const wrapper = await mountWizard({ mode: 'retry' })
     expect(wrapper.find('[data-testid="onboarding-title"]').text()).toBe('pages.onboarding.titleRetry')

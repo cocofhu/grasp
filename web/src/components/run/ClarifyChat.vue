@@ -522,10 +522,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       @scroll.passive="onScrollerScroll"
     >
       <div class="clarify-transcript">
-      <div class="clarify-thread-heading chat-meta flex items-center gap-2">
-        <Icon name="chat" :size="13" />
-        {{ translate('pages.clarify.header', { n: displayTurns.length }) }}
-      </div>
       <div
         v-if="showSandboxOrphanBanner"
         class="flex items-start gap-2 rounded-md border border-warn/40 bg-warn/10 px-2.5 py-2 text-[12px] text-txt"

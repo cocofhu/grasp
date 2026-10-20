@@ -8,6 +8,7 @@ import { kvToRec, recToKV, type AgentStudioDraft } from '@/lib/agent/agentStudio
 import { backendKind } from '@/lib/workspace/credentialKinds'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
+import { launchCommand } from '@/lib/agent/cliModelView'
 import {
   CLI_COMMON_EFFORTS,
   cliEffortsFor,
@@ -27,7 +28,11 @@ const props = defineProps<{
   credentialTitle?: string
   credentialHint?: string
   modelHint?: string
-  /** The workspace's shared model, shown while this draft stays on auto. */
+  /**
+   * Workspace shared model for this same CLI. When set and this draft has no
+   * model of its own, the card follows that config instead of offering Auto.
+   * An empty model is still "not set" — there is no saved "ignore the workspace" value.
+   */
   inheritedModel?: string
   focusTick?: number
 }>()
@@ -54,12 +59,41 @@ watch(
   { immediate: true },
 )
 
+/** Transient: the user opened "set separately" but has not picked a model yet. Not saved. */
+const specifying = ref(false)
+
 function setCliModel(id: string) {
+  if (id.trim()) specifying.value = false
   let env = writeCliModel(kvToRec(props.draft.env), id)
   const effort = readCliEffort(env)
   const listed = cliCatalog.value.find((m) => m.id === id)
   if (effort && !cliEffortsFor(listed).includes(effort)) env = writeCliEffort(env, '')
   props.draft.env = recToKV(env)
+}
+const inheritedId = computed(() => (props.inheritedModel || '').trim())
+const canFollow = computed(() => !!inheritedId.value)
+const showingFollow = computed(() => canFollow.value && !cliModel.value && !specifying.value)
+const inheritedTitle = computed(() => {
+  const id = inheritedId.value
+  if (!id) return ''
+  return cliCatalog.value.find((m) => m.id === id)?.name || id
+})
+const inheritedCommand = computed(() => launchCommand(props.draft.acpBackend, inheritedId.value))
+
+watch(
+  () => props.draft.acpBackend,
+  () => {
+    specifying.value = false
+  },
+)
+
+function followShared() {
+  specifying.value = false
+  if (cliModel.value) setCliModel('')
+}
+
+function specifyOwn() {
+  if (!cliModel.value) specifying.value = true
 }
 
 function setCliEffort(v: string) {
@@ -69,12 +103,6 @@ function setCliEffort(v: string) {
 const modelEfforts = computed(() => cliEffortsFor(cliCatalog.value.find((x) => x.id === cliModel.value)))
 const effortSupported = computed(() => modelEfforts.value.length > 0)
 const effortOptions = computed(() => ['auto', ...(effortSupported.value ? modelEfforts.value : CLI_COMMON_EFFORTS)])
-
-const inheritedLabel = computed(() => {
-  const id = (props.inheritedModel || '').trim()
-  if (!id || cliModel.value) return ''
-  return cliCatalog.value.find((m) => m.id === id)?.name || id
-})
 
 const modelCard = ref<HTMLElement | null>(null)
 const modelPulse = ref(false)
@@ -121,16 +149,75 @@ watch(
     >
       <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
       <p v-if="modelHint" class="-mt-1 mb-2 text-[11px] text-txt3">{{ modelHint }}</p>
-      <CliModelSelect :key="draft.acpBackend" :model-value="cliModel" :backend="draft.acpBackend" @update:model-value="setCliModel" />
-      <p
-        v-if="inheritedLabel"
-        class="mt-2 flex items-center gap-1.5 text-[11px] text-txt3"
+      <div
+        v-if="canFollow"
+        class="mb-2.5 flex rounded-[10px] border border-line bg-base p-0.5"
+        role="radiogroup"
+        :aria-label="t('pages.agentStudio.cliModel.label')"
+        data-test="agent-cli-model-mode"
+      >
+        <button
+          type="button"
+          role="radio"
+          class="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] transition"
+          :class="showingFollow ? 'bg-surface font-semibold text-txt shadow-sm' : 'font-medium text-txt3 hover:text-txt2'"
+          :aria-checked="showingFollow"
+          data-test="agent-cli-model-follow"
+          @click="followShared"
+        >
+          {{ t('pages.agentStudio.cliModel.follow') }}
+          <span class="inline-flex h-4 items-center rounded-full bg-accent-dim px-1.5 text-[10px] font-semibold leading-4 text-accent-2">{{ t('pages.agentStudio.cliModel.followDefault') }}</span>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          class="inline-flex min-h-8 flex-1 items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] transition"
+          :class="!showingFollow ? 'bg-surface font-semibold text-txt shadow-sm' : 'font-medium text-txt3 hover:text-txt2'"
+          :aria-checked="!showingFollow"
+          data-test="agent-cli-model-own"
+          @click="specifyOwn"
+        >
+          {{ t('pages.agentStudio.cliModel.specify') }}
+        </button>
+      </div>
+      <div
+        v-if="showingFollow"
+        class="rounded-xl border border-line bg-surface px-3.5 py-3"
         data-test="agent-cli-model-inherited"
       >
-        <Icon name="branch" :size="11" />
-        <span>{{ t('pages.agentStudio.cliModel.inherited') }}</span>
-        <code class="rounded bg-base px-1 py-px font-mono text-[10.5px] text-txt2">{{ inheritedLabel }}</code>
-      </p>
+        <p class="m-0 text-[10px] font-bold tracking-[0.08em] text-accent-2">{{ t('pages.agentStudio.cliModel.sharedKicker') }}</p>
+        <p
+          class="m-0 mt-1 text-[14px] font-semibold tracking-tight text-txt"
+          :class="inheritedTitle === inheritedId ? 'font-mono' : ''"
+          data-test="agent-cli-model-inherited-name"
+        >
+          {{ inheritedTitle }}
+        </p>
+        <p class="m-0 mt-1.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.cliModel.followNote') }}</p>
+        <div class="mt-2.5 flex min-w-0 items-center gap-2 text-[11px] text-txt3">
+          <Icon name="terminal" :size="12" class="shrink-0" />
+          <code class="min-w-0 truncate rounded bg-elevated px-1.5 py-0.5 font-mono text-[10.5px] text-txt2">{{ inheritedCommand }}</code>
+          <span class="hidden shrink-0 sm:inline">{{ t('pages.agentStudio.cliModel.fromShared') }}</span>
+        </div>
+      </div>
+      <template v-else>
+        <CliModelSelect
+          :key="draft.acpBackend"
+          :model-value="cliModel"
+          :backend="draft.acpBackend"
+          :empty-mode="canFollow ? 'required' : 'auto'"
+          @update:model-value="setCliModel"
+        />
+        <button
+          v-if="canFollow"
+          type="button"
+          class="mt-2 bg-transparent p-0 text-[11px] font-semibold text-accent-2 hover:underline"
+          data-test="agent-cli-model-back"
+          @click="followShared"
+        >
+          {{ t('pages.agentStudio.cliModel.backToFollow') }}
+        </button>
+      </template>
     </div>
     <div v-if="draft.acpBackend === 'codex'" class="border-t border-line/60 py-4" data-test="agent-cli-effort">
       <div class="mb-0.5 flex items-center gap-2 text-[12px] font-medium text-txt2">

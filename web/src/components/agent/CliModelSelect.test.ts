@@ -17,7 +17,7 @@ vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: mocks.load, cliCatalog
 
 const mounted: { unmount: () => void }[] = []
 
-async function mountSelect(props: { modelValue?: string; backend?: string; variant?: 'full' | 'compact' } = {}) {
+async function mountSelect(props: { modelValue?: string; backend?: string; variant?: 'full' | 'compact'; emptyMode?: 'auto' | 'required' } = {}) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   const w = mount(CliModelSelect, {
     props: { modelValue: '', backend: 'cursor', ...props },
@@ -174,6 +174,39 @@ describe('CliModelSelect panel', () => {
     await openPanel(w)
     expect(q('[data-testid="cli-model-failed"]')).not.toBeNull()
     expect(q('[data-testid="cli-model-option-auto"]')).not.toBeNull()
+  })
+
+  it('hides auto until a concrete model is picked when empty is not a choice', async () => {
+    mocks.load.mockResolvedValue(catalog)
+    const w = await mountSelect({ emptyMode: 'required' })
+    const trigger = w.get('[data-testid="cli-model-trigger"]')
+    expect(trigger.text()).toContain('选择一个模型')
+    expect(trigger.text()).not.toContain('自动')
+    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
+    expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
+    await openPanel(w)
+    expect(q('[data-testid="cli-model-option-auto"]')).toBeNull()
+    expect(q('[data-testid="cli-model-card-gpt-5"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-vendor-openai"]')).not.toBeNull()
+    q('[data-testid="cli-model-vendor-openai"]')!.click()
+    await flushPromises()
+    expect(q('[data-testid="cli-model-option-claude-4.5-sonnet"]')).toBeNull()
+    expect(q('[data-testid="cli-model-option-gpt-5"]')).not.toBeNull()
+    await typeQuery('my-private')
+    expect(q('[data-testid="cli-model-empty-use"]')).not.toBeNull()
+    q('[data-testid="cli-model-empty-use"]')!.click()
+    await flushPromises()
+    expect(w.emitted('update:modelValue')?.[0]).toEqual(['my-private'])
+  })
+
+  it('does not offer reset to auto once a required model is set', async () => {
+    mocks.load.mockResolvedValue(catalog)
+    const w = await mountSelect({ emptyMode: 'required', modelValue: 'gpt-5' })
+    expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
+    expect(w.get('[data-testid="cli-model-command"]').text()).toContain('cursor-agent --model gpt-5')
+    await openPanel(w)
+    expect(q('[data-testid="cli-model-option-auto"]')).toBeNull()
+    expect(q('[data-testid="cli-model-detail"]')!.textContent).not.toContain('自动')
   })
 
   it('shows details inline in the compact variant', async () => {

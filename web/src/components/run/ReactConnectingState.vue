@@ -94,8 +94,6 @@ onMounted(() => {
     aria-busy="true"
   >
     <div class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2.5">
-      <Icon name="chat" :size="13" class="text-txt3" />
-      <span class="text-[11px] text-txt3">{{ t('pages.clarify.header', { n: 0 }) }}</span>
       <span
         class="ml-auto inline-flex items-center gap-1.5 rounded-full border border-n-clarify/30 bg-n-clarify/10 px-2 py-0.5 text-[10px] text-n-clarify"
         data-testid="react-connecting-pill"
