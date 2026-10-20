@@ -405,6 +405,19 @@ onBeforeUnmount(() => {
   width: 4px;
   touch-action: none;
   z-index: 2;
+  background: rgb(var(--c-surface));
+}
+.review-shell-sash::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 1px;
+  width: 1px;
+  background: rgb(var(--c-line));
+  transition: background-color 160ms ease;
+}
+.review-shell-sash:hover::after,
+.review-shell-sash.bg-accent::after {
+  background: rgb(var(--c-accent) / .55);
 }
 /* Expanded hit target (~12px) without widening the visual bar. */
 .review-shell-sash::before {
@@ -428,6 +441,9 @@ onBeforeUnmount(() => {
 }
 .review-shell-drawer-handle-pill {
   pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .review-shell-sash::after { transition: none; }
 }
 </style>
 

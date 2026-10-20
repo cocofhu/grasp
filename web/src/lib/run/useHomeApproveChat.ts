@@ -102,6 +102,7 @@ export function useHomeApproveChat() {
   const attach = useImageAttachments()
 
   const workflows = ref<Workflow[]>([])
+  const workflowsLoaded = ref(false)
   const projectNamesById = ref<Map<string, string>>(new Map())
   const agentsByName = ref<Map<string, Agent>>(new Map())
   const loading = ref(false)
@@ -132,6 +133,16 @@ export function useHomeApproveChat() {
   /** Auto-save quota / partial toast once per session (plan g2.2 / F4). */
   let quotaToastShown = false
 
+  const requestedProjectId = computed(() => {
+    const route = router.currentRoute?.value
+    if (route?.path !== '/dashboard') return ''
+    const query = route.query.projectId
+    const value = Array.isArray(query) ? query[0] : query
+    return typeof value === 'string' ? value.trim() : ''
+  })
+  const appliedProjectId = ref('')
+  const unavailableProjectId = ref('')
+
   const homeWorkflows = computed(() =>
     workflows.value
       .filter((w) => isPublishedClarifyFirst(w, agentsByName.value) && !!w.showOnHome)
@@ -153,12 +164,19 @@ export function useHomeApproveChat() {
         isClarifyFirstWorkflow(w, agentsByName.value),
     ),
   )
-  const selected = computed(
-    () => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null,
-  )
+  const selected = computed(() => {
+    const requested = requestedProjectId.value
+    if (requested && (appliedProjectId.value !== requested || unavailableProjectId.value === requested)) {
+      return null
+    }
+    const candidates = requested
+      ? homeWorkflows.value.filter((w) => w.projectId === requested)
+      : homeWorkflows.value
+    return candidates.find((w) => w.id === selectedId.value) || candidates[0] || null
+  })
   /** Project context from the selected workflow (not a home project gate). */
   const projectId = computed(
-    () => selected.value?.projectId || launchTarget.value?.projectId || readStoredProjectId() || '',
+    () => selected.value?.projectId || requestedProjectId.value || launchTarget.value?.projectId || readStoredProjectId() || '',
   )
   const launchTitle = computed(() => runTitleFromDraft(pendingText.value, pendingImages.value))
   /** Opening message carried through the launch modal's own startRun call. */
@@ -221,7 +239,9 @@ export function useHomeApproveChat() {
     try {
       draft.value = stored.text
       attach.attachments.value = stored.attachments.map((im) => ({ ...im }))
-      if (stored.pipelineId) {
+      // A project compose link supplies explicit context even when IDB resolves
+      // after workflows load. Restore content without replacing that selection.
+      if (stored.pipelineId && !requestedProjectId.value) {
         const list = homeWorkflows.value
         if (list.length === 0) {
           // List not loaded yet — keep preference for workflows watch (plan g2.4).
@@ -245,8 +265,33 @@ export function useHomeApproveChat() {
   }
 
   watch(
-    homeWorkflows,
-    (list) => {
+    [homeWorkflows, requestedProjectId, loading, workflowsLoaded, hidingWorkflowId],
+    ([list, requested, isLoading, loaded, hiding]) => {
+      if (requested) {
+        // Recheck explicit context whenever candidates change, not only when
+        // entering the URL. Wait for optimistic visibility changes to settle.
+        if (!loaded || isLoading || loadError.value || hiding) return
+        const candidates = list.filter((w) => w.projectId === requested)
+        const preferred = [preferredDraftWorkflowId, selectedId.value, readLastWorkflowId()]
+          .find((id) => candidates.some((w) => w.id === id)) || ''
+        const next = pickDefaultWorkflowId(candidates, preferred)
+        const wasUnavailable = unavailableProjectId.value === requested
+        appliedProjectId.value = requested
+        unavailableProjectId.value = next ? '' : requested
+        selectedId.value = next
+        preferredDraftWorkflowId = next
+        if (next) {
+          writeLastWorkflowId(next)
+        } else if (!wasUnavailable) {
+          // Never silently launch another project's workflow when this project
+          // has no startable home workflow. Its detail page exposes setup.
+          toast.warn(t('pages.dashboard.noWorkflows'))
+          void router.push({ path: `/projects/${encodeURIComponent(requested)}` })
+        }
+        return
+      }
+      appliedProjectId.value = ''
+      unavailableProjectId.value = ''
       // While the list is still empty (initial mount / load in flight), keep any
       // draft workflow preference from hydrate — do not treat "not in empty list"
       // as unavailable (plan g2.4).
@@ -292,6 +337,7 @@ export function useHomeApproveChat() {
       agentsByName.value = new Map((Array.isArray(agents) ? agents : []).map((a) => [a.name, a]))
       workflows.value = Array.isArray(list) ? list : []
       projectNamesById.value = projectNameMap(projects)
+      workflowsLoaded.value = true
     } catch (e: any) {
       if (ac.signal.aborted || e?.name === 'AbortError') return
       loadError.value = String(e?.message || e)
@@ -323,6 +369,15 @@ export function useHomeApproveChat() {
     selectedId.value = id
     preferredDraftWorkflowId = id
     writeLastWorkflowId(id)
+    const route = router.currentRoute?.value
+    const chosen = homeWorkflows.value.find((w) => w.id === id)
+    if (route?.path === '/dashboard' && requestedProjectId.value && chosen && chosen.projectId !== requestedProjectId.value) {
+      // Reflect a manual cross-project choice in the URL so clicking the
+      // original project's compose link again is a new navigation.
+      const query = { ...route.query }
+      delete query.projectId
+      void router.replace?.({ path: route.path, query })
+    }
   }
 
   function selectPriority(value: RunPriority) {
@@ -338,10 +393,14 @@ export function useHomeApproveChat() {
     workflows.value = workflows.value.map((item) =>
       item.id === wf.id ? { ...item, showOnHome: false } : item,
     )
-    const nextId = homeWorkflows.value[0]?.id || ''
+    const requested = requestedProjectId.value
+    const candidates = requested
+      ? homeWorkflows.value.filter((item) => item.projectId === requested)
+      : homeWorkflows.value
+    const nextId = candidates[0]?.id || ''
     selectedId.value = nextId
     preferredDraftWorkflowId = nextId
-    writeLastWorkflowId(nextId)
+    if (nextId || !requested) writeLastWorkflowId(nextId)
     try {
       const saved = await api.patchWorkflowHomeVisibility(wf.id, false)
       workflows.value = workflows.value.map((item) =>
@@ -373,10 +432,9 @@ export function useHomeApproveChat() {
     launchOpen.value = false
   }
 
-  function goGates(runId: string, nodeId?: string) {
+  function goGates(runId: string, wf: Workflow | null, nodeId?: string) {
     // Align inbox filters to the workflow being started (plan g1.1). Use the
     // workflow object's projectId only — never a hard-coded project name/UUID.
-    const wf = selected.value || launchTarget.value
     const projectId = (wf?.projectId || '').trim()
     const query: Record<string, string> = { run: runId }
     if (nodeId) query.node = nodeId
@@ -389,11 +447,10 @@ export function useHomeApproveChat() {
    * engine once the approve node parks, so all we do here is hand the optimistic
    * bubble to the inbox and navigate.
    */
-  async function afterStart(runId: string, text: string, images: ClarifyImage[]) {
-    const wf = selected.value || launchTarget.value
+  async function afterStart(runId: string, text: string, images: ClarifyImage[], wf: Workflow | null) {
     const knownNodeId = wf ? clarifyFirstNodeId(wf, agentsByName.value) || '' : ''
     setHomeApproveHandoff({ runId, nodeId: knownNodeId, text, images })
-    await goGates(runId, knownNodeId || undefined)
+    await goGates(runId, wf, knownNodeId || undefined)
   }
 
   async function send() {
@@ -432,7 +489,7 @@ export function useHomeApproveChat() {
       attach.clearAttachments()
       clearComposerDraftNow()
       suppressSave = false
-      await afterStart(res.id, text, images)
+      await afterStart(res.id, text, images, wf)
     } catch (e: any) {
       const msg = String(e?.message || e)
       if (msg.includes('缺少必填项')) {
@@ -447,6 +504,7 @@ export function useHomeApproveChat() {
   }
 
   async function onLaunchStarted(runId: string) {
+    const wf = launchTarget.value || selected.value
     launchOpen.value = false
     const text = pendingText.value
     const images = pendingImages.value.map((im) => ({ ...im }))
@@ -458,7 +516,7 @@ export function useHomeApproveChat() {
       attach.clearAttachments()
       clearComposerDraftNow()
       suppressSave = false
-      await afterStart(runId, text, images)
+      await afterStart(runId, text, images, wf)
     } finally {
       sending.value = false
     }

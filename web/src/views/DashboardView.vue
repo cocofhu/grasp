@@ -794,7 +794,7 @@ onBeforeUnmount(() => {
             @wheel="onWorkflowWheel"
           >
             <div
-              v-for="p in homeWorkflows"
+              v-for="(p, index) in homeWorkflows"
               :key="p.id"
               tabindex="0"
               role="listitem"
@@ -821,12 +821,26 @@ onBeforeUnmount(() => {
                 <Icon name="more" :size="16" />
               </button>
               <div class="home-shell__card-top flex h-20 items-center justify-center">
-                <span class="flex items-center gap-1.5">
-                  <span class="h-2 w-2 bg-txt3" />
-                  <span class="h-px w-6 bg-line-strong" />
-                  <span class="h-2.5 w-2.5 bg-accent" />
-                  <span class="h-px w-6 bg-line-strong" />
-                  <span class="h-2 w-2 bg-txt3" />
+                <svg class="home-workflow-art" viewBox="0 0 218 84" aria-hidden="true" focusable="false">
+                  <path class="home-workflow-art__link" d="M54 42H87M131 42H164" />
+                  <path class="home-workflow-art__beam" d="M54 42H87M131 42H164" />
+                  <g class="home-workflow-art__node">
+                    <rect class="home-workflow-art__back" x="25" y="30" width="31" height="32" rx="6" />
+                    <rect class="home-workflow-art__paper" x="22" y="26" width="32" height="32" rx="6" />
+                    <path class="home-workflow-art__detail" d="M30 36h14M30 42h10M30 48h12" />
+                  </g>
+                  <g class="home-workflow-art__node home-workflow-art__node--middle">
+                    <rect class="home-workflow-art__back" x="90" y="25" width="43" height="42" rx="12" />
+                    <rect class="home-workflow-art__core" x="87" y="20" width="44" height="44" rx="12" />
+                  </g>
+                  <g class="home-workflow-art__node home-workflow-art__node--last">
+                    <rect class="home-workflow-art__back" x="167" y="30" width="31" height="32" rx="6" />
+                    <rect class="home-workflow-art__paper" x="164" y="26" width="32" height="32" rx="6" />
+                    <path class="home-workflow-art__detail" d="M172 36h14M172 42h10M172 48h12" />
+                  </g>
+                </svg>
+                <span class="home-workflow-art__mark" aria-hidden="true">
+                  <Icon :name="['server', 'artifact', 'workflow'][index % 3]" :size="14" />
                 </span>
               </div>
               <div class="px-3 py-2.5">
@@ -956,6 +970,36 @@ onBeforeUnmount(() => {
 /* g1 — clean shell aligned to page.html design tokens */
 .home-shell {
   isolation: isolate;
+  --c-base: 24 23 29;
+  --c-surface: 30 28 36;
+  --c-elevated: 36 33 43;
+  --c-overlay: 44 40 53;
+  --c-line: 61 56 71;
+  --c-line-strong: 85 78 99;
+  --c-accent: 180 164 221;
+  --c-accent-2: 180 164 221;
+  --home-shadow: 0 0 0 / 0.18;
+  --home-highlight: 255 255 255 / 0.04;
+}
+
+html.light .home-shell {
+  --c-base: 250 249 251;
+  --c-surface: 255 255 255;
+  --c-elevated: 255 255 255;
+  --c-overlay: 246 244 249;
+  --c-line: 231 228 236;
+  --c-line-strong: 208 202 220;
+  --c-txt: 43 40 50;
+  --c-txt2: 115 108 128;
+  --c-txt3: 133 126 145;
+  --c-accent: 83 72 139;
+  --c-accent-2: 83 72 139;
+  --home-shadow: 43 32 66 / 0.045;
+  --home-highlight: 255 255 255 / 0.9;
+}
+
+.home-shell :deep(.home-particle-mesh__canvas) {
+  opacity: 0.2;
 }
 
 /* Top inset shrinks before the column scrolls. Basis 120px, floor 48px:
@@ -1009,9 +1053,13 @@ onBeforeUnmount(() => {
   background: rgb(var(--c-surface));
   border-radius: 16px;
   overflow: hidden;
+  box-shadow:
+    inset 0 1px 0 rgb(var(--home-highlight)),
+    0 2px 3px rgb(var(--home-shadow)),
+    0 10px 28px rgb(var(--home-shadow));
   transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
+    border-color 0.22s ease,
+    box-shadow 0.22s ease;
 }
 
 .home-composer:hover {
@@ -1019,8 +1067,8 @@ onBeforeUnmount(() => {
 }
 
 .home-composer:focus-within {
-  border-color: rgb(var(--c-accent));
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.16);
+  border-color: rgb(var(--c-accent) / 0.65);
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.07), 0 6px 22px rgb(var(--home-shadow));
 }
 
 /* Background only — a border-color here would beat :focus-within. */
@@ -1030,6 +1078,7 @@ html.light .home-composer {
 
 .home-composer__toolbar {
   border-color: rgb(var(--c-line) / 0.55);
+  background: color-mix(in srgb, rgb(var(--c-base)) 35%, rgb(var(--c-surface)));
 }
 
 .home-composer__input {
@@ -1059,22 +1108,24 @@ html.light .home-composer {
 
 .home-composer__plus {
   border-color: rgb(var(--c-line));
-  background: transparent;
+  background: rgb(var(--c-surface));
   border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 1px 2px rgb(var(--home-shadow));
   transition: border-color 0.15s ease, color 0.15s ease, background-color 0.15s ease;
 }
 
 .home-composer__plus:hover:not(:disabled) {
   border-color: rgb(var(--c-line-strong));
   color: rgb(var(--c-txt));
-  background: rgb(var(--c-accent) / 0.12);
+  background: rgb(var(--c-accent) / 0.04);
 }
 
 .home-composer__send {
-  background: rgb(var(--c-txt));
+  background: linear-gradient(155deg, rgb(var(--c-accent) / 0.85), rgb(var(--c-accent)));
   color: rgb(var(--c-base));
   border-radius: 8px;
-  transition: transform 0.15s ease;
+  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 2px 4px rgb(var(--home-shadow));
+  transition: transform 0.16s ease, box-shadow 0.2s ease;
 }
 
 .home-composer__send:hover:not(:disabled) {
@@ -1086,8 +1137,25 @@ html.light .home-composer {
 }
 
 html.light .home-composer__send {
-  background: rgb(var(--c-txt));
+  background: linear-gradient(155deg, rgb(var(--c-accent) / 0.85), rgb(var(--c-accent)));
   color: #fff;
+}
+
+.home-composer__send:disabled,
+html.light .home-composer__send:disabled {
+  background: rgb(var(--c-txt3));
+  box-shadow: none;
+}
+
+.home-shell :deep(.home-workflow-select__trigger) {
+  background: rgb(var(--c-surface));
+  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 1px 2px rgb(var(--home-shadow));
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.home-shell :deep(.home-workflow-select__trigger:hover:not(:disabled)) {
+  background: rgb(var(--c-accent) / 0.035);
+  border-color: rgb(var(--c-accent) / 0.28);
 }
 
 /* Card role 12px; selected = accent inset border */
@@ -1095,19 +1163,32 @@ html.light .home-composer__send {
   position: relative;
   background: rgb(var(--c-surface));
   border-radius: 12px;
-  box-shadow: none;
+  box-shadow: 0 1px 2px rgb(var(--home-shadow));
+  transition: transform 0.3s var(--ease-out-expo), border-color 0.22s ease, box-shadow 0.3s ease;
   cursor: pointer;
   user-select: none;
   -webkit-touch-callout: none;
+}
+
+.home-shell__card:not(.home-shell__card--add):hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--c-accent) / 0.28);
+  box-shadow: 0 3px 5px rgb(var(--home-shadow)), 0 9px 18px rgb(var(--home-shadow));
+}
+
+.home-shell__card:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.5);
+  outline-offset: 2px;
 }
 
 html.light .home-shell__card:not(.home-shell__card--add) {
   background: rgb(var(--c-elevated));
 }
 
-.home-shell__card--selected {
-  border-color: rgb(var(--c-accent));
-  box-shadow: inset 0 0 0 1px rgb(var(--c-accent));
+.home-shell__card--selected,
+.home-shell__card.home-shell__card--selected:hover {
+  border-color: rgb(var(--c-accent) / 0.65);
+  box-shadow: 0 1px 0 rgb(var(--c-accent) / 0.75), 0 3px 8px rgb(var(--home-shadow));
 }
 
 .home-shell__card--add {
@@ -1161,13 +1242,21 @@ html.light .home-shell__card:not(.home-shell__card--add) {
 }
 
 .home-shell__card-top {
-  background: rgb(var(--c-elevated));
+  position: relative;
+  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-elevated)));
   border-bottom: 1px solid rgb(var(--c-line) / 0.55);
 }
 
+.home-shell__card--selected .home-shell__card-top {
+  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-accent) / 0.055));
+}
+
 .home-workflow-more {
-  border: 0;
-  background: color-mix(in srgb, rgb(var(--c-surface)) 78%, transparent);
+  border: 1px solid rgb(var(--c-line) / 0.65);
+  border-radius: 50%;
+  background: rgb(var(--c-surface));
+  box-shadow: 0 1px 2px rgb(var(--home-shadow));
+  transition: background-color 0.18s ease, color 0.18s ease;
 }
 
 .home-workflow-more:hover,
@@ -1203,7 +1292,108 @@ html.light .home-shell__card:not(.home-shell__card--add) {
 }
 
 html.light .home-shell__card-top {
-  background: rgb(244, 244, 245);
+  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(244, 244, 245));
+}
+
+html.light .home-shell__card--selected .home-shell__card-top {
+  background: linear-gradient(155deg, rgb(var(--c-surface)), rgb(var(--c-accent) / 0.055));
+}
+
+.home-workflow-art {
+  width: 150px;
+  height: 58px;
+  overflow: visible;
+}
+
+.home-workflow-art__link,
+.home-workflow-art__beam {
+  fill: none;
+  stroke: rgb(var(--c-line));
+  stroke-width: 1.5;
+}
+
+.home-workflow-art__beam {
+  stroke: rgb(var(--c-accent));
+  stroke-dasharray: 24 110;
+  stroke-dashoffset: 30;
+  opacity: 0;
+}
+
+.home-workflow-art__back {
+  fill: rgb(var(--c-line));
+  opacity: 0.45;
+}
+
+.home-workflow-art__paper,
+.home-workflow-art__core {
+  fill: rgb(var(--c-surface));
+  stroke: rgb(var(--c-line));
+  stroke-width: 1;
+  filter: drop-shadow(0 2px 2px rgb(var(--home-shadow)));
+}
+
+.home-workflow-art__detail {
+  fill: none;
+  stroke: rgb(var(--c-txt3));
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0.4;
+}
+
+.home-workflow-art__mark {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  inset: 0;
+  color: rgb(var(--c-txt3));
+  pointer-events: none;
+}
+
+.home-shell__card--selected .home-workflow-art__core {
+  fill: rgb(var(--c-accent));
+  stroke: rgb(var(--c-accent) / 0.6);
+}
+
+.home-shell__card--selected .home-workflow-art__mark {
+  color: rgb(var(--c-surface));
+}
+
+.home-workflow-art__node,
+.home-workflow-art__mark {
+  transition: transform 0.45s var(--ease-out-expo), color 0.2s ease;
+}
+
+.home-shell__card:hover .home-workflow-art__node,
+.home-shell__card:focus-within .home-workflow-art__node {
+  transform: translateY(-2px);
+}
+
+.home-shell__card:hover .home-workflow-art__node--middle,
+.home-shell__card:focus-within .home-workflow-art__node--middle {
+  transform: translateY(-5px);
+  transition-delay: 0.07s;
+}
+
+.home-shell__card:hover .home-workflow-art__node--last,
+.home-shell__card:focus-within .home-workflow-art__node--last {
+  transition-delay: 0.14s;
+}
+
+.home-shell__card:hover .home-workflow-art__mark,
+.home-shell__card:focus-within .home-workflow-art__mark {
+  transform: translateY(-3px);
+  transition-delay: 0.07s;
+}
+
+.home-shell__card:hover .home-workflow-art__beam,
+.home-shell__card:focus-within .home-workflow-art__beam {
+  animation: home-workflow-beam 800ms ease-out 1;
+}
+
+@keyframes home-workflow-beam {
+  0% { stroke-dashoffset: 30; opacity: 0; }
+  15%, 80% { opacity: 0.6; }
+  100% { stroke-dashoffset: -115; opacity: 0; }
 }
 
 /* g2 — workflow rail: hidden scrollbar + edge arrows (aligned to page.html demo) */
@@ -1266,7 +1456,8 @@ html.light .home-shell__card-top {
   height: 36px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: color-mix(in srgb, rgb(var(--c-surface)) 92%, transparent);
+  background: rgb(var(--c-surface));
+  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 3px 10px rgb(var(--home-shadow));
   backdrop-filter: blur(6px);
   color: rgb(var(--c-txt2));
   display: grid;
@@ -1341,6 +1532,28 @@ html.light .home-shell__card-top {
 
 /* g1.3 / g2.3 — prefers-reduced-motion */
 @media (prefers-reduced-motion: reduce) {
+  .home-composer,
+  .home-composer__plus,
+  .home-shell__card,
+  .home-workflow-more,
+  .home-workflow-art__node,
+  .home-workflow-art__mark {
+    transition: none;
+  }
+
+  .home-shell__card:not(.home-shell__card--add):hover,
+  .home-shell__card:hover .home-workflow-art__node,
+  .home-shell__card:focus-within .home-workflow-art__node,
+  .home-shell__card:hover .home-workflow-art__mark,
+  .home-shell__card:focus-within .home-workflow-art__mark {
+    transform: none;
+  }
+
+  .home-shell__card:hover .home-workflow-art__beam,
+  .home-shell__card:focus-within .home-workflow-art__beam {
+    animation: none;
+  }
+
   .home-composer__ph-cursor {
     animation: none;
     opacity: 1;

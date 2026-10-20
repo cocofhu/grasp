@@ -1,6 +1,6 @@
 {
   "route": {
-    "dashboard": "Start",
+    "dashboard": "New request",
     "stats": "Token usage",
     "projects": "Projects",
     "projectDetail": "Project detail",

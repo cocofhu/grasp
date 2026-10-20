@@ -141,8 +141,8 @@ export function estimateOuterWorkspace(): number {
   if (typeof window === 'undefined') return 1280
   const vw = window.innerWidth || 0
   if (vw <= 0) return 1280
-  // App shell sidebar ≈240px on md+; mobile has no horizontal outer sash.
-  if (vw >= 768) return Math.max(400, vw - 240)
+  // Desktop sidebar: 56px rail + 248px list + 14px padding; mobile has no outer sash.
+  if (vw >= 768) return Math.max(400, vw - 318)
   return vw
 }
 

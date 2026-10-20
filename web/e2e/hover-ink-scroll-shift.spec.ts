@@ -49,7 +49,7 @@ async function mockApi(page: Page) {
 }
 
 test.describe('hover-ink scroll-shift fix', () => {
-  test('workspace nav icons stay left-aligned after left-edge click/hover', async ({ page }) => {
+  test('workspace entry stays aligned after left-edge hover and app-rail navigation', async ({ page }) => {
     await mockApi(page)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/hover-ink-scroll-shift.html?start=/dashboard')
@@ -79,21 +79,18 @@ test.describe('hover-ink scroll-shift fix', () => {
 
     const before = await measure()
     expect(before).not.toBeNull()
-    expect(before!.length).toBeGreaterThanOrEqual(4)
+    expect(before).toHaveLength(1)
     expect(before!.every((x) => x.overflow === 'clip')).toBe(true)
 
     const active = before!.find((x) => x.active)
-    const idle = before!.find((x) => !x.active)
     expect(active).toBeTruthy()
-    expect(idle).toBeTruthy()
-    expect(Math.abs(active!.iconLeft - idle!.iconLeft)).toBeLessThanOrEqual(1)
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-dashboard-active.png'),
       fullPage: false,
     })
 
-    // Left-edge pointerenter on active「开始」— max left overflow for ink circle.
+    // Left-edge pointerenter on active「新需求」— max left overflow for ink circle.
     const dashboardLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').first()
     const box = await dashboardLink.boundingBox()
     expect(box).toBeTruthy()
@@ -104,8 +101,6 @@ test.describe('hover-ink scroll-shift fix', () => {
     expect(afterHover).not.toBeNull()
     expect(afterHover!.every((x) => x.scrollLeft === 0)).toBe(true)
     const activeAfter = afterHover!.find((x) => x.active)!
-    const idleAfter = afterHover!.find((x) => !x.active)!
-    expect(Math.abs(activeAfter.iconLeft - idleAfter.iconLeft)).toBeLessThanOrEqual(1)
     expect(Math.abs(activeAfter.iconLeft - active!.iconLeft)).toBeLessThanOrEqual(1)
 
     await page.screenshot({
@@ -113,8 +108,8 @@ test.describe('hover-ink scroll-shift fix', () => {
       fullPage: false,
     })
 
-    // Click 「运行」 itself. Index shifts when workspace items are inserted.
-    const runsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').filter({ hasText: '运行' })
+    // Primary destinations now live in the outer rail; inner Home keeps hover ink.
+    const runsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '运行', exact: true })
     const runsBox = await runsLink.boundingBox()
     expect(runsBox).toBeTruthy()
     await page.mouse.click(runsBox!.x + 2, runsBox!.y + runsBox!.height / 2)
@@ -126,20 +121,19 @@ test.describe('hover-ink scroll-shift fix', () => {
 
     const afterRunsLeave = await measure()
     expect(afterRunsLeave).not.toBeNull()
-    const runsRow = afterRunsLeave!.find((x) => x.active)
     const homeRow = afterRunsLeave!.find((x) => !x.active)
-    expect(runsRow).toBeTruthy()
     expect(homeRow).toBeTruthy()
-    expect(Math.abs(runsRow!.iconLeft - homeRow!.iconLeft)).toBeLessThanOrEqual(1)
-    expect(runsRow!.inkD === '' || runsRow!.inkD === '0px').toBe(true)
+    expect(Math.abs(homeRow!.iconLeft - active!.iconLeft)).toBeLessThanOrEqual(1)
+    expect(homeRow!.scrollLeft).toBe(0)
+    expect(homeRow!.inkD === '' || homeRow!.inkD === '0px').toBe(true)
+    await expect(runsLink).toHaveAttribute('aria-current', 'page')
 
     await page.screenshot({
       path: path.join(shotDir, 'hover-ink-after-runs-leave.png'),
       fullPage: false,
     })
 
-    // 待办 is not a workspace item. Open 设置 by its label so a stale index cannot land on 项目.
-    const settingsLink = page.locator('[data-testid="nav-workspace-chrome"] a.nav-item').filter({ hasText: '设置' })
+    const settingsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '设置', exact: true })
     const settingsBox = await settingsLink.boundingBox()
     expect(settingsBox).toBeTruthy()
     await page.mouse.click(settingsBox!.x + 2, settingsBox!.y + settingsBox!.height / 2)

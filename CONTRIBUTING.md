@@ -84,8 +84,9 @@ three checks in parallel / fan-in:
 Non-web path changes do not trigger `ci-web`, so these three are not in play;
 the always-on `ci` / `gate` job is **not** a substitute for `web-e2e`.
 
-`test:e2e:ci` specs (target wall time usually under 5–8 minutes with
-`workers: 1`; not the full suite):
+`test:e2e:ci` covers the critical paths below; the exact spec list is maintained
+in [`web/package.json`](web/package.json). This is a subset of the full suite
+(target wall time usually under 5–8 minutes with `workers: 1`). Coverage includes:
 
 - `gate-mobile-fill.spec.ts` — gate mobile approve / reject
 - `clarify-inbox-product.spec.ts` — clarify inbox product surface
@@ -96,6 +97,14 @@ the always-on `ci` / `gate` job is **not** a substitute for `web-e2e`.
 - `run-detail-mobile.spec.ts` — run detail mobile layout (assertions aligned to
   5 KPI cards: wall / node-sum / gap / total-tokens / token-rate; trim further
   if CI flake appears)
+- `yume-motion.spec.ts` — character tail attachment, sidebar motion, and
+  reduced-motion behavior without shifting the surrounding layout
+- `confirm-flow-clip.spec.ts` — draft-dependent confirm visibility, smooth
+  toolbar transitions, reduced motion, and narrow input layouts
+- `artifacts-page-version.spec.ts` — artifact versions, read-only historical
+  previews, and responsive HTML preview toolbar actions
+- `desktop-sidebar-hide.spec.ts` — hide/reopen persistence and mobile drawer
+  behavior when returning to desktop
 
 Reproduce locally (same entry as CI):
 

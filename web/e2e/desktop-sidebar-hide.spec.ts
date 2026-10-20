@@ -113,7 +113,7 @@ async function expectExpandedWithin(page: Page, budgetMs: number) {
   expect(elapsed as number).toBeLessThan(budgetMs)
 }
 
-/** Wait for 232→0 width transition so toBeHidden / edge.x are not sampled mid-animation. */
+/** Wait for expanded→0 width transition so toBeHidden / edge.x are not sampled mid-animation. */
 async function expectSidebarCollapsed(page: Page) {
   const aside = sidebar(page)
   await expect(aside).toHaveCSS('width', '0px')

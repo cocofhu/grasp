@@ -1,10 +1,11 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import shell from '@/locales/zh-CN/shell.json'
+import nav from '@/locales/zh-CN/nav.json'
 import { __resetSidebarHiddenForTests } from '@/lib/shared/sidebarHidden'
 
 const routeState = { path: '/dashboard', meta: {} as Record<string, unknown> }
@@ -12,7 +13,7 @@ const routeState = { path: '/dashboard', meta: {} as Record<string, unknown> }
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: vi.fn() }),
   useRoute: () => routeState,
-  RouterLink: { template: '<a><slot /></a>' },
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -24,12 +25,13 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import AppSidebar from './AppSidebar.vue'
+import SidebarAccountMenu from './SidebarAccountMenu.vue'
 
 function mountSidebar() {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages, ...shell } },
+    messages: { 'zh-CN': { ...common, ...pages, ...shell, ...nav } },
   })
   return mount(AppSidebar, {
     global: {
@@ -63,11 +65,31 @@ describe('AppSidebar', () => {
     wrapper.unmount()
   })
 
-  it('puts a 44px hide-nav control on the 56px brand row (g1.2 / g2.1)', () => {
+  it.each([
+    ['/dashboard', '/dashboard'],
+    ['/gates/run-1', '/dashboard'],
+    ['/projects/project-1', '/projects'],
+    ['/runs/run-1', '/runs'],
+    ['/agents', '/settings'],
+  ])('labels the app rail and marks the current section for %s', (path, activeHref) => {
+    routeState.path = path
+    const wrapper = mountSidebar()
+    const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
+    expect(rail.attributes('aria-label')).toBe('工作区导航')
+    const links = rail.findAll('a.sidebar-app-rail__item')
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/projects', '/runs', '/settings'])
+    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['新需求', '项目', '运行', '设置'])
+    expect(links.every((link) => link.attributes('title') === link.attributes('aria-label'))).toBe(true)
+    expect(links.filter((link) => link.attributes('aria-current') === 'page').map((link) => link.attributes('href'))).toEqual([activeHref])
+    expect(links.filter((link) => link.classes().includes('is-active')).map((link) => link.attributes('href'))).toEqual([activeHref])
+    wrapper.unmount()
+  })
+
+  it('puts a 44px hide-nav control on the aligned 64px brand row (g1.2 / g2.1)', () => {
     const wrapper = mountSidebar()
     const row = wrapper.find('[data-testid="sidebar-brand-row"]')
     expect(row.exists()).toBe(true)
-    expect(row.classes()).toContain('h-14')
+    expect(row.classes()).toContain('h-16')
     expect(row.classes()).not.toContain('h-[72px]')
     expect(row.classes()).toContain('justify-between')
     const hide = wrapper.find('[data-testid="desktop-nav-hide"]')
@@ -99,7 +121,7 @@ describe('AppSidebar', () => {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages, ...shell } },
+      messages: { 'zh-CN': { ...common, ...pages, ...shell, ...nav } },
     })
     const wrapper = mount(AppSidebar, {
       global: {
@@ -112,7 +134,7 @@ describe('AppSidebar', () => {
       },
     })
     const row = wrapper.find('[data-testid="sidebar-brand-row"]')
-    expect(row.classes()).toContain('h-14')
+    expect(row.classes()).toContain('h-16')
     expect(row.classes()).toContain('app-sidebar-brand-row')
     const logo = wrapper.find('.brand-logo')
     expect(logo.exists()).toBe(true)
@@ -129,14 +151,14 @@ describe('AppSidebar', () => {
     expect((aside.element as HTMLElement).style.display).not.toBe('none')
     expect(aside.classes()).toContain('w-0')
     expect(aside.classes()).toContain('border-r-0')
-    expect(aside.classes()).not.toContain('w-[232px]')
+    expect(aside.classes()).not.toContain('w-[304px]')
     expect(aside.classes()).not.toContain('border-r')
     expect(aside.classes()).toContain('md:flex')
     expect(aside.classes()).toContain('hidden')
     expect(aside.classes()).toContain('overflow-hidden')
     expect(aside.attributes('aria-hidden')).toBe('true')
     expect(wrapper.find('[data-testid="nav"]').exists()).toBe(true)
-    expect(wrapper.html()).toContain('min-w-[232px]')
+    expect(wrapper.html()).toContain('min-w-[248px]')
     wrapper.unmount()
   })
 
@@ -167,31 +189,29 @@ describe('AppSidebar', () => {
     wrapper.unmount()
   })
 
-  it('user row uses circular avatar and borderless logout (g3.1 / g3.2 / g3.3)', () => {
+  it('keeps the account in the rail and footer tools in the content panel', () => {
     const wrapper = mountSidebar()
     const avatar = wrapper.find('[data-testid="sidebar-user-avatar"]')
     expect(avatar.exists()).toBe(true)
     // force-radius-full keeps avatar circular (role: full)
     expect(avatar.classes()).toContain('force-radius-full')
     expect(avatar.classes()).toContain('rounded-full')
-    expect(avatar.classes()).toContain('bg-accent-dim')
     expect(avatar.classes()).toContain('h-7')
-    const logout = wrapper.find('[data-testid="sidebar-logout"]')
-    expect(logout.exists()).toBe(true)
-    expect(logout.classes()).toContain('border-0')
-    expect(logout.classes()).not.toContain('border-line')
-    expect(logout.text()).toBe('登出')
-    // footer stack uses unified gap-2.5 (10px) between chrome and user row
-    const footer = wrapper.find('.mt-auto')
-    expect(footer.classes()).toContain('gap-2.5')
+    expect(wrapper.get('[data-testid="sidebar-app-rail"]').findComponent(SidebarAccountMenu).exists()).toBe(true)
+    // Footer keeps chrome and account rows compact with a 4px gap.
+    const footer = wrapper.find('.sidebar-footer')
+    expect(footer.classes()).toContain('gap-1')
     expect(footer.classes()).toContain('flex-col')
+    expect(footer.findComponent(SidebarAccountMenu).exists()).toBe(false)
+    expect(footer.find('[data-testid="sidebar-user-name"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('logout clears leftover embed drawer tokens', async () => {
     localStorage.setItem('grasp.embed.run-1.n1', JSON.stringify({ token: 'gse_x', expiresAt: '2099-01-01T00:00:00Z' }))
     const wrapper = mountSidebar()
-    await wrapper.find('[data-testid="sidebar-logout"]').trigger('click')
+    wrapper.getComponent(SidebarAccountMenu).vm.$emit('logout')
+    await flushPromises()
     expect(localStorage.getItem('grasp.embed.run-1.n1')).toBeNull()
     wrapper.unmount()
   })

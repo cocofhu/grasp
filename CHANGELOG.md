@@ -4,6 +4,39 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **HTML preview toolbar:** removes the repeated file-information row and puts
+  copy and download immediately before the enlarge control. Version selection
+  and historical read-only controls remain available, including on narrow panels.
+- **Unified chat actions:** Confirm & continue now sits inside the input panel
+  alongside send and attachments, with wrapping for narrow panels. Draft text,
+  attachments, annotations and pending sends hide confirmation with a smooth
+  collapse and reveal. Sending shows progress inside its button, and reduced
+  motion switches immediately. Unsent content remains protected from confirmation.
+- **Yume motion:** the home mascot's tail stays attached throughout its wag,
+  press and jump. Home and sidebar characters gain gentle breathing, double
+  blinks and hover greetings; reduced-motion mode keeps both still.
+- **Two-level navigation:** a compact desktop icon rail sits beside the
+  project and recent-run panel. A dedicated **New request** action replaces
+  Start, with aligned section headings, consistent list rows, clearer project
+  nesting and a more compact footer. Project rows offer contextual actions and
+  a shortcut to start a request in that project. Account details and logout
+  move into the rail avatar menu. Projects expand on demand to show their latest
+  runs; pending approvals and favorite workflows keep their existing actions.
+  Project compose links stay scoped when workflows are hidden or refreshed,
+  and runs keep their launch context when navigation changes during startup.
+  Mobile navigation stays in a single-column drawer, and footer usage tooltips
+  stay within the viewport from their first appearance.
+- **Priority and chat controls:** the home priority chooser gains a compact
+  lightning icon and a layered three-level panel; keyboard opening and short
+  windows scroll the active option into view. Chat avatars, bubbles, input and actions
+  share a softer purple palette with a thinner pane separator.
+- **Resource card icons:** IDE, terminal, browser and logs share upright SVG
+  windows with consistent size, strokes and neutral surfaces, replacing the
+  mixed paper, dark terminal and planet illustrations.
+- **Home and artifact visuals:** the home page uses a quieter deep-purple
+  palette, layered workflow illustrations and subtle hover feedback while
+  keeping its mascot, layout and controls. Resource and artifact cards gain
+  softer surfaces and animated illustrations, with static reduced-motion states.
 - **Agent wizard service address:** the OpenCode API Key step now hints the
   picked vendor's real default base URL (from the model catalog) as the service
   address placeholder, instead of a fixed `https://api.example.com/v1`. A vendor

@@ -360,7 +360,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
       <div
         v-show="compactTipVisible"
         ref="compactTip"
-        class="sm-tip sm-kpi pointer-events-none z-[60] min-w-[220px] border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
+        class="sm-tip sm-kpi pointer-events-none fixed z-[60] min-w-[220px] border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
         role="tooltip"
         data-testid="status-metrics-compact-tip"
         :data-zone="activeCompactZone ?? undefined"

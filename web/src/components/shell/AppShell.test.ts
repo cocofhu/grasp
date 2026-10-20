@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import shell from '@/locales/zh-CN/shell.json'
+import nav from '@/locales/zh-CN/nav.json'
 import { __resetSidebarHiddenForTests, setSidebarHidden, sidebarHidden } from '@/lib/shared/sidebarHidden'
 
 const routeState = { path: '/', meta: {} as Record<string, unknown> }
@@ -14,6 +15,7 @@ const isMobileRef = ref(false)
 vi.mock('vue-router', () => ({
   useRoute: () => routeState,
   useRouter: () => ({ push: vi.fn() }),
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('@/lib/composables/useBreakpoint', () => ({
@@ -57,7 +59,7 @@ function mountShell(opts?: { stubSidebar?: boolean; attachToBody?: boolean }) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages, ...shell } },
+    messages: { 'zh-CN': { ...common, ...pages, ...shell, ...nav } },
   })
   return mount(AppShell, {
     attachTo: opts?.attachToBody ? document.body : undefined,
@@ -69,7 +71,7 @@ function mountShell(opts?: { stubSidebar?: boolean; attachToBody?: boolean }) {
           ? false
           : defineComponent({
               template:
-                '<aside data-testid="sidebar" class="w-[232px] shrink-0" />',
+                '<aside data-testid="sidebar" class="w-[304px] shrink-0" />',
             }),
         AppSidebarNav: { template: '<nav data-testid="shell-nav" />' },
         BrandLogo: true,

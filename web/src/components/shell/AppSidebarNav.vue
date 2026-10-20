@@ -29,8 +29,9 @@ import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 
-defineProps<{ drawer?: boolean }>()
+const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 
 const { t } = useI18n()
@@ -95,6 +96,13 @@ const pendingRows = computed(() => {
   const shown = new Set(displayedItems.value.map(itemKey))
   const extras = sidebarExtras.value.filter((it) => !shown.has(itemKey(it)))
   return [...extras, ...displayedItems.value]
+})
+const pendingRunTitles = computed(() => {
+  const titles: Record<string, string> = {}
+  for (const item of pendingRows.value) {
+    if (typeof item.runTitle === 'string') titles[item.runId] = item.runTitle
+  }
+  return titles
 })
 
 const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, itemKey, pins.value))
@@ -373,13 +381,13 @@ function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
 }
 
 /** Waiting on a person: static type mark. Executing rows keep motion; start-failed rows stay blank. */
-function pendingTypeMarks(it: InboxItem): Array<{ name: 'chat' | 'gate'; toneClass: string }> {
+function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: string }> {
   if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
   const tone = inboxBadgeTone(it)
   if (tone === 'replying') return []
-  if (tone === 'gate') return [{ name: 'gate', toneClass: 'text-warn' }]
-  if (tone === 'review') return [{ name: 'chat', toneClass: 'text-n-review' }]
-  return [{ name: 'chat', toneClass: 'text-n-clarify' }]
+  if (tone === 'gate') return [{ name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' }]
+  if (tone === 'review') return [{ name: 'pending-review', toneClass: 'nav-row-type-icon--review' }]
+  return [{ name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' }]
 }
 
 function isPendingActive(it: InboxItem): boolean {
@@ -584,12 +592,15 @@ function onHandlePointerDown(workflowId: string, event: PointerEvent) {
 }
 
 const primaryGroup = sidebarNavGroups[0]
+const primaryItems = computed(() => props.rail
+  ? primaryGroup?.items.filter((item) => item.to === '/dashboard') ?? []
+  : primaryGroup?.items ?? [])
 const settingsItems = settingsNavItems
 </script>
 
 <template>
   <nav
-    class="scroll-area flex-1 overflow-y-auto px-3 py-2"
+    class="sidebar-workspace-nav scroll-area flex-1 overflow-y-auto px-3 py-2"
     data-testid="app-sidebar-nav"
     :data-nav-mode="settingsChrome ? 'settings' : 'workspace'"
   >
@@ -637,15 +648,15 @@ const settingsItems = settingsNavItems
     <div v-else-if="primaryGroup" key="workspace" class="nav-chrome-pane">
     <div class="mb-3" data-testid="nav-workspace-chrome">
       <RouterLink
-        v-for="item in primaryGroup.items"
+        v-for="item in primaryItems"
         :key="item.to"
         v-hover-ink
         :to="item.to"
         class="nav-item mb-0.5"
-        :class="{ active: isActive(item.to) }"
+        :class="{ active: isActive(item.to), 'nav-create-action': item.to === '/dashboard' }"
         @click="onNavigate"
       >
-        <Icon :name="item.icon" :size="17" />
+        <Icon :name="item.to === '/dashboard' ? 'new-request' : item.icon" :size="17" />
         <span class="flex-1">{{ t(item.labelKey) }}</span>
         <span
           v-if="badgeFor(item.to)"
@@ -656,7 +667,7 @@ const settingsItems = settingsNavItems
 
     <!-- Quick workflows: workspace only, and only when favorites exist (plan g1.2) -->
     <div v-if="displayItems.length" class="mb-3" data-testid="nav-quick-workflows">
-      <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+      <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
         {{ t('nav.quickWorkflows') }}
       </div>
       <div ref="quickList" class="quick-workflows-list">
@@ -717,8 +728,9 @@ const settingsItems = settingsNavItems
     </div>
 
     <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
-      <div class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        {{ t('nav.pendingApprovals') }}
+      <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+        <span>{{ t('nav.pendingApprovals') }}</span>
+        <span class="sidebar-section-count">{{ pendingRows.length }}</span>
       </div>
       <template v-for="it in orderedPendingRows" :key="itemKey(it)">
         <div
@@ -811,6 +823,7 @@ const settingsItems = settingsNavItems
         </button>
       </template>
     </div>
+    <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" />
     </div>
     </Transition>
     </div>
@@ -885,6 +898,73 @@ const settingsItems = settingsNavItems
 </template>
 
 <style scoped>
+.sidebar-workspace-nav {
+  padding: 8px 12px 16px;
+}
+.sidebar-workspace-nav .nav-item {
+  min-height: 36px;
+  padding: 8px 10px;
+  font-size: 13px;
+  --hover-ink-color: rgb(var(--c-txt) / .04);
+}
+.sidebar-workspace-nav .nav-item.active {
+  background: rgb(var(--c-accent) / .065);
+}
+.sidebar-workspace-nav .nav-create-action {
+  height: 40px;
+  margin-bottom: 8px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  color: rgb(var(--c-txt));
+  background: transparent;
+  box-shadow: none;
+  font-weight: 500;
+  --hover-ink-color: rgb(var(--c-txt) / .045);
+}
+.sidebar-workspace-nav .nav-create-action.active {
+  background: rgb(var(--c-txt) / .055);
+  font-weight: 600;
+}
+.nav-create-action > svg {
+  color: rgb(var(--c-txt2));
+}
+.sidebar-workspace-nav [data-testid="nav-workspace-chrome"] {
+  margin-bottom: 16px;
+}
+.sidebar-workspace-nav [data-testid="nav-pending-approvals"],
+.sidebar-workspace-nav [data-testid="nav-quick-workflows"] {
+  margin-bottom: 24px;
+}
+.sidebar-workspace-nav .sidebar-section-heading {
+  display: flex;
+  height: 26px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)));
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  text-transform: none;
+}
+.sidebar-section-count {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-txt) / .04);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+.sidebar-workspace-nav [data-testid="nav-quick-workflow-item"] {
+  border-radius: 10px;
+  padding-inline: 4px;
+}
 /* Buttons default to centered text. Pending titles start at the row edge.
    Weight stays 400 so the active nav rule (600) does not bold this title. */
 .nav-row-title {
@@ -894,7 +974,10 @@ const settingsItems = settingsNavItems
 
 .nav-row-type-icon {
   flex: none;
+  color: light-dark(#7b718c, #b7abc9);
+  stroke-width: 1.6;
 }
+.nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
 
 .pending-row-menu__item {
   display: flex;

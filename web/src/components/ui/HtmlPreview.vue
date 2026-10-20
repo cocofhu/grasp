@@ -609,7 +609,8 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
   >
     <div
       ref="toolbarRef"
-      class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2"
+      class="flex shrink-0 flex-wrap items-center gap-y-2 border-b border-line py-2"
+      :class="$slots['toolbar-actions'] ? 'gap-x-1 px-2.5' : 'gap-x-2 px-3'"
       data-testid="html-preview-toolbar"
     >
       <div class="flex overflow-hidden rounded-md border border-line text-[11px]">
@@ -628,7 +629,7 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
           <Icon name="mobile" :size="13" />{{ t('common.htmlPreview.mobile') }}
         </button>
       </div>
-      <span class="text-[10px] text-txt3">{{ deviceHint }}</span>
+      <span v-if="!$slots['toolbar-actions']" class="text-[10px] text-txt3">{{ deviceHint }}</span>
       <button
         v-if="inspectable"
         type="button"
@@ -656,22 +657,18 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
       >
         <Icon name="copy" :size="13" />{{ t('pages.gatesInbox.share.copyLink') }}
       </button>
-      <div
-        v-if="enlargeable || $slots['toolbar-actions']"
-        class="ml-auto flex shrink-0 items-center gap-2"
-        data-testid="html-preview-toolbar-end"
-      >
+      <div v-if="$slots['toolbar-actions'] || enlargeable" class="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-1" data-testid="html-preview-toolbar-end">
+        <slot name="toolbar-actions" />
         <button
           v-if="enlargeable"
           type="button"
-          class="flex items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-txt2 transition-colors hover:text-txt"
+          class="flex shrink-0 items-center gap-1 rounded-md border border-line px-2 py-1 text-[11px] text-txt2 transition-colors hover:text-txt"
           :title="t('common.htmlPreview.enlargeTitle')"
           data-testid="html-preview-enlarge"
           @click="openEnlarge"
         >
           <Icon name="expand" :size="13" />{{ t('common.htmlPreview.enlargeTitle') }}
         </button>
-        <slot name="toolbar-actions" />
       </div>
     </div>
     <div

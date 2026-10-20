@@ -1150,7 +1150,8 @@ function send() {
 // Clarify: force Agent wrap-up (disabled while thinking).
 // Review: accept store snapshot only when ready (not thinking / queue empty).
 function finishAbort() {
-  if (props.done || !props.confirmCanAbort) return
+  if (props.done || !props.confirmCanAbort || composerSending.value ||
+    (!props.coldSession && hasComposerDraft())) return
   emit('finish-abort')
 }
 
@@ -1166,7 +1167,9 @@ function finishEarly() {
 
 const confirmDisabled = computed(() => {
   // Force finish / 确认并流转: only when session idle (no in-flight / queue).
-  return !!props.finishDisabled || validating.value || thinking.value || queued.value.length > 0 || liveAgentIdx.value >= 0
+  return !!props.finishDisabled || composerSending.value ||
+    (!props.coldSession && hasComposerDraft()) ||
+    validating.value || thinking.value || queued.value.length > 0 || liveAgentIdx.value >= 0
 })
 
 function cancelReview() {

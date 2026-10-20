@@ -6,6 +6,8 @@ withDefaults(
     showFooter?: boolean
     /** Height-constrained hosts (mobile gate drawer): shorter toolbar and tighter gaps. */
     compact?: boolean
+    /** Keep shared actions inside the input and wrap them on narrow hosts. */
+    wrapToolbar?: boolean
     boxTestId?: string
     toolbarTestId?: string
     footerTestId?: string
@@ -14,6 +16,7 @@ withDefaults(
     showChrome: true,
     showFooter: true,
     compact: false,
+    wrapToolbar: false,
     boxTestId: 'composer-shell-box',
     toolbarTestId: 'composer-shell-toolbar',
     footerTestId: 'composer-shell-footer',
@@ -34,11 +37,13 @@ withDefaults(
       <!-- flex-shrink:0 so SVG/tool buttons do not stretch with auto-grow textarea (plan g1.1 / f6) -->
       <div
         class="flex shrink-0 items-center gap-1.5 px-2"
-        :class="compact ? 'h-9 pb-1' : 'h-11 pb-2 pt-1'"
+        :class="wrapToolbar
+          ? (compact ? 'min-h-9 flex-wrap py-1' : 'min-h-11 flex-wrap pb-2 pt-1')
+          : (compact ? 'h-9 pb-1' : 'h-11 pb-2 pt-1')"
         :data-testid="toolbarTestId"
       >
         <slot name="toolbar-start" />
-        <div class="ml-auto flex shrink-0 items-center gap-1.5">
+        <div class="ml-auto flex shrink-0 items-center gap-1.5" :class="wrapToolbar ? 'max-w-full flex-wrap justify-end' : ''">
           <slot name="toolbar-end" />
         </div>
       </div>

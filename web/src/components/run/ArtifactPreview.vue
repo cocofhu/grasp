@@ -110,13 +110,7 @@ const displayName = computed(() => friendlyName.value || technicalName.value)
 const modalTitle = computed(() =>
   friendlyName.value ? `${friendlyName.value} · ${technicalName.value}` : technicalName.value,
 )
-/** HTML previews drop the kind chip, friendly name, and filename. */
-const showIdentityBar = computed(() => {
-  if (!displayArtifact.value) return false
-  if (!activeIsHtml.value) return true
-  return showVersionChip.value || viewingHistorical.value || showDelete.value
-})
-/** Cover the HTML canvas while content is missing or failed; toolbar stays up. */
+/** Cover missing HTML content without hiding the preview controls. */
 const htmlCanvasOverlay = computed(
   () => activeIsHtml.value && (!!loadErr.value || !activeContent.value),
 )
@@ -124,19 +118,12 @@ const htmlCanvasOverlay = computed(
 
 <template>
   <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-    <div
-      v-if="showIdentityBar"
-      class="flex items-center gap-2 border-b border-line px-4 py-2.5"
-      data-testid="artifact-preview-identity-bar"
-    >
-      <template v-if="!activeIsHtml">
-        <span class="chip border-n-artifact/30 text-n-artifact">{{ displayArtifact?.kind }}</span>
-        <span class="min-w-0 flex-1 truncate text-xs font-medium text-txt" :title="technicalName">
-          {{ displayName }}
-          <span v-if="friendlyName" class="ml-1.5 text-[10px] font-normal text-txt3">{{ technicalName }}</span>
-        </span>
-      </template>
-      <span v-else class="min-w-0 flex-1" aria-hidden="true" />
+    <div v-if="displayArtifact && !activeIsHtml" class="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5" data-testid="artifact-preview-identity-bar">
+      <span class="chip border-n-artifact/30 text-n-artifact">{{ displayArtifact.kind }}</span>
+      <span class="min-w-0 flex-1 truncate text-xs font-medium text-txt" :title="technicalName">
+        {{ displayName }}
+        <span v-if="friendlyName" class="ml-1.5 text-[10px] font-normal text-txt3">{{ technicalName }}</span>
+      </span>
       <ArtifactVersionSelect
         v-if="showVersionChip"
         :choices="versionChoices"
@@ -191,7 +178,7 @@ const htmlCanvasOverlay = computed(
         <Icon name="expand" :size="15" />
       </button>
       <button
-        v-if="!activeIsHtml && !hideCopy"
+        v-if="!hideCopy"
         class="text-txt3 hover:text-txt disabled:opacity-50"
         :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
         :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
@@ -203,7 +190,6 @@ const htmlCanvasOverlay = computed(
         <Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" />
       </button>
       <button
-        v-if="!activeIsHtml"
         class="text-txt3 hover:text-txt"
         :title="t('pages.artifactPreview.downloadRawTitle')"
         data-testid="artifact-preview-download-raw"
@@ -310,30 +296,57 @@ const htmlCanvasOverlay = computed(
           :html="activeContent"
           fill-parent
           :inspectable="canAnnotate"
+          :modal-title="modalTitle"
           class="h-full min-h-0"
           @pick="onHtmlPick"
         >
           <template #toolbar-actions>
+            <ArtifactVersionSelect
+              v-if="showVersionChip"
+              :choices="versionChoices"
+              :selected-index="selectedChoice?.index"
+              :current-label="currentChipLabel"
+              :menu-aria-label="t('pages.reactArtifactStage.versionMenu')"
+              chip-test-id="artifact-preview-version-chip"
+              button-test-id="artifact-preview-version-chip-btn"
+              menu-test-id="artifact-preview-version-menu"
+              option-test-id-prefix="artifact-preview-version-option-v"
+              :label-for="versionChipLabel"
+              @select="selectVersion"
+            />
+            <span
+              v-if="viewingHistorical"
+              class="shrink-0 rounded-md border border-line px-1 py-px text-[10px] text-txt3"
+              data-testid="artifact-preview-historical-readonly"
+            >{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
+            <button
+              v-if="showDelete"
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-err"
+              :title="t('pages.artifactPreview.delete')"
+              :aria-label="t('pages.artifactPreview.delete')"
+              data-testid="artifact-preview-delete"
+              @click="openDeleteConfirm"
+            ><Icon name="trash" :size="15" /></button>
             <button
               v-if="!hideCopy"
-              class="text-txt3 hover:text-txt disabled:opacity-50"
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt disabled:opacity-50"
               :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
               :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')"
               :disabled="copying"
               :aria-busy="copying ? 'true' : undefined"
               data-testid="artifact-preview-copy"
               @click="copyContent"
-            >
-              <Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" />
-            </button>
+            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
             <button
-              class="text-txt3 hover:text-txt"
-              :title="t('pages.artifactPreview.downloadRawTitle')"
+              type="button"
+              class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
+              :title="t('pages.artifactPreview.download')"
+              :aria-label="t('pages.artifactPreview.download')"
               data-testid="artifact-preview-download-raw"
               @click="download"
-            >
-              <Icon name="download" :size="15" />
-            </button>
+            ><Icon name="download" :size="15" /></button>
           </template>
           <template v-if="htmlCanvasOverlay" #canvas-overlay>
             <HardLoadLayer

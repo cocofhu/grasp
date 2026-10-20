@@ -208,7 +208,7 @@ onUnmounted(() => stopShutdownPolling())
               <Icon name="close" :size="18" />
             </button>
           </div>
-          <AppSidebarNav @navigate="closeDrawer" />
+          <AppSidebarNav workspace-lists @navigate="closeDrawer" />
           <div class="mt-auto border-t border-line p-3">
             <ShellChromeControls layout="sidebar" />
           </div>

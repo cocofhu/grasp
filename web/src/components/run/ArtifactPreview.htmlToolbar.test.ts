@@ -122,12 +122,12 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     const { toolbar, order } = toolbarOrder(wrapper)
     expect(toolbar.text()).toContain('桌面')
     expect(toolbar.text()).toContain('移动端')
-    expect(toolbar.text()).toContain('自适应宽度')
+    expect(toolbar.text()).not.toContain('自适应宽度')
     expect(toolbar.text()).toContain('窗口放大查看')
     expect(order).toEqual([
-      'html-preview-enlarge',
       'artifact-preview-copy',
       'artifact-preview-download-raw',
+      'html-preview-enlarge',
     ])
 
     const copy = toolbar.get('[data-testid="artifact-preview-copy"]')
@@ -140,7 +140,7 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     expect(wrapper.findAll('[data-testid="artifact-preview-copy"]')).toHaveLength(1)
     expect(wrapper.findAll('[data-testid="artifact-preview-download-raw"]')).toHaveLength(1)
     expect(copy.attributes('aria-label')).toBe('复制')
-    expect(download.attributes('title')).toBe('下载原始 JSON')
+    expect(download.attributes('title')).toBe('下载')
 
     await copy.trigger('click')
     expect(copyMocks.copyToClipboard).toHaveBeenCalledWith(
@@ -165,9 +165,9 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     expect(wrapper.text()).not.toContain('report.html')
     expect(wrapper.text()).not.toContain('html')
     expect(toolbarOrder(wrapper).order).toEqual([
-      'html-preview-enlarge',
       'artifact-preview-copy',
       'artifact-preview-download-raw',
+      'html-preview-enlarge',
     ])
     wrapper.unmount()
   })
@@ -181,11 +181,11 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     await flushPromises()
     const { toolbar, order } = toolbarOrder(wrapper)
     expect(toolbar.find('[data-testid="artifact-preview-copy"]').exists()).toBe(false)
-    expect(order).toEqual(['html-preview-enlarge', 'artifact-preview-download-raw'])
+    expect(order).toEqual(['artifact-preview-download-raw', 'html-preview-enlarge'])
     wrapper.unmount()
   })
 
-  it('keeps version, readonly, and delete on the identity bar without identity text', async () => {
+  it('keeps version, readonly, and delete in the HTML toolbar without an identity bar', async () => {
     apiMocks.artifactVersions.mockResolvedValue([
       { artifactId: 'page', revision: 1, nodeId: 'visual_1', sizeBytes: 8, createdAt: 't1' },
     ])
@@ -202,18 +202,21 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     )
     await flushPromises()
 
-    const bar = wrapper.get('[data-testid="artifact-preview-identity-bar"]')
+    expect(wrapper.find('[data-testid="artifact-preview-identity-bar"]').exists()).toBe(false)
+    const bar = wrapper.get('[data-testid="html-preview-toolbar"]')
     expect(bar.text()).not.toContain('网页预览')
     expect(bar.text()).not.toContain('page.html')
     expect(bar.text()).not.toContain('html')
     expect(bar.find('[data-testid="artifact-preview-version-chip"]').exists()).toBe(true)
     expect(bar.find('[data-testid="artifact-preview-delete"]').exists()).toBe(true)
-    expect(bar.find('[data-testid="artifact-preview-copy"]').exists()).toBe(false)
-    expect(bar.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(false)
+    expect(bar.find('[data-testid="artifact-preview-copy"]').exists()).toBe(true)
+    expect(bar.find('[data-testid="artifact-preview-download-raw"]').exists()).toBe(true)
     expect(toolbarOrder(wrapper).order).toEqual([
-      'html-preview-enlarge',
+      'artifact-preview-version-chip',
+      'artifact-preview-delete',
       'artifact-preview-copy',
       'artifact-preview-download-raw',
+      'html-preview-enlarge',
     ])
 
     await bar.get('[data-testid="artifact-preview-version-chip-btn"]').trigger('click')
@@ -223,7 +226,13 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     expect(bar.find('[data-testid="artifact-preview-historical-readonly"]').exists()).toBe(true)
     expect(bar.find('[data-testid="artifact-preview-delete"]').exists()).toBe(false)
     expect(bar.text()).not.toContain('page.html')
-    expect(wrapper.get('[data-testid="html-preview-toolbar"]').find('[data-testid="artifact-preview-copy"]').exists()).toBe(true)
+    expect(toolbarOrder(wrapper).order).toEqual([
+      'artifact-preview-version-chip',
+      'artifact-preview-historical-readonly',
+      'artifact-preview-copy',
+      'artifact-preview-download-raw',
+      'html-preview-enlarge',
+    ])
     wrapper.unmount()
   })
 
@@ -252,9 +261,9 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     const overlay = failed.get('[data-testid="html-preview-canvas-overlay"]')
     expect(overlay.get('[data-testid="artifact-preview-load-error"]').exists()).toBe(true)
     expect(toolbarOrder(failed).order).toEqual([
-      'html-preview-enlarge',
       'artifact-preview-copy',
       'artifact-preview-download-raw',
+      'html-preview-enlarge',
     ])
     failed.unmount()
   })

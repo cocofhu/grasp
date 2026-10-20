@@ -246,7 +246,7 @@ describe('DashboardView home chat layout', () => {
     expect(zh.pages.dashboard.heroSubtitle).toBe('先说清，再动手')
     expect(en.pages.dashboard.heroSubtitle).toBe('Clarify first, then act')
     expect(src).toMatch(/\.home-composer:focus-within\s*\{[^}]*rgb\(var\(--c-accent\)/)
-    expect(src).toMatch(/0 0 0 3px rgb\(var\(--c-accent\) \/ 0\.16\)/)
+    expect(src).toMatch(/0 0 0 3px rgb\(var\(--c-accent\) \/ 0\.07\)/)
     expect(src).toMatch(/\.home-composer__send:hover:not\(:disabled\)\s*\{[^}]*translateY\(-1px\)/)
     expect(src).toMatch(/prefers-reduced-motion: reduce[\s\S]*\.home-composer__send[\s\S]*transform:\s*none/)
     const lightComposer = src.match(/html\.light\s+\.home-composer\s*\{([^}]+)\}/)?.[1] ?? ''

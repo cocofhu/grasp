@@ -10,6 +10,7 @@ import enPages from '@/locales/en/pages.json'
 import type { Artifact } from '@/lib/shared/types'
 import { resetStageOpenStateForTests } from '@/lib/run/reactArtifactPreview'
 import ReactArtifactStage from './ReactArtifactStage.vue'
+import Icon from '@/components/ui/Icon.vue'
 import { api } from '@/lib/api/api'
 import { stageLinksFor } from '@/lib/run/stageLinks'
 import type { AgentCapabilities } from '@/lib/api/apiTypes'
@@ -668,7 +669,7 @@ describe('ReactArtifactStage', () => {
     empty.unmount()
   })
 
-  it('draws distinct glyphs on the four fixed cards and reuses them on tabs', async () => {
+  it('draws distinct decorative resource illustrations and keeps compact glyphs on tabs', async () => {
     const wrapper = mount(ReactArtifactStage, {
       props: {
         artifacts: [],
@@ -680,27 +681,25 @@ describe('ReactArtifactStage', () => {
     })
     await flushPromises()
     const ids = ['ide', 'terminal', 'browser', 'log'] as const
-    const glyphOf = (id: string) =>
-      wrapper.get(`[data-testid="react-artifact-card-${id}"]`).find('svg').element.innerHTML
-    const glyphs = ids.map((id) => glyphOf(id))
-    expect(new Set(glyphs).size).toBe(4)
-
-    const ide = wrapper.get('[data-testid="react-artifact-card-ide"]').find('svg')
-    expect(ide.html()).toContain('M8.2 8v12.4')
-    expect(ide.html()).not.toContain('M14 3v5h5')
-    expect(ide.attributes('width')).toBe('30')
-    expect(ide.classes()).toContain('text-txt2')
-    expect(ide.classes()).not.toContain('opacity-50')
-
-    const log = wrapper.get('[data-testid="react-artifact-card-log"]').find('svg')
-    expect(log.findAll('circle')).toHaveLength(3)
+    const illustrations = ids.map((id) =>
+      wrapper.get(`[data-testid="react-artifact-card-${id}"]`).find('svg'),
+    )
+    expect(new Set(illustrations.map((svg) => svg.element.innerHTML)).size).toBe(4)
+    for (const illustration of illustrations) {
+      expect(illustration.attributes()).toMatchObject({
+        viewBox: '0 0 96 72',
+        width: '96',
+        height: '72',
+        'aria-hidden': 'true',
+      })
+    }
 
     for (const id of ids) {
       await wrapper.get(`[data-testid="react-artifact-card-${id}"]`).trigger('click')
       await flushPromises()
-      const tab = wrapper.get(`[data-testid="react-artifact-tab-${id}"]`).find('svg')
-      expect(tab.element.innerHTML).toBe(glyphOf(id))
-      expect(tab.attributes('width')).toBe('13')
+      const tab = wrapper.get(`[data-testid="react-artifact-tab-${id}"]`)
+      expect(tab.findComponent(Icon).props()).toMatchObject({ name: `stage-${id}`, size: 13 })
+      expect(tab.find('svg').attributes('width')).toBe('13')
     }
     wrapper.unmount()
   })
@@ -721,8 +720,10 @@ describe('ReactArtifactStage', () => {
     expect(app.attributes('width')).toBe('28')
     expect(app.classes()).toContain('opacity-50')
     const browser = wrapper.get('[data-testid="react-artifact-card-browser"]').find('svg')
-    expect(browser.html()).toContain('r="8"')
-    expect(browser.html()).not.toContain('r="10"')
+    expect(browser.attributes()).toMatchObject({ viewBox: '0 0 96 72', width: '96', height: '72' })
+    expect(browser.find('circle[r="12"]').exists()).toBe(true)
+    expect(browser.find('ellipse').exists()).toBe(true)
+    expect(browser.element.innerHTML).not.toBe(app.element.innerHTML)
     expect(wrapper.get('[data-testid="react-artifact-tab-novnc"]').find('svg').html()).toContain('r="10"')
     wrapper.unmount()
   })

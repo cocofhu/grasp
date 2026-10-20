@@ -104,14 +104,16 @@ describe('user-facing copy remediation keys', () => {
     expect(enRoute.route.runs).toBe('Run history')
   })
 
-  it('uses Start and Needs attention consistently in navigation and page titles', () => {
-    expect(zhNav.nav.dashboard).toBe('开始')
-    expect(zhRoute.route.dashboard).toBe('开始')
+  it('uses New request and Needs attention consistently in navigation and page titles', () => {
+    expect(zhNav.nav.dashboard).toBe('新需求')
+    expect(zhRoute.route.dashboard).toBe('新需求')
+    expect(zhNav.nav.dashboard).toBe(zhRoute.route.dashboard)
     expect(zhNav.nav.gates).toBe('待办')
     expect(zhRoute.route.gates).toBe('待办')
     expect(zh.global.t('pages.gatesInbox.title')).toBe('待办')
-    expect(enNav.nav.dashboard).toBe('Start')
-    expect(enRoute.route.dashboard).toBe('Start')
+    expect(enNav.nav.dashboard).toBe('New request')
+    expect(enRoute.route.dashboard).toBe('New request')
+    expect(enNav.nav.dashboard).toBe(enRoute.route.dashboard)
     expect(enNav.nav.gates).toBe('Needs attention')
     expect(enRoute.route.gates).toBe('Needs attention')
     expect(en.global.t('pages.gatesInbox.title')).toBe('Needs attention')

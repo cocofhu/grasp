@@ -97,10 +97,10 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/\.home-workflow-select__search\s*\{[^}]*border-radius:\s*8px/s)
   })
 
-  it('HomePrioritySelect trigger 8px and panel 12px (plan g1.1)', () => {
+  it('HomePrioritySelect trigger 8px and panel 16px', () => {
     const src = read('components/dashboard/HomePrioritySelect.vue')
     expect(src).toMatch(/\.home-priority-select__trigger\s*\{[^}]*border-radius:\s*8px/s)
-    expect(src).toMatch(/\.home-priority-select__panel\s*\{[^}]*border-radius:\s*12px/s)
+    expect(src).toMatch(/\.home-priority-select__panel\s*\{[^}]*border-radius:\s*16px/s)
     expect(src).toMatch(/height:\s*32px/)
   })
 

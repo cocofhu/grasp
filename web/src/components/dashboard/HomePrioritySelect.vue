@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
 const PRIORITIES: RunPriority[] = ['high', 'normal', 'low']
-const PANEL_WIDTH = 168
+const PANEL_WIDTH = 232
 
 const props = withDefaults(
   defineProps<{
@@ -25,8 +25,9 @@ const activeIndex = ref(0)
 const root = ref<HTMLElement | null>(null)
 const trigger = ref<HTMLButtonElement | null>(null)
 const panel = ref<HTMLElement | null>(null)
-/** Fixed position below trigger (Teleport escapes .home-composer overflow-hidden). */
+/** Fixed position near trigger (Teleport escapes .home-composer overflow-hidden). */
 const panelStyle = ref<Record<string, string>>({})
+const panelPlacement = ref<'below' | 'above'>('below')
 
 const selectedLabel = computed(() => t(`common.priority.${props.modelValue}`))
 
@@ -37,19 +38,48 @@ function placePanelBelow() {
   const width = Math.min(PANEL_WIDTH, window.innerWidth - 16)
   let left = r.left
   left = Math.max(8, Math.min(left, window.innerWidth - width - 8))
-  const top = r.bottom + 6
+  const belowTop = r.bottom + 6
+  const spaceBelow = Math.max(0, window.innerHeight - belowTop - 8)
+  const spaceAbove = Math.max(0, r.top - 14)
+  const panelHeight = (panel.value?.scrollHeight || 182) + 2
+  const placeAbove = spaceBelow < Math.min(panelHeight, 120) && spaceAbove > spaceBelow
+  const maxHeight = Math.min(panelHeight, placeAbove ? spaceAbove : spaceBelow)
+  const top = placeAbove ? Math.max(8, r.top - 6 - maxHeight) : belowTop
+  panelPlacement.value = placeAbove ? 'above' : 'below'
   panelStyle.value = {
     position: 'fixed',
     top: `${Math.round(top)}px`,
     left: `${Math.round(left)}px`,
     width: `${Math.round(width)}px`,
+    maxHeight: `${Math.floor(maxHeight)}px`,
     zIndex: '60',
   }
 }
 
 function onScrollOrResize() {
-  if (open.value) placePanelBelow()
+  if (!open.value) return
+  placePanelBelow()
+  void nextTick(keepActiveOptionVisible)
 }
+
+function keepActiveOptionVisible() {
+  const list = panel.value
+  if (!open.value || !list || list.clientHeight <= 0) return
+  const option = list.querySelector<HTMLElement>(
+    `[data-testid="home-priority-select-option-${PRIORITIES[activeIndex.value]}"]`,
+  )
+  if (!option) return
+  const top = option.offsetTop
+  const bottom = top + option.offsetHeight
+  if (top < list.scrollTop) list.scrollTop = top
+  else if (bottom > list.scrollTop + list.clientHeight) {
+    list.scrollTop = bottom - list.clientHeight
+  }
+}
+
+watch(activeIndex, () => {
+  if (open.value) void nextTick(keepActiveOptionVisible)
+})
 
 async function openPanel() {
   if (props.disabled) return
@@ -57,6 +87,8 @@ async function openPanel() {
   activeIndex.value = Math.max(0, PRIORITIES.indexOf(props.modelValue))
   await nextTick()
   placePanelBelow()
+  await nextTick()
+  keepActiveOptionVisible()
 }
 
 function closePanel() {
@@ -113,6 +145,7 @@ function onTriggerKeydown(e: KeyboardEvent) {
   if (open.value) return
   if (e.key === 'ArrowDown' || e.key === 'Enter' || e.key === ' ') {
     e.preventDefault()
+    e.stopPropagation()
     void openPanel()
   }
 }
@@ -156,8 +189,13 @@ onBeforeUnmount(() => {
       @click="togglePanel"
       @keydown="onTriggerKeydown"
     >
+      <svg class="home-priority-select__bolt" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <path d="m11.7 2.7-6 8.2h4l-1.4 6.4 6-8.2h-4l1.4-6.4Z" fill="currentColor" />
+      </svg>
       <span class="home-priority-select__label">{{ selectedLabel }}</span>
-      <span class="home-priority-select__chev" aria-hidden="true" />
+      <svg class="home-priority-select__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
     </button>
 
     <!-- Teleport to body so .home-composer overflow-hidden cannot clip the panel (plan g1.2) -->
@@ -169,11 +207,30 @@ onBeforeUnmount(() => {
         class="home-priority-select__panel"
         role="listbox"
         data-testid="home-priority-select-panel"
-        data-placement="below"
+        :data-placement="panelPlacement"
+        :data-priority="modelValue"
         :aria-label="t('common.priority.label')"
         :style="panelStyle"
         @click.stop
       >
+        <div class="home-priority-select__heading" aria-hidden="true">
+          <span class="home-priority-select__heading-icon">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="m11.7 2.7-6 8.2h4l-1.4 6.4 6-8.2h-4l1.4-6.4Z" fill="currentColor" />
+            </svg>
+          </span>
+          <span>{{ t('common.priority.label') }}</span>
+          <span class="home-priority-select__current">{{ selectedLabel }}</span>
+        </div>
+        <div class="home-priority-select__spectrum" aria-hidden="true">
+          <span
+            v-for="value in PRIORITIES"
+            :key="value"
+            class="home-priority-select__spectrum-segment"
+            :class="{ 'home-priority-select__spectrum-segment--current': value === modelValue }"
+            :data-priority="value"
+          />
+        </div>
         <button
           v-for="(value, i) in PRIORITIES"
           :key="value"
@@ -184,11 +241,20 @@ onBeforeUnmount(() => {
             'home-priority-select__opt--current': value === modelValue,
             'home-priority-select__opt--active': i === activeIndex,
           }"
+          :data-priority="value"
           :aria-selected="value === modelValue"
           :data-testid="`home-priority-select-option-${value}`"
           @click.stop="choose(value)"
         >
-          {{ t(`common.priority.${value}`) }}
+          <svg class="home-priority-select__strength" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+            <rect x="3" y="11" width="3" height="5" rx="1.1" fill="currentColor" />
+            <rect x="8.5" y="7.5" width="3" height="8.5" rx="1.1" fill="currentColor" :opacity="value === 'low' ? 0.2 : 1" />
+            <rect x="14" y="4" width="3" height="12" rx="1.1" fill="currentColor" :opacity="value === 'high' ? 1 : 0.2" />
+          </svg>
+          <span>{{ t(`common.priority.${value}`) }}</span>
+          <svg class="home-priority-select__check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="m4.2 8 2.5 2.5 5.1-5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
         </button>
       </div>
     </Teleport>
@@ -209,33 +275,41 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: 4px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: transparent;
+  background: linear-gradient(180deg, rgb(var(--c-surface)), rgb(var(--c-elevated) / 0.55));
   color: rgb(var(--c-txt));
-  padding: 0 10px;
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.025);
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .home-priority-select__trigger:hover:not(:disabled),
 .home-priority-select--open .home-priority-select__trigger {
-  border-color: rgb(var(--c-line-strong));
+  border-color: rgb(var(--c-accent) / 0.3);
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.045);
+}
+
+.home-priority-select__trigger:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.65);
+  outline-offset: 3px;
 }
 
 .home-priority-select__trigger:disabled {
   cursor: default;
   color: rgb(var(--c-txt3));
+  opacity: 0.65;
 }
 
 .home-priority-select__trigger--high:not(:disabled) {
-  color: rgb(var(--c-err));
-  border-color: rgb(var(--c-err) / 0.35);
-  background: rgb(var(--c-err) / 0.08);
+  color: rgb(var(--c-accent-2));
+  border-color: rgb(var(--c-accent) / 0.28);
+  background: rgb(var(--c-accent) / 0.075);
 }
 
 .home-priority-select__trigger--low:not(:disabled) {
@@ -249,49 +323,212 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.home-priority-select__chev {
-  width: 0;
-  height: 0;
-  border: 4px solid transparent;
-  border-top-color: rgb(var(--c-txt3));
+.home-priority-select__bolt {
+  width: 14px;
+  height: 14px;
   flex-shrink: 0;
+  color: rgb(var(--c-accent));
+  transition: filter 0.18s ease;
+}
+
+.home-priority-select__trigger--low .home-priority-select__bolt {
+  opacity: 0.6;
+}
+
+.home-priority-select__trigger--high .home-priority-select__bolt {
+  filter: drop-shadow(0 0 3px rgb(var(--c-accent) / 0.22));
+}
+
+.home-priority-select__chev {
+  width: 12px;
+  height: 12px;
+  color: rgb(var(--c-txt3));
+  flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.home-priority-select--open .home-priority-select__chev {
+  transform: rotate(180deg);
 }
 
 .home-priority-select__panel {
+  --c-accent: 184 168 223;
+  --c-accent-2: 198 183 233;
+  --priority-surface: rgb(var(--c-elevated));
+  --priority-border: rgb(var(--c-line) / 0.9);
+  --priority-shadow: 0 16px 44px rgb(0 0 0 / 0.22), 0 3px 10px rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.05);
+  --priority-band-low: #92b5ff;
+  --priority-band-mid: #a28cfa;
+  --priority-band-high: #8255e9;
   position: fixed;
   left: 0;
   top: calc(100% + 6px);
-  width: 168px;
-  border: 1px solid rgb(var(--c-line-strong));
-  border-radius: 12px;
-  overflow: hidden;
-  background: rgb(var(--c-elevated));
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  width: 232px;
+  box-sizing: border-box;
+  border: 1px solid var(--priority-border);
+  border-radius: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--priority-surface);
+  box-shadow: var(--priority-shadow);
   z-index: 60;
-  padding: 4px;
+  padding: 8px;
+  transform-origin: 28px 0;
+  animation: home-priority-enter 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+html.light .home-priority-select__panel {
+  --c-accent: 83 72 139;
+  --c-accent-2: 83 72 139;
+  --priority-surface: rgb(var(--c-surface));
+  --priority-border: rgb(232 230 240);
+  --priority-shadow: 0 16px 44px rgb(48 36 85 / 0.09), 0 3px 10px rgb(48 36 85 / 0.035), inset 0 1px 0 rgb(255 255 255 / 0.9);
+}
+
+.home-priority-select__heading {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 5px 0;
+  color: rgb(var(--c-txt));
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.home-priority-select__heading-icon {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgb(var(--c-accent) / 0.075);
+  border-radius: 8px;
+  color: rgb(var(--c-accent));
+  background: linear-gradient(145deg, rgb(var(--c-accent) / 0.1), rgb(var(--c-accent-2) / 0.035));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.15);
+}
+
+.home-priority-select__heading-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.home-priority-select__current {
+  margin-left: auto;
+  padding: 3px 7px;
+  border-radius: 5px;
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent) / 0.065);
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.home-priority-select__spectrum {
+  display: flex;
+  gap: 3px;
+  height: 4px;
+  margin: 12px 7px 13px;
+}
+
+.home-priority-select__spectrum-segment {
+  flex: 1;
+  border-radius: 3px;
+  background: linear-gradient(90deg, var(--priority-band-mid), var(--priority-band-high));
+  opacity: 0.25;
+}
+
+.home-priority-select__spectrum-segment[data-priority='normal'] {
+  background: linear-gradient(90deg, var(--priority-band-low), var(--priority-band-mid));
+}
+
+.home-priority-select__spectrum-segment[data-priority='low'] {
+  background: linear-gradient(90deg, var(--priority-band-low), var(--priority-band-low));
+}
+
+.home-priority-select__spectrum-segment--current {
+  opacity: 1;
+  box-shadow: 0 1px 5px rgb(var(--c-accent) / 0.12), inset 0 1px 0 rgb(255 255 255 / 0.25);
 }
 
 .home-priority-select__opt {
+  display: flex;
+  align-items: center;
+  gap: 9px;
   width: 100%;
+  min-height: 35px;
   text-align: left;
-  border: 0;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: transparent;
   color: rgb(var(--c-txt));
-  padding: 8px 10px;
-  font-size: 13px;
+  padding: 6px 9px;
+  font-size: 12px;
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
 .home-priority-select__opt:hover,
 .home-priority-select__opt--active {
-  background: rgb(var(--c-accent) / 0.16);
+  background: rgb(var(--c-accent) / 0.045);
   color: rgb(var(--c-txt));
 }
 
 .home-priority-select__opt--current {
   color: rgb(var(--c-accent-2));
+  border-color: rgb(var(--c-accent) / 0.06);
+  background: rgb(var(--c-accent) / 0.075);
   font-weight: 600;
+}
+
+.home-priority-select__opt:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.6);
+  outline-offset: -2px;
+}
+
+.home-priority-select__strength {
+  width: 19px;
+  height: 19px;
+  flex-shrink: 0;
+  color: rgb(var(--c-accent));
+}
+
+.home-priority-select__opt[data-priority='low'] .home-priority-select__strength {
+  color: rgb(var(--c-txt2));
+}
+
+.home-priority-select__check {
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  opacity: 0;
+  color: rgb(var(--c-accent));
+}
+
+.home-priority-select__opt--current .home-priority-select__check {
+  opacity: 1;
+}
+
+@keyframes home-priority-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-priority-select__panel {
+    animation: none;
+  }
+
+  .home-priority-select__trigger,
+  .home-priority-select__bolt,
+  .home-priority-select__chev,
+  .home-priority-select__opt {
+    transition: none;
+  }
 }
 
 @media (max-width: 520px) {

@@ -20,6 +20,97 @@
 
 ## 记录
 
+### 2026-10-20（草稿确认动效与界面变更合并检查）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/run/ClarifyChat.vue` / 测试；`web/src/lib/inbox/useClarifyChat.ts` / actions 测试；新增 `web/src/lib/composables/useComposerActionMotion.ts` / 测试；`web/src/lib/run/useHomeApproveChat.ts` / 测试；`HomePrioritySelect.vue` / 测试；`web/e2e/confirm-flow-clip.spec.ts`、`web/package.json`、`web/LIB_DOMAIN_MAP.json`、`CONTRIBUTING.md`、`CHANGELOG.md`
+- 做了什么：未发送文字、附件、批注和发送等待状态隐藏流转按钮，清空或发送完成后恢复。将宽度与透明度过渡调整为 280ms、起止速度为零的缓动，按钮间隙同时收起；快速反转保留当前帧，减少动态效果即时收尾，卸载清理动画与偏好监听。移除临时草稿提示及未使用的双语 key，复审保留固定说明，发送等待改为按钮内转圈和 `aria-busy`；按钮隐藏前将焦点送回输入框。异常状态的「中止当前回合并确认」也阻止草稿或未确认发送，保留忙碌中止与 cold 隐藏草稿的既有语义。
+- Review 修复：短窗口优先级面板只滚动自身以完整显示键盘选中的选项；项目 compose 查询在隐藏或刷新工作流后仍持续限制项目候选，失败回滚不误跳，草稿保留。启动请求与 launch 回调使用启动时工作流快照，等待期间切换项目不会把真实运行带到其它项目/节点。基于最新主分支重新整合，保留待审批分享权限和预览加载覆盖层。将草稿动效、HTML 版本工具栏、侧栏隐藏恢复与 Yume 回归纳入关键路径入口，并登记新模块。
+- 为什么：用户要求编辑内容时隐藏流转、动画更柔和、取消提示，并在提交 PR 前整理代码和完成充分 review、测试与 CI 保障。
+- 如何验证：最终完整单测 470 文件 / 4358 条通过，Lines 90.84% ≥ 85%；eslint 0 error（15 条既有 warning）、`vue-tsc`、构建和品牌检查通过。`CI=1 npm run test:e2e:ci` 冷启动 113 条全过；预览、导出、hover 和圆角额外回归 9 条通过，无重试。新增测试覆盖反转时旧回调隔离、动态减少效果、卸载清理、焦点、发送反馈、普通及异常确认草稿保护、项目候选失效与异步启动切换。隔离浏览器深浅主题、390px 手机和 200/240/400px 分栏验证正常；首 16.64ms 位移由旧曲线约 33% 降至 2.81%，输入栏与发送按钮全程无垂直跳动，快速反转无尺寸残留；无脚本错误或真实业务写请求。根 actionlint / shellcheck-error、docs 构建及官方 registry 高危审计通过。
+
+### 2026-10-20（HTML 预览单行工具栏）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/run/ArtifactPreview.vue` 与相关测试；`web/src/components/ui/HtmlPreview.vue` / 测试；`web/e2e/artifacts-page-version-main.ts`、`artifacts-page-version.spec.ts`；`CHANGELOG.md`
+- 做了什么：移除 HTML 预览的完整身份信息行，将版本、历史只读、删除、复制及下载收进同一工具栏，复制/下载位于「窗口放大查看」左侧；为 HTML 下载提供正确标签。收紧带扩展操作的间距，411px 中文分栏保持 45px 单行，更窄时自然换行。沿用主分支始终挂载的 HTML 工具栏与画布加载/错误/空态覆盖层，不重复错误条，保留其它产物头部和导出操作；放大窗口不复制扩展操作或重挂原 iframe。版本演示夹具更新为持久 revision API，移除旧 execution 输出模拟。
+- 为什么：用户批注指出文件类型、名称及路径占据重复一行，希望复制和下载与放大操作集中展示。
+- 如何验证：相关四份单测 46 条通过；浏览器版本、历史只读、411px/240px 几何及预览/导出回归通过，并纳入最终 113 条关键路径。隔离浏览器验证中英文、深浅主题、手机与窄分栏，复制内容与实际下载的 `page.html` 逐字一致，设备切换、取点和放大正常，无脚本错误或业务写请求。
+- 附加检查记录：额外尝试的旧 `artifacts-page-loading.spec.ts` 仍等待已移除的 `HardLoadLayer`，夹具未模拟当前 `getArtifactTree`；已核对主分支与本分支的 `ArtifactsView.vue` 无差异，属于既有演示夹具失配，保留失败记录，未扩展修改无关列表逻辑或加入关键路径。
+
+### 2026-10-20（聊天输入与流转操作合并）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/run/ClarifyChat.vue`、`ComposerShell.vue` 与对应测试；`web/src/lib/inbox/useClarifyChat.ts` / actions 测试；`web/src/locales/{zh-CN,en}/pages.json`；`web/e2e/confirm-flow-clip-main.ts`、`confirm-flow-clip.spec.ts`；`CHANGELOG.md`
+- 做了什么：将活动会话的「确认并流转」收进输入面板底部，与发送/取消共用操作栏，移除原外置按钮行；工具栏可按需换行，默认共用组件布局保持兼容，提示仅在实际需要时提供 slot。未发送的文字、附件、批注以及发送待确认期间会阻止流转，并显示双语提示；不自动把发送消息与接受当前结果合成一次请求，空输入 Enter 仍不会流转。冷会话保留仅确认入口，不因隐藏遗留草稿锁死；忙碌、队列、权限、错误重试与中止行为保留。
+- 为什么：用户希望输入框和下方独立流转按钮合并，减少割裂与占高；同时避免误跳过未发送内容。
+- 如何验证：目标组件及草稿保护测试 174 条、完整单测 468 文件 / 4310 条通过，Lines 90.78% ≥ 85%；eslint（0 error）、`vue-tsc`、构建和品牌断言通过。Playwright 输入/流转裁切及草稿保护 11 条、关键路径与侧栏 96 条、hover 2 条、圆角视觉 1 条共 110 条全部通过，无重试。真实示例浅/深主题与 390px 手机只读检查通过；mock 400/240/200px 中英文布局完整、附件/发送/流转不重叠，另确认 busy 下取消和发送可用、冷会话例外、hideFinish、错误条、草稿和附件清空恢复均正常，无脚本错误或真实业务写请求。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（Yume 尾根修复与角色动效）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/dashboard/HomeYumeCharacter.vue` / 测试；`web/src/components/shell/BrandCharacterMark.vue` / 测试；新增 `web/e2e/yume-motion.spec.ts`；`web/package.json`；`CHANGELOG.md`
+- 做了什么：首页尾巴改为身体轮廓内的固定局部锚点，身体遮住尾根，尾巴与身体共用呼吸、倾斜和按压/跳跃祖先层。新增轻呼吸与好奇摆动、错峰双眨眼、悬停/键盘焦点招呼摆尾及表情回应，保留眼睛跟随指针、240×200 外框与黑白样貌。侧栏小角色分层实现呼吸、微摆、双眨眼、品牌区悬停回应及按压回弹，保留 28px/48px 接口和装饰语义；品牌文字保持对齐。动态启用减少动态效果时停止全部位移、重置眼睛和交互态、清理回弹定时器，卸载移除监听和定时器。三条浏览器回归加入关键路径命令，覆盖尾根连续性、减少动态效果和品牌文字不随内部角色偏移。
+- 为什么：用户指出首页角色尾巴偶尔出现断口，并希望首页和侧栏角色增加动效。旧尾巴以整个 SVG 的 `(0,200)` 为旋转轴，+10°时尾根偏移约 31.86 屏幕像素、留下约 5px 可见缝。
+- 如何验证：目标组件 13 条、完整单测 468 文件 / 4300 条通过，Lines 90.77% ≥ 85%；eslint（0 error）、`vue-tsc`、最终构建和品牌断言通过。真实浏览器对静止、悬停、按压、跳跃共 148 个关键帧采样，尾根与身体锚点最大误差 0.000033px，所有帧尾根都在身体填充内，外框仍为 240×200；深浅主题、390px 手机、28px/48px 标记、鼠标与键盘、动态减少效果/恢复及眼睛跟随检查通过，减少效果下包括腮红渐变在内均为 0 动画。录制 11.6 秒真实页面演示，未发业务写请求。最终关键路径加侧栏 Playwright 96 条通过，另最终角色回归 3 条、hover 2 条、圆角视觉 1 条通过；首轮取点用例在顶层页面和 iframe 重载时超时，保留 trace，源码稳定后隔离及整组复跑均通过，未改业务代码或重试配置。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（侧栏内容层级与新需求入口）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/shell/AppSidebar.vue`、`AppSidebarNav.vue`、`SidebarWorkspaceLists.vue`、`StatusMetrics.vue`；新增 `SidebarAccountMenu.vue` / 测试；`web/src/components/ui/Icon.vue`；`web/src/lib/run/useHomeApproveChat.ts` / 测试；`web/src/locales/{zh-CN,en}/{nav,route}.json` 与相关现有测试；`web/e2e/hover-ink-scroll-shift.spec.ts`；`CHANGELOG.md`
+- 做了什么：开始入口及路由标题改为「新需求」/「New request」，使用专用创建图标、无边框入口与中性选中底色。统一待审批、项目、最近列表的标题颜色、字号、行高与左右留白，待审批标题显示真实数量，澄清、复审、审批使用统一细线 SVG 与柔和语义色。项目展开内容增加缩进导线，最近运行补充会话图标，选中行使用柔和底色和短标记；展开控制移到左侧文件夹，右侧按参考增加更多和新需求动作。品牌行下移并与外轨对齐；底部仅保留用量和语言/主题/通知，账户名及登出收进外轨头像菜单。修复用量提示首次显示时，普通块级元素测量得到视口全宽、导致左侧越界的问题：在测量前即使用 fixed 定位。
+- 交互：项目更多菜单提供真实的项目详情和项目运行列表链接；项目新需求使用 `projectId` 查询参数选中该项目可在首页启动的工作流，支持同页切换，保留跨项目列表和草稿正文/附件。异步草稿恢复不覆盖明确项目上下文；该项目没有可启动工作流时提示并返回项目详情。手动选择其它项目工作流后清除 URL 的项目参数，保留其它查询，确保再次点击原项目的新需求能重新生效。账户菜单与项目菜单补充键盘、外部关闭和视口定位；隐藏桌面栏或切到手机时关闭账户浮层。
+- 为什么：用户要求进一步协调侧栏内部布局，并明确把「开始」改为「新需求」；按后续批注去除入口描边、整理账户展示、统一状态图标与项目操作。
+- 如何验证：完整单测 468 文件 / 4296 条通过，Lines 90.75% ≥ 85%；eslint（0 error）、`vue-tsc`、构建和品牌断言通过；源码冻结后关键路径加侧栏隐藏/恢复 Playwright 93 条、hover 位移回归 2 条、圆角视觉 1 条全部通过。新增菜单与项目上下文测试覆盖键盘、外点/隐藏关闭、首次定位、同页切换、不可启动项目回退、异步草稿恢复及重复项目入口。真实浏览器在 1440×900、1183×1244 深浅主题确认品牌与外轨中心一致、新需求无边框、项目悬停动作与账户菜单正常；两真实项目入口选择对应工作流，390px 抽屉操作可达、首次用量提示完整显示，无横向溢出、脚本错误或业务写请求。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（两层侧栏与真实项目/最近运行列表）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/shell/AppSidebar.vue`、`AppSidebarNav.vue`、`AppShell.vue` 及对应测试；新增 `SidebarWorkspaceLists.vue` / 测试；`web/src/lib/inbox/reviewLayoutBudget.ts` / 测试；`web/src/locales/{zh-CN,en}/nav.json`；`web/e2e/hover-ink-scroll-shift.spec.ts`、`radius-visual-main.ts`；`CHANGELOG.md`
+- 做了什么：桌面左侧改为 56px 功能图标轨加 248px 内容列表，保留品牌角色、隐藏/恢复导航、账户和主题通知工具；开始/项目/运行/设置切换放到图标轨，内侧保留开始、收藏和待审批，新增真实项目与最近运行列表。项目默认折叠，点击标题进入项目，独立箭头按需读取该项目最近两条运行；最近列表读取全局最近记录。默认只发项目和运行两个列表请求，路由变化只额外刷新当前展开项目，取消旧请求并忽略晚到响应。待审批重命名通过标题映射即时同步到最近和已展开项目记录。补双语加载、失败重试和空态文案；移动抽屉保持单列，隐藏的桌面列表在手机端不额外取数。同步首帧宽度预算、测试替身与演示尺寸。
+- 为什么：按用户提供的 Codex 侧栏参考，让功能切换与工作内容分层，项目和运行记录能直接找到，同时保留现有审批、重命名、置顶、收藏和抽屉交互。
+- 如何验证：现有侧栏/布局与新增列表行为测试、双语 key/编译测试、完整单测（467 文件 / 4277 条，Lines 90.71% ≥ 85%）、关键路径加侧栏隐藏/恢复 Playwright（93 条）、eslint（0 error）、`vue-tsc` 和构建通过；hover 位移回归 2 条、深浅圆角视觉 1 条通过。浏览器实测桌面 304px（含外留白 318px）、隐藏/恢复与焦点交接、四类导航与设置分类、项目按需请求、最近运行、收藏/重命名取消及 390px 单列抽屉。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（左侧主导航略微加宽）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/shell/AppSidebar.vue`、`AppSidebar.test.ts`、`AppShell.test.ts`、`web/src/lib/inbox/reviewLayoutBudget.ts` 及对应测试、`web/e2e/desktop-sidebar-hide.spec.ts`、`CHANGELOG.md`
+- 做了什么：桌面主导航展开宽度由 232px 调整为 248px，外层占位与内卡同步；运行详情挂载前工作区估算同步扣除侧栏与外侧留白，让初始分栏预算跟随新尺寸。更新已有断言、测试替身与展开宽度注释。
+- 为什么：用户希望左侧导航略宽，为图标和导航文字增加少量空间；折叠与移动端行为保持。
+- 如何验证：现有侧栏与布局测试（40 条）、完整单测（466 文件 / 4265 条，Lines 90.70% ≥ 85%）、关键路径加侧栏隐藏/恢复 Playwright（93 条）、eslint（0 error）、`vue-tsc` 及构建通过；实机确认外栏与内卡 248px、含留白 262px，隐藏后 0、恢复后 248px，390px 手机视口固定侧栏隐藏且无横向溢出或脚本错误。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（资源卡图标统一为正面窗口 SVG）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/run/ResourceCardIllustration.vue`、`ReactArtifactStage.vue`、`ReactArtifactStage.test.ts`、`CHANGELOG.md`
+- 做了什么：IDE、Terminal、浏览器和日志共用 64×52 的正面圆角窗口、浅色标题栏、统一线宽及中性表面；内部用分栏代码、命令提示符、地址栏地球和列表区分入口。移除倾斜叠纸、深色立体终端、浏览器卫星轨道及额外底部阴影，悬停只轻微加深窗口描边，终端光标保留有限次闪动并尊重减少动态偏好。卡片尺寸、顺序和点击行为保持；标签页继续使用原有紧凑图标，更新原有插画必须与标签页 SVG 完全相同的过时断言。
+- 为什么：此前三类资源插画在材质、角度、比例与线条上各自为一套风格，用户仍觉得不协调；统一成清晰、稳定的工具入口图标。
+- 如何验证：现有产物组件测试（53 条）、完整单测（466 文件 / 4265 条，Lines 90.71% ≥ 85%）、关键路径 Playwright（90 条）、eslint（0 error）、`vue-tsc` 及构建通过；真实浏览器核对深浅主题四卡、悬停时相对中心和尺寸保持不变、减少动态效果时光标无动画，无脚本错误。根 actionlint / shellcheck-error、docs 构建和官方 registry 高危审计通过。
+
+### 2026-10-20（优先级面板、开始图标与聊天区视觉统一）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/dashboard/HomePrioritySelect.vue` 及对应测试、`web/src/components/shell/AppSidebarNav.vue`、`web/src/components/ui/Icon.vue`、`web/src/components/run/ClarifyChat.vue`、`ReviewShell.vue`、`web/src/views/DashboardView.vue`、`web/src/styles/radiusZeroClearance.test.ts`、`CHANGELOG.md`
+- 做了什么：优先级保留高/普通/低三档与紧凑工具栏位置，改用闪电、强度柱、静态蓝紫分段提示和柔和圆角浮层；浮层使用独立主题色，短窗口可上翻或滚动。修复键盘打开事件继续冒泡后立即选中关闭的问题，补上真实冒泡及短窗口回归测试，并更新原有圆角断言。开始入口使用专用细线房屋图标，保持其他四格图标。聊天区统一深紫头像、柔和消息气泡、输入框聚焦柔光及动作按钮，发送禁用态保持中性，完成状态保留绿色；桌面拖拽分隔条只显示 1px 细线，保留原热区和尺寸。动态效果尊重减少动态偏好，原页面布局、消息顺序与业务事件保持。
+- 为什么：原优先级列表、四格开始图标、亮紫分隔线、青色 Agent 头像和绿色确认按钮缺少统一视觉，截图中的输入框与气泡描边也过硬；按用户参考统一局部材质和图标，不改整体布局。
+- 如何验证：组件及图标现有测试、优先级新增键盘/短窗口测试、完整单测（466 文件 / 4265 条，Lines 90.71% ≥ 85%）、eslint（0 error）、`vue-tsc` 及构建通过；源码稳定后关键路径 Playwright 90 条全部通过（首次并行开发触发 Vite 页面重载，画布放置用例中断，复跑无需改画布或测试）。真实浏览器检查深浅主题、400/240px 聊天区、普通消息与时间线消息、输入框聚焦及禁用发送，以及优先级 Enter/Space/方向键、矮窗口上翻与滚动。根 actionlint / shellcheck-error、docs 构建及官方 registry 高危审计通过。
+
+### 2026-10-20（浏览器资源插画的经线与轨道修正）
+
+- 日期：2026-10-20
+- 范围：`web/src/components/ui/Icon.vue`、`web/src/components/run/ResourceCardIllustration.vue`、`CHANGELOG.md`
+- 做了什么：浏览器专用图标的经线改用真实椭圆，球体与装饰轨道共用中心；将轨道拆为前后半弧，通过球体填色遮挡后弧，卫星点放在椭圆轨迹上。球体与轨道整体响应悬停，减少动态效果时保留固定倾角与静态位置。
+- 为什么：原经线在两极形成尖角，外圈与球体中心偏移，且悬停时只有球体移动，造成图形变形和错位。
+- 如何验证：图标与产物组件现有测试（61 条）、web eslint（0 error）、`vue-tsc`、完整单测（466 文件 / 4260 条，Lines 90.66% ≥ 85%）、关键路径 Playwright（90 条）及构建通过；真实浏览器检查深浅主题、悬停与减少动态效果，轨道前后遮挡和移动保持对齐，无脚本错误。根 actionlint / shellcheck-error、docs 构建与官方 registry 高危审计通过。
+
+### 2026-10-20（首页与工作流产物卡片视觉优化）
+
+- 日期：2026-10-20
+- 范围：`web/src/views/DashboardView.vue`、`DashboardView.fill.test.ts`、`web/src/components/run/ReactArtifactStage.vue`、`ResourceCardIllustration.vue`、`CHANGELOG.md`
+- 做了什么：首页局部使用深紫 `#53488B` 与中性卡面，降低背景粒子不透明度和输入框焦点柔光；保留 Yume 原 SVG、240×200 裁切、交互、首页文案来源、输入区和横排卡片布局。工作流封面改为分层节点与现有图标，悬停时连线流动、节点轻移；选中项悬停仍保留选中描边。产物页保持资源/文件卡片的原尺寸、排列、事件和版本选择，仅增加分层资源插画、纸角、细高光与轻阴影，支持深浅主题及减少动态效果。更新已有焦点柔光断言以匹配降低后的透明度。
+- 为什么：按已确认的视觉预览优化配色、SVG 和动效，解决原页面大面积浅灰、强紫描边与图形层次不足的问题，同时保留原布局、角色和业务流程。
+- 如何验证：web 依赖安装、eslint（0 error）、`vue-tsc`、完整单测（466 文件 / 4260 条，Lines 90.66% ≥ 85%）、关键路径 Playwright（90 条）、构建；根 actionlint / shellcheck-error，以及 docs 依赖安装、构建和官方 registry 高危审计。使用隔离 SQLite 的本地后端和真实 Vue 开发服务检查首页与样例产物页，不接入真实沙箱或模型供应商。
+
 ### 2026-10-16（优化中英文 README，去 AI 腔并修正首次安装说明）
 
 - 日期：2026-10-16

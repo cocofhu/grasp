@@ -10,6 +10,7 @@ import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import AppPreviewPanel from '@/components/run/AppPreviewPanel.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
+import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.vue'
 import { api, type SandboxView } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
@@ -897,9 +898,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col bg-base" data-testid="react-artifact-stage">
+  <div class="artifact-stage-surface flex h-full min-h-0 flex-col bg-base" data-testid="react-artifact-stage">
     <div
-      class="flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5 max-md:px-1.5 max-md:py-1"
+      class="artifact-stage-tabs flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5 max-md:px-1.5 max-md:py-1"
       data-testid="react-artifact-tabs"
       role="tablist"
     >
@@ -1075,27 +1076,29 @@ onBeforeUnmount(() => {
           v-for="card in fixedCards"
           :key="card.id"
           type="button"
-          class="overflow-hidden rounded-lg border border-line bg-accent-dim/40 text-left transition hover:border-line-strong"
+          class="artifact-card artifact-resource-card overflow-hidden rounded-lg border border-line bg-accent-dim/40 text-left transition hover:border-line-strong"
           :data-testid="'react-artifact-card-' + card.id"
           @click="onFixedCard(card.id)"
         >
           <div
-            class="relative flex h-[110px] items-center justify-center overflow-hidden bg-accent-dim/70"
+            class="artifact-card-cover relative flex h-[110px] items-center justify-center overflow-hidden bg-accent-dim/70"
             :class="card.id === 'app' ? 'text-txt3' : undefined"
           >
             <span
               class="absolute left-2 top-2 z-[1] rounded-[4px] bg-accent-dim px-[5px] py-[3px] text-[10px] font-semibold leading-none text-accent"
               data-testid="react-artifact-kind-badge"
             >{{ t('pages.reactArtifactStage.resourceBadge') }}</span>
+            <ResourceCardIllustration v-if="card.id !== 'app'" :kind="card.id" />
             <Icon
+              v-else
               :name="card.icon"
               :size="card.id === 'app' ? 28 : 30"
               :class="card.id === 'app' ? 'opacity-50' : 'text-txt2'"
             />
           </div>
           <div class="px-2.5 py-2">
-            <div class="truncate text-[12px] font-medium text-txt">{{ card.title }}</div>
-            <div class="mt-0.5 truncate text-[11px] text-txt3">{{ card.meta }}</div>
+            <div class="artifact-card-title truncate text-[12px] font-medium text-txt">{{ card.title }}</div>
+            <div class="artifact-card-meta mt-0.5 truncate text-[11px] text-txt3">{{ card.meta }}</div>
           </div>
         </button>
         <div
@@ -1103,19 +1106,20 @@ onBeforeUnmount(() => {
           :key="a.id"
           role="button"
           tabindex="0"
-          class="overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
+          class="artifact-card artifact-file-card overflow-hidden rounded-lg border border-line bg-surface text-left transition hover:border-line-strong"
           :data-testid="'react-artifact-card-' + a.name"
           @click="openArtifact(a)"
           @keydown.enter.prevent="openArtifact(a)"
         >
-          <div class="relative h-[110px] overflow-hidden bg-elevated">
+          <div class="artifact-card-cover relative h-[110px] overflow-hidden bg-elevated">
             <span
               class="absolute left-2 top-2 z-[1] rounded-[4px] bg-ok/15 px-[5px] py-[3px] text-[10px] font-semibold leading-none text-ok"
               data-testid="react-artifact-kind-badge"
             >{{ t('pages.reactArtifactStage.artifactBadge') }}</span>
+            <span class="artifact-paper-corner" aria-hidden="true" />
             <div
               v-if="textThumb(a)"
-              class="pointer-events-none h-full overflow-hidden border-b border-line px-3 pb-2 pt-7"
+              class="artifact-card-summary pointer-events-none h-full overflow-hidden border-b border-line px-3 pb-2 pt-7"
               data-testid="react-artifact-card-summary"
             >
               <div
@@ -1140,7 +1144,7 @@ onBeforeUnmount(() => {
           </div>
           <div class="px-2.5 py-2">
             <div class="flex items-center gap-1.5">
-              <div class="min-w-0 truncate text-[12px] font-medium text-txt" :title="artifactTitle(a)">{{ artifactTitle(a) }}</div>
+              <div class="artifact-card-title min-w-0 truncate text-[12px] font-medium text-txt" :title="artifactTitle(a)">{{ artifactTitle(a) }}</div>
               <span
                 v-if="artifactReadonly(a)"
                 class="shrink-0 rounded border border-line px-1 py-px text-[10px] text-txt3"
@@ -1148,7 +1152,7 @@ onBeforeUnmount(() => {
               >{{ t('pages.reactArtifactStage.readonlyBadge') }}</span>
             </div>
             <div class="mt-0.5 flex items-center justify-between gap-1">
-              <div class="min-w-0 truncate text-[11px] text-txt3">{{ metaLine(a) }}</div>
+              <div class="artifact-card-meta min-w-0 truncate text-[11px] text-txt3">{{ metaLine(a) }}</div>
               <ArtifactVersionSelect
                 v-if="showVersionChip(a)"
                 :choices="versionChoices(a)"
@@ -1291,3 +1295,98 @@ onBeforeUnmount(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.artifact-stage-surface {
+  --ra-bg: light-dark(#f8f9fc, #181a21);
+  --ra-surface: light-dark(#fff, #242630);
+  --ra-cover: light-dark(#f4f4fa, #292b38);
+  --ra-ink: light-dark(#262934, #eeeff6);
+  --ra-muted: light-dark(#7c8193, #a5abbd);
+  --ra-line: light-dark(#e5e8f0, #3b3f4e);
+  --ra-accent: light-dark(#7b67da, #b3a3ef);
+  --ra-green: light-dark(#4a9271, #88c6a6);
+  --ra-specular: light-dark(#ffffffdf, #ffffff15);
+  --ra-shadow: light-dark(#27334d0b, #00000026);
+  --ra-shadow-deep: light-dark(#27334d13, #00000040);
+  --ra-fx: .7;
+  --ra-glow: color-mix(in srgb, var(--ra-accent) calc(var(--ra-fx) * 16%), transparent);
+  --ra-ease: cubic-bezier(.22, 1, .36, 1);
+  background: var(--ra-bg);
+}
+.artifact-stage-tabs { border-color: var(--ra-line); }
+.artifact-stage-tabs > button, .artifact-stage-tabs > div { color: var(--ra-muted); }
+.artifact-stage-tabs > .bg-elevated {
+  color: var(--ra-ink);
+  background: var(--ra-surface);
+  box-shadow: inset 0 0 0 1px var(--ra-line), 0 1px 2px var(--ra-shadow);
+}
+.artifact-card {
+  --ra-card-hover: 0;
+  border-color: var(--ra-line);
+  background: var(--ra-surface);
+  box-shadow: inset 0 1px 0 var(--ra-specular), 0 2px 3px var(--ra-shadow);
+  transition: transform 350ms var(--ra-ease), box-shadow 350ms var(--ra-ease), border-color 220ms;
+}
+.artifact-card:is(:hover, :focus-visible) {
+  --ra-card-hover: 1;
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--ra-accent) 30%, var(--ra-line));
+  box-shadow: inset 0 1px 0 var(--ra-specular), 0 3px 5px var(--ra-shadow), 0 10px 20px var(--ra-shadow-deep);
+}
+.artifact-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ra-accent) 55%, transparent);
+  outline-offset: 3px;
+}
+.artifact-card-cover {
+  background: radial-gradient(ellipse at 50% 110%, var(--ra-glow), transparent 70%), linear-gradient(145deg, var(--ra-surface), var(--ra-cover));
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--ra-line) 65%, transparent);
+}
+.artifact-card-title { color: var(--ra-ink); }
+.artifact-card-meta { color: var(--ra-muted); }
+.artifact-card [data-testid="react-artifact-kind-badge"] {
+  border: 1px solid color-mix(in srgb, var(--ra-accent) 9%, transparent);
+  color: var(--ra-accent);
+  background: color-mix(in srgb, var(--ra-accent) 9%, var(--ra-surface));
+}
+.artifact-file-card [data-testid="react-artifact-kind-badge"] {
+  border-color: color-mix(in srgb, var(--ra-green) 10%, transparent);
+  color: var(--ra-green);
+  background: color-mix(in srgb, var(--ra-green) 9%, var(--ra-surface));
+}
+.artifact-card-summary { border-color: var(--ra-line); }
+.artifact-card-summary .text-txt { color: var(--ra-ink); }
+.artifact-card-summary .text-txt2 { color: var(--ra-muted); }
+.artifact-paper-corner {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 18px;
+  height: 18px;
+  border-left: 1px solid var(--ra-line);
+  border-bottom: 1px solid var(--ra-line);
+  border-radius: 0 0 0 5px;
+  background: linear-gradient(45deg, var(--ra-surface) 45%, var(--ra-cover) 52%);
+  transform-origin: 100% 0;
+  transition: transform 500ms var(--ra-ease), box-shadow 500ms;
+  pointer-events: none;
+}
+.artifact-file-card:is(:hover, :focus-visible) .artifact-paper-corner {
+  transform: rotate(4deg) scale(1.1);
+  box-shadow: -2px 3px 4px var(--ra-shadow);
+}
+.artifact-resource-card:is(:hover, :focus-visible) :deep(.resource-terminal-cursor) {
+  animation: resource-cursor 650ms steps(1) 2;
+}
+@keyframes resource-cursor {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .artifact-card, .artifact-paper-corner { transition: none; }
+  .artifact-card:is(:hover, :focus-visible),
+  .artifact-file-card:is(:hover, :focus-visible) .artifact-paper-corner { transform: none; }
+  .artifact-resource-card :deep(.resource-terminal-cursor) { animation: none !important; }
+}
+</style>

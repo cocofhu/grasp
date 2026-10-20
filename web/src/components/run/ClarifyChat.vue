@@ -32,6 +32,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
 
 const props = withDefaults(
   defineProps<{
@@ -280,6 +281,20 @@ function openImagePreview(images: ClarifyImage[], index: number) {
 
 /** Clarify passes its own reply copy; review uses the shared send copy. */
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
+const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
+const showHotConfirm = computed(() => !props.hideFinish && !composerBlocksConfirm.value)
+const confirmActionMotion = useComposerActionMotion()
+const confirmPresence = ref<HTMLElement | null>(null)
+const abortConfirmButton = ref<HTMLButtonElement | null>(null)
+watch([showHotConfirm, composerBlocksConfirm], ([showing, blocked]) => {
+  // Keep focus in the composer when either confirmation action disappears.
+  const active = document.activeElement
+  const leavingConfirm = !showing && confirmPresence.value?.contains(active)
+  const leavingAbort = blocked && !!abortConfirmButton.value && active === abortConfirmButton.value
+  if (leavingConfirm || leavingAbort) {
+    void nextTick(() => textareaRef.value?.focus({ preventScroll: true }))
+  }
+}, { flush: 'pre' })
 
 /**
  * Where each session's interactive card goes: under the first agent reply
@@ -469,7 +484,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       data-testid="clarify-scroller"
       @scroll.passive="onScrollerScroll"
     >
-      <div class="flex items-center gap-2 text-[11px] text-txt3">
+      <div class="clarify-thread-heading flex items-center gap-2 text-[11px] text-txt3">
         <Icon name="chat" :size="13" />
         {{ translate('pages.clarify.header', { n: displayTurns.length }) }}
       </div>
@@ -500,12 +515,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
       <template v-for="(t, i) in displayTurns" :key="i">
-      <div v-if="!isEmptyLiveTurn(t)" class="flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''">
+      <div v-if="!isEmptyLiveTurn(t)" class="clarify-turn flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''" :data-turn-role="t.role">
         <div
-          class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
+          class="clarify-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
           :class="t.role === 'agent' ? 'bg-n-clarify/15 text-n-clarify' : 'bg-accent-dim text-accent-2'"
         >
-          <Icon v-if="t.role === 'agent'" name="robot" :size="15" />
+          <Icon v-if="t.role === 'agent'" name="sparkles" :size="16" />
           <span v-else>{{ translate('pages.clarify.me') }}</span>
         </div>
         <div class="min-w-0 max-w-[80%]">
@@ -1209,7 +1224,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
-      <ComposerShell :show-footer="!hideFinish" box-test-id="clarify-input-row" toolbar-test-id="clarify-action-row">
+      <ComposerShell
+        wrap-toolbar
+        :show-footer="!hideFinish && reviewMode"
+        box-test-id="clarify-input-row"
+        toolbar-test-id="clarify-action-row"
+      >
         <template #input>
           <input ref="fileInput" type="file" multiple class="hidden" @change="onPickFiles" />
           <textarea
@@ -1256,35 +1276,52 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             type="button"
             class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
             :data-testid="sendLabel ? 'clarify-send-label' : 'clarify-send-icon'"
-            :title="clarifySendAria"
-            :aria-label="clarifySendAria"
+            :title="composerSending ? translate('common.buttons.sending') : clarifySendAria"
+            :aria-label="composerSending ? translate('common.buttons.sending') : clarifySendAria"
+            :aria-busy="composerSending ? 'true' : undefined"
             :disabled="composerSending || !hasComposerDraft()"
             @click="send"
           >
-            <Icon name="send" :size="14" />
+            <Icon :name="composerSending ? 'spinner' : 'send'" :size="14" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
           </button>
+          <Transition
+            :css="false"
+            @enter="confirmActionMotion.enter"
+            @leave="confirmActionMotion.leave"
+            @enter-cancelled="confirmActionMotion.cancel"
+            @leave-cancelled="confirmActionMotion.cancel"
+          >
+            <span
+              v-if="!hideFinish"
+              v-show="showHotConfirm"
+              ref="confirmPresence"
+              class="clarify-confirm-presence"
+              :inert="!showHotConfirm"
+              :aria-hidden="!showHotConfirm ? 'true' : undefined"
+            >
+              <span class="clarify-confirm-presence__inner">
+                <button
+                  type="button"
+                  class="clarify-confirm-integrated inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
+                  data-testid="clarify-confirm-flow"
+                  :disabled="confirmDisabled || !showHotConfirm"
+                  :title="translate('pages.clarify.confirmFlowTitle')"
+                  @click="finishEarly"
+                >
+                  <Icon name="check" :size="13" />
+                  {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow') }}
+                </button>
+              </span>
+            </span>
+          </Transition>
         </template>
-        <template #hint>
+        <template v-if="reviewMode" #hint>
           <p
-            v-if="reviewMode"
             class="m-0 min-w-0 text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]"
             data-testid="clarify-confirm-hint"
           >
             {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlowHint') }}
           </p>
-        </template>
-        <template #footer>
-          <button
-            type="button"
-            class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
-            data-testid="clarify-confirm-flow"
-            :disabled="confirmDisabled"
-            :title="translate('pages.clarify.confirmFlowTitle')"
-            @click="finishEarly"
-          >
-            <Icon name="check" :size="13" />
-            {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow') }}
-          </button>
         </template>
       </ComposerShell>
     </div>
@@ -1298,7 +1335,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <Icon name="alert" :size="13" />
       <span class="min-w-0 flex-1 [overflow-wrap:anywhere]">{{ confirmError }}</span>
       <button
-        v-if="confirmCanAbort"
+        v-if="confirmCanAbort && !composerBlocksConfirm"
+        ref="abortConfirmButton"
         type="button"
         class="shrink-0 rounded-md bg-ok px-2 py-1 text-[11px] font-medium text-white hover:bg-ok/90"
         data-testid="clarify-abort-and-confirm"
@@ -1362,6 +1400,158 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 </template>
 
 <style scoped>
+[data-review-composer] {
+  --c-accent: 184 168 223;
+  --c-accent-2: 198 183 233;
+  --c-accent-hover: 162 142 208;
+  --c-accent-dim: 46 40 60;
+  --chat-action: 113 93 159;
+  --chat-shadow: 0 0 0;
+  --chat-specular: 255 255 255 / .045;
+  background: rgb(var(--c-surface));
+}
+html.light [data-review-composer] {
+  --c-accent: 83 72 139;
+  --c-accent-2: 83 72 139;
+  --c-accent-hover: 101 85 153;
+  --c-accent-dim: 241 238 249;
+  --chat-action: 83 72 139;
+  --chat-shadow: 43 32 71;
+  --chat-specular: 255 255 255 / .85;
+}
+[data-testid="clarify-scroller"] {
+  background: linear-gradient(180deg, rgb(var(--c-accent) / .025), transparent 180px);
+}
+.clarify-thread-heading {
+  color: color-mix(in srgb, rgb(var(--c-txt2)) 80%, rgb(var(--c-surface)));
+  font-size: 10.5px;
+  letter-spacing: .01em;
+}
+.clarify-thread-heading > svg { color: rgb(var(--c-accent) / .65); }
+.clarify-avatar {
+  border: 1px solid rgb(var(--c-accent) / .09);
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent) / .07);
+  box-shadow: inset 0 1px 0 rgb(var(--chat-specular));
+}
+[data-turn-role="agent"] .clarify-avatar {
+  border-radius: 10px;
+  background: linear-gradient(145deg, rgb(var(--c-accent) / .18), rgb(var(--c-accent) / .045));
+}
+[data-testid="clarify-human-message"],
+[data-testid="clarify-agent-message"],
+[data-testid="clarify-busy-placeholder"],
+:deep([data-testid="clarify-agent-message"]) {
+  border-radius: 14px;
+  border-color: rgb(var(--c-accent) / .1);
+  box-shadow: 0 1px 2px rgb(var(--chat-shadow) / .025), inset 0 1px 0 rgb(var(--chat-specular));
+}
+[data-testid="clarify-human-message"] {
+  border-top-right-radius: 5px;
+  background: linear-gradient(145deg, rgb(var(--c-accent) / .09), rgb(var(--c-accent) / .035));
+}
+[data-testid="clarify-agent-message"],
+[data-testid="clarify-busy-placeholder"],
+:deep([data-testid="clarify-agent-message"]) {
+  border-top-left-radius: 5px;
+  background: color-mix(in srgb, rgb(var(--c-surface)) 82%, rgb(var(--c-elevated)));
+}
+[data-testid="clarify-turn-bottom-time"] {
+  margin-top: 5px;
+  padding-inline: 2px;
+  font-size: 9px;
+}
+[data-testid="clarify-hot-actions"],
+[data-testid="clarify-cold-actions"] {
+  border-color: rgb(var(--c-accent) / .075);
+  background: linear-gradient(180deg, rgb(var(--c-base) / .3), rgb(var(--c-surface)));
+}
+[data-review-composer] :deep([data-testid="clarify-input-row"]) {
+  border-radius: 14px;
+  border-color: rgb(var(--c-accent) / .17);
+  background: rgb(var(--c-surface));
+  box-shadow: 0 2px 6px rgb(var(--chat-shadow) / .035), inset 0 1px 0 rgb(var(--chat-specular));
+  transition: border-color 180ms ease, box-shadow 180ms ease;
+}
+[data-review-composer] :deep([data-testid="clarify-input-row"]:focus-within) {
+  border-color: rgb(var(--c-accent) / .42);
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / .055), 0 2px 6px rgb(var(--chat-shadow) / .035);
+}
+[data-testid="clarify-input"] { caret-color: rgb(var(--c-accent)); }
+[data-testid="clarify-input"]::placeholder { color: rgb(var(--c-txt3) / .85); }
+[data-testid="clarify-attach-btn"] {
+  border-color: transparent;
+  border-radius: 10px;
+  color: rgb(var(--c-txt3));
+  background: transparent;
+  transition: color 160ms ease, background-color 160ms ease;
+}
+[data-testid="clarify-attach-btn"]:hover:not(:disabled) {
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent) / .065);
+}
+[data-testid="clarify-send-icon"],
+[data-testid="clarify-send-label"],
+[data-testid="clarify-confirm-flow"] {
+  border: 1px solid rgb(var(--chat-action) / .6);
+  background: linear-gradient(145deg, rgb(var(--chat-action) / .86), rgb(var(--chat-action)));
+  color: #fff;
+  box-shadow: inset 0 1px 0 #ffffff26, 0 2px 4px rgb(var(--chat-shadow) / .08);
+  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
+}
+[data-testid="clarify-send-icon"],
+[data-testid="clarify-send-label"] { border-radius: 10px; }
+[data-testid="clarify-confirm-flow"] { border-radius: 10px; }
+.clarify-confirm-integrated {
+  max-width: 100%;
+  padding-inline: 10px;
+  font-size: 12px;
+}
+.clarify-confirm-presence {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  /* Include the adjacent 6px flex gap in the animated width. */
+  margin-inline-start: -6px;
+}
+.clarify-confirm-presence__inner {
+  display: inline-flex;
+  flex: 0 0 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding-inline-start: 6px;
+}
+[data-testid="clarify-send-icon"]:hover:not(:disabled),
+[data-testid="clarify-send-label"]:hover:not(:disabled),
+[data-testid="clarify-confirm-flow"]:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow: inset 0 1px 0 #ffffff26, 0 3px 8px rgb(var(--chat-shadow) / .12);
+}
+[data-testid="clarify-send-icon"]:active:not(:disabled),
+[data-testid="clarify-send-label"]:active:not(:disabled),
+[data-testid="clarify-confirm-flow"]:active:not(:disabled) { transform: scale(.97); }
+[data-testid="clarify-send-icon"]:disabled,
+[data-testid="clarify-send-label"]:disabled,
+[data-testid="clarify-confirm-flow"]:disabled {
+  border-color: rgb(var(--c-line));
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-elevated));
+  box-shadow: none;
+  opacity: .7;
+}
+[data-review-composer] button:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .65);
+  outline-offset: 3px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-review-composer] button,
+  [data-review-composer] :deep([data-testid="clarify-input-row"]) { transition: none; }
+  [data-testid="clarify-send-icon"]:active:not(:disabled),
+  [data-testid="clarify-send-label"]:active:not(:disabled),
+  [data-testid="clarify-confirm-flow"]:active:not(:disabled) { transform: none; }
+}
+
 /* Placeholder must wrap to the textarea width — UA default often clips the 2nd line. */
 .composer-hint-wrap::placeholder {
   white-space: pre-wrap;

@@ -3,6 +3,13 @@ const props = defineProps<{ name: string; size?: number | string }>()
 
 const paths: Record<string, string> = {
   dashboard: '<path d="M3 3h8v8H3zM13 3h8v5h-8zM13 12h8v9h-8zM3 13h8v8H3z"/>',
+  'home-start': '<path d="m3.5 10 7.3-6a1.9 1.9 0 0 1 2.4 0l7.3 6"/><path d="M5.5 8.4v10.1A1.5 1.5 0 0 0 7 20h3v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5h3a1.5 1.5 0 0 0 1.5-1.5V8.4"/>',
+  'new-request': '<path d="M12.5 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6.5"/><path d="m15.5 4.5 4 4M10 10l7.3-7.3a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L14 14l-5 1 1-5Z"/>',
+  'pending-chat': '<path d="M8 5h8a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4H9l-5 3V9a4 4 0 0 1 4-4Z"/><path d="M8.5 10h7M8.5 13.5h4.5"/>',
+  'pending-review': '<rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h3"/>',
+  'pending-approval': '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.5 4.7-5"/>',
+  'more-horizontal': '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
+  logout: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m4-12 4 4-4 4m-5-4h11"/>',
   chart: '<path d="M4 19V5M4 19h16M8 17V9M12 17V7M16 17v-5"/>',
   board: '<rect x="3" y="4" width="5" height="16"/><rect x="10" y="4" width="5" height="16"/><rect x="17" y="4" width="4" height="16"/>',
   workflow: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3"/>',
@@ -84,7 +91,7 @@ const paths: Record<string, string> = {
   // Dedicated glyphs for the four workflow-artifact sandbox cards. Shared doc/terminal/globe stay unchanged.
   'stage-ide': '<rect x="3.2" y="3.6" width="17.6" height="16.8" rx="2"/><path d="M3.2 8h17.6"/><path d="M8.2 8v12.4"/><path d="M11 12.2h6"/><path d="M11 15.4h4"/>',
   'stage-terminal': '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2"/><path d="M7.1 9.3 10.3 12 7.1 14.7"/><path d="M12.2 14.8h4.6"/>',
-  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><path d="M12 4c2.1 2.1 3.3 4.9 3.3 8s-1.2 5.9-3.3 8c-2.1-2.1-3.3-4.9-3.3-8s1.2-5.9 3.3-8z"/>',
+  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><ellipse cx="12" cy="12" rx="3.3" ry="8"/>',
   'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
 }
 

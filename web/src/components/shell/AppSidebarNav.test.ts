@@ -231,7 +231,7 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/settings"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/dashboard"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
-    expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('开始')
+    expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('新需求')
     expect(wrapper.text()).not.toContain('待办')
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
     const workspace = wrapper.find('[data-testid="nav-workspace-chrome"]')
@@ -244,6 +244,8 @@ describe('AppSidebarNav', () => {
     ])
     expect(workspace.find('[data-to="/projects"]').text()).toContain('项目')
     expect(wrapper.text()).not.toContain('配置')
+    await wrapper.setProps({ rail: true })
+    expect(workspace.findAll('a.nav-item').map((link) => link.attributes('data-to'))).toEqual(['/dashboard'])
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -943,17 +945,17 @@ describe('AppSidebarNav', () => {
       expect(icon.html()).toContain(glyph)
       expect(row.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
     }
-    expectTypeIcon(rows[3], 'text-n-clarify', 'M21 12a8')
-    expect(rows[3].html()).not.toContain('M12 3l8 4')
-    expectTypeIcon(rows[4], 'text-n-review', 'M21 12a8')
-    expectTypeIcon(rows[5], 'text-warn', 'M12 3l8 4')
-    expect(rows[5].html()).not.toContain('M21 12a8')
+    expectTypeIcon(rows[3], 'nav-row-type-icon--chat', 'M8 5h8')
+    expect(rows[3].html()).not.toContain('m8.5 12')
+    expectTypeIcon(rows[4], 'nav-row-type-icon--review', 'm-6 4')
+    expectTypeIcon(rows[5], 'nav-row-type-icon--approval', 'm8.5 12')
+    expect(rows[5].html()).not.toContain('M8 5h8')
 
     gateMocks.activeInboxKey.value = 'run-c:c'
     routeState.path = '/gates'
     await nextTick()
     expect(rows[3].classes()).toContain('active')
-    expectTypeIcon(rows[3], 'text-n-clarify', 'M21 12a8')
+    expectTypeIcon(rows[3], 'nav-row-type-icon--chat', 'M8 5h8')
 
     gateMocks.activeInboxKey.value = 'run-s:s'
     await nextTick()
