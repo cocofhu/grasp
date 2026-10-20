@@ -53,15 +53,20 @@ describe('takeover opening turn: turns[0].events (auto phase)', () => {
     expect(expandAutoPhase(noise)).toEqual([{ role: 'agent', text: opening, at }])
   })
 
-  it('drops the server narration prefix that repeats the auto phase\'s last message', () => {
-    const events = [ev({ kind: 'message', text: '已确认改动范围' }), ev({ kind: 'tool_call', title: 'Edit', status: 'completed' })]
-    const out = expandAutoPhase([{ role: 'agent', text: `已确认改动范围\n\n---\n${opening}`, at, events }])
-    expect(out.map((t) => t.text)).toEqual(['已确认改动范围', opening])
-    // timeline parts count too
-    const withParts = expandAutoPhase([{ role: 'agent', text: `第二段\n\n---\n${opening}`, at, events: [ev({ kind: 'timeline', parts: [{ kind: 'message', text: '第二段' }, { kind: 'tool', title: 'Bash' }] })] }])
-    expect(withParts[1]!.text).toBe(opening)
-    // a different prefix (not shown above) is kept
-    const other = expandAutoPhase([{ role: 'agent', text: `别的说明\n\n---\n${opening}`, at, events }])
-    expect(other[1]!.text).toBe(`别的说明\n\n---\n${opening}`)
+  it('puts the auto phase span (startedAt / endedAt) on the last auto row only', () => {
+    const span = { startedAt: '2026-10-21T00:00:00Z', endedAt: '2026-10-21T00:01:05Z' }
+    const out = expandAutoPhase([{ role: 'agent', text: opening, at, ...span, events: [
+      ev({ kind: 'message', text: '第一段' }), ev({ kind: 'segment' }),
+      ev({ kind: 'timeline', parts: [{ kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '第二段' }] }),
+    ] }])
+    expect(out.map((t) => [t.startedAt, t.endedAt])).toEqual([[undefined, undefined], [span.startedAt, span.endedAt], [undefined, undefined]])
+    expect(out[2]!.text).toBe(opening)
+  })
+
+  it('shows no span when either end is missing', () => {
+    for (const half of [{ startedAt: '2026-10-21T00:00:00Z' }, { endedAt: '2026-10-21T00:01:05Z' }]) {
+      const out = expandAutoPhase([{ role: 'agent', text: opening, at, ...half, events: [ev({ kind: 'message', text: 'x' })] }])
+      expect(out.every((t) => !t.startedAt && !t.endedAt)).toBe(true)
+    }
   })
 })

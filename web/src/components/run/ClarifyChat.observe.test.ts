@@ -206,4 +206,48 @@ describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () 
     expect(wrapper.findAll('[data-turn-role="agent"]')).toHaveLength(1)
     expect(wrapper.find('[data-testid="agent-tool-group"]').exists()).toBe(false)
   })
+
+  it('the auto-phase fold row shows its duration (turns[0].startedAt / endedAt) in the existing format', () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      turns: [{
+        role: 'agent',
+        text: '已中断自动执行，本节点转为人工接管（不会再自动执行）。',
+        at: '2026-10-21T00:01:06Z',
+        startedAt: '2026-10-21T00:00:00Z',
+        endedAt: '2026-10-21T00:01:05Z',
+        events: [{ t: 1, kind: 'timeline', parts: [{ kind: 'thought', text: '想' }, { kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '改了一半' }] }],
+      }],
+    })
+    const rows = wrapper.findAll('[data-turn-role="agent"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.get('[data-testid="agent-timeline-elapsed-time"]').text()).toBe('用时 1m 5s')
+    expect(rows[1]!.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(false)
+  })
+
+  it('no duration on the fold row when the span is incomplete', () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      turns: [{
+        role: 'agent', text: '已中断自动执行。', at: '2026-10-21T00:01:06Z', startedAt: '2026-10-21T00:00:00Z',
+        events: [{ t: 1, kind: 'timeline', parts: [{ kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '改了一半' }] }],
+      }],
+    })
+    expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(false)
+  })
+
+  it('a slow first manual turn (cold sandbox) keeps the existing busy placeholder, not a blank chat', async () => {
+    const wrapper = mountChat({
+      reviewMode: true,
+      turns: [{ role: 'agent', text: '已中断自动执行。', at: '2026-10-21T00:01:06Z', events: [{ t: 1, kind: 'message', text: '改了一半' }] }],
+    })
+    const vm = wrapper.vm as unknown as { applyReviewFrame: (f: Record<string, unknown>) => void }
+    vm.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: true })
+    vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '主按钮改成保存' } })
+    await flushPromises()
+    // No ACP yet (sandbox still cold-starting): pulse + 思考中… stays up.
+    expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').text()).toContain('思考中')
+  })
 })

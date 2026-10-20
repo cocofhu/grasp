@@ -907,9 +907,12 @@ export interface ClarifyTurn {
   tools?: AgentTool[]
   /** Thought / tool / message steps in order; rendered instead of the rails when set. */
   parts?: AgentPart[]
-  /** Wall clock when this reply started outputting (this page session). */
+  /**
+   * Wall clock when this reply started outputting (this page session). A
+   * takeover's opening turn carries it from the server: the auto phase's start.
+   */
   startedAt?: string
-  /** Wall clock when this reply stopped. */
+  /** Wall clock when this reply stopped (takeover opening turn: when the takeover took effect). */
   endedAt?: string
   /**
    * Aggregated ACP timeline behind this turn (prompt stripped). Today only the

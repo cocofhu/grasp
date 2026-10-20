@@ -30,37 +30,27 @@ export function autoPhaseRows(turn: ClarifyTurn): ClarifyTurn[] {
   return rows
 }
 
-/** Last message text the auto-phase rows show (rail text or timeline message part). */
-function lastAutoMessage(rows: readonly ClarifyTurn[]): string {
-  for (let i = rows.length - 1; i >= 0; i--) {
-    const row = rows[i]!
-    const parts = row.parts || []
-    for (let j = parts.length - 1; j >= 0; j--) {
-      if (parts[j]!.kind === 'message' && parts[j]!.text?.trim()) return parts[j]!.text!.trim()
-    }
-    if (row.text.trim()) return row.text.trim()
-  }
-  return ''
+/**
+ * The auto phase's span from the opening turn (startedAt = this visit's start,
+ * endedAt = when the takeover took effect). Both or nothing: a half span
+ * would draw no duration anyway.
+ */
+function autoPhaseSpan(turn: ClarifyTurn): { startedAt: string; endedAt: string } | null {
+  return turn.startedAt && turn.endedAt ? { startedAt: turn.startedAt, endedAt: turn.endedAt } : null
 }
 
 /**
- * The server prefixes the opening text with the auto phase's last message
- * ("<last message>\n\n---\n<opening>"). With the timeline drawn above, that
- * prefix is a duplicate: keep only the opening.
+ * turns with an opening auto-phase timeline expanded in front of the takeover
+ * notice. With events the server sends the notice alone (no narration
+ * prefix). The span goes on the last auto row, so its fold row shows the
+ * duration in the existing format (AgentTimeline elapsed line).
  */
-function dropRepeatedNarration(text: string, rows: readonly ClarifyTurn[]): string {
-  const cut = text.indexOf('\n\n---\n')
-  if (cut < 0) return text
-  const last = lastAutoMessage(rows)
-  return last && text.slice(0, cut).trim() === last ? text.slice(cut + 6) : text
-}
-
-/** turns with an opening auto-phase timeline expanded in front of the narration. */
 export function expandAutoPhase(turns: readonly ClarifyTurn[]): ClarifyTurn[] {
   const first = turns[0]
   if (!first || first.role !== 'agent' || !first.events?.length) return turns as ClarifyTurn[]
-  const { events: _events, ...opening } = first
+  const { events: _events, startedAt: _startedAt, endedAt: _endedAt, ...opening } = first
   const rows = autoPhaseRows(first)
-  if (rows.length) opening.text = dropRepeatedNarration(opening.text, rows)
+  const span = autoPhaseSpan(first)
+  if (span && rows.length) Object.assign(rows[rows.length - 1]!, span)
   return [...rows, opening, ...turns.slice(1)]
 }
