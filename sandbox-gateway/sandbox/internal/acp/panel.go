@@ -17,11 +17,11 @@ type PermissionChooser func(ctx context.Context, rpcID json.RawMessage, rawParam
 
 // ConfigOption 对应 ACP SessionConfigOption（select 类型）。
 type ConfigOption struct {
-	ID           string               `json:"id"`
-	CurrentValue string               `json:"currentValue"`
-	Category     string               `json:"category,omitempty"`
-	Options      []ConfigOptionValue  `json:"options,omitempty"`
-	Groups       []ConfigOptionGroup  `json:"groups,omitempty"`
+	ID           string              `json:"id"`
+	CurrentValue string              `json:"currentValue"`
+	Category     string              `json:"category,omitempty"`
+	Options      []ConfigOptionValue `json:"options,omitempty"`
+	Groups       []ConfigOptionGroup `json:"groups,omitempty"`
 }
 
 // ConfigOptionValue 对应 ACP SessionConfigSelectOption（平铺 options）。
@@ -231,7 +231,6 @@ func countOptions(opt ConfigOption) int {
 	}
 	return n
 }
-
 
 func (p *Panel) emit(ev map[string]any) {
 	if p.OnEvent == nil {
