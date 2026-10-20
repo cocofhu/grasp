@@ -158,6 +158,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 
 		api.GET("/runs", h.ListRuns)
 		api.GET("/runs/:id", h.GetRun)
+		api.GET("/runs/:id/conversation-chain", h.ConversationChain)
 		api.DELETE("/runs/:id", h.DeleteRun)
 		api.POST("/runs/:id/cancel", h.CancelRun)
 		api.POST("/runs/:id/resume", h.ResumeRun)
