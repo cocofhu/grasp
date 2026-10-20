@@ -31,7 +31,7 @@ const { t } = useI18n()
     ]"
     data-testid="clarify-demo-frame"
   >
-    <div class="flex items-center gap-1.5 border-b border-line px-2 py-1 text-[10px] text-txt3">
+    <div class="flex shrink-0 items-center gap-1.5 border-b border-line px-2 py-1 text-[10px] text-txt3">
       <span class="min-w-0 flex-1 truncate font-medium text-txt2" data-testid="clarify-demo-label">{{ label }}</span>
       <span
         v-if="selected"
@@ -41,11 +41,13 @@ const { t } = useI18n()
       <button
         v-if="enlargeable"
         type="button"
-        class="inline-flex shrink-0 items-center gap-0.5 whitespace-nowrap rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+        class="inline-flex shrink-0 items-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
         data-testid="clarify-demo-enlarge"
+        :aria-label="t('pages.clarify.demoEnlarge')"
+        :title="t('pages.clarify.demoEnlarge')"
         @click.stop="emit('enlarge')"
       >
-        <Icon name="expand" :size="11" />{{ t('pages.clarify.demoEnlarge') }}
+        <Icon name="expand" :size="11" aria-hidden="true" />
       </button>
     </div>
     <HtmlPreview :html="html" mode="demo" :enlargeable="false" :modal-title="label" />
@@ -53,7 +55,16 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
+.clarify-demo-expanded {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  flex-direction: column;
+}
 .clarify-demo-expanded :deep(iframe) {
-  height: 70vh;
+  flex: 1 1 auto;
+  width: 100%;
+  height: auto;
+  min-height: 0;
 }
 </style>

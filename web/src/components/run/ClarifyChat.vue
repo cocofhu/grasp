@@ -18,10 +18,14 @@ import { createClarifyChatAnchors } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
 import {
+  clampDemoWindow,
   isClarifyDemoEscapeMessage,
+  moveDemoWindow,
   placeClarifyDemoWindow,
+  resizeDemoWindow,
   withDemoEscapeBridge,
   type DemoWindowBox,
+  type DemoWindowEdge,
 } from '@/lib/inbox/clarifyDemoWindow'
 import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
@@ -232,6 +236,7 @@ const {
   latestQuestions,
   latestQuestionAnswered,
   displayTurns,
+  outputBounds,
   attachNotice,
   sel,
   other,
@@ -367,6 +372,10 @@ const previewFocus = ref<PreviewFocus | null>(null)
 const chatRoot = ref<HTMLElement | null>(null)
 const demoWindowEl = ref<HTMLElement | null>(null)
 const demoBox = ref<DemoWindowBox | null>(null)
+/** True after the title bar or an edge has actually moved this open. */
+const demoUserAdjusted = ref(false)
+let demoPointerCleanup: (() => void) | null = null
+const demoResizeEdges: DemoWindowEdge[] = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw']
 const demoWindowTitleId = `clarify-demo-window-title-${useId().replace(/:/g, '')}`
 
 function hasDemoHtml(o: { demoHtml?: string } | undefined): boolean {
@@ -412,14 +421,114 @@ const demoWindowStyle = computed(() => {
   }
 })
 
+function viewportSize() {
+  return {
+    w: window.innerWidth || document.documentElement?.clientWidth || 0,
+    h: window.innerHeight || document.documentElement?.clientHeight || 0,
+  }
+}
+
 function layoutDemoWindow() {
-  const rect = chatRoot.value?.getBoundingClientRect()
-  const vw = window.innerWidth || document.documentElement?.clientWidth || 0
-  const vh = window.innerHeight || document.documentElement?.clientHeight || 0
-  demoBox.value = placeClarifyDemoWindow(
-    { w: vw, h: vh },
-    { x: rect?.left ?? 0, y: rect?.top ?? 0, w: rect?.width ?? 0, h: rect?.height ?? 0 },
-  )
+  const viewport = viewportSize()
+  if (demoUserAdjusted.value && demoBox.value) {
+    demoBox.value = clampDemoWindow(demoBox.value, viewport)
+    return
+  }
+  demoBox.value = placeClarifyDemoWindow(viewport)
+}
+
+function stopDemoPointer() {
+  demoPointerCleanup?.()
+  demoPointerCleanup = null
+}
+
+function trackDemoPointer(pointerId: number, onMove: (event: PointerEvent) => void) {
+  stopDemoPointer()
+  const move = (event: PointerEvent) => {
+    if (event.pointerId !== pointerId) return
+    onMove(event)
+  }
+  const up = (event: PointerEvent) => {
+    if (event.pointerId !== pointerId) return
+    stopDemoPointer()
+  }
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', up)
+  demoPointerCleanup = () => {
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', up)
+  }
+}
+
+function capturePointer(event: PointerEvent) {
+  const host = event.currentTarget
+  if (!(host instanceof HTMLElement) || typeof host.setPointerCapture !== 'function') return
+  try {
+    host.setPointerCapture(event.pointerId)
+  } catch {
+    /* Detached nodes and some test DOMs reject capture. */
+  }
+}
+
+function onTitlePointerDown(event: PointerEvent) {
+  if (event.button !== 0) return
+  const target = event.target
+  if (target instanceof Element && target.closest('[data-testid="clarify-demo-window-close"]')) return
+  const origin = demoBox.value
+  if (!origin) return
+  event.preventDefault()
+  capturePointer(event)
+  const startX = event.clientX
+  const startY = event.clientY
+  trackDemoPointer(event.pointerId, (ev) => {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (dx === 0 && dy === 0) return
+    demoUserAdjusted.value = true
+    demoBox.value = moveDemoWindow(origin, dx, dy, viewportSize())
+  })
+}
+
+function onResizePointerDown(edge: DemoWindowEdge, event: PointerEvent) {
+  if (event.button !== 0) return
+  const origin = demoBox.value
+  if (!origin) return
+  event.preventDefault()
+  event.stopPropagation()
+  capturePointer(event)
+  const startX = event.clientX
+  const startY = event.clientY
+  trackDemoPointer(event.pointerId, (ev) => {
+    const dx = ev.clientX - startX
+    const dy = ev.clientY - startY
+    if (dx === 0 && dy === 0) return
+    demoUserAdjusted.value = true
+    demoBox.value = resizeDemoWindow(origin, edge, dx, dy, viewportSize())
+  })
+}
+
+function resizeHandleClass(edge: DemoWindowEdge): string {
+  const base = 'absolute z-20 touch-none'
+  switch (edge) {
+    case 'n':
+      return `${base} inset-x-3 top-0 h-2 cursor-ns-resize`
+    case 's':
+      return `${base} inset-x-3 bottom-0 h-2 cursor-ns-resize`
+    case 'e':
+      return `${base} inset-y-3 right-0 w-2 cursor-ew-resize`
+    case 'w':
+      return `${base} inset-y-3 left-0 w-2 cursor-ew-resize`
+    case 'nw':
+      return `${base} left-0 top-0 h-3 w-3 cursor-nwse-resize`
+    case 'ne':
+      return `${base} right-0 top-0 h-3 w-3 cursor-nesw-resize`
+    case 'sw':
+      return `${base} bottom-0 left-0 h-3 w-3 cursor-nesw-resize`
+    case 'se':
+      return `${base} bottom-0 right-0 h-3 w-3 cursor-nwse-resize`
+  }
 }
 
 function onDemoKeydown(event: KeyboardEvent) {
@@ -451,16 +560,20 @@ function detachDemoWindowListeners() {
   window.removeEventListener('resize', onDemoWindowResize)
 }
 
-/** Open this one frame. A later open replaces the same window. */
+/** Open this one frame. A later open replaces the content and keeps a user-moved box. */
 function openPreviewFocus(q: ReactQuestion, optionId: string, readonly: boolean, turnIndex: number) {
   const option = q.options.find((o) => o.id === optionId)
   if (!hasDemoHtml(option)) return
+  const alreadyOpen = showDemoWindow.value
   previewFocus.value = { question: q, optionId, readonly, turnIndex }
   if (embedDemoPreview) {
     embedDemoPreview.open(option!.demoHtml || '', option!.label)
     return
   }
-  layoutDemoWindow()
+  if (!alreadyOpen) {
+    demoUserAdjusted.value = false
+    layoutDemoWindow()
+  }
 }
 
 function closePreviewFocus() {
@@ -478,10 +591,13 @@ watch(
 
 watch(showDemoWindow, (open) => {
   if (!open) {
+    stopDemoPointer()
     detachDemoWindowListeners()
+    demoBox.value = null
+    demoUserAdjusted.value = false
     return
   }
-  layoutDemoWindow()
+  if (!demoBox.value) layoutDemoWindow()
   attachDemoWindowListeners()
   void nextTick(() => {
     demoWindowEl.value?.querySelector<HTMLElement>('[data-testid="clarify-demo-window-close"]')?.focus()
@@ -490,6 +606,7 @@ watch(showDemoWindow, (open) => {
 
 /** The newest request keeps only a loading headline until the agent stops working on it. */
 onBeforeUnmount(() => {
+  stopDemoPointer()
   detachDemoWindowListeners()
   if (previewFocus.value) closePreviewFocus()
 })
@@ -759,6 +876,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :completed="showTurnCompleted(t)"
               :interrupted="!!t.interrupted"
               :run-id="runId"
+              :started-at="outputBounds(i).startedAt"
+              :ended-at="outputBounds(i).endedAt"
               message-test-id="clarify-agent-message"
               @reveal="scrollBottom()"
             >
@@ -849,15 +968,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :live-ref="liveCards.full.get(i)!"
               agent
             />
-            <!-- Restrained completion footnote (Demo); never for interrupted/error -->
-            <div
-              v-if="showTurnCompleted(t)"
-              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
-              data-testid="clarify-turn-completed"
-            >
-              <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
-              <span>{{ relTime(t.at) }}</span>
-            </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div
@@ -927,11 +1037,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                           <button
                             v-if="hasDemoHtml(o)"
                             type="button"
-                            class="inline-flex shrink-0 items-center gap-0.5 self-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+                            class="inline-flex shrink-0 items-center self-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
                             data-testid="clarify-option-enlarge"
+                            :aria-label="translate('pages.clarify.demoEnlarge')"
+                            :title="translate('pages.clarify.demoEnlarge')"
                             @click="openPreviewFocus(curQuestion, o.id, false, i)"
                           >
-                            <Icon name="expand" :size="11" />{{ translate('pages.clarify.demoEnlarge') }}
+                            <Icon name="expand" :size="11" aria-hidden="true" />
                           </button>
                         </div>
                       </div>
@@ -1070,11 +1182,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     >✓ {{ translate('pages.clarify.demoSelected') }}</span>
                     <button
                       type="button"
-                      class="inline-flex shrink-0 items-center gap-0.5 rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+                      class="inline-flex shrink-0 items-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
                       data-testid="clarify-option-enlarge"
+                      :aria-label="translate('pages.clarify.demoEnlarge')"
+                      :title="translate('pages.clarify.demoEnlarge')"
                       @click="openPreviewFocus(q, o.id, true, i)"
                     >
-                      <Icon name="expand" :size="11" />{{ translate('pages.clarify.demoEnlarge') }}
+                      <Icon name="expand" :size="11" aria-hidden="true" />
                     </button>
                   </div>
                 </div>
@@ -1444,26 +1558,39 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       data-testid="clarify-demo-window"
       :style="demoWindowStyle"
     >
-      <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line px-5">
+      <div
+        v-for="edge in demoResizeEdges"
+        :key="edge"
+        :class="resizeHandleClass(edge)"
+        :data-testid="`clarify-demo-window-resize-${edge}`"
+        @pointerdown="onResizePointerDown(edge, $event)"
+      />
+      <div
+        class="relative z-10 flex h-14 shrink-0 cursor-grab select-none items-center gap-2 border-b border-line px-5 active:cursor-grabbing"
+        data-testid="clarify-demo-window-titlebar"
+        @pointerdown="onTitlePointerDown"
+      >
         <div :id="demoWindowTitleId" class="min-w-0 flex-1 truncate text-[15px] font-semibold text-txt">
           {{ focusedTitle }}
         </div>
         <button
           type="button"
-          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt"
+          class="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt"
           data-testid="clarify-demo-window-close"
+          @pointerdown.stop
           @click="closePreviewFocus"
         >
           <Icon name="close" :size="18" />
         </button>
       </div>
-      <div class="min-h-0 flex-1 overflow-y-auto p-4">
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
-          class="min-w-0"
+          class="flex min-h-0 min-w-0 flex-1 flex-col"
           :data-preview-option="focusedOption.id"
           data-testid="clarify-preview-wall"
         >
           <ClarifyDemoFrame
+            class="min-h-0 flex-1"
             :label="focusedOption.label"
             :html="windowDemoHtml"
             :highlighted="focusedHighlighted"

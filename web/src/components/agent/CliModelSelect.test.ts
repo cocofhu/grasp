@@ -217,3 +217,42 @@ describe('CliModelSelect panel', () => {
     expect(q('[data-testid="cli-model-inline-detail"]')!.textContent).toContain('--model gpt-5')
   })
 })
+
+const cursorTiers: CliCatalogModel[] = [
+  { id: 'grok-4.7-xhigh', name: 'Grok 4.7 Extra High', vendor: 'xai' },
+  { id: 'grok-4.7-medium', name: 'Grok 4.7 Medium', vendor: 'xai' },
+  { id: 'composer-2.5-fast', name: 'Composer 2.5 Fast', vendor: 'cursor', tags: ['fast'] },
+  { id: 'claude-opus-5-5-medium', name: 'Claude Opus 5.5 1M', vendor: 'anthropic', context: 1000, recommended: true },
+]
+
+describe('CliModelSelect listed Cursor ids', () => {
+  it('shows Grok 4.7 Extra High and the cursor-agent flag', async () => {
+    mocks.load.mockResolvedValue(cursorTiers)
+    const w = await mountSelect({ modelValue: 'grok-4.7-xhigh' })
+    const text = w.get('[data-testid="cli-model-trigger"]').text()
+    expect(text).toContain('Grok 4.7 Extra High')
+    expect(text).toContain('grok-4.7-xhigh')
+    expect(text).not.toContain('不在内置清单中')
+    expect(w.get('[data-testid="cli-model-trigger"]').classes()).not.toContain('border-warn/60')
+    expect(w.get('[data-testid="cli-model-command"]').text()).toContain('cursor-agent --model grok-4.7-xhigh')
+  })
+
+  it('finds the tier by id or name, and hides the custom row on an exact id', async () => {
+    mocks.load.mockResolvedValue(cursorTiers)
+    const w = await mountSelect()
+    await openPanel(w)
+    await typeQuery('grok-4.7-xhigh')
+    expect(q('[data-testid="cli-model-option-grok-4.7-xhigh"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-option-typed"]')).toBeNull()
+    await typeQuery('Grok 4.7 Extra High')
+    expect(q('[data-testid="cli-model-option-grok-4.7-xhigh"]')).not.toBeNull()
+    await typeQuery('')
+    q('[data-testid="cli-model-vendor-xai"]')!.click()
+    await flushPromises()
+    expect(q('[data-testid="cli-model-option-grok-4.7-xhigh"]')).not.toBeNull()
+    expect(q('[data-testid="cli-model-option-composer-2.5-fast"]')).toBeNull()
+    q('[data-testid="cli-model-option-grok-4.7-xhigh"]')!.click()
+    await flushPromises()
+    expect(w.emitted('update:modelValue')?.[0]).toEqual(['grok-4.7-xhigh'])
+  })
+})

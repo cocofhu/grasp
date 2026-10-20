@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineComponent } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
@@ -23,7 +26,7 @@ function mountFrame(props: { label: string; html: string; highlighted?: boolean;
     props,
     global: {
       plugins: [i18n],
-      stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+      stubs: { HtmlPreview: HtmlPreviewStub },
     },
   })
 }
@@ -38,7 +41,11 @@ describe('ClarifyDemoFrame', () => {
     expect(root.classes()).toContain('rounded-lg')
     expect(root.classes()).not.toContain('rounded-none')
     const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
-    expect(enlarge.text()).toContain('放大')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.text()).not.toContain('Enlarge')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    expect(enlarge.attributes('title')).toBe('放大')
+    expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
     const preview = wrapper.get('[data-testid="html-preview"]')
     expect(preview.attributes('data-mode')).toBe('demo')
     expect(preview.attributes('data-enlargeable')).toBe('0')
@@ -56,7 +63,7 @@ describe('ClarifyDemoFrame', () => {
             messages: { 'zh-CN': { ...common, ...pages } },
           }),
         ],
-        stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+        stubs: { HtmlPreview: HtmlPreviewStub },
       },
     })
     expect(wrapper.find('[data-testid="clarify-demo-enlarge"]').exists()).toBe(false)
@@ -93,8 +100,8 @@ describe('ClarifyDemoFrame', () => {
     expect(name.element.contains(selected.element)).toBe(false)
     const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
     expect(enlarge.classes()).toContain('shrink-0')
-    expect(enlarge.classes()).toContain('whitespace-nowrap')
-    expect(enlarge.text()).toContain('放大')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
     wrapper.unmount()
   })
 
@@ -108,5 +115,15 @@ describe('ClarifyDemoFrame', () => {
     expect(wrapper.text()).toMatch(/已选|✓/)
     expect(wrapper.get('[data-testid="clarify-demo-frame"]').classes()).toContain('border-accent')
     wrapper.unmount()
+  })
+
+  it('fills the expanded preview and leaves the inline demo height at 140px', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const frameSrc = readFileSync(join(here, 'ClarifyDemoFrame.vue'), 'utf8')
+    const previewSrc = readFileSync(join(here, '../ui/HtmlPreview.vue'), 'utf8')
+    expect(frameSrc).not.toContain('70vh')
+    expect(frameSrc).toContain('height: 100%')
+    expect(frameSrc).toContain('height: auto')
+    expect(previewSrc).toContain('h-[140px]')
   })
 })

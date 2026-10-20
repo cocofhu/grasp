@@ -114,7 +114,7 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByText('四阶段正文输出。')).toBeVisible()
     await expect(page.getByTestId('clarify-busy-status')).toHaveCount(0)
     await expect(page.getByTestId('clarify-stream-caret')).toHaveCount(0)
-    await expect(page.getByTestId('clarify-turn-completed')).toContainText('已完成')
+    await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
     // Thought default-collapsed after message / done.
     await expect(page.getByTestId('clarify-thought')).not.toHaveAttribute('open')
     await page.screenshot({ path: path.join(shotDir, '08-clarify-four-phase-done.png'), fullPage: true })

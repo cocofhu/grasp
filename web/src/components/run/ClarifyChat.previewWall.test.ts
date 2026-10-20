@@ -25,6 +25,12 @@ const HtmlPreviewStub = defineComponent({
     '<div data-testid="html-preview" :data-mode="mode" :data-enlargeable="enlargeable ? \'1\' : \'0\'">{{ html }}</div>',
 })
 
+const IconStub = defineComponent({
+  name: 'Icon',
+  props: { name: String, size: [Number, String] },
+  template: '<svg class="app-icon" :data-icon="name" :width="size" :height="size" />',
+})
+
 function mountChat(turns: ClarifyTurn[], provide?: Record<symbol, unknown>) {
   const i18n = createI18n({
     legacy: false,
@@ -43,7 +49,7 @@ function mountChat(turns: ClarifyTurn[], provide?: Record<symbol, unknown>) {
     attachTo: document.body,
     global: {
       plugins: [i18n],
-      stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+      stubs: { Icon: IconStub, HtmlPreview: HtmlPreviewStub },
       provide,
     },
   })
@@ -74,6 +80,15 @@ function wallPreviews(): HTMLElement[] {
 
 function dialog(): HTMLElement | null {
   return document.body.querySelector('[role="dialog"]')
+}
+
+function mockViewport(w: number, h: number) {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(w)
+  vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(h)
+}
+
+function pointer(target: EventTarget, type: 'pointerdown' | 'pointermove' | 'pointerup', x: number, y: number) {
+  target.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1 }))
 }
 
 function scrollerPreviews(wrapper: ReturnType<typeof mountChat>): HTMLElement[] {
@@ -137,6 +152,16 @@ describe('ClarifyChat option preview window', () => {
     expect(scroller.contains(wall.element)).toBe(true)
     expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(3)
     expect(wrapper.findAll('[data-testid="clarify-demo-enlarge"]')).toHaveLength(3)
+    for (const enlarge of [
+      ...wrapper.findAll('[data-testid="clarify-option-enlarge"]'),
+      ...wrapper.findAll('[data-testid="clarify-demo-enlarge"]'),
+    ]) {
+      expect(enlarge.text()).not.toContain('放大')
+      expect(enlarge.text()).not.toContain('Enlarge')
+      expect(enlarge.attributes('aria-label')).toBe('放大')
+      expect(enlarge.attributes('title')).toBe('放大')
+      expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
+    }
     expect(wrapper.text()).toContain('纯文字')
     expect(wrapper.text()).toContain('空白')
     expect(dialog()).toBeNull()
@@ -276,7 +301,12 @@ describe('ClarifyChat option preview window', () => {
     ])
     expect(inline[1]!.text()).toContain('已选')
 
-    await history[2]!.get('[data-testid="clarify-option-enlarge"]').trigger('click')
+    const historyEnlarge = history[2]!.get('[data-testid="clarify-option-enlarge"]')
+    expect(historyEnlarge.text()).not.toContain('放大')
+    expect(historyEnlarge.text()).not.toContain('Enlarge')
+    expect(historyEnlarge.attributes('aria-label')).toBe('放大')
+    expect(historyEnlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
+    await historyEnlarge.trigger('click')
     await flushPromises()
     expect(wallPreviews()).toHaveLength(1)
     expect(wallPreviews()[0]?.textContent).toContain('old-c')
@@ -333,7 +363,7 @@ describe('ClarifyChat option preview window', () => {
     wrapper.unmount()
   })
 
-  it('closes from the header and Escape without clearing the choice or covering the chat', async () => {
+  it('closes from the header and Escape without clearing the choice or adding a page mask', async () => {
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
@@ -365,9 +395,10 @@ describe('ClarifyChat option preview window', () => {
     const box = dialog()!
     expect(box.className).not.toContain('inset-0')
     expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
-    const left = Number.parseFloat(box.style.left)
-    const width = Number.parseFloat(box.style.width)
-    expect(left + width).toBeLessThanOrEqual(860)
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
     expect(box.contains(wrapper.get('[data-testid="clarify-inline-demos"]').element)).toBe(false)
     ;(document.body.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLButtonElement).click()
     await flushPromises()
@@ -407,6 +438,170 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     expect(dialog()).toBeNull()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    wrapper.unmount()
+  })
+
+  it('drags from the title bar, resizes from the edges, and restores the default box on reopen', async () => {
+    const wrapper = mountChat([agent([threeUp])])
+    await flushPromises()
+    mockViewport(1280, 900)
+    await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await flushPromises()
+
+    const box = dialog()!
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+    expect(box.textContent).toContain('窗口放大查看')
+    expect(box.textContent).toContain('方案 C')
+    expect(box.querySelector('[data-testid="clarify-demo-frame"]')?.className).toContain('clarify-demo-expanded')
+    expect(box.querySelector('[data-testid="clarify-preview-wall"]')?.className).toContain('flex-1')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    const title = box.querySelector('[data-testid="clarify-demo-window-titlebar"]') as HTMLElement
+    expect(title.className).toContain('cursor-grab')
+    pointer(title, 'pointerdown', 40, 40)
+    pointer(window, 'pointermove', 60, 60)
+    pointer(window, 'pointerup', 60, 60)
+    await flushPromises()
+    expect(box.style.left).toBe('48px')
+    expect(box.style.top).toBe('48px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    pointer(window, 'pointermove', 900, 900)
+    await flushPromises()
+    expect(box.style.left).toBe('48px')
+    expect(box.style.width).toBe('1224px')
+
+    pointer(title, 'pointerdown', 200, 80)
+    pointer(window, 'pointermove', 900, 700)
+    pointer(window, 'pointerup', 900, 700)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.top).toBe('56px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+
+    const close = box.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLElement
+    pointer(close, 'pointerdown', 1200, 40)
+    pointer(window, 'pointermove', 400, 400)
+    pointer(window, 'pointerup', 400, 400)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.top).toBe('56px')
+    expect(dialog()).toBeTruthy()
+
+    const east = box.querySelector('[data-testid="clarify-demo-window-resize-e"]') as HTMLElement
+    pointer(east, 'pointerdown', 1280, 200)
+    pointer(window, 'pointermove', 1180, 200)
+    pointer(window, 'pointerup', 1180, 200)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.width).toBe('1124px')
+    expect(box.style.height).toBe('844px')
+
+    const south = box.querySelector('[data-testid="clarify-demo-window-resize-s"]') as HTMLElement
+    pointer(south, 'pointerdown', 400, 900)
+    pointer(window, 'pointermove', 400, 780)
+    pointer(window, 'pointerup', 400, 780)
+    await flushPromises()
+    expect(box.style.top).toBe('56px')
+    expect(box.style.height).toBe('724px')
+    expect(box.style.width).toBe('1124px')
+
+    const west = box.querySelector('[data-testid="clarify-demo-window-resize-w"]') as HTMLElement
+    const right = 56 + 1124
+    pointer(west, 'pointerdown', 56, 200)
+    pointer(window, 'pointermove', 156, 200)
+    pointer(window, 'pointerup', 156, 200)
+    await flushPromises()
+    expect(Number.parseFloat(box.style.left) + Number.parseFloat(box.style.width)).toBe(right)
+    expect(box.style.left).toBe('156px')
+    expect(box.style.width).toBe('1024px')
+
+    const north = box.querySelector('[data-testid="clarify-demo-window-resize-n"]') as HTMLElement
+    const bottom = 56 + 724
+    pointer(north, 'pointerdown', 400, 56)
+    pointer(window, 'pointermove', 400, 136)
+    pointer(window, 'pointerup', 400, 136)
+    await flushPromises()
+    expect(Number.parseFloat(box.style.top) + Number.parseFloat(box.style.height)).toBe(bottom)
+    expect(box.style.top).toBe('136px')
+    expect(box.style.height).toBe('644px')
+
+    const corner = box.querySelector('[data-testid="clarify-demo-window-resize-se"]') as HTMLElement
+    pointer(corner, 'pointerdown', 1180, 780)
+    pointer(window, 'pointermove', 200, 200)
+    pointer(window, 'pointerup', 200, 200)
+    await flushPromises()
+    expect(box.style.left).toBe('156px')
+    expect(box.style.top).toBe('136px')
+    expect(Number.parseFloat(box.style.width)).toBeGreaterThanOrEqual(480)
+    expect(Number.parseFloat(box.style.height)).toBeGreaterThanOrEqual(320)
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    const held = {
+      left: box.style.left,
+      top: box.style.top,
+      width: box.style.width,
+      height: box.style.height,
+    }
+    await wrapper.get('[data-testid="clarify-inline-demos"]').findAll('[data-testid="clarify-demo-enlarge"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(wallPreviews()[0]?.textContent).toContain('preview-b')
+    expect(box.style.left).toBe(held.left)
+    expect(box.style.top).toBe(held.top)
+    expect(box.style.width).toBe(held.width)
+    expect(box.style.height).toBe(held.height)
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    mockViewport(1000, 700)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(box.style.width).not.toBe('944px')
+    expect(Number.parseFloat(box.style.left) + Number.parseFloat(box.style.width)).toBeLessThanOrEqual(1000)
+    expect(Number.parseFloat(box.style.top) + Number.parseFloat(box.style.height)).toBeLessThanOrEqual(700)
+    expect(Number.parseFloat(box.style.left)).toBeGreaterThanOrEqual(0)
+    expect(Number.parseFloat(box.style.top)).toBeGreaterThanOrEqual(0)
+
+    ;(box.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(dialog()).toBeNull()
+
+    mockViewport(1280, 900)
+    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await flushPromises()
+    const reopened = dialog()!
+    expect(reopened.style.left).toBe('28px')
+    expect(reopened.style.top).toBe('28px')
+    expect(reopened.style.width).toBe('1224px')
+    expect(reopened.style.height).toBe('844px')
+    expect(reopened.textContent).toContain('窗口放大查看')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(scrollerPreviews(wrapper)).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('recomputes the centered default when the viewport changes before a drag', async () => {
+    const wrapper = mountChat([agent([threeUp])])
+    await flushPromises()
+    mockViewport(1280, 900)
+    await wrapper.find('[data-testid="clarify-option-enlarge"]').trigger('click')
+    await flushPromises()
+    expect(dialog()?.style.width).toBe('1224px')
+
+    mockViewport(390, 900)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(dialog()?.style.left).toBe('28px')
+    expect(dialog()?.style.top).toBe('28px')
+    expect(dialog()?.style.width).toBe('334px')
+    expect(dialog()?.style.height).toBe('844px')
     wrapper.unmount()
   })
 
@@ -585,20 +780,6 @@ describe('ClarifyChat option preview window', () => {
     expect(summary.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
     expect(summary.get('[data-testid="html-preview"]').text()).toContain('preview-flow')
 
-    const root = wrapper.get('[data-review-composer]').element
-    vi.spyOn(root, 'getBoundingClientRect').mockReturnValue({
-      x: 860,
-      y: 0,
-      width: 420,
-      height: 900,
-      left: 860,
-      top: 0,
-      right: 1280,
-      bottom: 900,
-      toJSON() {
-        return {}
-      },
-    } as DOMRect)
     vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
     vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(900)
 
@@ -614,7 +795,10 @@ describe('ClarifyChat option preview window', () => {
     const scroller = wrapper.get('[data-testid="clarify-scroller"]').element
     expect(scroller.contains(dialog())).toBe(false)
     const box = dialog()!
-    expect(Number.parseFloat(box.style.left) + Number.parseFloat(box.style.width)).toBeLessThanOrEqual(860)
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
 
     await frames[1]!.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
     await flushPromises()

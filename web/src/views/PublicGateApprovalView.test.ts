@@ -250,9 +250,11 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     const tl = w.get('[data-testid="agent-timeline"]')
     expect(Array.from(tl.element.children).map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-thought', 'agent-tool-group', 'clarify-agent-message',
+      'agent-timeline-elapsed', 'agent-timeline-rule', 'clarify-agent-message',
     ])
     expect(w.findAll('[data-testid="agent-timeline"]')).toHaveLength(1)
+    expect(w.get('[data-testid="clarify-agent-message"]').text()).toContain('改好了')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
     await w.get('[data-testid="agent-tool-group-head"]').trigger('click')
     expect(w.find('[data-testid="agent-tool-summary"]').exists()).toBe(false)
     expect(w.find('[data-testid="agent-tool-row-toggle"]').exists()).toBe(false)
@@ -1793,7 +1795,12 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toContain('跳过本轮提问')
     expect(w.get('[data-testid="clarify-scroller"]').element.querySelector('[data-testid="html-preview"]')).toBeNull()
     expect(w.get('[data-testid="clarify-scroller"]').text()).not.toContain('title-preview')
-    expect(w.get('[data-testid="clarify-option-enlarge"]').text()).toContain('放大')
+    const enlarge = w.get('[data-testid="clarify-option-enlarge"]')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.text()).not.toContain('Enlarge')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    expect(enlarge.attributes('title')).toBe('放大')
+    expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
 
     const next = w.findAll('button').find((b) => b.text().includes('下一个'))
     expect(next).toBeTruthy()

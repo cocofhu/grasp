@@ -903,6 +903,10 @@ export interface ClarifyTurn {
   tools?: AgentTool[]
   /** Thought / tool / message steps in order; rendered instead of the rails when set. */
   parts?: AgentPart[]
+  /** Wall clock when this reply started outputting (this page session). */
+  startedAt?: string
+  /** Wall clock when this reply stopped. */
+  endedAt?: string
 }
 
 /** One tool call shown in the folded tool row of an agent turn. */

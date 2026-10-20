@@ -20,23 +20,14 @@ test.describe('ClarifyChat 完成态相对时间单通道', () => {
     await page.getByTestId('sim-four-phase-complete').click()
     await expect(page.getByText('四阶段正文输出。')).toBeVisible()
 
-    const completed = page.getByTestId('clarify-turn-completed')
-    await expect(completed).toBeVisible()
-    await expect(completed).toContainText('已完成')
-    await expect(completed).toContainText('刚刚')
-    const footerText = await completed.innerText()
-    expect(footerText.match(/刚刚/g)?.length ?? 0).toBe(1)
+    await expect(page.getByTestId('clarify-turn-completed')).toHaveCount(0)
 
-    // Agent completed turn must not render bottom time; human turn still may.
+    // Agent completed turn has no bottom time; the human turn still may.
     const bottomTimes = page.getByTestId('clarify-turn-bottom-time')
     await expect(bottomTimes).toHaveCount(1)
 
-    // Within the completed agent column, only the footer channel shows 刚刚
-    const agentMsg = page.getByTestId('clarify-agent-message')
-    await expect(agentMsg).toBeVisible()
-    const agentColumn = agentMsg.locator(
-      'xpath=ancestor::*[.//*[@data-testid="clarify-turn-completed"]][1]',
-    )
+    const agentColumn = page.locator('[data-turn-role="agent"]')
+    await expect(agentColumn.getByTestId('clarify-agent-message')).toBeVisible()
     await expect(agentColumn.getByTestId('clarify-turn-bottom-time')).toHaveCount(0)
 
     await page.screenshot({
