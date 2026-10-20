@@ -528,10 +528,21 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if s.isBusyRow(row) {
 		return fmt.Errorf("sandbox 正在执行任务,无法销毁")
 	}
+	return s.destroyRow(ctx, row)
+}
+
+// destroyRow destroys row's container and only then drops the row and its
+// ConfigHome. A failed destroy keeps the row with a due deadline so the
+// sweeper (or a later delete) retries it instead of leaking the container.
+func (s *SandboxService) destroyRow(ctx context.Context, row *models.Sandbox) error {
+	id := row.ID
 	s.writeBackLiveCodex(ctx, id, row.ProjectID)
 	s.teardownLive(id)
 	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
+	if err := s.destroyContainer(ctx, row, false); err != nil {
+		s.keepForDestroyRetry(row.ID, err)
+		return fmt.Errorf("destroy sandbox %s: %w", row.Name, err)
+	}
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}
@@ -797,15 +808,90 @@ func (s *SandboxService) reconcileRunSandbox(ctx context.Context, row *models.Sa
 	}
 }
 
+// destroyContainer destroys the gateway instance of row. A placeholder Name of
+// a creating row cannot address the real gateway id, so with byCorrelation (or
+// for a creating row) the grasp.name correlation label is swept as well.
+func (s *SandboxService) destroyContainer(ctx context.Context, row *models.Sandbox, byCorrelation bool) error {
+	err := s.mgr.DestroyByName(ctx, row.Name)
+	if byCorrelation || row.Status == "creating" || row.Status == "pulling" {
+		s.mgr.DestroyByCorrelationName(ctx, row.Name)
+	}
+	return err
+}
+
+// keepForDestroyRetry marks a row whose container could not be destroyed: it
+// is no longer in use and is due now, so the sweeper retries the destroy.
+func (s *SandboxService) keepForDestroyRetry(id uint, cause error) {
+	var row models.Sandbox
+	if s.db.Where("id = ?", id).First(&row).Error == nil {
+		s.mu.Lock()
+		delete(s.runActive, row.Name)
+		s.mu.Unlock()
+	}
+	now := time.Now()
+	_ = s.db.Model(&models.Sandbox{}).Where("id = ?", id).UpdateColumns(map[string]any{
+		"status": "error", "error": "销毁失败，等待重试: " + cause.Error(), "destroy_at": &now,
+	}).Error
+	// Retention leases would push the retry out to their deadline.
+	_ = s.db.Model(&models.Sandbox{ID: id}).Select("leases").
+		Updates(&models.Sandbox{Leases: []models.SandboxLease{}}).Error
+	log.Warn().Err(cause).Uint("id", id).Msg("sandbox destroy failed; row kept for retry")
+}
+
+// MarkRunSandboxDestroyFailed implements runtime.RunSandboxDestroyRetrier: the
+// provider could not destroy a run container, so its row is kept (adopting the
+// gateway id when it is still a placeholder) and handed to the sweeper.
+func (s *SandboxService) MarkRunSandboxDestroyFailed(name, gatewayID string, cause error) {
+	if name == "" {
+		return
+	}
+	var row models.Sandbox
+	if err := s.db.Where("name = ?", name).First(&row).Error; err != nil {
+		log.Warn().Err(cause).Str("name", name).Msg("run sandbox destroy failed and no row to retry from")
+		return
+	}
+	if gatewayID != "" && gatewayID != name {
+		_ = s.db.Model(&models.Sandbox{}).Where("id = ?", row.ID).UpdateColumn("name", gatewayID).Error
+		s.mu.Lock()
+		delete(s.runActive, name)
+		s.mu.Unlock()
+	}
+	s.keepForDestroyRetry(row.ID, cause)
+}
+
+// DestroyRunSandboxes destroys every sandbox recorded for runIDs, container
+// first, and drops the rows that were destroyed. It returns an error when any
+// destroy failed; those rows are kept for retry.
+func (s *SandboxService) DestroyRunSandboxes(ctx context.Context, runIDs []string) error {
+	if len(runIDs) == 0 {
+		return nil
+	}
+	var rows []models.Sandbox
+	if err := s.db.Where("run_id IN ?", runIDs).Find(&rows).Error; err != nil {
+		return err
+	}
+	var failed []string
+	for i := range rows {
+		if err := s.destroyRow(ctx, &rows[i]); err != nil {
+			failed = append(failed, rows[i].Name)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%d 个沙箱销毁失败（%s），已保留记录稍后重试", len(failed), strings.Join(failed, ", "))
+	}
+	return nil
+}
+
 // destroyLocalSandbox tears down the gateway instance (by Name and by
-// grasp.name correlation) then deletes the local list row.
+// grasp.name correlation) then deletes the local list row. A failed destroy
+// keeps the row for the sweeper to retry.
 func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sandbox) {
 	s.writeBackLiveCodex(ctx, row.ID, row.ProjectID)
 	s.archiveLog(ctx, row.Name)
-	_ = s.mgr.DestroyByName(ctx, row.Name)
-	// Placeholder Name cannot address the real gateway id; also destroy by
-	// correlation label so leaked control-plane rows are not left behind.
-	s.mgr.DestroyByCorrelationName(ctx, row.Name)
+	if err := s.destroyContainer(ctx, row, true); err != nil {
+		s.keepForDestroyRetry(row.ID, err)
+		return
+	}
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}

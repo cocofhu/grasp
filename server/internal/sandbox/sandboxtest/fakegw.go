@@ -46,6 +46,8 @@ type FakeGateway struct {
 	FailList   bool // GET /sandboxes returns 500
 	FailGet    bool // GET /sandboxes/:id returns 500
 	FailLogs   bool // GET /sandboxes/:id/logs returns 500
+	// FailDestroy makes DELETE /sandboxes/:id return 500 and keep the sandbox.
+	FailDestroy bool
 
 	ListCalls int // number of GET /sandboxes (list) calls served
 }
@@ -263,6 +265,11 @@ func (fg *FakeGateway) get(w http.ResponseWriter, id string) {
 
 func (fg *FakeGateway) delete(w http.ResponseWriter, id string) {
 	fg.mu.Lock()
+	if fg.FailDestroy {
+		fg.mu.Unlock()
+		http.Error(w, "destroy failed", http.StatusInternalServerError)
+		return
+	}
 	delete(fg.recs, id)
 	fg.mu.Unlock()
 	w.WriteHeader(http.StatusNoContent)

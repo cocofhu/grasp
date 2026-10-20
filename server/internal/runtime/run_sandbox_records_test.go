@@ -2,9 +2,11 @@ package runtime
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -22,6 +24,8 @@ type rowRegistry struct {
 	creating map[string]string // run|node -> placeholder
 	binding  *RunSandboxInfo
 	retired  []string
+	// destroyFailed records MarkRunSandboxDestroyFailed as "row->gateway id".
+	destroyFailed []string
 }
 
 func newRowRegistry() *rowRegistry {
@@ -164,5 +168,107 @@ func TestSharedCreateOrphanedByAbortDropsPlaceholderRow(t *testing.T) {
 	}
 	if rows := reg.live(); len(rows) != 0 {
 		t.Fatalf("orphaned shared create left rows behind: %v", rows)
+	}
+}
+
+func (r *rowRegistry) MarkRunSandboxDestroyFailed(name, gatewayID string, _ error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.destroyFailed = append(r.destroyFailed, name+"->"+gatewayID)
+}
+
+// destroyingManager adds DestroyByName (recording ids, failing while fail is
+// set) and attach capabilities that fail, like a gateway that lost the
+// container's endpoint.
+type destroyingManager struct {
+	*fakeManager
+	mu        sync.Mutex
+	fail      bool
+	destroyed []string
+}
+
+func (m *destroyingManager) DestroyByName(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.destroyed = append(m.destroyed, id)
+	if m.fail {
+		return errors.New("gateway unavailable")
+	}
+	return nil
+}
+
+func (m *destroyingManager) Attach(context.Context, string) (*sandbox.Sandbox, error) {
+	return nil, errors.New("no session endpoint")
+}
+
+func (m *destroyingManager) AttachNoEnsure(context.Context, string) (*sandbox.Sandbox, error) {
+	return nil, errors.New("no session endpoint")
+}
+
+func (m *destroyingManager) destroyedIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([]string(nil), m.destroyed...)
+}
+
+// AbortRun of a run whose shared container was left by a previous process
+// destroys it by name even though Attach fails, and only then drops the row
+// and ConfigHome. A failed destroy keeps both and reports the row for retry.
+func TestDetachedSharedTeardownDestroysByNameBeforeForgetting(t *testing.T) {
+	for _, fail := range []bool{true, false} {
+		f := newSharedFlow(t, map[string]string{"dev": `{"acpBackend":"cursor"}`}, idleChat)
+		p := f.provider(t, BackendCursor)
+		dm := &destroyingManager{fakeManager: f.mgr, fail: fail}
+		p.mgr = dm
+		reg := newRowRegistry()
+		home := t.TempDir()
+		info := RunSandboxInfo{Name: "gw-old", RunID: f.runID, HomeDir: home, Scope: sandboxScopeRun}
+		reg.rows[info.Name] = info
+		reg.binding = &info
+		p.registry = reg
+
+		p.AbortRun(f.runID)
+
+		if got := dm.destroyedIDs(); len(got) != 1 || got[0] != "gw-old" {
+			t.Fatalf("fail=%v: DestroyByName calls %v, want [gw-old]", fail, got)
+		}
+		_, statErr := os.Stat(home)
+		rows := reg.live()
+		if fail {
+			if len(rows) != 1 || statErr != nil || len(reg.destroyFailed) != 1 {
+				t.Fatalf("failed destroy must keep row/home and report retry: rows=%v home=%v retry=%v", rows, statErr, reg.destroyFailed)
+			}
+			continue
+		}
+		if len(rows) != 0 || !os.IsNotExist(statErr) {
+			t.Fatalf("destroyed container must drop row and home: rows=%v home=%v", rows, statErr)
+		}
+	}
+}
+
+// When the durable shared container cannot be re-attached the provider
+// starts a replacement generation; the old container is destroyed by name
+// rather than only forgotten.
+func TestSharedReattachFailureDestroysOldGeneration(t *testing.T) {
+	f := newSharedFlow(t, map[string]string{"dev": `{"acpBackend":"cursor"}`}, idleChat)
+	p := f.provider(t, BackendCursor)
+	dm := &destroyingManager{fakeManager: f.mgr}
+	p.mgr = dm
+	reg := newRowRegistry()
+	info := RunSandboxInfo{Name: "gw-gen1", RunID: f.runID, NodeID: "node-a", HomeDir: t.TempDir(), Scope: sandboxScopeRun, Generation: 1}
+	reg.rows[info.Name] = info
+	reg.binding = &info
+	p.registry = reg
+
+	sb, acp, home, err := p.openSandbox(context.Background(), f.req("node-a", "dev"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.retireRunSandbox(sb, acp, home)
+	if got := dm.destroyedIDs(); len(got) != 1 || got[0] != "gw-gen1" {
+		t.Fatalf("old generation not destroyed: %v", got)
+	}
+	if _, ok := reg.rows["gw-gen1"]; ok {
+		t.Fatal("old generation row should be dropped after its destroy")
 	}
 }

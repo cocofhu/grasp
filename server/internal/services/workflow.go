@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,7 +35,12 @@ var (
 type WorkflowService struct {
 	db     *gorm.DB
 	skills AgentGetter
+	reaper RunSandboxReaper
 }
+
+// SetSandboxReaper wires the sandbox service so Delete destroys the sandbox
+// containers of the runs it cascades.
+func (s *WorkflowService) SetSandboxReaper(r RunSandboxReaper) { s.reaper = r }
 
 // NewWorkflowService builds the service.
 func NewWorkflowService(db *gorm.DB) *WorkflowService { return &WorkflowService{db: db} }
@@ -621,13 +627,26 @@ func renameAgentProfileInGraph(g *models.Graph, oldName, newName string) bool {
 // every run it spawned (and that run's dependent records). Runs
 // are cascaded because they are meaningless without their workflow.
 func (s *WorkflowService) Delete(id string) error {
+	// Destroy the runs' containers before any row goes; a failed destroy
+	// aborts the delete with every record intact so it can be retried.
+	if s.reaper != nil {
+		var runIDs []string
+		if err := s.db.Model(&models.Run{}).Where("workflow_id = ?", id).Pluck("id", &runIDs).Error; err != nil {
+			return err
+		}
+		if err := s.reaper.DestroyRunSandboxes(context.Background(), runIDs); err != nil {
+			return err
+		}
+	}
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		var runIDs []string
 		if err := tx.Model(&models.Run{}).Where("workflow_id = ?", id).Pluck("id", &runIDs).Error; err != nil {
 			return err
 		}
 		if len(runIDs) > 0 {
-			for _, m := range []any{&models.StateRun{}, &models.RunVariable{}, &models.Artifact{}, &models.Gate{}, &models.ReactConversation{}} {
+			for _, m := range []any{&models.StateRun{}, &models.RunVariable{}, &models.Artifact{}, &models.Gate{}, &models.ReactConversation{},
+				&models.PreviewIssue{}, &models.RunPreviewPort{}, &models.SandboxLog{}, &models.Sandbox{},
+				&models.RunSandboxBinding{}, &models.RunSandboxGeneration{}} {
 				if err := tx.Where("run_id IN ?", runIDs).Delete(m).Error; err != nil {
 					return err
 				}

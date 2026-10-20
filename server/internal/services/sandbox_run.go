@@ -47,8 +47,11 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Token != "" {
 		fields["token"] = info.Token
 	}
+	// Only a previous placeholder of this run+node is replaced. A live,
+	// retired or destroy-pending row keeps its own name (and container).
 	var row models.Sandbox
 	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run", Scope: scope}).
+		Where("status IN ?", []string{"creating", "pulling"}).
 		Assign(fields).FirstOrCreate(&row).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
 	}

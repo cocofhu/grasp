@@ -376,6 +376,8 @@ func main() {
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
 		rr.SetSandboxRegistry(sbxSvc)
 	}
+	// Run / workflow delete destroy the containers before dropping rows.
+	runSvc.SetSandboxReaper(sbxSvc)
 	// Reconcile DB ↔ gateway on boot and start the idle-TTL sweeper. The
 	// gateway owns image lifecycle now, so there is no local image pre-pull.
 	sbxSvc.ReconcileOnStartup(context.Background(), eng.AdoptedSandboxes())
@@ -424,6 +426,7 @@ func main() {
 	pmProgress := services.NewPmProgress(pmSvc, runSvc, artifactSvc)
 	wfSvc := services.NewWorkflowService(db)
 	wfSvc.SetAgents(agentSvc)
+	wfSvc.SetSandboxReaper(sbxSvc)
 	pmMCP := pmmcp.NewHost(pmSvc, pmProgress, wfSvc, runSvc, artifactSvc, eng)
 	pmMCP.SetAgents(agentSvc)
 	pmMCP.SetRequirementDrafts(requirementDraftSvc)

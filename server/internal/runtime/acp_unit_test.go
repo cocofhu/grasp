@@ -385,6 +385,10 @@ func TestAbortRunSharedWithoutKeepaliveDestroys(t *testing.T) {
 	reg := &retiringRegistry{}
 	cp.registry = reg
 	cp.coordinator = newSharedSandboxCoordinator()
+	// The default manager has no reachable gateway, so its destroy fails and
+	// the row would (correctly) be kept for retry.
+	dm := &destroyingManager{}
+	cp.mgr = dm
 
 	sb := &sandbox.Sandbox{Name: "shared-abort-sb"}
 	if _, err := cp.coordinator.acquire(context.Background(), "runSharedAbort", "", func() (sharedCreateResult, error) {
@@ -409,6 +413,9 @@ func TestAbortRunSharedWithoutKeepaliveDestroys(t *testing.T) {
 	}
 	if unregistered != 1 {
 		t.Fatalf("no keepalive: expected Unregister+Destroy, unregistered=%d", unregistered)
+	}
+	if got := dm.destroyedIDs(); len(got) != 1 || got[0] != "shared-abort-sb" {
+		t.Fatalf("no keepalive: expected DestroyByName(shared-abort-sb), got %v", got)
 	}
 }
 

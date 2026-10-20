@@ -606,9 +606,7 @@ func (c *acpProvider) AbortRun(runID string) {
 			acp.Close()
 		}
 		if sb != nil {
-
-			c.deregisterRunSandbox(sb.Name)
-			sb.Destroy(context.Background())
+			c.destroyAndForget(sb.Name, sb, "")
 		}
 	}
 	if sharedSB != nil {
@@ -630,11 +628,7 @@ func (c *acpProvider) teardownSharedSandbox(name string, sb *sandbox.Sandbox, ho
 		}
 		return
 	}
-	c.deregisterRunSandbox(name)
-	if sb != nil {
-		sb.Destroy(context.Background())
-	}
-	removeHome(home)
+	c.destroyAndForget(name, sb, home)
 }
 
 // teardownDetachedRunSandbox cleans up a shared container whose binding was
@@ -649,11 +643,8 @@ func (c *acpProvider) teardownDetachedRunSandbox(runID string, keepPreview bool)
 	if !found || info.Name == "" {
 		return
 	}
-	var sb *sandbox.Sandbox
-	if attacher, ok := c.mgr.(sandboxRunAttacher); ok {
-		sb, _ = attacher.Attach(context.Background(), info.Name)
-	}
-	c.teardownSharedSandbox(info.Name, sb, info.HomeDir, keepPreview)
+	// Destroy by name: a failed Attach must not skip the destroy.
+	c.teardownSharedSandbox(info.Name, nil, info.HomeDir, keepPreview)
 }
 
 func (c *acpProvider) closeSession(key string) {

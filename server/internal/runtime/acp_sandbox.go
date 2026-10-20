@@ -223,6 +223,61 @@ func (c *acpProvider) registerRunSandbox(req NodeReq, sb *sandbox.Sandbox, home,
 	})
 }
 
+// sandboxDestroyer is the manager capability to remove a container by its
+// gateway id (sandbox.Manager.DestroyByName), reporting failure.
+type sandboxDestroyer interface {
+	DestroyByName(ctx context.Context, id string) error
+}
+
+// sandboxDestroyTimeout bounds one container destroy call.
+var sandboxDestroyTimeout = 2 * time.Minute
+
+// destroyContainer removes the container named id (sb.Name when id is empty)
+// through mgr.DestroyByName. Managers without that capability (test fakes)
+// fall back to the handle's best-effort Destroy.
+func (c *acpProvider) destroyContainer(sb *sandbox.Sandbox, id string) error {
+	if id == "" && sb != nil {
+		id = sb.Name
+	}
+	if d, ok := c.mgr.(sandboxDestroyer); ok {
+		if id == "" {
+			return nil
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), sandboxDestroyTimeout)
+		defer cancel()
+		return d.DestroyByName(ctx, id)
+	}
+	if sb != nil {
+		sb.Destroy(context.Background())
+	}
+	return nil
+}
+
+// destroyAndForget is the one teardown order for run containers: destroy the
+// container first, and only once that succeeded drop the platform row
+// (rowName, the placeholder until registerRunSandbox adopted the gateway id)
+// and the ConfigHome. A failed destroy keeps the row and home and hands the
+// row to the registry's retry path, so nothing is left behind untracked.
+func (c *acpProvider) destroyAndForget(rowName string, sb *sandbox.Sandbox, home string) bool {
+	id := ""
+	if sb != nil {
+		id = sb.Name
+	}
+	if id == "" {
+		id = rowName
+	}
+	if err := c.destroyContainer(sb, id); err != nil {
+		log.Warn().Err(err).Str("sandbox", id).Msg("run sandbox destroy failed; kept for retry")
+		if r, ok := c.registry.(RunSandboxDestroyRetrier); ok {
+			r.MarkRunSandboxDestroyFailed(rowName, id, err)
+		}
+		return false
+	}
+	c.deregisterRunSandbox(rowName)
+	removeHome(home)
+	return true
+}
+
 // deregisterRunSandbox clears a node sandbox record once its container is
 // torn down. No-op when no registry is wired.
 func (c *acpProvider) deregisterRunSandbox(name string) {
@@ -259,10 +314,7 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 		r.RetireRunSandbox(sb.Name)
 		return
 	}
-
-	c.deregisterRunSandbox(sb.Name)
-	sb.Destroy(context.Background())
-	removeHome(home)
+	c.destroyAndForget(sb.Name, sb, home)
 }
 
 // sharedSandboxHealthy probes a shared container before a node failure is
@@ -304,9 +356,7 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 			lifecycle.MarkRunSandboxReplacement(req.RunID, c.coordinator.nextGeneration(req.RunID), sharedReplacementReason)
 		}
 		if sharedHome, removed := c.coordinator.discard(req.RunID, sb); removed {
-			c.deregisterRunSandbox(sb.Name)
-			sb.Destroy(context.Background())
-			removeHome(sharedHome)
+			c.destroyAndForget(sb.Name, sb, sharedHome)
 		}
 		nl.release(c.coordinator)
 		return events
@@ -315,9 +365,7 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 		removeHome(home)
 		return events
 	}
-	c.deregisterRunSandbox(sb.Name)
-	sb.Destroy(context.Background())
-	removeHome(home)
+	c.destroyAndForget(sb.Name, sb, home)
 	return events
 }
 
@@ -349,9 +397,7 @@ func (c *acpProvider) createSandbox(ctx context.Context, req NodeReq, shared boo
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		c.deregisterRunSandbox(placeholder)
-		sb.Destroy(context.Background())
-		removeHome(home)
+		c.destroyAndForget(placeholder, sb, home)
 		return nil, layeredSpec{}, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
 	ls.placeholder = placeholder
@@ -422,9 +468,7 @@ func (c *acpProvider) openSharedSandbox(ctx context.Context, req NodeReq) (*sand
 		return sharedCreateResult{sb: sb, home: home, fingerprint: created.fingerprint, generation: generation,
 			discard: func() {
 				// Never adopted: the platform row still carries the placeholder.
-				c.deregisterRunSandbox(created.placeholder)
-				sb.Destroy(context.Background())
-				removeHome(home)
+				c.destroyAndForget(created.placeholder, sb, home)
 			}}, nil
 	})
 	if err != nil {
@@ -468,14 +512,14 @@ func (c *acpProvider) attachRunSandbox(ctx context.Context, req NodeReq) (res sh
 			if werr := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 30*time.Second); werr == nil {
 				return sharedCreateResult{sb: sb, home: info.HomeDir, fingerprint: info.EnvFingerprint, generation: prev}, true, prev
 			}
-			sb.Destroy(context.Background())
 		}
 	}
 	if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
 		lifecycle.MarkRunSandboxReplacement(req.RunID, prev+1, sharedReplacementReason)
 	}
-	c.deregisterRunSandbox(info.Name)
-	removeHome(info.HomeDir)
+	// Unusable (Attach failed or the bridge never answered): destroy by name
+	// so the old generation cannot outlive its row.
+	c.destroyAndForget(info.Name, nil, info.HomeDir)
 	return res, false, prev + 1
 }
 
@@ -496,9 +540,7 @@ func (c *acpProvider) openPrivateSandbox(ctx context.Context, req NodeReq) (*san
 		c.forgetCodexLogin(codexLoginKey(req))
 		// The row was never adopted by registerRunSandbox, so it is still
 		// keyed by the placeholder (as in createSandbox's failure paths).
-		c.deregisterRunSandbox(ls.placeholder)
-		sb.Destroy(context.Background())
-		removeHome(home)
+		c.destroyAndForget(ls.placeholder, sb, home)
 		return nil, nil, "", err
 	}
 	c.registerRunSandbox(req, sb, home, sandboxScopeNode, 1, "", "")
@@ -528,7 +570,7 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	}
 	sb, err := att.AttachNoEnsure(ctx, name)
 	if err != nil {
-		c.deregisterRunSandbox(name)
+		c.destroyAndForget(name, nil, "")
 		return nil, nil, fmt.Errorf("%w: reattach %s: %v", errSandboxSetup, name, err)
 	}
 	sb.Password = req.Token
@@ -540,8 +582,7 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 		WithBridgeModel(strings.TrimSpace(model))
 	if err := acp.Connect(ctx); err != nil {
 		acp.Close()
-		c.deregisterRunSandbox(name)
-		sb.Destroy(context.Background())
+		c.destroyAndForget(name, sb, "")
 		return nil, nil, fmt.Errorf("%w: reattach acp connect: %v", errSandboxSetup, err)
 	}
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).

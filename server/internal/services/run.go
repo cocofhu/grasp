@@ -58,10 +58,24 @@ var (
 )
 
 // RunService assembles run views from the underlying tables.
-type RunService struct{ db *gorm.DB }
+type RunService struct {
+	db     *gorm.DB
+	reaper RunSandboxReaper
+}
+
+// RunSandboxReaper destroys the sandbox containers recorded for runs (the
+// gateway workload, including its data volume) before their rows are
+// deleted. A failed destroy returns an error and keeps those rows for retry.
+type RunSandboxReaper interface {
+	DestroyRunSandboxes(ctx context.Context, runIDs []string) error
+}
 
 // NewRunService builds the service.
 func NewRunService(db *gorm.DB) *RunService { return &RunService{db: db} }
+
+// SetSandboxReaper wires the sandbox service so Delete leaves no container
+// behind.
+func (s *RunService) SetSandboxReaper(r RunSandboxReaper) { s.reaper = r }
 
 func applyRunTagsFilter(q *gorm.DB, column string, tags []string) *gorm.DB {
 	for _, tag := range tags {
@@ -297,6 +311,13 @@ func (s *RunService) Delete(id string) error {
 	if err := rejectIfNotDeletable(run.Status); err != nil {
 		return err
 	}
+	// Containers go first: if one cannot be destroyed the run and its rows
+	// stay, so deleting again (or the sweeper) retries instead of leaking it.
+	if s.reaper != nil {
+		if err := s.reaper.DestroyRunSandboxes(context.Background(), []string{id}); err != nil {
+			return err
+		}
+	}
 
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		// Re-check inside the transaction so a status change between the
@@ -323,6 +344,8 @@ func (s *RunService) Delete(id string) error {
 			&models.RunPreviewPort{},
 			&models.SandboxLog{},
 			&models.Sandbox{},
+			&models.RunSandboxBinding{},
+			&models.RunSandboxGeneration{},
 		} {
 			if err := tx.Where("run_id = ?", id).Delete(m).Error; err != nil {
 				return err

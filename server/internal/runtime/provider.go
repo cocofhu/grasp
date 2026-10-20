@@ -436,6 +436,14 @@ type RunSandboxRetirer interface {
 	RetireRunSandbox(name string)
 }
 
+// RunSandboxDestroyRetrier is an optional registry capability: a provider
+// teardown whose container destroy failed keeps the row (name, adopting
+// gatewayID when name is still a placeholder) and hands it to the store's
+// retry path instead of dropping it.
+type RunSandboxDestroyRetrier interface {
+	MarkRunSandboxDestroyFailed(name, gatewayID string, err error)
+}
+
 // RunSandboxLogArchiver is an optional capability (SandboxService / provider
 // forwarder): before AggregateRunFailure, best-effort archive live container
 // logs so CAPA failures after retire still have sandbox_logs.

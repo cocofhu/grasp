@@ -646,7 +646,16 @@ func (m *Manager) DestroyByName(ctx context.Context, id string) error {
 		return nil
 	}
 	m.runtime.forget(id)
-	return m.gw.Destroy(ctx, id)
+	if err := m.gw.Destroy(ctx, id); err != nil && !isGatewayNotFound(err) {
+		return err
+	}
+	// Already gone counts as destroyed, so a retried teardown converges.
+	return nil
+}
+
+// isGatewayNotFound reports a gateway 404 (GatewayClient.do error format).
+func isGatewayNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), ": 404 ")
 }
 
 // Logs fetches PID1 combined stdout/stderr via the gateway control plane.
