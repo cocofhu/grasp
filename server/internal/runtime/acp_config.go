@@ -392,8 +392,8 @@ func isWorkflowDroppedPlatformMCP(name, url string) bool {
 	case "memory-store", "context-store", "task-scheduler":
 		return true
 	}
-	return strings.Contains(url, "/mcp/memory-store/") ||
-		strings.Contains(url, "/mcp/context-store/") ||
+	return strings.Contains(url, "/mcp/memory-store") ||
+		strings.Contains(url, "/mcp/context-store") ||
 		strings.Contains(url, "/mcp/task-scheduler/")
 }
 

@@ -283,3 +283,21 @@ func eventWSServer(t *testing.T) (*httptest.Server, string, int) {
 	port, _ := strconv.Atoi(portStr)
 	return srv, "127.0.0.1", port
 }
+
+func TestIsWorkflowDroppedPlatformMCPMatchesRenamedEndpoints(t *testing.T) {
+	cases := []struct {
+		name, url string
+		want      bool
+	}{
+		{"mem", "http://grasp:8080/mcp/memory-store", true},
+		{"ctx", "http://grasp:8080/mcp/context-store", true},
+		{"sched", "http://grasp:8080/mcp/task-scheduler/agent-a", true},
+		{"Memory-Store", "", true},
+		{"git", "http://example.com/mcp/git", false},
+	}
+	for _, c := range cases {
+		if got := isWorkflowDroppedPlatformMCP(c.name, c.url); got != c.want {
+			t.Errorf("isWorkflowDroppedPlatformMCP(%q, %q) = %v, want %v", c.name, c.url, got, c.want)
+		}
+	}
+}
