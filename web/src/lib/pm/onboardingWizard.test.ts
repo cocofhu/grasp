@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, beforeEach, beforeAll, vi } from 'vitest'
+import zhPages from '@/locales/zh-CN/pages.json'
+import enPages from '@/locales/en/pages.json'
 import {
   ONBOARDING_SUPPRESS_KEY,
   ONBOARDING_AGENT_NAMES,
@@ -122,6 +124,71 @@ describe('onboardingWizard', () => {
     expect(body).not.toHaveProperty('featureHint')
     expect(body.vncPreview).toBe(true)
     expect(body.browserMcp).toBe(true)
+  })
+
+  it('clears the coding-tool model when the backend changes and keeps it when reselected', () => {
+    const d = freshOnboardingDraft()
+    expect(d.cliModel).toBe('')
+    applyOnboardingBackend(d, 'cursor')
+    d.cliModel = 'composer-2.5'
+    applyOnboardingBackend(d, 'cursor')
+    expect(d.cliModel).toBe('composer-2.5')
+
+    applyOnboardingBackend(d, 'claude_code')
+    expect(d.cliModel).toBe('')
+    applyOnboardingBackend(d, 'cursor')
+    expect(d.cliModel).toBe('')
+
+    applyOnboardingBackend(d, 'trae')
+    d.cliModel = 'trae-model'
+    d.apiKey = 'trae-key'
+    applyStartPath(d, 'apiKey')
+    expect(d.acpBackend).toBe('opencode')
+    expect(d.cliModel).toBe('')
+    expect(d.apiKey).toBe('')
+    applyStartPath(d, 'cli')
+    expect(d.acpBackend).toBe('trae')
+    expect(d.cliModel).toBe('')
+  })
+
+  it('sends cliModel for a coding tool and never uses it to carry an OpenCode model', () => {
+    const d = freshOnboardingDraft()
+    applyOnboardingBackend(d, 'cursor')
+    d.apiKey = 'k'
+    expect(assembleBootstrapBody(d)).not.toHaveProperty('cliModel')
+    expect(assembleBootstrapBody(d)).not.toHaveProperty('openCodeModel')
+
+    d.cliModel = '  composer-2.5  '
+    const body = assembleBootstrapBody(d)
+    expect(body.cliModel).toBe('composer-2.5')
+    expect(body).not.toHaveProperty('openCodeModel')
+
+    d.acpBackend = 'opencode'
+    d.openCodeModel = 'openai/gpt-4.1'
+    d.cliModel = 'composer-2.5'
+    const oc = assembleBootstrapBody(d)
+    expect(oc.openCodeModel).toBe('openai/gpt-4.1')
+    expect(oc).not.toHaveProperty('cliModel')
+  })
+
+  it('says a coding-tool account can specify a model or leave the choice to the tool', () => {
+    const zh = zhPages.pages.onboarding.acp.paths.cli.desc
+    const en = enPages.pages.onboarding.acp.paths.cli.desc
+    expect(zh).toContain('可以指定模型')
+    expect(zh).toContain('留给工具自己决定')
+    expect(zh).not.toContain('模型由对应工具决定')
+    expect(zh).not.toContain('不确定就先用自动')
+    expect(en).toContain('specify a model')
+    expect(en).toContain('leave the choice to the tool')
+    expect(en).not.toContain('The tool decides the model')
+    expect(zhPages.pages.onboarding.team.modelInherit).toBe('留空沿用 {model}')
+    expect(enPages.pages.onboarding.team.modelInherit).toContain('{model}')
+    expect(zhPages.pages.agentStudio.cliModel.autoSub).toBe('由 {cli} 决定用哪个模型')
+    expect(zhPages.pages.agentStudio.cliModel.unlisted).toContain('不在内置清单中')
+    expect(zhPages.pages.agentStudio.cliModel.catalogFailed).toContain('暂时不可用')
+    expect(zhPages.pages.agentStudio.cliModel.wizardHint).toContain('不确定就先用自动')
+    expect(enPages.pages.agentStudio.cliModel.wizardHint).toContain('Not sure? Start with auto')
+    expect(zhPages.pages.onboarding.apiKey).not.toHaveProperty('wizardHint')
   })
 
   it('includes OpenCode vendor fields on bootstrap', () => {

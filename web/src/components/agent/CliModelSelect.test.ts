@@ -17,7 +17,9 @@ vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: mocks.load, cliCatalog
 
 const mounted: { unmount: () => void }[] = []
 
-async function mountSelect(props: { modelValue?: string; backend?: string; variant?: 'full' | 'compact' } = {}) {
+async function mountSelect(
+  props: { modelValue?: string; backend?: string; variant?: 'full' | 'compact'; hideAutoSub?: boolean } = {},
+) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   const w = mount(CliModelSelect, {
     props: { modelValue: '', backend: 'cursor', ...props },
@@ -61,7 +63,9 @@ describe('CliModelSelect trigger', () => {
   it('shows auto with the bare launch command', async () => {
     mocks.load.mockResolvedValue(catalog)
     const w = await mountSelect()
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    const trigger = w.get('[data-testid="cli-model-trigger"]').text()
+    expect(trigger).toContain('自动')
+    expect(trigger).toContain('由 Cursor 决定用哪个模型')
     expect(w.get('[data-testid="cli-model-command"]').text()).toContain('cursor-agent')
     expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
   })
@@ -76,6 +80,18 @@ describe('CliModelSelect trigger', () => {
     expect(w.get('[data-testid="cli-model-command"]').text()).toContain('cursor-agent --model gpt-5')
     await w.get('[data-testid="cli-model-reset"]').trigger('click')
     expect(w.emitted('update:modelValue')?.[0]).toEqual([''])
+  })
+
+  it('hides the auto subtitle when onboarding asks, and still shows a picked model', async () => {
+    mocks.load.mockResolvedValue(catalog)
+    const w = await mountSelect({ hideAutoSub: true })
+    const text = w.get('[data-testid="cli-model-trigger"]').text()
+    expect(text).toContain('自动')
+    expect(text).not.toContain('由 Cursor 决定用哪个模型')
+    expect(w.text()).not.toContain('不确定就先用自动')
+    await w.setProps({ modelValue: 'gpt-5' })
+    await flushPromises()
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('GPT-5')
   })
 
   it('flags an id outside the shortlist without blocking it', async () => {

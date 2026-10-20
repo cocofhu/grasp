@@ -8,6 +8,7 @@ import { api } from '@/lib/api/api'
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { authGuideFor } from '@/lib/agent/backendAuthGuide'
 import { ACP_BACKENDS, getRegionPolicy, type BackendId } from '@/lib/shared/regionPolicy'
+import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import OnboardingTeamCard from './OnboardingTeamCard.vue'
 import OnboardingWorkflowPreview from './OnboardingWorkflowPreview.vue'
@@ -110,7 +111,9 @@ const backendSummary = computed(() => {
     return [vendor ? t(vendor.labelKey) : draft.value.openCodeProvider, model].filter(Boolean).join(' · ')
   }
   const region = regionPolicy.value?.options.find((o) => o.id === draft.value.region)
-  return region ? `${backendLabel.value} · ${t(region.labelKey)}` : backendLabel.value
+  const base = region ? `${backendLabel.value} · ${t(region.labelKey)}` : backendLabel.value
+  const model = draft.value.cliModel.trim()
+  return model ? `${base} · ${model}` : base
 })
 const gitCredLabel = computed(() => {
   const type = ONBOARDING_GIT_TYPES.find((g) => g.id === draft.value.gitCredentialType)
@@ -140,11 +143,13 @@ const nameIssues = computed(() => teamNameIssues(draft.value.team))
 const workflowPreview = computed(() => buildOnboardingWorkflowPreview(draft.value.team))
 const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.id === 'test_review'))
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
+const inheritedModel = computed(() => {
+  if (draft.value.acpBackend === 'opencode') return draft.value.openCodeModel.trim()
+  return draft.value.cliModel.trim()
+})
 const modelPlaceholder = computed(() =>
-  draft.value.acpBackend === 'opencode' && draft.value.openCodeModel.trim()
-    ? t('pages.onboarding.team.modelInherit', {
-        model: draft.value.openCodeModel.trim(),
-      })
+  inheritedModel.value
+    ? t('pages.onboarding.team.modelInherit', { model: inheritedModel.value })
     : t('pages.onboarding.team.modelPlaceholder'),
 )
 const successAgentNames = computed(() => {
@@ -210,6 +215,10 @@ function selectBackend(id: BackendId) {
 function selectOpenCodeModel(value: string) {
   draft.value.openCodeModel = value
   modelError.value = false
+}
+
+function selectCliModel(value: string) {
+  draft.value.cliModel = value
 }
 
 function selectStartPath(path: OnboardingStartPath) {
@@ -759,6 +768,17 @@ function editWorkflow() {
                       </button>
                     </header>
                     <div class="onb-cred-body">
+                      <div v-if="draft.acpBackend !== 'opencode'" class="mb-4" data-testid="onboarding-cli-model">
+                        <div class="onb-label">{{ t('pages.agentStudio.cliModel.label') }}</div>
+                        <CliModelSelect
+                          :key="draft.acpBackend"
+                          :model-value="draft.cliModel"
+                          :backend="draft.acpBackend"
+                          variant="compact"
+                          hide-auto-sub
+                          @update:model-value="selectCliModel"
+                        />
+                      </div>
                       <OpenCodeProviderFields
                         v-if="draft.acpBackend === 'opencode'"
                         class="mb-4"

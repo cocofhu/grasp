@@ -233,6 +233,8 @@ export type OnboardingDraft = {
   openCodeBaseURL: string
   openCodeModel: string
   openCodeModelVision: boolean
+  /** Coding-tool model (`ACP_BRIDGE_MODEL`). Empty means auto: do not pin one. */
+  cliModel: string
   team: OnboardingTeamMember[]
 }
 
@@ -264,6 +266,8 @@ export type OnboardingBootstrapBody = {
   openCodeBaseURL?: string
   openCodeModel?: string
   openCodeModelVision?: boolean
+  /** Coding-tool model. Omitted when auto. Never used to carry an OpenCode model. */
+  cliModel?: string
   agents?: OnboardingAgentChoice[]
 }
 
@@ -367,6 +371,7 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
     openCodeBaseURL: '',
     openCodeModel: '',
     openCodeModelVision: false,
+    cliModel: '',
     team: freshOnboardingTeam(),
   }
 }
@@ -374,6 +379,8 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
 /**
  * Select a backend. Keeps startPath in sync and resets values that belong to the
  * previous backend (region default, and the key, which is vendor-specific).
+ * A different backend also clears the coding-tool model: model ids do not transfer,
+ * and selecting the previous tool again stays on auto.
  */
 export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): void {
   syncStartPathFields(draft, id)
@@ -381,6 +388,7 @@ export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): v
   draft.acpBackend = id
   draft.region = getRegionPolicy(id)?.defaultRegion || ''
   draft.apiKey = ''
+  draft.cliModel = ''
   if (id === APIKEY_BACKEND && !draft.openCodeProvider) {
     draft.openCodeProvider = DEFAULT_OPENCODE_PROVIDER
   }
@@ -456,6 +464,8 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
     if (draft.openCodeBaseURL.trim()) body.openCodeBaseURL = draft.openCodeBaseURL.trim()
     if (draft.openCodeModel.trim()) body.openCodeModel = draft.openCodeModel.trim()
     body.openCodeModelVision = draft.openCodeModelVision
+  } else if (draft.cliModel.trim()) {
+    body.cliModel = draft.cliModel.trim()
   }
   body.agents = draft.team
     .filter((m) => m.enabled || isRequiredTemplate(m.templateId))
