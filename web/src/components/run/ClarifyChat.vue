@@ -328,7 +328,7 @@ watch(composerBlocksConfirm, (blocked) => {
 
 /**
  * The composer shows exactly one primary action (fix-post-launch/button-states.md):
- * draft or send in flight → 发送; session busy → 停止 (Esc also stops);
+ * draft or send in flight → 发送; session busy → 停止;
  * finishable → 确认并流转; otherwise a disabled 发送.
  */
 const primaryKind = computed<ComposerPrimaryKind>(() => {
@@ -343,7 +343,7 @@ const primaryDisabled = computed(() => {
   return composerSending.value || !hasComposerDraft()
 })
 const primaryLabel = computed(() => {
-  if (primaryKind.value === 'stop') return 'Cancel'
+  if (primaryKind.value === 'stop') return translate('common.buttons.stop')
   if (primaryKind.value === 'confirm') {
     return validating.value ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow')
   }

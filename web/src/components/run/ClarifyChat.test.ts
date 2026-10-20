@@ -1162,21 +1162,21 @@ describe('ClarifyChat', () => {
     })
   })
 
-  it('busy empty composer shows only the stop icon titled Cancel', async () => {
+  it('busy empty composer shows only the stop icon titled 停止', async () => {
     const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
     await clickSend(wrapper)
     expect(wrapper.find('[data-testid="clarify-send-label"]').exists()).toBe(false)
     const cancel = wrapper.get('[data-testid="clarify-review-cancel"]')
-    expect(cancel.attributes('aria-label')).toBe('Cancel')
-    expect(cancel.attributes('title')).toBe('Cancel')
-    expect(cancel.text()).not.toContain('Cancel')
+    expect(cancel.attributes('aria-label')).toBe('停止')
+    expect(cancel.attributes('title')).toBe('停止')
+    expect(cancel.text()).not.toContain('停止')
     expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await cancel.trigger('click')
     expect(wrapper.emitted('cancel')).toBeTruthy()
     wrapper.unmount()
   })
 
-  it('busy composer with a new draft shows only send; Esc still stops', async () => {
+  it('busy composer with a new draft shows only send; Esc does not stop the run', async () => {
     const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
     await clickSend(wrapper)
     await wrapper.find('[data-testid="clarify-input"]').setValue('再写一句')
@@ -1187,8 +1187,21 @@ describe('ClarifyChat', () => {
     const send = toolbar.get('[data-testid="clarify-send-label"]')
     expect((send.element as HTMLButtonElement).disabled).toBe(false)
     await wrapper.get('[data-testid="clarify-input"]').trigger('keydown', { key: 'Escape' })
-    expect(wrapper.emitted('cancel')).toBeTruthy()
+    await flushPromises()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).value).toBe('再写一句')
+    wrapper.unmount()
+  })
+
+  it('Esc in a busy empty composer does not stop the run (same as main)', async () => {
+    const wrapper = mountChat({ sendLabel: '发送回复', draft: '排队' })
+    await clickSend(wrapper)
+    expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="clarify-input"]').trigger('keydown', { key: 'Escape' })
+    await wrapper.get('[data-testid="clarify-input"]').trigger('keydown', { key: 'Esc' })
+    await flushPromises()
+    expect(wrapper.emitted('cancel')).toBeFalsy()
+    expect(wrapper.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
