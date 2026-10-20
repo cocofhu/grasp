@@ -508,12 +508,16 @@ func mrBranches(req NodeReq) (source, target string) {
 // never Destroy'd or removeHome'd. Full Run / gate / sandbox reclaim still
 // Destroy via the normal lifecycle.
 func (c *acpProvider) AbortRun(runID string) {
-	c.dropRunTranscript(runID)
-	prefix := runID + "|"
-	c.retireVisitorLanes(prefix)
-	// Detach the durable run-level binding before closing node sessions. This
-	// makes repeated finish/cancel callbacks idempotent and prevents one node's
-	// cleanup from destroying a container still referenced by another node.
+	shared := c.abortRunBegin(runID)
+	keep := c.abortRunNodes(runID, shared)
+	c.abortRunEnd(runID, shared, keep)
+}
+
+// abortRunBegin detaches the run's shared container from the coordinator and
+// finalizes its durable binding. This runs before any node session is closed,
+// which makes repeated finish/cancel callbacks idempotent and keeps one node's
+// cleanup from destroying a container another node still uses.
+func (c *acpProvider) abortRunBegin(runID string) *sharedSandbox {
 	var shared *sharedSandbox
 	if c.coordinator != nil {
 		shared, _ = c.coordinator.finalize(runID)
@@ -521,6 +525,29 @@ func (c *acpProvider) AbortRun(runID string) {
 	if lifecycle, ok := c.registry.(RunSandboxLifecycle); ok {
 		lifecycle.FinalizeRunSandbox(runID, "retired")
 	}
+	return shared
+}
+
+// abortRunEnd is the one terminal teardown of the run's shared container.
+// keepPreview must cover the nodes of every provider sharing the coordinator
+// (see ProviderRegistry.AbortRun).
+func (c *acpProvider) abortRunEnd(runID string, shared *sharedSandbox, keepPreview bool) {
+	if shared != nil && shared.sb != nil {
+		c.teardownSharedSandbox(shared.sb.Name, shared.sb, shared.home, keepPreview)
+		return
+	}
+	if shared == nil && c.coordinator != nil && !c.coordinator.managed(runID) {
+		c.teardownDetachedRunSandbox(runID, keepPreview)
+	}
+}
+
+// abortRunNodes tears down this provider's node sessions of runID except the
+// shared container, and reports whether any of its nodes still serves a
+// preview that keeps the shared container alive.
+func (c *acpProvider) abortRunNodes(runID string, shared *sharedSandbox) bool {
+	c.dropRunTranscript(runID)
+	prefix := runID + "|"
+	c.retireVisitorLanes(prefix)
 	c.mu.Lock()
 	keepSharedPreview := false
 	nodeKeepsPreview := func(nodeID string) bool {
@@ -591,7 +618,7 @@ func (c *acpProvider) AbortRun(runID string) {
 		sb := agentSBs[i]
 		nl := c.takeNodeLease(acp)
 		if nl != nil || (sharedSB != nil && sb == sharedSB) {
-			// The run's shared container gets the one terminal teardown below.
+			// The run's shared container gets the one terminal teardown in abortRunEnd.
 			if acp != nil {
 				acp.CloseOwnedChat(context.Background())
 				acp.Close()
@@ -612,13 +639,7 @@ func (c *acpProvider) AbortRun(runID string) {
 			c.destroyAndForget(sb.Name, sb, "")
 		}
 	}
-	if sharedSB != nil {
-		c.teardownSharedSandbox(sharedSB.Name, sharedSB, shared.home, keepSharedPreview)
-		return
-	}
-	if shared == nil && c.coordinator != nil && !c.coordinator.managed(runID) {
-		c.teardownDetachedRunSandbox(runID, keepSharedPreview)
-	}
+	return keepSharedPreview
 }
 
 // teardownSharedSandbox is the terminal cleanup of a run's shared container.

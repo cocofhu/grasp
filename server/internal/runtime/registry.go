@@ -333,12 +333,40 @@ func (r *ProviderRegistry) LiveNodeEventsPage(ctx context.Context, runID, nodeID
 	return nil, "", false, false, nil
 }
 
+// AbortRun ends runID on every provider. The backend providers share one
+// coordinator, so the run's shared container is finalized once, every
+// provider's nodes are closed, and only then is the container torn down once,
+// kept for preview when any provider's node still serves one. Aborting the
+// providers one by one would let a provider without the preview node destroy
+// the container first (map order is random).
 func (r *ProviderRegistry) AbortRun(runID string) {
+	var acps []*acpProvider
 	for _, p := range r.providers {
+		if ap, ok := p.(*acpProvider); ok {
+			acps = append(acps, ap)
+			continue
+		}
 		if ab, ok := p.(RunAborter); ok {
 			ab.AbortRun(runID)
 		}
 	}
+	if len(acps) == 0 {
+		return
+	}
+	var shared *sharedSandbox
+	owner := acps[0]
+	for _, ap := range acps {
+		if s := ap.abortRunBegin(runID); s != nil {
+			shared, owner = s, ap
+		}
+	}
+	keep := false
+	for _, ap := range acps {
+		if ap.abortRunNodes(runID, shared) {
+			keep = true
+		}
+	}
+	owner.abortRunEnd(runID, shared, keep)
 }
 
 func (r *ProviderRegistry) SetEventSink(fn func(runID, nodeID string, events []models.AcpEvent, busy bool)) {
