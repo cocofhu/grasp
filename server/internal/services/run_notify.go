@@ -94,7 +94,8 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 	if !ok {
 		return
 	}
-	if workflow.Defaults != nil && workflow.Defaults.NotifyPolicy != nil {
+	if workflow.Defaults != nil && workflow.Defaults.NotifyPolicy != nil && project.NotifyPolicy.IsEnabled() {
+		// The workspace master switch also silences workflow overrides.
 		project.NotifyPolicy = *workflow.Defaults.NotifyPolicy
 	}
 	events := ResolveNotifyEvents(project.NotifyPolicy, workflow.NotifyPolicy)

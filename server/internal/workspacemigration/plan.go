@@ -291,6 +291,13 @@ func BuildPlan(db *gorm.DB, opts Options) (Plan, error) {
 			}
 		}
 		p.Warnings = append(p.Warnings, Issue{Code: "external-clients", Message: "All project-wide MCP keys are revoked on merge. Configure clients with the new workspace address and newly issued keys; workflow-scoped /v1 keys are retained."})
+		if found && !canonical.NotifyPolicy.IsEnabled() {
+			for _, old := range s.projects {
+				if old.ID != canonical.ID && old.NotifyPolicy.IsEnabled() && len(old.NotifyPolicy.ChannelIDs) > 0 {
+					p.Warnings = append(p.Warnings, Issue{Code: "workspace-notify-disabled", Resource: old.ID, Message: "The retained workspace has run notifications switched off, which also silences this source's converted workflow notifications. Enable the workspace switch after migration if they should still be sent."})
+				}
+			}
+		}
 	}
 	workflowKey, err := nameKey(db, "workflow_defs", "name")
 	if err != nil {
@@ -300,8 +307,23 @@ func BuildPlan(db *gorm.DB, opts Options) (Plan, error) {
 	if err != nil {
 		return p, err
 	}
+	// The retained workspace reserves names first so its users keep theirs.
+	retainedFirst := func(projectID string) int {
+		if projectID == p.Options.CanonicalID {
+			return 0
+		}
+		return 1
+	}
+	flows := append([]models.WorkflowDef(nil), s.flows...)
+	sort.SliceStable(flows, func(i, j int) bool { return retainedFirst(flows[i].ProjectID) < retainedFirst(flows[j].ProjectID) })
+	memories := append([]models.ProjectMemoryItem(nil), s.memories...)
+	sort.SliceStable(memories, func(i, j int) bool {
+		return retainedFirst(memories[i].ProjectID) < retainedFirst(memories[j].ProjectID)
+	})
+	creds := append([]models.ProjectCredential(nil), s.creds...)
+	sort.SliceStable(creds, func(i, j int) bool { return retainedFirst(creds[i].ProjectID) < retainedFirst(creds[j].ProjectID) })
 	seenNames := map[string]bool{}
-	for _, flow := range s.flows {
+	for _, flow := range flows {
 		name := flow.Name
 		if chosen, ok := opts.Decisions.WorkflowNames[flow.ID]; ok {
 			name = strings.TrimSpace(chosen)
@@ -324,7 +346,7 @@ func BuildPlan(db *gorm.DB, opts Options) (Plan, error) {
 		}
 	}
 	seenMemory := map[string]bool{}
-	for _, memory := range s.memories {
+	for _, memory := range memories {
 		title := memory.Title
 		if chosen, ok := opts.Decisions.MemoryTitles[memory.ID]; ok {
 			title = strings.TrimSpace(chosen)
@@ -364,7 +386,7 @@ func BuildPlan(db *gorm.DB, opts Options) (Plan, error) {
 	if err != nil {
 		return p, err
 	}
-	for _, credential := range s.creds {
+	for _, credential := range creds {
 		name := credential.Name
 		if chosen, ok := opts.Decisions.CredentialNames[credential.ID]; ok {
 			name = strings.TrimSpace(chosen)
@@ -437,7 +459,7 @@ func nameKey(db *gorm.DB, table, column string) (func(string) (string, error), e
 	if db.Dialector.Name() != "mysql" {
 		return func(value string) (string, error) { return value, nil }, nil
 	}
-	var collation, charset, padding string
+	var collation, charset string
 	if err := db.Raw("SELECT COLLATION_NAME, CHARACTER_SET_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?", table, column).Row().Scan(&collation, &charset); err != nil {
 		return nil, err
 	}
@@ -445,7 +467,8 @@ func nameKey(db *gorm.DB, table, column string) (func(string) (string, error), e
 	if !valid.MatchString(collation) || !valid.MatchString(charset) {
 		return nil, fmt.Errorf("cannot determine name collation for %s", table)
 	}
-	if err := db.Raw("SELECT PAD_ATTRIBUTE FROM information_schema.COLLATIONS WHERE COLLATION_NAME = ?", collation).Scan(&padding).Error; err != nil {
+	padding, err := collationPadding(db, collation)
+	if err != nil {
 		return nil, err
 	}
 	expression := "CONVERT(? USING " + charset + ")"
@@ -457,6 +480,28 @@ func nameKey(db *gorm.DB, table, column string) (func(string) (string, error), e
 		err := db.Raw("SELECT HEX(WEIGHT_STRING("+expression+" COLLATE "+collation+"))", value).Scan(&key).Error
 		return key, err
 	}, nil
+}
+
+// MariaDB has no COLLATIONS.PAD_ATTRIBUTE; its NO PAD collations are the ones
+// named *_nopad_*, every other collation pads trailing spaces.
+func collationPadding(db *gorm.DB, collation string) (string, error) {
+	var columns int64
+	if err := db.Raw("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = 'information_schema' AND TABLE_NAME = 'COLLATIONS' AND COLUMN_NAME = 'PAD_ATTRIBUTE'").Scan(&columns).Error; err != nil {
+		return "", err
+	}
+	if columns == 0 {
+		return mariaDBPadding(collation), nil
+	}
+	var padding string
+	err := db.Raw("SELECT PAD_ATTRIBUTE FROM information_schema.COLLATIONS WHERE COLLATION_NAME = ?", collation).Scan(&padding).Error
+	return padding, err
+}
+
+func mariaDBPadding(collation string) string {
+	if strings.Contains(strings.ToLower(collation), "_nopad_") {
+		return "NO PAD"
+	}
+	return "PAD SPACE"
 }
 
 func reserveName(name, id string, used map[string]bool, key func(string) (string, error)) (string, error) {

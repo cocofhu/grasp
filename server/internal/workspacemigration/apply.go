@@ -591,7 +591,7 @@ func prepareFiles(plan Plan, source sourceState, backupDir string) error {
 		}
 		if materialize {
 			vcs := services.NewWorkspaceVcsService(profiles)
-			if _, err := vcs.CommitChange(agent.Name, services.VcsCommitMeta{Author: "system", Reason: "Consolidate workspace defaults", Source: "migration"}); err != nil {
+			if _, err := vcs.CommitChange(agent.Name, services.VcsCommitMeta{Author: "system", Reason: "Consolidate workspace defaults", Source: "migration"}); err != nil && !errors.Is(err, services.ErrVcsNoChanges) {
 				return err
 			}
 		}

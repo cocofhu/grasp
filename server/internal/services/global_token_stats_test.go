@@ -440,3 +440,14 @@ func assertTokenPartsMatchWorkflowTotals(t *testing.T, rows []TokenStatsWorkflow
 }
 
 func aliasPtr(s string) *string { return &s }
+
+func TestTokenStatsWorkflowFilterDistinguishesDuplicateNames(t *testing.T) {
+	opts := buildFilterOptions(nil, nil, map[string]string{"wf-a": "构建发布", "wf-b": "构建发布", "wf-c": "Other"}, nil)
+	names := map[string]string{}
+	for _, o := range opts.Workflows {
+		names[o.Key] = o.Name
+	}
+	if names["wf-a"] != "构建发布 · wf-a" || names["wf-b"] != "构建发布 · wf-b" || names["wf-c"] != "Other" {
+		t.Fatalf("duplicate workflow names not distinguished: %+v", opts.Workflows)
+	}
+}

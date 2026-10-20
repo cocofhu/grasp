@@ -47,7 +47,9 @@ func capture(db *gorm.DB) (Snapshot, error) {
 		if !identifier.MatchString(name) {
 			return out, fmt.Errorf("unsupported database identifier in migration")
 		}
-		if name == "sqlite_sequence" {
+		// Login sessions are not business data: signing in to check the migrated
+		// workspace must not turn verify/rollback into "unrelated writes".
+		if name == "sqlite_sequence" || name == "sessions" {
 			continue
 		}
 		rows, err := db.Table(name).Rows()

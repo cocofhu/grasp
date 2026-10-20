@@ -1388,7 +1388,8 @@
       "emptyHint": "从空白工作流开始，或导入已有配置。",
       "noMatchesHint": "试试其他关键词，或清空搜索查看全部工作流。",
       "clearSearch": "清空搜索",
-      "notificationEvents": "通知事件"
+      "notificationEvents": "通知事件",
+      "notifyInheritDefaults": "跟随工作流默认"
     },
     "workflowEditor": {
       "unnamedWorkflow": "未命名工作流",

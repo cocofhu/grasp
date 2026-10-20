@@ -84,6 +84,10 @@ const notifyModes = computed(() => [
   { value: 'inherit', label: t('pages.projectDetail.notify.modeInherit') },
   { value: 'custom', label: t('pages.projectDetail.notify.modeCustom') },
 ])
+const notifyModesWithDefaults = computed(() => notifyModes.value.map(mode => mode.value === 'inherit' ? { ...mode, label: t('pages.workflowList.notifyInheritDefaults') } : mode))
+function notifyModesFor(workflow: Workflow) {
+  return workflow.defaults?.notifyPolicy ? notifyModesWithDefaults.value : notifyModes.value
+}
 const notifyEvents = [
   { value: 'waiting_human', labelKey: 'pages.projectDetail.notify.segWaitingHuman' },
   { value: 'failed', labelKey: 'pages.projectDetail.notify.segFailed' },
@@ -162,7 +166,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
             <div class="workflow-notify-controls">
               <AppSelect
                 :model-value="wfNotifyMode(w)"
-                :options="notifyModes"
+                :options="notifyModesFor(w)"
                 :disabled="savingNotifyWfId === w.id"
                 :aria-label="`${w.name} · ${t('pages.projectDetail.notify.colPolicy')}`"
                 variant="ghost"

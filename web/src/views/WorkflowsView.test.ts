@@ -122,6 +122,15 @@ describe('workspace workflow management', () => {
     expect(router.currentRoute.value.path).toBe('/workflows')
     wrapper.unmount()
   })
+  it('labels inherited notifications by their source when a workflow carries its own defaults', async () => {
+    const migrated = { ...head, id: 'wf-migrated', name: 'Migrated', defaults: { inheritWorkspace: false, variables: [], notifyPolicy: { enabled: true, channelIds: ['chn-b'] } } }
+    mocks.listWorkflows.mockResolvedValueOnce([head, migrated])
+    const { wrapper } = await setup()
+    const triggers = wrapper.findAll('[data-testid="wf-notify-mode"] [data-test="app-select-trigger"]')
+    expect(triggers[0].text()).toContain('跟随工作区')
+    expect(triggers[1].text()).toContain('跟随工作流默认')
+    wrapper.unmount()
+  })
   it('keeps mobile visibility controls and the same three row actions', async () => {
     mocks.isMobile.value = true
     mocks.patchWorkflowHomeVisibility.mockImplementation(async (_id, showOnHome) => ({ ...head, showOnHome }))

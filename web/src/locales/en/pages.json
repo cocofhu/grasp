@@ -1388,7 +1388,8 @@
       "emptyHint": "Start with a blank workflow or import a configuration.",
       "noMatchesHint": "Try another keyword or clear your search to see all workflows.",
       "clearSearch": "Clear search",
-      "notificationEvents": "Notification events"
+      "notificationEvents": "Notification events",
+      "notifyInheritDefaults": "Workflow defaults"
     },
     "workflowEditor": {
       "unnamedWorkflow": "Untitled workflow",

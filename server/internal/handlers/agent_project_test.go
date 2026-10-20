@@ -46,11 +46,14 @@ func grantAdmin(t *testing.T) {
 	})
 }
 
-func TestAgentProjectIDRequired(t *testing.T) {
+func TestAgentProjectIDDefaultsToWorkspace(t *testing.T) {
 	hn := newHarness(t)
 	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "no-home"})
 	if w.Code != http.StatusCreated {
-		t.Fatalf("create without projectId want 400 got %d %s", w.Code, w.Body.String())
+		t.Fatalf("create without projectId want 201 got %d %s", w.Code, w.Body.String())
+	}
+	if ag, ok := hn.h.Agents.Get("no-home"); !ok || ag.ProjectID != models.DefaultProjectID {
+		t.Fatalf("create without projectId must bind the workspace, got %+v", ag)
 	}
 	w = hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "foreign-home", "projectId": "proj_dead"})
 	if w.Code != http.StatusBadRequest {
@@ -66,11 +69,11 @@ func TestAgentProjectIDRequired(t *testing.T) {
 	}
 	w = hn.do(http.MethodPut, "/api/agents/home", map[string]any{"acpBackend": "cursor", "name": "home"})
 	if w.Code != http.StatusOK {
-		t.Fatalf("save without projectId want 400 got %d %s", w.Code, w.Body.String())
+		t.Fatalf("save without projectId want 200 got %d %s", w.Code, w.Body.String())
 	}
 	ag, ok := hn.h.Agents.Get("home")
 	if !ok || ag.ProjectID != models.DefaultProjectID {
-		t.Fatalf("binding must survive rejected save, got %+v", ag)
+		t.Fatalf("binding must survive save without projectId, got %+v", ag)
 	}
 }
 

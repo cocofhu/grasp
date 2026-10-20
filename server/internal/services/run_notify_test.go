@@ -127,6 +127,30 @@ func TestAttemptDeliver_hardClose(t *testing.T) {
 	}
 }
 
+func TestAttemptDeliver_workspaceSwitchSilencesWorkflowDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		workspace bool
+		want      int
+	}{{"workspace off", false, 0}, {"workspace on", true, 1}} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupRunNotifyDB(t)
+			_, wf := seedNotifyProject(t, db, tc.workspace, []string{"waiting_human"}, "inherit", nil)
+			on := true
+			wf.Defaults = &models.WorkflowDefaults{NotifyPolicy: &models.ProjectNotifyPolicy{Enabled: &on, DefaultEvents: []string{"failed"}, ChannelIDs: []string{"chn-wf"}}}
+			if err := db.Save(&wf).Error; err != nil {
+				t.Fatal(err)
+			}
+			d := &fakeRunDeliverer{}
+			svc := NewRunNotifyService(db, d, "")
+			svc.AttemptDeliver(RunNotifyEvent{ProjectID: "proj-n1", RunID: "run-ws", WorkflowID: wf.ID, NodeID: "n", Iteration: 1, Kind: "failed"})
+			if d.count() != tc.want {
+				t.Fatalf("calls=%d want %d", d.count(), tc.want)
+			}
+		})
+	}
+}
+
 func TestAttemptDeliver_noTargetStillClaims(t *testing.T) {
 	db := setupRunNotifyDB(t)
 	seedNotifyProject(t, db, true, []string{"failed"}, "custom", []string{"failed"})
