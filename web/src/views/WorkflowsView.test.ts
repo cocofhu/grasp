@@ -18,6 +18,7 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ success: vi.fn
 vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMobile: mocks.isMobile }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: mocks.triggerImport, handleFileChange: vi.fn() }) }))
+import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import WorkflowsView from './WorkflowsView.vue'
 const head = { id: 'wf-one', name: 'Draft one', description: 'First workflow', status: 'draft', version: 3, publishedVersion: 2, nodes: [{ id: 'input', type: 'input', config: { variables: [{ name: 'current', ask: true, required: true, value: 'head value' }] } }], edges: [], updatedAt: '2026-10-20', showOnHome: false }
 async function setup() {
@@ -92,6 +93,17 @@ describe('workspace workflow management', () => {
     await buttons.find((button) => button.text() === '新建工作流')!.trigger('click')
     await flushPromises()
     expect(router.currentRoute.value.path).toBe('/workflows/new/edit')
+    wrapper.unmount()
+  })
+  it('replaces the empty workspace with the default workflow when the catalog revision advances', async () => {
+    mocks.listWorkflows.mockResolvedValueOnce([])
+    const { wrapper } = await setup()
+    expect(wrapper.get('[data-testid="workflows-empty"]').text()).toContain('暂无工作流')
+    mocks.listWorkflows.mockResolvedValue([{ ...head, id: 'wf-default', name: '默认工作流', status: 'published', showOnHome: true }])
+    workflowCatalogRevision.value++
+    await flushPromises()
+    expect(wrapper.text()).toContain('默认工作流')
+    expect(wrapper.find('[data-testid="workflows-empty"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('keeps notification mode compact and reveals custom events only when editing them', async () => {

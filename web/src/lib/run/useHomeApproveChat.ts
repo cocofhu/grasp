@@ -3,6 +3,7 @@ import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
 import { api } from '@/lib/api/api'
+import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import {
@@ -427,6 +428,12 @@ export function useHomeApproveChat() {
       sending.value = false
     }
   }
+
+  // Same catalog revision the sidebar and workflow page already watch.
+  // Onboarding success advances it while this page stays mounted.
+  watch(workflowCatalogRevision, () => {
+    void load()
+  })
 
   onMounted(() => {
     // Hydrate first so draft preference is set before the workflow list settles (plan g2.4).

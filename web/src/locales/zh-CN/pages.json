@@ -2989,7 +2989,6 @@
       "nameExists": "工作流名称已存在"
     },
     "clarify": {
-      "header": "Agent交互 · 多轮 ReAct · 共 {n} 条",
       "me": "我",
       "myChoice": "我的选择",
       "choicePrefix": "我的选择:",
