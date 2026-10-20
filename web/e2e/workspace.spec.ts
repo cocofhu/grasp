@@ -131,29 +131,21 @@ test('an unavailable historical Agent keeps the conversation readable without a 
   await expect(page.locator('textarea')).toHaveCount(0)
 })
 
-test('complete compact workflow directory has no sidebar search', async ({ page }) => {
+test('workspace sidebar keeps recent runs without a workflow directory', async ({ page }) => {
   await page.goto('/workspace.html')
-  const sidebar = page.getByTestId('sidebar-workflows')
-  await expect(sidebar.getByTestId('sidebar-workflow')).toHaveCount(12)
-  await expect(sidebar.locator('input[type="search"]')).toHaveCount(0)
+  const lists = page.getByTestId('app-desktop-sidebar').getByTestId('sidebar-workspace-lists')
+  await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
+  await expect(lists.getByTestId('sidebar-workflow')).toHaveCount(0)
+  await expect(lists.getByTestId('sidebar-workflow-run')).toHaveCount(0)
+  await expect(lists.getByRole('button', { name: /新建工作流|置顶 / })).toHaveCount(0)
+  await expect(lists.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
-  await expect(page.getByTestId('sidebar-recent-run')).toHaveCount(6)
-  await sidebar.getByRole('button', { name: '置顶 代码审查', exact: true }).click()
-  await expect(sidebar.getByTestId('sidebar-workflow').first()).toContainText('代码审查')
+  await expect(lists.getByRole('link', { name: '最近', exact: true })).toBeVisible()
+  await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(6)
+  await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-1')
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
-  expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(true)
-})
-
-test('manual directory runs load head details and keep publishedSnapshot unset', async ({ page }) => {
-  await page.goto('/workspace.html')
-  await page.getByTestId('sidebar-workflows').getByRole('button', { name: '运行 代码审查', exact: true }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
-  expect(calls.some((call: any) => call.path === '/api/workflows/wf-2')).toBe(true)
-  await page.getByRole('dialog').getByRole('button', { name: /开始运行|确认运行|运行$/, exact: false }).last().click()
-  await expect.poll(async () => page.evaluate(() => (window as any).__workspaceFixture.calls.filter((call: any) => call.method === 'POST' && call.path === '/api/workflows/wf-2/runs').length)).toBe(1)
-  const runCall = await page.evaluate(() => (window as any).__workspaceFixture.calls.find((call: any) => call.path === '/api/workflows/wf-2/runs' && call.method === 'POST'))
-  expect(runCall.body.publishedSnapshot).not.toBe(true)
+  expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(false)
+  expect(calls.some((call: any) => call.path === '/api/workflows' && call.method === 'GET')).toBe(true)
 })
 
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
@@ -167,7 +159,7 @@ test('settings lists workspace tools and independent configuration pages', async
   await expect.poll(async () => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('共享研发工作区')
 })
 
-test('390px drawer opens a compact workflow and closes after explicit run', async ({ page }) => {
+test('390px drawer shows recent runs without a workflow directory', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/workspace.html')
   const toggle = page.getByTestId('floating-nav-ball')
@@ -175,11 +167,12 @@ test('390px drawer opens a compact workflow and closes after explicit run', asyn
   else await page.getByRole('button', { name: /打开导航|显示导航/ }).first().click()
   const drawer = page.getByTestId('mobile-nav-drawer')
   await expect(drawer).toBeVisible()
-  await expect(drawer.getByTestId('sidebar-workflow')).toHaveCount(12)
+  await expect(drawer.getByTestId('sidebar-workflows')).toHaveCount(0)
+  await expect(drawer.getByTestId('sidebar-workflow')).toHaveCount(0)
+  await expect(drawer.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(drawer.locator('input[type="search"]')).toHaveCount(0)
-  await drawer.getByRole('button', { name: '运行 产品研发', exact: true }).click()
-  await expect(drawer).toHaveCount(0)
-  await expect(page.getByRole('dialog')).toBeVisible()
+  await expect(drawer.getByTestId('sidebar-recent-run')).toHaveCount(6)
+  await expect(drawer.getByRole('link', { name: '最近', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 
@@ -261,7 +254,9 @@ test('settings and workspace retain the same app rail while changing directory',
   await expect(rail.locator('a[href="/settings"]')).toHaveAttribute('aria-current', 'page')
   expect((await rail.boundingBox())?.width).toBe(before?.width)
   await rail.locator('a[href="/workflows"]').click()
-  await expect(page.getByTestId('sidebar-workflows')).toBeVisible()
+  await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
+  await expect(page.getByTestId('workflows-page')).toBeVisible()
+  await expect(page.getByTestId('sidebar-recent')).toBeVisible()
   await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
   await expect(rail.locator('a[href="/workflows"]')).toHaveAttribute('aria-current', 'page')
 })
