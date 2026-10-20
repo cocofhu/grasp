@@ -11,7 +11,7 @@ const emit = defineEmits<{ (e: 'update:mode', v: string): void }>()
 </script>
 
 <template>
-  <section class="token-chart-card flex min-w-0 flex-col border-t border-line/60 py-5">
+  <section class="token-chart-card flex min-w-0 flex-col py-4">
     <div class="flex flex-wrap items-start justify-between gap-x-5 gap-y-3">
       <div class="min-w-0 flex-1">
         <component :is="`h${headingLevel}`" class="m-0 text-sm font-semibold leading-5 text-txt">{{ title }}</component>

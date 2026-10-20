@@ -20,6 +20,7 @@ import { useToast } from '@/lib/composables/useToast'
 import { useAuth } from '@/lib/composables/useAuth'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import Icon from '@/components/ui/Icon.vue'
 import TokenChartCard from '@/components/token-analytics/TokenChartCard.vue'
 import TokenDrillDownModal from '@/components/token-analytics/TokenDrillDownModal.vue'
 import TokenPricingModal from '@/components/token-analytics/TokenPricingModal.vue'
@@ -527,10 +528,11 @@ function exportRuns() {
 const RUN_TITLE_MAX_DISPLAY = 60
 
 /** Session-only widths for the "highest-usage runs" table (g1.2). Refresh restores defaults. */
-type RunsColKey = 'run' | 'model' | 'total' | 'cost'
+type RunsColKey = 'run' | 'workflow' | 'model' | 'total' | 'cost'
 
 const RUNS_COL_DEFS = [
   { key: 'run' as const, labelKey: 'pages.tokenAnalytics.tables.colRun', align: 'left' as const, defaultWidth: 220, minWidth: 80 },
+  { key: 'workflow' as const, labelKey: 'pages.tokenAnalytics.colWorkflow', align: 'left' as const, defaultWidth: 140, minWidth: 64 },
   { key: 'model' as const, labelKey: 'pages.tokenAnalytics.tables.colModel', align: 'left' as const, defaultWidth: 140, minWidth: 64 },
   { key: 'total' as const, labelKey: 'pages.tokenAnalytics.tables.colTotal', align: 'right' as const, defaultWidth: 88, minWidth: 56 },
   { key: 'cost' as const, labelKey: 'pages.tokenAnalytics.tables.colCost', align: 'right' as const, defaultWidth: 80, minWidth: 56 },
@@ -606,6 +608,42 @@ onBeforeUnmount(() => {
 })
 
 watch(() => JSON.stringify(filters.value), () => void load())
+
+/* ── redesign: filter popover + chips, workflow table (restores the old 项目明细表 slot) ── */
+const fxOpen = ref(false)
+type FxKey = 'modelKey' | 'workflowId' | 'nodeType' | 'status' | 'phase'
+const FX_FIELDS: { key: FxKey; labelKey: string }[] = [
+  { key: 'modelKey', labelKey: 'pages.tokenAnalytics.fxModel' },
+  { key: 'workflowId', labelKey: 'pages.tokenAnalytics.fxWorkflow' },
+  { key: 'nodeType', labelKey: 'pages.tokenAnalytics.fxNodeType' },
+  { key: 'status', labelKey: 'pages.tokenAnalytics.fxStatus' },
+  { key: 'phase', labelKey: 'pages.tokenAnalytics.fxPhase' },
+]
+function fxOptions(key: FxKey) {
+  const src = key === 'modelKey' ? modelOptions.value : key === 'workflowId' ? workflowOptions.value : key === 'nodeType' ? nodeTypeOptions.value : key === 'status' ? statusOptions.value : phaseOptions.value
+  return src.map((o) => (o.value ? o : { value: '', label: t('pages.tokenAnalytics.fxAll') }))
+}
+function sourceName(s: TokenSourceFilter) {
+  return s === 'all' ? t('pages.tokenAnalytics.fxAllSources') : s === 'workflow' ? t('pages.tokenAnalytics.sourceWorkflow') : s === 'pm' ? t('pages.tokenAnalytics.sourcePm') : t('pages.tokenAnalytics.sourceStudio')
+}
+const fxChips = computed(() => {
+  const out: { key: string; label: string; clear: () => void }[] = []
+  for (const f of FX_FIELDS) {
+    const v = filters.value[f.key] as string
+    if (v) out.push({ key: f.key, label: `${t(f.labelKey)}：${fxOptions(f.key).find((o) => o.value === v)?.label || v}`, clear: () => setFilter(f.key, '' as never) })
+  }
+  if (filters.value.runId) out.push({ key: 'runId', label: `${t('pages.tokenAnalytics.drill.dims.run')}：${filters.value.runId.slice(0, 8)}`, clear: () => setFilter('runId', '') })
+  return out
+})
+const workflowRows = computed(() => (data.value?.workflows ?? []).filter((w) => w.total > 0))
+function exportWorkflows() {
+  const rows = workflowRows.value.map((w) => [w.name, w.workflowId || '', w.kind || '', w.total, w.inputTokens || 0, w.outputTokens || 0, w.cacheReadTokens || 0, w.cacheWriteTokens || 0, w.cost || 0])
+  downloadCsv('token-usage-workflows.csv', toCsv(['workflow', 'workflow_id', 'kind', 'total', 'input', 'output', 'cache_read', 'cache_write', 'cost'], rows))
+}
+onMounted(() => document.addEventListener('click', closeFx))
+onBeforeUnmount(() => document.removeEventListener('click', closeFx))
+function closeFx() { fxOpen.value = false }
+const fxCount = computed(() => fxChips.value.length)
 </script>
 
 <template>
@@ -630,10 +668,9 @@ watch(() => JSON.stringify(filters.value), () => void load())
           </div>
         </header>
 
-        <section class="usage-controls" :aria-label="t('pages.tokenAnalytics.analysisRange')" data-testid="token-analytics-controls">
-          <div class="usage-control-row" data-testid="token-analytics-period">
-            <span class="usage-control-label">{{ t('pages.tokenAnalytics.timeRange') }}</span>
-            <div class="usage-control-items">
+        <section class="usage-toolbar" :aria-label="t('pages.tokenAnalytics.analysisRange')" data-testid="token-analytics-controls">
+          <div class="usage-toolbar-row">
+            <div class="usage-toolbar-group" data-testid="token-analytics-period">
               <div
                 class="usage-seg flex gap-1 rounded-lg bg-elevated p-1"
                 role="group"
@@ -644,7 +681,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   v-for="w in WINDOWS"
                   :key="w"
                   type="button"
-                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
                   :class="filters.window === w ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-window-${w}`"
                   :aria-pressed="filters.window === w"
@@ -654,7 +691,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 </button>
                 <button
                   type="button"
-                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
                   :class="filters.window === 'custom' ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   data-testid="token-analytics-window-custom"
                   :aria-pressed="filters.window === 'custom'"
@@ -684,104 +721,102 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   @change="setRange('to', ($event.target as HTMLInputElement).value)"
                 />
               </div>
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.granularity"
-                :options="granularityOptions"
-                :aria-label="t('pages.tokenAnalytics.granularity.aria')"
-                data-testid="token-analytics-granularity"
-                @update:model-value="setFilter('granularity', $event as TokenStatsFilters['granularity'])"
-              />
-            </div>
-          </div>
-          <div class="usage-filter-rows" data-testid="token-analytics-filters">
-          <div class="usage-control-row">
-            <span class="usage-control-label">{{ t('pages.tokenAnalytics.sourceLabel') }}</span>
-            <div class="usage-control-items">
               <div class="usage-seg flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.tokenAnalytics.sourceLabel')">
                 <button
                   v-for="s in SOURCES"
                   :key="s"
                   type="button"
-                  class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+                  class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
                   :class="filters.source === s ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-source-${s}`"
                   :aria-pressed="filters.source === s"
                   @click="setFilter('source', s)"
+                >{{ sourceName(s) }}</button>
+              </div>
+            </div>
+            <div class="usage-toolbar-group">
+              <div class="relative" @click.stop>
+                <button
+                  type="button"
+                  class="toolbar-control flex items-center gap-2 border border-line bg-surface text-sm text-txt2 transition hover:bg-elevated"
+                  :class="{ 'border-accent/60 text-txt': fxCount }"
+                  :aria-expanded="fxOpen"
+                  data-testid="token-analytics-filter-btn"
+                  @click="fxOpen = !fxOpen"
                 >
-                  {{ s === 'all' ? t('pages.tokenAnalytics.sourceAll') : s === 'workflow' ? t('pages.tokenAnalytics.sourceWorkflow') : s === 'pm' ? t('pages.tokenAnalytics.sourcePm') : t('pages.tokenAnalytics.sourceStudio') }}
+                  <Icon name="filter" :size="15" class="text-txt3" />
+                  {{ t('pages.tokenAnalytics.fxFilter') }}
+                  <span v-if="fxCount" class="chip">{{ fxCount }}</span>
                 </button>
+                <Transition name="overlay-pop">
+                  <div v-if="fxOpen" class="card absolute right-0 z-30 mt-1.5 w-[340px] p-3" data-testid="token-analytics-filter-pop">
+
+                    <div class="grid grid-cols-[72px_1fr] items-center gap-x-3 gap-y-2" data-testid="token-analytics-filters">
+                      <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxModel') }}</span>
+                      <AppSelect
+                        size="sm"
+                        data-testid="token-analytics-filter-model"
+                        :model-value="filters.modelKey"
+                        :options="fxOptions('modelKey')"
+                        :aria-label="t('pages.tokenAnalytics.fxModel')"
+                        @update:model-value="setFilter('modelKey', $event)"
+                      />
+                      <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxWorkflow') }}</span>
+                      <AppSelect
+                        size="sm"
+                        data-testid="token-analytics-filter-workflow"
+                        :model-value="filters.workflowId"
+                        :options="fxOptions('workflowId')"
+                        :aria-label="t('pages.tokenAnalytics.fxWorkflow')"
+                        @update:model-value="setFilter('workflowId', $event)"
+                      />
+                      <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxNodeType') }}</span>
+                      <AppSelect
+                        size="sm"
+                        data-testid="token-analytics-filter-node-type"
+                        :model-value="filters.nodeType"
+                        :options="fxOptions('nodeType')"
+                        :aria-label="t('pages.tokenAnalytics.fxNodeType')"
+                        @update:model-value="setFilter('nodeType', $event)"
+                      />
+                      <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxStatus') }}</span>
+                      <AppSelect
+                        size="sm"
+                        data-testid="token-analytics-filter-status"
+                        :model-value="filters.status"
+                        :options="fxOptions('status')"
+                        :aria-label="t('pages.tokenAnalytics.fxStatus')"
+                        @update:model-value="setFilter('status', $event as TokenStatsFilters['status'])"
+                      />
+                      <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxPhase') }}</span>
+                      <AppSelect
+                        size="sm"
+                        data-testid="token-analytics-filter-phase"
+                        :model-value="filters.phase"
+                        :options="fxOptions('phase')"
+                        :aria-label="t('pages.tokenAnalytics.fxPhase')"
+                        @update:model-value="setFilter('phase', $event as TokenStatsFilters['phase'])"
+                      />
+                    </div>
+                    <div class="mt-3 flex justify-end border-t border-line/60 pt-2">
+                      <AppButton variant="ghost" size="sm" :disabled="!filterCount" data-testid="token-analytics-clear" @click="clearFilters">{{ t('pages.tokenAnalytics.clearFilters') }}</AppButton>
+                    </div>
+                  </div>
+                </Transition>
               </div>
             </div>
           </div>
-          <div class="usage-control-row" data-testid="token-analytics-dimensions">
-            <span class="usage-control-label">{{ t('pages.tokenAnalytics.dimensionsLabel') }}</span>
-            <div class="usage-control-items">
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.modelKey"
-                :options="modelOptions"
-                :aria-label="t('pages.tokenAnalytics.modelAll')"
-                data-testid="token-analytics-filter-model"
-                @update:model-value="setFilter('modelKey', $event)"
-              />
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.workflowId"
-                :options="workflowOptions"
-                :aria-label="t('pages.tokenAnalytics.workflowAll')"
-                data-testid="token-analytics-filter-workflow"
-                @update:model-value="setFilter('workflowId', $event)"
-              />
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.nodeType"
-                :options="nodeTypeOptions"
-                :aria-label="t('pages.tokenAnalytics.nodeTypeAll')"
-                data-testid="token-analytics-filter-node-type"
-                @update:model-value="setFilter('nodeType', $event)"
-              />
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.status"
-                :options="statusOptions"
-                :aria-label="t('pages.tokenAnalytics.statusAll')"
-                data-testid="token-analytics-filter-status"
-                @update:model-value="setFilter('status', $event as TokenStatsFilters['status'])"
-              />
-              <AppSelect
-                class="usage-select"
-                size="sm"
-                :model-value="filters.phase"
-                :options="phaseOptions"
-                :aria-label="t('pages.tokenAnalytics.phaseAll')"
-                data-testid="token-analytics-filter-phase"
-                @update:model-value="setFilter('phase', $event as TokenStatsFilters['phase'])"
-              />
-              <span
-                v-if="filters.runId"
-                class="chip border-accent/40 bg-accent-dim px-2.5 py-1.5 text-accent-2"
-                data-testid="token-analytics-filter-run"
-              >
-                {{ t('pages.tokenAnalytics.drill.dims.run') }}：{{ filters.runId.slice(0, 8) }}
-                <button type="button" :aria-label="t('pages.tokenAnalytics.clearFilters')" @click="setFilter('runId', '')">×</button>
-              </span>
-              <AppButton
-                variant="ghost"
-                size="sm"
-                :disabled="!filterCount"
-                data-testid="token-analytics-clear"
-                @click="clearFilters"
-              >
-                {{ t('pages.tokenAnalytics.clearFilters') }}<span v-if="filterCount"> ({{ filterCount }})</span>
-              </AppButton>
-            </div>
-          </div>
+          <div v-if="fxChips.length" class="usage-chips" data-testid="token-analytics-filter-chips">
+            <span
+              v-for="c in fxChips"
+              :key="c.key"
+              class="chip border-accent/40 bg-accent-dim px-2.5 py-1 text-accent-2"
+              :data-testid="`token-analytics-chip-${c.key}`"
+            >
+              {{ c.label }}
+              <button type="button" :aria-label="t('pages.tokenAnalytics.clearFilters')" :data-testid="`token-analytics-chip-remove-${c.key}`" @click="c.clear()">×</button>
+            </span>
+            <AppButton variant="ghost" size="sm" data-testid="token-analytics-chips-clear" @click="clearFilters">{{ t('pages.tokenAnalytics.fxClearAll') }}</AppButton>
           </div>
         </section>
 
@@ -804,8 +839,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
           <p class="mt-1 text-sm text-txt3">{{ t('pages.tokenAnalytics.emptyHint') }}</p>
         </div>
         <div v-else-if="data" class="transition-opacity" :class="loading ? 'opacity-70' : ''">
-          <section id="overview" class="usage-overview" data-testid="token-analytics-kpis" aria-labelledby="usage-overview-title">
-            <div class="usage-section-heading"><h2 id="usage-overview-title">{{ t('pages.tokenAnalytics.sections.overview') }}</h2><p>{{ t('pages.tokenAnalytics.sections.overviewHint') }}</p></div>
+          <section id="overview" class="usage-overview" data-testid="token-analytics-kpis" :aria-label="t('pages.tokenAnalytics.sections.overview')">
             <div class="usage-kpi-grid">
               <div
                 class="usage-metric"
@@ -935,13 +969,22 @@ watch(() => JSON.stringify(filters.value), () => void load())
             :mode="lineMode"
             @update:mode="lineMode = $event as TrendMode"
           >
+            <template #actions>
+              <AppSelect
+                class="usage-select w-[132px]"
+                size="sm"
+                :model-value="filters.granularity"
+                :options="granularityOptions"
+                :aria-label="t('pages.tokenAnalytics.granularity.aria')"
+                data-testid="token-analytics-granularity"
+                @update:model-value="setFilter('granularity', $event as TokenStatsFilters['granularity'])"
+              />
+            </template>
             <div class="token-analytics-plot mt-4 h-[300px] overflow-visible sm:h-[320px]" data-testid="token-analytics-plot-lines">
               <VChart v-if="lineOption" :option="lineOption" autoresize class="h-full w-full" @click="onChartClick" />
             </div>
           </TokenChartCard>
-
-          <section class="usage-analysis-section" aria-labelledby="usage-breakdown-title" data-testid="token-analytics-breakdown">
-            <div class="usage-section-heading"><h2 id="usage-breakdown-title">{{ t('pages.tokenAnalytics.sections.breakdown') }}</h2><p>{{ t('pages.tokenAnalytics.sections.breakdownHint') }}</p></div>
+          <section :aria-label="t('pages.tokenAnalytics.sections.breakdown')" data-testid="token-analytics-breakdown">
             <TokenChartCard
               :heading-level="3"
               id="pies"
@@ -963,7 +1006,6 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 </div>
               </div>
             </TokenChartCard>
-
             <div class="usage-chart-grid grid grid-cols-1 gap-5" :class="costOption && hasComparableBarDimension ? 'xl:grid-cols-[3fr_2fr]' : ''">
               <TokenChartCard
                 :heading-level="3"
@@ -995,10 +1037,8 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 </div>
               </TokenChartCard>
             </div>
-
           </section>
-
-          <section class="usage-analysis-section usage-patterns" :aria-label="t('pages.tokenAnalytics.sections.patterns')" data-testid="token-analytics-patterns">
+          <section class="usage-patterns" :aria-label="t('pages.tokenAnalytics.sections.patterns')" data-testid="token-analytics-patterns">
             <div class="usage-chart-grid grid grid-cols-1 gap-5 xl:grid-cols-2">
               <TokenChartCard
                 :heading-level="3"
@@ -1021,7 +1061,6 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   <p v-else class="py-20 text-center text-xs text-txt3">{{ t('pages.tokenAnalytics.noData') }}</p>
                 </div>
               </TokenChartCard>
-
             </div>
             <TokenChartCard
               :heading-level="3"
@@ -1039,7 +1078,6 @@ watch(() => JSON.stringify(filters.value), () => void load())
                 </div>
               </div>
             </TokenChartCard>
-
             <TokenChartCard
               :heading-level="3"
               v-if="treeOption"
@@ -1053,10 +1091,8 @@ watch(() => JSON.stringify(filters.value), () => void load())
               </div>
             </TokenChartCard>
           </section>
-
-          <section id="tables" class="usage-analysis-section" aria-labelledby="usage-tables-title" data-testid="token-analytics-details">
-            <div class="usage-section-heading"><h2 id="usage-tables-title">{{ t('pages.tokenAnalytics.sections.details') }}</h2><p>{{ t('pages.tokenAnalytics.sections.detailsHint') }}</p></div>
-            <div class="usage-table-grid grid grid-cols-1 gap-5">
+          <section id="tables" :aria-label="t('pages.tokenAnalytics.sections.details')" data-testid="token-analytics-details">
+            <div class="usage-table-grid grid grid-cols-1 gap-x-8 2xl:grid-cols-2">
               <TokenChartCard :heading-level="3" data-testid="token-analytics-models-table" :title="t('pages.tokenAnalytics.tables.models')">
                 <template #actions>
                   <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-models" @click="exportModels">
@@ -1105,88 +1141,130 @@ watch(() => JSON.stringify(filters.value), () => void load())
                   </table>
                 </div>
               </TokenChartCard>
-
-              <div class="min-w-0 border-t border-line/60 py-5" data-testid="token-analytics-runs-table">
-                <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
-                  <h3 class="m-0 text-sm font-semibold">{{ t('pages.tokenAnalytics.tables.runs') }}</h3>
-                  <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-runs" @click="exportRuns">
+              <TokenChartCard :heading-level="3" data-testid="token-analytics-workflows-table" :title="t('pages.tokenAnalytics.workflowsTable')">
+                <template #actions>
+                  <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-workflows" @click="exportWorkflows">
                     {{ t('pages.tokenAnalytics.exportCsv') }}
                   </button>
-                </div>
-                <div class="token-analytics-table-scroll min-w-0 max-w-full overflow-x-auto">
-                  <!-- plan coverage: g1.1 / g1.2 / g1.3 — header sashes, session col widths, truncate without misfire -->
-                  <table
-                    class="token-analytics-runs-grid min-w-full border-collapse text-xs"
-                    :class="runsColDragging ? 'select-none' : ''"
-                    :style="{ width: `${runsTableWidth}px`, minWidth: '100%' }"
-                    data-testid="token-analytics-runs-grid"
-                  >
-                    <colgroup>
-                      <col
-                        v-for="col in RUNS_COL_DEFS"
-                        :key="col.key"
-                        :data-testid="`token-analytics-runs-col-${col.key}`"
-                        :style="{ width: `${runsColWidths[col.key]}px` }"
-                      />
-                      <col style="width: 56px" />
-                    </colgroup>
-                    <thead>
+                </template>
+                <div class="token-analytics-table-scroll mt-2 min-w-0 max-w-full overflow-x-auto">
+                  <table class="w-full border-collapse text-xs">
+                    <thead class="sticky top-0 bg-surface">
                       <tr class="text-txt3">
-                        <th
-                          v-for="col in RUNS_COL_DEFS"
-                          :key="col.key"
-                          class="relative select-none border-b border-line py-1.5 font-semibold"
-                          :class="col.align === 'right' ? 'text-right' : 'text-left'"
-                        >
-                          {{ t(col.labelKey) }}
-                          <div
-                            class="token-analytics-runs-col-sash absolute top-0 z-[2] h-full w-1.5 cursor-col-resize touch-none hover:bg-accent"
-                            :class="runsColDragging === col.key ? 'bg-accent' : ''"
-                            role="separator"
-                            aria-orientation="vertical"
-                            :aria-valuemin="col.minWidth"
-                            :aria-valuenow="runsColWidths[col.key]"
-                            :aria-label="runsColSashLabel(col.key)"
-                            :title="runsColSashLabel(col.key)"
-                            :data-testid="`token-analytics-runs-col-sash-${col.key}`"
-                            @pointerdown="onRunsColSashPointerDown(col.key, $event)"
-                            @pointermove="onRunsColSashPointerMove"
-                            @pointerup="onRunsColSashPointerUp"
-                            @pointercancel="onRunsColSashPointerUp"
-                          />
-                        </th>
-                        <th class="border-b border-line" />
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-left font-semibold">{{ t('pages.tokenAnalytics.colWorkflow') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colShare') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colInput') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colOutput') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCache') }}</th>
+                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCost') }}</th>
+                        <th class="w-12 border-b border-line" />
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="r in data.topRuns" :key="r.runId" class="hover:bg-accent-dim/40">
-                        <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5">
-                          <button
-                            type="button"
-                            class="block w-full max-w-full truncate text-left text-accent-2"
-                            :title="runTitleTooltip(r.title)"
-                            @click="goRun(r.runId)"
-                          >{{ runTitleDisplay(r.title) }}</button>
+                      <tr v-for="(w, index) in workflowRows" :key="(w.kind || '') + (w.workflowId || w.name)" class="hover:bg-accent-dim/40" data-testid="token-analytics-workflow-row">
+                        <td class="border-b border-line/60 py-1.5">
+                          <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
+                            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: w.other ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
+                            <span class="min-w-0 truncate" :class="w.other ? 'text-txt3' : ''" :title="w.name">{{ w.kind === 'pm' ? sourceName('pm') : w.name }}</span>
+                          </div>
                         </td>
-                        <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5" :title="r.modelName || r.modelKey">{{ r.modelName || r.modelKey }}</td>
-                        <td class="overflow-hidden whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums" :title="fmtTokenCount(r.total)">
-                          {{ fmtCompactTokenCount(r.total) }}
-                        </td>
-                        <td class="overflow-hidden whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">
-                          {{ r.cost ? fmtCost(r.cost, currency) : '—' }}
-                        </td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(w.total)">{{ fmtCompactTokenCount(w.total) }}</td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums text-txt3">{{ share(w.total) }}</td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.inputTokens || 0) }}</td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.outputTokens || 0) }}</td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.cacheReadTokens || 0) }} / {{ fmtCompactTokenCount(w.cacheWriteTokens || 0) }}</td>
+                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ w.cost ? fmtCost(w.cost, currency) : '—' }}</td>
                         <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right">
-                          <button
-                            type="button"
-                            class="text-[11px] text-txt3 hover:text-accent-2"
-                            :data-testid="`token-analytics-run-detail-${r.runId}`"
-                            @click="openDrill([{ dim: 'run', key: r.runId, name: runTitleDisplay(r.title) }])"
-                          >{{ t('pages.tokenAnalytics.tables.details') }}</button>
+                          <button v-if="workflowDrill(w)" type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-workflow-detail" @click="openDrill([workflowDrill(w)!])">{{ t('pages.tokenAnalytics.tables.details') }}</button>
                         </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
+              </TokenChartCard>
+            </div>
+            <div class="min-w-0 py-4" data-testid="token-analytics-runs-table">
+              <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
+                <h3 class="m-0 text-sm font-semibold">{{ t('pages.tokenAnalytics.tables.runs') }}</h3>
+                <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-runs" @click="exportRuns">
+                  {{ t('pages.tokenAnalytics.exportCsv') }}
+                </button>
+              </div>
+              <div class="token-analytics-table-scroll min-w-0 max-w-full overflow-x-auto">
+                <!-- plan coverage: g1.1 / g1.2 / g1.3 — header sashes, session col widths, truncate without misfire -->
+                <table
+                  class="token-analytics-runs-grid min-w-full border-collapse text-xs"
+                  :class="runsColDragging ? 'select-none' : ''"
+                  :style="{ width: `${runsTableWidth}px`, minWidth: '100%' }"
+                  data-testid="token-analytics-runs-grid"
+                >
+                  <colgroup>
+                    <col
+                      v-for="col in RUNS_COL_DEFS"
+                      :key="col.key"
+                      :data-testid="`token-analytics-runs-col-${col.key}`"
+                      :style="{ width: `${runsColWidths[col.key]}px` }"
+                    />
+                    <col style="width: 56px" />
+                  </colgroup>
+                  <thead>
+                    <tr class="text-txt3">
+                      <th
+                        v-for="col in RUNS_COL_DEFS"
+                        :key="col.key"
+                        class="relative select-none border-b border-line py-1.5 font-semibold"
+                        :class="col.align === 'right' ? 'text-right' : 'text-left'"
+                      >
+                        {{ t(col.labelKey) }}
+                        <div
+                          class="token-analytics-runs-col-sash absolute top-0 z-[2] h-full w-1.5 cursor-col-resize touch-none hover:bg-accent"
+                          :class="runsColDragging === col.key ? 'bg-accent' : ''"
+                          role="separator"
+                          aria-orientation="vertical"
+                          :aria-valuemin="col.minWidth"
+                          :aria-valuenow="runsColWidths[col.key]"
+                          :aria-label="runsColSashLabel(col.key)"
+                          :title="runsColSashLabel(col.key)"
+                          :data-testid="`token-analytics-runs-col-sash-${col.key}`"
+                          @pointerdown="onRunsColSashPointerDown(col.key, $event)"
+                          @pointermove="onRunsColSashPointerMove"
+                          @pointerup="onRunsColSashPointerUp"
+                          @pointercancel="onRunsColSashPointerUp"
+                        />
+                      </th>
+                      <th class="border-b border-line" />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="r in data.topRuns" :key="r.runId" class="hover:bg-accent-dim/40">
+                      <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5">
+                        <button
+                          type="button"
+                          class="block w-full max-w-full truncate text-left text-accent-2"
+                          :title="runTitleTooltip(r.title)"
+                          @click="goRun(r.runId)"
+                        >{{ runTitleDisplay(r.title) }}</button>
+                      </td>
+                      <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5" :title="r.workflowName" data-testid="token-analytics-run-workflow">{{ r.workflowName || '—' }}</td>
+                      <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5" :title="r.modelName || r.modelKey">{{ r.modelName || r.modelKey }}</td>
+                      <td class="overflow-hidden whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums" :title="fmtTokenCount(r.total)">
+                        {{ fmtCompactTokenCount(r.total) }}
+                      </td>
+                      <td class="overflow-hidden whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">
+                        {{ r.cost ? fmtCost(r.cost, currency) : '—' }}
+                      </td>
+                      <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right">
+                        <button
+                          type="button"
+                          class="text-[11px] text-txt3 hover:text-accent-2"
+                          :data-testid="`token-analytics-run-detail-${r.runId}`"
+                          @click="openDrill([{ dim: 'run', key: r.runId, name: runTitleDisplay(r.title) }])"
+                        >{{ t('pages.tokenAnalytics.tables.details') }}</button>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </section>
@@ -1212,6 +1290,10 @@ watch(() => JSON.stringify(filters.value), () => void load())
 </template>
 
 <style scoped>
+.usage-toolbar { display: flex; flex-direction: column; gap: 10px; padding-bottom: 14px; }
+.usage-toolbar-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; }
+.usage-toolbar-group { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.usage-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .usage-content {
   width: 100%;
   max-width: 1480px;
@@ -1332,11 +1414,7 @@ watch(() => JSON.stringify(filters.value), () => void load())
 .usage-table-grid table {
   min-width: 640px;
 }
-@media (min-width: 1440px) {
-  .usage-kpi-grid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
-  .usage-metric:nth-child(n) { border-top: 0; border-left: 1px solid rgb(var(--c-line) / 0.6); }
-  .usage-metric:first-child { border-left: 0; }
-}
+/* 1440: keep 3 columns (six columns squeezed 输入/输出 and the cache bar). */
 @media (max-width: 639px) {
   .usage-content { padding-bottom: 24px; }
   .usage-page-header { flex-direction: column; gap: 16px; margin-bottom: 20px; }
