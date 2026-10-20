@@ -14,7 +14,7 @@ test('settings keeps the app rail and a centered document without search', async
   const formBox = await page.getByTestId('workspace-page').boundingBox()
   const mainBox = await page.getByTestId('shell-page-scroll').boundingBox()
   const mainWidth = await page.getByTestId('shell-page-scroll').evaluate(el => el.clientWidth)
-  expect(navBox!.width).toBe(304)
+  expect(navBox!.width).toBe(360)
   expect(formBox!.width).toBeLessThanOrEqual(860)
   expect(Math.abs(formBox!.x + formBox!.width / 2 - (mainBox!.x + mainWidth / 2))).toBeLessThan(2)
   const field = page.locator('#workspace-meta-name')
@@ -188,7 +188,7 @@ test('settings tool links keep the settings directory until explicitly leaving i
     await expect(page.getByTestId('app-desktop-sidebar')).toHaveAttribute('data-nav-mode', 'settings')
     await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   }
-  expect((await page.getByTestId('app-desktop-sidebar').boundingBox())?.width).toBe(304)
+  expect((await page.getByTestId('app-desktop-sidebar').boundingBox())?.width).toBe(360)
   await page.getByTestId('desktop-nav-hide').click()
   await expect(page.getByTestId('app-desktop-sidebar')).toHaveAttribute('aria-hidden', 'true')
   await page.getByTestId('floating-nav-ball').click()
