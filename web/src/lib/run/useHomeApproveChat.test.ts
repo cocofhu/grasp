@@ -54,6 +54,7 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
+import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
 import {
   useHomeApproveChat,
   HOME_WORKFLOW_MEMORY_KEY,
@@ -927,5 +928,18 @@ describe('useHomeApproveChat', () => {
     await chat.load()
     expect(chat.homeWorkflows.value[0]?.name).toBe('新版本')
     expect(chat.homeWorkflows.value[0]?.description).toBe('新说明')
+  })
+
+  it('reloads mounted home choices when the workflow catalog revision advances', async () => {
+    mocks.listWorkflows.mockResolvedValueOnce([])
+    const chat = withSetup(() => useHomeApproveChat())
+    await flushPromises()
+    expect(chat.homeWorkflows.value).toHaveLength(0)
+
+    mocks.listWorkflows.mockResolvedValue([{ ...approveWf, id: 'wf-default', name: '默认工作流' }])
+    workflowCatalogRevision.value++
+    await flushPromises()
+    expect(chat.homeWorkflows.value.map((w) => w.name)).toEqual(['默认工作流'])
+    expect(chat.selected.value?.id).toBe('wf-default')
   })
 })

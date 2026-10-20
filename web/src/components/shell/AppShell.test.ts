@@ -71,7 +71,7 @@ function mountShell(opts?: { stubSidebar?: boolean; attachToBody?: boolean }) {
           ? false
           : defineComponent({
               template:
-                '<aside data-testid="sidebar" class="w-[304px] shrink-0" />',
+                '<aside data-testid="sidebar" class="w-[360px] shrink-0" />',
             }),
         AppSidebarNav: { template: '<nav data-testid="shell-nav" />' },
         BrandLogo: true,
@@ -224,7 +224,7 @@ describe('AppShell (no topbar + floating ball)', () => {
     expect(slot.classes()).not.toContain('py-[14px]')
     expect(slot.classes()).not.toContain('pl-[14px]')
     const sidebar = wrapper.get('[data-testid="app-desktop-sidebar"]')
-    expect(sidebar.classes()).toContain('w-[304px]')
+    expect(sidebar.classes()).toContain('w-[360px]')
     expect(sidebar.find('[data-testid="sidebar-app-rail"]').exists()).toBe(true)
     expect(sidebar.get('[data-testid="sidebar-settings-title"]').text()).toBe('设置')
     expect(sidebar.get('.sidebar-footer').find('[data-testid="sidebar-account-trigger"]').exists()).toBe(false)
