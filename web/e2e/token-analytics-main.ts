@@ -200,9 +200,10 @@ window.fetch = async (input: RequestInfo | URL) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/projects')) {
+  if (url.includes('/workflows')) {
     return new Response(JSON.stringify([]), { status: 200, headers: { 'Content-Type': 'application/json' } })
   }
+  if (new URL(url, location.origin).pathname === '/api/workspace') return new Response(JSON.stringify({ id: 'workspace', name: '工作区', variables: [] }), { headers: { 'Content-Type': 'application/json' } })
   return new Response(JSON.stringify({}), { status: 200, headers: { 'Content-Type': 'application/json' } })
 }
 
@@ -220,13 +221,6 @@ async function bootstrap() {
   const DummyPage = defineComponent({
     setup() {
       return () => h('div', { 'data-testid': 'shell-main-dummy' }, 'ok')
-    },
-  })
-
-  const ProjectBoardPage = defineComponent({
-    props: { id: { type: String, required: true } },
-    setup(props) {
-      return () => h('div', { 'data-testid': 'project-board-page' }, `board:${props.id}`)
     },
   })
 
@@ -272,13 +266,6 @@ async function bootstrap() {
         name: 'stats',
         component: TokenAnalyticsView,
         meta: { titleKey: 'route.stats' },
-      },
-      {
-        path: '/projects/:id',
-        name: 'project-detail',
-        component: ProjectBoardPage,
-        props: true,
-        meta: { titleKey: 'route.projectDetail' },
       },
       {
         path: '/runs/:id',

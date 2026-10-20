@@ -102,7 +102,7 @@ function mountChat(opts: {
 }
 
 async function clickSend(wrapper: ReturnType<typeof mountChat>) {
-  const sendBtn = wrapper.find('button[class*="bg-accent"]')
+  const sendBtn = wrapper.find('[data-testid="clarify-send-icon"], [data-testid="clarify-send-label"]')
   expect(sendBtn.exists()).toBe(true)
   await sendBtn.trigger('click')
   await flushPromises()
@@ -205,7 +205,7 @@ describe('ClarifyChat', () => {
     expect(wrapper.text()).toContain('首页加点动效')
     expect(wrapper.text()).toContain('标题再大一点')
     expect(wrapper.text()).not.toContain('Live · ')
-    expect(wrapper.findAll('[data-testid="clarify-scroller"] > .flex-row-reverse')).toHaveLength(2)
+    expect(wrapper.findAll('[data-testid="clarify-scroller"] [data-turn-role="human"]')).toHaveLength(2)
     wrapper.unmount()
   })
 
@@ -255,7 +255,7 @@ describe('ClarifyChat', () => {
   it('emits send when user submits text', async () => {
     const wrapper = mountChat()
     await wrapper.find('textarea').setValue('我的需求说明')
-    await wrapper.find('button[class*="bg-accent"]').trigger('click')
+    await clickSend(wrapper)
     await flushPromises()
     expect(wrapper.emitted('send')).toBeTruthy()
     const payload = wrapper.emitted('send')![0]
@@ -388,7 +388,7 @@ describe('ClarifyChat', () => {
     const wrapper = mountChat({ reviewMode: true })
     // Enqueue a revise: thinking/queue must block 确认并流转 until ready.
     await wrapper.find('textarea').setValue('补充修订')
-    await wrapper.find('button[class*="bg-accent"]').trigger('click')
+    await clickSend(wrapper)
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
     const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
@@ -849,7 +849,7 @@ describe('ClarifyChat', () => {
     expect(send.attributes('aria-label')).toBe('发送澄清回复')
     expect(send.attributes('title')).toBe('发送澄清回复')
     expect(send.text()).not.toContain('发送澄清回复')
-    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
     expect(wrapper.find('[data-testid="clarify-input"]').classes()).toContain('composer-hint-wrap')
     wrapper.unmount()
   })
@@ -978,7 +978,7 @@ describe('ClarifyChat', () => {
     expect(send.attributes('aria-busy')).toBeUndefined()
     expect(send.attributes('aria-label')).toBe(pages.pages.reviewComposer.send)
     expect(send.attributes('title')).toBe(pages.pages.reviewComposer.send)
-    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
     expect((send.element as HTMLButtonElement).disabled).toBe(accepted)
     const input = wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement
     expect(input.value).toBe(accepted ? '' : '1')
@@ -1052,7 +1052,7 @@ describe('ClarifyChat', () => {
     expect(cancel.attributes('aria-label')).toBe('Cancel')
     expect(cancel.attributes('title')).toBe('Cancel')
     expect(cancel.text()).not.toContain('Cancel')
-    expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await cancel.trigger('click')
     expect(wrapper.emitted('cancel')).toBeTruthy()
     wrapper.unmount()
@@ -1112,13 +1112,20 @@ describe('ClarifyChat', () => {
     wrapper.unmount()
   })
 
-  it('keeps the paperclip box and nonshrinking wrapping toolbar when draft is multiline', async () => {
+  it('keeps an accessible attachment button and wrapping toolbar when draft is multiline', async () => {
     const wrapper = mountChat({ draft: 'line1\nline2\nline3' })
     const ta = wrapper.find('[data-testid="clarify-input"]').element as HTMLTextAreaElement
     expect(ta.tagName).toBe('TEXTAREA')
     expect(ta.value).toContain('\n')
     const attach = wrapper.get('[data-testid="clarify-attach-btn"]')
-    expect(attach.classes()).toEqual(expect.arrayContaining(['h-10', 'w-10', 'shrink-0']))
+    expect(attach.element.tagName).toBe('BUTTON')
+    expect(attach.attributes('type')).toBe('button')
+    expect(attach.attributes('aria-label')).toBeTruthy()
+    const picker = wrapper.get('input[type="file"]').element as HTMLInputElement
+    const openPicker = vi.spyOn(picker, 'click').mockImplementation(() => {})
+    await attach.trigger('click')
+    expect(openPicker).toHaveBeenCalledOnce()
+    openPicker.mockRestore()
     const toolbar = wrapper.get('[data-testid="clarify-action-row"]')
     expect(toolbar.classes()).toEqual(expect.arrayContaining(['min-h-11', 'shrink-0', 'flex-wrap']))
     wrapper.unmount()
@@ -1253,7 +1260,7 @@ describe('ClarifyChat', () => {
     // Simulate send-triggered thinking without new props.turns
     await wrapper.find('textarea').setValue('回复')
     // Leave bottom again after send force-stick, then re-enter off-bottom with no new turns
-    await wrapper.find('button[class*="bg-accent"]').trigger('click')
+    await clickSend(wrapper)
     await flushPromises()
     expect(wrapper.text()).toMatch(/思考/)
     // After send we force-stick — FAB must be hidden even while thinking
@@ -2504,7 +2511,7 @@ describe('ClarifyChat', () => {
     })
   })
 
-  // plan g2.1 / f1–f3: choice summary width chain — long answers wrap, short tags stay chips
+  // plan g2.1 / f1–f3: choice summary width chain — every answer remains readable.
   describe('choice summary long-answer wrap (g1.1/g1.2/g2.1)', () => {
     const longAnswer =
       '先设计 token 体系(--ci 语义层 + 清理硬编码 hex 与像素),再抽出共享组件与布局约束，不把长句撕出气泡。'
@@ -2528,7 +2535,7 @@ describe('ClarifyChat', () => {
       const row = wrapper.find('[data-testid="clarify-choice-row"]')
       expect(row.classes()).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full']))
 
-      const q = row.find('.text-txt3')
+      const q = row.find('.chat-response-question')
       expect(q.classes()).toEqual(expect.arrayContaining(['min-w-0', 'max-w-full', 'break-words']))
       expect(q.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
 
@@ -2557,7 +2564,7 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
-    it('multiple short answers remain independent tags with wrap constraints (f3/g2.1)', () => {
+    it('multiple short answers remain independent values with wrap constraints (f3/g2.1)', () => {
       const wrapper = mountChat({
         turns: [
           {
@@ -2624,7 +2631,7 @@ describe('ClarifyChat', () => {
 
       const prompt = wrapper.find('[data-testid="clarify-question-prompt"]')
       expect(prompt.exists()).toBe(true)
-      expect(prompt.classes()).toEqual(expect.arrayContaining(['min-w-0', 'flex-1', 'break-words']))
+      expect(prompt.classes()).toEqual(expect.arrayContaining(['min-w-0', 'break-words']))
       expect(prompt.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
 
       const shortLabel = labels.find((el) => el.text() === '直接挂 /')

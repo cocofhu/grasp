@@ -1,8 +1,12 @@
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { routeApi } from './helpers/apiRoute'
 /**
- * Temporary acceptance: en Inherit + nowrap; zh 跟随项目; no Follow project; mode patch.
- * Uses project-detail.html?lang=en (harness supports lang query).
+ * Temporary acceptance: en Inherit + nowrap; zh 跟随工作区; no Follow project; mode patch.
+ * Uses the production workflow directory and workspace notification settings.
  */
 import { test, expect } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 import path from 'node:path'
 import fs from 'node:fs'
 
@@ -69,7 +73,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
   let lastWorkflowSave: unknown = null
   const workflows = structuredClone(MOCK_WORKFLOWS)
 
-  await page.route('**/api/projects/proj-1/channel**', async (route) => {
+  await routeApi(page, '**/api/workspace/channel**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -85,7 +89,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
     })
   })
 
-  await page.route('**/api/projects/proj-1', async (route) => {
+  await routeApi(page, '**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -97,7 +101,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
     await route.continue()
   })
 
-  await page.route(/\/api\/workflows(\/|$|\?)/, async (route) => {
+  await routeApi(page, /\/api\/workflows(\/|$|\?)/, async (route) => {
     const method = route.request().method()
     const url = route.request().url()
     if (method === 'GET') {
@@ -135,7 +139,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
     await route.continue()
   })
 
-  await page.route('**/api/runs**', async (route) => {
+  await routeApi(page, '**/api/runs**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -147,7 +151,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
     await route.continue()
   })
 
-  await page.route('**/api/projects/proj-1/pm-leader', async (route) => {
+  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -155,27 +159,7 @@ async function setupHarness(page: import('@playwright/test').Page) {
     })
   })
 
-  await page.route('**/api/projects/*/token-stats**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        window: '30d',
-        bucketWidth: 'day',
-        timezone: 'UTC',
-        empty: true,
-        trend: [],
-        composition: {
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          total: 0,
-        },
-        workflows: [],
-      }),
-    })
-  })
+
 
   return {
     getLastWorkflowSave: () => lastWorkflowSave,
@@ -188,18 +172,17 @@ function assertSingleLine(box: { height: number } | null, label: string) {
 }
 
 test.describe('Notify Inherit label acceptance', () => {
-  test('en desktop: Inherit single-line, no Follow project, mode patch', async ({ page }) => {
+  test('en desktop: compact Inherit selector, no Follow project, mode patch', async ({ page }) => {
     const harness = await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/project-detail.html?lang=en')
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 15_000 })
+    await page.goto('/workspace-config.html?view=/workflows&lang=en')
 
-    await page.getByTestId('project-tab-workflows').click()
     const cell = page.getByTestId('wf-notify-cell').first()
     await expect(cell).toBeVisible({ timeout: 10_000 })
 
-    const inheritBtn = page.locator('[data-testid="wf-notify-cell"] button', { hasText: /^Inherit$/ }).first()
+    const inheritBtn = page.locator('[data-workflow-id="wf-inherit"]').getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]')
     await expect(inheritBtn).toBeVisible()
+    await expect(inheritBtn).toHaveText('Inherit')
     await expect(page.locator('body')).not.toContainText('Follow project')
 
     assertSingleLine(await inheritBtn.boundingBox(), 'desktop Inherit button')
@@ -214,12 +197,14 @@ test.describe('Notify Inherit label acceptance', () => {
     })
 
     const inheritRow = page.locator('tbody tr', { hasText: 'Inherit Default' })
-    await inheritRow.getByRole('button', { name: 'Custom' }).click()
+    await inheritRow.getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]').click()
+    await page.getByRole('option', { name: 'Custom', exact: true }).click()
     await expect.poll(() => {
       const s = harness.getLastWorkflowSave() as { id?: string; notifyPolicy?: { mode: string } } | null
       return s?.id === 'wf-inherit' ? s.notifyPolicy?.mode : null
     }).toBe('custom')
-    await inheritRow.getByRole('button', { name: 'Inherit' }).click()
+    await inheritRow.getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]').click()
+    await page.getByRole('option', { name: 'Inherit', exact: true }).click()
     await expect.poll(() => {
       const s = harness.getLastWorkflowSave() as { id?: string; notifyPolicy?: { mode: string } } | null
       return s?.id === 'wf-inherit' ? s.notifyPolicy?.mode : null
@@ -231,81 +216,38 @@ test.describe('Notify Inherit label acceptance', () => {
     })
   })
 
-  test('en mobile: Inherit single-line on wf-notify-inline', async ({ page }) => {
+  test('en mobile: compact Inherit selector fits the separated workflow row', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto('/project-detail.html?lang=en')
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 15_000 })
+    await page.goto('/workspace-config.html?view=/workflows&lang=en')
 
-    await page.getByTestId('project-tab-workflows').click()
-    const inline = page.getByTestId('wf-notify-inline').first()
-    await expect(inline).toBeVisible({ timeout: 10_000 })
-
-    const offBtn = inline.getByRole('button', { name: /^Off$/ })
-    const inheritBtn = inline.getByRole('button', { name: /^Inherit$/ })
-    const customBtn = inline.getByRole('button', { name: /^Custom$/ })
-    await expect(offBtn).toBeVisible()
-    await expect(inheritBtn).toBeVisible()
-    await expect(customBtn).toBeVisible()
-    assertSingleLine(await inheritBtn.boundingBox(), 'mobile Inherit')
-    assertSingleLine(await customBtn.boundingBox(), 'mobile Custom')
+    const inline = page.locator('[data-workflow-id="wf-inherit"]').getByTestId('wf-notify-inline')
+    const selector = inline.getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]')
+    await expect(selector).toBeVisible({ timeout: 10_000 })
+    await expect(selector).toHaveText('Inherit')
+    await selector.click()
+    await expect(page.getByRole('option', { name: 'Inherit', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('option')).toHaveText(['Off', 'Inherit', 'Custom'])
+    await page.keyboard.press('Escape')
+    await expect(page.getByRole('listbox')).toBeHidden()
     await expect(page.locator('body')).not.toContainText('Follow project')
+    const bounds = await selector.boundingBox()
+    expect(bounds!.height).toBeGreaterThanOrEqual(44)
+    expect(bounds!.width).toBeGreaterThan(80)
+    expect(bounds!.x).toBeGreaterThanOrEqual(0)
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390)
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 
-    const metrics = await inline.evaluate((root) => {
-      const seg = root.querySelector('div.inline-flex') as HTMLElement | null
-      const buttons = [...root.querySelectorAll('button')].map((b) => {
-        const el = b as HTMLElement
-        const r = el.getBoundingClientRect()
-        return {
-          text: (el.textContent || '').trim(),
-          clientWidth: el.clientWidth,
-          scrollWidth: el.scrollWidth,
-          whiteSpace: getComputedStyle(el).whiteSpace,
-          left: r.left,
-          right: r.right,
-          width: r.width,
-        }
-      })
-      return {
-        overflow: seg ? getComputedStyle(seg).overflow : null,
-        overflowX: seg ? getComputedStyle(seg).overflowX : null,
-        clientWidth: seg?.clientWidth ?? 0,
-        scrollWidth: seg?.scrollWidth ?? 0,
-        buttons,
-      }
-    })
-
-    const clipped = metrics.clientWidth + 1 < metrics.scrollWidth
-    if (clipped) {
-      expect(['auto', 'scroll'], 'segment may scroll but must not silently clip').toContain(
-        metrics.overflowX,
-      )
-    } else {
-      expect(metrics.clientWidth, 'segment fully visible').toBeGreaterThanOrEqual(metrics.scrollWidth - 1)
-    }
-    expect(metrics.overflow === 'hidden' && clipped, 'must not overflow-hidden clip Inherit/Custom').toBe(false)
-
-    for (const btn of metrics.buttons) {
-      expect(btn.whiteSpace, `${btn.text} nowrap`).toBe('nowrap')
-      expect(btn.width, `${btn.text} visible width`).toBeGreaterThan(12)
-      expect(btn.right, `${btn.text} within 390 viewport`).toBeLessThanOrEqual(391)
-      expect(btn.left, `${btn.text} not clipped left`).toBeGreaterThanOrEqual(-1)
-    }
-
-    await page.screenshot({
-      path: path.join(shotDir, '03-en-mobile-inherit.png'),
-      fullPage: true,
-    })
+    await page.screenshot({ path: path.join(shotDir, '03-en-mobile-inherit.png'), fullPage: true })
   })
 
-  test('zh-CN: 跟随项目 single-line; hint has no Follow project', async ({ page }) => {
+  test('zh-CN: 跟随工作区 single-line; hint has no Follow project', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/project-detail.html?tab=notify')
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 15_000 })
+    await page.goto('/workspace-config.html?view=/settings/notification-policy')
 
     await expect(page.getByTestId('project-notify-panel')).toBeVisible()
-    await expect(page.locator('text=跟随项目').first()).toBeVisible()
+    await expect(page.locator('text=跟随工作区').first()).toBeVisible()
     await expect(page.locator('body')).not.toContainText('Follow project')
 
     await page.screenshot({
@@ -313,10 +255,10 @@ test.describe('Notify Inherit label acceptance', () => {
       fullPage: true,
     })
 
-    await page.getByTestId('project-tab-workflows').click()
-    const inheritBtn = page.locator('[data-testid="wf-notify-cell"] button', { hasText: '跟随项目' }).first()
+    await page.goto('/workspace-config.html?view=/workflows')
+    const inheritBtn = page.locator('[data-workflow-id="wf-inherit"]').getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]')
     await expect(inheritBtn).toBeVisible({ timeout: 10_000 })
-    assertSingleLine(await inheritBtn.boundingBox(), 'zh desktop 跟随项目')
+    assertSingleLine(await inheritBtn.boundingBox(), 'zh desktop 跟随工作区')
 
     await page.screenshot({
       path: path.join(shotDir, '05-zh-desktop-follow.png'),
@@ -327,8 +269,7 @@ test.describe('Notify Inherit label acceptance', () => {
   test('en notify tab hint uses Inherit not Follow project', async ({ page }) => {
     await setupHarness(page)
     await page.setViewportSize({ width: 1280, height: 900 })
-    await page.goto('/project-detail.html?lang=en&tab=notify')
-    await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 15_000 })
+    await page.goto('/workspace-config.html?view=/settings/notification-policy&lang=en')
 
     await expect(page.getByTestId('project-notify-panel')).toBeVisible()
     await expect(page.getByText(/choose “Inherit”|choose "Inherit"/)).toBeVisible()

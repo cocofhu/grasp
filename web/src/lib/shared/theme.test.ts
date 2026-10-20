@@ -285,7 +285,7 @@ describe('toggleTheme shell motion (plan g1.2 g1.3 g2.1 g2.2)', () => {
     expect(css).toMatch(/html\.theme-vt-capture \.shell-theme-icon\s*\{[^}]*transition:\s*none/)
     expect(css).not.toMatch(/html\.theme-vt-capture[^{]*\{[^}]*animation:\s*none/)
     expect(css).toMatch(/html\.theme-color-motion body/)
-    expect(css).toMatch(/html\.theme-color-motion \.app-shell-dotgrid/)
+    expect(css).toMatch(/html\.theme-color-motion \.app-shell-canvas/)
     expect(css).not.toMatch(/html\.theme-color-motion :where\(:not\(\.shell-theme-icon\)/)
     expect(css).toMatch(/::view-transition-old\(\*\)/)
     expect(css).toMatch(/--dur-overlay:\s*200ms/)

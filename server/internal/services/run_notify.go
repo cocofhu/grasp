@@ -94,6 +94,9 @@ func (s *RunNotifyService) AttemptDeliver(ev RunNotifyEvent) {
 	if !ok {
 		return
 	}
+	if workflow.Defaults != nil && workflow.Defaults.NotifyPolicy != nil {
+		project.NotifyPolicy = *workflow.Defaults.NotifyPolicy
+	}
 	events := ResolveNotifyEvents(project.NotifyPolicy, workflow.NotifyPolicy)
 	if !NotifyEventAllowed(events, kind) {
 		log.Debug().Str("run_id", ev.RunID).Str("kind", kind).

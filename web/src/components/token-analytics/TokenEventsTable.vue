@@ -57,7 +57,6 @@ const SORTS = ['time', 'total', 'cost'] as const
           <tr class="text-txt3">
             <th class="border-b border-line py-1.5 pr-2 text-left font-semibold">{{ t('pages.tokenAnalytics.events.colTime') }}</th>
             <th class="border-b border-line py-1.5 pr-2 text-left font-semibold">{{ t('pages.tokenAnalytics.events.colSource') }}</th>
-            <th class="border-b border-line py-1.5 pr-2 text-left font-semibold">{{ t('pages.tokenAnalytics.tables.colProject') }}</th>
             <th class="border-b border-line py-1.5 pr-2 text-left font-semibold">{{ t('pages.tokenAnalytics.events.colScope') }}</th>
             <th class="border-b border-line py-1.5 pr-2 text-left font-semibold">{{ t('pages.tokenAnalytics.tables.colModel') }}</th>
             <th class="border-b border-line py-1.5 pl-2 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
@@ -69,7 +68,7 @@ const SORTS = ['time', 'total', 'cost'] as const
         </thead>
         <tbody>
           <tr v-if="!items.length">
-            <td colspan="10" class="py-8 text-center text-txt3">{{ t('pages.tokenAnalytics.events.empty') }}</td>
+            <td colspan="9" class="py-8 text-center text-txt3">{{ t('pages.tokenAnalytics.events.empty') }}</td>
           </tr>
           <tr v-for="r in items" :key="r.id" class="hover:bg-accent-dim/40">
             <td class="whitespace-nowrap border-b border-line/60 py-1.5 pr-2 tabular-nums text-txt2">{{ fmtAt(r.at) }}</td>
@@ -82,15 +81,6 @@ const SORTS = ['time', 'total', 'cost'] as const
                 :style="{ background: TOKEN_LEDGER_STATUS_COLORS[r.status] || '#94a3b8' }"
               >{{ statusLabel(t, r.status) }}</span>
             </td>
-            <td class="max-w-[160px] truncate border-b border-line/60 py-1.5 pr-2">
-              <button
-                v-if="r.projectId"
-                type="button"
-                class="truncate text-accent-2 hover:underline"
-                @click="emit('drill', { dim: 'project', key: r.projectId, name: r.projectName || r.projectId })"
-              >{{ r.projectName || r.projectId }}</button>
-              <span v-else class="text-txt3">{{ r.projectName || t('pages.tokenAnalytics.unassigned') }}</span>
-            </td>
             <td class="max-w-[260px] truncate border-b border-line/60 py-1.5 pr-2">
               <button
                 v-if="r.runId"
@@ -102,15 +92,7 @@ const SORTS = ['time', 'total', 'cost'] as const
               <span v-else-if="r.threadId" class="text-txt3">{{ t('pages.tokenAnalytics.events.thread') }}</span>
               <span v-if="r.nodeType" class="ml-1 text-txt3">· {{ r.nodeType }}</span>
             </td>
-            <td class="max-w-[160px] truncate border-b border-line/60 py-1.5 pr-2">
-              <button
-                v-if="r.modelKey"
-                type="button"
-                class="truncate hover:text-accent-2 hover:underline"
-                @click="emit('drill', { dim: 'model', key: r.modelKey, name: r.modelKey })"
-              >{{ r.modelKey }}</button>
-              <span v-else class="text-txt3">{{ t('pages.tokenAnalytics.unknownModel') }}</span>
-            </td>
+            <td class="whitespace-nowrap border-b border-line/60 py-1.5 pr-2"><button v-if="r.modelKey" type="button" class="text-accent-2 hover:underline" @click="emit('drill', { dim: 'model', key: r.modelKey, name: r.modelKey })">{{ r.modelKey }}</button><span v-else>—</span></td>
             <td class="whitespace-nowrap border-b border-line/60 py-1.5 pl-2 text-right font-semibold tabular-nums" :title="fmtTokenCount(r.total)">{{ fmtCompactTokenCount(r.total) }}</td>
             <td class="whitespace-nowrap border-b border-line/60 py-1.5 pl-2 text-right tabular-nums">{{ fmtCompactTokenCount(r.inputTokens) }}</td>
             <td class="whitespace-nowrap border-b border-line/60 py-1.5 pl-2 text-right tabular-nums">{{ fmtCompactTokenCount(r.outputTokens) }}</td>

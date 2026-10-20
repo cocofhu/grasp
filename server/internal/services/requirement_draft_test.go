@@ -99,7 +99,7 @@ func TestRequirementDraftProjectScopeAndCascade(t *testing.T) {
 		t.Fatalf("create missing project: %v", err)
 	}
 
-	if err := projSvc.Delete("proj-1"); err != nil {
+	if err := projSvc.DeleteFixture("proj-1"); err != nil {
 		t.Fatalf("delete project: %v", err)
 	}
 	var n int64

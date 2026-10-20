@@ -75,6 +75,7 @@ func workflowDTO(wf models.WorkflowDef, published ...*models.WorkflowVersion) gi
 	out := gin.H{
 		"id": wf.ID, "projectId": wf.ProjectID, "name": wf.Name, "description": wf.Description,
 		"status": wf.Status(), "version": wf.Version, "publishedVersion": wf.PublishedVersion,
+		"defaults":     maskedWorkflowDefaults(wf.Defaults),
 		"needsRepo":    wf.NeedsRepo,
 		"showOnHome":   wf.ShowOnHome,
 		"notifyPolicy": policy,
@@ -305,4 +306,13 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 		}
 	}
 	return out
+}
+
+func maskedWorkflowDefaults(d *models.WorkflowDefaults) *models.WorkflowDefaults {
+	if d == nil {
+		return nil
+	}
+	cp := *d
+	cp.Variables = services.MaskedProjectVars(d.Variables)
+	return &cp
 }

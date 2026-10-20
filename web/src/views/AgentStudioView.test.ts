@@ -46,13 +46,11 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  useProjectContext: () => ({
-    selected: { value: 'proj-default' },
-    ensureHydrated: vi.fn(),
-    setProject: vi.fn(),
-  }),
-}))
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref, computed } = await import('vue')
+  const workspace = ref({ id: 'proj-default', name: 'Default' })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: computed(() => workspace.value.id), ensureLoaded: vi.fn(async () => workspace.value), reload: vi.fn(async () => workspace.value) }) }
+})
 
 vi.mock('@/lib/composables/useBreakpoint', () => ({
   useBreakpoint: () => ({ isMobile: breakpointMocks.isMobile }),
@@ -314,7 +312,7 @@ describe('AgentStudio MCP PM leader prefills', () => {
     expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-preset-key"]').text()).toBe('memory-store')
     expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === '${GRASP_MEMORY_URL}')).toHaveLength(1)
     expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'Bearer ${GRASP_MEMORY_TOKEN}')).toHaveLength(1)
-    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-scope-note"]').text()).toContain('长期记忆，归属主项目')
+    expect(wrapper.get('[data-mcp-name="memory-store"] [data-test="mcp-scope-note"]').text()).toContain('长期记忆，归属主工作区')
     expect(wrapper.find('[data-mcp-name="artifact-store"]').exists()).toBe(true)
     expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'memory-store')).toHaveLength(0)
     expect(wrapper.findAll('input').filter((el) => (el.element as HTMLInputElement).value === 'artifact-store')).toHaveLength(0)
@@ -682,7 +680,7 @@ describe('AgentStudio rename entry migration', () => {
     await flushPromises()
 
     expect(wrapper.text()).not.toContain('工作流引用不会自动更新')
-    expect(wrapper.text()).toContain('将同步更新目录、项目管理，以及工作流中的 Agent 配置引用')
+    expect(wrapper.text()).toContain('将同步更新目录、工作区助手，以及工作流中的 Agent 配置引用')
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
     expect(mocks.renameAgent).not.toHaveBeenCalled()
@@ -1095,17 +1093,17 @@ describe('AgentStudio mobile core path', () => {
 
     const sheet = document.querySelector('[data-test="project-sheet"]')
     expect(sheet).toBeTruthy()
-    expect(sheet!.textContent).toContain('项目 Agent')
-    expect(sheet!.textContent).toContain('默认项目')
-    expect(sheet!.textContent).toContain('第二项目')
-    expect(sheet!.querySelector('[data-tree-key="c:proj-default:alpha"]')).toBeTruthy()
-    expect(sheet!.querySelector('[data-tree-key="p:proj-2"]')).toBeTruthy()
+    expect(sheet!.textContent).toContain('Agent')
+    expect(sheet!.textContent).not.toContain('默认项目')
+    expect(sheet!.textContent).not.toContain('第二项目')
+    expect(sheet!.querySelector('[data-resource-key="alpha"]')).toBeTruthy()
+    expect(sheet!.querySelector('[data-resource-key="beta"]')).toBeTruthy()
     wrapper.unmount()
   })
 
   function sheetAgent(name: string) {
     return document.querySelector(
-      `[data-test="project-sheet"] [data-tree-key="c:proj-default:${name}"]`,
+      `[data-test="project-sheet"] [data-resource-key="${name}"]`,
     ) as HTMLElement
   }
 
@@ -1891,8 +1889,8 @@ describe('AgentStudio project tree actions', () => {
     const wrapper = await mountTreeStudio()
     await flushPromises()
     const sidebar = wrapper.get('[data-test="sidebar"]')
-    expect(sidebar.attributes('data-projects')).toBe('proj-default,proj-2')
-    expect(sidebar.attributes('data-active-key')).toBe('c:proj-default:legacy')
+    expect(sidebar.attributes('data-projects')).toBe('legacy')
+    expect(sidebar.attributes('data-active-key')).toBe('legacy')
   })
 
   it('project row create opens the wizard prefilled with that project', async () => {
@@ -1900,27 +1898,18 @@ describe('AgentStudio project tree actions', () => {
     await flushPromises()
     await wrapper.get('[data-test="create-in-p2"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="create-wizard"]').attributes('data-project-id')).toBe('proj-2')
+    expect(wrapper.get('[data-test="create-wizard"]').attributes('data-project-id')).toBe('proj-default')
   })
 
-  it('header import asks for the target project before opening the file picker', async () => {
+  it('opens the file picker directly for workspace import', async () => {
     const wrapper = await mountTreeStudio()
     await flushPromises()
     const fileInput = wrapper.get('input[type="file"][accept=".zip"]').element as HTMLInputElement
     const click = vi.spyOn(fileInput, 'click').mockImplementation(() => {})
-
     await wrapper.get('[data-test="header-import"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('导入到项目')
-    expect(click).not.toHaveBeenCalled()
-    await wrapper.get('[data-test="import-project-select"]').setValue('proj-2')
-    await wrapper.get('[data-test="import-project-confirm"]').trigger('click')
-    await flushPromises()
     expect(click).toHaveBeenCalledTimes(1)
-    expect(wrapper.text()).not.toContain('导入到项目')
-
-    await wrapper.get('[data-test="import-p2"]').trigger('click')
-    expect(click).toHaveBeenCalledTimes(2)
+    expect(wrapper.find('[data-test="import-project-select"]').exists()).toBe(false)
   })
 
   it('exports a project bundle after the secrets warning', async () => {
@@ -1930,7 +1919,7 @@ describe('AgentStudio project tree actions', () => {
     await flushPromises()
     await wrapper.get('[data-test="export-p1"]').trigger('click')
     await flushPromises()
-    expect(wrapper.text()).toContain('导出项目将带走密钥')
+    expect(wrapper.text()).toContain('导出工作区将带走密钥')
     await wrapper.findAll('button').find((b) => b.text() === '确认并下载')!.trigger('click')
     await flushPromises()
     expect(mocks.exportProjectAgents).toHaveBeenCalledWith('proj-default')

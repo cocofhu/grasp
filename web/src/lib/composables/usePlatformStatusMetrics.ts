@@ -1,6 +1,6 @@
 import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 import { api, type PlatformStatusMetrics } from '@/lib/api/api'
-import { clientTimezoneParams } from '@/components/board/token-stats/tokenStatsShared'
+import { clientTimezoneParams } from '@/components/token-analytics/tokenStatsShared'
 
 /** Visible-tab poll interval for StatusMetrics (within 10–15s SLA). */
 export const PLATFORM_STATUS_POLL_MS = 12_000

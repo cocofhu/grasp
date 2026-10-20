@@ -35,6 +35,7 @@ func TestGraphNodesDTOCapsSnapshot(t *testing.T) {
 		t.Fatalf("decode create: %v", err)
 	}
 	id, _ := created["id"].(string)
+
 	if id == "" {
 		t.Fatal("workflow id missing")
 	}

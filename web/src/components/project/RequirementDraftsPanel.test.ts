@@ -167,6 +167,176 @@ describe('RequirementDraftsPanel', () => {
     expect(w.get('[data-testid="requirement-drafts-filter-done"]').classes()).not.toContain('on')
     expect(w.get('[data-testid="requirement-drafts-filter-all"]').classes()).not.toContain('on')
     expect(w.find('[data-testid="requirement-drafts-empty-detail"]').exists()).toBe(false)
+    expect(w.find('[data-testid="requirement-drafts-inspector"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('shows a compact empty state across views without an empty calendar or inspector', async () => {
+    apiMocks.listRequirementDrafts.mockResolvedValue({ items: [] })
+    const w = mountPanel()
+    await flushPromises()
+    for (const mode of ['gantt', 'edit', 'milestones']) {
+      await w.get(`[data-testid="requirement-drafts-view-${mode}"]`).trigger('click')
+      expect(w.find('[data-testid="requirement-drafts-empty"]').exists()).toBe(true)
+      expect(w.find('.rd-gantt-header').exists()).toBe(false)
+      expect(w.find('[data-testid="requirement-drafts-inspector"]').exists()).toBe(false)
+      expect(w.find('[data-testid="requirement-drafts-empty-detail"]').exists()).toBe(false)
+    }
+    await w.get('[data-testid="requirement-drafts-empty-new"]').trigger('click')
+    expect(w.find('[data-testid="requirement-drafts-new-modal"]').exists()).toBe(true)
+    expect(apiMocks.createRequirementDraft).not.toHaveBeenCalled()
+    w.unmount()
+  })
+
+  it('preserves search and status filters when there are no matching drafts', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    vi.useFakeTimers()
+    try {
+      apiMocks.listRequirementDrafts.mockImplementation(async (_id, opts) => ({
+        items: opts?.q ? [] : [draftOpen],
+      }))
+      await w.get('[data-testid="requirement-drafts-filter-done"]').trigger('click')
+      await flushPromises()
+      await w.get('[data-testid="requirement-drafts-search"]').setValue('not found')
+      await vi.advanceTimersByTimeAsync(200)
+      await flushPromises()
+      expect(w.find('[data-testid="requirement-drafts-empty"]').exists()).toBe(true)
+      expect(w.get('[data-testid="requirement-drafts-search"]').element).toHaveProperty('value', 'not found')
+      expect(w.get('[data-testid="requirement-drafts-filter-done"]').attributes('aria-pressed')).toBe('true')
+      expect(w.find('[data-testid="requirement-drafts-empty-new"]').exists()).toBe(false)
+      expect(w.find('[data-testid="requirement-drafts-clear-filters"]').exists()).toBe(true)
+      expect(apiMocks.listRequirementDrafts).toHaveBeenCalledWith('proj-a', { status: 'done', q: 'not found' })
+      expect(w.find('.rd-gantt-header').exists()).toBe(false)
+      await w.get('[data-testid="requirement-drafts-clear-filters"]').trigger('click')
+      await flushPromises()
+      expect(w.get('[data-testid="requirement-drafts-search"]').element).toHaveProperty('value', '')
+      expect(w.get('[data-testid="requirement-drafts-filter-open"]').attributes('aria-pressed')).toBe('true')
+      expect(w.find('[data-testid="requirement-drafts-empty"]').exists()).toBe(false)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('shows load failures with retry instead of claiming the workspace is empty', async () => {
+    apiMocks.listRequirementDrafts.mockRejectedValue(new Error('Draft service unavailable'))
+    const w = mountPanel()
+    await flushPromises()
+    expect(w.get('[data-testid="requirement-drafts-load-error"]').text()).toContain('Draft service unavailable')
+    expect(w.find('[data-testid="requirement-drafts-empty"]').exists()).toBe(false)
+    expect(toastMocks.error).toHaveBeenCalledWith('Draft service unavailable')
+    apiMocks.listRequirementDrafts.mockResolvedValue({ items: [draftOpen] })
+    await w.get('[data-testid="requirement-drafts-load-retry"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="requirement-drafts-load-error"]').exists()).toBe(false)
+    expect(w.find('.rd-gantt-scroll .rd-gantt-row').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('restores unsaved edits after searching to an empty result and clearing filters', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-body"]').setValue('# Local draft')
+    vi.useFakeTimers()
+    try {
+      apiMocks.listRequirementDrafts.mockImplementation(async (_id, opts) => ({
+        items: opts?.q ? [] : [draftOpen],
+      }))
+      await w.get('[data-testid="requirement-drafts-search"]').setValue('not found')
+      await vi.advanceTimersByTimeAsync(200)
+      await flushPromises()
+      expect(w.find('[data-testid="requirement-drafts-empty"]').exists()).toBe(true)
+      await w.get('[data-testid="requirement-drafts-clear-filters"]').trigger('click')
+      await flushPromises()
+      expect(w.get('[data-testid="requirement-drafts-body"]').element).toHaveProperty('value', '# Local draft')
+      expect(w.find('[data-testid="requirement-drafts-dirty-chip"]').exists()).toBe(true)
+      expect(apiMocks.updateRequirementDraft).not.toHaveBeenCalled()
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('switches narrow editor panes using their measured width and preserves content when widened', async () => {
+    let resizeEditor!: (width: number) => void
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: ResizeObserverCallback) {
+        resizeEditor = (width) => callback([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver)
+      }
+      observe() {}
+      disconnect = disconnect
+    })
+    const w = mountPanel()
+    await flushPromises()
+    await switchToEdit(w)
+    await w.get('[data-testid="requirement-drafts-item-rd-1"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-body"]').setValue('# Keep my draft')
+    resizeEditor(400)
+    await nextTick()
+    expect(w.find('[data-testid="requirement-drafts-mobile-switch"]').exists()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-source-pane"]').isVisible()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-preview-pane"]').isVisible()).toBe(false)
+    await w.get('[data-testid="requirement-drafts-mobile-prev"]').trigger('click')
+    expect(w.get('[data-testid="requirement-drafts-source-pane"]').isVisible()).toBe(false)
+    expect(w.get('[data-testid="requirement-drafts-preview-pane"]').isVisible()).toBe(true)
+    resizeEditor(900)
+    await nextTick()
+    expect(w.find('[data-testid="requirement-drafts-mobile-switch"]').exists()).toBe(false)
+    expect(w.get('[data-testid="requirement-drafts-source-pane"]').isVisible()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-preview-pane"]').isVisible()).toBe(true)
+    expect(w.get('[data-testid="requirement-drafts-body"]').element).toHaveProperty('value', '# Keep my draft')
+    expect(w.get('[data-testid="requirement-drafts-sash"]').isVisible()).toBe(true)
+    w.unmount()
+    expect(disconnect).toHaveBeenCalled()
+  })
+
+  it('keeps unscheduled drafts reachable without drawing an empty timeline', async () => {
+    apiMocks.listRequirementDrafts.mockResolvedValue({ items: [draftOpen2] })
+    const w = mountPanel()
+    await flushPromises()
+    expect(w.get('[data-testid="requirement-drafts-unscheduled"]').text()).toContain(draftOpen2.title)
+    expect(w.find('.rd-gantt-header').exists()).toBe(false)
+    await w.get('[data-testid="requirement-drafts-unscheduled"] .rd-gantt-row').trigger('click')
+    expect(w.get('[data-testid="requirement-drafts-inspector"]').text()).toContain(draftOpen2.title)
+    w.unmount()
+  })
+
+  it('closes and reopens the inspector without losing selection or unsaved Markdown', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('.rd-gantt-scroll .rd-gantt-row').trigger('click')
+    await w.get('[data-testid="requirement-drafts-open-body"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-title"]').setValue('Unsaved title')
+    await w.get('[data-testid="requirement-drafts-body"]').setValue('# Unsaved Markdown')
+    await w.get('[data-testid="requirement-drafts-view-gantt"]').trigger('click')
+    const listCalls = apiMocks.listRequirementDrafts.mock.calls.length
+    await w.get('[data-testid="requirement-drafts-inspector-close"]').trigger('click')
+    expect(w.find('[data-testid="requirement-drafts-inspector"]').exists()).toBe(false)
+    expect(apiMocks.listRequirementDrafts).toHaveBeenCalledTimes(listCalls)
+    expect(apiMocks.patchRequirementDraftSchedule).not.toHaveBeenCalled()
+    expect(apiMocks.updateRequirementDraft).not.toHaveBeenCalled()
+    await w.get('.rd-gantt-scroll .rd-gantt-row').trigger('click')
+    expect(w.get('[data-testid="requirement-drafts-inspector"]').text()).toContain(draftOpen.title)
+    await w.get('[data-testid="requirement-drafts-inspector-close"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-inspector-reopen"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-open-body"]').trigger('click')
+    expect(w.get('[data-testid="requirement-drafts-title"]').element).toHaveProperty('value', 'Unsaved title')
+    expect(w.get('[data-testid="requirement-drafts-body"]').element).toHaveProperty('value', '# Unsaved Markdown')
+    expect(w.find('[data-testid="requirement-drafts-dirty-chip"]').exists()).toBe(true)
+    w.unmount()
+  })
+
+  it('offers milestone creation directly from its empty view without writing early', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="requirement-drafts-view-milestones"]').trigger('click')
+    await w.get('[data-testid="requirement-drafts-new-milestone"]').trigger('click')
+    expect(w.find('[data-testid="requirement-drafts-new-milestone-due"]').exists()).toBe(true)
+    expect(apiMocks.createRequirementDraft).not.toHaveBeenCalled()
     w.unmount()
   })
 

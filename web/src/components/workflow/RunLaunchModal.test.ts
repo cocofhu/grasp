@@ -392,7 +392,7 @@ describe('RunLaunchModal', () => {
     expect(opts.title).toBe('修一下登录页')
     expect(opts.firstMessage).toEqual({ text: '修一下登录页', images: [] })
     expect(takeHomeApproveHandoff()).toMatchObject({ runId: 'run-msg', text: '修一下登录页' })
-    expect(routerPush).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-msg', projectId: 'proj-1' } })
+    expect(routerPush).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-msg' } })
     expect(wrapper.emitted('close')).toBeTruthy()
     wrapper.unmount()
   })

@@ -12,7 +12,7 @@ import { authApi } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { clearAllEmbedSessions } from '@/lib/inbox/embedChat'
 import { sidebarNavGroups } from '@/data/sidebarNav'
-import { isSettingsChrome } from '@/data/settingsNav'
+import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
   focusDesktopNavControl,
@@ -25,10 +25,12 @@ const router = useRouter()
 const route = useRoute()
 const { user, clearUser } = useAuth()
 const { isMobile } = useBreakpoint()
+const { settingsChrome, requestMode } = useSidebarNavigation()
 const railItems = sidebarNavGroups[0]?.items.filter((item) => item.to !== '/settings') ?? []
 
 function isRailActive(to: string) {
-  if (to === '/dashboard' && route.path.startsWith('/gates')) return true
+  if (settingsChrome.value) return false
+  if (to === '/dashboard' && (route.path.startsWith('/gates') || ['/board', '/requirements', '/assistant'].includes(route.path))) return true
   return route.path === to || route.path.startsWith(to + '/')
 }
 
@@ -58,13 +60,13 @@ async function onHideNav() {
   <aside
     id="app-desktop-sidebar"
     class="app-desktop-sidebar hidden h-full min-w-0 shrink-0 md:flex"
-    :class="
-      sidebarHidden
-        ? 'w-0 border-r-0 overflow-hidden'
-        : 'w-[304px] overflow-visible'
-    "
+    :class="[
+      sidebarHidden ? 'w-0 border-r-0 overflow-hidden' : 'w-[304px] overflow-visible',
+      { 'is-settings': settingsChrome },
+    ]"
     data-testid="app-desktop-sidebar"
-    :data-floating="sidebarHidden ? 'false' : 'true'"
+    :data-nav-mode="settingsChrome ? 'settings' : 'workspace'"
+    :data-floating="sidebarHidden || settingsChrome ? 'false' : 'true'"
     :aria-hidden="sidebarHidden ? 'true' : undefined"
     :inert="sidebarHidden"
   >
@@ -73,6 +75,7 @@ async function onHideNav() {
         v-for="item in railItems"
         :key="item.to"
         :to="item.to"
+        @click.capture="requestMode($event, item.to, 'workspace')"
         class="sidebar-app-rail__item"
         :class="{ 'is-active': isRailActive(item.to) }"
         :aria-label="t(item.labelKey)"
@@ -84,11 +87,12 @@ async function onHideNav() {
       <div class="sidebar-app-rail__bottom">
         <RouterLink
           to="/settings"
+          @click.capture="requestMode($event, '/settings', 'settings')"
           class="sidebar-app-rail__item"
-          :class="{ 'is-active': isSettingsChrome(route.path) }"
+          :class="{ 'is-active': settingsChrome }"
           :aria-label="t('nav.settings')"
           :title="t('nav.settings')"
-          :aria-current="isSettingsChrome(route.path) ? 'page' : undefined"
+          :aria-current="settingsChrome ? 'page' : undefined"
         >
           <Icon name="settings" :size="20" />
         </RouterLink>
@@ -108,7 +112,8 @@ async function onHideNav() {
         class="app-sidebar-brand-row flex h-16 shrink-0 items-center justify-between gap-2 pl-3.5 pr-2"
         data-testid="sidebar-brand-row"
       >
-        <div class="flex min-w-0 items-center gap-2" data-testid="sidebar-brand-lockup">
+        <h2 v-if="settingsChrome" class="sidebar-settings-title" data-testid="sidebar-settings-title">{{ t('nav.settings') }}</h2>
+        <div v-else class="flex min-w-0 items-center gap-2" data-testid="sidebar-brand-lockup">
           <BrandCharacterMark :size="28" />
           <BrandLogo size="md" align="start" :show-tagline="false" use-custom-brand />
         </div>
@@ -137,8 +142,8 @@ async function onHideNav() {
 
 <style scoped>
 .app-desktop-sidebar {
-  --sidebar-rail-bg: light-dark(#f3f1f6, #1b1921);
-  --sidebar-panel-bg: light-dark(#fbfafc, #211f28);
+  --sidebar-rail-bg: light-dark(#f6f6f6, rgb(var(--c-base)));
+  --sidebar-panel-bg: light-dark(#fff, rgb(var(--c-surface)));
   border-radius: 16px;
   background: var(--sidebar-rail-bg);
 }
@@ -168,7 +173,7 @@ async function onHideNav() {
 }
 .sidebar-app-rail__item.is-active {
   color: rgb(var(--c-txt));
-  background: rgb(var(--c-txt) / .065);
+  background: light-dark(#eaeaea, rgb(var(--c-txt) / .065));
 }
 .sidebar-app-rail__bottom {
   display: flex;
@@ -183,7 +188,29 @@ async function onHideNav() {
 }
 .app-desktop-sidebar .app-sidebar-card {
   background: var(--sidebar-panel-bg);
-  box-shadow: 0 0 0 1px rgb(var(--c-line) / .65), 0 6px 20px rgb(0 0 0 / .035);
+  box-shadow: 0 0 0 1px rgb(var(--c-line) / .6), 0 2px 8px rgb(0 0 0 / .025);
+}
+.app-desktop-sidebar.is-settings {
+  border-radius: 0;
+  background: var(--sidebar-rail-bg);
+}
+.app-desktop-sidebar.is-settings .sidebar-app-rail {
+  border-right: 1px solid rgb(var(--c-line) / .45);
+}
+.app-desktop-sidebar.is-settings .app-sidebar-card {
+  border-radius: 0 !important;
+  border-right: 1px solid rgb(var(--c-line) / .6);
+  box-shadow: none;
+}
+.sidebar-settings-title {
+  padding-left: 4px;
+  color: rgb(var(--c-txt));
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -.02em;
+}
+.is-settings .sidebar-footer {
+  background: transparent;
 }
 .app-sidebar-brand-row {
   padding-left: 18px;

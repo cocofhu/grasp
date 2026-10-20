@@ -7,17 +7,17 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { Project } from '@/lib/shared/types'
 
 const mocks = vi.hoisted(() => ({
-  listChannels: vi.fn(), getProject: vi.fn(), receipts: vi.fn(), threads: vi.fn(),
-  create: vi.fn(), update: vi.fn(), del: vi.fn(), updateProject: vi.fn(),
+  listChannels: vi.fn(), getWorkspace: vi.fn(), receipts: vi.fn(), threads: vi.fn(),
+  create: vi.fn(), update: vi.fn(), del: vi.fn(), updateWorkspace: vi.fn(),
   success: vi.fn(), error: vi.fn(),
 }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return { ...actual, api: { ...actual.api,
-    listProjectChannels: mocks.listChannels, getProject: mocks.getProject,
+    listProjectChannels: mocks.listChannels, getWorkspace: mocks.getWorkspace,
     listProjectNotifyReceipts: mocks.receipts, listPmThreads: mocks.threads,
     createProjectChannel: mocks.create, updateProjectChannel: mocks.update,
-    deleteProjectChannelById: mocks.del, updateProject: mocks.updateProject,
+    deleteProjectChannelById: mocks.del, updateWorkspace: mocks.updateWorkspace,
   } }
 })
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
@@ -46,11 +46,11 @@ describe('PmChannelMultiPanel interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks(); vi.stubGlobal('confirm', vi.fn(() => true))
     mocks.listChannels.mockResolvedValue({ items: channels, freeAgents: ['agent1', 'agent2'], secretsKeyConfigured: false })
-    mocks.getProject.mockResolvedValue(project)
+    mocks.getWorkspace.mockResolvedValue(project)
     mocks.receipts.mockResolvedValue({ items: [{ runId: 'r1', kind: 'failed', status: 'error', error: 'boom', createdAt: '' }] })
     mocks.threads.mockResolvedValue({ items: [] })
     mocks.create.mockResolvedValue({}); mocks.update.mockResolvedValue({}); mocks.del.mockResolvedValue({})
-    mocks.updateProject.mockResolvedValue({ ...project, notifyPolicy: { enabled: true, channelIds: ['c2'] } })
+    mocks.updateWorkspace.mockResolvedValue({ ...project, notifyPolicy: { enabled: true, channelIds: ['c2'] } })
   })
 
   it('renders all connection variants, edits types and builds provider inputs', async () => {
@@ -137,7 +137,7 @@ describe('PmChannelMultiPanel interactions', () => {
     vm.tab = 'notify'; vm.toggleNotify('c1'); vm.toggleNotify('c2')
     await vm.saveNotifyTargets()
     expect(w.emitted('project-updated')).toBeTruthy()
-    mocks.updateProject.mockRejectedValueOnce(new Error('notify failed'))
+    mocks.updateWorkspace.mockRejectedValueOnce(new Error('notify failed'))
     await vm.saveNotifyTargets()
     expect(mocks.error).toHaveBeenCalledWith('notify failed')
     w.unmount()
@@ -222,6 +222,17 @@ describe('PmChannelMultiPanel interactions', () => {
     for (const sw of w.findAll('button[role="switch"]')) await sw.trigger('click')
     await w.get('[data-testid="channel-save"]').trigger('click')
     await flushPromises()
+    expect(mocks.update).toHaveBeenCalledWith('p1', 'c2', expect.objectContaining({
+      name: 'Edited',
+      agentName: 'agent1',
+      enabled: true,
+      enabledMcps: [],
+      appId: 'appid',
+      appSecret: 'secret',
+      turnTimeoutSeconds: 20,
+      cronDeliver: true,
+      config: { region: 'cn', allowMemoryWrite: true, allowSchedulerWrite: true },
+    }))
     await w.get('[data-testid="channel-add"]').trigger('click')
     await w.vm.$nextTick()
     for (const type of ['qq', 'wecom', 'feishu', 'dingtalk']) {

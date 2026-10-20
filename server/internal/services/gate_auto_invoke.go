@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/sandbox"
 
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
@@ -58,8 +59,9 @@ type GateAutoInvokeService struct {
 	turns *PmTurnRunner
 	hooks CronTokenHooks
 
-	mu     sync.Mutex
-	queues map[string]*gateAutoProjectQueue
+	mu          sync.Mutex
+	queues      map[string]*gateAutoProjectQueue
+	maintenance bool
 }
 
 // NewGateAutoInvokeService builds the gate-auto invoker. hooks may reuse cron
@@ -97,6 +99,10 @@ func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 		return
 	}
 	s.mu.Lock()
+	if s.maintenance {
+		s.mu.Unlock()
+		return
+	}
 	q := s.queues[task.ProjectID]
 	if q == nil {
 		q = &gateAutoProjectQueue{}
@@ -117,7 +123,7 @@ func (s *GateAutoInvokeService) Enqueue(task GateAutoTask) {
 }
 
 func (s *GateAutoInvokeService) shouldEnqueue(task GateAutoTask) (bool, string) {
-	p, ok := s.pm.project(task.ProjectID)
+	p, ok := s.effectiveProject(task)
 	if !ok {
 		return false, "project_not_found"
 	}
@@ -230,7 +236,11 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 		return
 	}
 
-	thread, err := s.resolveMainThread(task.ProjectID)
+	p, ok := s.effectiveProject(task)
+	if !ok {
+		return
+	}
+	thread, err := s.resolveMainThreadAgent(task.ProjectID, p.PmLeaderAgent)
 	if err != nil {
 		log.Warn().Err(err).Str("project", task.ProjectID).
 			Msg("gate-auto: resolve main thread failed; degrade to human")
@@ -242,21 +252,31 @@ func (s *GateAutoInvokeService) process(task GateAutoTask) {
 		return
 	}
 
-	p, ok := s.pm.project(task.ProjectID)
+	p, ok = s.effectiveProject(task)
 	if !ok {
 		log.Warn().Str("project", task.ProjectID).Msg("gate-auto: project gone before send")
 		return
 	}
+	if allowed, _ := s.shouldEnqueue(task); !allowed || thread.AgentName != p.PmLeaderAgent {
+		logEv.Msg("gate-auto: policy changed while waiting; degrade to human")
+		return
+	}
 	prompt := BuildGateAutoPrompt(task, p.PmGateAutoPrompt)
 
-	if s.sbx == nil || s.turns == nil || s.hooks.Register == nil {
+	if s.sbx == nil || s.turns == nil || (s.hooks.Register == nil && s.hooks.RegisterPM == nil) {
 		log.Warn().Str("project", task.ProjectID).
 			Msg("gate-auto: runtime unavailable; degrade to human")
 		return
 	}
 
 	ctx := context.Background()
-	token, specs := s.hooks.Register(task.ProjectID, thread.ID, p.PmLeaderAgent)
+	var token string
+	var specs []sandbox.MCPServerSpec
+	if s.hooks.RegisterPM != nil {
+		token, specs = s.hooks.RegisterPM(task.ProjectID, thread.ID, p.PmLeaderAgent, p.PmEnabledMcps)
+	} else {
+		token, specs = s.hooks.Register(task.ProjectID, thread.ID, p.PmLeaderAgent)
+	}
 	if token == "" || len(specs) == 0 {
 		log.Warn().Str("project", task.ProjectID).Str("agent", p.PmLeaderAgent).
 			Msg("gate-auto: MCP register failed; degrade to human")
@@ -325,7 +345,10 @@ func (s *GateAutoInvokeService) resolveMainThread(projectID string) (models.Chat
 	if !ok {
 		return models.ChatThread{}, ErrProjectNotFound
 	}
-	agent := strings.TrimSpace(p.PmLeaderAgent)
+	return s.resolveMainThreadAgent(projectID, p.PmLeaderAgent)
+}
+func (s *GateAutoInvokeService) resolveMainThreadAgent(projectID, agent string) (models.ChatThread, error) {
+	agent = strings.TrimSpace(agent)
 	threads, err := s.pm.ListThreadsForAgent(projectID, agent)
 	if err != nil {
 		return models.ChatThread{}, err
@@ -540,4 +563,26 @@ func (s *GateAutoInvokeService) BusyForTest(projectID string) bool {
 	defer s.mu.Unlock()
 	q := s.queues[projectID]
 	return q != nil && q.busy
+}
+
+func (s *GateAutoInvokeService) effectiveProject(task GateAutoTask) (models.Project, bool) {
+	p, ok := s.pm.project(task.ProjectID)
+	if !ok {
+		return p, false
+	}
+	var wf models.WorkflowDef
+	if s.db != nil && task.WorkflowID != "" {
+		if err := s.db.Select("defaults").First(&wf, "id = ?", task.WorkflowID).Error; err == nil && wf.Defaults != nil && wf.Defaults.GateAuto != nil {
+			g := wf.Defaults.GateAuto
+			p.PmLeaderEnabled = g.Enabled
+			p.PmLeaderAgent = g.AgentName
+			p.PmGateAutoVar = g.Variable
+			p.PmGateAutoPrompt = g.Prompt
+			p.PmEnabledMcps = nil // nil means the normal PM role defaults.
+			if g.EnabledMcps != nil {
+				p.PmEnabledMcps = FilterPmEnabledMcps(g.EnabledMcps)
+			}
+		}
+	}
+	return p, true
 }

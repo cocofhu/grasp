@@ -266,7 +266,7 @@ export default defineConfig({
         main: fileURLToPath(new URL('./e2e/index.html', import.meta.url)),
         console: fileURLToPath(new URL('./e2e/console.html', import.meta.url)),
         'sandbox-list': fileURLToPath(new URL('./e2e/sandbox-list.html', import.meta.url)),
-        'project-detail': fileURLToPath(new URL('./e2e/project-detail.html', import.meta.url)),
+        'workspace-config': fileURLToPath(new URL('./e2e/workspace-config.html', import.meta.url)),
         'run-detail-mobile': fileURLToPath(new URL('./e2e/run-detail-mobile.html', import.meta.url)),
         'run-detail-mobile-panel': fileURLToPath(
           new URL('./e2e/run-detail-mobile-panel.html', import.meta.url),
@@ -283,6 +283,7 @@ export default defineConfig({
         'clarify-inbox-product': fileURLToPath(
           new URL('./e2e/clarify-inbox-product.html', import.meta.url),
         ),
+        'clarify-question-layout': fileURLToPath(new URL('./e2e/clarify-question-layout.html', import.meta.url)),
         'clarify-unread-fab': fileURLToPath(
           new URL('./e2e/clarify-unread-fab.html', import.meta.url),
         ),

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
@@ -15,7 +15,6 @@ import StructuredArtifactView from '@/components/run/StructuredArtifactView.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import { applyPublicLocale, locale, setLocale, type AppLocale } from '@/lib/shared/locale'
-import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { reapplyThemeChrome } from '@/lib/shared/theme'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { provideReviewAnnotate } from '@/lib/inbox/reviewAnnotate'
@@ -127,6 +126,10 @@ const ready = ref(false)
 const loading = ref(true)
 const maybeStuck = ref(false)
 const token = ref('')
+const conversationInstance = useId().replace(/:/g, '')
+const conversationCredentialEpoch = ref(0)
+const publicConversationScope = computed(() => `${chatOnly.value ? 'embedded' : 'public'}-review:${conversationInstance}:${conversationCredentialEpoch.value}`)
+watch(token, () => { conversationCredentialEpoch.value++ }, { flush: 'sync' })
 const preview = ref<PublicGatePreview | null>(null)
 const comment = ref('')
 const reviewerName = ref('')
@@ -1393,6 +1396,9 @@ watch([isActive, doneKind], () => {
 watch(token, (tok, prev) => {
   if (tok && tok !== prev && isActive.value && !doneKind.value && !linkInvalid.value) connectPublicEvents()
 })
+watch(() => props.embedToken, (next, previous) => {
+  if (next !== previous && ready.value) void loadPreview()
+})
 
 watch(chatRef, (chat) => {
   if (chat) syncChatQueueFromPreview()
@@ -1637,12 +1643,11 @@ defineExpose({
 
     <div v-else class="flex min-h-0 flex-1 flex-col" data-testid="public-gate-workbench">
       <ReviewShell
+        :scope-key="publicConversationScope"
+        :run-id="'public-share'"
         ref="shellRef"
         class="min-h-0 flex-1"
         :chat-only="chatOnly"
-        :mobile="isMobile"
-        :sidebar-width="400"
-        :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
       >
         <template #stage>
           <div
@@ -1651,6 +1656,8 @@ defineExpose({
             data-testid="public-gate-react-stage"
           >
             <ReactArtifactStage
+              run-id="public-share"
+              node-id="public-gate"
               :artifacts="publicStageArtifacts"
               :preview-artifact="publicPreviewName"
               :run="publicRunGraph"
@@ -1752,6 +1759,7 @@ defineExpose({
               </p>
               <div class="flex min-h-0 flex-1 flex-col" data-testid="public-gate-chat-host">
                 <ReviewComposer
+                  :key="publicConversationScope"
                   ref="chatRef"
                   :mode="composerMode"
                   :send-request="chatOnly ? onSend : undefined"

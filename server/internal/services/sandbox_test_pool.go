@@ -221,6 +221,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
+	runtime.ApplyCredentialBindings(env, projectCreds, projectID, agent.CredentialBindings, s.selectedCredential)
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
@@ -331,8 +332,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, projectID, runID
 	s.mu.Lock()
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
-		codexAuthInjected: codexLogin,
-		codexAuthPath:     codexLiveAuthPath(backend, configRoot),
+		codexAuthInjected:     codexLogin,
+		codexAuthCredentialID: runtime.CredentialIDForWriteBack(projectID, envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Uint("id", id).Msg("test sandbox opened")
@@ -480,16 +482,19 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 		return nil, nil, fmt.Errorf("reconnect acp: %w", err)
 	}
 	injected := ""
+	credentialID := ""
 	rejected := false
 	if ls != nil {
 		injected = ls.codexAuthInjected
+		credentialID = ls.codexAuthCredentialID
 		rejected = ls.codexAuthRejected
 	}
 	ls = &liveSandbox{
 		sb: sb, acp: acp,
-		codexAuthInjected: injected,
-		codexAuthPath:     codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
-		codexAuthRejected: rejected,
+		codexAuthInjected:     injected,
+		codexAuthCredentialID: credentialID,
+		codexAuthPath:         codexLiveAuthPath(runtime.NormalizeBackend(agent.AcpBackend), agent.Layout.ConfigRoot),
+		codexAuthRejected:     rejected,
 	}
 	s.mu.Lock()
 	s.live[id] = ls

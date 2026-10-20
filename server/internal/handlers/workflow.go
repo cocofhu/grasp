@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
@@ -43,6 +42,7 @@ func (h *Handlers) GetWorkflow(c *gin.Context) {
 }
 
 type workflowBody struct {
+	Defaults     *models.WorkflowDefaults     `json:"defaults,omitempty"`
 	ID           string                       `json:"id"`
 	ProjectID    string                       `json:"projectId"`
 	Name         string                       `json:"name"`
@@ -70,15 +70,14 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 		isCreate = true
 	}
 
-	if isCreate && strings.TrimSpace(b.ProjectID) == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": services.ErrWorkflowProjectRequired.Error()})
+	if !h.resolveWorkspaceID(c, &b.ProjectID) {
 		return
 	}
 	graph := models.Graph{Nodes: b.Nodes, Edges: b.Edges, Variables: b.Variables}
 	services.LiftInputVariables(&graph)
 
 	wf := models.WorkflowDef{
-		ID: b.ID, ProjectID: b.ProjectID, Name: b.Name, Description: b.Description, NeedsRepo: b.NeedsRepo,
+		Defaults: b.Defaults, ID: b.ID, ProjectID: b.ProjectID, Name: b.Name, Description: b.Description, NeedsRepo: b.NeedsRepo,
 		Graph: graph,
 	}
 	if b.NotifyPolicy != nil {
@@ -102,7 +101,9 @@ func (h *Handlers) SaveWorkflow(c *gin.Context) {
 		switch {
 		case errors.Is(err, services.ErrEmptyWorkflowName),
 			errors.Is(err, services.ErrWorkflowProjectRequired),
-			errors.Is(err, services.ErrWorkflowProjectNotFound):
+			errors.Is(err, services.ErrWorkflowProjectNotFound),
+			errors.Is(err, services.ErrSecretPlaceholderOnNewKey),
+			errors.Is(err, services.ErrSecretPlaceholderOnPublicValue):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrWorkflowNameExists),
 			errors.Is(err, services.ErrWorkflowProjectImmutable):

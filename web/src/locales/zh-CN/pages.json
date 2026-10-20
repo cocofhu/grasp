@@ -6,18 +6,18 @@
       "placeholder": "快速开启你的迭代",
       "placeholders": [
         "快速开启你的迭代",
-        "说一个功能：给项目加登录页",
+        "说一个功能：给应用加登录页",
         "也可以修 bug：导出 CSV 中文乱码",
         "改文案或布局，一句话就够",
         "贴文档或截图，从附件开始澄清"
       ],
-      "selectProject": "选择项目",
-      "noProject": "尚未选择项目。选择一个项目后可从首页启动 Grasp 工作流。",
-      "noWorkflows": "没有可在首页使用的工作流。首页只显示已发布、开始后第一个节点是澄清 Agent 的工作流，请到项目详情为它打开「首页可见」。",
+      "selectProject": "选择工作区",
+      "noProject": "尚未选择工作区。选择一个工作区后可从首页启动 Grasp 工作流。",
+      "noWorkflows": "没有可在首页使用的工作流。首页显示已发布且从澄清 Agent 开始的工作流，请在工作流管理中打开「首页可见」。",
       "unpublishedWorkflows": "「{name}」有未发布的修改，发布后才会出现在首页。",
       "goPublish": "去编辑页发布",
       "goCanvas": "去画布把 Grasp 接到开始节点后",
-      "goProjects": "前往项目查看工作流",
+      "goProjects": "查看全部工作流",
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
@@ -36,20 +36,37 @@
       },
       "create": {
         "addCard": "新建工作流",
-        "pickTitle": "选择项目",
-        "pickStep": "第 1 / 2 步 · 基线工作流将创建在所选项目下",
-        "formStep": "第 2 / 2 步 · 项目：{name}",
-        "formProject": "项目：{name}",
+        "pickTitle": "选择工作区",
+        "pickStep": "第 1 / 2 步 · 基线工作流将创建在所选工作区下",
+        "formStep": "第 2 / 2 步 · 工作区：{name}",
+        "formProject": "工作区：{name}",
         "back": "上一步",
-        "emptyTitle": "先创建一个项目",
-        "emptyHint": "工作流必须属于一个项目。当前没有可用项目，请先创建项目。",
-        "goProjects": "前往项目",
-        "loadFailed": "无法加载项目列表"
+        "emptyTitle": "工作区暂不可用",
+        "emptyHint": "请重试加载工作区。",
+        "goProjects": "前往工作区",
+        "loadFailed": "无法加载工作区，请重试"
       }
     },
     "tokenAnalytics": {
       "title": "用量统计",
-      "subtitle": "<strong class=\"font-medium text-warn\">明察秋毫</strong> <em class=\"not-italic text-n-clarify\">洞若观火</em>",
+      "subtitle": "分析工作流、助手与 Agent Studio 的 Token 用量、模型分布和预估费用。",
+      "analysisRange": "分析范围",
+      "timeRange": "时间范围",
+      "sourceLabel": "来源",
+      "dimensionsLabel": "细分",
+      "expandAnalysis": "展开分析",
+      "collapseAnalysis": "收起分析",
+      "unknownBadge": "未知",
+      "sections": {
+        "overview": "用量概览",
+        "overviewHint": "当前筛选范围内已上报的用量",
+        "breakdown": "构成与排行",
+        "breakdownHint": "按来源、模型和工作流查看消耗分布，点击图表可继续下钻。",
+        "patterns": "时段与执行分析",
+        "patternsHint": "结合时间、节点和运行状态，了解消耗如何分布。",
+        "details": "模型与运行明细",
+        "detailsHint": "核对模型用量和高消耗运行，可查看调用记录或导出 CSV。"
+      },
       "loading": "正在加载…",
       "loadFailed": "加载失败，请重试",
       "retry": "重试",
@@ -58,20 +75,20 @@
       "clearFilters": "清除筛选",
       "sourceAll": "来源：全部",
       "sourceWorkflow": "工作流",
-      "sourcePm": "项目管理",
-      "projectAll": "项目：全部",
+      "sourcePm": "工作区助手",
+      "projectAll": "工作区：全部",
       "modelAll": "模型：全部",
       "kpiTotal": "总 Token",
       "kpiInOutCache": "输入 / 输出",
-      "kpiScope": "范围",
-      "kpiProjects": "{n} 项目",
+      "kpiScope": "已上报运行",
+      "kpiProjects": "{n} 工作区",
       "kpiRuns": "{n} 次已上报运行",
       "kpiModels": "{n} 个模型",
       "noPrev": "—",
       "linePrevWindow": "上一周期",
       "lineModes": {
         "total": "总量（对比上一周期）",
-        "project": "按项目",
+        "project": "按工作区",
         "model": "按模型",
         "cost": "费用与缓存命中"
       },
@@ -81,7 +98,7 @@
         "status": "按成功/失败"
       },
       "barDimensions": {
-        "project": "项目",
+        "project": "工作区",
         "workflow": "工作流",
         "model": "模型",
         "nodeType": "节点类型",
@@ -91,13 +108,13 @@
         "run": "运行"
       },
       "charts": {
-        "lines": "折线图",
-        "linesHint": "对比当前时间范围与上一周期，也可按项目、模型或费用看；点击数据点查看该时段明细",
+        "lines": "用量趋势",
+        "linesHint": "对比当前时间范围与上一周期，也可按模型或费用查看；点击数据点查看该时段明细",
         "pies": "占比",
         "piesHint": "点击扇区查看明细",
-        "bars": "柱状图",
+        "bars": "消耗排行",
         "barsHints": {
-          "project": "各项目用量堆叠对比",
+          "project": "各工作区用量堆叠对比",
           "workflow": "各工作流用量堆叠对比",
           "model": "各模型用量堆叠对比",
           "nodeType": "各节点类型用量堆叠对比",
@@ -106,13 +123,13 @@
           "phase": "各阶段用量堆叠对比",
           "run": "各运行用量堆叠对比"
         },
-        "area": "堆叠面积",
+        "area": "用量构成趋势",
         "areaHint": "按时间查看来源、输入/输出/缓存或成功/失败",
-        "heat": "模型与项目对照",
-        "nodeWf": "节点类型 / 工作流 / 状态 / 阶段",
+        "heat": "模型与工作区对照",
+        "nodeWf": "执行构成",
         "sourcePie": "来源构成",
         "compPie": "输入/输出/缓存构成",
-        "projPie": "项目占比",
+        "projPie": "工作区占比",
         "modelPie": "模型占比",
         "nodePie": "节点类型",
         "wfPie": "工作流占比",
@@ -124,12 +141,12 @@
         "weekHour": "时段分布",
         "weekHourHint": "星期 × 小时（本地时区）",
         "treemap": "用量结构",
-        "treemapHint": "项目 → 工作流 / 项目管理 / Studio → 节点类型，点击查看明细"
+        "treemapHint": "工作流 / 工作区助手 / Studio → 节点类型，点击查看明细"
       },
       "tables": {
-        "projects": "项目明细表",
+        "projects": "工作区明细表",
         "runs": "消耗最多的运行",
-        "colProject": "项目",
+        "colProject": "工作区",
         "colRun": "运行",
         "colModel": "模型",
         "colTotal": "总量",
@@ -182,7 +199,7 @@
       "kpiFailed": "失败 / 取消消耗",
       "kpiFailedShare": "占总量 {pct}",
       "kpiAvgPerRun": "单次运行平均 {n}",
-      "unassigned": "未归属项目",
+      "unassigned": "未归属工作区",
       "unknownModel": "未知模型",
       "deleted": "已删除",
       "exportCsv": "导出 CSV",
@@ -198,7 +215,7 @@
       "drill": {
         "title": "用量明细",
         "dims": {
-          "project": "项目",
+          "project": "工作区",
           "model": "模型",
           "workflow": "工作流",
           "nodeType": "节点类型",
@@ -217,7 +234,7 @@
         "nestedHint": "弹窗里的图表元素也可以继续点击下钻；点击顶部路径可返回上一层",
         "apply": "应用到页面筛选",
         "openRun": "打开运行详情",
-        "openProject": "打开项目看板"
+        "openProject": "打开工作区看板"
       },
       "events": {
         "sortBy": "排序",
@@ -229,7 +246,7 @@
         "colTime": "时间",
         "colSource": "来源 / 阶段",
         "colScope": "运行 / 节点",
-        "thread": "项目管理会话",
+        "thread": "工作区助手会话",
         "empty": "没有调用记录"
       },
       "pricing": {
@@ -254,9 +271,15 @@
       }
     },
     "board": {
-      "title": "需求进度看板",
-      "subtitle": "运行中 · 等待人工 · 已完成 — 同屏对照一次需求执行（Run）",
-      "toolbarHint": "已完成默认最近 20 条 · 进行中尽量全量",
+      "title": "运行看板",
+      "subtitle": "跟进正在执行的工作，处理等待人工的任务。",
+      "toolbarHint": "点击列标题查看全部运行",
+      "overview": "当前执行概览",
+      "overviewRecent": "最近完成",
+      "actionsLabel": "看板操作",
+      "refresh": "刷新",
+      "allRuns": "全部运行",
+      "usage": "用量统计",
       "viewMoreCompleted": "在运行列表中查看更多 →",
       "loading": "加载中…",
       "loadFailed": "看板数据加载失败，请重试",
@@ -277,8 +300,8 @@
         "trendTitle": "消耗趋势 · 按来源堆叠",
         "compositionTitle": "用量构成",
         "rankTitle": "消耗排行",
-        "rankSub": "含工作流 Top 与项目管理",
-        "rankHint": "「其他」= 未进 Top 的其余工作流合计（不是项目管理）。项目管理单独成行。",
+        "rankSub": "含工作流 Top 与工作区助手",
+        "rankHint": "「其他」= 未进 Top 的其余工作流合计（不是工作区助手）。工作区助手单独成行。",
         "grainDay": "按日聚合 · 本地时区",
         "grainWeek": "按周聚合 · 本地时区",
         "grainHour": "按小时聚合 · 本地时区",
@@ -286,11 +309,11 @@
         "donutCenter": "总量",
         "other": "其他",
         "workflow": "工作流",
-        "pm": "项目管理",
+        "pm": "工作区助手",
         "value": "数值",
         "share": "占比",
         "emptyTrendTitle": "暂无 Token 数据",
-        "emptyTrendHint": "当前时间窗内暂无已上报的 Token 用量（含工作流与项目管理）；未上报不会显示为 0",
+        "emptyTrendHint": "当前时间窗内暂无已上报的 Token 用量（含工作流与工作区助手）；未上报不会显示为 0",
         "emptyCompTitle": "暂无用量构成",
         "emptyCompHint": "暂无已上报的用量构成数据",
         "emptyRankTitle": "暂无消耗排行",
@@ -304,7 +327,7 @@
         "emptyModelRankHint": "暂无模型排行"
       },
       "filters": {
-        "label": "显示非主列状态"
+        "label": "同时显示"
       },
       "columns": {
         "active": "进行中",
@@ -315,10 +338,10 @@
       "hints": {
         "active": "running + 等待人工",
         "completedOnly": "仅 completed",
-        "inProgress": "In Progress",
-        "inReview": "In Review",
-        "doneRecent": "Done · 最近 20",
-        "extraFilter": "筛选展示"
+        "inProgress": "正在执行",
+        "inReview": "需要处理",
+        "doneRecent": "最近 20 条",
+        "extraFilter": "附加状态"
       },
       "empty": {
         "active": "当前没有进行中的需求",
@@ -345,7 +368,7 @@
         "openDetail": "进入运行详情"
       },
       "statusList": {
-        "subtitle": "当前项目 · {title} · 共 {total} 条",
+        "subtitle": "当前工作区 · {title} · 共 {total} 条",
         "subtitleFailed": "{title} · 加载失败，可重试",
         "range": "已展示 {shown} / {total}",
         "rangeComplete": "已全部加载 {shown} / {total} · 没有更多",
@@ -355,29 +378,29 @@
         "loading": "加载中…",
         "retry": "重试",
         "emptyTitle": "该状态暂无运行",
-        "emptyHint": "当前项目下没有「{title}」的运行。这不是加载失败。",
+        "emptyHint": "当前工作区下没有「{title}」的运行。这不是加载失败。",
         "errorTitle": "加载失败",
         "errorHint": "无法拉取该状态运行列表。这不是空列表。"
       }
     },
     "projectList": {
-      "title": "项目",
+      "title": "工作区",
       "subtitle": "<strong class=\"font-medium text-warn\">纲举目张</strong> <em class=\"not-italic text-n-clarify\">各安其位</em>",
-      "newProject": "新建项目",
-      "empty": "暂无项目",
+      "newProject": "新建工作区",
+      "empty": "暂无工作区",
       "workflowCount": "{n} 个工作流",
       "tokenLabel": "Token",
-      "createTitle": "新建项目",
+      "createTitle": "新建工作区",
       "nameLabel": "名称",
-      "namePlaceholder": "项目名称",
-      "nameRequired": "请填写项目名称",
+      "namePlaceholder": "工作区名称",
+      "nameRequired": "请填写工作区名称",
       "descLabel": "描述（可选）",
-      "descPlaceholder": "简要说明项目用途",
-      "created": "已创建项目 {name}"
+      "descPlaceholder": "简要说明工作区用途",
+      "created": "已创建工作区 {name}"
     },
     "onboarding": {
       "title": "第一次安装",
-      "titleCreate": "新建项目引导",
+      "titleCreate": "新建工作区引导",
       "titleRetry": "继续安装配置",
       "railCap": "配置步骤",
       "prev": "上一步",
@@ -390,7 +413,7 @@
       "cta": "完成安装配置",
       "emptyTitle": "完成第一次安装",
       "emptyDesc": "将配置模型后端、API Key 与 Git，创建需求澄清 / 实现 / 测试评审 / 交付四个 Agent，并发布「默认工作流」。不会自动开跑。",
-      "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本项目的四个 Agent（名称带项目名前缀），并发布「默认工作流」。不会自动开跑。",
+      "emptyDescCreate": "将配置模型后端、API Key 与 Git，创建本工作区的四个 Agent（名称带工作区名前缀），并发布「默认工作流」。不会自动开跑。",
       "workflowName": "默认工作流",
       "steps": {
         "prefs": "偏好",
@@ -402,11 +425,11 @@
         "done": "完成"
       },
       "projectName": {
-        "meta": "项目名会作为 Agent 名称的前缀。",
-        "label": "项目名称",
+        "meta": "工作区名会作为 Agent 名称的前缀。",
+        "label": "工作区名称",
         "placeholder": "例如 支付中台",
-        "required": "请填写项目名称",
-        "invalid": "项目名称无法生成有效的 Agent 命名前缀，请换一个名称"
+        "required": "请填写工作区名称",
+        "invalid": "工作区名称无法生成有效的 Agent 命名前缀，请换一个名称"
       },
       "language": {
         "detected": "后续仍可在左下角随时切换语言。",
@@ -416,7 +439,7 @@
         "themeLight": "浅色"
       },
       "acp": {
-        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本项目，所有 Agent 共用。",
+        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本工作区，所有 Agent 共用。",
         "region": "站点",
         "paths": {
           "apiKey": {
@@ -435,7 +458,7 @@
       "apiKey": {
         "meta": "填写所选服务的 API Key，这一项必填。",
         "required": "请先填写 API Key。",
-        "hint": "只保存在本项目，不会出现在日志或产物里。",
+        "hint": "只保存在本工作区，不会出现在日志或产物里。",
         "howTo": "如何获取",
         "placeholder": "粘贴你的 API Key",
         "codexMeta": "粘贴本机 codex login 产生的 ChatGPT 登录文件，这一项必填。",
@@ -450,8 +473,8 @@
         "repoCredSection": "仓库与访问凭据",
         "skip": "跳过",
         "unskip": "现在配置",
-        "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到项目「凭据」里补。",
-        "foot": "凭据只保存在本项目，导出 Agent 时不会带上。"
+        "skippedHint": "已跳过：仓库可以在运行时再填，私有仓库的凭据之后到工作区「凭据」里补。",
+        "foot": "凭据只保存在本工作区，导出 Agent 时不会带上。"
       },
       "gitUser": {
         "section": "提交署名",
@@ -487,7 +510,7 @@
         "gitlabUrl": "GitLab 地址",
         "sshKey": "SSH 私钥",
         "knownHosts": "可信主机（可选）",
-        "sshSavedToCredentials": "SSH 私钥与可信主机将保存到项目凭据。"
+        "sshSavedToCredentials": "SSH 私钥与可信主机将保存到工作区凭据。"
       },
       "team": {
         "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流，可改名并指定模型。",
@@ -505,9 +528,9 @@
         "nameLabel": "名称",
         "namePlaceholder": "Agent 名称",
         "modelLabel": "模型",
-        "modelPlaceholder": "留空沿用项目默认",
+        "modelPlaceholder": "留空沿用工作区默认",
         "modelInherit": "留空沿用 {model}",
-        "foot": "需求澄清和实现是工作流的骨架，不能取消；名称默认带项目名前缀，生成后仍可在 Agent 页修改。",
+        "foot": "需求澄清和实现是工作流的骨架，不能取消；名称默认带工作区名前缀，生成后仍可在 Agent 页修改。",
         "toastFixNames": "请先修正 Agent 名称",
         "nameIssues": {
           "required": "请填写名称",
@@ -570,16 +593,16 @@
       },
       "success": {
         "title": "配置已生成",
-        "desc": "已保存项目凭据，创建了下列 Agent，并发布了「默认工作流」。",
+        "desc": "已保存工作区凭据，创建了下列 Agent，并发布了「默认工作流」。",
         "runOnce": "运行一次",
         "runOnceHint": "填写需求和仓库，马上跑一遍默认工作流。",
         "editWorkflow": "去编辑工作流",
         "editWorkflowHint": "在画布里调整节点、提示词和分支。",
-        "limit": "还没有设置仓库，运行时再填即可。私有仓库请到项目「凭据」里配置访问凭据。",
+        "limit": "还没有设置仓库，运行时再填即可。私有仓库请到工作区「凭据」里配置访问凭据。",
         "repoOk": "已设置默认仓库 {dir}，运行时仍可修改。",
         "publishedLine": "默认工作流（已发布）",
         "gitOk": "已保存 Git 凭据（内容已隐藏）。",
-        "gitSkip": "未配置 Git 凭据。私有仓库请到项目「凭据」里补充访问令牌或 SSH 密钥。",
+        "gitSkip": "未配置 Git 凭据。私有仓库请到工作区「凭据」里补充访问令牌或 SSH 密钥。",
         "gitUserOk": "提交署名：{name} <{email}>。",
         "preview": "预览设置：{vnc}，{mcp}。",
         "created": "已创建",
@@ -590,7 +613,7 @@
       "toastNeedGitUser": "请填写提交者姓名和邮箱",
       "toastErr": "生成失败",
       "railSub": "几分钟配好模型、团队和默认工作流。",
-      "railFoot": "所有配置之后都能在项目设置里修改。",
+      "railFoot": "所有配置之后都能在工作区设置里修改。",
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
         "prefs": "语言、主题与预览能力",
@@ -602,7 +625,7 @@
         "done": "生成配置，开始第一次运行"
       },
       "prefsMeta": "界面语言与主题，以及 Agent 可用的预览能力。",
-      "prefsMetaCreate": "项目名称，以及 Agent 可用的预览能力。"
+      "prefsMetaCreate": "工作区名称，以及 Agent 可用的预览能力。"
     },
     "tokenByModel": {
       "tipTitle": "用量提示",
@@ -617,13 +640,13 @@
       "colSubtotal": "小计"
     },
     "projectDetail": {
-      "back": "全部项目",
-      "notFound": "项目不存在或已删除",
+      "back": "全部工作区",
+      "notFound": "工作区不存在或已删除",
       "tokenUsage": "Token 消耗",
       "tokenTipTitle": "用量细节",
       "tokenTipTotal": "合计",
       "tokenTipWorkflow": "工作流",
-      "tokenTipPm": "项目管理",
+      "tokenTipPm": "工作区助手",
       "tokenTipAria": "Token 消耗，悬停查看细节",
       "newWorkflow": {
         "scratch": "从零开始",
@@ -642,16 +665,16 @@
       "tabWorkflows": "工作流",
       "tabRequirementDrafts": "需求草稿",
       "tabNotify": "通知",
-      "tabPmLeader": "项目管理",
+      "tabPmLeader": "工作区助手",
       "tabExternalMcp": "外部 MCP",
-      "tabPmMemory": "项目记忆",
+      "tabPmMemory": "工作区记忆",
       "tabCronJobs": "定时任务",
       "tabAgents": "智能体",
       "tabSharedAgent": "共享Agent配置",
-      "tabCredentials": "项目凭据",
+      "tabCredentials": "工作区凭据",
       "tabVariables": "工作流变量",
       "tabAudit": "审计",
-      "tabMeta": "项目信息",
+      "tabMeta": "工作区信息",
       "requirementDrafts": {
         "filterOpen": "未完成",
         "filterDone": "已完成",
@@ -754,10 +777,18 @@
         "errInvalidProgress": "进度须为 0–100 的整数。",
         "errInvalidKind": "类型无效。",
         "contextualParentHint": "语境父级",
-        "groupRowHint": "分组（自身未排期）"
+        "groupRowHint": "分组（自身未排期）",
+        "emptyTitle": "把想法整理成下一步",
+        "emptyHint": "先记下一条需求，再补充内容、排期和里程碑。",
+        "noMatchesTitle": "没有符合条件的草稿",
+        "noMatchesHint": "换个关键词或调整筛选，查看其他需求。",
+        "clearFilters": "清空筛选"
       },
       "notify": {
         "title": "运行通知",
+        "deliverySection": "通知发送",
+        "templateEvent": "通知时机",
+        "templateBody": "消息正文",
         "lead": "当运行需要人工处理或失败时，按策略向已绑定的 QQ 发送消息（含运行详情链接）。无需开启定时推送。",
         "statusOff": "已关闭",
         "statusNoChannel": "已开启，但未配置通知渠道",
@@ -765,10 +796,10 @@
         "loadChannelFailed": "通知渠道加载失败",
         "noChannelHint": "尚未绑定可用的 QQ 会话。设置仍可保存；配置渠道前暂时不会发出。请前往",
         "goChannel": "前往渠道设置",
-        "master": "项目通知总开关",
-        "masterHint": "关闭后，本项目所有运行通知都不会发送（包括工作流自定义设置）",
+        "master": "工作区通知总开关",
+        "masterHint": "关闭后，本工作区所有运行通知都不会发送（包括工作流自定义设置）",
         "defaultEvents": "默认通知时机",
-        "defaultEventsHint": "新工作流选择「跟随项目」时使用；建议只开启「等待人工处理」和「运行失败」",
+        "defaultEventsHint": "新工作流选择「跟随工作区」时使用；建议只开启「等待人工处理」和「运行失败」",
         "evWaitingHumanLabel": "等待人工处理",
         "evFailedLabel": "运行失败",
         "evCompletedLabel": "运行完成",
@@ -790,7 +821,7 @@
         "saved": "通知设置已保存",
         "colPolicy": "通知策略",
         "modeOff": "关闭",
-        "modeInherit": "跟随项目",
+        "modeInherit": "跟随工作区",
         "modeCustom": "自定义",
         "wfUpdated": "已更新"
       },
@@ -801,11 +832,12 @@
         "updateFailed": "更新首页可见失败"
       },
       "audit": {
+        "description": "查看工作流与系统操作，追踪工具调用和执行结果。",
         "title": "审计",
         "loading": "加载审计事件…",
         "loadFailed": "加载审计失败",
-        "deniedTitle": "无权查看本项目审计",
-        "deniedDesc": "仅系统管理员，或能够更新/管理该项目配置的用户可访问。查询与导出均被拒绝。",
+        "deniedTitle": "无权查看本工作区审计",
+        "deniedDesc": "仅系统管理员，或能够更新/管理该工作区配置的用户可访问。查询与导出均被拒绝。",
         "modeRun": "按 Run 查看",
         "modeAll": "全部日志",
         "filterTime": "时间",
@@ -816,10 +848,10 @@
         "time7d": "近 7 天",
         "time30d": "近 30 天",
         "noRun": "暂无 Run",
-        "callerPmSub": "项目管理者",
+        "callerPmSub": "工作区助手者",
         "callerApiKeySub": "外部触发",
         "callerSystemSub": "自动化",
-        "callerPm": "项目管理",
+        "callerPm": "工作区助手",
         "callerApiKey": "用户 API Key",
         "callerSystem": "系统",
         "callerExternal": "外部",
@@ -867,7 +899,7 @@
       "cron": {
         "title": "定时任务",
         "emptyTitle": "暂无定时任务",
-        "emptyDesc": "在项目管理咨询中创建任务后，将显示在此列表。",
+        "emptyDesc": "在工作区助手咨询中创建任务后，将显示在此列表。",
         "colName": "名称",
         "colAgent": "Agent",
         "colSchedule": "调度",
@@ -881,24 +913,26 @@
         "enabledYes": "是",
         "enabledNo": "否",
         "deliverLabel": "推送",
-        "deliverHint": "开启后，任务结果会推送到项目渠道中标记为定时任务推送的目标。需先在渠道设置中配置推送目标。",
+        "deliverHint": "开启后，任务结果会推送到工作区渠道中标记为定时任务推送的目标。需先在渠道设置中配置推送目标。",
         "deleteConfirm": "确认删除该定时任务？",
         "deleted": "已删除定时任务"
       },
       "pm": {
-        "settingsTitle": "项目管理设置",
-        "enable": "启用项目管理",
+        "settingsTitle": "工作区助手设置",
+        "defaultAssistantSection": "默认助手",
+        "automaticApprovalSection": "自动审批",
+        "enable": "启用工作区助手",
         "enablePermissionHint": "任意已登录用户可启用/换绑/停用",
         "aclMemoryNote": "记忆请在 Agent Studio「数据 → 记忆」中管理；任意已登录用户可编辑。",
-        "enabledMcps": "项目管理专用 MCP",
+        "enabledMcps": "工作区助手专用 MCP",
         "enabledMcpsHint": "咨询沙箱按勾选注入。通用记忆/上下文/调度器始终注入，不受此列表控制。",
-        "mcpProgress": "项目进度、阻塞、风险（只读）",
-        "mcpWorkflowRead": "同项目工作流只读查询（list / graph / versions / runs / 待审批）",
-        "mcpWorkflowWrite": "同项目工作流写操作（创建 / 更新 / 发布 / 启动 / 审批 / 取消）",
-        "mcpAgentFs": "列出项目 Agent + 编辑同项目 Agent 工作目录（非 Run 沙箱；Studio 刷新可见）",
-        "mcpPrdManager": "项目管理专用 · 查看与创建需求草稿",
+        "mcpProgress": "工作区进度、阻塞、风险（只读）",
+        "mcpWorkflowRead": "同工作区工作流只读查询（list / graph / versions / runs / 待审批）",
+        "mcpWorkflowWrite": "同工作区工作流写操作（创建 / 更新 / 发布 / 启动 / 审批 / 取消）",
+        "mcpAgentFs": "列出工作区 Agent + 编辑同工作区 Agent 工作目录（非 Run 沙箱；Studio 刷新可见）",
+        "mcpPrdManager": "工作区助手专用 · 查看与创建需求草稿",
         "gateAutoVar": "遇门禁自动唤起 · 开关变量",
-        "gateAutoVarPlaceholder": "输入项目布尔变量名，如 pm_auto_gate",
+        "gateAutoVarPlaceholder": "输入工作区布尔变量名，如 pm_auto_gate",
         "gateAutoVarHint": "填写 run 中须存在且为真的变量名；留空则能力关闭，遇门禁不唤起。保存时不校验变量是否已存在。",
         "gateAutoPrompt": "处理 Prompt（可选）",
         "gateAutoPromptPlaceholder": "可选：追加在系统默认上下文与工具引导之后",
@@ -916,7 +950,7 @@
         "needAgent": "启用前必须选择一个 Agent",
         "channel": {
           "sectionTitle": "渠道接入",
-          "sectionHint": "同一项目可配置多个 Channel（QQ / 企业微信 / 飞书 / 钉钉，主+副）。一 Channel 绑定一独立 Agent，具备独立记忆与 MCP；Web/门禁仍走项目管理主 PM。",
+          "sectionHint": "同一工作区可配置多个 Channel（QQ / 企业微信 / 飞书 / 钉钉，主+副）。一 Channel 绑定一独立 Agent，具备独立记忆与 MCP；Web/门禁仍走工作区助手主 PM。",
           "typeLabel": "渠道类型",
           "typeQq": "QQ",
           "typeQQ": "QQ",
@@ -985,7 +1019,7 @@
           "recentTargetsToggle": "打开/关闭最近目标列表",
           "recentTargetsLoadFailed": "最近目标加载失败，仍可手输保存",
           "secretKeyHint": "需要在服务端配置加密密钥才能保存凭据（config: security.secrets_key，或用 GRASP_SECRETS_KEY 环境变量覆盖）。",
-          "noPmLeaderWarning": "本项目未启用项目管理，启用前渠道回合会失败。",
+          "noPmLeaderWarning": "本工作区未启用工作区助手，启用前渠道回合会失败。",
           "delete": "删除渠道",
           "deleteConfirm": "确认删除此 Channel？",
           "deleteFailed": "删除失败",
@@ -1019,37 +1053,60 @@
           "basicsTitle": "基础与凭据",
           "basicsHint": "字段对齐现网渠道表单，并增加绑定 Agent。",
           "bindAgent": "绑定 Agent（PM）",
-          "bindAgentHint": "仅可选「主项目=本项目」且未被其他 Channel 占用的 Agent。严格一 Agent 一 Channel。",
+          "bindAgentHint": "仅可选「主工作区=本工作区」且未被其他 Channel 占用的 Agent。严格一 Agent 一 Channel。",
           "needAgent": "请选择绑定 Agent",
           "needAppId": "请填写 App ID",
           "noFreeAgent": "无空闲 Agent，请先到 Agent 配置中心创建。",
-          "confirmSyncPmLeader": "新绑定 Agent 与当前项目管理主 PM 不同。是否同步将 PmLeader 改为该 Agent？",
-          "cronDeliverHintMulti": "与项目「通知目标勾选」分两套配置，互不影响。仅投递绑定本 Channel Agent 的定时任务。",
+          "confirmSyncPmLeader": "新绑定 Agent 与当前工作区助手主 PM 不同。是否同步将 PmLeader 改为该 Agent？",
+          "cronDeliverHintMulti": "与工作区「通知目标勾选」分两套配置，互不影响。仅投递绑定本 Channel Agent 的定时任务。",
           "channelMcpsTitle": "平台 PM 角色 MCP",
           "channelMcpsHint": "仅本 Channel 回合使用 · 不影响 Web/门禁",
           "channelMcpsNote": "Web/门禁仍读 Project.PmEnabledMcps。此处改动只影响本渠道入站回合。",
-          "notifyTitle": "项目通知 · Channel 目标",
+          "notifyTitle": "工作区通知 · Channel 目标",
           "notifyHint": "显式勾选 0~N 个 Channel（可含主）。空列表 = 不发送。与各 Channel 定时推送目标独立。",
           "notifySave": "保存通知目标",
           "notifyPolicyTitle": "事件通知策略",
           "notifyPolicyHint": "Run / 门禁等事件扇出到下方勾选的有效 Channel",
           "notifySelected": "已选 {n}",
-          "notifyEmpty": "目标为空：即使其他通知开关开启，也不会向任何 Channel 投递项目通知。",
+          "notifyEmpty": "目标为空：即使其他通知开关开启，也不会向任何 Channel 投递工作区通知。",
           "notifyFanoutHint": "扇出时跳过未启用 / 已删除的 Channel，其余照常发送。定时推送仍按各 Channel 自有目标配置。",
           "noPushTarget": "未配置推送目标",
           "deletePrimaryTitle": "删除主 Channel",
-          "deletePrimaryHint": "必须指定新主，或确认项目进入无主 Channel 状态（Web/门禁仍可用 PmLeader）。",
+          "deletePrimaryHint": "必须指定新主，或确认工作区进入无主 Channel 状态（Web/门禁仍可用 PmLeader）。",
           "deletePrimaryPromote": "指定另一 Channel 为新主",
           "deletePrimaryNone": "确认无主 Channel，仅保留 PmLeader",
           "newPrimary": "新主 Channel",
-          "syncPmLeaderOnPromote": "同步将项目管理主 PM 改为新主绑定的 Agent",
+          "syncPmLeaderOnPromote": "同步将工作区助手主 PM 改为新主绑定的 Agent",
           "confirmDelete": "确认删除",
           "needNewPrimary": "请选择新主 Channel"
         },
-        "saveLeaderButton": "保存项目管理配置",
+        "saveLeaderButton": "保存工作区助手配置",
         "adminRequired": "需要平台管理员权限",
-        "disabledTitle": "项目管理未启用",
-        "disabledHint": "需先在本页设置中绑定已有 Agent 并启用后，才能发起进度咨询。",
+        "disabledTitle": "工作区助手未启用",
+        "disabledHint": "绑定一个已有 Agent 并启用助手，随时了解工作进展、阻塞和风险。",
+        "unavailableTitle": "先为助手选择可用的 Agent",
+        "scopeLabel": "工作区咨询",
+        "threadsLoadFailed": "暂时无法加载会话",
+        "threadsLoadFailedDesc": "请重试以查看已有会话。",
+        "welcomeTitle": "今天想了解什么？",
+        "pausedHistoryHint": "助手已暂停，历史会话仍可查看。重新启用后可继续咨询。",
+        "defaultUnavailableHint": "默认 Agent 暂不可用，无法新建会话；已有会话使用各自的 Agent。",
+        "pausedComposerHint": "当前会话仅供查看，可在设置中重新启用助手。",
+        "threadUnavailableHint": "此会话的 Agent 暂不可用，历史消息仍可查看。",
+        "features": {
+          "progress": {
+            "title": "了解进展",
+            "desc": "汇总工作流与运行进度。"
+          },
+          "blockers": {
+            "title": "找到阻塞",
+            "desc": "梳理等待处理的事项。"
+          },
+          "risk": {
+            "title": "关注风险",
+            "desc": "发现异常与需要关注的趋势。"
+          }
+        },
         "goSettings": "前往设置",
         "settings": "设置",
         "backToChat": "返回咨询",
@@ -1084,8 +1141,8 @@
         "channelDetailLabelSource": "来源",
         "channelDetailClose": "关闭",
         "noThreads": "暂无会话，点击新建开始咨询。",
-        "emptyHint": "询问项目整体进度、当前阻塞或风险趋势；也可附加文件说明问题。",
-        "suggestProgress": "项目整体进度如何？",
+        "emptyHint": "询问工作区整体进度、当前阻塞或风险趋势；也可附加文件说明问题。",
+        "suggestProgress": "工作区整体进度如何？",
         "suggestBlockers": "当前卡在哪里？",
         "suggestRisk": "最近有哪些风险趋势？",
         "inputPh": "输入问题，Enter 发送；可粘贴或选择附件（≤50 MiB）",
@@ -1132,21 +1189,22 @@
         "citationInvalid": "引用无效或目标不存在"
       },
       "externalMcp": {
+        "connectionTitle": "接入配置",
         "title": "外部 MCP 接入",
-        "subtitle": "供 Cursor / Claude 等外部 AI 通过 MCP 协议操作本项目 PM 能力面（独立于内部项目管理咨询）。",
-        "distinctHint": "此处开关与密钥仅作用于外部 MCP，不影响 Web/门禁内的项目管理 Leader 或渠道 MCP 注入。",
+        "subtitle": "供 Cursor / Claude 等外部 AI 通过 MCP 协议操作本工作区 PM 能力面（独立于内部工作区助手咨询）。",
+        "distinctHint": "此处开关与密钥仅作用于外部 MCP，不影响 Web/门禁内的工作区助手 Leader 或渠道 MCP 注入。",
         "enable": "启用外部 MCP",
-        "enableHint": "默认关闭。开启后仍需有效项目 API Key 与已勾选能力包方可调用。",
+        "enableHint": "默认关闭。开启后仍需有效工作区 API Key 与已勾选能力包方可调用。",
         "packsTitle": "外部能力包",
-        "packsHint": "仅勾选的能力包会出现在 tools/list，并可被 call；与内部项目管理 MCP 勾选相互独立。",
+        "packsHint": "仅勾选的能力包会出现在 tools/list，并可被 call；与内部工作区助手 MCP 勾选相互独立。",
         "urlTitle": "MCP 基址",
         "urlHint": "外部客户端按包追加路径，例如 …/pm-progress、…/pm-workflow-write。",
         "urlPending": "保存设置后显示",
         "urlPackSuffix": "完整 URL 形如：{base}/pm-progress",
-        "keysTitle": "项目 API Key",
+        "keysTitle": "工作区 API Key",
         "keysHint": "Bearer 鉴权外部 MCP。明文仅在创建时展示一次；吊销后立即失效。",
         "createKey": "创建密钥",
-        "createKeyTitle": "新建项目 MCP 密钥",
+        "createKeyTitle": "新建工作区 MCP 密钥",
         "keyCreatedTitle": "密钥已创建",
         "keyName": "名称",
         "keyNamePlaceholder": "例如 cursor-local",
@@ -1157,18 +1215,18 @@
         "save": "保存外部 MCP 设置",
         "saved": "外部 MCP 设置已保存",
         "exampleTitle": "Cursor / Claude 配置示例",
-        "exampleHint": "将 YOUR_PROJECT_MCP_KEY 替换为上方创建的密钥；按需调整包路径后缀。",
+        "exampleHint": "将 YOUR_WORKSPACE_MCP_KEY 替换为上方创建的密钥；按需调整包路径后缀。",
         "copy": "复制",
         "copied": "已复制",
         "copySuccess": "已复制到剪贴板",
         "copyFailed": "复制失败"
       },
-      "metaTitle": "项目信息",
+      "metaTitle": "基本信息",
       "metaHint": "修改名称、描述或未知模型显示名后点击保存；保存成功后页头与统计展示将同步。",
-      "metaDescPlaceholder": "简要说明项目用途",
+      "metaDescPlaceholder": "简要说明工作区用途",
       "unknownModelDisplayNameLabel": "未知模型显示名",
       "unknownModelDisplayNamePlaceholder": "例如 gpt-5，留空则保持默认名称",
-      "unknownModelDisplayNameHelp": "用于看板排行、构成图例以及 Run 按模型明细的展示。不改变已记录的数据，也不会和已上报的同名模型合并。",
+      "unknownModelDisplayNameHelp": "用于用量统计、构成图例以及 Run 按模型明细的展示。不改变已记录的数据，也不会和已上报的同名模型合并。",
       "unknownModelDisplayNameClear": "清空显示名",
       "unknownModelDisplayNameTooLong": "显示名最多 64 个字符，请缩短后再保存。",
       "colName": "名称",
@@ -1188,32 +1246,32 @@
       "envEmptyTitle": "暂无沙箱环境变量",
       "envEmptyDesc": "添加 KEY/VALUE 行后，将写入节点沙箱 Spec.Env。密钥项回读会打码。",
       "varsEmptyTitle": "暂无工作流变量",
-      "varsEmptyDesc": "添加一行后，即可配置项目级默认值。",
+      "varsEmptyDesc": "添加一行后，即可配置工作区级默认值。",
       "sharedAgent": {
-        "extendHint": "本项目 Run 与 Agent Studio「对话测试」会先 extend 此共享配置，再由所选 Agent 同名覆盖（Agent 优先）。",
+        "extendHint": "本工作区 Run 与 Agent Studio「对话测试」会先 extend 此共享配置，再由所选 Agent 同名覆盖（Agent 优先）。",
         "discard": "放弃修改",
         "testTab": "对话测试",
         "pickAgent": "选择 Agent",
         "pickAgentPlaceholder": "请选择要叠加测试的 Agent",
-        "testHint": "仅列出绑定本项目的 Agent。将以共享配置为基底，再 overlay 所选 Agent 启动对话测试。",
+        "testHint": "仅列出绑定本工作区的 Agent。将以共享配置为基底，再 overlay 所选 Agent 启动对话测试。",
         "noAgents": "暂无可用 Agent，请先到 Agent Studio 创建。",
-        "noProjectAgents": "本项目尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本项目后再试。",
+        "noProjectAgents": "本工作区尚无绑定 Agent。请前往 Agent 管理，在 Agent 元信息中绑定本工作区后再试。",
         "genericCredentialTitle": "通用授权",
-        "genericCredentialHint": "这是本项目的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。",
-        "runtimeDesc": "本项目的 Agent 默认用哪个账号、跑哪个模型。",
-        "modelHint": "项目默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。"
+        "genericCredentialHint": "这是本工作区的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。",
+        "runtimeDesc": "本工作区的 Agent 默认用哪个账号、跑哪个模型。",
+        "modelHint": "工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。"
       },
       "projectCredentials": {
         "eyebrow": "安全凭据中心",
-        "title": "项目凭据",
-        "subtitle": "凭据由项目统一管理，供项目内 Agent 和运行继承。读取接口只返回状态或掩码，不回显明文。",
+        "title": "工作区凭据",
+        "subtitle": "凭据由工作区统一管理，供工作区内 Agent 和运行继承。读取接口只返回状态或掩码，不回显明文。",
         "modelApiKeyTitle": "模型厂商 API Key",
         "modelApiKeySubtitle": "在这里新增、更换或清除。不会标成某个 Agent 的当前使用，密钥只显示掩码。",
         "apiKeyLabel": "API Key",
         "apiKeyHint": "密钥仅在保存或替换时提交，读取时始终只显示掩码。",
-        "empty": "该项目暂未提供可管理的凭据。",
+        "empty": "该工作区暂未提供可管理的凭据。",
         "create": "新增凭据",
-        "createTitle": "新增项目凭据",
+        "createTitle": "新增工作区凭据",
         "alias": "别名",
         "aliasPlaceholder": "工作号",
         "aliasRequired": "请填写别名",
@@ -1244,7 +1302,7 @@
           "ssh_key": "SSH 私钥",
           "ssh_hosts": "SSH 已知主机"
         },
-        "createIntroTitle": "把密钥放在项目范围内统一管理",
+        "createIntroTitle": "把密钥放在工作区范围内统一管理",
         "createIntro": "保存后只显示掩码。运行时会按环境变量键注入，明文不会回显到页面、日志或产物。",
         "basicSection": "基本信息",
         "bindingSection": "接入绑定",
@@ -1299,13 +1357,13 @@
         "clear": "清除",
         "saved": "凭据已保存",
         "cleared": "凭据已清除",
-        "managedByAdapter": "由 {source} 专用设置管理，此处仅用于项目范围查看。",
+        "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
         "updatedAt": "最近更新：{time}"
       },
       "agents": {
         "metaTab": "元信息",
         "testTab": "对话测试",
-        "noAgentForTest": "本项目尚无绑定 Agent。请先在「元信息」中创建或绑定 Agent，再进行对话测试。"
+        "noAgentForTest": "本工作区尚无绑定 Agent。请先在「元信息」中创建或绑定 Agent，再进行对话测试。"
       },
       "varName": "变量名",
       "varValue": "默认值",
@@ -1314,9 +1372,9 @@
       "selectPlaceholder": "选择…",
       "addRow": "添加一行",
       "saved": "已保存",
-      "deleteTitle": "删除项目 · {name}",
-      "deleteWarning": "仅当项目下已无工作流时可删除。删除后不可恢复。",
-      "deleted": "项目已删除"
+      "deleteTitle": "删除工作区 · {name}",
+      "deleteWarning": "仅当工作区下已无工作流时可删除。删除后不可恢复。",
+      "deleted": "工作区已删除"
     },
     "workflowList": {
       "title": "工作流",
@@ -1326,13 +1384,17 @@
       "deleteConfirm": "确认删除工作流 {name} 吗？",
       "repoNeeds": "需要",
       "repoNotNeeded": "无需",
-      "moreActions": "更多操作"
+      "moreActions": "更多操作",
+      "emptyHint": "从空白工作流开始，或导入已有配置。",
+      "noMatchesHint": "试试其他关键词，或清空搜索查看全部工作流。",
+      "clearSearch": "清空搜索",
+      "notificationEvents": "通知事件"
     },
     "workflowEditor": {
       "unnamedWorkflow": "未命名工作流",
       "descLabel": "描述（可选）",
       "descPlaceholder": "列表副文案 / 简要说明",
-      "projectRequired": "请先选择所属项目后再新建工作流",
+      "projectRequired": "无法加载工作区，请刷新后重试。",
       "loadFailed": "加载工作流失败,后端可能未连接",
       "loading": "加载工作流…",
       "mobile": {
@@ -1432,11 +1494,11 @@
         "nodeName": "节点名称",
         "noAgents": "暂无 Agent,请先在「Agent 管理」创建",
         "emptyAgent": "（空 · 不指定 Agent）",
-        "agentProfileHint": "列表已按工作流所属项目过滤；其他项目的 Agent 不展示。空配置允许。",
+        "agentProfileHint": "可选择工作区中的任意 Agent，也可留空。",
         "staleBannerTitle": "stale 引用",
-        "staleBannerBody": "当前 Agent 配置「{name}」为{reason}。请改选同项目 Agent 后再保存。",
+        "staleBannerBody": "当前 Agent 配置「{name}」为{reason}。请改选同工作区 Agent 后再保存。",
         "staleReasons": {
-          "foreign": "非本项目",
+          "foreign": "非本工作区",
           "deleted": "已删除"
         },
         "selectBody": "— 选择展示内容 —",
@@ -1532,11 +1594,15 @@
           "addedToast": "已添加来源",
           "reorderedToast": "顺序已更新 — 卡片将按此顺序展示"
         }
-      }
+      },
+      "backupCompare": "比较本地备份",
+      "backupLocal": "本地未保存内容",
+      "backupServer": "当前服务端内容",
+      "backupRestoreName": "同时恢复备份名称（默认保留当前名称）"
     },
     "runList": {
       "title": "运行记录",
-      "subtitle": "按项目、工作流与状态筛选",
+      "subtitle": "按工作流与状态筛选",
       "tagsLabel": "标签",
       "queued": "入队",
       "cancelConfirm": "仅停止这一次 Run；取消成功后列表将刷新该行状态。",
@@ -1580,7 +1646,7 @@
       "nodeFailed": "该节点执行失败",
       "failureBanner": {
         "title": "失败原因",
-        "codexLoginAction": "去项目凭据更新 Codex 登录文件"
+        "codexLoginAction": "去工作区凭据更新 Codex 登录文件"
       },
       "gateError": "提交失败,请重试",
       "resumeError": "续跑失败,请重试",
@@ -1824,7 +1890,7 @@
     },
     "notifications": {
       "title": "通知",
-      "subtitle": "仅展示执行完成或失败的收件事件 · 进行中请前往「运行」",
+      "subtitle": "查看工作流完成与失败的消息，及时了解执行结果。",
       "loading": "正在加载通知…",
       "filterEmpty": "没有符合筛选的通知",
       "filterEmptyHint": "试试切换全部 / 未读 / 已读",
@@ -1838,20 +1904,24 @@
     },
     "artifacts": {
       "title": "产物",
-      "subtitle": "<strong class=\"font-medium text-warn\">藏之名山</strong> <em class=\"not-italic text-n-clarify\">传之其人</em>",
-      "headerSubtitle": "(按 Run 分段 · createdAt 倒序)",
-      "treeTitle": "项目",
-      "treeSearchPlaceholder": "搜索项目或工作流…",
+      "subtitle": "浏览、检索和下载工作流与会话生成的文件。",
+      "treeTitle": "产物来源",
+      "treeSearchPlaceholder": "搜索工作流或会话…",
       "sessionArtifacts": "Agent 会话产物",
       "breadcrumbAria": "当前产物范围",
-      "switchScope": "切换项目",
+      "switchScope": "筛选来源",
       "emptyTitle": "还没有产物",
-      "emptyDesc": "工作流运行或 Agent 会话写出的产物会按项目归档在这里。",
-      "emptySelection": "当前范围暂无产物"
+      "emptyDesc": "工作流运行和 Agent 会话生成的文件会显示在这里。",
+      "emptySelection": "当前范围暂无产物",
+      "allSources": "全部来源",
+      "total": "{n} 个文件",
+      "backToFiles": "文件列表",
+      "newestFirst": "最近生成",
+      "noMatchingSources": "没有匹配的来源"
     },
     "integrations": {
       "title": "集成",
-      "subtitle": "内置 MCP 全程可用 · 仓库 / CI 密钥(如 GITLAB_TOKEN)只能在项目「凭据」配置；环境变量支持引用全局变量 {'${vars.<名字>}'}",
+      "subtitle": "内置 MCP 全程可用 · 仓库 / CI 密钥(如 GITLAB_TOKEN)只能在工作区「凭据」配置；环境变量支持引用全局变量 {'${vars.<名字>}'}",
       "sectionTitle": "内置 MCP · 运行级全局注入",
       "noConfigNeeded": "无需配置",
       "alwaysAvailable": "全程可用"
@@ -1881,8 +1951,8 @@
       }
     },
     "settings": {
-      "title": "设置",
-      "subtitle": "平台与运行参数 · 调度并发、沙箱回收与容量",
+      "title": "常规",
+      "subtitle": "管理品牌文案、运行并发与沙箱资源。",
       "saved": "已保存",
       "loadingTitle": "加载中…",
       "loadingDesc": "正在读取平台调度参数。",
@@ -1913,12 +1983,17 @@
         },
         "capacity": {
           "title": "沙箱容量",
-          "desc": "展示容量相关占用（测试沙箱 + running workflow）的实时合计与分项用量；测试沙箱上限可单独配置。"
+          "desc": "查看实时占用，设置测试沙箱的数量上限。"
         },
         "resources": {
           "title": "沙箱资源",
-          "desc": "平台创建的所有沙箱（工作流节点、测试与 Agent 沙箱）统一使用的资源上限，以及判定 Agent 卡住的无动作时限。"
+          "desc": "统一配置沙箱内存与 Agent 无动作时限。"
         }
+      },
+      "summaries": {
+        "run_sandbox_max_retention_hours": "从节点结束起计算的保留总上限；超时后自动回收沙箱。",
+        "sandbox_memory_mb": "每个新建沙箱可用的内存上限，包含浏览器、构建与测试的占用。",
+        "agent_idle_timeout_minutes": "Agent 持续没有输出或 CPU、磁盘活动时，先尝试恢复，再终止本轮。"
       },
       "labels": {
         "max_concurrent_runs": "最大并发运行数",
@@ -1980,7 +2055,7 @@
       "purpose": {
         "run": "运行",
         "test": "测试",
-        "agent": "项目管理"
+        "agent": "工作区助手"
       },
       "status": {
         "busy": "对话中",
@@ -1994,7 +2069,7 @@
       "source": {
         "workflow": "工作流",
         "chatTest": "对话测试",
-        "pmConsult": "项目管理咨询"
+        "pmConsult": "工作区助手咨询"
       },
       "ttl": {
         "busy": "运行中(暂停回收)",
@@ -2103,13 +2178,13 @@
     "agentStudio": {
       "title": "智能体",
       "errorPrefix": "出错:",
-      "empty": "暂无 Agent。可「创建 Agent 团队」一键拉起项目与工作流角色，或「新建 Agent」创建单个。",
+      "empty": "暂无 Agent。可「创建 Agent 团队」一键拉起工作区与工作流角色，或「新建 Agent」创建单个。",
       "emptyTeamTitle": "用一个入口拉起整支团队",
-      "emptyTeamDesc": "填写项目背景与运行配置后自动起沙箱：创建项目、项目经理与 4 名工程师。",
+      "emptyTeamDesc": "填写工作区背景与运行配置后自动起沙箱：创建工作区、工作区经理与 4 名工程师。",
       "emptyTeamCta": "创建 Agent 团队",
       "emptyTeamOrSingle": "或新建单个 Agent",
-      "emptyProjectTitle": "本项目还没有 Agent",
-      "emptyProjectDesc": "新建一个绑定到本项目的 Agent。团队在创建项目时已配置。",
+      "emptyProjectTitle": "本工作区还没有 Agent",
+      "emptyProjectDesc": "新建一个绑定到本工作区的 Agent。团队在创建工作区时已配置。",
       "createTeam": "创建 Agent 团队",
       "unsaved": "未保存",
       "saved": "已保存",
@@ -2129,10 +2204,11 @@
       },
       "tree": {
         "newTeam": "创建 Agent 团队",
-        "title": "项目 Agent",
-        "searchPlaceholder": "搜索项目或 Agent",
-        "empty": "暂无项目，请先创建项目。",
-        "createAgentHere": "在此项目新建 Agent",
+        "moreActions": "更多操作",
+        "title": "智能体",
+        "searchPlaceholder": "搜索智能体",
+        "empty": "暂无工作区，请先创建工作区。",
+        "createAgentHere": "在此工作区新建 Agent",
         "manage": "管理",
         "manageTitle": "Agent 管理",
         "manageIntro": "列出全部 Agent。此处「Rename」修改身份名称；「删除」为实体真删，不可恢复。",
@@ -2204,7 +2280,7 @@
         }
       },
       "mcp": {
-        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。项目管理 MCP 需手动添加,与 artifact-store 并列、互不合并。",
+        "hint": "整份 mcp.json 由你配置,写入 {configRoot}/mcp.json 并在 ACP session 注入。新建 Agent 默认带平台 artifact-store,可自行增删。工作区助手 MCP 需手动添加,与 artifact-store 并列、互不合并。",
         "formEdit": "表单编辑",
         "rawJson": "原始 JSON",
         "runVarsTitle": "运行级变量(运行时替换到 url / headers / args / env)",
@@ -2215,10 +2291,10 @@
         "addArtifactStore": "+ 添加产物存储",
         "agentVarsTitle": "Agent 通用平台 MCP",
         "agentScopeTag": "agent",
-        "memoryVars": "长期记忆（归属 Agent 主项目）",
+        "memoryVars": "长期记忆（归属 Agent 主工作区）",
         "contextVars": "对话上下文（Chat 落库回看）",
         "schedulerVars": "定时任务（定义面；平台调度执行）",
-        "agentScopeNote": "可在任意 Agent 的 mcp[] 声明。项目管理咨询沙箱也会自动注入这三项；pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs / pm-prd-manager 在项目的项目管理设置中启用，勿写在此处。",
+        "agentScopeNote": "可在任意 Agent 的 mcp[] 声明。工作区助手咨询沙箱也会自动注入这三项；pm-progress / pm-workflow-read / pm-workflow-write / pm-agent-fs / pm-prd-manager 在工作区的工作区助手设置中启用，勿写在此处。",
         "addMemoryStore": "+ 添加长期记忆",
         "addContextStore": "+ 添加对话上下文",
         "addTaskScheduler": "+ 添加定时任务",
@@ -2231,20 +2307,20 @@
         },
         "scopeNote": {
           "artifact": "本次运行隔离的产物服务。",
-          "memory": "长期记忆，归属主项目。",
+          "memory": "长期记忆，归属主工作区。",
           "context": "对话上下文，用于 Chat 落库回看。",
           "scheduler": "定时任务由平台调度执行。"
         },
         "agentMcpAlreadyExists": "已存在约定名 {name}，未新增重复条目",
-        "agentScopeBadge": "Agent 级平台 MCP：测试沙箱与声明场景使用；项目管理咨询由平台自动注入同名端点。与 artifact-store（运行级）保持独立。",
-        "pmVarsTitle": "项目管理咨询级变量",
-        "pmScopeTag": "project / 项目管理",
-        "pmUrl": "项目管理 MCP 端点（仅项目管理咨询场景）",
-        "pmToken": "咨询会话令牌（仅项目管理咨询场景）",
-        "pmScopeNote": "仅项目管理咨询场景可用：由平台在咨询沙箱注入生效；工作流 run 不会使用该条目。与上方运行级变量职责不同，请勿合并配置。",
-        "addPmLeader": "+ 添加项目管理 MCP（预填变量）",
+        "agentScopeBadge": "Agent 级平台 MCP：测试沙箱与声明场景使用；工作区助手咨询由平台自动注入同名端点。与 artifact-store（运行级）保持独立。",
+        "pmVarsTitle": "工作区助手咨询级变量",
+        "pmScopeTag": "project / 工作区助手",
+        "pmUrl": "工作区助手 MCP 端点（仅工作区助手咨询场景）",
+        "pmToken": "咨询会话令牌（仅工作区助手咨询场景）",
+        "pmScopeNote": "仅工作区助手咨询场景可用：由平台在咨询沙箱注入生效；工作流 run 不会使用该条目。与上方运行级变量职责不同，请勿合并配置。",
+        "addPmLeader": "+ 添加工作区助手 MCP（预填变量）",
         "pmAlreadyExists": "已存在约定名 pm-leader，未新增重复条目",
-        "pmScopeBadge": "适用范围：该配置仅在项目管理咨询场景由平台注入生效；工作流 run 不会使用本条目。与 artifact-store（运行级产物）保持独立，勿合并为同一服务。",
+        "pmScopeBadge": "适用范围：该配置仅在工作区助手咨询场景由平台注入生效；工作流 run 不会使用本条目。与 artifact-store（运行级产物）保持独立，勿合并为同一服务。",
         "serviceName": "服务名,如 context7",
         "transportCommand": "命令 (stdio)",
         "remove": "移除",
@@ -2257,11 +2333,11 @@
         "parseError": "MCP JSON 无法解析:"
       },
       "env": {
-        "hint": "普通环境变量会注入该 Agent 的沙箱容器；ACP Key、Git Token、SSH 等密钥只能在项目凭据中配置。值支持运行级变量与全局变量 {'${vars.<名字>}'}。",
+        "hint": "普通环境变量会注入该 Agent 的沙箱容器；ACP Key、Git Token、SSH 等密钥只能在工作区凭据中配置。值支持运行级变量与全局变量 {'${vars.<名字>}'}。",
         "backendAuthTitle": "当前后端鉴权凭据",
-        "backendAuthCredentialsBody": "该密钥只能在项目「凭据」中配置，运行时自动注入沙箱；环境变量中不能出现该变量。",
-        "backendAuthIntro": "acpBackend={backend} 时，请在项目「凭据」中配置对应 Key（值不会在界面明文回显）：",
-        "backendAuthMasked": "加密保存在项目凭据中，运行时注入沙箱",
+        "backendAuthCredentialsBody": "该密钥只能在工作区「凭据」中配置，运行时自动注入沙箱；环境变量中不能出现该变量。",
+        "backendAuthIntro": "acpBackend={backend} 时，请在工作区「凭据」中配置对应 Key（值不会在界面明文回显）：",
+        "backendAuthMasked": "加密保存在工作区凭据中，运行时注入沙箱",
         "regionLabel": "站点",
         "regionPublic": "国际站 (public)",
         "regionInternal": "国内站 (internal)",
@@ -2271,8 +2347,8 @@
         "regionIntl": "国际站 (trae.ai)",
         "add": "添加环境变量",
         "parseError": "环境变量 JSON 无法解析:",
-        "customConfigCallout": "请优先在项目「凭据」管理鉴权；除 Env Key 外，高级鉴权 / 参数仍可通过 Backend 配置文件完成：{path}。",
-        "secretCredentialsOnly": "密钥（ACP Key、Git Token、SSH）请在项目「凭据」中配置，环境变量不支持该变量",
+        "customConfigCallout": "请优先在工作区「凭据」管理鉴权；除 Env Key 外，高级鉴权 / 参数仍可通过 Backend 配置文件完成：{path}。",
+        "secretCredentialsOnly": "密钥（ACP Key、Git Token、SSH）请在工作区「凭据」中配置，环境变量不支持该变量",
         "goCredentials": "前往凭据",
         "openSettingsFile": "在 Files 中打开"
       },
@@ -2311,8 +2387,8 @@
       },
       "git": {
         "title": "Git 连接方式",
-        "subtitle": "选择引导推荐项；可与已有 Token 并存，运行时不互斥。SSH 请在项目「凭据」中配置。",
-        "choiceHint": "选择引导推荐项；可与已有 Token 并存，运行时不互斥。SSH 请在项目「凭据」中配置。",
+        "subtitle": "选择引导推荐项；可与已有 Token 并存，运行时不互斥。SSH 请在工作区「凭据」中配置。",
+        "choiceHint": "选择引导推荐项；可与已有 Token 并存，运行时不互斥。SSH 请在工作区「凭据」中配置。",
         "openWizard": "配置向导",
         "adjustType": "调整类型",
         "chooseTitle": "选择 Git 凭据类型",
@@ -2322,7 +2398,7 @@
         "unresolved": "运行时解析",
         "runtimeResolve": "运行时解析",
         "runtimeResolveHint": "仓库列表使用推荐变量时，本页不逐仓展开，将在运行时再解析。这是预期行为，不是错误。",
-        "envHint": "GitHub / GitLab Token 与 SSH 只能在项目「凭据」中配置，环境变量中不能出现 GITHUB_TOKEN / GITLAB_TOKEN。具体仓库地址请在 Studio 配置。",
+        "envHint": "GitHub / GitLab Token 与 SSH 只能在工作区「凭据」中配置，环境变量中不能出现 GITHUB_TOKEN / GITLAB_TOKEN。具体仓库地址请在 Studio 配置。",
         "done": "完成",
         "varsHint": "支持 {'${vars.*}'} 引用",
         "schemeHttps": "HTTPS",
@@ -2433,13 +2509,13 @@
         "advancedSummary": "高级说明（点开查看技术细节）",
         "advancedHint": "模型 id 本身带斜杠的（例如 deepseek/deepseek-flash）照原样填写；只填写模型名时，系统会自动补上厂商前缀。",
         "credentialTitle": "模型厂商 API Key",
-        "credentialDesc": "点一条给这个 Agent。未选择时使用种类匹配的共享通用授权；已选择时只注入这一条，不会改用同一列表里的另一条。密钥只保存在项目凭据里，这里只显示掩码。",
+        "credentialDesc": "点一条给这个 Agent。未选择时使用种类匹配的共享通用授权；已选择时只注入这一条，不会改用同一列表里的另一条。密钥只保存在工作区凭据里，这里只显示掩码。",
         "credentialAdd": "添加",
         "credentialSaveUse": "保存并选用",
         "credentialSave": "保存",
         "credentialCurrent": "当前使用",
         "credentialEmpty": "还没有模型厂商 API Key",
-        "credentialNeedProject": "请先选择主项目，才能添加凭据。",
+        "credentialNeedProject": "请先选择主工作区，才能添加凭据。",
         "credentialName": "别名",
         "credentialNamePlaceholder": "工作号",
         "credentialNameRequired": "请填写别名",
@@ -2465,9 +2541,9 @@
       "mobile": {
         "back": "返回",
         "switch": "切换",
-        "switchTitle": "切换 Agent / 项目",
-        "switchAria": "打开项目 Agent 列表",
-        "sheetTitle": "项目 Agent",
+        "switchTitle": "切换 Agent / 工作区",
+        "switchAria": "打开工作区 Agent 列表",
+        "sheetTitle": "工作区 Agent",
         "desktopOnlyTitle": "建议在桌面使用",
         "desktopOnlyDesc": "「{tab}」需要多栏编辑工作区。手机端仅提供引导，不提供编辑 UI。",
         "backToFiles": "返回 Files",
@@ -2492,7 +2568,7 @@
         "createPlaceholder": "字母 / 数字 / - / _",
         "renameTitle": "重命名 Agent",
         "renameLabel": "新名称",
-        "renameCascadeHint": "将同步更新目录、项目管理，以及工作流中的 Agent 配置引用",
+        "renameCascadeHint": "将同步更新目录、工作区助手，以及工作流中的 Agent 配置引用",
         "renameSuccess": "改名成功",
         "renameSuccessWithWorkflows": "改名成功，已更新 {n} 个工作流",
         "deleteAgentTitle": "删除 Agent",
@@ -2519,15 +2595,15 @@
         "exportSuccess": "已下载 {name}.zip",
         "importSuccess": "Agent「{name}」导入成功",
         "bundleExportSuccess": "已下载 {name}.zip",
-        "bundleImportSuccess": "项目 Agent 导入成功",
+        "bundleImportSuccess": "工作区 Agent 导入成功",
         "bundleSecrets": {
-          "title": "导出项目将带走密钥",
+          "title": "导出工作区将带走密钥",
           "body": "导出包内含环境变量/密钥。下载后文件将离开本环境，请仅发送给受信任的接收方。",
           "confirm": "确认并下载"
         },
         "pickProject": {
-          "title": "导入到项目",
-          "intro": "选择接收导入 Agent 的项目。",
+          "title": "导入到工作区",
+          "intro": "选择接收导入 Agent 的工作区。",
           "confirm": "选择文件"
         },
         "batchConflict": {
@@ -2570,7 +2646,7 @@
           "invalidZip": "ZIP 格式非法，请检查后重试。",
           "missingAgentJson": "ZIP 缺少根目录 agent.json，请检查后重试。",
           "invalidName": "Agent 名称不符合命名规则，请检查 agent.json 或 ZIP 文件名。",
-          "unrecognized": "无法识别该 ZIP，既不是项目 Agent 包也不是单 Agent 导出。",
+          "unrecognized": "无法识别该 ZIP，既不是工作区 Agent 包也不是单 Agent 导出。",
           "rolledBack": "导入失败，已整次回滚。",
           "ok": "知道了"
         }
@@ -2590,10 +2666,10 @@
       },
       "teamWizard": {
         "title": "创建 Agent 团队",
-        "headSub": "项目背景 + 运行配置 → 确认后自动起沙箱建团",
+        "headSub": "团队背景 + 运行配置 → 确认后自动起沙箱建团",
         "confirmStart": "确认并启动沙箱",
         "submitting": "正在提交",
-        "previewLine": "将创建：项目 {project} · {pm} + {n} 工程师",
+        "previewLine": "团队：{project} · PM：{pm} · {n} 名工程师",
         "steps": {
           "team": "团队信息",
           "acp": "Agent",
@@ -2604,19 +2680,19 @@
           "review": "确认创建"
         },
         "team": {
-          "meta": "先定项目与命名；工程师将在沙箱中按参考编制生成。",
-          "projectName": "项目 / 团队名",
+          "meta": "设置团队名称与命名前缀；工程师将在沙箱中按参考编制生成。",
+          "projectName": "团队名",
           "prefix": "命名前缀",
           "pmName": "PM Agent 名称",
-          "background": "项目背景",
-          "backgroundPlaceholder": "描述项目目标、技术栈、仓库形态、工作流诉求等。将作为沙箱建团 Prompt。",
+          "background": "团队背景",
+          "backgroundPlaceholder": "描述团队目标、技术栈、仓库形态与工作流诉求。将作为沙箱建团提示词。",
           "backgroundHint": "类似 Prompt：确认后注入沙箱，据此生成工程师团队。"
         },
         "acp": {
           "meta": "该配置用于 PM 及后续工程师的默认 ACP。先选启动方式，与安装引导、新建 Agent 相同。"
         },
         "git": {
-          "meta": "可选。点选 GitHub / GitLab / SSH，可跳过；Token 在项目凭据中配置。",
+          "meta": "可选。点选 GitHub / GitLab / SSH，可跳过；Token 在工作区凭据中配置。",
           "url": "仓库 URL"
         },
         "mcp": {
@@ -2632,26 +2708,26 @@
           "meta": "写入 PM；工程师创建时默认继承。"
         },
         "review": {
-          "meta": "确认后将创建项目与 PM，自动起沙箱并按参考编制生成 4 名工程师。",
-          "project": "项目",
+          "meta": "确认后将在当前工作区创建 PM，自动起沙箱并按参考编制生成 4 名工程师。",
+          "project": "团队",
           "set": "已填写",
           "skip": "跳过（可稍后补）",
           "none": "无",
           "roster": "编制：1 PM + 4 工程师 · 共 5",
-          "background": "项目背景（建团 Prompt）",
+          "background": "团队背景（建团提示词）",
           "noArtifactWarn": "工作流角色通常需要 artifact-store；当前 MCP 列表未包含它。"
         },
         "errors": {
-          "projectRequired": "请填写项目 / 团队名",
+          "projectRequired": "请填写团队名",
           "prefixRequired": "请填写命名前缀",
-          "backgroundRequired": "请填写项目背景（建团 Prompt）",
+          "backgroundRequired": "请填写团队背景（建团提示词）",
           "pmRequired": "请填写 PM Agent 名称",
           "pmInvalid": "PM 名称不合法（仅字母数字与 _/-）",
           "pmExists": "该 PM 名称已存在"
         },
         "progress": {
           "title": "沙箱 · {name}",
-          "sub": "自动建团：项目 / 项目经理 / 工程师 Agent",
+          "sub": "自动建团：工作区 / 工作区经理 / 工程师 Agent",
           "starting": "sandbox starting…",
           "running": "sandbox running",
           "pulling": "正在拉取镜像…",
@@ -2660,7 +2736,7 @@
           "failed": "failed",
           "waiting": "等待进度…",
           "resources": "已产出资源",
-          "openPm": "打开项目经理",
+          "openPm": "打开工作区经理",
           "done": "完成",
           "retry": "重试",
           "keepCreated": "仅保留已创建资源"
@@ -2720,10 +2796,10 @@
           "backendBanner": "当前 Backend：{backend}。",
           "inputLabel": "粘贴 API Key（可选，不会写入单个 Agent）",
           "inputPlaceholder": "建议跳过，改到共享Agent配置填写",
-          "skipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中填写 Token。",
+          "skipHint": "推荐直接「跳过」或「下一步」；在工作区详情 → 共享Agent配置中填写 Token。",
           "codexInputLabel": "粘贴 ChatGPT 登录文件（可选，不会写入单个 Agent）",
           "codexInputPlaceholder": "粘贴 ~/.codex/auth.json 的全部内容",
-          "codexSkipHint": "推荐直接「跳过」或「下一步」；在项目详情 → 共享Agent配置中粘贴登录文件。",
+          "codexSkipHint": "推荐直接「跳过」或「下一步」；在工作区详情 → 共享Agent配置中粘贴登录文件。",
           "notes": {
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
@@ -2793,7 +2869,7 @@
           "howTo": "如何获取"
         },
         "git": {
-          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过，之后在 Studio 再配；Token 在项目凭据中配置。"
+          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过，之后在 Studio 再配；Token 在工作区凭据中配置。"
         },
         "env": {
           "meta": "注入沙箱的环境变量。区域保留键由 Agent 步骤统一管理，密钥仅保存在 Agent 配置中。"
@@ -2835,24 +2911,23 @@
         }
       },
       "project": {
-        "label": "主项目",
-        "hint": "决定 memory-store / context-store / task-scheduler 的数据归属；切换将清空该 Agent 在旧项目下的记忆、对话与定时任务。",
-        "required": "请选择主项目",
-        "placeholder": "请选择项目",
-        "noProjects": "暂无项目，请先创建项目",
-        "switchTitle": "确认切换主项目？",
-        "switchWarn": "将清除该 Agent 在旧项目下的下列数据（不迁移到新项目）：",
+        "label": "主工作区",
+        "hint": "决定 memory-store / context-store / task-scheduler 的数据归属；切换将清空该 Agent 在旧工作区下的记忆、对话与定时任务。",
+        "required": "工作区尚未加载，请重试",
+        "placeholder": "请选择工作区",
+        "switchTitle": "确认切换主工作区？",
+        "switchWarn": "将清除该 Agent 在旧工作区下的下列数据（不迁移到新工作区）：",
         "switchItemMemory": "长期记忆",
         "switchItemContext": "对话上下文",
         "switchItemJobs": "定时任务",
-        "switchItemPm": "若旧项目项目管理指向本 Agent，将自动解绑",
+        "switchItemPm": "若旧工作区工作区助手指向本 Agent，将自动解绑",
         "switchApplyHint": "确认后写入草稿，保存 Agent 时生效。",
         "switchConfirm": "切换到 {name}"
       },
       "data": {
         "title": "Agent 数据",
-        "hint": "数据归属主项目「{project}」。在此管理记忆、上下文与定时任务。",
-        "unsavedBinding": "主项目修改尚未保存；数据面板仍使用已保存的主项目。",
+        "hint": "数据归属主工作区「{project}」。在此管理记忆、上下文与定时任务。",
+        "unsavedBinding": "主工作区修改尚未保存；数据面板仍使用已保存的主工作区。",
         "tabs": {
           "memory": "记忆",
           "context": "上下文",
@@ -2870,7 +2945,7 @@
           "lockDesc": "任意已登录用户可在此管理记忆。"
         },
         "context": {
-          "hint": "查看与清理会话；新咨询请到项目管理。",
+          "hint": "查看与清理会话；新咨询请到工作区助手。",
           "empty": "暂无会话",
           "deleteConfirm": "确认删除该会话及其消息？"
         },
@@ -2976,12 +3051,14 @@
         "switched": "已切换到 {cli}，模型恢复为自动",
         "undo": "撤销",
         "managedBy": "由「运行配置 · 模型」管理",
-        "inherited": "未单独选择，沿用项目共享配置：",
+        "inherited": "未单独选择，沿用工作区共享配置：",
         "goEdit": "去修改",
         "inspectorLabel": "模型",
         "inspectorEdit": "在 Agent 配置中修改",
         "wizardHint": "不确定就先用自动，之后可以在 Agent 配置里改。"
-      }
+      },
+      "workspaceUnavailable": "无法加载工作区，请刷新后重试。",
+      "pmScopeTag": "工作区助手"
     },
     "runLaunch": {
       "title": "启动运行 · {name}",
@@ -3044,9 +3121,9 @@
       },
       "import": {
         "success": "导入成功，正在跳转到「{name}」编辑器",
-        "missingAgentProfiles": "导入成功，但检测到缺失或非本项目 Agent 引用：{list}。请在编辑器中修复后再保存。",
+        "missingAgentProfiles": "导入成功，但检测到缺失的 Agent 引用：{list}。请在编辑器中修复后再保存。",
         "issueMissing": "缺失",
-        "issueForeign": "非本项目",
+        "issueForeign": "非本工作区",
         "discardTitle": "未保存改动将丢失",
         "discardBody": "当前编辑器有未保存改动，继续导入将丢弃这些改动。是否继续？",
         "discardConfirm": "继续导入"
@@ -3870,11 +3947,11 @@
       "packEmptyDisabled": "该 Run 暂无产物"
     },
     "artifactPreview": {
-      "emptyHint": "选择左侧产物查看内容(平台存储,可下载)",
+      "emptyHint": "选择文件查看内容。",
       "enlarge": "放大查看",
       "copy": "复制",
       "download": "下载",
-      "downloadRawTitle": "下载原始 JSON",
+      "downloadRawTitle": "下载原文件",
       "downloadPng": "下载图片",
       "downloadPdf": "下载 PDF",
       "exporting": "导出中…",
@@ -4305,6 +4382,64 @@
       "expiredHint": "请从 Grasp 重新打开预览，以继续查看产物。",
       "networkError": "无法连接 Grasp，请检查网络后重试。",
       "loadError": "产物加载失败，请稍后重试。"
+    },
+    "workspaceDefaults": {
+      "title": "工作流默认配置",
+      "hint": "覆盖共享默认值，画布中的同名变量仍优先。设置保存后对后续执行生效。",
+      "variables": "默认变量",
+      "inheritVariables": "继承工作区共享变量",
+      "variableName": "变量名",
+      "variableType": "变量类型",
+      "defaultValue": "默认值",
+      "description": "说明",
+      "options": "可选值，用逗号分隔",
+      "ask": "启动时填写",
+      "required": "必填",
+      "editable": "可修改",
+      "secret": "密钥",
+      "addVariable": "添加变量",
+      "notifyOverride": "单独设置运行通知",
+      "notifyEnabled": "发送运行通知",
+      "events": {
+        "waiting_human": "等待人工处理",
+        "failed": "运行失败",
+        "completed": "运行完成"
+      },
+      "templateHint": "留空使用默认通知格式",
+      "gateOverride": "单独设置自动审批",
+      "gateEnabled": "启用自动审批",
+      "agent": "执行 Agent",
+      "selectAgent": "选择 Agent",
+      "prompt": "附加提示",
+      "credentialTitle": "凭据绑定",
+      "credentialHint": "为每个环境键选择凭据，或明确不注入。指定凭据失效时不会回退到其他凭据。",
+      "inherit": "继承默认凭据",
+      "doNotInject": "不注入",
+      "unavailable": "不可用",
+      "manageCredentials": "管理凭据"
+    },
+    "chatNavigation": {
+      "ariaLabel": "对话定位",
+      "jumpTo": "跳转到：{title}",
+      "loadedHistory": "仅显示已加载的提问",
+      "loadEarlier": "加载更早消息",
+      "loadingEarlier": "正在加载更早消息…",
+      "attachmentMessage": "图片或附件消息"
+    },
+    "conversationWorkspace": {
+      "conversation": "对话",
+      "artifacts": "产物",
+      "openArtifacts": "打开产物",
+      "closeArtifacts": "关闭产物",
+      "backToChat": "返回聊天",
+      "resizePanel": "调整产物预览宽度",
+      "chooseArtifact": "在这里查看产物",
+      "chooseArtifactHint": "点击对话中的产物引用，在聊天旁查看文件内容。",
+      "fileSources": "文件来源",
+      "selectSource": "选择要查看的运行记录，确认文件来源。",
+      "noMatchingArtifact": "当前结果页没有同名文件。",
+      "loading": "正在加载产物…",
+      "deletedArtifact": "该产物已删除。"
     }
   }
 }

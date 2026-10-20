@@ -231,13 +231,17 @@ func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime.CredentialKindFunc) Agent {
 	base := shared.AsAgent()
 	out := Agent{
-		Name:              agent.Name,
-		ProjectID:         strings.TrimSpace(agent.ProjectID),
-		AcpBackend:        pickNonEmpty(agent.AcpBackend, base.AcpBackend),
-		GitCredentialType: pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
-		Files:             mergeFiles(base.Files, agent.Files),
-		MCP:               mergeMCP(base.MCP, agent.MCP),
-		Layout:            mergeLayout(base.Layout, agent.Layout),
+		Name:                 agent.Name,
+		CredentialBindings:   agent.CredentialBindings,
+		GitCredentialID:      agent.GitCredentialID,
+		SshHostsCredentialID: agent.SshHostsCredentialID,
+		Capabilities:         agent.Capabilities,
+		ProjectID:            strings.TrimSpace(agent.ProjectID),
+		AcpBackend:           pickNonEmpty(agent.AcpBackend, base.AcpBackend),
+		GitCredentialType:    pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
+		Files:                mergeFiles(base.Files, agent.Files),
+		MCP:                  mergeMCP(base.MCP, agent.MCP),
+		Layout:               mergeLayout(base.Layout, agent.Layout),
 	}
 	if out.AcpBackend != "" {
 		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)

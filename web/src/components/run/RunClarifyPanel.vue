@@ -11,10 +11,6 @@ import ClarifyChat from '@/components/run/ClarifyChat.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
-import {
-  REVIEW_SIDEBAR,
-  REVIEW_SHELL_WIDTH_KEY_CLARIFY,
-} from '@/lib/inbox/reviewLayoutBudget'
 import { addClarifyAnnotation } from '@/lib/inbox/useClarifyDraft'
 import { useToast } from '@/lib/composables/useToast'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
@@ -135,13 +131,11 @@ defineExpose({
     <p class="text-[11px] text-txt3">{{ t('pages.runDetail.clarifyFailed.hint') }}</p>
   </div>
   <ReviewShell
+    :scope-key="`run-clarify:${runId}:${clarify?.nodeId || nodeId}:${clarify?.iteration ?? 1}`"
+    :run-id="runId"
     v-else
     ref="reviewShellRef"
     class="h-full min-h-0"
-    :mobile="mobile"
-    :sidebar-width="REVIEW_SIDEBAR"
-    :storage-key="REVIEW_SHELL_WIDTH_KEY_CLARIFY"
-    card-panes
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" />

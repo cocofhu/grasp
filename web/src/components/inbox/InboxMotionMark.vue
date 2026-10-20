@@ -20,8 +20,8 @@ defineProps<{
       cx="7"
       cy="7"
       r="5"
-      stroke="#22d3ee"
-      stroke-width="1.6"
+      stroke="currentColor"
+      stroke-width="1.7"
       stroke-linecap="round"
       stroke-dasharray="18 14"
     />
@@ -35,19 +35,21 @@ defineProps<{
     aria-hidden="true"
     data-testid="inbox-motion-pulse"
   >
-    <circle cx="7" cy="7" r="3" fill="#22d3ee" />
+    <circle cx="7" cy="7" r="2.5" fill="currentColor" />
   </svg>
 </template>
 
 <style scoped>
 .inbox-motion-spin {
   flex: none;
-  animation: inbox-motion-spin 0.8s linear infinite;
+  color: rgb(var(--c-accent-2));
+  animation: inbox-motion-spin 1s linear infinite;
 }
 
 .inbox-motion-pulse {
   flex: none;
-  animation: inbox-motion-pulse 1.2s ease-in-out infinite;
+  color: rgb(var(--c-accent-2));
+  animation: inbox-motion-pulse 1.6s ease-in-out infinite;
 }
 
 @keyframes inbox-motion-spin {

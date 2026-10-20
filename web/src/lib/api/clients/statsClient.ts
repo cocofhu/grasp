@@ -44,7 +44,7 @@ function tokenStatsQuery(params: GlobalTokenStatsParams): URLSearchParams {
   if (params.source && params.source !== 'all') q.set('source', params.source)
   if (params.status) q.set('status', params.status)
   if (params.phase) q.set('phase', params.phase)
-  if (params.projectId) q.set('projectId', params.projectId)
+
   if (params.modelKey) q.set('modelKey', params.modelKey)
   if (params.workflowId) q.set('workflowId', params.workflowId)
   if (params.nodeType) q.set('nodeType', params.nodeType)

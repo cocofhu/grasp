@@ -1,8 +1,12 @@
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { routeApi } from './helpers/apiRoute'
 /**
  * P0 Run→QQ NotifyPolicy UI acceptance (mock API harness via project-detail).
  * Temporary verification for test gate; covers tab + inline override + no-channel.
  */
 import { test, expect } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 import path from 'node:path'
 import fs from 'node:fs'
 
@@ -76,7 +80,7 @@ async function setupNotifyHarness(
 
   await page.setViewportSize({ width: 1280, height: 900 })
 
-  await page.route('**/api/projects/proj-1/channel**', async (route) => {
+  await routeApi(page, '**/api/workspace/channel**', async (route) => {
     if (!hasChannel) {
       await route.fulfill({
         status: 200,
@@ -100,7 +104,7 @@ async function setupNotifyHarness(
     })
   })
 
-  await page.route('**/api/projects/proj-1', async (route) => {
+  await routeApi(page, '**/api/workspace', async (route) => {
     const method = route.request().method()
     if (method === 'GET') {
       const body = {
@@ -130,7 +134,7 @@ async function setupNotifyHarness(
     await route.continue()
   })
 
-  await page.route(/\/api\/workflows(\/|$|\?)/, async (route) => {
+  await routeApi(page, /\/api\/workflows(\/|$|\?)/, async (route) => {
     const method = route.request().method()
     const url = route.request().url()
     if (method === 'GET') {
@@ -193,7 +197,7 @@ async function setupNotifyHarness(
     await route.continue()
   })
 
-  await page.route('**/api/runs**', async (route) => {
+  await routeApi(page, '**/api/runs**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -205,7 +209,7 @@ async function setupNotifyHarness(
     await route.continue()
   })
 
-  await page.route('**/api/projects/proj-1/pm-leader', async (route) => {
+  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -213,30 +217,9 @@ async function setupNotifyHarness(
     })
   })
 
-  await page.route('**/api/projects/*/token-stats**', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({
-        window: '30d',
-        bucketWidth: 'day',
-        timezone: 'UTC',
-        empty: true,
-        trend: [],
-        composition: {
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheWriteTokens: 0,
-          total: 0,
-        },
-        workflows: [],
-      }),
-    })
-  })
 
-  await page.goto('/project-detail.html?tab=notify')
-  await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 10_000 })
+
+  await page.goto('/workspace-config.html?view=/settings/notification-policy')
 
   return {
     getSavedProjectPolicy: () => savedProjectPolicy,
@@ -248,7 +231,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
   test('通知 Tab：总开关/默认事件/completed 可勾/无渠道提示/可保存', async ({ page }) => {
     const harness = await setupNotifyHarness(page, { hasChannel: false })
 
-    await expect(page.getByTestId('project-tab-notify')).toBeVisible()
+    await expect(page.getByTestId('workspace-tool-notificationPolicy')).toBeVisible()
     await expect(page.getByTestId('project-notify-panel')).toBeVisible()
     await expect(page.getByTestId('notify-no-channel-hint')).toBeVisible()
     await expect(page.getByTestId('notify-go-channel')).toBeVisible()
@@ -348,7 +331,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
     await expect(page.getByTestId('notify-tpl-input')).toHaveValue('')
 
     // Workflow inline: mode/events only — no template controls
-    await page.getByRole('button', { name: '工作流' }).click()
+    await page.goto('/workspace-config.html?view=/workflows')
     await expect(page.getByTestId('wf-notify-cell').first()).toBeVisible({ timeout: 5_000 })
     await expect(page.getByTestId('notify-template-section')).toHaveCount(0)
     await expect(page.getByTestId('notify-tpl-input')).toHaveCount(0)
@@ -363,7 +346,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
   test('工作流行内：off/继承/自定义 + 事件勾选即持久化', async ({ page }) => {
     const harness = await setupNotifyHarness(page, { hasChannel: true })
 
-    await page.getByRole('button', { name: '工作流' }).click()
+    await page.goto('/workspace-config.html?view=/workflows')
     await expect(page.getByTestId('wf-notify-cell').first()).toBeVisible({ timeout: 5_000 })
 
     await page.screenshot({
@@ -373,7 +356,8 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
 
     // 轻量已是 off；将「继承默认」切到自定义并确认落库
     const inheritRow = page.locator('tbody tr', { hasText: '继承默认' })
-    await inheritRow.getByRole('button', { name: '自定义' }).click()
+    await inheritRow.getByTestId('wf-notify-mode').locator('[data-test="app-select-trigger"]').click()
+    await page.getByRole('option', { name: '自定义', exact: true }).click()
     await expect.poll(() => {
       const s = harness.getLastWorkflowSave() as {
         id?: string
@@ -386,6 +370,7 @@ test.describe('Run NotifyPolicy UI (P0)', () => {
 
     // 自我迭代已是 custom：第三勾「运行完成」默认不勾；取消「等待人工」，仅留「运行失败」
     const customRow = page.locator('tbody tr', { hasText: '自我迭代' })
+    await customRow.getByTestId('wf-notify-edit-events').click()
     const waitingCb = customRow.locator('label', { hasText: '等待人工' }).locator('input[type="checkbox"]')
     const completedCb = customRow.locator('label', { hasText: '运行完成' }).locator('input[type="checkbox"]')
     await expect(waitingCb).toBeChecked()

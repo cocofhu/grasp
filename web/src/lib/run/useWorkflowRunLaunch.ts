@@ -12,6 +12,7 @@ const runFields = ref<InputField[]>([])
 const runInputs = ref<Record<string, string>>({})
 const runImages = ref<Record<string, ClarifyImage[]>>({})
 const draftRestored = ref(false)
+let launchGeneration = 0
 
 /**
  * Shell-level RunLaunchModal orchestrator so sidebar quick-launch works on any route.
@@ -21,7 +22,9 @@ export function useWorkflowRunLaunch() {
   const { t } = useI18n()
 
   async function openLaunch(workflow: Workflow) {
+    const generation = ++launchGeneration
     const seeded = await seedAskLaunchFields(workflow)
+    if (generation !== launchGeneration) return
     target.value = workflow
     runFields.value = seeded.fields
     runInputs.value = seeded.inputs
@@ -31,8 +34,13 @@ export function useWorkflowRunLaunch() {
   }
 
   function closeLaunch() {
+    launchGeneration++
     open.value = false
     target.value = null
+    runFields.value = []
+    runInputs.value = {}
+    runImages.value = {}
+    draftRestored.value = false
   }
 
   async function saveRunDraftClick() {

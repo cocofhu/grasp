@@ -253,7 +253,7 @@ const canvasFollowNodeId = computed(() => {
 // Same source as the editor: project Agents resolve outlets for nodes without a caps snapshot.
 const allAgents = ref<Agent[]>([])
 const canvasAgents = computed(() =>
-  allAgents.value.filter((a) => !!wf.value.projectId && a.projectId === wf.value.projectId),
+  allAgents.value,
 )
 onMounted(() => {
   api

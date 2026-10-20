@@ -1,7 +1,7 @@
 // @vitest-environment node
 /**
  * Plan coverage locks for「操作按钮与 Tab 底线错开」:
- * g1.1 project tab-panel · g1.2 Studio action row · g1.3 inline rows · g1.4 shared tokens
+ * Studio action rows, inline rows, and shared tokens.
  */
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -12,7 +12,6 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const read = (rel: string) => readFileSync(join(root, rel), 'utf8')
 
 const globalCss = read('styles/global.css')
-const detailSrc = read('views/ProjectDetailView.vue')
 const studioSrc = read('views/AgentStudioView.vue')
 const sharedSrc = read('components/project/ProjectSharedAgentPanel.vue')
 const mcpSrc = read('components/agent/AgentMcpPanel.vue')
@@ -24,14 +23,6 @@ describe('toolbar Tab clearance tokens (g1.4)', () => {
   it('defines shared toolbar-below-tabs and toolbar-inline-row (8–12px band)', () => {
     expect(globalCss).toMatch(/\.toolbar-below-tabs\s*\{[\s\S]*?@apply pt-2\.5/)
     expect(globalCss).toMatch(/\.toolbar-inline-row\s*\{[\s\S]*?@apply py-2\.5/)
-  })
-})
-
-describe('project page tab-panel clearance (g1.1)', () => {
-  it('applies toolbar-below-tabs on project-detail-tab-panel', () => {
-    expect(detailSrc).toMatch(
-      /class="toolbar-below-tabs flex min-h-0 flex-1 flex-col overflow-hidden"\s+data-testid="project-detail-tab-panel"/,
-    )
   })
 })
 
@@ -55,7 +46,7 @@ describe('Agent Studio action / name bars (g1.2 / g1.3)', () => {
 describe('same-row toolbars leave the border-b (g1.3)', () => {
   it('shared Agent save row uses toolbar-inline-row instead of py-1', () => {
     expect(sharedSrc).toMatch(
-      /class="toolbar-inline-row flex shrink-0 items-center gap-2 border-b border-line px-2"/,
+      /class="toolbar-inline-row flex shrink-0 items-center gap-2 border-b border-line\/60"/,
     )
     expect(sharedSrc).not.toMatch(/border-b border-line px-2 py-1/)
   })

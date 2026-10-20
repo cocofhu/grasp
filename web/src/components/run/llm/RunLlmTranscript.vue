@@ -204,7 +204,7 @@ function toggleFollow() {
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 min-w-0 w-full flex-col bg-base" data-testid="run-llm-transcript">
+  <div class="chat-thread flex h-full min-h-0 min-w-0 w-full flex-col bg-surface" data-testid="run-llm-transcript">
     <div class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-surface px-3 py-2 sm:px-4">
       <div class="flex min-w-0 items-center gap-2 text-[12px] text-txt2" data-testid="llm-summary">
         <Icon name="chat" :size="14" class="text-accent-2" />
@@ -287,6 +287,7 @@ function toggleFollow() {
                 :preview-only="previewOnly && it.turn.prompt.truncated"
               />
               <LlmAnswerBubble
+                :run-id="run.id"
                 :turn="it.turn"
                 :models="it.models"
                 :node-label="nodeInfo(it.nodeId).label"

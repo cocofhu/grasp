@@ -68,8 +68,8 @@ async function mockStudioApi(page: Page) {
       await route.fulfill({ json: { username: 'e2e', expiresAt: '2099-01-01T00:00:00Z', isAdmin: false } })
       return
     }
-    if (path === '/projects' && method === 'GET') {
-      await route.fulfill({ json: [{ id: 'proj-default', name: 'Default' }] })
+    if (path === '/workspace' && method === 'GET') {
+      await route.fulfill({ json: { id: 'proj-default', name: 'Default' } })
       return
     }
     if (path === '/agents' && method === 'GET') {
@@ -212,8 +212,46 @@ test.describe('Agent Studio 窄屏数据 Tab', () => {
     await page.getByRole('button', { name: '添加记忆' }).click()
     await expect(page.getByText('新记忆')).toBeVisible()
 
-    const card = page.locator('.rounded.border').filter({ hasText: '项目约定' })
-    await card.getByRole('button', { name: '删除' }).click()
+    const row = page.getByTestId('agent-memory-row').filter({ hasText: '项目约定' })
+    page.once('dialog', dialog => dialog.accept())
+    await row.getByRole('button', { name: '删除' }).click()
     await expect(page.getByText('项目约定')).toHaveCount(0)
   })
+})
+
+test('768px Settings keeps Agent configuration fields usable beside the application directory', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 960 })
+  await page.goto('http://127.0.0.1:5174/workspace.html?view=/agents&theme=light')
+  await expect(page.getByTestId('app-desktop-sidebar')).toHaveCSS('width', '304px')
+  const tabs = page.locator('[data-test="studio-tabs"]')
+  const directory = page.getByTestId('agent-resource-sidebar')
+  await expect(directory).toBeVisible()
+  await expect(directory.getByText('智能体', { exact: true })).toBeVisible()
+  for (const id of ['agent-tree-create-agent', 'agent-tree-more', 'agent-tree-collapse']) {
+    await expect(page.getByTestId(id)).toBeVisible()
+  }
+
+  await tabs.getByRole('button', { name: '元信息', exact: true }).click()
+  await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
+  const editorBox = await page.locator('[data-test="studio-name-bar"]').boundingBox()
+  const directoryBox = await directory.boundingBox()
+  expect(editorBox!.width).toBeGreaterThan(340)
+  expect(editorBox!.y).toBeGreaterThanOrEqual(directoryBox!.y + directoryBox!.height)
+  const workspaceDir = page.getByPlaceholder('/root/workspace', { exact: true })
+  await workspaceDir.fill('/workspace/tablet-check')
+  await expect(workspaceDir).toHaveValue('/workspace/tablet-check')
+  expect((await workspaceDir.boundingBox())!.width).toBeGreaterThan(300)
+
+  await tabs.getByRole('button', { name: /^MCP/ }).click()
+  await expect(page.locator('[data-test="mcp-ops-bar"]')).toBeVisible()
+  await tabs.getByRole('button', { name: /^环境变量/ }).click()
+  await expect(page.locator('[data-test="env-help-inject"]')).toBeVisible()
+  await tabs.getByRole('button', { name: '能力', exact: true }).click()
+  await expect(page.getByTestId('agent-capabilities-panel')).toBeVisible()
+  await tabs.getByRole('button', { name: '数据', exact: true }).click()
+  await expect(page.getByRole('button', { name: '记忆', exact: true })).toBeVisible()
+  await tabs.getByRole('button', { name: '对话测试', exact: true }).click()
+  await expect(page.getByTestId('studio-chat-test')).toBeVisible()
+  await expect(page.getByText('建议在桌面使用')).toHaveCount(0)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })

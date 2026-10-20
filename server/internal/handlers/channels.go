@@ -47,7 +47,7 @@ func (b channelBody) toInput(projectID string) services.ChannelConfigInput {
 	return in
 }
 
-// ListProjectChannels handles GET /api/projects/:id/channels.
+// ListProjectChannels handles GET /api/workspace/channels.
 func (h *Handlers) ListProjectChannels(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
@@ -66,7 +66,7 @@ func (h *Handlers) ListProjectChannels(c *gin.Context) {
 	})
 }
 
-// CreateProjectChannel handles POST /api/projects/:id/channels.
+// CreateProjectChannel handles POST /api/workspace/channels.
 func (h *Handlers) CreateProjectChannel(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
@@ -98,7 +98,7 @@ func (h *Handlers) CreateProjectChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
-// UpdateProjectChannel handles PUT /api/projects/:id/channels/:channelId.
+// UpdateProjectChannel handles PUT /api/workspace/channels/:channelId.
 func (h *Handlers) UpdateProjectChannel(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})
@@ -131,7 +131,7 @@ func (h *Handlers) UpdateProjectChannel(c *gin.Context) {
 	c.JSON(http.StatusOK, dto)
 }
 
-// DeleteProjectChannelByID handles DELETE /api/projects/:id/channels/:channelId.
+// DeleteProjectChannelByID handles DELETE /api/workspace/channels/:channelId.
 func (h *Handlers) DeleteProjectChannelByID(c *gin.Context) {
 	if h.Channels == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "channels unavailable"})

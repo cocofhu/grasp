@@ -1,4 +1,8 @@
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { routeApi } from './helpers/apiRoute'
 import { test, expect, type Page, type Route } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onboarding'
@@ -25,7 +29,7 @@ function buildMessages(total: number) {
 }
 
 async function stubCommonApis(page: Page) {
-  await page.route('**/api/projects/proj-1', async (route) => {
+  await routeApi(page, '**/api/workspace', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -36,7 +40,7 @@ async function stubCommonApis(page: Page) {
     }
     await route.continue()
   })
-  await page.route('**/api/workflows**', async (route) => {
+  await routeApi(page, '**/api/workflows**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -47,7 +51,7 @@ async function stubCommonApis(page: Page) {
     }
     await route.continue()
   })
-  await page.route('**/api/runs**', async (route) => {
+  await routeApi(page, '**/api/runs**', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -58,7 +62,7 @@ async function stubCommonApis(page: Page) {
     }
     await route.continue()
   })
-  await page.route('**/api/projects/proj-1/pm-leader', async (route) => {
+  await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -69,14 +73,14 @@ async function stubCommonApis(page: Page) {
       }),
     })
   })
-  await page.route('**/api/projects/proj-1/pm/threads/*/draft**', async (route) => {
+  await routeApi(page, '**/api/workspace/pm/threads/*/draft**', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({ draft: null, live: false, hasFinal: false }),
     })
   })
-  await page.route('**/api/projects/proj-1/pm/threads/*/sandbox**', async (route) => {
+  await routeApi(page, '**/api/workspace/pm/threads/*/sandbox**', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({
         status: 200,
@@ -87,7 +91,7 @@ async function stubCommonApis(page: Page) {
     }
     await route.continue()
   })
-  await page.route('**/api/sandboxes/1', async (route) => {
+  await routeApi(page, '**/api/sandboxes/1', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -96,27 +100,27 @@ async function stubCommonApis(page: Page) {
   })
 }
 
-async function gotoPmLeader(page: Page) {
+async function gotoPmLeader(page: Page, binding?: { enabled: boolean; agentAvailable: boolean }) {
   await page.setViewportSize({ width: 1280, height: 800 })
   await seedOnboardingDismissed(page, 'proj-1')
   await stubCommonApis(page)
-  await page.goto('/project-detail.html?tab=pmLeader')
+  if (binding) await routeApi(page, '**/api/workspace/pm-leader', async (route) => route.fulfill({ json: { ...binding, agentConfigRef: 'new-default' } }))
+  await page.goto('/workspace-config.html?view=/assistant')
   await dismissOnboardingIfOpen(page)
-  await expect(page.getByRole('heading', { name: 'Demo Project' })).toBeVisible({ timeout: 15_000 })
   await expect(page.getByTestId('pm-message-scroller')).toBeVisible({ timeout: 15_000 })
 }
 
 async function stubLongThreadMessages(page: Page, all: ReturnType<typeof buildMessages>) {
   const messageGets: { limit: string | null; before: string | null }[] = []
 
-  await page.route('**/api/projects/proj-1/pm/threads**', async (route: Route) => {
+  await routeApi(page, '**/api/workspace/pm/threads**', async (route: Route) => {
     const url = new URL(route.request().url())
     if (route.request().method() === 'GET' && !url.pathname.includes('/messages')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({
-          items: [{ id: 'thr-long', title: '长会话', userId: 'alice' }],
+          items: [{ id: 'thr-long', agentAvailable: true, title: '长会话', userId: 'alice' }],
         }),
       })
       return
@@ -124,7 +128,7 @@ async function stubLongThreadMessages(page: Page, all: ReturnType<typeof buildMe
     await route.continue()
   })
 
-  await page.route('**/api/projects/proj-1/pm/threads/*/messages**', async (route: Route) => {
+  await routeApi(page, '**/api/workspace/pm/threads/*/messages**', async (route: Route) => {
     if (route.request().method() !== 'GET') {
       await route.continue()
       return
@@ -168,6 +172,20 @@ async function stubLongThreadMessages(page: Page, all: ReturnType<typeof buildMe
 }
 
 test.describe('PM Leader tail window + scroll-up lazyload', () => {
+  test('发送关闭时仍可读取历史；新默认Agent不可用时旧会话仍可继续', async ({ page }) => {
+    await stubLongThreadMessages(page, buildMessages(4))
+    await gotoPmLeader(page, { enabled: false, agentAvailable: false })
+    await expect(page.locator('[data-msg-id]')).toHaveCount(4)
+    await expect(page.getByTestId('pm-history-readonly')).toBeVisible()
+    await expect(page.getByTestId('pm-chat-section').locator('textarea')).toHaveCount(0)
+    await routeApi(page, '**/api/workspace/pm-leader', async (route) => route.fulfill({ json: { enabled: true, agentAvailable: false, agentConfigRef: 'new-default' } }))
+    await page.reload()
+    await expect(page.locator('[data-msg-id]')).toHaveCount(4)
+    await page.getByTestId('pm-chat-section').locator('textarea').fill('continue original conversation')
+    await expect(page.getByTestId('pm-chat-send')).toBeEnabled()
+    await expect(page.getByTestId('pm-threads-aside').getByRole('button', { name: '新建', exact: true })).toBeDisabled()
+  })
+
   test('长会话首屏只拉最近 20 条并默认滚底', async ({ page }) => {
     const all = buildMessages(45)
     const messageGets = await stubLongThreadMessages(page, all)
@@ -226,14 +244,14 @@ test.describe('PM Leader tail window + scroll-up lazyload', () => {
     const short = buildMessages(8)
     const messageGets: string[] = []
 
-    await page.route('**/api/projects/proj-1/pm/threads**', async (route: Route) => {
+    await routeApi(page, '**/api/workspace/pm/threads**', async (route: Route) => {
       const url = new URL(route.request().url())
       if (route.request().method() === 'GET' && !url.pathname.includes('/messages')) {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            items: [{ id: 'thr-short', title: '短会话', userId: 'alice' }],
+            items: [{ id: 'thr-short', agentAvailable: true, title: '短会话', userId: 'alice' }],
           }),
         })
         return
@@ -241,7 +259,7 @@ test.describe('PM Leader tail window + scroll-up lazyload', () => {
       await route.continue()
     })
 
-    await page.route('**/api/projects/proj-1/pm/threads/*/messages**', async (route: Route) => {
+    await routeApi(page, '**/api/workspace/pm/threads/*/messages**', async (route: Route) => {
       if (route.request().method() !== 'GET') {
         await route.continue()
         return
@@ -288,14 +306,14 @@ test.describe('PM Leader tail window + scroll-up lazyload', () => {
     const all = buildMessages(30)
     let earlierCalls = 0
 
-    await page.route('**/api/projects/proj-1/pm/threads**', async (route: Route) => {
+    await routeApi(page, '**/api/workspace/pm/threads**', async (route: Route) => {
       const url = new URL(route.request().url())
       if (route.request().method() === 'GET' && !url.pathname.includes('/messages')) {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',
           body: JSON.stringify({
-            items: [{ id: 'thr-long', title: '长会话', userId: 'alice' }],
+            items: [{ id: 'thr-long', agentAvailable: true, title: '长会话', userId: 'alice' }],
           }),
         })
         return
@@ -303,7 +321,7 @@ test.describe('PM Leader tail window + scroll-up lazyload', () => {
       await route.continue()
     })
 
-    await page.route('**/api/projects/proj-1/pm/threads/*/messages**', async (route: Route) => {
+    await routeApi(page, '**/api/workspace/pm/threads/*/messages**', async (route: Route) => {
       if (route.request().method() !== 'GET') {
         await route.continue()
         return

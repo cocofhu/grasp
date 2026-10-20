@@ -9,7 +9,9 @@ import ProjectNotifyPanel from './ProjectNotifyPanel.vue'
 
 const apiMocks = vi.hoisted(() => ({
   listProjectChannels: vi.fn(),
-  updateProject: vi.fn(),
+  updateWorkspace: vi.fn(),
+  toastSuccess: vi.fn(),
+  toastError: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -19,13 +21,13 @@ vi.mock('@/lib/api/api', async () => {
     api: {
       ...actual.api,
       listProjectChannels: apiMocks.listProjectChannels,
-      updateProject: apiMocks.updateProject,
+      updateWorkspace: apiMocks.updateWorkspace,
     },
   }
 })
 
 vi.mock('@/lib/composables/useToast', () => ({
-  useToast: () => ({ success: vi.fn(), error: vi.fn(), warn: vi.fn(), info: vi.fn() }),
+  useToast: () => ({ success: apiMocks.toastSuccess, error: apiMocks.toastError }),
 }))
 
 const SAMPLE_PROJECT: Project = {
@@ -59,43 +61,131 @@ function mountPanel(project: Project = SAMPLE_PROJECT) {
 
 describe('ProjectNotifyPanel', () => {
   beforeEach(() => {
-    vi.clearAllMocks()
+    vi.resetAllMocks()
     apiMocks.listProjectChannels.mockResolvedValue({
-      items: [{ id: 'ch-1', name: 'Slack', kind: 'webhook' }],
+      items: [{ id: 'ch-1', name: 'QQ', enabled: true, cronDeliverTarget: 'group:1' }],
       freeAgents: [],
       secretsKeyConfigured: true,
     })
-    apiMocks.updateProject.mockImplementation(async (_id: string, body: Partial<Project>) => ({
+    apiMocks.updateWorkspace.mockImplementation(async (body: Partial<Project>) => ({
       ...SAMPLE_PROJECT,
       ...body,
     }))
   })
 
-  it('loads channel status and can save policy', async () => {
+  it('saves selected events and all templates from the grouped settings', async () => {
     const w = mountPanel()
     await flushPromises()
     expect(apiMocks.listProjectChannels).toHaveBeenCalledWith('proj-1')
-    expect(w.text().length).toBeGreaterThan(10)
-    const switches = w.findAll('button[role="switch"]')
-    if (switches.length) {
-      await switches[0].trigger('click')
-      await flushPromises()
+    expect(w.findAll('h2').map((heading) => heading.text())).toEqual([
+      '通知发送', '默认通知时机', '消息文案模板',
+    ])
+    expect(w.get('[data-testid="notify-status-badge"]').text()).toBe('已启用')
+    expect(w.find('[data-testid="notify-no-channel-hint"]').exists()).toBe(false)
+
+    await w.get('[data-testid="notify-master-toggle"]').trigger('click')
+    await w.get('[data-testid="notify-ev-waiting-human"]').trigger('click')
+    await w.get('[data-testid="notify-ev-completed"]').trigger('click')
+    await w.get('[data-testid="notify-tpl-input"]').setValue('Waiting {run_id}')
+    await w.get('[data-testid="notify-tpl-seg-failed"]').trigger('click')
+    expect(w.get<HTMLTextAreaElement>('[data-testid="notify-tpl-input"]').element.value).toBe('fail {{run}}')
+    await w.get('[data-testid="notify-tpl-input"]').setValue('Failed {workflow}')
+    await w.get('[data-testid="notify-tpl-seg-completed"]').trigger('click')
+    await w.get('[data-testid="notify-tpl-input"]').setValue('Completed {project}')
+    await w.get('[data-testid="notify-save"]').trigger('click')
+    await flushPromises()
+
+    const policy = {
+      enabled: false,
+      defaultEvents: ['failed', 'completed'],
+      waitingHumanTemplate: 'Waiting {run_id}',
+      failedTemplate: 'Failed {workflow}',
+      completedTemplate: 'Completed {project}',
     }
-    const save = w.findAll('button').find((b) => /保存|Save/i.test(b.text()))
-    if (save) {
-      await save.trigger('click')
-      await flushPromises()
-    }
+    expect(apiMocks.updateWorkspace).toHaveBeenCalledWith({ notifyPolicy: policy })
+    expect(w.emitted('updated')?.[0]?.[0]).toMatchObject({ notifyPolicy: policy })
+    expect(apiMocks.toastSuccess).toHaveBeenCalledWith('通知设置已保存')
     w.unmount()
   })
 
-  it('handles missing channel ids as no channel configured', async () => {
+  it('inserts placeholders at the selection and keeps default and custom template previews', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    const input = w.get<HTMLTextAreaElement>('[data-testid="notify-tpl-input"]')
+    await input.setValue('Run details')
+    input.element.setSelectionRange(4, 11)
+    await w.get('[data-testid="notify-ph-run_id"]').trigger('click')
+    expect(input.element.value).toBe('Run {run_id}')
+    expect(input.element.selectionStart).toBe('Run {run_id}'.length)
+    expect(w.get('[data-testid="notify-preview-mode"]').text()).toBe('自定义模板渲染')
+    expect(w.get('[data-testid="notify-preview-body"]').text()).toContain('Run ')
+    expect(w.get('[data-testid="notify-preview-body"]').text()).not.toContain('{run_id}')
+
+    await w.get('[data-testid="notify-tpl-seg-completed"]').trigger('click')
+    expect(input.element.value).toBe('')
+    expect(w.get('[data-testid="notify-preview-mode"]').text()).toBe('使用系统默认')
+    await w.get('[data-testid="notify-tpl-fill-default"]').trigger('click')
+    expect(input.element.value).toContain('{project}')
+    await w.get('[data-testid="notify-tpl-clear"]').trigger('click')
+    expect(input.element.value).toBe('')
+    expect(w.get('[data-testid="notify-preview-body"]').text().length).toBeGreaterThan(0)
+    await w.get('[data-testid="notify-tpl-seg-waiting"]').trigger('click')
+    expect(input.element.value).toBe('Run {run_id}')
+    w.unmount()
+  })
+
+  it('locks the policy and template editors during save and retains edits after failure', async () => {
+    let rejectSave!: (error: Error) => void
+    apiMocks.updateWorkspace.mockImplementationOnce(() => new Promise<Project>((_, reject) => {
+      rejectSave = reject
+    }))
+    const w = mountPanel()
+    await flushPromises()
+    await w.get('[data-testid="notify-tpl-input"]').setValue('Unsaved {run_id}')
+    await w.get('[data-testid="notify-ev-completed"]').trigger('click')
+    await w.get('[data-testid="notify-save"]').trigger('click')
+
+    expect(w.get('[data-testid="project-notify-panel"]').attributes('aria-busy')).toBe('true')
+    for (const control of w.findAll('button[role="switch"], button[role="tab"], [data-testid="notify-ph-run_id"], [data-testid="notify-tpl-fill-default"], [data-testid="notify-tpl-clear"], [data-testid="notify-save"], textarea')) {
+      expect(control.attributes('disabled')).toBeDefined()
+    }
+    rejectSave(new Error('Save unavailable'))
+    await flushPromises()
+    expect(apiMocks.toastError).toHaveBeenCalledWith('Save unavailable')
+    expect(w.get<HTMLTextAreaElement>('[data-testid="notify-tpl-input"]').element.value).toBe('Unsaved {run_id}')
+    expect(w.get('[data-testid="notify-ev-completed"]').attributes('aria-checked')).toBe('true')
+    expect(w.get('[data-testid="notify-save"]').attributes('disabled')).toBeUndefined()
+    expect(w.emitted('updated')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('handles missing channel ids without fetching and links to channel settings', async () => {
     const w = mountPanel({
       ...SAMPLE_PROJECT,
       notifyPolicy: { enabled: true, defaultEvents: ['failed'] },
     })
     await flushPromises()
     expect(apiMocks.listProjectChannels).not.toHaveBeenCalled()
+    expect(w.get('[data-testid="notify-status-badge"]').text()).toBe('已开启，但未配置通知渠道')
+    await w.get('[data-testid="notify-go-channel"]').trigger('click')
+    expect(w.emitted('openChannelSettings')).toHaveLength(1)
+    expect(w.get('[data-testid="notify-save"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+
+  it('keeps channel load failures explicit and restores the form after retry', async () => {
+    apiMocks.listProjectChannels.mockRejectedValueOnce(new Error('Channel unavailable'))
+    const w = mountPanel()
+    expect(w.find('[data-testid="notify-channel-skeleton"]').exists()).toBe(true)
+    expect(w.find('[data-testid="notify-save"]').exists()).toBe(false)
+    await flushPromises()
+    expect(w.get('[data-testid="notify-channel-error"]').text()).toContain('Channel unavailable')
+    expect(w.find('[data-testid="notify-master-toggle"]').exists()).toBe(false)
+    await w.get('[data-testid="app-inline-error-retry"]').trigger('click')
+    await flushPromises()
+    expect(apiMocks.listProjectChannels).toHaveBeenCalledTimes(2)
+    expect(w.find('[data-testid="notify-channel-error"]').exists()).toBe(false)
+    expect(w.get('[data-testid="notify-master-toggle"]').attributes('aria-checked')).toBe('true')
     w.unmount()
   })
 })

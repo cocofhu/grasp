@@ -10,18 +10,14 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// ListArtifacts pages one project's artifacts. projectId is required;
+// ListArtifacts pages artifacts across the workspace;
 // workflowId narrows to one workflow, session=1 to workflow-less artifacts.
 func (h *Handlers) ListArtifacts(c *gin.Context) {
 	f := services.ArtifactFilter{
-		ProjectID:  c.Query("projectId"),
+		ProjectID:  "",
 		WorkflowID: c.Query("workflowId"),
 		Session:    c.Query("session") == "1",
 		Q:          c.Query("q"),
-	}
-	if f.ProjectID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "projectId is required"})
-		return
 	}
 	if f.Session && f.WorkflowID != "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "workflowId and session are mutually exclusive"})

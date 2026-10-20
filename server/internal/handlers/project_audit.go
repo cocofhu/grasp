@@ -112,7 +112,7 @@ func (h *Handlers) parseAuditListFilter(c *gin.Context, projectID string) (servi
 		return services.AuditListFilter{}, false
 	}
 	return services.AuditListFilter{
-		ProjectID:  projectID,
+		ProjectID:  "",
 		From:       from,
 		To:         to,
 		Actor:      c.Query("actor"),
@@ -176,7 +176,7 @@ func (h *Handlers) parseAuditFacetsFilter(c *gin.Context, projectID string) (ser
 		to = &t
 	}
 	return services.AuditListFilter{
-		ProjectID: projectID,
+		ProjectID: "",
 		From:      from,
 		To:        to,
 		RunID:     c.Query("runId"),
@@ -184,7 +184,7 @@ func (h *Handlers) parseAuditFacetsFilter(c *gin.Context, projectID string) (ser
 }
 
 // ListProjectAuditFacets returns Run / node / resource options for dual-mode filters.
-// GET /api/projects/:id/audit/facets
+// GET /api/workspace/audit/facets
 func (h *Handlers) ListProjectAuditFacets(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})
@@ -208,7 +208,7 @@ func (h *Handlers) ListProjectAuditFacets(c *gin.Context) {
 }
 
 // ListProjectAudit returns a paginated project audit timeline.
-// GET /api/projects/:id/audit
+// GET /api/workspace/audit
 func (h *Handlers) ListProjectAudit(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})
@@ -249,7 +249,7 @@ func (h *Handlers) ListProjectAudit(c *gin.Context) {
 
 // ExportProjectAudit exports matching audit events as JSON or plain text and
 // records an audit.export meta-event on success.
-// GET /api/projects/:id/audit/export?format=json|text
+// GET /api/workspace/audit/export?format=json|text
 func (h *Handlers) ExportProjectAudit(c *gin.Context) {
 	if h.Audit == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "audit unavailable"})

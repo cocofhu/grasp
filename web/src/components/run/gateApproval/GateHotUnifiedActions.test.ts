@@ -78,7 +78,7 @@ function mountHot(
 }
 
 describe('GateHotUnifiedActions hot toolbar', () => {
-  it('idle empty draft shows a faded send icon, record, and confirm outside the box', async () => {
+  it('idle empty draft shows an inactive send icon, record, and confirm outside the box', async () => {
     const { wrapper } = mountHot()
     await flushPromises()
     const send = wrapper.get('[data-testid="review-composer-send"]')
@@ -86,7 +86,7 @@ describe('GateHotUnifiedActions hot toolbar', () => {
     expect(send.attributes('aria-label')).toBe('发送')
     expect(send.attributes('title')).toBe('发送')
     expect(send.text()).not.toContain('发送')
-    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('send')
+    expect(send.findComponent({ name: 'Icon' }).props('name')).toBe('chat-send')
     expect(wrapper.find('[data-testid="gate-react-cancel"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="paragraph-input-attach"]').exists()).toBe(true)
     const footer = wrapper.get('[data-testid="composer-shell-footer"]')
@@ -108,7 +108,7 @@ describe('GateHotUnifiedActions hot toolbar', () => {
     expect(stop.attributes('aria-label')).toBe('Cancel')
     expect(stop.attributes('title')).toBe('Cancel')
     expect(stop.text()).not.toContain('Cancel')
-    expect(stop.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    expect(stop.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await stop.trigger('click')
     expect(busy.cancelReactRevise).toHaveBeenCalled()
     busy.wrapper.unmount()

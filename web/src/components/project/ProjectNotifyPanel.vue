@@ -13,6 +13,8 @@ import {
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
+import SettingsSection from '@/components/settings/SettingsSection.vue'
+import SettingsRow from '@/components/settings/SettingsRow.vue'
 
 const props = defineProps<{
   projectId: string
@@ -155,7 +157,7 @@ async function save() {
       failedTemplate: failedTemplate.value,
       completedTemplate: completedTemplate.value,
     }
-    const updated = await api.updateProject(props.projectId, { notifyPolicy })
+    const updated = await api.updateWorkspace({ notifyPolicy })
     emit('updated', updated)
     toast.success(t('pages.projectDetail.notify.saved'))
   } catch (e: any) {
@@ -196,45 +198,20 @@ function goChannelSettings() {
 </script>
 
 <template>
-  <div class="mx-auto max-w-2xl" data-testid="project-notify-panel" :aria-busy="loadingChannel ? 'true' : 'false'">
-    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
-      <div>
-        <h3 class="text-sm font-semibold text-txt">{{ t('pages.projectDetail.notify.title') }}</h3>
-        <p class="mt-1 text-[12px] text-txt3">{{ t('pages.projectDetail.notify.lead') }}</p>
-      </div>
-      <span
-        v-if="!loadingChannel && !channelError"
-        class="inline-flex items-center rounded border px-2 py-0.5 text-[11px] font-medium"
-        :class="
-          !enabled
-            ? 'border-err/40 bg-err/10 text-err'
-            : !hasChannel
-              ? 'border-warn/40 bg-warn/10 text-warn'
-              : 'border-ok/40 bg-ok/10 text-ok'
-        "
-        data-testid="notify-status-badge"
-      >
-        {{ statusLabel }}
-      </span>
-    </div>
-
+  <div class="space-y-7" data-testid="project-notify-panel" :aria-busy="loadingChannel || saving">
     <div
       v-if="loadingChannel"
-      class="mb-4 space-y-3 rounded-lg border border-line bg-surface p-4"
+      class="space-y-3 py-4"
       data-testid="notify-channel-skeleton"
       aria-hidden="true"
     >
-      <div class="h-4 w-1/3 bg-elevated animate-pulse" />
-      <div class="h-3 w-2/3 bg-elevated animate-pulse" />
-      <div class="h-10 w-full bg-elevated animate-pulse" />
-      <div class="h-10 w-full bg-elevated animate-pulse" />
+      <div class="h-4 w-1/3 animate-pulse bg-elevated" />
+      <div class="h-3 w-2/3 animate-pulse bg-elevated" />
+      <div class="h-10 w-full animate-pulse bg-elevated" />
+      <div class="h-10 w-full animate-pulse bg-elevated" />
     </div>
 
-    <div
-      v-else-if="channelError"
-      class="mb-4"
-      data-testid="notify-channel-error"
-    >
+    <div v-else-if="channelError" data-testid="notify-channel-error">
       <AppInlineError
         :title="t('pages.projectDetail.notify.loadChannelFailed')"
         :message="channelError"
@@ -242,223 +219,230 @@ function goChannelSettings() {
       />
     </div>
 
-    <template v-if="!loadingChannel && !channelError">
-    <div
-      v-if="!hasChannel"
-      class="mb-4 rounded border border-warn/35 bg-warn/10 px-3 py-2.5 text-[12px] text-txt2"
-      data-testid="notify-no-channel-hint"
-    >
-      {{ t('pages.projectDetail.notify.noChannelHint') }}
-      <button
-        type="button"
-        class="ml-1 text-accent-2 underline hover:brightness-110"
-        data-testid="notify-go-channel"
-        @click="goChannelSettings"
+    <template v-else>
+      <SettingsSection
+        :title="t('pages.projectDetail.notify.deliverySection')"
+        :description="t('pages.projectDetail.notify.lead')"
       >
-        {{ t('pages.projectDetail.notify.goChannel') }}
-      </button>
-    </div>
-
-    <div class="space-y-4 rounded-lg border border-line bg-surface p-4">
-      <label class="flex items-start gap-3">
-        <AppSwitch
-          v-model="enabled"
-          class="mt-0.5"
-          data-testid="notify-master-toggle"
-          :disabled="controlsDisabled"
-          :aria-label="t('pages.projectDetail.notify.master')"
-        />
-        <span>
-          <span class="block text-sm font-medium text-txt">{{ t('pages.projectDetail.notify.master') }}</span>
-          <span class="mt-0.5 block text-[12px] text-txt3">{{ t('pages.projectDetail.notify.masterHint') }}</span>
-        </span>
-      </label>
-
-      <div>
-        <div class="text-sm font-medium text-txt">{{ t('pages.projectDetail.notify.defaultEvents') }}</div>
-        <p class="mt-0.5 text-[12px] text-txt3">{{ t('pages.projectDetail.notify.defaultEventsHint') }}</p>
-        <div class="mt-2 space-y-2">
-          <label class="flex items-start gap-3">
-            <AppSwitch
-              v-model="waitingHuman"
-              class="mt-0.5"
-              data-testid="notify-ev-waiting-human"
-              :disabled="controlsDisabled"
-              :aria-label="t('pages.projectDetail.notify.evWaitingHumanLabel')"
-            />
-            <span>
-              <span class="block text-[13px] font-medium text-txt">{{
-                t('pages.projectDetail.notify.evWaitingHumanLabel')
-              }}</span>
-              <span class="mt-0.5 block text-[12px] text-txt3">{{
-                t('pages.projectDetail.notify.evWaitingHuman')
-              }}</span>
+        <SettingsRow
+          :label="t('pages.projectDetail.notify.master')"
+          :description="t('pages.projectDetail.notify.masterHint')"
+          inline
+        >
+          <template #meta>
+            <span
+              class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium"
+              :class="
+                !enabled
+                  ? 'border-err/40 bg-err/10 text-err'
+                  : !hasChannel
+                    ? 'border-warn/40 bg-warn/10 text-warn'
+                    : 'border-ok/40 bg-ok/10 text-ok'
+              "
+              data-testid="notify-status-badge"
+              role="status"
+            >
+              {{ statusLabel }}
             </span>
-          </label>
-          <label class="flex items-start gap-3">
-            <AppSwitch
-              v-model="failed"
-              class="mt-0.5"
-              data-testid="notify-ev-failed"
-              :disabled="controlsDisabled"
-              :aria-label="t('pages.projectDetail.notify.evFailedLabel')"
-            />
-            <span>
-              <span class="block text-[13px] font-medium text-txt">{{
-                t('pages.projectDetail.notify.evFailedLabel')
-              }}</span>
-              <span class="mt-0.5 block text-[12px] text-txt3">{{
-                t('pages.projectDetail.notify.evFailed')
-              }}</span>
-            </span>
-          </label>
-          <label class="flex items-start gap-3">
-            <AppSwitch
-              v-model="completed"
-              class="mt-0.5"
-              data-testid="notify-ev-completed"
-              :disabled="controlsDisabled"
-              :aria-label="t('pages.projectDetail.notify.evCompletedLabel')"
-            />
-            <span>
-              <span class="block text-[13px] font-medium text-txt">{{
-                t('pages.projectDetail.notify.evCompletedLabel')
-              }}</span>
-              <span class="mt-0.5 block text-[12px] text-txt3">{{
-                t('pages.projectDetail.notify.evCompleted')
-              }}</span>
-            </span>
-          </label>
-        </div>
-      </div>
-    </div>
+          </template>
+          <AppSwitch
+            v-model="enabled"
+            data-testid="notify-master-toggle"
+            :disabled="controlsDisabled"
+            :aria-label="t('pages.projectDetail.notify.master')"
+          />
+          <template v-if="!hasChannel" #details>
+            <p class="m-0 text-txt2" data-testid="notify-no-channel-hint">
+              {{ t('pages.projectDetail.notify.noChannelHint') }}
+              <button
+                type="button"
+                class="ml-1 text-accent-2 underline underline-offset-2 hover:brightness-110"
+                data-testid="notify-go-channel"
+                @click="goChannelSettings"
+              >
+                {{ t('pages.projectDetail.notify.goChannel') }}
+              </button>
+            </p>
+          </template>
+        </SettingsRow>
+      </SettingsSection>
 
-    <!-- Message templates (project-level only; no workflow override) -->
-    <div
-      class="mt-4 space-y-3 rounded-lg border border-line bg-surface p-4"
-      data-testid="notify-template-section"
-    >
-      <div>
-        <div class="text-sm font-medium text-txt">{{ t('pages.projectDetail.notify.templatesTitle') }}</div>
-        <p class="mt-0.5 text-[12px] text-txt3">{{ t('pages.projectDetail.notify.templatesHint') }}</p>
-      </div>
+      <SettingsSection
+        :title="t('pages.projectDetail.notify.defaultEvents')"
+        :description="t('pages.projectDetail.notify.defaultEventsHint')"
+      >
+        <SettingsRow
+          :label="t('pages.projectDetail.notify.evWaitingHumanLabel')"
+          :description="t('pages.projectDetail.notify.evWaitingHuman')"
+          inline
+        >
+          <AppSwitch
+            v-model="waitingHuman"
+            data-testid="notify-ev-waiting-human"
+            :disabled="controlsDisabled"
+            :aria-label="t('pages.projectDetail.notify.evWaitingHumanLabel')"
+          />
+        </SettingsRow>
+        <SettingsRow
+          :label="t('pages.projectDetail.notify.evFailedLabel')"
+          :description="t('pages.projectDetail.notify.evFailed')"
+          inline
+        >
+          <AppSwitch
+            v-model="failed"
+            data-testid="notify-ev-failed"
+            :disabled="controlsDisabled"
+            :aria-label="t('pages.projectDetail.notify.evFailedLabel')"
+          />
+        </SettingsRow>
+        <SettingsRow
+          :label="t('pages.projectDetail.notify.evCompletedLabel')"
+          :description="t('pages.projectDetail.notify.evCompleted')"
+          inline
+        >
+          <AppSwitch
+            v-model="completed"
+            data-testid="notify-ev-completed"
+            :disabled="controlsDisabled"
+            :aria-label="t('pages.projectDetail.notify.evCompletedLabel')"
+          />
+        </SettingsRow>
+      </SettingsSection>
 
-      <div class="flex gap-2" role="tablist" data-testid="notify-template-seg">
-        <button
-          type="button"
-          class="flex-1 rounded-md border px-3 py-2 text-[12px] transition"
-          :class="
-            templateKind === 'waiting_human'
-              ? 'border-accent/45 bg-accent-dim text-accent-2'
-              : 'border-line bg-elevated text-txt3 hover:text-txt'
-          "
-          data-testid="notify-tpl-seg-waiting"
-          @click="templateKind = 'waiting_human'"
-        >
-          {{ t('pages.projectDetail.notify.segWaitingHuman') }}
-        </button>
-        <button
-          type="button"
-          class="flex-1 rounded-md border px-3 py-2 text-[12px] transition"
-          :class="
-            templateKind === 'failed'
-              ? 'border-accent/45 bg-accent-dim text-accent-2'
-              : 'border-line bg-elevated text-txt3 hover:text-txt'
-          "
-          data-testid="notify-tpl-seg-failed"
-          @click="templateKind = 'failed'"
-        >
-          {{ t('pages.projectDetail.notify.segFailed') }}
-        </button>
-        <button
-          type="button"
-          class="flex-1 rounded-md border px-3 py-2 text-[12px] transition"
-          :class="
-            templateKind === 'completed'
-              ? 'border-accent/45 bg-accent-dim text-accent-2'
-              : 'border-line bg-elevated text-txt3 hover:text-txt'
-          "
-          data-testid="notify-tpl-seg-completed"
-          @click="templateKind = 'completed'"
-        >
-          {{ t('pages.projectDetail.notify.segCompleted') }}
-        </button>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-1.5" data-testid="notify-placeholder-chips">
-        <span class="mr-1 text-[11px] text-txt3">{{ t('pages.projectDetail.notify.placeholders') }}</span>
-        <button
-          v-for="ph in RUN_NOTIFY_PLACEHOLDERS"
-          :key="ph"
-          type="button"
-          class="rounded border border-line bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-accent-2 transition hover:border-accent/50"
-          :data-testid="`notify-ph-${ph.replace(/[{}]/g, '')}`"
-          @click="insertPlaceholder(ph)"
-        >
-          {{ ph }}
-        </button>
-      </div>
-
-      <div class="flex flex-wrap gap-2">
-        <AppButton
-          variant="outline"
-          data-testid="notify-tpl-fill-default"
-          @click="fillDefaultTemplate"
-        >
-          {{ t('pages.projectDetail.notify.fillDefault') }}
-        </AppButton>
-        <AppButton
-          variant="outline"
-          data-testid="notify-tpl-clear"
-          @click="clearTemplate"
-        >
-          {{ t('pages.projectDetail.notify.clearDefault') }}
-        </AppButton>
-      </div>
-
-      <textarea
-        ref="tplInput"
-        v-model="currentTemplate"
-        class="min-h-[160px] w-full resize-y rounded-md border border-line bg-elevated px-3 py-2 font-mono text-[12.5px] leading-relaxed text-txt placeholder:text-txt3 focus:border-accent/55 focus:outline-none"
-        data-testid="notify-tpl-input"
-        :placeholder="t('pages.projectDetail.notify.templatePlaceholder')"
-        spellcheck="false"
-      />
-
-      <div data-testid="notify-preview">
-        <div class="mb-2 flex items-center justify-between gap-2">
-          <span class="text-[11px] uppercase tracking-wide text-txt3">
-            {{ t('pages.projectDetail.notify.previewTitle') }}
-          </span>
-          <span
-            class="rounded px-2 py-0.5 text-[11px]"
-            :class="
-              previewIsDefault
-                ? 'bg-accent-dim/40 text-accent-2'
-                : 'bg-ok/10 text-ok'
-            "
-            data-testid="notify-preview-mode"
+      <SettingsSection
+        :title="t('pages.projectDetail.notify.templatesTitle')"
+        :description="t('pages.projectDetail.notify.templatesHint')"
+        data-testid="notify-template-section"
+      >
+        <SettingsRow :label="t('pages.projectDetail.notify.templateEvent')">
+          <div
+            class="flex gap-1 rounded-lg bg-elevated p-1"
+            role="tablist"
+            :aria-label="t('pages.projectDetail.notify.templateEvent')"
+            data-testid="notify-template-seg"
           >
-            {{ previewModeLabel }}
-          </span>
-        </div>
-        <pre
-          class="whitespace-pre-wrap break-all rounded-md border border-line bg-elevated px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-txt2"
-          data-testid="notify-preview-body"
-        >{{ previewText }}</pre>
-      </div>
-    </div>
+            <button
+              type="button"
+              role="tab"
+              class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
+              :class="templateKind === 'waiting_human' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :aria-selected="templateKind === 'waiting_human'"
+              :disabled="controlsDisabled"
+              data-testid="notify-tpl-seg-waiting"
+              @click="templateKind = 'waiting_human'"
+            >
+              {{ t('pages.projectDetail.notify.segWaitingHuman') }}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
+              :class="templateKind === 'failed' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :aria-selected="templateKind === 'failed'"
+              :disabled="controlsDisabled"
+              data-testid="notify-tpl-seg-failed"
+              @click="templateKind = 'failed'"
+            >
+              {{ t('pages.projectDetail.notify.segFailed') }}
+            </button>
+            <button
+              type="button"
+              role="tab"
+              class="flex-1 whitespace-nowrap rounded-md px-3 py-1.5 text-[12px] transition disabled:opacity-55"
+              :class="templateKind === 'completed' ? 'bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+              :aria-selected="templateKind === 'completed'"
+              :disabled="controlsDisabled"
+              data-testid="notify-tpl-seg-completed"
+              @click="templateKind = 'completed'"
+            >
+              {{ t('pages.projectDetail.notify.segCompleted') }}
+            </button>
+          </div>
+        </SettingsRow>
 
-    <div class="mt-4 flex justify-end">
-      <AppButton
-        variant="primary"
-        :disabled="controlsDisabled"
-        data-testid="notify-save"
-        @click="save"
-      >
-        {{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}
-      </AppButton>
-    </div>
+        <SettingsRow
+          :label="t('pages.projectDetail.notify.templateBody')"
+          :description="t('pages.projectDetail.notify.templatePlaceholder')"
+          for="notify-template-input"
+          stacked
+        >
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-center gap-1.5" data-testid="notify-placeholder-chips">
+              <span class="mr-1 text-[11px] text-txt3">{{ t('pages.projectDetail.notify.placeholders') }}</span>
+              <button
+                v-for="ph in RUN_NOTIFY_PLACEHOLDERS"
+                :key="ph"
+                type="button"
+                class="rounded border border-line bg-elevated px-1.5 py-0.5 font-mono text-[11px] text-accent-2 transition hover:border-accent/50 disabled:opacity-55"
+                :data-testid="`notify-ph-${ph.replace(/[{}]/g, '')}`"
+                :disabled="controlsDisabled"
+                @click="insertPlaceholder(ph)"
+              >
+                {{ ph }}
+              </button>
+            </div>
+            <textarea
+              id="notify-template-input"
+              ref="tplInput"
+              v-model="currentTemplate"
+              class="min-h-[160px] w-full resize-y rounded-lg border border-line bg-elevated px-3 py-2 font-mono text-[12.5px] leading-relaxed text-txt placeholder:text-txt3 focus:border-accent/55 focus:outline-none disabled:opacity-55"
+              data-testid="notify-tpl-input"
+              :placeholder="t('pages.projectDetail.notify.templatePlaceholder')"
+              :disabled="controlsDisabled"
+              spellcheck="false"
+            />
+            <div class="flex flex-wrap gap-2">
+              <AppButton
+                variant="outline"
+                data-testid="notify-tpl-fill-default"
+                :disabled="controlsDisabled"
+                @click="fillDefaultTemplate"
+              >
+                {{ t('pages.projectDetail.notify.fillDefault') }}
+              </AppButton>
+              <AppButton
+                variant="outline"
+                data-testid="notify-tpl-clear"
+                :disabled="controlsDisabled"
+                @click="clearTemplate"
+              >
+                {{ t('pages.projectDetail.notify.clearDefault') }}
+              </AppButton>
+            </div>
+          </div>
+          <template #details>
+            <div data-testid="notify-preview">
+              <div class="mb-2 flex items-center justify-between gap-2">
+                <span class="font-medium text-txt2">
+                  {{ t('pages.projectDetail.notify.previewTitle') }}
+                </span>
+                <span
+                  class="rounded-full px-2 py-0.5 text-[11px]"
+                  :class="previewIsDefault ? 'bg-accent-dim/40 text-accent-2' : 'bg-ok/10 text-ok'"
+                  data-testid="notify-preview-mode"
+                >
+                  {{ previewModeLabel }}
+                </span>
+              </div>
+              <pre
+                class="m-0 whitespace-pre-wrap break-all py-2 font-mono text-[12.5px] leading-relaxed text-txt2"
+                data-testid="notify-preview-body"
+              >{{ previewText }}</pre>
+            </div>
+          </template>
+        </SettingsRow>
+      </SettingsSection>
+
+      <div class="flex justify-end">
+        <AppButton
+          variant="primary"
+          :disabled="controlsDisabled"
+          data-testid="notify-save"
+          @click="save"
+        >
+          {{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}
+        </AppButton>
+      </div>
     </template>
   </div>
 </template>

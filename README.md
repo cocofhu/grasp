@@ -2,7 +2,7 @@
 
 <img src="media/logo-light.svg" alt="Grasp" width="420" />
 
-<p>Multi-project coding agent workflow orchestration with human approval gates</p>
+<p>Coding agent workflow orchestration with human approval gates in one workspace</p>
 
 [![Release](https://img.shields.io/github/v/release/cocofhu/grasp)](https://github.com/cocofhu/grasp/releases)
 [![License](https://img.shields.io/github/license/cocofhu/grasp)](LICENSE)
@@ -21,6 +21,8 @@
 
 </div>
 
+Existing installations: read the [single-workspace upgrade guide](server/WORKSPACE_MIGRATION.md) before upgrading. Multi-project databases require an offline migration; historical records are retained.
+
 ## Why Grasp
 
 Over the past two years I built 150+ personal projects with coding agents, and two problems kept slowing me down:
@@ -28,7 +30,7 @@ Over the past two years I built 150+ personal projects with coding agents, and t
 1. **Switching across projects is expensive**: bouncing between IDEs makes it hard to track which project is running and where it stopped.
 2. **Parallel agent output is hard to read**: models dump long walls of text, burying the actual changes and open questions in chat logs.
 
-I built Grasp to manage multiple projects in one place. It wires coding agents into workflows on a finite-state-machine (FSM) canvas, clarifies requirements before code is written, and turns verbose agent output into structured artifacts and visual previews that are quick to review at approval gates.
+I built Grasp to manage coding work in one workspace. It wires coding agents into workflows on a finite-state-machine (FSM) canvas, clarifies requirements before code is written, and turns verbose agent output into structured artifacts and visual previews that are quick to review at approval gates.
 
 Supported agent backends: **Cursor, Claude Code, CodeBuddy, Trae, OpenCode, and Codex**. Each agent step runs inside an isolated Docker sandbox.
 
@@ -43,7 +45,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 - **Human gates and unified inbox**: Runs pause at gate nodes for approval or rejection from a single inbox; one-time share links let reviewers without an account inspect and approve.
 - **Structured artifacts (Artifact MCP)**: Artifacts are isolated per run. Nodes must submit their declared required artifacts before the engine transitions forward.
 - **Docker sandboxes and Git delivery**: Agents run in isolated containers and can push branches or open PRs / MRs via `gh`, `glab`, or SSH.
-- **Observability**: State transition timeline, node handoff notes, sandbox logs, live desktop preview (noVNC), and token / cost tracking by project and model.
+- **Observability**: State transition timeline, node handoff notes, sandbox logs, live desktop preview (noVNC), and token / cost tracking by workflow, source, and model.
 
 <table>
   <tr>
@@ -84,7 +86,7 @@ The default login is `admin` / `demo1234` (for local evaluation only; configure 
 
 ### Running your first workflow
 
-1. Sign in with the demo account. Opening the default project for the first time launches the setup wizard.
+1. Sign in with the demo account. Opening the workspace for the first time launches the setup wizard.
 2. In the wizard (or **Project Credentials**), select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, or `codex`, and save the corresponding API key (`codex` uses your `~/.codex/auth.json` login file instead of an API key; Git credentials are optional). Finishing the wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
 3. Start a run from the home page with a single prompt, or open the canvas to customize nodes and `success` / `fail` / `rollback` edges.
 4. When a run pauses at a human gate, review the spec, preview page, or code diff from the inbox to approve or reject.
@@ -139,11 +141,11 @@ Repository layout:
 - `agents/` — Importable role agent workspaces
 - `docs/` — Project website and bilingual help docs
 
-Service configuration precedence: environment variables > mounted config file > code defaults. Runtime secrets (ACP API keys, Git tokens, SSH private keys) are managed exclusively in each project's credentials UI and injected per run, never from the server's process environment.
+Service configuration precedence: environment variables > mounted config file > code defaults. Runtime secrets (ACP API keys, Git tokens, SSH private keys) are managed exclusively in the workspace credentials settings and injected per run, never from the server's process environment.
 
 ## Deployment notes
 
-- Store API keys and Git credentials only in the project credentials UI; never commit them to the repository.
+- Store API keys and Git credentials only in the workspace credentials settings; never commit them to the repository.
 - Pin images by digest in production; see [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke).
 - Preserve the original `Host` header behind a reverse proxy (e.g. nginx `proxy_set_header Host $host`); temporary approval share links are generated from it. See [SECURITY.md](SECURITY.md).
 - SQLite (`./.localdata/db`) and attachments (`./.localdata/app-data`) are mounted separately. Back them up and clean them up together so existing runs do not end up with broken `blob:` references.

@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 /** Wait for /auth/me to paint; prefs must hydrate on auth settle (no focus/poll required). */
 async function settleAuth(page: Page) {
-  await expect(page.getByText('e2e', { exact: true })).toBeVisible({ timeout: 15_000 })
+  await expect(page.getByRole('button', { name: 'e2e', exact: true })).toBeVisible({ timeout: 15_000 })
 }
 
 test.describe('shell notification center (IA separation)', () => {
@@ -85,10 +85,10 @@ test.describe('shell notification center (IA separation)', () => {
 
     // /notifications uses settings chrome: 通知 is highlighted; 运行/待办 are not in this sidebar.
     await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-    await expect(page.getByRole('link', { name: '通知' })).toBeVisible()
+    await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/notifications"]')).toBeVisible()
     await expect(page.getByTestId('nav-back-home')).toBeVisible()
     await expect(page.getByRole('link', { name: '待办' })).toHaveCount(0)
-    await expect(page.getByRole('link', { name: '运行' })).toHaveCount(0)
+    await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '运行', exact: true })).toHaveCount(0)
 
     await page.getByTestId('notifications-filter-unread').click()
     await expect(page.getByTestId('notifications-item')).toHaveCount(3)
@@ -117,7 +117,7 @@ test.describe('shell notification center (IA separation)', () => {
     await expect(page.getByTestId('run-notifications-panel')).toHaveCount(0)
     await page.getByRole('link', { name: '设置' }).click()
     await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-    await page.getByRole('link', { name: '通知' }).click()
+    await page.getByTestId('nav-settings-chrome').locator('a[href="/notifications"]').click()
     await expect(page.getByTestId('notifications-page')).toBeVisible()
     await expect(page.getByTestId('nav-notifications-badge')).toHaveCount(0)
   })
@@ -183,7 +183,7 @@ test.describe('shell notification center (IA separation)', () => {
   }) => {
     await page.goto('/notifications-center.html?scene=with-items')
     await expect(page.getByTestId('shell-main-dashboard')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByText('e2e', { exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('button', { name: 'e2e', exact: true })).toBeVisible({ timeout: 15_000 })
     // Must not under-count until focus/15s poll — auth watch rehydrates prefs sync.
     await expect(page.getByTestId('run-notifications-badge')).toHaveText('3', { timeout: 5_000 })
   })

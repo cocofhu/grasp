@@ -247,7 +247,7 @@ defineExpose({
 
 <template>
   <div
-    class="flex min-h-0 flex-col overflow-hidden rounded-md border border-line bg-elevated"
+    class="flex min-h-0 flex-col overflow-hidden"
     :class="[
       fillSidebar ? 'flex-1' : compact ? 'mt-4 shrink-0' : 'mt-3',
     ]"
@@ -278,7 +278,7 @@ defineExpose({
       <div v-if="!issues.length" class="py-4 text-center text-xs text-txt3">
         {{ t(copyKey('empty')) }}
       </div>
-      <div v-for="is in issues" :key="is.id" class="group rounded-md border border-line bg-base p-2">
+      <div v-for="is in issues" :key="is.id" class="group border-b border-line/60 py-3">
         <div class="flex items-center gap-2">
           <span
             class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -313,6 +313,7 @@ defineExpose({
           </template>
         </div>
       </div>
+      <slot name="history-footer" />
     </div>
 
     <div

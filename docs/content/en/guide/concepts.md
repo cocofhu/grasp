@@ -85,7 +85,7 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; backend keys are saved only in the project's credential UI; non-secret options such as sites may go in Agent meta env (OpenCode also takes vendor, optional API Base, and model).
+Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; backend keys are saved only in Settings → Credentials; non-secret options such as sites may go in Agent meta env (OpenCode also takes vendor, optional API Base, and model).
 
 ## Artifact contract and MCP
 
@@ -97,12 +97,12 @@ Each run has an isolated artifact MCP. Agents call tools such as:
 
 Isolation is by run token, leaving an inspectable paper trail.
 
-## PM: `pm-agent-fs` (project members + Agent workspace)
+## PM: `pm-agent-fs` (workspace members + Agent workspace)
 
-A project-bound PM Leader can enable the dedicated MCP `pm-agent-fs` (on by default for new projects; older projects with an explicit EnabledMcps list must opt in under PM settings):
+A workspace PM Leader can enable the dedicated MCP `pm-agent-fs` (on by default; existing installations with an explicit EnabledMcps list must opt in under PM settings):
 
-- `pm_list_project_agents`: list every Agent in the current project (self / other relative to the PM)
-- `pm_fs_*`: list/read/write/delete/mkdir/rename the **host-side** `workspace/` of any same-project agent (**not** Run sandbox FS)
+- `pm_list_project_agents`: list every Agent in the workspace (self / other relative to the PM)
+- `pm_fs_*`: list/read/write/delete/mkdir/rename the **host-side** `workspace/` of any workspace agent (**not** Run sandbox FS)
 
 Writes land on the same disk tree as Agent Studio「Agent workspace」and are visible after **refresh or reopen** (no live hot-reload). If Studio still has an unsaved dirty draft for the same Agent, a later Save may overwrite MCP writes — refresh and avoid concurrent dirty edits during demos.
 

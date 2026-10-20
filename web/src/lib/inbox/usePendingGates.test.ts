@@ -327,7 +327,7 @@ describe('usePendingGates', () => {
     expect('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined).toBeUndefined()
   })
 
-  it('peek passes live URL wf/projectId/tag to listGates (plan g2.2)', async () => {
+  it('peek passes workflow and tag while ignoring obsolete project query to listGates (plan g2.2)', async () => {
     const prev = window.location.search
     window.history.replaceState({}, '', '/gates?wf=wf-1&projectId=proj-b&tag=urgent')
     vi.mocked(api.listGates).mockClear()
@@ -339,7 +339,7 @@ describe('usePendingGates', () => {
         page: 1,
         pageSize: 100,
         wf: 'wf-1',
-        projectId: 'proj-b',
+        projectId: undefined,
         tag: 'urgent',
       }),
     )

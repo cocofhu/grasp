@@ -8,6 +8,14 @@ import pages from '@/locales/zh-CN/pages.json'
 const apiMocks = vi.hoisted(() => ({
   listWorkflowVersions: vi.fn(),
   exportWorkflowVersion: vi.fn(),
+  getWorkflow: vi.fn(),
+  getWorkflowVersionGraph: vi.fn(),
+}))
+const ioMocks = vi.hoisted(() => ({ downloadJson: vi.fn() }))
+
+vi.mock('@/lib/run/workflowIO', async () => ({
+  ...await vi.importActual<typeof import('@/lib/run/workflowIO')>('@/lib/run/workflowIO'),
+  downloadJson: ioMocks.downloadJson,
 }))
 
 vi.mock('@/lib/api/api', async () => {
@@ -18,6 +26,8 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       listWorkflowVersions: apiMocks.listWorkflowVersions,
       exportWorkflowVersion: apiMocks.exportWorkflowVersion,
+      getWorkflow: apiMocks.getWorkflow,
+      getWorkflowVersionGraph: apiMocks.getWorkflowVersionGraph,
     },
   }
 })
@@ -45,7 +55,7 @@ function mountModal(open = true) {
         AppButton: { template: '<button><slot /></button>' },
         AppModal: {
           props: ['open'],
-          template: '<div v-if="open"><slot /></div>',
+          template: '<div v-if="open"><slot /><slot name="footer" /></div>',
         },
       },
     },
@@ -87,6 +97,31 @@ describe('ExportVersionModal', () => {
     const wrapper = mountModal(true)
     await flushPromises()
     expect(wrapper.text().length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+  it('exports unsaved editor runtime defaults without including secret values', async () => {
+    const wrapper = mountModal(true)
+    await wrapper.setProps({
+      localDraft: { nodes: [], edges: [] },
+      defaults: { inheritWorkspace: false, variables: [{ name: 'TOKEN', type: 'string', secret: true, value: 'private-editor-secret' }], gateAuto: { enabled: true, agentName: 'reviewer', variable: 'review', prompt: 'Inspect', enabledMcps: [] } },
+    })
+    await flushPromises()
+    await wrapper.findAll('button').at(-1)!.trigger('click')
+    await flushPromises()
+    const envelope = ioMocks.downloadJson.mock.calls[0][1]
+    expect(envelope.defaults).toMatchObject({ inheritWorkspace: false, variables: [{ name: 'TOKEN', secret: true }], gateAuto: { agentName: 'reviewer' } })
+    expect(envelope.defaults.variables[0]).not.toHaveProperty('value')
+    expect(apiMocks.getWorkflow).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+  it('exports the fresh saved head defaults instead of stale list metadata', async () => {
+    apiMocks.getWorkflow.mockResolvedValue({ nodes: [], edges: [], defaults: { inheritWorkspace: false, variables: [{ name: 'branch', type: 'string', value: 'release' }] } })
+    const wrapper = mountModal(true)
+    await wrapper.setProps({ defaults: { inheritWorkspace: true, variables: [] } })
+    await flushPromises()
+    await wrapper.findAll('button').at(-1)!.trigger('click')
+    await flushPromises()
+    expect(ioMocks.downloadJson.mock.calls[0][1].defaults).toMatchObject({ inheritWorkspace: false, variables: [{ name: 'branch', value: 'release' }] })
     wrapper.unmount()
   })
 })

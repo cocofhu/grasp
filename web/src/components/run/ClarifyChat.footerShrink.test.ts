@@ -120,9 +120,8 @@ describe('message list absorbs leftover height (plan g1.3)', () => {
     // Parent of scroller keeps min-h-0 flex-1 so the column can shrink the list.
     expect(chatSrc).toMatch(/class="relative flex min-h-0 flex-1 flex-col"/)
     // Multi-root: bake min-h-0 flex-1 on chat root (parent fallthrough is ignored).
-    expect(chatSrc).toMatch(
-      /class="flex h-full min-h-0 flex-1 flex-col" data-review-composer/,
-    )
+    const chatRootClasses = chatSrc.match(/ref="chatRoot" class="([^"]+)"/)?.[1].split(/\s+/)
+    expect(chatRootClasses).toEqual(expect.arrayContaining(['flex', 'h-full', 'min-h-0', 'flex-1', 'flex-col']))
   })
 
   it('ReviewComposer page-control row is shrink-0 and does not own the flex grow', () => {

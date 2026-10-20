@@ -391,7 +391,6 @@ async function startRun() {
       setHomeApproveHandoff({ runId: res.id, nodeId: '', text: ownText, images: ownImages })
       emit('close')
       const query: Record<string, string> = { run: res.id }
-      if (props.projectId?.trim()) query.projectId = props.projectId.trim()
       void router?.push({ path: '/gates', query })
       return
     }

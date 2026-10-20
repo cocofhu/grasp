@@ -73,11 +73,14 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
 
   it('ReviewShell sidebar/stage preserve min-h-0 overflow chain (g1.2 / g2.2)', () => {
     // relative + overflow-hidden required so ConfirmFlowOverlay clips to desk (not app chrome).
-    expect(shellSrc).toMatch(/class="relative flex h-full min-h-0 overflow-hidden"/)
+    const shellRootClasses = shellSrc.match(/class="([^"]+)" data-testid="review-shell"/)?.[1].split(/\s+/)
+    expect(shellRootClasses).toEqual(expect.arrayContaining([
+      'relative', 'flex', 'h-full', 'w-full', 'min-h-0', 'min-w-0', 'flex-1', 'overflow-hidden',
+    ]))
     expect(shellSrc).toMatch(/data-testid="review-shell-stage"/)
-    expect(shellSrc).toMatch(/flex min-h-0 flex-1 flex-col overflow-hidden/)
+    expect(shellSrc).toMatch(/flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden/)
     expect(shellSrc).toMatch(/data-testid="review-shell-sidebar"/)
-    expect(shellSrc).toMatch(/class="flex min-h-0 flex-1 flex-col overflow-hidden"/)
+    expect(shellSrc).toMatch(/class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"/)
   })
 
   it('ClarifyChat clarify-scroller remains the overflow-y-auto list (g2.2 / g3.1)', () => {
@@ -93,9 +96,8 @@ describe('PublicGateApproval height chain to clarify-scroller (g1.2 / g2)', () =
       /class="shrink-0 border-t border-line p-3" data-testid="clarify-cold-actions"/,
     )
     // Multi-root: fallthrough class is ignored — root must bake min-h-0 flex-1.
-    expect(chatSrc).toMatch(
-      /class="flex h-full min-h-0 flex-1 flex-col" data-review-composer/,
-    )
+    const chatRootClasses = chatSrc.match(/ref="chatRoot" class="([^"]+)"/)?.[1].split(/\s+/)
+    expect(chatRootClasses).toEqual(expect.arrayContaining(['flex', 'h-full', 'min-h-0', 'flex-1', 'flex-col']))
   })
 })
 

@@ -24,7 +24,7 @@
     "runTrigger": {
       "manual": "Manual",
       "api": "API",
-      "pmMcp": "Project Management MCP"
+      "pmMcp": "Workspace assistant MCP"
     },
     "statusFilter": {
       "selectedCount": "{n} selected"

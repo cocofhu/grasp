@@ -64,7 +64,7 @@ function agent(questions: ReactQuestion[], at = '2026-07-18T00:00:00Z'): Clarify
 function selectedOptionLabels(wrapper: ReturnType<typeof mountChat>): string[] {
   return wrapper
     .findAll('[data-testid="clarify-option-btn"]')
-    .filter((btn) => btn.classes().includes('border-accent'))
+    .filter((btn) => btn.attributes('aria-pressed') === 'true')
     .map((btn) => btn.get('[data-testid="clarify-option-label"]').text())
 }
 

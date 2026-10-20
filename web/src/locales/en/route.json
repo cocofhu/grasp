@@ -2,8 +2,6 @@
   "route": {
     "dashboard": "New request",
     "stats": "Token usage",
-    "projects": "Projects",
-    "projectDetail": "Project detail",
     "workflows": "Workflows",
     "workflowEditor": "Canvas editor",
     "runs": "Run history",
@@ -22,6 +20,18 @@
     "embedChat": "Preview chat",
     "embedArtifacts": "Preview artifacts",
     "embedImage": "Image preview",
-    "embedDemo": "Enlarged preview"
+    "embedDemo": "Enlarged preview",
+    "board": "Board",
+    "requirements": "Requirement drafts",
+    "assistant": "Workspace assistant",
+    "schedules": "Schedules",
+    "audit": "Audit",
+    "sharedAgent": "Agent defaults",
+    "credentials": "Credentials",
+    "variables": "Shared variables",
+    "assistantSettings": "Assistant settings",
+    "notificationPolicy": "Notification policy",
+    "externalMcp": "External MCP",
+    "workspaceInfo": "Workspace information"
   }
 }

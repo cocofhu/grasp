@@ -400,6 +400,9 @@ function onRefreshExternal() {
 
 defineExpose({
   isDirty: anyDirty,
+  /** Reuse the same guarded tab switch for a chat artifact reference. */
+  selectProduct,
+  showPreview: () => setMode('preview'),
   /** Discard active draft back to last saved. */
   discard() {
     draft.value = savedText.value

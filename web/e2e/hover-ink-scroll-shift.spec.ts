@@ -182,7 +182,7 @@ test.describe('hover-ink scroll-shift fix', () => {
     const baselineOffset = beforeSettings![0].offset
     expect(beforeSettings!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)
 
-    const general = page.locator('[data-testid="nav-settings-chrome"] a.nav-item').filter({ hasText: '通用' })
+    const general = page.locator('[data-testid="nav-settings-chrome"] a.nav-item').filter({ hasText: '常规' })
     const gBox = await general.boundingBox()
     expect(gBox).toBeTruthy()
     await page.mouse.click(gBox!.x + 2, gBox!.y + gBox!.height / 2)
@@ -191,7 +191,7 @@ test.describe('hover-ink scroll-shift fix', () => {
     await page.waitForTimeout(400)
     const afterGeneral = await measureSettings()
     expect(afterGeneral).not.toBeNull()
-    const clicked = afterGeneral!.find((x) => x.text.includes('通用')) ?? afterGeneral!.find((x) => x.active)
+    const clicked = afterGeneral!.find((x) => x.text.includes('常规')) ?? afterGeneral!.find((x) => x.active)
     expect(clicked).toBeTruthy()
     expect(Math.abs(clicked!.offset - baselineOffset)).toBeLessThanOrEqual(1)
     expect(afterGeneral!.every((x) => Math.abs(x.offset - baselineOffset) <= 1)).toBe(true)

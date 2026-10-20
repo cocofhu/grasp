@@ -20,8 +20,6 @@ export type FavoriteWorkflowDisplay = {
   workflowId: string
   favoritedAt: number
   name: string
-  projectId: string
-  projectName: string
   status: 'draft' | 'published'
 }
 
@@ -129,7 +127,7 @@ function removeIds(ids: string[]) {
 }
 
 /**
- * Fetch ≤8 workflows by id + project names; 404/missing → silent strip & persist.
+ * Fetch ≤8 workflows by id; 404/missing → silent strip & persist.
  * Network errors keep the local entry (no strip).
  */
 export async function hydrateDisplay(): Promise<void> {
@@ -146,15 +144,6 @@ export async function hydrateDisplay(): Promise<void> {
   displayError.value = null
 
   try {
-    let projectNameById = new Map<string, string>()
-    try {
-      const projects = await api.listProjects()
-      if (gen !== hydrateGeneration) return
-      projectNameById = new Map(projects.map((p) => [p.id, p.name]))
-    } catch {
-      // Keep going with empty project names; still resolve workflows.
-    }
-
     const missing: string[] = []
     const rows: FavoriteWorkflowDisplay[] = []
 
@@ -163,13 +152,10 @@ export async function hydrateDisplay(): Promise<void> {
         try {
           const wf = await api.getWorkflow(entry.workflowId)
           if (gen !== hydrateGeneration) return
-          const projectId = (wf.projectId || '').trim()
           rows.push({
             workflowId: wf.id,
             favoritedAt: entry.favoritedAt,
             name: wf.name,
-            projectId,
-            projectName: projectId ? projectNameById.get(projectId) || projectId : '',
             status: wf.status === 'published' ? 'published' : 'draft',
           })
         } catch (e) {

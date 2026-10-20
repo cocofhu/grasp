@@ -287,16 +287,17 @@ async function scrollBottom(force = false) {
 
 /**
  * Enter / remount / session-switch stick sequence (aligned with PmLeaderChat + Demo):
- * force pin immediately (scrollBottom already awaits nextTick), then re-pin after paint
+ * pin on entry (scrollBottom already awaits nextTick), then re-pin after paint
  * so tall ReAct / high content blocks that lag one frame still land at the latest message.
  * Must not be used for incremental turn updates — those stay stick-gated.
  */
 async function enterStickSequence() {
   stickToBottom.value = true
   unreadCount.value = 0
-  await scrollBottom(true)
+  await scrollBottom()
   requestAnimationFrame(() => {
-    void scrollBottom(true)
+    // A message-rail click or manual scroll may have cancelled follow in the meantime.
+    void scrollBottom()
   })
 }
 

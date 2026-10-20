@@ -4,6 +4,7 @@
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '../src/test/capsFixtures'
 
 const SHOT = '/tmp/clarify-empty-preview-shots'
@@ -167,39 +168,46 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
       return
     }
 
-    if (method === 'GET' && (path === '/api/projects' || path.endsWith('/api/projects'))) {
+    if (method === 'GET' && path === '/api/workspace') {
       await route.fulfill({
-        json: [{ id: 'proj-1', name: 'Grasp', slug: 'grasp' }],
+        json: { id: 'proj-1', name: 'Grasp', description: '', variables: [] },
       })
       return
     }
 
     if (path.includes('/api/auth') || path.endsWith('/api/me')) {
-      await route.fulfill({ json: { username: 'admin', isAdmin: true } })
+      await route.fulfill({ json: { username: 'admin', is_admin: true, expires_at: '2099-01-01T00:00:00Z' } })
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/projects\/[^/]+\/run-tags/)) {
+    if (method === 'GET' && path === '/api/workspace/run-tags') {
       await route.fulfill({ json: { tags: [] } })
       return
     }
 
-    await route.fulfill({ status: 200, json: {} })
+    await route.fallback()
   })
 }
 
 async function openGates(page: Page, opts: { item: Record<string, unknown>; ports: PortsState }) {
+  await installWorkspaceApiDefaults(page)
   await mockApis(page, opts)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/tag-filter-ux.html?page=gates')
-  await expect(page.getByRole('heading', { name: '待办' })).toBeVisible({ timeout: 15_000 })
+  await page.goto('/workspace-config.html?view=/gates')
+  await expect(page.getByTestId('nav-pending-row').first()).toBeVisible({ timeout: 15_000 })
 }
 
 test.describe('Clarify empty app preview', () => {
   test('无端口时不显示应用预览 Tab，也不出现空占位文案', async ({ page }) => {
     await openGates(page, { item: clarifyItem(), ports: { ports: [] } })
 
-    await page.locator('button').filter({ hasText: '澄清空预览验收' }).first().click()
+    const row = page.getByTestId('nav-pending-row').filter({ hasText: '澄清空预览验收' })
+    await expect(row).toHaveAttribute('title', '澄清空预览验收 · 需求澄清')
+    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--chat/)
+    await row.click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
     await expect(page.getByTestId('react-artifact-tab-grid')).toBeVisible({ timeout: 15_000 })
 
     // Wait > one silent poll cycle (2.5s) to ensure tab does not appear / flicker.
@@ -227,7 +235,10 @@ test.describe('Clarify empty app preview', () => {
       },
     })
 
-    await page.locator('button').filter({ hasText: '澄清空预览验收' }).first().click()
+    await page.getByTestId('nav-pending-row').filter({ hasText: '澄清空预览验收' }).click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
     await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible({ timeout: 15_000 })
     await expect(page.getByTestId('react-artifact-tab-novnc')).toContainText('应用预览')
     await page.getByTestId('react-artifact-tab-novnc').click()
@@ -239,7 +250,13 @@ test.describe('Clarify empty app preview', () => {
   test('复审 + set_preview 空端口仍保留应用预览 Tab', async ({ page }) => {
     await openGates(page, { item: previewReviewItem(), ports: { ports: [] } })
 
-    await page.locator('button').filter({ hasText: '预览复审空列表仍显示 Tab' }).first().click()
+    const row = page.getByTestId('nav-pending-row').filter({ hasText: '预览复审空列表仍显示 Tab' })
+    await expect(row).toHaveAttribute('title', '预览复审空列表仍显示 Tab · 实现')
+    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+    await row.click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
     await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible({ timeout: 15_000 })
     await page.waitForTimeout(3000)
     await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible()

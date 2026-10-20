@@ -35,12 +35,11 @@ func setupPrdManagerHost(t *testing.T, enabled []string) *prdManagerFixture {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	proj, err := ps.Create("PrdProj", "", nil)
+	proj, err := legacyProjectFixture(db, "PrdProj")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, err := ps.Create("OtherPrd", "", nil)
+	other, err := legacyProjectFixture(db, "OtherPrd")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -101,7 +101,6 @@ const {
   onVisible,
   itemTitle,
   itemSecondary,
-  router,
   route,
   toast,
   PAGE_SIZE,
@@ -204,7 +203,6 @@ const {
   isShareableInboxItem,
   isHumanGateInboxItem,
   inboxShareKind,
-  REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   pageControlByNode,
 } = useGatesInbox()
 
@@ -355,10 +353,10 @@ const listFadeKey = computed(() =>
     </template>
 
     <!-- Mobile detail view -->
-    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="card relative flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div v-if="active" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
+    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
+      data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
+      <div v-if="active && isShareableInboxItem(active)" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
-          v-if="isShareableInboxItem(active)"
           type="button"
           class="inline-flex min-h-11 items-center text-xs text-accent-2 hover:underline"
           data-testid="gate-share-copy-btn-detail"
@@ -366,9 +364,6 @@ const listFadeKey = computed(() =>
           @click="openSharePanel(active)"
         >
           {{ t('pages.gatesInbox.share.copyLink') }}
-        </button>
-        <button class="text-xs text-accent-2 hover:underline" @click="router.push('/runs/' + active.runId)">
-          {{ t('common.buttons.openRunDetail') }}
         </button>
       </div>
       <div class="relative flex min-h-0 flex-1 flex-col">
@@ -388,13 +383,12 @@ const listFadeKey = computed(() =>
         />
         <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
         <ReviewShell
+          :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
+          :run-id="active.runId"
           v-else-if="showClarifyReviewShell"
           ref="reviewShellRef"
           :key="active.runId + active.nodeId"
           class="min-h-0 flex-1"
-          mobile
-          :sidebar-width="400"
-          :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
           :host-confirm-flow="false"
         >
           <template #stage>
@@ -479,15 +473,10 @@ const listFadeKey = computed(() =>
       class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
-      <div v-if="active || confirmFlowDeskHold" class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        <div class="card relative flex h-full min-h-0 w-full flex-col overflow-hidden">
+      <div v-if="active || confirmFlowDeskHold" class="relative flex h-full min-h-0 min-w-0 flex-1 flex-col"
+        data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
+        <div class="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
           <template v-if="active">
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
-            <span class="text-xs text-txt3">Run #{{ active.runId.replace('run-', '') }} · {{ active.nodeId }}</span>
-            <button class="text-xs text-accent-2 hover:underline" @click="router.push('/runs/' + active.runId)">
-              {{ t('common.buttons.openRunDetail') }}
-            </button>
-          </div>
           <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
             <ArtifactLoadingPane v-if="activeRunLoading && active.type === 'gate'" message-key="pages.gatesInbox.loadingRun" />
             <GateApproval
@@ -506,12 +495,12 @@ const listFadeKey = computed(() =>
             />
             <InboxStartFailedPane v-else-if="startFailedActive" @dismiss="dismissStartFailure" />
             <ReviewShell
+              :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
+              :run-id="active.runId"
               v-else-if="showClarifyReviewShell"
               ref="reviewShellRef"
               :key="active.runId + active.nodeId"
               class="min-h-0 flex-1"
-              :sidebar-width="400"
-              :storage-key="REVIEW_SHELL_WIDTH_KEY_APPROVAL"
               :host-confirm-flow="false"
             >
               <template #stage>
@@ -599,10 +588,7 @@ const listFadeKey = computed(() =>
       data-testid="inbox-list-skeleton"
     >
       <div class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-        <div class="card flex h-full min-h-0 w-full flex-col overflow-hidden">
-          <div class="flex shrink-0 items-center justify-between border-b border-line px-4 py-2.5">
-            <span class="text-xs text-txt3">{{ t('pages.gatesInbox.detailPane') }}</span>
-          </div>
+        <div class="flex h-full min-h-0 w-full flex-col overflow-hidden bg-surface">
           <div class="flex min-h-0 flex-1 flex-col items-center justify-center px-6 text-center">
             <p class="text-sm text-txt2">{{ t('pages.gatesInbox.listLoadingHint') }}</p>
           </div>

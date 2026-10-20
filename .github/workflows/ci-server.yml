@@ -19,6 +19,21 @@ on:
 jobs:
   server:
     runs-on: ubuntu-latest
+    services:
+      migration-mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: migration-ci-root
+          MYSQL_DATABASE: grasp_workspace_migration_test
+          MYSQL_USER: migration
+          MYSQL_PASSWORD: migration-ci
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --host=127.0.0.1 --user=root --password=migration-ci-root"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
     # contents:write only used to update the orphan coverage-badges branch endpoint.
     permissions:
       contents: write
@@ -42,6 +57,10 @@ jobs:
       - run: go vet ./...
       - run: go run ./cmd/gen-configdoc -out CONFIGURATION.md -check
       - run: go test ./...
+      - name: Verify MySQL workspace migration and rollback
+        env:
+          GRASP_WORKSPACE_MIGRATION_TEST_DSN: "migration:migration-ci@tcp(127.0.0.1:3306)/grasp_workspace_migration_test?charset=utf8mb4&parseTime=true&loc=UTC"
+        run: go test ./internal/workspacemigration/ -count=1 -run '^TestMySQLMigration$' -v
       - name: Server Go coverage gate
         id: cover
         run: ./scripts/cover-check-server.sh 90

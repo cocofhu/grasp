@@ -146,7 +146,7 @@ function onMaxRounds(raw: string) {
     </div>
 
     <div v-if="!caps" class="scroll-area min-h-0 flex-1 overflow-y-auto p-4">
-      <div class="max-w-lg rounded border border-dashed border-line bg-base p-6 text-center">
+      <div class="max-w-lg py-6">
         <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.capabilities.undeclaredTitle') }}</p>
         <p class="mt-1.5 text-[12px] leading-6 text-txt3">{{ t('pages.agentStudio.capabilities.undeclaredDesc') }}</p>
         <AppButton class="mt-3" size="sm" variant="primary" icon="plus" data-testid="caps-declare" @click="declare">
@@ -165,7 +165,7 @@ function onMaxRounds(raw: string) {
         {{ issueText }}
       </div>
 
-      <section class="max-w-3xl rounded-lg border border-line bg-base/50 p-4">
+      <section class="max-w-3xl border-t border-line/60 py-5">
         <h3 class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.capabilities.interactionTitle') }}</h3>
         <div class="mt-3 grid gap-2 sm:grid-cols-2" role="radiogroup" :aria-label="t('pages.agentStudio.capabilities.interactionTitle')">
           <button
@@ -174,8 +174,8 @@ function onMaxRounds(raw: string) {
             type="button"
             role="radio"
             :aria-checked="caps.interaction === mode"
-            class="rounded-md border px-3 py-2 text-left transition-colors"
-            :class="caps.interaction === mode ? 'border-accent bg-accent-dim/40' : 'border-line hover:border-line-strong'"
+            class="border-l-2 px-3 py-2 text-left transition-colors"
+            :class="caps.interaction === mode ? 'border-accent bg-elevated/50' : 'border-line hover:bg-elevated/30'"
             :data-testid="`caps-interaction-${mode}`"
             @click="setInteraction(mode)"
           >
@@ -200,7 +200,7 @@ function onMaxRounds(raw: string) {
         </div>
       </section>
 
-      <section class="max-w-3xl rounded-lg border border-line bg-base/50 p-4">
+      <section class="max-w-3xl border-t border-line/60 py-5">
         <h3 class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.capabilities.toolsTitle') }}</h3>
         <p class="mt-0.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.capabilities.toolsDesc') }}</p>
         <ul class="mt-3 space-y-2">
@@ -225,7 +225,7 @@ function onMaxRounds(raw: string) {
         </ul>
       </section>
 
-      <section class="max-w-3xl rounded-lg border border-line bg-base/50 p-4">
+      <section class="max-w-3xl border-t border-line/60 py-5">
         <h3 class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.capabilities.readsTitle') }}</h3>
         <p class="mt-0.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.capabilities.readsDesc') }}</p>
         <label class="mt-3 flex cursor-pointer items-center gap-2 text-[12px] text-txt">
@@ -265,7 +265,7 @@ function onMaxRounds(raw: string) {
         </template>
       </section>
 
-      <section class="max-w-3xl rounded-lg border border-line bg-base/50 p-4">
+      <section class="max-w-3xl border-t border-line/60 py-5">
         <h3 class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.capabilities.writesTitle') }}</h3>
         <p class="mt-0.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.capabilities.writesDesc') }}</p>
         <ul class="mt-3 divide-y divide-line">
@@ -303,7 +303,7 @@ function onMaxRounds(raw: string) {
         </ul>
       </section>
 
-      <section class="max-w-3xl rounded-lg border border-line bg-base/50 p-4">
+      <section class="max-w-3xl border-t border-line/60 py-5">
         <label class="block">
           <span class="text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.capabilities.maxRoundsTitle') }}</span>
           <span class="mt-0.5 block text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.capabilities.maxRoundsDesc') }}</span>

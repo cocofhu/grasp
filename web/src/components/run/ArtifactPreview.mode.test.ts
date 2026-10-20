@@ -135,7 +135,7 @@ describe('ArtifactPreview structured mode + capability trim', () => {
   it('shows the friendly product title while retaining the technical filename', async () => {
     const wrapper = mountPreview(artA)
     await flushPromises()
-    const header = wrapper.get('.border-b.border-line')
+    const header = wrapper.get('[data-testid="artifact-preview-identity-bar"]')
     expect(header.text()).toContain('需求澄清')
     expect(header.text()).toContain('clarified_requirement.json')
     expect(header.text()).toContain('json')

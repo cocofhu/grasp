@@ -1,13 +1,12 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
-import { REVIEW_SHELL_WIDTH_KEY_APPROVAL } from '@/lib/inbox/reviewLayoutBudget'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
-import { useProjectContext } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
@@ -176,27 +175,18 @@ const pendingAcpFrames = createPendingAcpBuffer()
 /** Snapshot reactSessions stashed when activeRun is still null during hard load. */
 let pendingSnapshotSessions: Run['reactSessions'] | null = null
 const { selected } = useWorkflowFilter()
-const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
+const { workspaceId: selectedProject, ensureLoaded: hydrateProject } = useWorkspaceContext()
 const { selectedTags } = useTagFilter()
-const projectFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 
-watch(projectFilterOpen, (v) => {
-  if (v) {
-    workflowFilterOpen.value = false
-    tagFilterOpen.value = false
-  }
-})
 watch(workflowFilterOpen, (v) => {
   if (v) {
-    projectFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
 watch(tagFilterOpen, (v) => {
   if (v) {
-    projectFilterOpen.value = false
     workflowFilterOpen.value = false
   }
 })
@@ -822,7 +812,6 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
       page: listPage.value,
       pageSize: PAGE_SIZE,
       wf: selected.value || undefined,
-      projectId: selectedProject.value || undefined,
       tag: selectedTags.value.join(',') || undefined,
     })
     // Discard overdue snapshots so they cannot resurrect a just-removed gate.
@@ -2260,7 +2249,6 @@ function itemSecondary(it: InboxItem) {
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
     inboxConfirmFlowToken: inboxConfirmFlow.playToken,
     pendingAcpFrames,
-    projectFilterOpen,
     workflowFilterOpen,
     tagFilterOpen,
     showUpdateBanner,
@@ -2343,6 +2331,5 @@ function itemSecondary(it: InboxItem) {
     isShareableInboxItem,
     isHumanGateInboxItem,
     inboxShareKind,
-    REVIEW_SHELL_WIDTH_KEY_APPROVAL,
   }
 }

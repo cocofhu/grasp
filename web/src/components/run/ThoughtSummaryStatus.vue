@@ -54,86 +54,54 @@ const label = computed(() => {
 
 <template>
   <span
-    class="thought-summary-status inline-flex min-w-0 flex-1 items-center gap-1.5"
+    class="thought-summary-status inline-flex min-w-0 flex-1 items-center"
     :data-state="dataState"
     data-testid="thought-summary-state"
   >
     <Icon
-      name="sparkles"
-      :size="11"
-      class="thought-summary-sparkles shrink-0 text-accent-2"
-      :class="{ 'thought-summary-sparkles--pulse': state === 'generating' }"
+      :key="state"
+      :name="state === 'generating' ? 'spinner' : state === 'interrupted' ? 'alert' : state === 'done' ? 'check' : 'sparkles'"
+      :size="16"
+      class="thought-summary-icon"
+      :class="{ 'thought-summary-icon--running': state === 'generating' }"
       aria-hidden="true"
     />
-    <span class="thought-summary-title shrink-0 text-txt2">{{ t('pages.clarify.thought') }}</span>
+    <span class="thought-summary-title">{{ t('pages.clarify.thought') }}</span>
     <span
       v-if="state !== 'idle'"
-      class="thought-summary-badge ml-auto inline-flex items-center gap-1 text-[11px]"
-      :class="{
-        'text-accent-2': state === 'generating',
-        'text-ok': state === 'done',
-        'text-warn': state === 'interrupted',
-      }"
+      class="thought-summary-badge"
     >
-      <span
-        v-if="state === 'generating'"
-        class="thought-summary-dot"
-        aria-hidden="true"
-      />
-      <Icon
-        v-else-if="state === 'done'"
-        name="check"
-        :size="12"
-        class="shrink-0 text-ok"
-        aria-hidden="true"
-      />
       <span>{{ label }}</span>
     </span>
   </span>
 </template>
 
 <style scoped>
-.thought-summary-sparkles--pulse {
-  animation: thought-spark-pulse 1.2s ease-in-out infinite;
+.thought-summary-status {
+  gap: 8px;
+  color: var(--chat-muted, rgb(var(--c-txt2)));
+  font-size: 12px;
+  line-height: 1.65;
 }
-.thought-summary-dot {
-  width: 6px;
-  height: 6px;
+.thought-summary-icon { flex-shrink: 0; }
+.thought-summary-title { min-width: 0; font-weight: 500; }
+.thought-summary-badge {
   flex-shrink: 0;
-  background: currentColor;
-  animation: thought-dot-pulse 1s ease-in-out infinite;
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 11px;
+  white-space: nowrap;
 }
-@keyframes thought-spark-pulse {
-  0%,
-  100% {
-    opacity: 0.45;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.12);
-  }
-}
-@keyframes thought-dot-pulse {
-  0%,
-  100% {
-    opacity: 0.3;
-  }
-  50% {
-    opacity: 1;
-  }
-}
+.thought-summary-status[data-state="streaming"] .thought-summary-icon,
+.thought-summary-status[data-state="streaming"] .thought-summary-badge { color: rgb(var(--c-accent-2)); }
+.thought-summary-status[data-state="interrupted"] .thought-summary-icon,
+.thought-summary-status[data-state="interrupted"] .thought-summary-badge { color: var(--chat-error, rgb(var(--c-err))); }
+.thought-summary-icon--running { animation: thought-summary-spin 1.4s linear infinite; }
+@keyframes thought-summary-spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) {
-  .thought-summary-sparkles--pulse,
-  .thought-summary-dot {
+  .thought-summary-icon--running {
     animation: none !important;
-  }
-  .thought-summary-sparkles--pulse {
-    opacity: 1;
     transform: none;
-  }
-  .thought-summary-dot {
-    opacity: 0.85;
   }
 }
 </style>

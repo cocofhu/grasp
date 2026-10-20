@@ -69,7 +69,7 @@ export const agentsClient = {
       agentIds: string[]
       workflowId: string
       published: boolean
-    }>(`/projects/${encodeURIComponent(projectId)}/bootstrap-onboarding`, {
+    }>(`/workspace/bootstrap-onboarding`, {
       method: 'POST',
       body: JSON.stringify(body),
     }),
@@ -167,8 +167,8 @@ export const agentsClient = {
     }
     return res.blob()
   },
-  exportProjectAgents: async (projectId: string): Promise<{ blob: Blob; filename: string }> => {
-    const res = await fetch(`${BASE}/projects/${encodeURIComponent(projectId)}/agents/export`, {
+  exportProjectAgents: async (_workspaceId: string): Promise<{ blob: Blob; filename: string }> => {
+    const res = await fetch(`${BASE}/workspace/agents/export`, {
       credentials: 'include',
     })
     if (!res.ok) {
@@ -196,7 +196,7 @@ export const agentsClient = {
     const fd = new FormData()
     fd.append('file', zipFile)
     fd.append('mode', opts.mode)
-    const res = await fetch(`${BASE}/projects/${encodeURIComponent(projectId)}/agents/import`, {
+    const res = await fetch(`${BASE}/workspace/agents/import`, {
       method: 'POST',
       credentials: 'include',
       body: fd,
@@ -227,7 +227,6 @@ export const agentsClient = {
   ): Promise<Agent> => {
     const fd = new FormData()
     fd.append('file', zipFile)
-    fd.append('projectId', opts.projectId)
     fd.append('targetName', opts.targetName)
     fd.append('mode', opts.mode)
     const res = await fetch(`${BASE}/agents/import`, {

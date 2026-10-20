@@ -20,8 +20,7 @@ func TestPmMCPToolsAndAuth(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("MCPProj", "", nil)
+	p, err := legacyProjectFixture(db, "MCPProj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,8 +112,7 @@ func TestPmWorkflowWriteWhenEnabled(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("WriteWF", "", nil)
+	p, err := legacyProjectFixture(db, "WriteWF")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,8 +160,7 @@ func TestPmWorkflowWriteRejectedWhenDisabled(t *testing.T) {
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("NoWrite", "", nil)
+	p, err := legacyProjectFixture(db, "NoWrite")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,8 +192,7 @@ func TestFilterSafeToolUnknown(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
-	ps := services.NewProjectService(db)
-	p, _ := ps.Create("X", "", nil)
+	p, _ := legacyProjectFixture(db, "X")
 	pm := services.NewPmService(db, nil)
 	h := NewHost(pm, services.NewPmProgress(pm, nil, nil), nil, nil, services.NewArtifactService(db), nil)
 	tok := platformmcp.NewToken()

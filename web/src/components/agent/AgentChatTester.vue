@@ -10,6 +10,9 @@ import ReposEditor, { type RepoRow } from '@/components/ui/ReposEditor.vue'
 import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
 import AgentToolGroup from '@/components/run/AgentToolGroup.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import ThoughtSummaryStatus from '@/components/run/ThoughtSummaryStatus.vue'
+import { lastMessageText } from '@/lib/chat/messagePreview'
 import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
@@ -56,6 +59,7 @@ type Step = { kind: 'thought' | 'message'; text: string } | { kind: 'tool'; tool
 type ImageAtt = { data: string; mimeType: string; url: string; name?: string }
 type QueueItem = { id: string; text: string; images: ImageAtt[] }
 type Turn = {
+  id: string
   role: 'user' | 'agent'
   text: string
   thought: string
@@ -76,6 +80,10 @@ type LaunchMode = 'empty' | 'clone'
 const launchMode = ref<LaunchMode>('empty')
 const repos = ref<RepoRow[]>([{ name: '', url: '', branch: '' }])
 const scroller = ref<HTMLElement | null>(null)
+const followBottom = ref(true)
+// Old event logs may predate opId. Object identity keeps their anchors stable
+// when earlier pages are prepended, including repeated identical questions.
+const frameIds = new WeakMap<object, string>()
 const attachments = ref<ImageAtt[]>([])
 const fileInput = ref<HTMLInputElement | null>(null)
 // Not-yet-started sends as last reported by the server (plus optimistic local
@@ -101,6 +109,23 @@ let heldFrames: string[] | null = null
 let disposed = false
 // Local copies of sent items so turn_begin can show their previews.
 const sentItems = new Map<string, QueueItem>()
+const railScope = computed(() => `agent:${props.profile}:sandbox:${sandbox.value?.id ?? props.attachId ?? 'new'}`)
+const railItems = computed(() => {
+  const items: { id: string; title: string; preview?: string }[] = []
+  for (const turn of turns.value) {
+    if (turn.role === 'user') {
+      items.push({
+        id: turn.id,
+        title: turn.text.trim() || t('pages.agentChatTester.imagesOnly'),
+      })
+    } else if (items.length) {
+      const item = items[items.length - 1]!
+      const text = lastMessageText(turn.steps, turn.text)
+      if (text.trim()) item.preview = text
+    }
+  }
+  return items
+})
 
 const statusLabel = computed(() => ({
   idle: t('pages.agentChatTester.status.idle'),
@@ -359,6 +384,7 @@ function send() {
   input.value = ''
   attachments.value = []
   status.value = 'thinking'
+  followBottom.value = true
   ws!.send(
     JSON.stringify({
       type: 'chat',
@@ -429,7 +455,7 @@ function beginTurn(frame: any) {
   queued.value = queued.value.filter((q) => q.id !== item.id)
   if (item.id && item.id === activeItemId && activeIdx >= 0) {
     // Replay of the turn we were already showing: rebuild its reply.
-    turns.value[activeIdx] = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
+    turns.value[activeIdx] = { id: turns.value[activeIdx]!.id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }
     status.value = 'thinking'
     return
   }
@@ -437,7 +463,9 @@ function beginTurn(frame: any) {
     const prev = turns.value[activeIdx]
     if (prev) prev.streaming = false
   }
+  const questionId = `question:${item.id || newItemId()}`
   turns.value.push({
+    id: questionId,
     role: 'user',
     text: item.text,
     thought: '',
@@ -447,7 +475,7 @@ function beginTurn(frame: any) {
     images: item.images.length ? item.images : undefined,
   })
   activeIdx =
-    turns.value.push({ role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }) - 1
+    turns.value.push({ id: `${questionId}:reply`, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: true }) - 1
   activeItemId = item.id
   status.value = 'thinking'
 }
@@ -519,21 +547,34 @@ function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
 }
 
+function historyFrameId(frame: object, opId: unknown): string {
+  if (typeof opId === 'string' && opId) return `question:${opId}`
+  let id = frameIds.get(frame)
+  if (!id) {
+    id = `history:${newItemId()}`
+    frameIds.set(frame, id)
+  }
+  return id
+}
+
 function rebuildTurnsFromFrames(events: any[]): Turn[] {
   const rebuilt: Turn[] = []
   let agent: Turn | null = null
-  const newAgent = () => {
-    agent = { role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
+  const newAgent = (id: string) => {
+    agent = { id, role: 'agent', text: '', thought: '', tools: [], plan: [], streaming: false }
     rebuilt.push(agent)
   }
   for (const raw of events) {
-    const ev = unwrapFrame(raw)
+    const frame = typeof raw === 'string' ? parseFrame(raw) : raw
+    const ev = unwrapFrame(frame)
     if (!ev || typeof ev !== 'object') continue
     if (ev.type === 'prompt_begin') {
       const text = String(ev.promptText ?? ev.text ?? '').trim()
       const urls: string[] = Array.isArray(ev.imageURLs) ? ev.imageURLs.filter((u: any) => typeof u === 'string' && u) : []
       if (text || urls.length) {
+        const id = historyFrameId(ev, ev.opId ?? frame.opId)
         rebuilt.push({
+          id,
           role: 'user',
           text,
           thought: '',
@@ -544,10 +585,10 @@ function rebuildTurnsFromFrames(events: any[]): Turn[] {
             ? urls.map((u) => ({ url: u, data: '', mimeType: inferImageMimeFromUrl(u) }))
             : undefined,
         })
-        newAgent()
+        newAgent(`${id}:reply`)
       }
     } else if (ev.type === 'session_update' && ev.update) {
-      if (!agent) newAgent()
+      if (!agent) newAgent(`${historyFrameId(ev, ev.opId ?? frame.opId)}:reply`)
       applyAcp(ev, agent!)
     }
   }
@@ -592,18 +633,30 @@ async function restoreHistory(id: number) {
 
 async function loadEarlierHistory() {
   if (!sandbox.value || !historyHasMore.value || loadingEarlier.value) return
+  const sandboxId = sandbox.value.id
+  followBottom.value = false
   loadingEarlier.value = true
   try {
-    const r = await api.sandboxEventLog(sandbox.value.id, {
+    const r = await api.sandboxEventLog(sandboxId, {
       cursor: historyCursor.value,
       limit: 20,
     })
-    if (!('hasMore' in r) || !r.events?.length) return
+    if (sandbox.value?.id !== sandboxId || !('hasMore' in r)) return
     const paged = r as { events: any[]; nextCursor: string; hasMore: boolean }
-    rawFrames = [...paged.events, ...rawFrames]
+    const earlier = paged.events || []
+    rawFrames = [...earlier, ...rawFrames]
     historyHasMore.value = paged.hasMore
     historyCursor.value = paged.nextCursor || ''
-    turns.value = rebuildTurnsFromFrames(rawFrames)
+    // The API pages complete prompt_begin-delimited turns. Prepend only that
+    // page: rebuilding the live tail would lose streaming chunks and tool state.
+    const currentIds = new Set(turns.value.map(turn => turn.id))
+    const prefix = rebuildTurnsFromFrames(earlier).filter(turn => !currentIds.has(turn.id))
+    const previousHeight = scroller.value?.scrollHeight ?? 0
+    const previousTop = scroller.value?.scrollTop ?? 0
+    turns.value = [...prefix, ...turns.value]
+    if (activeIdx >= 0) activeIdx += prefix.length
+    await nextTick()
+    if (scroller.value) scroller.value.scrollTop = previousTop + scroller.value.scrollHeight - previousHeight
   } catch {
     /* keep current transcript */
   } finally {
@@ -732,8 +785,13 @@ function applyTool(u: any, turn: Turn) {
 
 function scrollDown() {
   nextTick(() => {
-    if (scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
+    if (followBottom.value && scroller.value) scroller.value.scrollTop = scroller.value.scrollHeight
   })
+}
+
+function onTranscriptScroll() {
+  const el = scroller.value
+  if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
 }
 
 function reset() {
@@ -747,6 +805,11 @@ function reset() {
   attachments.value = []
   queued.value = []
   restoring.value = false
+  loadingEarlier.value = false
+  historyHasMore.value = false
+  historyCursor.value = ''
+  rawFrames = []
+  followBottom.value = true
   activeIdx = -1
   status.value = 'idle'
 }
@@ -780,7 +843,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col">
+  <div class="agent-chat-tester flex min-h-0 min-w-0 flex-1 flex-col">
     <!-- header / controls -->
     <div v-if="!embedded" class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4">
       <AcpStatusPill v-if="acpConnected" :busy="acpBusy" connected />
@@ -808,36 +871,35 @@ onBeforeUnmount(() => {
       <span class="text-[11px] font-medium text-txt3">{{ t('pages.agentChatTester.acpSession') }}</span>
     </div>
 
-    <!-- idle: mode cards + repos editor -->
-    <div v-if="status === 'idle'" class="flex flex-1 flex-col items-center justify-center gap-5 p-6">
-      <div class="max-w-lg text-center">
-        <Icon name="robot" :size="32" class="mx-auto text-txt3" />
+    <!-- idle: launch options and repository inputs -->
+    <div v-if="status === 'idle'" class="scroll-area flex min-h-0 flex-1 flex-col items-center gap-5 overflow-y-auto px-4 py-6">
+      <div class="w-full max-w-2xl">
         <p class="mt-3 text-[13px] text-txt3">
           {{ t('pages.agentChatTester.idleHint', { profile }) }}
         </p>
       </div>
 
-      <div class="w-full max-w-lg">
+      <div class="w-full max-w-2xl">
         <div class="mb-2 text-[11px] font-semibold uppercase tracking-wider text-txt3">
           {{ t('pages.agentChatTester.mode.sectionLabel') }}
         </div>
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2" role="radiogroup" :aria-label="t('pages.agentChatTester.mode.sectionLabel')">
+        <div class="border-y border-line/60" role="radiogroup" :aria-label="t('pages.agentChatTester.mode.sectionLabel')">
           <button
             type="button"
             role="radio"
             :aria-checked="launchMode === 'empty'"
-            class="relative rounded-md border p-4 text-left transition"
-            :class="launchMode === 'empty' ? 'border-accent bg-accent/10 shadow-[0_0_0_1px_rgba(123,97,255,0.3)]' : 'border-line bg-surface hover:border-line-strong'"
+            class="relative w-full border-b border-line/60 py-4 pr-6 text-left transition last:border-b-0"
+            :class="launchMode === 'empty' ? 'text-txt' : 'text-txt2 hover:bg-elevated/30'"
             @click="launchMode = 'empty'"
           >
             <span
-              class="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full border"
+              class="absolute right-0 top-5 flex h-4 w-4 items-center justify-center rounded-full border"
               :class="launchMode === 'empty' ? 'border-accent bg-accent' : 'border-line-strong'"
             >
               <span v-if="launchMode === 'empty'" class="h-1.5 w-1.5 rounded-full bg-white" />
             </span>
             <div class="flex items-start gap-2.5 pr-6">
-              <span class="rounded-full flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-elevated text-txt2" :class="launchMode === 'empty' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3" :class="launchMode === 'empty' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
                 <Icon name="folder" :size="16" />
               </span>
               <div>
@@ -850,18 +912,18 @@ onBeforeUnmount(() => {
             type="button"
             role="radio"
             :aria-checked="launchMode === 'clone'"
-            class="relative rounded-md border p-4 text-left transition"
-            :class="launchMode === 'clone' ? 'border-accent bg-accent/10 shadow-[0_0_0_1px_rgba(123,97,255,0.3)]' : 'border-line bg-surface hover:border-line-strong'"
+            class="relative w-full border-b border-line/60 py-4 pr-6 text-left transition last:border-b-0"
+            :class="launchMode === 'clone' ? 'text-txt' : 'text-txt2 hover:bg-elevated/30'"
             @click="launchMode = 'clone'"
           >
             <span
-              class="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full border"
+              class="absolute right-0 top-5 flex h-4 w-4 items-center justify-center rounded-full border"
               :class="launchMode === 'clone' ? 'border-accent bg-accent' : 'border-line-strong'"
             >
               <span v-if="launchMode === 'clone'" class="h-1.5 w-1.5 rounded-full bg-white" />
             </span>
             <div class="flex items-start gap-2.5 pr-6">
-              <span class="rounded-full flex h-8 w-8 shrink-0 items-center justify-center border border-line bg-elevated text-txt2" :class="launchMode === 'clone' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3" :class="launchMode === 'clone' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
                 <Icon name="git" :size="16" />
               </span>
               <div>
@@ -873,7 +935,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div v-if="launchMode === 'clone'" class="w-full max-w-lg space-y-2">
+      <div v-if="launchMode === 'clone'" class="w-full max-w-2xl space-y-2">
         <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentChatTester.repos.sectionLabel') }}</div>
         <p class="text-[11.5px] text-txt3">{{ t('pages.agentChatTester.repos.hint') }}</p>
         <ReposEditor v-model:repos="repos" :min-rows="1" i18n-prefix="pages.agentChatTester.repos" />
@@ -904,7 +966,18 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- conversation -->
-    <div v-else ref="scroller" class="scroll-area min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+    <div v-else class="relative flex min-h-0 min-w-0 flex-1">
+      <ChatMessageRail
+        :items="railItems"
+        :scroller="scroller"
+        :scope-key="railScope"
+        :has-more="historyHasMore"
+        :loading-earlier="loadingEarlier"
+        @navigate="followBottom = false"
+        @load-earlier="loadEarlierHistory"
+      />
+      <div ref="scroller" class="tester-transcript scroll-area min-h-0 min-w-0 flex-1 overflow-y-auto" data-testid="tester-transcript" @scroll.passive="onTranscriptScroll">
+      <div class="chat-thread tester-chat-column space-y-7">
       <div v-if="historyHasMore" class="text-center">
         <button
           type="button"
@@ -916,12 +989,19 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div v-if="errorMsg" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ errorMsg }}</div>
-      <div v-if="restoring" class="flex items-center justify-center gap-2 rounded-md border border-line bg-base/60 px-3 py-2 text-[12px] text-txt3">
+      <div v-if="restoring" class="chat-meta flex items-center justify-center gap-2 py-2">
         <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />{{ t('pages.agentChatTester.loadingHistory') }}
       </div>
 
-      <div v-for="(turn, i) in turns" :key="i" class="flex" :class="turn.role === 'user' ? 'justify-end' : 'justify-start'">
-        <div v-if="turn.role === 'user'" class="max-w-[80%] space-y-1.5">
+      <div
+        v-for="turn in turns"
+        :key="turn.id"
+        class="flex min-w-0"
+        :class="turn.role === 'user' ? 'justify-end' : 'justify-start'"
+        :data-chat-message-id="turn.role === 'user' ? turn.id : undefined"
+        :data-chat-anchor="turn.role === 'user' ? turn.id : undefined"
+      >
+        <div v-if="turn.role === 'user'" class="min-w-0 max-w-[88%] space-y-1.5">
           <div v-if="turn.images && turn.images.length" class="flex flex-wrap justify-end gap-1.5">
             <template v-for="(im, ii) in turn.images" :key="ii">
               <ChatImageThumb
@@ -937,20 +1017,20 @@ onBeforeUnmount(() => {
               />
               <div
                 v-else
-                class="rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
+                class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
                 data-testid="tester-history-file-chip"
                 :title="attachmentDisplayName(im, ii)"
               >
-                <span class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-info">DOC</span>
+                <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
                 <span class="min-w-0 truncate text-[12px] text-txt">{{ attachmentDisplayName(im, ii) }}</span>
               </div>
             </template>
           </div>
-          <div v-if="turn.text" class="rounded-lg rounded-br-sm bg-accent px-3 py-2 text-[13px] leading-6 text-white">
+          <div v-if="turn.text" class="chat-user-message whitespace-pre-wrap break-words px-4 py-2.5 [overflow-wrap:anywhere]">
             {{ turn.text }}
           </div>
         </div>
-        <div v-else class="max-w-[88%] space-y-2">
+        <div v-else class="min-w-0 w-full space-y-3">
           <AgentTimeline
             v-if="turn.steps?.length"
             :parts="partsOf(turn)"
@@ -960,53 +1040,58 @@ onBeforeUnmount(() => {
             message-test-id="tester-agent-message"
           />
           <!-- thought -->
-          <details v-if="turn.thought && !turn.steps?.length" class="rounded-md border border-line bg-base/60 text-[11.5px] text-txt3">
-            <summary class="cursor-pointer select-none px-2.5 py-1.5 text-txt3 hover:text-txt2"><Icon name="sparkles" :size="11" class="-mt-0.5 mr-1 inline text-accent-2" />{{ t('pages.agentChatTester.thought') }}</summary>
-            <div class="whitespace-pre-wrap px-2.5 pb-2 font-mono leading-5">{{ turn.thought }}</div>
+          <details v-if="turn.thought && !turn.steps?.length" class="chat-thought chat-meta">
+            <summary class="chat-thought-summary"><ThoughtSummaryStatus :busy="turn.streaming" :completed="!turn.streaming && !turn.error" :interrupted="!turn.streaming && !!turn.error" /><Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" /></summary>
+            <div class="chat-thought-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ turn.thought }}</div>
           </details>
           <!-- plan -->
-          <div v-if="turn.plan.length" class="rounded-md border border-line bg-base/60 p-2 text-[11.5px]">
-            <div class="mb-1 text-txt3">{{ t('pages.agentChatTester.plan') }}</div>
-            <div v-for="(p, pi) in turn.plan" :key="pi" class="flex items-center gap-1.5 text-txt2">
-              <Icon :name="p.status === 'completed' ? 'check' : 'clock'" :size="11" :class="p.status === 'completed' ? 'text-ok' : 'text-txt3'" />
+          <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">
+            <div class="chat-meta mb-1">{{ t('pages.agentChatTester.plan') }}</div>
+            <div v-for="(p, pi) in turn.plan" :key="pi" class="flex items-center gap-2 text-txt2">
+              <Icon :name="p.status === 'completed' ? 'check' : 'clock'" :size="13" :class="p.status === 'completed' ? 'text-ok' : 'text-txt3'" />
               <span :class="p.status === 'completed' ? 'line-through text-txt3' : ''">{{ p.content }}</span>
             </div>
           </div>
           <AgentToolGroup v-if="turn.tools.length && !turn.steps?.length" :tools="turn.tools" :busy="turn.streaming" />
           <!-- narration -->
-          <div v-if="turn.text && !turn.steps?.length" class="md rounded-lg rounded-bl-sm border border-line bg-surface px-3 py-2 text-[13px] leading-6 text-txt">
+          <div v-if="turn.text && !turn.steps?.length" class="chat-prose md py-1">
             <StreamMarkdown v-if="turn.streaming" :blocks="renderMarkdownBlocks(turn.text, blockCache)" />
             <span v-else v-html="renderMarkdown(turn.text)" />
           </div>
-          <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length && !turn.text" class="rounded-lg border border-line bg-surface px-3 py-2 text-[13px] text-txt3">
+          <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length && !turn.text" class="chat-meta py-2">
             <Icon name="spinner" :size="13" class="mr-1 inline animate-spin" />{{ t('pages.agentChatTester.generating') }}
           </div>
           <div v-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>
         </div>
       </div>
+      </div>
+      </div>
     </div>
 
     <!-- pending-send queue panel (mirrors the sandbox UI: queued items show
          here at the bottom instead of as premature transcript bubbles) -->
-    <div v-if="status !== 'idle' && queued.length" class="border-t border-line bg-base/40 px-3 py-2">
-      <div class="mb-1 flex items-center gap-1.5 text-[11px] text-txt3">
-        <Icon name="clock" :size="11" />{{ t('pages.agentChatTester.queue', { n: queued.length }) }}
+    <div v-if="status !== 'idle' && queued.length" class="tester-bottom-region border-t border-line py-2">
+      <div class="chat-thread tester-chat-column">
+      <div class="chat-meta mb-1 flex items-center gap-2">
+        <Icon name="clock" :size="13" />{{ t('pages.agentChatTester.queue', { n: queued.length }) }}
       </div>
       <div class="space-y-1">
         <div
           v-for="(q, qi) in queued"
           :key="q.id || qi"
-          class="flex items-center gap-2 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2"
+          class="flex min-w-0 items-center gap-2 py-1.5 text-[12px] text-txt2"
         >
-          <span class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[9px] text-txt3">{{ qi + 1 }}</span>
-          <span v-if="q.images.length" class="shrink-0 text-[10.5px] text-txt3">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
+          <span class="chat-meta flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-line">{{ qi + 1 }}</span>
+          <span v-if="q.images.length" class="chat-meta shrink-0">{{ t('pages.agentChatTester.imagesCount', { n: q.images.length }) }}</span>
           <span class="truncate">{{ q.text || (q.images.length ? t('pages.agentChatTester.imagesOnly') : t('pages.agentChatTester.empty')) }}</span>
         </div>
+      </div>
       </div>
     </div>
 
     <!-- composer -->
-    <div v-if="status !== 'idle'" class="border-t border-line p-3">
+    <div v-if="status !== 'idle'" class="tester-bottom-region shrink-0 py-3">
+      <div class="chat-thread tester-chat-column">
       <!-- pending attachments -->
       <div v-if="attachments.length" class="mb-2 flex flex-wrap gap-1.5">
         <div v-for="(im, ii) in attachments" :key="ii" class="relative">
@@ -1023,12 +1108,12 @@ onBeforeUnmount(() => {
           />
           <div
             v-else
-            class="rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
+            class="chat-file-chip rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
             data-testid="tester-pending-file-chip"
             :title="attachmentDisplayName(im, ii)"
           >
-            <span class="shrink-0 text-[9px] font-medium uppercase text-info">DOC</span>
-            <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
+            <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
+            <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
           </div>
           <button
             class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-err text-white"
@@ -1036,32 +1121,56 @@ onBeforeUnmount(() => {
           ><Icon name="close" :size="9" /></button>
         </div>
       </div>
-      <div class="flex items-end gap-2">
+      <div class="chat-composer tester-composer flex min-w-0 flex-col gap-2 p-2.5">
         <input ref="fileInput" type="file" multiple class="hidden" @change="onPickFiles" />
-        <AppButton
-          size="sm"
-          variant="outline"
-          icon="paperclip"
-          :disabled="status !== 'ready' && status !== 'thinking'"
-          @click="fileInput?.click()"
-        >{{ t('pages.agentChatTester.images') }}</AppButton>
         <textarea
           v-model="input"
           rows="2"
           :disabled="status !== 'ready' && status !== 'thinking'"
           :placeholder="t('pages.agentChatTester.inputPlaceholder')"
-          class="scroll-area max-h-32 min-h-[40px] flex-1 resize-none rounded-md border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent disabled:opacity-50"
+          class="chat-input tester-composer-input scroll-area max-h-40 min-h-[44px] min-w-0 flex-1 resize-none px-1 py-2 disabled:opacity-50"
+          :aria-label="t('pages.agentChatTester.inputPlaceholder')"
           @keydown.enter.exact.prevent="send"
           @paste="onPaste"
         />
-        <AppButton v-if="status === 'thinking'" size="sm" variant="outline" icon="close" @click="cancel">{{ t('pages.agentChatTester.cancel') }}</AppButton>
-        <AppButton
-          size="sm"
-          variant="primary"
-          icon="send"
-          :disabled="(!input.trim() && !attachments.length) || (status !== 'ready' && status !== 'thinking')"
-          @click="send"
-        >{{ t('pages.agentChatTester.send') }}</AppButton>
+        <div class="chat-toolbar flex items-center justify-between gap-2">
+          <button
+            type="button"
+            class="chat-action-button"
+            :disabled="status !== 'ready' && status !== 'thinking'"
+            :aria-label="t('pages.agentChatTester.images')"
+            :title="t('pages.agentChatTester.images')"
+            @click="fileInput?.click()"
+          >
+            <Icon name="plus" :size="18" />
+            <span class="sr-only">{{ t('pages.agentChatTester.images') }}</span>
+          </button>
+          <div class="flex items-center gap-2">
+            <button
+              v-if="status === 'thinking'"
+              type="button"
+              class="chat-action-button chat-action-stop"
+              :aria-label="t('pages.agentChatTester.cancel')"
+              :title="t('pages.agentChatTester.cancel')"
+              @click="cancel"
+            >
+              <Icon name="chat-stop" :size="16" />
+              <span class="sr-only">{{ t('pages.agentChatTester.cancel') }}</span>
+            </button>
+            <button
+              type="button"
+              class="chat-action-button chat-action-primary"
+              :disabled="(!input.trim() && !attachments.length) || (status !== 'ready' && status !== 'thinking')"
+              :aria-label="t('pages.agentChatTester.send')"
+              :title="t('pages.agentChatTester.send')"
+              @click="send"
+            >
+              <Icon name="chat-send" :size="18" />
+              <span class="sr-only">{{ t('pages.agentChatTester.send') }}</span>
+            </button>
+          </div>
+        </div>
+      </div>
       </div>
     </div>
 
@@ -1090,16 +1199,38 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.agent-chat-tester {
+  container: agent-chat / inline-size;
+}
+.tester-chat-column {
+  width: 100%;
+  max-width: 760px;
+  min-width: 0;
+  margin-inline: auto;
+}
+.tester-transcript {
+  padding: 24px 20px 32px 36px;
+  overflow-anchor: none;
+}
+.tester-bottom-region {
+  padding-inline: 36px 20px;
+}
+@container agent-chat (max-width: 520px) {
+  .tester-transcript { padding: 20px 12px 28px 30px; }
+  .tester-bottom-region { padding-inline: 30px 12px; }
+}
 .startfade-enter-active,
 .startfade-leave-active {
-  transition: opacity 0.25s ease, transform 0.25s ease;
+  transition: opacity 160ms ease;
 }
 .startfade-enter-from {
   opacity: 0;
-  transform: translateY(4px);
 }
 .startfade-leave-to {
   opacity: 0;
-  transform: translateY(-4px);
+}
+@media (prefers-reduced-motion: reduce) {
+  .startfade-enter-active,
+  .startfade-leave-active { transition: none; }
 }
 </style>

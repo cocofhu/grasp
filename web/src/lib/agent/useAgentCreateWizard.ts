@@ -3,6 +3,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { api, type Agent } from '@/lib/api/api'
 import {
   ACP_BACKENDS,
@@ -44,9 +45,9 @@ import {
 export interface AgentCreateWizardProps {
   open: boolean
   existingNames: string[]
-  /** Selectable home projects; the wizard requires one. */
+  /** Workspace metadata supplied by its host. */
   projects: { id: string; name: string }[]
-  /** Prefilled home project (project row menu / current context). */
+  /** Internal workspace identity. */
   projectId?: string
 }
 
@@ -58,8 +59,9 @@ export type AgentCreateWizardEmit = {
 
 export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentCreateWizardEmit) {
 const { t, te } = useI18n()
+const { workspaceId, ensureLoaded } = useWorkspaceContext()
 function openDraft(): WizardDraft {
-  return { ...freshDraft(), projectId: props.projectId || props.projects[0]?.id || '' }
+  return { ...freshDraft(), projectId: workspaceId.value }
 }
 const draft = ref<WizardDraft>(openDraft())
 
@@ -103,6 +105,7 @@ async function loadTemplates() {
 }
 
 onMounted(() => {
+  void ensureLoaded().then(() => { draft.value.projectId = workspaceId.value })
   void loadTemplates()
 })
 
@@ -376,7 +379,7 @@ function applyBasicsError(err: string): boolean {
         : err === 'exists'
           ? t('pages.agentStudio.dialogs.nameExists')
           : ''
-  projectError.value = err === 'projectRequired' ? t('pages.agentStudio.project.required') : ''
+  projectError.value = err === 'projectRequired' ? t('pages.agentStudio.workspaceUnavailable') : ''
   return !err
 }
 

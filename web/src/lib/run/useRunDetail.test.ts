@@ -16,7 +16,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   getRun: vi.fn(),
   getWorkflow: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   runArtifacts: vi.fn(),
   nodeEvents: vi.fn(),
   nodeSandboxLog: vi.fn(),
@@ -45,7 +45,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       getRun: mocks.getRun,
       getWorkflow: mocks.getWorkflow,
-      getProject: mocks.getProject,
+      getWorkspace: mocks.getWorkspace,
       runArtifacts: mocks.runArtifacts,
       nodeEvents: mocks.nodeEvents,
       nodeSandboxLog: mocks.nodeSandboxLog,
@@ -169,7 +169,7 @@ describe('useRunDetail', () => {
     isMobile.value = false
     mocks.getRun.mockReset()
     mocks.getWorkflow.mockReset()
-    mocks.getProject.mockReset()
+    mocks.getWorkspace.mockReset()
     mocks.runArtifacts.mockReset()
     mocks.nodeEvents.mockReset()
     mocks.nodeSandboxLog.mockReset()
@@ -181,7 +181,7 @@ describe('useRunDetail', () => {
 
     mocks.getRun.mockResolvedValue(sampleRun())
     mocks.getWorkflow.mockResolvedValue(sampleWorkflow())
-    mocks.getProject.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
+    mocks.getWorkspace.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
     mocks.runArtifacts.mockResolvedValue([])
     mocks.nodeEvents.mockResolvedValue({ events: [], nextCursor: '', hasMore: false })
     mocks.nodeSandboxLog.mockResolvedValue({ content: 'boot log', live: false, found: true })
@@ -264,9 +264,9 @@ describe('useRunDetail', () => {
     app.unmount()
   })
 
-  it('keeps unknown model alias stable during soft refresh while getProject is pending', async () => {
+  it('keeps unknown model alias stable during soft refresh while getWorkspace is pending', async () => {
     let resolveProject: ((value: { id: string; unknownModelDisplayName: string }) => void) | null = null
-    mocks.getProject.mockImplementation(
+    mocks.getWorkspace.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveProject = resolve
@@ -281,11 +281,11 @@ describe('useRunDetail', () => {
     resolveProject!({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
-    expect(mocks.getProject).toHaveBeenCalledTimes(1)
+    expect(mocks.getWorkspace).toHaveBeenCalledTimes(1)
 
-    // Soft refresh while getProject would be slow: alias must not clear.
-    mocks.getProject.mockClear()
-    mocks.getProject.mockImplementation(
+    // Soft refresh while getWorkspace would be slow: alias must not clear.
+    mocks.getWorkspace.mockClear()
+    mocks.getWorkspace.mockImplementation(
       () =>
         new Promise((resolve) => {
           resolveProject = resolve
@@ -293,18 +293,18 @@ describe('useRunDetail', () => {
     )
     await detail.loadRun(false)
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
-    expect(mocks.getProject).not.toHaveBeenCalled()
+    expect(mocks.getWorkspace).not.toHaveBeenCalled()
 
     resolveProject!({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('Auto')
-    expect(mocks.getProject).not.toHaveBeenCalled()
+    expect(mocks.getWorkspace).not.toHaveBeenCalled()
 
     app.unmount()
   })
 
   it('reloads unknown model alias when projectId changes on hard refresh', async () => {
-    mocks.getProject
+    mocks.getWorkspace
       .mockResolvedValueOnce({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
       .mockResolvedValueOnce({ id: 'proj-2', unknownModelDisplayName: 'gpt-5' })
 
@@ -328,13 +328,13 @@ describe('useRunDetail', () => {
     await nextTick()
 
     expect(detail.unknownModelDisplayName.value).toBe('gpt-5')
-    expect(mocks.getProject).toHaveBeenLastCalledWith('proj-2')
+    expect(mocks.getWorkspace).toHaveBeenLastCalledWith()
 
     app.unmount()
   })
 
-  it('retains last successful alias when getProject fails after project switch on hard refresh', async () => {
-    mocks.getProject.mockResolvedValueOnce({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
+  it('retains last successful alias when getWorkspace fails after project switch on hard refresh', async () => {
+    mocks.getWorkspace.mockResolvedValueOnce({ id: 'proj-1', unknownModelDisplayName: 'Auto' })
 
     const { detail, app, router } = await withRunDetail()
     await flushPromises()
@@ -350,7 +350,7 @@ describe('useRunDetail', () => {
       id: 'wf-2',
       projectId: 'proj-2',
     })
-    mocks.getProject.mockRejectedValueOnce(new Error('network down'))
+    mocks.getWorkspace.mockRejectedValueOnce(new Error('network down'))
 
     await router.push('/runs/run-2')
     await flushPromises()
@@ -359,12 +359,12 @@ describe('useRunDetail', () => {
     // Hard refresh to new project failed to load alias → empty until success.
     expect(detail.unknownModelDisplayName.value).toBe('')
 
-    mocks.getProject.mockResolvedValueOnce({ id: 'proj-2', unknownModelDisplayName: 'gpt-5' })
+    mocks.getWorkspace.mockResolvedValueOnce({ id: 'proj-2', unknownModelDisplayName: 'gpt-5' })
     await detail.loadRun(false)
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('gpt-5')
 
-    mocks.getProject.mockRejectedValueOnce(new Error('network down'))
+    mocks.getWorkspace.mockRejectedValueOnce(new Error('network down'))
     await detail.loadRun(false)
     await flushPromises()
     expect(detail.unknownModelDisplayName.value).toBe('gpt-5')

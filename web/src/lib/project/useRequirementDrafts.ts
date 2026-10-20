@@ -53,6 +53,7 @@ const query = ref('')
 const items = ref<RequirementDraft[]>([])
 const catalog = ref<RequirementDraft[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const selectedId = ref<string | null>(null)
 const creating = ref(false)
 const saving = ref(false)
@@ -100,6 +101,20 @@ const gutterEl = ref<HTMLElement | null>(null)
 const previewEl = ref<HTMLElement | null>(null)
 const splitEl = ref<HTMLElement | null>(null)
 const findInputEl = ref<HTMLInputElement | null>(null)
+const editorWidth = ref(0)
+const isNarrowEditor = computed(() => isMobile.value || (editorWidth.value > 0 && editorWidth.value < 600))
+let editorObserver: ResizeObserver | null = null
+
+watch(splitEl, (element) => {
+  editorObserver?.disconnect()
+  editorObserver = null
+  editorWidth.value = element?.clientWidth || 0
+  if (!element || typeof ResizeObserver === 'undefined') return
+  editorObserver = new ResizeObserver(([entry]) => {
+    if (entry) editorWidth.value = entry.contentRect.width
+  })
+  editorObserver.observe(element)
+})
 
 const hasSelection = computed(() => Boolean(selectedId.value))
 const isDirty = computed(
@@ -110,15 +125,15 @@ const lineNumbers = computed(() => {
   return Array.from({ length: n }, (_, i) => i + 1)
 })
 const showSplitPreview = computed(() => {
-  if (isMobile.value) return mobilePane.value === 'prev'
+  if (isNarrowEditor.value) return mobilePane.value === 'prev'
   return !previewCollapsed.value
 })
 const showSplitSource = computed(() => {
-  if (isMobile.value) return mobilePane.value === 'src'
+  if (isNarrowEditor.value) return mobilePane.value === 'src'
   return true
 })
 const sourceWidthStyle = computed(() => {
-  if (isMobile.value || previewCollapsed.value || !showSplitPreview.value) {
+  if (isNarrowEditor.value || previewCollapsed.value || !showSplitPreview.value) {
     return { width: '100%' }
   }
   return { width: `${splitRatio.value * 100}%` }
@@ -311,6 +326,7 @@ async function loadCatalog() {
 async function loadList(opts?: { preferId?: string | null; keepSelection?: boolean }) {
   const seq = ++loadSeq
   loading.value = true
+  loadError.value = ''
   try {
     const [res] = await Promise.all([
       api.listRequirementDrafts(props.projectId, {
@@ -349,7 +365,8 @@ async function loadList(opts?: { preferId?: string | null; keepSelection?: boole
     selectedId.value = null
   } catch (e: any) {
     if (seq !== loadSeq) return
-    toast.error(e?.message || t('pages.projectDetail.requirementDrafts.loadFailed'))
+    loadError.value = e?.message || t('pages.projectDetail.requirementDrafts.loadFailed')
+    toast.error(loadError.value)
     items.value = []
     catalog.value = []
     selectedId.value = null
@@ -648,7 +665,7 @@ function runFindNext() {
 }
 
 function togglePreviewCollapsed() {
-  if (isMobile.value) return
+  if (isNarrowEditor.value) return
   previewCollapsed.value = !previewCollapsed.value
 }
 
@@ -657,7 +674,7 @@ function toggleScheduleCollapsed() {
 }
 
 function onSashDown(e: MouseEvent) {
-  if (isMobile.value || previewCollapsed.value) return
+  if (isNarrowEditor.value || previewCollapsed.value) return
   e.preventDefault()
   sashDragging.value = true
   const split = splitEl.value
@@ -789,7 +806,7 @@ watch(editBody, () => {
   scheduleHighlight()
 })
 
-watch(isMobile, (narrow) => {
+watch(isNarrowEditor, (narrow) => {
   if (narrow) mobilePane.value = 'src'
 })
 
@@ -801,6 +818,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  editorObserver?.disconnect()
   window.removeEventListener('beforeunload', onBeforeUnload)
   if (previewRaf) cancelAnimationFrame(previewRaf)
   if (highlightRaf) cancelAnimationFrame(highlightRaf)
@@ -815,12 +833,14 @@ onBeforeUnmount(() => {
   t,
   toast,
   isMobile,
+  isNarrowEditor,
   viewMode,
   filter,
   query,
   items,
   catalog,
   loading,
+  loadError,
   selectedId,
   creating,
   saving,

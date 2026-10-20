@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentChatTester from './AgentChatTester.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 
 const mocks = vi.hoisted(() => ({
   getSandbox: vi.fn(),
@@ -385,6 +386,89 @@ describe('AgentChatTester interactions', () => {
     expect(wrapped).toHaveLength(2)
     expect(wrapped[1]).toMatchObject({ role: 'agent', thought: 'ab', text: 'xy' })
     expect(wrapped[1].tools[0]).toMatchObject({ id: 't9', status: 'pending' })
+    w.unmount()
+  })
+
+  it('previews only the last streamed message block across intervening tools and thoughts', async () => {
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.beginTurn({ item: { id: 'question', text: '检查需求' } })
+    const update = (data: Record<string, unknown>) => vm.onFrame(JSON.stringify({ type: 'acp', data: { type: 'session_update', update: data } }))
+    update({ type: 'agent_message_chunk', content: '先检查已有产物。' })
+    update({ type: 'tool_call', toolCallId: 'read', title: '读取文件' })
+    update({ type: 'agent_message_chunk', content: '**最终结论**。\n\n请补充' })
+    await flushPromises()
+    const rail = w.getComponent(ChatMessageRail)
+    const id = rail.props('items')[0]!.id
+    expect(rail.props('items')[0]!.preview).toBe('**最终结论**。\n\n请补充')
+    update({ type: 'agent_message_chunk', content: '现象与期望。' })
+    update({ type: 'agent_thought_chunk', content: '内部过程' })
+    await flushPromises()
+    expect(rail.props('items')[0]!).toEqual({ id, title: '检查需求', preview: '**最终结论**。\n\n请补充现象与期望。' })
+    vm.beginTurn({ item: { id: 'next', text: '另一个问题' } })
+    await flushPromises()
+    expect(rail.props('items')[0]!.preview).toContain('最终结论')
+    expect(rail.props('items')[1]!.preview).toBeUndefined()
+    w.unmount()
+  })
+
+  it('keeps question anchors and the streaming reply when earlier history is prepended', async () => {
+    mocks.eventLog.mockResolvedValueOnce({
+      events: [
+        { type: 'prompt_begin', opId: 'saved-question', text: 'same question' },
+        { type: 'session_update', update: { type: 'agent_message_chunk', content: 'saved answer' } },
+      ], hasMore: true, nextCursor: 'older',
+    })
+    const w = mountTester()
+    const vm = w.vm as any
+    vm.status = 'ready'
+    vm.sandbox = { id: 7 }
+    await vm.restoreHistory(7)
+    vm.beginTurn({ item: { id: 'live-question', text: 'live question' } })
+    vm.onFrame(JSON.stringify({ type: 'acp', data: { type: 'session_update', update: { type: 'agent_message_chunk', content: 'live answer' } } }))
+    await flushPromises()
+    const originalIds = vm.turns.map((turn: any) => turn.id)
+    const reply = vm.turns.at(-1)
+    const scroller = w.get('[data-testid="tester-transcript"]').element as HTMLElement
+    Object.defineProperties(scroller, {
+      scrollHeight: { configurable: true, get: () => vm.turns.length * 100 },
+      clientHeight: { configurable: true, value: 100 },
+    })
+    scroller.scrollTop = 120
+    mocks.eventLog.mockResolvedValueOnce({
+      events: [
+        { type: 'prompt_begin', text: 'same question' },
+        { type: 'session_update', update: { type: 'agent_message_chunk', content: 'first old answer' } },
+        { type: 'prompt_begin', text: 'same question' },
+        { type: 'session_update', update: { type: 'agent_message_chunk', content: 'second old answer' } },
+      ], hasMore: false, nextCursor: '',
+    })
+    await vm.loadEarlierHistory()
+    expect(vm.turns.slice(-4).map((turn: any) => turn.id)).toEqual(originalIds)
+    expect(vm.turns.at(-1)).toBe(reply)
+    expect(scroller.scrollTop).toBe(520)
+    const questions = vm.turns.filter((turn: any) => turn.role === 'user')
+    expect(new Set(questions.map((turn: any) => turn.id)).size).toBe(4)
+    expect(questions.at(-1).id).toBe('question:live-question')
+    expect(w.findAll('[data-chat-message-id]').map(el => el.attributes('data-chat-message-id'))).toEqual(questions.map((turn: any) => turn.id))
+    const rail = w.getComponent(ChatMessageRail)
+    expect(rail.props('items').map(item => item.id)).toEqual(questions.map((turn: any) => turn.id))
+    expect(rail.props('items').at(-1)?.preview).toBe('live answer')
+
+    rail.vm.$emit('navigate', questions[0].id)
+    vm.onFrame(JSON.stringify({ type: 'acp', data: { type: 'session_update', update: { type: 'agent_message_chunk', content: ' continued' } } }))
+    await flushPromises()
+    expect(reply.text).toBe('live answer continued')
+    expect(scroller.scrollTop).toBe(520)
+    expect(vm.followBottom).toBe(false)
+    vm.openWs(7)
+    socket!.onopen?.()
+    await flushPromises()
+    vm.input = 'next question'
+    vm.send()
+    await flushPromises()
+    expect(vm.followBottom).toBe(true)
+    expect(scroller.scrollTop).toBe(scroller.scrollHeight)
     w.unmount()
   })
 

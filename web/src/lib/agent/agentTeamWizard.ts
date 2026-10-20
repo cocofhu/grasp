@@ -179,7 +179,6 @@ function mcpToApi(m: WizardMCP): MCPServer {
 }
 
 export type TeamBootstrapPayload = {
-  projectName: string
   prefix: string
   pmName: string
   background: string
@@ -218,7 +217,6 @@ export function assembleTeamBootstrapPayload(d: TeamWizardDraft): TeamBootstrapP
   const env = stripSecretKeysFromRecord(normalizeWizardRegions(w))
   d.env = w.env
   return {
-    projectName: d.projectName.trim(),
     prefix: d.prefix.trim(),
     pmName: normalizeAgentName(d.pmName),
     background: d.background.trim(),

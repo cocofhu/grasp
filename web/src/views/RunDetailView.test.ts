@@ -326,12 +326,10 @@ describe('RunDetailView desktop outer sash layout (all node tabs)', () => {
     )
   })
 
-  it('passes sidebar-width=REVIEW_SIDEBAR only on Run Detail review ReviewShell', () => {
-    expect(reviewPanelSrc).toMatch(
-      /<ReviewShell[\s\S]*?:sidebar-width="REVIEW_SIDEBAR"[\s\S]*?:storage-key="REVIEW_SHELL_WIDTH_KEY_REVIEW"/,
-    )
-    // Default ReviewShell width stays 400 elsewhere — this file must not change the default.
-    expect(src).not.toMatch(/sidebarWidth:\s*300/)
+  it('keys the node conversation by execution and delegates optional products to the shared shell', () => {
+    expect(reviewPanelSrc).toMatch(/:scope-key="`run-review:\$\{run.id\}:\$\{clarify\?\.nodeId \|\| node.id\}:\$\{clarify\?\.iteration \?\? 1\}`"/)
+    expect(reviewPanelSrc).toMatch(/:run-id="run.id"/)
+    expect(reviewPanelSrc).not.toMatch(/sidebar-width|storage-key|card-panes/)
   })
 
   it('does not bind REVIEW_CANVAS_MIN as drag canvas minWidth; canvas may go to 0', () => {

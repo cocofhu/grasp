@@ -14,7 +14,7 @@ const apiMocks = vi.hoisted(() => ({
   getPmLeader: vi.fn(),
   updatePmLeader: vi.fn(),
   listAgents: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   listProjectChannels: vi.fn(),
   listPmThreads: vi.fn(),
 }))
@@ -33,7 +33,7 @@ vi.mock('@/lib/api/api', async () => {
       getPmLeader: apiMocks.getPmLeader,
       updatePmLeader: apiMocks.updatePmLeader,
       listAgents: apiMocks.listAgents,
-      getProject: apiMocks.getProject,
+      getWorkspace: apiMocks.getWorkspace,
       listProjectChannels: apiMocks.listProjectChannels,
       listPmThreads: apiMocks.listPmThreads,
     },
@@ -63,7 +63,7 @@ async function mountPanel(
 ) {
   apiMocks.getPmLeader.mockResolvedValue(binding)
   apiMocks.listAgents.mockResolvedValue([{ name: 'agent-1' }])
-  apiMocks.getProject.mockResolvedValue({
+  apiMocks.getWorkspace.mockResolvedValue({
     id: 'proj-1',
     name: 'Demo',
     notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
@@ -251,27 +251,59 @@ describe('PmSettingsPanel gate-auto config', () => {
     expect(body.gateAutoVar).toBe('other_switch')
     expect(body.gateAutoPrompt).toBe('')
   })
+
+  it('keeps unsaved fields when a save fails or the channel updates independently', async () => {
+    const w = await mountPanel()
+    await w.get('[data-testid="pm-gate-auto-var"]').setValue('pending_approval')
+    await mcpSwitches(w)[0].trigger('click')
+    const updatedProject = { id: 'proj-1', name: 'Updated from channel', variables: [] }
+    w.getComponent({ name: 'PmChannelMultiPanel' }).vm.$emit('project-updated', updatedProject)
+    await flushPromises()
+    expect(w.emitted('project-updated')).toEqual([[updatedProject]])
+    expect((w.get('[data-testid="pm-gate-auto-var"]').element as HTMLInputElement).value).toBe('pending_approval')
+
+    apiMocks.updatePmLeader.mockRejectedValueOnce(new Error('Save failed'))
+    await w.get('[data-testid="pm-leader-save"]').trigger('click')
+    await flushPromises()
+    expect(toastMocks.error).toHaveBeenCalledWith('Save failed')
+    expect((w.get('[data-testid="pm-gate-auto-var"]').element as HTMLInputElement).value).toBe('pending_approval')
+    expect(mcpSwitches(w)[0].attributes('aria-checked')).toBe('false')
+    expect((w.get('[data-testid="pm-leader-save"]').element as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('disables all assistant controls while its own save is pending', async () => {
+    const w = await mountPanel()
+    let finishSave: (binding: PmLeaderBinding) => void = () => {}
+    const pending = new Promise<PmLeaderBinding>((resolve) => { finishSave = resolve })
+    apiMocks.updatePmLeader.mockReturnValueOnce(pending)
+    await w.get('[data-testid="pm-leader-save"]').trigger('click')
+    expect((w.get('#pm-bind-agent').element as HTMLSelectElement).disabled).toBe(true)
+    expect((w.get('[data-testid="pm-gate-auto-var"]').element as HTMLInputElement).disabled).toBe(true)
+    expect((w.get('[data-testid="pm-gate-auto-prompt"]').element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(mcpSwitches(w).every((control) => (control.element as HTMLButtonElement).disabled)).toBe(true)
+    finishSave(BINDING)
+    await flushPromises()
+    expect((w.get('#pm-bind-agent').element as HTMLSelectElement).disabled).toBe(false)
+  })
 })
 
-describe('PmSettingsPanel header without settingsHint', () => {
+describe('PmSettingsPanel grouped settings', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
   })
 
-  it('keeps settings title + status badge and omits the removed settingsHint copy', async () => {
+  it('shows grouped fields and status without repeating the page title', async () => {
     const w = await mountPanel({ ...BINDING, aclNote: '' })
     const text = w.text()
 
-    expect(w.find('h2').text()).toBe('项目管理设置')
+    expect(w.findAll('h2').map((heading) => heading.text())).toEqual(['默认助手', '工作区助手专用 MCP', '自动审批'])
     const badge = w.find('[role="status"]')
     expect(badge.exists()).toBe(true)
     expect(badge.text()).toContain('已启用')
     expect(badge.text()).toContain('agent-1')
 
-    const titleWrap = w.find('h2').element.parentElement
-    expect(titleWrap?.classList.contains('max-w-[42em]')).toBe(true)
-    expect(titleWrap?.classList.contains('min-w-0')).toBe(true)
+    expect(text).not.toContain('工作区助手设置')
     expect(text).not.toContain('无官方模板')
     expect(text).not.toContain('仅配置项目管理专用 MCP')
     expect(text).not.toContain('No official template')
@@ -308,7 +340,7 @@ describe('PmSettingsPanel header without settingsHint', () => {
     })
     await flushPromises()
     const text = w2.text()
-    expect(w2.find('h2').text()).toBe('项目管理设置')
+    expect(w2.find('h2').text()).toBe('默认助手')
     expect(w2.find('[role="status"]').text()).toContain('Agent 不可用')
     expect(text).toContain('当前无可绑定的 Agent，请先到 Agent 配置中心创建。')
     expect(text).toContain('前往 Agent 配置中心')
@@ -320,11 +352,11 @@ describe('PmSettingsPanel header without settingsHint', () => {
 
 })
 
-describe('PmSettingsPanel header en locale', () => {
+describe('PmSettingsPanel grouped settings en locale', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     apiMocks.listPmThreads.mockResolvedValue({ items: [] })
-    apiMocks.getProject.mockResolvedValue({
+    apiMocks.getWorkspace.mockResolvedValue({
       id: 'proj-1',
       name: 'Demo',
       notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
@@ -336,7 +368,7 @@ describe('PmSettingsPanel header en locale', () => {
     })
   })
 
-  it('English locale keeps the settings title and never shows No official template', async () => {
+  it('English locale shows group titles and status', async () => {
     apiMocks.getPmLeader.mockResolvedValue(BINDING)
     apiMocks.listAgents.mockResolvedValue([{ name: 'agent-1' }])
 
@@ -357,7 +389,7 @@ describe('PmSettingsPanel header en locale', () => {
     await flushPromises()
 
     const text = w.text()
-    expect(w.find('h2').text()).toBe('Project Management settings')
+    expect(w.findAll('h2').map((heading) => heading.text())).toEqual(['Default assistant', 'Workspace assistant MCPs', 'Automatic approval'])
     expect(w.find('[role="status"]').text()).toContain('Enabled')
     expect(text).toContain('Any signed-in user may enable, rebind, or disable')
     expect(text).toContain('Shared memory/context/scheduler always inject and are not controlled here.')

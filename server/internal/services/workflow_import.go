@@ -71,6 +71,13 @@ func ValidateImport(raw []byte) (models.ExportEnvelope, error) {
 	if err := env.Graph.Validate(); err != nil {
 		return models.ExportEnvelope{}, err
 	}
+	if env.Defaults != nil {
+		vars, err := mergeProjectVars(nil, env.Defaults.Variables)
+		if err != nil {
+			return models.ExportEnvelope{}, err
+		}
+		env.Defaults.Variables = vars
+	}
 	return env, nil
 }
 
@@ -103,6 +110,7 @@ func (s *WorkflowService) Import(raw []byte, projectID string) (models.WorkflowD
 			Name:        name,
 			Description: env.Description,
 			NeedsRepo:   env.NeedsRepo,
+			Defaults:    env.Defaults,
 			ShowOnHome:  false, // import never inherits Home visibility (plan g1.3)
 			Graph:       graph,
 			CreatedAt:   now,

@@ -148,17 +148,17 @@ describe('HomeWorkflowSelect', () => {
   })
 
   // plan g2.2 — trigger "项目名 · 工作流名"; search matches projectName; no empty · prefix
-  it('shows projectName · workflow name on the trigger', async () => {
+  it('shows only the workflow name on the trigger', async () => {
     const wrapper = mountSelect({
       workflows: [
         { id: 'wf-a', name: '默认工作流', projectName: '综合项目组' },
-        { id: 'wf-b', name: '默认工作流', projectName: 'SkillHub' },
+        { id: 'wf-b', name: 'Skill workflow', projectName: 'Other' },
       ],
       modelValue: 'wf-a',
     })
     await flushPromises()
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
-      '综合项目组 · 默认工作流',
+      '默认工作流',
     )
     wrapper.unmount()
   })
@@ -175,11 +175,11 @@ describe('HomeWorkflowSelect', () => {
     wrapper.unmount()
   })
 
-  it('filters options by project name substring and highlights both fields', async () => {
+  it('searches workflow names and omits former project labels', async () => {
     const wrapper = mountSelect({
       workflows: [
         { id: 'wf-a', name: '默认工作流', projectName: '综合项目组' },
-        { id: 'wf-b', name: '默认工作流', projectName: 'SkillHub' },
+        { id: 'wf-b', name: 'Skill workflow', projectName: 'Other' },
       ],
       modelValue: 'wf-a',
     })
@@ -188,7 +188,7 @@ describe('HomeWorkflowSelect', () => {
     await flushPromises()
     const optA = document.querySelector('[data-testid="home-workflow-select-option-wf-a"]')
     expect(optA?.querySelector('.home-workflow-select__opt-name')?.textContent).toBe('默认工作流')
-    expect(optA?.querySelector('.home-workflow-select__opt-project')?.textContent).toBe('综合项目组')
+    expect(optA?.querySelector('.home-workflow-select__opt-project')).toBeNull()
     const search = document.querySelector(
       '[data-testid="home-workflow-select-search"]',
     ) as HTMLInputElement

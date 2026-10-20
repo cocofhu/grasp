@@ -4,7 +4,7 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AgentProjectSidebar from '@/components/agent/AgentProjectSidebar.vue'
-import ProjectTree from '@/components/ui/ProjectTree.vue'
+import ResourceList from '@/components/ui/ResourceList.vue'
 import AgentDataPanel, { type DataSubTab } from '@/components/agent/AgentDataPanel.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
@@ -86,10 +86,6 @@ const {
   showBatchConflict,
   batchConflictNames,
   triggerImport,
-  showImportProjectPick,
-  importProjectId,
-  cancelImportProjectPick,
-  confirmImportProjectPick,
   onImportDiscardCancel,
   onImportDiscardConfirm,
   onImportFileChange,
@@ -182,13 +178,13 @@ async function createStudioChatTest(
 </script>
 <template>
   <div
-    class="flex h-full min-h-0 flex-col overflow-hidden"
+    class="agent-studio-document flex h-full min-h-0 flex-col overflow-hidden"
     data-testid="agent-studio-panel"
     :aria-busy="loading ? 'true' : 'false'"
   >
     <div
       v-if="error && !loadFailed && !loadDenied && agents.length"
-      class="card mb-3 shrink-0 border-err/40 p-3 text-[13px] text-err"
+      class="mb-3 shrink-0 border-l-2 border-err/40 px-3 py-2 text-[13px] text-err"
     >{{ t('pages.agentStudio.errorPrefix') }}{{ error }}</div>
 
     <div class="flex min-h-0 flex-1 flex-col">
@@ -203,7 +199,8 @@ async function createStudioChatTest(
 
       <div
         v-if="initialLoading"
-        class="card grid min-h-0 flex-1 overflow-hidden"
+        class="agent-studio-skeleton grid min-h-0 flex-1 overflow-hidden"
+        :data-mobile="isMobile"
         data-testid="agent-studio-skeleton"
         aria-hidden="true"
         :style="isMobile ? { gridTemplateColumns: '1fr' } : { gridTemplateColumns: '280px 1fr' }"
@@ -223,7 +220,7 @@ async function createStudioChatTest(
         v-else-if="loadDenied"
         role="status"
         data-testid="agent-studio-denied"
-        class="card flex flex-1 flex-col items-center justify-center border-warn/40 bg-warn/10 px-6 text-center"
+        class="flex flex-1 flex-col items-center justify-center px-6 text-center"
       >
         <Icon name="lock" :size="22" class="mb-3 text-warn" />
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h3>
@@ -237,7 +234,7 @@ async function createStudioChatTest(
         v-else-if="loadFailed"
         role="status"
         data-testid="agent-studio-failed"
-        class="card flex flex-1 flex-col items-center justify-center border-err/40 bg-err/10 px-6 text-center"
+        class="flex flex-1 flex-col items-center justify-center px-6 text-center"
       >
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
         <p class="mt-1 max-w-md text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
@@ -248,7 +245,7 @@ async function createStudioChatTest(
 
       <div
         v-else-if="!agents.length && !teamBootstrapSessionId"
-        class="card flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
+        class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
         data-testid="agent-studio-empty-team"
       >
         <template v-if="embedded">
@@ -288,12 +285,16 @@ async function createStudioChatTest(
 
       <div
         v-else
-        class="card grid min-h-0 flex-1 overflow-hidden transition-[grid-template-columns] duration-[var(--dur-ui)] ease-[var(--ease-out-expo)]"
+        class="agent-studio-layout grid min-h-0 flex-1 overflow-hidden bg-surface transition-[grid-template-columns] duration-[var(--dur-ui)] ease-[var(--ease-out-expo)]"
         :class="showRefreshProgress ? 'opacity-[0.55]' : ''"
         :style="cardGridStyle"
+        :data-mobile="isMobile"
+        :data-directory-collapsed="agentListCollapsed"
       >
       <!-- project → Agent tree (hidden on narrow screens; agent name bar remains) -->
       <AgentProjectSidebar
+        class="agent-studio-directory"
+        :workspace-id="savedProjectId"
         v-if="!isMobile"
         :nodes="treeNodes"
         :active-key="activeTreeKey"
@@ -746,7 +747,7 @@ async function createStudioChatTest(
             </button>
           </div>
           <div class="min-h-0 flex-1 overflow-hidden">
-            <ProjectTree
+            <ResourceList
               :nodes="treeNodes"
               :active-key="activeTreeKey"
               :title="t('pages.agentStudio.tree.title')"
@@ -808,35 +809,6 @@ async function createStudioChatTest(
         <AppButton size="sm" variant="primary" :disabled="exporting" @click="confirmBundleSecrets">
           {{ t('pages.agentStudio.exportImport.bundleSecrets.confirm') }}
         </AppButton>
-      </template>
-    </AppModal>
-
-    <!-- header import: pick the target project -->
-    <AppModal
-      :open="showImportProjectPick"
-      :title="t('pages.agentStudio.exportImport.pickProject.title')"
-      :width="420"
-      data-test="import-project-pick"
-      close-on-esc
-      @close="cancelImportProjectPick"
-    >
-      <p class="mb-3 text-[13px] leading-6 text-txt2">{{ t('pages.agentStudio.exportImport.pickProject.intro') }}</p>
-      <select
-        v-model="importProjectId"
-        data-test="import-project-select"
-        class="w-full rounded border border-line bg-surface px-2 py-1.5 text-[13px] text-txt outline-none focus:border-accent"
-      >
-        <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-      </select>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="cancelImportProjectPick">{{ t('common.buttons.cancel') }}</AppButton>
-        <AppButton
-          size="sm"
-          variant="primary"
-          data-test="import-project-confirm"
-          :disabled="!importProjectId"
-          @click="confirmImportProjectPick"
-        >{{ t('pages.agentStudio.exportImport.pickProject.confirm') }}</AppButton>
       </template>
     </AppModal>
 
@@ -1024,3 +996,27 @@ async function createStudioChatTest(
     </Teleport>
   </div>
 </template>
+
+<style scoped>
+.agent-studio-document {
+  container: agent-studio / inline-size;
+}
+
+/* Account for the Settings directory as well as the browser width. */
+@container agent-studio (max-width: 780px) {
+  .agent-studio-layout[data-mobile="false"],
+  .agent-studio-skeleton[data-mobile="false"] {
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: 160px minmax(0, 1fr);
+  }
+
+  .agent-studio-layout[data-mobile="false"][data-directory-collapsed="true"] {
+    grid-template-rows: 28px minmax(0, 1fr);
+  }
+
+  .agent-studio-directory {
+    border-right: 0;
+    border-bottom: 1px solid rgb(var(--c-line));
+  }
+}
+</style>

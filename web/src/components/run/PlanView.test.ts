@@ -286,9 +286,9 @@ describe('PlanView', () => {
       expect(el.classes(), sel).not.toContain('text-txt3')
     }
 
-    // Meta layers stay weaker: section uppercase label + goal id badge
-    const designLabel = wrapper.find('[data-testid="plan-design"] > .text-txt3')
-    expect(designLabel.exists()).toBe(true)
+    // The design document has a semantic section heading; identifiers remain secondary.
+    const designLabel = wrapper.get('[data-testid="plan-design"] > h3')
+    expect(designLabel.text()).toBe(pagesZh.pages.plan.designTitle)
     expect(wrapper.find('code.text-txt3').exists()).toBe(true)
     wrapper.unmount()
   })

@@ -105,9 +105,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
     expect(heroEmRules.length).toBe(0)
 
     const targets: { className: string; body: RegExp }[] = [
-      { className: '.home-composer', body: /--c-elevated/ },
       { className: '.home-composer__send', body: /#fff/ },
-      { className: '.home-shell__card', body: /--c-elevated/ },
       { className: '.home-shell__card-top', body: /244,\s*244,\s*245/ },
     ]
     for (const target of targets) {
@@ -124,7 +122,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
       }
     }
 
-    const darkSurfaces = rules.filter(
+    const sharedSurfaces = rules.filter(
       (rule) =>
         !rule.selector.includes('html.light') &&
         (hasClass(rule.selector, '.home-composer') ||
@@ -133,7 +131,7 @@ describe('DashboardView light selectors survive scoped compile', () => {
           hasClass(rule.selector, '.home-shell__card-top')) &&
         /--c-surface|--c-txt|--c-elevated/.test(rule.body),
     )
-    expect(darkSurfaces.length).toBeGreaterThan(0)
+    expect(sharedSurfaces.length).toBeGreaterThan(0)
   })
 
   it('reduced-motion send button none beats the hover lift and press scale', () => {

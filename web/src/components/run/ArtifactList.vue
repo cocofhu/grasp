@@ -258,52 +258,34 @@ watch(
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 flex-col">
-    <div class="shrink-0 border-b border-line px-4 py-2.5">
-      <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1.5 text-xs font-medium text-txt2">
-        <div class="min-w-0 flex-1 basis-[10rem]">
-          {{ headerTitle || defaultHeaderTitle() }} · {{ headerCount }}
-          <span v-if="matchCountLabel" class="font-normal text-txt3">{{ matchCountLabel }}</span>
-          <span class="font-normal text-txt3">{{ headerSubtitle || t('pages.artifactList.subtitle') }}</span>
-        </div>
-        <div v-if="scope === 'platform' && artifacts.length" class="flex shrink-0 items-center gap-1">
-          <button
-            type="button"
-            class="rounded border border-line bg-base px-1.5 py-0.5 text-[10px] leading-4 text-txt3 transition hover:border-line-strong hover:text-txt2"
-            @click="expandAllRuns"
-          >
-            {{ t('pages.artifactList.expandAll') }}
-          </button>
-          <button
-            type="button"
-            class="rounded border border-line bg-base px-1.5 py-0.5 text-[10px] leading-4 text-txt3 transition hover:border-line-strong hover:text-txt2"
-            @click="collapseAllRuns"
-          >
-            {{ t('pages.artifactList.collapseAll') }}
-          </button>
+  <div class="artifact-directory flex h-full min-h-0 min-w-0 flex-col">
+    <div class="artifact-list-header">
+      <div class="artifact-list-heading">
+        <h2 class="min-w-0 truncate text-xs font-medium text-txt2">{{ headerTitle || defaultHeaderTitle() }}</h2>
+        <span class="artifact-list-count">{{ headerCount }}</span>
+        <span v-if="matchCountLabel" class="text-[11px] text-txt3">{{ matchCountLabel }}</span>
+        <div v-if="scope === 'platform' && runSections.length" class="ml-auto flex shrink-0 items-center gap-1">
+          <button type="button" class="artifact-list-fold-action" @click="expandAllRuns">{{ t('pages.artifactList.expandAll') }}</button>
+          <button type="button" class="artifact-list-fold-action" @click="collapseAllRuns">{{ t('pages.artifactList.collapseAll') }}</button>
         </div>
       </div>
-      <div v-if="scope === 'platform'" class="mt-2">
-        <input
-          :value="serverSearch ? search : artFilter"
-          type="search"
-          class="art-search w-full rounded-md border border-line bg-base py-1.5 pl-7 pr-2 text-[12px] text-txt outline-none focus:border-accent/55 focus:ring-2 focus:ring-accent/12"
-          :placeholder="t('pages.artifactList.artSearchPlaceholder')"
-          @input="onSearchInput"
-        />
-      </div>
+      <p v-if="headerSubtitle" class="mt-1 text-[11px] leading-5 text-txt3">{{ headerSubtitle }}</p>
+      <label v-if="scope === 'platform'" class="artifact-search">
+        <Icon name="search" :size="14" />
+        <input :value="serverSearch ? search : artFilter" type="search" :aria-label="t('pages.artifactList.artSearchPlaceholder')" :placeholder="t('pages.artifactList.artSearchPlaceholder')" @input="onSearchInput" />
+      </label>
     </div>
-    <div ref="scrollEl" class="scroll-area min-h-0 flex-1 overflow-y-auto p-2">
+    <div ref="scrollEl" class="scroll-area min-h-0 flex-1 overflow-y-auto px-2 pb-3">
       <div v-if="platformListEmpty || (!artifacts.length && scope === 'run')" class="px-2 py-8 text-center text-[12px] text-txt3">
         {{ platformListEmpty || emptyText || defaultEmptyText() }}
       </div>
 
       <template v-else-if="scope === 'platform' && runSections.length">
-        <div v-for="sec in visibleRunSections" :key="sec.runId" class="mb-3 last:mb-0">
-          <div class="mb-1 flex w-full items-center gap-1.5 px-1 py-0.5">
+        <div v-for="sec in visibleRunSections" :key="sec.runId" class="artifact-run-section">
+          <div class="artifact-run-heading">
             <button
               type="button"
-              class="flex min-w-0 flex-1 items-center gap-1.5 px-1 py-1 text-left text-[12px] font-normal text-txt3 transition hover:text-txt2"
+              class="flex min-h-9 min-w-0 flex-1 items-center gap-1.5 px-1 text-left text-[11px] font-medium text-txt3 transition hover:text-txt2"
               :class="isRunCollapsed(sec.runId) ? 'collapsed' : ''"
               :aria-expanded="!isRunCollapsed(sec.runId)"
               @click="toggleRun(sec.runId)"
@@ -319,7 +301,7 @@ watch(
             </button>
             <button
               type="button"
-              class="inline-flex shrink-0 items-center gap-1 rounded-md border border-accent/45 bg-accent-dim px-2 py-0.5 text-[11px] leading-4 text-accent-2 transition hover:border-accent-2 hover:text-txt disabled:cursor-not-allowed disabled:opacity-45"
+              class="artifact-run-pack"
               :class="isPacking(sec.runId) ? 'opacity-80' : ''"
               data-testid="artifact-run-pack"
               :data-run-id="sec.runId"
@@ -338,20 +320,23 @@ watch(
               v-for="a in sec.items"
               v-show="matchArt(a, runLabel(sec))"
               :key="a.id"
-              class="mb-1.5 flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color] duration-[var(--dur-ui)] ease-out"
-              :class="activeId === a.id ? 'border-accent/50 bg-accent-dim/40' : 'border-line hover:border-line-strong hover:bg-elevated'"
+              type="button"
+              class="artifact-file-row"
+              data-testid="artifact-list-row"
+              :data-artifact-id="a.id"
+              :aria-current="activeId === a.id ? 'true' : undefined"
+              :class="{ 'is-active': activeId === a.id }"
               @click="emit('select', a)"
             >
-              <div class="flex h-8 w-8 items-center justify-center rounded-md bg-n-artifact/15 text-n-artifact">
+              <div class="artifact-file-icon">
                 <Icon :name="kindIcon[a.kind] || 'doc'" :size="16" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-[13px] font-medium text-txt" :title="a.name">{{ artifactDisplayName(a) }}</div>
-                <div class="truncate text-[10px] text-txt3">
-                  <span v-if="artifactFriendlyName(a)">{{ artifactTechnicalDisplayName(a.name) }} · </span>{{ a.nodeId }} · {{ fmtTime(a.createdAt) }}
+                <div class="artifact-file-name" :title="a.name">{{ artifactDisplayName(a) }}</div>
+                <div class="artifact-file-meta">
+                  <span v-if="artifactFriendlyName(a)">{{ artifactTechnicalDisplayName(a.name) }} · </span>{{ a.nodeId }} · {{ fmtTime(a.createdAt).slice(5) }}
                 </div>
               </div>
-              <Icon name="chevron-right" :size="14" class="text-txt3" />
             </button>
             </div>
           </div>
@@ -362,22 +347,25 @@ watch(
         <button
           v-for="a in plainItems"
           :key="a.id"
-          class="mb-1.5 flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color] duration-[var(--dur-ui)] ease-out"
-          :class="activeId === a.id ? 'border-accent/50 bg-accent-dim/40' : 'border-line hover:border-line-strong hover:bg-elevated'"
+          type="button"
+              class="artifact-file-row"
+              data-testid="artifact-list-row"
+              :data-artifact-id="a.id"
+              :aria-current="activeId === a.id ? 'true' : undefined"
+          :class="{ 'is-active': activeId === a.id }"
           @click="emit('select', a)"
         >
-          <div class="flex h-8 w-8 items-center justify-center rounded-md bg-n-artifact/15 text-n-artifact">
+          <div class="artifact-file-icon">
             <Icon :name="kindIcon[a.kind] || 'doc'" :size="16" />
           </div>
           <div class="min-w-0 flex-1">
-            <div class="truncate text-[13px] font-medium text-txt" :title="a.name">{{ artifactDisplayName(a) }}</div>
-            <div class="truncate text-[10px] text-txt3">
+            <div class="artifact-file-name" :title="a.name">{{ artifactDisplayName(a) }}</div>
+            <div class="artifact-file-meta">
               <span v-if="artifactFriendlyName(a)">{{ artifactTechnicalDisplayName(a.name) }} · </span>
-              <span v-if="scope === 'platform' && a.workflowName" class="text-accent-2">{{ a.workflowName }}</span>
-              <span v-if="scope === 'platform' && a.workflowName"> · </span>{{ a.nodeId }} · {{ fmtTime(a.createdAt) }}
+              <span v-if="scope === 'platform' && a.workflowName" class="text-txt2">{{ a.workflowName }}</span>
+              <span v-if="scope === 'platform' && a.workflowName"> · </span>{{ a.nodeId }} · {{ fmtTime(a.createdAt).slice(5) }}
             </div>
           </div>
-          <Icon name="chevron-right" :size="14" class="text-txt3" />
         </button>
 
         <div v-if="feedbackItems.length" class="mb-1.5">
@@ -385,6 +373,7 @@ watch(
             type="button"
             class="flex w-full items-center gap-1.5 px-2 py-1 text-left text-[12px] font-normal text-txt3 transition hover:text-txt2"
             data-testid="artifact-feedback-group"
+            :aria-expanded="feedbackOpen"
             @click="feedbackOpen = !feedbackOpen"
           >
             <Icon
@@ -401,18 +390,21 @@ watch(
             <button
               v-for="a in feedbackItems"
               :key="a.id"
-              class="mb-1.5 flex w-full items-center gap-2.5 rounded-md border px-2.5 py-2 text-left transition-[background-color,border-color] duration-[var(--dur-ui)] ease-out"
-              :class="activeId === a.id ? 'border-accent/50 bg-accent-dim/40' : 'border-line hover:border-line-strong hover:bg-elevated'"
+              type="button"
+              class="artifact-file-row"
+              data-testid="artifact-list-row"
+              :data-artifact-id="a.id"
+              :aria-current="activeId === a.id ? 'true' : undefined"
+              :class="{ 'is-active': activeId === a.id }"
               @click="emit('select', a)"
             >
-              <div class="flex h-8 w-8 items-center justify-center rounded-md bg-n-artifact/15 text-n-artifact">
+              <div class="artifact-file-icon">
                 <Icon name="doc" :size="16" />
               </div>
               <div class="min-w-0 flex-1">
-                <div class="truncate text-[13px] font-medium text-txt">{{ a.name }}</div>
-                <div class="truncate text-[10px] text-txt3">{{ a.nodeId }} · {{ fmtTime(a.createdAt) }}</div>
+                <div class="artifact-file-name">{{ a.name }}</div>
+                <div class="artifact-file-meta">{{ a.nodeId }} · {{ fmtTime(a.createdAt).slice(5) }}</div>
               </div>
-              <Icon name="chevron-right" :size="14" class="text-txt3" />
             </button>
             </div>
           </div>
@@ -423,9 +415,28 @@ watch(
 </template>
 
 <style scoped>
-.art-search {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='13' height='13' viewBox='0 0 24 24' fill='none' stroke='%236e6e78' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: 9px center;
+.artifact-list-header { flex: none; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 12px; }
+.artifact-list-heading { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.artifact-list-count { flex: none; color: rgb(var(--c-txt3)); font-size: 11px; font-variant-numeric: tabular-nums; }
+.artifact-list-fold-action { min-height: 28px; border-radius: 5px; padding: 3px 5px; color: rgb(var(--c-txt3)); font-size: 10px; white-space: nowrap; }
+.artifact-list-fold-action:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt2)); }
+.artifact-search { display: flex; min-width: 0; height: 34px; align-items: center; gap: 7px; margin-top: 10px; border: 1px solid rgb(var(--c-line)); border-radius: 7px; padding: 0 9px; color: rgb(var(--c-txt3)); }
+.artifact-search:focus-within { border-color: rgb(var(--c-accent) / .5); }
+.artifact-search input { width: 100%; min-width: 0; background: transparent; color: rgb(var(--c-txt)); font-size: 12px; outline: none; }
+.artifact-run-section + .artifact-run-section { margin-top: 12px; }
+.artifact-run-heading { display: flex; width: 100%; min-height: 38px; align-items: center; gap: 6px; padding: 3px 1px 0; }
+.artifact-run-pack { display: inline-flex; min-height: 28px; flex: none; align-items: center; gap: 4px; border-radius: 5px; padding: 3px 6px; color: rgb(var(--c-txt3)); font-size: 10px; line-height: 18px; }
+.artifact-run-pack:hover { background: rgb(var(--c-txt) / .04); color: rgb(var(--c-txt)); }
+.artifact-run-pack:disabled { cursor: not-allowed; opacity: .45; }
+.artifact-file-row { position: relative; display: flex; width: 100%; min-width: 0; min-height: 54px; align-items: center; gap: 10px; border-bottom: 1px solid rgb(var(--c-line) / .5); padding: 9px 10px; text-align: left; transition: background-color var(--dur-ui); }
+.artifact-file-row:hover { background: rgb(var(--c-txt) / .025); }
+.artifact-file-row.is-active { background: rgb(var(--c-txt) / .05); }
+.artifact-file-row.is-active::before { position: absolute; top: 12px; bottom: 12px; left: 0; width: 2px; background: rgb(var(--c-txt2) / .65); content: ''; }
+.artifact-file-row:focus-visible { outline: 2px solid rgb(var(--c-accent) / .55); outline-offset: -2px; }
+.artifact-file-icon { display: flex; width: 18px; height: 22px; flex: none; align-items: center; justify-content: center; color: rgb(var(--c-txt3)); }
+.artifact-file-name { overflow: hidden; color: rgb(var(--c-txt)); font-size: 12px; font-weight: 500; line-height: 19px; text-overflow: ellipsis; white-space: nowrap; }
+.artifact-file-meta { overflow: hidden; margin-top: 2px; color: rgb(var(--c-txt3)); font-size: 10px; line-height: 16px; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: reduce) {
+  .artifact-file-row { transition: none; }
 }
 </style>

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+
 const props = defineProps<{ name: string; size?: number | string }>()
 
 const paths: Record<string, string> = {
@@ -24,12 +26,16 @@ const paths: Record<string, string> = {
   trigger: '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
   settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
   search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
+  filter: '<path d="M4 5h16M7 12h10M10 19h4"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
   play: '<path d="M7 5l12 7-12 7z"/>',
   save: '<path d="M5 3h12l4 4v14H3V5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>',
   more: '<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
   check: '<path d="M5 12l5 5 9-11"/>',
+  'chat-send': '<path d="M12 18V6m-6 6 6-6 6 6"/>',
+  'chat-stop': '<rect x="7" y="7" width="10" height="10" rx="2"/>',
+  'chat-artifacts': '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M14 4v16"/>',
   alert: '<path d="M12 3l9 16H3z"/><path d="M12 9v5M12 17h.01"/>',
   'chevron-down': '<path d="M6 9l6 6 6-6"/>',
   'chevrons-down': '<path d="M6 5l6 6 6-6"/><path d="M6 11l6 6 6-6"/>',
@@ -96,15 +102,17 @@ const paths: Record<string, string> = {
 }
 
 /** Icons that render with solid fill (favorited star). */
-const filledNames = new Set(['star-filled', 'stop', 'pin'])
+const filledNames = new Set(['star-filled', 'stop', 'pin', 'chat-stop'])
 
-const size = props.size ?? 18
-const body = paths[props.name] ?? paths.dot
-const filled = filledNames.has(props.name)
+const size = computed(() => props.size ?? 18)
+const body = computed(() => paths[props.name] ?? paths.dot)
+const filled = computed(() => filledNames.has(props.name))
 </script>
 
 <template>
   <svg
+    class="app-icon"
+    :data-icon="props.name"
     :width="size"
     :height="size"
     viewBox="0 0 24 24"

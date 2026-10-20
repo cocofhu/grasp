@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
@@ -44,27 +45,29 @@ function linkLabel(provider?: string) {
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div class="space-y-4">
-    <div v-if="doc.summary" class="group flex items-start gap-1 rounded-lg border border-line bg-base/40 p-3 text-[12px] leading-relaxed text-txt2">
+    <div v-if="doc.summary" class="report-summary group flex items-start gap-1 text-[13px] leading-relaxed text-txt2">
       <span class="min-w-0 flex-1">{{ doc.summary }}</span>
       <AnnotateBtn json-path="summary" label="概述" />
     </div>
 
-    <section v-if="doc.items?.length">
-      <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.items?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-txt3">
         <Icon name="git" :size="12" :style="{ color: accent }" />{{ t('pages.product.mergeRequest.items', { n: doc.items.length }) }}
-      </div>
+      </h3>
       <div class="space-y-2">
         <div
           v-for="(it, i) in doc.items"
           :key="`${it.repo}-${i}`"
-          class="group rounded-lg border border-line bg-base/40 p-2.5"
+          class="report-item group"
           data-testid="merge-request-item"
         >
           <div class="flex flex-wrap items-center gap-2">
-            <span class="min-w-0 truncate text-[12px] font-semibold text-txt" :title="it.repo">{{ it.repo }}</span>
+            <span class="min-w-0 truncate text-[13px] font-semibold text-txt" :title="it.repo">{{ it.repo }}</span>
             <span
-              class="shrink-0 rounded border px-1.5 py-0.5 text-[10px] font-medium"
+              class="shrink-0 rounded border px-1.5 py-0.5 text-[11px] font-medium"
               :class="stateCls(it.state)"
               data-testid="merge-request-state"
             >{{ stateLabel(it.state) }}</span>
@@ -86,9 +89,11 @@ function linkLabel(provider?: string) {
             <span class="shrink-0">→</span>
             <span class="truncate" :title="it.targetBranch">{{ it.targetBranch }}</span>
           </div>
-          <div v-if="it.note" class="mt-1 text-[11px] leading-relaxed text-txt3">{{ it.note }}</div>
+          <div v-if="it.note" class="mt-1 text-[13px] leading-relaxed text-txt2">{{ it.note }}</div>
         </div>
       </div>
     </section>
   </div>
+
+  </ArtifactReportDocument>
 </template>

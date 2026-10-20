@@ -16,11 +16,11 @@ test.describe('structured artifact export harness', () => {
     await expect(page.getByTestId('artifact-preview-download-pdf')).toHaveText('下载 PDF')
     await expect(page.getByTestId('artifact-preview-download-raw')).toHaveAttribute(
       'title',
-      '下载原始 JSON',
+      '下载原文件',
     )
 
     // Button order: copy → raw download → png → pdf
-    const toolbar = page.locator('.border-b.border-line').first()
+    const toolbar = page.getByTestId('artifact-preview-toolbar')
     const order = await toolbar.locator('[data-testid]').evaluateAll((nodes) =>
       nodes.map((n) => n.getAttribute('data-testid')),
     )
@@ -65,7 +65,7 @@ test.describe('structured artifact export harness', () => {
     await expect(page.getByTestId('artifact-preview-zoom-download-pdf')).toBeVisible()
     await expect(page.getByTestId('artifact-preview-zoom-download-raw')).toHaveAttribute(
       'title',
-      '下载原始 JSON',
+      '下载原文件',
     )
     await page.screenshot({
       path: path.join(shotDir, '02-structured-zoom-dark.png'),

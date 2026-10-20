@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../../ui/Icon.vue'
 import AnnotateBtn from './AnnotateBtn.vue'
@@ -21,23 +22,25 @@ const { t } = useI18n()
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div class="space-y-4">
-    <div v-if="doc.summary" class="group rounded-lg border border-line bg-accent-dim/30 p-3">
-      <div v-if="doc.title" class="mb-1 flex items-center gap-1 text-[13px] font-semibold text-txt">
+    <div v-if="doc.summary" class="report-summary group">
+      <h2 v-if="doc.title" class="report-title mb-3 flex items-center gap-2">
         <span data-json-path="title" :data-label="doc.title">{{ doc.title }}</span>
         <AnnotateBtn json-path="title" :label="doc.title" />
-      </div>
-      <div class="flex items-start gap-1 text-[12px] leading-relaxed text-txt2">
+      </h2>
+      <div class="flex items-start gap-1 text-[13px] leading-relaxed text-txt2">
         <span class="min-w-0 flex-1" data-json-path="summary" data-label="概述">{{ doc.summary }}</span>
         <AnnotateBtn json-path="summary" label="概述" />
       </div>
     </div>
 
-    <section v-if="doc.questions?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.research.questions') }}</div>
+    <section v-if="doc.questions?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.research.questions') }}</h3>
       <div class="space-y-2">
-        <div v-for="(q, i) in doc.questions" :key="q.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5">
-          <div class="flex items-start gap-1.5 text-[12px] font-medium text-txt">
+        <div v-for="(q, i) in doc.questions" :key="q.id || i" class="report-item group">
+          <div class="flex items-start gap-1.5 text-[13px] font-medium text-txt">
             <span class="mt-0.5 shrink-0 text-accent-2">Q</span>
             <span
               class="min-w-0 flex-1"
@@ -46,7 +49,7 @@ const { t } = useI18n()
             >{{ q.question }}</span>
             <AnnotateBtn :json-path="`questions[${q.id || i}]`" :label="q.question || `Q${i + 1}`" />
           </div>
-          <div v-if="q.answer" class="mt-1 flex items-start gap-1.5 text-[11px] leading-relaxed text-txt2">
+          <div v-if="q.answer" class="mt-1 flex items-start gap-1.5 text-[13px] leading-relaxed text-txt2">
             <span class="mt-0.5 shrink-0 text-ok">A</span>
             <span
               class="min-w-0 flex-1"
@@ -59,16 +62,16 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.findings?.length">
-      <div class="mb-1.5 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.findings?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-txt3">
         <Icon name="doc" :size="12" :style="{ color: accent }" />{{ t('pages.product.research.findings') }}
-      </div>
+      </h3>
       <div class="space-y-2">
-        <div v-for="(f, i) in doc.findings" :key="f.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5">
+        <div v-for="(f, i) in doc.findings" :key="f.id || i" class="report-item group">
           <div class="flex flex-wrap items-center gap-2">
-            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[10px] text-txt3">{{ f.id }}</code>
+            <code class="shrink-0 rounded bg-base px-1.5 py-0.5 font-mono text-[11px] text-txt3">{{ f.id }}</code>
             <span
-              class="text-[12px] font-semibold text-txt"
+              class="text-[13px] font-semibold text-txt"
               :data-json-path="`findings[${f.id || i}]`"
               :data-label="f.title || `发现 ${i + 1}`"
             >{{ f.title }}</span>
@@ -76,7 +79,7 @@ const { t } = useI18n()
           </div>
           <div
             v-if="f.detail"
-            class="mt-1 text-[11px] leading-relaxed text-txt3"
+            class="mt-1 text-[13px] leading-relaxed text-txt2"
             :data-json-path="`findings[${f.id || i}].detail`"
             :data-label="`${f.id || i} 详情`"
           >{{ f.detail }}</div>
@@ -84,22 +87,22 @@ const { t } = useI18n()
       </div>
     </section>
 
-    <section v-if="doc.recommendation" class="group rounded-lg border border-ok/40 bg-ok/5 p-3">
-      <div class="mb-1 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-ok">
+    <section v-if="doc.recommendation" class="report-section group">
+      <h3 class="report-heading mb-1 flex items-center gap-1.5 font-semibold text-ok">
         <Icon name="check" :size="12" />{{ t('pages.product.research.recommendation') }}
         <AnnotateBtn json-path="recommendation" :label="t('pages.product.research.recommendation')" />
-      </div>
+      </h3>
       <div
-        class="text-[12px] leading-relaxed text-txt2"
+        class="text-[13px] leading-relaxed text-txt2"
         data-json-path="recommendation"
         :data-label="t('pages.product.research.recommendation')"
       >{{ doc.recommendation }}</div>
     </section>
 
-    <section v-if="doc.follow_ups?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.research.followUps') }}</div>
+    <section v-if="doc.follow_ups?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.research.followUps') }}</h3>
       <ul class="space-y-1">
-        <li v-for="(u, i) in doc.follow_ups" :key="i" class="group flex items-start gap-1.5 text-[11px] leading-5 text-txt2">
+        <li v-for="(u, i) in doc.follow_ups" :key="i" class="group flex items-start gap-1.5 text-[13px] leading-5 text-txt2">
           <span class="mt-0.5 shrink-0 text-txt3">→</span>
           <span class="min-w-0 flex-1" :data-json-path="`follow_ups[${i}]`" :data-label="u">{{ u }}</span>
           <AnnotateBtn :json-path="`follow_ups[${i}]`" :label="u" />
@@ -107,8 +110,8 @@ const { t } = useI18n()
       </ul>
     </section>
 
-    <section v-if="doc.references?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.research.references') }}</div>
+    <section v-if="doc.references?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.research.references') }}</h3>
       <div class="flex flex-wrap gap-1.5">
         <span
           v-for="(r, i) in doc.references"
@@ -123,4 +126,6 @@ const { t } = useI18n()
       </div>
     </section>
   </div>
+
+  </ArtifactReportDocument>
 </template>

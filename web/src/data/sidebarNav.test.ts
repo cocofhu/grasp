@@ -8,14 +8,14 @@ describe('sidebarNav (plan g1.1)', () => {
     const items = sidebarNavGroups[0].items
     expect(items.map((i) => i.to)).toEqual([
       '/dashboard',
-      '/projects',
+      '/workflows',
       '/runs',
       '/settings',
     ])
-    expect(items.find((i) => i.to === '/projects')).toEqual({
-      to: '/projects',
-      icon: 'folder',
-      labelKey: 'nav.projects',
+    expect(items.find((i) => i.to === '/workflows')).toEqual({
+      to: '/workflows',
+      icon: 'workflow',
+      labelKey: 'nav.workflows',
     })
   })
 

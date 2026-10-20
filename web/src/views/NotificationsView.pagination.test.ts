@@ -348,10 +348,9 @@ describe('NotificationsView pagination conventions (g4.4 / g1.5)', () => {
     expect(poolSrc).not.toMatch(/RUN_TERMINAL_POOL_SIZE/)
   })
 
-  it('wraps the list in ui-fade with listFadeKey and list-card-lift (g3)', () => {
+  it('wraps the list in ui-fade with listFadeKey (g3)', () => {
     expect(viewSrc).toMatch(/name="ui-fade"/)
     expect(viewSrc).toMatch(/listFadeKey/)
     expect(viewSrc).toMatch(/data-testid="notifications-list-fade"/)
-    expect(viewSrc).toMatch(/list-card-lift/)
   })
 })

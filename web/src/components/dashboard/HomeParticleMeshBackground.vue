@@ -174,7 +174,7 @@ onBeforeUnmount(() => {
   z-index: 0;
   overflow: hidden;
   pointer-events: none;
-  background: rgb(var(--c-base));
+  background: transparent;
 }
 
 .home-particle-mesh__canvas {

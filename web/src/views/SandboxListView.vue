@@ -320,7 +320,7 @@ onBeforeUnmount(() => {
 
     <div
       v-if="error && !initialLoading && rows.length && !initialLoadFailed && !loadDenied"
-      class="card mb-3 shrink-0 border-err/40 p-3 text-[13px] text-err"
+      class="mb-3 shrink-0 border-l-2 border-err/40 py-2 pl-3 text-[13px] text-err"
     >{{ t('pages.sandboxes.errorPrefix') }}{{ error }}</div>
 
     <div
@@ -332,7 +332,7 @@ onBeforeUnmount(() => {
       <i class="admin-list-thin-bar bg-accent" />
     </div>
 
-    <!-- Mobile card list — plan g2.1: py-0.5 so list-card-lift hover top border is not clipped -->
+    <!-- Mobile records use the same flat list hierarchy as the desktop table. -->
     <div
       v-if="isMobile"
       class="min-h-0 flex-1 overflow-y-auto py-0.5"
@@ -343,7 +343,7 @@ onBeforeUnmount(() => {
           <div
             v-for="n in SKELETON_CARDS"
             :key="'skel-card-' + n"
-            class="rounded-lg border border-line bg-surface p-3"
+            class="border-b border-line/60 py-4"
           >
             <div class="flex items-start justify-between gap-3">
               <div class="min-w-0 flex-1">
@@ -360,7 +360,7 @@ onBeforeUnmount(() => {
         v-else-if="loadDenied"
         role="status"
         data-testid="sandbox-list-denied"
-        class="card border-warn/40 bg-warn/10 px-5 py-10 text-center"
+        class="px-5 py-10 text-center"
       >
         <Icon name="lock" :size="22" class="mx-auto mb-3 text-warn" />
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h3>
@@ -373,7 +373,7 @@ onBeforeUnmount(() => {
         v-else-if="initialLoadFailed"
         role="status"
         data-testid="sandbox-list-failed"
-        class="card border-err/40 bg-err/10 px-5 py-10 text-center"
+        class="px-5 py-10 text-center"
       >
         <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
         <p class="mt-1 text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
@@ -381,14 +381,14 @@ onBeforeUnmount(() => {
           {{ t('common.buttons.retry') }}
         </AppButton>
       </div>
-      <div v-else-if="!rows.length" class="card px-5 py-10 text-center text-[13px] text-txt3">
+      <div v-else-if="!rows.length" class="px-5 py-10 text-center text-[13px] text-txt3">
         {{ t('pages.sandboxes.empty') }}
       </div>
       <div v-else class="flex flex-col gap-2">
         <div
           v-for="s in rows"
           :key="s.id"
-          class="list-card-lift rounded-lg border border-line bg-surface p-3 hover:border-line-strong hover:bg-elevated"
+          class="border-b border-line/60 py-4 last:border-b-0"
         >
           <div class="flex items-start justify-between gap-2.5">
             <div class="min-w-0 flex-1">
@@ -472,7 +472,7 @@ onBeforeUnmount(() => {
     <!-- Desktop table -->
     <div
       v-else
-      class="card flex min-h-0 flex-1 flex-col overflow-hidden"
+      class="flex min-h-0 flex-1 flex-col overflow-hidden border-y border-line/60"
       :class="{ 'table-loading': showTableLoading }"
     >
       <div class="scroll-area min-h-0 flex-1 overflow-auto">
@@ -520,7 +520,7 @@ onBeforeUnmount(() => {
             </template>
             <tr v-else-if="loadDenied">
               <td colspan="8" class="px-4 py-10 text-center">
-                <div role="status" data-testid="sandbox-list-denied" class="rounded-lg border border-warn/40 bg-warn/10 px-5 py-8">
+                <div role="status" data-testid="sandbox-list-denied" class="px-5 py-8">
                   <Icon name="lock" :size="22" class="mx-auto mb-3 text-warn" />
                   <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.permissionDeniedTitle') }}</h3>
                   <p class="mt-1 text-xs text-txt2">{{ t('common.asyncState.permissionDeniedDesc') }}</p>
@@ -532,7 +532,7 @@ onBeforeUnmount(() => {
             </tr>
             <tr v-else-if="initialLoadFailed">
               <td colspan="8" class="px-4 py-10 text-center">
-                <div role="status" data-testid="sandbox-list-failed" class="rounded-lg border border-err/40 bg-err/10 px-5 py-8">
+                <div role="status" data-testid="sandbox-list-failed" class="px-5 py-8">
                   <h3 class="text-sm font-semibold text-txt">{{ t('common.asyncState.loadFailedTitle') }}</h3>
                   <p class="mt-1 text-xs text-txt2">{{ t('common.asyncState.loadFailedDesc') }}</p>
                   <AppButton class="mt-4" variant="outline" data-testid="sandbox-list-retry" @click="load({ showLoading: true })">

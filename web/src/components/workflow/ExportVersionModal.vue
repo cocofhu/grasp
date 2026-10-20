@@ -16,6 +16,8 @@ const props = defineProps<{
   description: string
   needsRepo: boolean
   status: Workflow['status']
+  /** Current runtime defaults apply to every graph version; editor may include unsaved overrides. */
+  defaults?: Workflow['defaults']
   /** When set (editor), draft export uses this graph including unsaved edits. */
   localDraft?: WorkflowGraphPayload | null
 }>()
@@ -106,7 +108,7 @@ async function confirmExport() {
   exporting.value = true
   exportError.value = ''
   try {
-    const meta = { name: props.workflowName, description: props.description, needsRepo: props.needsRepo }
+    const meta = { name: props.workflowName, description: props.description, needsRepo: props.needsRepo, defaults: props.defaults }
     let graph: WorkflowGraphPayload
 
     if (selected.value === 'draft') {
@@ -114,6 +116,7 @@ async function confirmExport() {
         graph = props.localDraft
       } else {
         const wf = await api.getWorkflow(props.workflowId, { signal: exportAbort.signal })
+        meta.defaults = wf.defaults
         graph = { nodes: wf.nodes, edges: wf.edges, variables: (wf as any).variables }
       }
     } else {

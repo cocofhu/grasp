@@ -11,6 +11,7 @@ import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
 import type { LlmTurn } from '@/lib/run/llmTranscript'
 
 const props = defineProps<{
+  runId?: string
   turn: LlmTurn
   models: string[]
   nodeLabel: string
@@ -71,14 +72,8 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
 
 <template>
   <div class="flex min-w-0 w-full gap-2.5" data-testid="llm-answer">
-    <span
-      class="mt-5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-line-strong bg-elevated text-txt2"
-      :title="t('pages.llmTranscript.speaker.agent')"
-    >
-      <Icon name="robot" :size="14" />
-    </span>
     <div class="flex min-w-0 w-full max-w-full flex-1 flex-col">
-      <div class="mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-txt3">
+      <div class="chat-meta mb-1 flex flex-wrap items-center gap-x-2 gap-y-0.5">
         <span class="font-medium text-txt2">{{ nodeLabel }}</span>
         <span v-for="m in models" :key="m" class="rounded border border-line bg-elevated px-1 py-px font-mono text-[10px]">{{ m }}</span>
         <span v-if="durationSec != null" class="tabular-nums">{{ t('pages.llmTranscript.duration', { time: fmtDuration(durationSec) }) }}</span>
@@ -88,7 +83,7 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
         </span>
       </div>
 
-      <div class="rounded-xl min-w-0 max-w-full overflow-x-auto space-y-2 rounded-tl-sm border border-line bg-surface px-3 py-2">
+      <div class="min-w-0 max-w-full space-y-3 py-2">
         <template v-for="(a, i) in turn.answers" :key="i">
           <div v-if="i > 0" class="border-t border-dashed border-line" />
           <AgentTimeline
@@ -99,6 +94,7 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
             :interrupted="!turn.live && turn.failed"
             :hide-thought="!showThought"
             :expanded="expandAll"
+            :run-id="runId"
             bare
             message-test-id="llm-answer-text"
           />
@@ -125,10 +121,10 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
             </button>
             <pre v-if="open.has(`${i}:plan`)" class="m-0 mt-1 whitespace-pre-wrap font-mono text-[11px] leading-5 text-txt2">{{ a.plan }}</pre>
           </div>
-          <AgentToolGroup v-if="a.tools.length && !a.parts?.length" :tools="a.tools" :busy="turn.live" :expanded="expandAll" />
+          <AgentToolGroup v-if="a.tools.length && !a.parts?.length" :tools="a.tools" :busy="turn.live" :expanded="expandAll" :run-id="runId" />
           <div
             v-if="a.text && !a.parts?.length"
-            class="md min-w-0 text-[13px] leading-6 text-txt"
+            class="md chat-prose min-w-0"
             data-testid="llm-answer-text"
           >
             <StreamMarkdown v-if="turn.live" :blocks="renderMarkdownBlocks(a.text, blockCache)" />
@@ -139,7 +135,7 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
               v-for="(tool, ti) in a.tools.filter((x) => x.artifact)"
               :key="ti"
               type="button"
-              class="inline-flex items-center gap-1 rounded-md border border-n-artifact/40 bg-n-artifact/10 px-2 py-0.5 text-[11px] text-n-artifact hover:brightness-110"
+              class="inline-flex items-center gap-1 rounded-md border border-accent/20 bg-accent-dim px-2 py-0.5 text-[11px] text-accent-2 hover:border-accent/40"
               data-testid="llm-artifact-chip"
               @click="emit('open-artifact')"
             >
@@ -151,8 +147,8 @@ const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools
         <div v-if="turn.live && !hasReply" class="flex items-center gap-2 text-[12px] text-txt3">
           <Icon name="spinner" :size="13" class="animate-spin text-accent" />{{ t('pages.llmTranscript.waitingAnswer') }}
         </div>
-        <div v-else-if="turn.live" class="flex items-center gap-2 text-[11px] text-info">
-          <span class="h-1.5 w-1.5 animate-pulseglow rounded-full bg-info" />{{ t('pages.llmTranscript.answering') }}
+        <div v-else-if="turn.live" class="flex items-center gap-2 text-[11px] text-accent-2">
+          <span class="h-1.5 w-1.5 animate-pulseglow rounded-full bg-accent" />{{ t('pages.llmTranscript.answering') }}
         </div>
         <div v-else-if="!hasReply && !turn.failed" class="text-[12px] italic text-txt3">{{ t('pages.llmTranscript.noReply') }}</div>
 

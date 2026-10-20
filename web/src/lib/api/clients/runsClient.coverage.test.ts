@@ -39,7 +39,7 @@ describe('runsClient request coverage', () => {
     })
     expect(fetchMock).toHaveBeenNthCalledWith(
       2,
-      '/api/runs?status=running&tag=nightly&wf=wf+1&projectId=p1&page=2&pageSize=25&sort=priority&order=desc',
+      '/api/runs?status=running&tag=nightly&wf=wf+1&page=2&pageSize=25&sort=priority&order=desc',
       expect.objectContaining({ signal }),
     )
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/runs', expect.not.objectContaining({ signal }))

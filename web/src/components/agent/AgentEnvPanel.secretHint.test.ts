@@ -63,24 +63,20 @@ describe('AgentEnvPanel secret key hint', () => {
       const hint = wrapper.get('[data-test="env-secret-hint"]')
       expect(hint.text()).toContain(pages.pages.agentStudio.env.secretCredentialsOnly)
       const link = hint.get('[data-test="env-secret-credentials-link"]')
-      expect(JSON.parse(link.attributes('data-to')!)).toEqual({
-        name: 'project-detail',
-        params: { id: 'proj-1' },
-        query: { tab: 'credentials' },
-      })
+      expect(JSON.parse(link.attributes('data-to')!)).toEqual({ path: '/settings/credentials' })
 
       await wrapper.get('input[placeholder="KEY"]').setValue('FOO')
       expect(wrapper.find('[data-test="env-secret-hint"]').exists()).toBe(false)
     },
   )
 
-  it('also hints in the shared editor and omits the link without a project', async () => {
+  it('links to workspace credentials from both shared and Agent editors', async () => {
     const shared = mountWithLink(draft({ projectId: 'proj-1', env: [{ k: 'GIT_SSH_KNOWN_HOSTS', v: 'x' }] }), 'shared')
     expect(shared.find('[data-test="env-secret-hint"] [data-test="env-secret-credentials-link"]').exists()).toBe(true)
 
     const noProject = mountWithLink(draft({ env: [{ k: 'GITLAB_TOKEN', v: 'x' }] }))
     expect(noProject.find('[data-test="env-secret-hint"]').exists()).toBe(true)
-    expect(noProject.find('[data-test="env-secret-credentials-link"]').exists()).toBe(false)
+    expect(noProject.find('[data-test="env-secret-credentials-link"]').exists()).toBe(true)
   })
 
   it('does not flag non-secret git env such as GIT_SSH_COMMAND or GITLAB_URL', () => {

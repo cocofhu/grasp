@@ -5,12 +5,15 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -95,7 +98,7 @@ func main() {
 
 	gin.SetMode(gin.ReleaseMode)
 
-	db, err := database.Open(cfg.Database)
+	db, err := database.Open(cfg.Database, cfg.Engine.ProfilesRoot)
 	if err != nil {
 		log.Fatal().Err(err).Msg("open database failed")
 	}
@@ -250,7 +253,8 @@ func main() {
 		},
 		PublicAdvertise:         cfg.Server.PublicAdvertise,
 		OpenCodeCatalog:         openCodeCatalog,
-		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginFile,
+		WriteBackCodexLoginFile: projectCredentialSvc.WriteBackCodexLoginCredential,
+		InjectedCredentialID:    projectCredentialSvc.InjectedCredentialID,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
@@ -335,6 +339,9 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
+	if err := projectSvc.ValidateWorkspaceAgents(agentSvc); err != nil {
+		log.Fatal().Err(err).Msg("Agent ownership requires offline workspace migration")
+	}
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
@@ -363,7 +370,7 @@ func main() {
 		SelectedCredential:          projectCredentialSvc.ResolveSelectedValue,
 		OpenCodeCatalog:             openCodeCatalog,
 	})
-	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginFile)
+	sbxSvc.SetCodexLoginWriteBack(projectCredentialSvc.WriteBackCodexLoginCredential, projectCredentialSvc.InjectedCredentialID)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -453,6 +460,7 @@ func main() {
 		Unregister: mcpWire.unregister,
 	})
 	gateAutoSvc := services.NewGateAutoInvokeService(db, pmSvc, sbxSvc, pmTurns, services.CronTokenHooks{
+		RegisterPM: mcpWire.registerPMPolicy,
 		Register:   mcpWire.registerCron,
 		Unregister: mcpWire.unregister,
 	})
@@ -534,6 +542,34 @@ func main() {
 		Onboarding:         services.NewOnboardingService(projectSvc, agentSvc, sharedAgentSvc, wfSvc, projectCredentialSvc),
 		Team:               services.NewTeamService(projectSvc, agentSvc, pmSvc, sbxSvc),
 		OpenCodeCatalog:    openCodeCatalog,
+	}
+	var maintenancePrepared atomic.Bool
+	var maintenanceMu sync.Mutex
+	h.Maintenance = func(ctx context.Context, begin bool) (map[string]any, error) {
+		maintenanceMu.Lock()
+		defer maintenanceMu.Unlock()
+		if begin {
+			coord.BeginDraining()
+			eng.Halt()
+			cronSched.Pause()
+			gateAutoSvc.BeginMaintenance()
+			channelMgr.BeginMaintenance()
+		}
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance()}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
+		state["safeToStop"] = safe && maintenancePrepared.Load()
+		if begin && safe {
+			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {
+				state["safeToStop"] = false
+				return state, fmt.Errorf("archive interactive sandboxes: %w", err)
+			}
+			maintenancePrepared.Store(true)
+			state["safeToStop"] = true
+		}
+		if begin && !safe {
+			return state, fmt.Errorf("maintenance is draining; poll status, then POST again to archive idle interactive sandboxes")
+		}
+		return state, nil
 	}
 	h.Team.SharedAgent = sharedAgentSvc
 	h.Team.Credentials = projectCredentialSvc

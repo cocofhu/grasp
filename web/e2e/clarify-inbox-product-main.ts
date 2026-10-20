@@ -330,7 +330,7 @@ const Fixture = defineComponent({
               : [
                   h(
                     ReviewShell,
-                    { class: 'min-h-0 flex-1' },
+                    { class: 'min-h-0 flex-1', runId: run.value?.id || 'inbox-context', scopeKey: `inbox-preview:${scenario.value}:${run.value?.id || 'unavailable'}` },
                     {
                       stage: () =>
                         h(ClarifyProductStage, {

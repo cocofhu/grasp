@@ -37,6 +37,32 @@ describe('buildEnvelope', () => {
     expect(env.graph.nodes[0].config.variables).toBeUndefined()
     expect(env.exportedAt).toBeTruthy()
   })
+  it('preserves independent runtime defaults while excluding plaintext and masked secret values', () => {
+    const defaults = {
+      inheritWorkspace: false,
+      variables: [
+        { name: 'secret', type: 'string', secret: true, value: 'private-token', required: true },
+        { name: 'masked', type: 'string', secret: true, value: '****' },
+        { name: 'branch', type: 'string', value: 'main' },
+      ],
+      notifyPolicy: { enabled: true, channelIds: ['channel-id'], defaultEvents: ['failed'] },
+      gateAuto: { enabled: true, agentName: 'reviewer', variable: 'auto', prompt: 'Review this', enabledMcps: ['pm-progress'] },
+    }
+    const env = buildEnvelope({ name: 'Portable', description: '', needsRepo: false, defaults }, { nodes: [], edges: [], variables: [{ name: 'inputSecret', secret: true, value: 'private-input' }] })
+    expect(env.defaults).toEqual({ ...defaults, variables: [
+      { name: 'secret', type: 'string', secret: true, required: true },
+      { name: 'masked', type: 'string', secret: true },
+      { name: 'branch', type: 'string', value: 'main' },
+    ] })
+    expect(env.graph.variables).toEqual([{ name: 'inputSecret', secret: true }])
+    const serialized = JSON.stringify(env)
+    expect(serialized).not.toContain('private-token')
+    expect(serialized).not.toContain('private-input')
+    expect(serialized).not.toContain('****')
+    env.defaults!.gateAuto!.enabledMcps.push('pm-prd-manager')
+    expect(defaults.gateAuto.enabledMcps).toEqual(['pm-progress'])
+    expect(defaults.variables[0].value).toBe('private-token')
+  })
 })
 
 describe('agent profile helpers', () => {
@@ -51,13 +77,13 @@ describe('agent profile helpers', () => {
   })
 
   it('reports missing profiles by name via agentProfileIssues', () => {
-    const issues = agentProfileIssues(nodes, [{ name: 'Other', projectId: 'p' }], 'p')
+    const issues = agentProfileIssues(nodes, [{ name: 'Other' }])
     expect(issues.filter((i) => i.reason === 'missing').map((i) => i.name).sort()).toEqual(
       ['ImplementAgent', 'PreviewAgent'].sort(),
     )
   })
 
-  it('reports missing or foreign agent profiles for import warn', () => {
+  it('accepts every Agent in the workspace and only warns about missing profiles', () => {
     const agents = [
       { name: 'ImplementAgent', projectId: 'alpha' },
       { name: 'PreviewAgent', projectId: 'beta' },
@@ -66,16 +92,14 @@ describe('agent profile helpers', () => {
       ...nodes,
       { id: 'e', type: 'agent', label: 'Pl', position: { x: 0, y: 0 }, config: { agent_profile: 'ghost' } },
     ]
-    const issues = agentProfileIssues(withGhost, agents, 'alpha')
+    const issues = agentProfileIssues(withGhost, agents)
     expect(issues).toEqual([
-      { name: 'PreviewAgent', reason: 'foreign' },
       { name: 'ghost', reason: 'missing' },
     ])
-    // same-project only — no false positive
+    // Historical owner IDs do not affect the workspace directory.
     expect(agentProfileIssues(
       [{ id: 'a', type: 'agent', label: 'I', position: { x: 0, y: 0 }, config: { agent_profile: 'ImplementAgent' } }],
       agents,
-      'alpha',
     )).toEqual([])
   })
 

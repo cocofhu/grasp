@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 
@@ -162,6 +163,7 @@ func (s *WorkflowService) Copy(sourceID, name string) (models.WorkflowDef, error
 			Name:        name,
 			Description: src.Description,
 			NeedsRepo:   src.NeedsRepo,
+			Defaults:    src.Defaults,
 			ShowOnHome:  false, // copies never inherit Home visibility (plan g1.3)
 			Version:     1,
 			Graph:       graph,
@@ -211,6 +213,15 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 	var existing models.WorkflowDef
 	if err := s.db.First(&existing, "id = ?", wf.ID).Error; err != nil {
+		if wf.Defaults != nil {
+			cp := *wf.Defaults
+			vars, err := sanitizeProjectVars(cp.Variables)
+			if err != nil {
+				return err
+			}
+			cp.Variables = vars
+			wf.Defaults = &cp
+		}
 		wf.CreatedAt = time.Now()
 		wf.UpdatedAt = wf.CreatedAt
 		if strings.TrimSpace(wf.ProjectID) == "" {
@@ -238,9 +249,25 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 	if wf.ProjectID != "" && wf.ProjectID != existing.ProjectID {
 		return ErrWorkflowProjectImmutable
 	}
+	if wf.Defaults == nil {
+		wf.Defaults = existing.Defaults
+	}
 	wf.ProjectID = existing.ProjectID
 	if err := s.validateWorkflowName(wf.Name, wf.ID, wf.ProjectID); err != nil {
 		return err
+	}
+	if wf.Defaults != nil {
+		cp := *wf.Defaults
+		var old []models.ProjectVariable
+		if existing.Defaults != nil {
+			old = existing.Defaults.Variables
+		}
+		vars, err := mergeProjectVars(old, cp.Variables)
+		if err != nil {
+			return err
+		}
+		cp.Variables = vars
+		wf.Defaults = &cp
 	}
 	wf.CreatedAt = existing.CreatedAt
 	wf.LastRunAt = existing.LastRunAt
@@ -250,7 +277,7 @@ func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
 	contentChanged := !GraphsEqual(wf.Graph, existing.Graph) ||
 		wf.Name != existing.Name ||
 		wf.Description != existing.Description
-	settingsChanged := wf.NeedsRepo != existing.NeedsRepo ||
+	settingsChanged := !reflect.DeepEqual(wf.Defaults, existing.Defaults) || wf.NeedsRepo != existing.NeedsRepo ||
 		wf.ShowOnHome != existing.ShowOnHome ||
 		!WorkflowNotifyPoliciesEqual(wf.NotifyPolicy, existing.NotifyPolicy)
 	if !contentChanged && !settingsChanged {
@@ -671,4 +698,11 @@ func ValidateAgentProfilesProject(skills AgentGetter, projectID string, g models
 		return nil
 	}
 	return fmt.Errorf("存在不可用 Agent profile，请改选有效 Agent 后再保存：%s", strings.Join(bad, "；"))
+}
+
+// Catalog reads navigation metadata without graph bodies.
+func (s *WorkflowService) Catalog() []models.WorkflowDef {
+	var rows []models.WorkflowDef
+	s.db.Select("id", "project_id", "name", "description", "version", "published_version", "needs_repo", "show_on_home", "updated_at", "last_run_at").Order("updated_at desc, id asc").Find(&rows)
+	return rows
 }

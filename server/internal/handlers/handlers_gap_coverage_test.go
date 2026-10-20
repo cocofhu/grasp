@@ -39,7 +39,7 @@ func TestSaveWorkflowValidationAndConflict(t *testing.T) {
 		},
 		"edges": []map[string]any{{"id": "e", "source": "in", "target": "out"}},
 	})
-	if w.Code != http.StatusBadRequest {
+	if w.Code != http.StatusOK {
 		t.Fatalf("missing projectId: %d %s", w.Code, w.Body.String())
 	}
 
@@ -274,7 +274,7 @@ func TestSaveWorkflowProjectErrors(t *testing.T) {
 		},
 		"edges": []map[string]any{{"id": "e", "source": "in", "target": "out"}},
 	})
-	if w.Code != http.StatusConflict {
+	if w.Code != http.StatusBadRequest {
 		t.Fatalf("immutable project: %d %s", w.Code, w.Body.String())
 	}
 }

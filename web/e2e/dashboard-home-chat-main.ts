@@ -6,7 +6,7 @@ import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
 import ToastHost from '../src/components/ui/ToastHost.vue'
 import DashboardView from '../src/views/DashboardView.vue'
-import { PROJECT_CONTEXT_STORAGE_KEY } from '../src/lib/composables/useProjectContext'
+const PROJECT_CONTEXT_STORAGE_KEY = 'grasp.project-context' // obsolete selection must not affect workspace
 import { takeHomeApproveHandoff } from '../src/lib/run/homeApproveHandoff'
 
 installIdleScrollbar()

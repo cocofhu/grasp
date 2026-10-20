@@ -87,7 +87,7 @@ async function openStatsPage(page: import('@playwright/test').Page) {
   await page.goto('/token-analytics.html')
   await expect(page.getByTestId('shell-main-dashboard')).toBeVisible({ timeout: 15_000 })
   await page.getByRole('link', { name: '设置', exact: true }).click()
-  await page.getByRole('link', { name: '统计', exact: true }).click()
+  await page.getByRole('link', { name: '用量统计', exact: true }).click()
   await expect(page.getByTestId('token-analytics-page')).toBeVisible({ timeout: 15_000 })
 }
 
@@ -98,7 +98,7 @@ test.describe('Global token analytics', () => {
     await expect(page.getByTestId('token-analytics-pies')).toBeVisible()
     await expect(page.getByTestId('token-analytics-kpis')).toBeVisible()
     await expect(page.getByTestId('token-analytics-section-nav')).toHaveCount(0)
-    await expect(page.getByText('用量统计')).toBeVisible()
+    await expect(page.getByRole('heading', { name: '用量统计', exact: true })).toBeVisible()
   })
 
   test('input-side total plus output matches total KPI', async ({ page }) => {
@@ -127,8 +127,7 @@ test.describe('Global token analytics', () => {
 
   test('line mode tabs switch visible labels', async ({ page }) => {
     await openStatsPage(page)
-    await page.getByRole('button', { name: '按项目' }).click()
-    await expect(page.getByRole('button', { name: '按项目' })).toHaveClass(/font-semibold/)
+    await expect(page.getByRole('button', { name: '按项目' })).toHaveCount(0)
     await page.getByRole('button', { name: '按模型' }).click()
     await expect(page.getByRole('button', { name: '按模型' })).toHaveClass(/font-semibold/)
     await page.getByRole('button', { name: '总量（对比上一周期）' }).click()
@@ -141,7 +140,7 @@ test.describe('Global token analytics', () => {
     await openStatsPage(page)
     const bars = page.getByTestId('token-analytics-bars')
     await expect(bars).toBeVisible()
-    await expect(page.getByTestId('token-analytics-bar-dimension-project')).toHaveClass(/font-semibold/)
+    await expect(page.getByTestId('token-analytics-bar-dimension-project')).toHaveCount(0)
 
     await page.getByTestId('token-analytics-bar-dimension-workflow').click()
     await expect(page.getByTestId('token-analytics-bar-dimension-workflow')).toHaveClass(/font-semibold/)
@@ -153,11 +152,10 @@ test.describe('Global token analytics', () => {
     expect(errors).toEqual([])
   })
 
-  test('project table link navigates to project board tab', async ({ page }) => {
+  test('omits project controls and navigation from statistics', async ({ page }) => {
     await openStatsPage(page)
-    await page.getByRole('button', { name: 'Demo' }).click()
-    await expect(page.getByTestId('project-board-page')).toBeVisible({ timeout: 10_000 })
-    await expect(page.getByText('board:p1')).toBeVisible()
+    await expect(page.getByTestId('token-analytics-filter-project')).toHaveCount(0)
+    await expect(page.getByTestId('token-analytics-project-detail-p1')).toHaveCount(0)
   })
 
   test('top run link navigates to run detail', async ({ page }) => {
@@ -175,20 +173,20 @@ test.describe('Global token analytics', () => {
     await expect(page.getByTestId('token-pricing-save')).toBeEnabled()
   })
 
-  test('project detail opens the drill-down modal with ledger events and applies the filter', async ({ page }) => {
+  test('model detail opens the drill-down modal with ledger events and applies the filter', async ({ page }) => {
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await openStatsPage(page)
-    await page.getByTestId('token-analytics-project-detail-p1').click()
+    await page.getByTestId('token-analytics-models-table').getByRole('button', { name: 'Model', exact: true }).click()
     const modal = page.getByTestId('token-drill-modal')
     await expect(modal).toBeVisible()
-    await expect(page.getByTestId('token-drill-breadcrumb')).toContainText('项目：Demo')
+    await expect(page.getByTestId('token-drill-breadcrumb')).toContainText('模型：Model')
     await page.getByTestId('token-drill-tab-events').click()
     await expect(page.getByTestId('token-events-table')).toContainText('m1')
 
     await page.getByTestId('token-drill-apply').click()
     await expect(modal).toHaveCount(0)
-    await expect(page.getByTestId('token-analytics-filter-project')).toHaveValue('p1')
+    await expect(page.getByTestId('token-analytics-filter-model')).toHaveValue('m1')
     expect(errors).toEqual([])
   })
 })

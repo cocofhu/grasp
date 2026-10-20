@@ -20,7 +20,7 @@ func TestPmMemoryUpdateDeleteAndPagination(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("CRUDMem", "", nil)
+	p, err := ps.CreateFixture("CRUDMem", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestPmSearchMessagesAndFailDraft(t *testing.T) {
 	db := setupPmDB(t)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("SearchMsg", "", nil)
+	p, err := ps.CreateFixture("SearchMsg", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestPmTurnRunnerStartCancelAndFinish(t *testing.T) {
 	sbx := newSandboxService(t, db, ds)
 	pm := NewPmService(db, nil)
 	ps := NewProjectService(db)
-	p, err := ps.Create("TurnProj", "", nil)
+	p, err := ps.CreateFixture("TurnProj", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

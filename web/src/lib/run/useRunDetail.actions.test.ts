@@ -17,7 +17,7 @@ const mocks = vi.hoisted(() => ({
   toastError: vi.fn(),
   getRun: vi.fn(),
   getWorkflow: vi.fn(),
-  getProject: vi.fn(),
+  getWorkspace: vi.fn(),
   runArtifacts: vi.fn(),
   nodeEvents: vi.fn(),
   nodeSandboxLog: vi.fn(),
@@ -55,7 +55,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       getRun: mocks.getRun,
       getWorkflow: mocks.getWorkflow,
-      getProject: mocks.getProject,
+      getWorkspace: mocks.getWorkspace,
       runArtifacts: mocks.runArtifacts,
       nodeEvents: mocks.nodeEvents,
       nodeSandboxLog: mocks.nodeSandboxLog,
@@ -228,7 +228,7 @@ describe('useRunDetail actions', () => {
 
     mocks.getRun.mockResolvedValue(sampleRun())
     mocks.getWorkflow.mockResolvedValue(sampleWorkflow())
-    mocks.getProject.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
+    mocks.getWorkspace.mockResolvedValue({ id: 'proj-1', unknownModelDisplayName: '未知模型' })
     mocks.runArtifacts.mockResolvedValue([])
     mocks.nodeEvents.mockResolvedValue({ events: [], nextCursor: '', hasMore: false })
     mocks.nodeSandboxLog.mockResolvedValue({ content: 'boot log', live: false, found: true })
@@ -882,9 +882,7 @@ describe('useRunDetail actions', () => {
     )
     const { detail, app } = await withRunDetail()
     expect(detail.runFailureCredentialsRoute.value).toEqual({
-      name: 'project-detail',
-      params: { id: 'proj-1' },
-      query: { tab: 'credentials' },
+      path: '/settings/credentials',
     })
     app.unmount()
   })

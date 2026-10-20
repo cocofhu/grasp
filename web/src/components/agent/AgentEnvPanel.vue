@@ -62,11 +62,7 @@ function openEnvHelp(section: EnvCredentialHelpSection) {
 }
 
 /** Secrets are owned by project credentials; env rows with these keys are rejected on save. */
-const credentialsRoute = computed(() =>
-  props.draft.projectId
-    ? { name: 'project-detail', params: { id: props.draft.projectId }, query: { tab: 'credentials' } }
-    : null,
-)
+const credentialsRoute = computed(() => ({ path: '/settings/credentials' }))
 const rawHasSecretEnvKey = computed(() => props.draft.env.some((e) => isSecretEnvKey(e.k)))
 
 function upsertEnv(key: string, value: string) {
@@ -158,7 +154,7 @@ watch(
     </div>
     <div v-else class="scroll-area flex-1 space-y-2 overflow-y-auto p-4">
       <div
-        class="rounded-lg callout mb-3 border border-dashed border-accent/45 bg-accent-dim/40 px-3 py-2.5 text-[12px] leading-6 text-txt2"
+        class="callout mb-3 border-b border-line/60 pb-3 text-[12px] leading-6 text-txt2"
         data-test="env-custom-config-callout"
       >
         {{ t('pages.agentStudio.env.customConfigCallout', { path: settingsPath }) }}
@@ -178,7 +174,7 @@ watch(
         @update:credential-type="draft.gitCredentialType = $event"
         @help="openEnvHelp('git')"
       />
-      <div class="mb-3 rounded-lg border border-line bg-base/50 p-3 text-[11px] leading-6 text-txt3">
+      <div class="mb-3 border-b border-line/60 py-4 text-[12px] leading-6 text-txt3">
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="font-medium text-txt2">{{ t('pages.agentStudio.env.backendAuthTitle') }}</div>
           <AppButton
@@ -200,8 +196,8 @@ watch(
       </div>
       <template v-for="(e, i) in draft.env" :key="i">
         <div v-if="!isLockedKey(e.k)" class="flex items-center gap-1.5">
-          <input :value="e.k" placeholder="KEY" class="w-1/3 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt outline-none focus:border-accent" @input="updateEnvKey(i, ($event.target as HTMLInputElement).value)" />
-          <input v-model="e.v" placeholder="value" class="flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2 outline-none focus:border-accent" />
+          <input :value="e.k" placeholder="KEY" class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt outline-none focus:border-accent" @input="updateEnvKey(i, ($event.target as HTMLInputElement).value)" />
+          <input v-model="e.v" placeholder="value" class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2 outline-none focus:border-accent" />
           <button class="text-txt3 hover:text-err" @click="draft.env.splice(i, 1)"><Icon name="close" :size="14" /></button>
         </div>
         <p v-if="isSecretEnvKey(e.k)" class="pl-1 text-[11px] text-warn" data-test="env-secret-hint">
@@ -209,14 +205,14 @@ watch(
           <RouterLink v-if="credentialsRoute" :to="credentialsRoute" class="ml-1 text-accent-2 underline underline-offset-[3px]" data-test="env-secret-credentials-link">{{ t('pages.agentStudio.env.goCredentials') }}</RouterLink>
         </p>
       </template>
-      <div v-if="currentRegionPolicy" class="rounded-lg border border-accent/30 bg-accent-dim/40 p-3">
+      <div v-if="currentRegionPolicy" class="border-t border-line/60 py-4">
         <div class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.region.managedByAcp') }}</div>
         <div class="flex items-center gap-1.5">
-          <input :value="currentRegionPolicy.regionEnvKey" readonly :aria-label="t('pages.agentStudio.region.managedKey')" class="w-1/3 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
-          <input :value="storedRegion()" readonly :aria-label="t('pages.agentStudio.region.managedValue')" class="flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+          <input :value="currentRegionPolicy.regionEnvKey" readonly :aria-label="t('pages.agentStudio.region.managedKey')" class="w-1/3 min-w-0 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+          <input :value="storedRegion()" readonly :aria-label="t('pages.agentStudio.region.managedValue')" class="min-w-0 flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
         </div>
       </div>
-      <div v-if="managedModelRows.length" class="rounded-lg border border-accent/30 bg-accent-dim/40 p-3" data-test="env-managed-model">
+      <div v-if="managedModelRows.length" class="border-t border-line/60 py-4" data-test="env-managed-model">
         <div class="mb-2 flex items-center gap-1.5 text-[11px] text-txt3">
           <Icon name="lock" :size="12" />
           <span class="flex-1">{{ t('pages.agentStudio.cliModel.managedBy') }}</span>
@@ -231,8 +227,8 @@ watch(
           </button>
         </div>
         <div v-for="row in managedModelRows" :key="row.k" class="mt-1.5 flex items-center gap-1.5 first:mt-0">
-          <input :value="row.k" readonly class="w-1/3 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
-          <input :value="row.v" readonly class="flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+          <input :value="row.k" readonly class="w-1/3 min-w-0 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
+          <input :value="row.v" readonly class="min-w-0 flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="draft.env.push({ k: '', v: '' })">{{ t('pages.agentStudio.env.add') }}</AppButton>

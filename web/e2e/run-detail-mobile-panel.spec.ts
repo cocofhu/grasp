@@ -24,7 +24,7 @@ function boxesIntersect(
 }
 
 test.describe('Run 详情移动端单面板生产路径 (390×844)', () => {
-  // plan_coverage: g2.3 — ReviewShell mobile entries (gate/review/mobile-fill) share drawer behavior
+  // plan_coverage: g2.3 — ReviewShell mobile entries preserve chat while opening a separate preview
   test('completed：单面板 + 末项可视 + 汇总与条目无几何相交 (g1/g2)', async ({ page }) => {
     await gotoPanel(page, 'completed')
 
@@ -167,7 +167,7 @@ test.describe('Run 详情移动端单面板生产路径 (390×844)', () => {
     await gotoPanel(page, 'review')
     await expect(page.getByTestId('run-detail-right-panel')).toBeVisible()
     await expect(page.getByTestId('review-shell')).toBeVisible()
-    await expect(page.getByTestId('review-product-preview')).toBeVisible()
+    await expect(page.getByTestId('review-product-preview')).toBeHidden()
 
     const pass = page.getByTestId('review-composer-pass')
     const send = page.getByTestId('review-composer-send')
@@ -182,9 +182,12 @@ test.describe('Run 详情移动端单面板生产路径 (390×844)', () => {
     expect(passBox).toBeTruthy()
     expect(passBox!.y + passBox!.height).toBeLessThanOrEqual(844 + 1)
 
+    await page.getByTestId('conversation-panel-toggle').click()
+    await expect(page.getByTestId('review-product-preview')).toBeVisible()
     await page.getByTestId('review-product-preview').evaluate((el) => {
       el.scrollTop = el.scrollHeight
     })
+    await page.getByTestId('conversation-panel-close').click()
     await expect(pass).toBeVisible()
     const after = await pass.boundingBox()
     expect(after!.y + after!.height).toBeLessThanOrEqual(844 + 1)

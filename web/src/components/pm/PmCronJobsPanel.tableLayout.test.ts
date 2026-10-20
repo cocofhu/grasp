@@ -21,14 +21,14 @@ function tableBlockByTestId(testid: string): string {
 }
 
 describe('PmCronJobsPanel table layout parity (g2.1 / g2.2)', () => {
-  it('real cron table reuses the skeleton min-w-[720px] + overflow-x-auto strategy', () => {
+  it('real cron table reuses the skeleton min-w-[1380px] + overflow-x-auto strategy', () => {
     const real = tableTagByTestId('cron-table')
     expect(real).toMatch(/\bw-full\b/)
-    expect(real).toMatch(/min-w-\[720px\]/)
+    expect(real).toMatch(/min-w-\[1380px\]/)
     // Skeleton keeps the same min-width so rows/skeleton never jump width.
     const skeletonWrap = src.slice(src.indexOf('data-testid="cron-table-skeleton"'))
     const skeletonTag = skeletonWrap.slice(skeletonWrap.indexOf('<table'), skeletonWrap.indexOf('>', skeletonWrap.indexOf('<table')) + 1)
-    expect(skeletonTag).toMatch(/min-w-\[720px\]/)
+    expect(skeletonTag).toMatch(/min-w-\[1380px\]/)
     expect(src).toMatch(/scroll-area overflow-x-auto/)
   })
 

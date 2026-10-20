@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentFilesPanel from './AgentFilesPanel.vue'
@@ -71,6 +71,8 @@ function mountPanel(extra: Record<string, unknown> = {}) {
 }
 
 describe('AgentFilesPanel interactions', () => {
+  afterEach(() => { vi.unstubAllGlobals() })
+
   beforeEach(() => {
     localStorage.clear()
     vi.clearAllMocks()
@@ -293,6 +295,73 @@ describe('AgentFilesPanel interactions', () => {
     ;(document.querySelector('[data-action="newFolder"]') as HTMLElement).click()
     await flushPromises()
     await w.get('input[data-create]').trigger('keyup', { key: 'Escape' })
+    w.unmount()
+  })
+
+  it('keeps the active file editable in narrow desktop content and opens history separately', async () => {
+    let resized: (() => void) | undefined
+    const disconnect = vi.fn()
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(callback: () => void) { resized = callback }
+      observe() {}
+      disconnect = disconnect
+    })
+    const d = draft()
+    const w = mountPanel({ draft: d })
+    let width = 420
+    Object.defineProperty(w.element, 'getBoundingClientRect', { value: () => ({ width }) })
+    ;(w.vm as any).selectDefaultFile()
+    await flushPromises()
+
+    resized!()
+    await flushPromises()
+    expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
+    expect(w.find('[data-test="file-row-more"]').exists()).toBe(false)
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
+    await w.get('[data-testid="markdown"]').setValue('# edited without losing the file')
+    expect(d.files[0]!.content).toBe('# edited without losing the file')
+
+    await w.get('[data-testid="compact-history-open"]').trigger('click')
+    expect(w.find('[data-testid="history"]').exists()).toBe(true)
+    await w.findAll('[data-testid="history"] button')[1]!.trigger('click')
+    expect(w.emitted('restored')).toHaveLength(1)
+    await w.get('[data-testid="history"] button').trigger('click')
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
+
+    await w.findAll('button').find((button) => button.text() === '返回')!.trigger('click')
+    expect(w.find('[data-test="file-row-more"]').exists()).toBe(true)
+    expect(w.find('[data-testid="markdown"]').exists()).toBe(false)
+    await w.findAll('button').find((button) => button.text() === 'README.md')!.trigger('click')
+    expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
+
+    // Hidden tabs briefly report zero width; retain the last usable layout.
+    width = 0
+    resized!()
+    await flushPromises()
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
+
+    width = 1100
+    resized!()
+    await flushPromises()
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(false)
+    expect(w.findAll('[data-testid="history"]')).toHaveLength(1)
+    expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
+    expect(d.files[0]!.content).toBe('# edited without losing the file')
+    w.unmount()
+    expect(disconnect).toHaveBeenCalledOnce()
+  })
+
+  it('closes compact history when switching Agents and keeps history out of the mobile file flow', async () => {
+    const w = mountPanel()
+    Object.defineProperty(w.element, 'getBoundingClientRect', { value: () => ({ width: 760 }) })
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    await w.get('[data-testid="compact-history-open"]').trigger('click')
+    expect(w.find('[data-testid="history"]').exists()).toBe(true)
+    await w.setProps({ agentName: 'another-agent' })
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
+    await w.setProps({ isMobile: true })
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(false)
     w.unmount()
   })
 })

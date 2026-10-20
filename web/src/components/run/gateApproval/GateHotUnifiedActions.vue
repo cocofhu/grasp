@@ -5,7 +5,6 @@ import { useGateApprovalCtx } from './gateApprovalContext'
 import Icon from '../../ui/Icon.vue'
 import ParagraphInput from '../../ui/ParagraphInput.vue'
 import ComposerShell from '../ComposerShell.vue'
-import GateReactStreamPanel from '../GateReactStreamPanel.vue'
 import PendingSendQueuePanel from '../PendingSendQueuePanel.vue'
 
 const props = defineProps<{
@@ -49,7 +48,7 @@ const showSend = computed(() => {
 
 <template>
   <div v-if="s.reactError" class="mb-1.5 text-[11px] text-err">{{ s.reactError }}</div>
-  <ComposerShell :compact="compact">
+  <ComposerShell class="chat-thread" :compact="compact">
     <template #input>
       <ParagraphInput
         ref="paragraphRef"
@@ -64,45 +63,45 @@ const showSend = computed(() => {
     <template #toolbar-start>
       <button
         type="button"
-        class="flex shrink-0 items-center justify-center rounded-md border border-line text-txt2 hover:border-line-strong disabled:opacity-50"
-        :class="compact ? 'h-8 w-8' : 'h-10 w-10'"
+        class="chat-action-button"
         data-testid="paragraph-input-attach"
         :disabled="s.reactSending"
         :title="t('common.paragraphInput.addImage')"
+        :aria-label="t('common.paragraphInput.addImage')"
         @click="paragraphRef?.pickFiles?.()"
       >
-        <Icon name="paperclip" :size="16" />
+        <Icon name="plus" :size="18" />
       </button>
     </template>
     <template #toolbar-end>
       <button
         v-if="showCancel"
         type="button"
-        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
+        class="chat-action-button chat-action-stop"
         data-testid="gate-react-cancel"
         title="Cancel"
         aria-label="Cancel"
         @click="s.cancelReactRevise"
       >
-        <Icon name="stop" :size="12" />
+        <Icon name="chat-stop" :size="16" />
       </button>
       <button
         v-if="showSend"
         type="button"
-        class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
+        class="chat-action-button chat-action-primary"
         data-testid="review-composer-send"
         :title="s.composerRejectLabel"
         :aria-label="s.composerRejectLabel"
         :disabled="sendDisabled"
         @click="s.sendHotReject"
       >
-        <Icon name="send" :size="14" />
+        <Icon name="chat-send" :size="18" />
       </button>
     </template>
     <template #footer>
       <button
         type="button"
-        class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-line px-3 text-sm font-medium text-txt2 transition hover:bg-elevated disabled:cursor-not-allowed disabled:opacity-50"
+        class="chat-action-secondary inline-flex h-9 shrink-0"
         data-testid="review-record-issue"
         :disabled="!s.canRecordIssue"
         @click="s.recordFeedbackIssue"
@@ -112,7 +111,7 @@ const showSend = computed(() => {
       <button
         v-if="s.showHotPass"
         type="button"
-        class="inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:cursor-not-allowed disabled:opacity-50"
+        class="chat-action-confirm inline-flex h-9 shrink-0"
         data-testid="review-composer-pass"
         :disabled="s.composerPassDisabled"
         :title="s.passAction ? s.actionButtonTitle(s.passAction.id) : ''"
@@ -137,12 +136,5 @@ const showSend = computed(() => {
     @edit="s.editReactQueuedItem"
     @reorder="s.reorderReactQueuedItems"
   />
-  <GateReactStreamPanel
-    :thinking="s.reactThinking"
-    :stream-text="s.reactStreamText"
-    :stream-thought="s.reactStreamThought"
-    :stream-tools="s.reactStreamTools"
-    :interrupted="s.reactInterrupted"
-    :completed-at="s.reactStreamCompletedAt"
-  />
+
 </template>

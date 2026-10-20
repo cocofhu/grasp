@@ -30,7 +30,7 @@ func setCredentialKey(t *testing.T) {
 func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Credential project", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Credential project", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestProjectCredentialsCRUDAndResolution(t *testing.T) {
 func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("OpenCode metadata", "", nil)
+	p, err := NewProjectService(db).CreateFixture("OpenCode metadata", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +139,7 @@ func TestProjectCredentialOpenCodeMetadataResolvesRuntimeSettings(t *testing.T) 
 func TestProjectCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Empty slots", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Empty slots", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestProjectCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 func TestProjectCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Reserved keys", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Reserved keys", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestProjectCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 func TestProjectCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Empty slots", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Empty slots", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,7 +227,7 @@ func TestOverlayProjectCredentialEnvKeepsPlatformKeys(t *testing.T) {
 func TestOpenCodeSelectionInjectsOnlyTheChosenKey(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Two model keys", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Two model keys", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -319,14 +319,14 @@ func TestDeleteProjectRemovesCredentials(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
 	projects := NewProjectService(db)
-	p, err := projects.Create("Delete creds", "", nil)
+	p, err := projects.CreateFixture("Delete creds", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := NewProjectCredentialService(db).Create(p.ID, ProjectCredentialInput{Type: "custom", Name: "x", EnvKey: "X", Value: "v"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := projects.Delete(p.ID); err != nil {
+	if err := projects.DeleteFixture(p.ID); err != nil {
 		t.Fatal(err)
 	}
 	var n int64
@@ -339,7 +339,7 @@ func TestDeleteProjectRemovesCredentials(t *testing.T) {
 func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Codex login", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Codex login", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -393,7 +393,7 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 	if afterReject.ValueEnc != before.ValueEnc || !afterReject.UpdatedAt.Equal(before.UpdatedAt) {
 		t.Fatal("rejected paste overwrote the login file")
 	}
-	if err := s.WriteBackCodexLoginFile(p.ID, login); err != nil {
+	if err := s.WriteBackCodexLoginCredential(p.ID, slot.ID, login); err != nil {
 		t.Fatal(err)
 	}
 	var same models.ProjectCredential
@@ -404,17 +404,17 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 		t.Fatal("unchanged writeback touched the credential")
 	}
 	refreshed := `{"auth_mode":"chatgpt","tokens":{"access_token":"new","refresh_token":"rt2"}}`
-	if err := s.WriteBackCodexLoginFile(p.ID, refreshed); err != nil {
+	if err := s.WriteBackCodexLoginCredential(p.ID, slot.ID, refreshed); err != nil {
 		t.Fatal(err)
 	}
 	later := `{"auth_mode":"chatgpt","tokens":{"access_token":"later","refresh_token":"rt3"}}`
-	if err := s.WriteBackCodexLoginFile(p.ID, later); err != nil {
+	if err := s.WriteBackCodexLoginCredential(p.ID, slot.ID, later); err != nil {
 		t.Fatal(err)
 	}
 	if got := s.ResolveEnv(p.ID)[envauth.EnvCodexAuthFile]; got != later {
 		t.Fatalf("last writeback=%q", got)
 	}
-	if err := s.WriteBackCodexLoginFile(p.ID, "sk-nope"); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) {
+	if err := s.WriteBackCodexLoginCredential(p.ID, slot.ID, "sk-nope"); !errors.Is(err, runtime.ErrCodexLoginFileAPIKey) {
 		t.Fatalf("invalid writeback: %v", err)
 	}
 	if got := s.ResolveEnv(p.ID)[envauth.EnvCodexAuthFile]; got != later {
@@ -433,7 +433,7 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 func TestBuiltinCredentialShortNamesAndLegacyRename(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Short names", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Short names", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -533,7 +533,7 @@ func TestBuiltinCredentialShortNamesAndLegacyRename(t *testing.T) {
 func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("Alias project", "", nil)
+	p, err := NewProjectService(db).CreateFixture("Alias project", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func TestCredentialAliasLookupFailureIsNotAvailable(t *testing.T) {
 
 func TestProjectCredentialRequiresMasterKey(t *testing.T) {
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("No key", "", nil)
+	p, err := NewProjectService(db).CreateFixture("No key", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

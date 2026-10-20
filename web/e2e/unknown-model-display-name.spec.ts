@@ -1,4 +1,8 @@
+import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { routeApi } from './helpers/apiRoute'
 import { test, expect } from '@playwright/test'
+
+test.beforeEach(async ({ page }) => { await installWorkspaceApiDefaults(page) })
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { dismissOnboardingIfOpen, seedOnboardingDismissed } from './helpers/onboarding'
@@ -14,26 +18,6 @@ const BASE_PROJECT = {
   variables: [],
   createdAt: '2026-01-01T00:00:00Z',
   updatedAt: '2026-01-01T00:00:00Z',
-}
-
-function emptyTokenStats() {
-  return {
-    window: '30d',
-    bucketWidth: 'day',
-    timezone: 'UTC',
-    empty: true,
-    trend: [],
-    composition: {
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheWriteTokens: 0,
-      total: 0,
-    },
-    workflows: [],
-    modelComposition: [],
-    modelRanking: [],
-  }
 }
 
 function aliasedTokenStats() {
@@ -82,7 +66,7 @@ test.describe('未知模型显示名', () => {
     let project = { ...BASE_PROJECT, unknownModelDisplayName: '' as string }
     let lastPatch: Record<string, unknown> | null = null
 
-    await page.route('**/api/projects/proj-1', async (route) => {
+    await routeApi(page, '**/api/workspace', async (route) => {
       const method = route.request().method()
       if (method === 'GET') {
         await route.fulfill({
@@ -105,7 +89,7 @@ test.describe('未知模型显示名', () => {
       }
       await route.continue()
     })
-    await page.route('**/api/workflows**', async (route) => {
+    await routeApi(page, '**/api/workflows**', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -116,7 +100,7 @@ test.describe('未知模型显示名', () => {
       }
       await route.continue()
     })
-    await page.route('**/api/runs**', async (route) => {
+    await routeApi(page, '**/api/runs**', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -127,21 +111,14 @@ test.describe('未知模型显示名', () => {
       }
       await route.continue()
     })
-    await page.route('**/api/projects/proj-1/pm-leader', async (route) => {
+    await routeApi(page, '**/api/workspace/pm-leader', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
         body: JSON.stringify({ enabled: false }),
       })
     })
-    await page.route('**/api/projects/*/token-stats**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(emptyTokenStats()),
-      })
-    })
-    await page.route('**/api/agents**', async (route) => {
+    await routeApi(page, '**/api/agents**', async (route) => {
       if (route.request().method() === 'GET') {
         await route.fulfill({
           status: 200,
@@ -153,7 +130,7 @@ test.describe('未知模型显示名', () => {
       await route.continue()
     })
 
-    await page.goto('/project-detail.html?tab=meta')
+    await page.goto('/workspace-config.html?view=/settings/workspace')
     await dismissOnboardingIfOpen(page)
     await expect(page.getByTestId('project-meta-footer')).toBeVisible({ timeout: 15_000 })
 
@@ -180,122 +157,48 @@ test.describe('未知模型显示名', () => {
     await expect(input).toHaveValue('')
   })
 
-  test('看板排行/构成：别名无未知角标、非未知灰，同名两行不合并', async ({ page }) => {
+  function globalModelStats(stats: ReturnType<typeof aliasedTokenStats>) {
+    return {
+      ...stats,
+      kpi: { total: 180, inputTokens: 80, outputTokens: 60, cacheReadTokens: 20, cacheWriteTokens: 20, workflowTotal: 180, pmTotal: 0, runCount: 1, modelCount: 2 },
+      sources: [{ key: 'workflow', name: 'workflow', total: 180 }],
+      nodeTypes: [], topRuns: [], prevTrend: [], modelTrends: [],
+      filterOptions: { models: stats.modelRanking.map((model) => ({ key: model.modelKey, name: model.name })) },
+    }
+  }
+
+  test('用量统计：模型别名无未知角标、非未知灰，同名两行不合并', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await seedOnboardingDismissed(page, 'proj-1')
-
-    await page.route('**/api/stats/dashboard', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ running: 0, waitingHuman: 0, failed: 0, completed: 1 }),
-      })
-    })
-    await page.route('**/api/runs**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.continue()
-        return
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
-      })
-    })
-    await page.route('**/api/projects/*/token-stats**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(aliasedTokenStats()),
-      })
-    })
-
-    await page.goto('/board.html?start=project-board&memory=1&projectId=proj-1')
-    await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 15_000 })
-    await expect(page.getByTestId('token-stats-charts')).toBeVisible({ timeout: 10_000 })
-
-    const rank = page.getByTestId('token-model-rank')
-    await expect(rank).toBeVisible()
-    const rankRows = rank.locator('> li')
-    await expect(rankRows).toHaveCount(2)
-    // 两行都显示 gpt-5（真实桶 + 未知别名）；已设名后未知行无「未知」角标
-    await expect(rank).toContainText('gpt-5')
-    await expect(rank.getByTestId('unknown-model-badge')).toHaveCount(0)
-    await expect(rank).not.toContainText('未知/未分桶')
-    await expect(rank).not.toContainText('未知模型')
-    const unkRank = rank.locator('[data-unknown="1"]')
-    await expect(unkRank).toHaveCount(1)
-    // 条色非未知灰 #71717A
-    await expect(unkRank.locator('.h-full')).not.toHaveCSS('background-color', 'rgb(113, 113, 122)')
-
-    const legend = page.getByTestId('token-model-legend')
-    await expect(legend).toHaveCount(0)
-    const pie = page.getByTestId('token-model-pie')
-    await expect(pie).toBeVisible()
-    await expect(pie.locator('canvas')).toBeVisible()
-
-    await page.screenshot({
-      path: path.join(shotDir, '03-board-alias-no-badge.png'),
-      fullPage: false,
-    })
+    await routeApi(page, '**/api/stats/token**', async (route) => route.fulfill({ json: globalModelStats(aliasedTokenStats()) }))
+    await page.goto('/workspace-config.html?view=/stats')
+    const table = page.getByTestId('token-analytics-models-table')
+    await expect(table).toBeVisible()
+    const rows = table.locator('tbody tr')
+    await expect(rows).toHaveCount(2)
+    await expect(rows.nth(0)).toContainText('gpt-5')
+    await expect(rows.nth(1)).toContainText('gpt-5')
+    const unknownRow = table.locator('[data-unknown="1"]')
+    await expect(unknownRow).toHaveCount(1)
+    await expect(unknownRow).toHaveAttribute('data-model-key', '未知/未分桶')
+    await expect(table.getByTestId('unknown-model-badge')).toHaveCount(0)
+    await expect(unknownRow.locator('.token-model-swatch')).not.toHaveCSS('background-color', 'rgb(113, 113, 122)')
+    await expect(page.getByTestId('token-analytics-model-share').locator('canvas')).toBeVisible()
+    await page.screenshot({ path: path.join(shotDir, '03-usage-alias-no-badge.png'), fullPage: false })
   })
 
-  test('看板：未设显示名时未知桶仍有角标与灰色', async ({ page }) => {
+  test('用量统计：未设显示名时未知桶仍有角标与灰色', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 900 })
-    await seedOnboardingDismissed(page, 'proj-1')
-
-    const unnamedStats = {
-      ...aliasedTokenStats(),
-      modelComposition: [
-        { modelKey: 'gpt-5', name: 'gpt-5', total: 100 },
-        { modelKey: '未知/未分桶', name: '未知模型', total: 80, unknown: true },
-      ],
-      modelRanking: [
-        { modelKey: 'gpt-5', name: 'gpt-5', total: 100 },
-        { modelKey: '未知/未分桶', name: '未知模型', total: 80, unknown: true },
-      ],
-    }
-
-    await page.route('**/api/stats/dashboard', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ running: 0, waitingHuman: 0, failed: 0, completed: 1 }),
-      })
-    })
-    await page.route('**/api/runs**', async (route) => {
-      if (route.request().method() !== 'GET') {
-        await route.continue()
-        return
-      }
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
-      })
-    })
-    await page.route('**/api/projects/*/token-stats**', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/json',
-        body: JSON.stringify(unnamedStats),
-      })
-    })
-
-    await page.goto('/board.html?start=project-board&memory=1&projectId=proj-1')
-    await expect(page.getByTestId('token-model-rank')).toBeVisible({ timeout: 15_000 })
-
-    const rank = page.getByTestId('token-model-rank')
-    const unkRank = rank.locator('[data-unknown="1"]')
-    await expect(unkRank).toContainText('未知模型')
-    await expect(unkRank).not.toContainText('未知/未分桶')
-    await expect(unkRank.getByTestId('unknown-model-badge')).toHaveCount(1)
-    await expect(unkRank.locator('.h-full')).toHaveCSS('background-color', 'rgb(113, 113, 122)')
-
-    const pie = page.getByTestId('token-model-pie')
-    await expect(pie).toBeVisible()
-    await expect(pie.locator('canvas')).toBeVisible()
-    await expect(page.getByTestId('token-model-legend')).toHaveCount(0)
+    const stats = aliasedTokenStats()
+    stats.modelRanking[1] = { modelKey: '未知/未分桶', name: '未知模型', total: 80, unknown: true }
+    await routeApi(page, '**/api/stats/token**', async (route) => route.fulfill({ json: globalModelStats(stats) }))
+    await page.goto('/workspace-config.html?view=/stats')
+    const table = page.getByTestId('token-analytics-models-table')
+    const unknownRow = table.locator('[data-unknown="1"]')
+    await expect(unknownRow).toContainText('未知模型')
+    await expect(unknownRow).not.toContainText('未知/未分桶')
+    await expect(unknownRow.getByTestId('unknown-model-badge')).toHaveCount(1)
+    await expect(unknownRow.locator('.token-model-swatch')).toHaveCSS('background-color', 'rgb(113, 113, 122)')
+    await expect(page.getByTestId('token-analytics-model-share').locator('canvas')).toBeVisible()
   })
 
   test('Run 按模型明细：显示别名且无未知角标，来源列仍为未知模型', async ({ page }) => {
@@ -374,7 +277,7 @@ test.describe('未知模型显示名', () => {
       edges: [{ id: 'e1', source: 'start', target: 'research' }],
     }
 
-    await page.route('**/api/runs**', async (route) => {
+    await routeApi(page, '**/api/runs**', async (route) => {
       const url = new URL(route.request().url())
       const pathName = url.pathname
       if (pathName.endsWith('/events')) {
@@ -400,7 +303,7 @@ test.describe('未知模型显示名', () => {
       }
       await route.fulfill({ status: 404, json: { error: 'not mocked' } })
     })
-    await page.route('**/api/workflows/**', async (route) => {
+    await routeApi(page, '**/api/workflows/**', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -415,7 +318,7 @@ test.describe('未知模型显示名', () => {
         }),
       })
     })
-    await page.route('**/api/projects/proj-1', async (route) => {
+    await routeApi(page, '**/api/workspace', async (route) => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

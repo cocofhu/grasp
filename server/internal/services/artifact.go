@@ -220,8 +220,10 @@ func (s *ArtifactService) allQuery(f ArtifactFilter) *gorm.DB {
 		Select(`artifacts.id, artifacts.run_id, artifacts.node_id, artifacts.project_id, artifacts.workflow_id, artifacts.workflow_name,
 			artifacts.name, artifacts.kind, artifacts.size_bytes, artifacts.created_at, artifacts.updated_at, artifacts.revision,
 			runs.title as run_title`).
-		Joins("LEFT JOIN runs ON runs.id = artifacts.run_id").
-		Where("artifacts.project_id = ?", f.ProjectID)
+		Joins("LEFT JOIN runs ON runs.id = artifacts.run_id")
+	if f.ProjectID != "" {
+		query = query.Where("artifacts.project_id = ?", f.ProjectID)
+	}
 	if f.Session {
 		query = query.Where("(artifacts.workflow_id IS NULL OR artifacts.workflow_id = '')")
 	} else if f.WorkflowID != "" {
@@ -326,7 +328,7 @@ func (s *ArtifactService) Tree() ([]ArtifactTreeProject, error) {
 			COALESCE(artifacts.workflow_id, '') AS workflow_id,
 			COALESCE(MAX(workflow_defs.name), MAX(artifacts.workflow_name), '') AS workflow_name,
 			COUNT(*) AS count`).
-		Joins("JOIN projects ON projects.id = artifacts.project_id").
+		Joins("LEFT JOIN projects ON projects.id = artifacts.project_id").
 		Joins("LEFT JOIN workflow_defs ON workflow_defs.id = artifacts.workflow_id").
 		Group("artifacts.project_id, projects.name, COALESCE(artifacts.workflow_id, '')").
 		Order("projects.name, project_id, workflow_name").

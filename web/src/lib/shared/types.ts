@@ -57,6 +57,13 @@ export interface PublishedWorkflowSnapshot {
   edges: WFEdge[]
 }
 
+export interface WorkflowDefaults {
+  inheritWorkspace: boolean
+  variables: ProjectVariable[]
+  notifyPolicy?: ProjectNotifyPolicy
+  gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
+}
+
 export interface Workflow {
   id: string
   projectId?: string
@@ -81,6 +88,7 @@ export interface Workflow {
   /** Home cards + Home search; missing/false = hidden (plan g1.1). */
   showOnHome?: boolean
   notifyPolicy?: WorkflowNotifyPolicy
+  defaults?: WorkflowDefaults
   nodes: WFNode[]
   edges: WFEdge[]
   variables?: WorkflowGraph['variables']
@@ -202,7 +210,7 @@ export interface ProjectAuditStats {
   fail: number
 }
 
-/** Preset windows for board TokenStatsPanel (matches GET /token-stats). */
+/** Preset time windows for token usage analytics. */
 export type TokenStatsWindow = '24h' | '7d' | '30d' | '90d' | 'all'
 
 export interface TokenStatsBucket {
@@ -248,7 +256,7 @@ export interface TokenStatsWorkflow {
   cost?: number
 }
 
-/** One model bucket in project TokenStats (composition / ranking). */
+/** One model bucket in token usage composition and ranking. */
 export interface TokenStatsModel {
   modelKey?: string
   name: string
@@ -266,20 +274,6 @@ export interface TokenStatsModel {
   /** upstream | via ACP_BRIDGE_MODEL | unknown */
   source?: string
   cost?: number
-}
-
-/** Response of GET /projects/:id/token-stats */
-export interface ProjectTokenStats {
-  window: TokenStatsWindow | string
-  bucketWidth: 'hour' | 'day' | 'week' | string
-  timezone: string
-  /** true when no reported Usage in the window — do not draw forged zero charts */
-  empty: boolean
-  trend: TokenStatsBucket[]
-  composition: TokenStatsComposition
-  workflows: TokenStatsWorkflow[]
-  modelComposition?: TokenStatsModel[]
-  modelRanking?: TokenStatsModel[]
 }
 
 /** Response of GET /stats/token — global analytics page. */
@@ -589,6 +583,12 @@ export interface ChatThread {
   sandboxRef?: string
   createdAt: string
   updatedAt: string
+}
+
+/** PM response adds current Agent availability without persisting it in history. */
+export interface PmChatThread extends ChatThread {
+  agentAvailable: boolean
+  agentError?: string
 }
 
 export interface ChatMessage {

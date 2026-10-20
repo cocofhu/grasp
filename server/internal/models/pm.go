@@ -13,7 +13,7 @@ type ProjectMemoryItem struct {
 	ProjectID string `gorm:"index;uniqueIndex:idx_pm_mem_proj_agent_title" json:"projectId"`
 	// AgentName isolates memories per Agent within a project.
 	AgentName string    `gorm:"index;uniqueIndex:idx_pm_mem_proj_agent_title" json:"agentName"`
-	Title     string    `gorm:"uniqueIndex:idx_pm_mem_proj_agent_title" json:"title"`
+	Title     string    `gorm:"size:191;uniqueIndex:idx_pm_mem_proj_agent_title" json:"title"`
 	Content   string    `json:"content"`
 	Source    string    `json:"source"` // agent | user | admin | system
 	UpdatedBy string    `json:"updatedBy"`
@@ -100,7 +100,7 @@ type AttachedContext struct {
 // One draft per thread (unique ThreadID). Used for hydrate + catch-up resume.
 type ChatTurnDraft struct {
 	ID          string `gorm:"primaryKey" json:"id"`
-	ThreadID    string `gorm:"uniqueIndex" json:"threadId"`
+	ThreadID    string `gorm:"size:191;uniqueIndex" json:"threadId"`
 	UserMsgID   string `gorm:"index" json:"userMsgId"`
 	PartialText string `json:"partialText"`
 	// ChunkIndex is the number of agent_message_chunk texts accumulated so far.

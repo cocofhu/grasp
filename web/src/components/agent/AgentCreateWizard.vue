@@ -159,23 +159,6 @@ function setCliModel(id: string) {
                     />
                     <p v-if="nameError" class="mt-1.5 text-[12px] text-err">{{ nameError }}</p>
                   </label>
-                  <label class="mb-4 block max-w-[38rem]">
-                    <span class="mb-1.5 block text-[12px] font-medium text-txt2">
-                      {{ t('pages.agentStudio.project.label') }}
-                      <span class="text-err">*</span>
-                    </span>
-                    <select
-                      v-model="draft.projectId"
-                      data-testid="wizard-project-select"
-                      class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                      :disabled="creating"
-                      @change="projectError = ''"
-                    >
-                      <option value="" disabled>{{ t('pages.agentStudio.project.placeholder') }}</option>
-                      <option v-for="p in projects" :key="p.id" :value="p.id">{{ p.name }}</option>
-                    </select>
-                    <p v-if="projectError" class="mt-1.5 text-[12px] text-err">{{ projectError }}</p>
-                  </label>
                   <!-- plan g1 — workflow-style template dropdown; name stays independent (g1.4) -->
                   <div class="mb-4 block max-w-[38rem]">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
@@ -311,6 +294,7 @@ function setCliModel(id: string) {
               </div>
             </div>
 
+            <p v-if="projectError" class="px-5 pb-3 text-xs text-err" role="alert">{{ projectError }}</p>
             <div class="flex shrink-0 items-center justify-between gap-2 border-t border-line bg-surface px-5 py-3.5">
               <AppButton variant="ghost" :disabled="creating" @click="close">
                 {{ t('pages.agentStudio.dialogs.cancel') }}

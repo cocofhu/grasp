@@ -75,7 +75,7 @@ describe('radius zero clearance', () => {
 
   it('TokenAnalyticsView filter selects and clear use control rounded', () => {
     const src = read('views/TokenAnalyticsView.vue')
-    for (const id of ['project', 'model', 'workflow', 'node-type', 'status']) {
+    for (const id of ['model', 'workflow', 'node-type', 'status']) {
       expect(src).toMatch(
         new RegExp(`class="[^"]*\\brounded\\b[^"]*\\bborder border-line\\b[^"]*"\\s+data-testid="token-analytics-filter-${id}"`),
       )
@@ -183,17 +183,10 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/\bapp-sidebar-card\b/)
   })
 
-  it('ProjectAuditPanel scoped boxed controls use role radii (plan g3.2)', () => {
+  it('ProjectAuditPanel boxed search and export controls use role radii', () => {
     const src = read('components/project/ProjectAuditPanel.vue')
     expect(src).toMatch(/\.btn\s*\{[^}]*border-radius:\s*8px/s)
     expect(src).toMatch(/\.search\s*\{[^}]*border-radius:\s*8px/s)
-    expect(src).toMatch(/\.seg\s*\{[^}]*border-radius:\s*8px/s)
-    expect(src).toMatch(/\.event-card\s*\{[^}]*border-radius:\s*12px/s)
-  })
-
-  it('RequirementDraftsPanel .seg track is control 8px (plan g3.2)', () => {
-    const src = read('components/project/RequirementDraftsPanel.vue')
-    expect(src).toMatch(/\.seg\s*\{[^}]*border-radius:\s*8px/s)
   })
 
   it('LangSelect ghost trigger uses control rounded-md (plan g3.2)', () => {

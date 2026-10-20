@@ -430,7 +430,7 @@ watch(showCreate, (open) => {
 
 <template>
   <div
-    class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-b-0 border-line bg-surface shadow-[var(--shadow-card)]"
+    class="flex min-h-0 flex-1 flex-col overflow-hidden"
     data-testid="project-credentials-panel"
   >
     <div v-if="loading" class="flex flex-1 items-center justify-center text-[13px] text-txt3">
@@ -443,10 +443,10 @@ watch(showCreate, (open) => {
     </div>
 
     <template v-else>
-      <header class="flex shrink-0 flex-col gap-4 border-b border-line bg-surface px-4 py-5 sm:flex-row sm:items-start sm:justify-between sm:px-6 lg:px-8">
+      <header class="flex shrink-0 flex-col gap-4 border-b border-line/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0 max-w-3xl">
           <div class="flex items-center gap-2">
-            <span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-accent/35 bg-accent-dim text-accent-2">
+            <span class="flex h-8 w-8 shrink-0 items-center justify-center text-txt3">
               <Icon name="lock" :size="16" aria-hidden="true" />
             </span>
             <div>
@@ -470,18 +470,18 @@ watch(showCreate, (open) => {
       <div v-if="!orderedItems.length" class="flex flex-1 items-center justify-center px-6 py-12 text-center text-[13px] text-txt3">
         {{ t('pages.projectDetail.projectCredentials.empty') }}
       </div>
-      <div v-else class="scroll-area min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-6 lg:px-8">
+      <div v-else class="scroll-area min-h-0 flex-1 overflow-y-auto py-5">
         <div class="w-full space-y-6">
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-3" data-testid="project-credentials-summary">
-            <div class="rounded-lg border border-line bg-base/45 px-4 py-3">
+          <div class="grid grid-cols-3 gap-4 border-b border-line/60 pb-5" data-testid="project-credentials-summary">
+            <div class="min-w-0">
               <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.projectDetail.projectCredentials.summary.total') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-txt">{{ orderedItems.length }}</p>
             </div>
-            <div class="rounded-lg border border-line bg-base/45 px-4 py-3">
+            <div class="min-w-0">
               <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-txt3">{{ t('pages.projectDetail.projectCredentials.summary.configured') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-ok">{{ configuredCount }}<span class="ml-1 text-xs font-normal text-txt3">/ {{ orderedItems.length }}</span></p>
             </div>
-            <div class="rounded-lg border border-accent/25 bg-accent-dim/35 px-4 py-3">
+            <div class="min-w-0">
               <p class="m-0 text-[11px] font-medium uppercase tracking-[0.12em] text-accent-2">{{ t('pages.projectDetail.projectCredentials.summary.apiKeys') }}</p>
               <p class="mt-1 text-xl font-semibold tabular-nums text-txt">{{ apiKeyCount }}</p>
             </div>
@@ -499,7 +499,7 @@ watch(showCreate, (open) => {
 
             <div
               v-if="group.id === 'opencode'"
-              class="mb-3 rounded-xl border border-line bg-base/35 p-4 sm:p-5 lg:col-span-2 2xl:col-span-3"
+              class="mb-3 py-3"
             >
               <OpenCodeCredentialPicker
                 mode="manage"
@@ -510,11 +510,11 @@ watch(showCreate, (open) => {
               />
             </div>
 
-            <div class="grid min-w-0 grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
+            <div class="flex min-w-0 flex-col divide-y divide-line/60">
               <template v-for="item in group.items" :key="item.id">
                 <article
                   v-if="!isOpenCodeModelCredential(item)"
-                  class="min-w-0 rounded-xl border border-line bg-base/35 p-4 transition-[border-color,background-color] duration-[160ms] ease-[cubic-bezier(0.16,1,0.3,1)] hover:border-line-strong hover:bg-base/60"
+                  class="min-w-0 py-4"
                   data-testid="project-credential-row"
                   :data-credential-kind="kindOfItem(item)?.id || 'other'"
                 >
@@ -526,9 +526,9 @@ watch(showCreate, (open) => {
                       :configured="item.configured"
                     />
                     <div class="min-w-0 flex-1">
-                      <div class="flex min-w-0 items-start justify-between gap-3" data-testid="project-credential-headline">
+                      <div class="flex min-w-0 flex-wrap items-start justify-between gap-3" data-testid="project-credential-headline">
                         <div class="min-w-0">
-                          <h4 class="m-0 truncate text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="project-credential-alias">{{ itemLabel(item) }}</h4>
+                          <h4 class="m-0 break-words text-sm font-semibold text-txt" :title="itemLabel(item)" data-testid="project-credential-alias">{{ itemLabel(item) }}</h4>
                           <p class="m-0 mt-1 text-[10px] font-medium uppercase tracking-[0.1em] text-txt3" data-testid="project-credential-kind">{{ typeLabel(item) }}</p>
                         </div>
                         <div class="flex shrink-0 flex-wrap items-center justify-end gap-2" data-testid="project-credential-actions">
@@ -591,7 +591,7 @@ watch(showCreate, (open) => {
                     </div>
                   </div>
 
-                  <p v-if="!isProjectEditable(item)" class="mt-3 rounded-lg border border-line bg-surface px-3 py-2 text-[11px] leading-5 text-txt3">
+                  <p v-if="!isProjectEditable(item)" class="mt-3 text-[11px] leading-5 text-txt3">
                     {{ t('pages.projectDetail.projectCredentials.managedByAdapter', { source: item.source }) }}
                   </p>
                   <div

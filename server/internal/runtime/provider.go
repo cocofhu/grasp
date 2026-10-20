@@ -102,7 +102,8 @@ type Options struct {
 	// WriteBackCodexLoginFile replaces the project's Codex login file when a
 	// run's auth.json changed. Nil skips write-back (tests). The callback must
 	// not log the file body.
-	WriteBackCodexLoginFile func(projectID, content string) error
+	WriteBackCodexLoginFile func(projectID, credentialID, content string) error
+	InjectedCredentialID    func(projectID, envKey, value string) string
 }
 
 // SharedAgentView is the runtime-facing slice of project shared Agent config

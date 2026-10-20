@@ -25,7 +25,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	hn.h.PmProgress = progress
 	hn.h.PMMCP = pmmcp.NewHost(pm, progress, nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "PMProj"})
+	w := hn.seedWorkspace(map[string]any{"name": "PMProj"})
 	if w.Code != 200 {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
 	}
@@ -33,31 +33,31 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "no-such-agent",
 	})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("enable missing agent: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": false, "agentConfigRef": "",
 	})
 	if w.Code != 200 {
 		t.Fatalf("disable: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm-leader", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm-leader", nil)
 	if w.Code != 200 {
 		t.Fatalf("get binding: %d", w.Code)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
 	if w.Code != 200 {
 		t.Fatalf("list memories: %d", w.Code)
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("create thread while disabled want 409 got %d %s", w.Code, w.Body.String())
 	}
@@ -65,14 +65,14 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-demo", ProjectID: pid}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-demo",
 	})
 	if w.Code != 200 {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "问进度"})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "问进度"})
 	if w.Code != 200 {
 		t.Fatalf("create thread: %d %s", w.Code, w.Body.String())
 	}
@@ -80,14 +80,14 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", map[string]any{
 		"role": "user", "content": "整体进度如何？",
 	})
 	if w.Code != 200 {
 		t.Fatalf("append message: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages", nil)
 	if w.Code != 200 {
 		t.Fatalf("list messages: %d", w.Code)
 	}
@@ -106,7 +106,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 		t.Fatalf("default status=%v", msgResp.Items[0]["status"])
 	}
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages/"+mid, map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/pm/threads/"+tid+"/messages/"+mid, map[string]any{
 		"status": "failed", "failKind": "connection",
 	})
 	if w.Code != 200 {
@@ -118,7 +118,7 @@ func TestPmLeaderBindingMemoryAndThreadGate(t *testing.T) {
 		t.Fatalf("patched=%v", patched)
 	}
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages/"+mid, map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/pm/threads/"+tid+"/messages/"+mid, map[string]any{
 		"status": "ok",
 	})
 	if w.Code != 200 {
@@ -138,7 +138,7 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": name})
+	w := hn.seedWorkspace(map[string]any{"name": name})
 	if w.Code != 200 {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
 	}
@@ -148,13 +148,13 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-" + name, ProjectID: pid}); err != nil {
 		t.Fatalf("create agent: %v", err)
 	}
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-" + name,
 	})
 	if w.Code != 200 {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "t"})
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "t"})
 	if w.Code != 200 {
 		t.Fatalf("thread: %d %s", w.Code, w.Body.String())
 	}
@@ -166,8 +166,9 @@ func setupPmTurnThread(t *testing.T, hn *harness, name string) (pm *services.PmS
 func TestStartPmTurnValidatesAndMarksRejected(t *testing.T) {
 	hn := newHarness(t)
 	pm, pid, tid := setupPmTurnThread(t, hn, "TurnReject")
+	_ = pid
 	hn.h.PmTurns = services.NewPmTurnRunner(pm, nil)
-	base := "/api/projects/" + pid + "/pm/threads/" + tid
+	base := "/api/workspace/pm/threads/" + tid
 
 	if w := hn.do(http.MethodPost, base+"/turns", map[string]any{"content": "  "}); w.Code != http.StatusBadRequest {
 		t.Fatalf("empty content: %d %s", w.Code, w.Body.String())
@@ -211,11 +212,12 @@ func (stubPmChat) Cancel(uint) {}
 func TestStartPmTurnQueuesAndRetry(t *testing.T) {
 	hn := newHarness(t)
 	pm, pid, tid := setupPmTurnThread(t, hn, "TurnQueue")
+	_ = pid
 	hn.fg.FailCreate = true
 	runner := services.NewPmTurnRunner(pm, nil)
 	runner.SetChatterForTest(stubPmChat{})
 	hn.h.PmTurns = runner
-	base := "/api/projects/" + pid + "/pm/threads/" + tid
+	base := "/api/workspace/pm/threads/" + tid
 
 	w := hn.do(http.MethodPost, base+"/turns", map[string]any{"content": "进度？"})
 	if w.Code != http.StatusOK {
@@ -280,16 +282,17 @@ func TestPmLeaderNonAdminForbidden(t *testing.T) {
 	hn.h.Pm = pm
 	hn.h.PMMCP = pmmcp.NewHost(pm, services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts), nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "NoAdminProj"})
+	w := hn.seedWorkspace(map[string]any{"name": "NoAdminProj"})
 	if w.Code != 200 {
 		t.Fatalf("create: %d", w.Code)
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
+	_ = pid
 
 	// Non-admin may enable/disable PM Leader binding.
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": false,
 	})
 	if w.Code != http.StatusOK {
@@ -305,7 +308,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 	hn.h.Pm = pm
 	hn.h.PMMCP = pmmcp.NewHost(pm, services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts), nil, hn.h.Runs, hn.h.Arts, nil)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "MemScopeProj"})
+	w := hn.seedWorkspace(map[string]any{"name": "MemScopeProj"})
 	if w.Code != 200 {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -325,7 +328,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
 	if w.Code != 200 {
 		t.Fatalf("admin list: %d %s", w.Code, w.Body.String())
 	}
@@ -337,7 +340,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 		t.Fatalf("admin want 2 items got %d", len(all.Items))
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories?agent=agent-b", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/memories?agent=agent-b", nil)
 	if w.Code != 200 {
 		t.Fatalf("admin filter: %d", w.Code)
 	}
@@ -358,7 +361,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 	cfg.Auth.Users = users
 	config.StoreConfig(cfg)
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories?agent=agent-b", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/memories?agent=agent-b", nil)
 	if w.Code != 200 {
 		t.Fatalf("non-admin list: %d %s", w.Code, w.Body.String())
 	}
@@ -375,7 +378,7 @@ func TestListPmMemoriesScopedByRole(t *testing.T) {
 	if _, err := pm.UpdateBinding(pid, &dis, &empty, nil, nil, nil); err != nil {
 		t.Fatal(err)
 	}
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/memories", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/memories", nil)
 	if w.Code != 200 {
 		t.Fatalf("unbound list: %d", w.Code)
 	}
@@ -395,15 +398,16 @@ func TestUpdatePmLeaderEnabledMcps(t *testing.T) {
 	pm := services.NewPmService(hn.db, nil)
 	hn.h.Pm = pm
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "McpBindProj"})
+	w := hn.seedWorkspace(map[string]any{"name": "McpBindProj"})
 	if w.Code != 200 {
 		t.Fatalf("create: %d", w.Code)
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
+	_ = pid
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "agent-a",
 		"enabledMcps": []string{"pm-progress", "memory-store", "pm-workflow-read"},
 	})
@@ -427,7 +431,7 @@ func TestUpdatePmLeaderEnabledMcps(t *testing.T) {
 		}
 	}
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabledMcps": []string{"pm-workflow-read"},
 	})
 	if w.Code != 200 {
@@ -438,7 +442,7 @@ func TestUpdatePmLeaderEnabledMcps(t *testing.T) {
 		t.Fatalf("got %v", binding.EnabledMcps)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm-leader", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm-leader", nil)
 	if w.Code != 200 {
 		t.Fatalf("get: %d", w.Code)
 	}
@@ -455,7 +459,7 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronProjA"})
+	w := hn.seedWorkspace(map[string]any{"name": "CronProjA"})
 	if w.Code != 200 {
 		t.Fatalf("create a: %d %s", w.Code, w.Body.String())
 	}
@@ -463,13 +467,13 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &projA)
 	pidA := projA["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronProjB"})
+	w = hn.seedWorkspace(map[string]any{"name": "CronProjB"})
 	if w.Code != 200 {
 		t.Fatalf("create b: %d", w.Code)
 	}
 	var projB map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := projB["id"].(string)
+	pidB := "foreign"
 
 	now := time.Now().UTC()
 	jobs := []models.AgentCronJob{
@@ -495,7 +499,7 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 		}
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pidA+"/cron-jobs", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("list: %d %s", w.Code, w.Body.String())
 	}
@@ -520,16 +524,16 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 		t.Fatalf("want both agents, got %v", agents)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pidB+"/cron-jobs", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("list b: %d", w.Code)
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &list)
-	if len(list.Items) != 1 || list.Items[0].ID != "cron-b1" {
-		t.Fatalf("project B isolation: %+v", list.Items)
+	if len(list.Items) != 2 {
+		t.Fatalf("workspace must keep both agents: %+v", list.Items)
 	}
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pidA+"/cron-jobs/cron-a1", map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-a1", map[string]any{
 		"deliverToChannel": true,
 	})
 	if w.Code != 200 {
@@ -549,7 +553,7 @@ func TestProjectCronJobsListAndPatch(t *testing.T) {
 		t.Fatal("deliverToChannel not persisted")
 	}
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pidA+"/cron-jobs/cron-b1", map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-b1", map[string]any{
 		"deliverToChannel": true,
 	})
 	if w.Code != http.StatusNotFound {
@@ -564,7 +568,7 @@ func TestProjectCronJobsPatchAllowedForNonAdmin(t *testing.T) {
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronNoAdmin"})
+	w := hn.seedWorkspace(map[string]any{"name": "CronNoAdmin"})
 	if w.Code != 200 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -591,12 +595,12 @@ func TestProjectCronJobsPatchAllowedForNonAdmin(t *testing.T) {
 	cfg.Auth.Users = users
 	config.StoreConfig(cfg)
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/cron-jobs", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("non-admin list want 200 got %d", w.Code)
 	}
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pid+"/cron-jobs/cron-na1", map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/cron-jobs/cron-na1", map[string]any{
 		"deliverToChannel": true,
 	})
 	if w.Code != 200 {
@@ -624,7 +628,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronDelA"})
+	w := hn.seedWorkspace(map[string]any{"name": "CronDelA"})
 	if w.Code != 200 {
 		t.Fatalf("create a: %d %s", w.Code, w.Body.String())
 	}
@@ -632,13 +636,13 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &projA)
 	pidA := projA["id"].(string)
 
-	w = hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronDelB"})
+	w = hn.seedWorkspace(map[string]any{"name": "CronDelB"})
 	if w.Code != 200 {
 		t.Fatalf("create b: %d", w.Code)
 	}
 	var projB map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := projB["id"].(string)
+	pidB := "foreign"
 
 	now := time.Now().UTC()
 	thread := models.ChatThread{
@@ -683,7 +687,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 		t.Fatalf("seed other: %v", err)
 	}
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pidA+"/cron-jobs/cron-del-other", nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-other", nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("cross-project delete want 404 got %d %s", w.Code, w.Body.String())
 	}
@@ -692,7 +696,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 		t.Fatalf("cross-project delete must not remove other job: %v", err)
 	}
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pidA+"/cron-jobs/cron-del-1", nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-1", nil)
 	if w.Code != 200 {
 		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
 	}
@@ -730,7 +734,7 @@ func TestProjectCronJobsDeleteCleansRunsAndThread(t *testing.T) {
 		t.Fatalf("want drafts cleaned, got %d", draftCount)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pidA+"/cron-jobs", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/cron-jobs", nil)
 	if w.Code != 200 {
 		t.Fatalf("list after delete: %d", w.Code)
 	}
@@ -750,7 +754,7 @@ func TestProjectCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
 	pm := services.NewPmService(hn.db, hn.h.Agents)
 	hn.h.Pm = pm
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "CronDelNoAdmin"})
+	w := hn.seedWorkspace(map[string]any{"name": "CronDelNoAdmin"})
 	if w.Code != 200 {
 		t.Fatalf("create: %d", w.Code)
 	}
@@ -777,7 +781,7 @@ func TestProjectCronJobsDeleteAllowedForNonAdmin(t *testing.T) {
 	cfg.Auth.Users = users
 	config.StoreConfig(cfg)
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/cron-jobs/cron-del-na1", nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/cron-jobs/cron-del-na1", nil)
 	if w.Code != 200 {
 		t.Fatalf("non-admin delete want 200 got %d %s", w.Code, w.Body.String())
 	}
@@ -795,18 +799,19 @@ func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
 	hn.h.Pm = pm
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "PmHTTP"})
+	w := hn.seedWorkspace(map[string]any{"name": "PmHTTP"})
 	if w.Code != 200 {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
+
 	// A PM Leader must have this project as its home project (Agent↔project binding).
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/pm-leader", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{
 		"enabled": true, "agentConfigRef": "pm-agent",
 	})
 	if w.Code != 200 {
@@ -817,8 +822,9 @@ func setupPmEnabledHarness(t *testing.T) (*harness, string, string) {
 
 func TestPmThreadCRUDAndMessages(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
+	_ = pid
 
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "进度"})
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "进度"})
 	if w.Code != 200 {
 		t.Fatalf("create thread: %d %s", w.Code, w.Body.String())
 	}
@@ -826,24 +832,24 @@ func TestPmThreadCRUDAndMessages(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads", nil)
 	if w.Code != 200 {
 		t.Fatalf("list threads: %d", w.Code)
 	}
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid, nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid, nil)
 	if w.Code != 200 {
 		t.Fatalf("get thread: %d %s", w.Code, w.Body.String())
 	}
 
 	for i := 0; i < 3; i++ {
-		w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
+		w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", map[string]any{
 			"role": "user", "content": "msg",
 		})
 		if w.Code != 200 {
 			t.Fatalf("append %d: %d %s", i, w.Code, w.Body.String())
 		}
 	}
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid+"/messages", nil)
 	if w.Code != 200 {
 		t.Fatalf("list messages: %d", w.Code)
 	}
@@ -855,11 +861,11 @@ func TestPmThreadCRUDAndMessages(t *testing.T) {
 		t.Fatalf("messages=%d", len(msgs.Items))
 	}
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/threads/"+tid, nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/pm/threads/"+tid, nil)
 	if w.Code != 200 {
 		t.Fatalf("delete thread: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+tid, nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+tid, nil)
 	if w.Code != http.StatusNotFound {
 		t.Fatalf("get deleted want 404 got %d", w.Code)
 	}
@@ -867,14 +873,15 @@ func TestPmThreadCRUDAndMessages(t *testing.T) {
 
 func TestPatchPmMessageFailureMetadata(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "patch"})
+	_ = pid
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "patch"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var thr map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &thr)
 	tid := thr["id"].(string)
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+tid+"/messages", map[string]any{
 		"role": "user", "content": "fail me",
 	})
 	if w.Code != 200 {
@@ -884,13 +891,13 @@ func TestPatchPmMessageFailureMetadata(t *testing.T) {
 	_ = json.Unmarshal(w.Body.Bytes(), &msg)
 	mid := msg["id"].(string)
 
-	w = hn.do(http.MethodPatch, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages/"+mid, map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/pm/threads/"+tid+"/messages/"+mid, map[string]any{
 		"status": "failed", "failKind": "connection",
 	})
 	if w.Code != 200 {
 		t.Fatalf("patch: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPatch, "/api/projects/"+pid+"/pm/threads/"+tid+"/messages/missing", map[string]any{
+	w = hn.do(http.MethodPatch, "/api/workspace/pm/threads/"+tid+"/messages/missing", map[string]any{
 		"status": "failed",
 	})
 	if w.Code != http.StatusNotFound {
@@ -903,14 +910,15 @@ func TestPmThreadDisabledReturnsConflict(t *testing.T) {
 	enableAdmin(t)
 	pm := services.NewPmService(hn.db, nil)
 	hn.h.Pm = pm
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "DisabledPM"})
+	w := hn.seedWorkspace(map[string]any{"name": "DisabledPM"})
 	if w.Code != 200 {
 		t.Fatal(w.Body.String())
 	}
 	var proj map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &proj)
 	pid := proj["id"].(string)
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{})
+	_ = pid
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("disabled thread create want 409 got %d", w.Code)
 	}
@@ -918,6 +926,7 @@ func TestPmThreadDisabledReturnsConflict(t *testing.T) {
 
 func TestPmChannelThreadWriteDeleteForbidden(t *testing.T) {
 	hn, pid, _ := setupPmEnabledHarness(t)
+
 	hn.h.PmTurns = services.NewPmTurnRunner(hn.h.Pm, hn.h.Sbx)
 
 	channel, err := hn.h.Pm.CreateThread(pid, "qq:guild:ch1", "频道会话", "pm-agent", "user")
@@ -925,7 +934,7 @@ func TestPmChannelThreadWriteDeleteForbidden(t *testing.T) {
 		t.Fatalf("create channel thread: %v", err)
 	}
 
-	w := hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads", map[string]any{"title": "Web会话"})
+	w := hn.do(http.MethodPost, "/api/workspace/pm/threads", map[string]any{"title": "Web会话"})
 	if w.Code != 200 {
 		t.Fatalf("create web thread: %d %s", w.Code, w.Body.String())
 	}
@@ -943,24 +952,24 @@ func TestPmChannelThreadWriteDeleteForbidden(t *testing.T) {
 		}
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+channel.ID+"/messages", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+channel.ID+"/messages", map[string]any{
 		"role": "user", "content": "不应发送",
 	})
 	assertChannelReadOnly(t, "append channel", w.Code, w.Body.String())
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/threads/"+channel.ID, nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/pm/threads/"+channel.ID, nil)
 	assertChannelReadOnly(t, "delete channel", w.Code, w.Body.String())
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/pm/threads/"+channel.ID+"/chat", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/pm/threads/"+channel.ID+"/chat", nil)
 	assertChannelReadOnly(t, "ws chat channel", w.Code, w.Body.String())
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/pm/threads/"+webTID+"/messages", map[string]any{
+	w = hn.do(http.MethodPost, "/api/workspace/pm/threads/"+webTID+"/messages", map[string]any{
 		"role": "user", "content": "web ok",
 	})
 	if w.Code != 200 {
 		t.Fatalf("append web: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/pm/threads/"+webTID, nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/pm/threads/"+webTID, nil)
 	if w.Code != 200 {
 		t.Fatalf("delete web: %d %s", w.Code, w.Body.String())
 	}

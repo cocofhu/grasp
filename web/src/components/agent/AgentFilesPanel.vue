@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed, onBeforeUnmount, onMounted, reactive, ref, toRefs, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -12,6 +13,33 @@ import type { AgentFilesPanelProps, AgentFilesPanelEmit } from '@/lib/agent/useA
 
 const props = defineProps<AgentFilesPanelProps>()
 const emit = defineEmits<AgentFilesPanelEmit>()
+
+const panelEl = ref<HTMLElement | null>(null)
+const panelWidth = ref(0)
+const compactFiles = computed(() => props.isMobile || (panelWidth.value > 0 && panelWidth.value < 640))
+const modalHistory = computed(() => !props.isMobile && panelWidth.value > 0 && panelWidth.value < 1000)
+const showHistory = ref(false)
+// Reuse the established list/edit flow when the surrounding directories leave
+// too little room for both a file explorer and an editor.
+const responsiveProps = reactive({ ...toRefs(props), isMobile: compactFiles })
+let resizeObserver: ResizeObserver | undefined
+function measurePanel() {
+  const width = panelEl.value?.getBoundingClientRect().width ?? 0
+  if (width > 0) panelWidth.value = width
+}
+onMounted(() => {
+  measurePanel()
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(measurePanel)
+    if (panelEl.value) resizeObserver.observe(panelEl.value)
+  }
+  window.addEventListener('resize', measurePanel)
+})
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect()
+  window.removeEventListener('resize', measurePanel)
+})
+watch([() => props.agentName, modalHistory], () => { showHistory.value = false })
 
 const {
   t,
@@ -92,7 +120,15 @@ const {
   onDocumentClick,
   onChromeReposition,
   onChromeKeydown,
-} = useAgentFilesPanel(props, emit)
+} = useAgentFilesPanel(responsiveProps, emit)
+
+const filesGridStyle = computed(() => {
+  if (compactFiles.value) return undefined
+  if (modalHistory.value) {
+    return { gridTemplateColumns: `${explorerCollapsed.value ? '28px' : '240px'} minmax(0, 1fr)` }
+  }
+  return workspaceGridStyle.value
+})
 
 defineExpose({
   filesStep, resetForSelect, snapshot, restoreAfterDiscard, closeExplorerMore, selectDefaultFile,
@@ -101,45 +137,53 @@ defineExpose({
 </script>
 
 <template>
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+  <div ref="panelEl" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="agent-files-panel">
+  <div v-if="modalHistory && agentName" class="flex shrink-0 justify-end border-b border-line/60 px-3 py-1">
+    <button
+      type="button"
+      data-testid="compact-history-open"
+      class="min-h-9 text-[12px] text-txt2 hover:text-txt"
+      @click="showHistory = true"
+    >{{ t('pages.agentStudio.workspaceHistory.title') }}</button>
+  </div>
   <div
     class="min-h-0 flex-1 overflow-hidden transition-[grid-template-columns] duration-[var(--dur-ui)] ease-[var(--ease-out-expo)]"
-    :class="isMobile ? 'flex flex-col' : 'grid'"
-    :style="isMobile ? undefined : workspaceGridStyle"
+    :class="compactFiles ? 'flex flex-col' : 'grid'"
+    :style="filesGridStyle"
   >
         <!-- explorer (list step on mobile) -->
         <div
-          v-if="!isMobile || filesStep === 'list'"
-          class="flex min-h-0 min-w-0 flex-col bg-base/30"
-          :class="isMobile ? 'flex-1' : 'border-r border-line'"
+          v-if="!compactFiles || filesStep === 'list'"
+          class="flex min-h-0 min-w-0 flex-col"
+          :class="compactFiles ? 'flex-1' : 'border-r border-line'"
         >
           <div
             class="flex shrink-0 items-center gap-0.5 border-b border-line px-2 py-1.5"
             :class="[
-              isMobile ? 'min-h-11' : 'min-h-8',
-              explorerCollapsed && !isMobile ? 'justify-center px-[3px]' : '',
+              compactFiles ? 'min-h-11' : 'min-h-8',
+              explorerCollapsed && !compactFiles ? 'justify-center px-[3px]' : '',
             ]"
           >
             <span
-              v-if="!explorerCollapsed || isMobile"
+              v-if="!explorerCollapsed || compactFiles"
               class="flex-1 truncate px-1 text-[10.5px] font-semibold uppercase tracking-wider text-txt3"
             >{{ t('pages.agentStudio.explorer.title') }}</span>
-            <template v-if="!explorerCollapsed || isMobile">
+            <template v-if="!explorerCollapsed || compactFiles">
               <button
                 class="rounded p-1 text-txt3 hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none"
-                :class="isMobile ? 'min-h-11 min-w-11' : ''"
+                :class="compactFiles ? 'min-h-11 min-w-11' : ''"
                 :title="t('pages.agentStudio.explorer.newFile')"
                 @click="newFile('')"
               ><Icon name="doc" :size="13" /></button>
               <button
                 class="rounded p-1 text-txt3 hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none"
-                :class="isMobile ? 'min-h-11 min-w-11' : ''"
+                :class="compactFiles ? 'min-h-11 min-w-11' : ''"
                 :title="t('pages.agentStudio.explorer.newFolder')"
                 @click="newFolder('')"
               ><Icon name="folder" :size="13" /></button>
               <input ref="folderInput" type="file" webkitdirectory directory multiple class="hidden" @change="onFolderPick" />
               <button
-                v-if="!isMobile"
+                v-if="!compactFiles"
                 type="button"
                 :class="collapseBtnClass"
                 :title="t('pages.agentStudio.explorer.collapse')"
@@ -150,7 +194,7 @@ defineExpose({
               </button>
             </template>
             <button
-              v-if="explorerCollapsed && !isMobile"
+              v-if="explorerCollapsed && !compactFiles"
               type="button"
               :class="collapseBtnClass"
               :title="t('pages.agentStudio.explorer.expand')"
@@ -161,7 +205,7 @@ defineExpose({
             </button>
           </div>
           <div
-            v-if="!explorerCollapsed || isMobile"
+            v-if="!explorerCollapsed || compactFiles"
             class="scroll-area min-h-0 flex-1 overflow-y-auto py-1"
             @contextmenu="onExplorerBlankCtx"
           >
@@ -187,7 +231,7 @@ defineExpose({
             <div
               class="group relative flex w-full items-center gap-1 pr-1.5 text-left text-[12px] transition"
               :class="[
-                isMobile ? 'min-h-11 py-2' : 'py-[3px]',
+                compactFiles ? 'min-h-11 py-2' : 'py-[3px]',
                 !row.dir && activePath === row.path ? 'bg-accent-dim text-txt' : 'text-txt2 hover:bg-elevated',
                 ctxMenu.target?.path === row.path ? 'bg-overlay outline outline-1 outline-accent/35' : '',
               ]"
@@ -227,7 +271,7 @@ defineExpose({
                   <span class="truncate font-mono">{{ row.name }}</span>
                 </button>
                 <button
-                  v-if="isMobile"
+                  v-if="compactFiles"
                   type="button"
                   data-test="file-row-more"
                   :data-path="row.path"
@@ -292,14 +336,14 @@ defineExpose({
 
         <!-- editor pane (edit step on mobile) -->
         <div
-          v-if="!isMobile || filesStep === 'edit'"
+          v-if="!compactFiles || filesStep === 'edit'"
           class="flex min-h-0 min-w-0 flex-col overflow-hidden"
-          :class="isMobile ? 'flex-1' : ''"
+          :class="compactFiles ? 'flex-1' : ''"
         >
           <!-- mobile edit chrome: back + path -->
           <div
-            v-if="isMobile"
-            class="flex shrink-0 items-center gap-2 border-b border-line bg-base/25 px-2.5 py-2 min-h-12"
+            v-if="compactFiles"
+            class="flex shrink-0 items-center gap-2 border-b border-line/60 px-2.5 py-2 min-h-12"
           >
             <button
               type="button"
@@ -314,8 +358,8 @@ defineExpose({
 
           <!-- open-file tabs (desktop only; mobile uses single-file full-screen edit) -->
           <div
-            v-if="!isMobile && openTabs.length"
-            class="scroll-area flex shrink-0 items-stretch overflow-x-auto border-b border-line bg-base/40"
+            v-if="!compactFiles && openTabs.length"
+            class="scroll-area flex shrink-0 items-stretch overflow-x-auto border-b border-line/60"
           >
             <div
               v-for="tabFile in openTabs"
@@ -333,7 +377,7 @@ defineExpose({
           <template v-if="currentFile">
             <!-- breadcrumb (desktop) -->
             <div
-              v-if="!isMobile"
+              v-if="!compactFiles"
               class="flex shrink-0 items-center gap-1 border-b border-line px-3 py-1 text-[11px] text-txt3"
             >
               <Icon name="folder" :size="11" class="text-accent-2/70" />
@@ -347,19 +391,19 @@ defineExpose({
                 v-if="isMdPath(currentFile.path)"
                 v-model="currentFile.content"
                 :file-path="currentFile.path"
-                :variant="isMobile ? 'stack' : 'split'"
+                :variant="compactFiles ? 'stack' : 'split'"
               />
               <CodeEditor v-else v-model="currentFile.content" :language="langForPath(currentFile.path)" />
             </div>
             <!-- status bar -->
             <div
-              class="flex shrink-0 items-center gap-3 border-t border-line bg-base/40 px-3 py-1 text-[10.5px] text-txt3"
+              class="flex shrink-0 items-center gap-3 border-t border-line/60 px-3 py-1 text-[10.5px] text-txt3"
             >
               <span class="uppercase">{{ langForPath(currentFile.path) }}</span>
               <span>{{ t('common.format.lines', { n: currentFile.content.split('\n').length }) }}</span>
               <span>{{ t('common.format.chars', { n: currentFile.content.length }) }}</span>
               <span
-                v-if="!isMobile && isMdPath(currentFile.path)"
+                v-if="!compactFiles && isMdPath(currentFile.path)"
                 class="rounded-md border border-line bg-elevated px-1.5 text-[10px] text-txt2"
               >{{ t('pages.agentStudio.explorer.markdownBadge') }}</span>
               <span class="ml-auto truncate font-mono">{{ currentFile.path }}</span>
@@ -372,9 +416,9 @@ defineExpose({
         </div>
 
         <AgentWorkspaceHistoryPanel
-          v-if="!isMobile && agentName"
+          v-if="!compactFiles && !modalHistory && agentName"
           :agent-name="agentName"
-          :is-mobile="isMobile"
+          :is-mobile="compactFiles"
           :file-path="activePath"
           :collapsed="historyCollapsed"
           :refresh-key="historyRefreshKey"
@@ -382,6 +426,27 @@ defineExpose({
           @restored="emit('restored')"
         />
   </div>
+
+    <AppModal
+      :open="showHistory && modalHistory"
+      :title="t('pages.agentStudio.workspaceHistory.title')"
+      :width="640"
+      body-overflow="hidden"
+      @close="showHistory = false"
+    >
+      <div v-if="showHistory && agentName" class="flex h-[min(60dvh,520px)] min-h-0 flex-col">
+        <AgentWorkspaceHistoryPanel
+          class="flex-1 border-l-0"
+          :agent-name="agentName"
+          :is-mobile="false"
+          :file-path="activePath"
+          :collapsed="false"
+          :refresh-key="historyRefreshKey"
+          @toggle-collapse="showHistory = false"
+          @restored="emit('restored')"
+        />
+      </div>
+    </AppModal>
 
     <AppModal
       :open="!!leaveConfirmCfg"
@@ -412,13 +477,13 @@ defineExpose({
 
     <Teleport to="body">
       <div
-        v-if="isMobile && explorerMore"
+        v-if="compactFiles && explorerMore"
         data-test="explorer-more-backdrop"
         class="fixed inset-0 z-[9998]"
         @click="closeExplorerMore"
       />
       <div
-        v-if="isMobile && explorerMore"
+        v-if="compactFiles && explorerMore"
         data-test="explorer-more-menu"
         class="rounded-lg fixed z-[9999] min-w-[180px] border border-line bg-elevated py-1 shadow-card"
         :style="explorerMoreStyle"

@@ -135,7 +135,7 @@ defineExpose({ reload: loadHistory })
 <template>
   <div
     v-if="!isMobile"
-    class="flex min-h-0 min-w-0 flex-col border-l border-line bg-base/30"
+    class="flex min-h-0 min-w-0 flex-col border-l border-line/60"
     data-test="workspace-history-panel"
   >
   <template v-if="collapsed">
@@ -201,10 +201,10 @@ defineExpose({ reload: loadHistory })
         v-for="rev in filteredRevisions"
         :key="rev.sha"
         type="button"
-        class="mb-1 w-full rounded-lg border px-2 py-2 text-left transition-[background-color,border-color] duration-[var(--dur-ui)] ease-out"
+        class="w-full border-b border-line/60 px-2 py-3 text-left transition-colors duration-[var(--dur-ui)] ease-out"
         :class="rev.sha === selectedSha && showDiffModal
-          ? 'border-accent/35 bg-accent-dim'
-          : 'border-transparent hover:border-accent/25 hover:bg-accent-dim/60'"
+          ? 'bg-elevated text-txt'
+          : 'hover:bg-elevated/50'"
         :title="rev.reason"
         data-test="history-revision-row"
         :data-sha="rev.sha"

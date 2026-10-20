@@ -65,7 +65,7 @@ export function onboardingRoleNames(lang: AppLocale): string[] {
   return ONBOARDING_TEMPLATES.map((t) => (lang === 'en' ? ONBOARDING_ROLE_NAMES_EN[t.id] : t.label))
 }
 
-export type OnboardingMode = 'firstInstall' | 'createProject' | 'retry'
+export type OnboardingMode = 'firstInstall' | 'retry'
 
 export type OnboardingStepId = 'prefs' | 'model' | 'key' | 'git' | 'team' | 'workflow' | 'done'
 
@@ -327,44 +327,19 @@ export function sanitizeOnboardingPrefix(projectName: string): string {
   return validateAgentName(out) === '' ? out : ''
 }
 
-/** Agent names that bootstrap will create for this project. */
-export function deriveOnboardingAgentNames(projectId: string, projectName: string, lang: AppLocale = 'zh-CN'): string[] {
-  const roles = onboardingRoleNames(lang)
-  if (projectId === DEFAULT_PROJECT_ID) return roles
-  const prefix = sanitizeOnboardingPrefix(projectName)
-  if (!prefix) return []
-  return roles.map((n) => prefix + n)
+/** Agent role names used when bootstrapping an empty workspace. */
+export function deriveOnboardingAgentNames(_workspaceId: string, _workspaceName: string, lang: AppLocale = 'zh-CN'): string[] {
+  return onboardingRoleNames(lang)
 }
 
-function hasOnboardingNameConflict(
-  agents: { name?: string; projectId?: string }[],
-  projectId: string,
-  names: readonly string[],
-): boolean {
-  return agents.some((a) => {
-    const name = (a.name || '').trim()
-    if (!name || !(names as readonly string[]).includes(name)) return false
-    return (a.projectId || '').trim() !== projectId
-  })
-}
-
-/**
- * Empty project eligible for install CTA: 0 workflows, 0 bound agents, no name conflicts.
- * Any project may retry; App-level auto-open stays default-only via needsOnboarding.
- */
+/** Bootstrap is offered only for an empty workspace. */
 export function isEmptyProjectForOnboarding(
   workflowCount: number,
   agents: { name?: string; projectId?: string }[],
-  projectId: string,
-  projectName = '',
+  workspaceId: string,
+  _workspaceName = '',
 ): boolean {
-  if (!projectId) return false
-  if (workflowCount > 0) return false
-  const bound = agents.filter((a) => (a.projectId || '') === projectId)
-  if (bound.length > 0) return false
-  const names = deriveOnboardingAgentNames(projectId, projectName)
-  if (!names.length) return projectId === DEFAULT_PROJECT_ID
-  return !hasOnboardingNameConflict(agents, projectId, [...names, ...deriveOnboardingAgentNames(projectId, projectName, 'en')])
+  return !!workspaceId && workflowCount === 0 && agents.length === 0
 }
 
 /** The default workflow is the completion marker for first install. */
@@ -373,16 +348,14 @@ export function hasDefaultWorkflow(workflows: { name?: string }[]): boolean {
 }
 
 /**
- * App-level auto-open only for the default project until the default workflow exists.
+ * Existing workflows or Agents keep automatic first-install prompting closed.
  */
 export function needsOnboarding(
   workflows: { name?: string }[],
   agents: { name?: string; projectId?: string }[],
-  projectId: string,
+  workspaceId: string,
 ): boolean {
-  if (projectId !== DEFAULT_PROJECT_ID) return false
-  if (hasDefaultWorkflow(workflows)) return false
-  return !hasOnboardingNameConflict(agents, projectId, [...ONBOARDING_AGENT_NAMES, ...onboardingRoleNames('en')])
+  return !!workspaceId && workflows.length === 0 && agents.length === 0
 }
 
 export function shouldAutoOpenOnboarding(
@@ -396,7 +369,7 @@ export function shouldAutoOpenOnboarding(
 }
 
 /**
- * @param opts.inheritAppLocale — createProject: seed from current app locale
+ * @param opts.inheritAppLocale — seed from current app locale
  *   (not browser/OS). firstInstall/retry keep detectSystemLocale().
  */
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {

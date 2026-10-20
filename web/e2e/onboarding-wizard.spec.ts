@@ -102,6 +102,7 @@ async function mockOnboardingApi(page: Page): Promise<MockState> {
       await json({ items: TEMPLATES })
       return
     }
+    if (pathname === '/api/workspace' && method === 'GET') { await json({id: 'existing-workspace', name: 'Existing Workspace'}); return }
     if (pathname === '/api/projects' && method === 'POST') {
       state.createBody = route.request().postDataJSON() as { name?: string }
       await json({
@@ -368,7 +369,7 @@ test('English walkthrough: every step is English, fits without scrolling, and sa
 
 test('a missing server encryption key shows plain copy, not config names', async ({ page }) => {
   await mockOnboardingApi(page)
-  await page.route('**/api/projects/*/bootstrap-onboarding', (route) =>
+  await page.route('**/api/workspace/bootstrap-onboarding', (route) =>
     route.fulfill({
       status: 412,
       contentType: 'application/json',
@@ -386,28 +387,17 @@ test('a missing server encryption key shows plain copy, not config names', async
   await page.screenshot({ path: path.join(OUT, 'secrets-key-missing.png') })
 })
 
-test('新建项目 create 模式：偏好页填项目名 → 名称带前缀 → create+bootstrap', async ({ page }) => {
+test('重试引导复用现有工作区，不创建项目或给 Agent 添加项目前缀', async ({ page }) => {
   const state = await mockOnboardingApi(page)
-  await page.goto('/onboarding-wizard.html?mode=createProject', { waitUntil: 'networkidle' })
-  await expect(page.getByTestId('onboarding-project-name')).toBeVisible()
-  await expect(page.getByTestId('onboarding-language-zh-CN')).toHaveCount(0)
-
+  await page.goto('/onboarding-wizard.html?mode=retry', { waitUntil: 'networkidle' })
+  await expect(page.getByTestId('onboarding-project-name')).toHaveCount(0)
+  await walkToTeam(page, 'sk-retry-e2e')
+  await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('需求澄清')
   await next(page)
-  await expectStep(page, 'prefs')
-
-  await page.getByTestId('onboarding-project-name').fill('中国象棋')
-  await expectNoScroll(page)
-  await walkToTeam(page, 'sk-create-e2e')
-  await expect(page.getByTestId('onboarding-team-name-clarify')).toHaveValue('中国象棋需求澄清')
-  await page.screenshot({ path: path.join(OUT, 'create-team.png') })
-  await page.getByTestId('onboarding-next').click()
-  await page.getByTestId('onboarding-next').click()
-
+  await next(page)
   await expect(page.getByTestId('onboarding-success')).toBeVisible({ timeout: 10_000 })
-  await expect(page.getByText('中国象棋实现')).toBeVisible()
-  expect(state.createBody?.name).toBe('中国象棋')
-  expect(state.bootstrapPath).toContain('/projects/proj-e2e-created/bootstrap-onboarding')
-
+  expect(state.createBody).toBeNull()
+  expect(state.bootstrapPath).toBe('/api/workspace/bootstrap-onboarding')
   await page.getByTestId('onboarding-success-close').click()
-  await expect(page.getByTestId('project-agents-landing')).toBeVisible()
+  await expect(page.getByTestId('workflow-list-landing')).toBeVisible()
 })

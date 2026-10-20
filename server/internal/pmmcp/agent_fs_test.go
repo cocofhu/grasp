@@ -24,8 +24,7 @@ func setupAgentFSHost(t *testing.T) (projectID, token string, h *Host, skill *se
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		t.Fatal(err)
 	}
-	ps := services.NewProjectService(db)
-	p, err := ps.Create("AgentFSProj", "", nil)
+	p, err := legacyProjectFixture(db, "AgentFSProj")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -176,8 +175,7 @@ func TestPmFSDisabledMCP(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = db.AutoMigrate(models.AllModels()...)
-	ps := services.NewProjectService(db)
-	p, _ := ps.Create("Off", "", nil)
+	p, _ := legacyProjectFixture(db, "Off")
 	pm := services.NewPmService(db, nil)
 	en := true
 	agent := "leader"

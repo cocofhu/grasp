@@ -17,7 +17,6 @@ import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem } from '@/lib/shared/types'
 import {
-  isSettingsChrome,
   settingsItemActive,
   settingsItemKey,
   settingsNavItems,
@@ -25,11 +24,10 @@ import {
 } from '@/data/settingsNav'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
-import { useWorkflowFavorites } from '@/lib/run/useWorkflowFavorites'
-import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 
 const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
@@ -53,28 +51,7 @@ const {
 const { pins, pin: pinRow, unpin: unpinRow, isPinned } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
-const { displayItems, hydrateDisplay, unfavorite, getFavoriteWorkflow, reorderFavorites } = useWorkflowFavorites()
-const { openLaunch } = useWorkflowRunLaunch()
 const { isMobile } = useBreakpoint()
-
-const DRAG_THRESHOLD_PX = 4
-const quickList = ref<HTMLElement>()
-const suppressQuickItemClick = ref(false)
-const dragState = ref<{
-  workflowId: string
-  from: number
-  placeholder: number
-  x: number
-  y: number
-  offsetX: number
-  offsetY: number
-  width: number
-}>()
-const dragItems = computed(() =>
-  dragState.value
-    ? displayItems.value.filter((item) => item.workflowId !== dragState.value?.workflowId)
-    : displayItems.value,
-)
 
 let timer: number | undefined
 function badgeFor(to: string): number {
@@ -409,7 +386,6 @@ function pollRefresh() {
 }
 onMounted(() => {
   refresh({ source: 'mount' })
-  void hydrateDisplay()
   timer = window.setInterval(pollRefresh, 15000)
   chromeHasMounted.value = true
   document.addEventListener('mousedown', onDocMouseDown)
@@ -426,15 +402,14 @@ watch(
   () => route.path,
   () => {
     refresh({ source: 'navigate' })
-    void hydrateDisplay()
-  },
+    },
 )
 
 function isActive(to: string) {
   return route.path === to || route.path.startsWith(to + '/')
 }
 
-const settingsChrome = computed(() => isSettingsChrome(route.path, route.meta.full === true))
+const { settingsChrome, requestMode } = useSidebarNavigation()
 
 watch(settingsChrome, (on) => {
   if (!on) return
@@ -476,121 +451,6 @@ function onNavigate() {
   emit('navigate')
 }
 
-function onUnfavorite(workflowId: string, name: string, ev: Event) {
-  ev.stopPropagation()
-  ev.preventDefault()
-  if (suppressQuickItemClick.value) return
-  unfavorite(workflowId, { name })
-}
-
-async function onLaunch(workflowId: string) {
-  if (suppressQuickItemClick.value) return
-  try {
-    const wf = await getFavoriteWorkflow(workflowId)
-    if (!wf) return
-    openLaunch(wf)
-    onNavigate()
-  } catch {
-    toast.error(t('common.toast.favoriteLaunchFailed'))
-  }
-}
-
-function updatePlaceholder(clientY: number) {
-  if (!dragState.value || !quickList.value) return
-  const rows = Array.from(quickList.value.querySelectorAll<HTMLElement>('[data-sortable-row]'))
-  const slot = rows.findIndex((row) => clientY < row.getBoundingClientRect().top + row.offsetHeight / 2)
-  dragState.value.placeholder = slot === -1 ? rows.length : slot
-}
-
-function onHandlePointerDown(workflowId: string, event: PointerEvent) {
-  if (isMobile.value || event.button !== 0) return
-  const source = (event.currentTarget as HTMLElement).closest<HTMLElement>('[data-sortable-row]')
-  const from = displayItems.value.findIndex((item) => item.workflowId === workflowId)
-  if (!source || from < 0) return
-
-  event.preventDefault()
-  const handle = event.currentTarget as HTMLElement
-  const startX = event.clientX
-  const startY = event.clientY
-  let activated = false
-  let offsetX = 0
-  let offsetY = 0
-
-  try {
-    handle.setPointerCapture(event.pointerId)
-  } catch {
-    // Pointer capture is a progressive enhancement for the drag session.
-  }
-
-  const activate = (moveEvent: PointerEvent) => {
-    const rect = source.getBoundingClientRect()
-    offsetX = moveEvent.clientX - rect.left
-    offsetY = moveEvent.clientY - rect.top
-    activated = true
-    suppressQuickItemClick.value = true
-    dragState.value = {
-      workflowId,
-      from,
-      placeholder: from,
-      x: moveEvent.clientX,
-      y: moveEvent.clientY,
-      offsetX,
-      offsetY,
-      width: rect.width,
-    }
-    document.body.classList.add('quick-workflow-dragging')
-    updatePlaceholder(moveEvent.clientY)
-  }
-
-  const onMove = (moveEvent: PointerEvent) => {
-    if (!activated) {
-      const dx = moveEvent.clientX - startX
-      const dy = moveEvent.clientY - startY
-      if (Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return
-      activate(moveEvent)
-    }
-    if (!dragState.value) return
-    dragState.value.x = moveEvent.clientX
-    dragState.value.y = moveEvent.clientY
-    updatePlaceholder(moveEvent.clientY)
-    moveEvent.preventDefault()
-  }
-
-  const finish = (cancelled: boolean) => {
-    handle.removeEventListener('pointermove', onMove)
-    handle.removeEventListener('pointerup', onUp)
-    handle.removeEventListener('pointercancel', onCancel)
-    window.removeEventListener('pointermove', onMove)
-    window.removeEventListener('pointerup', onUp)
-    window.removeEventListener('pointercancel', onCancel)
-    try {
-      handle.releasePointerCapture(event.pointerId)
-    } catch {
-      // Capture may already be released by the browser.
-    }
-    if (!activated || !dragState.value) return
-
-    const { from: dragFrom, placeholder } = dragState.value
-    dragState.value = undefined
-    document.body.classList.remove('quick-workflow-dragging')
-    if (!cancelled) reorderFavorites(dragFrom, placeholder)
-    window.setTimeout(() => {
-      suppressQuickItemClick.value = false
-    }, 0)
-  }
-  const onUp = () => finish(false)
-  const onCancel = () => finish(true)
-
-  handle.addEventListener('pointermove', onMove)
-  handle.addEventListener('pointerup', onUp)
-  handle.addEventListener('pointercancel', onCancel)
-  // Once activation removes the source row from the rendered list, some browsers
-  // release element-level pointer capture. Window listeners keep the session intact.
-  window.addEventListener('pointermove', onMove)
-  window.addEventListener('pointerup', onUp)
-  window.addEventListener('pointercancel', onCancel)
-}
-
 const primaryGroup = sidebarNavGroups[0]
 const primaryItems = computed(() => props.rail
   ? primaryGroup?.items.filter((item) => item.to === '/dashboard') ?? []
@@ -607,21 +467,23 @@ const settingsItems = settingsNavItems
     <div class="nav-chrome-viewport">
     <Transition :name="chromeSlideName" :css="chromeUseCss">
     <!-- Settings chrome: back to home + category list (plan g2.2) -->
-    <div v-if="settingsChrome" key="settings" class="nav-chrome-pane mb-3" data-testid="nav-settings-chrome">
+    <div v-if="settingsChrome" key="settings" class="nav-chrome-pane mb-3 settings-directory" data-testid="nav-settings-chrome">
       <RouterLink
         v-hover-ink
         to="/dashboard"
-        class="nav-item mb-2 text-txt3"
+        class="nav-item settings-back-link"
         data-testid="nav-back-home"
+        @click.capture="requestMode($event, '/dashboard', 'workspace')"
         @click="onNavigate"
       >
         <Icon name="arrow-left" :size="16" />
-        <span class="flex-1 text-xs">{{ t('nav.backHome') }}</span>
+        <span class="flex-1">{{ t('nav.backWorkspace') }}</span>
       </RouterLink>
       <template v-for="(item, index) in settingsItems" :key="settingsItemKey(item, index)">
         <div
           v-if="item.groupKey"
-          class="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3"
+          class="settings-group-heading"
+          data-testid="settings-nav-group"
         >
           {{ t(item.groupKey) }}
         </div>
@@ -630,7 +492,9 @@ const settingsItems = settingsNavItems
           :to="settingsLinkTo(item)"
           class="nav-item mb-0.5"
           :class="{ active: isSettingsItemActive(item) }"
+          :aria-current="isSettingsItemActive(item) ? 'page' : undefined"
           :data-testid="item.query?.integrations ? 'nav-settings-integrations' : undefined"
+          @click.capture="requestMode($event, settingsLinkTo(item), 'settings')"
           @click="onNavigate"
         >
           <Icon :name="item.icon" :size="17" />
@@ -654,6 +518,7 @@ const settingsItems = settingsNavItems
         :to="item.to"
         class="nav-item mb-0.5"
         :class="{ active: isActive(item.to), 'nav-create-action': item.to === '/dashboard' }"
+        @click.capture="requestMode($event, item.to, item.to === '/settings' ? 'settings' : 'workspace')"
         @click="onNavigate"
       >
         <Icon :name="item.to === '/dashboard' ? 'new-request' : item.icon" :size="17" />
@@ -663,68 +528,6 @@ const settingsItems = settingsNavItems
           class="force-radius-full flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white"
         >{{ badgeFor(item.to) }}</span>
       </RouterLink>
-    </div>
-
-    <!-- Quick workflows: workspace only, and only when favorites exist (plan g1.2) -->
-    <div v-if="displayItems.length" class="mb-3" data-testid="nav-quick-workflows">
-      <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        {{ t('nav.quickWorkflows') }}
-      </div>
-      <div ref="quickList" class="quick-workflows-list">
-        <template v-for="(item, index) in dragItems" :key="item.workflowId">
-          <div
-            v-if="dragState && dragState.placeholder === index"
-            class="quick-workflow-placeholder"
-            data-testid="nav-quick-workflow-placeholder"
-          />
-          <div
-            class="mb-0.5 grid w-full grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5 text-left text-txt2 transition hover:bg-elevated hover:text-txt"
-            data-sortable-row
-            data-testid="nav-quick-workflow-item"
-            role="button"
-            tabindex="0"
-            @click="onLaunch(item.workflowId)"
-            @keydown.enter.prevent="onLaunch(item.workflowId)"
-            @keydown.space.prevent="onLaunch(item.workflowId)"
-          >
-            <button
-              v-if="!isMobile"
-              type="button"
-              class="quick-workflow-handle flex h-7 w-7 items-center justify-center text-txt3 hover:bg-overlay hover:text-txt"
-              data-testid="nav-quick-workflow-drag-handle"
-              aria-label="拖动调整顺序"
-              title="拖动调整顺序"
-              @pointerdown="onHandlePointerDown(item.workflowId, $event)"
-            ><span aria-hidden="true">⠿</span></button>
-            <div v-else aria-hidden="true" />
-            <div class="min-w-0">
-              <div class="truncate text-[13px] text-txt" :title="item.name">{{ item.name }}</div>
-              <div class="mt-0.5 flex min-w-0 items-center gap-1.5">
-                <span class="truncate text-[11px] text-txt3" :title="item.projectName">{{ item.projectName }}</span>
-                <span
-                  v-if="item.status === 'draft'"
-                  class="rounded-md shrink-0 border border-warn/35 bg-warn/10 px-1.5 py-px text-[10px] text-warn"
-                >{{ t('common.status.draft') }}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              class="flex h-7 w-7 items-center justify-center text-warn hover:text-warn"
-              data-testid="nav-quick-workflow-unfavorite"
-              :aria-label="t('common.buttons.unfavorite')"
-              :title="t('common.buttons.unfavorite')"
-              @click="onUnfavorite(item.workflowId, item.name, $event)"
-            >
-              <Icon name="star-filled" :size="14" />
-            </button>
-          </div>
-        </template>
-        <div
-          v-if="dragState && dragState.placeholder === dragItems.length"
-          class="quick-workflow-placeholder"
-          data-testid="nav-quick-workflow-placeholder"
-        />
-      </div>
     </div>
 
     <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
@@ -878,23 +681,6 @@ const settingsItems = settingsNavItems
       </button>
     </div>
   </Teleport>
-  <div
-    v-if="dragState"
-    class="quick-workflow-drag-float grid grid-cols-[28px_1fr_28px] items-center gap-0.5 px-2 py-1.5"
-    :style="{
-      width: `${dragState.width}px`,
-      left: `${dragState.x - dragState.offsetX}px`,
-      top: `${dragState.y - dragState.offsetY}px`,
-    }"
-    aria-hidden="true"
-  >
-    <span class="flex h-7 w-7 items-center justify-center text-txt">⠿</span>
-    <div class="min-w-0">
-      <div class="truncate text-[13px] text-txt">{{ displayItems.find((item) => item.workflowId === dragState?.workflowId)?.name }}</div>
-      <div class="truncate text-[11px] text-txt3">{{ displayItems.find((item) => item.workflowId === dragState?.workflowId)?.projectName }}</div>
-    </div>
-    <span class="flex h-7 w-7 items-center justify-center text-warn"><Icon name="star-filled" :size="14" /></span>
-  </div>
 </template>
 
 <style scoped>
@@ -908,7 +694,47 @@ const settingsItems = settingsNavItems
   --hover-ink-color: rgb(var(--c-txt) / .04);
 }
 .sidebar-workspace-nav .nav-item.active {
-  background: rgb(var(--c-accent) / .065);
+  background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065));
+}
+.sidebar-workspace-nav[data-nav-mode="settings"] {
+  padding-top: 0;
+}
+.settings-directory .settings-group-heading {
+  margin-top: 20px;
+  margin-bottom: 6px;
+  padding: 0 10px;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+}
+.settings-directory .nav-item {
+  min-height: 34px;
+  padding: 7px 10px;
+  gap: 10px;
+  color: rgb(var(--c-txt2));
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 20px;
+  --hover-ink-color: rgb(var(--c-txt) / .045);
+}
+.settings-directory .nav-item.active {
+  color: rgb(var(--c-txt));
+  background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065));
+  font-weight: 500;
+}
+.settings-directory .settings-back-link {
+  margin-bottom: 12px;
+  color: rgb(var(--c-txt3));
+}
+.settings-directory .nav-item :deep(svg) {
+  flex-shrink: 0;
+  color: rgb(var(--c-txt2));
+  stroke-width: 1.65;
+}
+@media (max-width: 767px) {
+  .settings-directory .nav-item { min-height: 44px; }
+  .settings-directory .settings-group-heading { margin-top: 18px; }
 }
 .sidebar-workspace-nav .nav-create-action {
   height: 40px;
@@ -932,8 +758,7 @@ const settingsItems = settingsNavItems
 .sidebar-workspace-nav [data-testid="nav-workspace-chrome"] {
   margin-bottom: 16px;
 }
-.sidebar-workspace-nav [data-testid="nav-pending-approvals"],
-.sidebar-workspace-nav [data-testid="nav-quick-workflows"] {
+.sidebar-workspace-nav [data-testid="nav-pending-approvals"] {
   margin-bottom: 24px;
 }
 .sidebar-workspace-nav .sidebar-section-heading {
@@ -960,10 +785,6 @@ const settingsItems = settingsNavItems
   background: rgb(var(--c-txt) / .04);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
-}
-.sidebar-workspace-nav [data-testid="nav-quick-workflow-item"] {
-  border-radius: 10px;
-  padding-inline: 4px;
 }
 /* Buttons default to centered text. Pending titles start at the row edge.
    Weight stays 400 so the active nav rule (600) does not bold this title. */
@@ -1066,36 +887,4 @@ const settingsItems = settingsNavItems
   }
 }
 
-.quick-workflow-handle {
-  cursor: grab;
-  touch-action: none;
-}
-
-.quick-workflow-handle:active {
-  cursor: grabbing;
-}
-
-.quick-workflow-placeholder {
-  height: 46px;
-  margin-bottom: 2px;
-  border: 1px dashed rgb(var(--c-accent) / 70%);
-  background: rgb(var(--c-accent) / 12%);
-}
-
-.quick-workflow-drag-float {
-  position: fixed;
-  z-index: 9999;
-  pointer-events: none;
-  border: 1px solid rgb(var(--c-accent));
-  background: rgb(var(--c-elevated));
-  box-shadow: 0 12px 28px rgb(0 0 0 / 55%), 0 0 0 1px rgb(var(--c-accent) / 35%);
-  opacity: 0.96;
-  transform: scale(1.02);
-}
-
-:global(body.quick-workflow-dragging),
-:global(body.quick-workflow-dragging *) {
-  cursor: grabbing !important;
-  user-select: none;
-}
 </style>

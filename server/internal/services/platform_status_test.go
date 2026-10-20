@@ -80,7 +80,7 @@ func TestPlatformStatus_todayTokensSum(t *testing.T) {
 		}
 	}
 
-	p, err := projects.Create("P", "", nil)
+	p, err := projects.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +151,7 @@ func TestPlatformStatus_crossDayTodayReset(t *testing.T) {
 		}
 	}
 
-	p, err := projects.Create("P", "", nil)
+	p, err := projects.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,7 +198,7 @@ func TestPlatformStatus_cacheHitSkipsRescan(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	p, err := projects.Create("P", "", nil)
+	p, err := projects.CreateFixture("P", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,12 +9,11 @@ import { registerECharts } from '@/components/charts/echartsSetup'
 import { api } from '@/lib/api/api'
 import type { GlobalTokenStats, TokenUsageEventRow } from '@/lib/shared/types'
 import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
-import { TOKEN_PART_COLORS, TOKEN_PART_KEYS } from '@/components/board/token-stats/tokenStatsShared'
+import { TOKEN_PART_COLORS, TOKEN_PART_KEYS } from '@/components/token-analytics/tokenStatsShared'
 import {
   TOKEN_LEDGER_SOURCE_COLORS,
   TOKEN_LEDGER_STATUS_COLORS,
   applyDrill,
-  boardQueryFromFilters,
   downloadCsv,
   filtersToParams,
   fmtCost,
@@ -267,9 +266,9 @@ function onEventDrill(step: DrillTarget) {
 }
 
 function exportEvents() {
-  const header = ['time', 'source', 'phase', 'status', 'project', 'workflow', 'run', 'node_type', 'model', 'total', 'input', 'output', 'cache_read', 'cache_write', 'cost']
+  const header = ['time', 'source', 'phase', 'status', 'workflow', 'run', 'node_type', 'model', 'total', 'input', 'output', 'cache_read', 'cache_write', 'cost']
   const rows = events.value.map((r) => [
-    r.at, r.source, r.phase || '', r.status, r.projectName || r.projectId || '', r.workflowName || '', r.runTitle || r.runId || '',
+    r.at, r.source, r.phase || '', r.status, r.workflowName || '', r.runTitle || r.runId || '',
     r.nodeType || '', r.modelKey, r.total, r.inputTokens, r.outputTokens, r.cacheReadTokens, r.cacheWriteTokens, r.priced ? r.cost : '',
   ])
   downloadCsv(`token-usage-events-p${eventsPage.value}.csv`, toCsv(header, rows))
@@ -286,13 +285,6 @@ function openRun() {
   void router.push(`/runs/${s.key}`)
 }
 
-function openProject() {
-  const s = current.value
-  if (s?.dim !== 'project') return
-  emit('close')
-  // plan coverage: g3.4 — drill-down keeps the page time range when opening the board
-  void router.push({ path: `/projects/${s.key}`, query: boardQueryFromFilters(filters.value) })
-}
 </script>
 
 <template>
@@ -419,13 +411,6 @@ function openProject() {
         data-testid="token-drill-open-run"
         @click="openRun"
       >{{ t('pages.tokenAnalytics.drill.openRun') }}</button>
-      <button
-        v-if="current?.dim === 'project'"
-        type="button"
-        class="rounded-md border border-line px-3 py-1.5 text-xs text-txt2 hover:bg-elevated"
-        data-testid="token-drill-open-project"
-        @click="openProject"
-      >{{ t('pages.tokenAnalytics.drill.openProject') }}</button>
       <button
         type="button"
         class="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white hover:opacity-90"

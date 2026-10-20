@@ -4,6 +4,7 @@
 package handlers
 
 import (
+	"context"
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/auth"
@@ -26,6 +27,7 @@ import (
 
 // Handlers bundles dependencies for route handlers.
 type Handlers struct {
+	Maintenance        func(context.Context, bool) (map[string]any, error)
 	WF                 *services.WorkflowService
 	Projects           *services.ProjectService
 	Runs               *services.RunService

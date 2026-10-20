@@ -21,7 +21,7 @@ func setChannelKey(t *testing.T) {
 func newChannelSvc(t *testing.T) (*ChannelConfigService, string) {
 	t.Helper()
 	db := newTestDB(t)
-	p, err := NewProjectService(db).Create("ChanProj", "", nil)
+	p, err := NewProjectService(db).CreateFixture("ChanProj", "", nil)
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}

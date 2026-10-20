@@ -9,6 +9,7 @@ export {
 </script>
 
 <script setup lang="ts">
+import { watch } from 'vue'
 import SelectionAddToChat from './SelectionAddToChat.vue'
 import GateApprovalTitle from './gateApproval/GateApprovalTitle.vue'
 import GateApprovalMobileFill from './gateApproval/GateApprovalMobileFill.vue'
@@ -17,6 +18,7 @@ import GateApprovalDesktopBody from './gateApproval/GateApprovalDesktopBody.vue'
 import ConfirmFlowOverlay from './ConfirmFlowOverlay.vue'
 import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { useGateApproval } from '@/lib/inbox/useGateApproval'
+import { registerStageLinks } from '@/lib/run/stageLinks'
 
 const props = defineProps<{
   gate: import('@/lib/shared/types').Gate
@@ -56,7 +58,21 @@ const {
   cancelReactRevise,
   reactQueued,
   editReactQueuedItem,
+  primaryProducts,
+  productName,
 } = useGateApproval(props, emit)
+
+// The gate's editable stage is deliberately narrower than the entire run's artifact store.
+// Keep its original tab-switch confirmation and preview renderer when chat opens a product.
+watch(() => props.gate.runId, (runId, _previous, onCleanup) => {
+  if (!runId) return
+  onCleanup(registerStageLinks(runId, {
+    hasArtifact: name => primaryProducts.value.some(product => product.name === name) || productName.value === name,
+    openArtifact: name => productEditorRef.value?.selectProduct?.(name),
+    canOpenPreview: () => primaryProducts.value.some(product => product.kind === 'html'),
+    openPreview: () => productEditorRef.value?.showPreview?.(),
+  }))
+}, { immediate: true })
 
 defineExpose({
   isEditing,

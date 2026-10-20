@@ -6,7 +6,6 @@ import StatusPill from '@/components/ui/StatusPill.vue'
 import PriorityBadge from '@/components/ui/PriorityBadge.vue'
 import StatusFilter from '@/components/ui/StatusFilter.vue'
 import WorkflowFilter from '@/components/ui/WorkflowFilter.vue'
-import ProjectFilter from '@/components/ui/ProjectFilter.vue'
 import TagFilter from '@/components/ui/TagFilter.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import Icon from '@/components/ui/Icon.vue'
@@ -16,7 +15,7 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
 import { useTagFilter } from '@/lib/composables/useTagFilter'
-import { useProjectContext } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   useStatusFilter,
   parseStatusQuery,
@@ -62,11 +61,10 @@ const showTableLoading = computed(() => loading.value && hasInitialLoaded)
 let requestSeq = 0
 let activeLoadingSeq = 0
 const { selected: selectedWf } = useWorkflowFilter()
-const { selected: selectedProject, ensureHydrated: hydrateProject } = useProjectContext()
+const { workspaceId: selectedProject, ensureLoaded: hydrateProject } = useWorkspaceContext()
 const { selectedStatuses } = useStatusFilter()
 const statusFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
-const projectFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 const { selectedTags } = useTagFilter()
 
@@ -262,21 +260,12 @@ async function confirmDeleteRun() {
 watch(statusFilterOpen, (v) => {
   if (v) {
     workflowFilterOpen.value = false
-    projectFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
 watch(workflowFilterOpen, (v) => {
   if (v) {
     statusFilterOpen.value = false
-    projectFilterOpen.value = false
-    tagFilterOpen.value = false
-  }
-})
-watch(projectFilterOpen, (v) => {
-  if (v) {
-    statusFilterOpen.value = false
-    workflowFilterOpen.value = false
     tagFilterOpen.value = false
   }
 })
@@ -284,13 +273,12 @@ watch(tagFilterOpen, (v) => {
   if (v) {
     statusFilterOpen.value = false
     workflowFilterOpen.value = false
-    projectFilterOpen.value = false
   }
 })
 
 const hasFilter = computed(() => {
   const statuses = parseStatusQuery(typeof route.query.status === 'string' ? route.query.status : '')
-  return !!(statuses.length || route.query.wf || route.query.projectId || selectedTags.value.length)
+  return !!(statuses.length || route.query.wf || selectedTags.value.length)
 })
 
 const emptyMessage = computed(() => {
@@ -310,13 +298,11 @@ function listParams() {
   const status = typeof route.query.status === 'string' ? route.query.status : undefined
   const tag = typeof route.query.tag === 'string' ? route.query.tag : undefined
   const wf = typeof route.query.wf === 'string' ? route.query.wf : undefined
-  const projectId = typeof route.query.projectId === 'string' ? route.query.projectId : undefined
   const sort = activeSort.value
   return {
     status,
     tag,
     wf,
-    projectId,
     page: page.value,
     pageSize: PAGE_SIZE,
     ...(sort ? { sort: sort.sort, order: sort.order } : {}),
@@ -441,7 +427,7 @@ function onFocus() {
 }
 
 onMounted(async () => {
-  hydrateProject()
+  await hydrateProject()
   const urlChanged = await validateQueryParams()
   const restored = await initStatusFilterFromStorage(route, router)
   if (!urlChanged && !restored) load({ showLoading: true })
@@ -469,11 +455,6 @@ onUnmounted(() => {
           v-model="selectedTags"
           v-model:open="tagFilterOpen"
           :project-id="selectedProject"
-        />
-        <ProjectFilter
-          v-model="selectedProject"
-          v-model:open="projectFilterOpen"
-          :count="total"
         />
         <StatusFilter
           v-model="selectedStatuses"

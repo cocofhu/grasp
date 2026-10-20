@@ -9,7 +9,6 @@ const src = readFileSync(join(dir, 'RunListView.vue'), 'utf8')
 const shellSrc = readFileSync(join(dir, '../components/shell/AppShell.vue'), 'utf8')
 const routerSrc = readFileSync(join(dir, '../router/index.ts'), 'utf8')
 const sandboxSrc = readFileSync(join(dir, 'SandboxListView.vue'), 'utf8')
-const projectSrc = readFileSync(join(dir, 'ProjectListView.vue'), 'utf8')
 const zhCommon = readFileSync(join(dir, '../locales/zh-CN/common.json'), 'utf8')
 const zhPages = readFileSync(join(dir, '../locales/zh-CN/pages.json'), 'utf8')
 
@@ -136,7 +135,6 @@ describe('RunListView fill scope lock (g4.3)', () => {
 
   it('does not change EmptyState or empty/fail i18n strings (list A pages now use fill scroll — plan g1)', () => {
     expect(sandboxSrc).toMatch(/flex h-full min-h-0 flex-col/)
-    expect(projectSrc).toMatch(/flex h-full min-h-0 flex-col/)
     expect(src).not.toMatch(/EmptyState/)
     expect(zhCommon).toMatch(/"noRuns": "暂无运行记录"/)
     expect(zhCommon).toMatch(/"noMatchingRuns": "无匹配运行记录"/)

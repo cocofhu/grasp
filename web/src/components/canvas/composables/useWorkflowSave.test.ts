@@ -129,12 +129,12 @@ describe('useWorkflowSave', () => {
 describe('pendingBackup', () => {
   beforeEach(() => localStorage.clear())
 
-  it('offers only a backup that is newer than the server copy and differs from it', () => {
+  it('keeps differing local content even when a remote rename is newer', () => {
     const at = Date.parse('2026-01-01T00:00:00Z')
     writeWorkflowBackup('w', { snapshot: 'local', savedAt: at + 1000 })
     expect(pendingBackup('w', 'server', '2026-01-01T00:00:00Z')).toMatchObject({ snapshot: 'local' })
     expect(pendingBackup('w', 'local', '2026-01-01T00:00:00Z')).toBeNull()
-    expect(pendingBackup('w', 'server', '2026-01-01T00:00:05Z')).toBeNull()
+    expect(pendingBackup('w', 'server', '2026-01-01T00:00:05Z')).toMatchObject({ snapshot: 'local' })
     expect(pendingBackup('w', 'server', '')).toMatchObject({ snapshot: 'local' })
     clearWorkflowBackup('w')
     expect(pendingBackup('w', 'server', '')).toBeNull()

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -64,10 +65,15 @@ type convQueue struct {
 // idempotently: adapters are started, stopped, or restarted based on a config
 // fingerprint so admin edits hot-reload without a server restart.
 type Manager struct {
-	bridge    *ChannelBridge
-	factories map[string]AdapterFactory
-	decrypt   func(enc string) (string, error)
-	loader    func() ([]models.ChannelConfig, error)
+	admissionMu    sync.Mutex
+	maintenance    bool
+	dispatchActive atomic.Int64
+	sending        atomic.Int64
+	flushing       atomic.Int64
+	bridge         *ChannelBridge
+	factories      map[string]AdapterFactory
+	decrypt        func(enc string) (string, error)
+	loader         func() ([]models.ChannelConfig, error)
 
 	applyMu sync.Mutex // serializes Apply/Reload
 	mu      sync.Mutex
@@ -314,6 +320,14 @@ func (m *Manager) IsConversationBusy(channelID, projectID string, scene Scene, c
 // per-message queue ACK (ahead count); dequeue sends another processing ACK.
 // Full queue: reject with a visible reply (never silently drop).
 func (m *Manager) dispatch(ctx context.Context, rc *runningChannel, in InboundMessage) {
+	m.admissionMu.Lock()
+	if m.maintenance {
+		m.admissionMu.Unlock()
+		return
+	}
+	m.dispatchActive.Add(1)
+	m.admissionMu.Unlock()
+	defer m.dispatchActive.Add(-1)
 	key := convKey(rc.cfg.ID, rc.cfg.ProjectID, in.Scene, in.ConversationID)
 	q := m.convQueueFor(key)
 
@@ -417,6 +431,8 @@ func (m *Manager) handleTurn(ctx context.Context, rc ResolvedChannel, in Inbound
 }
 
 func (m *Manager) sendOutbound(ctx context.Context, rc *runningChannel, out OutboundMessage) {
+	m.sending.Add(1)
+	defer m.sending.Add(-1)
 	if rc == nil || rc.adapter == nil {
 		return
 	}
@@ -527,6 +543,8 @@ func (m *Manager) HasRunNotifyTarget(projectID string, channelIDs []string) bool
 }
 
 func (m *Manager) flushPushQueue(key string) error {
+	m.flushing.Add(1)
+	defer m.flushing.Add(-1)
 	items := m.takePushQueue(key)
 	if len(items) == 0 {
 		return nil

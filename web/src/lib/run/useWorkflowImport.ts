@@ -1,10 +1,11 @@
-import { ref } from 'vue'
+import { onScopeDispose, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { agentProfileIssues } from '@/lib/run/workflowIO'
-import { readStoredProjectId } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useToast } from '@/lib/composables/useToast'
+import { useAuth } from '@/lib/composables/useAuth'
 import type { Workflow } from '@/lib/shared/types'
 
 export function useWorkflowImport(opts?: {
@@ -17,9 +18,18 @@ export function useWorkflowImport(opts?: {
   const router = useRouter()
   const { t } = useI18n()
   const toast = useToast()
+  const { workspaceId, ensureLoaded } = useWorkspaceContext()
   const fileInput = ref<HTMLInputElement | null>(null)
   const showDiscardConfirm = ref(false)
-  let pendingFile: File | null = null
+  const { user } = useAuth()
+  let importGeneration = 0
+  let disposed = false
+  watch(() => user.value?.username || '', () => {
+    importGeneration++
+    showDiscardConfirm.value = false
+    if (fileInput.value) fileInput.value.value = ''
+  }, { flush: 'sync' })
+  onScopeDispose(() => { disposed = true; importGeneration++ })
 
   function triggerImport() {
     if (opts?.dirty?.()) {
@@ -31,7 +41,6 @@ export function useWorkflowImport(opts?: {
 
   function onDiscardCancel() {
     showDiscardConfirm.value = false
-    pendingFile = null
   }
 
   function onDiscardConfirm() {
@@ -44,12 +53,20 @@ export function useWorkflowImport(opts?: {
     const file = input.files?.[0]
     input.value = ''
     if (!file) return
-
+    const generation = ++importGeneration
+    const username = user.value?.username || ''
+    const current = () => !disposed && generation === importGeneration && username === (user.value?.username || '')
     try {
       const text = await file.text()
-      const projectId = opts?.projectId?.() || readStoredProjectId() || undefined
+      if (!current()) return
+      await ensureLoaded()
+      if (!current()) return
+      const projectId = workspaceId.value
+      if (!projectId) throw new Error(t('pages.workflowEditor.projectRequired'))
       const wf = await api.importWorkflow(text, projectId)
-      await warnMissingAgents(wf)
+      if (!current()) return
+      await warnMissingAgents(wf, current)
+      if (!current()) return
       toast.success(t('pages.workflowIO.import.success', { name: wf.name }))
       if (opts?.onImported) {
         await opts.onImported(wf)
@@ -57,23 +74,19 @@ export function useWorkflowImport(opts?: {
         router.push('/workflows/' + wf.id + '/edit')
       }
     } catch (err: any) {
+      if (!current()) return
       toast.error(String(err?.message || err))
     }
   }
 
-  async function warnMissingAgents(wf: Workflow) {
+  async function warnMissingAgents(wf: Workflow, current: () => boolean) {
     try {
       const agents = await api.listAgents()
-      const issues = agentProfileIssues(wf.nodes, agents, wf.projectId)
+      if (!current()) return
+      const issues = agentProfileIssues(wf.nodes, agents)
       if (issues.length) {
         const list = issues
-          .map((i) => {
-            const short =
-              i.reason === 'missing'
-                ? t('pages.workflowIO.import.issueMissing')
-                : t('pages.workflowIO.import.issueForeign')
-            return `${i.name}（${short}）`
-          })
+          .map((issue) => `${issue.name}（${t('pages.workflowIO.import.issueMissing')}）`)
           .join('、')
         toast.warn(t('pages.workflowIO.import.missingAgentProfiles', { list }))
       }

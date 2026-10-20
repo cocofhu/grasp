@@ -23,7 +23,7 @@ const gate: Gate = {
   ],
   form: [{ key: 'comment', label: '评审意见' }],
   requestedAt: '2026-07-18T00:00:00Z',
-  // Hot session so mobile-fill drawer exposes ReviewComposer reject/pass (f9).
+  // A live upstream session keeps send/confirm available in the conversation.
   reactSessionAlive: true,
   reactUpstreamNodeId: 'visual',
   upstreamNodeId: 'visual',
@@ -90,12 +90,15 @@ const Fixture = defineComponent({
       } as MediaQueryList
     }) as typeof window.matchMedia
 
-    const resolved = ref(false)
+    const resolved = ref('')
+    const revised = ref(0)
     return () =>
       h(
         'div',
         {
           'data-testid': 'gate-mobile-fill-root',
+          'data-resolved': resolved.value,
+          'data-revised': revised.value,
           class: 'flex h-full min-h-0 flex-col bg-surface',
         },
         [
@@ -110,9 +113,10 @@ const Fixture = defineComponent({
                 fillPreview: true,
                 mobileFillRemaining: true,
                 compact: true,
-                onResolve: () => {
-                  resolved.value = true
+                onResolve: (action: string) => {
+                  resolved.value = action
                 },
+                onReactRevised: () => { revised.value++ },
               }),
             ],
           ),

@@ -33,11 +33,11 @@ const emit = defineEmits<{
 }>()
 
 const accentClass: Record<string, string> = {
-  active: 'border-t-2 border-t-accent-2',
-  running: 'border-t-2 border-t-info',
-  waiting: 'border-t-2 border-t-warn',
-  done: 'border-t-2 border-t-ok',
-  extra: 'border-t-2 border-t-txt3',
+  active: 'bg-accent-2',
+  running: 'bg-info',
+  waiting: 'bg-warn',
+  done: 'bg-ok',
+  extra: 'bg-txt3',
 }
 
 function badgeLabel(): string {
@@ -56,14 +56,14 @@ function onActivateHeader() {
 
 <template>
   <div
-    class="flex min-h-[200px] flex-col overflow-hidden rounded-lg border border-line bg-base"
-    :class="[accentClass[accent] || accentClass.extra, fill ? 'h-full' : '']"
+    class="flex min-w-0 flex-col overflow-hidden rounded-lg border border-line bg-surface"
+    :class="fill ? 'h-full' : ''"
     data-testid="run-board-column"
   >
     <component
       :is="headerActivatable ? 'button' : 'div'"
       :type="headerActivatable ? 'button' : undefined"
-      class="flex w-full items-center gap-2 border-b border-line bg-surface px-3 py-2.5 text-left"
+      class="flex min-h-12 w-full items-center gap-2 border-b border-line/70 bg-elevated/35 px-3.5 py-3 text-left"
       :class="
         headerActivatable
           ? 'cursor-pointer transition hover:bg-elevated focus-visible:bg-elevated focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-1px] focus-visible:outline-accent'
@@ -73,23 +73,24 @@ function onActivateHeader() {
       :data-testid="headerActivatable ? 'run-board-column-header' : undefined"
       @click="headerActivatable ? onActivateHeader() : undefined"
     >
+      <span class="h-1.5 w-1.5 shrink-0 rounded-full" :class="accentClass[accent] || accentClass.extra" aria-hidden="true" />
       <span class="text-[13px] font-semibold text-txt">{{ title }}</span>
       <span v-if="hint" class="text-[11px] text-txt3">{{ hint }}</span>
       <span
-        class="ml-auto inline-flex h-5 min-w-[22px] items-center justify-center rounded border border-line bg-elevated px-1.5 text-[11px] font-semibold text-txt2"
+        class="ml-auto inline-flex h-5 min-w-[22px] items-center justify-center rounded-md bg-elevated px-1.5 text-[11px] font-medium text-txt3"
         data-testid="run-board-column-count"
       >
         {{ badgeLabel() }}
       </span>
     </component>
     <div
-      class="scroll-area flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-2.5"
+      class="scroll-area flex min-h-0 flex-1 flex-col overflow-y-auto"
       :style="fill ? undefined : { maxHeight: 'min(52vh, 420px)' }"
       data-testid="run-board-column-body"
     >
       <template v-if="loading && !items.length">
         <div
-          class="rounded-lg border border-dashed border-line px-3 py-7 text-center text-xs text-txt3"
+          class="px-3 py-7 text-center text-xs text-txt3"
           data-testid="run-board-column-loading"
         >
           {{ loadingText || '…' }}
@@ -100,14 +101,14 @@ function onActivateHeader() {
       </template>
       <div
         v-else
-        class="rounded-lg border border-dashed border-line px-3 py-7 text-center text-xs text-txt3"
+        class="px-3 py-7 text-center text-xs text-txt3"
         data-testid="run-board-column-empty"
       >
         {{ emptyText }}
       </div>
-      <p v-if="truncatedHint" class="px-1 text-[11px] text-txt3">{{ truncatedHint }}</p>
+      <p v-if="truncatedHint" class="px-3.5 text-[11px] text-txt3">{{ truncatedHint }}</p>
     </div>
-    <div v-if="$slots.footer" class="px-3 pb-3 pt-1">
+    <div v-if="$slots.footer" class="px-3.5 pb-3 pt-1">
       <slot name="footer" />
     </div>
   </div>

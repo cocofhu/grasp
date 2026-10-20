@@ -90,7 +90,7 @@ async function openRunList(
 
   await page.goto('/run-list.html')
   await expect(page.getByRole('heading', { name: '运行记录' })).toBeVisible({ timeout: 15_000 })
-  await expect(page.getByText('按项目、工作流与状态筛选')).toBeVisible()
+  await expect(page.getByText('按工作流与状态筛选')).toBeVisible()
 }
 
 test.describe('RunListView delete run acceptance', () => {

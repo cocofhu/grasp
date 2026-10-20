@@ -21,6 +21,13 @@ const getProjectSharedAgentConfig = vi.fn(async (_projectId?: string) => ({
   mcp: [],
   layout: {},
 }))
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  const workspace = ref({ id: 'p1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+})
+
+
 vi.mock('@/lib/api/api', () => ({
   api: {
     createAgent: (payload: unknown) => createAgent(payload),
@@ -100,26 +107,16 @@ describe('AgentCreateWizard 5-step IA', () => {
     wrapper.unmount()
   })
 
-  it('prefills the home project and blocks basics until a project is chosen', async () => {
+  it('uses the workspace without presenting a project selector', async () => {
     const wrapper = mountWizard('zh-CN', 'p1')
-    const select = document.body.querySelector('[data-testid="wizard-project-select"]') as HTMLSelectElement
-    expect(select.value).toBe('p1')
-    wrapper.unmount()
-    document.body.innerHTML = ''
-
-    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...commonZh, ...pagesZh } } })
-    const empty = mount(AgentCreateWizard, {
-      attachTo: document.body,
-      props: { open: true, existingNames: [], projects: [] },
-      global: { plugins: [i18n] },
-    })
-    fillName('needs-project')
-    await empty.vm.$nextTick()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="wizard-project-select"]')).toBeNull()
+    fillName('workspace-agent')
+    await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
-    await empty.vm.$nextTick()
-    expect(document.body.textContent).toContain(pagesZh.pages.agentStudio.project.required)
-    expect(document.body.querySelector('#wiz-name-input')).not.toBeNull()
-    empty.unmount()
+    await wrapper.vm.$nextTick()
+    expect(document.body.querySelector('#wiz-name-input')).toBeNull()
+    wrapper.unmount()
   })
 
   it('defaults CodeBuddy to international on the Agent step', async () => {

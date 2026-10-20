@@ -113,26 +113,26 @@ function turnBody(text: string | undefined): string {
     <section
       v-if="agentSummary"
       data-testid="feedback-agent-summary"
-      class="rounded-lg border border-line border-l-2 border-l-info bg-info/10 px-3 py-2.5"
+      class="report-section"
     >
       <div class="mb-1.5 flex flex-wrap items-center gap-2">
-        <div class="text-[10px] font-semibold uppercase tracking-wider text-txt3">
+        <h3 class="report-heading font-semibold text-txt3">
           {{ t('pages.product.feedback.agentSummary') }}
-        </div>
-        <span class="rounded-md border border-info/40 bg-info/10 px-1.5 py-0.5 text-[10px] text-info">
+        </h3>
+        <span class="rounded-md border border-info/40 bg-info/10 px-1.5 py-0.5 text-[11px] text-info">
           {{ t('pages.product.feedback.agentSummaryTag') }}
         </span>
       </div>
-      <p class="whitespace-pre-wrap text-[12px] leading-relaxed text-txt">{{ agentSummary }}</p>
+      <p class="whitespace-pre-wrap text-[13px] leading-relaxed text-txt">{{ agentSummary }}</p>
     </section>
 
-    <section v-if="body || annotations.length">
-      <div v-if="agentSummary && body" class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="body || annotations.length" class="report-section">
+      <h3 v-if="agentSummary && body" class="report-heading mb-1.5 font-semibold text-txt3">
         {{ t('pages.product.feedback.fullText') }}
-      </div>
+      </h3>
       <div
         v-if="body"
-        class="md break-words text-[12px] leading-relaxed text-txt"
+        class="md break-words text-[13px] leading-relaxed text-txt"
         data-testid="feedback-round-body"
         v-html="renderMarkdown(body)"
       />
@@ -141,10 +141,10 @@ function turnBody(text: string | undefined): string {
       </div>
     </section>
 
-    <section v-if="attachments.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="attachments.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">
         {{ t('pages.product.feedback.attachments', { n: attachments.length }) }}
-      </div>
+      </h3>
       <div class="flex flex-wrap gap-1.5">
         <ChatImageThumb
           v-for="(a, i) in attachments"
@@ -156,40 +156,40 @@ function turnBody(text: string | undefined): string {
       </div>
     </section>
 
-    <section v-if="changedTargets.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="changedTargets.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">
         {{ t('pages.product.feedback.targets') }}
-      </div>
+      </h3>
       <ul class="space-y-1">
-        <li v-for="(x, i) in changedTargets" :key="i" class="flex flex-wrap items-center gap-1.5 text-[11px] text-txt2">
-          <code class="font-mono text-[12px] text-txt">{{ x.name }}</code>
+        <li v-for="(x, i) in changedTargets" :key="i" class="flex flex-wrap items-center gap-1.5 text-[13px] text-txt2">
+          <code class="font-mono text-[13px] text-txt">{{ x.name }}</code>
           <span class="text-txt3">{{ x.before || '—' }} → {{ x.after || '—' }}</span>
         </li>
       </ul>
     </section>
 
-    <section v-if="transcript.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="transcript.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">
         {{ t('pages.product.feedback.transcript') }}
-      </div>
+      </h3>
       <div class="space-y-1.5">
         <div
           v-for="(turn, i) in transcript"
           :key="i"
-          class="rounded-md border p-2"
-          :class="turn.role === 'human' ? 'border-accent/40 bg-accent-dim/25' : 'border-line bg-base/40'"
+          class="report-transcript-entry"
+          :class="turn.role === 'human' ? 'border-l-accent/50' : 'border-l-line'"
           :data-testid="`feedback-turn-${i}`"
         >
           <div class="mb-0.5 flex items-center gap-2">
-            <span class="text-[10px] font-medium uppercase tracking-wide" :class="turn.role === 'human' ? 'text-accent-2' : 'text-txt3'">
+            <span class="text-[11px] font-medium uppercase tracking-wide" :class="turn.role === 'human' ? 'text-accent-2' : 'text-txt3'">
               {{ turn.role === 'human' ? t('pages.product.feedback.roleHuman') : t('pages.product.feedback.roleAgent') }}
             </span>
-            <span v-if="turn.interrupted" class="text-[10px] text-warn">{{ t('pages.product.feedback.interrupted') }}</span>
-            <span v-if="turn.at" class="ml-auto text-[10px] text-txt3">{{ fmtTime(turn.at) }}</span>
+            <span v-if="turn.interrupted" class="text-[11px] text-warn">{{ t('pages.product.feedback.interrupted') }}</span>
+            <span v-if="turn.at" class="ml-auto text-[11px] text-txt3">{{ fmtTime(turn.at) }}</span>
           </div>
           <div
             v-if="turnBody(turn.text)"
-            class="md break-words text-[11px] leading-relaxed text-txt2"
+            class="md break-words text-[13px] leading-relaxed text-txt2"
             data-testid="feedback-turn-body"
             v-html="renderMarkdown(turn.text || '')"
           />
@@ -197,12 +197,12 @@ function turnBody(text: string | undefined): string {
       </div>
     </section>
 
-    <section v-if="doc.priorRounds?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.priorRounds?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">
         {{ t('pages.product.feedback.priorRounds') }}
-      </div>
+      </h3>
       <ul class="space-y-1">
-        <li v-for="(p, i) in doc.priorRounds" :key="i" class="flex items-start gap-1.5 text-[11px] leading-5 text-txt3">
+        <li v-for="(p, i) in doc.priorRounds" :key="i" class="flex items-start gap-1.5 text-[13px] leading-5 text-txt3">
           <span class="shrink-0 text-txt3">{{ t('pages.product.feedback.roundN', { n: p.round }) }}</span>
           <span class="min-w-0 flex-1">{{ p.summary }}</span>
         </li>

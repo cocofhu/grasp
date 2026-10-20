@@ -23,6 +23,21 @@ function mountStatus(props: {
 }
 
 describe('ThoughtSummaryStatus', () => {
+  it('replaces the running indicator when the turn completes or is interrupted', async () => {
+    const w = mountStatus({ busy: true })
+    expect(w.findAll('icon-stub')).toHaveLength(1)
+    expect(w.get('icon-stub').attributes('name')).toBe('spinner')
+    await w.setProps({ busy: false, completed: true })
+    expect(w.find('icon-stub[name="spinner"]').exists()).toBe(false)
+    expect(w.get('icon-stub').attributes('name')).toBe('check')
+    expect(w.get('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('done')
+    await w.setProps({ interrupted: true })
+    expect(w.get('icon-stub').attributes('name')).toBe('alert')
+    expect(w.text()).toContain('已中断')
+    expect(w.text()).not.toContain('已完成')
+    w.unmount()
+  })
+
   it('busy → data-state=streaming and 生成中…', () => {
     const w = mountStatus({ busy: true })
     const el = w.find('[data-testid="thought-summary-state"]')

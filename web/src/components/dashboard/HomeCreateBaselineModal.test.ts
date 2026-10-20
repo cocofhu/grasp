@@ -1,7 +1,4 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { DOMWrapper, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -32,6 +29,11 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  return { useWorkspaceContext: () => ({ workspaceId: ref('proj-1'), ensureLoaded: mocks.listProjects }) }
+})
+
 vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({
     warn: vi.fn(),
@@ -40,9 +42,6 @@ vi.mock('@/lib/composables/useToast', () => ({
   }),
 }))
 
-const dir = dirname(fileURLToPath(import.meta.url))
-const modalSrc = readFileSync(join(dir, 'HomeCreateBaselineModal.vue'), 'utf8')
-const menuSrc = readFileSync(join(dir, '../workflow/NewWorkflowMenu.vue'), 'utf8')
 
 const p1 = { id: 'proj-1', name: 'Grasp', description: '', variables: [] }
 const p2 = { id: 'proj-2', name: 'Platform', description: '', variables: [] }
@@ -80,7 +79,7 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     mocks.listProjects.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
     mocks.toastSuccess.mockReset()
-    mocks.listProjects.mockResolvedValue([p1])
+    mocks.listProjects.mockResolvedValue(p1)
     mocks.createWorkflowFromBaseline.mockResolvedValue({ id: 'wf-new', name: '需求对齐工作流' })
   })
 
@@ -97,44 +96,8 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     expect(name.element).toBe(document.activeElement)
     await name.setValue('需求对齐工作流')
     expect((name.element as HTMLInputElement).value).toBe('需求对齐工作流')
-    expect(document.body.textContent).toContain('项目：Grasp')
+    expect(document.body.textContent).not.toContain('项目：Grasp')
     expect(document.body.textContent).not.toContain('从零开始')
-    wrapper.unmount()
-  })
-
-  // plan g2.1 — two or more projects: pick then form; back returns to pick
-  it('uses a two-step wizard when there are multiple projects and can go back', async () => {
-    mocks.listProjects.mockResolvedValue([p1, p2, p3])
-    const wrapper = mountModal()
-    await flushPromises()
-    expect(qExists('home-create-project-list')).toBe(true)
-    expect(qExists('home-create-workflow-name')).toBe(false)
-    expect(q('home-create-pane').classes()).toContain('home-create-step--fwd')
-    await q('home-create-project-proj-2').trigger('click')
-    await flushPromises()
-    expect(qExists('home-create-workflow-name')).toBe(true)
-    expect(document.body.textContent).toContain('第 2 / 2 步')
-    expect(document.body.textContent).toContain('Platform')
-    await q('home-create-workflow-name').setValue('keep-me')
-    await q('home-create-back').trigger('click')
-    await flushPromises()
-    expect(qExists('home-create-project-list')).toBe(true)
-    expect(q('home-create-pane').classes()).toContain('home-create-step--back')
-    await q('home-create-project-proj-2').trigger('click')
-    await flushPromises()
-    expect((q('home-create-workflow-name').element as HTMLInputElement).value).toBe('keep-me')
-    wrapper.unmount()
-  })
-
-  // plan g2.3 — zero projects guides to create a project
-  it('guides the user to create a project when none exist', async () => {
-    mocks.listProjects.mockResolvedValue([])
-    const wrapper = mountModal()
-    await flushPromises()
-    expect(q('home-create-no-project').text()).toContain('请先创建项目')
-    await q('home-create-go-projects').trigger('click')
-    expect(mocks.push).toHaveBeenCalledWith('/projects')
-    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -143,11 +106,11 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     mocks.listProjects.mockRejectedValueOnce(new Error('network down'))
     const wrapper = mountModal()
     await flushPromises()
-    expect(q('home-create-load-error').text()).toContain('无法加载项目列表')
-    mocks.listProjects.mockResolvedValue([p1, p2])
+    expect(q('home-create-load-error').text()).toContain('network down')
+    mocks.listProjects.mockResolvedValue(p1)
     await q('home-create-retry').trigger('click')
     await flushPromises()
-    expect(qExists('home-create-project-list')).toBe(true)
+    expect(qExists('home-create-form')).toBe(true)
     expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -195,28 +158,5 @@ describe('HomeCreateBaselineModal (plan g2 / g3 / g4)', () => {
     expect(wrapper.emitted('created')).toBeFalsy()
     expect(wrapper.emitted('close')).toBeFalsy()
     wrapper.unmount()
-  })
-})
-
-describe('HomeCreateBaselineModal motion + regression (plan g3.4 / g4.2)', () => {
-  it('uses transform/opacity step motion and disables translate under reduced motion', () => {
-    expect(modalSrc).toMatch(/home-create-step--fwd/)
-    expect(modalSrc).toMatch(/home-create-step--back/)
-    expect(modalSrc).toMatch(/translateX\(14px\)/)
-    expect(modalSrc).toMatch(/translateX\(-14px\)/)
-    expect(modalSrc).toMatch(/opacity:\s*0/)
-    expect(modalSrc).toMatch(/@media \(prefers-reduced-motion:\s*reduce\)/)
-    expect(modalSrc).toMatch(/prefers-reduced-motion[\s\S]*animation:\s*none/)
-    expect(modalSrc).not.toMatch(/from-scratch|new-workflow-scratch|从零开始/)
-    const appModalSrc = readFileSync(join(dir, '../ui/AppModal.vue'), 'utf8')
-    expect(appModalSrc).toMatch(/transition:\s*opacity var\(--dur-overlay\)/)
-    expect(appModalSrc).toMatch(/transition:\s*transform var\(--dur-overlay\)/)
-    expect(appModalSrc).toMatch(/translateY\(12px\) scale\(0\.98\)/)
-  })
-
-  it('keeps project-detail NewWorkflowMenu scratch + baseline options unchanged', () => {
-    expect(menuSrc).toMatch(/data-testid="new-workflow-scratch"/)
-    expect(menuSrc).toMatch(/data-testid="new-workflow-baseline"/)
-    expect(menuSrc).toMatch(/pages\.projectDetail\.newWorkflow\.scratch/)
   })
 })

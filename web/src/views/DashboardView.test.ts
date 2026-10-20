@@ -24,6 +24,13 @@ const mocks = vi.hoisted(() => ({
   readStoredProjectId: vi.fn(() => 'proj-1'),
 }))
 
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
+  const { ref } = await import('vue')
+  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
+})
+
+
 vi.mock('vue-router', () => ({
   useRouter: () => ({ push: mocks.push }),
 }))
@@ -46,9 +53,7 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  readStoredProjectId: () => mocks.readStoredProjectId(),
-}))
+
 
 vi.mock('@/lib/composables/useToast', () => ({
   useToast: () => ({ warn: vi.fn(), error: vi.fn(), success: vi.fn() }),
@@ -252,7 +257,7 @@ describe('DashboardView home composer', () => {
     expect(wrapper.find('[data-testid="home-composer"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="home-no-project"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="home-workflow-card-wf-ap"]').text()).toContain('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
     expect(mocks.listWorkflows).toHaveBeenCalledWith(expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const call = mocks.listWorkflows.mock.calls[0]?.[0] || {}
     expect(call).not.toHaveProperty('projectId')
@@ -260,7 +265,7 @@ describe('DashboardView home composer', () => {
   })
 
   // plan g2.1 — card title = workflow name, next line = project name; same workflow name, different projects
-  it('shows workflow name above project name and distinguishes same-named workflows', async () => {
+  it('shows all workflow names without former project metadata', async () => {
     const other: Workflow = {
       ...approveWf,
       id: 'wf-ap-b',
@@ -279,12 +284,8 @@ describe('DashboardView home composer', () => {
     const b = wrapper.get('[data-testid="home-workflow-card-wf-ap-b"]')
     expect(a.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
     expect(b.get('[data-testid="home-workflow-card-name"]').text()).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').text()).toBe('综合项目组')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap-b"]').text()).toBe('SkillHub')
-    expect(a.get('[data-testid="home-workflow-card-name"]').attributes('title')).toBe('自我迭代PRO')
-    expect(wrapper.get('[data-testid="home-workflow-card-project-wf-ap"]').attributes('title')).toBe(
-      '综合项目组',
-    )
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-workflow-card-project-wf-ap-b"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -612,11 +613,11 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  it('filters the home combobox by project name as well as workflow name (plan g2.1/g2.2)', async () => {
+  it('filters the home combobox by workflow name', async () => {
     const second: Workflow = {
       ...approveWf,
       id: 'wf-lite',
-      name: '默认工作流',
+      name: 'Skill workflow',
       projectId: 'proj-2',
       description: '轻量 Approve 入口',
     }
@@ -628,7 +629,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').text()).toContain(
-      '综合项目组 · 自我迭代PRO',
+      '自我迭代PRO',
     )
     await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
     await flushPromises()
@@ -755,7 +756,7 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-workflows-empty"]').text()).not.toContain('选择项目')
     expect(wrapper.find('[data-testid="home-go-projects"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-go-projects"]').trigger('click')
-    expect(mocks.push).toHaveBeenCalledWith('/projects')
+    expect(mocks.push).toHaveBeenCalledWith('/workflows')
     wrapper.unmount()
   })
 
@@ -828,7 +829,7 @@ describe('DashboardView home composer', () => {
       publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
     wrapper.unmount()
   })
 
@@ -1003,7 +1004,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap', projectId: 'proj-1' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

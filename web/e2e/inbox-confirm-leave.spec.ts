@@ -279,9 +279,9 @@ async function openGates(page: Page, state: State) {
   await expect(page.getByRole('heading', { name: '待办' })).toHaveCount(0)
 }
 
-/** Desktop panel header. The card column is gone, so rows are not buttons in the main area. */
-function runHeader(page: Page, runSuffix: string, nodeId: string) {
-  return page.getByText(`Run #${runSuffix} · ${nodeId}`, { exact: true })
+/** Confirm leave by the active pane identity, independent of chat header copy. */
+function activeDetail(page: Page, runSuffix: string, nodeId: string) {
+  return page.locator(`[data-testid="inbox-active-detail"][data-run-id="run-${runSuffix}"][data-node-id="${nodeId}"]`)
 }
 
 test.describe('Inbox 确认发起即离开待办', () => {
@@ -298,7 +298,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    const opened = runHeader(page, 'approve', 'approve_7gl6')
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
     await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
@@ -334,7 +334,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    const opened = runHeader(page, 'approve', 'approve_7gl6')
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
     await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
@@ -343,7 +343,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     // First left; second auto-selected while first reply still pending.
     await expect(opened).toHaveCount(0, { timeout: 1500 })
     expect(state.forceReplyCount).toBe(0)
-    const second = runHeader(page, 'approve-b', 'approve_7gl7')
+    const second = activeDetail(page, 'approve-b', 'approve_7gl7')
     await expect(second).toBeVisible({ timeout: 5000 })
 
     const confirmB = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
@@ -373,7 +373,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     }
     await openGates(page, state)
 
-    const opened = runHeader(page, 'approve', 'approve_7gl6')
+    const opened = activeDetail(page, 'approve', 'approve_7gl6')
     await expect(opened).toBeVisible({ timeout: 15_000 })
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })

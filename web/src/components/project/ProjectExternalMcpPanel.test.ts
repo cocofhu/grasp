@@ -89,7 +89,7 @@ describe('ProjectExternalMcpPanel (plan g3.1/g3.2/g3.3)', () => {
     await flushPromises()
     await wrapper.get('[data-testid="external-mcp-create-key"]').trigger('click')
     await flushPromises()
-    expect(document.body.textContent).toContain('新建项目 MCP 密钥')
+    expect(document.body.textContent).toContain('新建工作区 MCP 密钥')
   })
 
   it('interpolates {base} in urlPackSuffix (g3.2 review v3)', async () => {

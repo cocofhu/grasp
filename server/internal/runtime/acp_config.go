@@ -102,15 +102,16 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	AcpBackend           string            `json:"acpBackend"`
-	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
-	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
-	GitCredentialID      string            `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string            `json:"sshHostsCredentialId,omitempty"`
-	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
-	MCP                  []agentMCP        `json:"mcp"`
-	Env                  map[string]string `json:"env"`
-	Layout               agentLayout       `json:"layout"`
+	CredentialBindings   map[string]*string `json:"credentialBindings,omitempty"`
+	AcpBackend           string             `json:"acpBackend"`
+	OpenCodeCredentialID string             `json:"openCodeCredentialId,omitempty"`
+	AiCredentialID       string             `json:"aiCredentialId,omitempty"`
+	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
+	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
+	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
+	MCP                  []agentMCP         `json:"mcp"`
+	Env                  map[string]string  `json:"env"`
+	Layout               agentLayout        `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).

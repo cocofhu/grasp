@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { defineComponent } from 'vue'
 import { createI18n } from 'vue-i18n'
+import { stageLinksFor } from '@/lib/run/stageLinks'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { TEST_REVIEW_CAPS, writesCaps } from '@/test/capsFixtures'
@@ -185,6 +186,7 @@ const PreviewFeedbackStub = defineComponent({
       >
         提交评审意见
       </button>
+      <slot name="history-footer" />
     </div>
   `,
 })
@@ -1765,6 +1767,31 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     })
   })
 
+  it('registers the editable gate stage for its run and keeps artifact links on the guarded product selector', async () => {
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
+    const fixture = { gate: baseGate({ nodeId: 'hg-visual', upstreamNodeId: 'visual', upstreamIteration: 1 }), run: visualEditableRun() }
+    fixture.gate.runId = 'run-gate-links-only'
+    fixture.run.id = fixture.gate.runId
+    const wrapper = mountApproval({ ...fixture, fillPreview: true })
+    await flushPromises()
+    const editor = wrapper.getComponent({ name: 'GateProductEditor' })
+    const products = editor.props('products') as Array<{ name: string }>
+    const name = products[0]!.name
+    const links = stageLinksFor(fixture.gate.runId)
+    expect(links?.hasArtifact(name)).toBe(true)
+    expect(links?.hasArtifact('unrelated-run-file.json')).toBe(false)
+    await editor.get('[data-testid="gate-mode-edit"]').trigger('click')
+    expect(editor.find('[data-testid="gate-artifact-textarea"]').exists()).toBe(true)
+    links!.openArtifact(name)
+    expect(editor.find('[data-testid="gate-artifact-textarea"]').exists()).toBe(true)
+    expect(links!.canOpenPreview()).toBe(true)
+    links!.openPreview()
+    await flushPromises()
+    expect(editor.find('[data-testid="gate-artifact-textarea"]').exists()).toBe(false)
+    wrapper.unmount()
+    expect(stageLinksFor(fixture.gate.runId)).toBeNull()
+  })
+
   it('shows inline loading in GateProductEditor while product loads (s1)', async () => {
     let release!: (v: unknown) => void
     apiMocks.artifactContent.mockReturnValue(
@@ -2429,7 +2456,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
   })
 
-  it('uses ReviewShell drawer with fillParent preview and cold sticky actions', async () => {
+  it('keeps the review conversation primary and opens its fillParent product without losing cold actions', async () => {
     const pageHtml = '<!doctype html><html><body><h1>短文</h1></body></html>'
     const { gate, run } = visualGateRun(pageHtml)
     const wrapper = mountApproval({
@@ -2443,7 +2470,11 @@ describe('GateApproval mobileFillRemaining layout', () => {
     expect(wrapper.find('[data-testid="mobile-fill-remaining"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="content-fit-scroll"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="review-shell"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="review-shell-sidebar"]').isVisible()).toBe(true)
+    expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('false')
+    await wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
 
     const preview = wrapper.find('[data-testid="mobile-fill-preview"]')
     expect(preview.exists()).toBe(true)
@@ -2486,7 +2517,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     })
     await flushPromises()
 
-    expect(wrapper.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-gate"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-send"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-pass"]').exists()).toBe(true)

@@ -72,7 +72,7 @@ describe('agentTeamWizard', () => {
     d.background = 'build a workflow team'
     d.gitUrl = 'https://github.com/org/repo.git'
     const payload = assembleTeamBootstrapPayload(d)
-    expect(payload.projectName).toBe('Demo')
+    expect(payload).not.toHaveProperty('projectName')
     expect(payload.pmName).toBe('Demo项目经理')
     expect(payload.mcp.some((m) => m.name === 'artifact-store')).toBe(true)
     expect(payload.env.GIT_REPOS).toBe('${vars.repos}')

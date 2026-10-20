@@ -11,7 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// BootstrapProjectOnboarding handles POST /api/projects/:id/bootstrap-onboarding.
+// BootstrapProjectOnboarding handles POST /api/workspace/bootstrap-onboarding.
 // Any project: shared auth, the chosen built-in template Agents, 默认工作流.
 // It never starts a Run. Missing apiKey or an invalid team → 400 with no partial
 // resources created.
@@ -57,6 +57,9 @@ func (h *Handlers) CreateWorkflowFromBaseline(c *gin.Context) {
 	var req services.CreateBaselineWorkflowRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !h.resolveWorkspaceID(c, &req.ProjectID) {
 		return
 	}
 	wf, err := h.Onboarding.CreateFromBaseline(req)

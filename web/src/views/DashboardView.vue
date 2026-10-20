@@ -205,7 +205,7 @@ function onComposerBlur() {
 }
 
 function goProjects() {
-  void router.push('/projects')
+  void router.push('/workflows')
 }
 
 function goEditWorkflow(id: string) {
@@ -850,12 +850,6 @@ onBeforeUnmount(() => {
                   data-testid="home-workflow-card-name"
                 >{{ p.name }}</div>
                 <div
-                  v-if="p.projectName"
-                  class="mt-0.5 truncate text-[11px] text-txt2"
-                  :title="p.projectName"
-                  :data-testid="`home-workflow-card-project-${p.id}`"
-                >{{ p.projectName }}</div>
-                <div
                   class="mt-0.5 line-clamp-2 text-[11px] text-txt3"
                   :title="p.description || t('pages.dashboard.cardFallback')"
                 >
@@ -967,34 +961,15 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-/* g1 — clean shell aligned to page.html design tokens */
+/* Inherit the app palette so the home canvas and surrounding shell stay continuous. */
 .home-shell {
   isolation: isolate;
-  --c-base: 24 23 29;
-  --c-surface: 30 28 36;
-  --c-elevated: 36 33 43;
-  --c-overlay: 44 40 53;
-  --c-line: 61 56 71;
-  --c-line-strong: 85 78 99;
-  --c-accent: 180 164 221;
-  --c-accent-2: 180 164 221;
   --home-shadow: 0 0 0 / 0.18;
   --home-highlight: 255 255 255 / 0.04;
 }
 
 html.light .home-shell {
-  --c-base: 250 249 251;
-  --c-surface: 255 255 255;
-  --c-elevated: 255 255 255;
-  --c-overlay: 246 244 249;
-  --c-line: 231 228 236;
-  --c-line-strong: 208 202 220;
-  --c-txt: 43 40 50;
-  --c-txt2: 115 108 128;
-  --c-txt3: 133 126 145;
-  --c-accent: 83 72 139;
-  --c-accent-2: 83 72 139;
-  --home-shadow: 43 32 66 / 0.045;
+  --home-shadow: 0 0 0 / 0.045;
   --home-highlight: 255 255 255 / 0.9;
 }
 
@@ -1069,11 +1044,6 @@ html.light .home-shell {
 .home-composer:focus-within {
   border-color: rgb(var(--c-accent) / 0.65);
   box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.07), 0 6px 22px rgb(var(--home-shadow));
-}
-
-/* Background only — a border-color here would beat :focus-within. */
-html.light .home-composer {
-  background: rgb(var(--c-elevated));
 }
 
 .home-composer__toolbar {
@@ -1179,10 +1149,6 @@ html.light .home-composer__send:disabled {
 .home-shell__card:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / 0.5);
   outline-offset: 2px;
-}
-
-html.light .home-shell__card:not(.home-shell__card--add) {
-  background: rgb(var(--c-elevated));
 }
 
 .home-shell__card--selected,
@@ -1506,12 +1472,12 @@ html.light .home-shell__card--selected .home-shell__card-top {
 
 .home-workflow-fade--left {
   left: 0;
-  background: linear-gradient(90deg, rgb(var(--c-base)), transparent);
+  background: linear-gradient(90deg, rgb(var(--c-surface)), transparent);
 }
 
 .home-workflow-fade--right {
   right: 0;
-  background: linear-gradient(270deg, rgb(var(--c-base)), transparent);
+  background: linear-gradient(270deg, rgb(var(--c-surface)), transparent);
 }
 
 .home-workflow-rail-wrap--has-left .home-workflow-fade--left,

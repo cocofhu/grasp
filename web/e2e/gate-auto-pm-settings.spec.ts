@@ -14,14 +14,26 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
 
     let lastSaveBody: Record<string, unknown> | null = null
     await page.route('**/api/**', async (route) => {
-    // Skip Vite module URLs like /@fs/.../src/lib/api/api.ts (pathname is not /api/...)
-    if (!new URL(route.request().url()).pathname.startsWith('/api/')) {
-      await route.continue()
-      return
-    }
+      // Skip Vite module URLs like /@fs/.../src/lib/api/api.ts.
+      if (!new URL(route.request().url()).pathname.startsWith('/api/')) {
+        await route.continue()
+        return
+      }
       const url = new URL(route.request().url())
       const method = route.request().method()
-      if (url.pathname.match(/\/projects\/[^/]+\/pm-leader$/) && method === 'GET') {
+      if (url.pathname === '/api/workspace' && method === 'GET') {
+        await route.fulfill({
+          json: {
+            id: 'proj-e2e',
+            name: '测试工作区',
+            description: '',
+            variables: [],
+            notifyPolicy: { enabled: true, defaultEvents: ['waiting_human', 'failed'], channelIds: [] },
+          },
+        })
+        return
+      }
+      if (url.pathname === '/api/workspace/pm-leader' && method === 'GET') {
         await route.fulfill({
           status: 200,
           json: {
@@ -36,7 +48,7 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
         })
         return
       }
-      if (url.pathname.match(/\/projects\/[^/]+\/pm-leader$/) && method === 'PUT') {
+      if (url.pathname === '/api/workspace/pm-leader' && method === 'PUT') {
         lastSaveBody = route.request().postDataJSON() as Record<string, unknown>
         await route.fulfill({
           status: 200,
@@ -56,14 +68,14 @@ test.describe('PM Leader gate-auto settings (browser)', () => {
         await route.fulfill({ status: 200, json: [{ name: 'agent-1' }] })
         return
       }
-      if (url.pathname.match(/\/projects\/[^/]+\/channel/)) {
+      if (url.pathname === '/api/workspace/channels' && method === 'GET') {
         await route.fulfill({
           status: 200,
-          json: { channel: null, secretsKeyConfigured: true },
+          json: { items: [], freeAgents: ['agent-1'], secretsKeyConfigured: true },
         })
         return
       }
-      if (url.pathname.match(/\/projects\/[^/]+\/pm\/threads/)) {
+      if (['/api/workspace/pm/threads', '/api/workspace/notify-receipts'].includes(url.pathname) && method === 'GET') {
         await route.fulfill({ status: 200, json: { items: [] } })
         return
       }

@@ -56,10 +56,10 @@ func TestRestartReattach(t *testing.T) {
 	s := newStack(t)
 	s.up()
 
-	projectID := s.createProject()
+	projectID := s.workspaceID()
 	model := s.pickModel()
 	t.Logf("using deepseek model %s", model)
-	s.onboard(projectID, apiKey, model)
+	s.onboard(apiKey, model)
 	wfID := s.createWorkflow(projectID)
 
 	marker := "E2E-" + randHex(6)
@@ -289,11 +289,14 @@ func (s *stack) mustDo(method, path string, body, out any) {
 	}
 }
 
-func (s *stack) createProject() string {
+func (s *stack) workspaceID() string {
 	var p struct {
 		ID string `json:"id"`
 	}
-	s.mustDo(http.MethodPost, "/api/projects", map[string]any{"name": "e2e-restart-" + randHex(3)}, &p)
+	s.mustDo(http.MethodGet, "/api/workspace", nil, &p)
+	if p.ID == "" {
+		s.t.Fatal("workspace id is empty")
+	}
 	return p.ID
 }
 
@@ -319,7 +322,7 @@ func (s *stack) pickModel() string {
 	return "deepseek-chat"
 }
 
-func (s *stack) onboard(projectID, apiKey, model string) {
+func (s *stack) onboard(apiKey, model string) {
 	s.t.Helper()
 	body := map[string]any{
 		"acpBackend": "opencode", "apiKey": apiKey,
@@ -331,7 +334,7 @@ func (s *stack) onboard(projectID, apiKey, model string) {
 		},
 	}
 	// The body carries the API key: report only the status on failure.
-	if code, err := s.do(http.MethodPost, "/api/projects/"+projectID+"/bootstrap-onboarding", body, nil); err != nil {
+	if code, err := s.do(http.MethodPost, "/api/workspace/bootstrap-onboarding", body, nil); err != nil {
 		s.t.Fatalf("bootstrap onboarding failed with status %d", code)
 	}
 	// The implement template parks for human review after its run; this test

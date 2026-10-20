@@ -30,7 +30,7 @@ func setupExternalMcpHarness(t *testing.T) (*harness, string) {
 	hn.h.ExternalMcp = services.NewProjectExternalMcpService(hn.db, "")
 	hn.h.ProjectMcpKeys = services.NewProjectMcpApiKeyService(hn.db)
 
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "ExtMCP"})
+	w := hn.seedWorkspace(map[string]any{"name": "ExtMCP"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create project: %d %s", w.Code, w.Body.String())
 	}
@@ -40,7 +40,7 @@ func setupExternalMcpHarness(t *testing.T) (*harness, string) {
 }
 
 func postExternalMcpRPC(hn *harness, pid, mcpID, bearer string, body []byte) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(http.MethodPost, "/mcp/external/"+pid+"/"+mcpID, bytes.NewReader(body))
+	req := httptest.NewRequest(http.MethodPost, "/mcp/workspace/"+mcpID, bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	w := httptest.NewRecorder()
@@ -52,7 +52,7 @@ func postExternalMcpRPC(hn *harness, pid, mcpID, bearer string, body []byte) *ht
 func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
 
-	w := hn.do(http.MethodGet, "/api/projects/"+pid+"/external-mcp", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/external-mcp", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("get settings: %d %s", w.Code, w.Body.String())
 	}
@@ -62,14 +62,14 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 		t.Fatalf("default enabled = %v", settings["enabled"])
 	}
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-progress"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("update settings: %d %s", w.Code, w.Body.String())
 	}
 
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/external-mcp/keys", map[string]any{"name": "cursor"})
+	w = hn.do(http.MethodPost, "/api/workspace/external-mcp/keys", map[string]any{"name": "cursor"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create key: %d %s", w.Code, w.Body.String())
 	}
@@ -81,7 +81,7 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 		t.Fatalf("create response = %v", created)
 	}
 
-	w = hn.do(http.MethodGet, "/api/projects/"+pid+"/external-mcp/keys", nil)
+	w = hn.do(http.MethodGet, "/api/workspace/external-mcp/keys", nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("list keys: %d %s", w.Code, w.Body.String())
 	}
@@ -94,7 +94,7 @@ func TestExternalMcpSettingsAndKeysREST(t *testing.T) {
 		t.Fatalf("tools/list: %d %s", resp.Code, resp.Body.String())
 	}
 
-	w = hn.do(http.MethodDelete, "/api/projects/"+pid+"/external-mcp/keys/"+keyID, nil)
+	w = hn.do(http.MethodDelete, "/api/workspace/external-mcp/keys/"+keyID, nil)
 	if w.Code != http.StatusOK {
 		t.Fatalf("revoke: %d %s", w.Code, w.Body.String())
 	}
@@ -109,13 +109,13 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
 
 	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	w := hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": false, "enabledPacks": []string{"pm-progress"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("update disabled: %d", w.Code)
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/external-mcp/keys", map[string]any{"name": "k"})
+	w = hn.do(http.MethodPost, "/api/workspace/external-mcp/keys", map[string]any{"name": "k"})
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	plain := created["key"].(string)
@@ -125,7 +125,7 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 		t.Fatalf("disabled want 403 got %d", resp.Code)
 	}
 
-	w = hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w = hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-progress"},
 	})
 	if w.Code != http.StatusOK {
@@ -143,49 +143,38 @@ func TestExternalMcpDisabledAndPackFilter(t *testing.T) {
 }
 
 // plan_coverage: g4.1 — project A key must not authorize project B external MCP.
-func TestExternalMcpCrossProjectKeyRejected(t *testing.T) {
-	hn, pidA := setupExternalMcpHarness(t)
-
-	w := hn.do(http.MethodPost, "/api/projects", map[string]any{"name": "Other"})
-	if w.Code != http.StatusOK {
-		t.Fatalf("create project B: %d %s", w.Code, w.Body.String())
+func TestExternalMcpForeignKeyRejected(t *testing.T) {
+	h, _ := setupExternalMcpHarness(t)
+	if err := h.db.Create(&models.Project{ID: "foreign", Name: "Foreign"}).Error; err != nil {
+		t.Fatal(err)
 	}
-	var projB map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &projB)
-	pidB := projB["id"].(string)
-
-	for _, pid := range []string{pidA, pidB} {
-		w = hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
-			"enabled": true, "enabledPacks": []string{"pm-progress"},
-		})
-		if w.Code != http.StatusOK {
-			t.Fatalf("enable %s: %d %s", pid, w.Code, w.Body.String())
-		}
+	key, err := h.h.ProjectMcpKeys.Create("foreign", "foreign-key")
+	if err != nil {
+		t.Fatal(err)
 	}
-
-	w = hn.do(http.MethodPost, "/api/projects/"+pidA+"/external-mcp/keys", map[string]any{"name": "a-key"})
-	var created map[string]any
-	_ = json.Unmarshal(w.Body.Bytes(), &created)
-	plain := created["key"].(string)
-
-	body, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "tools/list"})
-	resp := postExternalMcpRPC(hn, pidB, "pm-progress", plain, body)
-	if resp.Code != http.StatusUnauthorized {
-		t.Fatalf("cross-project key want 401 got %d %s", resp.Code, resp.Body.String())
+	if err = h.db.Delete(&models.Project{}, "id = ?", "foreign").Error; err != nil {
+		t.Fatal(err)
+	}
+	w := h.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{"enabled": true, "enabledPacks": []string{"pm-progress"}})
+	if w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	body := []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`)
+	if w := postExternalMcpRPC(h, "", "pm-progress", key.Plaintext, body); w.Code != 401 {
+		t.Fatalf("foreign key accepted: %d %s", w.Code, w.Body.String())
 	}
 }
 
-// plan_coverage: g2.3 — external MCP tool calls audit with CallerKind=external.
 func TestExternalMcpAuditExternalCallerKind(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
 
-	w := hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-progress"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/external-mcp/keys", map[string]any{"name": "audit-key"})
+	w = hn.do(http.MethodPost, "/api/workspace/external-mcp/keys", map[string]any{"name": "audit-key"})
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	plain := created["key"].(string)
@@ -265,6 +254,7 @@ func externalToolCallResult(t *testing.T, body []byte) (result map[string]any, i
 // unbound leader returns distinguishable "pm leader not bound".
 func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
+
 	wireExternalAgentFS(t, hn)
 
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-leader", ProjectID: pid}); err != nil {
@@ -279,13 +269,13 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-agent-fs"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/external-mcp/keys", map[string]any{"name": "fs-key"})
+	w = hn.do(http.MethodPost, "/api/workspace/external-mcp/keys", map[string]any{"name": "fs-key"})
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	plain := created["key"].(string)
@@ -331,19 +321,20 @@ func TestExternalMcpAgentFSUsesPmLeader(t *testing.T) {
 
 func TestExternalMcpAgentFSRequiresPmLeader(t *testing.T) {
 	hn, pid := setupExternalMcpHarness(t)
+
 	wireExternalAgentFS(t, hn)
 
 	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "orphan", ProjectID: pid}); err != nil {
 		t.Fatal(err)
 	}
 
-	w := hn.do(http.MethodPut, "/api/projects/"+pid+"/external-mcp", map[string]any{
+	w := hn.do(http.MethodPut, "/api/workspace/external-mcp", map[string]any{
 		"enabled": true, "enabledPacks": []string{"pm-agent-fs"},
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("enable: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPost, "/api/projects/"+pid+"/external-mcp/keys", map[string]any{"name": "no-leader"})
+	w = hn.do(http.MethodPost, "/api/workspace/external-mcp/keys", map[string]any{"name": "no-leader"})
 	var created map[string]any
 	_ = json.Unmarshal(w.Body.Bytes(), &created)
 	plain := created["key"].(string)

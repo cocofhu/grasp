@@ -31,3 +31,6 @@ func (e *Engine) IsHalted() bool {
 	defer e.haltMu.RUnlock()
 	return e.halted
 }
+
+// ActiveDrivers reports admitted executions still reaching a safe boundary.
+func (e *Engine) ActiveDrivers() int { e.sem.mu.Lock(); defer e.sem.mu.Unlock(); return e.sem.cur }

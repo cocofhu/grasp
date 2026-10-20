@@ -5,7 +5,7 @@ import type { InputField } from '@/components/workflow/RunLaunchModal.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
-import { readStoredProjectId } from '@/lib/composables/useProjectContext'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   clarifyFirstNodeId,
   isClarifyFirstWorkflow,
@@ -20,7 +20,7 @@ import {
 import { setHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 import { runTitleFromDraft } from '@/lib/run/runTitle'
 import { missingRequiredAskField, seedAskLaunchFields } from '@/lib/run/useWorkflowAskInputs'
-import type { ClarifyImage, Project, Workflow } from '@/lib/shared/types'
+import type { ClarifyImage, Workflow } from '@/lib/shared/types'
 import type { Agent } from '@/lib/api/apiTypes'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
 
@@ -55,25 +55,6 @@ function pickDefaultWorkflowId(list: Workflow[], preferred: string): string {
   return list[0]?.id || ''
 }
 
-/** Map projectId → name; missing list entry falls back to id; no projectId → empty. */
-export function resolveHomeProjectName(
-  projectId: string | undefined,
-  namesById: Map<string, string>,
-): string {
-  const id = (projectId || '').trim()
-  if (!id) return ''
-  const name = namesById.get(id)?.trim()
-  return name || id
-}
-
-function projectNameMap(projects: Project[] | null | undefined): Map<string, string> {
-  const map = new Map<string, string>()
-  for (const p of Array.isArray(projects) ? projects : []) {
-    if (p?.id) map.set(p.id, p.name || '')
-  }
-  return map
-}
-
 export function parseRunPriority(raw: string | null | undefined): RunPriority {
   if (raw === 'high' || raw === 'normal' || raw === 'low') return raw
   return 'normal'
@@ -103,7 +84,7 @@ export function useHomeApproveChat() {
 
   const workflows = ref<Workflow[]>([])
   const workflowsLoaded = ref(false)
-  const projectNamesById = ref<Map<string, string>>(new Map())
+  const { workspaceId, ensureLoaded: loadWorkspace } = useWorkspaceContext()
   const agentsByName = ref<Map<string, Agent>>(new Map())
   const loading = ref(false)
   const loadError = ref<string | null>(null)
@@ -133,22 +114,12 @@ export function useHomeApproveChat() {
   /** Auto-save quota / partial toast once per session (plan g2.2 / F4). */
   let quotaToastShown = false
 
-  const requestedProjectId = computed(() => {
-    const route = router.currentRoute?.value
-    if (route?.path !== '/dashboard') return ''
-    const query = route.query.projectId
-    const value = Array.isArray(query) ? query[0] : query
-    return typeof value === 'string' ? value.trim() : ''
-  })
-  const appliedProjectId = ref('')
-  const unavailableProjectId = ref('')
-
   const homeWorkflows = computed(() =>
     workflows.value
       .filter((w) => isPublishedClarifyFirst(w, agentsByName.value) && !!w.showOnHome)
       .map((w) => ({
         ...withPublishedSnapshot(w),
-        projectName: resolveHomeProjectName(w.projectId, projectNamesById.value),
+
       })),
   )
   /**
@@ -164,20 +135,8 @@ export function useHomeApproveChat() {
         isClarifyFirstWorkflow(w, agentsByName.value),
     ),
   )
-  const selected = computed(() => {
-    const requested = requestedProjectId.value
-    if (requested && (appliedProjectId.value !== requested || unavailableProjectId.value === requested)) {
-      return null
-    }
-    const candidates = requested
-      ? homeWorkflows.value.filter((w) => w.projectId === requested)
-      : homeWorkflows.value
-    return candidates.find((w) => w.id === selectedId.value) || candidates[0] || null
-  })
-  /** Project context from the selected workflow (not a home project gate). */
-  const projectId = computed(
-    () => selected.value?.projectId || requestedProjectId.value || launchTarget.value?.projectId || readStoredProjectId() || '',
-  )
+  const selected = computed(() => homeWorkflows.value.find((w) => w.id === selectedId.value) || homeWorkflows.value[0] || null)
+  const projectId = workspaceId
   const launchTitle = computed(() => runTitleFromDraft(pendingText.value, pendingImages.value))
   /** Opening message carried through the launch modal's own startRun call. */
   const launchFirstMessage = computed(() => ({
@@ -241,7 +200,7 @@ export function useHomeApproveChat() {
       attach.attachments.value = stored.attachments.map((im) => ({ ...im }))
       // A project compose link supplies explicit context even when IDB resolves
       // after workflows load. Restore content without replacing that selection.
-      if (stored.pipelineId && !requestedProjectId.value) {
+      if (stored.pipelineId) {
         const list = homeWorkflows.value
         if (list.length === 0) {
           // List not loaded yet — keep preference for workflows watch (plan g2.4).
@@ -264,34 +223,7 @@ export function useHomeApproveChat() {
     }
   }
 
-  watch(
-    [homeWorkflows, requestedProjectId, loading, workflowsLoaded, hidingWorkflowId],
-    ([list, requested, isLoading, loaded, hiding]) => {
-      if (requested) {
-        // Recheck explicit context whenever candidates change, not only when
-        // entering the URL. Wait for optimistic visibility changes to settle.
-        if (!loaded || isLoading || loadError.value || hiding) return
-        const candidates = list.filter((w) => w.projectId === requested)
-        const preferred = [preferredDraftWorkflowId, selectedId.value, readLastWorkflowId()]
-          .find((id) => candidates.some((w) => w.id === id)) || ''
-        const next = pickDefaultWorkflowId(candidates, preferred)
-        const wasUnavailable = unavailableProjectId.value === requested
-        appliedProjectId.value = requested
-        unavailableProjectId.value = next ? '' : requested
-        selectedId.value = next
-        preferredDraftWorkflowId = next
-        if (next) {
-          writeLastWorkflowId(next)
-        } else if (!wasUnavailable) {
-          // Never silently launch another project's workflow when this project
-          // has no startable home workflow. Its detail page exposes setup.
-          toast.warn(t('pages.dashboard.noWorkflows'))
-          void router.push({ path: `/projects/${encodeURIComponent(requested)}` })
-        }
-        return
-      }
-      appliedProjectId.value = ''
-      unavailableProjectId.value = ''
+  watch(homeWorkflows, (list) => {
       // While the list is still empty (initial mount / load in flight), keep any
       // draft workflow preference from hydrate — do not treat "not in empty list"
       // as unavailable (plan g2.4).
@@ -325,24 +257,21 @@ export function useHomeApproveChat() {
     loading.value = true
     loadError.value = null
     try {
-      // Cross-project: omit projectId so the API returns all visible workflows.
-      // Parallel listProjects so home cards can show names without a flash of UUID (g1.1).
+      // Load the visible workflow catalog and workspace metadata together.
       // Agents supply the caps that decide which workflows open with a clarify Agent.
-      const [list, projects, agents] = await Promise.all([
+      const [list, , agents] = await Promise.all([
         api.listWorkflows({ signal: ac.signal }),
-        api.listProjects({ signal: ac.signal }).catch(() => [] as Project[]),
+        loadWorkspace(),
         api.listAgents().catch(() => [] as Agent[]),
       ])
       if (ac.signal.aborted) return
       agentsByName.value = new Map((Array.isArray(agents) ? agents : []).map((a) => [a.name, a]))
       workflows.value = Array.isArray(list) ? list : []
-      projectNamesById.value = projectNameMap(projects)
       workflowsLoaded.value = true
     } catch (e: any) {
       if (ac.signal.aborted || e?.name === 'AbortError') return
       loadError.value = String(e?.message || e)
       workflows.value = []
-      projectNamesById.value = new Map()
     } finally {
       if (!ac.signal.aborted) loading.value = false
     }
@@ -351,11 +280,9 @@ export function useHomeApproveChat() {
   /** Reload home cards after from-baseline create (plan g2.1). Keep prior list if reload fails. */
   async function reloadAfterCreate(preferredId?: string) {
     const previousWorkflows = workflows.value
-    const previousNames = projectNamesById.value
     await load()
     if (loadError.value) {
       workflows.value = previousWorkflows
-      projectNamesById.value = previousNames
       return
     }
     const id = (preferredId || '').trim()
@@ -369,15 +296,6 @@ export function useHomeApproveChat() {
     selectedId.value = id
     preferredDraftWorkflowId = id
     writeLastWorkflowId(id)
-    const route = router.currentRoute?.value
-    const chosen = homeWorkflows.value.find((w) => w.id === id)
-    if (route?.path === '/dashboard' && requestedProjectId.value && chosen && chosen.projectId !== requestedProjectId.value) {
-      // Reflect a manual cross-project choice in the URL so clicking the
-      // original project's compose link again is a new navigation.
-      const query = { ...route.query }
-      delete query.projectId
-      void router.replace?.({ path: route.path, query })
-    }
   }
 
   function selectPriority(value: RunPriority) {
@@ -393,14 +311,11 @@ export function useHomeApproveChat() {
     workflows.value = workflows.value.map((item) =>
       item.id === wf.id ? { ...item, showOnHome: false } : item,
     )
-    const requested = requestedProjectId.value
-    const candidates = requested
-      ? homeWorkflows.value.filter((item) => item.projectId === requested)
-      : homeWorkflows.value
+    const candidates = homeWorkflows.value
     const nextId = candidates[0]?.id || ''
     selectedId.value = nextId
     preferredDraftWorkflowId = nextId
-    if (nextId || !requested) writeLastWorkflowId(nextId)
+    writeLastWorkflowId(nextId)
     try {
       const saved = await api.patchWorkflowHomeVisibility(wf.id, false)
       workflows.value = workflows.value.map((item) =>
@@ -432,13 +347,11 @@ export function useHomeApproveChat() {
     launchOpen.value = false
   }
 
-  function goGates(runId: string, wf: Workflow | null, nodeId?: string) {
+  function goGates(runId: string, _wf: Workflow | null, nodeId?: string) {
     // Align inbox filters to the workflow being started (plan g1.1). Use the
     // workflow object's projectId only — never a hard-coded project name/UUID.
-    const projectId = (wf?.projectId || '').trim()
     const query: Record<string, string> = { run: runId }
     if (nodeId) query.node = nodeId
-    if (projectId) query.projectId = projectId
     return router.push({ path: '/gates', query })
   }
 

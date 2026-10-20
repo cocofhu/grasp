@@ -28,7 +28,6 @@ var (
 
 // TeamBootstrapRequest is the body for POST /api/agent-teams/bootstrap.
 type TeamBootstrapRequest struct {
-	ProjectName  string            `json:"projectName"`
 	Prefix       string            `json:"prefix"`
 	PMName       string            `json:"pmName"`
 	Background   string            `json:"background"`
@@ -51,7 +50,7 @@ type TeamBootstrapEvent struct {
 
 // TeamBootstrapResource is one created resource for the progress panel.
 type TeamBootstrapResource struct {
-	Kind   string `json:"kind"` // project|agent
+	Kind   string `json:"kind"` // workspace|agent
 	Name   string `json:"name"`
 	Detail string `json:"detail,omitempty"`
 }
@@ -129,7 +128,7 @@ func (s *TeamService) GetSession(id string) (TeamBootstrapSession, error) {
 	return cp, nil
 }
 
-// Bootstrap creates project + PM + the built-in engineers, then starts a PM sandbox.
+// Bootstrap creates PM and engineer Agents in the existing workspace.
 func (s *TeamService) Bootstrap(ctx context.Context, req TeamBootstrapRequest) (TeamBootstrapSession, error) {
 	norm, err := s.normalizeRequest(req)
 	if err != nil {
@@ -204,20 +203,20 @@ type normalizedTeamReq struct {
 }
 
 func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeamReq, error) {
-	projectName := strings.TrimSpace(req.ProjectName)
+	workspace, err := s.Projects.Workspace()
+	if err != nil {
+		return normalizedTeamReq{}, err
+	}
+	projectName := workspace.Name
 	prefix := strings.TrimSpace(req.Prefix)
 	pmName := strings.TrimSpace(req.PMName)
 	background := strings.TrimSpace(req.Background)
-	if projectName == "" {
-		return normalizedTeamReq{}, fmt.Errorf("%w: projectName is required", ErrTeamValidation)
-	}
 	if prefix == "" {
 		return normalizedTeamReq{}, fmt.Errorf("%w: prefix is required", ErrTeamValidation)
 	}
 	if background == "" {
 		return normalizedTeamReq{}, fmt.Errorf("%w: background is required", ErrTeamValidation)
 	}
-	var err error
 	pmName, err = NormalizeAndValidateAgentName(pmName)
 	if err != nil {
 		if pmName == "" {
@@ -314,22 +313,24 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 		s.appendEvent(sessionID, "err", err.Error())
 	}
 
-	s.appendEvent(sessionID, "sys", "creating project "+req.ProjectName)
-	proj, err := s.Projects.Create(req.ProjectName, req.Background, nil)
+	s.appendEvent(sessionID, "sys", "preparing workspace "+req.ProjectName)
+	proj, err := s.Projects.Workspace()
 	if err != nil {
 		fail(err)
 		return
 	}
-	if err := s.writeProjectAuth(proj.ID, req); err != nil {
-		fail(fmt.Errorf("write project auth: %w", err))
-		return
+	if len(s.Skills.List()) == 0 {
+		if err := s.writeProjectAuth(proj.ID, req); err != nil {
+			fail(fmt.Errorf("write project auth: %w", err))
+			return
+		}
 	}
 	s.patchSession(sessionID, func(sess *TeamBootstrapSession) {
 		sess.ProjectID = proj.ID
 		sess.Status = "running"
 	})
-	s.addResource(sessionID, "project", proj.Name, proj.ID)
-	s.appendEvent(sessionID, "ok", "project created: "+proj.ID)
+	s.addResource(sessionID, "workspace", proj.Name, proj.ID)
+	s.appendEvent(sessionID, "ok", "workspace ready: "+proj.ID)
 
 	// Create PM agent
 	s.appendEvent(sessionID, "sys", "creating PM "+req.PMName)
@@ -351,9 +352,11 @@ func (s *TeamService) runBootstrap(ctx context.Context, sessionID string, req no
 
 	enabled := true
 	mcps := append([]string{}, DefaultPmEnabledMcps...)
-	if _, err := s.Pm.UpdateBinding(proj.ID, &enabled, &req.PMName, mcps, nil, nil); err != nil {
-		fail(fmt.Errorf("bind PM Leader: %w", err))
-		return
+	if !proj.PmLeaderEnabled && proj.PmLeaderAgent == "" {
+		if _, err := s.Pm.UpdateBinding(proj.ID, &enabled, &req.PMName, mcps, nil, nil); err != nil {
+			fail(fmt.Errorf("bind PM Leader: %w", err))
+			return
+		}
 	}
 	s.appendEvent(sessionID, "ok", "PM Leader bound")
 
@@ -709,7 +712,7 @@ func teamPMProjectContextMarkdown(req normalizedTeamReq) string {
 	b.WriteString(strings.TrimSpace(req.Background))
 	b.WriteString("\n\n## 编制约定\n\n")
 	b.WriteString("- 命名前缀：`" + req.Prefix + "`\n")
-	b.WriteString(fmt.Sprintf("- 所属项目：`%s`（你与 %d 名工程师同属此项目）\n", req.ProjectName, len(TeamEngineerTemplates)))
+	b.WriteString(fmt.Sprintf("- 工作区：`%s`（你与 %d 名工程师在此协作）\n", req.ProjectName, len(TeamEngineerTemplates)))
 	b.WriteString("- PM：`" + req.PMName + "`\n")
 	b.WriteString("- 工程师命名：`{前缀}{角色}`（" + teamRoleLabels() + "）\n\n")
 	if req.GitURL != "" {

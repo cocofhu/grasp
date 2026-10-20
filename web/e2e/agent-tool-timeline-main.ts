@@ -5,6 +5,7 @@ import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import AgentTimeline from '../src/components/run/AgentTimeline.vue'
 import ReactArtifactStage from '../src/components/run/ReactArtifactStage.vue'
+import ReviewShell from '../src/components/run/ReviewShell.vue'
 import type { AgentPart, Artifact } from '../src/lib/shared/types'
 
 initLocale()
@@ -44,13 +45,15 @@ const App = defineComponent({
   name: 'AgentToolTimelineHarness',
   setup() {
     return () =>
-      h('div', { class: 'flex h-screen gap-3 p-3', 'data-testid': 'tool-timeline-root' }, [
-        h('div', { class: 'w-[440px] shrink-0 overflow-auto rounded-lg border border-line bg-surface p-3' }, [
-          h(AgentTimeline, { parts, completed: true, runId: 'run-e2e' }),
-        ]),
-        h('div', { class: 'min-w-0 flex-1 overflow-hidden rounded-lg border border-line' }, [
-          h(ReactArtifactStage, { artifacts, runId: 'run-e2e', nodeId: 'grasp', inlineContent: true, remoteKind: 'off' }),
-        ]),
+      h('div', { class: 'flex h-screen min-h-0 min-w-0', 'data-testid': 'tool-timeline-root' }, [
+        h(ReviewShell, { runId: 'run-e2e', scopeKey: 'tool-timeline-e2e' }, {
+          sidebar: () => h('div', { class: 'min-h-0 min-w-0 flex-1 overflow-y-auto px-6 py-8', 'data-conversation-scroll': '' }, [
+            h('div', { class: 'mx-auto w-full max-w-[760px]' }, [
+              h(AgentTimeline, { parts, completed: true, runId: 'run-e2e' }),
+            ]),
+          ]),
+          stage: () => h(ReactArtifactStage, { artifacts, runId: 'run-e2e', nodeId: 'grasp', inlineContent: true, remoteKind: 'off' }),
+        }),
       ])
   },
 })

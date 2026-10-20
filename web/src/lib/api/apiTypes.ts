@@ -167,6 +167,8 @@ export interface AgentTemplate {
 }
 
 export interface Agent {
+  /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
+  credentialBindings?: Record<string, string | null>
   name: string
   /** Home project (required). */
   projectId: string
@@ -253,7 +255,7 @@ export type CreateProjectSharedAgentTestPayload = {
   repoUrl?: string
 }
 
-/** Result of POST /projects/:id/agents/import. */
+/** Result of POST /workspace/agents/import. */
 export interface ProjectAgentsImportResult {
   created?: string[]
   overwritten?: string[]
@@ -268,7 +270,7 @@ export interface TeamBootstrapEvent {
 }
 
 export interface TeamBootstrapResource {
-  kind: string
+  kind: 'workspace' | 'agent'
   name: string
   detail?: string
 }
@@ -292,7 +294,6 @@ export interface TeamBootstrapSession {
 }
 
 export interface TeamBootstrapRequest {
-  projectName: string
   prefix: string
   pmName: string
   background: string
@@ -538,4 +539,19 @@ export interface NotificationListResponse {
   allCount?: number
   unreadCount?: number
   readCount?: number
+}
+
+/** Lightweight metadata for the workspace workflow directory. Load graph details when opening or running. */
+export interface WorkflowCatalogItem {
+  id: string
+  name: string
+  description: string
+  status: 'draft' | 'published'
+  version: number
+  publishedVersion?: number
+  updatedAt: string
+  lastRunAt?: string
+  showOnHome?: boolean
+  needsRepo?: boolean
+  projectId?: string
 }

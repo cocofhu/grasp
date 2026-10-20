@@ -19,6 +19,7 @@ func TestWriteProjectErrBranches(t *testing.T) {
 	}{
 		{services.ErrEmptyProjectName, http.StatusBadRequest},
 		{services.ErrSecretPlaceholderOnNewKey, http.StatusBadRequest},
+		{services.ErrSecretPlaceholderOnPublicValue, http.StatusBadRequest},
 		{services.ErrUnknownModelDisplayNameTooLong, http.StatusBadRequest},
 		{services.ErrProjectNameExists, http.StatusConflict},
 		{services.ErrProjectNotFound, http.StatusNotFound},

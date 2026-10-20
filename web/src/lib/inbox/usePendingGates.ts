@@ -108,7 +108,6 @@ async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; to
   return listAllPendingGates({
     signal,
     wf: filters.wf,
-    projectId: filters.projectId,
     tag: filters.tag,
   })
 }
@@ -116,16 +115,14 @@ async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; to
 /** URL `?wf=&projectId=&tag=` — same source of truth as the inbox page filters. */
 function readPeekFiltersFromLocation(): {
   wf?: string
-  projectId?: string
   tag?: string
 } {
   if (typeof window === 'undefined') return {}
   try {
     const q = new URLSearchParams(window.location.search)
     const wf = q.get('wf')?.trim() || undefined
-    const projectId = q.get('projectId')?.trim() || undefined
     const tag = q.get('tag')?.trim() || undefined
-    return { wf, projectId, tag }
+    return { wf, tag }
   } catch {
     return {}
   }

@@ -86,10 +86,10 @@ onBeforeUnmount(() => {
     <button
       ref="trigger"
       type="button"
-      class="relative inline-flex shrink-0 items-center justify-center rounded-md border text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
+      class="relative inline-flex shrink-0 items-center justify-center text-xs font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent"
       :class="[
-        compact ? 'h-10 w-10' : 'h-8 gap-1.5 px-2',
-        open || activeLabels.length ? 'border-accent/40 bg-accent-dim text-accent' : 'border-line bg-surface text-txt2 hover:border-line-strong hover:text-txt',
+        compact ? 'chat-action-button' : 'h-8 gap-1.5 rounded-md border px-2',
+        open || activeLabels.length ? 'border-accent/40 bg-accent-dim text-accent' : compact ? 'text-txt2' : 'border-line bg-surface text-txt2 hover:border-line-strong hover:text-txt',
       ]"
       :title="[t('pages.embedChat.pageCollaboration'), ...activeLabels].join(' · ')"
       :aria-label="t('pages.embedChat.pageCollaboration')"

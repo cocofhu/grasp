@@ -1,30 +1,24 @@
 import { ref } from 'vue'
 import { api } from '@/lib/api/api'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
-  DEFAULT_PROJECT_ID,
-  isOnboardingSuppressed,
   shouldAutoOpenOnboarding,
+  isOnboardingSuppressed,
   type OnboardingMode,
 } from '@/lib/pm/onboardingWizard'
 
 /**
- * First install / new-project / retry share one App-level wizard mount.
+ * First install and retry share one App-level wizard mount.
  */
 export const onboardingOpen = ref(false)
 export const onboardingMode = ref<OnboardingMode>('firstInstall')
-export const onboardingProjectId = ref(DEFAULT_PROJECT_ID)
+export const onboardingProjectId = ref('')
 
 /** Bumped after a successful bootstrap so open views can refetch. */
 export const firstInstallCompletedAt = ref(0)
 
 export function openFirstInstall(): void {
   onboardingMode.value = 'firstInstall'
-  onboardingProjectId.value = DEFAULT_PROJECT_ID
-  onboardingOpen.value = true
-}
-
-export function openCreateProjectOnboarding(): void {
-  onboardingMode.value = 'createProject'
   onboardingProjectId.value = ''
   onboardingOpen.value = true
 }
@@ -32,7 +26,7 @@ export function openCreateProjectOnboarding(): void {
 export function openRetryOnboarding(projectId: string): void {
   const id = projectId.trim()
   if (!id) return
-  onboardingMode.value = id === DEFAULT_PROJECT_ID ? 'firstInstall' : 'retry'
+  onboardingMode.value = 'retry'
   onboardingProjectId.value = id
   onboardingOpen.value = true
 }
@@ -50,36 +44,32 @@ export function markFirstInstallCompleted(): void {
 }
 
 let probe: Promise<void> | null = null
+let probeGeneration = 0
 
 /** Probes once per session; later route changes must not re-open the wizard. */
 export function probeFirstInstall(): Promise<void> {
-  if (!probe) probe = runProbe()
+  if (!probe) probe = runProbe(probeGeneration)
   return probe
 }
 
 export function resetFirstInstallProbe(): void {
+  probeGeneration++
   probe = null
   onboardingOpen.value = false
   onboardingMode.value = 'firstInstall'
-  onboardingProjectId.value = DEFAULT_PROJECT_ID
+  onboardingProjectId.value = ''
 }
 
-async function runProbe(): Promise<void> {
-  if (isOnboardingSuppressed(DEFAULT_PROJECT_ID)) return
+async function runProbe(generation: number): Promise<void> {
   try {
-    // getProject rejects when the default project is absent — nothing to bootstrap into.
-    const [, workflows, agents] = await Promise.all([
-      api.getProject(DEFAULT_PROJECT_ID),
-      api.listWorkflows({ projectId: DEFAULT_PROJECT_ID }),
-      api.listAgents(),
-    ])
-    const named = agents.map((a) => ({ name: a.name, projectId: a.projectId }))
-    if (shouldAutoOpenOnboarding(DEFAULT_PROJECT_ID, workflows, named)) {
+    const workspace = await useWorkspaceContext().ensureLoaded()
+    if (generation !== probeGeneration || !workspace || isOnboardingSuppressed(workspace.id)) return
+    const [workflows, agents] = await Promise.all([api.listWorkflows(), api.listAgents()])
+    if (generation !== probeGeneration) return
+    if (shouldAutoOpenOnboarding(workspace.id, workflows, agents)) {
       onboardingMode.value = 'firstInstall'
-      onboardingProjectId.value = DEFAULT_PROJECT_ID
+      onboardingProjectId.value = workspace.id
       onboardingOpen.value = true
     }
-  } catch {
-    /* offline or no default project: stay silent, CTA still opens it manually */
-  }
+  } catch { /* Optional first-install prompt stays closed while offline. */ }
 }

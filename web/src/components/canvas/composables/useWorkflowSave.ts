@@ -11,6 +11,8 @@ export interface WorkflowBackup {
   snapshot: string
   /** Epoch ms of the last backed-up edit. */
   savedAt: number
+  /** Server content the draft was edited from; absent in older backups. */
+  baseSnapshot?: string
 }
 
 function storage(): Storage | null {
@@ -50,14 +52,12 @@ export function clearWorkflowBackup(id: string) {
 }
 
 /**
- * The backup worth offering on open: newer than the server copy and different from it.
+ * Offer every differing draft, including drafts predating a remote rename or edit.
  * `serverUpdatedAt` is the workflow's updatedAt; `serverSnapshot` its serialization.
  */
-export function pendingBackup(id: string, serverSnapshot: string, serverUpdatedAt?: string): WorkflowBackup | null {
+export function pendingBackup(id: string, serverSnapshot: string, _serverUpdatedAt?: string): WorkflowBackup | null {
   const b = readWorkflowBackup(id)
   if (!b || b.snapshot === serverSnapshot) return null
-  const server = serverUpdatedAt ? Date.parse(serverUpdatedAt) : NaN
-  if (Number.isFinite(server) && b.savedAt <= server) return null
   return b
 }
 
@@ -103,7 +103,7 @@ export function useWorkflowSave(opts: WorkflowSaveOptions) {
     clearTimer()
     const id = opts.backupId()
     if (!id || !enabled()) return
-    if (dirty.value) writeWorkflowBackup(id, { snapshot: current.value, savedAt: Date.now() })
+    if (dirty.value) writeWorkflowBackup(id, { snapshot: current.value, savedAt: Date.now(), baseSnapshot: saved.value })
     else clearWorkflowBackup(id)
   }
 
@@ -117,7 +117,7 @@ export function useWorkflowSave(opts: WorkflowSaveOptions) {
       clearTimer()
       const id = opts.backupId()
       if (id) {
-        if (dirty.value) writeWorkflowBackup(id, { snapshot: current.value, savedAt: Date.now() })
+        if (dirty.value) writeWorkflowBackup(id, { snapshot: current.value, savedAt: Date.now(), baseSnapshot: saved.value })
         else clearWorkflowBackup(id)
       }
       return true

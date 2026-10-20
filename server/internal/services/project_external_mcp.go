@@ -123,7 +123,7 @@ func (s *ProjectExternalMcpService) EnabledPacks(projectID string) []string {
 func (s *ProjectExternalMcpService) baseURL(projectID string) string {
 	base := strings.TrimRight(config.EffectiveMCPAdvertise(), "/")
 	if base == "" {
-		return "/mcp/external/" + projectID
+		return "/mcp/workspace"
 	}
-	return base + "/mcp/external/" + projectID
+	return base + "/mcp/workspace"
 }

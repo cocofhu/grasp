@@ -32,6 +32,7 @@ func TestGetBlobSniffsImageMIMEWithoutRewritingStore(t *testing.T) {
 	r.GET("/api/blobs/:id", h.GetBlob)
 
 	id := strings.TrimPrefix(ref.String(), "blob:")
+
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/blobs/"+id, nil)
 	r.ServeHTTP(w, req)

@@ -4,7 +4,8 @@ import { createMemoryHistory, createRouter, RouterView, useRoute } from 'vue-rou
 import { i18n } from '../src/lib/shared/i18n'
 import { initLocale, setLocale } from '../src/lib/shared/locale'
 import { installIdleScrollbar } from '../src/lib/shared/idleScrollbar'
-import { PROJECT_CONTEXT_STORAGE_KEY } from '../src/lib/composables/useProjectContext'
+import { useAuth } from '../src/lib/composables/useAuth'
+import { useWorkspaceContext } from '../src/lib/composables/useWorkspaceContext'
 import BoardView from '../src/views/BoardView.vue'
 import DashboardView from '../src/views/DashboardView.vue'
 
@@ -16,24 +17,20 @@ async function bootstrap() {
 
   const params = new URLSearchParams(window.location.search)
   const startParam = params.get('start') || 'dashboard'
-  const projectId = params.get('projectId') || 'proj-1'
-
-  if (params.get('memory') === '1') {
-    localStorage.setItem(PROJECT_CONTEXT_STORAGE_KEY, projectId)
-  } else if (params.get('memory') === '0') {
-    localStorage.removeItem(PROJECT_CONTEXT_STORAGE_KEY)
-  }
+  useAuth().setUser({ username: 'board-preview', isAdmin: true, expiresAt: '2099-01-01T00:00:00Z' })
+  const { workspaceId, ensureLoaded } = useWorkspaceContext()
+  await ensureLoaded()
 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard', component: DashboardView },
-      { path: '/projects', component: { render: () => h('div', { 'data-testid': 'projects-page' }, 'projects') } },
+      { path: '/workflows', component: { render: () => h('div', { 'data-testid': 'workflows-page' }, 'workflows') } },
       {
-        path: '/projects/:id',
+        path: '/board',
         component: {
           setup() {
-            return () => h(BoardView, { projectId, embedded: true })
+            return () => h(BoardView, { projectId: workspaceId.value, embedded: true })
           },
         },
       },
@@ -76,7 +73,7 @@ async function bootstrap() {
   })
 
   let start = '/dashboard'
-  if (startParam === 'project-board') start = `/projects/${projectId}`
+  if (startParam === 'board') start = '/board'
 
   await router.push(start)
 

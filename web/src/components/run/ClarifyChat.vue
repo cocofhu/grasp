@@ -12,6 +12,9 @@ import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import { lastMessageText } from '@/lib/chat/messagePreview'
+import { createClarifyChatAnchors } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import {
   isClarifyDemoEscapeMessage,
@@ -265,6 +268,32 @@ const {
   editQueuedItem,
 } = chat
 
+const railScopeKey = computed(() => `${props.runId}:${props.nodeId}:${props.iteration}`)
+const resolveMessageAnchors = createClarifyChatAnchors(`clarify-${useId().replace(/:/g, '')}`)
+const messageAnchorState = computed(() => resolveMessageAnchors(railScopeKey.value, displayTurns.value))
+const messageRailItems = computed(() => {
+  const rows = displayTurns.value
+  return rows.flatMap((turn, index) => {
+    const id = messageAnchorState.value.anchors[index]
+    if (!id || isEmptyLiveTurn(turn)) return []
+    let end = index + 1
+    while (end < rows.length && rows[end]!.role !== 'human') end++
+    let preview = ''
+    for (let replyIndex = index + 1; replyIndex < end; replyIndex++) {
+      const reply = rows[replyIndex]!
+      const message = lastMessageText(reply.parts, reply.text)
+      const text = message.trim() ? message : reply.questions?.map(question => question.prompt).join('\n') || ''
+      if (text.trim()) preview = text
+    }
+    const title = humanBubbleText(turn) || turn.images?.map((image, i) => attachmentDisplayName(image, i)).join(', ') || translate('pages.clarify.myChoice')
+    return [{ id, title, preview }]
+  })
+})
+
+function onMessageNavigate() {
+  stickToBottom.value = false
+}
+
 const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)
 const embedDemoPreview = inject(EMBED_DEMO_PREVIEW_KEY, null)
 
@@ -476,15 +505,23 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     Bake min-h-0 flex-1 so page-control status + this column share shell height
     and shrink-0 confirm footer is not clipped (plan g1.3).
   -->
-  <div ref="chatRoot" class="flex h-full min-h-0 flex-1 flex-col" data-review-composer>
+  <div ref="chatRoot" class="chat-thread flex h-full min-h-0 min-w-0 flex-1 flex-col" data-review-composer>
     <div class="relative flex min-h-0 flex-1 flex-col">
+    <ChatMessageRail
+      :items="messageRailItems"
+      :scroller="scroller || null"
+      :scope-key="railScopeKey"
+      @navigate="onMessageNavigate"
+    />
     <div
       ref="scroller"
       class="scroll-area flex-1 space-y-3 overflow-y-auto p-4 pb-14"
       data-testid="clarify-scroller"
+      data-conversation-scroll
       @scroll.passive="onScrollerScroll"
     >
-      <div class="clarify-thread-heading flex items-center gap-2 text-[11px] text-txt3">
+      <div class="clarify-transcript">
+      <div class="clarify-thread-heading chat-meta flex items-center gap-2">
         <Icon name="chat" :size="13" />
         {{ translate('pages.clarify.header', { n: displayTurns.length }) }}
       </div>
@@ -514,16 +551,17 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
-      <template v-for="(t, i) in displayTurns" :key="i">
-      <div v-if="!isEmptyLiveTurn(t)" class="clarify-turn flex gap-2.5" :class="t.role === 'human' ? 'flex-row-reverse' : ''" :data-turn-role="t.role">
-        <div
-          class="clarify-avatar flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-semibold"
-          :class="t.role === 'agent' ? 'bg-n-clarify/15 text-n-clarify' : 'bg-accent-dim text-accent-2'"
-        >
-          <Icon v-if="t.role === 'agent'" name="sparkles" :size="16" />
-          <span v-else>{{ translate('pages.clarify.me') }}</span>
-        </div>
-        <div class="min-w-0 max-w-[80%]">
+      <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
+      <div
+        v-if="!isEmptyLiveTurn(t)"
+        class="clarify-turn flex"
+        :class="t.role === 'human' ? 'justify-end' : ''"
+        :data-turn-role="t.role"
+        :data-chat-message-id="messageAnchorState.anchors[i]"
+        :data-chat-anchor="messageAnchorState.anchors[i]"
+      >
+        <span class="sr-only">{{ translate(t.role === 'human' ? 'pages.clarify.me' : 'pages.llmTranscript.speaker.agent') }}</span>
+        <div class="min-w-0" :class="t.role === 'human' ? 'max-w-[88%]' : 'w-full'">
           <div v-if="t.images && t.images.length" class="mb-1.5 flex flex-wrap gap-1.5" :class="t.role === 'human' ? 'justify-end' : ''">
             <!-- human history: images → lightbox; non-images → filename chip -->
             <template v-if="t.role === 'human'">
@@ -541,11 +579,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 />
                 <div
                   v-else
-                  class="rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
+                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
                   data-testid="clarify-history-file-chip"
                   :title="imagePreviewLabel(t.images, ii)"
                 >
-                  <span class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-info">DOC</span>
+                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
                   <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
                 </div>
               </template>
@@ -564,10 +602,10 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 />
                 <div
                   v-else
-                  class="rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
+                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
                   data-testid="clarify-agent-file-chip"
                 >
-                  <span class="shrink-0 text-[10px] font-medium uppercase tracking-wide text-info">DOC</span>
+                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
                   <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
                 </div>
               </template>
@@ -588,53 +626,53 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :ann="a"
             />
           </div>
-          <!-- submitted choice summary → structured cards (min-w-0 + wrap: long answers stay in bubble) -->
+          <!-- Submitted answers share the same quiet surface as the user's messages. -->
           <div
             v-if="t.role === 'human' && parseChoiceSummary(t.text)"
-            class="min-w-0 max-w-full rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2"
+            class="chat-user-message chat-response-summary min-w-0 max-w-full"
             data-testid="clarify-choice-summary"
           >
-            <div class="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-txt2">
-              <Icon name="check" :size="12" class="text-accent" /> {{ translate('pages.clarify.myChoice') }}
+            <div class="chat-response-heading flex items-center gap-2 text-txt2">
+              <Icon name="check" :size="16" /> {{ translate('pages.clarify.myChoice') }}
             </div>
-            <div class="min-w-0 max-w-full space-y-1.5">
+            <div class="min-w-0 max-w-full">
               <div
                 v-for="(row, ri) in parseChoiceSummary(t.text)!"
                 :key="ri"
-                class="min-w-0 max-w-full rounded-md border border-line bg-surface/70 px-2.5 py-1.5"
+                class="chat-response-row min-w-0 max-w-full"
                 data-testid="clarify-choice-row"
               >
-                <div class="mb-1 min-w-0 max-w-full break-words text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]">{{ row.q }}</div>
-                <div class="flex min-w-0 max-w-full flex-wrap gap-1">
+                <div class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]">{{ row.q }}</div>
+                <div class="chat-response-answers flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1">
                   <span
                     v-for="(a, ai) in row.answers"
                     :key="ai"
-                    class="min-w-0 max-w-full break-words rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[12px] text-txt [overflow-wrap:anywhere]"
+                    class="min-w-0 max-w-full break-words text-txt [overflow-wrap:anywhere]"
                     data-testid="clarify-choice-answer"
                   >{{ a }}</span>
                 </div>
               </div>
             </div>
           </div>
-          <!-- submitted form summary → structured cards (plaintext values, including passwords) -->
+          <!-- Submitted form values remain readable in full, including passwords. -->
           <div
             v-else-if="t.role === 'human' && parseFormSummary(t.text)"
-            class="min-w-0 max-w-full rounded-lg border border-n-ci/30 bg-n-ci/5 px-3 py-2"
+            class="chat-user-message chat-response-summary min-w-0 max-w-full"
             data-testid="clarify-form-summary"
           >
-            <div class="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-txt2">
-              <Icon name="ci" :size="12" class="text-n-ci" /> {{ translate('pages.clarify.myForm') }}
+            <div class="chat-response-heading flex items-center gap-2 text-txt2">
+              <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
             </div>
-            <div class="min-w-0 max-w-full space-y-1.5">
+            <div class="min-w-0 max-w-full">
               <div
                 v-for="(row, ri) in parseFormSummary(t.text)!"
                 :key="ri"
-                class="min-w-0 max-w-full rounded-md border border-line bg-surface/70 px-2.5 py-1.5"
+                class="chat-response-row min-w-0 max-w-full"
                 data-testid="clarify-form-row"
               >
-                <div class="mb-1 min-w-0 max-w-full break-words text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]">{{ row.label }}</div>
+                <div class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]">{{ row.label }}</div>
                 <div
-                  class="min-w-0 max-w-full break-words font-mono text-[12px] text-txt [overflow-wrap:anywhere] whitespace-pre-wrap"
+                  class="chat-response-value min-w-0 max-w-full break-words text-txt [overflow-wrap:anywhere] whitespace-pre-wrap"
                   data-testid="clarify-form-value"
                 >{{ row.value }}</div>
               </div>
@@ -645,7 +683,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <!-- Waiting first token: pulse + 思考中… inside bubble -->
             <div
               v-if="t.streaming && !t.thought && !agentHasMessage(t)"
-              class="inline-flex items-center gap-2.5 rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] text-txt3"
+              class="chat-meta inline-flex items-center gap-2.5 py-2"
               data-testid="clarify-busy-placeholder"
             >
               <InboxMotionMark kind="pulse" />
@@ -654,7 +692,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <!-- Status: 思考中… (has thought, no message yet) -->
             <div
               v-else-if="t.streaming && t.thought && !agentHasMessage(t)"
-              class="mb-1.5 inline-flex items-center gap-2 text-[12px] font-normal text-txt3"
+              class="chat-meta mb-1.5 inline-flex items-center gap-2 font-normal"
               data-testid="clarify-busy-status"
             >
               <InboxMotionMark kind="pulse" />
@@ -663,7 +701,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <!-- Status: 输出中 (shimmer) while streaming message -->
             <div
               v-else-if="t.streaming && agentHasMessage(t)"
-              class="clarify-outputting mb-1.5 text-[12px] font-normal"
+              class="clarify-outputting chat-meta mb-1.5 font-normal"
               data-testid="clarify-busy-status"
             >
               {{ translate('pages.clarify.outputting') }}
@@ -687,13 +725,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <!-- Thought: open while thought-only; default collapsed once message starts -->
               <details
                 v-if="t.thought"
-                class="mb-2 w-full rounded-md border border-line bg-base/60 text-[11.5px] text-txt3"
+                class="chat-thought chat-meta mb-2 w-full"
                 data-testid="clarify-thought"
                 :open="isThoughtOpen(i, t)"
                 @toggle="onThoughtToggle(i, $event)"
               >
                 <summary
-                  class="flex cursor-pointer select-none items-center gap-1.5 px-2.5 py-1.5 text-txt3 hover:text-txt2"
+                  class="chat-thought-summary"
                   data-testid="clarify-thought-summary"
                 >
                   <ThoughtSummaryStatus
@@ -701,14 +739,15 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     :completed="showTurnCompleted(t)"
                     :interrupted="!!t.interrupted"
                   />
+                  <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
                 </summary>
-                <div class="whitespace-pre-wrap break-words border-t border-dashed border-line px-2.5 pb-2 pt-1.5 font-mono leading-5 [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
+                <div class="chat-thought-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
               </details>
               <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
               <!-- Message body + streaming caret -->
               <div
                 v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
-                class="md rounded-lg border border-line bg-elevated px-3 py-2 text-[13px] leading-relaxed text-txt"
+                class="chat-prose md py-2"
                 data-testid="clarify-agent-message"
               >
                 <StreamMarkdown v-if="t.streaming" :blocks="liveStreamBlocks" /><span
@@ -768,7 +807,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <!-- Restrained completion footnote (Demo); never for interrupted/error -->
             <div
               v-if="showTurnCompleted(t)"
-              class="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-txt3"
+              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
               data-testid="clarify-turn-completed"
             >
               <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
@@ -778,7 +817,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div
             v-else-if="humanBubbleText(t)"
-            class="whitespace-pre-wrap break-words rounded-lg border border-accent/30 bg-accent-dim/60 px-3 py-2 text-[13px] leading-relaxed text-txt [overflow-wrap:anywhere]"
+            class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
             data-testid="clarify-human-message"
           >{{ humanBubbleText(t) }}</div>
 
@@ -789,7 +828,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             <!-- interactive card deck -->
             <div v-if="isActiveTurn(i) && curQuestion" class="mt-2">
               <div>
-                <div class="relative rounded-xl border border-n-clarify/25 bg-n-clarify/5 p-3">
+                <div class="clarify-request relative min-w-0">
                   <!-- progress -->
                   <div v-if="activeQuestions.length > 1" class="mb-2.5 flex items-center justify-between">
                     <div class="flex items-center gap-1">
@@ -797,28 +836,28 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                         v-for="(q, qi) in activeQuestions"
                         :key="qi"
                         class="h-1.5 rounded-full transition-all"
-                        :class="qi === step ? 'w-4 bg-n-clarify' : answered(q) ? 'w-1.5 bg-n-clarify/60' : 'w-1.5 bg-line-strong'"
+                        :class="qi === step ? 'w-4 bg-accent' : answered(q) ? 'w-1.5 bg-accent/40' : 'w-1.5 bg-line-strong'"
                       />
                     </div>
-                    <span class="text-[11px] text-txt3">{{ step + 1 }} / {{ activeQuestions.length }}</span>
+                    <span class="text-[11px] text-txt2">{{ step + 1 }} / {{ activeQuestions.length }}</span>
                   </div>
 
                   <Transition name="deck" mode="out-in">
                     <div :key="step">
-                      <div class="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-txt">
-                        <Icon name="chat" :size="13" class="shrink-0 text-n-clarify" />
+                      <div class="clarify-question-heading mb-3 text-[13px] font-medium text-txt">
+                        <Icon name="chat" :size="16" class="shrink-0 text-txt2" />
                         <span
-                          class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                          class="min-w-0 break-words leading-relaxed [overflow-wrap:anywhere]"
                           data-testid="clarify-question-prompt"
                         >{{ curQuestion.prompt }}</span>
-                        <span class="ml-auto shrink-0 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
+                        <span class="clarify-question-kind text-[11px] font-normal leading-5 text-txt2">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
                       </div>
                       <div class="space-y-1.5">
                         <div v-for="o in curQuestion.options" :key="o.id" class="flex w-full items-stretch gap-1.5">
                           <button
                             type="button"
-                            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
-                            :class="isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent-dim/60 text-txt' : 'border-line bg-surface text-txt2 hover:border-line-strong'"
+                            class="chat-choice-option flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
+                            :aria-pressed="isSelected(curQuestion.id, o.id)"
                             data-testid="clarify-option-btn"
                             @click="pick(curQuestion, o.id)"
                           >
@@ -837,7 +876,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                             >{{ o.label }}</span>
                             <span
                               v-if="o.recommended"
-                              class="ml-auto shrink-0 rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2"
+                              class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
                             >{{ translate('pages.clarify.recommended') }}</span>
                           </button>
                           <button
@@ -852,8 +891,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                         </div>
                       </div>
                       <div
-                        class="mt-1.5 flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-[12px] transition-colors"
-                        :class="isOtherSelected(curQuestion.id) ? 'border-accent bg-accent-dim/60 text-txt' : 'border-line bg-surface text-txt2'"
+                        class="chat-choice-other mt-1.5 flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
+                        :class="{ 'is-selected': isOtherSelected(curQuestion.id) }"
                         data-testid="clarify-other-row"
                       >
                         <button
@@ -864,6 +903,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                             isOtherSelected(curQuestion.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
                           ]"
                           data-testid="clarify-other-checkbox"
+                          :aria-pressed="isOtherSelected(curQuestion.id)"
                           :aria-label="translate('pages.clarify.otherPlaceholder')"
                           @click="toggleOther(curQuestion)"
                         >
@@ -911,7 +951,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   <div class="mt-3 flex items-center justify-between">
                     <button
                       v-if="!isFirstCard"
-                      class="inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-[12px] text-txt2 hover:text-txt"
+                      class="chat-request-back inline-flex items-center gap-0.5 rounded-md px-2 py-1 text-[12px] text-txt2 hover:text-txt"
                       @click="prevCard"
                     >
                       <Icon name="arrow-left" :size="13" /> {{ translate('pages.clarify.prev') }}
@@ -920,7 +960,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 
                     <button
                       v-if="!isLastCard"
-                      class="inline-flex items-center gap-0.5 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover"
+                      class="chat-action-secondary"
                       @click="nextCard"
                     >
                       {{ translate('pages.clarify.next') }} <Icon name="chevron-right" :size="13" />
@@ -928,19 +968,19 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     <div v-else class="flex flex-wrap items-center gap-2">
                       <button
                         v-if="hasRecommended"
-                        class="inline-flex items-center gap-1 rounded-md border border-accent/40 bg-accent/10 px-2.5 py-1.5 text-[12px] font-medium text-accent-2 hover:bg-accent/20 disabled:opacity-50"
+                        class="chat-action-secondary"
                         :disabled="thinking"
                         :title="translate('pages.clarify.applyRecommendedTitle')"
                         @click="submitRecommended"
                       >
-                        <Icon name="check" :size="12" /> {{ translate('pages.clarify.applyRecommended') }}
+                        <Icon name="check" :size="14" /> {{ translate('pages.clarify.applyRecommended') }}
                       </button>
                       <button
-                        class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+                        class="chat-action-confirm"
                         :disabled="!someAnswered || thinking"
                         @click="submitChoices"
                       >
-                        <Icon name="send" :size="12" /> {{ translate('pages.clarify.submitChoices') }}
+                        <Icon name="chat-send" :size="16" /> {{ translate('pages.clarify.submitChoices') }}
                       </button>
                     </div>
                   </div>
@@ -949,11 +989,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             </div>
 
             <!-- read-only history: prompt, chosen labels, inline previews, and per-frame enlarge -->
-            <div v-else class="mt-2 rounded-lg border border-n-clarify/20 bg-n-clarify/5 px-3 py-2">
-              <div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-txt3">
-                <Icon name="chat" :size="12" class="text-n-clarify" />
+            <div v-else class="clarify-request clarify-request--history mt-2 min-w-0">
+              <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
+                <Icon name="chat" :size="16" />
                 {{ translate('pages.clarify.questionsThisRound', { n: t.questions.length }) }}
-                <span class="ml-1 inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">
+                <span class="ml-auto text-[11px] font-normal text-txt2">
                   {{ translate('pages.clarify.readonly') }}
                 </span>
               </div>
@@ -967,7 +1007,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   <span
                     v-for="o in q.options.filter((op) => op.recommended)"
                     :key="o.id"
-                    class="ml-1 inline-flex max-w-full min-w-0 break-words rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent-2 [overflow-wrap:anywhere]"
+                    class="chat-choice-recommendation ml-1 inline-flex max-w-full min-w-0 break-words rounded-full px-1.5 py-0.5 text-[10px] font-medium [overflow-wrap:anywhere]"
                     data-testid="clarify-recommended-chip"
                   >{{ translate('pages.clarify.recommendedLabel', { label: o.label }) }}</span>
                 </div>
@@ -1030,31 +1070,31 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                earlier turns render read-only. Label only (no internal name); hover shows why. -->
           <template v-if="t.role === 'agent' && t.forms && t.forms.length">
             <div v-if="isActiveFormTurn(i)" class="mt-2" data-testid="clarify-form-card">
-              <div class="relative rounded-xl border border-n-ci/25 bg-n-ci/5 p-3">
+              <div class="clarify-request relative min-w-0">
                 <div
                   v-for="(form, fi) in activeForms"
                   :key="fi"
                   class="mb-3 last:mb-0"
                 >
-                  <div v-if="form.title" class="mb-2 flex items-center gap-1.5 text-[13px] font-medium text-txt">
-                    <Icon name="ci" :size="13" class="shrink-0 text-n-ci" />
-                    <span>{{ form.title }}</span>
+                  <div v-if="form.title" class="mb-2 flex min-w-0 items-center gap-2 text-[13px] font-medium text-txt">
+                    <Icon name="ci" :size="16" class="shrink-0 text-txt2" />
+                    <span class="min-w-0 break-words [overflow-wrap:anywhere]">{{ form.title }}</span>
                   </div>
                   <div class="space-y-2.5">
                     <label
                       v-for="f in form.fields"
                       :key="f.name"
-                      class="block"
+                      class="block min-w-0"
                       data-testid="clarify-form-field"
                     >
                       <span
-                        class="mb-1 block text-[12px] text-txt2"
+                        class="mb-1 block break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
                         :title="fieldWhy(f) || undefined"
                       >{{ f.label }}</span>
                       <input
                         v-model="formValues[formFieldKey(fi, f.name)]"
                         :type="formInputType(f)"
-                        class="input h-[34px] w-full rounded-lg border border-line bg-surface px-2.5 text-[12px] text-txt placeholder:text-txt3 focus:border-n-ci/50 focus:ring-0"
+                        class="input h-[34px] min-w-0 w-full rounded-lg border border-line bg-surface px-2.5 text-[13px] text-txt placeholder:text-txt3 focus:border-accent/50 focus:ring-0"
                         :placeholder="f.placeholder || ''"
                         autocomplete="off"
                         data-testid="clarify-form-input"
@@ -1068,34 +1108,34 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 <div class="mt-3 flex justify-end">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-1 rounded-md bg-accent px-3 py-1.5 text-[12px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
+                    class="chat-action-confirm"
                     :disabled="!formCanSubmit"
                     data-testid="clarify-form-submit"
                     @click="submitForms"
                   >
-                    <Icon name="send" :size="12" /> {{ translate('pages.clarify.submitForm') }}
+                    <Icon name="chat-send" :size="16" /> {{ translate('pages.clarify.submitForm') }}
                   </button>
                 </div>
               </div>
             </div>
             <div
               v-else
-              class="mt-2 rounded-lg border border-n-ci/20 bg-n-ci/5 px-3 py-2"
+              class="clarify-request clarify-request--history mt-2 min-w-0"
               data-testid="clarify-form-readonly"
             >
-              <div class="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium text-txt3">
-                <Icon name="ci" :size="12" class="text-n-ci" />
+              <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
+                <Icon name="ci" :size="16" />
                 {{ translate('pages.clarify.formsThisRound', { n: t.forms.length }) }}
-                <span class="ml-1 inline-flex items-center gap-1 rounded border border-line px-1.5 py-0.5 text-[10px] font-normal text-txt3">
+                <span class="ml-auto text-[11px] font-normal text-txt2">
                   {{ translate('pages.clarify.readonly') }}
                 </span>
               </div>
               <div v-for="(form, fi) in t.forms" :key="fi" class="mb-2 last:mb-0">
-                <div v-if="form.title" class="mb-1 text-[12px] text-txt2">{{ form.title }}</div>
+                <div v-if="form.title" class="mb-1 break-words text-[13px] text-txt2 [overflow-wrap:anywhere]">{{ form.title }}</div>
                 <div
                   v-for="f in form.fields"
                   :key="f.name"
-                  class="mb-1 text-[12px] text-txt3"
+                  class="mb-1 break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
                   :title="fieldWhy(f) || undefined"
                 >
                   {{ f.label }}
@@ -1114,23 +1154,24 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
           <div
             v-if="!showTurnCompleted(t)"
-            class="mt-1 text-[10px] text-txt3"
+            class="chat-meta mt-1"
             :class="t.role === 'human' ? 'text-right' : ''"
             data-testid="clarify-turn-bottom-time"
           >{{ locale && relTime(t.at) }}</div>
         </div>
       </div>
       </template>
-      <div v-if="thinking && !validating && liveAgentIdx < 0" class="flex items-center gap-2 pl-9 text-[12px] text-txt3">
+      <div v-if="thinking && !validating && liveAgentIdx < 0" class="chat-meta flex items-center gap-2 pl-9">
         <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
+      </div>
       </div>
     </div>
     <button
       v-if="showUnreadFab"
       type="button"
       data-testid="clarify-unread-fab"
-      class="absolute bottom-3 left-1/2 z-10 inline-flex h-[34px] -translate-x-1/2 items-center gap-1.5 rounded-full bg-surface px-3.5 pl-3 text-[14px] font-semibold text-info shadow-[0_2px_10px_rgba(26,35,50,0.12)] transition-shadow hover:shadow-[0_4px_14px_rgba(26,35,50,0.16)]"
+      class="absolute bottom-3 left-1/2 z-10 inline-flex h-[34px] -translate-x-1/2 items-center gap-1.5 rounded-full border border-line bg-surface px-3.5 pl-3 text-[12px] font-medium text-accent transition-colors hover:border-accent/40 hover:bg-accent-dim"
       :aria-label="unreadFabLabel"
       :title="unreadFabLabel"
       @click="onUnreadFabClick"
@@ -1160,7 +1201,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         <template #footer>
           <button
             type="button"
-            class="inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
+            class="chat-action-confirm h-9 shrink-0 inline-flex"
             data-testid="clarify-confirm-flow"
             :disabled="confirmDisabled"
             :title="translate('pages.clarify.confirmFlowTitle')"
@@ -1211,11 +1252,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
           <div
             v-else
-            class="rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
+            class="chat-file-chip rounded-lg flex h-14 max-w-[160px] items-center gap-1.5 border border-line bg-elevated px-2"
             :title="attachmentDisplayName(im, ii)"
             data-testid="clarify-pending-file-chip"
           >
-            <span class="shrink-0 text-[9px] font-medium uppercase text-info">DOC</span>
+            <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
             <span class="min-w-0 truncate text-[11px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
           </div>
           <button
@@ -1235,7 +1276,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <textarea
             ref="textareaRef"
             v-model="draft"
-            class="composer-hint-wrap min-h-[40px] min-w-0 w-full resize-none border-0 bg-transparent p-0 text-sm text-txt shadow-none outline-none focus:ring-0"
+            class="chat-input composer-hint-wrap min-h-[40px] min-w-0 w-full resize-none border-0 bg-transparent p-0 shadow-none outline-none focus:ring-0"
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
             :placeholder="inputPlaceholder"
@@ -1250,12 +1291,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         <template #toolbar-start>
           <button
             type="button"
-            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-line text-txt2 hover:border-line-strong disabled:opacity-50"
+            class="chat-action-button"
             :title="translate('pages.clarify.addImage')"
+            :aria-label="translate('pages.clarify.addImage')"
             data-testid="clarify-attach-btn"
             @click="fileInput?.click()"
           >
-            <Icon name="paperclip" :size="16" />
+            <Icon name="plus" :size="18" />
           </button>
           <slot name="composer-controls" :compact="true" />
         </template>
@@ -1263,18 +1305,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <button
             v-if="sessionBusy"
             type="button"
-            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-txt2 hover:border-line-strong"
+            class="chat-action-button chat-action-stop"
             data-testid="clarify-review-cancel"
             title="Cancel"
             aria-label="Cancel"
             @click="cancelReview"
           >
-            <Icon name="stop" :size="12" />
+            <Icon name="chat-stop" :size="16" />
           </button>
           <button
             v-if="!sessionBusy || hasComposerDraft()"
             type="button"
-            class="flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50"
+            class="chat-action-button chat-action-primary"
             :data-testid="sendLabel ? 'clarify-send-label' : 'clarify-send-icon'"
             :title="composerSending ? translate('common.buttons.sending') : clarifySendAria"
             :aria-label="composerSending ? translate('common.buttons.sending') : clarifySendAria"
@@ -1282,7 +1324,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :disabled="composerSending || !hasComposerDraft()"
             @click="send"
           >
-            <Icon :name="composerSending ? 'spinner' : 'send'" :size="14" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
+            <Icon :name="composerSending ? 'spinner' : 'chat-send'" :size="18" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
           </button>
           <Transition
             :css="false"
@@ -1302,7 +1344,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <span class="clarify-confirm-presence__inner">
                 <button
                   type="button"
-                  class="clarify-confirm-integrated inline-flex h-9 shrink-0 items-center gap-1 rounded-md bg-ok px-3.5 text-sm font-medium text-white hover:bg-ok/90 disabled:opacity-50"
+                  class="chat-action-confirm clarify-confirm-integrated h-9 shrink-0 inline-flex"
                   data-testid="clarify-confirm-flow"
                   :disabled="confirmDisabled || !showHotConfirm"
                   :title="translate('pages.clarify.confirmFlowTitle')"
@@ -1338,7 +1380,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         v-if="confirmCanAbort && !composerBlocksConfirm"
         ref="abortConfirmButton"
         type="button"
-        class="shrink-0 rounded-md bg-ok px-2 py-1 text-[11px] font-medium text-white hover:bg-ok/90"
+        class="chat-action-secondary"
         data-testid="clarify-abort-and-confirm"
         @click="finishAbort"
       >
@@ -1400,108 +1442,58 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 </template>
 
 <style scoped>
-[data-review-composer] {
-  --c-accent: 184 168 223;
-  --c-accent-2: 198 183 233;
-  --c-accent-hover: 162 142 208;
-  --c-accent-dim: 46 40 60;
-  --chat-action: 113 93 159;
-  --chat-shadow: 0 0 0;
-  --chat-specular: 255 255 255 / .045;
-  background: rgb(var(--c-surface));
-}
-html.light [data-review-composer] {
-  --c-accent: 83 72 139;
-  --c-accent-2: 83 72 139;
-  --c-accent-hover: 101 85 153;
-  --c-accent-dim: 241 238 249;
-  --chat-action: 83 72 139;
-  --chat-shadow: 43 32 71;
-  --chat-specular: 255 255 255 / .85;
-}
 [data-testid="clarify-scroller"] {
-  background: linear-gradient(180deg, rgb(var(--c-accent) / .025), transparent 180px);
+  padding: 24px 24px 56px 44px;
+  scrollbar-gutter: stable;
 }
-.clarify-thread-heading {
-  color: color-mix(in srgb, rgb(var(--c-txt2)) 80%, rgb(var(--c-surface)));
-  font-size: 10.5px;
-  letter-spacing: .01em;
+.clarify-transcript { width: 100%; max-width: 760px; margin-inline: auto; }
+.clarify-turn { margin-top: 28px; }
+.chat-response-heading { margin-bottom: 10px; font-size: 12px; font-weight: 500; }
+.chat-response-row + .chat-response-row {
+  margin-top: 10px;
+  border-top: 1px solid rgb(var(--c-line) / .7);
+  padding-top: 10px;
 }
-.clarify-thread-heading > svg { color: rgb(var(--c-accent) / .65); }
-.clarify-avatar {
-  border: 1px solid rgb(var(--c-accent) / .09);
-  color: rgb(var(--c-accent-2));
-  background: rgb(var(--c-accent) / .07);
-  box-shadow: inset 0 1px 0 rgb(var(--chat-specular));
+.chat-response-question { font-size: 12px; line-height: 1.65; }
+.chat-response-answers,
+.chat-response-value { font-size: 14px; line-height: 1.75; }
+.chat-response-answers > span + span::before {
+  content: '·';
+  margin-right: 8px;
+  color: rgb(var(--c-txt2));
 }
-[data-turn-role="agent"] .clarify-avatar {
-  border-radius: 10px;
-  background: linear-gradient(145deg, rgb(var(--c-accent) / .18), rgb(var(--c-accent) / .045));
+.clarify-request {
+  max-width: 100%;
+  border-left: 1px solid rgb(var(--c-line-strong) / .8);
+  padding: 2px 0 2px 14px;
 }
-[data-testid="clarify-human-message"],
-[data-testid="clarify-agent-message"],
-[data-testid="clarify-busy-placeholder"],
-:deep([data-testid="clarify-agent-message"]) {
-  border-radius: 14px;
-  border-color: rgb(var(--c-accent) / .1);
-  box-shadow: 0 1px 2px rgb(var(--chat-shadow) / .025), inset 0 1px 0 rgb(var(--chat-specular));
+.clarify-request--history { border-color: rgb(var(--c-line)); }
+.clarify-question-heading {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 6px;
 }
-[data-testid="clarify-human-message"] {
-  border-top-right-radius: 5px;
-  background: linear-gradient(145deg, rgb(var(--c-accent) / .09), rgb(var(--c-accent) / .035));
-}
-[data-testid="clarify-agent-message"],
-[data-testid="clarify-busy-placeholder"],
-:deep([data-testid="clarify-agent-message"]) {
-  border-top-left-radius: 5px;
-  background: color-mix(in srgb, rgb(var(--c-surface)) 82%, rgb(var(--c-elevated)));
-}
-[data-testid="clarify-turn-bottom-time"] {
-  margin-top: 5px;
-  padding-inline: 2px;
-  font-size: 9px;
-}
+.clarify-question-heading > .app-icon { margin-top: 3px; }
+.clarify-question-kind { grid-column: 2; }
+.clarify-request button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
+[data-testid="clarify-turn-bottom-time"] { margin-top: 6px; }
 [data-testid="clarify-hot-actions"],
 [data-testid="clarify-cold-actions"] {
-  border-color: rgb(var(--c-accent) / .075);
-  background: linear-gradient(180deg, rgb(var(--c-base) / .3), rgb(var(--c-surface)));
-}
-[data-review-composer] :deep([data-testid="clarify-input-row"]) {
-  border-radius: 14px;
-  border-color: rgb(var(--c-accent) / .17);
-  background: rgb(var(--c-surface));
-  box-shadow: 0 2px 6px rgb(var(--chat-shadow) / .035), inset 0 1px 0 rgb(var(--chat-specular));
-  transition: border-color 180ms ease, box-shadow 180ms ease;
-}
-[data-review-composer] :deep([data-testid="clarify-input-row"]:focus-within) {
-  border-color: rgb(var(--c-accent) / .42);
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / .055), 0 2px 6px rgb(var(--chat-shadow) / .035);
-}
-[data-testid="clarify-input"] { caret-color: rgb(var(--c-accent)); }
-[data-testid="clarify-input"]::placeholder { color: rgb(var(--c-txt3) / .85); }
-[data-testid="clarify-attach-btn"] {
+  width: 100%;
+  max-width: 800px;
+  margin-inline: auto;
   border-color: transparent;
-  border-radius: 10px;
-  color: rgb(var(--c-txt3));
-  background: transparent;
-  transition: color 160ms ease, background-color 160ms ease;
 }
-[data-testid="clarify-attach-btn"]:hover:not(:disabled) {
-  color: rgb(var(--c-accent-2));
-  background: rgb(var(--c-accent) / .065);
+[data-testid="clarify-attach-btn"] { border-color: transparent; background: transparent; }
+@media (max-width: 767px) {
+  [data-testid="clarify-scroller"] { padding: 18px 16px 56px 36px; }
+  .clarify-request { padding-left: 12px; }
+  [data-testid="clarify-option-btn"],
+  [data-testid="clarify-other-row"],
+  [data-testid="clarify-form-input"] { min-height: 44px; }
 }
-[data-testid="clarify-send-icon"],
-[data-testid="clarify-send-label"],
-[data-testid="clarify-confirm-flow"] {
-  border: 1px solid rgb(var(--chat-action) / .6);
-  background: linear-gradient(145deg, rgb(var(--chat-action) / .86), rgb(var(--chat-action)));
-  color: #fff;
-  box-shadow: inset 0 1px 0 #ffffff26, 0 2px 4px rgb(var(--chat-shadow) / .08);
-  transition: transform 160ms ease, box-shadow 160ms ease, filter 160ms ease;
-}
-[data-testid="clarify-send-icon"],
-[data-testid="clarify-send-label"] { border-radius: 10px; }
-[data-testid="clarify-confirm-flow"] { border-radius: 10px; }
 .clarify-confirm-integrated {
   max-width: 100%;
   padding-inline: 10px;
@@ -1521,35 +1513,6 @@ html.light [data-review-composer] {
   min-width: 0;
   max-width: 100%;
   padding-inline-start: 6px;
-}
-[data-testid="clarify-send-icon"]:hover:not(:disabled),
-[data-testid="clarify-send-label"]:hover:not(:disabled),
-[data-testid="clarify-confirm-flow"]:hover:not(:disabled) {
-  filter: brightness(1.08);
-  box-shadow: inset 0 1px 0 #ffffff26, 0 3px 8px rgb(var(--chat-shadow) / .12);
-}
-[data-testid="clarify-send-icon"]:active:not(:disabled),
-[data-testid="clarify-send-label"]:active:not(:disabled),
-[data-testid="clarify-confirm-flow"]:active:not(:disabled) { transform: scale(.97); }
-[data-testid="clarify-send-icon"]:disabled,
-[data-testid="clarify-send-label"]:disabled,
-[data-testid="clarify-confirm-flow"]:disabled {
-  border-color: rgb(var(--c-line));
-  color: rgb(var(--c-txt3));
-  background: rgb(var(--c-elevated));
-  box-shadow: none;
-  opacity: .7;
-}
-[data-review-composer] button:focus-visible {
-  outline: 2px solid rgb(var(--c-accent) / .65);
-  outline-offset: 3px;
-}
-@media (prefers-reduced-motion: reduce) {
-  [data-review-composer] button,
-  [data-review-composer] :deep([data-testid="clarify-input-row"]) { transition: none; }
-  [data-testid="clarify-send-icon"]:active:not(:disabled),
-  [data-testid="clarify-send-label"]:active:not(:disabled),
-  [data-testid="clarify-confirm-flow"]:active:not(:disabled) { transform: none; }
 }
 
 /* Placeholder must wrap to the textarea width — UA default often clips the 2nd line. */
@@ -1589,76 +1552,35 @@ html.light [data-review-composer] {
   transform: translateX(-8px);
 }
 
-/* "thinking" typing indicator: three dots bouncing in sequence. */
-.typing-dots {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-}
-.typing-dots i {
-  width: 5px;
-  height: 5px;
-  border-radius: 9999px;
-  background: #22d3ee;
-  animation: typing-bounce 1.2s infinite ease-in-out both;
-}
-.typing-dots i:nth-child(2) {
-  animation-delay: 0.16s;
-}
-.typing-dots i:nth-child(3) {
-  animation-delay: 0.32s;
-}
-@keyframes typing-bounce {
-  0%,
-  70%,
-  100% {
-    transform: translateY(0);
-    opacity: 0.35;
-  }
-  35% {
-    transform: translateY(-4px);
-    opacity: 1;
-  }
-}
-
-/* 「输出中」: same --grad-logo shimmer as .brand-logo__name */
+/* A quiet phase label; the message and caret carry the streaming activity. */
 .clarify-outputting {
-  color: rgb(var(--c-accent-2));
-  background: var(--grad-logo);
-  background-size: var(--grad-logo-size);
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  animation: shimmer 3.5s ease-in-out infinite;
+  color: rgb(var(--c-txt3));
 }
 
 /* Streaming caret at message tail (Demo phase 3) */
 .clarify-stream-caret {
   display: inline-block;
-  width: 7px;
-  height: 1em;
-  margin-left: 2px;
+  width: 3px;
+  height: .9em;
+  margin-left: 4px;
+  border-radius: 2px;
   vertical-align: text-bottom;
   background: rgb(var(--c-accent));
-  animation: clarify-caret-blink 0.9s step-end infinite;
+  animation: clarify-caret-blink 1.4s ease-in-out infinite;
 }
 @keyframes clarify-caret-blink {
-  50% {
-    opacity: 0;
-  }
+  0%, 100% { opacity: .25; }
+  50% { opacity: .9; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .typing-dots i,
-  .clarify-outputting,
+  .deck-enter-active, .deck-leave-active { transition: none; }
+  .deck-enter-from, .deck-leave-to { transform: none; }
   .clarify-stream-caret {
     animation: none !important;
   }
-  .clarify-outputting {
-    color: rgb(var(--c-accent-2));
-    background: none;
-    -webkit-background-clip: unset;
-    background-clip: unset;
-    -webkit-text-fill-color: unset;
-  }
+  .deck-enter-active,
+  .deck-leave-active { transition: none; }
+  .deck-enter-from,
+  .deck-leave-to { transform: none; }
 }
 </style>

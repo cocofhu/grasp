@@ -4,7 +4,6 @@
     "agent": [
       "agentCreateWizard.ts",
       "agentIO.ts",
-      "agentProjectTree.ts",
       "agentStudioDraft.ts",
       "agentTeamWizard.ts",
       "agentTemplateOptions.ts",
@@ -26,12 +25,15 @@
     "api": [
       "api.ts",
       "apiTypes.ts",
-      "httpCore.ts"
+      "httpCore.ts",
+      "workflowCatalogEvents.ts"
     ],
     "artifacts": [
       "artifactTree.ts"
     ],
     "chat": [
+      "conversationArtifacts.ts",
+      "messagePreview.ts",
       "sessionQueue.ts"
     ],
     "composables": [
@@ -45,14 +47,15 @@
       "useImageAttachments.ts",
       "useNotificationsPageEntry.ts",
       "usePlatformStatusMetrics.ts",
-      "useProjectContext.ts",
       "useServiceCommit.ts",
       "useShutdownState.ts",
+      "useSidebarNavigation.ts",
       "useStatusFilter.ts",
       "useTagFilter.ts",
       "useTestScreenshotLoad.ts",
       "useToast.ts",
-      "useWorkflowFilter.ts"
+      "useWorkflowFilter.ts",
+      "useWorkspaceContext.ts"
     ],
     "inbox": [
       "clarifyDemo.ts",
@@ -102,8 +105,8 @@
       "credentialKinds.ts",
       "requirementDraftMarkdown.ts",
       "requirementDraftSchedule.ts",
-      "useProjectDetail.ts",
-      "useRequirementDrafts.ts"
+      "useRequirementDrafts.ts",
+      "useWorkflows.ts"
     ],
     "run": [
       "acpTools.ts",
@@ -213,11 +216,11 @@
     ]
   },
   "totals": {
-    "agent": 20,
-    "api": 3,
+    "agent": 19,
+    "api": 4,
     "artifacts": 1,
-    "chat": 1,
-    "composables": 18,
+    "chat": 3,
+    "composables": 19,
     "inbox": 33,
     "pm": 7,
     "project": 5,

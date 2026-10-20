@@ -36,7 +36,7 @@ function mountReview(nodeId: string) {
 
 async function sendText(wrapper: ReturnType<typeof mountReview>, text: string) {
   await wrapper.find('textarea').setValue(text)
-  const sendBtn = wrapper.find('button[class*="bg-accent"]')
+  const sendBtn = wrapper.find('[data-testid="clarify-send-icon"], [data-testid="clarify-send-label"]')
   expect(sendBtn.exists()).toBe(true)
   await sendBtn.trigger('click')
   await flushPromises()
@@ -83,7 +83,7 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     expect(cancel.attributes('aria-label')).toBe('Cancel')
     expect(cancel.attributes('title')).toBe('Cancel')
     expect(cancel.text()).not.toContain('Cancel')
-    expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('stop')
+    expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await cancel.trigger('click')
     await flushPromises()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(false)

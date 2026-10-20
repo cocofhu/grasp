@@ -245,7 +245,7 @@ watch(
       </p>
       <details
         v-if="!columns"
-        class="mt-1 rounded-md border border-dashed border-line bg-base px-3 py-2"
+        class="mt-2 border-l-2 border-line pl-3 py-1"
         data-test="opencode-advanced"
       >
         <summary class="cursor-pointer text-[11px] text-accent">
@@ -280,7 +280,7 @@ watch(
     </label>
     <label
       v-if="showVision"
-      class="flex items-start gap-2.5 rounded-lg border border-line bg-base px-3 py-2.5"
+      class="flex items-start gap-2.5 border-y border-line/60 py-3"
       data-test="opencode-model-vision"
     >
       <input

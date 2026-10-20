@@ -445,6 +445,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		GitCredentialID:      agentCfg.GitCredentialID,
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
 	}, c.opts.SelectedCredentialForProject)
+	ApplyCredentialBindings(env, projectCreds, c.projectIDForReq(req), agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject)
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (project-shared workspace).
@@ -490,7 +491,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		return sandbox.Spec{}, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(c.projectIDForReq(req), envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredentialForProject, c.opts.InjectedCredentialID))
 	}
 	spec := sandbox.Spec{
 		Image:        resolveProviderImage(c.opts, c.backend),
@@ -547,11 +548,11 @@ func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr 
 		}
 		return runErr
 	}
-	if c.opts.WriteBackCodexLoginFile == nil {
+	if c.opts.WriteBackCodexLoginFile == nil || state.credentialID == "" {
 		return runErr
 	}
 	pid := c.projectIDForReq(req)
-	if err := c.opts.WriteBackCodexLoginFile(pid, next); err != nil {
+	if err := c.opts.WriteBackCodexLoginFile(pid, state.credentialID, next); err != nil {
 		log.Warn().Err(err).Str("project", pid).Str("run", req.RunID).Msg("codex login writeback failed")
 	}
 	return runErr

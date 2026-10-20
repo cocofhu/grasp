@@ -61,15 +61,10 @@ vi.mock('@/lib/composables/useWorkflowFilter', async () => {
   return { useWorkflowFilter: () => ({ selected: filterState.workflowSelected! }) }
 })
 
-vi.mock('@/lib/composables/useProjectContext', async () => {
+vi.mock('@/lib/composables/useWorkspaceContext', async () => {
   const { ref } = await import('vue')
-  filterState.projectSelected = ref('')
-  return {
-    useProjectContext: () => ({
-      selected: filterState.projectSelected!,
-      ensureHydrated: vi.fn(),
-    }),
-  }
+  const workspace = ref({ id: 'proj-1', name: '工作区', variables: [] })
+  return { useWorkspaceContext: () => ({ workspace, workspaceId: ref(workspace.value.id), ensureLoaded: async () => workspace.value, reload: async () => workspace.value }) }
 })
 
 vi.mock('@/lib/inbox/useClarifyDraft', async () => {
@@ -356,7 +351,7 @@ describe('GatesInboxView starting approvals', () => {
       status: 'completed',
       nodeRuns: { ap: { nodeId: 'ap', status: 'completed' } },
     })
-    filterState.projectSelected!.value = 'proj-x'
+    filterState.workflowSelected!.value = 'wf-other'
     await flushPromises()
     await nextTick()
     await flushPromises()
@@ -443,13 +438,13 @@ describe('GatesInboxView starting approvals', () => {
     // Stored/filter project is proj-a; the deep-linked run belongs to proj-b and
     // only appears on an unfiltered listGates. Identity is runId+nodeId.
     routeState.query = { run: 'run-1', node: 'n1' }
-    filterState.projectSelected!.value = 'proj-a'
+    filterState.workflowSelected!.value = 'wf-other'
     const parked = parkedItem()
     parked.runId = 'run-1'
     parked.nodeId = 'n1'
     // Filtered loadList (with projectId) returns empty; unfiltered pin peek returns the row.
-    mocks.listGates.mockImplementation(async (params?: { projectId?: string }) => {
-      if (params?.projectId) return paged([])
+    mocks.listGates.mockImplementation(async (params?: { wf?: string }) => {
+      if (params?.wf) return paged([])
       return paged([parked])
     })
     mocks.getRun.mockResolvedValue({

@@ -123,7 +123,7 @@ watch(
     </div>
 
     <div v-else class="scroll-area flex-1 space-y-3 overflow-y-auto p-4">
-      <div class="rounded-lg flex flex-wrap items-center gap-1.5 border border-line bg-elevated p-2.5" data-test="mcp-ops-bar">
+      <div class="flex flex-wrap items-center gap-1.5 border-b border-line/60 pb-3" data-test="mcp-ops-bar">
         <span class="mr-1 text-[11px] text-txt3">{{ t('pages.agentStudio.mcp.quickAddLabel') }}</span>
         <button
           v-if="!hasArtifactStore"
@@ -154,7 +154,7 @@ watch(
       <div
         v-for="(m, i) in draft.mcp"
         :key="i"
-        class="rounded-md border bg-base p-3"
+        class="border-b py-4"
         :class="isPlatformPresetName(m.name) ? 'border-ok/30' : 'border-line'"
         data-test="mcp-card"
         :data-mcp-name="m.name.trim()"
@@ -168,7 +168,7 @@ watch(
             v-else
             v-model="m.name"
             :placeholder="t('pages.agentStudio.mcp.serviceName')"
-            class="flex-1 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt outline-none focus:border-accent"
+            class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt outline-none focus:border-accent"
             data-test="mcp-custom-name"
           />
           <select v-model="m.transport" class="rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2 outline-none">
@@ -182,8 +182,8 @@ watch(
           <input v-model="m.url" placeholder="https://mcp.example.com/sse" class="mb-2 w-full rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt outline-none focus:border-accent" />
           <div class="text-[11px] text-txt3">{{ t('pages.agentStudio.mcp.headers') }}</div>
           <div v-for="(h, hi) in m.headers" :key="hi" class="mt-1 flex items-center gap-1.5">
-            <input v-model="h.k" placeholder="Authorization" class="w-1/3 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
-            <input v-model="h.v" placeholder="Bearer …" class="flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
+            <input v-model="h.k" placeholder="Authorization" class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
+            <input v-model="h.v" placeholder="Bearer …" class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
             <button class="text-txt3 hover:text-err" @click="m.headers.splice(hi, 1)"><Icon name="close" :size="12" /></button>
           </div>
           <button class="mt-1.5 text-[11px] text-accent-2 hover:underline" @click="m.headers.push({ k: '', v: '' })">{{ t('pages.agentStudio.mcp.addHeader') }}</button>
@@ -195,8 +195,8 @@ watch(
           <textarea v-model="m.args" rows="2" placeholder="-y&#10;@upstash/context7-mcp" class="mt-1 w-full resize-y rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
           <div class="mt-2 text-[11px] text-txt3">{{ t('pages.agentStudio.mcp.env') }}</div>
           <div v-for="(e, ei) in m.env" :key="ei" class="mt-1 flex items-center gap-1.5">
-            <input v-model="e.k" placeholder="KEY" class="w-1/3 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
-            <input v-model="e.v" placeholder="value" class="flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
+            <input v-model="e.k" placeholder="KEY" class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
+            <input v-model="e.v" placeholder="value" class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 font-mono text-[11px] text-txt2 outline-none" />
             <button class="text-txt3 hover:text-err" @click="m.env.splice(ei, 1)"><Icon name="close" :size="12" /></button>
           </div>
           <button class="mt-1.5 text-[11px] text-accent-2 hover:underline" @click="m.env.push({ k: '', v: '' })">{{ t('pages.agentStudio.mcp.addEnv') }}</button>
@@ -204,7 +204,7 @@ watch(
 
         <div
           v-if="isPlatformPresetName(m.name)"
-          class="rounded-lg mt-2.5 border border-dashed border-ok/35 bg-ok/5 p-2 text-[10.5px] leading-5 text-txt2"
+          class="mt-3 border-l-2 border-ok/35 pl-3 text-[11px] leading-5 text-txt2"
           data-test="mcp-scope-note"
         >
           {{ t(`pages.agentStudio.mcp.scopeNote.${platformPresetKind(m.name)}`) }}

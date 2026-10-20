@@ -62,10 +62,10 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({
 vi.mock('@/lib/composables/useWorkflowFilter', () => ({
   useWorkflowFilter: () => ({ selected: shared.selected }),
 }))
-vi.mock('@/lib/composables/useProjectContext', () => ({
-  useProjectContext: () => ({
-    selected: shared.selectedProject,
-    ensureHydrated: mocks.hydrateProject,
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({
+  useWorkspaceContext: () => ({
+    workspaceId: shared.selectedProject,
+    ensureLoaded: mocks.hydrateProject,
   }),
 }))
 vi.mock('@/lib/composables/useTagFilter', () => ({
@@ -280,7 +280,6 @@ describe('useGatesInbox actions', () => {
       page: 1,
       pageSize: 20,
       wf: undefined,
-      projectId: undefined,
       tag: undefined,
     })
     expect(inbox.listItems.value).toHaveLength(2)
@@ -303,15 +302,11 @@ describe('useGatesInbox actions', () => {
     await inbox.loadList()
     expect(mocks.listGates).toHaveBeenLastCalledWith(expect.objectContaining({
       wf: 'wf-1',
-      projectId: 'project-1',
       tag: 'urgent',
     }))
 
-    inbox.projectFilterOpen.value = true
-    await nextTick()
     inbox.workflowFilterOpen.value = true
     await nextTick()
-    expect(inbox.projectFilterOpen.value).toBe(false)
     inbox.tagFilterOpen.value = true
     await nextTick()
     expect(inbox.workflowFilterOpen.value).toBe(false)

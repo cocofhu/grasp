@@ -1,6 +1,6 @@
 import type { GlobalTokenStatsParams } from '@/lib/api/clients/statsClient'
 import type { TokenStatsWindow } from '@/lib/shared/types'
-import { clientTimezoneParams } from '@/components/board/token-stats/tokenStatsShared'
+import { clientTimezoneParams } from '@/components/token-analytics/tokenStatsShared'
 
 /** Categorical palette for project/model/workflow series (distinct hues, purple first). */
 export const TOKEN_CHART_PALETTE = [
@@ -52,7 +52,6 @@ export interface TokenStatsFilters {
   source: TokenSourceFilter
   status: TokenStatusFilter
   phase: TokenPhaseFilter
-  projectId: string
   modelKey: string
   workflowId: string
   nodeType: string
@@ -68,7 +67,6 @@ export function defaultTokenStatsFilters(): TokenStatsFilters {
     source: 'all',
     status: '',
     phase: '',
-    projectId: '',
     modelKey: '',
     workflowId: '',
     nodeType: '',
@@ -89,26 +87,11 @@ export function filtersToParams(f: TokenStatsFilters): GlobalTokenStatsParams {
     source: f.source,
     status: f.status || undefined,
     phase: f.phase || undefined,
-    projectId: f.projectId || undefined,
     modelKey: f.modelKey || undefined,
     workflowId: f.workflowId || undefined,
     nodeType: f.nodeType || undefined,
     runId: f.runId || undefined,
   }
-}
-
-/** Query carried onto the project board so its Token stats open on the same range. */
-export function boardQueryFromFilters(f: TokenStatsFilters): Record<string, string> {
-  const query: Record<string, string> = { tab: 'board' }
-  if (f.window === 'custom' && f.from) {
-    query.window = 'custom'
-    query.from = f.from
-    if (f.to) query.to = f.to
-  } else if (f.window) {
-    query.window = f.window
-  }
-  if (f.granularity) query.granularity = f.granularity
-  return query
 }
 
 /** Number of narrowing filters beyond the time range (for the "clear" affordance). */
@@ -117,7 +100,6 @@ export function activeFilterCount(f: TokenStatsFilters): number {
     f.source !== 'all',
     !!f.status,
     !!f.phase,
-    !!f.projectId,
     !!f.modelKey,
     !!f.workflowId,
     !!f.nodeType,
@@ -125,7 +107,7 @@ export function activeFilterCount(f: TokenStatsFilters): number {
   ].filter(Boolean).length
 }
 
-export type DrillDim = 'project' | 'model' | 'workflow' | 'nodeType' | 'source' | 'status' | 'phase' | 'run' | 'bucket'
+export type DrillDim = 'model' | 'workflow' | 'nodeType' | 'source' | 'status' | 'phase' | 'run' | 'bucket'
 
 /** One step of a drill-down path (clicked chart element / table row). */
 export interface DrillTarget {
@@ -167,9 +149,6 @@ export function applyDrill(base: TokenStatsFilters, path: DrillTarget[]): TokenS
   const out: TokenStatsFilters = { ...base }
   for (const step of path) {
     switch (step.dim) {
-      case 'project':
-        out.projectId = step.key
-        break
       case 'model':
         out.modelKey = step.key
         break

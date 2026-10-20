@@ -2,7 +2,7 @@
 
 <img src="media/logo-light.svg" alt="Grasp" width="420" />
 
-<p>多项目 Coding Agent 工作流编排与人工审批平台</p>
+<p>单工作区 Coding Agent 工作流编排与人工审批平台</p>
 
 [![Release](https://img.shields.io/github/v/release/cocofhu/grasp)](https://github.com/cocofhu/grasp/releases)
 [![License](https://img.shields.io/github/license/cocofhu/grasp)](LICENSE)
@@ -21,6 +21,8 @@
 
 </div>
 
+现有部署升级前请阅读[单工作区迁移说明](server/WORKSPACE_MIGRATION.md)。多项目数据库需要离线迁移，历史记录保留。
+
 ## 为什么做 Grasp
 
 近两年大模型能力提升很快，我陆续做过 150 多个个人项目，过程中一直卡在两个问题上：
@@ -28,7 +30,7 @@
 1. **多项目切换成本高**：多个 IDE 来回切，哪个项目在跑、跑到哪一步，很难同时管住；
 2. **并行开发时读不懂 Agent 输出**：模型动辄输出大段文本，关键改动和待确认的问题被淹没在对话里，光看懂就要花大量时间。
 
-于是我做了 Grasp：把多个项目收进同一个平台，用有限状态机（FSM）画布编排 Agent 工作流，并通过可视化的需求澄清和结构化产物，把冗长的输出整理成一眼能看懂的内容，减少人工审查的负担。
+于是我做了 Grasp：把工作流收进同一个工作区，用有限状态机（FSM）画布编排 Agent 工作流，并通过可视化的需求澄清和结构化产物，把冗长的输出整理成一眼能看懂的内容，减少人工审查的负担。
 
 支持接入 **Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex** 等后端，每个 Agent 节点运行在独立的 Docker 沙箱中。
 
@@ -43,7 +45,7 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 - **人工门禁与收件箱**：流程到达门禁节点时暂停，可在收件箱或运行详情中集中审批；支持生成一次性临时链接，供未登录协作者直接查看并审批。
 - **结构化产物（Artifact MCP）**：产物按运行实例（run）隔离读写，节点完成时自动校验必填产物，缺项直接判定失败。
 - **Docker 沙箱与 Git 交付**：每个 Agent 在独立容器内执行，支持在沙箱内通过 `gh`、`glab` 或 SSH 推送分支并创建 PR / MR。
-- **运行观测与统计**：记录状态流转时间线、节点交接说明、沙箱日志、实时桌面预览（noVNC），以及按项目和模型维度的 Token 用量与成本。
+- **运行观测与统计**：记录状态流转时间线、节点交接说明、沙箱日志、实时桌面预览（noVNC），以及按工作流、来源和模型维度的 Token 用量与成本。
 
 <table>
   <tr>
@@ -84,8 +86,8 @@ cd grasp
 
 ### 跑通第一个工作流
 
-1. 使用演示账号登录。首次进入默认项目会打开安装向导。
-2. 在向导（或「项目凭据」设置）中选择 `cursor`、`claude_code`、`codebuddy`、`trae`、`opencode` 或 `codex`，填入对应 API Key（Codex 粘贴 `~/.codex/auth.json` 登录文件，无需 API Key；Git 凭据可跳过）。完成后会自动创建默认团队并发布「默认工作流」（需求澄清 → 实现 → 测试评审）。
+1. 使用演示账号登录。首次进入工作区会打开安装向导。
+2. 在向导（或「设置 → 凭据」）中选择 `cursor`、`claude_code`、`codebuddy`、`trae`、`opencode` 或 `codex`，填入对应 API Key（Codex 粘贴 `~/.codex/auth.json` 登录文件，无需 API Key；Git 凭据可跳过）。完成后会自动创建默认团队并发布「默认工作流」（需求澄清 → 实现 → 测试评审）。
 3. 在首页输入需求直接启动，或打开画布调整节点与成功 / 失败 / 回滚连线后再运行。
 4. 流程停在人工门禁时，从收件箱查看澄清结果、预览页面或代码改动，确认后继续流转。
 
@@ -139,11 +141,11 @@ flowchart LR
 - `agents/`：可打包导入的预置角色工作区
 - `docs/`：项目主页与中英文帮助文档
 
-服务端配置优先级：环境变量 > 挂载配置文件 > 代码默认值。运行时凭据（各后端 API Key、Git Token、SSH 私钥）仅从项目的「项目凭据」界面读取并按需注入沙箱，不通过服务端环境变量下发。
+服务端配置优先级：环境变量 > 挂载配置文件 > 代码默认值。运行时凭据（各后端 API Key、Git Token、SSH 私钥）仅从「设置 → 凭据」界面读取并按需注入沙箱，不通过服务端环境变量下发。
 
 ## 部署注意事项
 
-- API Key 与 Git 凭据请仅在项目凭据界面配置，切勿提交到代码仓库。
+- API Key 与 Git 凭据请仅在工作区凭据设置配置，切勿提交到代码仓库。
 - 生产环境建议通过 digest 固定镜像版本，参见 [Release images and smoke](CONTRIBUTING.md#release-images-and-smoke)。
 - 使用反向代理时需保留原始 `Host` 请求头（例如 nginx 配置 `proxy_set_header Host $host`），临时审批链接依赖该字段生成，详见 [SECURITY.md](SECURITY.md)。
 - SQLite 数据库（`./.localdata/db`）与附件目录（`./.localdata/app-data`）分别挂载，备份与清理时需同步处理，否则已有运行记录中的 `blob:` 附件引用会返回 404。

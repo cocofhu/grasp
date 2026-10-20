@@ -146,11 +146,11 @@ describe('ArtifactPreview structured export UI', () => {
     wrapper.unmount()
   })
 
-  it('marks raw download tooltip as original JSON', async () => {
+  it('marks raw download tooltip as the original file', async () => {
     const wrapper = mountPreview(structuredArtifact)
     await flushPromises()
     expect(wrapper.find('[data-testid="artifact-preview-download-raw"]').attributes('title')).toBe(
-      '下载原始 JSON',
+      '下载原文件',
     )
     wrapper.unmount()
   })
@@ -255,7 +255,7 @@ describe('ArtifactPreview structured export UI', () => {
       '下载 PDF',
     )
     expect(wrapper.find('[data-testid="artifact-preview-zoom-download-raw"]').attributes('title')).toBe(
-      '下载原始 JSON',
+      '下载原文件',
     )
     wrapper.unmount()
   })

@@ -164,7 +164,7 @@ func TestListSandboxesAndEventLog(t *testing.T) {
 func TestPmNilServicePaths(t *testing.T) {
 	hn := newHarness(t)
 	hn.h.Pm = nil
-	w := hn.do(http.MethodGet, "/api/projects/"+models.DefaultProjectID+"/pm/threads", nil)
+	w := hn.do(http.MethodGet, "/api/workspace/pm/threads", nil)
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("nil pm list threads: %d", w.Code)
 	}

@@ -41,13 +41,15 @@ func (e *Engine) dispatch() {
 // Priority DESC → hasRemainingHumanGate DESC → created_at ASC → id ASC order,
 // then returns (either at capacity or with the queue empty).
 func (e *Engine) drainQueue() {
-	if e.IsHalted() {
-		return
-	}
 	for {
-		if !e.sem.TryAcquire() {
+		// Synchronize the halt check with taking a counted slot. Once Halt
+		// returns, every admitted driver must already be visible to maintenance.
+		e.haltMu.RLock()
+		if e.halted || !e.sem.TryAcquire() {
+			e.haltMu.RUnlock()
 			return // at capacity; a Release + wake will resume draining
 		}
+		e.haltMu.RUnlock()
 		runID, from, ok := e.claimNextQueued()
 		if !ok {
 			e.sem.Release()
@@ -158,10 +160,13 @@ func pickQueuedByRemainingHumanGate(candidates []models.Run) models.Run {
 // promotes it later by Priority → remaining human_gate → FIFO — never writing
 // "running" before a slot is held. Already-running runs are never preempted.
 func (e *Engine) scheduleRunAdmission(runID, fromNodeID string) {
-	if !e.sem.TryAcquire() {
+	e.haltMu.RLock()
+	if e.halted || !e.sem.TryAcquire() {
+		e.haltMu.RUnlock()
 		e.queueForAdmission(runID, fromNodeID)
 		return
 	}
+	e.haltMu.RUnlock()
 	if !e.admitRunDirect(runID, fromNodeID) {
 		e.sem.Release()
 		e.queueForAdmission(runID, fromNodeID)

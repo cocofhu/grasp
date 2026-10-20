@@ -3,6 +3,7 @@
 package database
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,18 +19,19 @@ import (
 	"gorm.io/driver/mysql"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
 
 // Open opens the database for the configured driver and migrates the schema.
 // SQLite is the zero-dependency default; MySQL is used when configured (driver
 // == "mysql" or a DSN is present, resolved in config.setDefaults).
-func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
+func Open(cfg config.DatabaseConfig, profilesRoot ...string) (*gorm.DB, error) {
 	switch cfg.Driver {
 	case "mysql":
-		return openMySQL(cfg.DSN)
+		return openMySQL(cfg.DSN, profilesRoot...)
 	default:
-		return OpenSQLite(cfg.Path)
+		return OpenSQLite(cfg.Path, profilesRoot...)
 	}
 }
 
@@ -37,7 +39,7 @@ func Open(cfg config.DatabaseConfig) (*gorm.DB, error) {
 // timeout plus a single writer connection keep the concurrent FSM goroutines
 // and API readers from tripping over SQLite write locks. Exported so tests can
 // spin up a file/memory DB without constructing a full DatabaseConfig.
-func OpenSQLite(path string) (*gorm.DB, error) {
+func OpenSQLite(path string, profilesRoot ...string) (*gorm.DB, error) {
 	existing := false
 	if path != "" && path != ":memory:" && !strings.HasPrefix(path, "file:") {
 		display := path
@@ -59,7 +61,7 @@ func OpenSQLite(path string) (*gorm.DB, error) {
 	if existing {
 		backupSQLite(db, path, time.Now())
 	}
-	return finalize(db)
+	return finalize(db, profilesRoot...)
 }
 
 const sqliteBackupKeep = 3
@@ -181,7 +183,7 @@ func openSQLiteConn(path string) (*gorm.DB, error) {
 // openMySQL opens the MySQL database at dsn. Unlike SQLite it supports genuine
 // concurrent writers, so the FSM goroutines each get their own pooled
 // connection instead of being serialized behind a single one.
-func openMySQL(dsn string) (*gorm.DB, error) {
+func openMySQL(dsn string, profilesRoot ...string) (*gorm.DB, error) {
 	if strings.TrimSpace(dsn) == "" {
 		return nil, fmt.Errorf("mysql driver selected but database.dsn is empty")
 	}
@@ -196,7 +198,7 @@ func openMySQL(dsn string) (*gorm.DB, error) {
 	sqlDB.SetMaxOpenConns(20)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetConnMaxLifetime(time.Hour)
-	return finalize(db)
+	return finalize(db, profilesRoot...)
 }
 
 func gormConfig() *gorm.Config {
@@ -204,13 +206,73 @@ func gormConfig() *gorm.Config {
 }
 
 // finalize runs the shared post-open steps (migrate + initial seed) for any driver.
-func finalize(db *gorm.DB) (*gorm.DB, error) {
+func finalize(db *gorm.DB, profilesRoot ...string) (*gorm.DB, error) {
+	workspaceID := ""
+	if db.Migrator().HasTable(&models.Project{}) {
+		var n int64
+		if err := db.Model(&models.Project{}).Count(&n).Error; err != nil {
+			return nil, err
+		}
+		if n > 1 {
+			return nil, fmt.Errorf("workspace migration required: %d projects; run workspace-migrate offline", n)
+		}
+		if n == 1 {
+			var p models.Project
+			if err := db.First(&p).Error; err != nil {
+				return nil, err
+			}
+			workspaceID = p.ID
+		}
+	}
+	if len(profilesRoot) > 0 {
+		if err := checkWorkspaceFiles(profilesRoot[0], workspaceID); err != nil {
+			return nil, err
+		}
+	}
 	if err := db.AutoMigrate(models.AllModels()...); err != nil {
 		return nil, err
 	}
 	createChannelIndexes(db)
-	ensureDefaultProject(db)
+	if err := ensureDefaultProject(db); err != nil {
+		return nil, err
+	}
 	return db, nil
+}
+
+// Inspect identity metadata before schema/seed mutations. Shared-only or corrupt
+// file installations must not be mistaken for a new, empty workspace.
+func checkWorkspaceFiles(profilesRoot, workspaceID string) error {
+	for _, root := range []string{profilesRoot, filepath.Join(filepath.Dir(profilesRoot), "project-shared")} {
+		entries, err := os.ReadDir(root)
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		for _, e := range entries {
+			if !e.IsDir() {
+				continue
+			}
+			if workspaceID == "" {
+				return fmt.Errorf("workspace migration required: configuration files exist without a workspace")
+			}
+			if root != profilesRoot {
+				if e.Name() != workspaceID {
+					return fmt.Errorf("workspace migration required: shared configuration belongs to a missing workspace")
+				}
+				continue
+			}
+			body, err := os.ReadFile(filepath.Join(root, e.Name(), "agent.json"))
+			if err != nil {
+				return fmt.Errorf("workspace migration required: unreadable Agent identity %q", e.Name())
+			}
+			var identity struct {
+				ProjectID string `json:"projectId"`
+			}
+			if json.Unmarshal(body, &identity) != nil || strings.TrimSpace(identity.ProjectID) != workspaceID {
+				return fmt.Errorf("workspace migration required: Agent %q has no valid workspace identity", e.Name())
+			}
+		}
+	}
+	return nil
 }
 
 // createChannelIndexes adds the multi-channel uniqueness constraints that GORM
@@ -235,17 +297,55 @@ func createChannelIndexes(db *gorm.DB) {
 	}
 }
 
-// ensureDefaultProject creates「默认项目」on an empty database. The default
-// project has no special protection afterward (rename/delete-when-empty like
-// any other).
-func ensureDefaultProject(db *gorm.DB) {
+// ensureDefaultProject seeds the sole workspace only on an empty installation.
+func ensureDefaultProject(db *gorm.DB) error {
 	var count int64
-	db.Model(&models.Project{}).Count(&count)
-	if count > 0 {
-		return
+	if err := db.Model(&models.Project{}).Count(&count).Error; err != nil {
+		return err
+	}
+	if count > 1 {
+		return fmt.Errorf("workspace migration required: found %d projects; run workspace-migrate offline", count)
+	}
+	if count == 1 {
+		var p models.Project
+		if err := db.First(&p).Error; err != nil {
+			return err
+		}
+		for _, model := range []any{&models.WorkflowDef{}, &models.ProjectCredential{}, &models.Artifact{}, &models.ProjectMemoryItem{}, &models.ChatThread{}, &models.AgentCronJob{}, &models.ChannelConfig{}, &models.RequirementDraft{}, &models.ProjectExternalMcpSettings{}} {
+			var n int64
+			if err := db.Model(model).Where("project_id IS NULL OR project_id <> ?", p.ID).Count(&n).Error; err != nil {
+				return err
+			}
+			if n != 0 {
+				return fmt.Errorf("workspace migration required: active resources reference a missing workspace")
+			}
+		}
+		var n int64
+		if err := db.Model(&models.Sandbox{}).Where("project_id <> '' AND project_id <> ?", p.ID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("workspace migration required: sandbox references a missing workspace")
+		}
+		if err := db.Model(&models.ProjectMcpApiKey{}).Where("revoked_at IS NULL AND project_id <> ?", p.ID).Count(&n).Error; err != nil {
+			return err
+		}
+		if n > 0 {
+			return fmt.Errorf("workspace migration required: active API key references a missing workspace")
+		}
+		return nil
+	}
+	for _, model := range []any{&models.WorkflowDef{}, &models.ProjectCredential{}, &models.Artifact{}, &models.Sandbox{}, &models.ProjectMemoryItem{}, &models.ChatThread{}, &models.AgentCronJob{}, &models.ChannelConfig{}, &models.RequirementDraft{}, &models.ProjectExternalMcpSettings{}, &models.ProjectMcpApiKey{}, &models.ProjectAuditEvent{}, &models.TokenUsageEvent{}} {
+		var n int64
+		if err := db.Model(model).Count(&n).Error; err != nil {
+			return err
+		}
+		if n != 0 {
+			return fmt.Errorf("workspace migration required: resources exist without a workspace")
+		}
 	}
 	now := time.Now()
-	_ = db.Create(&models.Project{
+	return db.Clauses(clause.OnConflict{DoNothing: true}).Create(&models.Project{
 		ID:           models.DefaultProjectID,
 		Name:         models.DefaultProjectName,
 		Variables:    []models.ProjectVariable{},

@@ -30,16 +30,16 @@ const nodeLine = computed(() => {
 <template>
   <button
     type="button"
-    class="list-card-lift run-board-card w-full rounded-lg border border-line bg-surface p-3 text-left hover:border-line-strong hover:bg-elevated focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-accent-2"
+    class="run-board-card w-full border-b border-line/70 px-3.5 py-4 text-left transition-colors last:border-b-0 hover:bg-elevated/40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-accent-2"
     @click="emit('select', run)"
   >
     <div class="mb-2 flex items-start justify-between gap-2">
-      <div class="min-w-0 text-[13px] font-medium leading-snug text-txt" :title="title">
+      <div class="min-w-0 text-[13px] font-medium leading-snug text-txt [overflow-wrap:anywhere]" :title="title">
         {{ truncateText(title, 64) }}
       </div>
       <div class="flex shrink-0 flex-col items-end gap-1">
         <StatusPill :status="run.status" size="sm" />
-        <PriorityBadge :priority="run.priority" />
+        <PriorityBadge v-if="run.priority === 'high' || run.priority === 'low'" :priority="run.priority" />
       </div>
     </div>
     <div class="mb-1.5 truncate text-xs text-txt2" :title="`${run.workflowName} · #${shortId}`">

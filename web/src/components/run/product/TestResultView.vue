@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import ArtifactReportDocument from './ArtifactReportDocument.vue'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -157,53 +158,55 @@ const SEV: Record<string, string> = {
 </script>
 
 <template>
+  <ArtifactReportDocument>
+
   <div class="space-y-4">
-    <div v-if="doc.summary" class="group flex items-start gap-1 rounded-lg border border-line bg-base/40 p-3 text-[12px] leading-relaxed text-txt2">
+    <div v-if="doc.summary" class="report-summary group flex items-start gap-1 text-[13px] leading-relaxed text-txt2">
       <span class="min-w-0 flex-1" data-json-path="summary" data-label="概述">{{ doc.summary }}</span>
       <AnnotateBtn json-path="summary" label="概述" />
     </div>
 
-    <section v-if="total">
+    <section v-if="total" class="report-section">
       <div class="mb-2 flex items-center gap-2">
         <span
           class="rounded-md px-2 py-0.5 text-[11px] font-semibold"
           :class="allPassed ? 'bg-ok/15 text-ok' : 'bg-err/15 text-err'"
         >{{ allPassed ? t('pages.product.testResult.allPassed') : t('pages.product.testResult.failedCount', { n: doc.failed || 0 }) }}</span>
-        <span class="text-[11px] text-txt3">{{ t('pages.product.testResult.passRate', { pct: passPct, total }) }}</span>
+        <span class="text-[13px] text-txt3">{{ t('pages.product.testResult.passRate', { pct: passPct, total }) }}</span>
       </div>
       <div class="mb-2 flex h-1.5 w-full overflow-hidden rounded-full bg-base">
         <div class="h-full bg-ok" :style="{ width: ((doc.passed || 0) / total) * 100 + '%' }" />
         <div class="h-full bg-err" :style="{ width: ((doc.failed || 0) / total) * 100 + '%' }" />
         <div class="h-full bg-line-strong" :style="{ width: ((doc.skipped || 0) / total) * 100 + '%' }" />
       </div>
-      <div class="flex gap-2">
-        <div class="flex-1 rounded-lg border border-line bg-base/40 p-2 text-center">
+      <div class="report-metrics">
+        <div class="report-metric flex-1 text-center">
           <div class="text-[15px] font-semibold text-ok">{{ doc.passed || 0 }}</div>
-          <div class="text-[10px] text-txt3">{{ t('pages.product.testResult.passed') }}</div>
+          <div class="text-[11px] text-txt3">{{ t('pages.product.testResult.passed') }}</div>
         </div>
-        <div class="flex-1 rounded-lg border border-line bg-base/40 p-2 text-center">
+        <div class="report-metric flex-1 text-center">
           <div class="text-[15px] font-semibold text-err">{{ doc.failed || 0 }}</div>
-          <div class="text-[10px] text-txt3">{{ t('pages.product.testResult.failed') }}</div>
+          <div class="text-[11px] text-txt3">{{ t('pages.product.testResult.failed') }}</div>
         </div>
-        <div class="flex-1 rounded-lg border border-line bg-base/40 p-2 text-center">
+        <div class="report-metric flex-1 text-center">
           <div class="text-[15px] font-semibold text-txt3">{{ doc.skipped || 0 }}</div>
-          <div class="text-[10px] text-txt3">{{ t('pages.product.testResult.skipped') }}</div>
+          <div class="text-[11px] text-txt3">{{ t('pages.product.testResult.skipped') }}</div>
         </div>
       </div>
     </section>
 
-    <section v-if="caseGroups.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">{{ t('pages.product.testResult.cases') }}</div>
+    <section v-if="caseGroups.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-txt3">{{ t('pages.product.testResult.cases') }}</h3>
       <div class="space-y-3">
         <div v-for="(g, gi) in caseGroups" :key="g.repo || `flat-${gi}`">
-          <div v-if="g.repo" class="mb-1 flex items-center gap-2 text-[11px]">
+          <div v-if="g.repo" class="mb-1 flex items-center gap-2 text-[13px]">
             <span class="rounded bg-accent/10 px-1.5 py-0.5 font-mono text-accent">{{ g.repo }}</span>
             <span class="text-txt3">
               {{ t('pages.product.testResult.repoStats', groupStats(g.cases)) }}
             </span>
           </div>
           <div class="space-y-1">
-            <div v-for="(c, i) in g.cases" :key="c.id || `${gi}-${i}`" class="group flex items-start gap-2 rounded-md bg-base/40 px-2 py-1.5 text-[11px]">
+            <div v-for="(c, i) in g.cases" :key="c.id || `${gi}-${i}`" class="report-item group flex items-start gap-2 text-[13px]">
               <span class="mt-0.5 shrink-0 font-bold" :class="cs(c.status).cls">{{ cs(c.status).icon }}</span>
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1 text-txt2">
@@ -216,7 +219,7 @@ const SEV: Record<string, string> = {
                 </div>
                 <div
                   v-if="c.detail"
-                  class="mt-0.5 text-[10px] leading-4 text-txt3"
+                  class="mt-1 text-[13px] leading-6 text-txt2"
                   :data-json-path="`cases[${c.id || `${gi}-${i}`}].detail`"
                   :data-label="`${c.name || i} 详情`"
                 >{{ c.detail }}</div>
@@ -227,23 +230,23 @@ const SEV: Record<string, string> = {
       </div>
     </section>
 
-    <section v-if="doc.defects?.length">
-      <div class="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-err">{{ t('pages.product.testResult.defects', { n: doc.defects.length }) }}</div>
+    <section v-if="doc.defects?.length" class="report-section">
+      <h3 class="report-heading mb-1.5 font-semibold text-err">{{ t('pages.product.testResult.defects', { n: doc.defects.length }) }}</h3>
       <div class="space-y-2">
-        <div v-for="(d, i) in doc.defects" :key="d.id || i" class="group rounded-lg border border-line bg-base/40 p-2.5">
+        <div v-for="(d, i) in doc.defects" :key="d.id || i" class="report-item group">
           <div class="flex flex-wrap items-center gap-2">
-            <span v-if="d.severity" class="shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase" :class="SEV[d.severity] || 'bg-base text-txt3'">{{ d.severity }}</span>
+            <span v-if="d.severity" class="shrink-0 rounded px-1.5 py-0.5 text-[11px] font-medium uppercase" :class="SEV[d.severity] || 'bg-base text-txt3'">{{ d.severity }}</span>
             <span
-              class="text-[12px] font-medium text-txt"
+              class="text-[13px] font-medium text-txt"
               :data-json-path="`defects[${d.id || i}]`"
               :data-label="d.title || `缺陷 ${i + 1}`"
             >{{ d.title }}</span>
             <AnnotateBtn :json-path="`defects[${d.id || i}]`" :label="d.title || `缺陷 ${i + 1}`" />
-            <span v-if="d.status" class="ml-auto shrink-0 text-[10px] text-txt3">{{ d.status }}</span>
+            <span v-if="d.status" class="ml-auto shrink-0 text-[11px] text-txt3">{{ d.status }}</span>
           </div>
           <div
             v-if="d.detail"
-            class="mt-1 text-[11px] leading-relaxed text-txt3"
+            class="mt-1 text-[13px] leading-relaxed text-txt2"
             :data-json-path="`defects[${d.id || i}].detail`"
             :data-label="`${d.id || i} 详情`"
           >{{ d.detail }}</div>
@@ -251,35 +254,35 @@ const SEV: Record<string, string> = {
       </div>
     </section>
 
-    <section v-if="doc.variances" class="group rounded-lg border border-warn/30 bg-warn/5 p-3">
-      <div class="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-warn">
+    <section v-if="doc.variances" class="report-section group">
+      <h3 class="report-heading mb-1 flex items-center gap-1 font-semibold text-warn">
         {{ t('pages.product.testResult.variances') }}
         <AnnotateBtn json-path="variances" :label="t('pages.product.testResult.variances')" />
-      </div>
+      </h3>
       <div
-        class="text-[12px] leading-relaxed text-txt2"
+        class="text-[13px] leading-relaxed text-txt2"
         data-json-path="variances"
         :data-label="t('pages.product.testResult.variances')"
       >{{ doc.variances }}</div>
     </section>
 
-    <section v-if="doc.assessment" class="group rounded-lg border border-line bg-base/40 p-3">
-      <div class="mb-1 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="doc.assessment" class="report-section group">
+      <h3 class="report-heading mb-1 flex items-center gap-1 font-semibold text-txt3">
         {{ t('pages.product.testResult.assessment') }}
         <AnnotateBtn json-path="assessment" :label="t('pages.product.testResult.assessment')" />
-      </div>
+      </h3>
       <div
-        class="text-[12px] leading-relaxed text-txt2"
+        class="text-[13px] leading-relaxed text-txt2"
         data-json-path="assessment"
         :data-label="t('pages.product.testResult.assessment')"
       >{{ doc.assessment }}</div>
     </section>
 
-    <section v-if="shots.length">
-      <div class="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-txt3">
+    <section v-if="shots.length" class="report-section">
+      <h3 class="report-heading">
         <Icon name="monitor" :size="12" :style="{ color: accent }" />
         {{ t('pages.product.testResult.screenshots', { n: shots.length }) }}
-      </div>
+      </h3>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
         <figure v-for="(s, i) in shots" :key="shotKey(s, i)" class="flex min-w-0 flex-col gap-1.5">
           <!-- loading -->
@@ -333,7 +336,7 @@ const SEV: Record<string, string> = {
             <span class="absolute left-1.5 top-1.5 rounded bg-black/55 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white backdrop-blur-sm">{{ i + 1 }}</span>
           </div>
 
-          <figcaption v-if="s.caption" class="truncate px-0.5 text-[10px] leading-4 text-txt3" :title="s.caption">{{ s.caption }}</figcaption>
+          <figcaption v-if="s.caption" class="truncate px-0.5 text-[11px] leading-5 text-txt3" :title="s.caption">{{ s.caption }}</figcaption>
         </figure>
       </div>
     </section>
@@ -392,6 +395,8 @@ const SEV: Record<string, string> = {
       </div>
     </AppModal>
   </div>
+
+  </ArtifactReportDocument>
 </template>
 
 <style scoped>

@@ -299,8 +299,9 @@ func RewriteCodexAuthError(message string) string {
 }
 
 type codexLoginState struct {
-	body string
-	path string
+	credentialID string
+	body         string
+	path         string
 }
 
 // codexLogins remembers the login file injected into one run attempt, keyed by
@@ -312,11 +313,11 @@ func codexLoginKey(req NodeReq) string {
 	return req.RunID + "|" + req.NodeID
 }
 
-func (c *acpProvider) rememberCodexLogin(key, body, path string) {
+func (c *acpProvider) rememberCodexLogin(key, body, path, credentialID string) {
 	if body == "" {
 		return
 	}
-	codexLogins.Store(c.backendKey(key), codexLoginState{body: body, path: path})
+	codexLogins.Store(c.backendKey(key), codexLoginState{body: body, path: path, credentialID: credentialID})
 }
 
 func (c *acpProvider) takeCodexLogin(key string) (codexLoginState, bool) {

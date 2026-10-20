@@ -26,6 +26,9 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
+	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+		t.Fatal(err)
+	}
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 	team := NewTeamService(projects, skills, pm, nil)
@@ -34,14 +37,13 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	team.Credentials = NewProjectCredentialService(db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		ProjectName: "TeamProj",
-		Prefix:      "Demo",
-		PMName:      "Demo项目经理",
-		Background:  "demo background for workflow team",
-		AcpBackend:  "cursor",
-		APIKey:      "sk-test",
-		MCP:         DefaultPlatformMCP(),
-		Env:         map[string]string{"GIT_REPOS": "${vars.repos}"},
+		Prefix:     "Demo",
+		PMName:     "Demo项目经理",
+		Background: "demo background for workflow team",
+		AcpBackend: "cursor",
+		APIKey:     "sk-test",
+		MCP:        DefaultPlatformMCP(),
+		Env:        map[string]string{"GIT_REPOS": "${vars.repos}"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -102,7 +104,7 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 		t.Fatalf("project-context should describe project members only: %q", ctx)
 	}
 	for _, r := range cur.Resources {
-		if r.Kind != "project" && r.Kind != "agent" {
+		if r.Kind != "workspace" && r.Kind != "agent" {
 			t.Fatalf("unexpected resource kind %q", r.Kind)
 		}
 	}
@@ -163,11 +165,14 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
+	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+		t.Fatal(err)
+	}
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 	team := NewTeamService(projects, skills, pm, nil)
 
-	p, err := projects.Create("P1", "", nil)
+	p, err := projects.CreateFixture("P1", "", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,17 +207,19 @@ func TestCreateAgentFromTemplate_SessionScopeDenied(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
+	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+		t.Fatal(err)
+	}
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 	team := NewTeamService(projects, skills, pm, nil)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		ProjectName: "ScopeProj",
-		Prefix:      "Sc",
-		PMName:      "Sc项目经理",
-		Background:  "scope test",
-		AcpBackend:  "cursor",
-		MCP:         DefaultPlatformMCP(),
+		Prefix:     "Sc",
+		PMName:     "Sc项目经理",
+		Background: "scope test",
+		AcpBackend: "cursor",
+		MCP:        DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,6 +290,9 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
+	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+		t.Fatal(err)
+	}
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 
@@ -298,12 +308,11 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 	team := NewTeamService(projects, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		ProjectName: "PullProj",
-		Prefix:      "Pu",
-		PMName:      "Pu项目经理",
-		Background:  "pull loading coverage for g3.3",
-		AcpBackend:  "cursor",
-		MCP:         DefaultPlatformMCP(),
+		Prefix:     "Pu",
+		PMName:     "Pu项目经理",
+		Background: "pull loading coverage for g3.3",
+		AcpBackend: "cursor",
+		MCP:        DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -358,6 +367,9 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	}
 	root := t.TempDir()
 	skills := NewAgentService(filepath.Join(root, "profiles"))
+	if err := db.Create(&models.Project{ID: models.DefaultProjectID, Name: models.DefaultProjectName}).Error; err != nil {
+		t.Fatal(err)
+	}
 	projects := NewProjectService(db)
 	pm := NewPmService(db, skills)
 
@@ -371,12 +383,11 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	team := NewTeamService(projects, skills, pm, fake)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		ProjectName: "ErrProj",
-		Prefix:      "Er",
-		PMName:      "Er项目经理",
-		Background:  "pull failure should fail bootstrap",
-		AcpBackend:  "cursor",
-		MCP:         DefaultPlatformMCP(),
+		Prefix:     "Er",
+		PMName:     "Er项目经理",
+		Background: "pull failure should fail bootstrap",
+		AcpBackend: "cursor",
+		MCP:        DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)

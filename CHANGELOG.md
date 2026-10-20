@@ -4,6 +4,115 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Conversation actions:** uses one readable purple for submissions and flow
+  confirmation, neutral secondary/disabled buttons and quieter recommendation
+  labels, including compact approval layouts.
+
+- **Home background:** removes the separate gray-purple backdrop and aligns
+  the home page, workflow edge fades and controls with the app theme.
+
+- **Chat design:** unifies readable message typography, neutral user messages,
+  composer actions, line icons, tool/thought states and artifact controls across
+  chats. Motion is restrained and honors reduced-motion preferences; icon
+  changes now update their shapes and sizes correctly during live replies.
+
+- **Inbox conversation:** removes the redundant run/node heading and run-detail
+  shortcut above the chat, including the desktop loading heading.
+
+- **Conversation navigation:** previews only the last nonempty assistant reply
+  for each question, preserving its paragraphs and Markdown text while leaving
+  earlier progress messages out of the summary.
+
+- **Notifications:** uses a clean inbox with small unread indicators, quiet
+  status labels and a separate filter/action toolbar. Mobile rows show time and
+  their destination, while long titles and run identifiers stay within the list.
+
+- **Audit workspace:** separates view controls from filters, uses quiet inline
+  counts and compact groups on the page surface, and removes repeated visible
+  table headings. Event details and filter menus support keyboard navigation,
+  with theme-aware mobile records and bounded dropdown positioning.
+
+- **Usage statistics:** detail tables expand with their rows, leaving one main
+  vertical scroll area. Wide tables scroll horizontally within their own bounds
+  on narrow screens without stretching the page. Long model names retain a
+  readable prefix and show their full name on hover.
+
+- **Workflow notification selector:** replaces the native dropdown with a
+  compact themed menu, a checkmark and soft accent selection. Keyboard focus,
+  dismissal and viewport placement work across desktop and mobile layouts.
+
+- **Run board:** status columns have subtle outlines and tinted headings, with
+  inset task content and fine row dividers for clearer grouping in both themes.
+  Long unbroken titles wrap without overlapping status or priority badges.
+
+- **Inbox conversation:** detail views use a flat surface without an outer
+  rounded border or card shadow on desktop and mobile, including initial loading.
+
+- **Conversation navigation:** hover summaries display readable Markdown text
+  across chats, preserving filenames and code symbols while removing formatting
+  markers. Summaries are shortened after parsing; full replies keep their layout.
+
+- **Chat theme:** conversations share the app's light and dark palette, with
+  lavender user messages, clearer prose and compact metadata. Composer focus,
+  artifact references and message navigation use the existing brand accent.
+  Code blocks and wide tables scroll within their messages on narrow screens.
+
+- **Conversation workspace:** chats use a shared reading column with question
+  navigation, hover previews and stable jumps through loaded history. Artifact
+  references open in a resizable right pane; narrow canvases use a returnable
+  preview while preserving drafts and reading position. Version menus dismiss
+  with their pane, filenames retain explicit run provenance, and public approval
+  links keep their scoped APIs and reset on credential changes.
+
+- **Application background:** all app routes use a clean, solid canvas in light
+  and dark themes, including trailing-slash and case-insensitive workflow links.
+  Removes the route-specific background whitelist and decorative shell dot grid.
+
+- **Artifact library and settings tools:** artifacts use a compact file directory
+  and wide preview, with searchable source filtering on demand and a list/preview
+  switch on smaller canvases. Structured reports use document sections. Settings
+  lists and Agent editors remove repeated card frames; narrow Agent layouts retain
+  their configuration tabs and file history. Failed source changes never display
+  another source's cached files, and deleting a final paged file returns to the list.
+
+- **Browser icon:** uses the Grasp character in a transparent multi-resolution
+  favicon, served through the existing ICO endpoint with an updated cache key.
+
+- **Workflow, drafts and assistant layout:** workflows use a flat directory with
+  compact notification controls and responsive rows. Requirement drafts use a
+  document workspace with an on-demand planning inspector and distinct empty,
+  filtered and error states. Assistant setup and conversations use an open canvas
+  with a single composer and lightweight suggestions instead of large panels.
+  Sidebar directories now use neutral surfaces, and narrower editors adapt to
+  their actual available width; mobile chat controls stay clear of floating navigation.
+  Failed history loading keeps its retry state until a deliberate retry.
+
+- **Settings layout:** the narrow navigation rail stays beside a 248px category
+  directory, with workspace tools first, then execution and platform settings.
+  Centered forms use flat groups and fine separators, aligned labels and controls,
+  and natural page scrolling. General settings scroll correctly; assistant,
+  notification and external MCP forms share the layout without sidebar search.
+
+- **Workspace tools:** board focuses on current runs and human attention;
+  Token, model and cost analysis lives in Usage, with clearer filters and
+  chart sections. Assistant setup and first-chat screens replace the empty
+  split view and repeated settings buttons; paused conversations remain
+  readable. Agent lists show full titles and group secondary actions under More.
+  The duplicate board usage endpoint and unused charts are removed.
+
+- **Settings navigation:** switching to board, workflows, drafts, or assistant
+  keeps the settings directory open. The navigation rail and mobile drawer
+  share this context; returning home or selecting a main section exits it.
+
+- **Single workspace:** removes project selection and project management. The
+  compact sidebar lists every workflow without search; workflow search stays on
+  the management page. Board, drafts, assistant, and shared configuration have
+  dedicated pages and Settings entries. Existing installations use an offline
+  plan/apply/verify/rollback tool that preserves history and converts differing
+  defaults into ordinary workflow overrides and Agent credential bindings.
+  Project API and external MCP addresses are replaced by workspace endpoints.
+  See [upgrade instructions](server/WORKSPACE_MIGRATION.md) before deployment.
+
 - **HTML preview toolbar:** removes the repeated file-information row and puts
   copy and download immediately before the enlarge control. Version selection
   and historical read-only controls remain available, including on narrow panels.
@@ -16,16 +125,8 @@ All notable public-release changes are documented here.
   press and jump. Home and sidebar characters gain gentle breathing, double
   blinks and hover greetings; reduced-motion mode keeps both still.
 - **Two-level navigation:** a compact desktop icon rail sits beside the
-  project and recent-run panel. A dedicated **New request** action replaces
-  Start, with aligned section headings, consistent list rows, clearer project
-  nesting and a more compact footer. Project rows offer contextual actions and
-  a shortcut to start a request in that project. Account details and logout
-  move into the rail avatar menu. Projects expand on demand to show their latest
-  runs; pending approvals and favorite workflows keep their existing actions.
-  Project compose links stay scoped when workflows are hidden or refreshed,
-  and runs keep their launch context when navigation changes during startup.
-  Mobile navigation stays in a single-column drawer, and footer usage tooltips
-  stay within the viewport from their first appearance.
+  workflow directory and recent runs. New request, pinning, contextual actions,
+  account controls, and a single-column mobile drawer remain available.
 - **Priority and chat controls:** the home priority chooser gains a compact
   lightning icon and a layered three-level panel; keyboard opening and short
   windows scroll the active option into view. Chat avatars, bubbles, input and actions
