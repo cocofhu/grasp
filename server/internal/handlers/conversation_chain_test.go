@@ -39,6 +39,7 @@ type chainResp struct {
 		EndedAt    *time.Time       `json:"endedAt"`
 		Turns      []map[string]any `json:"turns"`
 		EventCount *int             `json:"eventCount"`
+		Decision   string           `json:"decision"`
 		Task       *string          `json:"task"`
 		raw        map[string]any
 	} `json:"segments"`
@@ -62,12 +63,13 @@ func seedChainRun(t *testing.T, h *harness, longPrompt string) {
 		{NodeID: "design", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(5), DurationSec: 60,
 			Events: ev(42), Outputs: map[string]any{"content": "方案一"}},
 		{NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(7), Events: ev(3)},
-		{NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "completed", StartedAt: at(9)},
+		{NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "completed", StartedAt: at(9),
+			Outputs: map[string]any{"action": "revise"}},
 		{NodeID: "design", NodeType: "agent", Iteration: 2, Status: "completed", StartedAt: at(10), Events: ev(7),
 			Outputs: map[string]any{"content": "方案二"}},
 		{NodeID: "impl", NodeType: "agent", Iteration: 2, Status: "completed", StartedAt: at(12)},
 		{NodeID: "quiet", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(14)},
-		{NodeID: "dev", NodeType: "agent", Iteration: 1, Status: "waiting_human", Mode: "manual", StartedAt: at(15)},
+		{NodeID: "dev", NodeType: "agent", Iteration: 1, Status: "waiting_human", Mode: "manual", StartedAt: at(15), Events: ev(5)},
 	}
 	for i := range rows {
 		rows[i].RunID = "chain"
@@ -171,8 +173,20 @@ func TestConversationChain(t *testing.T) {
 	if _, ok := seg[2].raw["turns"]; ok {
 		t.Fatal("auto segment must not carry turns")
 	}
-	if _, ok := seg[3].raw["eventCount"]; ok {
-		t.Fatal("review segment must not carry eventCount")
+	// Review / takeover segments also carry their auto-phase eventCount.
+	if seg[3].EventCount == nil || *seg[3].EventCount != 3 || seg[6].EventCount == nil || *seg[6].EventCount != 0 ||
+		seg[8].EventCount == nil || *seg[8].EventCount != 5 {
+		t.Fatalf("review/takeover eventCount: %v %v %v", seg[3].EventCount, seg[6].EventCount, seg[8].EventCount)
+	}
+	// Gate segment: turns (empty: no discussion), decision, no eventCount, no task.
+	if seg[4].Turns == nil || len(seg[4].Turns) != 0 || seg[4].Decision != "rejected" {
+		t.Fatalf("gate segment: %v", seg[4].raw)
+	}
+	if _, ok := seg[4].raw["eventCount"]; ok {
+		t.Fatal("gate segment must not carry eventCount")
+	}
+	if _, ok := seg[1].raw["eventCount"]; ok {
+		t.Fatal("clarify segment must not carry eventCount")
 	}
 	// endedAt = startedAt + duration for finished executions only.
 	if seg[1].EndedAt == nil || !seg[1].EndedAt.Equal(seg[1].StartedAt.Add(2*time.Minute)) {

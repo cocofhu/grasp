@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/models/nodereg"
 )
 
 // ChainTurn is one text-only turn of a chain segment (the clarifyByNode turn
@@ -17,8 +18,9 @@ type ChainTurn struct {
 
 // ChainSegment is one node execution (nodeId, iteration) of a run's
 // conversation chain. Turns is set (possibly empty) for clarify / review /
-// takeover segments, EventCount for auto (kind=agent) segments, Task by the
-// handler (interpolated node prompt preview).
+// takeover / gate segments; EventCount (auto-phase ACP events of the visit)
+// for agent / review / takeover segments; Decision for resolved gates with a
+// standard action; Task by the handler (interpolated node prompt preview).
 type ChainSegment struct {
 	NodeID     string       `json:"nodeId"`
 	Iteration  int          `json:"iteration"`
@@ -30,12 +32,19 @@ type ChainSegment struct {
 	EndedAt    *time.Time   `json:"endedAt,omitempty"`
 	Turns      *[]ChainTurn `json:"turns,omitempty"`
 	EventCount *int         `json:"eventCount,omitempty"`
+	Decision   string       `json:"decision,omitempty"`
 	Task       string       `json:"task,omitempty"`
 
 	// StateRunID / NodeType are internal (task derivation in the handler).
 	StateRunID uint   `json:"-"`
 	NodeType   string `json:"-"`
 }
+
+// Gate decisions surfaced on gate segments.
+const (
+	ChainDecisionApproved = "approved"
+	ChainDecisionRejected = "rejected"
+)
 
 // ErrChainUntilNotFound: ?until (/ iteration) names no segment of the chain.
 var ErrChainUntilNotFound = errors.New("until segment not found")
@@ -58,25 +67,70 @@ func terminalVisit(status string) bool {
 	return false
 }
 
+// chainStateColumns is every StateRun column the chain needs. The heavy JSON
+// columns (events, vars_snapshot, mcp_calls, usage) are left out; events are
+// only counted (chainEventCounts).
+var chainStateColumns = []string{
+	"id", "run_id", "node_id", "node_type", "iteration", "status", "outputs",
+	"vars_before", "started_at", "duration_sec", "mode", "taken_over_at",
+}
+
+// chainEventCounts returns len(events) per StateRun id of the run, computed
+// in the database so the event payloads are never loaded. On a dialect
+// without a JSON length function, or a row whose events are not valid JSON,
+// it falls back to loading just (id, events).
+func (s *RunService) chainEventCounts(runID string) map[uint]int {
+	type idCount struct {
+		ID uint
+		N  int
+	}
+	fn := ""
+	switch s.db.Name() {
+	case "sqlite":
+		fn = "json_array_length"
+	case "mysql":
+		fn = "JSON_LENGTH"
+	}
+	out := map[uint]int{}
+	if fn != "" {
+		var rows []idCount
+		expr := "CASE WHEN events IS NULL OR events = '' OR events = 'null' THEN 0 ELSE " + fn + "(events) END AS n"
+		if err := s.db.Model(&models.StateRun{}).Select("id, "+expr).
+			Where("run_id = ?", runID).Scan(&rows).Error; err == nil {
+			for _, r := range rows {
+				out[r.ID] = r.N
+			}
+			return out
+		}
+	}
+	var full []models.StateRun
+	s.db.Select("id", "events").Where("run_id = ?", runID).Find(&full)
+	for _, sr := range full {
+		out[sr.ID] = len(sr.Events)
+	}
+	return out
+}
+
 // ConversationChain returns the run's executions in StateRun order (id asc:
 // every (re-)entry appends a row), one segment per (nodeId, iteration), each
 // clarify / review / takeover segment carrying the conversation of THAT
 // iteration. until / untilIter cut the chain after the matching segment
 // (inclusive); untilIter 0 means the node's last execution. It also returns
-// the full StateRun rows of the kept segments (same order) for callers that
-// derive more (task previews). Read-only.
+// the StateRun rows of the kept segments (same order, without events) for
+// callers that derive more (task previews). Read-only, three queries.
+//
+// Gate hot-revise (gate-ReAct) turns are stored on the upstream producer's
+// conversation; they are moved to the gate visit they happened in
+// (attributeGateTurns), and the producer keeps its own kind / mode.
 func (s *RunService) ConversationChain(run models.Run, until string, untilIter int) ([]ChainSegment, []models.StateRun, error) {
 	var states []models.StateRun
-	if err := s.db.Where("run_id = ?", run.ID).Order("id asc").Find(&states).Error; err != nil {
+	if err := s.db.Select(chainStateColumns).Where("run_id = ?", run.ID).Order("id asc").Find(&states).Error; err != nil {
 		return nil, nil, err
 	}
+	counts := s.chainEventCounts(run.ID)
 	var convs []models.ReactConversation
 	if err := s.db.Where("run_id = ?", run.ID).Order("id asc").Find(&convs).Error; err != nil {
 		return nil, nil, err
-	}
-	type visitKey struct {
-		node string
-		iter int
 	}
 	convByVisit := make(map[visitKey]models.ReactConversation, len(convs))
 	for _, c := range convs {
@@ -100,6 +154,9 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		rows = append(rows, sr)
 	}
 
+	// Attribute gate turns over the whole chain, before any cut.
+	ownTurns, gateTurns := attributeGateTurns(run.Graph, rows, convByVisit)
+
 	if until != "" {
 		cut := -1
 		for i, sr := range rows {
@@ -119,7 +176,8 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 	segs := make([]ChainSegment, 0, len(rows))
 	for _, sr := range rows {
 		node := run.Graph.FindNode(sr.NodeID)
-		conv, hasConv := convByVisit[visitKey{sr.NodeID, sr.Iteration}]
+		k := visitKey{sr.NodeID, sr.Iteration}
+		msgs, hasConv := ownTurns[k]
 		parked := sr.Status == "waiting_human" ||
 			(hasConv && node != nil && node.Type == "agent")
 		kind, mode := ClassifyVisit(node, sr, parked)
@@ -131,22 +189,148 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		if node != nil {
 			seg.NodeType = node.Type
 		}
-		if sr.StartedAt != nil && terminalVisit(sr.Status) {
-			end := sr.StartedAt.Add(time.Duration(sr.DurationSec) * time.Second)
+		if end, ok := visitEnd(sr); ok {
 			seg.EndedAt = &end
 		}
 		switch kind {
 		case CurrentKindClarify, CurrentKindReview, CurrentKindTakeover:
-			turns := make([]ChainTurn, 0, len(conv.Messages))
-			for _, m := range conv.Messages {
-				turns = append(turns, ChainTurn{Role: m.Role, Text: m.Text, At: m.At})
-			}
-			seg.Turns = &turns
-		case CurrentKindAgent:
-			n := len(sr.Events)
+			seg.Turns = chainTurns(msgs)
+		case CurrentKindGate:
+			seg.Turns = chainTurns(gateTurns[k])
+			seg.Decision = gateDecision(sr)
+		}
+		switch kind {
+		case CurrentKindAgent, CurrentKindReview, CurrentKindTakeover:
+			n := counts[sr.ID]
 			seg.EventCount = &n
 		}
 		segs = append(segs, seg)
 	}
 	return segs, rows, nil
+}
+
+type visitKey struct {
+	node string
+	iter int
+}
+
+func visitEnd(sr models.StateRun) (time.Time, bool) {
+	if sr.StartedAt == nil || !terminalVisit(sr.Status) {
+		return time.Time{}, false
+	}
+	return sr.StartedAt.Add(time.Duration(sr.DurationSec) * time.Second), true
+}
+
+func chainTurns(msgs []models.ReactMessage) *[]ChainTurn {
+	turns := make([]ChainTurn, 0, len(msgs))
+	for _, m := range msgs {
+		turns = append(turns, ChainTurn{Role: m.Role, Text: m.Text, At: m.At})
+	}
+	return &turns
+}
+
+// gateDecision maps a resolved gate's action to approved / rejected; custom
+// actions (and open gates) have none.
+func gateDecision(sr models.StateRun) string {
+	if sr.Status != "completed" {
+		return ""
+	}
+	action, _ := sr.Outputs["action"].(string)
+	switch action {
+	case "approve", "pass":
+		return ChainDecisionApproved
+	case "revise", "fail":
+		return ChainDecisionRejected
+	}
+	return ""
+}
+
+// attributeGateTurns splits every conversation into the turns that belong to
+// its own visit (own, keyed by the producer visit; a visit whose turns all
+// moved to gates has no entry) and the gate hot-revise turns, keyed by the
+// gate visit they happened in. Only human_gate visits after the producer
+// visit and before the producer's next visit are candidates:
+//   - a turn tagged with a gate (ReactMessage.GateNodeID) goes to the latest
+//     visit of that gate that started no later than the turn (the first one
+//     when none did);
+//   - an untagged turn (rows written before the tag existed) goes to a visit
+//     of a gate whose primary upstream is the producer when it falls inside
+//     that visit's window: in a later second than the gate's start (At has
+//     second precision, so a turn in the same second, typically the confirm
+//     that opened the gate, stays with the producer) and, for a finished
+//     gate, not after its end.
+func attributeGateTurns(g models.Graph, rows []models.StateRun, convs map[visitKey]models.ReactConversation) (own, gates map[visitKey][]models.ReactMessage) {
+	own = make(map[visitKey][]models.ReactMessage, len(convs))
+	gates = map[visitKey][]models.ReactMessage{}
+	upstreamOf := map[string]string{}
+	for i := range g.Nodes {
+		if n := &g.Nodes[i]; n.Type == "human_gate" {
+			upstreamOf[n.ID] = nodereg.GatePrimaryUpstreamNodeID(n)
+		}
+	}
+	pos := make(map[visitKey]int, len(rows))
+	for i, sr := range rows {
+		pos[visitKey{sr.NodeID, sr.Iteration}] = i
+	}
+	for k, conv := range convs {
+		var cands []models.StateRun
+		if p, inChain := pos[k]; inChain && len(upstreamOf) > 0 {
+			for _, sr := range rows[p+1:] {
+				if sr.NodeID == k.node {
+					break // the producer's next visit has its own conversation
+				}
+				if _, isGate := upstreamOf[sr.NodeID]; isGate && sr.StartedAt != nil {
+					cands = append(cands, sr)
+				}
+			}
+		}
+		var mine []models.ReactMessage
+		for _, m := range conv.Messages {
+			if gk, ok := gateVisitFor(m, k.node, cands, upstreamOf); ok {
+				gates[gk] = append(gates[gk], m)
+				continue
+			}
+			mine = append(mine, m)
+		}
+		if len(mine) > 0 || len(conv.Messages) == 0 {
+			own[k] = mine
+		}
+	}
+	return own, gates
+}
+
+func gateVisitFor(m models.ReactMessage, producer string, cands []models.StateRun, upstreamOf map[string]string) (visitKey, bool) {
+	if len(cands) == 0 {
+		return visitKey{}, false
+	}
+	at, atErr := time.Parse(time.RFC3339, m.At)
+	if m.GateNodeID != "" {
+		var pick *models.StateRun
+		for i := range cands {
+			sr := &cands[i]
+			if sr.NodeID != m.GateNodeID {
+				continue
+			}
+			if pick == nil || (atErr == nil && !sr.StartedAt.After(at.Add(time.Second))) {
+				pick = sr
+			}
+		}
+		if pick == nil {
+			return visitKey{}, false
+		}
+		return visitKey{pick.NodeID, pick.Iteration}, true
+	}
+	if atErr != nil {
+		return visitKey{}, false
+	}
+	for _, sr := range cands {
+		if upstreamOf[sr.NodeID] != producer || !at.After(sr.StartedAt.Truncate(time.Second)) {
+			continue
+		}
+		if end, ok := visitEnd(sr); ok && at.After(end.Add(time.Second)) {
+			continue
+		}
+		return visitKey{sr.NodeID, sr.Iteration}, true
+	}
+	return visitKey{}, false
 }
