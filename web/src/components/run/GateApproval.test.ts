@@ -2472,6 +2472,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     expect(wrapper.find('[data-testid="review-shell"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-shell-drawer-handle"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="review-shell-sidebar"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('false')
     await wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
     expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
@@ -2517,6 +2518,7 @@ describe('GateApproval mobileFillRemaining layout', () => {
     })
     await flushPromises()
 
+    expect(wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-gate"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="review-composer-send"]').exists()).toBe(true)

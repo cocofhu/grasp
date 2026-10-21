@@ -237,10 +237,11 @@ test.describe('preview review in Gates Inbox', () => {
     // The conversation opens first; artifacts remain mounted behind their pane.
     await expect(page.getByRole('button', { name: '确认并流转' })).toBeVisible()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
-    await page.getByTestId('conversation-panel-toggle').click()
+    await page.getByTestId('conversation-resource-toggle').click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
-    await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible({ timeout: 15_000 })
+    await page.getByTestId('react-artifact-card-app').click()
     await expect(page.getByRole('tab', { name: '应用预览' })).toHaveAttribute('aria-selected', 'true')
+    await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible({ timeout: 15_000 })
 
     await page.screenshot({ path: '/tmp/preview-review-inbox-screenshots/01-preview-only.png', fullPage: true })
   })
@@ -266,8 +267,9 @@ test.describe('preview review in Gates Inbox', () => {
     // Open the selected review's artifacts without dropping other list rows.
     await preview.click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
-    await page.getByTestId('conversation-panel-toggle').click()
+    await page.getByTestId('conversation-resource-toggle').click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
+    await page.getByTestId('react-artifact-card-app').click()
     await expect(page.getByRole('button', { name: '取点标注' })).toBeVisible({ timeout: 15_000 })
     await expect(gate).toBeVisible()
     await expect(review).toBeVisible()

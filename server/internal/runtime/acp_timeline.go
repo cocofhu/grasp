@@ -31,20 +31,18 @@ type acpTimelineStore struct {
 	// pull refreshes one node from its sandbox event log; a field so tests can
 	// count dials without a bridge.
 	pull func(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader)
-	// ingestEvery is the event-log poll cadence while a turn is running. A
-	// per-store field (not a package var) so a test can shorten it without
-	// racing ingest goroutines leaked by other tests' stores.
-	ingestEvery time.Duration
+	// every is this store's poll cadence. Zero uses defaultTimelineIngestEvery.
+	// Tests set it before startIngest so they do not share a package-level interval.
+	every time.Duration
 }
 
-// timelineIngestEvery is the default event-log poll cadence.
-const timelineIngestEvery = 2 * time.Second
+// defaultTimelineIngestEvery is the event-log poll cadence while a turn is running.
+const defaultTimelineIngestEvery = 2 * time.Second
 
 func newAcpTimelineStore() *acpTimelineStore {
 	s := &acpTimelineStore{
-		entries:     map[string]*acpTimelineEntry{},
-		ingest:      map[string]context.CancelFunc{},
-		ingestEvery: timelineIngestEvery,
+		entries: map[string]*acpTimelineEntry{},
+		ingest:  map[string]context.CancelFunc{},
 	}
 	s.pull = s.refreshFromReader
 	return s
@@ -213,7 +211,11 @@ func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, pas
 	s.ingest[key] = cancel
 	s.mu.Unlock()
 
-	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy, s.ingestEvery)
+	every := s.every
+	if every <= 0 {
+		every = defaultTimelineIngestEvery
+	}
+	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy, every)
 }
 
 func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool, every time.Duration) {

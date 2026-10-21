@@ -40,7 +40,44 @@ func (h *Handlers) PublicGateArtifacts(c *gin.Context) {
 	if lookup.Run.Graph.Nodes != nil {
 		out["nodes"] = graphNodesDTO(lookup.Run.Graph)
 	}
+	// The stage draws a read-only workflow for this conversation's node.
+	// Status is the latest execution only — never outputs, events, or tokens.
+	if id := strings.TrimSpace(lookup.Link.NodeID); id != "" {
+		out["nodeId"] = id
+	}
+	if h.Runs != nil {
+		out["nodeRuns"] = publicNodeStatusDTO(h.Runs.States(lookup.Link.RunID))
+	}
 	c.JSON(http.StatusOK, out)
+}
+
+// publicNodeStatusDTO keeps the latest execution status per node. States are
+// ordered oldest→newest, so the last row for a node wins. Nodes with no row
+// are omitted; the client must not invent "pending" for a missing map.
+func publicNodeStatusDTO(states []models.StateRun) gin.H {
+	out := gin.H{}
+	for _, s := range states {
+		id := strings.TrimSpace(s.NodeID)
+		status := strings.TrimSpace(s.Status)
+		if id == "" || !publicNodeStatusOK(status) {
+			continue
+		}
+		row := gin.H{"nodeId": id, "status": status}
+		if s.Iteration > 0 {
+			row["iteration"] = s.Iteration
+		}
+		out[id] = row
+	}
+	return out
+}
+
+func publicNodeStatusOK(status string) bool {
+	switch status {
+	case "pending", "running", "waiting_human", "completed", "failed", "skipped", "cancelled":
+		return true
+	default:
+		return false
+	}
 }
 
 // PublicGateArtifactContent returns one artifact's full content for a valid
