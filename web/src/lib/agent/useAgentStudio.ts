@@ -35,6 +35,8 @@ function parseDataSub(q: unknown): DataSubTab {
 
 export function useAgentStudio(opts?: {
   embedded?: boolean | MaybeRefOrGetter<boolean>
+  /** While true (e.g. Agent 默认配置 is shown) the Studio leaves the URL alone. */
+  pauseQuerySync?: MaybeRefOrGetter<boolean>
 }) {
 const { t } = useI18n()
 const { isMobile } = useBreakpoint()
@@ -133,7 +135,7 @@ const dataSubTab = ref<DataSubTab>('memory')
 let applyingStudioQuery = false
 
 function syncStudioQuery() {
-  if (applyingStudioQuery) return
+  if (applyingStudioQuery || toValue(opts?.pauseQuerySync)) return
   const useStudioTabKey = embedded.value
   const next: Record<string, unknown> = useStudioTabKey ? { ...route.query } : {}
   if (activeName.value) next.agent = activeName.value
@@ -449,14 +451,15 @@ async function leaveConfirmSave() {
     error.value = String(e?.message || e)
     return
   }
-  leaveConfirmCfg.value = null
+  // onSave/onDiscard may chain a follow-up prompt; only close the one that was answered.
+  if (leaveConfirmCfg.value === c) leaveConfirmCfg.value = null
 }
 
 function leaveConfirmDiscard() {
   const c = leaveConfirmCfg.value
   if (!c) return
   c.onDiscard()
-  leaveConfirmCfg.value = null
+  if (leaveConfirmCfg.value === c) leaveConfirmCfg.value = null
 }
 
 function leaveConfirmCancel() {
@@ -892,7 +895,8 @@ async function confirmOk() {
   } catch (e: any) {
     error.value = String(e?.message || e)
   }
-  confirmCfg.value = null
+  // ok() may chain a follow-up confirm; only close the one that was confirmed.
+  if (confirmCfg.value === c) confirmCfg.value = null
 }
 
 // --- working-dir file operations ------------------------------------------

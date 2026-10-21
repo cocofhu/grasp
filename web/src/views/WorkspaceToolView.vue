@@ -14,7 +14,6 @@ import PmCronJobsPanel from '@/components/pm/PmCronJobsPanel.vue'
 import RequirementDraftsPanel from '@/components/workspace/RequirementDraftsPanel.vue'
 import WorkspaceNotifyPanel from '@/components/workspace/WorkspaceNotifyPanel.vue'
 import WorkspaceExternalMcpPanel from '@/components/workspace/WorkspaceExternalMcpPanel.vue'
-import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
 import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
 import WorkspaceAuditPanel from '@/components/workspace/WorkspaceAuditPanel.vue'
 
@@ -67,7 +66,6 @@ onBeforeRouteLeave(() => drafts.value?.isDirty ? drafts.value.requestLeave() : t
       <PmCronJobsPanel v-else-if="tool === 'schedules'" />
       <WorkspaceNotifyPanel v-else-if="tool === 'notificationPolicy'" :workspace="workspace" @updated="workspace = $event" @open-channel-settings="router.push('/settings/assistant')" />
       <WorkspaceExternalMcpPanel v-else-if="tool === 'externalMcp'" />
-      <WorkspaceSharedAgentPanel v-else-if="tool === 'sharedAgent'" />
       <WorkspaceCredentialsPanel v-else-if="tool === 'credentials'" />
       <WorkspaceAuditPanel v-else-if="tool === 'audit'" />
     </div>

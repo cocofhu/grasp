@@ -71,3 +71,23 @@ test('old /settings/shared-agent link opens Agent 默认配置 in Agent Studio',
   await expect(pinned(page)).toHaveAttribute('aria-current', 'true')
   await expect(page.getByTestId('agent-resource-sidebar')).toBeVisible()
 })
+
+test('with no Agents the empty state still opens Agent 默认配置, and the old link lands there', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await installWorkspaceApiDefaults(page)
+  await routeApi(page, '**/api/workspace/shared-agent-config', async (route) => { await route.fulfill({ json: SHARED }) })
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents')}`)
+  await dismissOnboardingIfOpen(page)
+  await expect(page.getByTestId('agent-studio-empty-team')).toBeVisible()
+  await page.getByTestId('agent-studio-empty-defaults').click()
+  await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
+  // Only the pinned item in the list; no "暂无工作区" copy under it.
+  await expect(page.getByTestId('resource-list-pinned')).toBeVisible()
+  await expect(page.getByTestId('agent-resource-sidebar').getByTestId('resource-list-empty')).toHaveCount(0)
+  await expect(page.getByTestId('workspace-shared-agent-panel')).toBeVisible()
+
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/settings/shared-agent')}`)
+  await dismissOnboardingIfOpen(page)
+  await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
+  await expect(page.getByTestId('agent-studio-empty-team')).toHaveCount(0)
+})

@@ -21,12 +21,12 @@ const panel = (name: string) => defineComponent({ name, props: ['workspace', 'bi
   ])
 } })
 async function setup(path: string) {
-  const specs = [['/board', 'board'], ['/requirements', 'requirements'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/notification-policy', 'notificationPolicy'], ['/settings/schedules', 'schedules'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp'], ['/settings/shared-agent', 'sharedAgent']] as const
+  const specs = [['/board', 'board'], ['/requirements', 'requirements'], ['/assistant', 'assistant'], ['/settings/assistant', 'assistantSettings'], ['/settings/credentials', 'credentials'], ['/settings/notification-policy', 'notificationPolicy'], ['/settings/schedules', 'schedules'], ['/settings/audit', 'audit'], ['/settings/external-mcp', 'externalMcp']] as const
   const router = createRouter({ history: createMemoryHistory(), routes: specs.map(([route, tool]) => ({ path: route, component: WorkspaceToolView, meta: { workspaceTool: tool, workspaceTitle: `nav.${tool}` } })) })
   await router.push(path)
   const drafts = defineComponent({ setup(_props, { expose }) { expose({ get isDirty() { return mocks.dirty.value }, requestLeave: mocks.requestLeave }); return () => h('div', { 'data-panel': 'drafts' }) } })
   const stubs: Record<string, any> = { WorkspacePage: { template: '<section class="h-full min-h-0 flex flex-col"><slot name="actions"/><slot/></section>' }, RequirementDraftsPanel: drafts }
-  for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'PmCronJobsPanel', 'WorkspaceNotifyPanel', 'WorkspaceExternalMcpPanel', 'WorkspaceSharedAgentPanel', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
+  for (const name of ['BoardView', 'PmLeaderChat', 'PmSettingsPanel', 'PmCronJobsPanel', 'WorkspaceNotifyPanel', 'WorkspaceExternalMcpPanel', 'WorkspaceCredentialsPanel', 'WorkspaceAuditPanel']) stubs[name] = panel(name)
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': nav } })
   const wrapper = mount({ render: () => h(RouterView) }, { global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs } })
   await flushPromises()
@@ -38,7 +38,7 @@ describe('every workspace tool page', () => {
     ['/board', 'BoardView', 'workspace'], ['/requirements', 'drafts', 'workspace'], ['/assistant', 'PmLeaderChat', 'workspace'],
     ['/settings/assistant', 'PmSettingsPanel', 'settings'], ['/settings/schedules', 'PmCronJobsPanel', 'workspace'],
     ['/settings/notification-policy', 'WorkspaceNotifyPanel', 'settings'], ['/settings/external-mcp', 'WorkspaceExternalMcpPanel', 'settings'],
-    ['/settings/shared-agent', 'WorkspaceSharedAgentPanel', 'workspace'], ['/settings/credentials', 'WorkspaceCredentialsPanel', 'workspace'],
+    ['/settings/credentials', 'WorkspaceCredentialsPanel', 'workspace'],
     ['/settings/audit', 'WorkspaceAuditPanel', 'workspace'],
   ])('%s renders only %s in the %s layout', async (path, component, layout) => {
     const { wrapper } = await setup(path)

@@ -226,6 +226,8 @@ function openSettingsInFiles() {
 onMounted(() => {
   void load()
 })
+// Agent Studio asks before switching away from unsaved defaults.
+defineExpose({ dirty, save })
 </script>
 
 <template>

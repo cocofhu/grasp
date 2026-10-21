@@ -21,6 +21,10 @@ import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/ap
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
 
 const props = defineProps<{ embedded?: boolean }>()
+const route = useRoute()
+const router = useRouter()
+/** Agent 默认配置 is shown exactly when the URL says ?view=defaults (deep links, back/forward, settings nav). */
+const showDefaults = computed(() => route.query.view === 'defaults')
 
 const {
   t,
@@ -45,6 +49,8 @@ const {
   activeTreeKey,
   onTreeSelect,
   onSheetTreeSelect,
+  select,
+  syncStudioQuery,
   agentListCollapsed,
   toggleAgentListCollapsed,
   activeName,
@@ -149,7 +155,7 @@ const {
   confirmOk,
   onAgentNameClick,
   syncTabFade,
-} = useAgentStudio({ embedded: () => !!props.embedded })
+} = useAgentStudio({ embedded: () => !!props.embedded, pauseQuerySync: showDefaults })
 
 /** The env tab's "Edit" link for a managed model key lands on the Runtime card. */
 const focusModelTick = ref(0)
@@ -163,36 +169,95 @@ async function focusCliModel() {
 
 /* ── Agent 默认配置 lives in the same list as the Agents (pinned first item), so there is no
  *    second page to switch to. The old /settings/shared-agent link redirects here. ── */
-const route = useRoute()
-const router = useRouter()
 const DEFAULTS_KEY = '__workspace_defaults__'
-const showDefaults = ref(route.query.view === 'defaults')
 const pinnedNodes = computed(() => [{ id: DEFAULTS_KEY, label: t('nav.sharedAgent'), icon: 'skills' }])
-watch(() => route.query.view, (v) => { if (v === 'defaults') showDefaults.value = true })
-// Studio's own query sync rewrites ?agent=…; keep the defaults deep link while it is shown.
-watch(() => route.fullPath, () => {
-  if (showDefaults.value && route.query.view !== 'defaults') void router.replace({ query: { view: 'defaults' } })
-})
-function onSidebarSelect(key: string) {
-  if (key === DEFAULTS_KEY) {
-    showDefaults.value = true
-    void router.replace({ query: { view: 'defaults' } })
+const sharedPanelRef = ref<{ dirty: boolean; save: () => Promise<boolean> } | null>(null)
+// Leaving the defaults some other way (settings nav, back): put the Agent back in the URL.
+watch(showDefaults, (now, before) => { if (before && !now) syncStudioQuery() })
+function openDefaults() {
+  if (!showDefaults.value) void router.replace({ query: { view: 'defaults' } })
+}
+function agentQuery(): Record<string, string> {
+  const q: Record<string, string> = {}
+  if (activeName.value) q.agent = activeName.value
+  if (tab.value !== 'files') q.studioTab = tab.value
+  if (tab.value === 'data') q.sub = dataSubTab.value
+  return q
+}
+/** Defaults → Agent. The URL only changes once every confirm has passed. */
+function leaveDefaultsTo(key: string) {
+  const apply = () => {
+    // Coming back to the same Agent keeps the tab it was on; another Agent starts on Files.
+    if (key !== activeName.value) select(key)
+    void router.replace({ query: agentQuery() })
+  }
+  // The Agent itself may be unsaved too: same prompts as switching Agents (sheet on narrow screens).
+  const switchAgent = () => {
+    if (key === activeName.value || !dirty.value) return apply()
+    if (isMobile.value) {
+      leaveConfirmCfg.value = {
+        title: t('pages.agentStudio.dialogs.leaveUnsavedTitle'),
+        message: t('pages.agentStudio.dialogs.leaveUnsavedSwitchMessage', { name: activeName.value }),
+        saveText: t('pages.agentStudio.dialogs.saveAndSwitch'),
+        discardText: t('pages.agentStudio.dialogs.discardAndSwitch'),
+        onSave: async () => {
+          if (!(await save())) return false
+          justSaved.value = true
+          apply()
+          return true
+        },
+        onDiscard: apply,
+      }
+      return
+    }
+    confirmCfg.value = {
+      title: t('pages.agentStudio.dialogs.discardTitle'),
+      message: t('pages.agentStudio.dialogs.discardMessage', { name: activeName.value }),
+      confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
+      danger: true,
+      ok: apply,
+    }
+  }
+  if (!sharedPanelRef.value?.dirty) return switchAgent()
+  const name = t('nav.sharedAgent')
+  if (isMobile.value) {
+    leaveConfirmCfg.value = {
+      title: t('pages.agentStudio.dialogs.leaveUnsavedTitle'),
+      message: t('pages.agentStudio.dialogs.leaveUnsavedSwitchMessage', { name }),
+      saveText: t('pages.agentStudio.dialogs.saveAndSwitch'),
+      discardText: t('pages.agentStudio.dialogs.discardAndSwitch'),
+      onSave: async () => {
+        if (!(await sharedPanelRef.value?.save())) return false
+        switchAgent()
+        return true
+      },
+      onDiscard: switchAgent,
+    }
     return
   }
-  if (showDefaults.value) {
-    showDefaults.value = false
-    // Coming back to the same Agent keeps the tab it was on.
-    const q: Record<string, string> = { agent: key }
-    if (key === activeName.value && tab.value !== 'files') q.studioTab = tab.value
-    void router.replace({ query: q })
+  confirmCfg.value = {
+    title: t('pages.agentStudio.dialogs.discardTitle'),
+    message: t('pages.agentStudio.dialogs.discardMessage', { name }),
+    confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
+    danger: true,
+    ok: switchAgent,
   }
+}
+function onSidebarSelect(key: string) {
+  if (key === DEFAULTS_KEY) return openDefaults()
+  if (showDefaults.value) return leaveDefaultsTo(key)
   onTreeSelect(key)
 }
 // Narrow screens pick from the bottom sheet; the defaults item works the same way there.
 function onSheetSelect(key: string) {
-  if (key === DEFAULTS_KEY || showDefaults.value) {
-    onSidebarSelect(key)
+  if (key === DEFAULTS_KEY) {
+    openDefaults()
     closeSidebarSheet()
+    return
+  }
+  if (showDefaults.value) {
+    closeSidebarSheet()
+    leaveDefaultsTo(key)
     return
   }
   onSheetTreeSelect(key)
@@ -277,7 +342,7 @@ async function createStudioChatTest(
       </div>
 
       <div
-        v-else-if="!agents.length && !teamBootstrapSessionId"
+        v-else-if="!agents.length && !teamBootstrapSessionId && !showDefaults"
         class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
         data-testid="agent-studio-empty-team"
       >
@@ -314,6 +379,15 @@ async function createStudioChatTest(
             {{ t('pages.agentStudio.exportImport.import') }}
           </button>
         </template>
+        <!-- Agent 默认配置 stays reachable with no Agents yet (same look as the pinned list item). -->
+        <button
+          type="button"
+          data-testid="agent-studio-empty-defaults"
+          class="mt-2 flex min-h-9 items-center gap-2 rounded px-2 text-left text-[12px] text-txt2 hover:bg-overlay"
+          @click="openDefaults"
+        >
+          <Icon name="skills" :size="14" class="shrink-0" /><span>{{ t('nav.sharedAgent') }}</span>
+        </button>
       </div>
 
       <div
@@ -370,7 +444,7 @@ async function createStudioChatTest(
             <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
           </button>
         </div>
-        <WorkspaceSharedAgentPanel />
+        <WorkspaceSharedAgentPanel ref="sharedPanelRef" />
       </div>
 
       <!-- editor -->

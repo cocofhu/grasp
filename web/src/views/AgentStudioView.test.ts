@@ -2152,3 +2152,261 @@ describe('AgentStudio pinned Agent 默认配置', () => {
     expect(router.currentRoute.value.query.agent).toBe('beta')
   })
 })
+
+describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, URL as the source', () => {
+  const DEFAULTS = '__workspace_defaults__'
+  const sharedState = { dirty: false, save: vi.fn(async () => true) }
+  const SharedPanelStub = defineComponent({
+    name: 'WorkspaceSharedAgentPanel',
+    setup(_p, { expose }) {
+      expose({ get dirty() { return sharedState.dirty }, save: () => sharedState.save() })
+      return () => h('div', { 'data-testid': 'shared-panel-stub' })
+    },
+  })
+  const SidebarStub = defineComponent({
+    name: 'AgentSidebar',
+    props: { nodes: Array, pinned: Array, activeKey: String },
+    emits: ['select'],
+    template: '<div data-test="sidebar-stub" :data-active="activeKey"><button v-for="n in [...(pinned || []), ...(nodes || [])]" :key="n.id" :data-key="n.id" @click="$emit(\'select\', n.id)">{{ n.label }}</button></div>',
+  })
+  const ModalStub = defineComponent({
+    props: { open: Boolean, title: String },
+    emits: ['close'],
+    template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
+  })
+  const agents = (): Agent[] => [
+    { ...agent('public'), name: 'alpha' },
+    { ...agent('public'), name: 'beta' },
+  ]
+
+  async function mountAt(path: string) {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...nav } } })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/agents', component: { render: () => h('div') } },
+        { path: '/settings/shared-agent', redirect: { path: '/agents', query: { view: 'defaults' } } },
+      ],
+    })
+    const seen: string[] = []
+    router.afterEach((to) => { seen.push(to.fullPath) })
+    await router.push(path)
+    await router.isReady()
+    const wrapper = trackMount(
+      mount(AgentStudioView, {
+        global: {
+          plugins: [i18n, router],
+          stubs: {
+            AppButton: ButtonStub,
+            Icon: true,
+            AppModal: ModalStub,
+            CodeEditor: CodeEditorStub,
+            MarkdownSplitEditor: true,
+            ExplorerContextMenu: true,
+            AgentChatTester: true,
+            AgentGitGuide: true,
+            AgentCreateWizard: true,
+            CreateAgentTeamWizard: true,
+            AgentSidebar: SidebarStub,
+            AgentDataPanel: true,
+            WorkspaceSharedAgentPanel: SharedPanelStub,
+          },
+        },
+      }),
+    )
+    await flushPromises()
+    return { wrapper, router, seen }
+  }
+  type W = Awaited<ReturnType<typeof mountAt>>['wrapper']
+  const pick = async (wrapper: W, key: string) => {
+    await wrapper.get(`[data-test="sidebar-stub"] [data-key="${key}"]`).trigger('click')
+    await flushPromises()
+  }
+  const pane = (wrapper: W) => wrapper.find('[data-testid="studio-defaults-pane"]').exists()
+  const modal = (wrapper: W) => wrapper.find('[data-test="modal"]')
+  const clickModal = async (wrapper: W, text: string) => {
+    await modal(wrapper).findAll('button').find((b) => b.text() === text)!.trigger('click')
+    await flushPromises()
+  }
+
+  beforeEach(() => {
+    sharedState.dirty = false
+    sharedState.save.mockClear()
+    sharedState.save.mockResolvedValue(true)
+  })
+
+  // B1
+  it('opens Agent 默认配置 from ?view=defaults when the workspace has no Agents', async () => {
+    mocks.listAgents.mockResolvedValue([])
+    const { wrapper } = await mountAt('/agents?view=defaults')
+    expect(pane(wrapper)).toBe(true)
+    expect(wrapper.find('[data-testid="agent-studio-empty-team"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="sidebar-stub"]').attributes('data-active')).toBe(DEFAULTS)
+  })
+
+  it('old /settings/shared-agent link reaches the defaults with no Agents', async () => {
+    mocks.listAgents.mockResolvedValue([])
+    const { wrapper } = await mountAt('/settings/shared-agent')
+    expect(pane(wrapper)).toBe(true)
+  })
+
+  it('the empty state links to Agent 默认配置', async () => {
+    mocks.listAgents.mockResolvedValue([])
+    const { wrapper, router } = await mountAt('/agents')
+    expect(wrapper.find('[data-testid="agent-studio-empty-team"]').exists()).toBe(true)
+    const entry = wrapper.get('[data-testid="agent-studio-empty-defaults"]')
+    expect(entry.text()).toBe('Agent 默认配置')
+    await entry.trigger('click')
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    expect(pane(wrapper)).toBe(true)
+  })
+
+  // S1 desktop
+  it('asks before leaving unsaved defaults; cancel keeps URL and pane, confirm switches', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    await pick(wrapper, 'beta')
+    expect(modal(wrapper).text()).toContain('放弃未保存的修改')
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '取消')
+    expect(pane(wrapper)).toBe(true)
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await pick(wrapper, 'beta')
+    await clickModal(wrapper, '放弃并切换')
+    expect(pane(wrapper)).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+  })
+
+  it('switches without asking when the defaults are clean', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?view=defaults')
+    await pick(wrapper, 'beta')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+  })
+
+  // S1 narrow
+  it('narrow screens offer 保存并切换 / 丢弃并切换 for unsaved defaults', async () => {
+    breakpointMocks.isMobile.value = true
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?view=defaults')
+    sharedState.dirty = true
+    await wrapper.get('[data-testid="studio-defaults-pane"] [data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(modal(wrapper).text()).toContain('保存并切换')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '保存并切换')
+    expect(sharedState.save).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(pane(wrapper)).toBe(false)
+  })
+
+  // S2
+  it('dirty Agent → defaults → other Agent → cancel keeps URL and screen on the defaults', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
+    const ws = wrapper.findAll('input').find((i) => (i.element as HTMLInputElement).value === '/root/workspace')!
+    await ws.setValue('/root/workspace-edited')
+    await pick(wrapper, DEFAULTS)
+    await pick(wrapper, 'beta')
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '取消')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    expect(pane(wrapper)).toBe(true)
+    expect(wrapper.get('[data-test="sidebar-stub"]').attributes('data-active')).toBe(DEFAULTS)
+    // Back to the dirty Agent itself: no prompt, edit kept, tab kept.
+    await pick(wrapper, 'alpha')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'alpha', studioTab: 'meta' })
+    expect(wrapper.findAll('input').some((i) => (i.element as HTMLInputElement).value === '/root/workspace-edited')).toBe(true)
+  })
+
+  const dirtyAlphaMeta = async (wrapper: W) => {
+    await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
+    const ws = wrapper.findAll('input').find((i) => (i.element as HTMLInputElement).value === '/root/workspace')!
+    await ws.setValue('/root/workspace-edited')
+  }
+
+  // Both the defaults and the Agent unsaved: the second prompt must survive closing the first.
+  it('defaults and alpha both unsaved: two 放弃并切换 clicks land on beta', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    await pick(wrapper, 'beta')
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    await clickModal(wrapper, '放弃并切换')
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '放弃并切换')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(pane(wrapper)).toBe(false)
+  })
+
+  it('narrow screens use 保存并切换 / 丢弃并切换 for the unsaved Agent prompt too', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    breakpointMocks.isMobile.value = true
+    await flushPromises()
+    await wrapper.get('[data-testid="studio-defaults-pane"] [data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    await clickModal(wrapper, '丢弃并切换')
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(modal(wrapper).text()).toContain('保存并切换')
+    expect(modal(wrapper).text()).not.toContain('放弃并切换')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '丢弃并切换')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+  })
+
+  // S3 / S4: the URL alone decides
+  it('pushing the old link while an Agent is open shows the defaults; Back leaves them', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha&studioTab=mcp')
+    expect(pane(wrapper)).toBe(false)
+    await router.push('/settings/shared-agent')
+    await flushPromises()
+    expect(pane(wrapper)).toBe(true)
+    router.back()
+    await flushPromises()
+    await new Promise((r) => setTimeout(r, 20))
+    await flushPromises()
+    expect(router.currentRoute.value.query).toEqual({ agent: 'alpha', studioTab: 'mcp' })
+    expect(pane(wrapper)).toBe(false)
+  })
+
+  it('settings nav 「智能体」 (/agents) leaves the defaults and restores the Agent in the URL', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?view=defaults')
+    expect(pane(wrapper)).toBe(true)
+    await router.push('/agents')
+    await flushPromises()
+    expect(pane(wrapper)).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'alpha' })
+  })
+
+  it('first load of ?view=defaults never rewrites the URL to an Agent', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router, seen } = await mountAt('/agents?view=defaults')
+    expect(pane(wrapper)).toBe(true)
+    expect(router.currentRoute.value.fullPath).toBe('/agents?view=defaults')
+    expect(seen).toEqual(['/agents?view=defaults'])
+  })
+})
