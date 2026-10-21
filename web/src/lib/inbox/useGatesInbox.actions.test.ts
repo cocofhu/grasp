@@ -382,6 +382,7 @@ describe('useGatesInbox actions', () => {
       expect.arrayContaining([expect.objectContaining({ selector: '#buy' })]),
       false,
       false,
+      expect.stringMatching(/\S/),
     )
     expect(mocks.patchItemReplying).toHaveBeenCalledWith('run-chat:react', true)
 
@@ -389,6 +390,32 @@ describe('useGatesInbox actions', () => {
     await inbox.onClarifySend('again')
     expect(discardLastQueued).toHaveBeenCalled()
     expect(inbox.clarifyConfirmError.value).toBe('queue full')
+
+    // Run ended (409 clarify_visit_ended): refill the composer with the notice.
+    const restoreUnsentQueued = vi.fn()
+    discardLastQueued.mockClear()
+    inbox.reviewChatRef.value = { discardLastQueued, restoreUnsentQueued, isSessionBusy: () => false }
+    for (const [autoRetryOnResume, notice] of [
+      [false, '运行已结束，这条消息没有发送；续跑后请重新发送'],
+      [true, '运行已结束，这条消息没有发送；续跑后会自动发送'],
+    ] as const) {
+      mocks.reactReply.mockRejectedValueOnce(
+        Object.assign(new Error('运行已结束，这条消息没有发送'), {
+          status: 409,
+          code: 'clarify_visit_ended',
+          autoRetryOnResume,
+        }),
+      )
+      await inbox.onClarifySend('late reply')
+      expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+        expect.objectContaining({ text: 'late reply', images: [] }),
+        notice,
+        { autoRetryOnResume },
+      )
+      expect(inbox.clarifyConfirmError.value).toBeNull()
+    }
+    expect(discardLastQueued).not.toHaveBeenCalled()
+    inbox.reviewChatRef.value = { discardLastQueued, isSessionBusy: () => false }
 
     inbox.onAppPreviewStagedPick({ selector: '#x', url: '', tagName: 'DIV' })
     expect(inbox.mergeStagedAppPreviewPick([])).toHaveLength(1)

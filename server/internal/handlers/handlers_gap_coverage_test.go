@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -363,6 +364,70 @@ func TestReactReplyRetryLast(t *testing.T) {
 	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"retryLast": true})
 	if w.Code != http.StatusOK {
 		t.Fatalf("retryLast: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	runID := "run-react-visit-ended"
+	h.db.Create(&models.Run{
+		ID: runID, Status: "cancelled", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}}},
+	})
+	h.db.Create(&models.ReactConversation{
+		RunID: runID, NodeID: "react", Iteration: 1, Done: false,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "question?", At: now.Format(time.RFC3339)}},
+	})
+	// Cancel finalizes the StateRun; clarifyVisitLive must refuse new turns.
+	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "cancelled"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{
+		"text":        "answer",
+		"images":      []map[string]any{{"data": "QUJD", "mimeType": "image/png", "name": "a.png"}},
+		"annotations": []map[string]any{{"selector": "#x", "note": "改这里"}},
+	})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("react reply after cancel: %d %s", w.Code, w.Body.String())
+	}
+	body := parseJSON(t, w)
+	if body["code"] != "clarify_visit_ended" {
+		t.Fatalf("code=%v body=%s", body["code"], w.Body.String())
+	}
+	if body["error"] != "运行已结束，这条消息没有发送" {
+		t.Fatalf("error=%v", body["error"])
+	}
+	if body["autoRetryOnResume"] != false {
+		t.Fatalf("autoRetryOnResume=%v want false", body["autoRetryOnResume"])
+	}
+	if strings.Contains(w.Body.String(), "续跑后") {
+		t.Fatalf("must not embed resume hint: %s", w.Body.String())
+	}
+	d, _ := body["dropped"].(map[string]any)
+	if d == nil || d["text"] != "answer" {
+		t.Fatalf("dropped=%v", body["dropped"])
+	}
+	if a, _ := d["attachments"].([]any); len(a) != 1 || a[0].(map[string]any)["data"] != "QUJD" {
+		t.Fatalf("attachments=%v", d["attachments"])
+	}
+	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "改这里" {
+		t.Fatalf("annotations=%v", d["annotations"])
+	}
+	if _, has := body["clientMessageId"]; has {
+		t.Fatalf("no id was sent; clientMessageId must be omitted: %s", w.Body.String())
+	}
+
+	const cid = "5c9d1e7a-2f4b-4a6c-8e3d-1b7f9a2c6e54"
+	w2 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "again", "clientMessageId": cid})
+	b2 := parseJSON(t, w2)
+	if w2.Code != http.StatusConflict || b2["clientMessageId"] != cid {
+		t.Fatalf("409 must echo clientMessageId: %d %s", w2.Code, w2.Body.String())
+	}
+	if d2, _ := b2["dropped"].(map[string]any); d2 == nil || d2["text"] != "again" {
+		t.Fatalf("409 keeps dropped: %s", w2.Body.String())
+	}
+	w3 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "x", "clientMessageId": "not-a-uuid"})
+	if w3.Code != http.StatusBadRequest {
+		t.Fatalf("invalid clientMessageId: %d %s", w3.Code, w3.Body.String())
 	}
 }
 

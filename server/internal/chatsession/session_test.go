@@ -157,6 +157,22 @@ func TestSessionErrorFrameUnlessCancelled(t *testing.T) {
 	}
 }
 
+func TestSessionErrorFrameExtra(t *testing.T) {
+	h := newHarness()
+	h.errs["a"] = errors.New("boom")
+	cfg := h.config()
+	cfg.ErrorExtra = func(err error) map[string]any {
+		return map[string]any{"code": "x_" + err.Error(), "message": "override"}
+	}
+	s := New(cfg)
+	_, _ = s.Enqueue(&testItem{"a", ""}, nil)
+	h.waitIdle(t)
+	e := h.last(EventError)
+	if e == nil || e["code"] != "x_boom" || e["message"] != "override" || e["interrupted"] != false {
+		t.Fatalf("error frame=%v", e)
+	}
+}
+
 func TestSessionCancelKeepsOrClearsQueue(t *testing.T) {
 	for _, clear := range []bool{false, true} {
 		h := newHarness()

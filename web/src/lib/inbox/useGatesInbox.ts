@@ -4,6 +4,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
+import { readClarifyStash } from '@/lib/inbox/clarifyDraftStash'
+import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
@@ -150,6 +152,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
@@ -875,6 +878,18 @@ async function loadList({
 function retryListLoad() {
   void loadList({ showLoading: true })
 }
+
+// The selected clarify item vanished from /gates (run ended under it): if its
+// unsent text was kept for resume, say so — the composer it was in is gone.
+watch(active, (_cur, prev) => {
+  if (!prev || prev.type !== 'clarify' || prev.done) return
+  const prevKey = itemKey(prev)
+  if (listItems.value.some((x) => itemKey(x) === prevKey)) return
+  // The chat stashes on unmount; read after it has gone.
+  void nextTick(() => {
+    if (readClarifyStash(prev.runId, prev.nodeId)) toast.warn(t('pages.clarify.draftKept'))
+  })
+})
 
 watch(selected, () => {
   listPage.value = 1
@@ -2090,6 +2105,12 @@ async function onClarifySend(
   clarifyConfirmError.value = null
   if (!abortRunning) clarifyConfirmCanAbort.value = false
   let ok = true
+  const clientMessageId = beginClarifySend(
+    it.runId,
+    it.nodeId,
+    { text, images, annotations: mergedAnnotations },
+    { force, retryLast },
+  )
   try {
     if (retryLast) {
       await api.reactReply(
@@ -2102,7 +2123,17 @@ async function onClarifySend(
         true,
       )
     } else {
-      await api.reactReply(it.runId, it.nodeId, text, images, force, mergedAnnotations, false, abortRunning)
+      await api.reactReply(
+        it.runId,
+        it.nodeId,
+        text,
+        images,
+        force,
+        mergedAnnotations,
+        false,
+        abortRunning,
+        ...(clientMessageId ? [clientMessageId] : []),
+      )
     }
     if (!force && !retryLast) lastStagedAppPreviewPick.value = null
   } catch (e: any) {
@@ -2126,6 +2157,21 @@ async function onClarifySend(
       }
       return
     }
+    // Run/visit already ended: the reply was never sent. Hand it back to the
+    // composer with a notice instead of an error reply (no confirm-error bar).
+    const visitEnded = handleClarifyVisitEnded(e, t, {
+      chat: reviewChatRef.value,
+      runId: it.runId,
+      nodeId: it.nodeId,
+      sent: { text, images, annotations: mergedAnnotations },
+      retryLast,
+      clientMessageId,
+    })
+    if (visitEnded) {
+      if (!visitEnded.shownInChat) toast.warn(visitEnded.notice)
+      return
+    }
+    failClarifySend(it.runId, it.nodeId, clientMessageId)
     // Non-force enqueue failed: roll back optimistic queue + surface error.
     if (!retryLast) reviewChatRef.value?.discardLastQueued?.()
     clarifyConfirmError.value = msg

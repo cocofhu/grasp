@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
@@ -140,6 +141,7 @@ const chatRef = ref<{
   ) => void
   cancelReview: () => void
   discardLastQueued: () => void
+  restoreUnsentQueued: RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
@@ -167,6 +169,8 @@ defineExpose({
   ) => chatRef.value?.applyQueueState?.(waiting, items, busy, activeItem),
   cancelReview: () => chatRef.value?.cancelReview(),
   discardLastQueued: () => chatRef.value?.discardLastQueued(),
+  restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
+    chatRef.value?.restoreUnsentQueued(...args),
   isChatReady: () => !!chatRef.value,
   /**
    * Platform session busy from ClarifyChat (thinking / queued / live slot).
