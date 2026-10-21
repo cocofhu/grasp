@@ -60,6 +60,9 @@ type reviewQueueItem struct {
 	LiveChat *models.LiveCtx
 	// LiveWritesDenied is server-derived share permission, never client input.
 	LiveWritesDenied bool
+	// AutoRetryOnResume marks the system first-message turn that ResumeFrom
+	// will redeliver. Surfaced on ClarifyVisitEndedError for the frontend.
+	AutoRetryOnResume bool
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
@@ -256,7 +259,7 @@ func (e *Engine) EnqueueReviewTurn(runID, producerID, text string, images []mode
 
 // EnqueueReviewTurnAs is EnqueueReviewTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueReviewTurnAs(owner, runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner)
+	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner, false)
 }
 
 // EnqueueClarifyTurn queues a classic react (需求澄清) turn onto the same platform
@@ -267,7 +270,22 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 
 // EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner)
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false)
+}
+
+// EnqueueClarifyFirstMessageAs queues Run.FirstMessage for a clarify visit.
+// AutoRetryOnResume is true so a visit-ended refusal tells the client resume
+// will redeliver this turn (see fireClarifyFirstMessage).
+func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string, images []models.PromptImage) (waiting int, err error) {
+	var conv models.ReactConversation
+	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		return 0, errors.New("no react conversation")
+	}
+	if conv.Done {
+		return 0, errors.New("react already done")
+	}
+	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true)
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
@@ -294,7 +312,7 @@ func (e *Engine) enqueueClarifyRetryLast(owner, runID, nodeID string) (waiting i
 	if !ok {
 		return 0, errors.New("没有可重试的上一轮用户消息")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner)
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner, false)
 }
 
 // lastRetryableHuman finds the latest human whose following agent (if any) is
@@ -341,27 +359,33 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 		strings.Contains(t, "复审修改失败")
 }
 
-func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string) (waiting int, err error) {
+func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
 	if !retryLast && strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
 		return 0, errors.New("text, images, or annotations required")
 	}
+	if kind == sessionKindClarify {
+		if err := e.errIfClarifyVisitEnded(runID, producerID, autoRetryOnResume); err != nil {
+			return 0, err
+		}
+	}
 	images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
 	item := &reviewQueueItem{
-		ID:          uuid.NewString(),
-		Text:        text,
-		Effective:   renderReviewHuman(text, annotations),
-		Images:      images,
-		Annotations: annotations,
-		Source:      source,
-		GateNodeID:  gateNodeID,
-		RetryLast:   retryLast,
-		Owner:       owner,
+		ID:                uuid.NewString(),
+		Text:              text,
+		Effective:         renderReviewHuman(text, annotations),
+		Images:            images,
+		Annotations:       annotations,
+		Source:            source,
+		GateNodeID:        gateNodeID,
+		RetryLast:         retryLast,
+		Owner:             owner,
+		AutoRetryOnResume: autoRetryOnResume,
 	}
 	return e.enqueueReviewItem(runID, producerID, kind, item)
 }
@@ -548,8 +572,9 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 			e.failCancelledQueuedLive(s.runID, s.producerID, item.Live.SID)
 		}
 		// The error reaches the page as the turn's error frame, so the
-		// message is not lost silently.
-		return false, errClarifyVisitEnded
+		// message is not lost silently. HTTP callers that hit the same
+		// condition at enqueue get 409 clarify_visit_ended.
+		return false, clarifyVisitEndedErr(item.AutoRetryOnResume)
 	}
 
 	// The questions this answer responds to, captured before the human turn is
@@ -871,11 +896,6 @@ func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[
 	}
 	e.broker.Publish(runID, msg)
 }
-
-// errClarifyVisitEnded is returned for a clarify turn that starts after its
-// visit ended (run cancelled / failed, or resumed into a visit whose
-// conversation is not open yet); the pump shows it as the turn's error.
-var errClarifyVisitEnded = errors.New("运行已结束，这条消息没有发送；续跑后请重新发送")
 
 // clarifyVisitLive reports whether the clarify visit (runID, nodeID,
 // iteration) can still take a turn's outcome: the run is not terminal and that

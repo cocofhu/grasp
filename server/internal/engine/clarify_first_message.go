@@ -89,7 +89,9 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 				Msg("clarify first message: claim superseded; skip stale delivery")
 			return
 		}
-		if err := e.ReactReply(runID, nodeID, text, images, nil, false); err != nil {
+		// Marked AutoRetryOnResume so a visit-ended refusal tells callers the
+		// latch will be released and ResumeFrom will redeliver.
+		if _, err := e.EnqueueClarifyFirstMessageAs("", runID, nodeID, text, images); err != nil {
 			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 				Msg("clarify first message: deliver failed; releasing latch")
 			e.releaseClarifyFirstMessageLatch(runID)

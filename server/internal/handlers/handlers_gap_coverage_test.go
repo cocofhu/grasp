@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -363,6 +364,39 @@ func TestReactReplyRetryLast(t *testing.T) {
 	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"retryLast": true})
 	if w.Code != http.StatusOK {
 		t.Fatalf("retryLast: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	runID := "run-react-visit-ended"
+	h.db.Create(&models.Run{
+		ID: runID, Status: "cancelled", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}}},
+	})
+	h.db.Create(&models.ReactConversation{
+		RunID: runID, NodeID: "react", Iteration: 1, Done: false,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "question?", At: now.Format(time.RFC3339)}},
+	})
+	// Cancel finalizes the StateRun; clarifyVisitLive must refuse new turns.
+	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "cancelled"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "answer"})
+	if w.Code != http.StatusConflict {
+		t.Fatalf("react reply after cancel: %d %s", w.Code, w.Body.String())
+	}
+	body := parseJSON(t, w)
+	if body["code"] != "clarify_visit_ended" {
+		t.Fatalf("code=%v body=%s", body["code"], w.Body.String())
+	}
+	if body["error"] != "运行已结束，这条消息没有发送" {
+		t.Fatalf("error=%v", body["error"])
+	}
+	if body["autoRetryOnResume"] != false {
+		t.Fatalf("autoRetryOnResume=%v want false", body["autoRetryOnResume"])
+	}
+	if strings.Contains(w.Body.String(), "续跑后") {
+		t.Fatalf("must not embed resume hint: %s", w.Body.String())
 	}
 }
 

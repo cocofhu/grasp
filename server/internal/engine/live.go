@@ -145,6 +145,11 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
 		return nil, err
 	}
+	// Clarify visits that already ended must 409 before the Live request is
+	// accepted; ordinary user Live never auto-redelivers on resume.
+	if err := e.errIfClarifyVisitEnded(runID, nodeID, false); err != nil {
+		return nil, err
+	}
 	if ev.Replace {
 		if err := e.discardIdleLiveForReplace(owner, runID, nodeID, ev.SID); err != nil {
 			return nil, err

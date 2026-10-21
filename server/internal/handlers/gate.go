@@ -351,7 +351,8 @@ func (h *Handlers) attachInboxReplying(items []any) {
 }
 
 // writeReactReplyError maps confirm-path errors: a sandbox still running an
-// orphan turn is 409 sandbox_busy so the UI can offer abort-and-confirm.
+// orphan turn is 409 sandbox_busy so the UI can offer abort-and-confirm;
+// a clarify turn against an ended visit is 409 clarify_visit_ended.
 func writeReactReplyError(c *gin.Context, err error) {
 	_ = c.Error(err)
 	var busy *engine.SandboxBusyError
@@ -361,6 +362,23 @@ func writeReactReplyError(c *gin.Context, err error) {
 			"code":        "sandbox_busy",
 			"runningOpId": busy.RunningOpID,
 			"desynced":    busy.Desynced,
+		})
+		return
+	}
+	var visitEnded *engine.ClarifyVisitEndedError
+	if errors.As(err, &visitEnded) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":             visitEnded.Error(),
+			"code":              "clarify_visit_ended",
+			"autoRetryOnResume": visitEnded.AutoRetryOnResume,
+		})
+		return
+	}
+	if errors.Is(err, engine.ErrClarifyVisitEnded) {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":             "运行已结束，这条消息没有发送",
+			"code":              "clarify_visit_ended",
+			"autoRetryOnResume": false,
 		})
 		return
 	}
