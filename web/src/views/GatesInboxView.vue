@@ -82,8 +82,6 @@ const {
   softRefreshActiveRun,
   loadActiveRun,
   retryActiveRun,
-  applyListUpdate,
-  dismissUpdateBanner,
   onReactRevised,
   onResolve,
   patchShareStatus,
@@ -128,7 +126,6 @@ const {
   inboxConfirmFlowReduce,
   inboxConfirmFlowToken,
   pendingAcpFrames,
-  showUpdateBanner,
   showProcessedBanner,
   showListSkeleton,
   showListError,
@@ -144,6 +141,7 @@ const {
   startFailedActive,
   activeStarting,
   startingSandboxPhase,
+  startingBootKey,
   incomingGhostConfirmInFlight,
   STARTING_POLL_MS,
   STARTING_POLL_MAX_TICKS,
@@ -152,7 +150,6 @@ const {
   lastStagedAppPreviewPick,
   isClarifyEditing,
   isEditing,
-  updateBannerDetail,
   activeRun,
   activeRunLoading,
   activeRunLoadError,
@@ -190,11 +187,8 @@ const {
   totalCount,
   refresh,
   peek,
-  applyPending,
   removeItemLocally,
   restoreItemLocally,
-  hasPendingUpdate,
-  pendingMeta,
   lastPeekAt,
   itemKey,
   ariaBusy,
@@ -252,35 +246,6 @@ const listFadeKey = computed(() =>
     >
       <Icon name="alert" :size="18" class="shrink-0" />
       <span v-html="t('pages.gatesInbox.processedBanner')" />
-    </div>
-
-    <!-- f2: pending update banner -->
-    <div
-      v-if="showUpdateBanner && hasPendingUpdate"
-      class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-md border border-info/35 bg-info/10 px-3.5 py-2.5 text-sm animate-[slideDown_0.25s_ease]"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-2.5 text-info">
-        <Icon name="bell" :size="18" class="shrink-0" />
-        <div class="min-w-0">
-          <strong class="font-semibold text-txt">{{ t('pages.gatesInbox.updateBannerTitle') }}</strong>
-          <span class="text-txt2">{{ updateBannerDetail }}</span>
-        </div>
-      </div>
-      <div class="flex shrink-0 gap-2">
-        <button
-          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover disabled:opacity-45"
-          :disabled="processingLock"
-          @click="applyListUpdate()"
-        >
-          {{ t('common.buttons.applyRefresh') }}
-        </button>
-        <button
-          class="rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-txt transition hover:bg-elevated"
-          @click="dismissUpdateBanner"
-        >
-          {{ t('common.buttons.later') }}
-        </button>
-      </div>
     </div>
 
     <!-- Mobile list view -->
@@ -403,6 +368,7 @@ const listFadeKey = computed(() =>
               mode="stage"
               hide-home-tab
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
             <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
             <ReactArtifactStage
@@ -423,8 +389,8 @@ const listFadeKey = computed(() =>
           <template #sidebar>
             <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
             <ReviewComposer
               v-else
@@ -524,6 +490,7 @@ const listFadeKey = computed(() =>
               mode="stage"
               hide-home-tab
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
                 <ArtifactLoadingPane v-else-if="activeRunLoading" message-key="pages.gatesInbox.loadingRun" />
                 <ReactArtifactStage
@@ -544,8 +511,8 @@ const listFadeKey = computed(() =>
               <template #sidebar>
                 <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
+              :boot-key="startingBootKey"
             />
                 <ReviewComposer
                   v-else

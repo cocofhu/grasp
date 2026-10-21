@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { defineComponent, nextTick } from 'vue'
+import { computed, defineComponent, nextTick, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -154,8 +154,10 @@ const GateApprovalStub = defineComponent({
   name: 'GateApproval',
   emits: ['resolve', 'react-revised'],
   setup(_, { expose }) {
+    // Real-form stand-in: typing into the comment makes the gate "editing".
+    const comment = ref('')
     expose({
-      isEditing: false,
+      isEditing: computed(() => comment.value.trim().length > 0),
       applyReviewFrame: (f: Record<string, unknown>) => {
         composerFrames.applied.push(f)
         if (f.event === 'turn_begin') composerFrames.busy = true
@@ -167,9 +169,13 @@ const GateApprovalStub = defineComponent({
       },
       cancelReactRevise: () => {},
     })
-    return {}
+    return { comment }
   },
-  template: '<button data-testid="resolve-btn" @click="$emit(\'resolve\', \'approve\', {})">resolve</button>',
+  template:
+    `<div>
+      <textarea data-testid="gate-comment" v-model="comment"></textarea>
+      <button data-testid="resolve-btn" @click="$emit('resolve', 'approve', {})">resolve</button>
+    </div>`,
 })
 
 /** Captures applyReviewFrame / applyAcpEvents for hard-load restore assertions. */
@@ -225,13 +231,14 @@ function hangInboxContext(_runId: string, _nodeId: string, _iteration?: number, 
   })
 }
 
-function mountInbox() {
+function mountInbox(opts: { attach?: boolean } = {}) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(GatesInboxView, {
+    ...(opts.attach ? { attachTo: document.body } : {}),
     global: {
       plugins: [i18n],
       stubs: {
@@ -521,14 +528,13 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     const before = inboxCallsFor('run-b', 'gate-b', 1).length
     expect(before).toBeGreaterThan(0)
 
-    // External removal: peek raises the update banner; apply reloads and picks the neighbor.
+    // External removal: an idle peek applies on its own (no banner), reloads and picks the neighbor.
     list = [a, c]
     await usePendingGates().peek()
     await nextTick()
     await flushPromises()
-    const applyBtn = wrapper.findAll('button').find((btn) => btn.text().includes('立即刷新'))
-    expect(applyBtn).toBeTruthy()
-    await applyBtn!.trigger('click')
+    expect(wrapper.text()).not.toContain('有新审批待处理')
+    expect(wrapper.findAll('button').some((btn) => btn.text().includes('立即刷新'))).toBe(false)
     await flushPromises()
     await nextTick()
     await flushPromises()
@@ -536,6 +542,98 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(inboxCallsFor('run-b', 'gate-b', 1).length).toBe(before)
     expect(activeDetail(wrapper)).toEqual({ runId: 'run-c', nodeId: 'gate-c' })
     expect(inboxCallsFor('run-c', 'gate-c', 1).length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
+  it('auto-refresh never touches the input: peek while typing keeps value, caret, focus and selection; applies after editing', async () => {
+    const a = gateItem('a')
+    const b = gateItem('b')
+    const n = gateItem('new')
+    let list = [a, b]
+    mocks.listGates.mockImplementation(async () => paged(list))
+    const pg = usePendingGates()
+
+    const wrapper = mountInbox({ attach: true })
+    await flushPromises()
+    await nextTick()
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+
+    const field = wrapper.get('[data-testid="gate-comment"]')
+    const el = field.element as HTMLTextAreaElement
+    el.focus()
+    await field.setValue('请补充回归截图')
+    el.setSelectionRange(3, 3)
+    expect(document.activeElement).toBe(el)
+    const listCallsBefore = mocks.listGates.mock.calls.length
+    const contextCallsBefore = inboxCallsFor('run-a', 'gate-a', 1).length
+
+    // A new approval arrives while the user types.
+    list = [n, a, b]
+    await pg.peek({ source: 'focus' })
+    await nextTick()
+    await flushPromises()
+
+    // Input untouched: same element, same value, caret and focus; selection unchanged.
+    const sameField = wrapper.get('[data-testid="gate-comment"]').element as HTMLTextAreaElement
+    expect(sameField).toBe(el)
+    expect(el.value).toBe('请补充回归截图')
+    expect(el.selectionStart).toBe(3)
+    expect(document.activeElement).toBe(el)
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    // Held: neither the sidebar snapshot nor the page list moved, no context reload, no banner.
+    expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-a', 'run-b'])
+    expect(pg.hasPendingUpdate.value).toBe(true)
+    expect(mocks.listGates.mock.calls.length).toBe(listCallsBefore + 1) // the peek itself
+    expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(contextCallsBefore)
+    expect(wrapper.text()).not.toContain('有新审批待处理')
+
+    // Done editing: clear the draft and leave the field → list updates by itself.
+    await field.setValue('')
+    el.blur()
+    await nextTick()
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    expect(pg.hasPendingUpdate.value).toBe(false)
+    expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-new', 'run-a', 'run-b'])
+    expect(mocks.listGates.mock.calls.length).toBeGreaterThan(listCallsBefore + 1)
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    wrapper.unmount()
+  })
+
+  it('auto-refresh waits for processingLock: a peek during approve applies after it settles', async () => {
+    const a = gateItem('a')
+    const b = gateItem('b')
+    const n = gateItem('new')
+    let list = [a, b]
+    mocks.listGates.mockImplementation(async () => paged(list))
+    let releaseResume!: (v: unknown) => void
+    mocks.resumeGate.mockImplementation(() => new Promise((resolve) => { releaseResume = resolve }))
+    const pg = usePendingGates()
+
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await wrapper.get('[data-testid="resolve-btn"]').trigger('click')
+    await flushPromises()
+
+    // Server lags (still lists a) and a new gate shows up mid-approve.
+    list = [n, a, b]
+    await pg.peek({ source: 'sidebar-poll' })
+    await flushPromises()
+    // a was removed locally and must not come back as a ghost.
+    expect(pg.displayedItems.value.some((it) => it.runId === 'run-a')).toBe(false)
+
+    list = [n, b]
+    releaseResume({ status: 'ok' })
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    await pg.peek({ source: 'sidebar-poll' })
+    await flushPromises()
+    expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-new', 'run-b'])
+    expect(pg.count.value).toBe(2)
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'gate-b' })
     wrapper.unmount()
   })
 
@@ -1735,7 +1833,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="react-connecting-pill"]').text()).toContain('连接中')
+    expect(wrapper.find('[data-testid="react-connecting-pill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="clarify-boot-loader"]').exists()).toBe(true)
     expect(
       (wrapper.get('[data-testid="react-connecting-input"]').element as HTMLTextAreaElement)
         .disabled,

@@ -3,20 +3,23 @@ import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
+import ComposerShell from './ComposerShell.vue'
+import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
 
 const props = withDefaults(
   defineProps<{
     mode?: 'stage' | 'sidebar'
-    showConfirm?: boolean
     /** Gateway lifecycle while inbox starting (e.g. pulling). */
     sandboxPhase?: string | null
+    /** Boot record key (runId:nodeId:iteration) driving the checklist. */
+    bootKey?: string | null
     /** Sandbox drawer already titles the panel; don't repeat the old home tab. */
     hideHomeTab?: boolean
   }>(),
   {
     mode: 'sidebar',
-    showConfirm: true,
     sandboxPhase: null,
+    bootKey: null,
     hideHomeTab: false,
   },
 )
@@ -91,55 +94,70 @@ onMounted(() => {
     </div>
   </div>
 
+  <!--
+    Same chat skeleton as ClarifyChat (centered transcript column + ComposerShell),
+    so starting → connecting → clarify/ReAct never swaps layout. No meta row above
+    the transcript: the boot loader is the only connecting status (it pins the
+    pull-image step when sandboxPhase is pulling); the composer is only disabled.
+  -->
   <div
     v-else
-    class="flex h-full min-h-0 flex-col"
+    class="chat-thread flex h-full min-h-0 min-w-0 flex-1 flex-col"
     data-testid="react-connecting-sidebar"
     aria-busy="true"
   >
-    <div class="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2.5">
-      <span
-        class="ml-auto inline-flex items-center gap-1.5 rounded-full border border-n-clarify/30 bg-n-clarify/10 px-2 py-0.5 text-[10px] text-n-clarify"
-        data-testid="react-connecting-pill"
-      >
-        <i class="h-1.5 w-1.5 animate-pulse rounded-full bg-current" />
-        {{
-          sandboxPhase === 'pulling'
-            ? t('pages.clarify.connectingPulling')
-            : t('pages.clarify.connecting')
-        }}
-      </span>
-    </div>
-    <div class="min-h-0 flex-1 overflow-hidden">
-      <ClarifyBootLoader phase="starting" :sandbox-phase="sandboxPhase" />
-    </div>
-    <div class="shrink-0 border-t border-line p-3">
-      <textarea
-        disabled
-        rows="2"
-        class="input min-h-[62px] w-full resize-none disabled:cursor-not-allowed disabled:bg-elevated disabled:text-txt3"
-        :placeholder="t('pages.clarify.connectingInputPlaceholder')"
-        data-testid="react-connecting-input"
-      />
-      <div class="mt-2 flex justify-end gap-2">
-        <button
-          v-if="showConfirm"
-          type="button"
-          disabled
-          class="rounded-md bg-ok px-3 py-1.5 text-xs font-semibold text-white opacity-45"
-          data-testid="react-connecting-confirm"
-        >
-          {{ t('pages.clarify.confirmFlow') }}
-        </button>
-        <button
-          type="button"
-          disabled
-          class="rounded-md bg-accent px-3 py-1.5 text-xs font-semibold text-white opacity-45"
-          data-testid="react-connecting-send"
-        >
-          {{ t('pages.reviewComposer.send') }}
-        </button>
+    <div class="react-connecting-scroller scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="react-connecting-scroller">
+      <div class="react-connecting-transcript">
+        <div class="react-connecting-turn">
+          <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" :boot-key="bootKey" />
+        </div>
       </div>
+    </div>
+    <div class="react-connecting-actions shrink-0 p-3" data-testid="react-connecting-actions">
+      <ComposerShell wrap-toolbar :show-footer="false" box-test-id="react-connecting-input-row">
+        <template #input>
+          <textarea
+            disabled
+            rows="1"
+            class="chat-input min-h-[40px] w-full min-w-0 resize-none overflow-y-hidden border-0 bg-transparent p-0 shadow-none outline-none focus:ring-0 disabled:cursor-not-allowed"
+            :placeholder="t('pages.clarify.connectingInputPlaceholder')"
+            data-testid="react-connecting-input"
+          />
+        </template>
+        <template #toolbar-start>
+          <button
+            type="button"
+            disabled
+            class="chat-action-button react-connecting-attach"
+            :aria-label="t('pages.clarify.addImage')"
+            data-testid="react-connecting-attach"
+          >
+            <Icon name="plus" :size="18" />
+          </button>
+        </template>
+        <template #toolbar-end>
+          <!-- State #1 (button-states.md): one disabled 发送; ClarifyChat morphs it on hand-off. -->
+          <ComposerPrimaryAction
+            kind="send"
+            disabled
+            :label="t('pages.reviewComposer.send')"
+            testid="react-connecting-send"
+            handoff-out
+          />
+        </template>
+      </ComposerShell>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* Mirrors ClarifyChat's scroller / transcript / hot-actions geometry. */
+.react-connecting-scroller { padding: 24px 24px 56px 44px; scrollbar-gutter: stable; }
+.react-connecting-transcript { width: 100%; max-width: 760px; margin-inline: auto; }
+.react-connecting-turn { margin-top: 28px; }
+.react-connecting-actions { width: 100%; max-width: 800px; margin-inline: auto; }
+.react-connecting-attach { border-color: transparent; background: transparent; }
+@media (max-width: 767px) {
+  .react-connecting-scroller { padding: 18px 16px 56px 36px; }
+}
+</style>

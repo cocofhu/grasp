@@ -25,4 +25,18 @@ describe('global.css dark theme scrollbar (g2)', () => {
     expect(globalCss).toContain('scrollbar-color: transparent transparent')
     expect(globalCss).toMatch(/::-webkit-scrollbar-thumb\s*\{[^}]*background:\s*transparent/)
   })
+
+  // Chromium >= 121 drops ::-webkit-scrollbar styling once the standard properties
+  // apply, which brought back the wide native bar with arrows.
+  it('applies scrollbar-width / scrollbar-color only where ::-webkit-scrollbar is unsupported', () => {
+    const outside = globalCss.replace(/@supports not selector\(::-webkit-scrollbar\)\s*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '')
+    expect(globalCss).toContain('@supports not selector(::-webkit-scrollbar)')
+    expect(outside).not.toMatch(/scrollbar-width:\s*thin/)
+    expect(outside).not.toMatch(/scrollbar-color:/)
+  })
+
+  it('hides WebKit scrollbar arrow buttons and keeps the thin 4px bar', () => {
+    expect(globalCss).toMatch(/::-webkit-scrollbar-button\s*\{[^}]*display:\s*none/)
+    expect(globalCss).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*4px/)
+  })
 })

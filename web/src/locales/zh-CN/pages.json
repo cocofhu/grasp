@@ -1615,14 +1615,6 @@
     "gatesInbox": {
       "title": "待办",
       "subtitleHtml": "<strong class=\"font-medium text-warn\">运筹帷幄之中</strong> <em class=\"not-italic text-n-clarify\">决胜千里之外</em>",
-      "statusPending": "有新审批 · 待刷新",
-      "statusEditing": "正在填写 · 后台同步中",
-      "statusIdle": "空闲 · 后台同步中",
-      "updateBannerTitle": "有新审批待处理",
-      "updateBannerDetailEmpty": " — 后台检测到列表变化，刷新后查看最新内容",
-      "updateBannerDetail": "{summary} — 列表未自动刷新，点击「立即刷新」查看",
-      "updateAdded": "新增 {n} 条",
-      "updateRemoved": "移除 {n} 条",
       "processedBanner": "该项已被处理 — 当前选中项已从待审批列表移除，您的表单/草稿已保留。",
       "gateType": "人工门禁",
       "clarifyType": "待澄清",
@@ -3121,8 +3113,6 @@
       "retry": "重试",
       "done": "交互已完成，进入下一步",
       "closed": "该运行已结束，交互已关闭",
-      "connecting": "连接中…",
-      "connectingPulling": "正在拉取镜像…",
       "connectingHint": "连接中，稍后即可开始对话",
       "connectingInputPlaceholder": "连接中，暂不可输入",
       "connectingStageTitle": "正在准备会话",
@@ -3500,6 +3490,15 @@
       "stepQuestions": {
         "title": "正在整理第一轮问题…",
         "hint": "正在整理需要向你确认的事项。"
+      },
+      "checklist": {
+        "title": "正在启动 Agent",
+        "done": "环境已就绪",
+        "doneMeta": "{n} 步 · {d}",
+        "doneMetaNoTime": "{n} 步",
+        "sandbox": "启动沙箱",
+        "workspace": "准备工作区",
+        "agent": "连接 Agent"
       }
     },
     "nodeOutput": {
