@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<{
   splitDrawer?: boolean
   /** Workspace shells with an artifact panel read and write the page-session switch. */
   rememberArtifactPanel?: boolean
+  /** Passed through to the conversation toolbar. Omit to keep 「对话」. */
+  runName?: string
 }>(), { scopeKey: 'review-conversation', hostConfirmFlow: true, chatOnly: false, splitDrawer: false, rememberArtifactPanel: false })
 
 const { t } = useI18n()
@@ -114,6 +116,7 @@ defineExpose({
       :split-modes="splitDrawer && !chatOnly"
       :retain-open="rememberArtifactPanel && !chatOnly"
       :title="t('pages.runDetail.tabs.artifacts')"
+      :run-name="runName"
       :scope-key="scopeKey"
       :panel-enabled="!chatOnly"
       :show-toolbar="!chatOnly"

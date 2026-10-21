@@ -16,6 +16,7 @@ import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import AppInlineError from '@/components/ui/AppInlineError.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import { computed } from 'vue'
+import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { useGatesInbox } from '@/lib/inbox/useGatesInbox'
 
 const {
@@ -215,6 +216,13 @@ const inboxPageControl = computed(() => {
 const listFadeKey = computed(() =>
   [listPage.value, selectedTags.value.slice().sort().join(',')].join('|'),
 )
+
+/** Toolbar title: loaded run, else the inbox row patchRunTitle rewrites. */
+const inboxConversationRunName = useConversationToolbarRunName(() => {
+  const item = active.value
+  const loaded = item && activeRun.value?.id === item.runId ? activeRun.value : null
+  return { run: loaded, fallback: item }
+})
 </script>
 
 <template>
@@ -355,6 +363,7 @@ const listFadeKey = computed(() =>
         <ReviewShell
           :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
           :run-id="active.runId"
+          :run-name="inboxConversationRunName"
           v-else-if="showClarifyReviewShell"
           ref="reviewShellRef"
           :key="active.runId"
@@ -479,6 +488,7 @@ const listFadeKey = computed(() =>
             <ReviewShell
               :scope-key="`inbox:${active.runId}:${active.nodeId}:${clarifyComposerIteration}`"
               :run-id="active.runId"
+              :run-name="inboxConversationRunName"
               v-else-if="showClarifyReviewShell"
               ref="reviewShellRef"
               :key="active.runId"
