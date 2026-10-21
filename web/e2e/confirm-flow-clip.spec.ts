@@ -98,19 +98,23 @@ async function sampleDraftTransition(page: Page, text: string, duration = 360) {
     const toolbar = document.querySelector('[data-testid="clarify-action-row"]') as HTMLElement
     const input = document.querySelector('[data-testid="clarify-input"]') as HTMLTextAreaElement
     const snapshot = () => {
-      const send = toolbar.querySelector('[data-testid^="clarify-send-"]') as HTMLElement
-      const confirm = toolbar.querySelector('[data-testid="clarify-confirm-flow"]') as HTMLButtonElement | null
-      const sr = send.getBoundingClientRect()
+      // The composer renders exactly one primary action that morphs between
+      // 确认并流转 and 发送 (ComposerPrimaryAction); track that single button.
+      const primaries = toolbar.querySelectorAll<HTMLButtonElement>('.composer-primary')
+      const primary = primaries[0]!
+      const pr = primary.getBoundingClientRect()
       const cr = composer.getBoundingClientRect()
       const hr = host.getBoundingClientRect()
       return {
-        sendX: sr.left,
-        sendY: sr.top,
+        primaryX: pr.left,
+        primaryY: pr.top,
+        primaryCount: primaries.length,
+        kind: primary.dataset.kind ?? null,
+        disabled: primary.disabled,
         height: cr.height,
         inside: cr.left >= hr.left - 0.5 && cr.right <= hr.right + 0.5 &&
           cr.top >= hr.top - 0.5 && cr.bottom <= hr.bottom + 0.5,
         noOverflow: host.scrollWidth <= host.clientWidth + 1,
-        confirm: confirm ? { disabled: confirm.disabled, inert: !!confirm.closest('[inert]') } : null,
         runningAnimations: toolbar.getAnimations({ subtree: true }).filter((animation) => animation.playState === 'running').length,
       }
     }
@@ -134,13 +138,16 @@ function assertStableComposer(samples: MotionSamples, allowRowChange = false) {
   expect(samples.every((sample) => sample.inside && sample.noOverflow)).toBe(true)
 }
 
-function assertSmoothSendMovement(samples: MotionSamples) {
+function assertSmoothPrimaryMorph(samples: MotionSamples) {
+  // Exactly one primary in every frame; its edge travels through intermediate
+  // positions (width morph) rather than jumping.
+  expect(samples.every((sample) => sample.primaryCount === 1)).toBe(true)
   const start = samples[0]!
   const end = samples.at(-1)!
-  const dx = end.sendX - start.sendX
+  const dx = end.primaryX - start.primaryX
   expect(Math.abs(dx)).toBeGreaterThan(2)
   const progresses = samples.slice(1, -1).map((sample) =>
-    (sample.sendX - start.sendX) / dx,
+    (sample.primaryX - start.primaryX) / dx,
   )
   expect(progresses.some((progress) => progress > 0.1 && progress < 0.9)).toBe(true)
 }
@@ -240,15 +247,17 @@ test.describe('确认并流转底栏裁切回归', () => {
       await assertIntegratedActions(page)
       const leaving = await sampleDraftTransition(page, 'a')
       await expect(page.getByTestId('clarify-confirm-flow')).toBeHidden()
-      assertSmoothSendMovement(leaving)
+      await expect(page.getByTestId(/^clarify-send-(label|icon)$/)).toBeEnabled()
+      expect(leaving[0]!.kind).toBe('confirm')
+      assertSmoothPrimaryMorph(leaving)
       assertStableComposer(leaving, width === 200)
-      const outgoing = leaving.slice(1).flatMap((sample) => sample.confirm ? [sample.confirm] : [])
-      expect(outgoing.length).toBeGreaterThan(0)
-      expect(outgoing.every((button) => button.disabled && button.inert)).toBe(true)
+      // The same button becomes 发送 as soon as a draft exists; no second primary lingers.
+      expect(leaving.slice(1).every((sample) => sample.kind === 'send' && !sample.disabled)).toBe(true)
 
       const entering = await sampleDraftTransition(page, '')
       await expect(page.getByTestId('clarify-confirm-flow')).toBeEnabled()
-      assertSmoothSendMovement(entering)
+      expect(entering.slice(1).every((sample) => sample.kind === 'confirm')).toBe(true)
+      assertSmoothPrimaryMorph(entering)
       assertStableComposer(entering, width === 200)
       await assertIntegratedActions(page)
       await testInfo.attach('composer-transition-geometry', {
@@ -287,16 +296,16 @@ test.describe('确认并流转底栏裁切回归', () => {
     const start = reduced[0]!
     const end = reduced.at(-1)!
     expect(reduced.slice(1).every((sample) => {
-      const atStart = Math.abs(sample.sendX - start.sendX) <= 0.5 && Math.abs(sample.sendY - start.sendY) <= 0.5
-      const atEnd = Math.abs(sample.sendX - end.sendX) <= 0.5 && Math.abs(sample.sendY - end.sendY) <= 0.5
-      return (atStart || atEnd) && sample.runningAnimations === 0
+      const atStart = Math.abs(sample.primaryX - start.primaryX) <= 0.5 && Math.abs(sample.primaryY - start.primaryY) <= 0.5
+      const atEnd = Math.abs(sample.primaryX - end.primaryX) <= 0.5 && Math.abs(sample.primaryY - end.primaryY) <= 0.5
+      return (atStart || atEnd) && sample.runningAnimations === 0 && sample.primaryCount === 1
     })).toBe(true)
     assertStableComposer(reduced)
 
     await page.emulateMedia({ reducedMotion: 'no-preference' })
     const restored = await sampleDraftTransition(page, '')
     await expect(page.getByTestId('clarify-confirm-flow')).toBeEnabled()
-    assertSmoothSendMovement(restored)
+    assertSmoothPrimaryMorph(restored)
     assertStableComposer(restored)
     await assertIntegratedActions(page)
   })

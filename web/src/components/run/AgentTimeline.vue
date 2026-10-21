@@ -226,7 +226,7 @@ function onToggle(index: number, last: boolean, e: Event) {
           <summary class="agent-thought-summary">
             <ThoughtSummaryStatus
               :busy="streaming && b.last && !quietThought"
-              :completed="streaming ? !b.last : completed"
+              :completed="!streaming && completed"
               :interrupted="!streaming && interrupted"
             />
             <Icon name="chevron-down" :size="16" class="agent-thought-chevron" aria-hidden="true" />

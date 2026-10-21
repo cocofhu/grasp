@@ -40,8 +40,8 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
-import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
 
 const props = withDefaults(
   defineProps<{
@@ -209,6 +209,7 @@ const {
   applyReviewFrame,
   applyAcpEvents,
   agentHasMessage,
+  agentTailOutputting,
   agentThoughtDisplay,
   isThoughtOpen,
   onThoughtToggle,
@@ -348,19 +349,47 @@ function openImagePreview(images: ClarifyImage[], index: number) {
 /** Clarify passes its own reply copy; review uses the shared send copy. */
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
-const showHotConfirm = computed(() => !props.hideFinish && !composerBlocksConfirm.value)
-const confirmActionMotion = useComposerActionMotion()
-const confirmPresence = ref<HTMLElement | null>(null)
 const abortConfirmButton = ref<HTMLButtonElement | null>(null)
-watch([showHotConfirm, composerBlocksConfirm], ([showing, blocked]) => {
-  // Keep focus in the composer when either confirmation action disappears.
-  const active = document.activeElement
-  const leavingConfirm = !showing && confirmPresence.value?.contains(active)
-  const leavingAbort = blocked && !!abortConfirmButton.value && active === abortConfirmButton.value
-  if (leavingConfirm || leavingAbort) {
+watch(composerBlocksConfirm, (blocked) => {
+  // Keep focus in the composer when the abort-and-confirm action disappears.
+  if (blocked && !!abortConfirmButton.value && document.activeElement === abortConfirmButton.value) {
     void nextTick(() => textareaRef.value?.focus({ preventScroll: true }))
   }
 }, { flush: 'pre' })
+
+/**
+ * The composer shows exactly one primary action (fix-post-launch/button-states.md):
+ * draft or send in flight → 发送; session busy → 停止;
+ * finishable → 确认并流转; otherwise a disabled 发送.
+ */
+const primaryKind = computed<ComposerPrimaryKind>(() => {
+  if (composerSending.value || hasComposerDraft()) return 'send'
+  if (sessionBusy.value) return 'stop'
+  if (!props.hideFinish) return 'confirm'
+  return 'send'
+})
+const primaryDisabled = computed(() => {
+  if (primaryKind.value === 'stop') return false
+  if (primaryKind.value === 'confirm') return confirmDisabled.value
+  return composerSending.value || !hasComposerDraft()
+})
+const primaryLabel = computed(() => {
+  if (primaryKind.value === 'stop') return translate('common.buttons.stop')
+  if (primaryKind.value === 'confirm') {
+    return validating.value ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow')
+  }
+  return composerSending.value ? translate('common.buttons.sending') : clarifySendAria.value
+})
+const primaryTestid = computed(() => {
+  if (primaryKind.value === 'stop') return 'clarify-review-cancel'
+  if (primaryKind.value === 'confirm') return 'clarify-confirm-flow'
+  return props.sendLabel ? 'clarify-send-label' : 'clarify-send-icon'
+})
+function onPrimary(kind: ComposerPrimaryKind) {
+  if (kind === 'stop') cancelReview()
+  else if (kind === 'confirm') finishEarly()
+  else send()
+}
 
 /**
  * Where each session's interactive card goes: under the first agent reply
@@ -898,23 +927,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <InboxMotionMark kind="pulse" />
               <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
             </div>
-            <!-- Status: 思考中… (has thought, no message yet) -->
-            <div
-              v-else-if="t.streaming && t.thought && !agentHasMessage(t)"
-              class="chat-meta mb-1.5 inline-flex items-center gap-2 font-normal"
-              data-testid="clarify-busy-status"
-            >
-              <InboxMotionMark kind="pulse" />
-              <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
-            </div>
-            <!-- Status: 输出中 (shimmer) while streaming message -->
-            <div
-              v-else-if="t.streaming && agentHasMessage(t)"
-              class="clarify-outputting chat-meta mb-1.5 font-normal"
-              data-testid="clarify-busy-status"
-            >
-              {{ translate('pages.clarify.outputting') }}
-            </div>
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
               v-if="t.parts?.length && !isRetryableFailedAgent(t)"
@@ -1328,8 +1340,25 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             interrupted
           </div>
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
+          <!--
+            Turn still running: the live status sits at the end of the reply (where
+            the next step will appear), never only at the top. Same pulse +
+            思考中… / shimmer 输出中 styles as before.
+          -->
           <div
-            v-if="!showTurnCompleted(t) && !observeQuietBusy(t)"
+            v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
+            class="chat-meta mt-1 inline-flex items-center gap-2 font-normal"
+            :class="agentTailOutputting(t) ? 'clarify-outputting' : ''"
+            data-testid="clarify-busy-status"
+            :data-state="agentTailOutputting(t) ? 'outputting' : 'thinking'"
+            role="status"
+          >
+            <InboxMotionMark v-if="!agentTailOutputting(t)" kind="pulse" />
+            <span>{{ agentTailOutputting(t) ? translate('pages.clarify.outputting') : translate('pages.clarify.thinkingBusy') }}</span>
+          </div>
+          <!-- No timestamp until the turn has ended. -->
+          <div
+            v-else-if="!showTurnCompleted(t) && !(t.role === 'agent' && t.streaming)"
             class="chat-meta mt-1"
             :class="t.role === 'human' ? 'text-right' : ''"
             data-testid="clarify-turn-bottom-time"
@@ -1494,60 +1523,15 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </button>
         </template>
         <template v-else #toolbar-end>
-          <button
-            v-if="sessionBusy"
-            type="button"
-            class="chat-action-button chat-action-stop"
-            data-testid="clarify-review-cancel"
-            title="Cancel"
-            aria-label="Cancel"
-            @click="cancelReview"
-          >
-            <Icon name="chat-stop" :size="16" />
-          </button>
-          <button
-            v-if="!sessionBusy || hasComposerDraft()"
-            type="button"
-            class="chat-action-button chat-action-primary"
-            :data-testid="sendLabel ? 'clarify-send-label' : 'clarify-send-icon'"
-            :title="composerSending ? translate('common.buttons.sending') : clarifySendAria"
-            :aria-label="composerSending ? translate('common.buttons.sending') : clarifySendAria"
-            :aria-busy="composerSending ? 'true' : undefined"
-            :disabled="composerSending || !hasComposerDraft()"
-            @click="send"
-          >
-            <Icon :name="composerSending ? 'spinner' : 'chat-send'" :size="18" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
-          </button>
-          <Transition
-            :css="false"
-            @enter="confirmActionMotion.enter"
-            @leave="confirmActionMotion.leave"
-            @enter-cancelled="confirmActionMotion.cancel"
-            @leave-cancelled="confirmActionMotion.cancel"
-          >
-            <span
-              v-if="!hideFinish"
-              v-show="showHotConfirm"
-              ref="confirmPresence"
-              class="clarify-confirm-presence"
-              :inert="!showHotConfirm"
-              :aria-hidden="!showHotConfirm ? 'true' : undefined"
-            >
-              <span class="clarify-confirm-presence__inner">
-                <button
-                  type="button"
-                  class="chat-action-confirm clarify-confirm-integrated h-9 shrink-0 inline-flex"
-                  data-testid="clarify-confirm-flow"
-                  :disabled="confirmDisabled || !showHotConfirm"
-                  :title="translate('pages.clarify.confirmFlowTitle')"
-                  @click="finishEarly"
-                >
-                  <Icon name="check" :size="13" />
-                  {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow') }}
-                </button>
-              </span>
-            </span>
-          </Transition>
+          <ComposerPrimaryAction
+            :kind="primaryKind"
+            :disabled="primaryDisabled"
+            :busy="primaryKind === 'send' && composerSending"
+            :label="primaryLabel"
+            :title="primaryKind === 'confirm' ? translate('pages.clarify.confirmFlowTitle') : undefined"
+            :testid="primaryTestid"
+            @click="onPrimary"
+          />
         </template>
         <template v-if="reviewMode && !observe" #hint>
           <p
@@ -1704,26 +1688,6 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   [data-testid="clarify-option-btn"],
   [data-testid="clarify-other-row"],
   [data-testid="clarify-form-input"] { min-height: 44px; }
-}
-.clarify-confirm-integrated {
-  max-width: 100%;
-  padding-inline: 10px;
-  font-size: 12px;
-}
-.clarify-confirm-presence {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 100%;
-  /* Include the adjacent 6px flex gap in the animated width. */
-  margin-inline-start: -6px;
-}
-.clarify-confirm-presence__inner {
-  display: inline-flex;
-  flex: 0 0 auto;
-  min-width: 0;
-  max-width: 100%;
-  padding-inline-start: 6px;
 }
 
 /* Placeholder must wrap to the textarea width — UA default often clips the 2nd line. */
