@@ -8,12 +8,17 @@ import (
 	"github.com/cocofhu/grasp/internal/models/nodereg"
 )
 
-// ChainTurn is one text-only turn of a chain segment (the clarifyByNode turn
-// shape without images / questions / forms / events).
+// ChainTurn is one turn of a chain segment. It carries the text plus the
+// structured detail the fold renders (questions, tools, parts, forms).
+// Images and the raw ACP event log stay off this payload.
 type ChainTurn struct {
-	Role string `json:"role"`
-	Text string `json:"text"`
-	At   string `json:"at"`
+	Role      string                 `json:"role"`
+	Text      string                 `json:"text"`
+	At        string                 `json:"at"`
+	Questions []models.ReactQuestion `json:"questions,omitempty"`
+	Tools     []models.ReactTool     `json:"tools,omitempty"`
+	Parts     []models.AcpPart       `json:"parts,omitempty"`
+	Forms     []models.ReactForm     `json:"forms,omitempty"`
 }
 
 // ChainSegment is one node execution (nodeId, iteration) of a run's
@@ -224,7 +229,10 @@ func visitEnd(sr models.StateRun) (time.Time, bool) {
 func chainTurns(msgs []models.ReactMessage) *[]ChainTurn {
 	turns := make([]ChainTurn, 0, len(msgs))
 	for _, m := range msgs {
-		turns = append(turns, ChainTurn{Role: m.Role, Text: m.Text, At: m.At})
+		turns = append(turns, ChainTurn{
+			Role: m.Role, Text: m.Text, At: m.At,
+			Questions: m.Questions, Tools: m.Tools, Parts: m.Parts, Forms: m.Forms,
+		})
 	}
 	return &turns
 }

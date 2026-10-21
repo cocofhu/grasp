@@ -98,6 +98,31 @@ describe('runConversationChain', () => {
     expect(isPlumbingNode(nodes, 'impl')).toBe(false)
   })
 
+  it('keeps questions, tools and parts, and still drops a blank turn', () => {
+    const c = normalizeRunChain({
+      runId: 'r1',
+      status: 'completed',
+      segments: [{
+        nodeId: 'clarify', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'completed',
+        turns: [
+          {
+            role: 'agent', text: '', at: '',
+            questions: [{ id: 'q', prompt: '类型', options: [{ id: 'a', label: '其他' }] }],
+            tools: [{ title: 'Read', status: 'completed' }],
+            parts: [{ kind: 'tool', title: 'Read' }],
+          },
+          { role: 'human', text: '  ', at: '' },
+        ],
+      }],
+    })
+    expect(c.segments[0].turns).toHaveLength(1)
+    expect(c.segments[0].turns[0]).toMatchObject({
+      questions: [{ prompt: '类型' }],
+      tools: [{ title: 'Read' }],
+      parts: [{ title: 'Read' }],
+    })
+  })
+
   it('gate segments: own segment with turns + decision, or folded into upstream turns (today)', () => {
     const own = normalizeRunChain({
       runId: 'r1',

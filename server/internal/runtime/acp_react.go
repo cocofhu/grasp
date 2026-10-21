@@ -151,9 +151,25 @@ func (c *acpProvider) ReactReply(ctx context.Context, req NodeReq, history []mod
 	if extra := liveVariantPromptExtras(req, human); extra != "" {
 		prompt = extra + "\n" + prompt
 	}
-	res, err := c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)
-	if res != nil && res.OpID != "" {
-		chatOp = res.OpID
+	var res *sandbox.ChatResult
+	var err error
+	restarted := false
+	for {
+		res, err = c.streamChat(chatCtx, sess.acp, req, prompt, chatImages)
+		if res != nil && res.OpID != "" {
+			chatOp = res.OpID
+		}
+		if restarted || !isPoisonedResumeFailure(res, err) {
+			break
+		}
+		restarted = true
+		log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("clarify resume stuck on provider error; restarting agent in the same sandbox")
+		if rerr := c.reopenPoisonedReact(chatCtx, req, &sess, history); rerr != nil {
+			log.Warn().Err(rerr).Str("run", req.RunID).Str("node", req.NodeID).
+				Msg("clarify resume restart failed")
+			break
+		}
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).
@@ -282,10 +298,29 @@ func (c *acpProvider) ReviseInPlace(ctx context.Context, req NodeReq, history []
 		rehydrated = true
 	}
 	chatCtx, cancel := c.turnCtx(ctx, req)
-	res, err := c.streamChat(chatCtx, sess.acp, req, reviewTurnPrompt(req, history, human, rehydrated), images)
-	cancel()
-	if res != nil && res.OpID != "" {
-		chatOp = res.OpID
+	defer cancel()
+	prompt := reviewTurnPrompt(req, history, human, rehydrated)
+	var res *sandbox.ChatResult
+	var err error
+	restarted := false
+	for {
+		res, err = c.streamChat(chatCtx, sess.acp, req, prompt, images)
+		if res != nil && res.OpID != "" {
+			chatOp = res.OpID
+		}
+		if restarted || !isPoisonedResumeFailure(res, err) {
+			break
+		}
+		restarted = true
+		log.Warn().Str("run", req.RunID).Str("node", req.NodeID).
+			Msg("review resume stuck on provider error; restarting agent in the same sandbox")
+		if rerr := c.reopenPoisonedReact(chatCtx, req, &sess, history); rerr != nil {
+			log.Warn().Err(rerr).Str("run", req.RunID).Str("node", req.NodeID).
+				Msg("review resume restart failed")
+			break
+		}
+		rehydrated = true
+		prompt = reviewTurnPrompt(req, history, human, true)
 	}
 	if err != nil {
 		log.Warn().Err(err).Str("run", req.RunID).Str("node", req.NodeID).Msg("review revise chat failed")
@@ -719,8 +754,188 @@ func (c *acpProvider) buildReactRehydratePrompt(req NodeReq, seeded []string, hi
 	var b strings.Builder
 	b.WriteString(c.buildReactOpenPrompt(req, seeded))
 	b.WriteString("\n\n## 会话恢复(重要)\n之前的澄清对话因故中断,现在在新会话中恢复。以下是此前的完整问答记录,请据此恢复上下文并继续:不要重复已经问过的问题,先不要提出新问题,等待我接下来的回复。\n\n")
-	b.WriteString(renderTranscript(history))
+	b.WriteString(renderRecoveryTranscript(history))
 	return b.String()
+}
+
+// reopenPoisonedReact drops a Cursor chat id that can no longer be resumed and
+// primes a fresh CLI session in the same sandbox. The container and workspace
+// stay. A dead connection falls back to rehydrateReact, which already primes.
+func (c *acpProvider) reopenPoisonedReact(ctx context.Context, req NodeReq, sess **reactSession, history []models.ReactMessage) error {
+	cur := *sess
+	if cur == nil || cur.acp == nil {
+		return errors.New("澄清会话重建失败")
+	}
+	err := cur.acp.RestartAgent(ctx)
+	if err != nil {
+		if cur.acp.IsConnected() {
+			return err
+		}
+		key := reactKey(req)
+		c.mu.Lock()
+		delete(c.sessions, key)
+		c.mu.Unlock()
+		c.discardSandbox(ctx, req, cur.sb, cur.acp, cur.home, nil)
+		next := c.rehydrateReact(ctx, req, historyWithoutTrailingHuman(history))
+		if next == nil {
+			return errors.New("澄清会话重建失败")
+		}
+		*sess = next
+		return nil
+	}
+	prime := c.buildReactRehydratePrompt(req, c.upstreamArtifacts(req), historyWithoutTrailingHuman(history))
+	res, perr := c.streamChat(ctx, cur.acp, req, prime, nil)
+	c.carryChatUsage(reactKey(req), res)
+	if perr != nil {
+		return perr
+	}
+	if fail := chatFailure(res); fail != "" {
+		return errors.New(fail)
+	}
+	return nil
+}
+
+func historyWithoutTrailingHuman(history []models.ReactMessage) []models.ReactMessage {
+	if len(history) > 0 && history[len(history)-1].Role == "human" {
+		return history[:len(history)-1]
+	}
+	return history
+}
+
+// recoveryTranscriptMaxRunes caps the text handed to a fresh CLI session. The
+// recovery prompt also carries the node contract, so the transcript itself
+// stays bounded.
+const recoveryTranscriptMaxRunes = 12000
+
+const recoveryTranscriptPreamble = "已写入的平台产物若存在，请先用 get_clarified_requirement 与 get_plan 读取，不要凭记忆重写。\n" +
+	"工具的输出和思考过程没有保留。需要文件内容时请重新读取。\n\n"
+
+const recoveryTranscriptTruncMark = "…(更早的记录已截断)\n"
+
+// renderRecoveryTranscript is the dialogue a new CLI session gets after the
+// previous Cursor chat id was dropped. It keeps questions, choices, attachment
+// names and tool names. Tool results and private reasoning are not in the
+// persisted turn, so the new session is told to re-read files and saved products.
+// When the dialogue exceeds the cap, the preamble stays and the oldest turns
+// are dropped so the fresh session still sees the latest decisions.
+func renderRecoveryTranscript(history []models.ReactMessage) string {
+	var b strings.Builder
+	for _, m := range history {
+		if isClarifyFailedOpenText(m.Text) {
+			continue
+		}
+		b.WriteString(m.Role)
+		b.WriteString(": ")
+		b.WriteString(strings.TrimSpace(m.Text))
+		b.WriteString("\n")
+		for _, q := range m.Questions {
+			b.WriteString("  问题: ")
+			b.WriteString(strings.TrimSpace(q.Prompt))
+			b.WriteString("\n")
+			for _, o := range q.Options {
+				b.WriteString("    - ")
+				b.WriteString(strings.TrimSpace(o.Label))
+				b.WriteString("\n")
+			}
+		}
+		for _, f := range m.Forms {
+			if title := strings.TrimSpace(f.Title); title != "" {
+				b.WriteString("  表单: ")
+				b.WriteString(title)
+				b.WriteString("\n")
+			}
+			for _, field := range f.Fields {
+				b.WriteString("    - ")
+				b.WriteString(strings.TrimSpace(field.Label))
+				if v := strings.TrimSpace(field.Value); v != "" {
+					b.WriteString(": ")
+					b.WriteString(v)
+				}
+				b.WriteString("\n")
+			}
+		}
+		if m.Role == "human" {
+			for _, im := range m.Images {
+				name := strings.TrimSpace(im.Name)
+				if name == "" {
+					name = "未命名附件"
+				}
+				b.WriteString("  附件: ")
+				b.WriteString(name)
+				b.WriteString("（需要时请让用户重新上传）\n")
+			}
+			for _, a := range m.Annotations {
+				label := strings.TrimSpace(a.Label)
+				note := strings.TrimSpace(a.Note)
+				if label == "" && note == "" {
+					continue
+				}
+				b.WriteString("  批注: ")
+				b.WriteString(label)
+				if note != "" {
+					if label != "" {
+						b.WriteString(" — ")
+					}
+					b.WriteString(note)
+				}
+				b.WriteString("\n")
+			}
+		}
+		if tools := recoveryToolLines(m); len(tools) > 0 {
+			b.WriteString("  工具: ")
+			b.WriteString(strings.Join(tools, "；"))
+			b.WriteString("\n")
+		}
+	}
+	body := b.String()
+	prefix := recoveryTranscriptPreamble
+	if len([]rune(prefix+body)) <= recoveryTranscriptMaxRunes {
+		return prefix + body
+	}
+	mark := recoveryTranscriptTruncMark
+	budget := recoveryTranscriptMaxRunes - len([]rune(prefix)) - len([]rune(mark))
+	if budget < 0 {
+		budget = 0
+	}
+	br := []rune(body)
+	if len(br) > budget {
+		body = string(br[len(br)-budget:])
+	}
+	return prefix + mark + body
+}
+
+func recoveryToolLines(m models.ReactMessage) []string {
+	var out []string
+	for _, p := range m.Parts {
+		if p.Kind != "tool" {
+			continue
+		}
+		line := strings.TrimSpace(p.Title)
+		if s := strings.TrimSpace(p.Summary); s != "" {
+			if line != "" {
+				line += " "
+			}
+			line += s
+		}
+		if line != "" {
+			out = append(out, line)
+		}
+		if len(out) >= 20 {
+			return out
+		}
+	}
+	if len(out) > 0 {
+		return out
+	}
+	for _, t := range m.Tools {
+		if title := strings.TrimSpace(t.Title); title != "" {
+			out = append(out, title)
+		}
+		if len(out) >= 20 {
+			break
+		}
+	}
+	return out
 }
 
 func reactKey(req NodeReq) string { return req.RunID + "|" + req.NodeID }

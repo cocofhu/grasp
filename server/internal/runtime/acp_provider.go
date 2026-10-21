@@ -65,6 +65,30 @@ func isTransientACPTransportErr(err error) bool {
 		strings.Contains(msg, "ENETUNREACH")
 }
 
+// poisonedResumePhrase is the Cursor CLI failure that sticks to one resumed
+// chat id. A brand-new session in the same sandbox succeeds, so the dialogue
+// can drop that id and continue. It is intentionally not a sandbox-retry
+// signal: RunAgent uses isRetryableSandboxErr and would destroy the container.
+const poisonedResumePhrase = "trouble connecting to the model provider"
+
+// isPoisonedResumeFailure reports a resume that died before producing any
+// narration or tool call, with Cursor's stuck-session provider error. A turn
+// that already did work is left alone: that can be a one-off upstream blip,
+// and dropping the session would throw away the tool context it just built.
+func isPoisonedResumeFailure(res *sandbox.ChatResult, err error) bool {
+	if res != nil && (strings.TrimSpace(res.Narration) != "" || len(res.ToolCalls) > 0) {
+		return false
+	}
+	text := ""
+	if err != nil {
+		text = err.Error()
+	}
+	if res != nil {
+		text += "\n" + res.ErrorText
+	}
+	return strings.Contains(text, poisonedResumePhrase)
+}
+
 // isChatTimeoutErr reports whether err is the per-turn chat deadline (context
 // deadline exceeded). Used to distinguish timeout truncation from contract misses
 // in nudge re-prompt paths.
