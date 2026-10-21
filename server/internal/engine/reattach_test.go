@@ -172,8 +172,68 @@ func TestResumeInterruptedContinuesSameVisit(t *testing.T) {
 	if !found {
 		t.Error("trace should record the reattach")
 	}
+	// finish() writes "completed" from inside the driver; the driver releases
+	// its slot only when it unwinds afterwards. Wait for that, not just for
+	// the status.
+	waitDriversIdle(t, e)
 	if !e.sem.TryAcquire() {
 		t.Error("slot should be released after the run finished")
+	}
+}
+
+// waitDriversIdle waits until every admitted driver has released its slot.
+func waitDriversIdle(t *testing.T, e *Engine) {
+	t.Helper()
+	deadline := time.Now().Add(waitPollTimeout)
+	for e.ActiveDrivers() > 0 {
+		if time.Now().After(deadline) {
+			t.Fatalf("drivers still active: %d", e.ActiveDrivers())
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// Regression for the TestResumeInterruptedContinuesSameVisit flake: the run
+// is visibly "completed" while its driver still holds the slot. The driver is
+// parked right after finish() commits the status to make the window
+// deterministic.
+func TestReattachedRunCompletedBeforeSlotRelease(t *testing.T) {
+	e, db := bareEngine(t)
+	committed := make(chan struct{})
+	release := make(chan struct{})
+	var once sync.Once
+	if err := db.Callback().Update().After("gorm:commit_or_rollback_transaction").Register("test:park-after-finish", func(tx *gorm.DB) {
+		if tx.Statement.Table != "runs" {
+			return
+		}
+		if m, ok := tx.Statement.Dest.(map[string]any); ok && m["status"] == "completed" {
+			once.Do(func() {
+				close(committed)
+				<-release
+			})
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	db.Create(&models.Run{ID: "r", WorkflowID: "w", Status: "running", Graph: reattachGraph(), StartedAt: now, McpToken: "tok-r"})
+	db.Create(&models.StateRun{RunID: "r", NodeID: "input", NodeType: "input", Iteration: 1, Status: "completed", StartedAt: &now})
+	db.Create(&models.StateRun{RunID: "r", NodeID: "work", NodeType: "agent", Iteration: 1, Status: "running", StartedAt: &now,
+		ArtifactBaseSet: true})
+	db.Create(&models.Sandbox{Name: "sb-r", Purpose: "run", Status: "running", RunID: "r", NodeID: "work"})
+
+	e.reconcileInterrupted()
+	e.ResumeInterrupted()
+	<-committed
+	waitRunStatus(t, db, "r", "completed")
+	// The flaky test checked the slot right here.
+	if e.sem.TryAcquire() {
+		t.Fatal("slot should still be held by the unwinding driver")
+	}
+	close(release)
+	waitDriversIdle(t, e)
+	if !e.sem.TryAcquire() {
+		t.Fatal("slot should be released once the driver unwound")
 	}
 }
 
