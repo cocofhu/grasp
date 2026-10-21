@@ -5,7 +5,10 @@ export function demoOptionsOf(q: ReactQuestion): ReactOption[] {
   return q.options.filter((o) => !!o.demoHtml?.trim())
 }
 
-/** Side-by-side demo layout when at most three options have demos. */
+/**
+ * Historical 1–3 demo count. Inline chat layout no longer branches on this;
+ * a question renders at most the one selected preview.
+ */
 export function useSideBySide(demoOptions: ReactOption[]): boolean {
   return demoOptions.length > 0 && demoOptions.length <= 3
 }
@@ -27,7 +30,7 @@ export function matchSelectedLabels(
   return q.options.filter((o) => set.has(o.label))
 }
 
-/** First selected option with demoHtml, for >3 select-preview mode. */
+/** First still-selected option with non-empty demoHtml, in option-list order. */
 export function selectedDemoOption(
   q: ReactQuestion,
   selectedLabels: string[],
@@ -45,22 +48,19 @@ export interface ChoiceEcho {
   question: ReactQuestion | null
 }
 
-/** Selected answers that carry a preview, in the order the reply listed them. */
+/**
+ * At most one preview card: the first selected option with a non-empty demo,
+ * in option-list order. Further preview labels stay in the text answers.
+ */
 export function selectedPreviewOptions(q: ReactQuestion, answers: string[]): ReactOption[] {
-  const cards: ReactOption[] = []
-  const seen = new Set<string>()
-  for (const label of answers) {
-    const option = q.options.find((o) => o.label === label && !!o.demoHtml?.trim())
-    if (!option || seen.has(option.id)) continue
-    seen.add(option.id)
-    cards.push(option)
-  }
-  return cards
+  const first = selectedDemoOption(q, answers)
+  return first ? [first] : []
 }
 
 /**
  * Pair each parsed choice row with the question it answers.
- * Preview answers become cards; everything else stays readable text.
+ * One selected preview becomes a card; every other answer, including extra
+ * preview labels, stays readable text.
  * A single previewed question does not repeat its prompt.
  */
 export function choiceEchoRows(

@@ -73,8 +73,8 @@ describe('selectedDemoOption', () => {
 })
 
 describe('selectedPreviewOptions', () => {
-  it('keeps every selected preview in answer order and skips blanks', () => {
-    expect(selectedPreviewOptions(q, ['D', 'B', 'A', 'D']).map((o) => o.id)).toEqual(['d', 'a'])
+  it('keeps the first selected preview in option order and skips blanks', () => {
+    expect(selectedPreviewOptions(q, ['D', 'B', 'A', 'D']).map((o) => o.id)).toEqual(['a'])
   })
 })
 
@@ -106,11 +106,18 @@ describe('choiceEchoRows', () => {
       [previewQ, plain],
     )
     expect(echoes[0]?.showPrompt).toBe(true)
-    expect(echoes[0]?.cards.map((card) => card.id)).toEqual(['b', 'a'])
-    expect(echoes[0]?.texts).toEqual([])
+    expect(echoes[0]?.cards.map((card) => card.id)).toEqual(['a'])
+    expect(echoes[0]?.texts).toEqual(['B'])
     expect(echoes[1]?.showPrompt).toBe(true)
     expect(echoes[1]?.cards).toEqual([])
     expect(echoes[1]?.texts).toEqual(['左'])
+  })
+
+  it('keeps extra selected preview labels in the text answer', () => {
+    const [echo] = choiceEchoRows([{ q: '布局', answers: ['B', 'A', '自己写'] }], [previewQ])
+    expect(echo?.cards.map((card) => card.id)).toEqual(['a'])
+    expect(echo?.texts).toEqual(['B', '自己写'])
+    expect(echo?.showPrompt).toBe(false)
   })
 
   it('does not invent a card when the answer matches nothing', () => {

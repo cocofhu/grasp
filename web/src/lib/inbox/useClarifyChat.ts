@@ -13,10 +13,8 @@ import {
 } from '@/lib/inbox/clarifyEmptyFail'
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import {
-  demoGridColsClass,
   demoOptionsOf,
   selectedDemoOption,
-  useSideBySide,
 } from '@/lib/inbox/clarifyDemo'
 import type {
   AgentPart,
@@ -1208,8 +1206,6 @@ function selectedLabelsForQuestion(q: ReactQuestion, rows: ChoiceRow[] | null): 
 }
 
 function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
-  const demos = demoOptionsOf(q)
-  if (!demos.length || useSideBySide(demos)) return null
   return q.options.find((o) => isSelected(q.id, o.id) && !!o.demoHtml?.trim()) ?? null
 }
 
@@ -2012,10 +2008,8 @@ function retryLastFailed() {
     closeImagePreview,
     renderMarkdown,
     relTime,
-    demoGridColsClass,
     demoOptionsOf,
     selectedDemoOption,
-    useSideBySide,
     isSessionBusy: () => sessionBusy.value,
   }
 }
