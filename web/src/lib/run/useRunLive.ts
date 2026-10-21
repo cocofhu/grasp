@@ -1,4 +1,4 @@
-import { computed, onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -87,7 +87,15 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let disposed = false
   let loadGen = 0
   let seededKey = ''
+  /**
+   * The surface instance the current node was seeded on. RunLiveView re-keys
+   * the surface per node, so after continueTo() the next node's stream must be
+   * seeded on the new instance, never on the one being unmounted.
+   */
+  let seededSurface: LiveChatSurface | null = null
   let lastEvents: AcpEvent[] | null = null
+  /** Latest snapshot of a node not on screen yet (the run's next node starts streaming before the page switches). */
+  let aheadEvents: { nodeId: string; events: AcpEvent[] } | null = null
   /** A node has been shown on this page: from now on, no automatic navigation. */
   let shown = false
 
@@ -147,13 +155,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     mode.value = m
     chatKind.value = c?.kind === 'clarify' ? 'clarify' : 'review'
     seededKey = ''
-    lastEvents = null
+    lastEvents = aheadEvents?.nodeId === next ? aheadEvents.events : null
+    aheadEvents = null
     task.value = typeof c?.task === 'string' ? c.task.trim() : ''
     shown = true
     notifyRecentActivity()
     connect(runId.value)
     void loadChain()
-    if (m === 'observe') void seed()
+    // No seed now: the surface still on screen belongs to the previous node.
+    // The re-keyed surface is seeded once mounted (watch(chat) below, or after
+    // this render); ACP frames that arrive before that are kept in lastEvents
+    // and replayed on it.
+    if (m === 'observe') void nextTick(() => seed())
   }
 
   /**
@@ -230,18 +243,23 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }, REFRESH_DEBOUNCE_MS)
   }
 
+  function isSeeded() {
+    return !!chat.value && seededSurface === chat.value && seededKey === `${runId.value}:${nodeId.value}:${iteration.value}`
+  }
+
   /** Open the live bubble, then seed it from the node's current turn snapshot. */
   async function seed() {
     const key = `${runId.value}:${nodeId.value}:${iteration.value}`
     const surface = chat.value
-    if (!surface || seededKey === key || mode.value !== 'observe') return
+    if (!surface || (seededKey === key && seededSurface === surface) || mode.value !== 'observe') return
     seededKey = key
+    seededSurface = surface
     surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
     surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
     if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
     try {
       const r = await api.nodeEvents(runId.value, nodeId.value)
-      if (disposed || seededKey !== key || isNodeEventsUnavailable(r)) return
+      if (disposed || seededKey !== key || seededSurface !== chat.value || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
       // Top-level task on the first (non-paged) page only.
       const sent = 'task' in r ? r.task : undefined
@@ -264,13 +282,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (m.type === 'acp') {
       if (m.nodeId !== nodeId.value) {
-        if (m.nodeId) scheduleRefresh()
+        if (m.nodeId) {
+          const ahead = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
+          if (ahead.length) aheadEvents = { nodeId: m.nodeId, events: ahead }
+          scheduleRefresh()
+        }
         return
       }
       const events = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
       if (events.length) {
+        // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
-        chat.value?.applyAcpEvents(events, nodeId.value)
+        if (isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
       }
       if (m.busy === false) scheduleRefresh()
       return
@@ -414,7 +437,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     handoff.value = null
     void load()
   }, { immediate: true })
-  watch(chat, () => { void seed() })
+  watch(chat, () => { void seed() }, { flush: 'post' })
   function poll() { if (!document.hidden) void load() }
   pollTimer = window.setInterval(poll, LIVE_POLL_MS)
   onBeforeUnmount(() => { disposed = true; stop() })

@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { defineComponent, h, ref } from 'vue'
+import { defineComponent, h, ref, watch } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createI18n } from 'vue-i18n'
@@ -149,6 +149,65 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     await flushPromises()
     expect(replace).not.toHaveBeenCalled()
     expect(mocks.getRun.mock.calls.length).toBe(calls)
+    wrapper.unmount()
+  })
+
+  // GraspReview B-850-1: 实现 → 验证 (auto → auto). RunLiveView re-keys the surface per node.
+  it('auto → auto in place: the next node is seeded once on the re-keyed surface, early frames replayed there, never on the old one', async () => {
+    const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
+    await router.push('/runs/r1/live?node=impl')
+    const mk = (): LiveChatSurface => ({ applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn() })
+    const first = mk()
+    const surfaces: LiveChatSurface[] = []
+    const chatRef = ref<LiveChatSurface | null>(first)
+    let live!: ReturnType<typeof useRunLive>
+    const Harness = defineComponent({
+      setup() {
+        live = useRunLive(ref('r1'), ref('impl'), chatRef)
+        // Like :key="surfaceKey": a new node mounts a new surface on the next render.
+        watch(live.nodeId, (_n, old) => {
+          if (!old) return // first node: the surface that is already mounted
+          const s = mk()
+          surfaces.push(s)
+          chatRef.value = s
+        })
+        return () => h('div')
+      },
+    })
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
+    const wrapper = mount(Harness, { global: { plugins: [router, i18n] } })
+    await flushPromises()
+    const replace = vi.spyOn(router, 'replace')
+    mocks.nodeEvents.mockResolvedValue({ events: [] })
+    // Server order: node_enter, then 验证's first acp frames, then the page learns 验证 is current.
+    FakeSocket.last!.send({ type: 'node_enter', nodeId: 'verify', iteration: 1, kind: 'agent', mode: 'auto' })
+    const early = [{ t: 0, kind: 'message', text: '开始验证' }]
+    FakeSocket.last!.send({ type: 'acp', nodeId: 'verify', events: early, busy: true })
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('verify', 'agent', 'auto', 'running') })
+    await live.reload()
+    await flushPromises()
+    expect(live.nodeId.value).toBe('verify')
+    expect(surfaces).toHaveLength(1)
+    const next = surfaces[0]
+    // The old surface never sees 验证.
+    expect(first.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ nodeId: 'verify' }))
+    expect(first.applyAcpEvents).not.toHaveBeenCalledWith(expect.anything(), 'verify')
+    // The new one is seeded exactly once and gets the early frame.
+    const begins = (next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')
+    expect(begins).toHaveLength(1)
+    expect(next.applyAcpEvents).toHaveBeenCalledWith(early, 'verify')
+    // Later frames stream into the same turn.
+    const later = [...early, { t: 0, kind: 'tool_call', title: '运行测试', status: 'completed' }]
+    FakeSocket.last!.send({ type: 'acp', nodeId: 'verify', events: later, busy: true })
+    expect(next.applyAcpEvents).toHaveBeenLastCalledWith(later, 'verify')
+    expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
+    // Run ends: one turn_done on the new surface, nothing busy left, no navigation.
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'completed' })
+    await live.reload()
+    await flushPromises()
+    expect(live.ended.value).toBe(true)
+    expect(next.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'verify' })
+    expect(replace).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
