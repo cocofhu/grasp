@@ -26,8 +26,21 @@ const SandboxPurposeAgent = "agent"
 type AgentSandboxDestroyHook func(threadID, token string)
 
 // SetAgentSandboxDestroyHook registers cleanup for purpose=agent|pm sandboxes.
+// The hook is read from the container-start goroutine, so the pointer is
+// published under s.mu and copied out before the callback runs.
 func (s *SandboxService) SetAgentSandboxDestroyHook(fn AgentSandboxDestroyHook) {
+	s.mu.Lock()
 	s.agentOnDestroy = fn
+	s.mu.Unlock()
+}
+
+func (s *SandboxService) invokeAgentDestroyHook(threadID, token string) {
+	s.mu.Lock()
+	fn := s.agentOnDestroy
+	s.mu.Unlock()
+	if fn != nil {
+		fn(threadID, token)
+	}
 }
 
 // SetTestSchedulerHooks registers purpose=test read-only scheduler injection.
@@ -211,9 +224,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
-		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(threadID, sharedToken)
-		}
+		s.invokeAgentDestroyHook(threadID, sharedToken)
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
@@ -393,9 +404,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		acp.Close()
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
-		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(threadID, sharedToken)
-		}
+		s.invokeAgentDestroyHook(threadID, sharedToken)
 		return
 	}
 	s.mu.Lock()

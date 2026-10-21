@@ -442,11 +442,22 @@ export type PublicGateArtifactMeta = {
   revision?: number
 }
 
+/** Latest execution status for one public-workflow node. No outputs or tokens. */
+export type PublicGateNodeRun = {
+  nodeId: string
+  status: string
+  iteration?: number
+}
+
 export type PublicGateArtifactsResult = {
   status: string
   artifacts?: PublicGateArtifactMeta[]
   /** Sanitized graph nodes for ReactArtifactStage grid filtering. */
   nodes?: Array<{ id: string; type: string; label?: string; config?: Record<string, unknown> }>
+  /** This public conversation's workflow node. Absent until the share lookup resolves. */
+  nodeId?: string
+  /** Latest status per node. Empty or absent means status has not arrived. */
+  nodeRuns?: Record<string, PublicGateNodeRun>
   error?: string
   message?: string
 }

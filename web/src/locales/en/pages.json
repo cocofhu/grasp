@@ -3150,6 +3150,8 @@
     },
     "reactArtifactStage": {
       "workflowTab": "Workflow artifacts",
+      "workflowHeading": "Workflow",
+      "currentMark": "Current",
       "closeTab": "Close",
       "novncTab": "noVNC",
       "novncCardTitle": "Remote desktop",
@@ -4277,6 +4279,10 @@
     },
     "conversationWorkspace": {
       "conversation": "Conversation",
+      "resources": "Resources",
+      "resourceTip": "Resource",
+      "openResources": "Open resources",
+      "closeResources": "Close resources",
       "artifacts": "Artifacts",
       "openArtifacts": "Open artifacts",
       "closeArtifacts": "Close artifacts",

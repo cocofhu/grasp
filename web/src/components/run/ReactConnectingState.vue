@@ -11,10 +11,13 @@ const props = withDefaults(
     mode?: 'stage' | 'sidebar'
     /** Gateway lifecycle while inbox starting (e.g. pulling). */
     sandboxPhase?: string | null
+    /** Sandbox drawer already titles the panel; don't repeat the old home tab. */
+    hideHomeTab?: boolean
   }>(),
   {
     mode: 'sidebar',
     sandboxPhase: null,
+    hideHomeTab: false,
   },
 )
 
@@ -45,6 +48,7 @@ onMounted(() => {
     aria-busy="true"
   >
     <div
+      v-if="!hideHomeTab"
       class="flex shrink-0 gap-1 border-b border-line px-3 py-2"
       data-testid="react-connecting-stage-tabs"
       role="tablist"
