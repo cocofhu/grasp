@@ -274,6 +274,67 @@ func TestConversationChainHandoff(t *testing.T) {
 	}
 }
 
+func TestConversationChainBoot(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	seedChainRun(t, h, "长")
+	ready := time.Date(2026, 10, 21, 5, 5, 30, 0, time.UTC)
+	h.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ? AND iteration = ?", "chain", "design", 1).
+		Update("sandbox_ready_at", ready)
+	h.db.Create(&models.Sandbox{Name: "sb-dev", Purpose: "run", Status: "creating", RunID: "chain", NodeID: "dev"})
+	h.db.Create(&models.Sandbox{Name: "sb-quiet", Purpose: "run", Status: "creating", RunID: "chain", NodeID: "quiet"})
+	out, code, body := getChain(t, h, "")
+	if code != 200 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	for _, s := range out.Segments {
+		boot, _ := s.raw["boot"].(map[string]any)
+		switch {
+		case s.NodeID == "design" && s.Iteration == 1:
+			if boot["status"] != "ready" || boot["readyAt"] != "2026-10-21T05:05:30Z" {
+				t.Fatalf("design#1 boot: %v", boot)
+			}
+		case s.NodeID == "dev":
+			if boot["status"] != "creating" || boot["readyAt"] != nil {
+				t.Fatalf("dev boot: %v", boot)
+			}
+		default:
+			// quiet finished: a leftover creating row is not its boot.
+			if boot != nil {
+				t.Fatalf("%s#%d: unexpected boot %v", s.NodeID, s.Iteration, boot)
+			}
+		}
+	}
+}
+
+func TestConversationChainResumedDialogueShowsOnce(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	g := chainGraph("p")
+	h.db.Create(&models.Run{ID: "chain", Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: time.Now()})
+	t0 := time.Date(2026, 10, 21, 5, 0, 0, 0, time.UTC)
+	h.db.Create(&models.StateRun{RunID: "chain", NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "cancelled", StartedAt: &t0})
+	t1 := t0.Add(time.Minute)
+	h.db.Create(&models.StateRun{RunID: "chain", NodeID: "clarify", NodeType: "agent", Iteration: 2, Status: "waiting_human", StartedAt: &t1})
+	old := []models.ReactMessage{
+		{Role: "human", Text: "把登录做清楚", At: "2026-10-21T05:00:01Z"},
+		{Role: "agent", Text: "要支持哪些登录方式?", At: "2026-10-21T05:00:05Z"},
+	}
+	h.db.Create(&models.ReactConversation{RunID: "chain", NodeID: "clarify", Iteration: 1, Messages: old})
+	h.db.Create(&models.ReactConversation{RunID: "chain", NodeID: "clarify", Iteration: 2,
+		Messages: append(append([]models.ReactMessage{}, old...), models.ReactMessage{Role: "human", Text: "密码和短信", At: "2026-10-21T05:01:10Z"})})
+	out, code, body := getChain(t, h, "")
+	if code != 200 || len(out.Segments) != 2 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	if n := len(out.Segments[0].Turns); n != 0 {
+		t.Fatalf("interrupted visit should hand its turns to the resumed one, has %d", n)
+	}
+	if n := len(out.Segments[1].Turns); n != 3 {
+		t.Fatalf("resumed visit turns = %d, want 3", n)
+	}
+}
+
 func TestConversationChainUntil(t *testing.T) {
 	h := newHarness(t)
 	h.h.Eng.Halt()

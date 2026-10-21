@@ -134,6 +134,35 @@ func TestRunSandboxLifecycle(t *testing.T) {
 	}
 }
 
+func TestRegisterRunSandboxStampsVisitReady(t *testing.T) {
+	db := newTestDB(t)
+	ds := &dockerState{}
+	s := newSandboxService(t, db, ds)
+	info := runtimeInfo("grasp-sb-ready")
+	old := models.StateRun{RunID: info.RunID, NodeID: info.NodeID, Iteration: 1, Status: "completed"}
+	cur := models.StateRun{RunID: info.RunID, NodeID: info.NodeID, Iteration: 2, Status: "running"}
+	db.Create(&old)
+	db.Create(&cur)
+
+	s.RegisterRunSandbox(info)
+	db.First(&cur, cur.ID)
+	db.First(&old, old.ID)
+	if cur.SandboxReadyAt == nil || old.SandboxReadyAt != nil {
+		t.Fatalf("ready stamp: active=%v finished=%v", cur.SandboxReadyAt, old.SandboxReadyAt)
+	}
+	first := *cur.SandboxReadyAt
+
+	// A later rebuild of the same visit's sandbox keeps the first boot.
+	time.Sleep(5 * time.Millisecond)
+	again := info
+	again.Name = "grasp-sb-ready-2"
+	s.RegisterRunSandbox(again)
+	db.First(&cur, cur.ID)
+	if !cur.SandboxReadyAt.Equal(first) {
+		t.Fatalf("ready moved: %v → %v", first, cur.SandboxReadyAt)
+	}
+}
+
 func runtimeInfo(name string) runtime.RunSandboxInfo {
 	return runtime.RunSandboxInfo{
 		Name: name, Profile: "agentA", RunID: "run-" + name, NodeID: "impl",

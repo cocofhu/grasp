@@ -345,6 +345,10 @@ type StateRun struct {
 	Mode string `gorm:"default:auto" json:"mode,omitempty"`
 	// TakenOverAt is when the user interrupted this auto visit (nil = never).
 	TakenOverAt *time.Time `json:"takenOverAt,omitempty"`
+	// SandboxReadyAt is when this visit's sandbox first came up with the Agent
+	// connected (nil = no sandbox, or still booting). A later rebuild of the
+	// sandbox does not move it.
+	SandboxReadyAt *time.Time `json:"sandboxReadyAt,omitempty"`
 	// ArtifactBaseRev is each live artifact's revision when this execution
 	// started. A conclusion counts as written on this visit only when the
 	// live revision moves past that baseline. ArtifactBaseSet distinguishes

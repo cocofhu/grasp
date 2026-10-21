@@ -229,6 +229,38 @@ beforeEach(async () => {
 })
 
 describe('GatesInboxView starting approvals', () => {
+  it('a reload after 确认并流转 reopens the confirmed chat and follows the run', async () => {
+    routeState.query = { run: 'run-boot', node: 'ap' }
+    mocks.inboxContext.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    mocks.getRun.mockResolvedValue({
+      id: 'run-boot',
+      status: 'running',
+      title: '把登录做清楚',
+      nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '开发前澄清' }],
+      nodeRuns: { ap: { nodeId: 'ap', iteration: 1, status: 'waiting_human' } },
+      clarifyByNode: {
+        ap: {
+          nodeId: 'ap',
+          iteration: 1,
+          done: true,
+          turns: [
+            { role: 'human', text: '把登录做清楚', at: '' },
+            { role: 'agent', text: '需求已整理', at: '' },
+          ],
+        },
+      },
+    })
+    const wrapper = mountInbox()
+    for (let i = 0; i < 20; i++) {
+      await flushPromises()
+      await nextTick()
+    }
+    expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(false)
+    const composer = wrapper.getComponent(ReviewComposerStub)
+    expect((composer.props('turns') as unknown[]).length).toBe(2)
+    wrapper.unmount()
+  })
+
   it('renders a connecting ReviewShell for a starting card', async () => {
     mocks.listGates.mockResolvedValue(paged([startingItem()]))
     mocks.inboxContext.mockResolvedValue(startingContext)
@@ -257,6 +289,16 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
+    const queue = wrapper.get('[data-testid="react-connecting-queue"]')
+    expect(queue.text()).toContain('把登录做清楚')
+    // Above the composer, where ClarifyChat keeps its queue.
+    const input = wrapper.get('[data-testid="react-connecting-input-row"]')
+    expect(queue.element.compareDocumentPosition(input.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A context reload (activeRun cleared while it loads) must not blink the row out.
+    mocks.inboxContext.mockReturnValue(new Promise(() => {}))
+    liveSocket().emit('status', { runId: 'run-boot' })
+    await flushPromises()
+    await nextTick()
     expect(wrapper.get('[data-testid="react-connecting-queue"]').text()).toContain('把登录做清楚')
     wrapper.unmount()
   })

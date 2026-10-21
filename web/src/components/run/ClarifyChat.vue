@@ -153,6 +153,18 @@ const props = withDefaults(
 // This node visit's boot (connecting checklist) → one folded row above the first reply.
 const bootRecordKey = computed(() => makeBootKey(props.runId, props.nodeId, props.iteration))
 const bootSummary = computed(() => !!getBootRecord(bootRecordKey.value)?.live)
+/** Sandbox still starting: the three boot steps stand in for the Agent's reply. */
+const bootStarting = computed(() => {
+  const rec = getBootRecord(bootRecordKey.value)
+  return !!rec && !rec.live
+})
+function visitBootKey(nodeId: string, iteration: number) {
+  return makeBootKey(props.runId, nodeId, iteration)
+}
+/** A reply placeholder with nothing in it yet (思考中). */
+function isWaitingAgentTurn(t: ClarifyTurn): boolean {
+  return t.role === 'agent' && !!t.streaming && !String(t.text || '').trim() && !t.parts?.length && !t.tools?.length
+}
 /** After a hand-off the boot summary merges into the 已流转到 separator. */
 const bootOnDivider = computed(() => !!props.priorSegments?.length)
 const dividerTitle = computed(() =>
@@ -1088,6 +1100,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   :data-node-id="member.nodeId"
                 >
                   <ClarifyHandoffBubble v-if="priorAsk(member.nodeId, member.iteration)" class="mb-3" :ask="priorAsk(member.nodeId, member.iteration)!" />
+                  <ClarifyBootLoader phase="done" variant="inline" :boot-key="visitBootKey(member.nodeId, member.iteration)" />
                   <p
                     v-if="autoRecord(member).status === 'error'"
                     class="text-[12px] leading-relaxed text-txt2"
@@ -1117,6 +1130,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               </template>
               <template v-else>
               <ClarifyHandoffBubble v-if="seg.kind === 'chat' && priorAsk(seg.nodeId, seg.iteration)" :ask="priorAsk(seg.nodeId, seg.iteration)!" />
+              <ClarifyBootLoader v-if="seg.kind === 'chat'" phase="done" variant="inline" :boot-key="visitBootKey(seg.nodeId, seg.iteration)" />
               <div
                 v-for="(pt, pi) in seg.turns"
                 :key="pi"
@@ -1289,6 +1303,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         as its first User Message.
       -->
       <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
+      <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && i === bootSummaryAt"
@@ -1297,7 +1312,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         :boot-key="bootRecordKey"
       />
       <div
-        v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t))"
+        v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t)) && !(bootStarting && isWaitingAgentTurn(t))"
         class="clarify-turn flex"
         :class="t.role === 'human' ? 'justify-end' : ''"
         :data-turn-role="t.role"
@@ -1955,7 +1970,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
         </div>
       </Transition>
-      <div v-if="thinking && !validating && liveAgentIdx < 0" class="chat-meta flex items-center gap-2 pl-9">
+      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta flex items-center gap-2 pl-9">
         <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
       </div>

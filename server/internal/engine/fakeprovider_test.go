@@ -40,7 +40,9 @@ type fakeProvider struct {
 	// more replies (each returns Done:false with a follow-up question);
 	// reactSkipProduces makes the confirm turn write no products so the
 	// contract fails and routeFailure is exercised.
-	reactPending      int
+	reactPending int
+	// resumed records the history each ReactResume (carried dialogue) received.
+	resumed           map[string][]models.ReactMessage
 	reactSkipProduces bool
 	// clarifySkipPlan writes clarified_requirement.json but not plan.json so
 	// the two-product clarify contract fails.
@@ -465,6 +467,17 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 		}
 	}
 	return runtime.ReactTurn{}
+}
+
+// ReactResume records the carried dialogue, then opens like ReactOpen.
+func (f *fakeProvider) ReactResume(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage) runtime.ReactTurn {
+	f.mu.Lock()
+	if f.resumed == nil {
+		f.resumed = map[string][]models.ReactMessage{}
+	}
+	f.resumed[req.NodeID] = append([]models.ReactMessage(nil), history...)
+	f.mu.Unlock()
+	return f.ReactOpen(ctx, req)
 }
 
 // ReactReply concludes the clarification with no further questions (or on a

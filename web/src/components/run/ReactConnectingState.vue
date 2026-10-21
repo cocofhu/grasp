@@ -123,6 +123,13 @@ onMounted(() => {
       </div>
     </div>
     <div class="react-connecting-actions shrink-0 p-3" data-testid="react-connecting-actions">
+      <!-- Not sent yet: the agent is still starting; the platform sends it once it is ready. Same spot as ClarifyChat's queue. -->
+      <PendingSendQueuePanel
+        v-if="queued.length"
+        readonly
+        panel-test-id="react-connecting-queue"
+        :items="queued"
+      />
       <ComposerShell wrap-toolbar :show-footer="false" box-test-id="react-connecting-input-row">
         <template #input>
           <textarea
@@ -155,13 +162,6 @@ onMounted(() => {
           />
         </template>
       </ComposerShell>
-      <!-- Not sent yet: the agent is still starting; the platform sends it once it is ready. -->
-      <PendingSendQueuePanel
-        v-if="queued.length"
-        readonly
-        panel-test-id="react-connecting-queue"
-        :items="queued"
-      />
     </div>
   </div>
 </template>

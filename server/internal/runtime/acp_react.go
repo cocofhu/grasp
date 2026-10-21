@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -38,6 +39,21 @@ func (c *acpProvider) ReactOpen(ctx context.Context, req NodeReq) (out ReactTurn
 		return ReactTurn{SetupErr: err, Msg: "(沙箱启动失败,无法开始澄清:" + err.Error() + ")",
 			Events: []models.AcpEvent{{Kind: "message", Text: "react open failed: " + err.Error()}}}
 	}
+}
+
+// ReactResume opens a dialogue carried over from an interrupted visit: a fresh
+// sandbox primed with the earlier Q&A, then parked for the next human reply.
+func (c *acpProvider) ReactResume(ctx context.Context, req NodeReq, history []models.ReactMessage) (out ReactTurn) {
+	defer c.drainCarriedUsage(reactKey(req), &out)
+	c.resetNodeBudget(req)
+	c.host.ClearOutcome(req.RunID, req.NodeID)
+	c.host.SetOutcomeAllowed(req.RunID, false)
+	if c.rehydrateReact(ctx, req, historyWithoutTrailingHuman(history)) != nil {
+		return ReactTurn{}
+	}
+	err := fmt.Errorf("%w: resume dialogue", errSandboxSetup)
+	return ReactTurn{SetupErr: err, Msg: "(沙箱启动失败,无法恢复澄清对话)",
+		Events: []models.AcpEvent{{Kind: "message", Text: "react resume failed"}}}
 }
 
 // rehydrateReact rebuilds a lost react session — server restart dropped the

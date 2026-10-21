@@ -140,6 +140,18 @@ func (r *ProviderRegistry) ReactOpen(ctx context.Context, req NodeReq) ReactTurn
 	return p.ReactOpen(ctx, req)
 }
 
+// ReactResume implements ReactResumer, falling back to ReactOpen.
+func (r *ProviderRegistry) ReactResume(ctx context.Context, req NodeReq, history []models.ReactMessage) ReactTurn {
+	p, err := r.providerFor(req)
+	if err != nil {
+		return ReactTurn{SetupErr: err, Msg: "(" + err.Error() + ")"}
+	}
+	if rr, ok := p.(ReactResumer); ok {
+		return rr.ReactResume(ctx, req, history)
+	}
+	return p.ReactOpen(ctx, req)
+}
+
 func (r *ProviderRegistry) ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) ReactTurn {
 	p, err := r.providerFor(req)
 	if err != nil {

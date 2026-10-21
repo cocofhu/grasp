@@ -14,7 +14,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import { i18n as appI18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import { confirmFlowCeremonyKey } from '@/lib/inbox/confirmFlowCeremony'
-import { beginBoot, bootKey, clearBootRecords, markBootLive } from '@/lib/run/bootRecord'
+import { beginBoot, bootKey, clearBootRecords, markBootLive, seedBoot } from '@/lib/run/bootRecord'
 import type { ClarifyTurn } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 
@@ -369,6 +369,37 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     expect(nodeEvents).toHaveBeenCalledWith('run-1', 'implement', expect.anything())
     expect(nodeEvents).toHaveBeenCalledWith('run-1', 'test_review', expect.anything())
     w.unmount()
+  })
+
+  it('shows the three boot steps while this node boots, and each finished node keeps its own', async () => {
+    clearBootRecords()
+    nodeEvents.mockResolvedValue({ events: [{ kind: 'timeline', parts: [{ kind: 'message', text: '实现完成' }] }], live: false })
+    seedBoot(bootKey('run-1', 'implement', 1), '2026-10-21T05:00:00Z', { status: 'ready', readyAt: '2026-10-21T05:00:28Z' })
+    seedBoot(bootKey('run-1', 'test_review', 1), '2026-10-21T05:01:00Z', { status: 'creating' })
+    const live: ClarifyTurn[] = [{ role: 'agent', text: '', at: '2026-10-21T05:01:00Z', streaming: true }]
+    const w = mountChat({
+      nodeId: 'test_review',
+      turns: live,
+      observe: true,
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', endedAt: '2026-10-21T05:00:59Z', turns: [], open: false },
+      ],
+      nodeLabel: '测试评审',
+    })
+    await flushPromises()
+    // Booting: the checklist stands in for 思考中.
+    const loader = w.get('[data-testid="clarify-boot-loader"]')
+    expect(loader.findAll('[data-testid="clarify-boot-step"]').map((s) => s.attributes('data-state'))).toEqual(['running', 'pending', 'pending'])
+    expect(w.text()).not.toContain('思考中')
+    // History: the finished node opens with its boot row (time from the server).
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-boot-done-meta"]').text()).toBe('3 步 · 28s')
+    w.unmount()
+    clearBootRecords()
   })
 
   it('says when an auto record cannot be loaded', async () => {
