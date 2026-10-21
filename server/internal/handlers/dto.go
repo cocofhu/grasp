@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -167,7 +169,74 @@ func reactConversationDTO(conv models.ReactConversation) gin.H {
 	if name := strings.TrimSpace(conv.PreviewArtifact); name != "" {
 		out["previewArtifact"] = name
 	}
+	if conv.Takeover {
+		out["takeover"] = true
+	}
 	return out
+}
+
+func visitKeyOf(nodeID string, iter int) string {
+	if iter < 1 {
+		iter = 1
+	}
+	return nodeID + "#" + strconv.Itoa(iter)
+}
+
+// visitTasks returns the task preview of each Agent visit in want (keyed by
+// visitKeyOf), the single rule shared by the takeover conversation, the run
+// detail currentNode, the node events endpoint and #850's chain segments:
+// engine.SegmentTasks (read-only interpolation of node.config.prompt with
+// the visit's vars and the outputs before it, secret vars masked as •••,
+// trimmed, 280 runes + "…"). Gates / non-Agent nodes and blank prompts have
+// no entry.
+func (h *Handlers) visitTasks(r models.Run, states []models.StateRun, want map[string]bool) map[string]string {
+	if len(want) == 0 || h.Eng == nil {
+		return nil
+	}
+	// SegmentTasks needs execution order (StateRun id); States is per-node.
+	ordered := append([]models.StateRun(nil), states...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	isAgent := func(nodeID string) bool {
+		n := r.Graph.FindNode(nodeID)
+		return n != nil && n.Type == "agent"
+	}
+	byID := h.Eng.SegmentTasks(r, ordered, func(sr models.StateRun) bool {
+		return want[visitKeyOf(sr.NodeID, sr.Iteration)] && isAgent(sr.NodeID)
+	})
+	out := make(map[string]string, len(byID))
+	for _, sr := range ordered {
+		if t, ok := byID[sr.ID]; ok {
+			out[visitKeyOf(sr.NodeID, sr.Iteration)] = t
+		}
+	}
+	return out
+}
+
+// takeoverTasks is visitTasks for every takeover conversation's visit.
+func (h *Handlers) takeoverTasks(r models.Run, states []models.StateRun, convs []models.ReactConversation) map[string]string {
+	want := map[string]bool{}
+	for _, c := range convs {
+		if c.Takeover {
+			want[visitKeyOf(c.NodeID, c.Iteration)] = true
+		}
+	}
+	return h.visitTasks(r, states, want)
+}
+
+// latestVisitTask is the task preview of nodeID's latest visit ("" when the
+// node never ran, is not an Agent, or has a blank prompt).
+func (h *Handlers) latestVisitTask(r models.Run, states []models.StateRun, nodeID string) string {
+	iter := 0
+	for _, sr := range states {
+		if sr.NodeID == nodeID && sr.Iteration > iter {
+			iter = sr.Iteration
+		}
+	}
+	if iter == 0 {
+		return ""
+	}
+	k := visitKeyOf(nodeID, iter)
+	return h.visitTasks(r, states, map[string]bool{k: true})[k]
 }
 
 func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
@@ -206,6 +275,10 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 			// can only show the right visit when this payload still carries
 			// that visit's JSON. Log events stay free of those bodies.
 			"outputs": cloneOutputs(s.Outputs), "varsSnapshot": s.VarsSnapshot, "events": previewPromptEvents(s.Events), "mcpCalls": s.McpCalls, "durationSec": s.DurationSec,
+			"mode": stateRunMode(s),
+		}
+		if s.TakenOverAt != nil {
+			nr["takenOverAt"] = s.TakenOverAt
 		}
 		// Nullable usage: omit when nil so clients treat missing as "—" (not 0).
 		if s.Usage != nil {
@@ -277,8 +350,14 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	// Per-node conversations so each react node renders its own dialogue history
 	// (a run may have several react nodes).
 	clarifyByNode := gin.H{}
-	for _, conv := range h.Runs.Conversations(r.ID) {
-		clarifyByNode[conv.NodeID] = reactConversationDTO(conv)
+	convs := h.Runs.Conversations(r.ID)
+	takeoverTasks := h.takeoverTasks(r, states, convs)
+	for _, conv := range convs {
+		dto := reactConversationDTO(conv)
+		if t := takeoverTasks[visitKeyOf(conv.NodeID, conv.Iteration)]; t != "" {
+			dto["task"] = t
+		}
+		clarifyByNode[conv.NodeID] = dto
 	}
 	out["clarifyByNode"] = clarifyByNode
 	// Authoritative busy/queue for refresh resume (clarify + review sessions).
@@ -305,6 +384,13 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 			out["logSummaryOrRef"] = info.LogSummaryOrRef
 		}
 	}
+	// Same derivation as the run list summary (ListRuns).
+	out["lastActivityAt"] = services.RunLastActivity(r)
+	if cn, ok := h.runCurrentNodes([]models.Run{r})[r.ID]; ok {
+		k := visitKeyOf(cn.ID, cn.Iteration)
+		cn.Task = h.visitTasks(r, states, map[string]bool{k: true})[k]
+		out["currentNode"] = cn
+	}
 	return out
 }
 
@@ -315,4 +401,12 @@ func maskedWorkflowDefaults(d *models.WorkflowDefaults) *models.WorkflowDefaults
 	cp := *d
 	cp.Variables = services.MaskedWorkspaceVars(d.Variables)
 	return &cp
+}
+
+// stateRunMode is the visit's auto|manual mode ("" on old rows = auto).
+func stateRunMode(s models.StateRun) string {
+	if s.IsManual() {
+		return models.NodeModeManual
+	}
+	return models.NodeModeAuto
 }

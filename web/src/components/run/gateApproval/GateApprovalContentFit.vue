@@ -133,6 +133,7 @@ const {
         :run-id="gate.runId"
         class="min-h-0 flex-1"
         :host-confirm-flow="false"
+        remember-artifact-panel
       >
         <template #stage>
           <div class="flex h-full min-h-0 flex-col overflow-hidden">

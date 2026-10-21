@@ -1165,8 +1165,8 @@
       "sharedAgent": {
         "extendHint": "Workspace Runs and Agent Studio Chat test extend this shared config first, then the chosen Agent overlays same-named keys (Agent wins).",
         "discard": "Discard",
-        "genericCredentialTitle": "Shared credential",
-        "genericCredentialHint": "This is the workspace default. An Agent that already chose a credential uses its own. An Agent that has not chosen one uses this credential when the kind matches.",
+        "genericCredentialTitle": "Workspace default credential",
+        "genericCredentialHint": "An Agent that already chose a credential uses its own. One that has not, and uses the same kind, uses this one.",
         "runtimeDesc": "Which account and model this workspace's Agents use by default.",
         "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
       },
@@ -1192,8 +1192,9 @@
         "secretKnownHosts": "Known hosts",
         "pickTitle": "Credential to use",
         "pickHint": "The title is the alias. A run injects only the selected one, and clearing it does not switch to another.",
-        "codingPickHint": "The title is the alias. When nothing is selected, a run uses the shared credential of the matching kind. When one is selected, the run injects only that one and does not switch to another in the same list.",
+        "codingPickHint": "When nothing is selected, the Agent uses the workspace default credential. When one is selected, only that one is used.",
         "pickEmpty": "This kind has no saved credential yet.",
+        "pickEmptyNamed": "No saved {kind} credential yet.",
         "pickClear": "Clear selection",
         "kinds": {
           "cursor": "Cursor",
@@ -2327,7 +2328,7 @@
       "meta": {
         "layoutTitle": "Sandbox layout (WSP/1)",
         "layoutIntro": "Persisted per agent; applied when creating sandboxes. Switching ACP backend fills recommended configRoot; manual overrides are respected.",
-        "acpBackend": "ACP backend (acpBackend)",
+        "acpBackend": "Backend engine",
         "acpBackendDesc": "Each Agent profile binds one backend; Run routes by this field (no node-level override). Defaults to cursor. OpenCode uses an API key with mainstream model vendors. Codex uses a ChatGPT login file, not an API key.",
         "configRoot": "Config root",
         "configRootDesc": "Agent workspace (rules/skills/mcp.json) RW mount path in container.",
@@ -2893,7 +2894,9 @@
         },
         "switched": "Switched to {cli}; model reset to auto",
         "undo": "Undo",
-        "managedBy": "Managed in Runtime · Model",
+        "managedBy": "Managed by the model in Metadata",
+        "inheritDefault": "Inherit default config",
+        "inheritDefaultFrom": "Workspace default",
         "follow": "Follow config",
         "followDefault": "Default",
         "specify": "Set separately",
@@ -3134,7 +3137,11 @@
       "queueEditBlocked": "An attachment is too large to move the current draft onto the queue. Fix attachments first.",
       "queueEditLost": "Draft was queued, but the item to edit could not be found. Click the pencil on the queue row again.",
       "queueAttachmentBadge": "Files×{n}",
-      "queueAnnotationBadge": "Note"
+      "queueAnnotationBadge": "Note",
+      "observeInputPlaceholder": "Running automatically. Stop to take over the chat",
+      "observeStoppingPlaceholder": "Stopping…",
+      "observeStop": "Stop and take over",
+      "observeStopTitle": "Stop the automatic run and take this node over"
     },
     "reviewComposer": {
       "sendClarify": "Send reply",
@@ -4303,6 +4310,18 @@
       "noMatchingArtifact": "There are no files with this exact name on this results page.",
       "loading": "Loading artifact…",
       "deletedArtifact": "This artifact has been deleted."
+    },
+    "runLive": {
+      "loading": "Loading run…",
+      "loadFailed": "Failed to load run",
+      "takeoverFailed": "Stop failed: {msg}",
+      "not_auto_node": "This node is not an automatic node and cannot be stopped",
+      "node_not_current": "The node is no longer running; refreshed",
+      "node_finishing": "The node is finishing; refreshed",
+      "run_not_running": "The run is no longer running ({status}); refreshed",
+      "server_halting": "The server is shutting down. Try again later",
+      "run_not_found": "Run not found",
+      "node_not_found": "Node not found"
     }
   }
 }

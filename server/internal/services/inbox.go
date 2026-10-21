@@ -104,19 +104,21 @@ type ClarifyInboxItem struct {
 	// means the item is parked at waiting_human and the review/clarify session
 	// is busy (in-flight turn or waiting>0, same as sessionBusy). Empty means
 	// parked and idle. starting takes priority over replying.
-	State        string                `json:"state,omitempty"`
-	RunID        string                `json:"runId"`
-	NodeID       string                `json:"nodeId"`
-	Iteration    int                   `json:"iteration"`
-	WorkflowID   string                `json:"workflowId"`
-	WorkflowName string                `json:"workflowName"`
-	RunTitle     string                `json:"runTitle,omitempty"`
-	Label        string                `json:"label"`
-	Done         bool                  `json:"done"`
-	RequestedAt  time.Time             `json:"requestedAt"`
-	UpdatedAt    time.Time             `json:"updatedAt"`
-	Tags         []string              `json:"tags"`
-	ShareLink    *GateShareInboxStatus `json:"shareLink,omitempty"`
+	State        string `json:"state,omitempty"`
+	RunID        string `json:"runId"`
+	NodeID       string `json:"nodeId"`
+	Iteration    int    `json:"iteration"`
+	WorkflowID   string `json:"workflowId"`
+	WorkflowName string `json:"workflowName"`
+	RunTitle     string `json:"runTitle,omitempty"`
+	Label        string `json:"label"`
+	Done         bool   `json:"done"`
+	// Takeover marks a user-interrupted auto node (Kind is review).
+	Takeover    bool                  `json:"takeover,omitempty"`
+	RequestedAt time.Time             `json:"requestedAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
+	Tags        []string              `json:"tags"`
+	ShareLink   *GateShareInboxStatus `json:"shareLink,omitempty"`
 }
 
 // IsShareableReviewSession reports whether the node can mint a
@@ -133,6 +135,15 @@ func clarifyInboxKind(node *models.Node) string {
 		return "review"
 	}
 	return "clarify"
+}
+
+// clarifyInboxKindFor is clarifyInboxKind that also files a user takeover
+// (an auto node driven through the review path) under review.
+func clarifyInboxKindFor(node *models.Node, conv models.ReactConversation) string {
+	if conv.Takeover {
+		return "review"
+	}
+	return clarifyInboxKind(node)
 }
 
 type inboxEntry struct {
@@ -316,11 +327,11 @@ func (s *RunService) pendingClarifications(tags []string) []ClarifyInboxItem {
 
 		sortAt := latestMessageAt(conv.Messages, run.StartedAt)
 		out = append(out, ClarifyInboxItem{
-			Type: "clarify", Kind: clarifyInboxKind(node),
+			Type: "clarify", Kind: clarifyInboxKindFor(node, conv),
 			RunID: conv.RunID, NodeID: conv.NodeID, Iteration: conv.Iteration,
 			WorkflowID: run.WorkflowID, WorkflowName: run.WorkflowName,
 			RunTitle: strings.TrimSpace(run.Title),
-			Label:    nodeLabel(run.Graph, conv.NodeID), Done: conv.Done, Tags: append([]string{}, run.Tags...),
+			Label:    nodeLabel(run.Graph, conv.NodeID), Done: conv.Done, Takeover: conv.Takeover, Tags: append([]string{}, run.Tags...),
 			RequestedAt: run.StartedAt, UpdatedAt: sortAt,
 		})
 	}

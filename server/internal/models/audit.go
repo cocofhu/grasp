@@ -46,6 +46,7 @@ const (
 	AuditActionGateShareUse    = "gate.share.use"
 	AuditActionRunStart        = "run.start"
 	AuditActionRunCancel       = "run.cancel"
+	AuditActionNodeTakeover    = "node.takeover"
 	AuditActionRunCompleted    = "run.completed"
 	AuditActionRunFailed       = "run.failed"
 	AuditActionRunCancelled    = "run.cancelled"

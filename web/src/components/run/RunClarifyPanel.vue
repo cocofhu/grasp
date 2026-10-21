@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { findGraphNode, isPreviewNode } from '@/lib/shared/clarifyInteractive'
 /**
  * Run 详情「澄清」面板壳：OpenDesign 产物舞台 + ReAct 聊天。
@@ -33,6 +34,8 @@ const props = defineProps<{
     turns: ClarifyTurn[]
     done: boolean
     previewArtifact?: string
+    takeover?: boolean
+    task?: string
   } | null
   runId: string
   run?: Run | null
@@ -137,6 +140,7 @@ defineExpose({
     ref="reviewShellRef"
     class="h-full min-h-0"
     split-drawer
+    remember-artifact-panel
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" hide-home-tab />
@@ -165,6 +169,7 @@ defineExpose({
         :attachments="attachments"
         :turns="clarify.turns ?? []"
         :done="clarify.done"
+        :node-task="takeoverTask(clarify)"
         :active="inputActive"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"

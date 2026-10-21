@@ -68,7 +68,7 @@ function setCliModel(id: string) {
 }
 const inheritedId = computed(() => (props.inheritedModel || '').trim())
 const canFollow = computed(() => !!inheritedId.value)
-const showingFollow = computed(() => canFollow.value && !cliModel.value && !specifying.value)
+const showingFollow = computed(() => !showsInheritance.value && canFollow.value && !cliModel.value && !specifying.value)
 const inheritedTitle = computed(() => {
   const id = inheritedId.value
   if (!id) return ''
@@ -81,6 +81,9 @@ watch(
     specifying.value = false
   },
 )
+
+/** Agent meta passes inheritedModel (possibly empty). The workspace page omits it. */
+const showsInheritance = computed(() => props.inheritedModel !== undefined)
 
 function followShared() {
   specifying.value = false
@@ -118,14 +121,6 @@ watch(
 
 <template>
   <section class="runtime-section border-y border-line/60" data-test="agent-cli-runtime">
-    <header class="flex items-start gap-2 border-b border-line/60 py-3">
-      <span class="flex h-5 w-5 shrink-0 items-center justify-center text-txt3">
-        <Icon name="terminal" :size="14" />
-      </span>
-      <div class="min-w-0">
-        <h4 class="m-0 text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.cliModel.runtimeTitle') }}</h4>
-      </div>
-    </header>
     <div v-if="aiKind" class="py-4">
       <CredentialAliasPicker
         :kind="aiKind.id"
@@ -143,7 +138,7 @@ watch(
     >
       <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
       <div
-        v-if="canFollow"
+        v-if="canFollow && !showsInheritance"
         class="mb-2.5 flex rounded-[10px] border border-line bg-base p-0.5"
         role="radiogroup"
         :aria-label="t('pages.agentStudio.cliModel.label')"
@@ -193,12 +188,12 @@ watch(
           :key="draft.acpBackend"
           :model-value="cliModel"
           :backend="draft.acpBackend"
-          :empty-mode="canFollow ? 'required' : 'auto'"
+          :empty-mode="canFollow && !showsInheritance ? 'required' : 'auto'"
           hide-command
           @update:model-value="setCliModel"
         />
         <button
-          v-if="canFollow"
+          v-if="canFollow && !showsInheritance"
           type="button"
           class="mt-2 bg-transparent p-0 text-[11px] font-semibold text-accent-2 hover:underline"
           data-test="agent-cli-model-back"

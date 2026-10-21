@@ -31,6 +31,9 @@ export type ClarifyInboxContext = {
     previewArtifact?: string
     /** Approve sandbox still booting: empty transcript, replies not accepted yet. */
     starting?: boolean
+    takeover?: boolean
+    /** Taken-over node's task (interpolated prompt), when the backend sends it. */
+    task?: string
   }
 }
 
@@ -76,6 +79,8 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
         turns: ctx.clarify.turns ?? [],
         done: ctx.clarify.done,
         previewArtifact: ctx.clarify.previewArtifact,
+        ...(ctx.clarify.takeover ? { takeover: true } : {}),
+        ...(ctx.clarify.task ? { task: ctx.clarify.task } : {}),
       },
     },
   }

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
@@ -13,9 +12,6 @@ import (
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
-
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 )
 
 func setCredentialKey(t *testing.T) {
@@ -147,16 +143,13 @@ func TestWorkspaceCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 	if rows, err := s.List(); err != nil || len(rows) == 0 {
 		t.Fatalf("list defaults: n=%d err=%v", len(rows), err)
 	}
-	var buf bytes.Buffer
-	prev := log.Logger
-	log.Logger = zerolog.New(&buf)
-	t.Cleanup(func() { log.Logger = prev })
+	logged := captureLog(t)
 
 	if env := s.ResolveEnv(); len(env) != 0 {
 		t.Fatalf("empty slots resolved: %v", env)
 	}
-	if strings.Contains(buf.String(), "undecryptable") {
-		t.Fatalf("empty slots logged as undecryptable:\n%s", buf.String())
+	if out := logged(); strings.Contains(out, "undecryptable") {
+		t.Fatalf("empty slots logged as undecryptable:\n%s", out)
 	}
 }
 
