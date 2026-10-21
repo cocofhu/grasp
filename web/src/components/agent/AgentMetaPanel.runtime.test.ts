@@ -132,9 +132,8 @@ describe('AgentMetaPanel runtime card', () => {
     const card = w.get('[data-test="agent-cli-model-inherited"]')
     expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('GPT-6 Luna')
     expect(card.text()).toContain('工作区共享配置')
-    expect(card.text()).toContain('gpt-6-luna')
-    expect(card.text()).toContain('--model gpt-6-luna')
-    expect(card.text()).toContain('来自工作区共享配置')
+    expect(card.text()).not.toContain('--model')
+    expect(card.text()).not.toContain('cursor-agent')
     expect(model.text()).not.toContain('自动')
     expect(model.text()).not.toContain('CLI 默认')
     expect(model.text()).not.toContain('未单独选择')
@@ -164,7 +163,7 @@ describe('AgentMetaPanel runtime card', () => {
     const card = w.get('[data-test="agent-cli-model-inherited"]')
     expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('grok-4.7-xhigh')
     expect(card.text()).not.toContain('Grok 4.7')
-    expect(card.text()).toContain('cursor-agent --model grok-4.7-xhigh')
+    expect(card.text()).not.toContain('cursor-agent')
     expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
   })
 
@@ -255,7 +254,8 @@ describe('AgentMetaPanel runtime card', () => {
     expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
     expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
     expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    expect(w.get('[data-testid="cli-model-command"] code').text()).toBe('cursor-agent')
+    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('不指定 --model，使用 CLI 默认')
   })
 
   it('returns to follow after leaving the separate choice without a pick', async () => {
