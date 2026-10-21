@@ -183,6 +183,8 @@
       "fxPhase": "Phase",
       "fxSource": "Source",
       "fxClearAll": "Clear all",
+      "fxChipLabel": "{name}: {value}",
+      "fxChipRemove": "Clear filter: {name}",
       "fxAllSources": "All sources",
       "tabOverview": "Overview",
       "tabBreakdown": "Breakdown",

@@ -275,4 +275,16 @@ describe('RunListView row ⋯ menu (cancel / delete)', () => {
     expect(wrapper.find('[data-testid="run-row-menu"]').exists()).toBe(false)
     wrapper.unmount()
   })
+
+  it('closes on any scroll so the fixed menu never floats away from its row', async () => {
+    const { wrapper } = await setup()
+    const more = rowOf(wrapper, '整理发布说明').get('[data-testid="run-more-btn"]')
+    await more.trigger('click')
+    expect(wrapper.find('[data-testid="run-row-menu"]').exists()).toBe(true)
+    // Capture phase: a scroll inside the list container also closes it.
+    document.body.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(wrapper.find('[data-testid="run-row-menu"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })

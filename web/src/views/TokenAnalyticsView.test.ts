@@ -916,6 +916,12 @@ describe('TokenAnalyticsView', () => {
       expect(chip.text()).toContain('模型：Sonnet')
       expect(chip.classes()).toEqual(expect.arrayContaining(['chip', 'bg-accent-dim', 'text-accent-2']))
       expect(wrapper.get('[data-testid="token-analytics-filter-btn"]').text()).toContain('1')
+      // Each × names the filter it clears.
+      expect(wrapper.get('[data-testid="token-analytics-chip-remove-modelKey"]').attributes('aria-label')).toBe('清除筛选：模型：Sonnet')
+      // Narrow screens: the popover anchors left and is clamped to the viewport; ≥sm it anchors right.
+      expect(wrapper.get('[data-testid="token-analytics-filter-pop"]').classes()).toEqual(
+        expect.arrayContaining(['left-0', 'max-w-[calc(100vw-2rem)]', 'sm:left-auto', 'sm:right-0']),
+      )
 
       vi.mocked(api.getGlobalTokenStats).mockClear()
       await wrapper.get('[data-testid="token-analytics-chip-remove-modelKey"]').trigger('click')

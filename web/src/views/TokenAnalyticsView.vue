@@ -630,9 +630,9 @@ const fxChips = computed(() => {
   const out: { key: string; label: string; clear: () => void }[] = []
   for (const f of FX_FIELDS) {
     const v = filters.value[f.key] as string
-    if (v) out.push({ key: f.key, label: `${t(f.labelKey)}：${fxOptions(f.key).find((o) => o.value === v)?.label || v}`, clear: () => setFilter(f.key, '' as never) })
+    if (v) out.push({ key: f.key, label: t('pages.tokenAnalytics.fxChipLabel', { name: t(f.labelKey), value: fxOptions(f.key).find((o) => o.value === v)?.label || v }), clear: () => setFilter(f.key, '' as never) })
   }
-  if (filters.value.runId) out.push({ key: 'runId', label: `${t('pages.tokenAnalytics.drill.dims.run')}：${filters.value.runId.slice(0, 8)}`, clear: () => setFilter('runId', '') })
+  if (filters.value.runId) out.push({ key: 'runId', label: t('pages.tokenAnalytics.fxChipLabel', { name: t('pages.tokenAnalytics.drill.dims.run'), value: filters.value.runId.slice(0, 8) }), clear: () => setFilter('runId', '') })
   return out
 })
 const workflowRows = computed(() => (data.value?.workflows ?? []).filter((w) => w.total > 0))
@@ -749,7 +749,7 @@ const fxCount = computed(() => fxChips.value.length)
                   <span v-if="fxCount" class="chip">{{ fxCount }}</span>
                 </button>
                 <Transition name="overlay-pop">
-                  <div v-if="fxOpen" class="card absolute right-0 z-30 mt-1.5 w-[340px] p-3" data-testid="token-analytics-filter-pop">
+                  <div v-if="fxOpen" class="card absolute left-0 z-30 mt-1.5 w-[340px] max-w-[calc(100vw-2rem)] p-3 sm:left-auto sm:right-0" data-testid="token-analytics-filter-pop">
 
                     <div class="grid grid-cols-[72px_1fr] items-center gap-x-3 gap-y-2" data-testid="token-analytics-filters">
                       <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxModel') }}</span>
@@ -814,7 +814,7 @@ const fxCount = computed(() => fxChips.value.length)
               :data-testid="`token-analytics-chip-${c.key}`"
             >
               {{ c.label }}
-              <button type="button" :aria-label="t('pages.tokenAnalytics.clearFilters')" :data-testid="`token-analytics-chip-remove-${c.key}`" @click="c.clear()">×</button>
+              <button type="button" :aria-label="t('pages.tokenAnalytics.fxChipRemove', { name: c.label })" :data-testid="`token-analytics-chip-remove-${c.key}`" @click="c.clear()">×</button>
             </span>
             <AppButton variant="ghost" size="sm" data-testid="token-analytics-chips-clear" @click="clearFilters">{{ t('pages.tokenAnalytics.fxClearAll') }}</AppButton>
           </div>

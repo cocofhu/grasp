@@ -183,6 +183,8 @@
       "fxPhase": "阶段",
       "fxSource": "来源",
       "fxClearAll": "清除全部",
+      "fxChipLabel": "{name}：{value}",
+      "fxChipRemove": "清除筛选：{name}",
       "fxAllSources": "全部来源",
       "tabOverview": "概览",
       "tabBreakdown": "构成与排行",

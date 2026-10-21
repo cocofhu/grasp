@@ -40,13 +40,19 @@ function toggleRowMenu(id: string, e: MouseEvent) {
 }
 function closeRowMenu() { openRowMenu.value = null }
 function onRowMenuKey(e: KeyboardEvent) { if (e.key === 'Escape') closeRowMenu() }
+/** The menu is position:fixed at the button; any scroll would leave it floating, so close it (like DashboardView's workflow menu). */
+function onRowMenuScroll() { if (openRowMenu.value) closeRowMenu() }
 onMounted(() => {
   document.addEventListener('click', closeRowMenu)
   document.addEventListener('keydown', onRowMenuKey)
+  window.addEventListener('scroll', onRowMenuScroll, true)
+  window.addEventListener('resize', onRowMenuScroll)
 })
 onUnmounted(() => {
   document.removeEventListener('click', closeRowMenu)
   document.removeEventListener('keydown', onRowMenuKey)
+  window.removeEventListener('scroll', onRowMenuScroll, true)
+  window.removeEventListener('resize', onRowMenuScroll)
 })
 /** Queued runs have no startedAt yet; fall back to createdAt. */
 function startIso(r: Run) { return r.status === 'queued' ? r.createdAt ?? '' : r.startedAt }
@@ -886,6 +892,10 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* No hover on touch screens: keep the row ⋯ visible (as NotificationsView does for its row action). */
+@media (hover: none) {
+  .run-more { opacity: 1; }
+}
 .run-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
 .run-table { table-layout: fixed; min-width: 640px; }
 .run-menu-action { display: flex; width: 100%; min-height: 36px; align-items: center; gap: 8px; border-radius: 6px; padding: 8px 10px; text-align: left; font-size: 12px; }
