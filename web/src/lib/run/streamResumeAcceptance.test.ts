@@ -71,10 +71,12 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
 
   it('g2.3: soft refresh path and thinkingBusy copy untouched', () => {
     const inbox = readSrc('lib/inbox/useGatesInbox.ts')
-    const clarify = [readSrc('components/run/ClarifyChat.vue'), readSrc('lib/inbox/useClarifyChat.ts')].join('\n')
+    const clarifyChat = readSrc('components/run/ClarifyChat.vue')
+    const clarify = [clarifyChat, readSrc('components/run/ClarifyThinkingRow.vue'), readSrc('lib/inbox/useClarifyChat.ts')].join('\n')
     const gatePanel = readSrc('components/run/GateReactStreamPanel.vue')
     expect(inbox).toMatch(/isClarifySoftRefreshBlocked/)
     expect(inbox).toMatch(/Soft-refresh semantics unchanged/)
+    expect(clarifyChat).toMatch(/ClarifyThinkingRow/)
     expect(clarify).toMatch(/pages\.clarify\.thinkingBusy/)
     expect(gatePanel).toMatch(/pages\.clarify\.thinkingBusy/)
     expect(clarify).not.toMatch(/正在恢复对话/)
