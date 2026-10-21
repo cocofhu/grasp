@@ -31,13 +31,20 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 	// Tokens burned by attempts that are retried away still count.
 	var spent *models.TokenUsage
 	var spentByModel models.TokenUsageByModel
+	// Aborts (run cancel / delete) are tracked from here, before the first
+	// attempt: a run cancelled mid-attempt must not be retried into a fresh
+	// sandbox (the cancel closes the ACP link, which reads as retryable, and
+	// does not cancel ctx).
+	abortSnap, unwatch := c.watchRunAborts(req.RunID)
+	defer unwatch()
 	for attempt := 1; ; attempt++ {
-		res, err := c.runAgentOnce(ctx, req)
+		res, err := c.runAgentOnce(ctx, req, abortSnap)
 		// Only the first attempt continues a reattached sandbox; retries
 		// start over in a fresh one.
 		req.ReattachSandbox = ""
-		stuck := errors.Is(err, sandbox.ErrAgentStuck) && stuckRetries > 0 && ctx.Err() == nil
-		if !stuck && (err == nil || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil) {
+		aborted := err != nil && c.abortedSince(req.RunID, abortSnap)
+		stuck := errors.Is(err, sandbox.ErrAgentStuck) && stuckRetries > 0 && ctx.Err() == nil && !aborted
+		if !stuck && (err == nil || aborted || !isRetryableSandboxErr(err) || attempt >= n || ctx.Err() != nil) {
 			res.Usage = models.AddTokenUsage(spent, res.Usage)
 			res.UsageByModel = models.AddTokenUsageByModel(spentByModel, res.UsageByModel)
 			return res, err
@@ -63,9 +70,9 @@ func (c *acpProvider) RunAgent(ctx context.Context, req NodeReq) (NodeResult, er
 // sandbox lifecycle: on success or a non-retryable outcome it retires the
 // sandbox (kept for the debug TTL); on a retryable fault it discards (destroys)
 // the broken sandbox so the caller can retry cleanly.
-func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeResult, err error) {
+// abortSnap is RunAgent's watchRunAborts snapshot.
+func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap uint64) (res NodeResult, err error) {
 	reattach := req.ReattachSandbox != ""
-	epoch := c.runAbortEpoch(req.RunID)
 	var (
 		sb   *sandbox.Sandbox
 		acp  *sandbox.ACPClient
@@ -114,7 +121,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 	// The run was aborted (cancel / delete) while setup was in flight, before
 	// there was anything for AbortRun to tear down: retire the sandbox (defer
 	// above) instead of running — or parking — a session for a dead run.
-	if !c.registerLiveUnlessAborted(req, sb, acp, epoch) {
+	if !c.registerLiveUnlessAborted(req, sb, acp, abortSnap) {
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("run aborted during sandbox setup; retiring the new session")
 		if errors.Is(context.Cause(ctx), ErrNodeTakenOver) {
@@ -140,7 +147,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq) (res NodeRe
 			return
 		}
 		if !noPark {
-			parked = c.parkTakenOver(req, sb, acp, home, epoch)
+			parked = c.parkTakenOver(req, sb, acp, home, abortSnap)
 		}
 		err = ErrNodeTakenOver
 	}()
@@ -543,7 +550,7 @@ func (c *acpProvider) AbortRun(runID string) {
 	prefix := runID + "|"
 	c.retireVisitorLanes(prefix)
 	c.mu.Lock()
-	c.bumpAbortEpochLocked(runID)
+	c.recordAbortLocked(runID)
 	var sessionKeys []string
 	for k := range c.sessions {
 		if strings.HasPrefix(k, prefix) {
@@ -654,7 +661,7 @@ func nudgeRetries(req NodeReq, planRounds bool) int {
 // the manual phase continues in the same workspace. It returns false (and the
 // caller retires the sandbox as usual) when the ACP link is already gone; the
 // first manual turn then rehydrates a cold sandbox.
-func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, epoch uint64) bool {
+func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, abortSnap uint64) bool {
 	if sb == nil || acp == nil || !acp.IsConnected() {
 		return false
 	}
@@ -677,7 +684,7 @@ func (c *acpProvider) parkTakenOver(req NodeReq, sb *sandbox.Sandbox, acp *sandb
 	// this in-flight session (removed it from inflightACP), or ran at all
 	// since this attempt started, we must not resurrect it as a parked
 	// session.
-	if c.inflightACP[key] != acp || c.abortEpoch[req.RunID] != epoch {
+	if c.inflightACP[key] != acp || c.abortedSinceLocked(req.RunID, abortSnap) {
 		c.mu.Unlock()
 		log.Info().Str("run", req.RunID).Str("node", req.NodeID).
 			Msg("takeover park skipped: session already torn down by run abort")

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/envauth"
@@ -18,33 +19,80 @@ import (
 // drops it when the sandbox is torn down. acp may be nil for callers that only
 // need the event-log handle (react sessions already keep acp elsewhere).
 func (c *acpProvider) registerLive(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient) {
-	c.registerLiveUnlessAborted(req, sb, acp, c.runAbortEpoch(req.RunID))
+	c.mu.Lock()
+	c.registerLiveLocked(req, sb, acp)
 }
 
-// runAbortEpoch snapshots the run's AbortRun counter (see abortEpoch).
-func (c *acpProvider) runAbortEpoch(runID string) uint64 {
+// runAbortWatch is one run's abort record while RunAgent calls are in flight.
+type runAbortWatch struct {
+	last     uint64 // abortSeq of the run's latest AbortRun (0 = none seen)
+	watchers int    // RunAgent calls of the run in flight
+}
+
+// watchRunAborts snapshots abortSeq for a RunAgent call of runID and keeps
+// the run's abort record alive until done is called.
+func (c *acpProvider) watchRunAborts(runID string) (snap uint64, done func()) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.abortEpoch[runID]
+	if c.runAborts == nil {
+		c.runAborts = map[string]*runAbortWatch{}
+	}
+	w := c.runAborts[runID]
+	if w == nil {
+		w = &runAbortWatch{}
+		c.runAborts[runID] = w
+	}
+	w.watchers++
+	var once sync.Once
+	return c.abortSeq, func() {
+		once.Do(func() {
+			c.mu.Lock()
+			defer c.mu.Unlock()
+			if w.watchers--; w.watchers == 0 && c.runAborts[runID] == w {
+				delete(c.runAborts, runID)
+			}
+		})
+	}
 }
 
-// bumpAbortEpochLocked records an AbortRun; c.mu must be held.
-func (c *acpProvider) bumpAbortEpochLocked(runID string) {
-	if c.abortEpoch == nil {
-		c.abortEpoch = map[string]uint64{}
+// abortedSince reports whether runID was aborted after snap was taken by
+// watchRunAborts (whose done must not have run yet).
+func (c *acpProvider) abortedSince(runID string, snap uint64) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.abortedSinceLocked(runID, snap)
+}
+
+func (c *acpProvider) abortedSinceLocked(runID string, snap uint64) bool {
+	w := c.runAborts[runID]
+	return w != nil && w.last > snap
+}
+
+// recordAbortLocked records an AbortRun of runID; c.mu must be held.
+func (c *acpProvider) recordAbortLocked(runID string) {
+	c.abortSeq++
+	if w := c.runAborts[runID]; w != nil {
+		w.last = c.abortSeq
 	}
-	c.abortEpoch[runID]++
 }
 
 // registerLiveUnlessAborted is registerLive that refuses (false) when the run
-// was aborted since epoch was taken. Check and insert share one lock hold, so
-// an AbortRun either sees the registration (and tears it down) or is seen.
-func (c *acpProvider) registerLiveUnlessAborted(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, epoch uint64) bool {
+// was aborted since snap (watchRunAborts). Check and insert share one lock
+// hold, so an AbortRun either sees the registration (and tears it down) or
+// is seen.
+func (c *acpProvider) registerLiveUnlessAborted(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, snap uint64) bool {
 	c.mu.Lock()
-	if c.abortEpoch[req.RunID] != epoch {
+	if c.abortedSinceLocked(req.RunID, snap) {
 		c.mu.Unlock()
 		return false
 	}
+	c.registerLiveLocked(req, sb, acp)
+	return true
+}
+
+// registerLiveLocked inserts the live / in-flight entries and starts the
+// timeline ingest; c.mu must be held and is released.
+func (c *acpProvider) registerLiveLocked(req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient) {
 	key := reactKey(req)
 	c.live[key] = sb
 	if acp != nil {
@@ -58,7 +106,6 @@ func (c *acpProvider) registerLiveUnlessAborted(req NodeReq, sb *sandbox.Sandbox
 	if c.timeline != nil && sb != nil {
 		c.timeline.startIngest(req.RunID, req.NodeID, host, port, sb.Password, acpTurnBusy(acp, c.emit != nil))
 	}
-	return true
 }
 
 func (c *acpProvider) deregisterLive(req NodeReq) {
