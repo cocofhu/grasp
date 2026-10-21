@@ -160,21 +160,29 @@ async function onFinish() {
 
 <template>
   <div class="chat-thread flex h-full min-h-0 min-w-0 w-full flex-col bg-surface" data-testid="run-llm-transcript">
-    <ClarifyChat
-      v-if="thread.conversational && thread.current"
-      class="min-h-0 flex-1"
-      :run-id="run.id"
-      :node-id="thread.current.nodeId"
-      :iteration="thread.current.iteration"
-      :turns="thread.currentTurns"
-      :prior-segments="thread.priors"
-      :node-label="thread.current.label"
-      :active="true"
-      :done="false"
-      :review-mode="run.currentNode?.kind === 'review'"
-      :send-request="sendRequest"
-      @finish="onFinish"
-    />
+    <template v-if="thread.conversational && thread.current">
+      <ClarifyMessageThread
+        v-if="loadError"
+        class="shrink-0 px-6 pt-3"
+        :run-id="run.id"
+        :load-error="true"
+        @retry="load"
+      />
+      <ClarifyChat
+        class="min-h-0 flex-1"
+        :run-id="run.id"
+        :node-id="thread.current.nodeId"
+        :iteration="thread.current.iteration"
+        :turns="thread.currentTurns"
+        :prior-segments="thread.priors"
+        :node-label="thread.current.label"
+        :active="true"
+        :done="false"
+        :review-mode="run.currentNode?.kind === 'review'"
+        :send-request="sendRequest"
+        @finish="onFinish"
+      />
+    </template>
     <div
       v-else
       ref="scroller"

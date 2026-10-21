@@ -320,6 +320,81 @@ describe('RunLlmTranscript', () => {
     expect(w.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
   })
 
+  it('draws prompt images and files on a finished read-only turn', async () => {
+    llmTranscript.mockResolvedValue({
+      executions: [{
+        id: 1,
+        nodeId: 'a',
+        iteration: 1,
+        status: 'completed',
+        startedAt: '2026-10-01T00:00:00Z',
+        events: [
+          { t: 0, kind: 'prompt', text: '看这张图', at: '2026-10-01T00:00:01Z' },
+          { t: 1, kind: 'message', text: '收到' },
+          { t: 2, kind: 'turn_end', at: '2026-10-01T00:00:10Z' },
+        ],
+      }],
+    })
+    const w = mountView({
+      run: run({
+        clarifyByNode: {
+          a: {
+            turns: [{
+              role: 'human',
+              text: '看这张图',
+              at: '2026-10-01T00:00:01Z',
+              images: [
+                { data: 'abc', mimeType: 'image/png', name: 'shot.png' },
+                { data: 'pdf', mimeType: 'application/pdf', name: 'notes.pdf' },
+              ],
+            }],
+          },
+        },
+      } as Partial<Run>),
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-human-message"]').text()).toContain('看这张图')
+    expect(w.get('[data-testid="clarify-history-image-thumb"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-history-file-chip"]').text()).toContain('notes.pdf')
+    expect(w.text()).toContain('收到')
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
+  })
+
+  it('keeps the failure row when a conversational node cannot load the transcript', async () => {
+    llmTranscript.mockRejectedValueOnce(new Error('boom'))
+    const w = mountView({
+      run: run({
+        status: 'waiting_human',
+        currentNode: {
+          id: 'b',
+          name: '人工审批',
+          iteration: 1,
+          kind: 'clarify',
+          mode: 'manual',
+          state: 'waiting_human',
+        },
+        nodeExecutions: {
+          b: [{
+            nodeId: 'b',
+            status: 'waiting_human',
+            startedAt: '2026-10-01T00:00:00Z',
+            events: [{ t: 0, kind: 'prompt', text: 'preview…', truncated: true }],
+          }],
+        },
+      } as Partial<Run>),
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-empty-fail"]').text()).toContain('完整对话记录加载失败')
+    expect(w.get('[data-testid="clarify-empty-fail-retry"]').exists()).toBe(true)
+    expect(w.text()).toContain('preview…')
+    expect(w.get('[data-testid="clarify-input"]').exists()).toBe(true)
+    llmTranscript.mockResolvedValueOnce({ executions: [] })
+    await w.get('[data-testid="clarify-empty-fail-retry"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-empty-fail"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-input"]').exists()).toBe(true)
+  })
+
   it('shows the conversation empty hint when a run has no messages', async () => {
     llmTranscript.mockResolvedValue({ executions: [] })
     const w = mountView()

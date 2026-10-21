@@ -5,10 +5,14 @@
  * history through this component; the run LLM transcript renders the whole
  * thread through it. Do not keep a second copy of these rows.
  */
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { AcpEvent, AgentPart, ClarifyTurn, ReactQuestion } from '@/lib/shared/types'
+import type { AcpEvent, AgentPart, ClarifyImage, ClarifyTurn, ReactQuestion } from '@/lib/shared/types'
 import { api } from '@/lib/api/api'
+import { isImageAttachment } from '@/lib/shared/attachments'
+import { imgSrc } from '@/lib/shared/compositeText'
+import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
+import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
 import { replySpan } from '@/lib/inbox/turnSpan'
 import { partsFromAcp } from '@/lib/run/acpTools'
@@ -19,6 +23,8 @@ import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 import { nodeAsk, priorAsk } from './clarifyPrior'
 import AgentTimeline from './AgentTimeline.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
+import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
+import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
@@ -67,6 +73,22 @@ const props = withDefaults(
 const emit = defineEmits<{ retry: [] }>()
 
 const { t: translate } = useI18n()
+const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)
+const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
+
+function attachmentLabel(images: ClarifyImage[], index: number): string {
+  const named = images[index]?.name?.trim()
+  if (named) return named
+  if (images.length <= 1) return translate('common.chatImage.imageFallback')
+  return translate('common.chatImage.imageFallbackN', { n: index + 1 })
+}
+function openTurnImagePreview(images: ClarifyImage[], index: number) {
+  const im = images[index]
+  if (!im || !isImageAttachment(im)) return
+  const label = attachmentLabel(images, index)
+  if (embedImagePreview) embedImagePreview.open(imgSrc(im), label)
+  else openChatImagePreview(imgSrc(im), label)
+}
 
 const relClock = ref(0)
 let relClockTimer: ReturnType<typeof setInterval> | undefined
@@ -554,6 +576,12 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
           :data-turn-role="turn.role"
         >
           <div class="min-w-0" :class="turn.role === 'human' ? 'max-w-[88%]' : 'w-full'">
+            <ChatTurnAttachments
+              v-if="turn.role === 'human' && turn.images?.length"
+              :images="turn.images"
+              role="human"
+              @preview="openTurnImagePreview(turn.images, $event)"
+            />
             <ChatUserMessage
               v-if="turn.role === 'human' && turn.text"
               test-id="clarify-human-message"
@@ -588,6 +616,14 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
         :boot-key="bootRecordKey"
       />
     </template>
+    <ChatImagePreviewModal
+      v-if="!priorsOnly"
+      :open="!!imagePreview"
+      :src="imagePreview?.src || ''"
+      :label="imagePreview?.label || ''"
+      test-id-prefix="clarify-image-preview"
+      @close="closeChatImagePreview"
+    />
   </div>
 </template>
 

@@ -31,6 +31,7 @@ export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; 
 
 <script setup lang="ts">
 import Icon from '../ui/Icon.vue'
+import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
 import ClarifyMessageThread from './ClarifyMessageThread.vue'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
@@ -934,55 +935,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         <span class="sr-only">{{ translate(t.role === 'human' ? 'pages.clarify.me' : 'pages.llmTranscript.speaker.agent') }}</span>
         <div class="min-w-0" :class="turnColumnClass(t, i)">
-          <div v-if="t.images && t.images.length" class="mb-1.5 flex flex-wrap gap-1.5" :class="t.role === 'human' ? 'justify-end' : ''">
-            <!-- human history: images → lightbox; non-images → filename chip -->
-            <template v-if="t.role === 'human'">
-              <template v-for="(im, ii) in t.images" :key="ii">
-                <ChatImageThumb
-                  v-if="isImageAttachment(im)"
-                  mode="previewable"
-                  size="md"
-                  fit="contain"
-                  thumb-class="rounded-md"
-                  :src="imgSrc(im)"
-                  :label="imagePreviewLabel(t.images, ii)"
-                  test-id="clarify-history-image-thumb"
-                  @preview="openImagePreview(t.images!, ii)"
-                />
-                <div
-                  v-else
-                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                  data-testid="clarify-history-file-chip"
-                  :title="imagePreviewLabel(t.images, ii)"
-                >
-                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                  <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
-                </div>
-              </template>
-            </template>
-            <!-- agent history: locked thumbs / filename chips (FR-f7) -->
-            <template v-else>
-              <template v-for="(im, ii) in t.images" :key="ii">
-                <ChatImageThumb
-                  v-if="isImageAttachment(im)"
-                  mode="locked"
-                  size="md"
-                  thumb-class="rounded-md"
-                  :src="imgSrc(im)"
-                  :label="imagePreviewLabel(t.images, ii)"
-                  test-id="clarify-agent-image-thumb"
-                />
-                <div
-                  v-else
-                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                  data-testid="clarify-agent-file-chip"
-                >
-                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                  <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
-                </div>
-              </template>
-            </template>
-          </div>
+          <ChatTurnAttachments
+            v-if="t.images && t.images.length"
+            :images="t.images"
+            :role="t.role"
+            @preview="openImagePreview(t.images!, $event)"
+          />
           <!-- Live variant request card (state from the preview drawer, if any) -->
           <LiveVariantCard
             v-if="liveHost && t.role === 'human' && t.live"
