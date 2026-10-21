@@ -100,6 +100,7 @@ function mountChat(opts: {
               <button type="button" data-testid="clarify-image-preview-close" @click="$emit('close')">×</button>
               <button type="button" data-testid="clarify-image-preview-backdrop" @click="$emit('close')">backdrop</button>
               <slot />
+              <slot name="footer" />
             </div>
           `,
         },
@@ -187,10 +188,11 @@ describe('ClarifyChat takeover turns (re-review after Stop)', () => {
     await flushPromises()
     // #868: 确认并流转 asks in an in-app dialog first.
     expect(wrapper.emitted('finish')).toBeUndefined()
-    // AppModal is stubbed in this file, so accept through the dialog component.
-    const dialog = wrapper.findComponent(ConfirmFlowDialog)
-    expect(dialog.props('open')).toBe(true)
-    dialog.vm.$emit('confirm')
+    expect(wrapper.findComponent(ConfirmFlowDialog).props('open')).toBe(true)
+    // Click the dialog's real 「确认流转」 button (the AppModal stub renders its footer).
+    const accept = wrapper.get('[data-testid="confirm-flow-dialog-accept"]')
+    expect(accept.text()).toContain('确认流转')
+    await accept.trigger('click')
     await flushPromises()
     expect(wrapper.emitted('finish')).toHaveLength(1)
   })
