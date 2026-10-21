@@ -101,6 +101,24 @@ describe('ConversationWorkspace', () => {
     expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
   })
 
+  it('keeps the panel open across scope changes when the parent retains it', async () => {
+    const closed = mountWorkspace(false, { retainOpen: true })
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(closed.get('[data-testid="artifact-unread-badge"]').text()).toBe('1')
+    await closed.setProps({ scopeKey: 'run-b/node-b' })
+    await flushPromises()
+    expect(closed.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    closed.unmount()
+
+    const w = mountWorkspace(true, { retainOpen: true })
+    await flushPromises()
+    await w.setProps({ scopeKey: 'run-b/node-b' })
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(true)
+    expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
+  })
+
   it('keeps a single labeled artifact button unless the sandbox drawer is split', () => {
     const w = mountWorkspace()
     expect(w.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)

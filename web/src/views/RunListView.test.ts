@@ -173,56 +173,38 @@ describe('RunListView duration column layout (g1.1 / g1.2 / g2.1)', () => {
     src.indexOf('<!-- Desktop table -->'),
   )
 
-  it('uses tabular-nums and whitespace-nowrap on the desktop duration td', () => {
-    expect(desktopBlock).toMatch(
-      /<td class="[^"]*\btabular-nums\b[^"]*">[\s\S]*\{\{ fmtDuration\(r\.durationSec\) \}\}/,
-    )
-    expect(desktopBlock).toMatch(
-      /<td class="[^"]*\bwhitespace-nowrap\b[^"]*">[\s\S]*\{\{ fmtDuration\(r\.durationSec\) \}\}/,
-    )
-    expect(src).toMatch(/\{\{ fmtDuration\(r\.durationSec\) \}\}/)
+  const durationTd = () =>
+    desktopBlock.match(/<td class="[^"]*">\{\{ r\.status === 'queued' \? '—' : fmtDuration\(r\.durationSec\) \}\}<\/td>/)?.[0]
+
+  it('uses tabular-nums, whitespace-nowrap and right alignment on the desktop duration td', () => {
+    const td = durationTd()
+    expect(td).toBeTruthy()
+    expect(td).toMatch(/\btabular-nums\b/)
+    expect(td).toMatch(/\bwhitespace-nowrap\b/)
+    expect(td).toMatch(/\btext-right\b/)
+    const th = desktopBlock.match(/<th class="[^"]*">\{\{ t\('pages\.runList\.colDuration'\) \}\}<\/th>/)?.[0]
+    expect(th).toMatch(/whitespace-nowrap/)
+    expect(th).toMatch(/text-right/)
   })
 
-  it('reserves hh:mm:ss min-width on duration th, td, and skeleton placeholder', () => {
-    // 8ch covers hh:mm:ss; +2.5rem matches px-5 so border-box min-width is not eaten by padding.
-    const durationMinW = /min-w-\[calc\(8ch\+2\.5rem\)\]/
-    const durationSlot = /min-w-\[8ch\]/
-
-    const durationTh = desktopBlock.match(
-      /<th class="[^"]*">[\s\S]*?\{\{ t\('common\.table\.duration'\) \}\}[\s\S]*?<\/th>/,
-    )?.[0]
-    expect(durationTh).toBeTruthy()
-    expect(durationTh).toMatch(durationMinW)
-    expect(durationTh).toMatch(durationSlot)
-    expect(durationTh).toMatch(/whitespace-nowrap/)
-
-    const durationTd = desktopBlock.match(
-      /<td class="[^"]*">[\s\S]*?\{\{ fmtDuration\(r\.durationSec\) \}\}[\s\S]*?<\/td>/,
-    )?.[0]
-    expect(durationTd).toBeTruthy()
-    expect(durationTd).toMatch(durationMinW)
-    expect(durationTd).toMatch(durationSlot)
-    expect(durationTd).toMatch(/inline-block min-w-\[8ch\]/)
-
+  it('reserves fixed column widths (incl. hh:mm:ss duration) via colgroup and the skeleton', () => {
+    const colgroup = desktopBlock.match(/<colgroup>[\s\S]*?<\/colgroup>/)?.[0]
+    expect(colgroup).toBeTruthy()
+    // 运行 flexes; 状态 / 开始 / 耗时 / ⋯ are fixed so short columns never wrap.
+    expect(colgroup!.match(/<col\b/g)).toHaveLength(5)
+    expect(colgroup).toMatch(/<col \/>\s*<col style="width: 216px" \/>\s*<col style="width: 112px" \/>\s*<col style="width: 88px" \/>\s*<col style="width: 44px" \/>/)
     const skelStart = desktopBlock.indexOf('v-if="initialLoading"')
     const skelEnd = desktopBlock.indexOf('<template v-else>', skelStart)
     const skeleton = desktopBlock.slice(skelStart, skelEnd)
-    expect(skeleton).toMatch(durationMinW)
     expect(skeleton).toMatch(/w-\[8ch\]/)
-    expect(skeleton).not.toMatch(/w-\[40%\]/)
-    expect(skeleton).not.toMatch(/w-\[6\.2em\]/)
-    expect(skeleton).not.toMatch(/min-w-\[6\.2em\]/)
+    expect(skeleton.match(/<td\b/g)).toHaveLength(5)
   })
 
-  it('does not switch the table to fixed layout or change duration alignment', () => {
-    expect(desktopBlock).toMatch(/<table class="w-full text-sm">/)
-    expect(desktopBlock).not.toMatch(/table-layout/)
-    expect(desktopBlock).not.toMatch(/table-fixed/)
-    const durationTd = desktopBlock.match(
-      /<td class="[^"]*">[\s\S]*?\{\{ fmtDuration\(r\.durationSec\) \}\}[\s\S]*?<\/td>/,
-    )?.[0]
-    expect(durationTd).toBeTruthy()
-    expect(durationTd).not.toMatch(/text-right|text-center/)
+  it('switches the desktop table to fixed layout with a scrollable minimum width', () => {
+    expect(desktopBlock).toMatch(/<table class="run-table w-full text-sm">/)
+    expect(src).toMatch(/\.run-table \{ table-layout: fixed; min-width: 640px; \}/)
+    // the table scroller already scrolls horizontally on narrow widths
+    expect(src).toMatch(/<div class="min-h-0 flex-1 overflow-auto">/)
   })
 
   it('does not add duration display to mobile cards', () => {
@@ -232,9 +214,11 @@ describe('RunListView duration column layout (g1.1 / g1.2 / g2.1)', () => {
 })
 
 describe('RunListView sorting', () => {
-  it('exposes desktop sortable headers for start time and priority only', () => {
+  it('exposes a desktop sortable header for start time only (priority column removed)', () => {
     expect(src).toMatch(/applySortClick\('started_at'\)/)
-    expect(src).toMatch(/applySortClick\('priority'\)/)
+    expect(src).not.toMatch(/applySortClick\('priority'\)/)
+    // ?sort=priority links stay valid: priority is still on the API whitelist.
+    expect(src).toMatch(/ALLOWED_SORT: Record<RunSortKey, true> = \{ started_at: true, priority: true \}/)
     expect(src).toMatch(/role="columnheader"/)
     expect(src).toMatch(/aria-sort/)
     expect(src).toMatch(/th\.sortable/)

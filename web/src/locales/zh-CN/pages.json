@@ -41,21 +41,14 @@
       "title": "用量统计",
       "subtitle": "分析工作流、助手与 Agent Studio 的 Token 用量、模型分布和预估费用。",
       "analysisRange": "分析范围",
-      "timeRange": "时间范围",
       "sourceLabel": "来源",
-      "dimensionsLabel": "细分",
-      "expandAnalysis": "展开分析",
-      "collapseAnalysis": "收起分析",
       "unknownBadge": "未知",
       "sections": {
         "overview": "用量概览",
         "overviewHint": "当前筛选范围内已上报的用量",
         "breakdown": "构成与排行",
-        "breakdownHint": "按来源、模型和工作流查看消耗分布，点击图表可继续下钻。",
         "patterns": "时段与执行分析",
-        "patternsHint": "结合时间、节点和运行状态，了解消耗如何分布。",
-        "details": "模型与运行明细",
-        "detailsHint": "核对模型用量和高消耗运行，可查看调用记录或导出 CSV。"
+        "details": "模型与运行明细"
       },
       "loading": "正在加载…",
       "loadFailed": "加载失败，请重试",
@@ -63,7 +56,6 @@
       "emptyTitle": "暂无 Token 数据",
       "emptyHint": "当前筛选条件下没有已上报的 Token 用量；未上报不会显示为 0",
       "clearFilters": "清除筛选",
-      "sourceAll": "来源：全部",
       "sourceWorkflow": "工作流",
       "sourcePm": "工作区助手",
       "modelAll": "模型：全部",
@@ -182,6 +174,24 @@
       "kpiAvgPerRun": "单次运行平均 {n}",
       "unknownModel": "未知模型",
       "exportCsv": "导出 CSV",
+      "fxFilter": "筛选",
+      "fxAll": "全部",
+      "fxModel": "模型",
+      "fxWorkflow": "工作流",
+      "fxNodeType": "节点类型",
+      "fxStatus": "状态",
+      "fxPhase": "阶段",
+      "fxSource": "来源",
+      "fxClearAll": "清除全部",
+      "fxChipLabel": "{name}：{value}",
+      "fxChipRemove": "清除筛选：{name}",
+      "fxAllSources": "全部来源",
+      "tabOverview": "概览",
+      "tabBreakdown": "构成与排行",
+      "tabPatterns": "时段与执行",
+      "tabDetails": "明细",
+      "workflowsTable": "工作流明细表",
+      "colWorkflow": "工作流",
       "weekdays": {
         "0": "周一",
         "1": "周二",
@@ -1165,8 +1175,8 @@
       "sharedAgent": {
         "extendHint": "本工作区 Run 与 Agent Studio「对话测试」会先 extend 此共享配置，再由所选 Agent 同名覆盖（Agent 优先）。",
         "discard": "放弃修改",
-        "genericCredentialTitle": "通用授权",
-        "genericCredentialHint": "这是本工作区的默认授权。单个 Agent 已选择时以单个 Agent 为准；单个 Agent 未选择且种类一致时使用这里的选择。",
+        "genericCredentialTitle": "工作区默认授权",
+        "genericCredentialHint": "单个 Agent 已选择时用自己的；没选且种类相同则用这里。",
         "runtimeDesc": "本工作区的 Agent 默认用哪个账号、跑哪个模型。",
         "modelHint": "工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。"
       },
@@ -1192,8 +1202,9 @@
         "secretKnownHosts": "已知主机",
         "pickTitle": "使用的授权",
         "pickHint": "主标题是别名。运行只注入选中的这一条，清空后不会改用另一条。",
-        "codingPickHint": "主标题是别名。未选择时使用种类匹配的共享通用授权；已选择时只注入这一条，不会改用同一列表里的另一条。",
+        "codingPickHint": "未选择时使用工作区默认授权；已选择时只使用这一条。",
         "pickEmpty": "这一类还没有已保存的授权。",
+        "pickEmptyNamed": "还没有已保存的 {kind} 授权。",
         "pickClear": "清空选择",
         "kinds": {
           "cursor": "Cursor",
@@ -1480,7 +1491,20 @@
       "deleteConfirm": "仅清理这一次 Run；删除成功后列表将刷新。",
       "deleteSuccess": "已删除运行，列表已刷新",
       "loadFailedTitle": "加载失败",
-      "loadFailedDesc": "无法加载运行记录，后台轮询将自动重试。筛选与翻页仍可使用。"
+      "loadFailedDesc": "无法加载运行记录，后台轮询将自动重试。筛选与翻页仍可使用。",
+      "segAll": "全部",
+      "segActive": "进行中",
+      "segWaiting": "待处理",
+      "segDone": "已完成",
+      "segFailed": "失败/取消",
+      "colRun": "运行",
+      "colStatus": "状态",
+      "colStart": "开始",
+      "colDuration": "耗时",
+      "cancelRun": "取消运行",
+      "deleteRun": "删除运行",
+      "filterStatus": "状态",
+      "moreActions": "更多操作"
     },
     "runDetail": {
       "title": "Run #{id}",
@@ -2335,7 +2359,7 @@
       "meta": {
         "layoutTitle": "沙箱注入布局(WSP/1)",
         "layoutIntro": "本 Agent 的配置在沙箱内的注入位置,随 Agent 持久化保存,创建沙箱时按此挂载与设置 WORKSPACE_DIR。切换 ACP 后端会自动填充推荐 configRoot,手动修改后尊重覆盖值。",
-        "acpBackend": "ACP 后端 (acpBackend)",
+        "acpBackend": "后端引擎",
         "acpBackendDesc": "每个 Agent 配置绑定一个 ACP 后端;Run 执行时按此路由到对应 bridge,不支持节点级覆盖。缺省 cursor。OpenCode 用 API Key 接主流模型厂商。Codex 使用 ChatGPT 登录文件，不使用 API Key。",
         "configRoot": "配置根目录",
         "configRootDesc": "Agent 工作目录(rules / skills / mcp.json)RW 挂载到容器内的此路径。",
@@ -2901,7 +2925,9 @@
         },
         "switched": "已切换到 {cli}，模型恢复为自动",
         "undo": "撤销",
-        "managedBy": "由「运行配置 · 模型」管理",
+        "managedBy": "由元信息里的模型管理",
+        "inheritDefault": "继承默认配置",
+        "inheritDefaultFrom": "工作区默认",
         "follow": "沿用配置",
         "followDefault": "默认",
         "specify": "单独指定",
@@ -3148,7 +3174,11 @@
       "queueEditBlocked": "附件过大，无法将当前草稿移入队列后再编辑。请先处理附件。",
       "queueEditLost": "当前草稿已入队，但未能定位要编辑的队列项。请从队列中再次点击铅笔。",
       "queueAttachmentBadge": "附件×{n}",
-      "queueAnnotationBadge": "批注"
+      "queueAnnotationBadge": "批注",
+      "observeInputPlaceholder": "自动运行中，停止后可接管对话",
+      "observeStoppingPlaceholder": "正在停止…",
+      "observeStop": "停止并转人工",
+      "observeStopTitle": "停止自动执行，本节点转为人工接管"
     },
     "reviewComposer": {
       "sendClarify": "发送回复",
@@ -4317,6 +4347,18 @@
       "noMatchingArtifact": "当前结果页没有同名文件。",
       "loading": "正在加载产物…",
       "deletedArtifact": "该产物已删除。"
+    },
+    "runLive": {
+      "loading": "加载运行…",
+      "loadFailed": "加载运行失败",
+      "takeoverFailed": "停止失败：{msg}",
+      "not_auto_node": "该节点不是自动执行节点，无法停止",
+      "node_not_current": "节点已不在执行，已刷新",
+      "node_finishing": "节点正在结束，已刷新",
+      "run_not_running": "运行已不在执行中（{status}），已刷新",
+      "server_halting": "服务正在停机，请稍后重试",
+      "run_not_found": "运行不存在",
+      "node_not_found": "节点不存在"
     }
   }
 }

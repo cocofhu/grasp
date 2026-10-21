@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
+import { takeoverTask } from '@/lib/run/takeoverTimeline'
 /**
  * Run 详情「复审」面板壳：ReviewShell + 产物舞台 + ReviewComposer。
  */
@@ -31,6 +32,8 @@ const props = defineProps<{
     turns: ClarifyTurn[]
     done: boolean
     previewArtifact?: string
+    takeover?: boolean
+    task?: string
   } | null
   draft: string
   attachments: ClarifyImage[]
@@ -100,6 +103,7 @@ defineExpose({
     ref="reviewShellRef"
     class="h-full min-h-0"
     split-drawer
+    remember-artifact-panel
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" hide-home-tab />
@@ -132,6 +136,7 @@ defineExpose({
         :annotations="annotations"
         :turns="clarify.turns ?? []"
         :done="clarify.done"
+        :node-task="takeoverTask(clarify)"
         :active="inputActive"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"

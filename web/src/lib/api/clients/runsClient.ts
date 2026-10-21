@@ -4,6 +4,7 @@ import type {
   GateShareInboxStatus,
   ClarifyImage,
   ReactAnnotation,
+  NodeTakeoverResult,
 } from '../../shared/types'
 import type { InboxContextResponse } from '../../inbox/inboxContext'
 import type { EmbedTicket } from '../../inbox/embedChat'
@@ -46,7 +47,7 @@ export const runsClient = {
     wf?: string
     page?: number
     pageSize?: number
-    /** Whitelist: started_at | priority. Only sent when paired with a valid order. */
+    /** Whitelist: started_at | priority | last_activity. Only sent when paired with a valid order. */
     sort?: string
     /** Whitelist: asc | desc. Only sent when paired with a valid sort. */
     order?: 'asc' | 'desc' | string
@@ -61,7 +62,7 @@ export const runsClient = {
     const sort = params?.sort
     const order = params?.order
     if (
-      (sort === 'started_at' || sort === 'priority') &&
+      (sort === 'started_at' || sort === 'priority' || sort === 'last_activity') &&
       (order === 'asc' || order === 'desc')
     ) {
       qs.set('sort', sort)
@@ -135,6 +136,15 @@ export const runsClient = {
       body: JSON.stringify({ nodeId }),
     }),
   runEventsWsUrl: (id: string) => wsUrl(`/runs/${id}/events`),
+  /**
+   * Interrupt an auto node and hand it to a person (idempotent 200; 409 carries
+   * {error, message, current}). iteration guards stale clicks.
+   */
+  takeoverNode: (runId: string, nodeId: string, iteration?: number) =>
+    req<NodeTakeoverResult>(`/runs/${runId}/nodes/${nodeId}/takeover`, {
+      method: 'POST',
+      body: JSON.stringify(iteration != null && iteration >= 0 ? { iteration } : {}),
+    }),
   resumeGate: (runId: string, nodeId: string, action: string, form: Record<string, any> = {}) =>
     req<{ status: string }>(`/runs/${runId}/gates/${nodeId}/resume`, {
       method: 'POST',

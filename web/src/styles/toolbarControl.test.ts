@@ -28,7 +28,13 @@ describe('toolbar-control shared sizing (g2.1 g2.2 g4.1 g4.2 g4.4)', () => {
     expect(runList).toContain('<TagFilter')
     expect(runList).toContain('<StatusFilter')
     expect(runList).toContain('<WorkflowFilter')
-    expect(runList).toContain('flex w-full flex-col gap-2 md:w-auto md:flex-row md:items-center')
+    // Desktop: status segments + workflow/tag filters share one toolbar row; mobile keeps a stacked column.
+    expect(runList).toContain('class="run-toolbar" data-testid="run-list-toolbar"')
+    expect(runList).toContain('<div v-if="isMobile" class="mb-3 flex flex-col gap-2">')
+    // Filters own their toolbar-control sizing: no local size / padding classes on the hosts.
+    for (const tag of runList.match(/<(?:TagFilter|StatusFilter|WorkflowFilter)\b[^>]*>/g) ?? []) {
+      expect(tag).not.toMatch(/\bclass=/)
+    }
   })
 
   it('ArtifactsView navigates workflow and session resources with ResourceList', () => {

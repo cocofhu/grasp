@@ -28,6 +28,7 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.e
 vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => ({ openLaunch: mocks.openLaunch }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: mocks.toggleFavorite }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 const recentRun = { id: 'r1', title: '最近一次运行', workflowName: '工作流' }
 function expectNoWorkflowDirectory(wrapper: VueWrapper) {
@@ -49,6 +50,7 @@ async function setup(path = '/dashboard') {
   return { wrapper, router }
 }
 beforeEach(() => {
+  resetConversationDrawers()
   vi.clearAllMocks()
   mocks.workspace.value = mocks.signedInWorkspace
   mocks.entries.value = []
@@ -69,7 +71,7 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(rows[0].text()).toBe('运行 0')
     expect(rows[0].attributes('href')).toBe('/runs/r0')
     expect(rows[0].attributes('aria-current')).toBe('page')
-    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, sort: 'started_at', order: 'desc', signal: expect.any(AbortSignal) })
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.getWorkflow).not.toHaveBeenCalled()
     expect(mocks.openLaunch).not.toHaveBeenCalled()
@@ -118,6 +120,17 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expectNoWorkflowDirectory(wrapper)
     expect(wrapper.findAll('[data-testid="sidebar-recent-run"]')).toHaveLength(0)
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('does not rewrite the artifact panel switch when a recent run is opened', async () => {
+    writeArtifactPanelOpen(true)
+    const { wrapper } = await setup('/dashboard')
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('click')
+    expect(readArtifactPanelOpen()).toBe(true)
+    writeArtifactPanelOpen(false)
+    await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('click')
+    expect(readArtifactPanelOpen()).toBe(false)
     wrapper.unmount()
   })
 })

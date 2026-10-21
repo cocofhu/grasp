@@ -75,6 +75,11 @@ const props = withDefaults(
     streamCompletedAt?: string | null
     /** This user's preview-page control state; unset hides the line. */
     pageControl?: PageControlState
+    /** Read-only auto stream; Stop emits takeover (ClarifyChat observe). */
+    observe?: boolean
+    stopping?: boolean
+    /** Taken-over node's task (opening User Message). */
+    nodeTask?: string
   }>(),
   {
     iteration: 1,
@@ -104,6 +109,8 @@ const props = withDefaults(
     streamTools: () => [],
     interrupted: false,
     streamCompletedAt: null,
+    observe: false,
+    stopping: false,
   },
 )
 
@@ -113,6 +120,7 @@ const emit = defineEmits<{
   (e: 'finish'): void
   (e: 'finish-abort'): void
   (e: 'cancel'): void
+  (e: 'takeover'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
   (e: 'queue-edit', index: number): void
@@ -283,6 +291,10 @@ function onConfirm() {
       :send-label="mode === 'clarify' ? t('pages.reviewComposer.sendClarify') : undefined"
       :confirm-error="confirmError"
       :confirm-can-abort="confirmCanAbort"
+      :observe="observe"
+      :node-task="nodeTask"
+      :stopping="stopping"
+      @takeover="emit('takeover')"
       @send="(text, images, anns) => emit('send', text, images, anns)"
       @retry-last="emit('retry-last')"
       @finish="emit('finish')"

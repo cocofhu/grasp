@@ -40,6 +40,11 @@ const props = withDefaults(
     startedAt?: string
     /** ISO when this reply stopped. */
     endedAt?: string
+    /**
+     * The host already shows one busy line (「思考中…」), so the streaming
+     * thought summary drops its own 生成中… badge (observe view, before text).
+     */
+    quietThought?: boolean
   }>(),
   {
     streaming: false,
@@ -52,6 +57,7 @@ const props = withDefaults(
     runId: undefined,
     startedAt: undefined,
     endedAt: undefined,
+    quietThought: false,
   },
 )
 
@@ -219,7 +225,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         >
           <summary class="agent-thought-summary">
             <ThoughtSummaryStatus
-              :busy="streaming && b.last"
+              :busy="streaming && b.last && !quietThought"
               :completed="streaming ? !b.last : completed"
               :interrupted="!streaming && interrupted"
             />

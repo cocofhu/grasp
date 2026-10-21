@@ -522,7 +522,7 @@ func (s *Service) LookupByToken(token string) (*LookupResult, string, error) {
 	if err := s.db.First(&run, "id = ?", link.RunID).Error; err != nil {
 		return nil, st, ErrTokenInvalid
 	}
-	res := &LookupResult{Link: link, Kind: kind, Run: run, Node: run.Graph.FindNode(link.NodeID)}
+	res := &LookupResult{Link: link, Kind: kind, Run: run, Node: services.EffectiveNode(s.db, run, link.NodeID)}
 	if kind == models.ShareLinkKindReview {
 		if st == models.ShareLinkStateActive {
 			if terminalRun(run.Status) {
@@ -578,7 +578,7 @@ func (s *Service) lookupRunNodeReview(ref EmbedRef, tokenHash string) (*LookupRe
 	if err := s.db.First(&run, "id = ?", ref.RunID).Error; err != nil {
 		return nil, models.ShareLinkStateNone, ErrTokenInvalid
 	}
-	node := run.Graph.FindNode(ref.NodeID)
+	node := services.EffectiveNode(s.db, run, ref.NodeID)
 	if !services.IsShareableReviewSession(node) {
 		return nil, models.ShareLinkStateNone, ErrTokenInvalid
 	}
