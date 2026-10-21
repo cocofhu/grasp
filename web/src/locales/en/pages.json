@@ -3109,6 +3109,7 @@
       "turnElapsed": "Took {time}",
       "turnProcess": "This turn",
       "emptyFailTitle": "No output this turn",
+      "replyFailTitle": "This turn didn't finish",
       "emptyFailDesc": "The assistant returned no message. You can retry the last turn.",
       "retry": "Retry",
       "done": "Interaction complete — continuing",

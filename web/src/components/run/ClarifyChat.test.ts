@@ -3034,6 +3034,36 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
+    it('a failed reply shows its own steps, not the 50-tool session cap', async () => {
+      const wrapper = mountChat({
+        turns: [
+          { role: 'human', text: '继续', at: 't1' },
+          {
+            role: 'agent',
+            text: "(澄清回复失败:exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.)",
+            at: 't2',
+            tools: Array.from({ length: 50 }, () => ({ title: 'Read', status: 'completed' })),
+            parts: [
+              { kind: 'tool', title: 'Read', status: 'completed' },
+              { kind: 'tool', title: 'Glob', status: 'completed' },
+              {
+                kind: 'message',
+                text: "(澄清回复失败:exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.)",
+              },
+            ],
+          },
+        ],
+      })
+      expect(wrapper.text()).not.toContain('使用了 50 个工具')
+      expect(wrapper.find('[data-testid="clarify-empty-fail"]').classes().join(' ')).not.toContain('bg-err')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-title"]').text()).toBe('这一轮没有完成')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toBe("We're having trouble.")
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      expect(wrapper.text()).toContain('使用了 2 个工具')
+      expect(wrapper.text()).not.toContain('使用了 50 个工具')
+      wrapper.unmount()
+    })
+
     it('retry emits retry-last and does not change draft (plan g1.2)', async () => {
       const wrapper = mountChat({
         draft: 'keep-draft',
@@ -3042,9 +3072,9 @@ describe('ClarifyChat', () => {
           { role: 'agent', text: '(澄清回复失败:timeout)', at: 't2' },
         ],
       })
-      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toContain(
-        '澄清回复失败',
-      )
+      expect(wrapper.find('[data-testid="clarify-empty-fail-title"]').text()).toBe('这一轮没有完成')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toBe('timeout')
+      expect(wrapper.find('[data-testid="clarify-empty-fail"]').text()).not.toContain('本轮没有输出')
       await wrapper.get('[data-testid="clarify-empty-fail-retry"]').trigger('click')
       expect(wrapper.emitted('retry-last')).toBeTruthy()
       expect(wrapper.vm.$props.draft ?? wrapper.props('draft')).toBe('keep-draft')

@@ -33,6 +33,7 @@ import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
+import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
@@ -1164,8 +1165,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             </div>
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
-              v-if="t.parts?.length && !isRetryableFailedAgent(t)"
-              :parts="t.parts"
+              v-if="turnProcessParts(t).length"
+              :parts="turnProcessParts(t)"
               :streaming="!!t.streaming"
               :completed="showTurnCompleted(t)"
               :interrupted="!!t.interrupted"
@@ -1202,7 +1203,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 </summary>
                 <div class="chat-thought-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
               </details>
-              <AgentToolGroup v-if="t.tools?.length" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
+              <AgentToolGroup v-if="t.tools?.length && !isRetryableFailedAgent(t)" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
               <!-- Message body + streaming caret -->
               <div
                 v-if="agentHasMessage(t) && !isRetryableFailedAgent(t)"
@@ -1219,45 +1220,48 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   aria-hidden="true"
                 />
               </div>
-              <!-- Empty / failure card + cover-retry (plan g1.1 / g1.2) -->
-              <div
-                v-else-if="isRetryableFailedAgent(t)"
-                class="rounded-lg flex max-w-full flex-col gap-2 border border-err/35 bg-err/10 px-3 py-2.5"
-                role="alert"
-                data-testid="clarify-empty-fail"
-              >
-                <div class="flex items-start gap-2">
-                  <Icon name="alert" :size="16" class="mt-0.5 shrink-0 text-err" />
-                  <div class="min-w-0">
-                    <div class="text-[13px] font-semibold text-err">
-                      {{ translate('pages.clarify.emptyFailTitle') }}
-                    </div>
-                    <div
-                      class="mt-0.5 break-words text-xs text-txt2 [overflow-wrap:anywhere]"
-                      data-testid="clarify-empty-fail-desc"
-                    >
-                      {{
-                        emptyFailDisplayText(
-                          t,
-                          translate('pages.clarify.emptyFailDesc'),
-                        )
-                      }}
-                    </div>
-                  </div>
-                </div>
-                <div v-if="showFailRetry(t, i)">
-                  <button
-                    type="button"
-                    class="rounded-md border border-err/40 bg-transparent px-2.5 py-1 text-xs text-err hover:bg-err/15 disabled:opacity-50"
-                    :disabled="failRetryDisabled"
-                    data-testid="clarify-empty-fail-retry"
-                    @click="retryLastFailed"
-                  >
-                    {{ translate('pages.clarify.retry') }}
-                  </button>
-                </div>
-              </div>
             </template>
+            <!-- Failure sits under this turn's own steps, not under the capped tool list. -->
+            <div
+              v-if="isRetryableFailedAgent(t)"
+              class="chat-meta mt-1 flex min-w-0 items-start gap-2 py-1"
+              role="alert"
+              data-testid="clarify-empty-fail"
+            >
+              <Icon name="alert" :size="16" class="mt-0.5 shrink-0 text-err" />
+              <div class="min-w-0 flex-1">
+                <div class="text-[13px] font-medium text-txt" data-testid="clarify-empty-fail-title">
+                  {{
+                    emptyFailHeadline(
+                      t,
+                      translate('pages.clarify.emptyFailTitle'),
+                      translate('pages.clarify.replyFailTitle'),
+                    )
+                  }}
+                </div>
+                <div
+                  class="mt-0.5 break-words text-[12px] text-txt3 [overflow-wrap:anywhere]"
+                  data-testid="clarify-empty-fail-desc"
+                >
+                  {{
+                    emptyFailDisplayText(
+                      t,
+                      translate('pages.clarify.emptyFailDesc'),
+                    )
+                  }}
+                </div>
+                <button
+                  v-if="showFailRetry(t, i)"
+                  type="button"
+                  class="mt-1 text-[12px] font-medium text-txt2 hover:text-txt disabled:opacity-50"
+                  :disabled="failRetryDisabled"
+                  data-testid="clarify-empty-fail-retry"
+                  @click="retryLastFailed"
+                >
+                  {{ translate('pages.clarify.retry') }}
+                </button>
+              </div>
+            </div>
             <LiveVariantCard
               v-if="liveCards.full.has(i) && !t.streaming && liveSettled(liveCards.full.get(i)!.sid)"
               :live-ref="liveCards.full.get(i)!"
