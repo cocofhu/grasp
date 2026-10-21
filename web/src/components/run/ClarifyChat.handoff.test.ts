@@ -3,6 +3,12 @@ import { ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+
+const { nodeEvents } = vi.hoisted(() => ({ nodeEvents: vi.fn() }))
+vi.mock('@/lib/api/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
+  return { ...actual, api: { ...actual.api, nodeEvents } }
+})
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import { i18n as appI18n } from '@/lib/shared/i18n'
@@ -118,6 +124,7 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     const divider = w.get('[data-testid="clarify-segment-divider"]')
     expect(divider.attributes('role')).toBe('separator')
     expect(divider.text()).toContain('已流转到「验收测试」')
+    expect(w.findAll('.clarify-status-row')).toHaveLength(3)
     // Order: segments → separator → this node's turns.
     const html = w.html()
     expect(html.indexOf('clarify-segment-divider')).toBeGreaterThan(html.indexOf('需求已整理'))
@@ -202,6 +209,84 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     expect(segs).toHaveLength(1)
     expect(segs[0].text()).toContain('「方案设计、部署预览」自动执行')
     expect(segs[0].text()).toContain('用时 1m 30s')
+    w.unmount()
+  })
+
+  it('shows the choice, the question options, and the tool timeline inside 需求澄清', async () => {
+    const w = mountChat({
+      priorSegments: [{
+        nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', open: true,
+        at: '2026-10-14T00:00:00Z',
+        turns: [
+          {
+            role: 'agent', text: '请选工作类型', at: '2026-10-14T00:00:00Z',
+            questions: [{ id: 'q1', prompt: '这次做什么', options: [{ id: 'a', label: '其他' }, { id: 'b', label: '修缺陷' }] }],
+            parts: [
+              { kind: 'tool', title: 'Read', status: 'completed' },
+              { kind: 'message', text: '请选工作类型' },
+            ],
+          },
+          { role: 'human', text: '我的选择:\n- 这次做什么 → 其他', at: '2026-10-14T00:00:01Z' },
+        ],
+      }],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-prior-choice-answer"]').text()).toBe('其他')
+    expect(w.get('[data-testid="clarify-prior-choice"]').text()).not.toContain('→')
+    expect(w.get('[data-testid="clarify-prior-option"][data-selected="true"]').text()).toContain('其他')
+    expect(w.get('[data-testid="clarify-prior-option"][data-selected="false"]').text()).toContain('修缺陷')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    expect(w.get('[data-testid="agent-tool-group-names"]').text()).toContain('读取文件')
+    w.unmount()
+  })
+
+  it('opens an auto row and shows each node record', async () => {
+    nodeEvents.mockImplementation(async (_run: string, nodeId: string) => {
+      if (nodeId === 'implement') {
+        return { events: [{ kind: 'timeline', parts: [{ kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '实现完成' }] }], live: false }
+      }
+      return { events: [{ kind: 'timeline', parts: [{ kind: 'message', text: '测试通过' }] }], live: false }
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', endedAt: '2026-10-21T05:00:06Z', turns: [], open: false },
+        { nodeId: 'test_review', iteration: 1, label: '测试评审', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:07Z', endedAt: '2026-10-21T05:01:30Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    expect(row.element.tagName).toBe('DETAILS')
+    expect(row.text()).toContain('「实现、测试评审」自动执行')
+    expect(row.find('[data-testid="clarify-auto-record"]').exists()).toBe(false)
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const records = w.findAll('[data-testid="clarify-auto-record"]')
+    expect(records.map((r) => r.attributes('data-node-id'))).toEqual(['implement', 'test_review'])
+    expect(records[0].text()).toContain('实现')
+    expect(records[0].text()).toContain('实现完成')
+    expect(records[1].text()).toContain('测试通过')
+    expect(nodeEvents).toHaveBeenCalledWith('run-1', 'implement', expect.anything())
+    expect(nodeEvents).toHaveBeenCalledWith('run-1', 'test_review', expect.anything())
+    w.unmount()
+  })
+
+  it('says when an auto record cannot be loaded', async () => {
+    nodeEvents.mockRejectedValue(new Error('down'))
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-auto-record-status"]').text()).toContain('执行记录没有加载出来')
     w.unmount()
   })
 

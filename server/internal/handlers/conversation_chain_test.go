@@ -79,7 +79,11 @@ func seedChainRun(t *testing.T, h *harness, longPrompt string) {
 	}
 	msg := func(role, text string) models.ReactMessage {
 		return models.ReactMessage{Role: role, Text: text, At: "2026-10-21T05:00:00Z",
-			Events: []models.AcpEvent{{Kind: "tool_call"}}, Questions: []models.ReactQuestion{{ID: "q"}}}
+			Events:    []models.AcpEvent{{Kind: "tool_call", Title: "raw-event"}},
+			Questions: []models.ReactQuestion{{ID: "q", Prompt: "哪一列", Options: []models.ReactOption{{ID: "a", Label: "全部"}}}},
+			Tools:     []models.ReactTool{{Title: "Read", Status: "completed"}},
+			Parts:     []models.AcpPart{{Kind: "tool", Title: "Read"}, {Kind: "message", Text: text}},
+		}
 	}
 	convs := []models.ReactConversation{
 		{NodeID: "clarify", Iteration: 1, Done: true, Messages: []models.ReactMessage{msg("agent", "要导出哪些列?"), msg("human", "全部")}},
@@ -148,16 +152,28 @@ func TestConversationChain(t *testing.T) {
 		}
 	}
 	seg := out.Segments
-	// Per-iteration conversations (multi-iteration loop), text-only turns.
+	// Per-iteration conversations (multi-iteration loop). Turns keep questions,
+	// tools and parts; images and the raw event log stay off the chain.
 	if len(seg[3].Turns) != 2 || seg[3].Turns[0]["text"] != "第一次复审" || len(seg[6].Turns) != 1 || seg[6].Turns[0]["text"] != "第二次复审" {
 		t.Fatalf("impl turns per iteration: #1=%v #2=%v", seg[3].Turns, seg[6].Turns)
 	}
+	allowedTurnKey := map[string]bool{"role": true, "text": true, "at": true, "questions": true, "tools": true, "parts": true, "forms": true}
 	for _, turn := range seg[1].Turns {
 		for k := range turn {
-			if k != "role" && k != "text" && k != "at" {
-				t.Fatalf("turns must be text-only, got key %q", k)
+			if !allowedTurnKey[k] {
+				t.Fatalf("unexpected turn key %q", k)
 			}
 		}
+	}
+	qTurn := seg[1].Turns[0]
+	qs, _ := qTurn["questions"].([]any)
+	tools, _ := qTurn["tools"].([]any)
+	parts, _ := qTurn["parts"].([]any)
+	if len(qs) != 1 || len(tools) != 1 || len(parts) != 2 {
+		t.Fatalf("clarify detail: questions=%v tools=%v parts=%v", qs, tools, parts)
+	}
+	if _, ok := qTurn["events"]; ok {
+		t.Fatal("turns must not carry raw events")
 	}
 	if seg[1].Turns[1]["role"] != "human" || seg[1].Turns[1]["text"] != "全部" {
 		t.Fatalf("clarify turns: %v", seg[1].Turns)

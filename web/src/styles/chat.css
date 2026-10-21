@@ -126,6 +126,7 @@
   transition: background var(--dur-ui);
 }
 .chat-thought-summary::-webkit-details-marker { display: none; }
+.chat-thought-summary::marker { content: none; }
 .chat-thought-summary:hover { background: rgb(var(--c-elevated) / .6); }
 .chat-thought-summary:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
 .chat-thought-chevron { flex: none; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
