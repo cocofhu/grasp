@@ -151,7 +151,9 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings/workspace')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/shared-agent', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
+  await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/shared-agent"]')).toHaveCount(0)
   await expect(page.locator('.settings-group-heading')).toHaveText(['工作区工具', '执行配置', '平台配置'])
   await expect(page.getByTestId('workspace-meta-delete')).toHaveCount(0)
   await page.locator('#workspace-meta-name').fill('共享研发工作区')

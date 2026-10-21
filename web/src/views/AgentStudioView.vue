@@ -188,6 +188,15 @@ function onSidebarSelect(key: string) {
   }
   onTreeSelect(key)
 }
+// Narrow screens pick from the bottom sheet; the defaults item works the same way there.
+function onSheetSelect(key: string) {
+  if (key === DEFAULTS_KEY || showDefaults.value) {
+    onSidebarSelect(key)
+    closeSidebarSheet()
+    return
+  }
+  onSheetTreeSelect(key)
+}
 
 async function createStudioChatTest(
   profile: string,
@@ -344,10 +353,22 @@ async function createStudioChatTest(
       />
 
       <!-- workspace defaults (was /settings/shared-agent) -->
-      <div v-else-if="showDefaults && !isMobile" class="flex min-h-0 min-w-0 flex-col overflow-hidden" data-testid="studio-defaults-pane">
+      <div v-else-if="showDefaults" class="flex min-h-0 min-w-0 flex-col overflow-hidden" data-testid="studio-defaults-pane">
         <div data-test="studio-name-bar" class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4">
           <Icon name="skills" :size="15" class="shrink-0 text-accent-2" />
-          <span class="min-w-0 truncate text-[13px] font-medium text-txt">{{ t('nav.sharedAgent') }}</span>
+          <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ t('nav.sharedAgent') }}</span>
+          <button
+            v-if="isMobile"
+            type="button"
+            data-test="sidebar-switch"
+            class="inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-line bg-elevated px-2.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
+            :title="t('pages.agentStudio.mobile.switchTitle')"
+            :aria-label="t('pages.agentStudio.mobile.switchAria')"
+            @click="openSidebarSheet"
+          >
+            <Icon name="menu" :size="14" />
+            <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
+          </button>
         </div>
         <WorkspaceSharedAgentPanel />
       </div>
@@ -778,13 +799,14 @@ async function createStudioChatTest(
           <div class="min-h-0 flex-1 overflow-hidden">
             <ResourceList
               :nodes="treeNodes"
-              :active-key="activeTreeKey"
+              :pinned="pinnedNodes"
+              :active-key="showDefaults ? DEFAULTS_KEY : activeTreeKey"
               :title="t('pages.agentStudio.tree.title')"
               :total="agents.length"
               :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')"
               :empty-text="t('pages.agentStudio.tree.empty')"
               storage-key="agent-studio-sheet-tree"
-              @select="onSheetTreeSelect"
+              @select="onSheetSelect"
             />
           </div>
         </div>
