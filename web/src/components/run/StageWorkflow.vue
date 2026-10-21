@@ -60,11 +60,17 @@ const rows = computed(() => {
 
 <template>
   <section v-if="rows.length" class="stage-workflow" data-testid="stage-workflow">
-    <p class="mb-2 text-[12px] font-medium text-txt3" data-testid="stage-workflow-heading">
+    <p class="mb-2 px-1 text-[12px] font-medium text-txt3" data-testid="stage-workflow-heading">
       {{ t('pages.reactArtifactStage.workflowHeading') }}
     </p>
-    <ol class="relative m-0 min-w-0 max-w-full list-none space-y-2 border-l border-line pl-6" :aria-label="t('pages.reactArtifactStage.workflowHeading')">
-      <li v-for="row in rows" :key="row.id" class="relative min-w-0 max-w-full">
+    <ol class="m-0 min-w-0 max-w-full list-none p-0" :aria-label="t('pages.reactArtifactStage.workflowHeading')">
+      <li
+        v-for="row in rows"
+        :key="row.id"
+        class="stage-workflow-step"
+        :class="{ 'is-done': row.status === 'completed' }"
+        :aria-current="row.current ? 'step' : undefined"
+      >
         <span
           class="stage-workflow-dot"
           :class="DOT[row.status] || DOT.pending"
@@ -73,28 +79,28 @@ const rows = computed(() => {
           aria-hidden="true"
         />
         <div
-          class="flex min-w-0 cursor-default items-start gap-2.5 rounded-xl border bg-surface px-3 py-2.5"
-          :class="row.current ? 'border-accent/60 ring-1 ring-accent/40' : 'border-line'"
+          class="stage-workflow-node"
+          :class="{ 'is-current': row.current, 'is-pending': row.status === 'pending' && !row.current }"
           data-testid="stage-workflow-node"
           :data-node-id="row.id"
           :data-current="row.current ? 'true' : 'false'"
           :data-status="row.status"
         >
           <span
-            class="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg"
+            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
             :style="{ background: row.tint, color: row.color }"
             data-testid="stage-workflow-mark"
           >
-            <Icon :name="row.icon" :size="15" />
+            <Icon :name="row.icon" :size="14" />
           </span>
           <div
-            class="min-w-0 flex-1 pt-px text-[13px] font-semibold text-txt [overflow-wrap:anywhere]"
+            class="min-w-0 flex-1 pt-0.5 text-[13px] font-medium leading-5 text-txt [overflow-wrap:anywhere]"
             data-testid="stage-workflow-label"
           >
             {{ row.label }}
             <span
               v-if="row.current"
-              class="ml-1.5 inline-block rounded-full bg-accent-dim px-1.5 align-middle text-[10px] font-bold leading-4 text-accent-2"
+              class="ml-1.5 inline-block rounded-full bg-accent-dim px-1.5 align-middle text-[10px] font-semibold leading-4 text-accent-2"
               data-testid="stage-workflow-current"
             >{{ t('pages.reactArtifactStage.currentMark') }}</span>
           </div>
@@ -109,15 +115,48 @@ const rows = computed(() => {
 .stage-workflow {
   max-width: 100%;
   margin-bottom: 16px;
-  overflow-x: hidden;
 }
+/* Rail column (20px) + row; the line runs dot to dot behind every step but the last. */
+.stage-workflow-step {
+  position: relative;
+  min-width: 0;
+  padding-left: 20px;
+}
+.stage-workflow-step + .stage-workflow-step { margin-top: 2px; }
+.stage-workflow-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 20px;
+  bottom: -20px;
+  width: 2px;
+  border-radius: 1px;
+  background: rgb(var(--c-line));
+}
+.stage-workflow-step.is-done:not(:last-child)::before { background: rgb(var(--c-ok) / .35); }
 .stage-workflow-dot {
   position: absolute;
-  left: -31px;
-  top: 18px;
+  z-index: 1;
+  left: 0;
+  top: 15px;
   width: 10px;
   height: 10px;
   border-radius: 999px;
-  box-shadow: 0 0 0 4px var(--ra-bg, rgb(var(--c-base)));
+  box-shadow: 0 0 0 3px var(--ra-bg, rgb(var(--c-base)));
 }
+.stage-workflow-node {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 10px;
+  cursor: default;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+}
+.stage-workflow-node.is-current {
+  border-color: rgb(var(--c-accent) / .35);
+  background: rgb(var(--c-accent) / .06);
+}
+.stage-workflow-node.is-pending { opacity: .62; }
 </style>

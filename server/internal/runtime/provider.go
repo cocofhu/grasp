@@ -254,6 +254,14 @@ type ExecProvider interface {
 	ReactReply(ctx context.Context, req NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) ReactTurn
 }
 
+// ReactResumer is an optional provider capability: open a react dialogue
+// carried over from an interrupted visit (从失败位置继续) in a fresh sandbox,
+// primed with that dialogue so the Agent continues where it stopped.
+// Providers without it open the visit like a new one (ReactOpen).
+type ReactResumer interface {
+	ReactResume(ctx context.Context, req NodeReq, history []models.ReactMessage) ReactTurn
+}
+
 // ReviewProvider is an optional provider capability for the post-run ReAct
 // review phase: a single in-place edit turn against a parked session that does
 // NOT finish/close the node (unlike ReactReply's clarify semantics). The engine

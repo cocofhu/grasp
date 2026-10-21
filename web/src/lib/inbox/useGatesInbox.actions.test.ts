@@ -448,6 +448,48 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('a force confirm that is not sent, or fails with the same error, releases the spinner', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value[1]!
+    inbox.selectItem(clarify)
+    await nextTick()
+    const releaseConfirmPending = vi.fn()
+    inbox.reviewChatRef.value = { releaseConfirmPending, isSessionBusy: () => false }
+    inbox.beginProcessingIntent(clarify)
+    mocks.reactReply.mockClear()
+    await inbox.onClarifySend('done', [], [], true)
+    expect(mocks.reactReply).not.toHaveBeenCalled()
+    // In-flight confirm keeps 校验中; releasing here made the button look ready
+    // while the next click did not send.
+    expect(releaseConfirmPending).not.toHaveBeenCalled()
+
+    inbox.rollbackProcessingIntent(clarify)
+    mocks.reactReply.mockRejectedValue(new Error('react already done'))
+    await inbox.onClarifySend('done', [], [], true)
+    await inbox.onClarifySend('done', [], [], true)
+    expect(inbox.clarifyConfirmError.value).toBe('react already done')
+    expect(releaseConfirmPending).toHaveBeenCalledTimes(2)
+    app.unmount()
+  })
+
+  it('an ordinary reply refused during confirm does not show react already done', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value[1]!
+    inbox.selectItem(clarify)
+    await nextTick()
+    let release: (value?: unknown) => void = () => {}
+    mocks.reactReply.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const finishing = inbox.onClarifySend('done', [], [], true)
+    await nextTick()
+    mocks.reactReply.mockRejectedValueOnce(new Error('react already done'))
+    await inbox.onClarifySend('hello')
+    expect(inbox.clarifyConfirmError.value).toBeNull()
+    expect(inbox.activeHandoff.value?.phase).toBe('pending')
+    release({})
+    await finishing
+    app.unmount()
+  })
+
   it('v2 hand-off: next node of the same run continues under the earlier nodes', async () => {
     const turns = [{ role: 'human', text: '做个导出', at: '2026-10-21T05:00:00+08:00' }]
     mocks.runConversationChain.mockResolvedValue({

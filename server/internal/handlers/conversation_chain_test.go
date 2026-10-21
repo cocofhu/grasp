@@ -41,6 +41,8 @@ type chainResp struct {
 		EventCount *int             `json:"eventCount"`
 		Decision   string           `json:"decision"`
 		Task       *string          `json:"task"`
+		Handoff    string           `json:"handoff"`
+		HandoffSrc string           `json:"handoffSource"`
 		raw        map[string]any
 	} `json:"segments"`
 }
@@ -61,7 +63,7 @@ func seedChainRun(t *testing.T, h *harness, longPrompt string) {
 		{NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(1), DurationSec: 120,
 			VarsBefore: map[string]any{"topic": "导出 CSV"}},
 		{NodeID: "design", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(5), DurationSec: 60,
-			Events: ev(42), Outputs: map[string]any{"content": "方案一"}},
+			Events: ev(42), Outputs: map[string]any{"content": "方案一", "handoff": "  按方案一实现,注意导出编码  ", "handoff_source": "agent"}},
 		{NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(7), Events: ev(3)},
 		{NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "completed", StartedAt: at(9),
 			Outputs: map[string]any{"action": "revise"}},
@@ -79,7 +81,11 @@ func seedChainRun(t *testing.T, h *harness, longPrompt string) {
 	}
 	msg := func(role, text string) models.ReactMessage {
 		return models.ReactMessage{Role: role, Text: text, At: "2026-10-21T05:00:00Z",
-			Events: []models.AcpEvent{{Kind: "tool_call"}}, Questions: []models.ReactQuestion{{ID: "q"}}}
+			Events:    []models.AcpEvent{{Kind: "tool_call", Title: "raw-event"}},
+			Questions: []models.ReactQuestion{{ID: "q", Prompt: "哪一列", Options: []models.ReactOption{{ID: "a", Label: "全部"}}}},
+			Tools:     []models.ReactTool{{Title: "Read", Status: "completed"}},
+			Parts:     []models.AcpPart{{Kind: "tool", Title: "Read"}, {Kind: "message", Text: text}},
+		}
 	}
 	convs := []models.ReactConversation{
 		{NodeID: "clarify", Iteration: 1, Done: true, Messages: []models.ReactMessage{msg("agent", "要导出哪些列?"), msg("human", "全部")}},
@@ -148,16 +154,28 @@ func TestConversationChain(t *testing.T) {
 		}
 	}
 	seg := out.Segments
-	// Per-iteration conversations (multi-iteration loop), text-only turns.
+	// Per-iteration conversations (multi-iteration loop). Turns keep questions,
+	// tools and parts; images and the raw event log stay off the chain.
 	if len(seg[3].Turns) != 2 || seg[3].Turns[0]["text"] != "第一次复审" || len(seg[6].Turns) != 1 || seg[6].Turns[0]["text"] != "第二次复审" {
 		t.Fatalf("impl turns per iteration: #1=%v #2=%v", seg[3].Turns, seg[6].Turns)
 	}
+	allowedTurnKey := map[string]bool{"role": true, "text": true, "at": true, "questions": true, "tools": true, "parts": true, "forms": true}
 	for _, turn := range seg[1].Turns {
 		for k := range turn {
-			if k != "role" && k != "text" && k != "at" {
-				t.Fatalf("turns must be text-only, got key %q", k)
+			if !allowedTurnKey[k] {
+				t.Fatalf("unexpected turn key %q", k)
 			}
 		}
+	}
+	qTurn := seg[1].Turns[0]
+	qs, _ := qTurn["questions"].([]any)
+	tools, _ := qTurn["tools"].([]any)
+	parts, _ := qTurn["parts"].([]any)
+	if len(qs) != 1 || len(tools) != 1 || len(parts) != 2 {
+		t.Fatalf("clarify detail: questions=%v tools=%v parts=%v", qs, tools, parts)
+	}
+	if _, ok := qTurn["events"]; ok {
+		t.Fatal("turns must not carry raw events")
 	}
 	if seg[1].Turns[1]["role"] != "human" || seg[1].Turns[1]["text"] != "全部" {
 		t.Fatalf("clarify turns: %v", seg[1].Turns)
@@ -231,6 +249,89 @@ func TestConversationChain(t *testing.T) {
 	h.db.First(&r, "id = ?", "chain")
 	if vars != 1 || r.Status != "waiting_human" {
 		t.Fatalf("chain must be read-only: vars=%d status=%s", vars, r.Status)
+	}
+}
+
+func TestConversationChainHandoff(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	seedChainRun(t, h, "长")
+	out, code, body := getChain(t, h, "")
+	if code != 200 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	for _, s := range out.Segments {
+		switch {
+		case s.NodeID == "design" && s.Iteration == 1:
+			if s.Handoff != "按方案一实现,注意导出编码" || s.HandoffSrc != "agent" {
+				t.Fatalf("design#1 handoff: %q %q", s.Handoff, s.HandoffSrc)
+			}
+		default:
+			if _, ok := s.raw["handoff"]; ok {
+				t.Fatalf("%s#%d: unexpected handoff %v", s.NodeID, s.Iteration, s.raw["handoff"])
+			}
+		}
+	}
+}
+
+func TestConversationChainBoot(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	seedChainRun(t, h, "长")
+	ready := time.Date(2026, 10, 21, 5, 5, 30, 0, time.UTC)
+	h.db.Model(&models.StateRun{}).Where("run_id = ? AND node_id = ? AND iteration = ?", "chain", "design", 1).
+		Update("sandbox_ready_at", ready)
+	h.db.Create(&models.Sandbox{Name: "sb-dev", Purpose: "run", Status: "creating", RunID: "chain", NodeID: "dev"})
+	h.db.Create(&models.Sandbox{Name: "sb-quiet", Purpose: "run", Status: "creating", RunID: "chain", NodeID: "quiet"})
+	out, code, body := getChain(t, h, "")
+	if code != 200 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	for _, s := range out.Segments {
+		boot, _ := s.raw["boot"].(map[string]any)
+		switch {
+		case s.NodeID == "design" && s.Iteration == 1:
+			if boot["status"] != "ready" || boot["readyAt"] != "2026-10-21T05:05:30Z" {
+				t.Fatalf("design#1 boot: %v", boot)
+			}
+		case s.NodeID == "dev":
+			if boot["status"] != "creating" || boot["readyAt"] != nil {
+				t.Fatalf("dev boot: %v", boot)
+			}
+		default:
+			// quiet finished: a leftover creating row is not its boot.
+			if boot != nil {
+				t.Fatalf("%s#%d: unexpected boot %v", s.NodeID, s.Iteration, boot)
+			}
+		}
+	}
+}
+
+func TestConversationChainResumedDialogueShowsOnce(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	g := chainGraph("p")
+	h.db.Create(&models.Run{ID: "chain", Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: time.Now()})
+	t0 := time.Date(2026, 10, 21, 5, 0, 0, 0, time.UTC)
+	h.db.Create(&models.StateRun{RunID: "chain", NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "cancelled", StartedAt: &t0})
+	t1 := t0.Add(time.Minute)
+	h.db.Create(&models.StateRun{RunID: "chain", NodeID: "clarify", NodeType: "agent", Iteration: 2, Status: "waiting_human", StartedAt: &t1})
+	old := []models.ReactMessage{
+		{Role: "human", Text: "把登录做清楚", At: "2026-10-21T05:00:01Z"},
+		{Role: "agent", Text: "要支持哪些登录方式?", At: "2026-10-21T05:00:05Z"},
+	}
+	h.db.Create(&models.ReactConversation{RunID: "chain", NodeID: "clarify", Iteration: 1, Messages: old})
+	h.db.Create(&models.ReactConversation{RunID: "chain", NodeID: "clarify", Iteration: 2,
+		Messages: append(append([]models.ReactMessage{}, old...), models.ReactMessage{Role: "human", Text: "密码和短信", At: "2026-10-21T05:01:10Z"})})
+	out, code, body := getChain(t, h, "")
+	if code != 200 || len(out.Segments) != 2 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	if n := len(out.Segments[0].Turns); n != 0 {
+		t.Fatalf("interrupted visit should hand its turns to the resumed one, has %d", n)
+	}
+	if n := len(out.Segments[1].Turns); n != 3 {
+		t.Fatalf("resumed visit turns = %d, want 3", n)
 	}
 }
 

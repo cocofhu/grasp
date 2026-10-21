@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { computed, defineComponent, nextTick, ref } from 'vue'
+import { computed, defineComponent, nextTick, onMounted, ref } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -231,6 +231,8 @@ function hangInboxContext(_runId: string, _nodeId: string, _iteration?: number, 
   })
 }
 
+const reviewShellMounts = { n: 0 }
+
 function mountInbox(opts: { attach?: boolean } = {}) {
   const i18n = createI18n({
     legacy: false,
@@ -249,6 +251,9 @@ function mountInbox(opts: { attach?: boolean } = {}) {
         ArtifactLoadingPane: true,
         GateApproval: GateApprovalStub,
         ReviewShell: defineComponent({
+          setup() {
+            onMounted(() => { reviewShellMounts.n++ })
+          },
           template: '<div><slot name="stage" /><slot name="sidebar" /></div>',
         }),
         ReviewComposer: ReviewComposerStub,
@@ -909,7 +914,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
 
   it('方案 B: after the hand-off the inbox follows the run into its next waiting node', async () => {
     const a = clarifyItem('a')
-    const next: InboxItem = { ...clarifyItem('a'), nodeId: 'accept-a', label: 'Accept a' }
+    const next: InboxItem = { ...clarifyItem('a'), nodeId: 'clarify-accept-a', label: 'Accept a' }
     const b = clarifyItem('b')
     let list: InboxItem[] = [b, a]
     mocks.listGates.mockImplementation(async () => paged(list))
@@ -921,6 +926,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await selectByQuery('run-a', 'clarify-a')
     expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    const mountsBefore = reviewShellMounts.n
+    expect(mountsBefore).toBeGreaterThan(0)
 
     const finishClick = wrapper.get('[data-testid="clarify-send"]').trigger('click')
     await flushPromises()
@@ -935,7 +942,10 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'accept-a' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-accept-a' })
+    expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
+    // Same run, next node: one chat — the shell (stage, drawers) is not rebuilt.
+    expect(reviewShellMounts.n).toBe(mountsBefore)
     wrapper.unmount()
   })
 

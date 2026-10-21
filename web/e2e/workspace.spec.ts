@@ -140,9 +140,13 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
   await expect(lists.getByRole('button', { name: /新建工作流|置顶 / })).toHaveCount(0)
   await expect(lists.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page').getByRole('searchbox')).toBeVisible()
-  await expect(lists.getByRole('link', { name: '最近', exact: true })).toBeVisible()
-  await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(6)
-  await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-1')
+  await expect(lists.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
+  // Finished runs only; the running and waiting ones are listed under 正在执行.
+  await expect(lists.getByTestId('sidebar-recent-run')).toHaveCount(4)
+  await expect(lists.getByTestId('sidebar-recent-run').first()).toHaveAttribute('href', '/runs/run-3')
+  const running = page.getByTestId('app-desktop-sidebar').getByTestId('nav-pending-approvals')
+  await expect(running).toContainText('正在执行')
+  await expect(running.getByTestId('nav-pending-row')).toHaveCount(2)
   const calls = await page.evaluate(() => (window as any).__workspaceFixture.calls)
   expect(calls.some((call: any) => call.path === '/api/workflows/catalog')).toBe(false)
   expect(calls.some((call: any) => call.path === '/api/workflows' && call.method === 'GET')).toBe(true)
@@ -151,7 +155,9 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
   await page.goto('/workspace.html?view=/settings/workspace')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/shared-agent', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
+  await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/shared-agent"]')).toHaveCount(0)
   await expect(page.locator('.settings-group-heading')).toHaveText(['工作区工具', '执行配置', '平台配置'])
   await expect(page.getByTestId('workspace-meta-delete')).toHaveCount(0)
   await page.locator('#workspace-meta-name').fill('共享研发工作区')
@@ -171,8 +177,8 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
   await expect(drawer.getByTestId('sidebar-workflow')).toHaveCount(0)
   await expect(drawer.getByTestId('sidebar-workflow-run')).toHaveCount(0)
   await expect(drawer.locator('input[type="search"]')).toHaveCount(0)
-  await expect(drawer.getByTestId('sidebar-recent-run')).toHaveCount(6)
-  await expect(drawer.getByRole('link', { name: '最近', exact: true })).toBeVisible()
+  await expect(drawer.getByTestId('sidebar-recent-run')).toHaveCount(4)
+  await expect(drawer.getByRole('link', { name: '历史执行', exact: true })).toBeVisible()
   expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false)
 })
 

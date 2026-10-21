@@ -219,3 +219,69 @@ func TestClarifyFirstMessageTurnShowsBusy(t *testing.T) {
 	}
 	waitFirstHumanTurn(t, db, run.ID, "predev")
 }
+
+// 从失败位置继续 a clarify visit cancelled mid-dialogue: the new visit carries
+// the dialogue on (the provider primes a fresh session with it) and the
+// opening message is not delivered a second time.
+func TestClarifyResumeCarriesInterruptedDialogue(t *testing.T) {
+	eng, db, p := setupEngineGraphP(t, clarifyOnlyGraph())
+	p.mu.Lock()
+	p.reactPending = 5
+	p.mu.Unlock()
+	run, err := eng.StartRunWithFirstMessage("wf", nil, "test", "", nil, nil, "", &models.CompositeText{Text: "把登录做清楚"})
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitFirstHumanTurn(t, db, run.ID, "predev")
+	var first models.ReactConversation
+	deadline := time.Now().Add(waitPollTimeout)
+	for {
+		db.Where("run_id = ? AND node_id = ?", run.ID, "predev").First(&first)
+		if len(first.Messages) >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("agent never answered: %+v", first.Messages)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	waitRunStatus(t, db, run.ID, "waiting_human")
+	if err := eng.Cancel(run.ID); err != nil {
+		t.Fatalf("cancel: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "cancelled")
+	db.Where("run_id = ? AND node_id = ?", run.ID, "predev").First(&first)
+
+	if err := eng.ResumeFrom(run.ID, "predev"); err != nil {
+		t.Fatalf("ResumeFrom: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "waiting_human")
+	var conv models.ReactConversation
+	deadline = time.Now().Add(waitPollTimeout)
+	for {
+		err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").Order("iteration desc").First(&conv).Error
+		if err == nil && conv.Iteration >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no resumed visit: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(80 * time.Millisecond)
+	db.First(&conv, conv.ID)
+	if len(conv.Messages) != len(first.Messages) {
+		t.Fatalf("resumed visit messages = %d, want the %d carried", len(conv.Messages), len(first.Messages))
+	}
+	for i := range first.Messages {
+		if conv.Messages[i].Role != first.Messages[i].Role || conv.Messages[i].Text != first.Messages[i].Text {
+			t.Fatalf("message %d = %+v, want %+v", i, conv.Messages[i], first.Messages[i])
+		}
+	}
+	p.mu.Lock()
+	primed := p.resumed["predev"]
+	p.mu.Unlock()
+	if len(primed) != len(first.Messages) {
+		t.Fatalf("provider primed with %d messages, want %d", len(primed), len(first.Messages))
+	}
+}

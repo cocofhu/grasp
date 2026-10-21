@@ -229,6 +229,38 @@ beforeEach(async () => {
 })
 
 describe('GatesInboxView starting approvals', () => {
+  it('a reload after 确认并流转 reopens the confirmed chat and follows the run', async () => {
+    routeState.query = { run: 'run-boot', node: 'ap' }
+    mocks.inboxContext.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    mocks.getRun.mockResolvedValue({
+      id: 'run-boot',
+      status: 'running',
+      title: '把登录做清楚',
+      nodes: [{ id: 'ap', type: 'agent', caps: CLARIFY_CAPS, label: '开发前澄清' }],
+      nodeRuns: { ap: { nodeId: 'ap', iteration: 1, status: 'waiting_human' } },
+      clarifyByNode: {
+        ap: {
+          nodeId: 'ap',
+          iteration: 1,
+          done: true,
+          turns: [
+            { role: 'human', text: '把登录做清楚', at: '' },
+            { role: 'agent', text: '需求已整理', at: '' },
+          ],
+        },
+      },
+    })
+    const wrapper = mountInbox()
+    for (let i = 0; i < 20; i++) {
+      await flushPromises()
+      await nextTick()
+    }
+    expect(wrapper.find('[data-testid="react-connecting-stage"]').exists()).toBe(false)
+    const composer = wrapper.getComponent(ReviewComposerStub)
+    expect((composer.props('turns') as unknown[]).length).toBe(2)
+    wrapper.unmount()
+  })
+
   it('renders a connecting ReviewShell for a starting card', async () => {
     mocks.listGates.mockResolvedValue(paged([startingItem()]))
     mocks.inboxContext.mockResolvedValue(startingContext)
@@ -248,6 +280,29 @@ describe('GatesInboxView starting approvals', () => {
     wrapper.unmount()
   })
 
+  it('keeps the first message queued after a reload, from the backend copy', async () => {
+    takeHomeApproveHandoff()
+    routeState.query = { run: 'run-boot', node: 'ap' }
+    mocks.listGates.mockResolvedValue(paged([startingItem()]))
+    mocks.inboxContext.mockResolvedValue({ ...startingContext, clarify: { ...startingContext.clarify, firstMessage: '把登录做清楚' } })
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    const queue = wrapper.get('[data-testid="react-connecting-queue"]')
+    expect(queue.text()).toContain('把登录做清楚')
+    // Above the composer, where ClarifyChat keeps its queue.
+    const input = wrapper.get('[data-testid="react-connecting-input-row"]')
+    expect(queue.element.compareDocumentPosition(input.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    // A context reload (activeRun cleared while it loads) must not blink the row out.
+    mocks.inboxContext.mockReturnValue(new Promise(() => {}))
+    liveSocket().emit('status', { runId: 'run-boot' })
+    await flushPromises()
+    await nextTick()
+    expect(wrapper.get('[data-testid="react-connecting-queue"]').text()).toContain('把登录做清楚')
+    wrapper.unmount()
+  })
+
   it('swaps the boot loader for the chat once a status frame reports the park', async () => {
     setHomeApproveHandoff({ runId: 'run-boot', nodeId: 'ap', text: '把登录做清楚', images: [] })
     routeState.query = { run: 'run-boot', node: 'ap' }
@@ -257,7 +312,14 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
+    const connecting = wrapper.get('[data-testid="react-connecting-sidebar"]')
+    // Not sent yet: the run's first message waits in the queue under the composer, read-only.
+    const queue = connecting.get('[data-testid="react-connecting-queue"]')
+    expect(queue.text()).toContain('待发送队列 · 1 条')
+    expect(queue.text()).toContain('把登录做清楚')
+    expect(queue.find('[data-testid="clarify-queue-cancel"]').exists()).toBe(false)
+    expect(queue.find('[data-testid="clarify-queue-edit"]').exists()).toBe(false)
+    expect(connecting.get('[data-testid="clarify-boot-loader"]').exists()).toBe(true)
 
     mocks.listGates.mockResolvedValue(paged([parkedItem()]))
     mocks.inboxContext.mockResolvedValue(parkedContext)
@@ -378,6 +440,30 @@ describe('GatesInboxView starting approvals', () => {
     expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="inbox-boot-loader"]').exists()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('names a starting row after its own run, never after another run\'s home handoff', async () => {
+    routeState.query = { run: 'run-other', node: 'ap' }
+    setHomeApproveHandoff({ runId: 'run-boot', nodeId: 'ap', text: '把登录做清楚', images: [] })
+    mocks.listGates.mockResolvedValue(paged([]))
+    mocks.getRun.mockResolvedValue({
+      id: 'run-other',
+      status: 'running',
+      title: '另一个运行',
+      workflowName: 'wf',
+      nodeRuns: { ap: { nodeId: 'ap', status: 'running' } },
+    })
+    const wrapper = mountInbox()
+    const titles = () => usePendingGates().sidebarExtras.value.filter((it) => it.runId === 'run-other').map((it) => it.runTitle)
+    await nextTick()
+    expect(titles()).not.toContain('把登录做清楚')
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    expect(titles()).toEqual(['另一个运行'])
+    expect(wrapper.find('[data-testid="react-connecting-queue"]').exists()).toBe(false)
+    wrapper.unmount()
+    takeHomeApproveHandoff()
   })
 
   it('does not rebuild the ghost after the approval leaves the pending list', async () => {

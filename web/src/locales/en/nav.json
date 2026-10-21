@@ -2,9 +2,10 @@
   "nav": {
     "dashboard": "New request",
     "workspace": "Workspace navigation",
-    "recent": "Recent",
+    "runningRuns": "Running",
+    "runHistory": "History",
     "workspaceLoading": "Loading…",
-    "workspaceNoRuns": "No runs yet",
+    "workspaceNoRuns": "No finished runs yet",
     "workspaceLoadFailed": "Unable to load",
     "workspaceRetry": "Retry",
     "viewAllRuns": "View all runs",

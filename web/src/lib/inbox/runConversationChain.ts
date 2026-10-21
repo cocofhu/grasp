@@ -1,4 +1,5 @@
 import type { ClarifyTurn, Run } from '../shared/types'
+import { bootKey, seedBoot } from '../run/bootRecord'
 
 /**
  * One executed node of a run, in execution order, for the continuous inbox
@@ -23,6 +24,16 @@ export interface ChainSegment {
   decision?: string
   /** What this node does (interpolated node task), for the opening bubble after a hand-off. */
   task?: string
+  /** The note this visit left for the next node (outputs.handoff); platform = written for a silent upstream. */
+  handoff?: string
+  handoffSource?: 'agent' | 'platform'
+  /** Sandbox start-up of this visit: pulling / creating while booting, ready once the Agent is connected. */
+  boot?: ChainBoot
+}
+
+export interface ChainBoot {
+  status: string
+  readyAt?: string
 }
 
 export interface RunChainCurrent {
@@ -45,7 +56,8 @@ export interface RunChain {
 /**
  * Wire shape of GET /api/runs/:id/conversation-chain (#850, feature/conversation-chain @ 3410ac20).
  * One segment per (nodeId, iteration), execution order. clarify/review/takeover
- * segments always carry turns (role/text/at only, possibly empty); agent
+ * segments always carry turns (role/text/at, plus questions/tools/parts/forms
+ * when the turn has them; images and the raw event log are omitted); agent
  * segments carry eventCount only. endedAt only once ended. name may be "".
  * task only on Agent-node agent/clarify/review/takeover segments.
  */
@@ -58,9 +70,12 @@ export interface RunChainWireSegment {
   status?: string
   startedAt?: string
   endedAt?: string
-  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at'>>
+  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at' | 'questions' | 'tools' | 'parts' | 'forms'>>
   eventCount?: number
   task?: string
+  handoff?: string
+  handoffSource?: string
+  boot?: { status?: string; readyAt?: string } | null
   /**
    * kind:'gate' + mode:'manual' segments (requested #850 follow-up): the
    * gate-react reject / re-review discussion as its own segment after the
@@ -83,6 +98,11 @@ export type ChainNodeMeta = ReadonlyArray<{ id: string; label?: unknown; type?: 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 export function isRunTerminal(status: string | undefined | null): boolean {
   return !!status && TERMINAL.has(status)
+}
+
+/** Text, or the structured detail the prior fold renders. */
+function turnHasDetail(t: ClarifyTurn): boolean {
+  return !!String(t.text ?? '').trim() || !!t.questions?.length || !!t.tools?.length || !!t.parts?.length || !!t.forms?.length
 }
 
 function segKind(kind: string | undefined, hasTurns: boolean): ChainSegment['kind'] {
@@ -111,6 +131,12 @@ export function isPlumbingSegment(s: RunChainWireSegment, type?: string): boolea
   )
 }
 
+function handoffOf(text: unknown, source: unknown): Pick<ChainSegment, 'handoff' | 'handoffSource'> {
+  const handoff = typeof text === 'string' ? text.trim() : ''
+  if (!handoff) return {}
+  return { handoff, handoffSource: source === 'platform' ? 'platform' : 'agent' }
+}
+
 export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta): RunChain {
   const meta = new Map((nodes ?? []).map((n) => [n.id, n]))
   const label = (id: string, name?: string) => name || (meta.get(id)?.label as string | undefined) || id
@@ -122,8 +148,8 @@ export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta):
     segments: (res.segments ?? [])
       .filter((s) => !isPlumbingSegment(s, meta.get(s.nodeId)?.type as string | undefined))
       .map((s) => {
-        // Blank turns (e.g. a bare 确认并流转 with no text) carry nothing to show.
-        const turns = ((s.turns ?? []) as ClarifyTurn[]).filter((t) => String(t.text ?? '').trim())
+        // A bare 确认并流转 (no text and no structured detail) carries nothing to show.
+        const turns = ((s.turns ?? []) as ClarifyTurn[]).filter(turnHasDetail)
         return {
           nodeId: s.nodeId,
           iteration: s.iteration ?? 1,
@@ -136,9 +162,24 @@ export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta):
           eventCount: s.eventCount,
           decision: s.decision || undefined,
           task: s.task || undefined,
+          ...handoffOf(s.handoff, s.handoffSource),
+          ...(s.boot?.status ? { boot: { status: s.boot.status, readyAt: s.boot.readyAt || undefined } } : {}),
         }
       }),
   }
+}
+
+/** Boot records of every visit the server reports, so the boot steps survive a reload and stay on finished nodes. */
+export function seedChainBoots(chain: RunChain | null | undefined): void {
+  for (const s of chain?.segments ?? []) {
+    if (s.boot) seedBoot(bootKey(chain!.runId, s.nodeId, s.iteration), s.at, s.boot)
+  }
+}
+
+/** The visit on screen is not in the chain yet, or its sandbox is still starting. */
+export function chainBootPending(chain: RunChain | null | undefined, nodeId: string, iteration: number): boolean {
+  const s = (chain?.segments ?? []).find((x) => x.nodeId === nodeId && x.iteration === iteration)
+  return !s || (!!s.boot && s.boot.status !== 'ready')
 }
 
 /** Plumbing node ids (input/output) of a run graph, for live frames (node_enter) that carry no type. */
@@ -175,6 +216,7 @@ export function runChainFromRun(run: Run): RunChain {
       at: nr.startedAt || '',
       turns,
       task: task(nr.nodeId),
+      ...handoffOf(nr.outputs?.handoff, nr.outputs?.handoff_source),
     })
     if (nr.status === 'running' || nr.status === 'waiting_human') {
       current = {

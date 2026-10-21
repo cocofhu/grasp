@@ -24,13 +24,17 @@ export function resolveIncomingApproval(
 /** Ghost row node id when neither the query nor the handoff names the node. */
 export const INCOMING_GHOST_NODE_ID = 'incoming'
 
-/** Optimistic loading row shown until listGates returns the real approval. */
+/**
+ * Optimistic loading row shown until listGates returns the real approval.
+ * Title is the run's own title (home handoff text or `run.title`); empty until
+ * one of them is known, so the row never shows a stand-in that later changes.
+ */
 export function makeIncomingGhost(
   target: IncomingApproval,
   seedText = '',
   now: string = new Date().toISOString(),
 ): ClarifyInboxItem {
-  const label = clipRunTitle(seedText.trim()) || '…'
+  const label = clipRunTitle(seedText.trim())
   return {
     type: 'clarify',
     state: 'starting',

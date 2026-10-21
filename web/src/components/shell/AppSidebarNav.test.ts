@@ -93,12 +93,18 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
 
 const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
+  listRuns: vi.fn(),
 }))
 
 vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
+    listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
   },
+}))
+
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({
+  useWorkspaceContext: () => ({ ensureLoaded: async () => ({ name: 'ws' }) }),
 }))
 
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({
@@ -157,6 +163,8 @@ beforeEach(() => {
   resetConversationDrawers()
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
+  apiMocks.listRuns.mockReset()
+  apiMocks.listRuns.mockResolvedValue({ items: [], total: 0 })
   const toast = useToast()
   for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
   vi.useFakeTimers()
@@ -181,6 +189,93 @@ function mountNav(attachOrOptions: boolean | { realIcon?: boolean } = false) {
 }
 
 describe('AppSidebarNav', () => {
+  it('keeps one 正在执行 row per run through clarify, auto and the next waiting node', async () => {
+    const runRow = (currentNode: Record<string, unknown>, status = 'running') => ({
+      id: 'run-x', workflowId: 'wf', workflowName: 'w', title: '把登录做清楚', status, startedAt: 'T0', currentNode,
+    })
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-x', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+      { type: 'clarify', runId: 'run-y', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '另一个' },
+    ]
+    gateMocks.activeInboxKey.value = 'run-x:clarify'
+    routeState.path = '/gates'
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued,running,waiting_human' }))
+    const keys = () => wrapper.findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    const rowX = () => wrapper.get('[data-key="run-x"]')
+    expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(wrapper.get('[data-testid="nav-pending-approvals"]').text()).toContain('正在执行2')
+
+    // 确认并流转: the pending item leaves; the row stays in place, running, before any reload.
+    let resolveRuns: (v: unknown) => void = () => {}
+    apiMocks.listRuns.mockImplementationOnce(() => new Promise((res) => { resolveRuns = res }))
+    gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+    await nextTick()
+    expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(rowX().attributes('data-motion')).toBe('pulse')
+    expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
+    expect(rowX().classes()).toContain('active')
+
+    // The run reports its auto node: same row, same title, still executing.
+    resolveRuns({ items: [runRow({ id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' })], total: 1 })
+    await flushPromises()
+    expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(rowX().attributes('data-motion')).toBe('pulse')
+    expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
+    await rowX().trigger('click')
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-x/live', query: { node: 'impl' } })
+
+    // Next node waits for the user: the pending item takes the row back, same key and title.
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-x', nodeId: 'deliver', label: '交付', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+      ...gateMocks.displayedItems.value,
+    ]
+    await flushPromises()
+    expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(rowX().attributes('data-node-id')).toBe('deliver')
+    expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
+    expect(wrapper.text()).not.toContain('Run #')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('names the row after the run whether or not it is selected', async () => {
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{ id: 'run-s', workflowId: 'wf', workflowName: 'w', title: '启动服务 我来指定需求', status: 'running', startedAt: 'T0' }],
+      total: 1,
+    })
+    const wrapper = mountNav()
+    await flushPromises()
+    const title = () => wrapper.get('[data-key="run-s"]').get('.nav-row-title').text()
+    expect(title()).toBe('启动服务 我来指定需求')
+    // Selecting it opens a starting item whose own title came from elsewhere.
+    gateMocks.sidebarExtras.value = [
+      { type: 'clarify', runId: 'run-s', nodeId: 'ap', label: '哦哦发哦佛啊', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '哦哦发哦佛啊' },
+    ]
+    gateMocks.activeInboxKey.value = 'run-s:ap'
+    routeState.path = '/gates'
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-s"]').classes()).toContain('active')
+    expect(title()).toBe('启动服务 我来指定需求')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows a blank title bar instead of a stand-in while a starting run has no title yet', async () => {
+    gateMocks.sidebarExtras.value = [
+      { type: 'clarify', runId: 'run-new', nodeId: 'incoming', label: '', kind: 'clarify', state: 'starting', workflowName: '', runTitle: '' },
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+    const row = wrapper.get('[data-key="run-new"]')
+    expect(row.find('[data-testid="nav-pending-title-skeleton"]').exists()).toBe(true)
+    expect(row.text()).not.toContain('…')
+    expect(row.text()).not.toContain('Run #')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('renders nav links from sidebar config', async () => {
     const wrapper = mountNav()
     await flushPromises()
@@ -636,7 +731,7 @@ describe('AppSidebarNav', () => {
     await flushPromises()
 
     const pending = wrapper.get('[data-testid="nav-pending-approvals"]')
-    expect(pending.text()).toContain('待审批')
+    expect(pending.text()).toContain('正在执行')
     expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-record-row"]').exists()).toBe(false)
 
@@ -669,7 +764,7 @@ describe('AppSidebarNav', () => {
     expect(rows[1].find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
 
     gateMocks.displayedItems.value = []
-    await nextTick()
+    await flushPromises()
     expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
 
@@ -891,7 +986,7 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="nav-inbox-records"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('待审批')
+    expect(wrapper.text()).not.toContain('正在执行')
     expect(wrapper.text()).not.toContain('发布前确认')
     wrapper.unmount()
     vi.useRealTimers()
@@ -912,14 +1007,14 @@ describe('AppSidebarNav', () => {
     expect(rows.map((row) => row.get('.nav-row-title').text())).toEqual([
       '把登录做清楚',
       '补充空状态文案',
-      'Run #abc',
-      'Run #json',
+      'w',
+      'w',
       'approving',
     ])
     expect(rows[0].text()).not.toContain('需求澄清')
     expect(rows[4].text()).not.toContain('[')
     expect(rows[0].attributes('title')).toBe('把登录做清楚 · 需求澄清')
-    expect(rows[2].attributes('title')).toBe('Run #abc · 需求澄清')
+    expect(rows[2].attributes('title')).toBe('w · 需求澄清')
     expect(rows[4].attributes('title')).toBe('approving · 人工门禁')
     expect(rows[0].attributes('data-motion')).toBe('spin')
     expect(rows[0].find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
@@ -948,10 +1043,10 @@ describe('AppSidebarNav', () => {
     const wrapper = mountNav(true)
     await flushPromises()
     const sourceOrder = () => wrapper.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))
-    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+    expect(sourceOrder()).toEqual(['run-e', 'run-b', 'run-c'])
 
     const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 })
-    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(event)
+    wrapper.get('[data-key="run-c"]').element.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
     await nextTick()
     const menu = document.querySelector('[data-testid="nav-pending-menu"]')
@@ -963,65 +1058,63 @@ describe('AppSidebarNav', () => {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
-    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+    expect(sourceOrder()).toEqual(['run-e', 'run-b', 'run-c'])
 
-    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-c"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
     )
     await nextTick()
     document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
-    expect(sourceOrder()).toEqual(['run-e:e', 'run-b:b', 'run-c:c', 'run-b:other'])
+    expect(sourceOrder()).toEqual(['run-e', 'run-b', 'run-c'])
 
     const stored = gateMocks.displayedItems.value.map((it) => `${it.runId}:${it.nodeId}`)
-    wrapper.get('[data-key="run-c:c"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-c"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
     )
     await nextTick()
     ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
-    expect(sourceOrder()).toEqual(['run-c:c', 'run-e:e', 'run-b:b', 'run-b:other'])
-    expect(wrapper.get('[data-key="run-c:c"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
-    expect(wrapper.get('[data-key="run-b:other"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
+    expect(sourceOrder()).toEqual(['run-c', 'run-e', 'run-b'])
+    expect(wrapper.get('[data-key="run-c"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="run-b"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
     expect(gateMocks.displayedItems.value.map((it) => `${it.runId}:${it.nodeId}`)).toEqual(stored)
 
-    wrapper.get('[data-key="run-b:b"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-b"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
     )
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('置顶')
     ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
     await nextTick()
-    expect(sourceOrder()).toEqual(['run-b:b', 'run-c:c', 'run-e:e', 'run-b:other'])
+    expect(sourceOrder()).toEqual(['run-b', 'run-c', 'run-e'])
 
-    wrapper.get('[data-key="run-b:b"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-b"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
     )
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('取消置顶')
     ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
     await nextTick()
-    expect(sourceOrder()).toEqual(['run-c:c', 'run-e:e', 'run-b:b', 'run-b:other'])
-    expect(wrapper.get('[data-key="run-b:b"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
+    expect(sourceOrder()).toEqual(['run-c', 'run-e', 'run-b'])
+    expect(wrapper.get('[data-key="run-b"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
 
     wrapper.unmount()
     const again = mountNav(true)
     await flushPromises()
     expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
-      'run-c:c',
-      'run-e:e',
-      'run-b:b',
-      'run-b:other',
+      'run-c',
+      'run-e',
+      'run-b',
     ])
     useAuth().setUser({ username: 'bob', expiresAt: '2099-01-01T00:00:00Z' })
     await nextTick()
     expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
-      'run-e:e',
-      'run-b:b',
-      'run-c:c',
-      'run-b:other',
+      'run-e',
+      'run-b',
+      'run-c',
     ])
     useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
     await nextTick()
@@ -1030,8 +1123,8 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
     ]
     gateMocks.sidebarExtras.value = []
-    await nextTick()
-    expect(again.find('[data-testid="nav-pending-row"]').attributes('data-key')).not.toBe('run-c:c')
+    await flushPromises()
+    expect(again.find('[data-testid="nav-pending-row"]').attributes('data-key')).not.toBe('run-c')
     gateMocks.displayedItems.value = [
       { type: 'clarify', runId: 'run-d', nodeId: 'd', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '更新的一行' },
       { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
@@ -1039,9 +1132,9 @@ describe('AppSidebarNav', () => {
     ]
     await nextTick()
     expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
-      'run-c:c',
-      'run-d:d',
-      'run-b:b',
+      'run-c',
+      'run-d',
+      'run-b',
     ])
     again.unmount()
     vi.useRealTimers()
@@ -1057,12 +1150,12 @@ describe('AppSidebarNav', () => {
     const wrapper = mountNav(true)
     await flushPromises()
 
-    await wrapper.get('[data-key="run-1:a"]').trigger('keydown', { key: 'F2' })
+    await wrapper.get('[data-key="run-1"]').trigger('keydown', { key: 'F2' })
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
     let input = wrapper.get('[data-testid="nav-pending-rename-input"]')
     expect((input.element as HTMLInputElement).value).toBe('把登录做清楚')
-    expect(wrapper.get('[data-key="run-1:a"]').find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="run-1"]').find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
     routerMocks.push.mockClear()
     await wrapper.get('[data-editing="true"]').trigger('click')
     expect(routerMocks.push).not.toHaveBeenCalled()
@@ -1074,15 +1167,15 @@ describe('AppSidebarNav', () => {
     await input.trigger('keydown', { key: 'Escape' })
     await nextTick()
     expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
-    expect(wrapper.get('[data-key="run-1:a"]').get('.nav-row-title').text()).toBe('把登录做清楚')
+    expect(wrapper.get('[data-key="run-1"]').get('.nav-row-title').text()).toBe('把登录做清楚')
     expect(apiMocks.updateRunTitle).not.toHaveBeenCalled()
 
-    await wrapper.get('[data-key="run-empty:e"]').trigger('keydown', { key: 'F2' })
+    await wrapper.get('[data-key="run-empty"]').trigger('keydown', { key: 'F2' })
     await nextTick()
     expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe('')
     await wrapper.get('[data-testid="nav-pending-rename-input"]').trigger('keydown', { key: 'Escape' })
 
-    wrapper.get('[data-key="run-1:a"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-1"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
     )
     await nextTick()
@@ -1111,10 +1204,10 @@ describe('AppSidebarNav', () => {
     await wrapper.get('[data-testid="nav-pending-rename-input"]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
     expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-1', '字'.repeat(80))
-    expect(wrapper.findAll('.nav-row-title').map((node) => node.text()).filter((text) => text === '字'.repeat(80))).toHaveLength(2)
-    expect(wrapper.get('[data-key="run-2:a"]').get('.nav-row-title').text()).toBe('补充空状态文案')
+    expect(wrapper.findAll('.nav-row-title').map((node) => node.text()).filter((text) => text === '字'.repeat(80))).toHaveLength(1)
+    expect(wrapper.get('[data-key="run-2"]').get('.nav-row-title').text()).toBe('补充空状态文案')
 
-    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-2"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
     )
     await nextTick()
@@ -1129,7 +1222,7 @@ describe('AppSidebarNav', () => {
     expect(apiMocks.updateRunTitle).toHaveBeenCalledTimes(1)
     expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
 
-    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-2"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
     )
     await nextTick()
@@ -1143,9 +1236,9 @@ describe('AppSidebarNav', () => {
     await vi.advanceTimersByTimeAsync(0)
     await flushPromises()
     expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-2', '空状态短名')
-    expect(wrapper.get('[data-key="run-2:a"]').get('.nav-row-title').text()).toBe('空状态短名')
+    expect(wrapper.get('[data-key="run-2"]').get('.nav-row-title').text()).toBe('空状态短名')
 
-    wrapper.get('[data-key="run-2:a"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-2"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 16, clientY: 16 }),
     )
     await nextTick()
@@ -1160,10 +1253,10 @@ describe('AppSidebarNav', () => {
     expect((wrapper.get('[data-testid="nav-pending-rename-input"]').element as HTMLInputElement).value).toBe('保存失败的名字')
     expect(useToast().toasts.value.some((item) => item.message === '保存失败')).toBe(true)
     expect(routerMocks.push).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-key="run-2:a"]').find('.nav-row-title').exists()).toBe(false)
+    expect(wrapper.get('[data-key="run-2"]').find('.nav-row-title').exists()).toBe(false)
 
     gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.nodeId !== 'a' || it.runId !== 'run-2')
-    await nextTick()
+    await flushPromises()
     expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
     expect(apiMocks.updateRunTitle).toHaveBeenCalledTimes(3)
 
@@ -1309,7 +1402,7 @@ describe('AppSidebarNav', () => {
       )
     }
 
-    openRow('run-g:g')
+    openRow('run-g')
     await nextTick()
     const labels = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map(
       (el) => el.getAttribute('data-testid'),
@@ -1325,10 +1418,10 @@ describe('AppSidebarNav', () => {
     expect(share.title).toBe('分享审批')
 
     routerMocks.push.mockClear()
-    await wrapper.get('[data-key="run-g:g"]').trigger('click')
+    await wrapper.get('[data-key="run-g"]').trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-g', node: 'g' } })
 
-    openRow('run-g:g')
+    openRow('run-g')
     await nextTick()
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
@@ -1338,21 +1431,21 @@ describe('AppSidebarNav', () => {
     })
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
 
-    openRow('run-r:r')
+    openRow('run-r')
     await nextTick()
     expect((document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).disabled).toBe(false)
-    openRow('run-c:c')
+    openRow('run-c')
     await nextTick()
     expect((document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).disabled).toBe(false)
 
-    openRow('run-x:x')
+    openRow('run-x')
     await nextTick()
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-pin"]')).toBeTruthy()
     expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
 
     routerMocks.push.mockClear()
-    openRow('run-s:s')
+    openRow('run-s')
     await nextTick()
     const starting = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(starting.disabled).toBe(true)
@@ -1363,7 +1456,7 @@ describe('AppSidebarNav', () => {
     starting.click()
     expect(routerMocks.push).not.toHaveBeenCalled()
 
-    openRow('run-u:u')
+    openRow('run-u')
     await nextTick()
     const used = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(used.disabled).toBe(true)
@@ -1374,7 +1467,7 @@ describe('AppSidebarNav', () => {
 
     const previousWidth = window.innerWidth
     window.innerWidth = 360
-    wrapper.get('[data-key="run-u:u"]').element.dispatchEvent(
+    wrapper.get('[data-key="run-u"]').element.dispatchEvent(
       new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 340, clientY: 40 }),
     )
     await nextTick()
@@ -1383,7 +1476,7 @@ describe('AppSidebarNav', () => {
     window.innerWidth = previousWidth
 
     knownInboxProcessingLock.value = true
-    openRow('run-g:g')
+    openRow('run-g')
     await nextTick()
     const locked = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(locked.disabled).toBe(true)
@@ -1393,17 +1486,17 @@ describe('AppSidebarNav', () => {
     expect(routerMocks.push).not.toHaveBeenCalled()
     knownInboxProcessingLock.value = false
 
-    const row = wrapper.get('[data-key="run-g:g"]')
+    const row = wrapper.get('[data-key="run-g"]')
     await row.trigger('pointerdown', { pointerType: 'touch', clientX: 12, clientY: 40 })
     await vi.advanceTimersByTimeAsync(500)
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeTruthy()
 
     expect(window.innerHeight).toBeGreaterThan(200)
-    openRow('run-g:g', window.innerHeight - 4)
+    openRow('run-g', window.innerHeight - 4)
     await nextTick()
     const clamped = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
     expect(clamped.style.top).toBe(`${window.innerHeight - 104}px`)
-    openRow('run-x:x', window.innerHeight - 4)
+    openRow('run-x', window.innerHeight - 4)
     await nextTick()
     const shortMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
     expect(shortMenu.style.top).toBe(`${window.innerHeight - 72}px`)

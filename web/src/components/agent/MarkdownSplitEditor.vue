@@ -21,6 +21,8 @@ const props = withDefaults(
     readonly?: boolean
     /** split = desktop FM form + side-by-side; stack = mobile unified source + edit/preview toggle */
     variant?: 'split' | 'stack'
+    /** Host renders the preview toggle in its own toolbar (no in-pane header/rail). */
+    externalToolbar?: boolean
   }>(),
   { variant: 'split' },
 )
@@ -220,6 +222,8 @@ onMounted(() => {
   document.addEventListener('mouseup', onMouseUp)
 })
 
+defineExpose({ previewCollapsed, collapsePreview, expandPreview })
+
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onMouseMove)
   document.removeEventListener('mouseup', onMouseUp)
@@ -384,7 +388,7 @@ onBeforeUnmount(() => {
         class="flex min-w-0 flex-1 flex-col bg-surface"
         data-testid="md-preview-panel"
       >
-        <div class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-base/35 px-3 py-1 text-[10.5px] uppercase tracking-wider text-txt3">
+        <div v-if="!externalToolbar" class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-base/35 px-3 py-1 text-[10.5px] uppercase tracking-wider text-txt3">
           <span>{{ t('pages.markdownEditor.preview') }}</span>
           <span class="flex items-center gap-1.5">
             <span class="flex items-center gap-1 text-[10px] normal-case text-ok">
@@ -413,7 +417,7 @@ onBeforeUnmount(() => {
         </div>
       </div>
       <button
-        v-if="previewCollapsed"
+        v-if="previewCollapsed && !externalToolbar"
         type="button"
         class="flex shrink-0 select-none items-center justify-center gap-2 border-l border-line bg-base py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-txt3 transition hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none"
         :style="{ width: PREVIEW_RAIL_W, writingMode: 'vertical-rl', textOrientation: 'mixed' }"

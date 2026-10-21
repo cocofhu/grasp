@@ -40,7 +40,9 @@ type fakeProvider struct {
 	// more replies (each returns Done:false with a follow-up question);
 	// reactSkipProduces makes the confirm turn write no products so the
 	// contract fails and routeFailure is exercised.
-	reactPending      int
+	reactPending int
+	// resumed records the history each ReactResume (carried dialogue) received.
+	resumed           map[string][]models.ReactMessage
 	reactSkipProduces bool
 	// clarifySkipPlan writes clarified_requirement.json but not plan.json so
 	// the two-product clarify contract fails.
@@ -51,6 +53,9 @@ type fakeProvider struct {
 	reactForceStayOpen bool
 	// reactInterrupted: force wrap-up returns Done:false + Interrupted (timeout).
 	reactInterrupted bool
+	// reactChatErr: force wrap-up returns Done with this send/chat error
+	// (finishReact's agent-chat failure). The dialogue must stay open.
+	reactChatErr error
 	// sandboxBusy / sandboxDesynced drive SessionBridgeInspector for confirm-gate tests.
 	sandboxBusy      bool
 	sandboxDesynced  bool
@@ -464,6 +469,17 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 	return runtime.ReactTurn{}
 }
 
+// ReactResume records the carried dialogue, then opens like ReactOpen.
+func (f *fakeProvider) ReactResume(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage) runtime.ReactTurn {
+	f.mu.Lock()
+	if f.resumed == nil {
+		f.resumed = map[string][]models.ReactMessage{}
+	}
+	f.resumed[req.NodeID] = append([]models.ReactMessage(nil), history...)
+	f.mu.Unlock()
+	return f.ReactOpen(ctx, req)
+}
+
 // ReactReply concludes the clarification with no further questions (or on a
 // forced finish), writing the declared produces artifact like the real provider
 // harvests one.
@@ -490,12 +506,21 @@ func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, hist
 	skip := f.reactSkipProduces
 	stayOpen := f.reactForceStayOpen
 	interrupted := f.reactInterrupted
+	chatErr := f.reactChatErr
 	hold := f.reactHold
 	tools := append([]models.AcpEvent(nil), f.reactTools...)
 	f.mu.Unlock()
 	if interrupted {
 		return runtime.ReactTurn{Msg: "半截旁白", Done: false, Interrupted: true,
 			Events: []models.AcpEvent{{Kind: "message", Text: "idle-timeout"}}}
+	}
+	if force && chatErr != nil {
+		return runtime.ReactTurn{
+			Msg:    "(澄清回复失败:" + chatErr.Error() + ")",
+			Done:   true,
+			Err:    chatErr,
+			Events: []models.AcpEvent{{Kind: "message", Text: "react reply chat failed: " + chatErr.Error()}},
+		}
 	}
 	if hold != nil {
 		select {

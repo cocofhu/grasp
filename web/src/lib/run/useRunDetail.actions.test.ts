@@ -398,6 +398,46 @@ describe('useRunDetail actions', () => {
     app.unmount()
   })
 
+  it('force confirm failure and a finished dialogue release the spinner', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+    const releaseConfirmPending = vi.fn()
+    detail.reviewChatRef.value = { releaseConfirmPending }
+    mocks.reactReply.mockRejectedValue(new Error('react already done'))
+    await detail.onClarifySend('done', [], [], true)
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyConfirmError.value).toBe('react already done')
+    expect(releaseConfirmPending).toHaveBeenCalledTimes(2)
+
+    detail.run.value = {
+      ...detail.run.value,
+      clarifyByNode: { n1: { nodeId: 'n1', turns: [], done: true } },
+    } as Run
+    await nextTick()
+    mocks.reactReply.mockClear()
+    releaseConfirmPending.mockClear()
+    await detail.onClarifySend('again', [], [], true)
+    expect(mocks.reactReply).not.toHaveBeenCalled()
+    expect(releaseConfirmPending).toHaveBeenCalledTimes(1)
+    app.unmount()
+  })
+
+  it('an ordinary reply refused during confirm does not unlock the spinner', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+    let release: (value?: unknown) => void = () => {}
+    mocks.reactReply.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const finishing = detail.onClarifySend('done', [], [], true)
+    mocks.reactReply.mockRejectedValueOnce(new Error('react already done'))
+    await detail.onClarifySend('hello')
+    expect(detail.clarifyConfirmError.value).toBeNull()
+    release({})
+    await finishing
+    app.unmount()
+  })
+
   it('stages app-preview picks and merges them into the next review reply', async () => {
     const { detail, app } = await withRunDetail()
     detail.selectNode('n2')

@@ -63,6 +63,7 @@ import {
 import type { Ref } from 'vue'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
+import { replySpan } from '@/lib/inbox/turnSpan'
 import {
   cloneAnnotations as cloneReactAnnotations,
   cloneImages as cloneClarifyImages,
@@ -94,6 +95,8 @@ export type ClarifyChatProps = {
   confirmCanAbort?: boolean
   seedHumanText?: string
   seedHumanImages?: ClarifyImage[]
+  /** Host hand-off row; while pending, that confirm owns the 校验中 state. */
+  handoff?: { phase: 'pending' | 'done' } | null
 }
 
 export type ClarifyChatEmit = {
@@ -586,12 +589,15 @@ const outputBoundsByIndex = computed(() => {
       continue
     }
     const text = t.text || ''
-    for (let c = pool.length - 1; c >= 0; c--) {
-      if (pool[c]!.text !== text) continue
+    let c = pool.length - 1
+    while (c >= 0 && pool[c]!.text !== text) c--
+    if (c >= 0) {
       out.set(i, { startedAt: pool[c]!.startedAt, endedAt: pool[c]!.endedAt })
       pool.splice(c, 1)
-      break
+      continue
     }
+    const span = replySpan(turns[i - 1], t)
+    if (span) out.set(i, span)
   }
   return out
 })
@@ -803,10 +809,20 @@ watch(
   () => props.confirmError,
   (err) => {
     if (!err) return
+    // The host hand-off row is still pending: that confirm owns the spinner.
+    // A parallel reply (often "react already done") must not turn the button
+    // back into a clickable 确认并流转 that then no-ops.
+    if (props.handoff?.phase === 'pending') return
     validating.value = false
     if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
   },
 )
+
+// Hosts call this when a confirm click does not send, or when the same
+// confirmError is reported again (the watch above only runs on a change).
+function releaseConfirmPending() {
+  validating.value = false
+}
 
 function addFiles(files: ArrayLike<File> | null | undefined) {
   if (!files) return
@@ -2374,6 +2390,7 @@ function retryLastFailed() {
     inputPlaceholder,
     thinking,
     validating,
+    releaseConfirmPending,
     queued,
     liveTurns,
     showClarifyEmptyHint,

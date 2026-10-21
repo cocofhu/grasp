@@ -72,9 +72,9 @@ func TestEmptySelectionDropsKeyWhenWorkspaceCredsOmitIt(t *testing.T) {
 func TestMergeCodingCredentialIDsPriority(t *testing.T) {
 	kind := func(id string) (string, bool) {
 		switch id {
-		case "shared-cursor":
+		case "shared-cursor", "agent-cursor":
 			return envauth.EnvCursorAPIKey, true
-		case "shared-oc":
+		case "shared-oc", "agent-oc":
 			return envauth.EnvOpenCodeAPIKey, true
 		case "gone":
 			return "", false
@@ -102,6 +102,18 @@ func TestMergeCodingCredentialIDsPriority(t *testing.T) {
 	if ai != "" {
 		t.Fatalf("stale shared id used: %q", ai)
 	}
+	ai, _ = MergeCodingCredentialIDs("cursor", "gone", "", "shared-cursor", "", kind)
+	if ai != "shared-cursor" {
+		t.Fatalf("dangling agent id did not inherit shared: %q", ai)
+	}
+	ai, _ = MergeCodingCredentialIDs("cursor", "gone", "", "also-gone", "", kind)
+	if ai != "gone" {
+		t.Fatalf("dangling agent id with no shared fallback = %q", ai)
+	}
+	_, oc = MergeCodingCredentialIDs("opencode", "", "gone", "", "shared-oc", kind)
+	if oc != "shared-oc" {
+		t.Fatalf("dangling opencode id did not inherit shared: %q", oc)
+	}
 	ai, oc = MergeCodingCredentialIDs("opencode", "agent-ai", "", "shared-cursor", "shared-oc", kind)
 	if oc != "shared-oc" || ai != "agent-ai" {
 		t.Fatalf("opencode slot ai=%q oc=%q", ai, oc)
@@ -122,10 +134,12 @@ func TestMergeCodingCredentialIDsPriority(t *testing.T) {
 
 func TestOverlayAgentFileUsesSameCredentialPriority(t *testing.T) {
 	kind := func(id string) (string, bool) {
-		if id == "shared-cursor" {
+		switch id {
+		case "shared-cursor", "agent-cursor":
 			return envauth.EnvCursorAPIKey, true
+		default:
+			return "", false
 		}
-		return "", false
 	}
 	got := overlayAgentFile(SharedAgentView{
 		AcpBackend:     "cursor",
@@ -133,6 +147,13 @@ func TestOverlayAgentFileUsesSameCredentialPriority(t *testing.T) {
 	}, agentFile{AiCredentialID: "agent-cursor"}, kind)
 	if got.AiCredentialID != "agent-cursor" {
 		t.Fatalf("overlay dropped agent id: %q", got.AiCredentialID)
+	}
+	dangling := overlayAgentFile(SharedAgentView{
+		AcpBackend:     "cursor",
+		AiCredentialID: "shared-cursor",
+	}, agentFile{AiCredentialID: "gone"}, kind)
+	if dangling.AiCredentialID != "shared-cursor" {
+		t.Fatalf("dangling agent id = %q", dangling.AiCredentialID)
 	}
 	got = overlayAgentFile(SharedAgentView{
 		AcpBackend:     "cursor",

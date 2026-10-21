@@ -44,6 +44,7 @@ function mountChat(opts: {
   annotateEnabled?: boolean
   annotations?: ReactAnnotation[]
   attachments?: { data: string; mimeType: string; name?: string }[]
+  handoff?: { phase: 'pending' | 'done'; at: string; target?: string } | null
   seedHumanText?: string
   seedHumanImages?: { data: string; mimeType: string; name?: string }[]
   hideFinish?: boolean
@@ -73,6 +74,7 @@ function mountChat(opts: {
       annotateEnabled: opts.annotateEnabled ?? false,
       annotations: opts.annotations ?? [],
       attachments: opts.attachments ?? [],
+      handoff: opts.handoff ?? null,
       seedHumanText: opts.seedHumanText ?? '',
       seedHumanImages: opts.seedHumanImages ?? [],
       hideFinish: opts.hideFinish ?? false,
@@ -297,7 +299,7 @@ describe('ClarifyChat', () => {
     bare.unmount()
   })
 
-  it('shows a reply with a failed tool call inline with the completion footnote, as before #843', () => {
+  it('folds a reply with a failed tool call and counts the failure on the fold line', async () => {
     const w = mountChat({
       turns: [{
         role: 'agent',
@@ -313,15 +315,33 @@ describe('ClarifyChat', () => {
         ],
       }],
     })
-    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
-    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
-    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
-    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
+    const line = w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(line.text()).toContain('3m 34s')
+    expect(line.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
     expect(w.get('[data-testid="clarify-agent-message"]').text()).toBe('没跑通')
-    const done = w.get('[data-testid="clarify-turn-completed"]')
-    expect(done.text()).toContain('已完成')
-    const msg = w.get('[data-testid="clarify-agent-message"]').element
-    expect(msg.compareDocumentPosition(done.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(w.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+    await line.trigger('click')
+    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
+    w.unmount()
+  })
+
+  it('times a reloaded reply from the question it answers when it has no start/end of its own', () => {
+    const w = mountChat({
+      turns: [
+        { role: 'human', text: '跑一下', at: '2026-10-20T00:00:00Z' },
+        {
+          role: 'agent',
+          text: '跑完了',
+          at: '2026-10-20T00:01:05Z',
+          parts: [
+            { kind: 'thought', text: '先看看' },
+            { kind: 'message', text: '跑完了' },
+          ],
+        },
+      ],
+    })
+    expect(w.get('[data-testid="agent-timeline-elapsed-time"]').text()).toContain('1m 5s')
     w.unmount()
   })
 
@@ -669,6 +689,52 @@ describe('ClarifyChat', () => {
     expect((wrapper.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
       false,
     )
+    wrapper.unmount()
+  })
+
+  it('same confirmError leaves 校验中 until releaseConfirmPending', async () => {
+    const wrapper = mountChat({
+      turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
+    })
+    const clickConfirm = async () => {
+      await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
+      await flushPromises()
+      await acceptConfirmFlowDialog()
+    }
+    await clickConfirm()
+    expect(wrapper.text()).toContain('校验中…')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('校验中…')
+
+    await clickConfirm()
+    expect(wrapper.text()).toContain('校验中…')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('校验中…')
+    ;(wrapper.vm as { releaseConfirmPending: () => void }).releaseConfirmPending()
+    await flushPromises()
+    const btn = wrapper.find('[data-testid="clarify-confirm-flow"]')
+    expect(btn.text()).toContain('确认并流转')
+    expect((btn.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.text()).not.toContain('校验中…')
+    wrapper.unmount()
+  })
+
+  it('pending host handoff keeps the confirm button on 校验中 when the same error arrives', async () => {
+    const wrapper = mountChat({
+      turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
+      handoff: { phase: 'pending', at: '2026-08-21T17:01:00+08:00' },
+    })
+    await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
+    await flushPromises()
+    await acceptConfirmFlowDialog()
+    const btn = () => wrapper.find('[data-testid="clarify-confirm-flow"]')
+    expect(btn().text()).toContain('校验中')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(btn().text()).toContain('校验中')
+    expect((btn().element as HTMLButtonElement).disabled).toBe(true)
     wrapper.unmount()
   })
 
@@ -3034,6 +3100,36 @@ describe('ClarifyChat', () => {
       wrapper.unmount()
     })
 
+    it('a failed reply shows its own steps, not the 50-tool session cap', async () => {
+      const wrapper = mountChat({
+        turns: [
+          { role: 'human', text: '继续', at: 't1' },
+          {
+            role: 'agent',
+            text: "(澄清回复失败:exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.)",
+            at: 't2',
+            tools: Array.from({ length: 50 }, () => ({ title: 'Read', status: 'completed' })),
+            parts: [
+              { kind: 'tool', title: 'Read', status: 'completed' },
+              { kind: 'tool', title: 'Glob', status: 'completed' },
+              {
+                kind: 'message',
+                text: "(澄清回复失败:exit status 1; stderr: NonRetriableError: Provider Error We're having trouble.)",
+              },
+            ],
+          },
+        ],
+      })
+      expect(wrapper.text()).not.toContain('使用了 50 个工具')
+      expect(wrapper.find('[data-testid="clarify-empty-fail"]').classes().join(' ')).not.toContain('bg-err')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-title"]').text()).toBe('这一轮没有完成')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toBe("We're having trouble.")
+      await wrapper.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      expect(wrapper.text()).toContain('使用了 2 个工具')
+      expect(wrapper.text()).not.toContain('使用了 50 个工具')
+      wrapper.unmount()
+    })
+
     it('retry emits retry-last and does not change draft (plan g1.2)', async () => {
       const wrapper = mountChat({
         draft: 'keep-draft',
@@ -3042,9 +3138,9 @@ describe('ClarifyChat', () => {
           { role: 'agent', text: '(澄清回复失败:timeout)', at: 't2' },
         ],
       })
-      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toContain(
-        '澄清回复失败',
-      )
+      expect(wrapper.find('[data-testid="clarify-empty-fail-title"]').text()).toBe('这一轮没有完成')
+      expect(wrapper.find('[data-testid="clarify-empty-fail-desc"]').text()).toBe('timeout')
+      expect(wrapper.find('[data-testid="clarify-empty-fail"]').text()).not.toContain('本轮没有输出')
       await wrapper.get('[data-testid="clarify-empty-fail-retry"]').trigger('click')
       expect(wrapper.emitted('retry-last')).toBeTruthy()
       expect(wrapper.vm.$props.draft ?? wrapper.props('draft')).toBe('keep-draft')

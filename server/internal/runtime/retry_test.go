@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -33,6 +34,7 @@ func TestIsRetryableSandboxErr(t *testing.T) {
 		{"canceled", context.Canceled, false},
 		{"agent-error", errors.New("acp error: model refused"), false},
 		{"cursor-api", errors.New("acp error: exit status 1; stderr: Failed to reach the Cursor API"), true},
+		{"poisoned-resume", errors.New("acp error: exit status 1; stderr: NonRetriableError: Provider Error We're having trouble connecting to the model provider."), false},
 		{"tls-abort", errors.New("acp error: exit status 1; stderr: Error: [aborted] Client network socket disconnected before secure TLS connection was established"), true},
 		{"econnreset", errors.New("agent chat: read: connection reset by peer: ECONNRESET"), true},
 	}
@@ -40,6 +42,75 @@ func TestIsRetryableSandboxErr(t *testing.T) {
 		if got := isRetryableSandboxErr(tc.err); got != tc.want {
 			t.Errorf("%s: isRetryableSandboxErr = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestIsPoisonedResumeFailure(t *testing.T) {
+	phrase := "exit status 1; stderr: NonRetriableError: Provider Error We're having trouble connecting to the model provider. This might be temporary - please try again in a moment."
+	if !isPoisonedResumeFailure(nil, errors.New(phrase)) {
+		t.Fatal("empty resume with the provider phrase should restart")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{Narration: "partial", ErrorText: phrase, Failed: true}, nil) {
+		t.Fatal("a turn that already narrated must keep its session")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: phrase, Failed: true, ToolCalls: []sandbox.ACPToolCall{{Title: "Read"}}}, nil) {
+		t.Fatal("a turn that already called a tool must keep its session")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: "quota exceeded", Failed: true}, nil) {
+		t.Fatal("quota is not a poisoned resume")
+	}
+	if isPoisonedResumeFailure(nil, errors.New("acp error: model refused")) {
+		t.Fatal("a plain agent error is not a poisoned resume")
+	}
+	if isRetryableSandboxErr(errors.New(phrase)) {
+		t.Fatal("the provider phrase must not discard the sandbox")
+	}
+}
+
+func TestRenderRecoveryTranscriptKeepsRecentDialogue(t *testing.T) {
+	short := renderRecoveryTranscript([]models.ReactMessage{
+		{
+			Role: "agent", Text: "用亮色吗",
+			Questions: []models.ReactQuestion{{Prompt: "用亮色吗", Options: []models.ReactOption{{Label: "亮色"}}}},
+		},
+		{Role: "human", Text: "先看截图", Images: []models.PromptImage{{Name: "shot.png"}}},
+		{Role: "agent", Text: "(澄清回复失败:boom)"},
+	})
+	for _, want := range []string{"用亮色吗", "亮色", "shot.png", "get_clarified_requirement"} {
+		if !strings.Contains(short, want) {
+			t.Errorf("short transcript missing %q", want)
+		}
+	}
+	if strings.Contains(short, "澄清回复失败") || strings.Contains(short, "更早的记录已截断") {
+		t.Fatalf("short transcript = %q", short)
+	}
+
+	var history []models.ReactMessage
+	for i := 0; i < 300; i++ {
+		history = append(history, models.ReactMessage{
+			Role: "human",
+			Text: fmt.Sprintf("早期-%04d-%s", i, strings.Repeat("甲", 80)),
+		})
+	}
+	history = append(history, models.ReactMessage{Role: "human", Text: "最新决定用亮色"})
+	out := renderRecoveryTranscript(history)
+	if !strings.Contains(out, "get_clarified_requirement") {
+		t.Fatal("preamble dropped")
+	}
+	if !strings.Contains(out, "最新决定用亮色") {
+		t.Fatal("newest turn dropped")
+	}
+	if !strings.Contains(out, "更早的记录已截断") {
+		t.Fatal("missing truncation marker")
+	}
+	if strings.Contains(out, "早期-0000") {
+		t.Fatal("oldest turn kept")
+	}
+	if len([]rune(out)) > recoveryTranscriptMaxRunes {
+		t.Fatalf("len = %d, cap %d", len([]rune(out)), recoveryTranscriptMaxRunes)
+	}
+	if strings.Index(out, "更早的记录已截断") > strings.Index(out, "最新决定用亮色") {
+		t.Fatal("truncation marker landed after the recent turn")
 	}
 }
 

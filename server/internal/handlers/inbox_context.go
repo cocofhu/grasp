@@ -71,6 +71,7 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 		"nodes":          graphNodesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
+		"nodeRuns":       h.Runs.NodeStatuses(runID),
 	}
 	// Gate DTO subset + reactSessions for Inbox hard-refresh seed-then-live
 	// (parity with runDetailDTO / clarify inbox-context).
@@ -102,20 +103,26 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 // same shape as a normal clarify context but with an empty transcript and
 // starting=true, so the inbox detail pane can render the boot loader.
 func (h *Handlers) inboxContextStarting(c *gin.Context, run models.Run, nodeID string, iteration int) {
+	clarify := gin.H{
+		"nodeId":    nodeID,
+		"iteration": iteration,
+		"turns":     []models.ReactMessage{},
+		"done":      false,
+		"label":     services.ClarifyLabel(run.Graph, nodeID),
+		"starting":  true,
+	}
+	// The launcher's opening message waits for the agent; the inbox shows it as queued.
+	if m := run.FirstMessage; m != nil && strings.TrimSpace(m.Text) != "" {
+		clarify["firstMessage"] = strings.TrimSpace(m.Text)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"type":           "clarify",
 		"status":         run.Status,
 		"nodes":          graphNodesDTO(run.Graph),
 		"artifacts":      []gin.H{},
 		"nodeExecutions": map[string][]map[string]any{},
-		"clarify": gin.H{
-			"nodeId":    nodeID,
-			"iteration": iteration,
-			"turns":     []models.ReactMessage{},
-			"done":      false,
-			"label":     services.ClarifyLabel(run.Graph, nodeID),
-			"starting":  true,
-		},
+		"nodeRuns":       h.Runs.NodeStatuses(run.ID),
+		"clarify":        clarify,
 	})
 }
 
@@ -159,6 +166,7 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 		"nodes":          graphNodesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
+		"nodeRuns":       h.Runs.NodeStatuses(runID),
 		"clarify":        clarify,
 	}
 	// Authoritative busy/queue for GatesInbox refresh-resume (parity with runDetailDTO).

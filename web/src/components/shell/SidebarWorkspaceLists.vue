@@ -3,18 +3,17 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
-import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import RecentReorderList from './RecentReorderList.vue'
 import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { displayRunTitle } from '@/lib/run/runTitle'
 import type { Run } from '@/lib/shared/types'
+import { HISTORY_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
 import {
   RECENT_POLL_MS,
   createRecentHold,
   onRecentActivity,
   recentRunActive,
-  recentRunMark,
   recentRunTarget,
   sameRecentRows,
 } from '@/lib/run/recentRuns'
@@ -41,7 +40,14 @@ async function loadRuns() {
   runsRequest = controller
   try {
     if (!await ensureLoaded() || runsRequest !== controller) return
-    const result = await api.listRuns({ page: 1, pageSize: 6, sort: 'last_activity', order: 'desc', signal: controller.signal })
+    const result = await api.listRuns({
+      page: 1,
+      pageSize: 6,
+      status: HISTORY_RUN_STATUSES,
+      sort: 'last_activity',
+      order: 'desc',
+      signal: controller.signal,
+    })
     if (runsRequest !== controller) return
     if (!Array.isArray(result?.items)) throw new Error('Invalid run list')
     applyRuns(result.items.slice(0, 6))
@@ -50,14 +56,7 @@ async function loadRuns() {
     if (runsRequest === controller) runsFailed.value = true
   } finally { if (runsRequest === controller) runsRequest = null }
 }
-function markMotion(run: Run) {
-  const m = recentRunMark(run)
-  return m && 'motion' in m ? m.motion : null
-}
-function markIcon(run: Run) {
-  const m = recentRunMark(run)
-  return m && 'icon' in m ? m.icon : null
-}
+const endedBadly = (run: Run) => run.status === 'failed' || run.status === 'cancelled'
 /** Write only real changes, and never while the user is on the list. */
 function applyRuns(next: Run[]) {
   if (recentHold.isHeld()) { heldRuns = next; return }
@@ -88,11 +87,11 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 <template>
   <div class="workspace-lists" data-testid="sidebar-workspace-lists">
     <section class="workspace-recents" data-testid="sidebar-recent">
-      <h3 class="workspace-list-heading"><RouterLink to="/runs" @click="emit('navigate')">{{ t('nav.recent') }}</RouterLink></h3>
+      <h3 class="workspace-list-heading"><RouterLink to="/runs" @click="emit('navigate')">{{ t('nav.runHistory') }}</RouterLink></h3>
       <div v-if="runsFailed" class="workspace-list-state" role="alert"><span>{{ t('nav.workspaceLoadFailed') }}</span><button type="button" @click="loadRuns">{{ t('nav.workspaceRetry') }}</button></div>
       <p v-else-if="!runs.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <RecentReorderList v-else ref="recentListEl">
-        <RouterLink v-for="run in runs" :key="run.id" :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-kind="run.currentNode?.kind" :data-state="run.currentNode?.state" @click="emit('navigate')"><Icon name="chat" :size="14" /><span class="workspace-list-title">{{ runTitle(run) }}</span><InboxMotionMark v-if="markMotion(run)" :kind="markMotion(run)!" /><Icon v-else-if="markIcon(run)" :name="markIcon(run)!.name" :size="14" class="nav-row-type-icon" :class="markIcon(run)!.toneClass" data-testid="sidebar-recent-type-icon" aria-hidden="true" /></RouterLink>
+        <RouterLink v-for="run in runs" :key="run.id" :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><Icon name="chat" :size="14" /><span class="workspace-list-title">{{ runTitle(run) }}</span><span v-if="endedBadly(run)" class="workspace-recent-ended" data-testid="sidebar-recent-ended" :title="t(`common.status.${run.status}`)" aria-hidden="true" /></RouterLink>
       </RecentReorderList>
     </section>
   </div>
@@ -107,9 +106,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 .workspace-list-state button { color: rgb(var(--c-accent-2)); }
 .workspace-recent-row { display: flex; align-items: center; gap: 9px; min-height: 35px; padding: 7px 8px; border-radius: 8px; color: rgb(var(--c-txt3)); }
 .workspace-recent-row:hover, .workspace-recent-row.is-active { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .035); }
-/* Same values as the 待审批 row marks (AppSidebarNav .nav-row-type-icon). */
-.nav-row-type-icon { flex: none; color: light-dark(#7b718c, #b7abc9); stroke-width: 1.6; }
-.nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
+.workspace-recent-ended { flex: none; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--c-txt3) / .55); }
 a:focus-visible, button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .6); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>

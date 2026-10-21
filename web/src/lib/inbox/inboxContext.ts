@@ -5,6 +5,8 @@ export type GateInboxContext = {
   nodes: WFNode[]
   artifacts: Artifact[]
   nodeExecutions: Record<string, NodeRun[]>
+  /** Every executed node's latest visit (status only), for the workflow outline. */
+  nodeRuns?: Record<string, NodeRun>
   /** Authoritative busy/queue for Inbox gate hard-refresh resume. */
   reactSessions?: Run['reactSessions']
   /** Gate DTO subset (reactUpstream / sessionAlive) for hot-revise seed. */
@@ -20,6 +22,8 @@ export type ClarifyInboxContext = {
   artifacts?: Artifact[]
   /** Slim executions for current node ∪ parseable upstream refs. */
   nodeExecutions?: Record<string, NodeRun[]>
+  /** Every executed node's latest visit (status only), for the workflow outline. */
+  nodeRuns?: Record<string, NodeRun>
   /** Authoritative busy/queue for refresh-resume (parity with Run detail). */
   reactSessions?: Run['reactSessions']
   clarify: {
@@ -34,6 +38,8 @@ export type ClarifyInboxContext = {
     takeover?: boolean
     /** Taken-over node's task (interpolated prompt), when the backend sends it. */
     task?: string
+    /** Starting only: the launcher's opening message, waiting for the agent. */
+    firstMessage?: string
   }
 }
 
@@ -59,6 +65,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
       ...base,
       nodes: ctx.nodes,
       artifacts: ctx.artifacts,
+      nodeRuns: ctx.nodeRuns ?? {},
       nodeExecutions: ctx.nodeExecutions,
       reactSessions: ctx.reactSessions,
       gate: ctx.gate,
@@ -70,6 +77,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
     status: ctx.status,
     nodes: ctx.nodes,
     artifacts: ctx.artifacts ?? [],
+    nodeRuns: ctx.nodeRuns ?? {},
     nodeExecutions: ctx.nodeExecutions,
     reactSessions: ctx.reactSessions,
     clarifyByNode: {
@@ -81,6 +89,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
         previewArtifact: ctx.clarify.previewArtifact,
         ...(ctx.clarify.takeover ? { takeover: true } : {}),
         ...(ctx.clarify.task ? { task: ctx.clarify.task } : {}),
+        ...(ctx.clarify.firstMessage ? { firstMessage: ctx.clarify.firstMessage } : {}),
       },
     },
   }

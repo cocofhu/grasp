@@ -5,6 +5,7 @@ import Icon from '@/components/ui/Icon.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ComposerShell from './ComposerShell.vue'
 import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
+import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueuePanel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -15,16 +16,24 @@ const props = withDefaults(
     bootKey?: string | null
     /** Sandbox drawer already titles the panel; don't repeat the old home tab. */
     hideHomeTab?: boolean
+    /** The run's first message: queued under the composer until the agent is up to take it. */
+    seedText?: string
   }>(),
   {
     mode: 'sidebar',
     sandboxPhase: null,
     bootKey: null,
     hideHomeTab: false,
+    seedText: '',
   },
 )
 
 const { t } = useI18n()
+
+const queued = computed<PendingQueueRow[]>(() => {
+  const text = props.seedText.trim()
+  return text ? [{ id: 'first-message', text, images: [], annotations: [] }] : []
+})
 
 const isPulling = computed(() => (props.sandboxPhase || '').trim().toLowerCase() === 'pulling')
 
@@ -114,6 +123,13 @@ onMounted(() => {
       </div>
     </div>
     <div class="react-connecting-actions shrink-0 p-3" data-testid="react-connecting-actions">
+      <!-- Not sent yet: the agent is still starting; the platform sends it once it is ready. Same spot as ClarifyChat's queue. -->
+      <PendingSendQueuePanel
+        v-if="queued.length"
+        readonly
+        panel-test-id="react-connecting-queue"
+        :items="queued"
+      />
       <ComposerShell wrap-toolbar :show-footer="false" box-test-id="react-connecting-input-row">
         <template #input>
           <textarea

@@ -19,6 +19,18 @@ describe('adaptInboxContextToRun', () => {
     expect(run.nodeExecutions?.visual[0].outputs?.page).toBe('<p/>')
   })
 
+  it('carries every executed node\'s status for the workflow outline', () => {
+    const nodeRuns = { in: { nodeId: 'in', iteration: 1, status: 'completed' as const } }
+    const clarify = adaptInboxContextToRun(
+      { type: 'clarify', status: 'waiting_human', nodeRuns, clarify: { nodeId: 'react', turns: [], done: false, label: 'R' } },
+      'r1',
+    )
+    expect(clarify.nodeRuns.in?.status).toBe('completed')
+    const gate = adaptInboxContextToRun({ type: 'gate', nodes: [], artifacts: [], nodeExecutions: {}, nodeRuns }, 'r1')
+    expect(gate.nodeRuns.in?.status).toBe('completed')
+    expect(adaptInboxContextToRun({ type: 'gate', nodes: [], artifacts: [], nodeExecutions: {} }, 'r1').nodeRuns).toEqual({})
+  })
+
   it('maps clarify context to clarifyByNode + status', () => {
     const run = adaptInboxContextToRun(
       {

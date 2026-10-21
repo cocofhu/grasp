@@ -9,6 +9,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
+import nav from '@/locales/zh-CN/nav.json'
 import enCommon from '@/locales/en/common.json'
 import enPages from '@/locales/en/pages.json'
 import type { Agent } from '@/lib/api/api'
@@ -2044,5 +2045,110 @@ describe('AgentStudioView entry assembly (g3 / Demo main path)', () => {
     await flushPromises()
     expect(wrapper.text()).toMatch(/环境|MCP|文件/)
     wrapper.unmount()
+  })
+})
+
+describe('AgentStudio pinned Agent 默认配置', () => {
+  const SidebarStub = defineComponent({
+    name: 'AgentSidebar',
+    props: { nodes: Array, pinned: Array, activeKey: String },
+    emits: ['select'],
+    template: '<div data-test="sidebar-stub" :data-active="activeKey"><button v-for="n in [...(pinned || []), ...(nodes || [])]" :key="n.id" :data-key="n.id" @click="$emit(\'select\', n.id)">{{ n.label }}</button></div>',
+  })
+  const agents = (): Agent[] => [
+    { ...agent('public'), name: 'alpha' },
+    { ...agent('public'), name: 'beta' },
+  ]
+
+  async function mountWithDefaults(query: Record<string, string> = {}) {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...nav } } })
+    const router = await createStudioRouter(query)
+    const wrapper = trackMount(
+      mount(AgentStudioView, {
+        global: {
+          plugins: [i18n, router],
+          stubs: {
+            AppButton: ButtonStub,
+            Icon: true,
+            AppModal: true,
+            CodeEditor: CodeEditorStub,
+            MarkdownSplitEditor: true,
+            ExplorerContextMenu: true,
+            AgentChatTester: true,
+            AgentGitGuide: true,
+            AgentCreateWizard: true,
+            AgentSidebar: SidebarStub,
+            AgentDataPanel: true,
+            WorkspaceSharedAgentPanel: { template: '<div data-testid="shared-panel-stub" />' },
+          },
+        },
+      }),
+    )
+    await flushPromises()
+    return { wrapper, router }
+  }
+  const pick = async (wrapper: Awaited<ReturnType<typeof mountWithDefaults>>['wrapper'], key: string) => {
+    await wrapper.get(`[data-test="sidebar-stub"] [data-key="${key}"]`).trigger('click')
+    await flushPromises()
+  }
+  const activeTab = (wrapper: Awaited<ReturnType<typeof mountWithDefaults>>['wrapper']) =>
+    wrapper.findAll('[data-test="studio-tab-strip"] button').find((b) => b.classes().includes('border-accent'))?.text() ?? ''
+
+  it('lists Agent 默认配置 as the pinned first item and opens it in the same page', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha' })
+    const buttons = wrapper.findAll('[data-test="sidebar-stub"] button')
+    expect(buttons[0].text()).toBe('Agent 默认配置')
+    await pick(wrapper, '__workspace_defaults__')
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="shared-panel-stub"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="sidebar-stub"]').attributes('data-active')).toBe('__workspace_defaults__')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+  })
+
+  it('opens the defaults pane from ?view=defaults (old /settings/shared-agent link target)', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ view: 'defaults' })
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(true)
+    expect(router.currentRoute.value.query.view).toBe('defaults')
+  })
+
+  it('keeps the MCP tab when switching back to the same Agent', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'mcp' })
+    expect(router.currentRoute.value.query.studioTab).toBe('mcp')
+    await pick(wrapper, '__workspace_defaults__')
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(true)
+    await pick(wrapper, 'alpha')
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query).toMatchObject({ agent: 'alpha', studioTab: 'mcp' })
+    expect(activeTab(wrapper)).toContain('MCP')
+  })
+
+  it('opens another Agent on its Files tab after the defaults', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ agent: 'alpha', studioTab: 'mcp' })
+    await pick(wrapper, '__workspace_defaults__')
+    await pick(wrapper, 'beta')
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query.agent).toBe('beta')
+    expect(router.currentRoute.value.query.studioTab).toBeUndefined()
+  })
+
+  it('narrow screens reach the defaults from the switch sheet and can switch back', async () => {
+    breakpointMocks.isMobile.value = true
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountWithDefaults({ view: 'defaults' })
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="studio-defaults-pane"] [data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    const pinned = document.querySelector('[data-test="sidebar-sheet"] [data-testid="resource-list-pinned"] button') as HTMLButtonElement
+    expect(pinned.textContent).toContain('Agent 默认配置')
+    const beta = document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement
+    beta.click()
+    await flushPromises()
+    expect(document.querySelector('[data-test="sidebar-sheet"]')).toBeNull()
+    expect(wrapper.find('[data-testid="studio-defaults-pane"]').exists()).toBe(false)
+    expect(router.currentRoute.value.query.agent).toBe('beta')
   })
 })
