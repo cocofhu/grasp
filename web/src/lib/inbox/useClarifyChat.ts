@@ -910,13 +910,6 @@ async function sendFromComposer(): Promise<boolean> {
 }
 
 function onComposerKeydown(e: KeyboardEvent) {
-  // The single primary shows 发送 while a draft exists mid-turn; Esc still stops.
-  if ((e.key === 'Escape' || e.key === 'Esc') && sessionBusy.value) {
-    if (composing.value || e.isComposing) return
-    e.preventDefault()
-    cancelReview()
-    return
-  }
   if (e.key !== 'Enter' || e.shiftKey) return
   // IME: composition Enter / keyCode 229 must not send (prevents double-fire).
   if (composing.value || e.isComposing || e.keyCode === 229) return

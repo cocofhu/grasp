@@ -95,7 +95,7 @@ const {
   lastPeekAt,
   lastAutoAppliedAt,
   autoApplyPending,
-  setAutoApplyHold,
+  addAutoApplyHold,
   itemKey,
   ariaBusy,
 } = usePendingGates()
@@ -928,34 +928,41 @@ const isClarifyEditing = computed(
 const isEditing = computed(() => isGateEditing.value || isClarifyEditing.value)
 
 /**
- * Focus is in a text field (gate form, clarify composer, filters…). Counted as
- * editing for list auto-apply even before anything is typed, so the caret and
- * the focused element are never disturbed.
+ * The focused text field (gate form, clarify composer, filters…) holds a
+ * non-empty draft. Counted as editing for list auto-apply so the caret and the
+ * typed text are never disturbed; an empty focused field (e.g. the composer
+ * right after sending) does not freeze the list.
  */
-const inputFocused = ref(false)
-function isTextEntry(el: Element | null): boolean {
+const focusedFieldHasDraft = ref(false)
+function isTextEntry(el: Element | null): el is HTMLElement {
   if (!(el instanceof HTMLElement)) return false
   if (el.isContentEditable) return true
-  if (el instanceof HTMLTextAreaElement || el instanceof HTMLSelectElement) return true
+  if (el instanceof HTMLTextAreaElement) return true
   if (el instanceof HTMLInputElement) {
     return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type)
   }
   return false
 }
-function syncInputFocused() {
-  inputFocused.value = typeof document !== 'undefined' && isTextEntry(document.activeElement)
+function fieldHasDraft(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim().length > 0
+  return (el.textContent || '').trim().length > 0
+}
+function syncFocusedFieldDraft() {
+  const el = typeof document !== 'undefined' ? document.activeElement : null
+  focusedFieldHasDraft.value = isTextEntry(el) && fieldHasDraft(el)
 }
 function onFocusOut() {
   // activeElement is still the old field during focusout; read it next tick.
-  void nextTick(syncInputFocused)
+  void nextTick(syncFocusedFieldDraft)
 }
 
 /**
- * List auto-apply waits while the user is working: editing a gate form or a
- * clarify draft, focus in a text field, or a processing intent (approve /
- * confirm in flight). Pending membership changes apply once this clears.
+ * List auto-apply waits while the user is working: a non-empty gate form or
+ * clarify draft, a non-empty draft in the focused field, or a processing intent
+ * (approve / confirm in flight). Pending membership changes apply once this clears.
  */
-const autoApplyHeld = computed(() => isEditing.value || inputFocused.value || processingLock.value)
+let releaseAutoApplyHold: (() => void) | null = null
+const autoApplyHeld = computed(() => isEditing.value || focusedFieldHasDraft.value || processingLock.value)
 
 function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
@@ -2155,10 +2162,11 @@ onMounted(() => {
     if (!active.value) active.value = listItems.value[0] || null
   })
   peek({ source: 'mount' })
-  setAutoApplyHold(() => autoApplyHeld.value)
-  syncInputFocused()
-  document.addEventListener('focusin', syncInputFocused)
+  releaseAutoApplyHold = addAutoApplyHold(() => autoApplyHeld.value)
+  syncFocusedFieldDraft()
+  document.addEventListener('focusin', syncFocusedFieldDraft)
   document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('input', syncFocusedFieldDraft)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -2167,10 +2175,12 @@ onUnmounted(() => {
   stopStartingPoll()
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
-  document.removeEventListener('focusin', syncInputFocused)
+  document.removeEventListener('focusin', syncFocusedFieldDraft)
   document.removeEventListener('focusout', onFocusOut)
-  // Leaving the page: nothing holds the list any more, so apply what is pending.
-  setAutoApplyHold(null)
+  document.removeEventListener('input', syncFocusedFieldDraft)
+  // Leaving the page: this page no longer holds the list, so apply what is pending.
+  releaseAutoApplyHold?.()
+  releaseAutoApplyHold = null
   autoApplyPending()
   closeActiveRunWs()
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
@@ -2330,7 +2340,7 @@ function itemSecondary(it: InboxItem) {
     lastStagedAppPreviewPick,
     isClarifyEditing,
     isEditing,
-    inputFocused,
+    focusedFieldHasDraft,
     autoApplyHeld,
     activeRun,
     activeRunLoading,

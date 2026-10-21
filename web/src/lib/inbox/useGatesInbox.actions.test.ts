@@ -109,7 +109,10 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     lastPeekAt: shared.lastPeekAt,
     lastAutoAppliedAt: shared.lastAutoAppliedAt,
     autoApplyPending: mocks.autoApplyPending,
-    setAutoApplyHold: (hold: (() => boolean) | null) => { shared.autoApplyHold = hold },
+    addAutoApplyHold: (hold: () => boolean) => {
+      shared.autoApplyHold = hold
+      return () => { if (shared.autoApplyHold === hold) shared.autoApplyHold = null }
+    },
     itemKey: (it: InboxItem) => `${it.runId}:${it.nodeId}`,
     ariaBusy: shared.ariaBusy,
   }),
@@ -559,13 +562,19 @@ describe('useGatesInbox actions', () => {
     field.focus()
     document.dispatchEvent(new FocusEvent('focusin'))
     await nextTick()
-    expect(inbox.inputFocused.value).toBe(true)
+    // Focus alone (empty field, e.g. the composer right after sending) does not hold.
+    expect(inbox.focusedFieldHasDraft.value).toBe(false)
+    expect(shared.autoApplyHold!()).toBe(false)
+    field.value = '筛选词'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(inbox.focusedFieldHasDraft.value).toBe(true)
     expect(shared.autoApplyHold!()).toBe(true)
     field.blur()
     document.dispatchEvent(new FocusEvent('focusout'))
     await nextTick()
     await nextTick()
-    expect(inbox.inputFocused.value).toBe(false)
+    expect(inbox.focusedFieldHasDraft.value).toBe(false)
     field.remove()
 
     app.unmount()
