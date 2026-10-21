@@ -1727,7 +1727,9 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
       url: 'http://127.0.0.1:18080/cart',
     })
     await flushPromises()
-    expect(w.get('[data-testid="public-gate-sidebar"]').text()).toContain('/cart · button.buy')
+    const chip = w.get('[data-testid="clarify-annotation-chip"]')
+    expect(chip.text()).toContain('button.buy')
+    expect(chip.attributes('title')).toContain('/cart · button.buy')
   })
 
   describe('drawer chat stays in sync after lost frames', () => {
@@ -1978,7 +1980,9 @@ describe('PublicGateApprovalView chat-only drawer mode', () => {
     expect(plain.text()).toContain('普通说明')
     expect(plain.find('[data-testid="clarify-choice-summary"]').exists()).toBe(true)
     expect(plain.get('[data-testid="clarify-choice-answer"]').text()).toContain('标题区')
-    expect(plain.text()).toContain('标题批注')
+    const chip = plain.get('[data-chip-kind="field"]')
+    expect(chip.text()).toContain('#title')
+    expect(chip.attributes('title')).toContain('标题批注')
   })
 
   it('reports a dead drawer token so the host can drop it', async () => {
