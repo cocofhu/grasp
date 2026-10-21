@@ -132,7 +132,13 @@ describe('ReactConnectingState', () => {
     await nextTick()
     // Pulling is shown once, as the checklist head's current phase (sandbox step in progress).
     expect(wrapper.get('[data-testid="clarify-boot-context"]').text()).toBe('正在拉取镜像…')
-    expect(wrapper.text().split('正在拉取镜像…')).toHaveLength(2)
+    // Visible once; the sr-only live region announces the same phase.
+    const status = wrapper.get('[data-testid="clarify-boot-status"]')
+    expect(status.attributes('role')).toBe('status')
+    expect(status.classes()).toContain('sr-only')
+    expect(status.text()).toBe('正在拉取镜像…')
+    expect(wrapper.get('[data-testid="clarify-boot-head"]').attributes('role')).toBeUndefined()
+    expect(wrapper.text().replace(status.text(), '').split('正在拉取镜像…')).toHaveLength(2)
     vi.advanceTimersByTime(10_400)
     await nextTick()
     expect(wrapper.get('[data-testid="clarify-boot-context"]').text()).toBe('正在拉取镜像…')

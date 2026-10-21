@@ -41,6 +41,24 @@ export function isSandboxBusyError(e: unknown): e is Error & { status?: number; 
   return (e as { code?: string }).code === 'sandbox_busy'
 }
 
+/**
+ * Server clock offset (server − client, ms) from the HTTP Date header, so
+ * "elapsed since <server timestamp>" is not skewed by the client's clock.
+ * Date has 1s resolution; +500ms centres it and the request midpoint stands
+ * in for the moment it was stamped. 0 until a response carries Date.
+ */
+let serverClockOffsetMs = 0
+export function noteServerDate(date: string | null | undefined, sentAt: number, receivedAt: number): void {
+  if (!date) return
+  const server = Date.parse(date)
+  if (!Number.isFinite(server)) return
+  serverClockOffsetMs = server + 500 - (sentAt + receivedAt) / 2
+}
+/** Client time corrected to the server clock (see noteServerDate). */
+export function serverNow(): number {
+  return Date.now() + serverClockOffsetMs
+}
+
 export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   if (mutationsBlocked() && isMutationMethod(method)) {
@@ -49,11 +67,13 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(msg)
   }
 
+  const sentAt = Date.now()
   const res = await fetch(BASE + path, {
     credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) },
     ...init,
   })
+  noteServerDate(res.headers?.get?.('date'), sentAt, Date.now())
   apiState.checked = true
 
   if (!res.ok) {

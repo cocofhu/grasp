@@ -14,6 +14,7 @@ import {
   markBootLive,
   observeBootSandbox,
 } from '@/lib/run/bootRecord'
+import { noteServerDate } from '@/lib/api/httpCore'
 
 const i18n = () => createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zh } })
 const KEY = bootKey('r1', 'n1', 1)
@@ -92,6 +93,20 @@ describe('boot checklist', () => {
     const rows = w.findAll('[data-testid="clarify-boot-step"]').map((s) => s.text())
     expect(rows).toEqual(['启动沙箱13s', '准备工作区', '连接 Agent'])
     expect(w.get('[data-testid="clarify-boot-context"]').text()).toBe('正在连接 Agent…')
+  })
+
+  it('measures elapsed on the server clock, not the skewed client clock', () => {
+    vi.useFakeTimers()
+    // Client clock runs 120s ahead of the server.
+    vi.setSystemTime(Date.parse(at(7)) + 120_000)
+    const now = Date.now()
+    // Server Date header says at(7) (1s resolution; noteServerDate centres it to at(7.5)).
+    noteServerDate(new Date(Date.parse(at(7))).toUTCString(), now, now)
+    beginBoot(KEY, T0)
+    const w = mountLoader('starting')
+    expect(w.get('[data-testid="clarify-boot-elapsed"]').text()).toBe('7s')
+    w.unmount()
+    noteServerDate(new Date(now).toUTCString(), now, now)
   })
 
   it('hides the elapsed counter without a node start time', () => {

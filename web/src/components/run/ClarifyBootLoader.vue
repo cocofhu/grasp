@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
 import { fmtDuration } from '@/lib/shared/format'
 import { bootReadySec, bootSteps, getBootRecord } from '@/lib/run/bootRecord'
+import { serverNow } from '@/lib/api/httpCore'
 
 // phase:
 //  - 'pending'  节点尚未进入澄清(队列中),静态等待提示
@@ -95,8 +96,9 @@ const currentTitle = computed(() => {
   if (currentCheck.value.id === 'agent') return STARTING_STEPS.value[3]!.title
   return pulling.value ? STARTING_STEPS.value[0]!.title : STARTING_STEPS.value[1]!.title
 })
-// Elapsed since the node started (server timestamp). Hidden when unknown.
-const nowMs = ref(Date.now())
+// Elapsed since the node started (server timestamp), measured on the server
+// clock (serverNow) so client clock skew does not shift it. Hidden when unknown.
+const nowMs = ref(serverNow())
 let tick: number | undefined
 const elapsedLabel = computed(() => {
   const start = record.value?.nodeStartedAt
@@ -108,7 +110,7 @@ const elapsedLabel = computed(() => {
 onMounted(() => {
   if (props.phase === 'starting') startCycling()
   if (props.phase === 'starting' && props.variant === 'inline') {
-    tick = window.setInterval(() => { nowMs.value = Date.now() }, 1000)
+    tick = window.setInterval(() => { nowMs.value = serverNow() }, 1000)
   }
 })
 onBeforeUnmount(() => {
@@ -137,40 +139,41 @@ const doneMeta = computed(() => {
   -->
   <div
     v-if="variant === 'inline' && phase === 'starting'"
-    class="boot-check chat-meta w-full min-w-0"
+    class="agent-tools chat-meta w-full min-w-0"
     data-testid="clarify-boot-loader"
     data-variant="inline"
     :data-sandbox-phase="sandboxPhase || ''"
   >
+    <!-- Live region for the step in progress; the toggle keeps plain button semantics. -->
+    <span class="sr-only" role="status" aria-live="polite" data-testid="clarify-boot-status">{{ currentTitle }}</span>
     <button
       type="button"
-      class="boot-check-head"
-      role="status"
+      class="agent-tools-head"
       :aria-expanded="checklistOpen"
       data-testid="clarify-boot-head"
       @click="checklistOpen = !checklistOpen"
     >
-      <Icon name="spinner" :size="16" class="boot-check-icon boot-check-running animate-spin" aria-hidden="true" />
-      <span class="boot-check-title" data-testid="clarify-boot-title">{{ t('pages.clarifyBootLoader.checklist.title') }}</span>
+      <Icon name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+      <span class="agent-tools-count" data-testid="clarify-boot-title">{{ t('pages.clarifyBootLoader.checklist.title') }}</span>
       <span v-if="elapsedLabel" class="tabular-nums text-txt3" data-testid="clarify-boot-elapsed">{{ elapsedLabel }}</span>
-      <span class="boot-check-context" data-testid="clarify-boot-context">{{ currentTitle }}</span>
-      <Icon name="chevron-down" :size="16" class="boot-check-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
+      <span class="agent-tools-context text-txt3" data-testid="clarify-boot-context">{{ currentTitle }}</span>
+      <Icon name="chevron-down" :size="16" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
     </button>
-    <ul v-if="checklistOpen" class="boot-check-list" data-testid="clarify-boot-checklist">
+    <ul v-if="checklistOpen" class="agent-tool-list" data-testid="clarify-boot-checklist">
       <li
         v-for="c in checklist"
         :key="c.id"
-        class="boot-check-row"
+        class="agent-tool-row-main"
         :data-state="c.state"
         data-testid="clarify-boot-step"
       >
         <!-- type=transition: the spinner's infinite spin must not hold the swap to ✓. -->
         <Transition name="startfade" mode="out-in" type="transition">
-          <Icon v-if="c.state === 'running'" key="r" name="spinner" :size="16" class="boot-check-icon boot-check-running animate-spin" aria-hidden="true" />
-          <Icon v-else-if="c.state === 'done'" key="d" name="check" :size="16" class="boot-check-icon" aria-hidden="true" />
-          <Icon v-else key="p" name="dot" :size="16" class="boot-check-icon text-txt3/60" aria-hidden="true" />
+          <Icon v-if="c.state === 'running'" key="r" name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+          <Icon v-else-if="c.state === 'done'" key="d" name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+          <Icon v-else key="p" name="dot" :size="16" class="agent-tool-icon text-txt3/60" aria-hidden="true" />
         </Transition>
-        <span class="boot-check-label" :class="c.state === 'pending' ? 'text-txt3' : ''">{{ c.label }}</span>
+        <span class="agent-tool-label" :class="c.state === 'pending' ? 'text-txt3' : ''">{{ c.label }}</span>
         <span v-if="c.sec" class="tabular-nums text-[11px] text-txt3">{{ c.sec }}</span>
       </li>
     </ul>
@@ -178,24 +181,24 @@ const doneMeta = computed(() => {
   </div>
   <!-- Done (inside ClarifyChat): same row, folded, check icon. -->
   <Transition v-else-if="variant === 'inline' && phase === 'done'" name="startfade" appear>
-    <div v-if="doneReady" class="boot-check chat-meta mb-2 w-full min-w-0" data-testid="clarify-boot-done">
+    <div v-if="doneReady" class="agent-tools chat-meta mb-2 w-full min-w-0" data-testid="clarify-boot-done">
       <button
         type="button"
-        class="boot-check-head"
+        class="agent-tools-head"
         :aria-expanded="doneOpen"
         data-testid="clarify-boot-done-head"
         @click="doneOpen = !doneOpen"
       >
-        <Icon name="check" :size="16" class="boot-check-icon" aria-hidden="true" />
-        <span class="boot-check-title">{{ t('pages.clarifyBootLoader.checklist.done') }}</span>
+        <Icon name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+        <span class="agent-tools-count">{{ t('pages.clarifyBootLoader.checklist.done') }}</span>
         <span class="tabular-nums text-txt3" data-testid="clarify-boot-done-meta">{{ doneMeta }}</span>
-        <span class="boot-check-context" />
-        <Icon name="chevron-down" :size="16" class="boot-check-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
+        <span class="agent-tools-context text-txt3" />
+        <Icon name="chevron-down" :size="16" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
       </button>
-      <ul v-if="doneOpen" class="boot-check-list">
-        <li v-for="c in checklist" :key="c.id" class="boot-check-row" data-state="done" data-testid="clarify-boot-done-step">
-          <Icon name="check" :size="16" class="boot-check-icon" aria-hidden="true" />
-          <span class="boot-check-label">{{ c.label }}</span>
+      <ul v-if="doneOpen" class="agent-tool-list">
+        <li v-for="c in checklist" :key="c.id" class="agent-tool-row-main" data-state="done" data-testid="clarify-boot-done-step">
+          <Icon name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+          <span class="agent-tool-label">{{ c.label }}</span>
           <span v-if="c.sec" class="tabular-nums text-[11px] text-txt3">{{ c.sec }}</span>
         </li>
       </ul>
@@ -246,30 +249,11 @@ const doneMeta = computed(() => {
   transform: translateY(-4px);
 }
 
-/* Mirrors AgentToolGroup's folded row (head / list / icons) with theme tokens. */
-.boot-check { color: var(--chat-muted, rgb(var(--c-txt2))); font-size: 12px; line-height: 1.65; }
-.boot-check-head,
-.boot-check-row { display: flex; min-width: 0; align-items: center; gap: 8px; border-radius: 6px; text-align: left; }
-.boot-check-head { width: 100%; min-height: 32px; padding: 4px 6px; transition: background-color var(--dur-ui), color var(--dur-ui); }
-.boot-check-head:hover { background: rgb(var(--c-elevated) / .6); color: rgb(var(--c-txt)); }
-.boot-check-head:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
-.boot-check-title { flex-shrink: 0; font-weight: 500; }
-.boot-check-context { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: rgb(var(--c-txt3)); }
-.boot-check-icon, .boot-check-chevron { flex-shrink: 0; }
-.boot-check-chevron { color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
-.boot-check-running { color: rgb(var(--c-accent-2)); }
-.boot-check-running.animate-spin { animation-duration: 1.4s; }
-.boot-check-list { min-width: 0; margin: 3px 0 0 13px; border-left: 1px solid rgb(var(--c-line) / .8); padding: 0 0 2px 15px; list-style: none; }
-.boot-check-row { min-height: 30px; padding: 4px; }
-.boot-check-label { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
 @media (prefers-reduced-motion: reduce) {
   .startfade-enter-active,
   .startfade-leave-active {
     transition: none;
   }
-  .boot-check-head,
-  .boot-check-chevron { transition: none; }
-  .boot-check-running.animate-spin { animation: none !important; }
 }
 </style>
+<style scoped src="./agentToolGroup.css"></style>
