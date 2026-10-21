@@ -306,3 +306,50 @@ describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () 
     expect(wrapper.find('[data-testid="clarify-busy-placeholder"]').text()).toContain('思考中')
   })
 })
+
+describe('ClarifyChat observe mode: one busy indicator', () => {
+  beforeEach(() => sessionStorage.clear())
+
+  const thinkingLegacy: ClarifyTurn[] = [
+    { role: 'agent', text: '', thought: '先读一下 LoginView.vue', streaming: true, at: new Date().toISOString() },
+  ]
+  const thinkingParts: ClarifyTurn[] = [
+    { role: 'agent', text: '', thought: '先读一下 LoginView.vue', parts: [{ kind: 'thought', text: '先读一下 LoginView.vue' }], streaming: true, at: new Date().toISOString() },
+  ]
+  const outputting: ClarifyTurn[] = [
+    { role: 'agent', text: '已改好', thought: '先读一下', parts: [{ kind: 'thought', text: '先读一下' }, { kind: 'message', text: '已改好' }], streaming: true, at: new Date().toISOString() },
+  ]
+
+  function busyCopies(wrapper: ReturnType<typeof mountChat>) {
+    return {
+      thinking: wrapper.findAll('[data-testid="clarify-busy-status"]').filter((w) => w.text().includes('思考中')).length,
+      generating: wrapper.findAll('[data-testid="thought-summary-state"]').filter((w) => w.text().includes('生成中')).length,
+      bottomTime: wrapper.findAll('[data-testid="clarify-turn-bottom-time"]').length,
+    }
+  }
+
+  it.each([['legacy thought', thinkingLegacy], ['timeline parts', thinkingParts]])(
+    'observe (%s): only 「思考中…」 until a message arrives',
+    (_label, turns) => {
+      const wrapper = mountChat({ reviewMode: true, observe: true, turns })
+      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 0, bottomTime: 0 })
+      expect(wrapper.text()).not.toContain('刚刚')
+    },
+  )
+
+  it.each([['legacy thought', thinkingLegacy], ['timeline parts', thinkingParts]])(
+    'interactive chat (%s) keeps its indicators unchanged',
+    (_label, turns) => {
+      const wrapper = mountChat({ reviewMode: true, observe: false, turns })
+      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 1, bottomTime: 1 })
+    },
+  )
+
+  it('observe: once message text streams, the normal status and time return', () => {
+    const observed = busyCopies(mountChat({ reviewMode: true, observe: true, turns: outputting }))
+    const interactive = busyCopies(mountChat({ reviewMode: true, observe: false, turns: outputting }))
+    expect(observed).toEqual(interactive)
+    expect(observed.thinking).toBe(0)
+    expect(observed.bottomTime).toBe(1)
+  })
+})
