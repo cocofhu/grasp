@@ -48,7 +48,13 @@ export function isSandboxBusyError(e: unknown): e is Error & { status?: number; 
  */
 export function isClarifyVisitEndedError(
   e: unknown,
-): e is Error & { status?: number; code: 'clarify_visit_ended'; autoRetryOnResume?: boolean } {
+): e is Error & {
+  status?: number
+  code: 'clarify_visit_ended'
+  autoRetryOnResume?: boolean
+  /** Optional echo of the dropped reply (clientId/text/attachments/annotations). */
+  dropped?: Record<string, unknown>
+} {
   if (!e || typeof e !== 'object') return false
   return (e as { code?: string }).code === 'clarify_visit_ended'
 }
@@ -88,7 +94,13 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (!isDraining()) apiState.online = false
     let msg = `${res.status} ${path}`
-    const extra: { code?: string; runningOpId?: string; alias?: string; autoRetryOnResume?: boolean } = {}
+    const extra: {
+      code?: string
+      runningOpId?: string
+      alias?: string
+      autoRetryOnResume?: boolean
+      dropped?: Record<string, unknown>
+    } = {}
     try {
       const body = await res.json()
       if (body?.error) msg = body.error
@@ -96,6 +108,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId
       if (typeof body?.alias === 'string') extra.alias = body.alias
       if (typeof body?.autoRetryOnResume === 'boolean') extra.autoRetryOnResume = body.autoRetryOnResume
+      if (body?.dropped && typeof body.dropped === 'object') extra.dropped = body.dropped
     } catch {
       // non-JSON error body; keep the status line
     }

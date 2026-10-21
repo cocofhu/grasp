@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
 /**
  * Run 详情「复审」面板壳：ReviewShell + 产物舞台 + ReviewComposer。
  */
@@ -63,7 +64,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
-  restoreUnsentQueued?: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) => void
+  restoreUnsentQueued?: RestoreUnsent
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -76,8 +77,8 @@ defineExpose({
   applyAcpEvents: (events: any[] | undefined, nodeId?: string) =>
     reviewChatRef.value?.applyAcpEvents?.(events, nodeId),
   discardLastQueued: () => reviewChatRef.value?.discardLastQueued?.(),
-  restoreUnsentQueued: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) =>
-    reviewChatRef.value?.restoreUnsentQueued?.(sent, notice),
+  restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
+    reviewChatRef.value?.restoreUnsentQueued?.(...args),
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),
   isChatReady: () => !!reviewChatRef.value?.isChatReady?.(),
   playConfirmCeremony: async () => {
