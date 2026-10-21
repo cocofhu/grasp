@@ -141,6 +141,10 @@ for (const theme of ['light', 'dark'] as const) {
     send(acp('verify', [T1, M1, tool('运行测试 npm test')]))
     send(acp('verify', [T1, M1, tool('运行测试 npm test'), M2]))
     await expect(page.getByText('验证完成：登录页改版无回归。')).toHaveCount(1)
+    // Let the background poll run (it still reads 「follow 验证」 from the opened URL):
+    // the stream must not be re-seeded into a new 「输出中」 row.
+    await page.waitForTimeout(4600)
+    await expect(page.getByText('Agent', { exact: true })).toHaveCount(1)
     // Streamed text is kept (not replaced by a fresh empty row per frame).
     await expect(page.getByText('开始验证：先跑单元测试。')).toHaveCount(1)
     await expect(busy(page)).toHaveCount(1)

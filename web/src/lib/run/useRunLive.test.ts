@@ -204,6 +204,13 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     FakeSocket.last!.send({ type: 'acp', nodeId: 'verify', events: later, busy: true })
     expect(next.applyAcpEvents).toHaveBeenLastCalledWith(later, 'verify')
     expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
+    // Polls keep reading 「follow 验证」 (the URL still says impl): no re-seed, no new turn.
+    await live.reload()
+    await flushPromises()
+    await live.reload()
+    await flushPromises()
+    expect(surfaces).toHaveLength(1)
+    expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
     // Run ends: one turn_done on the new surface, nothing busy left, no navigation.
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'completed' })
     await live.reload()

@@ -209,13 +209,26 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return finish()
     }
     if (d.kind === 'follow') {
-      if (shown) return continueTo(d.nodeId, 'observe', c)
+      // The URL keeps the node the page was opened on, so every later poll
+      // reads as 「follow」: only a node the page is not showing yet continues.
+      if (shown) return d.nodeId === nodeId.value ? observeCurrent(c) : continueTo(d.nodeId, 'observe', c)
       notifyRecentActivity()
       stopping.value = false
       void router.replace({ path: runLivePath(id), query: { node: d.nodeId } })
       return
     }
     if (shown && nodeId.value !== d.nodeId) return continueTo(d.nodeId, 'observe', c)
+    applyObserve(d, id)
+  }
+
+  /** Same node still streaming (a poll / snapshot after the page continued in place). */
+  function observeCurrent(c: RunCurrentNode | null) {
+    if (c?.state === 'stopping') stopping.value = true
+    connect(runId.value)
+    void seed()
+  }
+
+  function applyObserve(d: Extract<ReturnType<typeof decideLive>, { kind: 'observe' }>, id: string) {
     if (nodeId.value !== d.nodeId) {
       nodeId.value = d.nodeId
       seededKey = ''
