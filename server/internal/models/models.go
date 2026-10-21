@@ -517,6 +517,11 @@ type ReactMessage struct {
 	// phase's start (the visit's start) and end (when the takeover settled).
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// Narration is the interrupted auto phase's final agent message, set only
+	// on a takeover's opening turn when it is not already prepended to Text
+	// (i.e. when Events carry the auto phase). Public share / embed previews
+	// show it instead of the raw events.
+	Narration string `json:"narration,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`

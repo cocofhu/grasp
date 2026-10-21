@@ -376,7 +376,7 @@ func TestTakeoverOpeningTurnWithoutEventsKeepsNarration(t *testing.T) {
 	var conv models.ReactConversation
 	env.db.Where("run_id = ? AND node_id = ?", run.ID, "impl").First(&conv)
 	m := conv.Messages[0]
-	if m.Text != "最后一条自动消息\n\n---\n"+takeoverOpening || len(m.Events) != 0 {
+	if m.Text != "最后一条自动消息\n\n---\n"+takeoverOpening || len(m.Events) != 0 || m.Narration != "" {
 		t.Fatalf("opening turn: %+v", m)
 	}
 	if m.StartedAt == nil || !m.StartedAt.Equal(started.Truncate(time.Microsecond)) && m.StartedAt.Sub(started).Abs() > time.Second ||

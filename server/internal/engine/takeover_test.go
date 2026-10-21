@@ -201,6 +201,7 @@ func TestTakeoverRunningAutoNodeBecomesManual(t *testing.T) {
 	// the text (the chat renders the events); the auto phase's span is set.
 	if !conv.Takeover || conv.Done || len(conv.Messages) == 0 || conv.Messages[0].Text != takeoverOpening ||
 		strings.Contains(conv.Messages[0].Text, "partial narration") ||
+		!strings.Contains(conv.Messages[0].Narration, "partial narration") ||
 		conv.Messages[0].StartedAt == nil || conv.Messages[0].EndedAt == nil ||
 		conv.Messages[0].EndedAt.Before(*conv.Messages[0].StartedAt) {
 		t.Fatalf("bad takeover conversation: %+v", conv)

@@ -30,6 +30,10 @@ type PreviewTurn struct {
 	Annotations []PreviewAnnotation `json:"annotations,omitempty"`
 	Questions   []PreviewQuestion   `json:"questions,omitempty"`
 	Forms       []PreviewForm       `json:"forms,omitempty"`
+	// Narration is the auto phase's final agent message on a takeover's
+	// opening turn (raw events are never exposed publicly). Treated like
+	// Text.
+	Narration string `json:"narration,omitempty"`
 	// Live points a human turn at its Live variant session (sid/op only).
 	Live *models.LiveRef `json:"live,omitempty"`
 	// Tools are the agent turn's tool calls as bare names (SanitizeToolTitle).
@@ -384,6 +388,9 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 			continue
 		}
 		turn := PreviewTurn{Role: role, Text: m.Text, At: strings.TrimSpace(m.At), Interrupted: m.Interrupted}
+		if role == "agent" {
+			turn.Narration = m.Narration
+		}
 		if anns := sanitizeAnnotations(m.Annotations); len(anns) > 0 {
 			turn.Annotations = anns
 		}

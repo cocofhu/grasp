@@ -310,7 +310,8 @@ const takeoverOpening = "已中断自动执行，本节点转为人工接管（�
 // carries the auto phase: its aggregated ACP events and its time span
 // (startedAt = the visit's start, endedAt = autoEnd). When events are present
 // the chat renders the auto timeline itself, so the narration is not
-// repeated in the text; without events the last auto narration is prepended.
+// repeated in the text (it is kept in Narration for public previews, which
+// never get raw events); without events the last auto narration is prepended.
 func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter int, narration string, events []models.AcpEvent, autoEnd time.Time) {
 	if iter < 1 {
 		iter = 1
@@ -331,6 +332,9 @@ func (e *Engine) seedTakeoverConversation(runID string, node *models.Node, iter 
 		text = n + "\n\n---\n" + takeoverOpening
 	}
 	opening := models.ReactMessage{Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Events: auto}
+	if len(auto) > 0 {
+		opening.Narration = strings.TrimSpace(narration)
+	}
 	var sr models.StateRun
 	if e.db.Select("id", "started_at").Where("run_id = ? AND node_id = ? AND iteration = ?", runID, node.ID, iter).
 		Order("id desc").First(&sr).Error == nil && sr.StartedAt != nil {
