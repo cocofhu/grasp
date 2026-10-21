@@ -54,7 +54,8 @@ func (b agentBody) toAgent(name string) services.Agent {
 
 // agentSaveStatus maps Agent save errors to HTTP status.
 func agentSaveStatus(err error) int {
-	if errors.Is(err, services.ErrSecretEnvKey) || errors.Is(err, services.ErrInvalidAcpBackend) {
+	if errors.Is(err, services.ErrSecretEnvKey) || errors.Is(err, services.ErrInvalidAcpBackend) ||
+		errors.Is(err, services.ErrInvalidAgent) {
 		return http.StatusBadRequest
 	}
 	return http.StatusInternalServerError

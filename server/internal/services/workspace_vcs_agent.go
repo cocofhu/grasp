@@ -146,6 +146,11 @@ func (s *AgentService) RestoreWorkspaceVcs(agent, sha, author, reason string) (s
 func (s *AgentService) SaveAgentWithVcs(a Agent, author, reason string, recordVcs bool) ([]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	// Validate before EnsureBaseline, which commits a baseline revision: a
+	// rejected save must not leave anything behind.
+	if _, err := s.prepareSave(a); err != nil {
+		return nil, err
+	}
 	var before []AgentFile
 	if recordVcs && s.Vcs != nil {
 		if err := s.Vcs.EnsureBaseline(a.Name); err != nil {
