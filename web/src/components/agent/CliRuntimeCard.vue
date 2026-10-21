@@ -8,7 +8,6 @@ import { kvToRec, recToKV, type AgentStudioDraft } from '@/lib/agent/agentStudio
 import { backendKind } from '@/lib/workspace/credentialKinds'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
-import { launchCommand } from '@/lib/agent/cliModelView'
 import {
   CLI_COMMON_EFFORTS,
   cliEffortsFor,
@@ -24,10 +23,7 @@ import {
  */
 const props = defineProps<{
   draft: Pick<AgentStudioDraft, 'acpBackend' | 'aiCredentialId' | 'env'>
-  description?: string
   credentialTitle?: string
-  credentialHint?: string
-  modelHint?: string
   /**
    * Workspace shared model for this same CLI. When set and this draft has no
    * model of its own, the card follows that config instead of offering Auto.
@@ -78,7 +74,6 @@ const inheritedTitle = computed(() => {
   if (!id) return ''
   return cliCatalog.value.find((m) => m.id === id)?.name || id
 })
-const inheritedCommand = computed(() => launchCommand(props.draft.acpBackend, inheritedId.value))
 
 watch(
   () => props.draft.acpBackend,
@@ -129,7 +124,6 @@ watch(
       </span>
       <div class="min-w-0">
         <h4 class="m-0 text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.cliModel.runtimeTitle') }}</h4>
-        <p class="m-0 text-[11px] text-txt3">{{ description ?? t('pages.agentStudio.cliModel.runtimeDesc') }}</p>
       </div>
     </header>
     <div v-if="aiKind" class="py-4">
@@ -137,7 +131,7 @@ watch(
         :kind="aiKind.id"
         :selected-id="draft.aiCredentialId"
         :title="credentialTitle"
-        :hint="credentialHint ?? t('pages.workspace.credentials.codingPickHint')"
+        hide-hint
         @update:selected-id="draft.aiCredentialId = $event"
       />
     </div>
@@ -148,7 +142,6 @@ watch(
       data-test="agent-cli-model"
     >
       <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
-      <p v-if="modelHint" class="-mt-1 mb-2 text-[11px] text-txt3">{{ modelHint }}</p>
       <div
         v-if="canFollow"
         class="mb-2.5 flex rounded-[10px] border border-line bg-base p-0.5"
@@ -194,11 +187,6 @@ watch(
           {{ inheritedTitle }}
         </p>
         <p class="m-0 mt-1.5 text-[11px] leading-5 text-txt3">{{ t('pages.agentStudio.cliModel.followNote') }}</p>
-        <div class="mt-2.5 flex min-w-0 items-center gap-2 text-[11px] text-txt3">
-          <Icon name="terminal" :size="12" class="shrink-0" />
-          <code class="min-w-0 truncate rounded bg-elevated px-1.5 py-0.5 font-mono text-[10.5px] text-txt2">{{ inheritedCommand }}</code>
-          <span class="hidden shrink-0 sm:inline">{{ t('pages.agentStudio.cliModel.fromShared') }}</span>
-        </div>
       </div>
       <template v-else>
         <CliModelSelect
@@ -206,6 +194,7 @@ watch(
           :model-value="cliModel"
           :backend="draft.acpBackend"
           :empty-mode="canFollow ? 'required' : 'auto'"
+          hide-command
           @update:model-value="setCliModel"
         />
         <button
