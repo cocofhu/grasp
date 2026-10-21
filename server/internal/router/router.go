@@ -172,6 +172,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.GET("/runs/:id/nodes/:nodeId/events", h.NodeEvents)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox-log", h.NodeSandboxLog)
 		api.GET("/runs/:id/nodes/:nodeId/sandbox", h.RunNodeSandbox)
+		api.POST("/runs/:id/nodes/:nodeId/takeover", h.TakeoverNode)
 		api.GET("/runs/:id/nodes/:nodeId/previews", h.ListNodePreviews)
 		api.POST("/runs/:id/nodes/:nodeId/embed-ticket", h.CreateEmbedTicket)
 		api.GET("/runs/:id/nodes/:nodeId/live-sessions", h.LiveSessions)

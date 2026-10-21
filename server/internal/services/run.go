@@ -40,6 +40,8 @@ func runListOrderBy(sort, order string) string {
 		return "CASE WHEN status = 'queued' THEN created_at ELSE started_at END " + dir + ", id DESC"
 	case "priority":
 		return "priority " + dir + ", id DESC"
+	case "last_activity":
+		return "COALESCE(last_activity_at, CASE WHEN status = 'queued' THEN created_at ELSE started_at END) " + dir + ", id DESC"
 	default:
 		return defaultRunListOrder
 	}
@@ -173,6 +175,15 @@ func (s *RunService) States(runID string) []models.StateRun {
 	// Ordered oldest→newest per node so callers can treat the last row for a
 	// node as its latest execution and build an in-order execution history.
 	s.db.Where("run_id = ?", runID).Order("iteration asc, id asc").Find(&states)
+	return states
+}
+
+// TaskStates returns the run's StateRuns in execution order (id asc) with
+// only the columns task previews need (no events / snapshots / MCP calls).
+func (s *RunService) TaskStates(runID string) []models.StateRun {
+	var states []models.StateRun
+	s.db.Select("id", "run_id", "node_id", "node_type", "iteration", "status", "outputs", "vars_before").
+		Where("run_id = ?", runID).Order("id asc").Find(&states)
 	return states
 }
 

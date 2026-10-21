@@ -75,7 +75,7 @@ func (h *Handlers) embedTargetReady(runID, nodeID string) (int, string) {
 	if terminalRunStatus(run.Status) {
 		return http.StatusConflict, "run finished"
 	}
-	n := run.Graph.FindNode(nodeID)
+	n := h.Runs.EffectiveNode(run, nodeID)
 	if n == nil || !models.PreviewCapableNode(n.Caps) || !services.IsShareableReviewSession(n) {
 		return http.StatusBadRequest, "node has no preview chat"
 	}

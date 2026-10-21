@@ -64,6 +64,15 @@ const props = withDefaults(
     confirmCanAbort?: boolean
     seedHumanText?: string
     seedHumanImages?: ClarifyImage[]
+    /**
+     * Watching an auto node: read-only stream, input disabled, the only action
+     * is Stop, which asks the host to take the node over (emit takeover).
+     */
+    observe?: boolean
+    /** Takeover accepted (state=stopping); waiting for node_takeover waiting_human. */
+    stopping?: boolean
+    /** Taken-over node's task: shown as the opening User Message, above the auto-phase fold row. */
+    nodeTask?: string
   }>(),
   {
     active: true,
@@ -78,6 +87,9 @@ const props = withDefaults(
     turns: () => [],
     seedHumanText: '',
     seedHumanImages: () => [],
+    observe: false,
+    stopping: false,
+    nodeTask: '',
   },
 )
 
@@ -95,6 +107,11 @@ function humanBubbleText(t: ClarifyTurn): string {
   return liveHost ? '' : t.live?.prompt || ''
 }
 
+/** turn_begin of an auto stream carries no human text; nothing to draw. */
+function isBlankHumanTurn(t: ClarifyTurn): boolean {
+  return t.role === 'human' && !t.text && !t.images?.length && !t.annotations?.length
+}
+
 /** A generated Live turn with nothing left to show once the card is gone. */
 function isEmptyLiveTurn(t: ClarifyTurn): boolean {
   return t.role === 'human' && !liveHost && isLiveCardText(t) && !humanBubbleText(t) && !t.images?.length && !t.annotations?.length
@@ -106,6 +123,7 @@ const emit = defineEmits<{
   (e: 'finish'): void
   (e: 'finish-abort'): void
   (e: 'cancel'): void
+  (e: 'takeover'): void
   (e: 'queue-remove', itemId: string | undefined, index: number): void
   (e: 'queue-reorder', itemIds: string[]): void
 }>()
@@ -278,6 +296,16 @@ const {
   editQueuedItem,
 } = chat
 
+/**
+ * Observe (read-only auto run) view: while the agent is busy and no message
+ * text has arrived, 「思考中…」 is the only busy indicator — the thought
+ * summary's 生成中… badge and the bottom 「刚刚」 time wait for the message.
+ * The interactive chat keeps its existing indicators.
+ */
+function observeQuietBusy(t: ClarifyTurn): boolean {
+  return !!props.observe && t.role === 'agent' && !!t.streaming && !agentHasMessage(t)
+}
+
 const railScopeKey = computed(() => `${props.runId}:${props.nodeId}:${props.iteration}`)
 const resolveMessageAnchors = createClarifyChatAnchors(`clarify-${useId().replace(/:/g, '')}`)
 const messageAnchorState = computed(() => resolveMessageAnchors(railScopeKey.value, displayTurns.value))
@@ -285,7 +313,7 @@ const messageRailItems = computed(() => {
   const rows = displayTurns.value
   return rows.flatMap((turn, index) => {
     const id = messageAnchorState.value.anchors[index]
-    if (!id || isEmptyLiveTurn(turn)) return []
+    if (!id || isEmptyLiveTurn(turn) || (props.observe && isBlankHumanTurn(turn))) return []
     let end = index + 1
     while (end < rows.length && rows[end]!.role !== 'human') end++
     let preview = ''
@@ -727,9 +755,21 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
+      <!-- Taken-over node: what it was asked to do, as the conversation's first User Message (same user-bubble style). -->
+      <div
+        v-if="nodeTask?.trim()"
+        class="clarify-turn flex justify-end"
+        data-turn-role="human"
+        data-testid="clarify-node-task"
+      >
+        <span class="sr-only">{{ translate('pages.clarify.me') }}</span>
+        <div class="min-w-0 max-w-[88%]">
+          <div class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ nodeTask.trim() }}</div>
+        </div>
+      </div>
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
       <div
-        v-if="!isEmptyLiveTurn(t)"
+        v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t))"
         class="clarify-turn flex"
         :class="t.role === 'human' ? 'justify-end' : ''"
         :data-turn-role="t.role"
@@ -897,6 +937,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :run-id="runId"
               :started-at="outputBounds(i).startedAt"
               :ended-at="outputBounds(i).endedAt"
+              :quiet-thought="observeQuietBusy(t)"
               message-test-id="clarify-agent-message"
               @reveal="scrollBottom()"
             >
@@ -918,7 +959,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   data-testid="clarify-thought-summary"
                 >
                   <ThoughtSummaryStatus
-                    :busy="!!t.streaming"
+                    :busy="!!t.streaming && !observeQuietBusy(t)"
                     :completed="showTurnCompleted(t)"
                     :interrupted="!!t.interrupted"
                   />
@@ -1431,7 +1472,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </div>
       <ComposerShell
         wrap-toolbar
-        :show-footer="!hideFinish && reviewMode"
+        :show-footer="!hideFinish && reviewMode && !observe"
         box-test-id="clarify-input-row"
         toolbar-test-id="clarify-action-row"
       >
@@ -1443,7 +1484,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             class="chat-input composer-hint-wrap min-h-[40px] min-w-0 w-full resize-none border-0 bg-transparent p-0 shadow-none outline-none focus:ring-0"
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
-            :placeholder="inputPlaceholder"
+            :placeholder="observe ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
+            :disabled="observe"
             data-testid="clarify-input"
             @input="onTextInput"
             @keydown="onComposerKeydown"
@@ -1459,13 +1501,28 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :title="translate('pages.clarify.addImage')"
             :aria-label="translate('pages.clarify.addImage')"
             data-testid="clarify-attach-btn"
+            :disabled="observe"
             @click="fileInput?.click()"
           >
             <Icon name="plus" :size="18" />
           </button>
           <slot name="composer-controls" :compact="true" />
         </template>
-        <template #toolbar-end>
+        <template v-if="observe" #toolbar-end>
+          <button
+            type="button"
+            class="chat-action-button chat-action-stop"
+            data-testid="clarify-observe-stop"
+            :title="translate('pages.clarify.observeStopTitle')"
+            :aria-label="translate('pages.clarify.observeStop')"
+            :aria-busy="stopping ? 'true' : undefined"
+            :disabled="stopping"
+            @click="emit('takeover')"
+          >
+            <Icon :name="stopping ? 'spinner' : 'chat-stop'" :size="16" :class="stopping ? 'animate-spin motion-reduce:animate-none' : ''" />
+          </button>
+        </template>
+        <template v-else #toolbar-end>
           <ComposerPrimaryAction
             :kind="primaryKind"
             :disabled="primaryDisabled"
@@ -1476,7 +1533,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             @click="onPrimary"
           />
         </template>
-        <template v-if="reviewMode" #hint>
+        <template v-if="reviewMode && !observe" #hint>
           <p
             class="m-0 min-w-0 text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]"
             data-testid="clarify-confirm-hint"
