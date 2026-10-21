@@ -374,6 +374,10 @@ type RunVariable struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
 	Value any    `gorm:"serializer:json" json:"value"`
+	// Secret is carried over from a workspace variable flagged secret, so
+	// display-only derivations (task previews) can mask
+	// the value. Execution still sees the real value.
+	Secret bool `json:"secret,omitempty"`
 }
 
 // Artifact is a platform-stored run product written via the artifact-store MCP.
