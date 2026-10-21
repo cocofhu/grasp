@@ -10,6 +10,7 @@ import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
+import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
 enableAutoUnmount(afterEach)
@@ -93,6 +94,7 @@ function mountChat(opts: {
               <button type="button" data-testid="clarify-image-preview-close" @click="$emit('close')">×</button>
               <button type="button" data-testid="clarify-image-preview-backdrop" @click="$emit('close')">backdrop</button>
               <slot />
+              <slot name="footer" />
             </div>
           `,
         },
@@ -431,6 +433,11 @@ describe('ClarifyChat', () => {
     expect(finishBtn.text()).toContain('确认并流转')
     await finishBtn.trigger('click')
     await flushPromises()
+    expect(wrapper.emitted('finish')).toBeUndefined()
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-body"]')?.textContent).toContain(
+      '将接受当前已落盘产物并进入下一节点',
+    )
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish')).toBeTruthy()
     wrapper.unmount()
   })
@@ -563,6 +570,8 @@ describe('ClarifyChat', () => {
     })
     expect(wrapper.find('[data-testid="clarify-abort-and-confirm"]').text()).toContain('中止当前回合并确认')
     await wrapper.find('[data-testid="clarify-abort-and-confirm"]').trigger('click')
+    expect(wrapper.emitted('finish-abort')).toBeUndefined()
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish-abort')).toBeTruthy()
     wrapper.unmount()
   })
@@ -583,6 +592,7 @@ describe('ClarifyChat', () => {
     const abort = wrapper.get('[data-testid="clarify-abort-and-confirm"]')
     expect(abort.isVisible()).toBe(true)
     await abort.trigger('click')
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish-abort')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -614,6 +624,7 @@ describe('ClarifyChat', () => {
     const abort = wrapper.get('[data-testid="clarify-abort-and-confirm"]')
     expect(abort.isVisible()).toBe(true)
     await abort.trigger('click')
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish-abort')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -622,7 +633,7 @@ describe('ClarifyChat', () => {
     const wrapper = mountChat({ reviewMode: true })
     const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
     await confirmBtn.trigger('click')
-    await flushPromises()
+    await acceptConfirmFlowDialog()
     expect((confirmBtn.element as HTMLButtonElement).disabled).toBe(true)
     await wrapper.setProps({ confirmError: '产物契约不满足' })
     await flushPromises()
@@ -643,6 +654,8 @@ describe('ClarifyChat', () => {
     const confirmBtn = wrapper.find('[data-testid="clarify-confirm-flow"]')
     await confirmBtn.trigger('click')
     await flushPromises()
+    expect(wrapper.text()).not.toContain('校验中…')
+    await acceptConfirmFlowDialog()
     expect(wrapper.text()).toContain('校验中…')
     expect(wrapper.text()).not.toContain('Agent 正在思考下一轮')
     expect((confirmBtn.element as HTMLButtonElement).disabled).toBe(true)
@@ -974,6 +987,7 @@ describe('ClarifyChat', () => {
     expect(confirm.isVisible()).toBe(true)
     expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
     await confirm.trigger('click')
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish')).toHaveLength(1)
     wrapper.unmount()
   })
@@ -1002,6 +1016,7 @@ describe('ClarifyChat', () => {
     expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
     expect((wrapper.get('[data-testid="clarify-send-icon"]').element as HTMLButtonElement).disabled).toBe(true)
     await confirm.trigger('click')
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish')).toHaveLength(1)
     expect(wrapper.emitted('send')).toBeUndefined()
     wrapper.unmount()
@@ -1079,6 +1094,8 @@ describe('ClarifyChat', () => {
     expect(confirm.isVisible()).toBe(true)
     expect((confirm.element as HTMLButtonElement).disabled).toBe(false)
     await confirm.trigger('click')
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-discard"]')).toBeNull()
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('finish')).toHaveLength(1)
     expect(wrapper.emitted('send')).toBeUndefined()
     wrapper.unmount()

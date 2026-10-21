@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { acceptConfirmFlow } from './helpers/confirmFlow'
 
 const attachment = {
   name: 'review-draft.png',
@@ -110,6 +111,7 @@ test.describe('移动审批聊天与按需产物预览', () => {
     await expect(chat).not.toHaveAttribute('inert')
     await expect(pass).toBeEnabled()
     await pass.click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('gate-mobile-fill-root')).toHaveAttribute('data-resolved', 'approve')
   })
 
