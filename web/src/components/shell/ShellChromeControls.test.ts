@@ -295,6 +295,49 @@ describe('ShellChromeControls notifications (g1.2)', () => {
     wrapper.unmount()
   })
 
+  it('styles the popover like the account menu and keeps rows quiet', async () => {
+    seedList([
+      asItem(run({ id: 'ok-1', status: 'completed', title: 'done' }), { unread: false }),
+      asItem(run({ id: 'fail-1', status: 'failed', title: 'boom' }), { unread: true }),
+    ])
+    const wrapper = mountChrome()
+    await flushPromises()
+    await wrapper.find('[data-testid="run-notifications-bell"]').trigger('click')
+    await nextTick()
+    const panel = wrapper.find('[data-testid="run-notifications-panel"]')
+    expect(panel.classes()).toEqual(expect.arrayContaining(['bg-surface', 'border-line', 'rounded-xl']))
+    expect(panel.classes()).not.toContain('bg-elevated')
+    expect(panel.classes()).not.toContain('border-line-strong')
+    expect(wrapper.find('[data-testid="run-notifications-unread"]').text()).toBe('1 条未读')
+    const [read, unread] = wrapper.findAll('[data-testid="run-notifications-item"]')
+    // No bordered status chip, no "click to view" hint; status leads the meta line.
+    expect(read.find('[data-testid="run-notifications-status"]').text()).toBe('已完成')
+    expect(read.find('[data-testid="run-notifications-status"]').classes()).not.toContain('text-err')
+    expect(read.text()).not.toContain('点击查看')
+    expect(read.html()).not.toMatch(/border-ok|border-err/)
+    expect(read.find('[data-testid="run-notifications-unread-dot"]').exists()).toBe(false)
+    expect(read.find('[data-testid="run-notifications-title"]').classes()).toContain('text-txt2')
+    expect(unread.find('[data-testid="run-notifications-status"]').classes()).toContain('text-err')
+    expect(unread.find('[data-testid="run-notifications-unread-dot"]').exists()).toBe(true)
+    expect(unread.find('[data-testid="run-notifications-title"]').classes()).toContain('font-medium')
+    const viewAll = wrapper.find('[data-testid="run-notifications-view-all"]')
+    expect(viewAll.classes()).not.toContain('border')
+    expect(viewAll.classes()).not.toContain('text-accent-2')
+    wrapper.unmount()
+  })
+
+  it('hides the unread count when everything is read', async () => {
+    seedList([asItem(run({ id: 'ok-1', status: 'completed', title: 'done' }), { unread: false })])
+    const wrapper = mountChrome()
+    await flushPromises()
+    await wrapper.find('[data-testid="run-notifications-bell"]').trigger('click')
+    await nextTick()
+    expect(wrapper.find('[data-testid="run-notifications-unread"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="run-notifications-panel"]').text()).not.toContain('0 条未读')
+    expect(wrapper.find('[data-testid="run-notifications-mark-all"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('cleans noisy progress titles in the panel', async () => {
     seedList([
       asItem(

@@ -275,23 +275,23 @@ defineExpose({
     <Teleport to="body">
       <div
         v-if="panelOpen"
-        class="rounded-lg z-[60] flex max-h-[min(420px,70vh)] flex-col border border-line-strong bg-elevated shadow-card"
+        class="run-notifications-panel z-[60] flex max-h-[min(420px,70vh)] flex-col rounded-xl border border-line bg-surface p-1.5"
         role="menu"
         :aria-label="t('shell.runNotifications.title')"
         data-testid="run-notifications-panel"
         :style="panelStyle"
         @click.stop
       >
-        <div class="flex items-center justify-between gap-2 border-b border-line px-3.5 py-3">
-          <h3 class="m-0 text-[13px] font-semibold text-txt">{{ t('shell.runNotifications.title') }}</h3>
+        <div class="mb-1 flex min-h-[40px] items-center justify-between gap-2 border-b border-line px-2 pb-1.5 pt-0.5">
+          <h3 class="m-0 text-[13px] font-medium text-txt">{{ t('shell.runNotifications.title') }}</h3>
           <div class="flex items-center gap-2">
-            <span class="text-xs text-txt3">
+            <span v-if="unreadCount > 0" class="text-[11px] tabular-nums text-txt3" data-testid="run-notifications-unread">
               {{ t('shell.runNotifications.unreadCount', { n: unreadCount }) }}
             </span>
             <button
               v-if="unreadCount > 0"
               type="button"
-              class="rounded-md border border-line bg-transparent px-2 py-0.5 text-[11px] text-txt2 hover:border-accent hover:text-accent"
+              class="run-notifications-action rounded-[7px] border-0 bg-transparent px-2 py-1 text-[11px] text-txt2"
               data-testid="run-notifications-mark-all"
               @click="onMarkAllRead"
             >
@@ -314,8 +314,7 @@ defineExpose({
             v-for="item in previewItems"
             :key="item.runId"
             type="button"
-            class="relative block w-full border-b border-line px-3.5 py-3 text-left hover:bg-overlay"
-            :class="item.unread ? 'bg-accent/5' : ''"
+            class="run-notifications-action relative block w-full rounded-[7px] py-2 pl-2 pr-6 text-left"
             data-testid="run-notifications-item"
             :data-run-id="item.runId"
             :data-status="item.status"
@@ -325,28 +324,21 @@ defineExpose({
           >
             <span
               v-if="item.unread"
-              class="absolute bottom-0 left-0 top-0 w-0.5 bg-accent"
+              class="absolute right-2.5 top-[15px] h-1.5 w-1.5 rounded-full bg-accent"
+              data-testid="run-notifications-unread-dot"
               aria-hidden="true"
             />
-            <div class="mb-1 flex items-center gap-2">
+            <div
+              class="mb-0.5 truncate text-[13px]"
+              :class="item.unread ? 'font-medium text-txt' : 'text-txt2'"
+              data-testid="run-notifications-title"
+            >{{ itemTitle(item) }}</div>
+            <div class="truncate text-[11px] text-txt3" data-testid="run-notifications-meta">
               <span
-                class="rounded-md shrink-0 border px-1.5 py-0.5 text-[10px] font-semibold"
-                :class="
-                  item.status === 'failed'
-                    ? 'border-err/45 text-err'
-                    : 'border-ok/40 text-ok'
-                "
+                :class="item.status === 'failed' ? 'text-err' : ''"
+                data-testid="run-notifications-status"
               >{{ statusLabel(item.status) }}</span>
-              <span class="truncate text-[13px] font-medium text-txt">{{ itemTitle(item) }}</span>
-            </div>
-            <div class="truncate text-xs text-txt3">
-              {{ itemContext(item) }}
-              <template v-if="item.status === 'completed'">
-                · {{ t('shell.runNotifications.clickForOutput') }}
-              </template>
-              <template v-else>
-                · {{ t('shell.runNotifications.clickForDetail') }}
-              </template>
+              · {{ itemContext(item) }}
               · {{ relTime(item.finishedApprox || item.startedAt) }}
               <template v-if="item.beforeBaseline">
                 ·
@@ -358,17 +350,17 @@ defineExpose({
           </button>
         </div>
 
-        <div class="flex flex-col gap-2 border-t border-line px-3.5 py-2.5">
+        <div class="mt-1 flex flex-col gap-0.5 border-t border-line pt-1">
           <div
             v-if="remainingCount > 0"
-            class="text-xs text-txt3"
+            class="px-2 pt-1 text-[11px] text-txt3"
             data-testid="run-notifications-more"
           >
             {{ t('shell.runNotifications.moreHint', { n: remainingCount }) }}
           </div>
           <button
             type="button"
-            class="rounded-md w-full border border-line bg-transparent px-3 py-2 text-[13px] text-accent-2 hover:border-accent hover:bg-accent-dim hover:text-accent"
+            class="run-notifications-action flex h-9 w-full items-center rounded-[7px] border-0 bg-transparent px-2 text-left text-[13px] text-txt2"
             data-testid="run-notifications-view-all"
             @click="viewAll"
           >
@@ -430,6 +422,22 @@ defineExpose({
   transform: rotate(0deg) scale(1);
 }
 
+/* Same popover shell and rows as SidebarAccountMenu (surface, line, 12px, 7px rows). */
+.run-notifications-panel {
+  box-shadow: 0 10px 32px rgb(0 0 0 / .12);
+}
+.run-notifications-action {
+  transition: background-color 140ms ease, color 140ms ease;
+}
+.run-notifications-action:hover {
+  background: rgb(var(--c-txt) / .05);
+  color: rgb(var(--c-txt));
+}
+.run-notifications-action:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .55);
+  outline-offset: -2px;
+}
+
 .shell-unread-badge {
   animation: shell-badge-pop 280ms ease;
 }
@@ -453,6 +461,10 @@ defineExpose({
 
   .shell-theme-icon:not(.is-active) {
     opacity: 0;
+  }
+
+  .run-notifications-action {
+    transition: none;
   }
 
   .shell-unread-badge {
