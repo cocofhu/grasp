@@ -99,6 +99,7 @@ const paths: Record<string, string> = {
   'stage-terminal': '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2"/><path d="M7.1 9.3 10.3 12 7.1 14.7"/><path d="M12.2 14.8h4.6"/>',
   'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><ellipse cx="12" cy="12" rx="3.3" ry="8"/>',
   'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
+  'stage-resources': '<rect x="3.2" y="3.2" width="7" height="7" rx="1.6"/><rect x="13.8" y="3.2" width="7" height="7" rx="1.6"/><rect x="3.2" y="13.8" width="7" height="7" rx="1.6"/><rect x="13.8" y="13.8" width="7" height="7" rx="1.6"/>',
 }
 
 /** Icons that render with solid fill (favorited star). */

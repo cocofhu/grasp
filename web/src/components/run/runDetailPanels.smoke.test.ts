@@ -277,9 +277,8 @@ describe('Run detail panel shells (Demo entry assembly)', () => {
     expect(clarify.find('[data-testid="react-connecting-stage"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
     expect(clarify.find('[data-testid="react-connecting-confirm"]').exists()).toBe(false)
-    // connecting stage: workflow tab + centered status (no preview chrome Tab / skeleton)
-    expect(clarify.get('[data-testid="react-connecting-tab-workflow"]').text()).toContain('工作流产物')
-    expect(clarify.get('[data-testid="react-connecting-tab-workflow"]').attributes('aria-selected')).toBe('true')
+    // connecting stage: drawer already titles the panel, so the old home tab stays hidden
+    expect(clarify.find('[data-testid="react-connecting-tab-workflow"]').exists()).toBe(false)
     expect(clarify.find('[data-testid="react-connecting-tab-preview"]').exists()).toBe(false)
     expect(clarify.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     expect(clarify.get('[data-testid="react-connecting-stage-body"]').exists()).toBe(true)

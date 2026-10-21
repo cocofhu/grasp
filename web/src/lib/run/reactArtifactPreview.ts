@@ -119,7 +119,9 @@ export function buildArtifactVersionChoices(
   const live = artifactRevision({ revision: liveRevision })
   const seen = new Set<number>()
   const choices: ArtifactVersionChoice[] = []
-  for (const row of archived || []) {
+  // A paginated envelope is not a version list; iterating it blanks the stage.
+  const rows = Array.isArray(archived) ? archived : []
+  for (const row of rows) {
     const rev = artifactRevision(row)
     if (rev === live || seen.has(rev)) continue
     seen.add(rev)
@@ -826,6 +828,21 @@ export function saveStageOpenState(
     sessionStorage.setItem(key, JSON.stringify(next))
   } catch {
     // quota / private mode — memory still holds refresh-within-SPA; hard reload needs storage
+  }
+}
+
+/** Drop a remembered preview so the next conversation does not reopen it. */
+export function clearStageOpenState(runId?: string | null, nodeId?: string | null): void {
+  const rid = String(runId || '').trim()
+  const nid = String(nodeId || '').trim()
+  if (!rid || !nid) return
+  const key = stageOpenStateStorageKey(rid, nid)
+  stageOpenMemory.delete(key)
+  if (typeof sessionStorage === 'undefined') return
+  try {
+    sessionStorage.removeItem(key)
+  } catch {
+    // private mode
   }
 }
 

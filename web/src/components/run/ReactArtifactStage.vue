@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { findGraphNode, isClarifyNode, isPreviewNode, type CapsNode } from '@/lib/shared/clarifyInteractive'
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import HtmlPreview from '@/components/ui/HtmlPreview.vue'
@@ -11,6 +11,7 @@ import AppPreviewPanel from '@/components/run/AppPreviewPanel.vue'
 import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
 import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.vue'
+import StageWorkflow from '@/components/run/StageWorkflow.vue'
 import { api, type SandboxView } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
@@ -45,6 +46,7 @@ import {
   expandStageArtifacts,
   isHistoricalStageArtifact,
   isOwnNodeArtifact,
+  clearStageOpenState,
   loadStageOpenState,
   parseHistoricalStageArtifact,
   resolveEffectivePreviewPin,
@@ -63,6 +65,7 @@ import {
 } from '@/lib/run/reactArtifactPreview'
 import { useArtifactVersions } from '@/lib/run/useArtifactVersions'
 import { registerStageLinks } from '@/lib/run/stageLinks'
+import { peekConversationDrawer } from '@/lib/chat/conversationDrawer'
 
 const props = withDefaults(
   defineProps<{
@@ -140,6 +143,18 @@ const initialOpen = restoreStageOpenState(
 )
 /** Default to workflow artifacts grid (no standalone preview chrome Tab). */
 const activeTab = ref(initialOpen?.activeTab || REACT_STAGE_TAB_GRID)
+type ResourceView = 'home' | 'ide' | 'terminal' | 'browser' | 'log' | 'app'
+const resourceView = ref<ResourceView>('home')
+const artifactView = ref('home')
+function seedDrawerViews(tab: string) {
+  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'log') resourceView.value = tab
+  else if (tab === REACT_STAGE_TAB_NOVNC) resourceView.value = 'app'
+  else {
+    const name = previewTabName(tab)
+    if (name) artifactView.value = name
+  }
+}
+seedDrawerViews(activeTab.value)
 /** True after the user picks a grid tab, card, preview tab, or noVNC — auto-open must not steal focus.
  *  Also set when session open-state restore succeeds so pin auto-activate loses to refresh restore. */
 const userMoved = ref(!!initialOpen)
@@ -459,6 +474,8 @@ function activatePreview(name: string) {
   const art = findArtifactByName(stageArtifacts.value, name)
   if (!art) return
   openNames.value = openStagePreviewTab(openNames.value, art.name)
+  artifactView.value = art.name
+  if (splitActive.value && drawerMode.value === 'resources') return
   activeTab.value = previewTabId(art.name)
   tabUnread.value = clearStageTabUnread(tabUnread.value, art.name)
 }
@@ -520,6 +537,11 @@ function neighborTab(closedId: string, ids: string[]): string {
 
 function closePreview(name: string) {
   markUserMoved()
+  if (splitActive.value) {
+    openNames.value = closeStagePreviewTab(openNames.value, name)
+    activeTab.value = REACT_STAGE_TAB_GRID
+    return
+  }
   const closedId = previewTabId(name)
   const before = closableTabIds()
   const wasActive = previewTabName(activeTab.value) === name
@@ -562,6 +584,11 @@ function selectNovncTab() {
 function closeFixed(id: string) {
   if (!isFixedPanel(id)) return
   markUserMoved()
+  if (splitActive.value) {
+    fixedOpen.value = fixedOpen.value.filter((x) => x !== id)
+    activeTab.value = REACT_STAGE_TAB_GRID
+    return
+  }
   const before = closableTabIds()
   const wasActive = activeTab.value === id
   fixedOpen.value = fixedOpen.value.filter((x) => x !== id)
@@ -570,10 +597,54 @@ function closeFixed(id: string) {
 
 function closeNovnc() {
   markUserMoved()
+  if (splitActive.value) {
+    novncOpen.value = false
+    activeTab.value = REACT_STAGE_TAB_GRID
+    return
+  }
   const before = closableTabIds({ includeApp: true })
   const wasActive = activeTab.value === REACT_STAGE_TAB_NOVNC
   novncOpen.value = false
   if (wasActive) activeTab.value = neighborTab(REACT_STAGE_TAB_NOVNC, before)
+}
+
+function resetSplitHome() {
+  openNames.value = []
+  activeTab.value = REACT_STAGE_TAB_GRID
+  novncOpen.value = false
+  fixedOpen.value = []
+  fixedMounted.value = {}
+  userMoved.value = false
+  tabUnread.value = {}
+  resourceView.value = 'home'
+  artifactView.value = 'home'
+  autoPinFingerprints.value = null
+}
+
+function syncDrawerMode(next: 'resources' | 'artifacts') {
+  if (next === 'resources') {
+    const view = resourceView.value
+    if (view === 'home') {
+      activeTab.value = REACT_STAGE_TAB_GRID
+      return
+    }
+    if (view === 'app') {
+      novncOpen.value = true
+      activeTab.value = REACT_STAGE_TAB_NOVNC
+      return
+    }
+    fixedMounted.value = { ...fixedMounted.value, [view]: true }
+    if (!fixedOpen.value.includes(view)) fixedOpen.value = [...fixedOpen.value, view]
+    activeTab.value = view
+    return
+  }
+  const name = artifactView.value
+  if (!name || name === 'home' || !artifactByName(name)) {
+    artifactView.value = 'home'
+    activeTab.value = REACT_STAGE_TAB_GRID
+    return
+  }
+  activatePreview(name)
 }
 
 function onRemotePick(payload: AppPreviewPickPayload) {
@@ -582,6 +653,39 @@ function onRemotePick(payload: AppPreviewPickPayload) {
 
 const showingGrid = computed(() => activeTab.value === REACT_STAGE_TAB_GRID)
 const activePreviewName = computed(() => previewTabName(activeTab.value))
+const drawer = computed(() => peekConversationDrawer(props.runId))
+const splitActive = computed(() => !!drawer.value?.split && !props.hideAppPreview)
+const drawerMode = computed(() => (splitActive.value ? drawer.value?.mode ?? null : null))
+const showResourceCards = computed(() => showFixedCards.value && (!splitActive.value || drawerMode.value === 'resources'))
+const showArtifactCards = computed(() => !splitActive.value || drawerMode.value === 'artifacts')
+const showWorkflow = computed(
+  () => splitActive.value && drawerMode.value === 'artifacts' && showingGrid.value && (props.run?.nodes?.length || 0) > 0,
+)
+const showSplitArtifactEmpty = computed(
+  () => splitActive.value && drawerMode.value === 'artifacts' && showingGrid.value && gridArtifacts.value.length === 0,
+)
+const showStageTabs = computed(() => !splitActive.value || activeTab.value !== REACT_STAGE_TAB_GRID)
+const displayedPreviewNames = computed(() => {
+  if (!splitActive.value) return openNames.value
+  if (drawerMode.value !== 'artifacts') return []
+  const name = previewTabName(activeTab.value)
+  return name && openNames.value.includes(name) ? [name] : []
+})
+const displayedFixedBefore = computed(() => {
+  if (!splitActive.value) return fixedTabsBeforeApp.value
+  if (drawerMode.value !== 'resources') return []
+  return fixedTabsBeforeApp.value.filter((id) => id === activeTab.value)
+})
+const displayedNovnc = computed(() => {
+  if (!novncOpen.value || !showAppCard.value) return false
+  if (!splitActive.value) return true
+  return drawerMode.value === 'resources' && activeTab.value === REACT_STAGE_TAB_NOVNC
+})
+const displayedFixedAfter = computed(() => {
+  if (!splitActive.value) return fixedTabsAfterApp.value
+  if (drawerMode.value !== 'resources') return []
+  return fixedTabsAfterApp.value.filter((id) => id === activeTab.value)
+})
 
 watch(
   () => {
@@ -615,6 +719,10 @@ watch(
       false,
     )
     if (!pinEvent) return
+    // Split homes stay on the workflow until the user opens a card, or the
+    // conversation asks for a named artifact. An automatic pin must not
+    // replace that home or the preview this mode already remembers.
+    if (splitActive.value) return
     const canFocus = shouldFocusPinnedOrAutoTab({
       userMoved: userMoved.value,
       activeTab: activeTab.value,
@@ -666,6 +774,7 @@ watch(
     if (!prevMap || scope !== prevScope) return
     const { created, updated } = diffArtifactFingerprints(prevMap, nextMap)
     if (!created.length && !updated.length) return
+    if (splitActive.value) return
 
     const pinName = String(effectivePin.value || '').trim()
     const changed = [...created, ...updated]
@@ -756,6 +865,13 @@ watch(
   () => `${props.runId}|${props.nodeId}`,
   (key, prev) => {
     if (!prev || key === prev) return
+    if (splitActive.value) {
+      const [oldRun, oldNode] = prev.split('|')
+      clearStageOpenState(oldRun, oldNode)
+      clearStageOpenState(props.runId, props.nodeId)
+      resetSplitHome()
+      return
+    }
     const rid = String(props.runId || '').trim()
     const nid = String(props.nodeId || '').trim()
     if (!rid || !nid) {
@@ -796,11 +912,14 @@ watch(
       const before = closableTabIds({ includeApp: true })
       const wasActive = activeTab.value === REACT_STAGE_TAB_NOVNC
       novncOpen.value = false
-      if (wasActive) activeTab.value = neighborTab(REACT_STAGE_TAB_NOVNC, before)
+      if (wasActive) {
+        activeTab.value = splitActive.value ? REACT_STAGE_TAB_GRID : neighborTab(REACT_STAGE_TAB_NOVNC, before)
+      }
       return
     }
     // Show the app tab once a preview is registered; never steal focus after the user moved.
     novncOpen.value = true
+    if (splitActive.value) return
     if (userMoved.value) return
     if (activeTab.value === REACT_STAGE_TAB_GRID) {
       activeTab.value = REACT_STAGE_TAB_NOVNC
@@ -808,6 +927,42 @@ watch(
   },
   { immediate: true },
 )
+
+watch(activeTab, (tab) => {
+  if (!splitActive.value) return
+  if (tab === 'ide' || tab === 'terminal' || tab === 'browser' || tab === 'log') {
+    resourceView.value = tab
+    return
+  }
+  if (tab === REACT_STAGE_TAB_NOVNC) {
+    resourceView.value = 'app'
+    return
+  }
+  const name = previewTabName(tab)
+  if (name) {
+    artifactView.value = name
+    return
+  }
+  if (tab !== REACT_STAGE_TAB_GRID) return
+  if (drawerMode.value === 'resources') resourceView.value = 'home'
+  else if (drawerMode.value === 'artifacts') artifactView.value = 'home'
+})
+watch(drawerMode, (mode, prev) => {
+  if (!splitActive.value || !mode || mode === prev) return
+  syncDrawerMode(mode)
+})
+watch(
+  () => drawer.value?.resetEpoch ?? 0,
+  (epoch, prev) => {
+    if (!splitActive.value || prev == null || epoch === prev) return
+    clearStageOpenState(props.runId, props.nodeId)
+    resetSplitHome()
+  },
+)
+onMounted(() => {
+  const mode = drawerMode.value
+  if (splitActive.value && (mode === 'resources' || mode === 'artifacts')) syncDrawerMode(mode)
+})
 
 let sandboxGen = 0
 watch(
@@ -898,13 +1053,15 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="artifact-stage-surface flex h-full min-h-0 flex-col bg-base" data-testid="react-artifact-stage">
+  <div class="artifact-stage-surface flex h-full min-h-0 flex-col bg-base" data-testid="react-artifact-stage" :data-drawer-mode="splitActive ? (drawerMode || 'closed') : undefined">
     <div
+      v-show="showStageTabs"
       class="artifact-stage-tabs flex shrink-0 items-center gap-1 overflow-x-auto border-b border-line px-2 py-1.5 max-md:px-1.5 max-md:py-1"
       data-testid="react-artifact-tabs"
       role="tablist"
     >
       <button
+        v-if="!splitActive"
         type="button"
         role="tab"
         class="inline-flex max-w-[200px] items-center gap-1.5 rounded-md px-2.5 py-1 text-[12px] transition max-md:px-2 max-md:py-0.5 max-md:text-[11px]"
@@ -921,7 +1078,7 @@ onBeforeUnmount(() => {
         <span class="truncate">{{ t('pages.reactArtifactStage.workflowTab') }}</span>
       </button>
       <div
-        v-for="name in openNames"
+        v-for="name in displayedPreviewNames"
         :key="name"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
         :class="
@@ -963,7 +1120,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div
-        v-for="id in fixedTabsBeforeApp"
+        v-for="id in displayedFixedBefore"
         :key="id"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
         :class="
@@ -995,7 +1152,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div
-        v-if="novncOpen && showAppCard"
+        v-if="displayedNovnc"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
         :class="
           showingNovnc
@@ -1026,7 +1183,7 @@ onBeforeUnmount(() => {
         </button>
       </div>
       <div
-        v-for="id in fixedTabsAfterApp"
+        v-for="id in displayedFixedAfter"
         :key="id"
         class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
         :class="
@@ -1059,7 +1216,7 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <div v-show="showingGrid" class="min-h-0 flex-1 overflow-y-auto p-4" data-testid="react-artifact-grid">
+    <div v-show="showingGrid" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4" data-testid="react-artifact-grid">
       <div
         v-if="!showGridCards"
         class="flex h-full min-h-[160px] flex-col items-center justify-center text-center text-[12px] text-txt3"
@@ -1069,9 +1226,17 @@ onBeforeUnmount(() => {
         {{ t('pages.reactArtifactStage.gridEmpty') }}
       </div>
       <template v-else>
+      <StageWorkflow v-if="showWorkflow" :run="run" :current-node-id="nodeId" />
+      <p
+        v-if="showSplitArtifactEmpty"
+        class="py-6 text-center text-[12px] text-txt3"
+        data-testid="react-artifact-split-empty"
+      >{{ t('pages.reactArtifactStage.gridEmpty') }}</p>
       <div
+        v-if="(showResourceCards && fixedCards.length) || (showArtifactCards && gridArtifacts.length)"
         class="grid grid-cols-[repeat(auto-fill,minmax(176px,1fr))] gap-3"
       >
+        <template v-if="showResourceCards">
         <button
           v-for="card in fixedCards"
           :key="card.id"
@@ -1101,6 +1266,8 @@ onBeforeUnmount(() => {
             <div class="artifact-card-meta mt-0.5 truncate text-[11px] text-txt3">{{ card.meta }}</div>
           </div>
         </button>
+        </template>
+        <template v-if="showArtifactCards">
         <div
           v-for="a in gridArtifacts"
           :key="a.id"
@@ -1169,9 +1336,10 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
+        </template>
       </div>
       <div
-        v-if="showNoArtifactHint"
+        v-if="showNoArtifactHint && !splitActive"
         class="mt-4 rounded-lg border border-dashed border-line px-3 py-[22px] text-center"
         data-testid="react-artifact-grid-empty-hint"
       >
