@@ -73,6 +73,11 @@ describe('ClarifyChat inline hand-off step row (方案 B)', () => {
     expect(confirm).toBeTruthy()
     await confirm!.trigger('click')
     await flushPromises()
+    // #868: 确认并流转 asks in an in-app dialog first.
+    expect(w.emitted('finish')).toBeUndefined()
+    const accept = (w.find('[data-testid="confirm-flow-dialog-accept"]').exists() ? w.get('[data-testid="confirm-flow-dialog-accept"]').element : document.querySelector('[data-testid="confirm-flow-dialog-accept"]')) as HTMLElement
+    accept.click()
+    await flushPromises()
     expect(w.emitted('finish')?.length).toBe(1)
     expect(play).not.toHaveBeenCalled()
     expect(w.get('[data-testid="clarify-handoff"]').attributes('data-state')).toBe('pending')

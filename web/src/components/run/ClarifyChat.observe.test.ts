@@ -9,6 +9,7 @@ import pagesEn from '@/locales/en/pages.json'
 import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
+import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import ClarifyChat from './ClarifyChat.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
@@ -183,6 +184,14 @@ describe('ClarifyChat takeover turns (re-review after Stop)', () => {
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).disabled).toBe(false)
     expect(wrapper.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
     await confirm.trigger('click')
+    await flushPromises()
+    // #868: 确认并流转 asks in an in-app dialog first.
+    expect(wrapper.emitted('finish')).toBeUndefined()
+    // AppModal is stubbed in this file, so accept through the dialog component.
+    const dialog = wrapper.findComponent(ConfirmFlowDialog)
+    expect(dialog.props('open')).toBe(true)
+    dialog.vm.$emit('confirm')
+    await flushPromises()
     expect(wrapper.emitted('finish')).toHaveLength(1)
   })
 
