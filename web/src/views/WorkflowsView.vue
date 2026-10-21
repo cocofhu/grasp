@@ -355,7 +355,6 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 .workflow-col-actions { width: 142px; }
 .workflow-directory th { height: 38px; padding: 0 12px; border-bottom: 1px solid rgb(var(--c-line)); color: rgb(var(--c-txt3)); font-size: 11px; font-weight: 400; white-space: nowrap; }
 .workflow-directory td { padding: 15px 12px; border-bottom: 1px solid rgb(var(--c-line) / .65); vertical-align: middle; }
-.workflow-directory th:first-child, .workflow-directory td:first-child { padding-left: 0; }
 .workflow-directory th:last-child, .workflow-directory td:last-child { padding-right: 0; }
 .workflow-row { cursor: pointer; }
 .workflow-row:hover { background: rgb(var(--c-txt) / .018); }
@@ -388,7 +387,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 @container workflow-directory (max-width: 740px) {
   .workflow-directory, .workflow-directory tbody { display: block; }
   .workflow-directory colgroup, .workflow-directory thead { display: none; }
-  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'notify home' 'updated actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0; }
+  .workflow-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: 'name status' 'notify home' 'updated actions'; align-items: center; gap: 7px 14px; border-bottom: 1px solid rgb(var(--c-line) / .7); padding: 16px 0 16px 12px; }
   .workflow-directory .workflow-row td { min-width: 0; border: 0; padding: 0; }
   .workflow-name-cell { grid-area: name; }
   .workflow-status-cell { grid-area: status; justify-self: end; }
