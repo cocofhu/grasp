@@ -122,9 +122,18 @@ function hasOwnRuntime(): boolean {
   return !!(readCliModel(env) || readCliEffort(env))
 }
 
-/** Default is inherit. A stored credential is not an edit; a pinned model is. */
+/** A stored credential or a pinned model leaves the workspace default. */
+function hasOwnCredential(): boolean {
+  return !!(props.draft.aiCredentialId?.trim() || props.draft.openCodeCredentialId?.trim())
+}
+
 const inheriting = computed(
-  () => !!sharedBackend.value && !customizing.value && props.draft.acpBackend === sharedBackend.value.id && !hasOwnRuntime(),
+  () =>
+    !!sharedBackend.value &&
+    !customizing.value &&
+    props.draft.acpBackend === sharedBackend.value.id &&
+    !hasOwnRuntime() &&
+    !hasOwnCredential(),
 )
 
 function clearRuntimeOverrides() {

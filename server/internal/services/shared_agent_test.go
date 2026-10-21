@@ -194,6 +194,8 @@ func TestExtendOverlayCredentialPriority(t *testing.T) {
 			return envauth.EnvClaudeAPIKey, true
 		case "shared-oc":
 			return envauth.EnvOpenCodeAPIKey, true
+		case "agent-cursor":
+			return envauth.EnvCursorAPIKey, true
 		default:
 			return "", false
 		}
@@ -208,6 +210,17 @@ func TestExtendOverlayCredentialPriority(t *testing.T) {
 	}, kind)
 	if agentWins.AiCredentialID != "agent-cursor" {
 		t.Fatalf("agent id lost: %q", agentWins.AiCredentialID)
+	}
+	dangling := ExtendOverlayWithKind(SharedAgentConfig{
+		AcpBackend:     AcpBackendCursor,
+		AiCredentialID: "shared-cursor",
+	}, Agent{
+		Name:           "demo",
+		AcpBackend:     AcpBackendCursor,
+		AiCredentialID: "cred-proj-default-cursor",
+	}, kind)
+	if dangling.AiCredentialID != "shared-cursor" {
+		t.Fatalf("dangling agent id = %q", dangling.AiCredentialID)
 	}
 
 	sharedUsed := ExtendOverlayWithKind(SharedAgentConfig{

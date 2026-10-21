@@ -3109,6 +3109,7 @@
       "turnElapsed": "用时 {time}",
       "turnProcess": "本轮过程",
       "emptyFailTitle": "本轮没有输出",
+      "replyFailTitle": "这一轮没有完成",
       "emptyFailDesc": "助手本轮没有返回正文，可重试上一轮。",
       "retry": "重试",
       "done": "交互已完成，进入下一步",
