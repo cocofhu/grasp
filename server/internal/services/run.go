@@ -178,6 +178,15 @@ func (s *RunService) States(runID string) []models.StateRun {
 	return states
 }
 
+// TaskStates returns the run's StateRuns in execution order (id asc) with
+// only the columns task previews need (no events / snapshots / MCP calls).
+func (s *RunService) TaskStates(runID string) []models.StateRun {
+	var states []models.StateRun
+	s.db.Select("id", "run_id", "node_id", "node_type", "iteration", "status", "outputs", "vars_before").
+		Where("run_id = ?", runID).Order("id asc").Find(&states)
+	return states
+}
+
 // FeedbackEvents returns the run's human feedback rounds in order, satisfying
 // the run-history tools' provider contract.
 func (s *RunService) FeedbackEvents(runID string) []models.FeedbackEvent {

@@ -346,6 +346,9 @@ func writeNodeEventsLiveReadErr(c *gin.Context, paginated bool) {
 // When a live sandbox is registered but the bridge read fails, the handler
 // returns HTTP 200 with unavailable=true so the UI can show a rehydrate failure
 // without polluting the browser console with 502 Failed to load resource.
+// The first (non-cursor) request also carries task (omitempty): the task
+// preview of the node's latest visit, as on the takeover conversation and
+// the run detail currentNode. Paginated requests (cursor or limit) omit it.
 func (h *Handlers) NodeEvents(c *gin.Context) {
 	runID := c.Param("id")
 	nodeID := c.Param("nodeId")
@@ -360,15 +363,20 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 			writeNodeEventsLiveReadErr(c, false)
 			return
 		}
-		if live {
-			c.JSON(http.StatusOK, gin.H{"events": ev, "live": true})
-			return
+		out := gin.H{"events": ev, "live": live}
+		if !live {
+			out["events"] = []models.AcpEvent{}
+			if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
+				out["events"] = previewPromptEvents(sr.Events)
+			}
 		}
-		if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
-			c.JSON(http.StatusOK, gin.H{"events": previewPromptEvents(sr.Events), "live": false})
-			return
+		// task: the first (non-cursor) request only; cursor pages omit it.
+		if r, ok := h.Runs.Get(runID); ok {
+			if t := h.latestVisitTask(r, h.Runs.TaskStates(runID), nodeID); t != "" {
+				out["task"] = t
+			}
 		}
-		c.JSON(http.StatusOK, gin.H{"events": []models.AcpEvent{}, "live": false})
+		c.JSON(http.StatusOK, out)
 		return
 	}
 

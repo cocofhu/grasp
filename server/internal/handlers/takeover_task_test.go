@@ -73,3 +73,56 @@ func TestTakeoverConversationTask(t *testing.T) {
 		t.Fatalf("blank prompt / review conversation must omit task: %v %v", task("quiet"), task("rev"))
 	}
 }
+
+// The same task preview on GET /runs/:id currentNode (Agent nodes only,
+// never gates) and on the node events endpoint (first request only; cursor /
+// limit pages omit it).
+func TestCurrentNodeAndNodeEventsTask(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	auto := &models.AgentCapabilities{Interaction: models.InteractionAuto}
+	g := models.Graph{Nodes: []models.Node{
+		{ID: "impl", Type: "agent", Label: "实现", Caps: auto, Config: map[string]any{"prompt": "用 {{vars.tok}} 实现 {{vars.env}}"}},
+		{ID: "gate", Type: "human_gate", Label: "评审", Config: map[string]any{"prompt": "gate prompt"}},
+	}}
+	now := time.Now()
+	h.db.Create(&models.Run{ID: "live", Status: "running", WorkflowID: "wf", Graph: g, StartedAt: now})
+	h.db.Create(&models.RunVariable{RunID: "live", Name: "tok", Value: "s3cr3t-value", Secret: true})
+	h.db.Create(&models.RunVariable{RunID: "live", Name: "env", Value: "预发"})
+	h.db.Create(&models.StateRun{RunID: "live", NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: &now,
+		VarsBefore: map[string]any{"tok": "s3cr3t-value", "env": "旧"}})
+	h.db.Create(&models.StateRun{RunID: "live", NodeID: "impl", NodeType: "agent", Iteration: 2, Status: "running", StartedAt: &now,
+		VarsBefore: map[string]any{"tok": "s3cr3t-value", "env": "预发"},
+		Events:     []models.AcpEvent{{Kind: "message", Text: "hi"}}})
+	const want = "用 ••• 实现 预发"
+
+	w := h.do(http.MethodGet, "/api/runs/live", nil)
+	cn, _ := parseJSON(t, w)["currentNode"].(map[string]any)
+	if cn["id"] != "impl" || cn["iteration"] != float64(2) || cn["task"] != want {
+		t.Fatalf("currentNode: %v", cn)
+	}
+
+	ev := parseJSON(t, h.do(http.MethodGet, "/api/runs/live/nodes/impl/events", nil))
+	if ev["task"] != want || ev["live"] != false {
+		t.Fatalf("node events: %v", ev)
+	}
+	if evs, _ := ev["events"].([]any); len(evs) != 1 {
+		t.Fatalf("events: %v", ev)
+	}
+	page := parseJSON(t, h.do(http.MethodGet, "/api/runs/live/nodes/impl/events?limit=10", nil))
+	if _, ok := page["task"]; ok {
+		t.Fatalf("paginated request must omit task: %v", page)
+	}
+
+	// A gate as current node: no task; the gate's events request has none either.
+	h.db.Create(&models.StateRun{RunID: "live", NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	h.db.Model(&models.Run{}).Where("id = ?", "live").Update("status", "waiting_human")
+	h.db.Create(&models.Gate{RunID: "live", NodeID: "gate", Iteration: 1, Title: "评审", RequestedAt: now})
+	cn, _ = parseJSON(t, h.do(http.MethodGet, "/api/runs/live", nil))["currentNode"].(map[string]any)
+	if cn["id"] != "gate" || cn["task"] != nil {
+		t.Fatalf("gate currentNode must omit task: %v", cn)
+	}
+	if ev := parseJSON(t, h.do(http.MethodGet, "/api/runs/live/nodes/gate/events", nil)); ev["task"] != nil {
+		t.Fatalf("gate events must omit task: %v", ev)
+	}
+}

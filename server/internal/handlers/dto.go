@@ -182,10 +182,37 @@ func visitKeyOf(nodeID string, iter int) string {
 	return nodeID + "#" + strconv.Itoa(iter)
 }
 
-// takeoverTasks returns the task preview (engine.SegmentTasks: read-only
-// interpolation of node.config.prompt, secret vars masked, trimmed, 280
-// runes + "…") of every taken-over visit that has a takeover conversation,
-// keyed by visitKeyOf. Empty prompts have no entry.
+// visitTasks returns the task preview of each Agent visit in want (keyed by
+// visitKeyOf), the single rule shared by the takeover conversation, the run
+// detail currentNode, the node events endpoint and #850's chain segments:
+// engine.SegmentTasks (read-only interpolation of node.config.prompt with
+// the visit's vars and the outputs before it, secret vars masked as •••,
+// trimmed, 280 runes + "…"). Gates / non-Agent nodes and blank prompts have
+// no entry.
+func (h *Handlers) visitTasks(r models.Run, states []models.StateRun, want map[string]bool) map[string]string {
+	if len(want) == 0 || h.Eng == nil {
+		return nil
+	}
+	// SegmentTasks needs execution order (StateRun id); States is per-node.
+	ordered := append([]models.StateRun(nil), states...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	isAgent := func(nodeID string) bool {
+		n := r.Graph.FindNode(nodeID)
+		return n != nil && n.Type == "agent"
+	}
+	byID := h.Eng.SegmentTasks(r, ordered, func(sr models.StateRun) bool {
+		return want[visitKeyOf(sr.NodeID, sr.Iteration)] && isAgent(sr.NodeID)
+	})
+	out := make(map[string]string, len(byID))
+	for _, sr := range ordered {
+		if t, ok := byID[sr.ID]; ok {
+			out[visitKeyOf(sr.NodeID, sr.Iteration)] = t
+		}
+	}
+	return out
+}
+
+// takeoverTasks is visitTasks for every takeover conversation's visit.
 func (h *Handlers) takeoverTasks(r models.Run, states []models.StateRun, convs []models.ReactConversation) map[string]string {
 	want := map[string]bool{}
 	for _, c := range convs {
@@ -193,22 +220,23 @@ func (h *Handlers) takeoverTasks(r models.Run, states []models.StateRun, convs [
 			want[visitKeyOf(c.NodeID, c.Iteration)] = true
 		}
 	}
-	if len(want) == 0 || h.Eng == nil {
-		return nil
-	}
-	// SegmentTasks needs execution order (StateRun id); States is per-node.
-	ordered := append([]models.StateRun(nil), states...)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
-	byID := h.Eng.SegmentTasks(r, ordered, func(sr models.StateRun) bool {
-		return want[visitKeyOf(sr.NodeID, sr.Iteration)]
-	})
-	out := make(map[string]string, len(byID))
+	return h.visitTasks(r, states, want)
+}
+
+// latestVisitTask is the task preview of nodeID's latest visit ("" when the
+// node never ran, is not an Agent, or has a blank prompt).
+func (h *Handlers) latestVisitTask(r models.Run, states []models.StateRun, nodeID string) string {
+	iter := 0
 	for _, sr := range states {
-		if t, ok := byID[sr.ID]; ok {
-			out[visitKeyOf(sr.NodeID, sr.Iteration)] = t
+		if sr.NodeID == nodeID && sr.Iteration > iter {
+			iter = sr.Iteration
 		}
 	}
-	return out
+	if iter == 0 {
+		return ""
+	}
+	k := visitKeyOf(nodeID, iter)
+	return h.visitTasks(r, states, map[string]bool{k: true})[k]
 }
 
 func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
@@ -359,6 +387,8 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	// Same derivation as the run list summary (ListRuns).
 	out["lastActivityAt"] = services.RunLastActivity(r)
 	if cn, ok := h.runCurrentNodes([]models.Run{r})[r.ID]; ok {
+		k := visitKeyOf(cn.ID, cn.Iteration)
+		cn.Task = h.visitTasks(r, states, map[string]bool{k: true})[k]
 		out["currentNode"] = cn
 	}
 	return out
