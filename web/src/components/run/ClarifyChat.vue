@@ -40,6 +40,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
 
 const props = withDefaults(
@@ -175,6 +176,10 @@ const {
   send,
   finishEarly,
   finishAbort,
+  confirmFlowDialogOpen,
+  confirmFlowDiscard,
+  acceptConfirmFlow,
+  dismissConfirmFlow,
   playConfirmCeremony,
   showDoneChrome,
   confirmFlowPlaying,
@@ -1581,6 +1586,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     :label="imagePreview?.label || ''"
     test-id-prefix="clarify-image-preview"
     @close="closeImagePreview"
+  />
+  <ConfirmFlowDialog
+    :open="confirmFlowDialogOpen"
+    :discard="confirmFlowDiscard"
+    @cancel="dismissConfirmFlow"
+    @confirm="acceptConfirmFlow"
   />
 </template>
 
