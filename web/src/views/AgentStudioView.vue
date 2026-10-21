@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -15,6 +16,7 @@ import AgentChatTester from '@/components/agent/AgentChatTester.vue'
 import AgentCreateWizard from '@/components/agent/AgentCreateWizard.vue'
 import CreateAgentTeamWizard from '@/components/agent/CreateAgentTeamWizard.vue'
 import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
+import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
 
@@ -159,6 +161,43 @@ async function focusCliModel() {
   focusModelTick.value = 0
 }
 
+/* ── Agent 默认配置 lives in the same list as the Agents (pinned first item), so there is no
+ *    second page to switch to. The old /settings/shared-agent link redirects here. ── */
+const route = useRoute()
+const router = useRouter()
+const DEFAULTS_KEY = '__workspace_defaults__'
+const showDefaults = ref(route.query.view === 'defaults')
+const pinnedNodes = computed(() => [{ id: DEFAULTS_KEY, label: t('nav.sharedAgent'), icon: 'skills' }])
+watch(() => route.query.view, (v) => { if (v === 'defaults') showDefaults.value = true })
+// Studio's own query sync rewrites ?agent=…; keep the defaults deep link while it is shown.
+watch(() => route.fullPath, () => {
+  if (showDefaults.value && route.query.view !== 'defaults') void router.replace({ query: { view: 'defaults' } })
+})
+function onSidebarSelect(key: string) {
+  if (key === DEFAULTS_KEY) {
+    showDefaults.value = true
+    void router.replace({ query: { view: 'defaults' } })
+    return
+  }
+  if (showDefaults.value) {
+    showDefaults.value = false
+    // Coming back to the same Agent keeps the tab it was on.
+    const q: Record<string, string> = { agent: key }
+    if (key === activeName.value && tab.value !== 'files') q.studioTab = tab.value
+    void router.replace({ query: q })
+  }
+  onTreeSelect(key)
+}
+// Narrow screens pick from the bottom sheet; the defaults item works the same way there.
+function onSheetSelect(key: string) {
+  if (key === DEFAULTS_KEY || showDefaults.value) {
+    onSidebarSelect(key)
+    closeSidebarSheet()
+    return
+  }
+  onSheetTreeSelect(key)
+}
+
 async function createStudioChatTest(
   profile: string,
   payload: CreateAgentTestPayload,
@@ -290,10 +329,11 @@ async function createStudioChatTest(
         class="agent-studio-directory"
         v-if="!isMobile"
         :nodes="treeNodes"
-        :active-key="activeTreeKey"
+        :pinned="pinnedNodes"
+        :active-key="showDefaults ? DEFAULTS_KEY : activeTreeKey"
         :collapsed="agentListCollapsed"
         :hide-create-team="hideTeamCreate"
-        @select="onTreeSelect"
+        @select="onSidebarSelect"
         @open-manage="openAgentManage"
         @import="triggerImport"
         @create-agent="openCreateAgent"
@@ -311,6 +351,27 @@ async function createStudioChatTest(
         @done="onTeamBootstrapDone"
         @refresh="onTeamBootstrapRefresh"
       />
+
+      <!-- workspace defaults (was /settings/shared-agent) -->
+      <div v-else-if="showDefaults" class="flex min-h-0 min-w-0 flex-col overflow-hidden" data-testid="studio-defaults-pane">
+        <div data-test="studio-name-bar" class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4">
+          <Icon name="skills" :size="15" class="shrink-0 text-accent-2" />
+          <span class="min-w-0 flex-1 truncate text-[13px] font-medium text-txt">{{ t('nav.sharedAgent') }}</span>
+          <button
+            v-if="isMobile"
+            type="button"
+            data-test="sidebar-switch"
+            class="inline-flex min-h-11 shrink-0 items-center gap-1 rounded border border-line bg-elevated px-2.5 text-[12px] text-txt2 transition hover:border-line-strong hover:text-txt"
+            :title="t('pages.agentStudio.mobile.switchTitle')"
+            :aria-label="t('pages.agentStudio.mobile.switchAria')"
+            @click="openSidebarSheet"
+          >
+            <Icon name="menu" :size="14" />
+            <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
+          </button>
+        </div>
+        <WorkspaceSharedAgentPanel />
+      </div>
 
       <!-- editor -->
       <div v-else-if="draft" class="flex min-h-0 min-w-0 flex-col overflow-hidden">
@@ -738,13 +799,14 @@ async function createStudioChatTest(
           <div class="min-h-0 flex-1 overflow-hidden">
             <ResourceList
               :nodes="treeNodes"
-              :active-key="activeTreeKey"
+              :pinned="pinnedNodes"
+              :active-key="showDefaults ? DEFAULTS_KEY : activeTreeKey"
               :title="t('pages.agentStudio.tree.title')"
               :total="agents.length"
               :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')"
               :empty-text="t('pages.agentStudio.tree.empty')"
               storage-key="agent-studio-sheet-tree"
-              @select="onSheetTreeSelect"
+              @select="onSheetSelect"
             />
           </div>
         </div>

@@ -93,8 +93,11 @@ async function gotoSharedAgentEnv(page: import('@playwright/test').Page) {
       body: JSON.stringify({ enabled: false }),
     })
   })
-  await page.goto('/workspace-config.html?view=/settings/shared-agent')
+  // Agent 默认配置 is the pinned first item of the Agent list in Agent Studio.
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents')}`)
   await dismissOnboardingIfOpen(page)
+  await page.getByTestId('resource-list-pinned').getByRole('button', { name: 'Agent 默认配置' }).click()
+  await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
   await page.getByTestId('shared-agent-subtab-env').click()
 }
 

@@ -19,6 +19,7 @@ const panelWidth = ref(0)
 const compactFiles = computed(() => props.isMobile || (panelWidth.value > 0 && panelWidth.value < 640))
 const modalHistory = computed(() => !props.isMobile && panelWidth.value > 0 && panelWidth.value < 1000)
 const showHistory = ref(false)
+const mdEditorRef = ref<InstanceType<typeof MarkdownSplitEditor> | null>(null)
 // Reuse the established list/edit flow when the surrounding directories leave
 // too little room for both a file explorer and an editor.
 const responsiveProps = reactive({ ...toRefs(props), isMobile: compactFiles })
@@ -74,7 +75,6 @@ const {
   leaveConfirmCfg,
   currentFile,
   activePath,
-  breadcrumb,
   langForPath,
   isMdPath,
   hideCtxMenu,
@@ -138,7 +138,8 @@ defineExpose({
 
 <template>
   <div ref="panelEl" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="agent-files-panel">
-  <div v-if="modalHistory && agentName" class="flex shrink-0 justify-end border-b border-line/60 px-3 py-1">
+  <!-- compact (<640px) keeps its own row; wider desktop folds 版本历史 into the editor toolbar -->
+  <div v-if="compactFiles && modalHistory && agentName" class="flex shrink-0 justify-end border-b border-line/60 px-3 py-1">
     <button
       type="button"
       data-testid="compact-history-open"
@@ -165,9 +166,10 @@ defineExpose({
             ]"
           >
             <span
-              v-if="!explorerCollapsed || compactFiles"
+              v-if="compactFiles"
               class="flex-1 truncate px-1 text-[10.5px] font-semibold uppercase tracking-wider text-txt3"
             >{{ t('pages.agentStudio.explorer.title') }}</span>
+            <span v-else-if="!explorerCollapsed" class="flex-1" />
             <template v-if="!explorerCollapsed || compactFiles">
               <button
                 class="rounded p-1 text-txt3 hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none"
@@ -356,39 +358,61 @@ defineExpose({
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-txt">{{ activePath }}</span>
           </div>
 
-          <!-- open-file tabs (desktop only; mobile uses single-file full-screen edit) -->
+          <!-- editor toolbar (desktop): open-file tabs + 版本历史 + 预览 toggle in ONE row -->
           <div
-            v-if="!compactFiles && openTabs.length"
-            class="scroll-area flex shrink-0 items-stretch overflow-x-auto border-b border-line/60"
+            v-if="!compactFiles"
+            data-testid="files-editor-toolbar"
+            class="flex min-h-8 shrink-0 items-stretch border-b border-line"
           >
-            <div
-              v-for="tabFile in openTabs"
-              :key="tabFile.path"
-              class="group flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-line px-3 py-1.5 text-[12px] transition"
-              :class="activeFile === tabFile ? 'bg-surface text-txt' : 'text-txt3 hover:bg-elevated'"
-              @click="activeFile = tabFile"
-            >
-              <Icon name="doc" :size="12" class="shrink-0" />
-              <span class="max-w-[160px] truncate font-mono">{{ tabFile.path.split('/').pop() }}</span>
-              <button class="shrink-0 rounded text-txt3 opacity-0 hover:bg-overlay hover:text-txt group-hover:opacity-100" :class="activeFile === tabFile ? 'opacity-60' : ''" :title="t('pages.agentStudio.explorer.close')" @click.stop="closeTab(tabFile)"><Icon name="close" :size="12" /></button>
+            <div class="scroll-area flex min-w-0 flex-1 items-stretch overflow-x-auto">
+              <div
+                v-for="tabFile in openTabs"
+                :key="tabFile.path"
+                class="group flex shrink-0 cursor-pointer items-center gap-1.5 border-r border-line px-3 py-1.5 text-[12px] transition"
+                :class="activeFile === tabFile ? 'bg-surface text-txt' : 'text-txt3 hover:bg-elevated'"
+                :title="tabFile.path"
+                @click="activeFile = tabFile"
+              >
+                <Icon name="doc" :size="12" class="shrink-0" />
+                <span class="max-w-[160px] truncate font-mono">{{ tabFile.path.split('/').pop() }}</span>
+                <button class="shrink-0 rounded text-txt3 opacity-0 hover:bg-overlay hover:text-txt group-hover:opacity-100" :class="activeFile === tabFile ? 'opacity-60' : ''" :title="t('pages.agentStudio.explorer.close')" @click.stop="closeTab(tabFile)"><Icon name="close" :size="12" /></button>
+              </div>
+            </div>
+            <div class="flex shrink-0 items-center gap-2 px-2">
+              <button
+                v-if="modalHistory && agentName"
+                type="button"
+                data-testid="compact-history-open"
+                class="text-[12px] text-txt2 hover:text-txt"
+                @click="showHistory = true"
+              >{{ t('pages.agentStudio.workspaceHistory.title') }}</button>
+              <template v-if="currentFile && isMdPath(currentFile.path) && mdEditorRef">
+                <span
+                  v-if="!mdEditorRef.previewCollapsed"
+                  class="flex items-center gap-1 text-[10px] text-ok"
+                ><span class="h-1.5 w-1.5 rounded-full bg-ok" />{{ t('pages.markdownEditor.live') }}</span>
+                <button
+                  type="button"
+                  class="flex items-center gap-1 rounded px-1 py-0.5 text-[10.5px] uppercase tracking-wider text-txt3 transition hover:bg-elevated hover:text-accent-2"
+                  :title="mdEditorRef.previewCollapsed ? t('pages.markdownEditor.expandPreview') : t('pages.markdownEditor.collapsePreview')"
+                  :aria-label="mdEditorRef.previewCollapsed ? t('pages.markdownEditor.expandPreview') : t('pages.markdownEditor.collapsePreview')"
+                  :aria-expanded="!mdEditorRef.previewCollapsed"
+                  :data-testid="mdEditorRef.previewCollapsed ? 'md-preview-expand-rail' : 'md-preview-collapse'"
+                  @click="mdEditorRef.previewCollapsed ? mdEditorRef.expandPreview() : mdEditorRef.collapsePreview()"
+                >
+                  <span>{{ t('pages.markdownEditor.preview') }}</span>
+                  <Icon name="chevron-right" :size="14" :class="mdEditorRef.previewCollapsed ? 'rotate-180' : ''" />
+                </button>
+              </template>
             </div>
           </div>
 
           <template v-if="currentFile">
-            <!-- breadcrumb (desktop) -->
-            <div
-              v-if="!compactFiles"
-              class="flex shrink-0 items-center gap-1 border-b border-line px-3 py-1 text-[11px] text-txt3"
-            >
-              <Icon name="folder" :size="11" class="text-accent-2/70" />
-              <template v-for="(seg, i) in breadcrumb" :key="i">
-                <Icon v-if="i > 0" name="chevron-right" :size="10" class="text-txt3/60" />
-                <span :class="i === breadcrumb.length - 1 ? 'font-mono text-txt2' : 'font-mono'">{{ seg }}</span>
-              </template>
-            </div>
             <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
               <MarkdownSplitEditor
                 v-if="isMdPath(currentFile.path)"
+                ref="mdEditorRef"
+                :external-toolbar="!compactFiles"
                 v-model="currentFile.content"
                 :file-path="currentFile.path"
                 :variant="compactFiles ? 'stack' : 'split'"
