@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onBeforeUnmount, computed, inject, type ComputedRef } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount, computed, inject, nextTick, type ComputedRef } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { injectDemoScrollbarStyles } from '@/lib/shared/demoScrollbar'
 import {
@@ -19,6 +19,7 @@ import {
   buildInspectCommand,
   type InspectElementStyle,
 } from '@/lib/shared/htmlPreviewSandbox'
+import { CONVERSATION_PANEL_SHOWN_EVENT } from '@/lib/chat/conversationArtifacts'
 import Icon from './Icon.vue'
 import AppModal from './AppModal.vue'
 import CommentPinInspectCard from '../run/CommentPinInspectCard.vue'
@@ -96,6 +97,11 @@ const props = withDefaults(
     commentPins?: HtmlPreviewCommentPinBadge[]
     /** Open OD annotate card over the preview (parent owns pin persistence). */
     annotateDraft?: HtmlPreviewAnnotateDraft | null
+    /**
+     * False while a parent keeps this preview mounted but hidden (tab v-show).
+     * Combined with the host box: a hidden or zero-size frame reloads once it is shown.
+     */
+    presented?: boolean
   }>(),
   {
     enlargeable: true,
@@ -106,6 +112,7 @@ const props = withDefaults(
     fillParent: false,
     commentPins: () => [],
     annotateDraft: null,
+    presented: true,
   },
 )
 
@@ -262,11 +269,28 @@ const previewSrcdoc = computed(() =>
   }),
 )
 
-/** Mount key — remount iframe only on structural changes, not html content updates. */
+/** Mount key — structural changes only. Visibility and body changes reload the same frame. */
 const iframeMountKey = computed(
   () =>
     `${props.mode}-${props.fitContent}-${props.fillParent}-${props.inspectable}-${props.maxContentHeightVh ?? ''}-${instanceId}`,
 )
+
+/** Srcdoc actually written into the inline/default frame (demo keeps its own). */
+const frameSrcdoc = computed(() => {
+  if (props.mode === 'inline') return previewSrcdoc.value
+  if (props.inspectable || props.fitContent) return previewSrcdoc.value
+  return props.html || ''
+})
+
+/**
+ * While true, the bound srcdoc is cleared so the next real value is a fresh
+ * navigation. Setting the same srcdoc again does not replace a document that
+ * was first loaded with no box.
+ */
+const holdBlank = ref(false)
+const boundSrcdoc = computed(() => (holdBlank.value ? '' : frameSrcdoc.value))
+/** Increments only when the current HTML is loaded into a frame that already has a box. */
+const documentEpoch = ref(0)
 
 function openEnlarge() {
   modalHtml.value = injectDemoScrollbarStyles(props.html)
@@ -398,14 +422,187 @@ function resetContentHeightState() {
   pendingResizeHeight = null
 }
 
+/** Hash of props.html last committed into a positively sized frame. */
+let paintedHash: string | null = null
+/** The frame was hidden, or the body changed before a sized paint. */
+let needsReload = false
+let hostSized = false
+let reloading = false
+let reloadGen = 0
+let disposed = false
+let boxObserver: ResizeObserver | null = null
+
+function readBox(el: HTMLElement): 'hidden' | 'sized' | 'unsized' {
+  if (props.presented === false) return 'hidden'
+  // v-show writes inline display:none. Computed style is also checked so a
+  // stylesheet hide is caught; happy-dom often leaves computed display blank.
+  let node: HTMLElement | null = el
+  while (node) {
+    if (node.style?.display === 'none' || getComputedStyle(node).display === 'none') return 'hidden'
+    node = node.parentElement
+  }
+  if (el.clientWidth > 0 && el.clientHeight > 0) return 'sized'
+  return 'unsized'
+}
+
+/**
+ * Load the current HTML into the existing iframe after it has a box.
+ * Clearing srcdoc first forces a navigation even when the attribute already
+ * equals the document that was swallowed while the frame was hidden or empty.
+ */
+async function reloadSizedDocument() {
+  if (props.mode === 'demo' || reloading || disposed) return
+  const html = props.html || ''
+  if (!html) {
+    paintedHash = computeHtmlHash('')
+    needsReload = false
+    return
+  }
+  const el = pinHostRef.value
+  if (!el || readBox(el) !== 'sized') {
+    needsReload = true
+    hostSized = false
+    return
+  }
+  reloading = true
+  const gen = ++reloadGen
+  holdBlank.value = true
+  try {
+    await nextTick()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    if (disposed || gen !== reloadGen) return
+    const host = pinHostRef.value
+    if (!host || readBox(host) !== 'sized') {
+      needsReload = true
+      hostSized = false
+      holdBlank.value = false
+      return
+    }
+    holdBlank.value = false
+    await nextTick()
+    if (disposed || gen !== reloadGen) return
+    paintedHash = computeHtmlHash(props.html || '')
+    needsReload = false
+    hostSized = true
+    documentEpoch.value += 1
+    if (needsContentHeight.value) resetContentHeightState()
+  } finally {
+    reloading = false
+    if (!disposed && (props.html || '') && computeHtmlHash(props.html || '') !== paintedHash) {
+      needsReload = true
+      scheduleMeasure()
+    }
+  }
+}
+
+function scheduleMeasure() {
+  if (props.mode === 'demo' || disposed) return
+  const el = pinHostRef.value
+  if (!el) return
+  const state = readBox(el)
+  if (state === 'hidden') {
+    needsReload = true
+    hostSized = false
+    return
+  }
+  if (state !== 'sized') {
+    hostSized = false
+    return
+  }
+  hostSized = true
+  const hash = computeHtmlHash(props.html || '')
+  if (!needsReload && (paintedHash === null || paintedHash === hash)) {
+    paintedHash = hash
+    return
+  }
+  void reloadSizedDocument()
+}
+
+async function measureUntilSettled(attempt = 0) {
+  await nextTick()
+  scheduleMeasure()
+  const el = pinHostRef.value
+  if (!el || props.mode === 'demo' || disposed) return
+  if (readBox(el) === 'unsized' && needsReload && attempt < 8) {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    await measureUntilSettled(attempt + 1)
+  }
+}
+
+function onConversationPanelShown() {
+  if (props.mode === 'demo') return
+  void measureUntilSettled()
+}
+
+function bindBoxObserver() {
+  boxObserver?.disconnect()
+  boxObserver = null
+  if (props.mode === 'demo' || typeof ResizeObserver === 'undefined') return
+  const el = pinHostRef.value
+  if (!el) return
+  boxObserver = new ResizeObserver(() => scheduleMeasure())
+  boxObserver.observe(el)
+}
+
+watch(
+  () => props.html,
+  () => {
+    if (props.mode === 'demo') return
+    const hash = computeHtmlHash(props.html || '')
+    if (paintedHash === hash && !needsReload) return
+    if (hostSized && paintedHash !== null) {
+      void reloadSizedDocument()
+      return
+    }
+    needsReload = true
+    scheduleMeasure()
+  },
+)
+
+watch(
+  () => props.presented,
+  (on) => {
+    if (props.mode === 'demo') return
+    if (!on) {
+      needsReload = true
+      hostSized = false
+      return
+    }
+    void measureUntilSettled()
+  },
+)
+
+watch(
+  () => props.mode,
+  () => {
+    if (props.mode === 'demo') {
+      boxObserver?.disconnect()
+      boxObserver = null
+      return
+    }
+    bindBoxObserver()
+    scheduleMeasure()
+  },
+)
+
 onMounted(() => {
   if (needsMessageListener.value) {
     window.addEventListener('message', handlePreviewMessage)
   }
+  if (props.mode !== 'demo') {
+    window.addEventListener(CONVERSATION_PANEL_SHOWN_EVENT, onConversationPanelShown)
+    bindBoxObserver()
+    scheduleMeasure()
+  }
 })
 
 onBeforeUnmount(() => {
+  disposed = true
+  reloadGen += 1
   window.removeEventListener('message', handlePreviewMessage)
+  window.removeEventListener(CONVERSATION_PANEL_SHOWN_EVENT, onConversationPanelShown)
+  boxObserver?.disconnect()
+  boxObserver = null
   clearResizeTimeout()
   if (resizeRafId != null) cancelAnimationFrame(resizeRafId)
 })
@@ -438,7 +635,8 @@ watch(
       lastHtmlHash.value = newHash
     } else if (!htmlUnchanged) {
       lastHtmlHash.value = newHash
-      // Silent srcdoc hot-update: keep iframe mounted, let reactive srcdoc apply.
+      // Body text changed. Height resets above when the shell measures content;
+      // the iframe itself reloads only once its box is non-zero (see scheduleMeasure).
     }
 
     if (!props.inspectable) inspecting.value = false
@@ -522,7 +720,8 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
         <iframe
           :key="iframeMountKey"
           ref="iframeRef"
-          :srcdoc="previewSrcdoc"
+          :srcdoc="boundSrcdoc"
+          :data-preview-epoch="documentEpoch"
           :sandbox="sandboxAttr"
           referrerpolicy="no-referrer"
           :scrolling="iframeScrolling"
@@ -702,7 +901,8 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
           v-if="device === 'desktop'"
           :key="iframeMountKey + '-desktop'"
           ref="iframeRef"
-          :srcdoc="inspectable || fitContent ? previewSrcdoc : html"
+          :srcdoc="boundSrcdoc"
+          :data-preview-epoch="documentEpoch"
           :sandbox="sandboxAttr"
           referrerpolicy="no-referrer"
           :scrolling="fitContent || fillParent ? iframeScrolling : undefined"
@@ -721,7 +921,8 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
           <iframe
             :key="iframeMountKey + '-mobile'"
             ref="iframeRef"
-            :srcdoc="inspectable || fitContent ? previewSrcdoc : html"
+            :srcdoc="boundSrcdoc"
+            :data-preview-epoch="documentEpoch"
             :sandbox="sandboxAttr"
             referrerpolicy="no-referrer"
             :scrolling="fitContent || fillParent ? iframeScrolling : undefined"
