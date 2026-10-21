@@ -4056,6 +4056,8 @@ describe('GateApproval cold exit uses the chat composer (desktop body)', () => {
     await wrapper.find('[data-testid="gate-cold-composer"] textarea').setValue('缺表头说明')
     await wrapper.find('[data-testid="review-composer-pass"]').trigger('click')
     await flushPromises()
+    expect(wrapper.emitted('resolve')).toBeUndefined()
+    await acceptConfirmFlowDialog()
     const ev = wrapper.emitted('resolve')
     expect(ev?.length).toBe(1)
     expect(ev?.[0]?.[0]).toBe('approve')
