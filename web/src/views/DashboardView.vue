@@ -1115,17 +1115,6 @@ html.light .home-composer__send:disabled {
   box-shadow: none;
 }
 
-.home-shell :deep(.home-workflow-select__trigger) {
-  background: rgb(var(--c-surface));
-  box-shadow: inset 0 1px 0 rgb(var(--home-highlight)), 0 1px 2px rgb(var(--home-shadow));
-  transition: border-color 0.18s ease, background-color 0.18s ease;
-}
-
-.home-shell :deep(.home-workflow-select__trigger:hover:not(:disabled)) {
-  background: rgb(var(--c-accent) / 0.035);
-  border-color: rgb(var(--c-accent) / 0.28);
-}
-
 /* Card role 12px; selected = accent inset border */
 .home-shell__card {
   position: relative;
