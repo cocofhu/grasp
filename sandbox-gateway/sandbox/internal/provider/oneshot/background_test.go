@@ -172,10 +172,20 @@ func childPID(t *testing.T, file string) int {
 	return 0
 }
 
+// ownSessionChild is a shell line that starts `sleep 30` in a session of its
+// own and writes its pid to file only once setsid has taken effect. `$!` is
+// not enough: the shell knows it right after fork, while the child may still
+// be sh or setsid in the CLI's process group, which ownedBackgroundShell
+// rightly refuses. pre runs in the child before setsid, so a test can widen
+// that window.
+func ownSessionChild(file, pre string) string {
+	return `(` + pre + `exec setsid sh -c 'echo $$ >` + file + `; exec sleep 30' </dev/null >/dev/null 2>&1) &`
+}
+
 func TestOwnedBackgroundShell(t *testing.T) {
 	dir := t.TempDir()
 	own, same := filepath.Join(dir, "own"), filepath.Join(dir, "same")
-	cli := startProc(t, "sh", "-c", `setsid sleep 30 </dev/null >/dev/null 2>&1 & echo $! >`+own+`
+	cli := startProc(t, "sh", "-c", ownSessionChild(own, "")+`
 sleep 30 & echo $! >`+same+`
 wait`)
 	stranger := startProc(t, "sleep", "30")
@@ -218,8 +228,16 @@ wait`)
 		t.Fatalf("due = %+v", shells)
 	}
 	terminateShells(shells)
+	// terminateShells returns once the shell is gone or after SIGKILL; under
+	// heavy load the kernel can take a moment more to tear it down, so poll.
+	deadline := time.Now().Add(2 * time.Second)
+	for (sh.alive() || b.waiting()) && time.Now().Before(deadline) {
+		time.Sleep(15 * time.Millisecond)
+	}
 	if sh.alive() || b.waiting() {
-		t.Fatal("background shell survived terminate")
+		stat, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(ownPID), "stat"))
+		t.Fatalf("background shell survived terminate: alive=%v waiting=%v /proc/%d/stat=%q err=%v",
+			sh.alive(), b.waiting(), ownPID, stat, err)
 	}
 }
 
@@ -263,5 +281,18 @@ func TestBackgroundGrace(t *testing.T) {
 		if got := BackgroundGrace(); got != want {
 			t.Errorf("%q: got %s, want %s", v, got, want)
 		}
+	}
+}
+
+// The pid must be read only after the child has left the CLI's process
+// group; a slow fork→setsid used to fail TestOwnedBackgroundShell under load.
+func TestOwnedBackgroundShellAfterSlowSetsid(t *testing.T) {
+	own := filepath.Join(t.TempDir(), "own")
+	cli := startProc(t, "sh", "-c", ownSessionChild(own, "sleep 0.3; ")+`
+wait`)
+	ownPID := childPID(t, own)
+	t.Cleanup(func() { _ = syscall.Kill(-ownPID, syscall.SIGKILL) })
+	if sh, ok := ownedBackgroundShell(cli.Process.Pid, ownPID); !ok || sh.pid != ownPID || !sh.alive() {
+		t.Fatalf("own session child not adopted: %+v ok=%v", sh, ok)
 	}
 }
