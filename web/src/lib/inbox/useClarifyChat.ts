@@ -94,6 +94,8 @@ export type ClarifyChatProps = {
   confirmCanAbort?: boolean
   seedHumanText?: string
   seedHumanImages?: ClarifyImage[]
+  /** Host hand-off row; while pending, that confirm owns the 校验中 state. */
+  handoff?: { phase: 'pending' | 'done' } | null
 }
 
 export type ClarifyChatEmit = {
