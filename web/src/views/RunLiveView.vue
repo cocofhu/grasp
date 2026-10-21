@@ -13,7 +13,9 @@ import { useI18n } from 'vue-i18n'
 /**
  * Read-only stream of an auto node, opened from the sidebar「最近」row. Same
  * surface as the inbox chat (ReviewShell + ReviewComposer/ClarifyChat); the
- * composer is disabled and its only action is Stop (takeover).
+ * composer is disabled and its only action is Stop (takeover). It opens with
+ * the node task (server currentNode.task / node events task) when sent, and
+ * stays on this page once the node finishes (shown as done, no navigation).
  */
 const route = useRoute()
 const { t } = useI18n()
@@ -23,7 +25,7 @@ const requestedNode = computed(() => {
   return String((Array.isArray(q) ? q[0] : q) || '')
 })
 const chatRef = ref<LiveChatSurface | null>(null)
-const { run, loading, loadError, nodeId, iteration, stopping, takeover, reload } = useRunLive(runId, requestedNode, chatRef)
+const { run, loading, loadError, nodeId, iteration, stopping, ended, task, takeover, reload } = useRunLive(runId, requestedNode, chatRef)
 const stageNode = computed(() => findGraphNode(run.value?.nodes, nodeId.value) || null)
 const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.value}`)
 </script>
@@ -71,11 +73,12 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :node-id="nodeId"
                   :iteration="iteration"
                   :turns="[]"
-                  :done="false"
+                  :done="ended"
                   :active="true"
                   :can-pass="false"
                   observe
                   :stopping="stopping"
+                  :node-task="task"
                   @takeover="takeover"
                 />
               </template>

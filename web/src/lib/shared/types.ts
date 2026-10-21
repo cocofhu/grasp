@@ -1060,6 +1060,11 @@ export interface RunCurrentNode {
   kind: 'agent' | 'gate' | 'clarify' | 'review' | 'takeover'
   mode: RunNodeMode
   state: 'running' | 'stopping' | 'waiting_human' | 'busy'
+  /**
+   * Agent node's task preview (interpolated prompt, secrets as •••, trimmed,
+   * ≤280 chars + 「…」). Omitted when empty or not an Agent node.
+   */
+  task?: string
 }
 
 /** POST /api/runs/:id/nodes/:nodeId/takeover 200 body (idempotent). */
