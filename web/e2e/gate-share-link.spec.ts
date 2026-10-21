@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test'
+import { acceptConfirmFlow } from './helpers/confirmFlow'
 
 test.describe('human_gate 临时审批链接', () => {
   test('Inbox 复制临时链接打开管理面板且桌面按钮不高于花粒', async ({ page }) => {
@@ -190,6 +191,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('public-gate-name').fill('Jordan')
     await page.getByTestId('public-gate-comment').fill('可以流转')
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('clarify-confirm-flow')).toHaveText(/校验中/)
     await expect(page.getByTestId('clarify-confirm-flow')).not.toHaveText(/提交中/)
     await expect(page.getByTestId('public-gate-reject')).toBeDisabled()
@@ -215,6 +217,7 @@ test.describe('human_gate 临时审批链接', () => {
     await page.getByTestId('public-gate-name').fill('Jordan')
     await page.getByTestId('public-gate-comment').fill('可以流转')
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('public-gate-done')).toContainText('已确认')
     await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
     await expect(page.getByTestId('public-gate-reject')).toHaveCount(0)
@@ -311,6 +314,7 @@ test.describe('human_gate 临时审批链接', () => {
     })
     await expect(page.getByTestId('clarify-confirm-flow')).toBeVisible()
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('public-gate-done')).toContainText('已确认')
     await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
   })
@@ -405,10 +409,12 @@ test.describe('human_gate 临时审批链接', () => {
       window.dispatchEvent(new HashChangeEvent('hashchange'))
     })
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('clarify-confirm-error')).toContainText('尚未结束')
     await expect(page.getByTestId('public-gate-done')).toHaveCount(0)
     await expect(page.getByTestId('public-gate-workbench')).toBeVisible()
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('public-gate-done')).toContainText('已确认')
   })
 
@@ -610,6 +616,7 @@ test.describe('human_gate 临时审批链接', () => {
     await expect(page.getByTestId('clarify-input')).toBeVisible()
     await expect(page.getByTestId('clarify-confirm-flow')).toBeVisible()
     await page.getByTestId('clarify-confirm-flow').click()
+    await acceptConfirmFlow(page)
     await expect(page.getByTestId('public-gate-done')).toContainText('已确认')
   })
 })
