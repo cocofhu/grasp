@@ -397,30 +397,66 @@ func (s *AgentService) Save(a Agent) error {
 }
 
 func (s *AgentService) saveUnlocked(a Agent) error {
+	w, err := s.prepareSave(a)
+	if err != nil {
+		return err
+	}
+	_, statErr := os.Stat(w.dir)
+	created := errors.Is(statErr, fs.ErrNotExist)
+	if err := w.write(); err != nil {
+		if created {
+			// A failed create must not leave a half-written agent behind:
+			// List() would show it as if the request had succeeded.
+			if rmErr := os.RemoveAll(w.dir); rmErr != nil {
+				log.Warn().Err(rmErr).Str("dir", w.dir).Msg("roll back failed agent create")
+			}
+		}
+		return err
+	}
+	return nil
+}
+
+// ErrInvalidAgent wraps request-level Agent validation failures (bad
+// capabilities, credential binding keys or file paths) so handlers answer 400.
+var ErrInvalidAgent = errors.New("invalid agent")
+
+// agentWriteFile is one validated workspace file with its absolute target.
+type agentWriteFile struct {
+	full    string
+	content []byte
+}
+
+// agentWrite is a fully validated save. prepareSave builds it without touching
+// disk, so every validation failure happens before the first write.
+type agentWrite struct {
+	dir   string
+	cfg   []byte
+	files []agentWriteFile
+}
+
+// prepareSave runs every Agent save validation and renders agent.json. It
+// performs no filesystem writes.
+func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 	name := sanitize(a.Name)
 	if name == "" {
-		return fmt.Errorf("invalid agent name")
+		return agentWrite{}, fmt.Errorf("%w: invalid agent name", ErrInvalidAgent)
 	}
 	if a.Capabilities != nil {
 		if err := nodereg.ValidateCapabilities(name, a.Capabilities); err != nil {
-			return err
+			return agentWrite{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
 		}
 	}
 	for key := range a.CredentialBindings {
 		if strings.TrimSpace(key) == "" || strings.TrimSpace(key) != key || envauth.IsPlatformReservedEnvKey(key) {
-			return fmt.Errorf("invalid credential binding key %q", key)
+			return agentWrite{}, fmt.Errorf("%w: invalid credential binding key %q", ErrInvalidAgent, key)
 		}
 	}
 	if err := RejectSecretEnvKeys(a.Env); err != nil {
-		return err
-	}
-	dir := filepath.Join(s.root, name)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
+		return agentWrite{}, err
 	}
 	backend, err := ParseAcpBackend(a.AcpBackend)
 	if err != nil {
-		return err
+		return agentWrite{}, err
 	}
 	layout := a.Layout.withDefaults()
 	if strings.TrimSpace(a.Layout.ConfigRoot) == "" {
@@ -441,18 +477,11 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
-		return err
+		return agentWrite{}, err
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), b, 0o644); err != nil {
-		return err
-	}
+	dir := filepath.Join(s.root, name)
 	work := filepath.Join(dir, WorkDirName)
-	if err := os.RemoveAll(work); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(work, 0o755); err != nil {
-		return err
-	}
+	files := make([]agentWriteFile, 0, len(a.Files))
 	for _, f := range a.Files {
 		rel := safeRel(f.Path)
 		if rel == "" {
@@ -460,12 +489,34 @@ func (s *AgentService) saveUnlocked(a Agent) error {
 		}
 		full, err := underRoot(work, rel)
 		if err != nil {
-			return fmt.Errorf("file %q: %w", f.Path, err)
+			return agentWrite{}, fmt.Errorf("%w: file %q: %w", ErrInvalidAgent, f.Path, err)
 		}
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		files = append(files, agentWriteFile{full: full, content: []byte(f.Content)})
+	}
+	return agentWrite{dir: dir, cfg: b, files: files}, nil
+}
+
+// write puts a prepared save on disk. The workspace/ tree is fully rewritten
+// so removed files disappear.
+func (w agentWrite) write() error {
+	if err := os.MkdirAll(w.dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(w.dir, "agent.json"), w.cfg, 0o644); err != nil {
+		return err
+	}
+	work := filepath.Join(w.dir, WorkDirName)
+	if err := os.RemoveAll(work); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		return err
+	}
+	for _, f := range w.files {
+		if err := os.MkdirAll(filepath.Dir(f.full), 0o755); err != nil {
 			return err
 		}
-		if err := os.WriteFile(full, []byte(f.Content), 0o644); err != nil {
+		if err := os.WriteFile(f.full, f.content, 0o644); err != nil {
 			return err
 		}
 	}
