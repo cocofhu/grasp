@@ -61,6 +61,7 @@ type fakeBridge struct {
 	mu        sync.Mutex
 	stalledOp string // opId of a stalled ackCancel turn awaiting {op:cancel}
 	turns     int
+	restarts  int      // {op:restart_agent} count; the container is not recreated
 	prompts   []string // every chat prompt received (for rehydrate-prime assertions)
 	images    []int    // image attachment count per chat turn
 }
@@ -85,6 +86,18 @@ func startFakeBridge(t *testing.T, host *mcp.Host, runID, nodeID, token string, 
 func (b *fakeBridge) hostPort() (string, int) {
 	addr := b.srv.Listener.Addr().(*net.TCPAddr)
 	return "127.0.0.1", addr.Port
+}
+
+func (b *fakeBridge) restartCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.restarts
+}
+
+func (b *fakeBridge) promptCount() int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return len(b.prompts)
 }
 
 func (b *fakeBridge) promptAt(i int) string {
@@ -132,6 +145,11 @@ func (b *fakeBridge) serveWS(w http.ResponseWriter, r *http.Request) {
 			if op != "" {
 				_ = conn.WriteJSON(withOpID(promptDoneFrame(), op))
 			}
+		case "restart_agent":
+			b.mu.Lock()
+			b.restarts++
+			b.mu.Unlock()
+			_ = conn.WriteJSON(map[string]any{"op": "connected", "sessionId": "fake-session-restarted"})
 		case "chat":
 			b.mu.Lock()
 			turn := b.turns

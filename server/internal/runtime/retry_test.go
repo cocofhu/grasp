@@ -33,6 +33,7 @@ func TestIsRetryableSandboxErr(t *testing.T) {
 		{"canceled", context.Canceled, false},
 		{"agent-error", errors.New("acp error: model refused"), false},
 		{"cursor-api", errors.New("acp error: exit status 1; stderr: Failed to reach the Cursor API"), true},
+		{"poisoned-resume", errors.New("acp error: exit status 1; stderr: NonRetriableError: Provider Error We're having trouble connecting to the model provider."), false},
 		{"tls-abort", errors.New("acp error: exit status 1; stderr: Error: [aborted] Client network socket disconnected before secure TLS connection was established"), true},
 		{"econnreset", errors.New("agent chat: read: connection reset by peer: ECONNRESET"), true},
 	}
@@ -40,6 +41,28 @@ func TestIsRetryableSandboxErr(t *testing.T) {
 		if got := isRetryableSandboxErr(tc.err); got != tc.want {
 			t.Errorf("%s: isRetryableSandboxErr = %v, want %v", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestIsPoisonedResumeFailure(t *testing.T) {
+	phrase := "exit status 1; stderr: NonRetriableError: Provider Error We're having trouble connecting to the model provider. This might be temporary - please try again in a moment."
+	if !isPoisonedResumeFailure(nil, errors.New(phrase)) {
+		t.Fatal("empty resume with the provider phrase should restart")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{Narration: "partial", ErrorText: phrase, Failed: true}, nil) {
+		t.Fatal("a turn that already narrated must keep its session")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: phrase, Failed: true, ToolCalls: []sandbox.ACPToolCall{{Title: "Read"}}}, nil) {
+		t.Fatal("a turn that already called a tool must keep its session")
+	}
+	if isPoisonedResumeFailure(&sandbox.ChatResult{ErrorText: "quota exceeded", Failed: true}, nil) {
+		t.Fatal("quota is not a poisoned resume")
+	}
+	if isPoisonedResumeFailure(nil, errors.New("acp error: model refused")) {
+		t.Fatal("a plain agent error is not a poisoned resume")
+	}
+	if isRetryableSandboxErr(errors.New(phrase)) {
+		t.Fatal("the provider phrase must not discard the sandbox")
 	}
 }
 
