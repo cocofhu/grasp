@@ -13,6 +13,7 @@ import {
   INSPECT_MESSAGE_TYPE,
   contentFitPreviewCapPx,
 } from '@/lib/shared/htmlPreviewSandbox'
+import { CONVERSATION_PANEL_SHOWN_EVENT } from '@/lib/chat/conversationArtifacts'
 import HtmlPreview from './HtmlPreview.vue'
 
 const FIXED_ID = 'html-preview-test-instance'
@@ -652,3 +653,172 @@ describe('HtmlPreview toolbar actions slot', () => {
     wrapper.unmount()
   })
 })
+
+const PAGE_A = '<!doctype html><html><body><p id="marker-a">甲</p></body></html>'
+const PAGE_B = '<!doctype html><html><body><p id="marker-b">乙</p></body></html>'
+
+function drawerProps(extra: Record<string, unknown> = {}) {
+  return {
+    mode: 'default' as const,
+    fitContent: false,
+    fillParent: true,
+    maxContentHeightVh: undefined,
+    enlargeable: true,
+    ...extra,
+  }
+}
+
+function setHostBox(wrapper: ReturnType<typeof mountPreview>, mode: 'sized' | 'hidden') {
+  const el = wrapper.get('[data-testid="html-preview-pin-host"]').element as HTMLElement
+  if (mode === 'hidden') {
+    el.style.display = 'none'
+    return el
+  }
+  el.style.display = 'block'
+  Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => 800 })
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => 600 })
+  return el
+}
+
+async function flushPaint() {
+  for (let i = 0; i < 4; i++) {
+    await nextTick()
+    await flushPromises()
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+}
+
+describe('HtmlPreview reloads a sized frame', () => {
+  beforeEach(() => {
+    vi.stubGlobal('crypto', { randomUUID: () => FIXED_ID })
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reloads the current html when a hidden frame becomes sized', async () => {
+    const wrapper = mountPreview(drawerProps({ html: PAGE_A, presented: false }))
+    await flushPromises()
+    const first = wrapper.get('iframe').element
+    expect(wrapper.get('iframe').attributes('data-preview-epoch')).toBe('0')
+    setHostBox(wrapper, 'sized')
+    await wrapper.setProps({ presented: true })
+    await flushPaint()
+    const iframe = wrapper.get('iframe')
+    expect(iframe.element).toBe(first)
+    expect(iframe.attributes('srcdoc')).toContain('marker-a')
+    expect(Number(iframe.attributes('data-preview-epoch'))).toBeGreaterThan(0)
+    expect(iframe.attributes('sandbox')).toBe('allow-scripts allow-forms')
+    expect(iframe.attributes('sandbox')).not.toContain('allow-same-origin')
+    wrapper.unmount()
+  })
+
+  it('loads html that arrives while the frame is hidden', async () => {
+    const wrapper = mountPreview(drawerProps({ html: '', presented: false }))
+    await flushPromises()
+    await wrapper.setProps({ html: PAGE_B })
+    await flushPromises()
+    setHostBox(wrapper, 'sized')
+    await wrapper.setProps({ presented: true })
+    await flushPaint()
+    const iframe = wrapper.get('iframe')
+    expect(iframe.attributes('srcdoc')).toContain('marker-b')
+    expect(iframe.attributes('srcdoc')).not.toContain('marker-a')
+    expect(Number(iframe.attributes('data-preview-epoch'))).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
+  it('replaces the document when html is overwritten and keeps it when html is unchanged', async () => {
+    const wrapper = mountPreview(drawerProps({ html: PAGE_A, presented: true }))
+    await flushPromises()
+    setHostBox(wrapper, 'sized')
+    window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT))
+    await flushPaint()
+    const first = wrapper.get('iframe').element
+    const adopted = Number(wrapper.get('iframe').attributes('data-preview-epoch'))
+    await wrapper.setProps({ html: PAGE_B })
+    await flushPaint()
+    const iframe = wrapper.get('iframe')
+    expect(iframe.element).toBe(first)
+    expect(iframe.attributes('srcdoc')).toContain('marker-b')
+    expect(Number(iframe.attributes('data-preview-epoch'))).toBeGreaterThan(adopted)
+    const epoch = Number(iframe.attributes('data-preview-epoch'))
+    await wrapper.setProps({ html: PAGE_B })
+    await flushPaint()
+    expect(wrapper.get('iframe').element).toBe(first)
+    expect(Number(wrapper.get('iframe').attributes('data-preview-epoch'))).toBe(epoch)
+    expect(wrapper.get('iframe').attributes('sandbox')).toBe('allow-scripts allow-forms')
+    wrapper.unmount()
+  })
+
+  it('repaints after an ancestor is shown again and matches the enlarge modal', async () => {
+    const wrapper = mountPreview(drawerProps({ html: PAGE_A, presented: true }))
+    await flushPromises()
+    const host = wrapper.get('[data-testid="html-preview-pin-host"]').element as HTMLElement
+    host.parentElement!.style.display = 'none'
+    window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT))
+    await flushPaint()
+    expect(wrapper.get('iframe').attributes('data-preview-epoch')).toBe('0')
+    host.parentElement!.style.display = 'block'
+    setHostBox(wrapper, 'sized')
+    window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT))
+    await flushPaint()
+    expect(wrapper.get('iframe').attributes('srcdoc')).toContain('marker-a')
+    expect(Number(wrapper.get('iframe').attributes('data-preview-epoch'))).toBeGreaterThan(0)
+
+    await wrapper.get('[data-testid="html-preview-enlarge"]').trigger('click')
+    await flushPaint()
+    const docs = wrapper.findAll('iframe').map((frame) => frame.attributes('srcdoc') || '')
+    expect(docs.filter((doc) => doc.includes('marker-a')).length).toBeGreaterThan(1)
+    for (const frame of wrapper.findAll('iframe')) {
+      expect(frame.attributes('sandbox')).toBe('allow-scripts allow-forms')
+    }
+
+    await wrapper.setProps({ html: PAGE_B })
+    await flushPaint()
+    const next = wrapper.findAll('iframe').map((frame) => frame.attributes('srcdoc') || '')
+    expect(next.every((doc) => doc.includes('marker-b'))).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the mobile frame on the same sandbox and current html', async () => {
+    const wrapper = mountPreview(drawerProps({ html: PAGE_A, presented: true }))
+    await flushPromises()
+    setHostBox(wrapper, 'sized')
+    window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT))
+    await flushPaint()
+    const mobile = wrapper.findAll('button').find((button) => button.text().includes('移动端'))
+    expect(mobile).toBeTruthy()
+    await mobile!.trigger('click')
+    await flushPaint()
+    const iframe = wrapper.get('iframe')
+    expect(iframe.attributes('srcdoc')).toContain('marker-a')
+    expect(iframe.attributes('sandbox')).toBe('allow-scripts allow-forms')
+    expect(iframe.attributes('title')).toContain('移动端')
+    wrapper.unmount()
+  })
+
+  it('does not reload demo thumbnails when visibility toggles', async () => {
+    const wrapper = mountPreview({
+      mode: 'demo',
+      html: PAGE_A,
+      enlargeable: false,
+      fitContent: false,
+      maxContentHeightVh: undefined,
+    })
+    await flushPromises()
+    const first = wrapper.get('iframe').element
+    await wrapper.setProps({ presented: false })
+    await wrapper.setProps({ presented: true })
+    window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT))
+    await flushPaint()
+    const iframe = wrapper.get('iframe')
+    expect(iframe.element).toBe(first)
+    expect(iframe.attributes('data-preview-epoch')).toBeUndefined()
+    expect(iframe.attributes('srcdoc')).toContain('marker-a')
+    expect(iframe.attributes('sandbox')).toBe('allow-scripts allow-forms')
+    wrapper.unmount()
+  })
+})
+

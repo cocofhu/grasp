@@ -66,6 +66,7 @@
       "clarifyInboxStage.ts",
       "composerAutoGrow.ts",
       "confirmFlowCeremony.ts",
+      "confirmFlowDiscard.ts",
       "embedChat.ts",
       "embedDemoPreview.ts",
       "embedImagePreview.ts",

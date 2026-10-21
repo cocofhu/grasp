@@ -65,6 +65,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
 
 const props = withDefaults(
@@ -234,6 +235,10 @@ const {
   send,
   finishEarly,
   finishAbort,
+  confirmFlowDialogOpen,
+  confirmFlowDiscard,
+  acceptConfirmFlow,
+  dismissConfirmFlow,
   playConfirmCeremony,
   showDoneChrome,
   confirmFlowPlaying,
@@ -320,11 +325,9 @@ const {
   openChatImagePreview,
   closeImagePreview,
   relTime,
-  demoGridColsClass,
   demoOptionsOf,
   selectedDemoForInteractive,
   selectedDemoOption,
-  useSideBySide,
   queueNotice,
   queueToast,
   hasComposerDraft,
@@ -550,6 +553,10 @@ const demoWindowTitleId = `clarify-demo-window-title-${useId().replace(/:/g, '')
 
 function hasDemoHtml(o: { demoHtml?: string } | undefined): boolean {
   return !!o?.demoHtml?.trim()
+}
+
+function historyPreviewOption(q: ReactQuestion, turnIndex: number) {
+  return selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(turnIndex)))
 }
 
 const focusedOption = computed(() => {
@@ -1324,26 +1331,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                         />
                       </div>
                       <div
-                        v-if="demoOptionsOf(curQuestion).length"
+                        v-if="selectedDemoForInteractive(curQuestion)"
                         class="mt-2.5"
                         data-testid="clarify-inline-demos"
                       >
-                        <div
-                          v-if="useSideBySide(demoOptionsOf(curQuestion))"
-                          class="grid gap-2.5"
-                          :class="demoGridColsClass(demoOptionsOf(curQuestion).length)"
-                        >
-                          <ClarifyDemoFrame
-                            v-for="o in demoOptionsOf(curQuestion)"
-                            :key="o.id"
-                            :label="o.label"
-                            :html="o.demoHtml!"
-                            :highlighted="isSelected(curQuestion.id, o.id)"
-                            @enlarge="openPreviewFocus(curQuestion, o.id, false, i)"
-                          />
-                        </div>
                         <ClarifyDemoFrame
-                          v-else-if="selectedDemoForInteractive(curQuestion)"
                           :label="selectedDemoForInteractive(curQuestion)!.label"
                           :html="selectedDemoForInteractive(curQuestion)!.demoHtml!"
                           highlighted
@@ -1442,32 +1434,16 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   </div>
                 </div>
                 <div
-                  v-if="demoOptionsOf(q).length"
+                  v-if="historyPreviewOption(q, i)"
                   class="mt-2.5"
                   data-testid="clarify-inline-demos"
                 >
-                  <div
-                    v-if="useSideBySide(demoOptionsOf(q))"
-                    class="grid gap-2.5"
-                    :class="demoGridColsClass(demoOptionsOf(q).length)"
-                  >
-                    <ClarifyDemoFrame
-                      v-for="o in demoOptionsOf(q)"
-                      :key="o.id"
-                      :label="o.label"
-                      :html="o.demoHtml!"
-                      :highlighted="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
-                      :selected="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
-                      @enlarge="openPreviewFocus(q, o.id, true, i)"
-                    />
-                  </div>
                   <ClarifyDemoFrame
-                    v-else-if="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))"
-                    :label="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))!.label"
-                    :html="selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))!.demoHtml!"
+                    :label="historyPreviewOption(q, i)!.label"
+                    :html="historyPreviewOption(q, i)!.demoHtml!"
                     highlighted
                     selected
-                    @enlarge="openPreviewFocus(q, selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)))!.id, true, i)"
+                    @enlarge="openPreviewFocus(q, historyPreviewOption(q, i)!.id, true, i)"
                   />
                 </div>
               </div>
@@ -1924,6 +1900,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     :label="imagePreview?.label || ''"
     test-id-prefix="clarify-image-preview"
     @close="closeImagePreview"
+  />
+  <ConfirmFlowDialog
+    :open="confirmFlowDialogOpen"
+    :discard="confirmFlowDiscard"
+    @cancel="dismissConfirmFlow"
+    @confirm="acceptConfirmFlow"
   />
 </template>
 

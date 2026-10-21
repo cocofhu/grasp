@@ -16,6 +16,7 @@ import GateApprovalMobileFill from './gateApproval/GateApprovalMobileFill.vue'
 import GateApprovalContentFit from './gateApproval/GateApprovalContentFit.vue'
 import GateApprovalDesktopBody from './gateApproval/GateApprovalDesktopBody.vue'
 import ConfirmFlowOverlay from './ConfirmFlowOverlay.vue'
+import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import { provideConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { useGateApproval } from '@/lib/inbox/useGateApproval'
 import { registerStageLinks } from '@/lib/run/stageLinks'
@@ -60,6 +61,10 @@ const {
   editReactQueuedItem,
   primaryProducts,
   productName,
+  confirmFlowDialogOpen,
+  confirmFlowDiscard,
+  acceptConfirmFlow,
+  dismissConfirmFlow,
 } = useGateApproval(props, emit)
 
 // The gate's editable stage is deliberately narrower than the entire run's artifact store.
@@ -105,6 +110,12 @@ defineExpose({
       :enabled="selectionQuoteEnabled"
       :root="gateStageEl"
       @add="onQuoteAdd"
+    />
+    <ConfirmFlowDialog
+      :open="confirmFlowDialogOpen"
+      :discard="confirmFlowDiscard"
+      @cancel="dismissConfirmFlow"
+      @confirm="acceptConfirmFlow"
     />
   </div>
 </template>
