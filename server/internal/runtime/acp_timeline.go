@@ -31,10 +31,13 @@ type acpTimelineStore struct {
 	// pull refreshes one node from its sandbox event log; a field so tests can
 	// count dials without a bridge.
 	pull func(ctx context.Context, runID, nodeID string, reader *sandbox.EventLogReader)
+	// every is this store's poll cadence. Zero uses defaultTimelineIngestEvery.
+	// Tests set it before startIngest so they do not share a package-level interval.
+	every time.Duration
 }
 
-// timelineIngestEvery is the event-log poll cadence while a turn is running.
-var timelineIngestEvery = 2 * time.Second
+// defaultTimelineIngestEvery is the event-log poll cadence while a turn is running.
+const defaultTimelineIngestEvery = 2 * time.Second
 
 func newAcpTimelineStore() *acpTimelineStore {
 	s := &acpTimelineStore{
@@ -208,17 +211,21 @@ func (s *acpTimelineStore) startIngest(runID, nodeID, host string, port int, pas
 	s.ingest[key] = cancel
 	s.mu.Unlock()
 
-	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy)
+	every := s.every
+	if every <= 0 {
+		every = defaultTimelineIngestEvery
+	}
+	go s.ingestLoop(ctx, runID, nodeID, host, port, password, busy, every)
 }
 
-func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool) {
+func (s *acpTimelineStore) ingestLoop(ctx context.Context, runID, nodeID, host string, port int, password string, busy func() bool, every time.Duration) {
 	// Keep one cookie for this ingest lifecycle; polling must not allocate a
 	// new bridge session (and hash the login secret) every two seconds.
 	reader := sandbox.NewEventLogReader(host, port, password)
 	// Immediate first pull so cold page loads see history without waiting.
 	s.pull(ctx, runID, nodeID, reader)
 
-	ticker := time.NewTicker(timelineIngestEvery)
+	ticker := time.NewTicker(every)
 	defer ticker.Stop()
 	wasBusy := false
 	for {

@@ -342,6 +342,102 @@ describe('PublicGateApprovalView workbench', () => {
     expect(mocks.artifactContent.mock.calls.map((c) => c[1])).not.toContain('feedback.clarify.g1.r1.json')
   })
 
+  it('opens the artifact home with the real node status when a product is already pinned', async () => {
+    window.location.hash = `#t=${'aa'.repeat(32)}`
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      interaction: 'clarify',
+      remainingSec: 3600,
+      nonce: 'n-wf',
+      reactSessionAlive: true,
+      productName: 'page.html',
+      actions: { confirm: 'confirm', reply: 'reply' },
+      turns: [{ role: 'agent', text: '请看产物', at: '2026-08-01T00:00:00Z' }],
+    })
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      nodeId: 'g1',
+      artifacts: [
+        {
+          id: 'page',
+          name: 'page.html',
+          kind: 'html',
+          nodeId: 'g1',
+          sizeBytes: 20,
+          createdAt: '2026-08-01T00:00:00Z',
+          revision: 1,
+          content: '<html>page</html>',
+        },
+      ],
+      nodes: [
+        { id: 'in', type: 'input', label: '输入' },
+        { id: 'g1', type: 'agent', label: '需求澄清' },
+      ],
+      nodeRuns: {
+        in: { nodeId: 'in', status: 'completed', iteration: 1 },
+        g1: { nodeId: 'g1', status: 'waiting_human', iteration: 1 },
+      },
+    })
+    const w = mountView()
+    await flushPromises()
+    const stage = w.getComponent(ReactArtifactStage)
+    expect(stage.props('nodeId')).toBe('g1')
+    expect(stage.props('nodeId')).not.toBe('public-gate')
+    expect(stage.props('previewArtifact')).toBe('page.html')
+    const run = stage.props('run') as { nodeRuns: Record<string, { status: string }> }
+    expect(run.nodeRuns.in.status).toBe('completed')
+    expect(run.nodeRuns.g1.status).toBe('waiting_human')
+    expect(w.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    const nodes = w.findAll('[data-testid="stage-workflow-node"]')
+    expect(nodes).toHaveLength(2)
+    expect(nodes[0].attributes('data-node-id')).toBe('in')
+    expect(nodes[0].attributes('data-status')).toBe('completed')
+    expect(nodes[0].attributes('data-current')).toBe('false')
+    expect(nodes[1].attributes('data-node-id')).toBe('g1')
+    expect(nodes[1].attributes('data-status')).toBe('waiting_human')
+    expect(nodes[1].attributes('data-current')).toBe('true')
+    expect(nodes[1].text()).toContain('当前')
+    expect(nodes[1].text()).toContain('等待人工')
+    expect(w.find('[data-testid="react-artifact-tab-page.html"]').exists()).toBe(false)
+    expect(w.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(true)
+  })
+
+  it('does not paint public workflow nodes as pending before status arrives', async () => {
+    window.location.hash = `#t=${'ab'.repeat(32)}`
+    mocks.preview.mockResolvedValue({
+      status: 'active',
+      kind: 'review',
+      interaction: 'clarify',
+      remainingSec: 3600,
+      nonce: 'n-wf-empty',
+      reactSessionAlive: true,
+      actions: { reply: 'reply' },
+      turns: [],
+    })
+    mocks.artifacts.mockResolvedValue({
+      status: 'active',
+      artifacts: [],
+      nodes: [
+        { id: 'in', type: 'input', label: '输入' },
+        { id: 'g1', type: 'agent', label: '需求澄清' },
+      ],
+    })
+    const w = mountView()
+    await flushPromises()
+    const stage = w.getComponent(ReactArtifactStage)
+    expect(stage.props('nodeId')).toBe('')
+    expect((stage.props('run') as { nodeRuns: Record<string, unknown> }).nodeRuns).toEqual({})
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="stage-workflow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="stage-workflow-node"]').exists()).toBe(false)
+    expect(w.get('[data-testid="public-gate-react-stage"]').text()).not.toContain('等待中')
+  })
+
   it('review hot session has ReAct + composer confirm and no reject', async () => {
     window.location.hash = `#t=${'ee'.repeat(32)}`
     mocks.preview.mockResolvedValue({
@@ -364,7 +460,7 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(w.get('[data-testid="public-gate-badge"]').text()).toBe('外部复审')
     expect(w.find('[data-testid="public-gate-react-stage"]').exists()).toBe(true)
-    expect(w.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(true)
+    expect(w.find('[data-testid="react-artifact-tab-grid"]').exists()).toBe(false)
     const sidebar = w.get('[data-testid="public-gate-sidebar"]').text()
     expect(sidebar).not.toContain('Agent交互 · 多轮 ReAct')
     expect(sidebar).not.toMatch(/共 \d+ 条/)
