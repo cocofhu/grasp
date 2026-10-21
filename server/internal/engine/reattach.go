@@ -41,6 +41,13 @@ func (e *Engine) reconcileInterrupted() {
 			orphans[sr.RunID] = true
 			continue
 		}
+		if sr.IsManual() {
+			// Taken over just before the restart: never adopt or re-run in
+			// auto; park it as a manual session (cold sandbox).
+			e.reconcileManualVisit(&run, sr)
+			handled[sr.RunID] = true
+			continue
+		}
 		if name, ok := e.adoptableSandbox(&run, sr); ok {
 			e.reattachMu.Lock()
 			e.pendingReattach = append(e.pendingReattach, reattachInfo{

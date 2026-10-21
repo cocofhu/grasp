@@ -351,7 +351,7 @@ func (e *Engine) refreshProducerOutputs(c *execCtx, producer *models.Node) {
 		return
 	}
 	sr.Outputs = oc.outputs
-	logDB(e.db.Save(&sr), c.run.ID, "refresh producer outputs after revise")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "refresh producer outputs after revise")
 }
 
 // refreshPendingGatesForProducer re-interpolates BodyMd for unresolved gates

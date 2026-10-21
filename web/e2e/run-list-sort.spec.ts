@@ -130,28 +130,26 @@ function hashQuery(page: Page) {
 }
 
 test.describe('RunListView sort acceptance', () => {
-  test('default: headers inactive, no restore control; first click priority=desc + URL', async ({
+  test('default: start header inactive, no restore control; first click started_at=desc + URL', async ({
     page,
   }) => {
     const capture = await openRunList(page)
-    const startedTh = page.locator('th.sortable', { hasText: '开始时间' })
-    const priorityTh = page.locator('th.sortable', { hasText: '优先级' })
+    const startedTh = page.locator('th.sortable', { hasText: '开始' })
     await expect(startedTh).toHaveAttribute('aria-sort', 'none')
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'none')
     await expect(startedTh).not.toHaveClass(/active/)
-    await expect(priorityTh).not.toHaveClass(/active/)
     await expect(page.getByRole('button', { name: /恢复默认/ })).toHaveCount(0)
-    await expect(page.locator('th.sortable')).toHaveCount(2)
+    // The priority column was removed; start time is the only sortable header.
+    await expect(page.locator('th.sortable')).toHaveCount(1)
+    await expect(page.locator('th', { hasText: '优先级' })).toHaveCount(0)
 
     await page.screenshot({ path: '/tmp/run-list-sort-default.png', fullPage: true })
 
-    await priorityTh.click()
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'descending')
-    await expect(priorityTh).toHaveClass(/active/)
-    await expect(priorityTh).toHaveClass(/desc/)
-    await expect(startedTh).toHaveAttribute('aria-sort', 'none')
+    await startedTh.click()
+    await expect(startedTh).toHaveAttribute('aria-sort', 'descending')
+    await expect(startedTh).toHaveClass(/active/)
+    await expect(startedTh).toHaveClass(/desc/)
 
-    await expect.poll(() => hashQuery(page).get('sort')).toBe('priority')
+    await expect.poll(() => hashQuery(page).get('sort')).toBe('started_at')
     await expect.poll(() => hashQuery(page).get('order')).toBe('desc')
 
     await expect
@@ -161,42 +159,46 @@ test.describe('RunListView sort acceptance', () => {
         const u = new URL(last.url())
         return `${u.searchParams.get('sort')}|${u.searchParams.get('order')}`
       })
-      .toBe('priority|desc')
-
-    await page.screenshot({ path: '/tmp/run-list-sort-priority-desc.png', fullPage: true })
+      .toBe('started_at|desc')
   })
 
-  test('same column toggles asc; switching column activates new key', async ({ page }) => {
+  test('same column toggles asc and back to desc (never clears)', async ({ page }) => {
     await openRunList(page)
-    const startedTh = page.locator('th.sortable', { hasText: '开始时间' })
-    const priorityTh = page.locator('th.sortable', { hasText: '优先级' })
-
-    await priorityTh.click()
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'descending')
-    await priorityTh.click()
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'ascending')
-    await expect.poll(() => hashQuery(page).get('order')).toBe('asc')
-    await page.screenshot({ path: '/tmp/run-list-sort-priority-asc.png', fullPage: true })
-
-    // Third click must NOT clear — stays sorted (asc→desc)
-    await priorityTh.click()
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'descending')
-    await expect.poll(() => hashQuery(page).get('sort')).toBe('priority')
+    const startedTh = page.locator('th.sortable', { hasText: '开始' })
 
     await startedTh.click()
     await expect(startedTh).toHaveAttribute('aria-sort', 'descending')
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'none')
+    await startedTh.click()
+    await expect(startedTh).toHaveAttribute('aria-sort', 'ascending')
+    await expect.poll(() => hashQuery(page).get('order')).toBe('asc')
+    await page.screenshot({ path: '/tmp/run-list-sort-started-asc.png', fullPage: true })
+
+    // Third click must NOT clear — stays sorted (asc→desc)
+    await startedTh.click()
+    await expect(startedTh).toHaveAttribute('aria-sort', 'descending')
     await expect.poll(() => hashQuery(page).get('sort')).toBe('started_at')
     await expect.poll(() => hashQuery(page).get('order')).toBe('desc')
-    await page.screenshot({ path: '/tmp/run-list-sort-started-desc.png', fullPage: true })
+  })
+
+  test('legacy ?sort=priority links still sort via the API without an active header', async ({ page }) => {
+    const capture = { requests: [] as Request[] }
+    await openRunList(page, 'sort=priority&order=desc', capture)
+    await expect(page.locator('th.sortable', { hasText: '开始' })).toHaveAttribute('aria-sort', 'none')
+    await expect.poll(() => hashQuery(page).get('sort')).toBe('priority')
+    await expect
+      .poll(() =>
+        capture.requests.some((r) => {
+          const u = new URL(r.url())
+          return u.searchParams.get('sort') === 'priority' && u.searchParams.get('order') === 'desc'
+        }),
+      )
+      .toBe(true)
   })
 
   test('illegal sort query stripped; headers inactive; list still loads', async ({ page }) => {
     await openRunList(page, 'sort=duration&order=up')
-    const startedTh = page.locator('th.sortable', { hasText: '开始时间' })
-    const priorityTh = page.locator('th.sortable', { hasText: '优先级' })
+    const startedTh = page.locator('th.sortable', { hasText: '开始' })
     await expect(startedTh).toHaveAttribute('aria-sort', 'none')
-    await expect(priorityTh).toHaveAttribute('aria-sort', 'none')
     await expect.poll(() => hashQuery(page).get('sort')).toBeNull()
     await expect.poll(() => hashQuery(page).get('order')).toBeNull()
     await expect(page.locator('tbody tr').first()).toBeVisible()
@@ -206,7 +208,7 @@ test.describe('RunListView sort acceptance', () => {
   test('deep-link legal sort restores header + API params', async ({ page }) => {
     const capture = { requests: [] as Request[] }
     await openRunList(page, 'sort=started_at&order=asc', capture)
-    const startedTh = page.locator('th.sortable', { hasText: '开始时间' })
+    const startedTh = page.locator('th.sortable', { hasText: '开始' })
     await expect(startedTh).toHaveAttribute('aria-sort', 'ascending')
     await expect(startedTh).toHaveClass(/active/)
     await expect
@@ -226,9 +228,9 @@ test.describe('RunListView sort acceptance', () => {
     await expect(page.getByText(/共 22/)).toBeVisible({ timeout: 10_000 })
     await page.getByRole('button', { name: '2', exact: true }).click()
     await expect(page.getByText(/第 2\/2/)).toBeVisible()
-    await page.locator('th.sortable', { hasText: '优先级' }).click()
+    await page.locator('th.sortable', { hasText: '开始' }).click()
     await expect(page.getByText(/第 1\/2/)).toBeVisible()
-    await expect.poll(() => hashQuery(page).get('sort')).toBe('priority')
+    await expect.poll(() => hashQuery(page).get('sort')).toBe('started_at')
     await page.screenshot({ path: '/tmp/run-list-sort-page-reset.png', fullPage: true })
   })
 

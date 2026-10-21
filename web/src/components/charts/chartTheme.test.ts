@@ -60,7 +60,7 @@ describe('chartTheme shared chrome (g1.1)', () => {
     expect(axis.left).toBe(0)
   })
 
-  it('pie option shows name+percent labels and compact tooltip', () => {
+  it('pie option puts name+percent in a truncating legend (no outer labels) and keeps the compact tooltip', () => {
     const option = pieChartOption(
       [
         { name: '输入', value: 396_400, color: '#3b82f6' },
@@ -71,9 +71,16 @@ describe('chartTheme shared chrome (g1.1)', () => {
     expect(option).toBeTruthy()
     expect(option!.legend.orient).toBe('vertical')
     expect(option!.legend.right).toBe(0)
-    expect(option!.series[0]!.label.show).toBe(true)
-    expect(option!.series[0]!.label.formatter).toBe('{b} {d}%')
-    expect(option!.series[0]!.center[0]).toBe('38%')
+    // Outer labels overlapped the legend; share now lives in the legend text.
+    expect(option!.series[0]!.label.show).toBe(false)
+    expect(option!.series[0]!.labelLine.show).toBe(false)
+    expect(option!.legend.formatter('输入')).toBe('输入  100.0%')
+    expect(option!.legend.formatter('输出')).toBe('输出  0.0%')
+    expect(option!.legend.formatter('missing')).toBe('missing  0.0%')
+    expect(option!.legend.textStyle).toMatchObject({ width: 132, overflow: 'truncate' })
+    expect(option!.series[0]!.center[0]).toBe('26%')
+    expect(option!.series[0]!.radius).toBe('66%')
+    expect(pieChartOption([{ name: 'a', value: 1 }], true)!.series[0]!.radius).toEqual(['44%', '66%'])
     expect(option!.tooltip.borderRadius).toBe(12)
     expect(option!.tooltip.appendToBody).toBe(true)
     expect(typeof option!.tooltip.formatter).toBe('function')

@@ -295,7 +295,7 @@ func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []
 		if typ == "" {
 			typ = "string"
 		}
-		byName[v.Name] = models.RunVariable{Name: v.Name, Type: typ, Value: coerceVar(v.Value, typ)}
+		byName[v.Name] = models.RunVariable{Name: v.Name, Type: typ, Value: coerceVar(v.Value, typ), Secret: v.Secret}
 		order = append(order, v.Name)
 	}
 	for _, v := range g.Variables {
@@ -318,7 +318,9 @@ func resolveStartVars(g models.Graph, submitted map[string]any, workspaceVars []
 		if _, exists := byName[v.Name]; !exists {
 			order = append(order, v.Name)
 		}
-		byName[v.Name] = models.RunVariable{Name: v.Name, Type: v.Type, Value: coerceVar(val, v.Type)}
+		// A graph variable overlaying a secret workspace variable stays
+		// secret (masking by name is the conservative choice).
+		byName[v.Name] = models.RunVariable{Name: v.Name, Type: v.Type, Value: coerceVar(val, v.Type), Secret: byName[v.Name].Secret}
 	}
 	out := make([]models.RunVariable, 0, len(order))
 	for _, name := range order {
@@ -535,7 +537,26 @@ func (e *Engine) refreshReviewFlag(c *execCtx, node *models.Node) {
 	}
 	log.Info().Str("run_id", c.run.ID).Str("node_id", node.ID).
 		Bool("old", node.Caps.Review).Bool("new", want).Msg("review flag refreshed from agent")
-	node.Caps.Review = want
-	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).Select("graph").
-		Updates(&models.Run{Graph: c.graph}), c.run.ID, "refresh review flag")
+	clone := *node.Caps
+	clone.Review = want
+	node.Caps = &clone
+	e.persistNodeReviewFlag(c.run.ID, node.ID, want)
+}
+
+// persistNodeReviewFlag writes only this node's Review flag into the stored
+// graph. It deliberately re-reads the persisted graph instead of saving
+// c.graph: the in-memory graph may hold takeover overlays (Review=true
+// clones from applyTakeoverCaps) that must never reach the DB.
+func (e *Engine) persistNodeReviewFlag(runID, nodeID string, want bool) {
+	var run models.Run
+	if err := e.db.Select("id", "graph").First(&run, "id = ?", runID).Error; err != nil {
+		return
+	}
+	n := run.Graph.FindNode(nodeID)
+	if n == nil || n.Caps == nil || n.Caps.Review == want {
+		return
+	}
+	n.Caps.Review = want
+	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).Select("graph").
+		Updates(&models.Run{Graph: run.Graph}), runID, "refresh review flag")
 }

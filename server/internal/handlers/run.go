@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -143,10 +144,16 @@ func (h *Handlers) ListRuns(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取运行记录失败: " + err.Error()})
 		return
 	}
-	labels := h.Runs.CurrentNodeLabels(runs)
+	current := h.runCurrentNodes(runs)
 	items := make([]gin.H, 0, len(runs))
 	for _, r := range runs {
-		items = append(items, runSummaryDTO(r, labels[r.ID]))
+		cn, ok := current[r.ID]
+		item := runSummaryDTO(r, cn.Name)
+		item["lastActivityAt"] = services.RunLastActivity(r)
+		if ok {
+			item["currentNode"] = cn
+		}
+		items = append(items, item)
 	}
 	c.JSON(http.StatusOK, paginatedResponse(items, int(total), pg.Page, pg.PageSize))
 }
@@ -157,7 +164,7 @@ func parseRunListSort(sort, order string) (string, string) {
 	sort = strings.TrimSpace(sort)
 	order = strings.ToLower(strings.TrimSpace(order))
 	switch sort {
-	case "started_at", "priority":
+	case "started_at", "priority", "last_activity":
 	default:
 		return "", ""
 	}
@@ -339,6 +346,9 @@ func writeNodeEventsLiveReadErr(c *gin.Context, paginated bool) {
 // When a live sandbox is registered but the bridge read fails, the handler
 // returns HTTP 200 with unavailable=true so the UI can show a rehydrate failure
 // without polluting the browser console with 502 Failed to load resource.
+// The first (non-cursor) request also carries task (omitempty): the task
+// preview of the node's latest visit, as on the takeover conversation and
+// the run detail currentNode. Paginated requests (cursor or limit) omit it.
 func (h *Handlers) NodeEvents(c *gin.Context) {
 	runID := c.Param("id")
 	nodeID := c.Param("nodeId")
@@ -353,15 +363,20 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 			writeNodeEventsLiveReadErr(c, false)
 			return
 		}
-		if live {
-			c.JSON(http.StatusOK, gin.H{"events": ev, "live": true})
-			return
+		out := gin.H{"events": ev, "live": live}
+		if !live {
+			out["events"] = []models.AcpEvent{}
+			if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
+				out["events"] = previewPromptEvents(sr.Events)
+			}
 		}
-		if sr, ok := h.Runs.StateRun(runID, nodeID); ok {
-			c.JSON(http.StatusOK, gin.H{"events": previewPromptEvents(sr.Events), "live": false})
-			return
+		// task: the first (non-cursor) request only; cursor pages omit it.
+		if r, ok := h.Runs.Get(runID); ok {
+			if t := h.latestVisitTask(r, h.Runs.TaskStates(runID), nodeID); t != "" {
+				out["task"] = t
+			}
 		}
-		c.JSON(http.StatusOK, gin.H{"events": []models.AcpEvent{}, "live": false})
+		c.JSON(http.StatusOK, out)
 		return
 	}
 
@@ -381,4 +396,30 @@ func (h *Handlers) NodeEvents(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"events": []models.AcpEvent{}, "nextCursor": "", "hasMore": false, "live": false})
+}
+
+// deriveCurrentNodeState upgrades a parked manual node (waiting_human) to
+// busy while its manual session (review / takeover / clarify) has a turn
+// running in the bridge; the UI offers Stop for busy. Auto (running) and
+// stopping states are never busy.
+func deriveCurrentNodeState(cn services.CurrentNode, sessionBusy func() bool) services.CurrentNode {
+	if cn.Mode == models.NodeModeManual && cn.State == engine.NodeStateWaitingHuman && sessionBusy() {
+		cn.State = engine.NodeStateBusy
+	}
+	return cn
+}
+
+// runCurrentNodes is the single currentNode derivation shared by the run
+// list (runSummary) and the run detail: services.CurrentNodes plus the
+// engine-only busy upgrade of a manual session with a running turn.
+func (h *Handlers) runCurrentNodes(runs []models.Run) map[string]services.CurrentNode {
+	out := h.Runs.CurrentNodes(runs)
+	for id, cn := range out {
+		runID := id
+		nodeID := cn.ID
+		out[id] = deriveCurrentNodeState(cn, func() bool {
+			return h.Eng != nil && h.Eng.ManualSessionBusy(runID, nodeID)
+		})
+	}
+	return out
 }

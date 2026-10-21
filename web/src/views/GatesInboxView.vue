@@ -82,8 +82,6 @@ const {
   softRefreshActiveRun,
   loadActiveRun,
   retryActiveRun,
-  applyListUpdate,
-  dismissUpdateBanner,
   onReactRevised,
   onResolve,
   patchShareStatus,
@@ -128,7 +126,6 @@ const {
   inboxConfirmFlowReduce,
   inboxConfirmFlowToken,
   pendingAcpFrames,
-  showUpdateBanner,
   showProcessedBanner,
   showListSkeleton,
   showListError,
@@ -152,7 +149,6 @@ const {
   lastStagedAppPreviewPick,
   isClarifyEditing,
   isEditing,
-  updateBannerDetail,
   activeRun,
   activeRunLoading,
   activeRunLoadError,
@@ -170,6 +166,7 @@ const {
   clarifyComposerNodeId,
   clarifyComposerIteration,
   clarifyComposerTurns,
+  activeNodeTask,
   clarifyComposerDone,
   inboxClarifyStageKind,
   inboxReviewState,
@@ -185,11 +182,8 @@ const {
   totalCount,
   refresh,
   peek,
-  applyPending,
   removeItemLocally,
   restoreItemLocally,
-  hasPendingUpdate,
-  pendingMeta,
   lastPeekAt,
   itemKey,
   ariaBusy,
@@ -247,35 +241,6 @@ const listFadeKey = computed(() =>
     >
       <Icon name="alert" :size="18" class="shrink-0" />
       <span v-html="t('pages.gatesInbox.processedBanner')" />
-    </div>
-
-    <!-- f2: pending update banner -->
-    <div
-      v-if="showUpdateBanner && hasPendingUpdate"
-      class="mb-3 flex shrink-0 flex-wrap items-center justify-between gap-3 rounded-md border border-info/35 bg-info/10 px-3.5 py-2.5 text-sm animate-[slideDown_0.25s_ease]"
-    >
-      <div class="flex min-w-0 flex-1 items-center gap-2.5 text-info">
-        <Icon name="bell" :size="18" class="shrink-0" />
-        <div class="min-w-0">
-          <strong class="font-semibold text-txt">{{ t('pages.gatesInbox.updateBannerTitle') }}</strong>
-          <span class="text-txt2">{{ updateBannerDetail }}</span>
-        </div>
-      </div>
-      <div class="flex shrink-0 gap-2">
-        <button
-          class="rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-white transition hover:bg-accent-hover disabled:opacity-45"
-          :disabled="processingLock"
-          @click="applyListUpdate()"
-        >
-          {{ t('common.buttons.applyRefresh') }}
-        </button>
-        <button
-          class="rounded-md border border-line bg-surface px-3 py-1.5 text-xs font-medium text-txt transition hover:bg-elevated"
-          @click="dismissUpdateBanner"
-        >
-          {{ t('common.buttons.later') }}
-        </button>
-      </div>
     </div>
 
     <!-- Mobile list view -->
@@ -390,6 +355,7 @@ const listFadeKey = computed(() =>
           class="min-h-0 flex-1"
           :host-confirm-flow="false"
           split-drawer
+          remember-artifact-panel
         >
           <template #stage>
             <ReactConnectingState
@@ -417,7 +383,6 @@ const listFadeKey = computed(() =>
           <template #sidebar>
             <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
             />
             <ReviewComposer
@@ -431,6 +396,7 @@ const listFadeKey = computed(() =>
               v-model:attachments="clarifyAttachments"
               v-model:annotations="clarifyAnnotations"
               :turns="clarifyComposerTurns"
+              :node-task="activeNodeTask"
               :seed-human-text="activeHomeSeed?.text"
               :seed-human-images="activeHomeSeed?.images ?? []"
               :done="clarifyComposerDone"
@@ -504,6 +470,7 @@ const listFadeKey = computed(() =>
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
               split-drawer
+              remember-artifact-panel
             >
               <template #stage>
                 <ReactConnectingState
@@ -531,7 +498,6 @@ const listFadeKey = computed(() =>
               <template #sidebar>
                 <ReactConnectingState
               v-if="activeStarting"
-              :show-confirm="composerMode === 'review'"
               :sandbox-phase="startingSandboxPhase"
             />
                 <ReviewComposer
@@ -545,6 +511,7 @@ const listFadeKey = computed(() =>
                   v-model:attachments="clarifyAttachments"
                   v-model:annotations="clarifyAnnotations"
                   :turns="clarifyComposerTurns"
+                  :node-task="activeNodeTask"
                   :seed-human-text="activeHomeSeed?.text"
                   :seed-human-images="activeHomeSeed?.images ?? []"
                   :done="clarifyComposerDone"

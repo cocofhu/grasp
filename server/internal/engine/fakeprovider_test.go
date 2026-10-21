@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -162,6 +163,20 @@ type fakeProvider struct {
 	liveGuardCalls int
 	// reactHold (test-only): same for ReactReply / clarify session Cancel.
 	reactHold <-chan struct{}
+
+	// Takeover controls (test-only). runHold[nodeID], when set, makes RunAgent
+	// block (after writing products) until the channel closes or ctx is
+	// cancelled; runStarted receives the node id once the hold begins.
+	// runIgnoreCancel makes a held RunAgent finish successfully even when
+	// its ctx was cancelled (models a turn completing at the same instant).
+	// takeoverParks counts ctx cancellations with ErrNodeTakenOver.
+	runHold         map[string]chan struct{}
+	runStarted      chan string
+	runIgnoreCancel bool
+	takeoverParks   int
+	runAgentCalls   map[string]int
+	// runPanic makes RunAgent panic for the node (S7 settle-on-panic test).
+	runPanic map[string]bool
 }
 
 // nextStructuredBody returns the reserved-artifact body to write for nodeID on
@@ -289,6 +304,42 @@ func (f *fakeProvider) lastPromptImages(nodeID string) []models.PromptImage {
 }
 
 func (f *fakeProvider) RunAgent(ctx context.Context, req runtime.NodeReq) (runtime.NodeResult, error) {
+	f.mu.Lock()
+	if f.runAgentCalls == nil {
+		f.runAgentCalls = map[string]int{}
+	}
+	f.runAgentCalls[req.NodeID]++
+	if f.runPanic[req.NodeID] {
+		f.mu.Unlock()
+		panic("fake provider panic")
+	}
+	hold := f.runHold[req.NodeID]
+	started := f.runStarted
+	ignore := f.runIgnoreCancel
+	f.mu.Unlock()
+	if hold != nil {
+		if started != nil {
+			started <- req.NodeID
+		}
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			if ignore {
+				<-hold
+				break
+			}
+			if errors.Is(context.Cause(ctx), runtime.ErrNodeTakenOver) {
+				f.mu.Lock()
+				f.takeoverParks++
+				f.mu.Unlock()
+				return runtime.NodeResult{OutputMd: "partial narration", Events: []models.AcpEvent{
+					{Kind: "thought", Text: "auto thinking"},
+					{Kind: "tool_call", Title: "edit main.go"},
+					{Kind: "message", Text: "partial narration"}}}, runtime.ErrNodeTakenOver
+			}
+			return runtime.NodeResult{}, ctx.Err()
+		}
+	}
 	if err := f.recordAndMaybeFail(req); err != nil {
 		f.mu.Lock()
 		beforeFail := f.outcomeBeforeFail

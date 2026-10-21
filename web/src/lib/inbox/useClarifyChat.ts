@@ -4,6 +4,7 @@ import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } fro
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
+import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   emptyFailDisplayText,
@@ -125,7 +126,8 @@ const showAnnotationChips = computed(() => props.reviewMode || props.annotateEna
 
 const { t: translate, locale } = useI18n()
 
-const persistedTurns = computed(() => props.turns ?? [])
+// A takeover's opening turn carries the auto phase (turns[0].events): continue it.
+const persistedTurns = computed(() => expandAutoPhase(props.turns ?? []))
 
 const thinking = ref(false)
 /** Review confirm mid-state: re-validating product (not Agent thinking). */
@@ -1776,6 +1778,22 @@ function agentHasMessage(t: ClarifyTurn): boolean {
   return !!(t.text || (t.streaming && liveStreamHtml.value))
 }
 
+/**
+ * Streaming agent whose newest step is message text: tail shows 输出中.
+ * After a tool or thought step (waiting for the model) it shows 思考中….
+ */
+function agentTailOutputting(t: ClarifyTurn): boolean {
+  if (t.role !== 'agent' || !t.streaming) return false
+  const parts = t.parts || []
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]!
+    if (p.kind === 'tool') return false
+    if ((p.kind === 'message' || p.kind === 'thought') && p.text?.trim()) return p.kind === 'message'
+  }
+  if (t.tools?.length) return false
+  return agentHasMessage(t)
+}
+
 /** Display thought (revealed while this live agent is streaming). */
 function agentThoughtDisplay(t: ClarifyTurn, idx: number): string {
   if (t.streaming && idx === liveAgentIdx.value) {
@@ -1966,6 +1984,7 @@ function retryLastFailed() {
     applyReviewFrame,
     applyAcpEvents,
     agentHasMessage,
+    agentTailOutputting,
     agentThoughtDisplay,
     isThoughtOpen,
     onThoughtToggle,

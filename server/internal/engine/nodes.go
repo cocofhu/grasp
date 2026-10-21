@@ -34,6 +34,8 @@ type nodeOutcome struct {
 	// not auto-retryable; only failure construction sites that opt in set true.
 	// Display text (err/outputMd) is intentionally decoupled from retryability.
 	retryable bool
+	// takeover marks the paused outcome of a user-interrupted auto visit.
+	takeover bool
 }
 
 // executeNode dispatches to the per-type executor via the node registry.

@@ -65,6 +65,8 @@ export interface EventPaginatedResponse {
 export interface NodeEventsResponse {
   events: AcpEvent[]
   live: boolean
+  /** Agent node's task preview (same helper as currentNode.task); absent on paging requests. */
+  task?: string
   unavailable?: boolean
   error?: string
 }

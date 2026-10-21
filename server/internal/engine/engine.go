@@ -72,6 +72,13 @@ type Engine struct {
 	execMu   sync.Mutex
 	execRuns map[string]bool
 	execGen  map[string]uint64
+	// autoMu guards autoRuns: the in-flight auto Agent calls a user takeover
+	// may cancel (see takeover.go). Lazily initialised.
+	autoMu   sync.Mutex
+	autoRuns map[string]*autoRun
+	// act debounces Run.last_activity_at writes (see touchActivity).
+	activityOnce sync.Once
+	act          *activityTracker
 
 	// haltMu guards halted: when true the dispatcher stops admitting work and
 	// running drivers requeue their run at the next node boundary.

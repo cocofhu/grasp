@@ -90,7 +90,7 @@ function envOf(draft: ReturnType<typeof draftFor>) {
 
 beforeEach(() => {
   mocks.listCredentials.mockResolvedValue({ items: [] })
-  mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: '', env: {} })
+  mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
 })
 afterEach(() => {
   mounted.splice(0).forEach((w) => w.unmount())
@@ -100,11 +100,22 @@ afterEach(() => {
 })
 
 describe('AgentMetaPanel runtime card', () => {
+  async function useOwn(w: ReturnType<typeof mountPanel>) {
+    const sw = w.get('[data-test="agent-inherit-default-switch"]')
+    if (sw.attributes('aria-checked') === 'true') await sw.trigger('click')
+    await flushPromises()
+  }
+
   it('writes the picked model to ACP_BRIDGE_MODEL and removes it for auto', async () => {
     const draft = draftFor()
     const w = mountPanel(draft)
     await flushPromises()
-    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(true)
+    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(false)
+    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(false)
+    await useOwn(w)
+    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(true)
     expect(w.find('[data-test="agent-cli-effort"]').exists()).toBe(false)
     expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
     expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
@@ -117,7 +128,7 @@ describe('AgentMetaPanel runtime card', () => {
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
   })
 
-  it('defaults to following the workspace model, and pins a separate choice beside it', async () => {
+  it('inherits the workspace default until the switch is turned off', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'codex',
       env: { ACP_BRIDGE_MODEL: 'gpt-6-luna' },
@@ -125,49 +136,42 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor({ acpBackend: 'codex' })
     const w = mountPanel(draft)
     await flushPromises()
-    const model = w.get('[data-test="agent-cli-model"]')
-    expect(w.get('[data-test="agent-cli-model-follow"]').attributes('aria-checked')).toBe('true')
-    expect(w.get('[data-test="agent-cli-model-follow"]').text()).toContain('默认')
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('false')
-    const card = w.get('[data-test="agent-cli-model-inherited"]')
-    expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('GPT-6 Luna')
-    expect(card.text()).toContain('工作区共享配置')
-    expect(card.text()).not.toContain('--model')
-    expect(card.text()).not.toContain('cursor-agent')
-    expect(model.text()).not.toContain('自动')
-    expect(model.text()).not.toContain('CLI 默认')
-    expect(model.text()).not.toContain('未单独选择')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
+    expect(w.text()).not.toContain('不用在这里填写')
     expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
+    expect(w.find('[data-testid="credential-alias-picker"]').exists()).toBe(false)
+
+    await useOwn(w)
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
 
     draft.env = [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }]
     await flushPromises()
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('true')
-    expect(w.get('[data-test="agent-cli-model-follow"]').text()).toContain('默认')
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
     expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('GPT-6.1 Sol')
 
-    const cursor = mountPanel(draftFor({ acpBackend: 'cursor' }))
+    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
     await flushPromises()
-    expect(cursor.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-    expect(cursor.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-    expect(cursor.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
+    expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
   })
 
-  it('shows an unlisted shared model id as-is, not a similar catalog name', async () => {
+  it('hides the form while inheriting, even when the workspace model is unlisted', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'cursor',
       env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
     })
     const w = mountPanel(draftFor())
     await flushPromises()
-    const card = w.get('[data-test="agent-cli-model-inherited"]')
-    expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('grok-4.7-xhigh')
-    expect(card.text()).not.toContain('Grok 4.7')
-    expect(card.text()).not.toContain('cursor-agent')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
     expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
+    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
+    expect(w.get('[data-test="agent-inherit-backend"]').text()).toContain('Cursor')
+    expect(w.text()).not.toContain('Grok 4.7')
+    expect(w.text()).not.toContain('cursor-agent')
   })
 
-  it('writes a model only after a pick, and either way back clears it', async () => {
+  it('writes a model only after a pick, and inheriting again clears it', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'cursor',
       env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
@@ -175,45 +179,22 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor()
     const w = mountPanel(draft)
     await flushPromises()
-    await w.get('[data-test="agent-cli-model-own"]').trigger('click')
-    await flushPromises()
+    await useOwn(w)
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('选择一个模型')
-    expect(w.get('[data-test="agent-cli-model"]').text()).not.toContain('自动')
-    expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
     expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     await w.get('[data-testid="cli-model-trigger"]').trigger('click')
     await flushPromises()
-    expect(document.body.querySelector('[data-testid="cli-model-option-auto"]')).toBeNull()
     expect(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]')).not.toBeNull()
     ;(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]') as HTMLElement).click()
     await flushPromises()
     expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('true')
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
 
-    await w.get('[data-test="agent-cli-model-follow"]').trigger('click')
+    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
     await flushPromises()
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.get('[data-test="agent-cli-model-follow"]').attributes('aria-checked')).toBe('true')
-    expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('grok-4.7-xhigh')
-
-    await w.get('[data-test="agent-cli-model-own"]').trigger('click')
-    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
-    await flushPromises()
-    const input = document.body.querySelector('[data-testid="cli-model-search"]') as HTMLInputElement
-    input.value = 'grok-4.7-xhigh'
-    input.dispatchEvent(new Event('input'))
-    await flushPromises()
-    ;(document.body.querySelector('[data-testid="cli-model-empty-use"]') as HTMLElement).click()
-    await flushPromises()
-    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('grok-4.7-xhigh')
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('true')
-
-    await w.get('[data-test="agent-cli-model-back"]').trigger('click')
-    await flushPromises()
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.get('[data-test="agent-cli-model-follow"]').attributes('aria-checked')).toBe('true')
+    expect(draft.aiCredentialId).toBe('')
     expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
   })
 
@@ -225,10 +206,8 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor({ env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }] })
     const w = mountPanel(draft)
     await flushPromises()
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('true')
-    expect(w.get('[data-test="agent-cli-model-follow"]').text()).toContain('默认')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
     expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-    expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
     expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('GPT-5')
   })
 
@@ -241,24 +220,25 @@ describe('AgentMetaPanel runtime card', () => {
     const w = mountPanel(draft)
     await flushPromises()
     const trigger = w.get('[data-testid="cli-model-trigger"]').text()
-    expect(w.get('[data-test="agent-cli-model-own"]').attributes('aria-checked')).toBe('true')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
     expect(trigger).toContain('GPT-5')
     expect(trigger).not.toContain('grok-4.7-xhigh')
     expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
   })
 
-  it('stays on auto when the same CLI has no shared model', async () => {
+  it('stays inherited when the same CLI has no shared model', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
     const w = mountPanel(draftFor())
     await flushPromises()
-    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
+    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(false)
     expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     expect(w.text()).not.toContain('不指定 --model，使用 CLI 默认')
+    await useOwn(w)
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
   })
 
-  it('returns to follow after leaving the separate choice without a pick', async () => {
+  it('returns to inherit after leaving the form without a pick', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'cursor',
       env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
@@ -266,18 +246,17 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor()
     const w = mountPanel(draft)
     await flushPromises()
-    await w.get('[data-test="agent-cli-model-own"]').trigger('click')
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
+    await useOwn(w)
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
     mounted.pop()
     w.unmount()
     const again = mountPanel(draft)
     await flushPromises()
-    expect(again.get('[data-test="agent-cli-model-follow"]').attributes('aria-checked')).toBe('true')
+    expect(again.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
     expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
   })
 
-  it('comes back to follow when a CLI switch lands on a shared model', async () => {
+  it('keeps the engine picker while a different engine is chosen', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({
       acpBackend: 'cursor',
       env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
@@ -285,18 +264,39 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor()
     const w = mountPanel(draft)
     await flushPromises()
-    await w.get('[data-test="agent-cli-model-own"]').trigger('click')
+    await useOwn(w)
     await w.findAll('button').find((b) => b.text().includes('Codex'))!.trigger('click')
     await flushPromises()
     expect(draft.acpBackend).toBe('codex')
-    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    await w.findAll('button').find((b) => b.text().includes('Cursor'))!.trigger('click')
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
+    expect(w.get('[data-testid="acp-backend-codex"]').attributes('aria-pressed')).toBe('true')
+    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(true)
+  })
+
+  it('drops a different engine and its overrides when inheriting', async () => {
+    mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
+    const draft = draftFor({
+      acpBackend: 'claude_code',
+      aiCredentialId: 'own',
+      env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }, { k: 'FOO', v: '1' }, { k: 'GRASP_CODEBUDDY_REGION', v: 'intl' }],
+      layout: { configRoot: '/root/.claude', workspaceDir: '/workspace' },
+    })
+    const w = mountPanel(draft)
+    await flushPromises()
+    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
+    expect(w.find('[data-testid="acp-backend-claude_code"]').exists()).toBe(true)
+    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
     await flushPromises()
     expect(draft.acpBackend).toBe('cursor')
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.get('[data-test="agent-cli-model-follow"]').attributes('aria-checked')).toBe('true')
-    expect(w.get('[data-test="agent-cli-model-inherited-name"]').text()).toBe('grok-4.7-xhigh')
+    expect(draft.aiCredentialId).toBe('')
+    expect(envOf(draft)).toEqual({ FOO: '1', GRASP_CODEBUDDY_REGION: 'intl' })
+    expect(draft.layout.configRoot).toBe('/root/.claude')
+    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
+    expect(w.find('[data-testid="meta-config-root"]').exists()).toBe(false)
+    expect(w.find('[data-testid="meta-workspace-dir"]').exists()).toBe(false)
+    expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-credential-bindings"]').exists()).toBe(false)
+    expect(w.get('[data-test="agent-inherit-backend"]').text()).toContain('Cursor')
   })
 
   it('is not shown for OpenCode, which keeps its model on the credential', async () => {
@@ -325,6 +325,7 @@ describe('AgentMetaPanel runtime card', () => {
     const draft = draftFor()
     const w = mountPanel(draft)
     await flushPromises()
+    await useOwn(w)
     await w.findAll('button').find((b) => b.text().includes('Claude Code'))!.trigger('click')
     expect(useToast().toasts.value).toHaveLength(0)
   })
@@ -354,6 +355,7 @@ describe('AgentMetaPanel runtime card', () => {
   it('offers the common levels for auto', async () => {
     const w = mountPanel(draftFor({ acpBackend: 'codex' }))
     await flushPromises()
+    await useOwn(w)
     expect(effortOptions(w)).toEqual(['auto', 'low', 'medium', 'high'])
   })
 

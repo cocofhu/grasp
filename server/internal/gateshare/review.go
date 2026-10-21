@@ -54,7 +54,7 @@ func (s *Service) currentPendingReview(runID, nodeID string) (models.ReactConver
 	if terminalRun(run.Status) {
 		return models.ReactConversation{}, run, ErrRunEnded
 	}
-	node := run.Graph.FindNode(nodeID)
+	node := services.EffectiveNode(s.db, run, nodeID)
 	if !services.IsShareableReviewSession(node) {
 		return models.ReactConversation{}, run, ErrNotReviewSession
 	}

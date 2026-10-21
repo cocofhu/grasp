@@ -12,6 +12,7 @@ import { setTheme } from '@/lib/shared/theme'
 import { i18n as appI18n } from '@/lib/shared/i18n'
 import { locale as appLocale, setLocale } from '@/lib/shared/locale'
 import ReviewShell from '@/components/run/ReviewShell.vue'
+import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 
 const mocks = vi.hoisted(() => ({
@@ -133,6 +134,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket)
   window.location.hash = ''
   localStorage.clear()
+  resetConversationDrawers()
   setTheme('dark')
 })
 
@@ -748,10 +750,8 @@ describe('PublicGateApprovalView workbench', () => {
     resolveReply?.({ status: 'accepted' })
     await flushPromises()
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
-    // plan g1/g2: busy keeps confirm mounted and disabled (not unmounted).
-    const confirmBusy = w.find('[data-testid="clarify-confirm-flow"]')
-    expect(confirmBusy.exists()).toBe(true)
-    expect((confirmBusy.element as HTMLButtonElement).disabled).toBe(true)
+    // One primary action: while busy it is 停止, 确认并流转 returns when idle.
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     expect(w.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
   })
 
@@ -773,10 +773,8 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
     expect(w.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
-    // plan g1/g2: sessionBusy resume keeps confirm visible + disabled.
-    const confirmResume = w.find('[data-testid="clarify-confirm-flow"]')
-    expect(confirmResume.exists()).toBe(true)
-    expect((confirmResume.element as HTMLButtonElement).disabled).toBe(true)
+    // One primary action: while busy it is 停止, 确认并流转 returns when idle.
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     expect(w.find('[data-testid="public-gate-done"]').exists()).toBe(false)
   })
 
@@ -1563,10 +1561,8 @@ describe('PublicGateApprovalView workbench', () => {
     await flushPromises()
     expect(w.find('[data-testid="clarify-busy-placeholder"]').exists()).toBe(true)
     expect(w.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
-    // plan g1/g2: sticky busy keeps confirm visible + disabled until idle.
-    const confirmSticky = w.find('[data-testid="clarify-confirm-flow"]')
-    expect(confirmSticky.exists()).toBe(true)
-    expect((confirmSticky.element as HTMLButtonElement).disabled).toBe(true)
+    // One primary action: while busy it is 停止, 确认并流转 returns when idle.
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
 
     // Authoritative idle poll — clear stale activeItem explicitly (sparse merge).
     mocks.preview.mockResolvedValue({
@@ -2269,9 +2265,13 @@ it('resets the public conversation panel for a new credential without exposing t
   })
   const wrapper = mountView()
   await flushPromises()
+  expect(wrapper.getComponent(ReviewShell).props('rememberArtifactPanel')).toBe(false)
+  expect(readArtifactPanelOpen()).toBe(false)
   const firstScope = wrapper.getComponent(ReviewShell).props('scopeKey')
   await wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
   expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
+  expect(readArtifactPanelOpen()).toBe(false)
+  writeArtifactPanelOpen(true)
   window.history.replaceState(null, '', `#t=${secondToken}`)
   window.dispatchEvent(new HashChangeEvent('hashchange'))
   await flushPromises()
@@ -2280,4 +2280,5 @@ it('resets the public conversation panel for a new credential without exposing t
   expect(`${firstScope} ${secondScope}`).not.toContain(firstToken)
   expect(`${firstScope} ${secondScope}`).not.toContain(secondToken)
   expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('false')
+  expect(readArtifactPanelOpen()).toBe(true)
 })

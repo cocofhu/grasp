@@ -66,6 +66,9 @@ func (e *Engine) RecentTurns(runID string) map[string][]models.AcpEvent {
 // in the sandbox (queried on demand via LiveNodeEvents) and the final snapshot
 // is persisted by saveState — this is purely the live push channel.
 func (e *Engine) publishAcp(runID, nodeID string, events []models.AcpEvent, busy bool) {
+	if isActivityEvent(events) {
+		e.touchActivity(runID, false)
+	}
 	msg, err := json.Marshal(map[string]any{
 		"type": "acp", "runId": runID, "nodeId": nodeID, "events": events, "busy": busy,
 	})
@@ -99,6 +102,7 @@ func (e *Engine) startNodeRun(c *execCtx, node *models.Node) {
 		Iteration: c.iter[node.ID], Status: "running", StartedAt: &now, Attempt: c.run.Attempt,
 		VarsBefore: before, ArtifactBaseRev: base, ArtifactBaseSet: true,
 	}), c.run.ID, "startNodeRun")
+	e.touchActivity(c.run.ID, true)
 }
 
 // execCtx is the in-memory execution context, rebuildable from the DB so a
@@ -128,6 +132,9 @@ type execCtx struct {
 	// reattachSandbox is the live sandbox the current node continues in after
 	// a control-plane restart; consumed by the first agent call.
 	reattachSandbox string
+	// takeoverCaps holds the original caps of nodes whose live visit was
+	// taken over (their in-memory caps are a Review=true clone).
+	takeoverCaps map[string]*models.AgentCapabilities
 }
 
 // lockResume serializes resume operations for a given key (runID:nodeID),
@@ -177,6 +184,7 @@ func (e *Engine) loadCtx(runID string) (*execCtx, error) {
 			c.nodeOutputs[s.NodeID] = s.Outputs
 		}
 	}
+	e.applyManualVisits(c, states)
 	e.mu.Lock()
 	c.token = e.tokens[runID]
 	e.mu.Unlock()
@@ -352,6 +360,13 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 				e.snapshotCheckpoint(c, node.ID)
 			}
 			c.iter[node.ID]++
+			// A new visit always starts in auto, even after a takeover of
+			// the previous one.
+			e.restoreTakeoverCaps(c, node)
+			// …and outside any review phase: a review / takeover session of an
+			// earlier visit (e.g. one dropped by a cancel) must not leak
+			// InReviewPhase into this auto visit. enterReview re-arms it.
+			e.host.SetActiveReview(runID, false)
 			e.refreshReviewFlag(c, node)
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
 			e.startNodeRun(c, node)
@@ -364,6 +379,11 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "lost exec ownership; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).
 				Msg("execute stopped: lost exec ownership while node was in flight")
+			if outcome.takeover {
+				// Another driver may own the run now: close only this visit's
+				// conversation, leave the shared MCP flags to that driver.
+				e.closeTakeoverConversation(runID, node.ID, c.iter[node.ID])
+			}
 			e.recordDroppedOutcomeUsage(c, node, outcome, models.TokenLedgerStatusCancelled)
 			return
 		}
@@ -372,6 +392,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "exit", Detail: "run " + st + " during node; drop late outcome"})
 			log.Info().Str("run_id", runID).Str("node_id", node.ID).Str("status", st).
 				Msg("execute stopped: run became terminal while node was in flight")
+			if outcome.takeover {
+				e.rollbackTakeover(runID, node.ID, c.iter[node.ID])
+			}
 			status := models.TokenLedgerStatusCancelled
 			if st == "failed" {
 				status = models.TokenLedgerStatusFailed
@@ -389,7 +412,9 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 
 			if e.pauseStillPending(runID, node) {
 				if e.finish(runID, "waiting_human") {
-
+					if outcome.takeover {
+						e.publishTakeover(runID, node.ID, c.iter[node.ID], NodeStateWaitingHuman)
+					}
 					e.fireGateAutoInvoke(c, node)
 					e.fireClarifyFirstMessage(c, node)
 					e.fireRunNotify(c, node, models.NotifyKindWaitingHuman)

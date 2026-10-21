@@ -11,6 +11,7 @@ import type { Gate, Run } from '@/lib/shared/types'
 import { listPrimaryProducts } from '@/lib/inbox/gateUpstream'
 import { CONTENT_FIT_PREVIEW_MAX_VH } from '@/lib/shared/htmlPreviewSandbox'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
+import { resetConversationDrawers } from '@/lib/chat/conversationDrawer'
 
 vi.mock('@novnc/novnc/lib/rfb.js', () => ({
   default: class MockRFB {},
@@ -362,6 +363,7 @@ function visualGateRun(pageHtml: string) {
 
 beforeEach(() => {
   breakpointMocks.isMobile.value = false
+  resetConversationDrawers()
 })
 
 function hasClass(el: Element | null | undefined, token: string): boolean {
@@ -563,6 +565,8 @@ describe('GateApproval content-fit layout branches', () => {
 
     expect(contentFitRoot(wrapper).exists()).toBe(false)
     expect(wrapper.find('[data-testid="content-fit-preview"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="review-shell"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="structured-view"]').exists()).toBe(true)
     wrapper.unmount()
   })
