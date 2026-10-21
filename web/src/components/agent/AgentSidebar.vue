@@ -3,7 +3,7 @@ import { nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type CSSProper
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import ResourceList, { type ResourceListItem } from '@/components/ui/ResourceList.vue'
-const props = defineProps<{ nodes: ResourceListItem[]; activeKey: string; collapsed: boolean; hideCreateTeam?: boolean }>()
+const props = defineProps<{ nodes: ResourceListItem[]; pinned?: ResourceListItem[]; activeKey: string; collapsed: boolean; hideCreateTeam?: boolean }>()
 const emit = defineEmits<{
   (e: 'select', key: string): void
   (e: 'open-manage', agentName?: string): void
@@ -138,7 +138,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="flex min-h-0 min-w-0 flex-col border-r border-line" data-testid="agent-resource-sidebar">
     <button v-if="collapsed" type="button" :class="buttonClass" :aria-label="t('pages.agentStudio.agentList.expand')" @click="emit('toggle-collapsed')"><Icon name="chevron-right" :size="14" /></button>
-    <ResourceList v-else :nodes="nodes" :active-key="activeKey" :title="t('pages.agentStudio.tree.title')" :total="nodes.length" :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')" :empty-text="t('pages.agentStudio.tree.empty')" @select="emit('select', $event)" @contextmenu="onContext">
+    <ResourceList v-else :nodes="nodes" :pinned="pinned" :active-key="activeKey" :title="t('pages.agentStudio.tree.title')" :total="nodes.length" :search-placeholder="t('pages.agentStudio.tree.searchPlaceholder')" :empty-text="t('pages.agentStudio.tree.empty')" @select="emit('select', $event)" @contextmenu="onContext">
       <template #actions>
         <button type="button" data-testid="agent-tree-create-agent" :class="buttonClass" :title="t('common.buttons.newAgent')" :aria-label="t('common.buttons.newAgent')" @click="emit('create-agent')"><Icon name="plus" :size="12" /></button>
         <button :id="triggerId" ref="moreTrigger" type="button" data-testid="agent-tree-more" :class="buttonClass" :title="t('pages.agentStudio.tree.moreActions')" :aria-label="t('pages.agentStudio.tree.moreActions')" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-controls="menuId" @click="moreOpen ? closeMore() : openMore()" @keydown="onTriggerKeydown"><Icon name="more" :size="15" /></button>

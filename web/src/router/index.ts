@@ -48,7 +48,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/settings/schedules', name: 'schedules', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.schedules', workspaceTool: 'schedules', workspaceTitle: 'nav.schedules' } },
   { path: '/settings/notification-policy', name: 'notificationPolicy', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.notificationPolicy', workspaceTool: 'notificationPolicy', workspaceTitle: 'nav.notificationPolicy' } },
   { path: '/settings/external-mcp', name: 'externalMcp', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.externalMcp', workspaceTool: 'externalMcp', workspaceTitle: 'nav.externalMcp' } },
-  { path: '/settings/shared-agent', name: 'sharedAgent', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.sharedAgent', workspaceTool: 'sharedAgent', workspaceTitle: 'nav.sharedAgent' } },
+  // Defaults now live inside Agent Studio (pinned first item); keep old links working.
+  { path: '/settings/shared-agent', name: 'sharedAgent', redirect: { path: '/agents', query: { view: 'defaults' } } },
   { path: '/settings/credentials', name: 'credentials', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.credentials', workspaceTool: 'credentials', workspaceTitle: 'nav.credentials' } },
   { path: '/settings/audit', name: 'audit', component: () => import('@/views/WorkspaceToolView.vue'), meta: { titleKey: 'route.audit', workspaceTool: 'audit', workspaceTitle: 'nav.audit' } },
   { path: '/settings/variables', name: 'variables', component: () => import('@/views/WorkspaceDefaultsView.vue'), meta: { titleKey: 'route.variables', workspaceTool: 'variables', workspaceTitle: 'nav.variables' } },
