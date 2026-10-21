@@ -412,8 +412,9 @@ func SanitizeTurnsFrom(msgs []models.ReactMessage, imageBase int) ([]PreviewTurn
 		if role == "agent" {
 			turn.Parts = SanitizeParts(m.Parts)
 		}
-		// Keep a text-less turn when it still carries a choice card or form.
-		if turn.Text == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
+		// Keep a text-less turn when it still carries a choice card, a form,
+		// or a takeover opening's narration.
+		if turn.Text == "" && strings.TrimSpace(turn.Narration) == "" && len(turn.Annotations) == 0 && len(turn.Images) == 0 && !turn.Interrupted && len(turn.Questions) == 0 && len(turn.Forms) == 0 {
 			continue
 		}
 		out = append(out, turn)
