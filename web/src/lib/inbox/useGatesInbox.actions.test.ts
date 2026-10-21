@@ -432,6 +432,40 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('one opening task bubble: takeover task without a chain, the chain task after a hand-off', async () => {
+    const takeoverRun = (runId: string) =>
+      contextRun(runId, {
+        clarifyByNode: { react: { nodeId: 'react', iteration: 1, turns: [], done: false, takeover: true, task: ' 实现登录页 ' } },
+      })
+    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: takeoverRun(runId) }))
+    mocks.getRun.mockImplementation(async (runId: string) => takeoverRun(runId))
+    // Taken-over node opened directly: no earlier nodes → #849 clarifyByNode task.
+    const first = await withInbox()
+    first.inbox.selectItem(first.inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    expect(first.inbox.activeChainSegments.value).toEqual([])
+    expect(first.inbox.activeNodeTask.value).toBe('实现登录页')
+    first.app.unmount()
+    // Reached by a hand-off (earlier nodes in the chain): the chain segment's task wins — one value, one bubble.
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: 'Clarify', mode: 'manual', state: 'waiting_human' },
+      segments: [
+        { nodeId: 'design', iteration: 1, name: '方案设计', kind: 'agent', mode: 'auto', status: 'completed', startedAt: '2026-10-21T05:00:00+08:00', endedAt: '2026-10-21T05:00:30+08:00', eventCount: 3, task: '出方案' },
+        { nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'takeover', mode: 'manual', status: 'waiting_human', turns: [], task: '实现登录页（链）' },
+      ],
+    })
+    const second = await withInbox()
+    second.inbox.selectItem(second.inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    expect(second.inbox.activeChainSegments.value.map((s) => s.label)).toEqual(['方案设计'])
+    expect(second.inbox.activeNodeTask.value).toBe('实现登录页（链）')
+    second.app.unmount()
+  })
+
   it('v2 hand-off: an auto next node keeps the conversation with a follow tail until the user leaves', async () => {
     mocks.runConversationChain.mockResolvedValue({
       runId: 'run-chat',
