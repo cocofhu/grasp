@@ -6,6 +6,7 @@ import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
+import { CONVERSATION_PANEL_SHOWN_EVENT } from '@/lib/chat/conversationArtifacts'
 import ConversationWorkspace from './ConversationWorkspace.vue'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
@@ -43,6 +44,23 @@ describe('ConversationWorkspace', () => {
     expect(w.get('textarea').element).toBe(chat)
     expect(w.get('input').element).toBe(preview)
     expect((chat as HTMLTextAreaElement).value).toBe('保留我的草稿')
+  })
+
+  it('notifies mounted previews once when the artifact drawer opens', async () => {
+    let shown = 0
+    const onShow = () => { shown += 1 }
+    window.addEventListener(CONVERSATION_PANEL_SHOWN_EVENT, onShow)
+    const w = mountWorkspace()
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(shown).toBe(1)
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    await flushPromises()
+    expect(shown).toBe(1)
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(shown).toBe(2)
+    window.removeEventListener(CONVERSATION_PANEL_SHOWN_EVENT, onShow)
   })
 
   it('supports keyboard panel resizing and persists the preference', async () => {

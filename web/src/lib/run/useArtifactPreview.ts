@@ -38,6 +38,11 @@ export interface ArtifactPreviewProps {
   annotatable?: boolean
   /** When set, load content via public review-share token instead of session API. */
   shareToken?: string
+  /**
+   * False while this preview's tab is not the selected one (the pane stays mounted).
+   * The HTML frame reloads once the tab is shown again.
+   */
+  previewActive?: boolean
 }
 
 export type ArtifactPreviewEmit = { (e: 'deleted', id: string): void }
