@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import VChart from 'vue-echarts'
@@ -611,6 +611,30 @@ watch(() => JSON.stringify(filters.value), () => void load())
 
 /* ── redesign: filter popover + chips, workflow table (restores the old 项目明细表 slot) ── */
 const fxOpen = ref(false)
+/**
+ * The filter button is the last item of a wrapping toolbar: on one line it sits
+ * at the right edge, once wrapped it starts a line on the left. Anchor the
+ * 340px popover to whichever side keeps it inside the viewport.
+ */
+const FX_POP_WIDTH = 340
+const fxAlignRight = ref(false)
+const fxBtn = ref<HTMLElement | null>(null)
+function syncFxAlign() {
+  const el = fxBtn.value
+  if (!el || typeof window === 'undefined') return
+  const next = el.getBoundingClientRect().left + FX_POP_WIDTH > window.innerWidth - 16
+  if (next !== fxAlignRight.value) fxAlignRight.value = next
+}
+function toggleFx() {
+  if (!fxOpen.value) syncFxAlign()
+  fxOpen.value = !fxOpen.value
+}
+// The button can move while the popover is open (count badge / chips re-wrap
+// the toolbar, window resize): re-anchor after each render and on resize.
+onUpdated(() => { if (fxOpen.value) void nextTick(syncFxAlign) })
+function onFxResize() { if (fxOpen.value) syncFxAlign() }
+onMounted(() => window.addEventListener('resize', onFxResize))
+onBeforeUnmount(() => window.removeEventListener('resize', onFxResize))
 type FxKey = 'modelKey' | 'workflowId' | 'nodeType' | 'status' | 'phase'
 const FX_FIELDS: { key: FxKey; labelKey: string }[] = [
   { key: 'modelKey', labelKey: 'pages.tokenAnalytics.fxModel' },
@@ -737,19 +761,20 @@ const fxCount = computed(() => fxChips.value.length)
             <div class="usage-toolbar-group">
               <div class="relative" @click.stop>
                 <button
+                  ref="fxBtn"
                   type="button"
                   class="toolbar-control flex items-center gap-2 border border-line bg-surface text-sm text-txt2 transition hover:bg-elevated"
                   :class="{ 'border-accent/60 text-txt': fxCount }"
                   :aria-expanded="fxOpen"
                   data-testid="token-analytics-filter-btn"
-                  @click="fxOpen = !fxOpen"
+                  @click="toggleFx"
                 >
                   <Icon name="filter" :size="15" class="text-txt3" />
                   {{ t('pages.tokenAnalytics.fxFilter') }}
                   <span v-if="fxCount" class="chip">{{ fxCount }}</span>
                 </button>
                 <Transition name="overlay-pop">
-                  <div v-if="fxOpen" class="card absolute left-0 z-30 mt-1.5 w-[340px] max-w-[calc(100vw-2rem)] p-3 sm:left-auto sm:right-0" data-testid="token-analytics-filter-pop">
+                  <div v-if="fxOpen" class="card absolute z-30 mt-1.5 w-[340px] max-w-[calc(100vw-2rem)] p-3" :class="fxAlignRight ? 'right-0' : 'left-0'" data-testid="token-analytics-filter-pop">
 
                     <div class="grid grid-cols-[72px_1fr] items-center gap-x-3 gap-y-2" data-testid="token-analytics-filters">
                       <span class="text-xs text-txt3">{{ t('pages.tokenAnalytics.fxModel') }}</span>

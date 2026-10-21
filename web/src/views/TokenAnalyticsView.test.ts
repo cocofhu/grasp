@@ -918,9 +918,9 @@ describe('TokenAnalyticsView', () => {
       expect(wrapper.get('[data-testid="token-analytics-filter-btn"]').text()).toContain('1')
       // Each × names the filter it clears.
       expect(wrapper.get('[data-testid="token-analytics-chip-remove-modelKey"]').attributes('aria-label')).toBe('清除筛选：模型：Sonnet')
-      // Narrow screens: the popover anchors left and is clamped to the viewport; ≥sm it anchors right.
+      // Clamped to the viewport and anchored on the side that keeps it on screen.
       expect(wrapper.get('[data-testid="token-analytics-filter-pop"]').classes()).toEqual(
-        expect.arrayContaining(['left-0', 'max-w-[calc(100vw-2rem)]', 'sm:left-auto', 'sm:right-0']),
+        expect.arrayContaining(['max-w-[calc(100vw-2rem)]', 'left-0']),
       )
 
       vi.mocked(api.getGlobalTokenStats).mockClear()
@@ -929,6 +929,19 @@ describe('TokenAnalyticsView', () => {
       expect(wrapper.find('[data-testid="token-analytics-chip-modelKey"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="token-analytics-filter-chips"]').exists()).toBe(false)
       expect(vi.mocked(api.getGlobalTokenStats).mock.lastCall?.[0]).not.toHaveProperty('modelKey', 'sonnet')
+      wrapper.unmount()
+    })
+
+    it('anchors the popover right when the button sits at the right edge (one-line toolbar)', async () => {
+      const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] }, attachTo: document.body })
+      await flushPromises()
+      const btn = wrapper.get('[data-testid="token-analytics-filter-btn"]')
+      const rect = { left: window.innerWidth - 90, right: window.innerWidth - 10, top: 0, bottom: 32, width: 80, height: 32, x: window.innerWidth - 90, y: 0, toJSON: () => ({}) }
+      vi.spyOn(btn.element, 'getBoundingClientRect').mockReturnValue(rect as DOMRect)
+      await btn.trigger('click')
+      const pop = wrapper.get('[data-testid="token-analytics-filter-pop"]')
+      expect(pop.classes()).toContain('right-0')
+      expect(pop.classes()).not.toContain('left-0')
       wrapper.unmount()
     })
 
