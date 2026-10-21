@@ -42,6 +42,8 @@ function paged(items: InboxItem[], total = items.length) {
   return { items, total, page: 1, pageSize: 20, hasMore: total > items.length }
 }
 
+const holdReleases: Array<() => void> = []
+
 describe('usePendingGates', () => {
   beforeEach(async () => {
     vi.mocked(api.listGates).mockReset()
@@ -51,7 +53,7 @@ describe('usePendingGates', () => {
     usePendingGates().startFailedKeys.value = []
     usePendingGates().setActiveInboxKey(null)
     usePendingGates().setSidebarExtras([])
-    usePendingGates().setAutoApplyHold(null)
+    while (holdReleases.length) holdReleases.pop()!()
     await usePendingGates().refresh({ mode: 'force' })
   })
 
@@ -120,7 +122,7 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
-    pg.setAutoApplyHold(() => true)
+    holdReleases.push(pg.addAutoApplyHold(() => true))
     expect(pg.displayedItems.value).toHaveLength(1)
     expect(pg.count.value).toBe(1)
 
@@ -150,12 +152,34 @@ describe('usePendingGates', () => {
       expect(pg.lastAutoAppliedAt.value).toBeGreaterThan(before)
     })
 
+    it('holds are per inbox instance: releasing one keeps the other instance holding', async () => {
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
+      const pg = usePendingGates()
+      await pg.refresh({ mode: 'force' })
+      const releaseA = pg.addAutoApplyHold(() => true)
+      const releaseB = pg.addAutoApplyHold(() => false)
+      holdReleases.push(releaseA, releaseB)
+
+      vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('2'), gate('1')], 2))
+      await pg.peek({ source: 'focus' })
+      expect(pg.hasPendingUpdate.value).toBe(true)
+
+      // Instance B unmounts: A is still editing, so nothing applies.
+      releaseB()
+      expect(pg.autoApplyPending()).toBe(false)
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-1'])
+
+      releaseA()
+      expect(pg.autoApplyPending()).toBe(true)
+      expect(pg.displayedItems.value.map((it) => it.runId)).toEqual(['run-2', 'run-1'])
+    })
+
     it('applies through an idle inbox hold and defers through a busy one until autoApplyPending', async () => {
       vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
       const pg = usePendingGates()
       await pg.refresh({ mode: 'force' })
       let busy = true
-      pg.setAutoApplyHold(() => busy)
+      holdReleases.push(pg.addAutoApplyHold(() => busy))
 
       vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('2'), gate('1')], 2))
       await pg.peek({ source: 'focus' })
@@ -223,7 +247,7 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
-    pg.setAutoApplyHold(() => true)
+    holdReleases.push(pg.addAutoApplyHold(() => true))
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     await pg.peek()
@@ -246,7 +270,7 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
-    pg.setAutoApplyHold(() => true)
+    holdReleases.push(pg.addAutoApplyHold(() => true))
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     await pg.peek()
@@ -468,7 +492,7 @@ describe('usePendingGates', () => {
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1')], 1))
     const pg = usePendingGates()
     await pg.refresh({ mode: 'force' })
-    pg.setAutoApplyHold(() => true)
+    holdReleases.push(pg.addAutoApplyHold(() => true))
 
     vi.mocked(api.listGates).mockResolvedValueOnce(paged([gate('1'), gate('2')], 2))
     await pg.peek({ source: 'sidebar-poll' })

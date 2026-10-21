@@ -62,12 +62,14 @@ const lastPeekAt = ref(0)
  */
 const lastAutoAppliedAt = ref(0)
 /**
- * Mounted inbox page registers a hold: while it returns true (editing a form or
- * draft, focus in an input, processingLock) membership changes stay pending and
- * nothing the user is working on re-renders. Null = inbox not mounted → apply
- * at once so the sidebar never freezes on other pages.
+ * Each mounted inbox page registers its own hold: while any returns true
+ * (a non-empty draft in a form/composer/focused field, processingLock)
+ * membership changes stay pending and nothing the user is working on
+ * re-renders. No holds = no inbox mounted → apply at once so the sidebar never
+ * freezes on other pages. Per instance: one inbox unmounting releases only its
+ * own hold.
  */
-let autoApplyHold: (() => boolean) | null = null
+const autoApplyHolds = new Set<() => boolean>()
 /**
  * Keys removed locally (approve/reject/force) → time. A lagging peek that still
  * lists them must not resurrect a ghost card now that peeks apply on their own.
@@ -367,15 +369,16 @@ function applyPending(): void {
  */
 function autoApplyPending(): boolean {
   if (!hasPendingUpdate.value) return false
-  if (autoApplyHold?.()) return false
+  for (const hold of autoApplyHolds) if (hold()) return false
   applyPending()
   lastAutoAppliedAt.value = Date.now()
   return true
 }
 
-/** Register (or clear with null) the inbox page's edit/processing hold. */
-function setAutoApplyHold(hold: (() => boolean) | null): void {
-  autoApplyHold = hold
+/** Register an inbox page's edit/processing hold; returns its release function. */
+function addAutoApplyHold(hold: () => boolean): () => void {
+  autoApplyHolds.add(hold)
+  return () => { autoApplyHolds.delete(hold) }
 }
 
 async function refresh(opts?: RefreshOptions): Promise<void> {
@@ -486,7 +489,7 @@ export function usePendingGates() {
     peek,
     applyPending,
     autoApplyPending,
-    setAutoApplyHold,
+    addAutoApplyHold,
     removeItemLocally,
     restoreItemLocally,
     setSidebarExtras,
