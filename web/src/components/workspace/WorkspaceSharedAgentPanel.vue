@@ -7,7 +7,6 @@ import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
 import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
-  DEFAULT_CONFIG_ROOT,
   DEFAULT_WORKSPACE_DIR,
   defaultConfigRootFor,
   draftPayloadJson,
@@ -103,42 +102,6 @@ const specialRegion = computed(() => {
     'preserve-special',
   )
   return normalized.special ? normalized.region : ''
-})
-
-function joinConfigPath(root: string, sub: string): string {
-  return (root || DEFAULT_CONFIG_ROOT).replace(/\/+$/, '') + '/' + sub
-}
-
-const derivedPaths = computed(() => {
-  if (!draft.value) return []
-  const root = draft.value.layout.configRoot || DEFAULT_CONFIG_ROOT
-  return [
-    {
-      label: t('pages.agentStudio.configPaths.mcp'),
-      path: joinConfigPath(root, 'mcp.json'),
-      note: t('pages.agentStudio.configPaths.mcpNote'),
-    },
-    {
-      label: t('pages.agentStudio.configPaths.rules'),
-      path: joinConfigPath(root, 'rules/'),
-      note: t('pages.agentStudio.configPaths.rulesNote'),
-    },
-    {
-      label: t('pages.agentStudio.configPaths.skills'),
-      path: joinConfigPath(root, 'skills/'),
-      note: t('pages.agentStudio.configPaths.skillsNote'),
-    },
-    {
-      label: t('pages.agentStudio.configPaths.commands'),
-      path: joinConfigPath(root, 'commands/'),
-      note: t('pages.agentStudio.configPaths.commandsNote'),
-    },
-    {
-      label: t('pages.agentStudio.configPaths.env'),
-      path: 'container-env',
-      note: t('pages.agentStudio.configPaths.envNote'),
-    },
-  ]
 })
 
 const aiKind = computed(() => {
@@ -410,9 +373,9 @@ onMounted(() => {
               mode="select"
               :allow-add="false"
               allow-clear
-              hide-hint
               :selected-id="draft.openCodeCredentialId"
               :title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
+              hide-hint
               @update:selected-id="draft.openCodeCredentialId = $event"
             />
           </div>
@@ -487,26 +450,6 @@ onMounted(() => {
               class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
             />
           </label>
-        </div>
-
-        <div class="mt-5 max-w-3xl">
-          <div class="overflow-hidden border-y border-line/60" data-testid="derived-paths-table">
-            <table class="w-full text-left text-[12px]">
-              <tbody>
-                <tr
-                  v-for="(e, i) in derivedPaths"
-                  :key="e.label"
-                  :class="i % 2 ? 'bg-base/40' : ''"
-                >
-                  <td class="px-3 py-2 text-txt2">{{ e.label }}</td>
-                  <td class="px-3 py-2">
-                    <code class="bg-base px-1.5 py-0.5 font-mono text-accent-2">{{ e.path }}</code>
-                  </td>
-                  <td class="px-3 py-2 text-txt3">{{ e.note }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
         </div>
       </div>
     </template>

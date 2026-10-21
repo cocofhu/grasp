@@ -300,6 +300,12 @@ var ErrVisitorsFull = errors.New("visitor chats full")
 
 // ErrNoParkedSession means the node has no live parked session to branch a
 // visitor chat from (the review/clarify session has ended).
+// ErrNodeTakenOver is the cancel cause the engine puts on an auto Agent's
+// RunAgent ctx when the user interrupts the node. The provider parks the live
+// sandbox session (instead of retiring it) and returns this error; the engine
+// turns it into a manual review-style session, never a failure or retry.
+var ErrNodeTakenOver = errors.New("node taken over by user")
+
 var ErrNoParkedSession = errors.New("上游会话已不存在 (cold)")
 
 // VisitorLaneProvider is an optional provider capability for share-link

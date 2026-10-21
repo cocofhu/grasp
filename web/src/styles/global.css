@@ -185,26 +185,41 @@ body {
   border-radius: 10px !important;
 }
 
-/* ghost scrollbar — idle-invisible (align AppModal / approved page.html) */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-}
-*:hover,
-*.is-scrolling {
-  scrollbar-color: rgb(var(--c-line)) transparent;
+/* ghost scrollbar — idle-invisible (align AppModal / approved page.html)
+ * Chromium >= 121 ignores every ::-webkit-scrollbar rule on an element once
+ * scrollbar-width / scrollbar-color apply to it, and falls back to the native
+ * bar (wide, grey, arrow buttons on Windows). Keep the standard properties for
+ * engines without ::-webkit-scrollbar (Firefox) so WebKit/Blink use the thin,
+ * arrowless pseudo-element bar below. */
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  *:hover,
+  *.is-scrolling {
+    scrollbar-color: rgb(var(--c-line)) transparent;
+  }
+  html:not(.light) *:hover,
+  html:not(.light) *.is-scrolling {
+    scrollbar-color: rgb(var(--c-line)) rgb(var(--c-base));
+  }
 }
 /* Dark theme: UA-native scrollbars stay dark; visible track matches base surface */
 html:not(.light) {
   color-scheme: dark;
 }
-html:not(.light) *:hover,
-html:not(.light) *.is-scrolling {
-  scrollbar-color: rgb(var(--c-line)) rgb(var(--c-base));
-}
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
+}
+::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -327,17 +342,19 @@ html.light .app-sidebar-card {
     @apply bg-elevated font-semibold text-txt;
   }
   /* Utility marker for scroll regions; idle-invisible comes from global rules above. */
-  .scroll-area {
-    scrollbar-width: thin;
-    scrollbar-color: transparent transparent;
-  }
-  .scroll-area:hover,
-  .scroll-area.is-scrolling {
-    scrollbar-color: rgb(var(--c-line)) transparent;
-  }
-  html:not(.light) .scroll-area:hover,
-  html:not(.light) .scroll-area.is-scrolling {
-    scrollbar-color: rgb(var(--c-line)) rgb(var(--c-base));
+  @supports not selector(::-webkit-scrollbar) {
+    .scroll-area {
+      scrollbar-width: thin;
+      scrollbar-color: transparent transparent;
+    }
+    .scroll-area:hover,
+    .scroll-area.is-scrolling {
+      scrollbar-color: rgb(var(--c-line)) transparent;
+    }
+    html:not(.light) .scroll-area:hover,
+    html:not(.light) .scroll-area.is-scrolling {
+      scrollbar-color: rgb(var(--c-line)) rgb(var(--c-base));
+    }
   }
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);

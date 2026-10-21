@@ -56,8 +56,9 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     expect(queue.text()).toMatch(/待发送队列/)
     expect(queue.text()).toContain('方案意见甲')
     expect(queue.text()).toContain('方案意见乙')
-    const confirm = w.find('[data-testid="clarify-confirm-flow"]')
-    expect((confirm.element as HTMLButtonElement).disabled).toBe(true)
+    // Busy queue: the single primary is 停止; 确认并流转 is not offered yet.
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-review-cancel"]').exists()).toBe(true)
     // No transcript human/agent bubbles until turn_begin (persisted turns empty).
     expect(w.findAll('.rounded-2xl').filter((n) => n.text().includes('方案意见甲')).length).toBe(0)
     w.unmount()
@@ -80,9 +81,9 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     expect(w.text()).toContain('增量流式正文')
     const cancel = w.find('[data-testid="clarify-review-cancel"]')
     expect(cancel.exists()).toBe(true)
-    expect(cancel.attributes('aria-label')).toBe('Cancel')
-    expect(cancel.attributes('title')).toBe('Cancel')
-    expect(cancel.text()).not.toContain('Cancel')
+    expect(cancel.attributes('aria-label')).toBe('停止')
+    expect(cancel.attributes('title')).toBe('停止')
+    expect(cancel.text()).not.toContain('停止')
     expect(cancel.findComponent({ name: 'Icon' }).props('name')).toBe('chat-stop')
     await cancel.trigger('click')
     await flushPromises()
@@ -97,9 +98,7 @@ describe('[approving] ClarifyChat reviewMode UX (visual/research shared)', () =>
     const w = mountReview('research')
     await sendText(w, '将失败的意见')
     expect(w.find('[data-testid="clarify-review-queue"]').exists()).toBe(true)
-    expect((w.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
-      true,
-    )
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
     const vm = w.vm as unknown as { discardLastQueued: () => void }
     vm.discardLastQueued()
     await nextTick()

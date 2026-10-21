@@ -255,7 +255,7 @@ func (e *Engine) syncUpstreamOutputs(c *execCtx, gate *models.Gate, gateNode *mo
 		outs["artifact_"+norm.Name] = norm.Content
 	}
 	sr.Outputs = outs
-	logDB(e.db.Save(&sr), c.run.ID, "sync upstream outputs after human artifact edit")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "sync upstream outputs after human artifact edit")
 	c.nodeOutputs[upNodeID] = outs
 }
 
@@ -348,7 +348,7 @@ func (e *Engine) syncAfterPrimaryArtifactWrite(runID, nodeID, name, content, kin
 		}
 	}
 	sr.Outputs = outs
-	logDB(e.db.Save(&sr), runID, "sync outputs after WriteArtifact")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), runID, "sync outputs after WriteArtifact")
 
 	c, err := e.loadCtx(runID)
 	if err != nil {

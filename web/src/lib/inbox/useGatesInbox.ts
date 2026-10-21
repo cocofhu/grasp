@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -58,6 +59,7 @@ import {
   knownInboxProcessingLock,
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -67,6 +69,9 @@ import {
 import type GateApproval from '@/components/run/GateApproval.vue'
 import type { AcpEvent, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
+
+/** Input idle time after which a focused, emptied field stops holding list auto-apply. */
+export const TYPING_IDLE_MS = 2000
 
 export function useGatesInbox() {
 
@@ -91,8 +96,10 @@ const {
   syncDisplayedBaseline,
   clearVisibleMembership,
   hasPendingUpdate,
-  pendingMeta,
   lastPeekAt,
+  lastAutoAppliedAt,
+  autoApplyPending,
+  addAutoApplyHold,
   itemKey,
   ariaBusy,
 } = usePendingGates()
@@ -190,7 +197,6 @@ watch(tagFilterOpen, (v) => {
   }
 })
 
-const showUpdateBanner = ref(false)
 const showProcessedBanner = ref(false)
 const manualRefreshing = ref(false)
 /** First-screen skeleton when loading with no rows yet (plan g2.1). */
@@ -689,9 +695,22 @@ function startStartingPoll() {
   }, STARTING_POLL_MS)
 }
 
-function selectFromQuery(): boolean {
+function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
   const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
   if (!hit) return false
+  // Silent auto-apply reload with the same gate already selected: keep the
+  // object. A fresh row for the same key would retrigger watch(active) →
+  // loadActiveRun(true) and remount the chat with its focused composer.
+  // Starting↔parked still swaps (rebindActiveFromList + this check).
+  const cur = active.value
+  if (
+    keepActive &&
+    cur &&
+    itemKey(cur) === itemKey(hit) &&
+    isStartingInboxItem(cur) === isStartingInboxItem(hit)
+  ) {
+    return true
+  }
   active.value = hit
   return true
 }
@@ -742,9 +761,9 @@ async function waitForQueryItem() {
  * List non-empty + invalid/missing active → pick first valid item.
  * Empty list → clear active (full empty inbox). Never leave a Run # - shell.
  */
-function ensureValidActive() {
+function ensureValidActive({ keepActive = false }: { keepActive?: boolean } = {}) {
   if (processingLock.value) return
-  if (selectFromQuery()) {
+  if (selectFromQuery({ keepActive })) {
     applyHomeHandoff()
     return
   }
@@ -802,7 +821,10 @@ function handleLeftInboxContext(it: InboxItem) {
   selectActiveAfterRemove(prevList, key)
 }
 
-async function loadList({ showLoading = false }: { showLoading?: boolean } = {}) {
+async function loadList({
+  showLoading = false,
+  keepActive = false,
+}: { showLoading?: boolean; keepActive?: boolean } = {}) {
   const gen = ++listLoadGeneration
   listLoadError.value = null
   if (showLoading) listLoading.value = true
@@ -827,7 +849,7 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
     listLoadError.value = null
     reconcileProcessedWithList(rows)
     // Independent loadList success path: repair invalid selection (no Run # - shell).
-    if (!processingLock.value) ensureValidActive()
+    if (!processingLock.value) ensureValidActive({ keepActive })
     // Align peek banner baseline with the visible list (plan g1.2 / g2.1).
     syncDisplayedBaseline(listItems.value)
   } catch (err) {
@@ -918,27 +940,71 @@ const isClarifyEditing = computed(
 
 const isEditing = computed(() => isGateEditing.value || isClarifyEditing.value)
 
-const statusPillClass = computed(() => {
-  if (hasPendingUpdate.value) return 'pending'
-  if (isEditing.value) return 'editing'
-  return 'idle'
-})
+/**
+ * The focused text field (gate form, clarify composer, filters…) holds a
+ * non-empty draft. Counted as editing for list auto-apply so the caret and the
+ * typed text are never disturbed; an empty focused field (e.g. the composer
+ * right after sending) does not freeze the list.
+ */
+const focusedFieldHasDraft = ref(false)
+function isTextEntry(el: Element | null): el is HTMLElement {
+  if (!(el instanceof HTMLElement)) return false
+  if (el.isContentEditable) return true
+  if (el instanceof HTMLTextAreaElement) return true
+  if (el instanceof HTMLInputElement) {
+    return !['button', 'checkbox', 'radio', 'submit', 'reset', 'file', 'image', 'range', 'color'].includes(el.type)
+  }
+  return false
+}
+function fieldHasDraft(el: HTMLElement): boolean {
+  if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim().length > 0
+  return (el.textContent || '').trim().length > 0
+}
+/**
+ * The user typed into the focused field within the last TYPING_IDLE_MS. Clearing
+ * a draft (Ctrl+A, Backspace) and typing on must not count as "done editing":
+ * the hold lasts until the field blurs or input has been idle for a while.
+ */
+const typingRecently = ref(false)
+let typingIdleTimer: ReturnType<typeof setTimeout> | null = null
+function clearTypingIdle() {
+  if (typingIdleTimer) clearTimeout(typingIdleTimer)
+  typingIdleTimer = null
+  typingRecently.value = false
+}
+function syncFocusedFieldDraft() {
+  const el = typeof document !== 'undefined' ? document.activeElement : null
+  const entry = isTextEntry(el)
+  focusedFieldHasDraft.value = entry && fieldHasDraft(el)
+  if (!entry) clearTypingIdle()
+}
+function onFieldInput(e: Event) {
+  syncFocusedFieldDraft()
+  const el = typeof document !== 'undefined' ? document.activeElement : null
+  if (!isTextEntry(el) || (e.target instanceof Node && !el.contains(e.target))) return
+  typingRecently.value = true
+  if (typingIdleTimer) clearTimeout(typingIdleTimer)
+  typingIdleTimer = setTimeout(() => {
+    typingIdleTimer = null
+    typingRecently.value = false
+  }, TYPING_IDLE_MS)
+}
+function onFocusOut() {
+  // activeElement is still the old field during focusout; read it next tick.
+  void nextTick(syncFocusedFieldDraft)
+}
 
-const statusPillText = computed(() => {
-  if (hasPendingUpdate.value) return t('pages.gatesInbox.statusPending')
-  if (isEditing.value) return t('pages.gatesInbox.statusEditing')
-  return t('pages.gatesInbox.statusIdle')
-})
-
-const updateBannerDetail = computed(() => {
-  const meta = pendingMeta.value
-  if (!meta) return t('pages.gatesInbox.updateBannerDetailEmpty')
-  const parts: string[] = []
-  if (meta.added) parts.push(t('pages.gatesInbox.updateAdded', { n: meta.added }))
-  if (meta.removed) parts.push(t('pages.gatesInbox.updateRemoved', { n: meta.removed }))
-  const summary = parts.length ? `（${parts.join('，')}）` : ''
-  return t('pages.gatesInbox.updateBannerDetail', { summary })
-})
+/**
+ * List auto-apply waits while the user is working: a non-empty gate form or
+ * clarify draft, a non-empty draft in the focused field, typing in the focused
+ * field within TYPING_IDLE_MS (an emptied draft the user keeps typing into), or
+ * a processing intent (approve / confirm in flight). Pending membership changes
+ * apply once this clears: on blur, or after input has gone idle.
+ */
+let releaseAutoApplyHold: (() => void) | null = null
+const autoApplyHeld = computed(
+  () => isEditing.value || focusedFieldHasDraft.value || typingRecently.value || processingLock.value,
+)
 
 function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
@@ -983,14 +1049,69 @@ function checkProcessedWhileEditing() {
   if (!inRemote) showProcessedBanner.value = true
 }
 
-watch(hasPendingUpdate, (pending) => {
-  if (pending) showUpdateBanner.value = true
-})
-
 watch(lastPeekAt, () => {
-  if (hasPendingUpdate.value) showUpdateBanner.value = true
   checkProcessedWhileEditing()
 })
+
+// Hold ended (blur, draft cleared, processing done): apply what the peek found.
+watch(autoApplyHeld, (held) => {
+  if (!held) autoApplyPending()
+})
+
+// usePendingGates applied a membership change to displayedItems (sidebar):
+// reload this page's list silently, keep the selection and the scroll offset.
+watch(lastAutoAppliedAt, () => {
+  void syncListAfterAutoApply()
+})
+
+/**
+ * Snapshot the focused text field so a silent list reload can never take the
+ * caret away. If the field is still connected nothing happens; if a re-render
+ * replaced it, focus moves to its replacement (same data-testid) with the same
+ * selection — but only when focus fell to <body>, never away from a field the
+ * user moved to themselves.
+ */
+function captureFocus(): (() => void) | null {
+  if (typeof document === 'undefined') return null
+  const el = document.activeElement
+  if (!isTextEntry(el)) return null
+  const tid = el.getAttribute('data-testid')
+  const sel =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      ? { start: el.selectionStart, end: el.selectionEnd }
+      : null
+  return () => {
+    if (el.isConnected || !tid) return
+    const cur = document.activeElement
+    if (cur && cur !== document.body) return
+    const next = document.querySelector(`[data-testid="${CSS.escape(tid)}"]`)
+    if (!(next instanceof HTMLElement) || !isTextEntry(next)) return
+    next.focus({ preventScroll: true })
+    if (sel && (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement)) {
+      const max = next.value.length
+      next.setSelectionRange(Math.min(sel.start ?? max, max), Math.min(sel.end ?? max, max))
+    }
+  }
+}
+
+let autoApplyGen = 0
+async function syncListAfterAutoApply() {
+  const gen = ++autoApplyGen
+  const restoreFocus = captureFocus()
+  const prevKey = active.value ? itemKey(active.value) : null
+  const scrollTop = listEl.value?.scrollTop ?? null
+  await loadList({ keepActive: true })
+  if (gen !== autoApplyGen) return
+  // The user may have started typing while listGates was in flight: keep the
+  // current selection untouched; the processed banner still covers removal.
+  if (!autoApplyHeld.value) syncActiveAfterApply(listItems.value, prevKey)
+  else checkProcessedWhileEditing()
+  await nextTick()
+  restoreFocus?.()
+  if (scrollTop != null) {
+    if (listEl.value && listEl.value.scrollTop !== scrollTop) listEl.value.scrollTop = scrollTop
+  }
+}
 
 // Peek/poll may only change state=replying on existing keys. Merge onto the
 // current page so badges follow sessionBusy without hanging the update banner.
@@ -1402,6 +1523,8 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       return
     }
     if (m.type === 'review') {
+      // Sidebar「最近」has no channel of its own: relay turn boundaries.
+      if (m.event === 'turn_begin' || m.event === 'turn_done' || m.event === 'error') notifyRecentActivity()
       if (m.event === 'turn_begin') clarifyLiveBusy.value = true
       if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
         clarifyLiveBusy.value = !!m.busy
@@ -1435,6 +1558,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
       return
     }
+    if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
     if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
       // Ignore events for runs that no longer match the current pending active item.
       if (!active.value || active.value.runId !== runId) return
@@ -1650,6 +1774,8 @@ const clarifyComposerNodeId = computed(
 )
 const clarifyComposerIteration = computed(() => activeClarify.value?.iteration ?? 1)
 const clarifyComposerTurns = computed(() => activeClarify.value?.turns ?? [])
+/** Taken-over node's task, shown as the conversation's opening User Message. */
+const activeNodeTask = computed(() => takeoverTask(activeClarify.value))
 const clarifyComposerDone = computed(() => activeClarify.value?.done ?? false)
 
 const inboxClarifyStageKind = computed(() => (activeRunLoadError.value ? 'loadFailed' : 'pending'))
@@ -1695,6 +1821,7 @@ const clarifyInputActive = computed(() =>
   activeRun.value ? ['queued', 'running', 'waiting_human'].includes(activeRun.value.status) : false,
 )
 
+/** Manual refresh with a held pending change: the user asked, so apply now. */
 async function applyListUpdate() {
   if (processingLock.value) return
   const prevKey = active.value ? itemKey(active.value) : null
@@ -1703,7 +1830,6 @@ async function applyListUpdate() {
   syncActiveAfterApply(listItems.value, prevKey)
   await loadActiveRun(false)
   await softRefreshActiveRun()
-  showUpdateBanner.value = false
 }
 
 async function onManualRefresh() {
@@ -1723,10 +1849,6 @@ async function onManualRefresh() {
   } finally {
     manualRefreshing.value = false
   }
-}
-
-function dismissUpdateBanner() {
-  showUpdateBanner.value = false
 }
 
 // ReAct reject-and-revise edited the upstream producer in place; the gate stays
@@ -2005,6 +2127,7 @@ async function onClarifySend(
         activeRunLoadError.value = false
       }
       endProcessingIntent(submittedItem)
+      if (finished) notifyRecentActivity()
       if (finished) {
         clarifyConfirmError.value = null
         toast.success(
@@ -2020,7 +2143,10 @@ async function onClarifySend(
   // Ordinary turn enqueue returns before the turn finishes — keep live
   // queue/stream bubbles (clarify + review shared session UX). No force refresh.
   // Optimistic: this page's send is sessionBusy; WS queue_state confirms/clears.
-  if (ok) patchVisibleCardBusy(it.runId, it.nodeId, true)
+  if (ok) {
+    patchVisibleCardBusy(it.runId, it.nodeId, true)
+    notifyRecentActivity()
+  }
 }
 
 // Review: confirm product & advance (same contract as RunDetailView.onClarifyFinish).
@@ -2102,6 +2228,11 @@ onMounted(() => {
     if (!active.value) active.value = listItems.value[0] || null
   })
   peek({ source: 'mount' })
+  releaseAutoApplyHold = addAutoApplyHold(() => autoApplyHeld.value)
+  syncFocusedFieldDraft()
+  document.addEventListener('focusin', syncFocusedFieldDraft)
+  document.addEventListener('focusout', onFocusOut)
+  document.addEventListener('input', onFieldInput)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -2110,6 +2241,14 @@ onUnmounted(() => {
   stopStartingPoll()
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
+  document.removeEventListener('focusin', syncFocusedFieldDraft)
+  document.removeEventListener('focusout', onFocusOut)
+  document.removeEventListener('input', onFieldInput)
+  clearTypingIdle()
+  // Leaving the page: this page no longer holds the list, so apply what is pending.
+  releaseAutoApplyHold?.()
+  releaseAutoApplyHold = null
+  autoApplyPending()
   closeActiveRunWs()
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
   confirmFlowDeskHold.value = false
@@ -2192,9 +2331,7 @@ function itemSecondary(it: InboxItem) {
     softRefreshActiveRun,
     loadActiveRun,
     retryActiveRun,
-    applyListUpdate,
     onManualRefresh,
-    dismissUpdateBanner,
     onReactRevised,
     onResolve,
     patchShareStatus,
@@ -2245,7 +2382,6 @@ function itemSecondary(it: InboxItem) {
     pendingAcpFrames,
     workflowFilterOpen,
     tagFilterOpen,
-    showUpdateBanner,
     showProcessedBanner,
     manualRefreshing,
     showListSkeleton,
@@ -2270,9 +2406,9 @@ function itemSecondary(it: InboxItem) {
     lastStagedAppPreviewPick,
     isClarifyEditing,
     isEditing,
-    statusPillClass,
-    statusPillText,
-    updateBannerDetail,
+    focusedFieldHasDraft,
+    typingRecently,
+    autoApplyHeld,
     activeRun,
     activeRunLoading,
     activeRunLoadError,
@@ -2291,6 +2427,7 @@ function itemSecondary(it: InboxItem) {
     clarifyComposerNodeId,
     clarifyComposerIteration,
     clarifyComposerTurns,
+    activeNodeTask,
     clarifyComposerDone,
     inboxClarifyStageKind,
     inboxReviewState,
@@ -2310,8 +2447,8 @@ function itemSecondary(it: InboxItem) {
     removeItemLocally,
     restoreItemLocally,
     hasPendingUpdate,
-    pendingMeta,
     lastPeekAt,
+    lastAutoAppliedAt,
     itemKey,
     patchVisibleCardBusy,
     ariaBusy,

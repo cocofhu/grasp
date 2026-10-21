@@ -55,6 +55,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/settings/workspace', name: 'workspaceInfo', component: () => import('@/views/WorkspaceDefaultsView.vue'), meta: { titleKey: 'route.workspaceInfo', workspaceTool: 'workspaceInfo', workspaceTitle: 'nav.workspaceInfo' } },
   { path: '/workflows/:id/edit', name: 'workflow-editor', component: () => import('@/views/WorkflowEditorView.vue'), meta: { titleKey: 'route.workflowEditor', full: true } },
   { path: '/runs', name: 'runs', component: () => import('@/views/RunListView.vue'), meta: { titleKey: 'route.runs' } },
+  { path: '/runs/:id/live', name: 'run-live', component: () => import('@/views/RunLiveView.vue'), meta: { titleKey: 'route.runLive' } },
   { path: '/runs/:id', name: 'run-detail', component: () => import('@/views/RunDetailView.vue'), meta: { titleKey: 'route.runDetail', full: true } },
   { path: '/gates', name: 'gates', component: () => import('@/views/GatesInboxView.vue'), meta: { titleKey: 'route.gates' } },
   { path: '/artifacts', name: 'artifacts', component: () => import('@/views/ArtifactsView.vue'), meta: { titleKey: 'route.artifacts' } },

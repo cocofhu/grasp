@@ -153,7 +153,8 @@ func main() {
 			nodeID = sb.NodeID
 		}
 		var caps *models.AgentCapabilities
-		if n := run.Graph.FindNode(nodeID); n != nil {
+		// Manual-aware: a live takeover visit reads as a review node.
+		if n := services.EffectiveNode(db, run, nodeID); n != nil {
 			caps = n.Caps
 		}
 		return nodeID, caps, true

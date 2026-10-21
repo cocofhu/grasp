@@ -137,4 +137,16 @@ describe('adaptInboxContextToRun', () => {
     )
     expect(run.clarifyByNode?.predev.turns).toEqual([])
   })
+
+  it('carries takeover + task through to clarifyByNode only when present', () => {
+    const base = { nodeId: 'impl', turns: [], done: false, label: '实现' }
+    const withTask = adaptInboxContextToRun(
+      { type: 'clarify', status: 'waiting_human', clarify: { ...base, takeover: true, task: '实现登录页' } },
+      'r3',
+    )
+    expect(withTask.clarifyByNode?.impl).toMatchObject({ takeover: true, task: '实现登录页' })
+    const without = adaptInboxContextToRun({ type: 'clarify', status: 'waiting_human', clarify: base }, 'r3')
+    expect(without.clarifyByNode?.impl).not.toHaveProperty('task')
+    expect(without.clarifyByNode?.impl).not.toHaveProperty('takeover')
+  })
 })

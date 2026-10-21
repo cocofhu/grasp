@@ -134,7 +134,7 @@ func (e *Engine) failRun(runID, reason string) {
 }
 
 func (e *Engine) finish(runID, status string) bool {
-	updates := map[string]any{"status": status}
+	updates := map[string]any{"status": status, "last_activity_at": time.Now()}
 	if status == "completed" {
 		updates["progress"] = 1.0
 	}
@@ -179,6 +179,9 @@ func (e *Engine) finish(runID, status string) bool {
 	if status == "completed" {
 
 		e.fireCompletedRunNotify(runID)
+	}
+	if status == "completed" || status == "failed" || status == "cancelled" {
+		e.forgetActivity(runID)
 	}
 	if status == "failed" || status == "cancelled" {
 		e.finalizeActiveStateRuns(runID, status)
