@@ -162,7 +162,7 @@ defineExpose({
       />
     </template>
     <template #sidebar>
-      <ReactConnectingState v-if="!clarify" :show-confirm="false" />
+      <ReactConnectingState v-if="!clarify" />
       <ClarifyChat
         v-else
         ref="reviewChatRef"

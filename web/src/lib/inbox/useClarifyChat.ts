@@ -2147,6 +2147,22 @@ function agentHasMessage(t: ClarifyTurn): boolean {
   return !!(t.text || (t.streaming && liveStreamHtml.value))
 }
 
+/**
+ * Streaming agent whose newest step is message text: tail shows 输出中.
+ * After a tool or thought step (waiting for the model) it shows 思考中….
+ */
+function agentTailOutputting(t: ClarifyTurn): boolean {
+  if (t.role !== 'agent' || !t.streaming) return false
+  const parts = t.parts || []
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const p = parts[i]!
+    if (p.kind === 'tool') return false
+    if ((p.kind === 'message' || p.kind === 'thought') && p.text?.trim()) return p.kind === 'message'
+  }
+  if (t.tools?.length) return false
+  return agentHasMessage(t)
+}
+
 /** Display thought (revealed while this live agent is streaming). */
 function agentThoughtDisplay(t: ClarifyTurn, idx: number): string {
   if (t.streaming && idx === liveAgentIdx.value) {
@@ -2341,6 +2357,7 @@ function retryLastFailed() {
     applyReviewFrame,
     applyAcpEvents,
     agentHasMessage,
+    agentTailOutputting,
     agentThoughtDisplay,
     isThoughtOpen,
     onThoughtToggle,

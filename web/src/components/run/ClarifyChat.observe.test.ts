@@ -348,7 +348,8 @@ describe('ClarifyChat observe mode: one busy indicator', () => {
     'interactive chat (%s) keeps its indicators unchanged',
     (_label, turns) => {
       const wrapper = mountChat({ reviewMode: true, observe: false, turns })
-      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 1, bottomTime: 1 })
+      // No bottom time while the turn is still running (#851); the status sits at the reply's end.
+      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 1, bottomTime: 0 })
     },
   )
 
@@ -357,6 +358,7 @@ describe('ClarifyChat observe mode: one busy indicator', () => {
     const interactive = busyCopies(mountChat({ reviewMode: true, observe: false, turns: outputting }))
     expect(observed).toEqual(interactive)
     expect(observed.thinking).toBe(0)
-    expect(observed.bottomTime).toBe(1)
+    // Time appears once the turn ends (#851), in both views.
+    expect(observed.bottomTime).toBe(0)
   })
 })

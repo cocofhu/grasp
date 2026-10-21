@@ -260,4 +260,26 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(true)
     expect(w.get('[data-testid="agent-timeline-elapsed"]').attributes('aria-expanded')).toBe('true')
   })
+
+  // Root cause of "streaming looks finished": earlier thoughts were marked 已完成
+  // per segment while the turn was still running.
+  it('never marks a thought 已完成 while the turn is still streaming', async () => {
+    const midTurn: AgentPart[] = [
+      { kind: 'thought', text: 'first thought' },
+      { kind: 'message', text: 'first note' },
+      { kind: 'tool', title: 'Read', status: 'completed' },
+      { kind: 'thought', text: 'second thought' },
+      { kind: 'tool', title: 'Grep', status: 'completed' },
+    ]
+    const w = mountTimeline({ parts: midTurn, streaming: true })
+    const states = () => w.findAll('[data-testid="thought-summary-state"]').map((el) => el.attributes('data-state'))
+    expect(states()).toEqual(['idle', 'idle'])
+    expect(w.text()).not.toContain('已完成')
+    await w.setProps({ parts: [...midTurn, { kind: 'thought', text: 'third thought' }] })
+    expect(states()).toEqual(['idle', 'idle', 'streaming'])
+    // Once the turn ends, main (#843) folds the whole turn into the elapsed line.
+    await w.setProps({ streaming: false, completed: true })
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+    expect(states()).toEqual([])
+  })
 })
