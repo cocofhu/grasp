@@ -39,7 +39,7 @@ describe('AgentEnvPanel managed model keys', () => {
   it('locks the model keys and links to the Runtime card', async () => {
     const w = mountPanel(draft({ env: pinned.map((e) => ({ ...e })) }))
     const block = w.get('[data-test="env-managed-model"]')
-    expect(block.text()).toContain('运行配置')
+    expect(block.text()).toContain('元信息里的模型')
     expect(block.findAll('input').map((i) => (i.element as HTMLInputElement).value)).toEqual([
       'ACP_BRIDGE_MODEL',
       'gpt-5',
@@ -56,7 +56,7 @@ describe('AgentEnvPanel managed model keys', () => {
     const w = mountPanel(d)
     await w.get('input[placeholder="KEY"]').setValue('ACP_BRIDGE_MODEL')
     expect(d.env[0]!.k).toBe('')
-    expect(w.emitted('toast')?.[0]?.[0]).toContain('运行配置')
+    expect(w.emitted('toast')?.[0]?.[0]).toContain('元信息里的模型')
   })
 
   it('locks the keys in the workspace shared config too, which has its own Runtime card', async () => {

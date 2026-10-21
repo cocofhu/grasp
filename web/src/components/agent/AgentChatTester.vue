@@ -918,7 +918,7 @@ onBeforeUnmount(() => {
               <span v-if="launchMode === 'empty'" class="h-1.5 w-1.5 rounded-full bg-white" />
             </span>
             <div class="flex items-start gap-2.5 pr-6">
-              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3" :class="launchMode === 'empty' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3">
                 <Icon name="folder" :size="16" />
               </span>
               <div>
@@ -942,7 +942,7 @@ onBeforeUnmount(() => {
               <span v-if="launchMode === 'clone'" class="h-1.5 w-1.5 rounded-full bg-white" />
             </span>
             <div class="flex items-start gap-2.5 pr-6">
-              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3" :class="launchMode === 'clone' ? 'border-accent/35 bg-accent/15 text-accent-2' : ''">
+              <span class="flex h-6 w-6 shrink-0 items-center justify-center text-txt3">
                 <Icon name="git" :size="16" />
               </span>
               <div>

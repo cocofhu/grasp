@@ -53,7 +53,7 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     const vm = w.vm as any
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(vm.derivedPaths[0].path).toContain('mcp.json')
+    expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
     vm.selectAcpBackend('claude_code')
     await flushPromises()
     expect(vm.draft.acpBackend).toBe('claude_code')
@@ -151,10 +151,10 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     vm.subTab = 'meta'; await w.vm.$nextTick()
     await flushPromises()
     expect(w.find('[data-test="shared-ssh-private-key"]').exists()).toBe(false)
-    expect(w.get('[data-testid="credential-alias-empty"]').text()).toContain('这一类还没有已保存的授权')
+    expect(w.get('[data-testid="credential-alias-empty"]').text()).toContain('还没有已保存的 Cursor 授权')
     vm.draft.layout.configRoot = ''
     await w.vm.$nextTick()
-    expect(vm.derivedPaths[0].path).toContain('mcp.json')
+    expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
     w.unmount()
   })
 
@@ -176,8 +176,9 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('通用授权')
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('单个 Agent 已选择时以单个 Agent 为准')
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('工作区默认授权')
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('单个 Agent 已选择时用自己的')
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('通用授权')
     expect(w.text()).not.toContain('这一类还没有已保存的授权')
     await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
     expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')

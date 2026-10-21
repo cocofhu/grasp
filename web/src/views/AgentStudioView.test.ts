@@ -650,7 +650,7 @@ describe('AgentStudio rename entry migration', () => {
     expect((wrapper.get('[data-test="manage-search"]').element as HTMLInputElement).value).toBe('')
   })
 
-  it('shows Metadata rename hint and keeps header name read-only', async () => {
+  it('keeps the header name read-only without a metadata rename hint', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountRenameStudio()
     await flushPromises()
@@ -658,7 +658,7 @@ describe('AgentStudio rename entry migration', () => {
     await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
     await flushPromises()
 
-    expect(wrapper.text()).toContain('名称请在 Agent 管理中重命名')
+    expect(wrapper.text()).not.toContain('名称请在 Agent 管理中重命名')
     // header name is a span, not an input
     const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
     expect(headerName).toBeTruthy()

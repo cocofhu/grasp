@@ -42,7 +42,9 @@ const hiddenZh = [
   '这个 Agent 用哪个账号、跑哪个模型。',
   '这是本工作区的默认授权',
   '未选择时使用种类匹配的共享通用授权',
-  '工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。',
+  '通用授权',
+  '运行配置',
+  '名称请在 Agent 管理中重命名',
   '不指定 --model，使用 CLI 默认',
   '(configRoot)',
   '(workspaceDir)',
@@ -59,7 +61,9 @@ const hiddenEn = [
   "Which account and model this workspace's Agents use by default.",
   'Which account this Agent signs in with and which model it runs.',
   'This is the workspace default.',
-  'The workspace default model.',
+  'Shared credential',
+  'Runtime',
+  'Rename this agent in Agent management',
   'No --model; the CLI default applies',
   'configRoot',
   'workspaceDir',
@@ -148,20 +152,20 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     const text = wrapper.get('[data-testid="shared-agent-meta"]').text()
     expectHidden(text, hiddenZh)
-    expect(text).toContain('ACP 后端 (acpBackend)')
+    expect(text).toContain('后端引擎')
     expect(text).toContain('配置根目录')
     expect(text).toContain('工作区目录')
-    expect(text).toContain('运行配置')
-    expect(text).toContain('通用授权')
+    expect(text).toContain('工作区默认授权')
+    expect(text).not.toContain('单个 Agent 已选择时用自己的')
+    expect(text).not.toContain('工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。')
     expect(wrapper.get('[data-testid="cli-model-trigger"]').text()).toContain('composer-2.5')
     expect(wrapper.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="cli-model-reset"]').text()).toContain('恢复自动')
     expect(wrapper.find('[data-testid="credential-alias-picker"]').exists()).toBe(true)
     expect(wrapper.get('[data-testid="meta-config-root"]').element).toBeInstanceOf(HTMLInputElement)
     expect(wrapper.get('[data-testid="meta-workspace-dir"]').element).toBeInstanceOf(HTMLInputElement)
-    const table = wrapper.get('[data-testid="derived-paths-table"]')
-    expect(table.text()).toContain('mcp.json')
-    expect(table.text()).not.toContain('派生子路径')
+    expect(wrapper.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('派生子路径')
     const claude = wrapper.get('[data-testid="acp-backend-claude_code"]')
     expect(claude.text()).toContain('Claude Code')
     expect(claude.text()).not.toContain('claude_code')
@@ -194,7 +198,7 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     expect(vm.draft.layout.configRoot).toBe('/custom/root')
     expect(wrapper.find('[data-test="agent-cli-effort"]').exists()).toBe(true)
-    expect(wrapper.text()).toContain('运行配置')
+    expect(wrapper.text()).not.toContain('运行配置')
 
     vm.selectAcpBackend('codebuddy')
     await flushPromises()
@@ -204,7 +208,7 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     expect(wrapper.text()).toContain('模型厂商与模型')
     expect(wrapper.find('[data-testid="credential-opencode"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="derived-paths-table"]').text()).toContain('mcp.json')
+    expect(wrapper.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -214,15 +218,18 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     const text = wrapper.text()
     expectHidden(text, hiddenZh)
-    expect(text).toContain('ACP 后端 (acpBackend)')
+    expect(text).toContain('后端引擎')
     expect(text).toContain('配置根目录')
     expect(text).toContain('工作区目录')
-    expect(text).toContain('运行配置')
+    expect(text).toContain('继承默认配置')
+    expect(wrapper.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
+    expect(text).not.toContain('未选择时使用工作区默认授权')
+    expect(text).not.toContain('工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。')
     expect(wrapper.get('[data-testid="cli-model-trigger"]').text()).toContain('gpt-5')
     expect(wrapper.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="cli-model-reset"]').text()).toContain('恢复自动')
     expect(wrapper.find('[data-testid="credential-alias-picker"]').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="derived-paths-table"]').text()).toContain('mcp.json')
+    expect(wrapper.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
     expect(wrapper.get('[data-testid="acp-backend-claude_code"]').text()).toContain('Claude Code')
     expect(wrapper.get('[data-testid="acp-backend-claude_code"]').text()).not.toContain('claude_code')
     expect(wrapper.get('[data-testid="acp-backend-cursor"]').classes()).toContain('border-accent')
@@ -236,9 +243,11 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     const sharedText = shared.get('[data-testid="shared-agent-meta"]').text()
     expectHidden(sharedText, hiddenEn)
-    expect(sharedText).toContain('ACP backend (acpBackend)')
+    expect(sharedText).toContain('Backend engine')
     expect(sharedText).toContain('Config root')
     expect(sharedText).toContain('Workspace directory')
+    expect(sharedText).toContain('Workspace default credential')
+    expect(sharedText).not.toContain('The workspace default model.')
     expect(shared.get('[data-testid="cli-model-trigger"]').exists()).toBe(true)
     shared.unmount()
 
@@ -246,9 +255,12 @@ describe('meta info copy cleanup', () => {
     await flushPromises()
     const text = wrapper.text()
     expectHidden(text, hiddenEn)
-    expect(text).toContain('ACP backend (acpBackend)')
+    expect(text).toContain('Backend engine')
     expect(text).toContain('Config root')
     expect(text).toContain('Workspace directory')
+    expect(text).toContain('Inherit default config')
+    expect(wrapper.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
+    expect(text).not.toContain('The workspace default model.')
     expect(wrapper.get('[data-testid="cli-model-trigger"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     wrapper.unmount()
