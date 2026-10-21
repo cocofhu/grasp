@@ -26,9 +26,12 @@ const props = withDefaults(defineProps<{
   allowAdd?: boolean
   /** True shows a control that clears the current selection. */
   allowClear?: boolean
+  /** Meta panels omit the hint paragraph under the picker title. */
+  hideHint?: boolean
 }>(), {
   allowAdd: true,
   allowClear: false,
+  hideHint: false,
 })
 
 const emit = defineEmits<{
@@ -247,7 +250,7 @@ onMounted(async () => {
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="text-[12px] font-medium text-txt2">{{ heading }}</div>
-        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ description }}</p>
+        <p v-if="!hideHint" class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ description }}</p>
       </div>
       <div class="flex shrink-0 gap-1.5">
         <AppButton
