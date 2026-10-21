@@ -132,11 +132,8 @@ func TestAcpTimelineIngestLoopCancels(t *testing.T) {
 }
 
 func TestAcpTimelineIngestPollsOnlyWhileBusy(t *testing.T) {
-	prev := timelineIngestEvery
-	timelineIngestEvery = 5 * time.Millisecond
-	t.Cleanup(func() { timelineIngestEvery = prev })
-
 	s := newAcpTimelineStore()
+	s.every = 5 * time.Millisecond
 	var pulls atomic.Int32
 	s.pull = func(context.Context, string, string, *sandbox.EventLogReader) { pulls.Add(1) }
 	var busy atomic.Bool

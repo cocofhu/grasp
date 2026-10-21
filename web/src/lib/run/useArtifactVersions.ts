@@ -35,7 +35,7 @@ export function useArtifactVersions() {
     const task = (async () => {
       try {
         const rows = await api.artifactVersions(key, signal ? { signal } : undefined)
-        archivedById.value = { ...archivedById.value, [key]: rows || [] }
+        archivedById.value = { ...archivedById.value, [key]: Array.isArray(rows) ? rows : [] }
       } catch (e) {
         if (isAbortError(e) || signal?.aborted) return
         archivedById.value = { ...archivedById.value, [key]: [] }

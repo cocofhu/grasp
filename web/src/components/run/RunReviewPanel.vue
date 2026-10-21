@@ -95,9 +95,10 @@ defineExpose({
     :run-id="run.id"
     ref="reviewShellRef"
     class="h-full min-h-0"
+    split-drawer
   >
     <template #stage>
-      <ReactConnectingState v-if="!clarify" mode="stage" />
+      <ReactConnectingState v-if="!clarify" mode="stage" hide-home-tab />
       <ReactArtifactStage
         v-else
         :artifacts="run.artifacts || []"
