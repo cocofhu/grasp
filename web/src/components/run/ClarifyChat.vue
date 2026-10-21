@@ -637,6 +637,13 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
+/** A settled reply with a failed tool call stays unfolded (see AgentTimeline settled). */
+function turnHasFailedTool(t: ClarifyTurn): boolean {
+  const failed = (status?: string) => (status || '').toLowerCase() === 'failed'
+  if (t.parts?.length) return t.parts.some((p) => p.kind === 'tool' && failed(p.status))
+  return (t.tools || []).some((tool) => failed(tool.status))
+}
+
 function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
   if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
   return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
@@ -968,6 +975,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :live-ref="liveCards.full.get(i)!"
               agent
             />
+            <!--
+              A reply with a failed tool call does not fold (AgentTimeline), so it
+              keeps the pre-#843 completion footnote: 已完成 + when it ended.
+            -->
+            <div
+              v-if="showTurnCompleted(t) && turnHasFailedTool(t)"
+              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
+              data-testid="clarify-turn-completed"
+            >
+              <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
+              <span>{{ locale && relTime(t.at) }}</span>
+            </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div

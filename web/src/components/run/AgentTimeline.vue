@@ -61,7 +61,6 @@ const { t } = useI18n()
 const workId = `agent-elapsed-${useId().replace(/:/g, '')}`
 const cache: MarkdownBlockCache = new Map()
 const blocks = computed(() => timelineBlocks(props.parts).filter((b) => !(props.hideThought && b.kind === 'thought')))
-const settled = computed(() => !props.streaming && timelineFolds(props.parts))
 
 const elapsedTime = computed(() => {
   const sec = wallClockSec(props.startedAt, props.endedAt)
@@ -77,9 +76,14 @@ const failedCount = computed(() => {
   }
   return n
 })
+/**
+ * A finished turn folds into the elapsed line (#843) — except when a tool call
+ * failed: then the steps stay inline exactly as before #843, so the failed
+ * tool (its red status, title and detail) is visible without opening a fold.
+ */
+const settled = computed(() => !props.streaming && failedCount.value === 0 && timelineFolds(props.parts))
 const statusLabel = computed(() => {
   if (!settled.value) return ''
-  if (failedCount.value > 0) return t('pages.clarify.toolFailedCount', { n: failedCount.value })
   if (props.interrupted) return t('pages.clarify.thoughtInterrupted')
   return ''
 })
