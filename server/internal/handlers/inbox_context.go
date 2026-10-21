@@ -145,6 +145,14 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 	if name := strings.TrimSpace(conv.PreviewArtifact); name != "" {
 		clarify["previewArtifact"] = name
 	}
+	if conv.Takeover {
+		// Same fields as clarifyByNode[nodeId] on the run detail.
+		clarify["takeover"] = true
+		k := visitKeyOf(conv.NodeID, conv.Iteration)
+		if t := h.visitTasks(run, h.Runs.TaskStates(runID), map[string]bool{k: true})[k]; t != "" {
+			clarify["task"] = t
+		}
+	}
 	out := gin.H{
 		"type":           "clarify",
 		"status":         run.Status,

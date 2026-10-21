@@ -126,3 +126,49 @@ func TestCurrentNodeAndNodeEventsTask(t *testing.T) {
 		t.Fatalf("gate events must omit task: %v", ev)
 	}
 }
+
+// GET /runs/:id/inbox-context: a takeover conversation's clarify object
+// carries takeover:true and the same task as clarifyByNode; a review
+// conversation carries neither.
+func TestInboxContextTakeoverTask(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	auto := &models.AgentCapabilities{Interaction: models.InteractionAuto}
+	review := &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}
+	g := models.Graph{Nodes: []models.Node{
+		{ID: "impl", Type: "agent", Label: "实现", Caps: auto, Config: map[string]any{"prompt": "部署 {{vars.tok}}"}},
+		{ID: "rev", Type: "agent", Label: "复审", Caps: review, Config: map[string]any{"prompt": "复审任务"}},
+	}}
+	now := time.Now()
+	for _, id := range []string{"ib-to", "ib-rev"} {
+		h.db.Create(&models.Run{ID: id, Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: now})
+		h.db.Create(&models.RunVariable{RunID: id, Name: "tok", Value: "s3cr3t-value", Secret: true})
+	}
+	h.db.Create(&models.StateRun{RunID: "ib-to", NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "waiting_human",
+		Mode: models.NodeModeManual, StartedAt: &now, VarsBefore: map[string]any{"tok": "s3cr3t-value"}})
+	h.db.Create(&models.ReactConversation{RunID: "ib-to", NodeID: "impl", Iteration: 1, Takeover: true,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "已中断"}}})
+	h.db.Create(&models.StateRun{RunID: "ib-rev", NodeID: "rev", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	h.db.Create(&models.ReactConversation{RunID: "ib-rev", NodeID: "rev", Iteration: 1,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "请复审"}}})
+
+	w := h.do(http.MethodGet, "/api/runs/ib-to/inbox-context?nodeId=impl&iteration=1", nil)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	cl, _ := parseJSON(t, w)["clarify"].(map[string]any)
+	if cl["takeover"] != true || cl["task"] != "部署 •••" {
+		t.Fatalf("takeover clarify: %v", cl)
+	}
+	w = h.do(http.MethodGet, "/api/runs/ib-rev/inbox-context?nodeId=rev&iteration=1", nil)
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	cl, _ = parseJSON(t, w)["clarify"].(map[string]any)
+	if _, ok := cl["takeover"]; ok {
+		t.Fatalf("review clarify must omit takeover: %v", cl)
+	}
+	if _, ok := cl["task"]; ok {
+		t.Fatalf("review clarify must omit task: %v", cl)
+	}
+}
