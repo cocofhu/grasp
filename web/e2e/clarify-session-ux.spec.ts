@@ -4,6 +4,14 @@ import { fileURLToPath } from 'node:url'
 
 const shotDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.tmp-clarify-ux-shots')
 
+/** This tab's stash for the harness run (key carries the per-tab id). */
+async function readStash(page: import('@playwright/test').Page): Promise<string | null> {
+  return page.evaluate(() => {
+    const tab = sessionStorage.getItem('grasp-clarify-tab-id')
+    return localStorage.getItem(`grasp-clarify-stash:anon:${tab}:run-clarify-e2e:clarify`)
+  })
+}
+
 async function sendClarify(page: import('@playwright/test').Page, text: string) {
   const box = page.locator('[data-testid="clarify-input"]')
   await box.fill(text)
@@ -155,7 +163,7 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.locator('[data-testid="clarify-input"]')).toHaveCount(0)
     await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
     await expect(page.getByTestId('clarify-scroller')).not.toContainText('取消时发出的回复')
-    const stash = await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))
+    const stash = await readStash(page)
     expect(JSON.parse(stash!).text).toBe('取消时发出的回复')
 
     // Survives a refresh; the harness reloads with the run resumed.
@@ -164,12 +172,12 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     const box = page.locator('[data-testid="clarify-input"]')
     await expect(box).toHaveValue('取消时发出的回复')
     // Kept until it is really sent (another refresh must not lose it).
-    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))).not.toBeNull()
+    expect(await readStash(page)).not.toBeNull()
 
     await page.getByTestId('clarify-send-label').click()
     await expect(page.getByTestId('clarify-review-queue')).toContainText('取消时发出的回复')
     await expect(box).toHaveValue('')
-    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))).toBeNull()
+    expect(await readStash(page)).toBeNull()
   })
 
   test('运行结束时正在打的草稿：先暂存，续跑后回到输入框', async ({ page }) => {
@@ -182,5 +190,55 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-send-notice')).toBeVisible()
     await page.getByTestId('sim-resume').click()
     await expect(box).toHaveValue('还没发的草稿')
+  })
+
+  test('同一用户开两个标签页：只有发送的那个标签页回填，另一个不回填', async ({ page, context }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    // Tab A sends while the run is being cancelled: refused, kept for resume.
+    await sendClarify(page, '只在发送的标签页回来')
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+
+    // Tab B of the same user (same browser storage) opens the same run.
+    const tabB = await context.newPage()
+    await tabB.setViewportSize({ width: 1100, height: 900 })
+    await tabB.goto('/clarify-session-ux.html')
+    await expect(tabB.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    const boxB = tabB.locator('[data-testid="clarify-input"]')
+    await expect(boxB).toBeVisible()
+    // B also sees the run end and resume: still nothing of A's.
+    await tabB.getByTestId('sim-cancel-race').click()
+    await tabB.getByTestId('sim-resume').click()
+    await expect(boxB).toHaveValue('')
+    await expect(tabB.getByTestId('clarify-send-notice')).toHaveCount(0)
+
+    // A resumes: the text is back only there, and A sends it.
+    await page.getByTestId('sim-resume').click()
+    const boxA = page.locator('[data-testid="clarify-input"]')
+    await expect(boxA).toHaveValue('只在发送的标签页回来')
+    await page.getByTestId('clarify-send-label').click()
+    await expect(page.getByTestId('clarify-review-queue')).toContainText('只在发送的标签页回来')
+    expect(await readStash(page)).toBeNull()
+    await tabB.reload()
+    await expect(tabB.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await expect(boxB).toHaveValue('')
+  })
+
+  test('发送的标签页关掉后：暂存交给下一个打开的标签页', async ({ page, context }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await sendClarify(page, '标签页关了也不丢')
+    await page.getByTestId('sim-cancel-race').click()
+    expect(JSON.parse((await readStash(page))!).text).toBe('标签页关了也不丢')
+    await page.close()
+
+    const tabB = await context.newPage()
+    await tabB.setViewportSize({ width: 1100, height: 900 })
+    await tabB.goto('/clarify-session-ux.html')
+    await expect(tabB.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await expect(tabB.locator('[data-testid="clarify-input"]')).toHaveValue('标签页关了也不丢')
   })
 })

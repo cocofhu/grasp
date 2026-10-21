@@ -13,6 +13,14 @@ import {
 import { readClarifyStash } from './clarifyDraftStash'
 import { vi, afterEach } from 'vitest'
 
+/** Stash / outbox keys only (the tab id and heartbeat live alongside). */
+function countKeys(st: Storage, prefix: string): number {
+  let n = 0
+  for (let i = 0; i < st.length; i++) if (st.key(i)?.startsWith(prefix)) n++
+  return n
+}
+
+
 const ended = (autoRetryOnResume?: boolean) =>
   Object.assign(new Error('运行已结束，这条消息没有发送'), { status: 409, code: 'clarify_visit_ended', autoRetryOnResume })
 
@@ -94,11 +102,11 @@ describe('beginClarifySend / 409 outbox', () => {
     const sent = { text: 'hi', images: [], annotations: [] }
     expect(beginClarifySend('r', 'n', sent, { force: true })).toBeUndefined()
     expect(beginClarifySend('r', 'n', sent, { retryLast: true })).toBeUndefined()
-    expect(sessionStorage.length).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
     const id = beginClarifySend('r', 'n', sent, {})!
     expect(id).toMatch(/\S/)
     failClarifySend('r', 'n', id)
-    expect(sessionStorage.length).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
   })
 
   it('409: local copy first, then the outbox, then dropped (ref-only only as a last resort)', () => {
@@ -117,7 +125,7 @@ describe('beginClarifySend / 409 outbox', () => {
     })
     expect(restore.mock.calls[0][0]).toMatchObject({ text: '原文', images: [local] })
     // Consumed by the 409: no later frame can refill it again.
-    expect(sessionStorage.length).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
 
     const restore2 = vi.fn()
     handleClarifyVisitEnded(
@@ -126,5 +134,16 @@ describe('beginClarifySend / 409 outbox', () => {
       { chat: { restoreUnsentQueued: restore2 }, runId: 'r', nodeId: 'n', sent: {} },
     )
     expect(restore2.mock.calls[0][0]).toMatchObject({ text: '服务端', images: [{ ref: 'blob:2', mimeType: 'image/png' }] })
+  })
+
+  it('no chat mounted: the toast also says which images could not be kept (S21)', () => {
+    const big = { data: 'x'.repeat(300 * 1024), mimeType: 'image/png' }
+    const r = handleClarifyVisitEnded(ended(false), zh.t, {
+      chat: null,
+      runId: 'r',
+      nodeId: 'n',
+      sent: { text: '带大图', images: [big] },
+    })
+    expect(r!.notice).toBe('运行已结束，这条消息没有发送；续跑后请重新发送\n有 1 张图片太大，没能一起保留，续跑后请重新添加')
   })
 })

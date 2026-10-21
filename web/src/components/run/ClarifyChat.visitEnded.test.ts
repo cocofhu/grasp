@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
-import { putClarifyOutbox } from '@/lib/inbox/clarifyDraftStash'
+import { clarifyTabId, putClarifyOutbox } from '@/lib/inbox/clarifyDraftStash'
 import ClarifyChat from './ClarifyChat.vue'
 
 enableAutoUnmount(afterEach)
@@ -18,7 +18,13 @@ afterEach(() => {
 
 type ChatApi = {
   restoreUnsentQueued: (
-    sent: { text?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; clientId?: string },
+    sent: {
+      text?: string
+      images?: ClarifyImage[]
+      annotations?: ReactAnnotation[]
+      clientId?: string
+      at?: number
+    },
     notice: string,
     opts?: { autoRetryOnResume?: boolean },
   ) => void
@@ -26,7 +32,8 @@ type ChatApi = {
 }
 const AUTO = '运行已结束，这条消息没有发送；续跑后会自动发送'
 const KEPT = '运行已结束，草稿已保留；续跑后会回到输入框'
-const STASH_KEY = 'grasp-clarify-stash:anon:run-1:react-1'
+/** This tab's stash key (per user + tab + run + node). */
+const STASH_KEY = () => `grasp-clarify-stash:anon:${clarifyTabId()}:run-1:react-1`
 const OUTBOX_KEY = 'grasp-clarify-outbox:anon:run-1:react-1'
 
 /** What the host (onClarifySend) records for a send from this tab. */
@@ -140,7 +147,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '还在吗' }, RESEND)
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('还在吗')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('还在吗')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
 
     isActive.value = true
@@ -149,10 +156,10 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     // Resumed and refilled: the "resend after resume" notice is done (S14).
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
     // Kept until it is actually sent again.
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('还在吗')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('还在吗')
     await wrapper.find('[data-testid="clarify-send-icon"]').trigger('click')
     await flushPromises()
-    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(localStorage.getItem(STASH_KEY())).toBeNull()
   })
 
   it('composer open: the refill is stashed too, mirrors edits, and clears when emptied', async () => {
@@ -161,13 +168,13 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '刷新也不能丢' }, RESEND)
     await flushPromises()
     expect(draft.value).toBe('刷新也不能丢')
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('刷新也不能丢')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新也不能丢')
     await wrapper.find('[data-testid="clarify-input"]').setValue('刷新也不能丢！')
     await flushPromises()
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('刷新也不能丢！')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新也不能丢！')
     await wrapper.find('[data-testid="clarify-input"]').setValue('')
     await flushPromises()
-    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(localStorage.getItem(STASH_KEY())).toBeNull()
   })
 
   it('autoRetryOnResume: restores nothing, only says it will be sent after resume', async () => {
@@ -176,7 +183,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '' }, AUTO, { autoRetryOnResume: true })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(localStorage.getItem(STASH_KEY())).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
   })
 
@@ -222,7 +229,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(localStorage.getItem(STASH_KEY())).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
     // The dropped turn's empty slot is gone for every viewer.
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('别人的回复')
@@ -238,7 +245,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(localStorage.getItem(STASH_KEY())).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
   })
 
@@ -317,7 +324,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     await wrapper.find('[data-testid="clarify-input"]').setValue('正在打的草稿')
     isActive.value = false
     await flushPromises()
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('正在打的草稿')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('正在打的草稿')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(KEPT)
     // Simulate a refresh: the in-memory draft is gone, the stash is not.
     draft.value = ''
@@ -328,14 +335,14 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
 
   it('stash is restored on mount after a refresh when the composer is open', async () => {
     localStorage.setItem(
-      STASH_KEY,
+      STASH_KEY(),
       JSON.stringify({ text: '刷新前的草稿', images: [], annotations: [], at: Date.now() }),
     )
     const { draft } = mountHost()
     await flushPromises()
     expect(draft.value).toBe('刷新前的草稿')
     // Still kept until sent or cleared (another refresh must not lose it).
-    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('刷新前的草稿')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新前的草稿')
   })
 
   it('clears the notice on the next send', async () => {
@@ -347,5 +354,80 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     await wrapper.find('[data-testid="clarify-send-icon"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
+  })
+
+  it('S18: a stash written by another open tab is never refilled here', async () => {
+    const other = 'tab-other'
+    localStorage.setItem(`grasp-clarify-tab-alive:${other}`, String(Date.now()))
+    localStorage.setItem(
+      `grasp-clarify-stash:anon:${other}:run-1:react-1`,
+      JSON.stringify({ text: '另一个标签页发的', images: [], annotations: [], at: Date.now(), tab: other }),
+    )
+    const { draft } = mountHost()
+    await flushPromises()
+    expect(draft.value).toBe('')
+    // The sender's copy is untouched.
+    expect(localStorage.getItem(`grasp-clarify-stash:anon:${other}:run-1:react-1`)).not.toBeNull()
+  })
+
+  it('S18: a stash left by a closed tab is adopted (refilled once, moved to this tab)', async () => {
+    const gone = 'tab-gone'
+    localStorage.setItem(
+      `grasp-clarify-stash:anon:${gone}:run-1:react-1`,
+      JSON.stringify({ text: '关掉的标签页留下的', images: [], annotations: [], at: Date.now(), tab: gone }),
+    )
+    const { draft } = mountHost()
+    await flushPromises()
+    expect(draft.value).toBe('关掉的标签页留下的')
+    expect(localStorage.getItem(`grasp-clarify-stash:anon:${gone}:run-1:react-1`)).toBeNull()
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('关掉的标签页留下的')
+  })
+
+  it('S19: refusals arriving out of order come back in send order, ahead of new typing', async () => {
+    const { wrapper, chat, draft } = mountHost()
+    await wrapper.find('[data-testid="clarify-input"]').setValue('后来打的')
+    await flushPromises()
+    // The later send's 409 arrives first, then the earlier turn-start drop.
+    // (Each refusal is its own network event, so each lands in its own tick.)
+    chat.value!.restoreUnsentQueued({ text: '第二条', at: 2000 }, RESEND)
+    await flushPromises()
+    chat.value!.restoreUnsentQueued({ text: '第一条', at: 1000 }, RESEND)
+    await flushPromises()
+    chat.value!.restoreUnsentQueued({ text: '第三条', at: 3000 }, RESEND)
+    await flushPromises()
+    expect(draft.value).toBe('第一条\n第二条\n第三条\n后来打的')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('第一条\n第二条\n第三条\n后来打的')
+  })
+
+  it('S19: same order when the composer is closed (stash) and on resume', async () => {
+    const { chat, draft, isActive } = mountHost()
+    isActive.value = false
+    await flushPromises()
+    chat.value!.restoreUnsentQueued({ text: '乙', at: 2000 }, RESEND)
+    chat.value!.restoreUnsentQueued({ text: '甲', at: 1000 }, RESEND)
+    await flushPromises()
+    isActive.value = true
+    await flushPromises()
+    expect(draft.value).toBe('甲\n乙')
+  })
+
+  it('S21: inline images over the stash budget are reported, not silently lost', async () => {
+    const { chat, isActive, wrapper } = mountHost()
+    isActive.value = false
+    await flushPromises()
+    const big: ClarifyImage = { data: 'x'.repeat(300 * 1024), mimeType: 'image/png', name: 'big.png' }
+    chat.value!.restoreUnsentQueued({ text: '带大图', images: [big] }, RESEND)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-stash-notice"]').text()).toBe(
+      '有 1 张图片太大，没能一起保留，续跑后请重新添加',
+    )
+    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).images).toEqual([])
+    // Still said after resume (the image is not back), gone once sent.
+    isActive.value = true
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-stash-notice"]').exists()).toBe(true)
+    await wrapper.find('[data-testid="clarify-send-icon"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-stash-notice"]').exists()).toBe(false)
   })
 })

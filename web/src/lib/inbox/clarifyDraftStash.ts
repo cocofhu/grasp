@@ -19,10 +19,28 @@ export type ClarifyDraftStash = {
   annotations: ReactAnnotation[]
 }
 
-type Stored = ClarifyDraftStash & { at: number }
+/** One rescued (refused) message at the head of a draft, by send time. */
+export type RescuedPart = { text: string; at: number }
+
+/** What a read returns: the content plus who owns it and how it was trimmed. */
+export type ClarifyStashRead = ClarifyDraftStash & {
+  /** Tab that wrote it (the sender); other live tabs must not refill it. */
+  tab?: string
+  /** Rescued messages at the head of `text`, oldest send first. */
+  parts?: RescuedPart[]
+  /** Inline images left out because they exceeded the size budget. */
+  imagesDropped?: number
+}
+
+type Stored = ClarifyDraftStash & { at: number; tab?: string; parts?: RescuedPart[]; imagesDropped?: number }
 
 const STASH_PREFIX = 'grasp-clarify-stash:'
 const OUTBOX_PREFIX = 'grasp-clarify-outbox:'
+const TAB_ID_KEY = 'grasp-clarify-tab-id'
+const TAB_ALIVE_PREFIX = 'grasp-clarify-tab-alive:'
+/** A tab heartbeat older than this means that tab is gone (closed / crashed). */
+export const TAB_ALIVE_MS = 15_000
+const TAB_BEAT_MS = 5_000
 /** Unsent text older than this is dropped on the next sweep. */
 export const STASH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 /** Inline (base64) image bytes kept per entry; ref-only images are always kept. */
@@ -38,8 +56,31 @@ function userKey(): string {
   }
 }
 
-function stashKey(runId: string, nodeId: string): string {
-  return `${STASH_PREFIX}${userKey()}:${runId}:${nodeId}`
+/**
+ * Per user + tab + run + node. Per tab so that two tabs of the same user never
+ * both refill one message: only the tab that sent it does. A stash whose tab
+ * is gone (closed) is adopted by the next tab that shows that composer.
+ */
+function stashKey(runId: string, nodeId: string, tab = clarifyTabId()): string {
+  return `${STASH_PREFIX}${userKey()}:${tab}:${runId}:${nodeId}`
+}
+
+/** Stash keys of other, closed tabs for this user+run+node. */
+function orphanStashKeys(runId: string, nodeId: string): string[] {
+  const store = storage('local')
+  if (!store) return []
+  const head = `${STASH_PREFIX}${userKey()}:`
+  const tail = `:${runId}:${nodeId}`
+  const mine = stashKey(runId, nodeId)
+  const out: string[] = []
+  for (let i = 0; i < store.length; i++) {
+    const k = store.key(i)
+    if (!k || k === mine || !k.startsWith(head) || !k.endsWith(tail)) continue
+    const tab = k.slice(head.length, k.length - tail.length)
+    if (!tab || tab.includes(':') || isOtherLiveTab(tab)) continue
+    out.push(k)
+  }
+  return out
 }
 
 function outboxKey(runId: string, nodeId: string): string {
@@ -63,6 +104,15 @@ function isEmpty(s: ClarifyDraftStash): boolean {
  * the budget. Text and annotations are always kept.
  */
 export function budgetImages(images: ClarifyImage[], budget = INLINE_IMAGE_BUDGET): ClarifyImage[] {
+  return budgetImagesCounted(images, budget).kept
+}
+
+/** budgetImages plus how many inline images did not fit. */
+export function budgetImagesCounted(
+  images: ClarifyImage[],
+  budget = INLINE_IMAGE_BUDGET,
+): { kept: ClarifyImage[]; dropped: number } {
+  let dropped = 0
   let used = 0
   const out: ClarifyImage[] = []
   for (const im of images) {
@@ -70,11 +120,14 @@ export function budgetImages(images: ClarifyImage[], budget = INLINE_IMAGE_BUDGE
       if (im.ref || im.url) out.push(im)
       continue
     }
-    if (used + im.data.length > budget) continue
+    if (used + im.data.length > budget) {
+      dropped += 1
+      continue
+    }
     used += im.data.length
     out.push(im)
   }
-  return out
+  return { kept: out, dropped }
 }
 
 function normalize(v: Partial<Stored> | null | undefined): Stored | null {
@@ -84,6 +137,15 @@ function normalize(v: Partial<Stored> | null | undefined): Stored | null {
     images: Array.isArray(v.images) ? v.images : [],
     annotations: Array.isArray(v.annotations) ? v.annotations : [],
     at: typeof v.at === 'number' ? v.at : 0,
+    ...(typeof v.tab === 'string' && v.tab ? { tab: v.tab } : {}),
+    ...(Array.isArray(v.parts)
+      ? {
+          parts: v.parts.filter(
+            (p): p is RescuedPart => !!p && typeof p.text === 'string' && typeof p.at === 'number',
+          ),
+        }
+      : {}),
+    ...(typeof v.imagesDropped === 'number' && v.imagesDropped > 0 ? { imagesDropped: v.imagesDropped } : {}),
   }
 }
 
@@ -101,6 +163,15 @@ let swept = false
 export function sweepClarifyStash(now = Date.now(), force = false): void {
   if (swept && !force) return
   swept = true
+  const ls = storage('local')
+  if (ls) {
+    const stale: string[] = []
+    for (let i = 0; i < ls.length; i++) {
+      const k = ls.key(i)
+      if (k && k.startsWith(TAB_ALIVE_PREFIX) && !(now - Number(ls.getItem(k)) <= TAB_ALIVE_MS * 4)) stale.push(k)
+    }
+    for (const k of stale) ls.removeItem(k)
+  }
   for (const [kind, prefix] of [['local', STASH_PREFIX], ['session', OUTBOX_PREFIX]] as const) {
     const store = storage(kind)
     if (!store) continue
@@ -133,19 +204,48 @@ export function sweepClarifyStash(now = Date.now(), force = false): void {
   }
 }
 
-export function readClarifyStash(runId: string, nodeId: string): ClarifyDraftStash | null {
+function readKey(store: Storage, k: string): ClarifyStashRead | null {
+  try {
+    const s = normalize(JSON.parse(store.getItem(k) || 'null'))
+    if (!s || Date.now() - s.at > STASH_TTL_MS) return null
+    const out: ClarifyStashRead = { text: s.text, images: s.images, annotations: s.annotations }
+    if (isEmpty(out)) return null
+    if (s.tab) out.tab = s.tab
+    if (s.parts?.length) out.parts = s.parts
+    if (s.imagesDropped) out.imagesDropped = s.imagesDropped
+    return out
+  } catch {
+    return null
+  }
+}
+
+/**
+ * This tab's stash for user+run+node. With `adopt`, stashes left by closed
+ * tabs of the same user are moved into this tab's first (their sender is
+ * gone, so nobody else will refill them); live tabs' stashes are never read.
+ */
+export function readClarifyStash(
+  runId: string,
+  nodeId: string,
+  opts: { adopt?: boolean } = {},
+): ClarifyStashRead | null {
   if (!runId || !nodeId) return null
   sweepClarifyStash()
   const store = storage('local')
   if (!store) return null
-  try {
-    const s = normalize(JSON.parse(store.getItem(stashKey(runId, nodeId)) || 'null'))
-    if (!s || Date.now() - s.at > STASH_TTL_MS) return null
-    const out = { text: s.text, images: s.images, annotations: s.annotations }
-    return isEmpty(out) ? null : out
-  } catch {
-    return null
+  if (opts.adopt) {
+    for (const k of orphanStashKeys(runId, nodeId)) {
+      const o = readKey(store, k)
+      store.removeItem(k)
+      if (o) stashClarifyDraft(runId, nodeId, o, o.parts?.length ? { at: o.parts[0].at } : {})
+    }
   }
+  return readKey(store, stashKey(runId, nodeId))
+}
+
+/** localStorage key of a run+node stash (for `storage` event listeners). */
+export function clarifyStashKey(runId: string, nodeId: string): string {
+  return stashKey(runId, nodeId)
 }
 
 export function clearClarifyStash(runId: string, nodeId: string): void {
@@ -173,30 +273,151 @@ function uniqueByJson<T>(list: T[]): T[] {
   })
 }
 
-/** Add to whatever is already stashed for user+run+node (never overwrites it). */
-export function stashClarifyDraft(runId: string, nodeId: string, add: ClarifyDraftStash): void {
-  if (!runId || !nodeId) return
+/**
+ * Put a rescued message back at the head of `current`, keeping rescued
+ * messages in send order (oldest first) and anything typed since after them.
+ * Refusals can arrive out of order (a 409 for a later send before the
+ * turn-start drop of an earlier one), so order by `at`, not arrival.
+ */
+export function insertRescued(
+  current: string,
+  head: RescuedPart[],
+  item: RescuedPart,
+): { text: string; head: RescuedPart[] } {
+  const t = item.text.trim()
+  if (!t) return { text: current, head }
+  if (current.includes(t)) return { text: current, head }
+  const headText = head.map((p) => p.text).join('\n')
+  if (head.length && current.startsWith(headText)) {
+    const next = [...head, { text: t, at: item.at }].sort((a, b) => a.at - b.at)
+    return { text: next.map((p) => p.text).join('\n') + current.slice(headText.length), head: next }
+  }
+  const next = [{ text: t, at: item.at }]
+  return { text: current.trim() ? `${t}\n${current}` : t, head: next }
+}
+
+/**
+ * Add to whatever is already stashed for user+run+node (never overwrites it).
+ * `at` (send time) orders rescued messages; `tab` marks this tab as the owner.
+ * Returns how many inline images were left out for size.
+ */
+export function stashClarifyDraft(
+  runId: string,
+  nodeId: string,
+  add: ClarifyDraftStash,
+  opts: { at?: number; parts?: RescuedPart[] } = {},
+): { imagesDropped: number } {
+  if (!runId || !nodeId) return { imagesDropped: 0 }
   const store = storage('local')
-  if (!store) return
+  if (!store) return { imagesDropped: 0 }
   const prev = readClarifyStash(runId, nodeId)
+  let text: string
+  let parts: RescuedPart[] | undefined
+  if (opts.parts) {
+    text = add.text
+    parts = opts.parts
+  } else if (typeof opts.at === 'number') {
+    const r = insertRescued(prev?.text ?? '', prev?.parts ?? [], { text: add.text, at: opts.at })
+    text = r.text
+    parts = r.head
+  } else {
+    text = mergeClarifyText(prev?.text ?? '', add.text)
+    parts = prev?.parts
+  }
+  const budget = budgetImagesCounted(uniqueByJson([...(prev?.images ?? []), ...add.images]))
   const next: Stored = {
-    text: mergeClarifyText(prev?.text ?? '', add.text),
-    images: budgetImages(uniqueByJson([...(prev?.images ?? []), ...add.images])),
+    text,
+    images: budget.kept,
     annotations: uniqueByJson([...(prev?.annotations ?? []), ...add.annotations]),
     at: Date.now(),
+    tab: clarifyTabId(),
+    ...(parts?.length ? { parts } : {}),
   }
-  if (isEmpty(next)) return
+  const imagesDropped = budget.dropped + (prev?.imagesDropped ?? 0)
+  if (imagesDropped) next.imagesDropped = imagesDropped
+  if (isEmpty(next)) return { imagesDropped: 0 }
   const k = stashKey(runId, nodeId)
   try {
     write(store, k, next)
   } catch {
     // Quota: keep at least the text (and ref-only images).
+    const inline = next.images.filter((im) => !!im.data).length
     try {
-      write(store, k, { ...next, images: next.images.filter((im) => !im.data) })
+      write(store, k, {
+        ...next,
+        images: next.images.filter((im) => !im.data),
+        imagesDropped: imagesDropped + inline,
+      })
+      return { imagesDropped: budget.dropped + inline }
     } catch {
       /* storage full: nothing more we can do without evicting others */
     }
   }
+  return { imagesDropped: budget.dropped }
+}
+
+/* ---------------- tab ownership ---------------- */
+
+let tabIdCache: string | null = null
+let beating = false
+
+function beat(id: string) {
+  try {
+    localStorage.setItem(TAB_ALIVE_PREFIX + id, String(Date.now()))
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * This tab's id: kept in sessionStorage, so it survives a refresh of the same
+ * tab but differs between tabs. Starts a heartbeat other tabs can read.
+ */
+export function clarifyTabId(): string {
+  if (tabIdCache) return tabIdCache
+  let id = ''
+  try {
+    id = sessionStorage.getItem(TAB_ID_KEY) || ''
+    if (!id) {
+      id = newClientMessageId()
+      sessionStorage.setItem(TAB_ID_KEY, id)
+    }
+  } catch {
+    id = newClientMessageId()
+  }
+  tabIdCache = id
+  if (!beating && typeof window !== 'undefined') {
+    beating = true
+    beat(id)
+    window.setInterval(() => beat(id), TAB_BEAT_MS)
+    // Closing (or reloading) this tab frees its stash for other tabs at once;
+    // a reload re-claims it on the next beat.
+    window.addEventListener('pagehide', () => {
+      try {
+        localStorage.removeItem(TAB_ALIVE_PREFIX + id)
+      } catch {
+        /* ignore */
+      }
+    })
+    window.addEventListener('pageshow', () => beat(id))
+  }
+  return id
+}
+
+/** True when `tab` is another tab that is still open. */
+export function isOtherLiveTab(tab: string | undefined, now = Date.now()): boolean {
+  if (!tab || tab === clarifyTabId()) return false
+  try {
+    const ts = Number(localStorage.getItem(TAB_ALIVE_PREFIX + tab))
+    return Number.isFinite(ts) && ts > 0 && now - ts <= TAB_ALIVE_MS
+  } catch {
+    return false
+  }
+}
+
+/** Test hook: forget the cached tab id (a "new tab"). */
+export function resetClarifyTabForTest(): void {
+  tabIdCache = null
 }
 
 /* ---------------- outbox (per tab) ---------------- */
@@ -269,11 +490,13 @@ export function putClarifyOutbox(runId: string, nodeId: string, id: string, entr
   if (!runId || !nodeId || !id) return
   sweepClarifyStash()
   const box = readOutbox(runId, nodeId)
+  const budget = budgetImagesCounted(entry.images)
   box[id] = {
     text: entry.text,
-    images: budgetImages(entry.images),
+    images: budget.kept,
     annotations: entry.annotations,
     at: Date.now(),
+    ...(budget.dropped ? { imagesDropped: budget.dropped } : {}),
   }
   const ids = Object.keys(box).sort((a, b) => box[a].at - box[b].at)
   while (ids.length > OUTBOX_MAX) delete box[ids.shift()!]
@@ -281,14 +504,25 @@ export function putClarifyOutbox(runId: string, nodeId: string, id: string, entr
 }
 
 /** The outbox entry for `id`, removed; null when this tab did not send it. */
-export function takeClarifyOutbox(runId: string, nodeId: string, id: string | undefined | null): ClarifyDraftStash | null {
+export function takeClarifyOutbox(
+  runId: string,
+  nodeId: string,
+  id: string | undefined | null,
+): (ClarifyDraftStash & { at: number; imagesDropped?: number }) | null {
   if (!runId || !nodeId || !id) return null
   const box = readOutbox(runId, nodeId)
   const e = box[id]
   if (!e || Date.now() - e.at > STASH_TTL_MS) return null
   delete box[id]
   writeOutbox(runId, nodeId, box)
-  return { text: e.text, images: e.images, annotations: e.annotations }
+  const out: ClarifyDraftStash & { at: number; imagesDropped?: number } = {
+    text: e.text,
+    images: e.images,
+    annotations: e.annotations,
+    at: e.at,
+  }
+  if (e.imagesDropped) out.imagesDropped = e.imagesDropped
+  return out
 }
 
 /** Forget a send (failed for another reason). */
@@ -317,8 +551,13 @@ export function ackClarifyOutboxText(runId: string, nodeId: string, text: string
  * Mirror the composer into the stash while it holds rescued text, so a refresh
  * keeps the user's edits; an empty composer clears it.
  */
-export function replaceClarifyStash(runId: string, nodeId: string, next: ClarifyDraftStash): void {
-  if (!runId || !nodeId) return
+export function replaceClarifyStash(
+  runId: string,
+  nodeId: string,
+  next: ClarifyDraftStash,
+  parts: RescuedPart[] = [],
+): { imagesDropped: number } {
+  if (!runId || !nodeId) return { imagesDropped: 0 }
   clearClarifyStash(runId, nodeId)
-  stashClarifyDraft(runId, nodeId, next)
+  return stashClarifyDraft(runId, nodeId, next, { parts })
 }

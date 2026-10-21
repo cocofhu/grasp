@@ -7,6 +7,8 @@ import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpT
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   ackClarifyOutboxText,
+  insertRescued,
+  type RescuedPart,
   clearClarifyStash,
   readClarifyStash,
   replaceClarifyStash,
@@ -1375,7 +1377,13 @@ function composerOpen(): boolean {
  * (never overwriting it). With `focus`, keep focus in the composer (caret
  * stays where the user was typing) unless they moved to another field.
  */
-function mergeIntoComposer(text: string, imgs: ClarifyImage[], anns: ReactAnnotation[], focus: boolean) {
+function mergeIntoComposer(
+  text: string,
+  imgs: ClarifyImage[],
+  anns: ReactAnnotation[],
+  focus: boolean,
+  order: { at?: number; parts?: RescuedPart[] } = {},
+) {
   const el = textareaRef.value
   const hadFocus = !!el && document.activeElement === el
   const selStart = hadFocus ? el!.selectionStart : 0
@@ -1384,13 +1392,21 @@ function mergeIntoComposer(text: string, imgs: ClarifyImage[], anns: ReactAnnota
   const t = text.trim()
   let shift = 0
   if (t) {
-    if (!current.trim()) {
+    if (typeof order.at === 'number') {
+      // Rescued message: keep rescued ones in send order, ahead of new typing.
+      const r = insertRescued(current, rescuedHead, { text: t, at: order.at })
+      rescuedHead = r.head
+      draft.value = r.text
+      shift = r.text.length - current.length
+    } else if (!current.trim()) {
       draft.value = t
       shift = t.length - current.length
+      rescuedHead = order.parts?.length && t.startsWith(order.parts.map((p) => p.text).join('\n')) ? order.parts : []
     } else if (!current.includes(t)) {
       const prefix = `${t}\n`
       draft.value = prefix + current
       shift = prefix.length
+      rescuedHead = []
     }
   }
   const imgKey = (im: ClarifyImage) => JSON.stringify(im)
@@ -1432,30 +1448,46 @@ function mergeIntoComposer(text: string, imgs: ClarifyImage[], anns: ReactAnnota
  * until that text is sent or cleared, so a refresh never loses it.
  */
 let stashLive = false
+/** Rescued messages at the head of the draft, oldest send first (S19). */
+let rescuedHead: RescuedPart[] = []
 
-/** Restore a run+node stash once the composer is open again (run resumed). */
+/** Inline images left out of the stash for size (S21); null when none. */
+const stashNotice = ref<string | null>(null)
+function noteImagesDropped(n: number | undefined) {
+  if (n && n > 0) stashNotice.value = translate('pages.clarify.stashImagesDropped', { n })
+}
+
+/**
+ * Restore this tab's run+node stash once the composer is open again (run
+ * resumed). Another open tab's stash is never refilled here (S18): only the
+ * tab that sent a message puts it back. A closed tab's stash is adopted.
+ */
 function restoreStashedDraft() {
   if (!composerOpen()) return
-  const s = readClarifyStash(props.runId, props.nodeId)
+  const s = readClarifyStash(props.runId, props.nodeId, { adopt: true })
   if (!s) return
   stashLive = true
-  mergeIntoComposer(s.text, s.images, s.annotations, false)
+  mergeIntoComposer(s.text, s.images, s.annotations, false, { parts: s.parts })
+  noteImagesDropped(s.imagesDropped)
 }
 
 /** Composer closed (run ended) or is going away: keep the unsent draft per run+node. */
 function stashComposerDraft(): boolean {
   if (!hasComposerDraft()) return false
-  stashClarifyDraft(props.runId, props.nodeId, {
+  const r = stashClarifyDraft(props.runId, props.nodeId, {
     text: draft.value,
     images: cloneClarifyImages(attachments.value),
     annotations: cloneReactAnnotations(annotations.value),
   })
+  noteImagesDropped(r.imagesDropped)
   stashLive = true
   return true
 }
 
 /** Composer sent or emptied: the rescued text is gone on purpose. */
 function releaseStash() {
+  rescuedHead = []
+  stashNotice.value = null
   if (!stashLive) return
   stashLive = false
   clearClarifyStash(props.runId, props.nodeId)
@@ -1469,11 +1501,18 @@ watch(
       releaseStash()
       return
     }
-    replaceClarifyStash(props.runId, props.nodeId, {
-      text: draft.value,
-      images: cloneClarifyImages(attachments.value),
-      annotations: cloneReactAnnotations(annotations.value),
-    })
+    const headText = rescuedHead.map((p) => p.text).join('\n')
+    if (rescuedHead.length && !draft.value.startsWith(headText)) rescuedHead = []
+    replaceClarifyStash(
+      props.runId,
+      props.nodeId,
+      {
+        text: draft.value,
+        images: cloneClarifyImages(attachments.value),
+        annotations: cloneReactAnnotations(annotations.value),
+      },
+      rescuedHead,
+    )
   },
   { deep: true, flush: 'post' },
 )
@@ -1508,7 +1547,16 @@ onBeforeUnmount(() => {
  * Shows `notice` instead of any chat reply.
  */
 function restoreUnsentQueued(
-  sent: { text?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; clientId?: string },
+  sent: {
+    text?: string
+    images?: ClarifyImage[]
+    annotations?: ReactAnnotation[]
+    clientId?: string
+    /** Send time (outbox), so several refusals come back in send order. */
+    at?: number
+    /** Inline images the outbox already had to leave out. */
+    imagesDropped?: number
+  },
   notice: string,
   opts: { autoRetryOnResume?: boolean } = {},
 ) {
@@ -1535,13 +1583,21 @@ function restoreUnsentQueued(
   if (!text && !imgs.length && !anns.length) return
   // Always stash (even with the composer open): a refresh or /gates dropping
   // this item before the user resends must not lose it. Cleared on send/clear.
-  stashClarifyDraft(props.runId, props.nodeId, {
-    text,
-    images: cloneClarifyImages(imgs),
-    annotations: cloneReactAnnotations(anns),
-  })
+  const at = typeof sent.at === 'number' ? sent.at : Date.now()
+  const r = stashClarifyDraft(
+    props.runId,
+    props.nodeId,
+    {
+      text,
+      images: cloneClarifyImages(imgs),
+      annotations: cloneReactAnnotations(anns),
+    },
+    { at },
+  )
+  // With the composer open the images are back in it; only say so when they are not.
+  noteImagesDropped((composerOpen() ? 0 : r.imagesDropped) + (sent.imagesDropped ?? 0))
   stashLive = true
-  if (composerOpen()) mergeIntoComposer(text, imgs, anns, true)
+  if (composerOpen()) mergeIntoComposer(text, imgs, anns, true, { at })
 }
 
 /** Notice copy for a clarify_visit_ended refusal. */
@@ -1768,6 +1824,9 @@ function applyVisitEndedFrame(frame: {
         text: mine.text,
         images: sameTurn && local!.images.length ? local!.images : mine.images,
         annotations: mine.annotations.length ? mine.annotations : (sameTurn ? local!.annotations : []),
+        at: mine.at,
+        // Same turn: the live bubble's images are complete, nothing was lost.
+        imagesDropped: sameTurn && local!.images.length ? 0 : mine.imagesDropped,
       },
       visitEndedNotice(false),
     )
@@ -2266,6 +2325,7 @@ function retryLastFailed() {
     restoreUnsentQueued,
     visitEndedNotice,
     sendNotice,
+    stashNotice,
     forceAuthoritativeIdle,
     settleAfterTurnEnd,
     applyQueueState,

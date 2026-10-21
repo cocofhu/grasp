@@ -8,9 +8,16 @@ import {
 } from '@/lib/inbox/clarifyDraftStash'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 
-type Translate = (key: string) => string
+type Translate = (key: string, named?: Record<string, unknown>) => string
 
-type Sent = { text?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; clientId?: string }
+type Sent = {
+  text?: string
+  images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
+  clientId?: string
+  at?: number
+  imagesDropped?: number
+}
 
 export type RestoreUnsent = (sent: Sent, notice: string, opts?: { autoRetryOnResume?: boolean }) => void
 
@@ -74,9 +81,12 @@ export function handleClarifyVisitEnded(
     images: ctx.sent.images?.length ? ctx.sent.images : outbox?.images,
     annotations: ctx.sent.annotations?.length ? ctx.sent.annotations : outbox?.annotations,
   }
+  const usedLocalImages = !!ctx.sent.images?.length
   const sent: Sent = ctx.retryLast
     ? {}
     : {
+        at: outbox?.at,
+        imagesDropped: usedLocalImages ? 0 : outbox?.imagesDropped,
         clientId: dropped.clientId,
         text: local.text || dropped.text,
         images: local.images?.length ? local.images : (dropped.images ?? local.images),
@@ -87,11 +97,19 @@ export function handleClarifyVisitEnded(
     return { notice, shownInChat: true }
   }
   if (!auto && !ctx.retryLast) {
-    stashClarifyDraft(ctx.runId, ctx.nodeId, {
-      text: sent.text ?? '',
-      images: sent.images ?? [],
-      annotations: sent.annotations ?? [],
-    })
+    const r = stashClarifyDraft(
+      ctx.runId,
+      ctx.nodeId,
+      {
+        text: sent.text ?? '',
+        images: sent.images ?? [],
+        annotations: sent.annotations ?? [],
+      },
+      { at: sent.at ?? Date.now() },
+    )
+    const n = r.imagesDropped + (sent.imagesDropped ?? 0)
+    // No chat to show it in: one toast carries both lines.
+    if (n > 0) return { notice: `${notice}\n${t('pages.clarify.stashImagesDropped', { n })}`, shownInChat: false }
   }
   return { notice, shownInChat: false }
 }

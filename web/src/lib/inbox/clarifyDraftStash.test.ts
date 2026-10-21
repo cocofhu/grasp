@@ -6,6 +6,9 @@ import {
   STASH_TTL_MS,
   ackClarifyOutboxText,
   budgetImages,
+  clarifyTabId,
+  insertRescued,
+  isOtherLiveTab,
   clearClarifyStash,
   dropClarifyOutbox,
   mergeClarifyText,
@@ -16,6 +19,14 @@ import {
   sweepClarifyStash,
   takeClarifyOutbox,
 } from './clarifyDraftStash'
+
+/** Stash / outbox keys only (the tab id and heartbeat live alongside). */
+function countKeys(st: Storage, prefix: string): number {
+  let n = 0
+  for (let i = 0; i < st.length; i++) if (st.key(i)?.startsWith(prefix)) n++
+  return n
+}
+
 
 afterEach(() => {
   localStorage.clear()
@@ -31,7 +42,7 @@ describe('clarifyDraftStash', () => {
     stashClarifyDraft('r', 'n', { text: '第一条', images: [img], annotations: [] })
     stashClarifyDraft('r', 'n', { text: '第二条', images: [img], annotations: [] })
     stashClarifyDraft('r', 'n', { text: '第一条', images: [], annotations: [] })
-    expect(readClarifyStash('r', 'n')).toEqual({ text: '第一条\n第二条', images: [img], annotations: [] })
+    expect(readClarifyStash('r', 'n')).toMatchObject({ text: '第一条\n第二条', images: [img], annotations: [] })
     expect(readClarifyStash('r', 'other')).toBeNull()
     clearClarifyStash('r', 'n')
     expect(readClarifyStash('r', 'n')).toBeNull()
@@ -40,7 +51,7 @@ describe('clarifyDraftStash', () => {
   it('ignores empty payloads, bad JSON and missing ids', () => {
     stashClarifyDraft('r', 'n', { text: '  ', images: [], annotations: [] })
     expect(readClarifyStash('r', 'n')).toBeNull()
-    localStorage.setItem('grasp-clarify-stash:anon:r:n', '{oops')
+    localStorage.setItem(`grasp-clarify-stash:anon:${clarifyTabId()}:r:n`, '{oops')
     expect(readClarifyStash('r', 'n')).toBeNull()
     stashClarifyDraft('', 'n', { text: 'x', images: [], annotations: [] })
     expect(readClarifyStash('', 'n')).toBeNull()
@@ -49,14 +60,21 @@ describe('clarifyDraftStash', () => {
   it('keeps the text when images exceed the storage quota', () => {
     const store = new Map<string, string>()
     let calls = 0
-    vi.spyOn(localStorage, 'getItem').mockImplementation((k: string) => store.get(k) ?? null)
-    vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
-      calls += 1
-      if (calls === 1) throw new Error('QuotaExceededError')
+    const g = vi.spyOn(localStorage, 'getItem').mockImplementation((k: string) => store.get(k) ?? null)
+    const st = vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+      if (k.startsWith('grasp-clarify-stash:')) {
+        calls += 1
+        if (calls === 1) throw new Error('QuotaExceededError')
+      }
       store.set(k, v)
     })
-    stashClarifyDraft('r', 'n', { text: '文字', images: [{ data: 'big', mimeType: 'image/png' }], annotations: [] })
-    expect(readClarifyStash('r', 'n')).toEqual({ text: '文字', images: [], annotations: [] })
+    try {
+      stashClarifyDraft('r', 'n', { text: '文字', images: [{ data: 'big', mimeType: 'image/png' }], annotations: [] })
+      expect(readClarifyStash('r', 'n')).toMatchObject({ text: '文字', images: [], annotations: [], imagesDropped: 1 })
+    } finally {
+      g.mockRestore()
+      st.mockRestore()
+    }
   })
 
   it('merges text first-in-first', () => {
@@ -84,8 +102,8 @@ describe('clarifyDraftStash', () => {
     vi.setSystemTime(Date.now() + STASH_TTL_MS + 1)
     expect(readClarifyStash('r', 'n')).toBeNull()
     sweepClarifyStash(Date.now(), true)
-    expect(localStorage.length).toBe(0)
-    expect(sessionStorage.length).toBe(0)
+    expect(countKeys(localStorage, 'grasp-clarify-stash:')).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
   })
 
   it('caps inline image bytes and keeps ref-only images', () => {
@@ -94,7 +112,7 @@ describe('clarifyDraftStash', () => {
     const ref = { ref: 'blob:1', mimeType: 'image/png', name: 'ref' }
     expect(budgetImages([big, second, ref]).map((i) => i.name)).toEqual(['big', 'ref'])
     stashClarifyDraft('r', 'n', { text: 't', images: [big, second, ref], annotations: [] })
-    expect(readClarifyStash('r', 'n')!.images.map((i) => i.name)).toEqual(['big', 'ref'])
+    expect(readClarifyStash('r', 'n')!.images.map((i) => i.name)).toMatchObject(['big', 'ref'])
   })
 
   it('outbox: per tab (sessionStorage), take consumes, drop and ack forget', () => {
@@ -111,15 +129,60 @@ describe('clarifyDraftStash', () => {
     spy.mockRestore()
     putClarifyOutbox('r', 'n', a, { text: '一', images: [], annotations: [] })
     putClarifyOutbox('r', 'n', b, { text: '二', images: [], annotations: [] })
-    expect(localStorage.length).toBe(0)
+    expect(countKeys(localStorage, 'grasp-clarify-stash:')).toBe(0)
     expect(takeClarifyOutbox('r', 'n', 'nope')).toBeNull()
     expect(takeClarifyOutbox('r', 'n', undefined)).toBeNull()
-    expect(takeClarifyOutbox('r', 'n', a)).toEqual({ text: '一', images: [], annotations: [] })
+    expect(takeClarifyOutbox('r', 'n', a)).toMatchObject({ text: '一', images: [], annotations: [] })
     expect(takeClarifyOutbox('r', 'n', a)).toBeNull()
     ackClarifyOutboxText('r', 'n', '二')
     expect(takeClarifyOutbox('r', 'n', b)).toBeNull()
     putClarifyOutbox('r', 'n', a, { text: '三', images: [], annotations: [] })
     dropClarifyOutbox('r', 'n', a)
-    expect(sessionStorage.length).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
+  })
+
+  it('insertRescued keeps rescued messages in send order ahead of typing', () => {
+    let r = insertRescued('打字中', [], { text: 'b', at: 2 })
+    expect(r.text).toBe('b\n打字中')
+    r = insertRescued(r.text, r.head, { text: 'a', at: 1 })
+    expect(r.text).toBe('a\nb\n打字中')
+    r = insertRescued(r.text, r.head, { text: 'a', at: 1 })
+    expect(r.text).toBe('a\nb\n打字中')
+    // The user rewrote the head: start a fresh head instead of reordering it.
+    r = insertRescued('改过了', r.head, { text: 'c', at: 3 })
+    expect(r.text).toBe('c\n改过了')
+  })
+
+  it('stash ordering by send time when refusals arrive reversed', () => {
+    stashClarifyDraft('r', 'n', { text: '第二条', images: [], annotations: [] }, { at: 20 })
+    stashClarifyDraft('r', 'n', { text: '第一条', images: [], annotations: [] }, { at: 10 })
+    expect(readClarifyStash('r', 'n')!.text).toBe('第一条\n第二条')
+  })
+
+  it('reports inline images left out for size', () => {
+    const big = { data: 'x'.repeat(INLINE_IMAGE_BUDGET + 1), mimeType: 'image/png' }
+    expect(stashClarifyDraft('r', 'n', { text: 't', images: [big], annotations: [] }).imagesDropped).toBe(1)
+    expect(readClarifyStash('r', 'n')!.imagesDropped).toBe(1)
+    putClarifyOutbox('r', 'n', 'id', { text: 't', images: [big], annotations: [] })
+    expect(takeClarifyOutbox('r', 'n', 'id')!.imagesDropped).toBe(1)
+  })
+
+  it('per tab: another live tab\'s stash is invisible; a closed tab\'s is adopted', () => {
+    localStorage.setItem('grasp-clarify-tab-alive:live', String(Date.now()))
+    localStorage.setItem(
+      'grasp-clarify-stash:anon:live:r:n',
+      JSON.stringify({ text: '活着的', images: [], annotations: [], at: Date.now() }),
+    )
+    localStorage.setItem(
+      'grasp-clarify-stash:anon:dead:r:n',
+      JSON.stringify({ text: '关掉的', images: [], annotations: [], at: Date.now() }),
+    )
+    expect(readClarifyStash('r', 'n')).toBeNull()
+    expect(readClarifyStash('r', 'n', { adopt: true })!.text).toBe('关掉的')
+    expect(localStorage.getItem('grasp-clarify-stash:anon:dead:r:n')).toBeNull()
+    expect(localStorage.getItem('grasp-clarify-stash:anon:live:r:n')).not.toBeNull()
+    expect(isOtherLiveTab('live')).toBe(true)
+    expect(isOtherLiveTab('dead')).toBe(false)
+    expect(isOtherLiveTab(clarifyTabId())).toBe(false)
   })
 })

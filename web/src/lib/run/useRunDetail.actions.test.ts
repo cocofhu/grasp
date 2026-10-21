@@ -319,7 +319,13 @@ describe('useRunDetail actions', () => {
     mocks.reactReply.mockRejectedValueOnce(ended(false))
     await detail.onClarifySend('late', [{ data: 'aGk=', mimeType: 'image/png' }])
     expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
-      { clientId: undefined, text: 'late', images: [{ data: 'aGk=', mimeType: 'image/png' }], annotations: [] },
+      expect.objectContaining({
+        text: 'late',
+        images: [{ data: 'aGk=', mimeType: 'image/png' }],
+        annotations: [],
+        // Send time from the outbox, so several refusals keep send order.
+        at: expect.any(Number),
+      }),
       '运行已结束，这条消息没有发送；续跑后请重新发送',
       { autoRetryOnResume: false },
     )
