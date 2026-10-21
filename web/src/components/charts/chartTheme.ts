@@ -160,12 +160,21 @@ export function pieChartOption(slices: PieSlice[], donut = false) {
   const colors = slices.map((s, i) => s.color || ['#4f46e5', '#7c6dff', '#a99cff', '#94a3b8'][i % 4])
   return {
     tooltip: statsTooltip({ trigger: 'item', formatter: pieTooltipFormatter }),
-    legend: pieLegend(),
+    legend: {
+      ...pieLegend(),
+      // Name + share live in the legend; outer labels used to overlap it.
+      formatter: (name: string) => {
+        const total = slices.reduce((a, x) => a + (x.value || 0), 0) || 1
+        const v = slices.find((x) => x.name === name)?.value || 0
+        return `${name}  ${((v / total) * 100).toFixed(1)}%`
+      },
+      textStyle: { fontSize: 11, color: tone.legend, width: 132, overflow: 'truncate' as const },
+    },
     series: [
       {
         type: 'pie' as const,
-        radius: donut ? (['36%', '54%'] as [string, string]) : '54%',
-        center: ['38%', '50%'],
+        radius: donut ? (['44%', '66%'] as [string, string]) : '66%',
+        center: ['26%', '50%'],
         data: slices.map((s) => ({
           name: s.name,
           value: s.value,
@@ -174,13 +183,8 @@ export function pieChartOption(slices: PieSlice[], donut = false) {
         })),
         itemStyle: { borderWidth: 0 },
         color: colors,
-        label: {
-          show: true,
-          formatter: '{b} {d}%',
-          fontSize: 10,
-          color: tone.pieLabel,
-        },
-        labelLayout: { hideOverlap: true },
+        label: { show: false },
+        labelLine: { show: false },
       },
     ],
   }
