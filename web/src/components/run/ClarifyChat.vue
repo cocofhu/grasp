@@ -353,6 +353,16 @@ watch(() => handoffRow.value?.phase, (ph) => { if (ph) void scrollBottom() })
 // (the host disables it while following the run, enables it on the next node).
 watch(() => props.handoff?.phase, (ph) => { if (ph === 'done') validating.value = false })
 
+/**
+ * Observe (read-only auto run) view: while the agent is busy and no message
+ * text has arrived, 「思考中…」 is the only busy indicator — the thought
+ * summary's 生成中… badge and the bottom 「刚刚」 time wait for the message.
+ * The interactive chat keeps its existing indicators.
+ */
+function observeQuietBusy(t: ClarifyTurn): boolean {
+  return !!props.observe && t.role === 'agent' && !!t.streaming && !agentHasMessage(t)
+}
+
 const railScopeKey = computed(() => `${props.runId}:${props.nodeId}:${props.iteration}`)
 const resolveMessageAnchors = createClarifyChatAnchors(`clarify-${useId().replace(/:/g, '')}`)
 const messageAnchorState = computed(() => resolveMessageAnchors(railScopeKey.value, displayTurns.value))
@@ -1110,6 +1120,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :run-id="runId"
               :started-at="outputBounds(i).startedAt"
               :ended-at="outputBounds(i).endedAt"
+              :quiet-thought="observeQuietBusy(t)"
               message-test-id="clarify-agent-message"
               @reveal="scrollBottom()"
             >
@@ -1131,7 +1142,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   data-testid="clarify-thought-summary"
                 >
                   <ThoughtSummaryStatus
-                    :busy="!!t.streaming"
+                    :busy="!!t.streaming && !observeQuietBusy(t)"
                     :completed="showTurnCompleted(t)"
                     :interrupted="!!t.interrupted"
                   />
@@ -1544,7 +1555,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </div>
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
           <div
-            v-if="!showTurnCompleted(t)"
+            v-if="!showTurnCompleted(t) && !observeQuietBusy(t)"
             class="chat-meta mt-1"
             :class="t.role === 'human' ? 'text-right' : ''"
             data-testid="clarify-turn-bottom-time"
