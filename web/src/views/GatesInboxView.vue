@@ -172,6 +172,10 @@ const {
   clarifyComposerTurns,
   activeNodeTask,
   clarifyComposerDone,
+  activeHandoff,
+  activeChainSegments,
+  clarifyComposerLocked,
+  activeFollowTail,
   inboxClarifyStageKind,
   inboxReviewState,
   reviewActive,
@@ -434,6 +438,11 @@ const listFadeKey = computed(() =>
               :seed-human-text="activeHomeSeed?.text"
               :seed-human-images="activeHomeSeed?.images ?? []"
               :done="clarifyComposerDone"
+              :handoff="activeHandoff"
+              :prior-segments="activeChainSegments"
+              :node-label="active?.type === 'clarify' ? active.label : undefined"
+              :follow-tail="activeFollowTail"
+              :composer-locked="clarifyComposerLocked"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
               :confirm-can-abort="clarifyConfirmCanAbort"
@@ -470,7 +479,7 @@ const listFadeKey = computed(() =>
 
     <!-- Desktop: existing panel only. Pending rows live in the sidebar. -->
     <div
-      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"
+      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"
       class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
@@ -547,6 +556,11 @@ const listFadeKey = computed(() =>
                   :seed-human-text="activeHomeSeed?.text"
                   :seed-human-images="activeHomeSeed?.images ?? []"
                   :done="clarifyComposerDone"
+                  :handoff="activeHandoff"
+                  :prior-segments="activeChainSegments"
+                  :node-label="active?.type === 'clarify' ? active.label : undefined"
+                  :follow-tail="activeFollowTail"
+                  :composer-locked="clarifyComposerLocked"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"
                   :confirm-can-abort="clarifyConfirmCanAbort"

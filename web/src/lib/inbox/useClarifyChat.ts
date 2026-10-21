@@ -1231,7 +1231,7 @@ function finishEarly() {
   // Click intent: play overlay immediately; parent force must not wait for done (g1.1).
   if (validating.value || confirmDisabled.value) return
   validating.value = true
-  void playConfirmCeremony()
+  // Hand-off progress is shown inline in the transcript (no full-desk overlay).
   emit('finish')
   void scrollBottom()
 }

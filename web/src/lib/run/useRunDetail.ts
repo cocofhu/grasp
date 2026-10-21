@@ -624,7 +624,7 @@ async function onClarifySend(
       : annotations
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
   // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
-  if (force) void playConfirmFlowCeremony(reviewChatRef.value)
+  // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)

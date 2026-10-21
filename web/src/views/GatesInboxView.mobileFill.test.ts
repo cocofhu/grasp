@@ -61,7 +61,7 @@ describe('GatesInboxView review/clarify composer mode', () => {
     expect(resolveBindings.length).toBe(2)
     // Leave pending on confirm click (plan g1.1 / g1.2); restore on wrap-up failure (g2.2).
     expect(src).toMatch(/Leave pending at confirm click/)
-    expect(src).toMatch(/play overlay \+ leave pending before wrap-up HTTP/)
+    expect(src).toMatch(/inline hand-off row/)
     expect(src).toMatch(/restoreListItemLocally/)
   })
 
@@ -171,9 +171,9 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
 
     const desktop = src.slice(src.indexOf('<!-- Desktop: existing panel'))
     // Content with rows first; empty-path order is skeleton → error → EmptyState.
-    expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"')).toBeGreaterThan(-1)
+    expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"')).toBeGreaterThan(-1)
     expect(desktop.indexOf('v-else-if="!isMobile && showListSkeleton"')).toBeGreaterThan(
-      desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold)"'),
+      desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"'),
     )
     expect(desktop.indexOf('v-else-if="!isMobile && showListError"')).toBeGreaterThan(
       desktop.indexOf('v-else-if="!isMobile && showListSkeleton"'),

@@ -1,4 +1,29 @@
+<script lang="ts">
+/** Host-owned inline hand-off after 确认并流转 (see useGatesInbox.activeHandoff). */
+export type ClarifyHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
+/** Earlier node of the same run shown above this conversation (useGatesInbox.activeChainSegments). */
+export type ClarifyPriorSegment = {
+  nodeId: string
+  iteration: number
+  label: string
+  kind: 'chat' | 'auto' | 'gate'
+  status: string
+  at: string
+  /** Ended segments only; preferred meta time. */
+  endedAt?: string
+  turns: ClarifyTurn[]
+  /** Gate segments (#850 follow-up): approve / reject outcome, when the backend sends one. */
+  decision?: string
+  open: boolean
+  /** Consecutive auto nodes folded into one row (Linear-style grouping): their labels. */
+  group?: string[]
+}
+/** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
+export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
+</script>
+
 <script setup lang="ts">
+import { fmtTurnElapsed } from '@/lib/shared/format'
 import Icon from '../ui/Icon.vue'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
@@ -72,6 +97,16 @@ const props = withDefaults(
     stopping?: boolean
     /** Taken-over node's task: shown as the opening User Message, above the auto-phase fold row. */
     nodeTask?: string
+    /** Inline hand-off row (host phase); without it the row follows this chat's own confirm click. */
+    handoff?: ClarifyHandoff | null
+    /** Earlier nodes of this run (continuous transcript, one fold per node). */
+    priorSegments?: ClarifyPriorSegment[]
+    /** This node's label, for the separator into it. */
+    nodeLabel?: string
+    /** Same composer, locked (following the run after a hand-off): no typing / attach / primary. */
+    composerLocked?: boolean
+    /** Row under the hand-off while following the run. */
+    followTail?: ClarifyFollowTail | null
   }>(),
   {
     active: true,
@@ -292,6 +327,32 @@ const {
   editQueuedItem,
 } = chat
 
+/**
+ * Inline hand-off row at the end of the transcript, replacing the full-desk
+ * 已确认并流转 overlay. The host (inbox) owns the phase when it passes
+ * `handoff`; otherwise (run detail) it follows this chat: pending from the
+ * confirm click until `done`, then done.
+ */
+const localHandoffAt = ref<string | null>(null)
+watch(
+  () => props.done,
+  (d) => {
+    if (d && validating.value) localHandoffAt.value = new Date().toISOString()
+    if (!d) localHandoffAt.value = null
+  },
+  { flush: 'sync' },
+)
+const handoffRow = computed<ClarifyHandoff | null>(() => {
+  if (props.handoff) return props.handoff
+  if (validating.value) return { phase: 'pending', at: '' }
+  if (localHandoffAt.value) return { phase: 'done', at: localHandoffAt.value }
+  return null
+})
+watch(() => handoffRow.value?.phase, (ph) => { if (ph) void scrollBottom() })
+// Host hand-off settled: the composer drops「校验中…」and stays the same composer
+// (the host disables it while following the run, enables it on the next node).
+watch(() => props.handoff?.phase, (ph) => { if (ph === 'done') validating.value = false })
+
 const railScopeKey = computed(() => `${props.runId}:${props.nodeId}:${props.iteration}`)
 const resolveMessageAnchors = createClarifyChatAnchors(`clarify-${useId().replace(/:/g, '')}`)
 const messageAnchorState = computed(() => resolveMessageAnchors(railScopeKey.value, displayTurns.value))
@@ -333,6 +394,81 @@ function openImagePreview(images: ClarifyImage[], index: number) {
 }
 
 /** Clarify passes its own reply copy; review uses the shared send copy. */
+/**
+ * Earlier nodes as transcript rows. Consecutive unattended (auto) nodes fold
+ * into one row — like Linear's grouped activity — so a long auto stretch
+ * reads as one step, not a ladder of identical lines.
+ */
+const priorRows = computed<ClarifyPriorSegment[]>(() => {
+  const rows: ClarifyPriorSegment[] = []
+  for (const seg of props.priorSegments ?? []) {
+    const last = rows[rows.length - 1]
+    if (seg.kind === 'auto' && last && last.kind === 'auto' && last.status === 'completed' && seg.status === 'completed') {
+      rows[rows.length - 1] = {
+        ...last,
+        group: [...(last.group ?? [last.label]), seg.label],
+        endedAt: seg.endedAt,
+        nodeId: last.nodeId,
+      }
+      continue
+    }
+    rows.push(seg)
+  }
+  return rows
+})
+function segSeconds(seg: ClarifyPriorSegment): number | null {
+  if (!seg.endedAt || !seg.at) return null
+  const sec = (Date.parse(seg.endedAt) - Date.parse(seg.at)) / 1000
+  return Number.isFinite(sec) && sec >= 0 ? sec : null
+}
+/** Right-hand meta of a fold row: 用时 (Codex「Worked for」) when the node ended, else when it ran. */
+function priorSegmentMeta(seg: ClarifyPriorSegment): string {
+  const sec = segSeconds(seg)
+  const time = sec == null ? '' : fmtTurnElapsed(sec)
+  return time ? translate('pages.clarify.turnElapsed', { time }) : relTime(seg.at)
+}
+type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean; title: string; busyLabel: string; doneLabel: string; interruptedLabel: string }
+/**
+ * Tail row after a hand-off. Title = what the run is doing; right label =
+ * what happens next (where the conversation continues), so the disabled
+ * composer never reads as broken.
+ */
+const followTailView = computed<FollowTailView | null>(() => {
+  const ft = props.followTail
+  if (!ft) return null
+  const at = relTime(ft.at)
+  const base = { busy: false, completed: false, interrupted: false, busyLabel: '', doneLabel: at, interruptedLabel: at }
+  if (ft.kind === 'auto') {
+    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followAutoTo', { name: ft.label }) : translate('pages.clarify.followAuto'), busyLabel: translate('pages.clarify.followAutoBadge') }
+  }
+  if (ft.kind === 'waiting') {
+    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followWaitingTo', { name: ft.label }) : translate('pages.clarify.followWaiting'), busyLabel: translate('pages.clarify.followWaitingBadge') }
+  }
+  if (ft.kind === 'error') {
+    return { ...base, busy: true, title: translate('pages.clarify.followError'), busyLabel: translate('pages.clarify.followErrorBadge') }
+  }
+  if (ft.status === 'failed') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedFailed') }
+  if (ft.status === 'cancelled') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedCancelled') }
+  return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
+})
+
+/**
+ * Fold-row title of an earlier node. Gate segments (人工审批, optionally with
+ * the reject / re-review discussion as turns) keep the approval line; a
+ * rejected decision is spelled out. Today's backend folds gate discussions
+ * into the upstream node's chat segment — that renders as a plain chat row.
+ */
+function priorSegmentTitle(seg: ClarifyPriorSegment): string {
+  if (seg.kind === 'gate') {
+    const d = String(seg.decision || '').toLowerCase()
+    return /^(reject|rejected|fail|failed|revise)$/.test(d)
+      ? translate('pages.clarify.segmentGateRejected', { name: seg.label })
+      : translate('pages.clarify.segmentGate', { name: seg.label })
+  }
+  if (seg.kind === 'chat') return translate('pages.clarify.segmentChat', { name: seg.label, n: seg.turns.length })
+  if (seg.group && seg.group.length > 1) return translate('pages.clarify.segmentAutoGroup', { names: seg.group.join('、') })
+  return translate('pages.clarify.segmentAuto', { name: seg.label })
+}
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
 const showHotConfirm = computed(() => !props.hideFinish && !composerBlocksConfirm.value)
@@ -709,7 +845,73 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
-      <!-- Taken-over node: what it was asked to do, as the conversation's first User Message (same user-bubble style). -->
+      <!-- Continuous run transcript: earlier nodes fold above, then a separator into this node. -->
+      <template v-if="priorSegments && priorSegments.length">
+        <template v-for="seg in priorRows" :key="seg.nodeId + ':' + seg.iteration">
+          <details
+            v-if="(seg.kind === 'chat' || seg.kind === 'gate') && seg.turns.length"
+            class="chat-thought chat-meta clarify-prior-segment w-full"
+            data-testid="clarify-prior-segment"
+            :data-node-id="seg.nodeId"
+            :data-kind="seg.kind"
+            :open="seg.open"
+          >
+            <summary class="chat-thought-summary" data-testid="clarify-prior-summary">
+              <ThoughtSummaryStatus
+                :completed="seg.status !== 'failed' && seg.status !== 'cancelled'"
+                :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
+                :title="priorSegmentTitle(seg)"
+                :done-label="priorSegmentMeta(seg)"
+              :interrupted-label="priorSegmentMeta(seg)"
+              />
+              <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
+            </summary>
+            <div class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+              <div
+                v-for="(pt, pi) in seg.turns"
+                :key="pi"
+                class="flex"
+                :class="pt.role === 'human' ? 'justify-end' : ''"
+                :data-turn-role="pt.role"
+              >
+                <div
+                  v-if="pt.role === 'human'"
+                  class="chat-user-message max-w-[88%] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
+                >{{ pt.text }}</div>
+                <div v-else class="chat-prose md w-full" v-html="renderChatMarkdown(pt.text)" />
+              </div>
+            </div>
+          </details>
+          <div
+            v-else
+            class="clarify-handoff-step chat-meta flex w-full min-w-0"
+            data-testid="clarify-prior-segment"
+            :data-node-id="seg.nodeId"
+            :data-kind="seg.kind"
+          >
+            <ThoughtSummaryStatus
+              :completed="seg.status !== 'failed' && seg.status !== 'cancelled'"
+              :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
+              :title="priorSegmentTitle(seg)"
+              :done-label="priorSegmentMeta(seg)"
+              :interrupted-label="priorSegmentMeta(seg)"
+            />
+          </div>
+        </template>
+        <div
+          class="clarify-handoff-step clarify-segment-divider chat-meta flex w-full min-w-0"
+          data-testid="clarify-segment-divider"
+          role="separator"
+        >
+          <ThoughtSummaryStatus
+            :completed="true"
+            :title="nodeLabel ? translate('pages.clarify.handoffDoneTo', { name: nodeLabel }) : translate('pages.clarify.handoffDone')"
+            :done-label="translate('pages.clarify.segmentCurrent')"
+          />
+        </div>
+      </template>
+      <!-- What this node is doing, as its first User Message: the chain segment's task after a
+           hand-off (below the separator), or the taken-over node's task. Same user-bubble style. -->
       <div
         v-if="nodeTask?.trim()"
         class="clarify-turn flex justify-end"
@@ -1350,6 +1552,46 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </div>
       </template>
+      <!-- Inline hand-off (方案 B): one more step row in the「思考过程」style — ⟳ 流转到下一节点 · 校验中… → ✓ 已确认并流转 · 已完成. -->
+      <Transition name="clarify-row">
+      <div
+        v-if="handoffRow"
+        class="clarify-handoff-step chat-meta mt-2 flex w-full min-w-0"
+        data-testid="clarify-handoff"
+        :data-state="handoffRow.phase"
+        role="status"
+      >
+        <ThoughtSummaryStatus
+          :busy="handoffRow.phase === 'pending'"
+          :completed="handoffRow.phase === 'done'"
+          :title="handoffRow.phase === 'pending'
+            ? (handoffRow.target ? translate('pages.clarify.handoffStepTo', { name: handoffRow.target }) : translate('pages.clarify.handoffStep'))
+            : (handoffRow.target ? translate('pages.clarify.handoffDoneTo', { name: handoffRow.target }) : translate('pages.clarify.handoffDone'))"
+          :busy-label="translate('pages.clarify.validating')"
+        />
+      </div>
+      </Transition>
+      <Transition name="clarify-row">
+        <div
+          v-if="handoffRow && followTail && followTailView"
+          :key="followTail.kind + ':' + (followTail.label || '') + ':' + (followTail.status || '')"
+          class="clarify-handoff-step chat-meta flex w-full min-w-0"
+          data-testid="clarify-follow-tail"
+          :data-kind="followTail.kind"
+          role="status"
+          aria-live="polite"
+        >
+          <ThoughtSummaryStatus
+            :busy="followTailView.busy"
+            :completed="followTailView.completed"
+            :interrupted="followTailView.interrupted"
+            :title="followTailView.title"
+            :busy-label="followTailView.busyLabel"
+            :done-label="followTailView.doneLabel"
+            :interrupted-label="followTailView.interruptedLabel"
+          />
+        </div>
+      </Transition>
       <div v-if="thinking && !validating && liveAgentIdx < 0" class="chat-meta flex items-center gap-2 pl-9">
         <InboxMotionMark kind="pulse" />
         {{ translate('pages.clarify.thinking') }}
@@ -1469,7 +1711,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
             :placeholder="observe ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
-            :disabled="observe"
+            :disabled="observe || composerLocked"
             data-testid="clarify-input"
             @input="onTextInput"
             @keydown="onComposerKeydown"
@@ -1485,7 +1727,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :title="translate('pages.clarify.addImage')"
             :aria-label="translate('pages.clarify.addImage')"
             data-testid="clarify-attach-btn"
-            :disabled="observe"
+            :disabled="observe || composerLocked"
             @click="fileInput?.click()"
           >
             <Icon name="plus" :size="18" />
@@ -1526,7 +1768,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :title="composerSending ? translate('common.buttons.sending') : clarifySendAria"
             :aria-label="composerSending ? translate('common.buttons.sending') : clarifySendAria"
             :aria-busy="composerSending ? 'true' : undefined"
-            :disabled="composerSending || !hasComposerDraft()"
+            :disabled="composerSending || !hasComposerDraft() || composerLocked"
             @click="send"
           >
             <Icon :name="composerSending ? 'spinner' : 'chat-send'" :size="18" :class="composerSending ? 'animate-spin motion-reduce:animate-none' : ''" />
@@ -1551,7 +1793,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   type="button"
                   class="chat-action-confirm clarify-confirm-integrated h-9 shrink-0 inline-flex"
                   data-testid="clarify-confirm-flow"
-                  :disabled="confirmDisabled || !showHotConfirm"
+                  :disabled="confirmDisabled || !showHotConfirm || composerLocked"
                   :title="translate('pages.clarify.confirmFlowTitle')"
                   @click="finishEarly"
                 >
@@ -1771,6 +2013,17 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 }
 
 /* A quiet phase label; the message and caret carry the streaming activity. */
+.clarify-handoff-step { padding: 6px 8px; margin-inline: -8px; width: calc(100% + 16px); }
+/* History ends here: a hairline (same token as markdown <hr>) then the current node. */
+.clarify-segment-divider { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgb(var(--c-line) / .7); border-radius: 0; }
+/* New in-stream status rows settle in quietly (no slide on reduced motion). */
+.clarify-row-enter-active { transition: opacity .18s ease-out, transform .18s ease-out; }
+.clarify-row-leave-active { transition: opacity .12s ease-in; }
+.clarify-row-enter-from { opacity: 0; transform: translateY(3px); }
+.clarify-row-leave-to { opacity: 0; }
+/* Earlier nodes read as context: weaker than the live conversation. */
+.clarify-prior-body { opacity: .72; }
+.clarify-prior-body:hover { opacity: 1; }
 .clarify-outputting {
   color: rgb(var(--c-txt3));
 }
@@ -1791,6 +2044,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   50% { opacity: .9; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .clarify-row-enter-active, .clarify-row-leave-active { transition: none; }
+  .clarify-row-enter-from { transform: none; }
   .deck-enter-active, .deck-leave-active { transition: none; }
   .deck-enter-from, .deck-leave-to { transform: none; }
   .clarify-stream-caret {

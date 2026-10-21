@@ -69,6 +69,19 @@ import {
 import type GateApproval from '@/components/run/GateApproval.vue'
 import type { AcpEvent, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
+import {
+  activeSegment,
+  clipTask,
+  isPlumbingNode,
+  isRunTerminal,
+  nodeTaskFromConfig,
+  normalizeRunChain,
+  priorSegments,
+  runChainFromRun,
+  segmentKey,
+  type ChainSegment,
+  type RunChain,
+} from '@/lib/inbox/runConversationChain'
 
 export function useGatesInbox() {
 
@@ -157,6 +170,306 @@ const inboxConfirmFlow = createConfirmFlowCeremony()
  * (listItems empty would otherwise tear down the host via v-if).
  */
 const confirmFlowDeskHold = ref(false)
+
+/**
+ * Inline hand-off (replaces the full-desk overlay for clarify/review confirm):
+ * the confirmed conversation stays on screen with a status row at the end of
+ * the transcript — pending while reactReply(force) runs, done once it returns —
+ * then the inbox moves on. Keyed by itemKey so a neighbour never inherits it.
+ */
+const handoffState = ref<{ key: string; phase: 'pending' | 'done'; at: string; target: string } | null>(null)
+const HANDOFF_HOLD_MS = 900
+const HANDOFF_HOLD_REDUCED_MS = 200
+function handoffHoldMs(): number {
+  if (typeof process !== 'undefined' && process.env.VITEST) return 0
+  const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  return reduce ? HANDOFF_HOLD_REDUCED_MS : HANDOFF_HOLD_MS
+}
+/** Label of the node the confirmed one flows into (first outgoing edge), for the status row. */
+function nextNodeLabel(nodeId: string): string {
+  const run = activeRun.value
+  if (!run) return ''
+  // inbox-context carries nodes but not edges; the run chain knows the live node.
+  const cur = runChains.value[run.id]?.current
+  if (cur && cur.id !== nodeId && cur.name) return cur.name
+  const edge = (run.edges ?? []).find((e) => e.source === nodeId)
+  if (!edge) return ''
+  const n = (run.nodes ?? []).find((x) => x.id === edge.target)
+  return (n?.label as string | undefined) || ''
+}
+const activeHandoff = computed(() =>
+  handoffState.value && active.value && handoffState.value.key === itemKey(active.value) ? handoffState.value : null,
+)
+
+/**
+ * Continuous run transcript: after 确认并流转 the next node's chat continues
+ * below the previous nodes' conversations (one fold row per node). Chains are
+ * cached per run; GET /runs/:id/conversation-chain (#850) with a GET
+ * /runs/:id fallback only when the chain endpoint 404s (unknown run / older
+ * backend). Other errors (400 invalid_iteration / until_not_found, 5xx,
+ * network) are errors: no chain → main transcript, no fallback.
+ */
+const runChains = ref<Record<string, RunChain>>({})
+/** Segments the user just handed off in this session open expanded (continuity); older ones stay folded. */
+const openedSegments = ref<string[]>([])
+/** Graph meta (label / type) for name:"" fallback + hiding input/output; inbox-context carries nodes. */
+function chainNodeMeta(runId: string) {
+  return activeRun.value?.id === runId ? activeRun.value.nodes : undefined
+}
+async function fetchRunChain(runId: string): Promise<RunChain | null> {
+  try {
+    return normalizeRunChain(await api.runConversationChain(runId), chainNodeMeta(runId))
+  } catch (e: any) {
+    if (e?.status !== 404) return null
+  }
+  try {
+    return runChainFromRun(await api.getRun(runId))
+  } catch {
+    return null
+  }
+}
+async function loadRunChain(runId: string): Promise<RunChain | null> {
+  const c = await fetchRunChain(runId)
+  if (c) runChains.value = { ...runChains.value, [runId]: c }
+  return c
+}
+type PriorSegmentView = ChainSegment & { open: boolean }
+const activeChainSegments = computed<PriorSegmentView[]>(() => {
+  const it = active.value
+  if (!it || it.type !== 'clarify') return []
+  return priorSegments(runChains.value[it.runId], it.nodeId, it.iteration ?? 1).map((seg) => ({
+    ...seg,
+    open: openedSegments.value.includes(segmentKey(it.runId, seg)),
+  }))
+})
+/**
+ * Opening user bubble when this node was reached by a hand-off (earlier nodes
+ * shown above): what the step is doing. Chain task (interpolated, proposed
+ * backend field) first; else the node's raw config.prompt from the run graph.
+ */
+const chainNodeTask = computed(() => {
+  const it = active.value
+  if (!it || it.type !== 'clarify' || !activeChainSegments.value.length) return ''
+  const seg = activeSegment(runChains.value[it.runId], it.nodeId, it.iteration ?? 1)
+  if (seg?.task) return clipTask(seg.task)
+  const node = (activeRun.value?.nodes ?? []).find((n) => n.id === it.nodeId)
+  return nodeTaskFromConfig(node?.config) || ''
+})
+watch(
+  () => (active.value && active.value.type === 'clarify' ? active.value.runId : ''),
+  (runId) => {
+    if (runId && !runChains.value[runId]) void loadRunChain(runId)
+  },
+)
+
+/**
+ * Follow the run after a hand-off whose next node is not (yet) waiting for the
+ * user: the confirmed conversation stays with a tail row — next node running
+ * unattended / not started yet / run ended — until the run's next waiting
+ * node appears (then it opens below, same transcript).
+ */
+type FollowTail = { key: string; runId: string; kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
+const followTail = ref<FollowTail | null>(null)
+let followTimer: ReturnType<typeof setTimeout> | null = null
+let followItem: InboxItem | null = null
+let followInFlight = false
+let followAgain = false
+/** Consecutive chain fetch failures while following; 2+ → error row (keeps retrying). */
+let followFailures = 0
+const FOLLOW_ERROR_AFTER = 2
+/**
+ * Poll cadence. With the run socket open, node_enter / status frames drive
+ * the follow and the poll is only a safety net (node_enter is not re-pushed on
+ * a server-restart reattach; the waiting row also needs the list to show the
+ * parked node). Without a socket: the old 2 s poll.
+ */
+const FOLLOW_POLL_MS = 2000
+const FOLLOW_WS_FALLBACK_MS = 10000
+/**
+ * Dedicated socket on WS /runs/:id/events while following: the active-run
+ * socket is closed by beginProcessingIntent on 确认并流转, and this one only
+ * reads node_enter / status (no stream projection, no reconnect — poll covers).
+ */
+let followWs: WebSocket | null = null
+function closeFollowWs() {
+  const ws = followWs
+  followWs = null
+  if (ws) {
+    ws.onmessage = ws.onclose = ws.onerror = null
+    try {
+      ws.close()
+    } catch {
+      /* ignore */
+    }
+  }
+}
+function followWsLive(runId: string): boolean {
+  return !!followWs && followWs.readyState === 1 && (followWs as WebSocket & { _runId?: string })._runId === runId
+}
+function openFollowWs(runId: string) {
+  if (followWsLive(runId)) return
+  closeFollowWs()
+  if (typeof WebSocket === 'undefined' || (typeof process !== 'undefined' && process.env.VITEST)) return
+  let ws: WebSocket
+  try {
+    ws = new WebSocket(api.runEventsWsUrl(runId))
+  } catch {
+    return
+  }
+  ;(ws as WebSocket & { _runId?: string })._runId = runId
+  followWs = ws
+  ws.onmessage = (ev) => {
+    if (followWs !== ws) return
+    let m: { type?: string; runId?: string; nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }
+    try {
+      m = JSON.parse(String(ev.data))
+    } catch {
+      return
+    }
+    if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
+    else if (m.type === 'status') kickFollow()
+  }
+  ws.onclose = () => {
+    if (followWs !== ws) return
+    followWs = null
+    // Socket gone: fall back to the 2 s poll right away.
+    if (followTail.value && followItem) scheduleFollow(followItem, followTail.value.key)
+  }
+}
+/**
+ * WS node_enter {runId,nodeId,iteration,name,kind,mode} (#850): the run
+ * opened its next visit. Update the tail at once (no fetch round-trip), then
+ * re-read chain + list. input/output plumbing visits are skipped (the status
+ * frame / run end will follow).
+ */
+function onFollowNodeEnter(runId: string, m: { nodeId?: string; name?: string; kind?: string; mode?: string }) {
+  const ft = followTail.value
+  if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
+  if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
+    const label =
+      m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
+    followTail.value = { ...ft, kind: m.mode === 'auto' ? 'auto' : 'waiting', label, at: new Date().toISOString() }
+  }
+  kickFollow()
+}
+function kickFollow() {
+  const ft = followTail.value
+  if (!ft || !followItem) return
+  if (followTimer) clearTimeout(followTimer)
+  followTimer = null
+  void followStep(followItem, ft.key)
+}
+function stopFollow() {
+  if (followTimer) clearTimeout(followTimer)
+  followTimer = null
+  followTail.value = null
+  followItem = null
+  followAgain = false
+  followFailures = 0
+  closeFollowWs()
+}
+function isFollowingActive(): boolean {
+  return !!followTail.value && !!active.value && followTail.value.key === itemKey(active.value)
+}
+const activeFollowTail = computed(() =>
+  followTail.value && active.value && followTail.value.key === itemKey(active.value) ? followTail.value : null,
+)
+function tailFromChain(key: string, chain: RunChain): FollowTail {
+  const at = new Date().toISOString()
+  if (isRunTerminal(chain.status)) return { key, runId: chain.runId, kind: 'ended', status: String(chain.status), at }
+  const cur = chain.current
+  if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label: cur.name, at }
+  return { key, runId: chain.runId, kind: 'waiting', label: cur?.name, at }
+}
+/**
+ * Same-run waiting node in the list → open it under the chain. A row still
+ * booting (state: starting — the real backend lists a clarify node while its
+ * sandbox comes up) is not opened yet: its starting card would replace the
+ * transcript; the follow tail shows「等待…」until it parks (status frame).
+ */
+async function continueInRun(submitted: InboxItem, submittedKey: string): Promise<boolean> {
+  const next = listItems.value.find(
+    (k) => k.runId === submitted.runId && itemKey(k) !== submittedKey && !isStartingInboxItem(k),
+  )
+  if (!next) return false
+  await loadRunChain(submitted.runId)
+  openedSegments.value = [...openedSegments.value, `${submitted.runId}:${submitted.nodeId}:${submitted.iteration ?? 1}`]
+  if (handoffState.value?.key === submittedKey) handoffState.value = null
+  stopFollow()
+  active.value = next
+  showProcessedBanner.value = false
+  return true
+}
+async function followStep(submitted: InboxItem, submittedKey: string) {
+  followTimer = null
+  if (followInFlight) {
+    followAgain = true
+    return
+  }
+  if (!followTail.value || followTail.value.key !== submittedKey) return
+  if (!active.value || itemKey(active.value) !== submittedKey) return stopFollow()
+  followInFlight = true
+  try {
+    const chain = await loadRunChain(submitted.runId)
+    if (!followTail.value || followTail.value.key !== submittedKey) return
+    try {
+      await loadList()
+    } catch {
+      /* soft */
+    }
+    if (await continueInRun(submitted, submittedKey)) return
+    if (chain) {
+      followFailures = 0
+      followTail.value = tailFromChain(submittedKey, chain)
+    } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
+      followTail.value = { ...followTail.value, kind: 'error', at: new Date().toISOString() }
+    }
+    // Run done: stay on this conversation with the ended row (never jump to another run).
+    if (followTail.value?.kind === 'ended') return closeFollowWs()
+  } finally {
+    followInFlight = false
+  }
+  if (followAgain) {
+    followAgain = false
+    return void followStep(submitted, submittedKey)
+  }
+  scheduleFollow(submitted, submittedKey)
+}
+function scheduleFollow(submitted: InboxItem, submittedKey: string) {
+  if (typeof process !== 'undefined' && process.env.VITEST) return
+  if (followTimer) clearTimeout(followTimer)
+  if (!followTail.value || followTail.value.key !== submittedKey || followTail.value.kind === 'ended') return
+  const ms = followWsLive(submitted.runId) ? FOLLOW_WS_FALLBACK_MS : FOLLOW_POLL_MS
+  followTimer = setTimeout(() => void followStep(submitted, submittedKey), ms)
+}
+/**
+ * After the hand-off returned and no same-run node is waiting yet: stay and
+ * follow the run (「流转了继续聊，不要跳」). Never hands the selection to
+ * another pending item — not even when the run ended or the chain is
+ * unavailable (then: waiting row, keep polling the list for this run).
+ */
+async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<boolean> {
+  followItem = submitted
+  openFollowWs(submitted.runId)
+  const chain = await loadRunChain(submitted.runId)
+  followFailures = chain ? 0 : 1
+  const tail: FollowTail = chain
+    ? tailFromChain(submittedKey, chain)
+    : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
+  followTail.value = tail
+  if (tail.kind === 'ended') closeFollowWs()
+  else scheduleFollow(submitted, submittedKey)
+  return true
+}
+watch(
+  () => (active.value ? itemKey(active.value) : ''),
+  (k) => {
+    if (followTail.value && followTail.value.key !== k) {
+      if (handoffState.value?.key === followTail.value.key) handoffState.value = null
+      stopFollow()
+    }
+  },
+)
 
 function playInboxConfirmFlowCeremony(): Promise<void> {
   confirmFlowDeskHold.value = true
@@ -746,6 +1059,8 @@ async function waitForQueryItem() {
  */
 function ensureValidActive() {
   if (processingLock.value) return
+  // Following a run after hand-off: the confirmed conversation stays although it left the list.
+  if (isFollowingActive()) return
   if (selectFromQuery()) {
     applyHomeHandoff()
     return
@@ -781,6 +1096,21 @@ function reconcileProcessedWithList(list: InboxItem[]) {
 }
 
 /** After an item leaves the list: neighbor active (or null). Never keep stale active. */
+/**
+ * Where the inbox goes after an inline hand-off. Returns false to fall back to
+ * the usual next pending item (selectActiveAfterRemove).
+ * Same run first: a clarify/review next node continues in place.
+ */
+function pickHandoffNext(submitted: InboxItem, removedKey: string): boolean {
+  // 方案 B: follow the run — when its next node is already waiting for the user
+  // (clarify / review), open that conversation instead of the next inbox row.
+  const next = listItems.value.find((k) => k.runId === submitted.runId && itemKey(k) !== removedKey)
+  if (!next) return false
+  active.value = next
+  showProcessedBanner.value = false
+  return true
+}
+
 function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
   active.value = pickNextActiveAfterRemove(prevList, removedKey, itemKey)
   showProcessedBanner.value = false
@@ -945,6 +1275,7 @@ const updateBannerDetail = computed(() => {
 function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
   if (processingLock.value) return
+  if (isFollowingActive()) return
   if (!active.value && list.length) {
     active.value = list[0]
     return
@@ -1655,8 +1986,12 @@ const clarifyComposerNodeId = computed(
 )
 const clarifyComposerIteration = computed(() => activeClarify.value?.iteration ?? 1)
 const clarifyComposerTurns = computed(() => activeClarify.value?.turns ?? [])
-/** Taken-over node's task, shown as the conversation's opening User Message. */
-const activeNodeTask = computed(() => takeoverTask(activeClarify.value))
+/**
+ * The node's task, shown as the conversation's opening User Message: the chain
+ * segment's task when the node was reached by a hand-off (below the separator),
+ * else the taken-over node's task (#849 clarifyByNode[nodeId].task).
+ */
+const activeNodeTask = computed(() => chainNodeTask.value || takeoverTask(activeClarify.value))
 const clarifyComposerDone = computed(() => activeClarify.value?.done ?? false)
 
 const inboxClarifyStageKind = computed(() => (activeRunLoadError.value ? 'loadFailed' : 'pending'))
@@ -1701,6 +2036,11 @@ const activeGate = computed<Gate | null>(() => {
 const clarifyInputActive = computed(() =>
   activeRun.value ? ['queued', 'running', 'waiting_human'].includes(activeRun.value.status) : false,
 )
+/**
+ * Following the run after a hand-off: the same composer stays mounted (never the
+ * closed/done footer) but is locked until the run's next node waits for the user.
+ */
+const clarifyComposerLocked = computed(() => isFollowingActive())
 
 async function applyListUpdate() {
   if (processingLock.value) return
@@ -1934,15 +2274,9 @@ async function onClarifySend(
   const prevList = force ? listItems.value.slice() : null
   if (force) {
     beginProcessingIntent(it)
-    // Click intent: play overlay + leave pending before wrap-up HTTP (plan g1.1 / g1.2).
-    // Page-level host (not chat inject / shell remount) — do not await reactReply.
-    void playInboxConfirmFlowCeremony()
-    removeListItemLocally(submittedKey)
-    selectActiveAfterRemove(prevList!, submittedKey)
-    if (!active.value) {
-      activeRun.value = null
-      activeRunLoadError.value = false
-    }
+    // Click intent: the conversation stays and shows the inline hand-off row
+    // (no full-desk overlay); the inbox leaves once the hand-off is done.
+    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -1976,8 +2310,7 @@ async function onClarifySend(
     if (force) {
       // Align with RunDetail: bottom status bar, not toast.
       clarifyConfirmError.value = msg
-      confirmFlowDeskHold.value = false
-      inboxConfirmFlow.reset()
+      if (handoffState.value?.key === submittedKey) handoffState.value = null
       restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
       // Reclaim for retry unless a newer neighbor confirm already owns the selection.
@@ -1995,6 +2328,11 @@ async function onClarifySend(
   // Force-finish: already left locally; sync counts and re-drop lagging ghosts.
   if (force) {
     let stillThere = true
+    if (handoffState.value?.key === submittedKey) {
+      handoffState.value = { ...handoffState.value, phase: 'done', at: new Date().toISOString() }
+    }
+    const holdMs = handoffHoldMs()
+    const hold = holdMs > 0 ? new Promise<void>((resolve) => setTimeout(resolve, holdMs)) : null
     try {
       showProcessedBanner.value = false
       await refresh({ source: 'submit', mode: 'force' })
@@ -2003,9 +2341,24 @@ async function onClarifySend(
     } catch {
       /* refresh/loadList already soft-fail in most paths; still unlock below */
     } finally {
+      // Let the「已流转」row read before the conversation leaves.
+      if (hold) await hold
+      const leaving = !!active.value && itemKey(active.value) === submittedKey
       removeListItemLocally(submittedKey)
-      if (active.value && itemKey(active.value) === submittedKey) {
-        selectActiveAfterRemove(listItems.value, submittedKey)
+      let stayed = false
+      if (leaving && !stillThere) {
+        // Same run first: its next waiting node continues below; else follow the live run.
+        stayed = (await continueInRun(submittedItem, submittedKey)) || (await beginFollow(submittedItem, submittedKey))
+      }
+      if (!stayed && handoffState.value?.key === submittedKey) handoffState.value = null
+      if (leaving && !stayed) {
+        if (!pickHandoffNext(submittedItem, submittedKey)) {
+          selectActiveAfterRemove(prevList!, submittedKey)
+          // The click-time neighbour may have left meanwhile; fall back to the live list.
+          if (active.value && !listItems.value.some((k) => itemKey(k) === itemKey(active.value!))) {
+            selectActiveAfterRemove(listItems.value, submittedKey)
+          }
+        }
       }
       if (!active.value) {
         activeRun.value = null
@@ -2015,11 +2368,8 @@ async function onClarifySend(
       if (finished) notifyRecentActivity()
       if (finished) {
         clarifyConfirmError.value = null
-        toast.success(
-          stillThere
-            ? t('pages.gatesInbox.reviewFinishedPending')
-            : t('pages.gatesInbox.reviewFinished'),
-        )
+        // Success is shown inline; only the still-pending case needs a toast.
+        if (stillThere) toast.success(t('pages.gatesInbox.reviewFinishedPending'))
       }
     }
     return
@@ -2122,6 +2472,7 @@ onUnmounted(() => {
   document.removeEventListener('visibilitychange', onVisible)
   window.removeEventListener('focus', onFocus)
   closeActiveRunWs()
+  stopFollow()
   for (const triple of [...inboxContextAborts.keys()]) abortInboxContext(triple)
   confirmFlowDeskHold.value = false
   inboxConfirmFlow.reset()
@@ -2249,6 +2600,9 @@ function itemSecondary(it: InboxItem) {
     reviewShellRef,
     reviewChatRef,
     confirmFlowDeskHold,
+    activeHandoff,
+    activeChainSegments,
+    activeFollowTail,
     inboxConfirmFlow,
     inboxConfirmFlowPhase: inboxConfirmFlow.phase,
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
@@ -2310,6 +2664,7 @@ function itemSecondary(it: InboxItem) {
     composerMode,
     activeGate,
     clarifyInputActive,
+    clarifyComposerLocked,
     sharePanelOpen,
     shareTarget,
     t,

@@ -11,18 +11,19 @@ import { describe, expect, it } from 'vitest'
 describe('confirm-flow click timing (plan g1)', () => {
   const root = resolve(__dirname, '../..')
 
-  it('g1.1/g1.2: inbox force plays page-level ceremony and leaves before await reactReply', () => {
+  it('g1.1/g1.2 (inline hand-off): inbox force shows the row at click and leaves only after reactReply', () => {
     const src = readFileSync(resolve(root, 'lib/inbox/useGatesInbox.ts'), 'utf8')
     const forceBlock = src.slice(src.indexOf('async function onClarifySend'), src.indexOf('function onClarifyFinish'))
-    expect(forceBlock).toMatch(/void playInboxConfirmFlowCeremony\(\)/)
-    expect(forceBlock).toMatch(/removeListItemLocally\(submittedKey\)/)
-    expect(forceBlock).toMatch(/selectActiveAfterRemove\(prevList!,\s*submittedKey\)/)
-    const playAt = forceBlock.indexOf('void playInboxConfirmFlowCeremony()')
-    const removeAt = forceBlock.indexOf('removeListItemLocally(submittedKey)')
+    // No full-desk overlay for clarify/review confirm.
+    expect(forceBlock).not.toMatch(/playInboxConfirmFlowCeremony/)
+    const pendingAt = forceBlock.indexOf("phase: 'pending'")
     const awaitAt = forceBlock.indexOf('await api.reactReply')
-    expect(playAt).toBeGreaterThanOrEqual(0)
-    expect(removeAt).toBeGreaterThan(playAt)
-    expect(awaitAt).toBeGreaterThan(removeAt)
+    const doneAt = forceBlock.indexOf("phase: 'done'")
+    const removeAt = forceBlock.indexOf('removeListItemLocally(submittedKey)')
+    expect(pendingAt).toBeGreaterThanOrEqual(0)
+    expect(awaitAt).toBeGreaterThan(pendingAt)
+    expect(doneAt).toBeGreaterThan(awaitAt)
+    expect(removeAt).toBeGreaterThan(doneAt)
     // Failure must restore the card (g2.2).
     expect(forceBlock).toMatch(/restoreListItemLocally\(submittedItem, prevList!\)/)
   })
@@ -50,15 +51,10 @@ describe('confirm-flow click timing (plan g1)', () => {
     expect(view).toMatch(/:host-confirm-flow="false"/)
   })
 
-  it('g1.1: run detail plays overlay before await; not after forceOk', () => {
+  it('g1.1 (inline hand-off): run detail clarify confirm plays no overlay', () => {
     const src = readFileSync(resolve(root, 'lib/run/useRunDetail.ts'), 'utf8')
     const block = src.slice(src.indexOf('async function onClarifySend'), src.indexOf('async function onClarifyRetryLast'))
-    expect(block).toMatch(/if \(force\) void playConfirmFlowCeremony\(reviewChatRef\.value\)/)
-    expect(block).not.toMatch(/if \(forceOk\) await playConfirmFlowCeremony/)
-    const playAt = block.indexOf('void playConfirmFlowCeremony(reviewChatRef.value)')
-    const awaitAt = block.indexOf('await api.reactReply')
-    expect(playAt).toBeGreaterThanOrEqual(0)
-    expect(awaitAt).toBeGreaterThan(playAt)
+    expect(block).not.toMatch(/playConfirmFlowCeremony/)
   })
 
   it('g1.2: RunClarifyPanel / RunReviewPanel prefer ReviewShell host over chat inject', () => {
@@ -74,7 +70,9 @@ describe('confirm-flow click timing (plan g1)', () => {
   it('g1.1: clarify chat does not auto-play on done; finishEarly plays on click', () => {
     const src = readFileSync(resolve(root, 'lib/inbox/useClarifyChat.ts'), 'utf8')
     expect(src).not.toMatch(/Success path: play overlay once/)
-    expect(src).toMatch(/void playConfirmCeremony\(\)/)
+    // finishEarly no longer plays the overlay; the transcript shows the hand-off row.
+    const finish = src.slice(src.indexOf('function finishEarly'), src.indexOf('function finishEarly') + 600)
+    expect(finish).not.toMatch(/playConfirmCeremony\(\)/)
     expect(src).toMatch(/Overlay is owned by the click path/)
   })
 

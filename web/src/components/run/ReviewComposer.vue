@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
-import ClarifyChat from './ClarifyChat.vue'
+import ClarifyChat, { type ClarifyFollowTail, type ClarifyHandoff, type ClarifyPriorSegment } from './ClarifyChat.vue'
 import ComposerShell from './ComposerShell.vue'
 import ParagraphInput from '../ui/ParagraphInput.vue'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
@@ -77,8 +77,15 @@ const props = withDefaults(
     /** Read-only auto stream; Stop emits takeover (ClarifyChat observe). */
     observe?: boolean
     stopping?: boolean
-    /** Taken-over node's task (opening User Message). */
+    /** Inline hand-off row after 确认并流转 (host-owned phase). */
+    handoff?: ClarifyHandoff | null
+    /** Continuous run transcript (earlier nodes) + follow-the-run tail. */
+    priorSegments?: ClarifyPriorSegment[]
+    nodeLabel?: string
+    /** Node task (opening User Message): takeover task or the chain segment's task. */
     nodeTask?: string
+    composerLocked?: boolean
+    followTail?: ClarifyFollowTail | null
   }>(),
   {
     iteration: 1,
@@ -290,6 +297,11 @@ function onConfirm() {
       :observe="observe"
       :node-task="nodeTask"
       :stopping="stopping"
+      :handoff="handoff ?? null"
+      :prior-segments="priorSegments ?? []"
+      :node-label="nodeLabel"
+      :composer-locked="!!composerLocked"
+      :follow-tail="followTail ?? null"
       @takeover="emit('takeover')"
       @send="(text, images, anns) => emit('send', text, images, anns)"
       @retry-last="emit('retry-last')"
