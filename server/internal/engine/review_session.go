@@ -541,7 +541,15 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	if !e.clarifyVisitLive(s.runID, s.producerID, conv.Iteration) {
 		log.Info().Str("run_id", s.runID).Str("node", s.producerID).Int("iteration", conv.Iteration).
 			Msg("clarify turn dropped: its visit already ended")
-		return false, nil
+		// A dropped Live request would otherwise stay generating forever, and
+		// Live sessions are per run+node, so it would block the resumed
+		// visit's confirm. Settle it like a request cancelled in the queue.
+		if item.Live != nil {
+			e.failCancelledQueuedLive(s.runID, s.producerID, item.Live.SID)
+		}
+		// The error reaches the page as the turn's error frame, so the
+		// message is not lost silently.
+		return false, errClarifyVisitEnded
 	}
 
 	// The questions this answer responds to, captured before the human turn is
@@ -581,7 +589,14 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	}
 
 	cancelled := s.CancelRequested() || ctx.Err() != nil
-	if cancelled || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
+	// The run may have been cancelled (or failed, or resumed into a new visit)
+	// while the provider call was in flight. Cancel does not interrupt this
+	// FIFO turn, so its reply would otherwise finish the stale visit and write
+	// a terminal status over the cancelled — or already resumed — run. Treat
+	// it as interrupted: keep the reply in the transcript, settle Live and
+	// record feedback as interrupted, attribute usage to this visit, and stop.
+	stale := !e.clarifyVisitLive(s.runID, s.producerID, conv.Iteration)
+	if cancelled || stale || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
 		interrupted = true
 	}
 	if item.Live != nil {
@@ -606,29 +621,17 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	if interrupted {
 		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (interrupted)")
-		e.flushMcpCalls(s.runID, s.producerID)
-		e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
-		log.Info().Str("run_id", s.runID).Str("node", s.producerID).
-			Msg("clarify turn interrupted by Cancel; queue kept for next item")
-		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
-		return true, nil
-	}
-
-	// The run may have been cancelled (or failed, or resumed into a new visit)
-	// while the provider call was in flight. Cancel does not interrupt this
-	// FIFO turn, so its reply would otherwise finish the stale visit and write
-	// a terminal status over the cancelled — or already resumed — run. Keep the
-	// reply in the transcript, marked interrupted, and stop here.
-	if !e.clarifyVisitLive(s.runID, s.producerID, conv.Iteration) {
-		last := &conv.Messages[len(conv.Messages)-1]
-		last.Interrupted = true
-		if strings.TrimSpace(last.Text) == "" {
-			last.Text = "(已中断)"
+		// Pin to this visit: after a ResumeFrom the latest StateRun is the
+		// new visit's.
+		e.flushMcpCallsAt(s.runID, s.producerID, conv.Iteration)
+		e.flushTokenUsageAt(s.runID, s.producerID, conv.Iteration, t.Usage, t.UsageByModel)
+		if stale {
+			log.Info().Str("run_id", s.runID).Str("node", s.producerID).Int("iteration", conv.Iteration).
+				Msg("clarify turn outcome dropped: its visit ended while the turn was in flight")
+		} else {
+			log.Info().Str("run_id", s.runID).Str("node", s.producerID).
+				Msg("clarify turn interrupted by Cancel; queue kept for next item")
 		}
-		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (visit ended)")
-		e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
-		log.Info().Str("run_id", s.runID).Str("node", s.producerID).Int("iteration", conv.Iteration).
-			Msg("clarify turn outcome dropped: its visit ended while the turn was in flight")
 		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
 		return true, nil
 	}
@@ -868,6 +871,11 @@ func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[
 	}
 	e.broker.Publish(runID, msg)
 }
+
+// errClarifyVisitEnded is returned for a clarify turn that starts after its
+// visit ended (run cancelled / failed, or resumed into a visit whose
+// conversation is not open yet); the pump shows it as the turn's error.
+var errClarifyVisitEnded = errors.New("运行已结束，这条消息没有发送；续跑后请重新发送")
 
 // clarifyVisitLive reports whether the clarify visit (runID, nodeID,
 // iteration) can still take a turn's outcome: the run is not terminal and that

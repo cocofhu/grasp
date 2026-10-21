@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 	"github.com/rs/zerolog/log"
+	"gorm.io/gorm"
 )
 
 // checkAgentProfile verifies the referenced Agent exists before agent-class
@@ -230,13 +232,18 @@ func (e *Engine) saveState(c *execCtx, node *models.Node, o nodeOutcome) {
 // pause without a saveState) so each round's tool calls land on the timeline as
 // they happen rather than being stranded in the buffer until completion.
 func (e *Engine) flushMcpCalls(runID, nodeID string) {
+	e.flushMcpCallsAt(runID, nodeID, 0)
+}
+
+// flushMcpCallsAt is flushMcpCalls pinned to one visit (iteration > 0), for a
+// turn that may finish after a newer visit started; 0 means the latest.
+func (e *Engine) flushMcpCallsAt(runID, nodeID string, iteration int) {
 	calls := e.host.TakeMcpCalls(runID, nodeID)
 	if len(calls) == 0 {
 		return
 	}
 	var sr models.StateRun
-	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
-		Order("iteration desc, id desc").First(&sr).Error; err != nil {
+	if err := e.stateRunAt(runID, nodeID, iteration, &sr); err != nil {
 		log.Warn().Str("run_id", runID).Str("node_id", nodeID).Err(err).Msg("flushMcpCalls: no state_run to attach calls to")
 		return
 	}
@@ -248,12 +255,17 @@ func (e *Engine) flushMcpCalls(runID, nodeID string) {
 // without ending the execution (paired with flushMcpCalls while the node stays
 // paused).
 func (e *Engine) flushTokenUsage(runID, nodeID string, delta *models.TokenUsage, byModel models.TokenUsageByModel) {
+	e.flushTokenUsageAt(runID, nodeID, 0, delta, byModel)
+}
+
+// flushTokenUsageAt is flushTokenUsage pinned to one visit (iteration > 0);
+// 0 means the latest.
+func (e *Engine) flushTokenUsageAt(runID, nodeID string, iteration int, delta *models.TokenUsage, byModel models.TokenUsageByModel) {
 	if delta == nil && byModel == nil {
 		return
 	}
 	var sr models.StateRun
-	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
-		Order("iteration desc, id desc").First(&sr).Error; err != nil {
+	if err := e.stateRunAt(runID, nodeID, iteration, &sr); err != nil {
 		log.Warn().Str("run_id", runID).Str("node_id", nodeID).Err(err).Msg("flushTokenUsage: no state_run to attach usage to")
 		e.recordTokenUsage(tokenledger.Entry{
 			RunID: runID, NodeID: nodeID, Phase: models.TokenLedgerPhaseInteractive,
@@ -268,6 +280,20 @@ func (e *Engine) flushTokenUsage(runID, nodeID string, delta *models.TokenUsage,
 	sr.Usage = models.AddTokenUsage(sr.Usage, delta)
 	sr.UsageByModel = models.AddTokenUsageByModel(sr.UsageByModel, byModel)
 	logDB(e.db.Save(&sr), runID, "flush token usage")
+}
+
+// stateRunAt loads the node's StateRun for iteration, or the latest one when
+// iteration <= 0 or that visit has no row (legacy data).
+func (e *Engine) stateRunAt(runID, nodeID string, iteration int, sr *models.StateRun) error {
+	if iteration > 0 {
+		err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, iteration).
+			Order("id desc").First(sr).Error
+		if err == nil || !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	}
+	return e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(sr).Error
 }
 
 // recordTokenUsage appends a workflow usage delta to the token ledger.

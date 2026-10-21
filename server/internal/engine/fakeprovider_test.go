@@ -162,6 +162,9 @@ type fakeProvider struct {
 	liveGuardCalls int
 	// reactHold (test-only): same for ReactReply / clarify session Cancel.
 	reactHold <-chan struct{}
+	// reactUsage (test-only): when set, ReactReply returns this Usage delta so
+	// the visit a clarify turn's tokens land on can be asserted.
+	reactUsage *models.TokenUsage
 }
 
 // nextStructuredBody returns the reserved-artifact body to write for nodeID on
@@ -414,6 +417,16 @@ func (f *fakeProvider) ReactOpen(ctx context.Context, req runtime.NodeReq) runti
 // forced finish), writing the declared produces artifact like the real provider
 // harvests one.
 func (f *fakeProvider) ReactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) runtime.ReactTurn {
+	t := f.reactReply(ctx, req, history, human, images, force)
+	f.mu.Lock()
+	if t.Usage == nil {
+		t.Usage = models.CloneTokenUsage(f.reactUsage)
+	}
+	f.mu.Unlock()
+	return t
+}
+
+func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, history []models.ReactMessage, human string, images []models.PromptImage, force bool) runtime.ReactTurn {
 	f.mu.Lock()
 	if f.reactReplyCalls == nil {
 		f.reactReplyCalls = map[string]int{}
