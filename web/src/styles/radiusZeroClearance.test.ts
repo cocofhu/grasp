@@ -90,10 +90,10 @@ describe('radius zero clearance', () => {
     expect(src).toMatch(/class="[^"]*\brounded-xl\b[^"]*border border-line bg-surface/)
   })
 
-  it('HomeWorkflowSelect trigger 8px and panel 12px', () => {
+  it('HomeWorkflowSelect trigger 8px, panel 16px, and search 8px', () => {
     const src = read('components/dashboard/HomeWorkflowSelect.vue')
     expect(src).toMatch(/\.home-workflow-select__trigger\s*\{[^}]*border-radius:\s*8px/s)
-    expect(src).toMatch(/\.home-workflow-select__panel\s*\{[^}]*border-radius:\s*12px/s)
+    expect(src).toMatch(/\.home-workflow-select__panel\s*\{[^}]*border-radius:\s*16px/s)
     expect(src).toMatch(/\.home-workflow-select__search\s*\{[^}]*border-radius:\s*8px/s)
   })
 

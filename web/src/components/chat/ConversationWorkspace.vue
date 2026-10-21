@@ -9,7 +9,7 @@ import {
   onRunArtifactEdit,
   runArtifactUnreadOnPanel,
 } from '@/lib/chat/artifactUnread'
-import { conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
+import { CONVERSATION_PANEL_SHOWN_EVENT, conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
 
 const props = withDefaults(defineProps<{
   title?: string
@@ -164,6 +164,11 @@ watch(open, async value => {
     const target = returnFocus?.isConnected ? returnFocus : fallback
     target?.focus({ preventScroll: true })
   }
+})
+watch(open, (value, prev) => {
+  if (!value || prev !== false) return
+  // Drawer was display:none while the preview stayed mounted. Tell it to repaint after layout.
+  void nextTick(() => window.dispatchEvent(new CustomEvent(CONVERSATION_PANEL_SHOWN_EVENT)))
 })
 watch(open, (value) => {
   if (!props.splitModes) return
