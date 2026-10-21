@@ -30,12 +30,14 @@ type SelectedCredentialFunc func(credentialID string) (envKey, value string, ok 
 type CredentialKindFunc func(credentialID string) (envKey string, ok bool)
 
 // MergeCodingCredentialIDs chooses the credential ids for a merged Agent.
-// A non-empty id on the individual Agent wins. Otherwise the shared id is
-// used only when its env key matches the effective backend. OpenCode consults
-// only the OpenCode slot; every other backend consults only the AI slot.
-// The unused slot keeps the individual Agent's id and is never filled from
-// shared. A nil kindOf, an unknown id, or a mismatched key leaves that slot
-// empty so callers stay on the existing empty-selection path.
+// A non-empty Agent id wins when kindOf is nil or that id resolves to the
+// backend's env key. An id kindOf rejects is dangling: the shared id is used
+// when it resolves to that key, matching the inherit-default screen. If the
+// shared id is also missing or mismatched, the dangling Agent id is kept so
+// injection fail-closes instead of substituting another secret. OpenCode
+// consults only the OpenCode slot; every other backend consults only the AI
+// slot. The unused slot keeps the individual Agent's id and is never filled
+// from shared. A nil kindOf does not copy a shared id.
 func MergeCodingCredentialIDs(backend, agentAI, agentOC, sharedAI, sharedOC string, kindOf CredentialKindFunc) (aiID, ocID string) {
 	if AcpBackend(strings.TrimSpace(backend)) == BackendOpenCode {
 		return strings.TrimSpace(agentAI), pickCredentialSlot(agentOC, sharedOC, envauth.EnvOpenCodeAPIKey, kindOf)
@@ -44,19 +46,21 @@ func MergeCodingCredentialIDs(backend, agentAI, agentOC, sharedAI, sharedOC stri
 }
 
 func pickCredentialSlot(agentID, sharedID, expected string, kindOf CredentialKindFunc) string {
-	if id := strings.TrimSpace(agentID); id != "" {
-		return id
-	}
+	agentID = strings.TrimSpace(agentID)
 	sharedID = strings.TrimSpace(sharedID)
 	expected = strings.TrimSpace(expected)
-	if sharedID == "" || expected == "" || kindOf == nil {
-		return ""
+	if agentID != "" && (kindOf == nil || expected == "" || credentialKindMatches(kindOf, agentID, expected)) {
+		return agentID
 	}
-	key, ok := kindOf(sharedID)
-	if !ok || strings.TrimSpace(key) != expected {
-		return ""
+	if sharedID != "" && expected != "" && kindOf != nil && credentialKindMatches(kindOf, sharedID, expected) {
+		return sharedID
 	}
-	return sharedID
+	return agentID
+}
+
+func credentialKindMatches(kindOf CredentialKindFunc, id, expected string) bool {
+	key, ok := kindOf(id)
+	return ok && strings.TrimSpace(key) == expected
 }
 
 // CredentialEnvKeyForBackend is the workspace-credential env key for a coding
