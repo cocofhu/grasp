@@ -5,21 +5,6 @@ export function demoOptionsOf(q: ReactQuestion): ReactOption[] {
   return q.options.filter((o) => !!o.demoHtml?.trim())
 }
 
-/**
- * Historical 1–3 demo count. Inline chat layout no longer branches on this;
- * a question renders at most the one selected preview.
- */
-export function useSideBySide(demoOptions: ReactOption[]): boolean {
-  return demoOptions.length > 0 && demoOptions.length <= 3
-}
-
-/** Tailwind grid column class for 1–3 side-by-side demos (responsive ≤640px → single col). */
-export function demoGridColsClass(count: number): string {
-  if (count <= 1) return 'grid-cols-1'
-  if (count === 2) return 'grid-cols-1 sm:grid-cols-2'
-  return 'grid-cols-1 sm:grid-cols-3'
-}
-
 /** Match selected option labels from a parsed choice summary row. */
 export function matchSelectedLabels(
   q: ReactQuestion,

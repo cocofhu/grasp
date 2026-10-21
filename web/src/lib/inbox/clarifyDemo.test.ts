@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   choiceEchoRows,
-  demoGridColsClass,
   demoOptionsOf,
   matchSelectedLabels,
   selectedDemoOption,
   selectedPreviewOptions,
-  useSideBySide,
 } from './clarifyDemo'
 import type { ReactQuestion } from '../shared/types'
 
@@ -24,31 +22,6 @@ const q: ReactQuestion = {
 describe('demoOptionsOf', () => {
   it('keeps only non-empty demoHtml', () => {
     expect(demoOptionsOf(q).map((o) => o.id)).toEqual(['a', 'd'])
-  })
-})
-
-describe('useSideBySide', () => {
-  it('is true for 1–3 demos', () => {
-    expect(useSideBySide(demoOptionsOf(q))).toBe(true)
-  })
-  it('is false for >3 demos', () => {
-    const many = Array.from({ length: 4 }, (_, i) => ({
-      id: `o${i}`,
-      label: `L${i}`,
-      demoHtml: '<!doctype html><html></html>',
-    }))
-    expect(useSideBySide(many)).toBe(false)
-  })
-  it('is false when no demos', () => {
-    expect(useSideBySide([])).toBe(false)
-  })
-})
-
-describe('demoGridColsClass', () => {
-  it('adapts column count', () => {
-    expect(demoGridColsClass(1)).toContain('grid-cols-1')
-    expect(demoGridColsClass(2)).toContain('sm:grid-cols-2')
-    expect(demoGridColsClass(3)).toContain('sm:grid-cols-3')
   })
 })
 
