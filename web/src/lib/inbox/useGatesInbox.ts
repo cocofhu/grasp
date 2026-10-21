@@ -701,14 +701,22 @@ function startStartingPoll() {
   }, STARTING_POLL_MS)
 }
 
-function selectFromQuery(): boolean {
+function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
   const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
   if (!hit) return false
-  // Same gate already selected: keep the object. A fresh row for the same key
-  // would retrigger watch(active) → loadActiveRun(true) and remount the chat
-  // (and its focused composer) on every silent list reload.
-  // rebindActiveFromList already swaps it in for starting↔parked.
-  if (active.value && itemKey(active.value) === itemKey(hit)) return true
+  // Silent auto-apply reload with the same gate already selected: keep the
+  // object. A fresh row for the same key would retrigger watch(active) →
+  // loadActiveRun(true) and remount the chat with its focused composer.
+  // Starting↔parked still swaps (rebindActiveFromList + this check).
+  const cur = active.value
+  if (
+    keepActive &&
+    cur &&
+    itemKey(cur) === itemKey(hit) &&
+    isStartingInboxItem(cur) === isStartingInboxItem(hit)
+  ) {
+    return true
+  }
   active.value = hit
   return true
 }
@@ -759,9 +767,9 @@ async function waitForQueryItem() {
  * List non-empty + invalid/missing active → pick first valid item.
  * Empty list → clear active (full empty inbox). Never leave a Run # - shell.
  */
-function ensureValidActive() {
+function ensureValidActive({ keepActive = false }: { keepActive?: boolean } = {}) {
   if (processingLock.value) return
-  if (selectFromQuery()) {
+  if (selectFromQuery({ keepActive })) {
     applyHomeHandoff()
     return
   }
@@ -819,7 +827,10 @@ function handleLeftInboxContext(it: InboxItem) {
   selectActiveAfterRemove(prevList, key)
 }
 
-async function loadList({ showLoading = false }: { showLoading?: boolean } = {}) {
+async function loadList({
+  showLoading = false,
+  keepActive = false,
+}: { showLoading?: boolean; keepActive?: boolean } = {}) {
   const gen = ++listLoadGeneration
   listLoadError.value = null
   if (showLoading) listLoading.value = true
@@ -844,7 +855,7 @@ async function loadList({ showLoading = false }: { showLoading?: boolean } = {})
     listLoadError.value = null
     reconcileProcessedWithList(rows)
     // Independent loadList success path: repair invalid selection (no Run # - shell).
-    if (!processingLock.value) ensureValidActive()
+    if (!processingLock.value) ensureValidActive({ keepActive })
     // Align peek banner baseline with the visible list (plan g1.2 / g2.1).
     syncDisplayedBaseline(listItems.value)
   } catch (err) {
@@ -1095,7 +1106,7 @@ async function syncListAfterAutoApply() {
   const restoreFocus = captureFocus()
   const prevKey = active.value ? itemKey(active.value) : null
   const scrollTop = listEl.value?.scrollTop ?? null
-  await loadList()
+  await loadList({ keepActive: true })
   if (gen !== autoApplyGen) return
   // The user may have started typing while listGates was in flight: keep the
   // current selection untouched; the processed banner still covers removal.
