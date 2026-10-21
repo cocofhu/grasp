@@ -158,7 +158,7 @@ onUnmounted(() => stopShutdownPolling())
         <div v-else class="scroll-area safe-area-bottom h-full min-h-0 overflow-y-auto" :class="{ 'settings-main-scroll': settingsChrome }" data-testid="shell-page-scroll">
           <div
             class="flex h-full min-h-0 min-w-0 flex-col"
-            :class="[settingsChrome ? 'settings-shell-content' : 'px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3', { 'app-refresh-dim': dimContent }]"
+            :class="[settingsChrome ? 'settings-shell-content' : 'workspace-shell-content px-4 pb-4 pt-2 md:px-6 md:pb-6 md:pt-3', { 'app-refresh-dim': dimContent }]"
           >
             <slot />
           </div>
@@ -251,10 +251,6 @@ onUnmounted(() => stopShutdownPolling())
   padding-top: 0;
   padding-bottom: 0;
 }
-.settings-shell-content:has(.usage-page) {
-  height: auto;
-  flex: none;
-}
 .settings-shell-content :deep(.route-view-wrap:has(.settings-document)),
 .settings-shell-content :deep(.route-view-wrap:has([data-testid="settings-panel"])) {
   height: auto;
@@ -262,9 +258,14 @@ onUnmounted(() => stopShutdownPolling())
   flex: none;
   overflow: visible;
 }
-/* Usage stats is one long document. A nested h-full scroller left a body-colored
-   gap under the last table once the inner box and the shell height diverged. */
-.settings-shell-content :deep(.route-view-wrap:has(.usage-page)) {
+/* Usage stats is one long document in the workspace content area. A nested
+   h-full scroller left a body-colored gap under the last table once the inner
+   box and the shell height diverged. Workspace padding stays on the wrapper. */
+.workspace-shell-content:has(.usage-page) {
+  height: auto;
+  flex: none;
+}
+.workspace-shell-content :deep(.route-view-wrap:has(.usage-page)) {
   height: auto;
   flex: none;
   overflow: visible;

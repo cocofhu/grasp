@@ -209,9 +209,24 @@ describe('AppShell (no topbar + floating ball)', () => {
     const workspace = wrapper.find('[data-testid="app-shell-workspace"]')
     const content = workspace.find('.scroll-area > div')
     expect(content.classes()).toEqual(
-      expect.arrayContaining(['px-4', 'pt-2', 'pb-4', 'md:px-6', 'md:pt-3', 'md:pb-6']),
+      expect.arrayContaining(['px-4', 'pt-2', 'pb-4', 'md:px-6', 'md:pt-3', 'md:pb-6', 'workspace-shell-content']),
     )
     expect(content.classes()).not.toEqual(expect.arrayContaining(['py-4', 'md:py-6']))
+    wrapper.unmount()
+  })
+
+  it('keeps /stats in the workspace content area and scrolls the long usage page with the shell', () => {
+    routeState.path = '/stats'
+    const wrapper = mountShell()
+    expect(wrapper.find('.app-shell-settings').exists()).toBe(false)
+    const content = wrapper.get('[data-testid="shell-page-scroll"] > div')
+    expect(content.classes()).toContain('workspace-shell-content')
+    expect(content.classes()).toEqual(expect.arrayContaining(['px-4', 'md:px-6', 'md:pb-6']))
+    expect(content.classes()).not.toContain('settings-shell-content')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppShell.vue'), 'utf8')
+    expect(src).toMatch(/\.workspace-shell-content:has\(\.usage-page\)\s*\{[^}]*height:\s*auto/s)
+    expect(src).toMatch(/\.workspace-shell-content :deep\(\.route-view-wrap:has\(\.usage-page\)\)\s*\{[^}]*overflow:\s*visible/s)
+    expect(src).not.toMatch(/\.settings-shell-content:has\(\.usage-page\)/)
     wrapper.unmount()
   })
 
