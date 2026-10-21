@@ -40,6 +40,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import { hasFailedTool } from '@/lib/run/acpTools'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import { useComposerActionMotion } from '@/lib/composables/useComposerActionMotion'
 
@@ -646,9 +647,8 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
 
 /** A settled reply with a failed tool call stays unfolded (see AgentTimeline settled). */
 function turnHasFailedTool(t: ClarifyTurn): boolean {
-  const failed = (status?: string) => (status || '').toLowerCase() === 'failed'
-  if (t.parts?.length) return t.parts.some((p) => p.kind === 'tool' && failed(p.status))
-  return (t.tools || []).some((tool) => failed(tool.status))
+  if (t.parts?.length) return hasFailedTool(t.parts)
+  return (t.tools || []).some((tool) => (tool.status || '').toLowerCase() === 'failed')
 }
 
 function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
