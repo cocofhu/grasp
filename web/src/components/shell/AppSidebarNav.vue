@@ -67,7 +67,7 @@ function pendingNodeLabel(it: InboxItem): string {
 }
 
 function pendingTooltip(it: InboxItem): string {
-  const name = sidebarRunTitle(it)
+  const name = rowTitle(it)
   const node = pendingNodeLabel(it).trim()
   return node ? `${name} · ${node}` : name
 }
@@ -82,6 +82,15 @@ const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.r
 /** Unfinished runs (queued / running / waiting_human) for「正在执行」. */
 const runningRuns = ref<Run[]>([])
 const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
+/** A row is named after its run: the run's own title wins over whatever the pending item carries. */
+function rowRunTitle(it: InboxItem): string | undefined {
+  const run = runningById.value.get(it.runId)
+  return run?.title?.trim() ? run.title : it.runTitle
+}
+function rowTitle(it: InboxItem): string {
+  const run = runningById.value.get(it.runId)
+  return sidebarRunTitle({ runTitle: rowRunTitle(it), workflowName: run?.workflowName || it.workflowName })
+}
 /**
  * A run whose pending item just left (hand-off confirmed) stays in place, marked
  * running, until the next running-run read says whether it is still going.
@@ -314,7 +323,7 @@ async function beginRename(it: InboxItem) {
   if (saving.value) return
   closeMenu()
   editingKey.value = it.runId
-  renameDraft.value = displayRunTitle(it.runTitle)
+  renameDraft.value = displayRunTitle(rowRunTitle(it))
   await nextTick()
   const el = renameInput.value
   if (!el) return
@@ -336,7 +345,7 @@ async function commitRename(it: InboxItem) {
     return
   }
   const next = renameDraft.value.trim()
-  const prev = displayRunTitle(it.runTitle)
+  const prev = displayRunTitle(rowRunTitle(it))
   if (next === prev) {
     cancelEdit()
     return
@@ -711,7 +720,7 @@ const settingsItems = settingsNavItems
           >
             <Icon name="pin" :size="12" />
           </span>
-          <span v-if="sidebarRunTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ sidebarRunTitle(it) }}</span>
+          <span v-if="rowTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
           <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />

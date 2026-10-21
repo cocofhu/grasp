@@ -5,6 +5,7 @@ import Icon from '@/components/ui/Icon.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ComposerShell from './ComposerShell.vue'
 import ComposerPrimaryAction from './ComposerPrimaryAction.vue'
+import PendingSendQueuePanel, { type PendingQueueRow } from './PendingSendQueuePanel.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -15,7 +16,7 @@ const props = withDefaults(
     bootKey?: string | null
     /** Sandbox drawer already titles the panel; don't repeat the old home tab. */
     hideHomeTab?: boolean
-    /** The run's first message: stays on top so the chat starts where the user typed it. */
+    /** The run's first message: queued under the composer until the agent is up to take it. */
     seedText?: string
   }>(),
   {
@@ -28,6 +29,11 @@ const props = withDefaults(
 )
 
 const { t } = useI18n()
+
+const queued = computed<PendingQueueRow[]>(() => {
+  const text = props.seedText.trim()
+  return text ? [{ id: 'first-message', text, images: [], annotations: [] }] : []
+})
 
 const isPulling = computed(() => (props.sandboxPhase || '').trim().toLowerCase() === 'pulling')
 
@@ -111,17 +117,6 @@ onMounted(() => {
   >
     <div class="react-connecting-scroller scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="react-connecting-scroller">
       <div class="react-connecting-transcript">
-        <div
-          v-if="seedText.trim()"
-          class="react-connecting-turn flex justify-end"
-          data-turn-role="human"
-          data-testid="react-connecting-seed"
-        >
-          <span class="sr-only">{{ t('pages.clarify.me') }}</span>
-          <div class="min-w-0 max-w-[88%]">
-            <div class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ seedText.trim() }}</div>
-          </div>
-        </div>
         <div class="react-connecting-turn">
           <ClarifyBootLoader phase="starting" variant="inline" :sandbox-phase="sandboxPhase" :boot-key="bootKey" />
         </div>
@@ -160,6 +155,13 @@ onMounted(() => {
           />
         </template>
       </ComposerShell>
+      <!-- Not sent yet: the agent is still starting; the platform sends it once it is ready. -->
+      <PendingSendQueuePanel
+        v-if="queued.length"
+        readonly
+        panel-test-id="react-connecting-queue"
+        :items="queued"
+      />
     </div>
   </div>
 </template>

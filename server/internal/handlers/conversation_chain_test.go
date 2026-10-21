@@ -41,6 +41,8 @@ type chainResp struct {
 		EventCount *int             `json:"eventCount"`
 		Decision   string           `json:"decision"`
 		Task       *string          `json:"task"`
+		Handoff    string           `json:"handoff"`
+		HandoffSrc string           `json:"handoffSource"`
 		raw        map[string]any
 	} `json:"segments"`
 }
@@ -61,7 +63,7 @@ func seedChainRun(t *testing.T, h *harness, longPrompt string) {
 		{NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(1), DurationSec: 120,
 			VarsBefore: map[string]any{"topic": "导出 CSV"}},
 		{NodeID: "design", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(5), DurationSec: 60,
-			Events: ev(42), Outputs: map[string]any{"content": "方案一"}},
+			Events: ev(42), Outputs: map[string]any{"content": "方案一", "handoff": "  按方案一实现,注意导出编码  ", "handoff_source": "agent"}},
 		{NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "completed", StartedAt: at(7), Events: ev(3)},
 		{NodeID: "gate", NodeType: "human_gate", Iteration: 1, Status: "completed", StartedAt: at(9),
 			Outputs: map[string]any{"action": "revise"}},
@@ -247,6 +249,28 @@ func TestConversationChain(t *testing.T) {
 	h.db.First(&r, "id = ?", "chain")
 	if vars != 1 || r.Status != "waiting_human" {
 		t.Fatalf("chain must be read-only: vars=%d status=%s", vars, r.Status)
+	}
+}
+
+func TestConversationChainHandoff(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	seedChainRun(t, h, "长")
+	out, code, body := getChain(t, h, "")
+	if code != 200 {
+		t.Fatalf("chain: %d %s", code, body)
+	}
+	for _, s := range out.Segments {
+		switch {
+		case s.NodeID == "design" && s.Iteration == 1:
+			if s.Handoff != "按方案一实现,注意导出编码" || s.HandoffSrc != "agent" {
+				t.Fatalf("design#1 handoff: %q %q", s.Handoff, s.HandoffSrc)
+			}
+		default:
+			if _, ok := s.raw["handoff"]; ok {
+				t.Fatalf("%s#%d: unexpected handoff %v", s.NodeID, s.Iteration, s.raw["handoff"])
+			}
+		}
 	}
 }
 

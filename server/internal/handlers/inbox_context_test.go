@@ -112,6 +112,46 @@ func TestRunInboxContextClarify(t *testing.T) {
 	}
 }
 
+func TestRunInboxContextNodeStatuses(t *testing.T) {
+	h := newHarness(t)
+	h.db.Create(&models.Run{
+		ID: "ic-status", Status: "waiting_human", StartedAt: time.Now(),
+		Graph: models.Graph{Nodes: []models.Node{
+			{ID: "in", Type: "input", Label: "开始"},
+			{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清"},
+			{ID: "impl", Type: "agent", Caps: testReviewCaps, Label: "实现"},
+		}},
+	})
+	h.db.Create(&models.ReactConversation{RunID: "ic-status", NodeID: "react", Iteration: 2,
+		Messages: []models.ReactMessage{{Role: "agent", Text: "q", At: time.Now().Format(time.RFC3339)}}})
+	h.db.Create(&models.StateRun{RunID: "ic-status", NodeID: "in", Iteration: 1, Status: "completed"})
+	h.db.Create(&models.StateRun{RunID: "ic-status", NodeID: "react", Iteration: 1, Status: "completed"})
+	h.db.Create(&models.StateRun{RunID: "ic-status", NodeID: "react", Iteration: 2, Status: "waiting_human"})
+
+	w := h.do("GET", "/api/runs/ic-status/inbox-context?nodeId=react&iteration=2", nil)
+	if w.Code != 200 {
+		t.Fatalf("inbox-context: %d %s", w.Code, w.Body)
+	}
+	var out struct {
+		NodeRuns map[string]struct {
+			Iteration int    `json:"iteration"`
+			Status    string `json:"status"`
+		} `json:"nodeRuns"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if got := out.NodeRuns["in"]; got.Status != "completed" {
+		t.Errorf("input node: %+v", got)
+	}
+	if got := out.NodeRuns["react"]; got.Status != "waiting_human" || got.Iteration != 2 {
+		t.Errorf("latest visit wins: %+v", got)
+	}
+	if _, ok := out.NodeRuns["impl"]; ok {
+		t.Error("a node never entered has no status")
+	}
+}
+
 func TestRunInboxContextClarifyResearchReview(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()
@@ -230,7 +270,8 @@ func TestRunInboxContextStartingClarify(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{
 		ID: "ic-starting", Status: "running", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{{ID: "ap", Type: "agent", Caps: testClarifyCaps, Label: "开发前澄清"}}},
+		Graph:        models.Graph{Nodes: []models.Node{{ID: "ap", Type: "agent", Caps: testClarifyCaps, Label: "开发前澄清"}}},
+		FirstMessage: &models.CompositeText{Text: "  帮我做导出  "},
 	})
 	h.db.Create(&models.StateRun{
 		RunID: "ic-starting", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running",
@@ -243,6 +284,7 @@ func TestRunInboxContextStartingClarify(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`"type":"clarify"`, `"starting":true`, `"turns":[]`, `"done":false`, "开发前澄清",
+		`"firstMessage":"帮我做导出"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("starting response missing %q in %s", want, body)

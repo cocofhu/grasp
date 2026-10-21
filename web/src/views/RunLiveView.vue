@@ -103,6 +103,8 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
               :run-id="runId"
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
+              split-drawer
+              remember-artifact-panel
             >
               <template #stage>
                 <ReactArtifactStage

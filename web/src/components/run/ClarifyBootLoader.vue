@@ -23,7 +23,9 @@ const props = withDefaults(defineProps<{
   variant?: 'center' | 'inline'
   /** runId:nodeId:iteration of the boot record (lib/run/bootRecord.ts). */
   bootKey?: string | null
-}>(), { sandboxPhase: null, variant: 'center', bootKey: null })
+  /** Done row merged into another line (the 已流转到 separator): its title, with 环境已就绪 moved to the meta. */
+  title?: string | null
+}>(), { sandboxPhase: null, variant: 'center', bootKey: null, title: null })
 
 const { t } = useI18n()
 
@@ -125,9 +127,10 @@ const doneReady = computed(() => !!record.value?.live)
 const doneMeta = computed(() => {
   const n = checklist.value.length
   const sec = bootReadySec(record.value)
-  return sec == null
+  const meta = sec == null
     ? t('pages.clarifyBootLoader.checklist.doneMetaNoTime', { n })
     : t('pages.clarifyBootLoader.checklist.doneMeta', { n, d: fmtSec(sec) })
+  return props.title ? `${t('pages.clarifyBootLoader.checklist.done')} · ${meta}` : meta
 })
 </script>
 
@@ -181,7 +184,7 @@ const doneMeta = computed(() => {
   </div>
   <!-- Done (inside ClarifyChat): same row, folded, check icon. -->
   <Transition v-else-if="variant === 'inline' && phase === 'done'" name="startfade" appear>
-    <div v-if="doneReady" class="agent-tools chat-meta mb-2 w-full min-w-0" data-testid="clarify-boot-done">
+    <div v-if="doneReady" class="agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
       <button
         type="button"
         class="agent-tools-head"
@@ -190,7 +193,7 @@ const doneMeta = computed(() => {
         @click="doneOpen = !doneOpen"
       >
         <Icon name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
-        <span class="agent-tools-count">{{ t('pages.clarifyBootLoader.checklist.done') }}</span>
+        <span class="agent-tools-count" data-testid="clarify-boot-done-title">{{ title || t('pages.clarifyBootLoader.checklist.done') }}</span>
         <span class="tabular-nums text-txt3" data-testid="clarify-boot-done-meta">{{ doneMeta }}</span>
         <span class="agent-tools-context text-txt3" />
         <Icon name="chevron-down" :size="16" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />

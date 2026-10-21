@@ -156,6 +156,15 @@ const activeHomeSeed = computed(() => {
   if (!s || !homeApproveHandoffMatchesRun(s, it.runId)) return null
   return s
 })
+/** The run's opening message while the agent starts: the home hand-off, else the backend's queued copy (survives reload). */
+const activeQueuedFirstMessage = computed(() => {
+  const it = active.value
+  if (!it) return ''
+  const seed = activeHomeSeed.value?.text?.trim()
+  if (seed) return seed
+  const run = activeRun.value
+  return run?.id === it.runId ? run.clarifyByNode?.[it.nodeId]?.firstMessage?.trim() || '' : ''
+})
 const mobileView = ref<'list' | 'detail'>('list')
 const listScrollTop = ref(0)
 const listEl = ref<HTMLElement | null>(null)
@@ -799,10 +808,15 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
   if (pinned && pinned.runId === t.runId && !isStartingInboxItem(pinned)) {
     return [pinned, ...items]
   }
-  const seed = peekHomeApproveHandoff() || homeSeed.value
-  const ghost = withRunTitle(makeIncomingGhost(t, String(seed?.text || '')))
+  const ghost = withRunTitle(makeIncomingGhost(t, seedTextForRun(t.runId)))
   incomingGhost.value = ghost
   return [ghost, ...items]
+}
+
+/** Home handoff text, only when it belongs to this run (another run's text must never title it). */
+function seedTextForRun(runId: string): string {
+  const seed = peekHomeApproveHandoff() || homeSeed.value
+  return seed && homeApproveHandoffMatchesRun(seed, runId) ? String(seed.text || '') : ''
 }
 
 /** Run title read while a ghost had no handoff text; reused by rebuilt ghosts of the same run. */
@@ -852,7 +866,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
       const ghost =
         incomingGhost.value && itemKey(incomingGhost.value) === key
           ? incomingGhost.value
-          : makeIncomingGhost(target, String((peekHomeApproveHandoff() || homeSeed.value)?.text || ''))
+          : makeIncomingGhost(target, seedTextForRun(target.runId))
       incomingArmed.value = false
       incomingGhost.value = null
       queryWaitGen++
@@ -2864,6 +2878,7 @@ function itemSecondary(it: InboxItem) {
     startFailedItem,
     incomingArmed,
     activeHomeSeed,
+    activeQueuedFirstMessage,
     mobileView,
     listScrollTop,
     listEl,

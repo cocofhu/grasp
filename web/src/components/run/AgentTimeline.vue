@@ -83,18 +83,20 @@ const failedCount = computed(() => {
   return n
 })
 /**
- * A finished turn folds into the elapsed line (#843) — except when a tool call
- * failed: then the steps stay inline exactly as before #843, so the failed
- * tool (its red status, title and detail) is visible without opening a fold.
+ * A finished turn folds into the elapsed line (#843). Failed tool calls fold
+ * too; the line says how many failed, and opening it shows them expanded.
  */
-const settled = computed(() => !props.streaming && failedCount.value === 0 && timelineFolds(props.parts))
+const settled = computed(() => !props.streaming && timelineFolds(props.parts))
 const statusLabel = computed(() => {
   if (!settled.value) return ''
   if (props.interrupted) return t('pages.clarify.thoughtInterrupted')
   return ''
 })
-const elapsedName = computed(
-  () => [elapsedTime.value, statusLabel.value].filter(Boolean).join(' ') || t('pages.clarify.turnProcess'),
+const failedLabel = computed(() => (settled.value && failedCount.value ? t('pages.clarify.toolFailedCount', { n: failedCount.value }) : ''))
+/** Shown in place of the time when the reply's start/end are unknown, so the line never is a bare chevron. */
+const processLabel = computed(() => (elapsedTime.value ? '' : t('pages.clarify.turnProcess')))
+const elapsedName = computed(() =>
+  [elapsedTime.value || processLabel.value, failedLabel.value, statusLabel.value].filter(Boolean).join(' '),
 )
 
 const tailBlock = computed(() => {
@@ -200,7 +202,9 @@ function onToggle(index: number, last: boolean, e: Event) {
         @click="toggleProcess"
       >
         <span v-if="elapsedTime" class="agent-elapsed-time tabular-nums" data-testid="agent-timeline-elapsed-time">{{ elapsedTime }}</span>
+        <span v-else class="agent-elapsed-time" data-testid="agent-timeline-elapsed-process">{{ processLabel }}</span>
         <Icon name="chevron-right" :size="12" class="agent-elapsed-chevron" data-testid="agent-timeline-elapsed-chevron" aria-hidden="true" />
+        <span v-if="failedLabel" class="agent-elapsed-failed" data-testid="agent-timeline-elapsed-failed">{{ failedLabel }}</span>
         <span v-if="statusLabel" class="agent-elapsed-status" data-testid="agent-timeline-elapsed-status">{{ statusLabel }}</span>
       </button>
       <div v-if="processOpen && workBlocks.length" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
@@ -270,6 +274,7 @@ function onToggle(index: number, last: boolean, e: Event) {
   cursor: pointer;
 }
 .agent-elapsed:hover { color: rgb(var(--c-txt)); }
+.agent-elapsed-failed { color: var(--chat-error, rgb(var(--c-err))); }
 .agent-elapsed:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / .45);
   outline-offset: 4px;

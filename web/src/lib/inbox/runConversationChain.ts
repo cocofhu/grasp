@@ -23,6 +23,9 @@ export interface ChainSegment {
   decision?: string
   /** What this node does (interpolated node task), for the opening bubble after a hand-off. */
   task?: string
+  /** The note this visit left for the next node (outputs.handoff); platform = written for a silent upstream. */
+  handoff?: string
+  handoffSource?: 'agent' | 'platform'
 }
 
 export interface RunChainCurrent {
@@ -62,6 +65,8 @@ export interface RunChainWireSegment {
   turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at' | 'questions' | 'tools' | 'parts' | 'forms'>>
   eventCount?: number
   task?: string
+  handoff?: string
+  handoffSource?: string
   /**
    * kind:'gate' + mode:'manual' segments (requested #850 follow-up): the
    * gate-react reject / re-review discussion as its own segment after the
@@ -117,6 +122,12 @@ export function isPlumbingSegment(s: RunChainWireSegment, type?: string): boolea
   )
 }
 
+function handoffOf(text: unknown, source: unknown): Pick<ChainSegment, 'handoff' | 'handoffSource'> {
+  const handoff = typeof text === 'string' ? text.trim() : ''
+  if (!handoff) return {}
+  return { handoff, handoffSource: source === 'platform' ? 'platform' : 'agent' }
+}
+
 export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta): RunChain {
   const meta = new Map((nodes ?? []).map((n) => [n.id, n]))
   const label = (id: string, name?: string) => name || (meta.get(id)?.label as string | undefined) || id
@@ -142,6 +153,7 @@ export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta):
           eventCount: s.eventCount,
           decision: s.decision || undefined,
           task: s.task || undefined,
+          ...handoffOf(s.handoff, s.handoffSource),
         }
       }),
   }
@@ -181,6 +193,7 @@ export function runChainFromRun(run: Run): RunChain {
       at: nr.startedAt || '',
       turns,
       task: task(nr.nodeId),
+      ...handoffOf(nr.outputs?.handoff, nr.outputs?.handoff_source),
     })
     if (nr.status === 'running' || nr.status === 'waiting_human') {
       current = {

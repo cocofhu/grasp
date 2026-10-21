@@ -43,6 +43,23 @@ describe('runConversationChain', () => {
     expect(clipTask('  ')).toBe('')
   })
 
+  it('carries the note each visit handed to the next node', () => {
+    const c = normalizeRunChain({
+      runId: 'r1',
+      status: 'running',
+      segments: [
+        { nodeId: 'a', handoff: '  交给 B  ', handoffSource: 'platform' },
+        { nodeId: 'b', handoff: '   ' },
+      ],
+    })
+    expect(c.segments[0]).toMatchObject({ handoff: '交给 B', handoffSource: 'platform' })
+    expect(c.segments[1]!.handoff).toBeUndefined()
+    const r = run()
+    const first = Object.keys(r.nodeRuns)[0]!
+    r.nodeRuns[first] = { ...r.nodeRuns[first]!, outputs: { handoff: '上游说明' } }
+    expect(runChainFromRun(r).segments.find((s) => s.nodeId === first)).toMatchObject({ handoff: '上游说明', handoffSource: 'agent' })
+  })
+
   it('marks a running node without a conversation as auto', () => {
     const r = run()
     r.nodeRuns.accept = { nodeId: 'accept', iteration: 1, status: 'completed', startedAt: '2026-10-21T05:03:00+08:00' }

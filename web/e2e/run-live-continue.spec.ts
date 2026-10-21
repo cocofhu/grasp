@@ -125,6 +125,9 @@ for (const theme of ['light', 'dark'] as const) {
     await page.addInitScript((t) => localStorage.setItem('grasp-theme', t), theme)
     const { state, send } = await setup(page)
     await expect(page.getByTestId('clarify-observe-stop')).toBeVisible()
+    // Same split toolbar as the clarify chat: 资源 and 产物 open separately.
+    await expect(page.getByTestId('conversation-resource-toggle')).toBeVisible()
+    await expect(page.getByTestId('conversation-panel-toggle')).toBeVisible()
     send(acp('impl', [T1, { kind: 'message', text: '实现完成，登录页已改版。' }]))
     await expect(page.getByText('实现完成，登录页已改版。')).toBeVisible()
 

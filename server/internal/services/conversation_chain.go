@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -39,6 +40,10 @@ type ChainSegment struct {
 	EventCount *int         `json:"eventCount,omitempty"`
 	Decision   string       `json:"decision,omitempty"`
 	Task       string       `json:"task,omitempty"`
+	// Handoff is the note this visit left for the next node (outputs.handoff);
+	// HandoffSource is agent or platform (written for a silent upstream).
+	Handoff       string `json:"handoff,omitempty"`
+	HandoffSource string `json:"handoffSource,omitempty"`
 
 	// StateRunID / NodeType are internal (task derivation in the handler).
 	StateRunID uint   `json:"-"`
@@ -196,6 +201,10 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		}
 		if end, ok := visitEnd(sr); ok {
 			seg.EndedAt = &end
+		}
+		if h, _ := sr.Outputs[models.OutputHandoff].(string); strings.TrimSpace(h) != "" {
+			seg.Handoff = strings.TrimSpace(h)
+			seg.HandoffSource, _ = sr.Outputs[models.OutputHandoffSource].(string)
 		}
 		switch kind {
 		case CurrentKindClarify, CurrentKindReview, CurrentKindTakeover:

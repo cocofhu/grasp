@@ -7,7 +7,7 @@ import AgentToolGroup from '../AgentToolGroup.vue'
 import AgentTimeline from '../AgentTimeline.vue'
 import StreamMarkdown from '../StreamMarkdown.vue'
 import { fmtTurnElapsed } from '@/lib/shared/format'
-import { hasFailedTool, timelineFolds } from '@/lib/run/acpTools'
+import { timelineFolds } from '@/lib/run/acpTools'
 import { fmtTokenCount, tokenUsageTotal } from '@/lib/run/tokenUsage'
 import type { LlmTurn } from '@/lib/run/llmTranscript'
 
@@ -73,8 +73,7 @@ const elapsedLabel = computed(() => {
   return compact ? t('pages.llmTranscript.duration', { time: compact }) : ''
 })
 const timelineShowsElapsed = computed(
-  // A reply with a failed tool does not fold (AgentTimeline), so the header keeps its duration.
-  () => !props.turn.live && props.turn.answers.some((a) => timelineFolds(a.parts) && !hasFailedTool(a.parts)),
+  () => !props.turn.live && props.turn.answers.some((a) => timelineFolds(a.parts)),
 )
 
 const hasReply = computed(() => props.turn.answers.some((a) => a.text || a.tools.length || a.plan || a.thought || a.parts?.length))

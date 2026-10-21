@@ -63,6 +63,7 @@ import {
 import type { Ref } from 'vue'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
+import { replySpan } from '@/lib/inbox/turnSpan'
 import {
   cloneAnnotations as cloneReactAnnotations,
   cloneImages as cloneClarifyImages,
@@ -588,12 +589,15 @@ const outputBoundsByIndex = computed(() => {
       continue
     }
     const text = t.text || ''
-    for (let c = pool.length - 1; c >= 0; c--) {
-      if (pool[c]!.text !== text) continue
+    let c = pool.length - 1
+    while (c >= 0 && pool[c]!.text !== text) c--
+    if (c >= 0) {
       out.set(i, { startedAt: pool[c]!.startedAt, endedAt: pool[c]!.endedAt })
       pool.splice(c, 1)
-      break
+      continue
     }
+    const span = replySpan(turns[i - 1], t)
+    if (span) out.set(i, span)
   }
   return out
 })

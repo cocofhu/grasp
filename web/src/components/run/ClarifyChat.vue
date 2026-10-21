@@ -14,11 +14,16 @@ export type ClarifyPriorSegment = {
   turns: ClarifyTurn[]
   /** Gate segments (#850 follow-up): approve / reject outcome, when the backend sends one. */
   decision?: string
+  /** What this node does (chain task), asked when no note was handed to it. */
+  task?: string
+  /** The note this node left for the next one (outputs.handoff). */
+  handoff?: string
+  handoffSource?: 'agent' | 'platform'
   open: boolean
   /** Consecutive auto nodes folded into one row (Linear-style grouping): their labels. */
   group?: string[]
   /** Folded auto nodes, each still addressable for its own execution record. */
-  members?: { nodeId: string; iteration: number; label: string }[]
+  members?: { nodeId: string; iteration: number; label: string; at?: string; endedAt?: string }[]
 }
 /** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
 export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
@@ -38,6 +43,7 @@ import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
+import ClarifyHandoffBubble, { type ClarifyNodeAsk } from './ClarifyHandoffBubble.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
@@ -73,6 +79,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import { replySpan } from '@/lib/inbox/turnSpan'
 import { hasFailedTool, partsFromAcp } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
@@ -146,6 +153,11 @@ const props = withDefaults(
 // This node visit's boot (connecting checklist) → one folded row above the first reply.
 const bootRecordKey = computed(() => makeBootKey(props.runId, props.nodeId, props.iteration))
 const bootSummary = computed(() => !!getBootRecord(bootRecordKey.value)?.live)
+/** After a hand-off the boot summary merges into the 已流转到 separator. */
+const bootOnDivider = computed(() => !!props.priorSegments?.length)
+const dividerTitle = computed(() =>
+  props.nodeLabel ? translate('pages.clarify.handoffDoneTo', { name: props.nodeLabel }) : translate('pages.clarify.handoffDone'),
+)
 const bootSummaryAt = computed(() => displayTurns.value.findIndex((x) => x.role === 'agent'))
 
 /** Live request text written for the agent; the Live card already tells the user. */
@@ -438,7 +450,7 @@ function openImagePreview(images: ClarifyImage[], index: number) {
  * reads as one step, not a ladder of identical lines.
  */
 function autoMember(seg: ClarifyPriorSegment) {
-  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label }
+  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label, at: seg.at, endedAt: seg.endedAt }
 }
 const priorRows = computed<ClarifyPriorSegment[]>(() => {
   const rows: ClarifyPriorSegment[] = []
@@ -962,7 +974,30 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
-/** A settled reply with a failed tool call stays unfolded (see AgentTimeline settled). */
+/** Raw (unfolded) chain position of each prior visit, to find the node it was handed from. */
+function priorIndex(nodeId: string, iteration: number): number {
+  return (props.priorSegments || []).findIndex((s) => s.nodeId === nodeId && s.iteration === iteration)
+}
+/** What a node starts from: the note of the visit right before it, else its own task. */
+function nodeAsk(index: number, task?: string): ClarifyNodeAsk | null {
+  const list = props.priorSegments || []
+  const up = index > 0 ? list[index - 1] : undefined
+  if (up?.handoff?.trim()) return { kind: 'handoff', text: up.handoff.trim(), from: up.label, source: up.handoffSource || 'agent' }
+  return task?.trim() ? { kind: 'task', text: task.trim() } : null
+}
+function priorAsk(nodeId: string, iteration: number): ClarifyNodeAsk | null {
+  const i = priorIndex(nodeId, iteration)
+  // The run's first node starts from the user's own message, already in its turns.
+  return i < 1 ? null : nodeAsk(i, props.priorSegments?.[i]?.task)
+}
+const currentAsk = computed(() => nodeAsk((props.priorSegments || []).length, props.nodeTask))
+
+/** An upstream reply's span: from the question it answers (or the segment's start) to when it was stored. */
+function priorReplySpan(seg: ClarifyPriorSegment, index: number) {
+  return replySpan(seg.turns[index - 1], seg.turns[index]!, seg.at)
+}
+
+/** A legacy (timeline-less) reply with a failed tool call keeps its completion footnote. */
 function turnHasFailedTool(t: ClarifyTurn): boolean {
   if (t.parts?.length) return hasFailedTool(t.parts)
   return (t.tools || []).some((tool) => (tool.status || '').toLowerCase() === 'failed')
@@ -1052,11 +1087,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   data-testid="clarify-auto-record"
                   :data-node-id="member.nodeId"
                 >
-                  <div
-                    v-if="autoMembers(seg).length > 1"
-                    class="text-[12px] font-medium text-txt2"
-                    data-testid="clarify-auto-record-label"
-                  >{{ member.label }}</div>
+                  <ClarifyHandoffBubble v-if="priorAsk(member.nodeId, member.iteration)" class="mb-3" :ask="priorAsk(member.nodeId, member.iteration)!" />
                   <p
                     v-if="autoRecord(member).status === 'error'"
                     class="text-[12px] leading-relaxed text-txt2"
@@ -1078,11 +1109,14 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     :completed="seg.status === 'completed'"
                     :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
                     :run-id="runId"
+                    :started-at="member.at"
+                    :ended-at="member.endedAt"
                     message-test-id="clarify-prior-agent-message"
                   />
                 </div>
               </template>
               <template v-else>
+              <ClarifyHandoffBubble v-if="seg.kind === 'chat' && priorAsk(seg.nodeId, seg.iteration)" :ask="priorAsk(seg.nodeId, seg.iteration)!" />
               <div
                 v-for="(pt, pi) in seg.turns"
                 :key="pi"
@@ -1144,6 +1178,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     :parts="pt.parts"
                     :completed="true"
                     :run-id="runId"
+                    :started-at="priorReplySpan(seg, pi)?.startedAt"
+                    :ended-at="priorReplySpan(seg, pi)?.endedAt"
                     message-test-id="clarify-prior-agent-message"
                   />
                   <template v-else>
@@ -1228,31 +1264,34 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         <div
           class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
           data-testid="clarify-segment-divider"
-          role="separator"
+          :role="bootSummary ? undefined : 'separator'"
+          :data-boot="bootSummary ? 'merged' : undefined"
         >
+          <!-- This node's 环境已就绪 rides on the hand-off line instead of a row of its own. -->
+          <ClarifyBootLoader
+            v-if="bootSummary"
+            phase="done"
+            variant="inline"
+            :boot-key="bootRecordKey"
+            :title="dividerTitle"
+          />
           <ThoughtSummaryStatus
+            v-else
             :completed="true"
-            :title="nodeLabel ? translate('pages.clarify.handoffDoneTo', { name: nodeLabel }) : translate('pages.clarify.handoffDone')"
+            :title="dividerTitle"
             :done-label="translate('pages.clarify.segmentCurrent')"
           />
         </div>
       </template>
-      <!-- What this node is doing, as its first User Message: the chain segment's task after a
-           hand-off (below the separator), or the taken-over node's task. Same user-bubble style. -->
-      <div
-        v-if="nodeTask?.trim()"
-        class="clarify-turn flex justify-end"
-        data-turn-role="human"
-        data-testid="clarify-node-task"
-      >
-        <span class="sr-only">{{ translate('pages.clarify.me') }}</span>
-        <div class="min-w-0 max-w-[88%]">
-          <div class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ nodeTask.trim() }}</div>
-        </div>
-      </div>
+      <!--
+        Below the separator: the note the upstream node handed this one, else
+        what this node is doing (the chain segment's / taken-over node's task),
+        as its first User Message.
+      -->
+      <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
       <ClarifyBootLoader
-        v-if="bootSummary && i === bootSummaryAt"
+        v-if="bootSummary && !bootOnDivider && i === bootSummaryAt"
         phase="done"
         variant="inline"
         :boot-key="bootRecordKey"
@@ -1521,11 +1560,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               agent
             />
             <!--
-              A reply with a failed tool call does not fold (AgentTimeline), so it
-              keeps the pre-#843 completion footnote: 已完成 + when it ended.
+              Legacy replies without a timeline do not fold, so a failed one keeps
+              the pre-#843 completion footnote: 已完成 + when it ended.
             -->
             <div
-              v-if="showTurnCompleted(t) && turnHasFailedTool(t)"
+              v-if="showTurnCompleted(t) && !turnProcessParts(t).length && turnHasFailedTool(t)"
               class="chat-meta mt-1.5 flex items-center justify-between gap-2"
               data-testid="clarify-turn-completed"
             >
@@ -1871,7 +1910,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </div>
       </template>
       <ClarifyBootLoader
-        v-if="bootSummary && bootSummaryAt < 0"
+        v-if="bootSummary && !bootOnDivider && bootSummaryAt < 0"
         phase="done"
         variant="inline"
         :boot-key="bootRecordKey"
