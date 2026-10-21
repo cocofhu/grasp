@@ -521,6 +521,11 @@ type ReactMessage struct {
 	// phase's start (the visit's start) and end (when the takeover settled).
 	StartedAt *time.Time `json:"startedAt,omitempty"`
 	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// GateNodeID marks a turn of a ReAct discussion opened from a pending
+	// human_gate (gate hot-revise). The turn is stored on the upstream
+	// producer's conversation; this tag lets read views attribute it to the
+	// gate instead.
+	GateNodeID string `json:"gateNodeId,omitempty"`
 	// Narration is the interrupted auto phase's final agent message, set only
 	// on a takeover's opening turn when it is not already prepended to Text
 	// (i.e. when Events carry the auto phase). Public share / embed previews

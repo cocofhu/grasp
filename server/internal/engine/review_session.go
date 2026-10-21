@@ -772,7 +772,7 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		if item.Source == "gate" {
 			conv = models.ReactConversation{RunID: s.runID, NodeID: s.producerID, Iteration: iter, Done: false,
 				Messages: []models.ReactMessage{{Role: "agent", Text: e.reviewSummaryMarkdown(c, producer),
-					At: time.Now().Format(time.RFC3339)}}}
+					At: time.Now().Format(time.RFC3339), GateNodeID: item.GateNodeID}}}
 			logDB(e.db.Create(&conv), s.runID, "seed gate-react producer conversation")
 		} else {
 			return false, errors.New("no react conversation")
@@ -782,10 +782,17 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 		return false, errors.New("上游复审会话已结束")
 	}
 
+	// Turns of a gate hot-revise are tagged with the gate so read views can
+	// attribute them to the gate visit rather than to the producer.
+	gateTag := ""
+	if item.Source == "gate" {
+		gateTag = item.GateNodeID
+	}
 	now := time.Now().Format(time.RFC3339)
 	conv.Messages = append(conv.Messages, models.ReactMessage{
 		Role: "human", Text: item.Text, At: now,
 		Images: item.Images, Annotations: item.Annotations, Live: item.Live,
+		GateNodeID: gateTag,
 	})
 	logDB(e.db.Save(&conv), s.runID, "save review human turn (turn_begin)")
 
@@ -818,12 +825,14 @@ func (e *Engine) executeReviewTurn(ctx context.Context, s *reviewSession, item *
 	for _, text := range t.Handoffs {
 		conv.Messages = append(conv.Messages, models.ReactMessage{
 			Role: "agent", Text: text, At: time.Now().Format(time.RFC3339), Handoff: true,
+			GateNodeID: gateTag,
 		})
 	}
 	agentMsg := models.ReactMessage{
 		Role: "agent", Text: t.Msg, At: time.Now().Format(time.RFC3339),
 		Questions: t.Questions, Forms: t.Forms, Interrupted: interrupted,
 		OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg),
+		GateNodeID: gateTag,
 	}
 	if interrupted && strings.TrimSpace(agentMsg.Text) == "" && t.Err != nil {
 		agentMsg.Text = "(已中断)"

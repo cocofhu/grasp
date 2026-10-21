@@ -272,6 +272,7 @@ export default defineConfig({
           new URL('./e2e/run-detail-mobile-panel.html', import.meta.url),
         ),
         'run-detail-real': fileURLToPath(new URL('./e2e/run-detail-real.html', import.meta.url)),
+        'run-live-continue': fileURLToPath(new URL('./e2e/run-live-continue.html', import.meta.url)),
         'run-completed-output': fileURLToPath(
           new URL('./e2e/run-completed-output.html', import.meta.url),
         ),

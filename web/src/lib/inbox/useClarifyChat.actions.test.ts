@@ -1362,7 +1362,8 @@ describe('confirm-flow dialog before clarify submit', () => {
     chat.finishEarly()
     chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
-    expect(play).toHaveBeenCalledOnce()
+    // #850: the hand-off shows inline in the transcript, no full-desk ceremony.
+    expect(play).not.toHaveBeenCalled()
     expect(chat.validating.value).toBe(true)
     app.unmount()
   })

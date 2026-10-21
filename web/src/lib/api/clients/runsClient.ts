@@ -7,6 +7,7 @@ import type {
   NodeTakeoverResult,
 } from '../../shared/types'
 import type { InboxContextResponse } from '../../inbox/inboxContext'
+import type { RunChainResponse } from '../../inbox/runConversationChain'
 import type { EmbedTicket } from '../../inbox/embedChat'
 import { apiState, BASE, origin, req, wsUrl } from '../httpCore'
 import type {
@@ -74,6 +75,12 @@ export const runsClient = {
     return req<PaginatedResponse<Run>>(path, init)
   },
   getRun: (id: string) => req<Run>(`/runs/${id}`),
+  /**
+   * Slim per-node conversation chain of a run, in execution order (#850).
+   * Callers fall back to getRun only on 404 (unknown run / older backend).
+   */
+  runConversationChain: (id: string, init?: { signal?: AbortSignal }) =>
+    req<RunChainResponse>(`/runs/${id}/conversation-chain`, init),
   runArtifacts: (id: string) => req<Artifact[]>(`/runs/${id}/artifacts`),
   inboxContext: (
     runId: string,

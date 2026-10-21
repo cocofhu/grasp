@@ -38,6 +38,10 @@ vi.mock('@/lib/api/api', async () => {
       nodeEvents: mocks.nodeEvents,
       runArtifacts: mocks.runArtifacts,
       runEventsWsUrl: mocks.runEventsWsUrl,
+      // Run chain unavailable → hand-off keeps main behaviour (next pending item).
+      runConversationChain: async () => {
+        throw new Error('chain unavailable in this suite')
+      },
     },
   }
 })
@@ -439,7 +443,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
 
     expect(mocks.reactReply).toHaveBeenCalled()
     expect(inboxCallsFor('run-a', 'clarify-a', 1).length).toBe(before)
-    expect(inboxCallsFor('run-b', 'clarify-b', 1).length).toBeGreaterThan(0)
+    // v3「流转了继续聊，不要跳」: the confirmed conversation stays (follows its run), b is not opened.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     expect(mocks.toastError).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -863,7 +868,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('plan g1.2: clarify force leaves pending before reactReply resolves', async () => {
+  it('plan g1.2 (inline hand-off): clarify force keeps the conversation with a hand-off row, then leaves', async () => {
     const a = clarifyItem('a')
     const b = clarifyItem('b')
     let list: InboxItem[] = [a, b]
@@ -885,11 +890,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // Leave at confirm initiation — list drops a; neighbor b is selected (its composer may mount).
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
-    expect(activeDetail(wrapper)?.runId).toBe('run-b')
-    expect(activeDetail(wrapper)?.runId).not.toBe('run-a')
+    // Inline hand-off: a stays on screen with the pending row while reactReply(force) runs.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
 
     list = [b]
     releaseReply({ status: 'ok' })
@@ -898,9 +900,42 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
-    expect(mocks.toastSuccess).toHaveBeenCalled()
+    // v3: no jump to the next pending item — a stays and follows its run.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    // Success is the inline row, not a toast.
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('方案 B: after the hand-off the inbox follows the run into its next waiting node', async () => {
+    const a = clarifyItem('a')
+    const next: InboxItem = { ...clarifyItem('a'), nodeId: 'accept-a', label: 'Accept a' }
+    const b = clarifyItem('b')
+    let list: InboxItem[] = [b, a]
+    mocks.listGates.mockImplementation(async () => paged(list))
+    let releaseReply!: (v: unknown) => void
+    mocks.reactReply.mockImplementation(() => new Promise((resolve) => { releaseReply = resolve }))
+
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await selectByQuery('run-a', 'clarify-a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+
+    const finishClick = wrapper.get('[data-testid="clarify-send"]').trigger('click')
+    await flushPromises()
+    await nextTick()
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+
+    // Engine advanced run-a to its next interactive node.
+    list = [next, b]
+    releaseReply({ status: 'ok' })
+    await finishClick
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'accept-a' })
     wrapper.unmount()
   })
 
@@ -951,8 +986,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // First Approve left pending while reactReply(force) is still in flight.
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-same', nodeId: 'clarify-approve-1' })
+    // First Approve stays on screen (inline hand-off) while reactReply(force) is in flight.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-same', nodeId: 'clarify-approve-1' })
 
     // Engine advances: second Approve enters the list during the lock window.
     list = [approve2]
@@ -1001,8 +1036,9 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    // A left; B selected while A's reactReply still hangs.
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    // A stays with its hand-off row while its reactReply hangs; the user can still open B.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    await selectByQuery('run-b', 'clarify-b')
     expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     expect(mocks.reactReply).toHaveBeenCalledTimes(1)
     expect(mocks.reactReply).toHaveBeenNthCalledWith(
@@ -1034,7 +1070,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
       false,
     )
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
 
     list = []
     replyResolvers[0]!({ status: 'ok' })
@@ -1045,7 +1081,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(mocks.toastSuccess).toHaveBeenCalled()
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(usePendingGates().displayedItems.value).toHaveLength(0)
     wrapper.unmount()
   })
 
@@ -1071,8 +1108,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     await nextTick()
 
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    // Inline hand-off: A stays on screen while its reactReply(force) is pending.
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
 
     // A fails while B was briefly selected — restore A for retry and unlock the page.
     rejectA(new Error('confirm blew up'))
@@ -1108,8 +1145,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
       false,
     )
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
+    // v3: b stays after its own confirm (follows run-b; never jumps to a).
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
     wrapper.unmount()
   })
 
@@ -1139,8 +1176,8 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await nextTick()
     await flushPromises()
 
-    expect(activeDetail(wrapper)).not.toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    // v3: the retried confirm succeeds and a stays (no jump to b).
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     wrapper.unmount()
   })
 
@@ -1225,7 +1262,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       false,
     )
     expect(inboxCallsFor('run-a', 'clarify-a', 1).length).toBe(afterReact)
-    expect(activeDetail(wrapper)).toEqual({ runId: 'run-b', nodeId: 'clarify-b' })
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'clarify-a' })
     wrapper.unmount()
   })
 

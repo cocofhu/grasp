@@ -18,11 +18,23 @@ const props = withDefaults(
     completed?: boolean
     /** Interrupted or failed end. */
     interrupted?: boolean
+    /** Row title (default「思考过程」); the inline hand-off step reuses this row. */
+    title?: string
+    /** Badge while busy (default「生成中…」). */
+    busyLabel?: string
+    /** Badge when done (default「已完成」); node separators show the hand-off time. */
+    doneLabel?: string
+    /** Badge when interrupted (default「已中断」); run-ended rows show the time instead. */
+    interruptedLabel?: string
   }>(),
   {
     busy: false,
     completed: false,
     interrupted: false,
+    title: '',
+    busyLabel: '',
+    doneLabel: '',
+    interruptedLabel: '',
   },
 )
 
@@ -45,9 +57,9 @@ const dataState = computed(() => {
 })
 
 const label = computed(() => {
-  if (state.value === 'generating') return t('pages.clarify.thoughtGenerating')
-  if (state.value === 'done') return t('pages.clarify.turnCompleted')
-  if (state.value === 'interrupted') return t('pages.clarify.thoughtInterrupted')
+  if (state.value === 'generating') return props.busyLabel || t('pages.clarify.thoughtGenerating')
+  if (state.value === 'done') return props.doneLabel || t('pages.clarify.turnCompleted')
+  if (state.value === 'interrupted') return props.interruptedLabel || t('pages.clarify.thoughtInterrupted')
   return ''
 })
 </script>
@@ -66,7 +78,7 @@ const label = computed(() => {
       :class="{ 'thought-summary-icon--running': state === 'generating' }"
       aria-hidden="true"
     />
-    <span class="thought-summary-title">{{ t('pages.clarify.thought') }}</span>
+    <span class="thought-summary-title">{{ title || t('pages.clarify.thought') }}</span>
     <span
       v-if="state !== 'idle'"
       class="thought-summary-badge"

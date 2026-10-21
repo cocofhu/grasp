@@ -1318,7 +1318,7 @@ function commitFinishEarly() {
   if (!canFinishEarly()) return
   // Click intent: play overlay only after the in-app confirm; parent force must not wait for done (g1.1).
   validating.value = true
-  void playConfirmCeremony()
+  // Hand-off progress is shown inline in the transcript (no full-desk overlay).
   emit('finish')
   void scrollBottom()
 }

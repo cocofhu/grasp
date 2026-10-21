@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/services"
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
@@ -255,6 +256,23 @@ func (e *Engine) publishTakeover(runID, nodeID string, iteration int, state stri
 		return
 	}
 	e.broker.Publish(runID, b)
+}
+
+// publishNodeEnter pushes a node_enter frame on the run's broker topic (the
+// WS /api/runs/:id/events channel, like node_takeover) when the FSM opens a
+// new visit of a node. kind/mode use the currentNode classification for a
+// fresh (auto, not yet parked) visit: gate / clarify / agent.
+func (e *Engine) publishNodeEnter(c *execCtx, node *models.Node) {
+	kind, mode := services.ClassifyVisit(node, models.StateRun{Mode: models.NodeModeAuto}, false)
+	b, err := json.Marshal(map[string]any{
+		"type": "node_enter", "runId": c.run.ID, "nodeId": node.ID,
+		"iteration": c.iter[node.ID], "name": services.GraphNodeLabel(c.graph, node.ID),
+		"kind": kind, "mode": mode,
+	})
+	if err != nil {
+		return
+	}
+	e.broker.Publish(c.run.ID, b)
 }
 
 // enterTakeover converts an interrupted auto visit into a parked manual

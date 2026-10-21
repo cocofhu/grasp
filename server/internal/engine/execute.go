@@ -370,6 +370,7 @@ func (e *Engine) executeFrom(runID, fromNodeID string, re *reattachInfo) {
 			e.refreshReviewFlag(c, node)
 			e.appendTrace(c, models.TraceEntry{NodeID: node.ID, Event: "enter", Iteration: c.iter[node.ID]})
 			e.startNodeRun(c, node)
+			e.publishNodeEnter(c, node)
 		}
 		re = nil
 

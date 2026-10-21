@@ -34,6 +34,7 @@ const mocks = vi.hoisted(() => ({
   listGates: vi.fn(),
   inboxContext: vi.fn(),
   getRun: vi.fn(),
+  runConversationChain: vi.fn(),
   resumeGate: vi.fn(),
   reactReply: vi.fn(),
   reactCancel: vi.fn(),
@@ -130,6 +131,7 @@ vi.mock('@/lib/api/api', async () => {
       listGates: mocks.listGates,
       inboxContext: mocks.inboxContext,
       getRun: mocks.getRun,
+      runConversationChain: mocks.runConversationChain,
       resumeGate: mocks.resumeGate,
       reactReply: mocks.reactReply,
       reactCancel: mocks.reactCancel,
@@ -262,6 +264,7 @@ describe('useGatesInbox actions', () => {
     mocks.listGates.mockResolvedValue({ items: [gateItem(), clarifyItem()], total: 2 })
     mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: contextRun(runId) }))
     mocks.getRun.mockImplementation(async (runId: string) => contextRun(runId))
+    mocks.runConversationChain.mockRejectedValue(new Error('chain offline'))
     mocks.resumeGate.mockResolvedValue({})
     mocks.reactReply.mockResolvedValue({})
     mocks.reactCancel.mockResolvedValue({})
@@ -428,9 +431,166 @@ describe('useGatesInbox actions', () => {
     expect(inbox.clarifyConfirmError.value).toBe('finish denied')
 
     mocks.reactReply.mockResolvedValueOnce({})
-    await inbox.onClarifySend('done', [], [], true)
-    expect(mocks.toastSuccess).toHaveBeenCalled()
+    const finishing = inbox.onClarifySend('done', [], [], true)
+    // Inline hand-off: the conversation stays and shows the pending row at click.
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeHandoff.value?.phase).toBe('pending')
+    await finishing
+    // Success is shown inline, not as a toast. v3: no jump — the conversation stays,
+    // the row turns done and (chain unavailable here) a waiting row follows the run.
+    expect(mocks.toastSuccess).not.toHaveBeenCalled()
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeHandoff.value?.phase).toBe('done')
+    expect(inbox.activeFollowTail.value?.kind).toBe('waiting')
+    expect(inbox.clarifyInputActive.value).toBe(true)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
     expect(inbox.processingLock.value).toBe(false)
+    app.unmount()
+  })
+
+  it('v2 hand-off: next node of the same run continues under the earlier nodes', async () => {
+    const turns = [{ role: 'human', text: '做个导出', at: '2026-10-21T05:00:00+08:00' }]
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'accept', name: '验收测试', mode: 'manual', state: 'waiting_human' },
+      segments: [
+        { nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns },
+        { nodeId: 'accept', iteration: 1, name: '验收测试', kind: 'clarify', status: 'waiting_human', turns: [], task: '编写并执行验收用例' },
+      ],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({ items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试' })], total: 2 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'accept' })
+    expect(inbox.activeChainSegments.value.map((s) => [s.label, s.open])).toEqual([['Clarify', true]])
+    expect(inbox.activeNodeTask.value).toBe('编写并执行验收用例')
+    expect(inbox.activeFollowTail.value).toBeNull()
+    app.unmount()
+  })
+
+  it('one opening task bubble: takeover task without a chain, the chain task after a hand-off', async () => {
+    const takeoverRun = (runId: string) =>
+      contextRun(runId, {
+        clarifyByNode: { react: { nodeId: 'react', iteration: 1, turns: [], done: false, takeover: true, task: ' 实现登录页 ' } },
+      })
+    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: takeoverRun(runId) }))
+    mocks.getRun.mockImplementation(async (runId: string) => takeoverRun(runId))
+    // Taken-over node opened directly: no earlier nodes → #849 clarifyByNode task.
+    const first = await withInbox()
+    first.inbox.selectItem(first.inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    expect(first.inbox.activeChainSegments.value).toEqual([])
+    expect(first.inbox.activeNodeTask.value).toBe('实现登录页')
+    first.app.unmount()
+    // Reached by a hand-off (earlier nodes in the chain): the chain segment's task wins — one value, one bubble.
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: 'Clarify', mode: 'manual', state: 'waiting_human' },
+      segments: [
+        { nodeId: 'design', iteration: 1, name: '方案设计', kind: 'agent', mode: 'auto', status: 'completed', startedAt: '2026-10-21T05:00:00+08:00', endedAt: '2026-10-21T05:00:30+08:00', eventCount: 3, task: '出方案' },
+        { nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'takeover', mode: 'manual', status: 'waiting_human', turns: [], task: '实现登录页（链）' },
+      ],
+    })
+    const second = await withInbox()
+    second.inbox.selectItem(second.inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    expect(second.inbox.activeChainSegments.value.map((s) => s.label)).toEqual(['方案设计'])
+    expect(second.inbox.activeNodeTask.value).toBe('实现登录页（链）')
+    second.app.unmount()
+  })
+
+  it('v2 hand-off: an auto next node keeps the conversation with a follow tail until the user leaves', async () => {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'running',
+      currentNode: { id: 'deploy', name: '部署', mode: 'auto', state: 'running' },
+      segments: [{ nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeHandoff.value?.phase).toBe('done')
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '部署' })
+    inbox.selectItem(inbox.listItems.value[0]!)
+    await nextTick()
+    expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.activeHandoff.value).toBeNull()
+    app.unmount()
+  })
+
+  it('real backend: a same-run node still booting (state: starting) is not opened; the tail names it', async () => {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'running',
+      currentNode: { id: 'accept', name: '验收测试', kind: 'clarify', mode: 'manual', state: 'running' },
+      segments: [{ nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试', state: 'starting' })],
+      total: 2,
+    })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'waiting', label: '验收测试' })
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+    app.unmount()
+  })
+
+  it('#850 chain errors: only 404 falls back to GET /runs/:id; 400 keeps the main transcript', async () => {
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    mocks.getRun.mockClear()
+    mocks.runConversationChain.mockRejectedValue(Object.assign(new Error('until_not_found'), { status: 400 }))
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(mocks.runConversationChain).toHaveBeenCalledWith('run-chat')
+    expect(mocks.getRun).not.toHaveBeenCalledWith('run-chat')
+    expect(inbox.activeChainSegments.value).toEqual([])
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeFollowTail.value?.kind).toBe('waiting')
+    app.unmount()
+  })
+
+  it('#850 chain 404 (unknown run / older backend) falls back to GET /runs/:id', async () => {
+    mocks.runConversationChain.mockRejectedValue(Object.assign(new Error('not found'), { status: 404 }))
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    await flushPromises()
+    expect(mocks.getRun).toHaveBeenCalledWith('run-chat')
+    app.unmount()
+  })
+
+  it('v3 hand-off: an ended run stays with the ended row even with other work queued', async () => {
+    mocks.runConversationChain.mockResolvedValue({ runId: 'run-chat', status: 'completed', currentNode: null, segments: [] })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value?.runId).toBe('run-chat')
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'ended', status: 'completed' })
+    expect(inbox.clarifyComposerDone.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
     app.unmount()
   })
 
@@ -457,7 +617,7 @@ describe('useGatesInbox actions', () => {
       vi.useRealTimers()
     }
     await flushPromises()
-    expect(mocks.toastSuccess).toHaveBeenCalled()
+    // #850: the chain hand-off replaces the v2 success toast (toast only when the row is still listed); the no-navigation rule is what matters here.
     expect(push).not.toHaveBeenCalled()
     expect(replace).not.toHaveBeenCalled()
     expect(router.currentRoute.value.fullPath).toBe(before)

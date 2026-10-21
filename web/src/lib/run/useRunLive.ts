@@ -1,12 +1,21 @@
-import { onBeforeUnmount, ref, watch, type Ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
-import { notifyRecentActivity, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { notifyRecentActivity, recentCurrentNode, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import {
+  activeSegment,
+  clipTask,
+  normalizeRunChain,
+  priorSegments as chainPriorSegments,
+  runChainFromRun,
+  type ChainSegment,
+  type RunChain,
+} from '@/lib/inbox/runConversationChain'
 import { decideLive, takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost, type LiveFrame } from '@/lib/run/runLive'
-import type { AcpEvent, Run } from '@/lib/shared/types'
+import type { AcpEvent, ClarifyImage, ClarifyTurn, ReactAnnotation, Run, RunCurrentNode } from '@/lib/shared/types'
 
 /** The ReviewComposer / ClarifyChat surface this view drives. */
 export interface LiveChatSurface {
@@ -17,13 +26,24 @@ export interface LiveChatSurface {
 export const LIVE_POLL_MS = 4000
 const REFRESH_DEBOUNCE_MS = 400
 
+/** What the live page shows for the node on screen. */
+/** Why the page ended in place: the run waits at a gate, or the run itself ended. */
+export type LiveEndState = { kind: 'gate'; label: string } | { kind: 'run'; status: string }
+export type LiveMode = 'observe' | 'chat'
+/** Hand-off row after 确认并流转 on this page (same shape as ClarifyChat's). */
+export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
+
 /**
- * Live view of an auto node: read-only stream (nodeEvents seed + run WS acp
- * frames) and Stop → POST takeover → the node's chat (re-review with
- * 确认并流转). Once a node is on screen the page never navigates by itself:
- * when that node finishes (the run moved on or ended), the stream stops and
- * the view shows the node as done (`ended`). Only the user's Stop, or this
- * same node being parked for a person, opens its chat.
+ * Live view of a run: read-only stream of an auto node (nodeEvents seed + run
+ * WS acp frames) and Stop → POST takeover → the node's chat (re-review with
+ * 确认并流转). Once a node is on screen the page never navigates by itself and
+ * the conversation continues in place (#850): when the node finishes and the
+ * run moves to its next node, earlier nodes fold above (conversation-chain),
+ * then a separator and the next node's task, then its stream (next node auto)
+ * or its chat (next node waiting for a person: reply and 确认并流转 right here).
+ * A gate, or the end of the run, ends the page in place (`ended`). Only the
+ * user's Stop, or the observed node itself being parked for a person, opens
+ * the /gates chat.
  */
 export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat: Ref<LiveChatSurface | null>) {
   const router = useRouter()
@@ -38,17 +58,49 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const stopping = ref(false)
   /** The node on screen finished; the view stays here, read-only. */
   const ended = ref(false)
-  /** Node task preview (currentNode.task / nodeEvents task), shown as the opening User Message. */
+  /** Node task preview (chain task / currentNode.task / nodeEvents task), shown as the opening User Message. */
   const task = ref('')
+  /** observe: read-only auto stream; chat: the next node's conversation continued in place. */
+  const mode = ref<LiveMode>('observe')
+  const chatKind = ref<'clarify' | 'review'>('review')
+  const nodeLabel = ref('')
+  const chain = ref<RunChain | null>(null)
+  const handoff = ref<LiveHandoff | null>(null)
+  const confirmError = ref<string | null>(null)
+  /** Chats confirmed on this page stay expanded above, like /gates. */
+  const opened = ref<string[]>([])
+  const priorSegments = computed(() =>
+    chainPriorSegments(chain.value, nodeId.value, iteration.value).map((s: ChainSegment) => ({
+      ...s,
+      open: opened.value.includes(`${s.nodeId}:${s.iteration}`),
+    })),
+  )
+  const turns = computed<ClarifyTurn[]>(() =>
+    mode.value === 'chat' ? (run.value?.clarifyByNode?.[nodeId.value]?.turns ?? []) : [],
+  )
+  /** Locked between 确认并流转 and the next node (the composer itself is never replaced). */
+  const composerLocked = computed(() => mode.value === 'chat' && !!handoff.value)
+  let chatBusy = false
+  const endState = ref<LiveEndState | null>(null)
 
   let ws: WebSocket | null = null
   let wsRun = ''
+  /** `${run}:${node}` this page wrote into ?node= itself (not a new route). */
+  let selfRoute = ''
   let pollTimer: number | undefined
   let refreshTimer: number | undefined
   let disposed = false
   let loadGen = 0
   let seededKey = ''
+  /**
+   * The surface instance the current node was seeded on. RunLiveView re-keys
+   * the surface per node, so after continueTo() the next node's stream must be
+   * seeded on the new instance, never on the one being unmounted.
+   */
+  let seededSurface: LiveChatSurface | null = null
   let lastEvents: AcpEvent[] | null = null
+  /** Latest snapshot of a node not on screen yet (the run's next node starts streaming before the page switches). */
+  let aheadEvents: { nodeId: string; events: AcpEvent[] } | null = null
   /** A node has been shown on this page: from now on, no automatic navigation. */
   let shown = false
 
@@ -74,35 +126,133 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     notifyRecentActivity()
   }
 
+  /** Earlier nodes of this run (folded above) and the current node's task. */
+  async function loadChain() {
+    const id = runId.value
+    let c: RunChain | null = null
+    try {
+      c = normalizeRunChain(await api.runConversationChain(id), run.value?.nodes)
+    } catch (e: unknown) {
+      // Same rule as /gates: only a 404 (older backend) falls back to the run graph.
+      if ((e as { status?: number })?.status === 404 && run.value) c = runChainFromRun(run.value)
+    }
+    if (!c || disposed || id !== runId.value) return
+    chain.value = c
+    const seg = activeSegment(c, nodeId.value, iteration.value)
+    if (seg?.task) task.value = clipTask(seg.task)
+    if (seg?.label && !nodeLabel.value) nodeLabel.value = seg.label
+  }
+
+  /**
+   * The run moved to its next node while this page shows one: continue the
+   * same conversation in place (no navigation). The surface re-keys on the
+   * node, so the stream / chat restarts below the folded earlier nodes.
+   */
+  function continueTo(next: string, m: LiveMode, c: RunCurrentNode | null) {
+    ended.value = false
+    endState.value = null
+    stopping.value = false
+    handoff.value = null
+    confirmError.value = null
+    chatBusy = false
+    nodeId.value = next
+    iteration.value = c?.iteration || 1
+    nodeLabel.value = (typeof c?.name === 'string' && c.name.trim()) || ''
+    mode.value = m
+    chatKind.value = c?.kind === 'clarify' ? 'clarify' : 'review'
+    seededKey = ''
+    lastEvents = aheadEvents?.nodeId === next ? aheadEvents.events : null
+    aheadEvents = null
+    task.value = typeof c?.task === 'string' ? c.task.trim() : ''
+    shown = true
+    syncUrlNode(next)
+    notifyRecentActivity()
+    connect(runId.value)
+    void loadChain()
+    // No seed now: the surface still on screen belongs to the previous node.
+    // The re-keyed surface is seeded once mounted (watch(chat) below, or after
+    // this render); ACP frames that arrive before that are kept in lastEvents
+    // and replayed on it.
+    if (m === 'observe') void nextTick(() => seed())
+  }
+
+  /**
+   * Keep ?node= on the node on screen so a refresh lands there. Same path, so
+   * the view is not remounted; replace, so Back does not step through nodes.
+   * The route watcher below skips this change (the page is already there).
+   */
+  function syncUrlNode(next: string) {
+    if (requestedNode.value === next) return
+    selfRoute = `${runId.value}:${next}`
+    const query = { ...router.currentRoute.value.query, node: next }
+    void router.replace({ path: runLivePath(runId.value), query })
+  }
+
   /**
    * Route on the server's run.currentNode (GET /runs/:id or the WS snapshot
    * frame). follow / detail / another node's chat only route the page while
-   * it is opening; after a node was shown they end it in place.
+   * it is opening; after a node was shown the run is followed in place, and
+   * a gate or the end of the run ends it in place.
    */
   function applyRun(r: Run, id: string) {
     if (ended.value) return
+    const d = decideLive(r, requestedNode.value)
+    const c = recentCurrentNode(r)
+    // Mid-turn in the continued chat: keep the live stream (refresh on turn_done).
+    if (shown && mode.value === 'chat' && chatBusy && d.kind === 'chat' && d.nodeId === nodeId.value) return
     run.value = r
     loadError.value = false
-    const d = decideLive(r, requestedNode.value)
+    // Between nodes after a node was shown: stay and wait for the next one.
+    if (shown && !c && (r.status === 'running' || r.status === 'queued')) return
     if (d.kind === 'chat') {
-      if (!shown || d.nodeId === nodeId.value) return goToChat(d.nodeId)
+      if (!shown) return goToChat(d.nodeId)
+      if (d.nodeId === nodeId.value) {
+        if (mode.value === 'chat') return
+        // The observed node itself was parked for a person (Stop elsewhere).
+        return goToChat(d.nodeId)
+      }
+      if (c?.kind === 'gate') {
+        const label = (typeof c.name === 'string' && c.name.trim()) || String(r.nodes?.find((n) => n.id === c.id)?.label || '') || c.id
+        endState.value = { kind: 'gate', label }
+        return finish()
+      }
+      return continueTo(d.nodeId, 'chat', c)
+    }
+    if (d.kind === 'detail') {
+      if (!shown) return leaveTo(runDetailPath(id))
+      endState.value = { kind: 'run', status: String(r.status || '') }
       return finish()
     }
-    if (d.kind === 'detail') return shown ? finish() : leaveTo(runDetailPath(id))
     if (d.kind === 'follow') {
-      if (shown) return finish()
+      // Shown already: only a node the page is not showing yet continues
+      // (a poll racing the ?node= update still reads 「follow」 for this one).
+      if (shown) return d.nodeId === nodeId.value ? observeCurrent(c) : continueTo(d.nodeId, 'observe', c)
       notifyRecentActivity()
       stopping.value = false
       void router.replace({ path: runLivePath(id), query: { node: d.nodeId } })
       return
     }
+    if (shown && nodeId.value !== d.nodeId) return continueTo(d.nodeId, 'observe', c)
+    applyObserve(d, id)
+  }
+
+  /** Same node still streaming (a poll / snapshot after the page continued in place). */
+  function observeCurrent(c: RunCurrentNode | null) {
+    if (c?.state === 'stopping') stopping.value = true
+    connect(runId.value)
+    void seed()
+  }
+
+  function applyObserve(d: Extract<ReturnType<typeof decideLive>, { kind: 'observe' }>, id: string) {
     if (nodeId.value !== d.nodeId) {
       nodeId.value = d.nodeId
       seededKey = ''
       lastEvents = null
       task.value = ''
     }
+    const first = !shown
     shown = true
+    if (first) void loadChain()
     if (d.task) task.value = d.task
     if (d.iteration != null) iteration.value = d.iteration
     if (d.stopping) stopping.value = true
@@ -133,18 +283,23 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }, REFRESH_DEBOUNCE_MS)
   }
 
+  function isSeeded() {
+    return !!chat.value && seededSurface === chat.value && seededKey === `${runId.value}:${nodeId.value}:${iteration.value}`
+  }
+
   /** Open the live bubble, then seed it from the node's current turn snapshot. */
   async function seed() {
     const key = `${runId.value}:${nodeId.value}:${iteration.value}`
     const surface = chat.value
-    if (!surface || seededKey === key) return
+    if (!surface || (seededKey === key && seededSurface === surface) || mode.value !== 'observe') return
     seededKey = key
+    seededSurface = surface
     surface.applyReviewFrame({ event: 'queue_state', nodeId: nodeId.value, waiting: 0, items: [], busy: true })
     surface.applyReviewFrame({ event: 'turn_begin', nodeId: nodeId.value, item: { text: '' } })
     if (lastEvents) surface.applyAcpEvents(lastEvents, nodeId.value)
     try {
       const r = await api.nodeEvents(runId.value, nodeId.value)
-      if (disposed || seededKey !== key || isNodeEventsUnavailable(r)) return
+      if (disposed || seededKey !== key || seededSurface !== chat.value || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
       // Top-level task on the first (non-paged) page only.
       const sent = 'task' in r ? r.task : undefined
@@ -167,13 +322,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
     if (m.type === 'acp') {
       if (m.nodeId !== nodeId.value) {
-        if (m.nodeId) scheduleRefresh()
+        if (m.nodeId) {
+          const ahead = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
+          if (ahead.length) aheadEvents = { nodeId: String(m.nodeId), events: ahead }
+          scheduleRefresh()
+        }
         return
       }
       const events = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
       if (events.length) {
+        // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
-        chat.value?.applyAcpEvents(events, nodeId.value)
+        if (isSeeded()) chat.value?.applyAcpEvents(events, nodeId.value)
       }
       if (m.busy === false) scheduleRefresh()
       return
@@ -183,6 +343,19 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       notifyRecentActivity()
       if (m.state === 'waiting_human') goToChat(nodeId.value)
       else stopping.value = true
+      return
+    }
+    if (m.type === 'review' && mode.value === 'chat') {
+      const f = m as Record<string, unknown>
+      if (typeof f.nodeId === 'string' && f.nodeId && f.nodeId !== nodeId.value) return
+      notifyRecentActivity()
+      if (f.event === 'turn_begin') chatBusy = true
+      if (f.event === 'queue_state' && typeof f.busy === 'boolean') chatBusy = f.busy
+      chat.value?.applyReviewFrame(f)
+      if (f.event === 'turn_done' || f.event === 'error') {
+        chatBusy = false
+        scheduleRefresh()
+      }
       return
     }
     if (m.type === 'status' || m.type === 'trace' || m.type === 'review' || m.type === 'react') {
@@ -248,6 +421,39 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     }
   }
 
+  /** Reply in the continued chat (same API as /gates). */
+  async function send(text: string, images: ClarifyImage[] = [], annotations: ReactAnnotation[] = []) {
+    if (mode.value !== 'chat' || handoff.value) return
+    try {
+      await api.reactReply(runId.value, nodeId.value, text, images, false, annotations)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : String(e))
+      void load()
+    }
+  }
+
+  /** 确认并流转 in the continued chat: the page stays and follows the run in place. */
+  async function confirm() {
+    if (mode.value !== 'chat' || handoff.value) return
+    const node = nodeId.value
+    const iter = iteration.value
+    confirmError.value = null
+    handoff.value = { phase: 'pending', at: new Date().toISOString() }
+    try {
+      const prompt = chatKind.value === 'review' ? t('pages.clarify.confirmFlowPrompt') : t('pages.runDetail.clarifyFinishPrompt')
+      await api.reactReply(runId.value, node, prompt, [], true, [])
+      if (nodeId.value !== node) return
+      handoff.value = { phase: 'done', at: new Date().toISOString() }
+      opened.value = [...opened.value.filter((k) => k !== `${node}:${iter}`), `${node}:${iter}`]
+      notifyRecentActivity()
+      void load()
+    } catch (e) {
+      if (nodeId.value !== node) return
+      handoff.value = null
+      confirmError.value = e instanceof Error ? e.message : String(e)
+    }
+  }
+
   function stop() {
     ws?.close()
     ws = null
@@ -260,18 +466,51 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   watch([runId, requestedNode], () => {
     if (disposed) return
+    // ?node= caught up with an in-place continue: same page, nothing to reload.
+    if (selfRoute && selfRoute === `${runId.value}:${requestedNode.value}`) {
+      selfRoute = ''
+      return
+    }
+    selfRoute = ''
     loading.value = !run.value || run.value.id !== runId.value
     stopping.value = false
     // A new route (sidebar click / follow while opening) starts a fresh page.
     if (ended.value) pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     ended.value = false
+    endState.value = null
     shown = false
+    mode.value = 'observe'
+    chain.value = null
+    handoff.value = null
     void load()
   }, { immediate: true })
-  watch(chat, () => { void seed() })
+  watch(chat, () => { void seed() }, { flush: 'post' })
   function poll() { if (!document.hidden) void load() }
   pollTimer = window.setInterval(poll, LIVE_POLL_MS)
   onBeforeUnmount(() => { disposed = true; stop() })
 
-  return { run, loading, loadError, nodeId, iteration, stopping, ended, task, takeover, reload: load, onFrame }
+  return {
+    run,
+    loading,
+    loadError,
+    nodeId,
+    iteration,
+    stopping,
+    ended,
+    endState,
+    task,
+    mode,
+    chatKind,
+    nodeLabel,
+    priorSegments,
+    turns,
+    handoff,
+    composerLocked,
+    confirmError,
+    takeover,
+    send,
+    confirm,
+    reload: load,
+    onFrame,
+  }
 }
