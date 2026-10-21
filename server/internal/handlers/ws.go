@@ -82,7 +82,7 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 				_ = conn.Close()
 				return
 			}
-			h.handleRunWSControl(runID, owner, data)
+			h.handleRunWSControl(runID, owner, data, w.write)
 		}
 	}()
 
@@ -105,14 +105,17 @@ func (h *Handlers) RunEvents(c *gin.Context) {
 	}
 }
 
-func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
+// reply sends a frame to the connection that sent data only.
+func (h *Handlers) handleRunWSControl(runID, owner string, data []byte, reply func([]byte) error) {
 	var m struct {
-		Type        string                   `json:"type"`
-		NodeID      string                   `json:"nodeId"`
-		Content     string                   `json:"content"`
-		Images      []models.PromptImage     `json:"images"`
-		Annotations []models.ReactAnnotation `json:"annotations"`
-		GateNodeID  string                   `json:"gateNodeId"`
+		// ClientMessageID: optional client UUID for a chat turn (see reactReplyBody).
+		ClientMessageID string                   `json:"clientMessageId"`
+		Type            string                   `json:"type"`
+		NodeID          string                   `json:"nodeId"`
+		Content         string                   `json:"content"`
+		Images          []models.PromptImage     `json:"images"`
+		Annotations     []models.ReactAnnotation `json:"annotations"`
+		GateNodeID      string                   `json:"gateNodeId"`
 	}
 	if json.Unmarshal(data, &m) != nil {
 		return
@@ -153,10 +156,16 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 		// Classic react → clarify FIFO; review-capable nodes → review FIFO.
 		if run, ok := h.Runs.Get(runID); ok {
 			if n := run.Graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
-				if _, err := h.Eng.EnqueueClarifyTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations); err != nil {
+				cid := m.ClientMessageID
+				if !validClientMessageID(cid) {
+					cid = "" // opaque best-effort id; an invalid one is ignored
+				}
+				if _, err := h.Eng.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, cid, m.Content, m.Images, m.Annotations); err != nil {
 					var ve *engine.ClarifyVisitEndedError
 					if errors.As(err, &ve) {
-						h.publishReviewWSFrame(runID, nodeID, ve.FrameExtra())
+						// The reject carries the sender's own content, so it
+						// goes back on this connection only, never the broker.
+						h.replyReviewWSFrame(reply, runID, nodeID, ve.FrameExtra(true))
 					} else {
 						h.publishReviewWSError(runID, nodeID, err.Error())
 					}
@@ -179,14 +188,27 @@ func (h *Handlers) publishReviewWSError(runID, nodeID, message string) {
 // publishReviewWSFrame is publishReviewWSError with extra fields (code,
 // autoRetryOnResume, dropped, ...); extra keys may not change type/event.
 func (h *Handlers) publishReviewWSFrame(runID, nodeID string, extra map[string]any) {
+	msg, err := reviewErrorFrame(runID, nodeID, extra)
+	if err != nil {
+		return
+	}
+	h.Eng.Broker().Publish(runID, msg)
+}
+
+// replyReviewWSFrame sends a review error frame to one connection only.
+func (h *Handlers) replyReviewWSFrame(reply func([]byte) error, runID, nodeID string, extra map[string]any) {
+	msg, err := reviewErrorFrame(runID, nodeID, extra)
+	if err != nil || reply == nil {
+		return
+	}
+	_ = reply(msg)
+}
+
+func reviewErrorFrame(runID, nodeID string, extra map[string]any) ([]byte, error) {
 	frame := map[string]any{"runId": runID, "nodeId": nodeID}
 	for k, v := range extra {
 		frame[k] = v
 	}
 	frame["type"], frame["event"] = "review", "error"
-	msg, err := json.Marshal(frame)
-	if err != nil {
-		return
-	}
-	h.Eng.Broker().Publish(runID, msg)
+	return json.Marshal(frame)
 }

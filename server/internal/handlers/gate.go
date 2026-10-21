@@ -10,6 +10,7 @@ import (
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type gateResumeBody struct {
@@ -125,12 +126,28 @@ type reactReplyBody struct {
 	// a Live session is open (which variant "this" means).
 	Live    *models.LiveEvent `json:"live"`
 	LiveCtx *models.LiveCtx   `json:"liveCtx"`
+	// ClientMessageID is an optional client-generated UUID for this turn,
+	// echoed on clarify_visit_ended so the sender can match its local copy.
+	ClientMessageID string `json:"clientMessageId"`
+}
+
+// validClientMessageID accepts "" (absent) or a UUID.
+func validClientMessageID(id string) bool {
+	if id == "" {
+		return true
+	}
+	_, err := uuid.Parse(id)
+	return err == nil && len(id) <= 64
 }
 
 func (h *Handlers) ReactReply(c *gin.Context) {
 	var b reactReplyBody
 	if err := c.ShouldBindJSON(&b); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !validClientMessageID(b.ClientMessageID) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "clientMessageId must be a UUID"})
 		return
 	}
 	runID, nodeID := c.Param("id"), c.Param("nodeId")
@@ -153,7 +170,7 @@ func (h *Handlers) ReactReply(c *gin.Context) {
 	} else if b.Force {
 		err = h.Eng.ReactConfirmAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.AbortRunning)
 	} else {
-		err = h.Eng.ReactReplyLiveCtxAs(sessionTurnOwner(c), runID, nodeID, b.Text, b.Images, b.Annotations, b.LiveCtx)
+		err = h.Eng.ReactReplyLiveCtxWithIDAs(sessionTurnOwner(c), runID, nodeID, b.ClientMessageID, b.Text, b.Images, b.Annotations, b.LiveCtx)
 	}
 	if err != nil {
 		writeReactReplyError(c, err)
@@ -374,6 +391,9 @@ func writeReactReplyError(c *gin.Context, err error) {
 		}
 		if d := visitEnded.DroppedPayload(); d != nil {
 			body["dropped"] = d
+		}
+		if visitEnded.ClientMessageID != "" {
+			body["clientMessageId"] = visitEnded.ClientMessageID
 		}
 		c.JSON(http.StatusConflict, body)
 		return

@@ -412,6 +412,23 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "改这里" {
 		t.Fatalf("annotations=%v", d["annotations"])
 	}
+	if _, has := body["clientMessageId"]; has {
+		t.Fatalf("no id was sent; clientMessageId must be omitted: %s", w.Body.String())
+	}
+
+	const cid = "5c9d1e7a-2f4b-4a6c-8e3d-1b7f9a2c6e54"
+	w2 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "again", "clientMessageId": cid})
+	b2 := parseJSON(t, w2)
+	if w2.Code != http.StatusConflict || b2["clientMessageId"] != cid {
+		t.Fatalf("409 must echo clientMessageId: %d %s", w2.Code, w2.Body.String())
+	}
+	if d2, _ := b2["dropped"].(map[string]any); d2 == nil || d2["text"] != "again" {
+		t.Fatalf("409 keeps dropped: %s", w2.Body.String())
+	}
+	w3 := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "x", "clientMessageId": "not-a-uuid"})
+	if w3.Code != http.StatusBadRequest {
+		t.Fatalf("invalid clientMessageId: %d %s", w3.Code, w3.Body.String())
+	}
 }
 
 func TestReactReplyRetryLastWithForceRejected(t *testing.T) {

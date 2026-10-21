@@ -63,6 +63,9 @@ type reviewQueueItem struct {
 	// AutoRetryOnResume marks the system first-message turn that ResumeFrom
 	// will redeliver. Surfaced on ClarifyVisitEndedError for the frontend.
 	AutoRetryOnResume bool
+	// ClientMessageID is the sender's optional message id (never shown to the
+	// agent); echoed on a visit-ended drop frame.
+	ClientMessageID string
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
@@ -147,7 +150,7 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 		ErrorExtra: func(err error) map[string]any {
 			var ve *ClarifyVisitEndedError
 			if errors.As(err, &ve) {
-				return ve.FrameExtra()
+				return ve.FrameExtra(false)
 			}
 			return nil
 		},
@@ -266,7 +269,7 @@ func (e *Engine) EnqueueReviewTurn(runID, producerID, text string, images []mode
 
 // EnqueueReviewTurnAs is EnqueueReviewTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueReviewTurnAs(owner, runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner, false)
+	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner, false, "")
 }
 
 // EnqueueClarifyTurn queues a classic react (需求澄清) turn onto the same platform
@@ -277,7 +280,13 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 
 // EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false)
+	return e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, "", text, images, annotations)
+}
+
+// EnqueueClarifyTurnWithIDAs is EnqueueClarifyTurnAs carrying the sender's
+// optional clientMessageID with the queued turn.
+func (e *Engine) EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false, clientMessageID)
 }
 
 // EnqueueClarifyFirstMessageAs queues Run.FirstMessage for a clarify visit.
@@ -292,7 +301,7 @@ func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string,
 	if conv.Done {
 		return 0, errors.New("react already done")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true)
+	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true, "")
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
@@ -319,7 +328,7 @@ func (e *Engine) enqueueClarifyRetryLast(owner, runID, nodeID string) (waiting i
 	if !ok {
 		return 0, errors.New("没有可重试的上一轮用户消息")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner, false)
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner, false, "")
 }
 
 // lastRetryableHuman finds the latest human whose following agent (if any) is
@@ -366,7 +375,7 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 		strings.Contains(t, "复审修改失败")
 }
 
-func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool) (waiting int, err error) {
+func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
@@ -377,7 +386,7 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		// Best-effort early refusal. A Cancel landing after this check is
 		// caught again when the turn starts (executeClarifyTurn), which sends
 		// the same contract as a WS error frame.
-		dropped := &DroppedTurn{Text: text, Images: images, Annotations: annotations}
+		dropped := &DroppedTurn{ClientMessageID: clientMessageID, Text: text, Images: images, Annotations: annotations}
 		if err := e.errIfClarifyVisitEnded(runID, producerID, autoRetryOnResume, dropped); err != nil {
 			return 0, err
 		}
@@ -397,6 +406,7 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		RetryLast:         retryLast,
 		Owner:             owner,
 		AutoRetryOnResume: autoRetryOnResume,
+		ClientMessageID:   clientMessageID,
 	}
 	return e.enqueueReviewItem(runID, producerID, kind, item)
 }
@@ -589,7 +599,8 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		// (newReviewSession ErrorExtra), echoing the dropped turn.
 		return false, &ClarifyVisitEndedError{
 			AutoRetryOnResume: item.AutoRetryOnResume, NodeID: s.producerID, Iteration: conv.Iteration,
-			Dropped: &DroppedTurn{Text: item.Text, Images: item.Images, Annotations: item.Annotations},
+			ClientMessageID: item.ClientMessageID,
+			Dropped:         &DroppedTurn{Text: item.Text, Images: item.Images, Annotations: item.Annotations},
 		}
 	}
 

@@ -345,14 +345,14 @@ func (e *Engine) ReactReply(runID, nodeID, humanText string, images []models.Pro
 
 // ReactReplyAs is ReactReply sent by owner (a pagebridge owner id).
 func (e *Engine) ReactReplyAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force bool) error {
-	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, force, false, false)
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, force, false, false, "")
 }
 
 // ReactConfirmAs is ReactReplyAs(force=true). With abortRunning, an agent turn
 // the sandbox is still running outside the platform FIFO (ErrSandboxBusy) is
 // cancelled first instead of failing the confirm.
 func (e *Engine) ReactConfirmAs(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, abortRunning bool) error {
-	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning)
+	return e.reactReply(owner, runID, nodeID, humanText, images, annotations, true, false, abortRunning, "")
 }
 
 // ReactReplyRetryLast covers the last human turn after an empty/failed agent
@@ -363,10 +363,10 @@ func (e *Engine) ReactReplyRetryLast(runID, nodeID string) error {
 
 // ReactReplyRetryLastAs is ReactReplyRetryLast sent by owner.
 func (e *Engine) ReactReplyRetryLastAs(owner, runID, nodeID string) error {
-	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true, false)
+	return e.reactReply(owner, runID, nodeID, "", nil, nil, false, true, false, "")
 }
 
-func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool) error {
+func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []models.PromptImage, annotations []models.ReactAnnotation, force, retryLast, abortRunning bool, clientMessageID string) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -376,7 +376,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	// A clarify reply to an ended visit is refused before attachments are
 	// ingested so the 409 echoes them exactly as the client sent them.
 	if !force && !retryLast && e.nodeIsClarify(runID, nodeID) {
-		dropped := &DroppedTurn{Text: humanText, Images: images, Annotations: annotations}
+		dropped := &DroppedTurn{ClientMessageID: clientMessageID, Text: humanText, Images: images, Annotations: annotations}
 		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, dropped); err != nil {
 			return err
 		}
@@ -435,7 +435,7 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 					_, err := e.enqueueClarifyRetryLast(owner, runID, nodeID)
 					return err
 				}
-				_, err := e.EnqueueClarifyTurnAs(owner, runID, nodeID, humanText, images, annotations)
+				_, err := e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, humanText, images, annotations)
 				return err
 			} else if n.Caps.Clarify() && force {
 				// Clarify force finish: only when session idle (no in-flight / queue).

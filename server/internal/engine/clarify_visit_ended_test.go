@@ -86,8 +86,10 @@ func collectVisitEndedFrame(t *testing.T, eng *Engine, runID string) func() map[
 	}
 }
 
-// A user turn queued behind a held turn, then Cancel: the turn-start drop
-// must publish the same contract as HTTP, echoing the dropped turn.
+// A user turn queued (via the HTTP engine entry) behind a held turn, then
+// Cancel: the turn-start drop is broadcast to every run subscriber, so it
+// carries the contract and the sender's clientMessageId but never the
+// dropped content.
 func TestClarifyTurnStartDropFrameUserMessage(t *testing.T) {
 	eng, db, p := setupEngineGraphP(t, clarifyOnlyGraph())
 	run, err := eng.StartRun("wf", nil, "test")
@@ -105,7 +107,8 @@ func TestClarifyTurnStartDropFrameUserMessage(t *testing.T) {
 	waitClarifyBusy(t, eng, run.ID, "predev")
 	ann := []models.ReactAnnotation{{Selector: "#login", Note: "按钮放大"}}
 	img := []models.PromptImage{{Ref: "blob:abc", MimeType: "image/png", Name: "shot.png"}}
-	if err := eng.ReactReply(run.ID, "predev", "排队的第二条", img, ann, false); err != nil {
+	const cid = "7b1f3c2e-9d4a-4e8b-a1c5-2f6d8e0b4a91"
+	if err := eng.ReactReplyLiveCtxWithIDAs("user:a", run.ID, "predev", cid, "排队的第二条", img, ann, nil); err != nil {
 		t.Fatal(err)
 	}
 	wait := collectVisitEndedFrame(t, eng, run.ID)
@@ -122,15 +125,11 @@ func TestClarifyTurnStartDropFrameUserMessage(t *testing.T) {
 	if _, ok := f["iteration"].(float64); !ok {
 		t.Fatalf("iteration missing: %v", f)
 	}
-	d, _ := f["dropped"].(map[string]any)
-	if d == nil || d["text"] != "排队的第二条" {
-		t.Fatalf("dropped=%v", f["dropped"])
+	if f["clientMessageId"] != cid {
+		t.Fatalf("clientMessageId=%v want %s", f["clientMessageId"], cid)
 	}
-	if a, _ := d["attachments"].([]any); len(a) != 1 || a[0].(map[string]any)["name"] != "shot.png" {
-		t.Fatalf("attachments=%v", d["attachments"])
-	}
-	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "按钮放大" {
-		t.Fatalf("annotations=%v", d["annotations"])
+	if _, has := f["dropped"]; has {
+		t.Fatalf("broadcast frame must not carry dropped content: %v", f)
 	}
 }
 
@@ -164,12 +163,11 @@ func TestClarifyTurnStartDropFrameFirstMessage(t *testing.T) {
 	if f["autoRetryOnResume"] != true || f["message"] != ClarifyVisitEndedMessage {
 		t.Fatalf("frame=%v", f)
 	}
-	d, ok := f["dropped"].(map[string]any)
-	if !ok {
-		t.Fatalf("dropped missing: %v", f)
+	if _, has := f["dropped"]; has {
+		t.Fatalf("broadcast frame must not carry dropped: %v", f)
 	}
-	if _, has := d["text"]; has {
-		t.Fatalf("first message must not echo text: %v", d)
+	if _, has := f["clientMessageId"]; has {
+		t.Fatalf("no id was sent; clientMessageId must be omitted: %v", f)
 	}
 }
 

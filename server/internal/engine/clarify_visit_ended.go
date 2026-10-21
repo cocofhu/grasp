@@ -27,13 +27,17 @@ type ClarifyVisitEndedError struct {
 	// draft. Nil for Live requests. Empty (no text) for the system first
 	// message, which no client typed.
 	Dropped *DroppedTurn
+	// ClientMessageID is the optional id the sender attached to the turn,
+	// echoed on every frame / response so the sender can match its local copy.
+	ClientMessageID string
 }
 
 // DroppedTurn is the refused turn as the sender submitted it.
 type DroppedTurn struct {
-	Text        string
-	Images      []models.PromptImage
-	Annotations []models.ReactAnnotation
+	ClientMessageID string
+	Text            string
+	Images          []models.PromptImage
+	Annotations     []models.ReactAnnotation
 }
 
 func (e *ClarifyVisitEndedError) Error() string { return ClarifyVisitEndedMessage }
@@ -61,8 +65,10 @@ func (e *ClarifyVisitEndedError) DroppedPayload() map[string]any {
 }
 
 // FrameExtra is the field set added to a WS error frame (alongside the
-// existing type/event/runId/nodeId/message).
-func (e *ClarifyVisitEndedError) FrameExtra() map[string]any {
+// existing type/event/runId/nodeId/message). withDropped is only for replies
+// that reach the sender alone (the WS enqueue reject); frames broadcast to
+// every run subscriber never carry the dropped content.
+func (e *ClarifyVisitEndedError) FrameExtra(withDropped bool) map[string]any {
 	out := map[string]any{
 		"message":           ClarifyVisitEndedMessage,
 		"code":              "clarify_visit_ended",
@@ -72,8 +78,13 @@ func (e *ClarifyVisitEndedError) FrameExtra() map[string]any {
 	if e.NodeID != "" {
 		out["nodeId"] = e.NodeID
 	}
-	if d := e.DroppedPayload(); d != nil {
-		out["dropped"] = d
+	if e.ClientMessageID != "" {
+		out["clientMessageId"] = e.ClientMessageID
+	}
+	if withDropped {
+		if d := e.DroppedPayload(); d != nil {
+			out["dropped"] = d
+		}
 	}
 	return out
 }
@@ -91,7 +102,11 @@ func (e *Engine) errIfClarifyVisitEnded(runID, nodeID string, autoRetryOnResume 
 	if e.clarifyVisitLive(runID, nodeID, conv.Iteration) {
 		return nil
 	}
-	return &ClarifyVisitEndedError{AutoRetryOnResume: autoRetryOnResume, NodeID: nodeID, Iteration: conv.Iteration, Dropped: dropped}
+	ve := &ClarifyVisitEndedError{AutoRetryOnResume: autoRetryOnResume, NodeID: nodeID, Iteration: conv.Iteration, Dropped: dropped}
+	if dropped != nil {
+		ve.ClientMessageID = dropped.ClientMessageID
+	}
+	return ve
 }
 
 // nodeIsClarify reads only the run graph (not the full exec context) to tell
@@ -108,5 +123,5 @@ func (e *Engine) nodeIsClarify(runID, nodeID string) bool {
 // publishClarifyVisitEnded broadcasts the visit-ended error frame on the run
 // broker (used for the server-side first message, which no client sent).
 func (e *Engine) publishClarifyVisitEnded(runID string, ve *ClarifyVisitEndedError) {
-	e.publishReview(runID, ve.NodeID, "error", ve.FrameExtra())
+	e.publishReview(runID, ve.NodeID, "error", ve.FrameExtra(false))
 }
