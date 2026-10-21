@@ -9,13 +9,16 @@ import AppInlineError from '@/components/ui/AppInlineError.vue'
 import { findGraphNode } from '@/lib/shared/clarifyInteractive'
 import { useRunLive, type LiveChatSurface } from '@/lib/run/useRunLive'
 import { useI18n } from 'vue-i18n'
+import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 
 /**
- * Read-only stream of an auto node, opened from the sidebar「最近」row. Same
- * surface as the inbox chat (ReviewShell + ReviewComposer/ClarifyChat); the
- * composer is disabled and its only action is Stop (takeover). It opens with
- * the node task (server currentNode.task / node events task) when sent, and
- * stays on this page once the node finishes (shown as done, no navigation).
+ * Live view of a run, opened from the sidebar「最近」row. Same surface as the
+ * inbox chat (ReviewShell + ReviewComposer/ClarifyChat). An auto node streams
+ * read-only (the only action is Stop → takeover). The page never navigates by
+ * itself: when the node finishes, the conversation continues in place with the
+ * run's next node (earlier nodes folded above, a separator, the node's task as
+ * the first User Message), streaming it if auto or as a chat you can answer
+ * and 确认并流转 right here. A gate or the end of the run ends it in place.
  */
 const route = useRoute()
 const { t } = useI18n()
@@ -25,7 +28,37 @@ const requestedNode = computed(() => {
   return String((Array.isArray(q) ? q[0] : q) || '')
 })
 const chatRef = ref<LiveChatSurface | null>(null)
-const { run, loading, loadError, nodeId, iteration, stopping, ended, task, takeover, reload } = useRunLive(runId, requestedNode, chatRef)
+const {
+  run,
+  loading,
+  loadError,
+  nodeId,
+  iteration,
+  stopping,
+  ended,
+  task,
+  mode,
+  chatKind,
+  nodeLabel,
+  priorSegments,
+  turns,
+  handoff,
+  composerLocked,
+  confirmError,
+  takeover,
+  send,
+  confirm,
+  reload,
+} = useRunLive(runId, requestedNode, chatRef)
+const draft = ref('')
+const attachments = ref<ClarifyImage[]>([])
+const annotations = ref<ReactAnnotation[]>([])
+function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
+  draft.value = ''
+  attachments.value = []
+  annotations.value = []
+  void send(text, images, anns)
+}
 const stageNode = computed(() => findGraphNode(run.value?.nodes, nodeId.value) || null)
 const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.value}`)
 </script>
@@ -68,18 +101,28 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
               <template #sidebar>
                 <ReviewComposer
                   ref="chatRef"
-                  mode="review"
+                  :mode="mode === 'chat' ? chatKind : 'review'"
                   :run-id="runId"
                   :node-id="nodeId"
                   :iteration="iteration"
-                  :turns="[]"
+                  v-model:draft="draft"
+                  v-model:attachments="attachments"
+                  v-model:annotations="annotations"
+                  :turns="turns"
                   :done="ended"
                   :active="true"
-                  :can-pass="false"
-                  observe
+                  :can-pass="mode === 'chat'"
+                  :observe="mode === 'observe'"
                   :stopping="stopping"
                   :node-task="task"
+                  :prior-segments="priorSegments"
+                  :node-label="nodeLabel || nodeId"
+                  :handoff="handoff"
+                  :composer-locked="composerLocked"
+                  :confirm-error="confirmError"
                   @takeover="takeover"
+                  @send="onSend"
+                  @finish="confirm"
                 />
               </template>
             </ReviewShell>
