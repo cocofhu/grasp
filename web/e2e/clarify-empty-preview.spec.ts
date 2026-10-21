@@ -1,6 +1,7 @@
 /**
- * Browser acceptance: a clarify Agent hides the app-preview tab until set_preview
- * registers ports; a reviewed Agent with set_preview keeps the tab even when empty.
+ * Browser acceptance: a clarify Agent hides the app-preview card until set_preview
+ * registers ports; a reviewed Agent with set_preview keeps that card even when empty.
+ * Split drawers have no 「工作流产物」 home tab. Open the resource icon, then the card.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
@@ -72,6 +73,16 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
 
     if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/previews/)) {
       await route.fulfill({ json: opts.ports })
+      return
+    }
+
+    if (method === 'GET' && path.match(/\/api\/artifacts\/[^/]+\/versions$/)) {
+      await route.fulfill({ json: [] })
+      return
+    }
+
+    if (method === 'GET' && path.match(/\/api\/artifacts\/[^/]+\/content$/)) {
+      await route.fulfill({ json: { id: path.split('/')[3], content: '{}' } })
       return
     }
 
@@ -208,11 +219,22 @@ test.describe('Clarify empty app preview', () => {
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
     await page.getByTestId('conversation-panel-toggle').click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
-    await expect(page.getByTestId('react-artifact-tab-grid')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('conversation-artifact-panel')).toHaveAttribute('aria-label', '产物')
+    await expect(page.getByTestId('react-artifact-tab-grid')).toHaveCount(0)
+    await expect(page.getByTestId('stage-workflow')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('react-artifact-card-clarified_requirement.json')).toBeVisible()
+    await expect(page.getByTestId('react-artifact-card-plan.json')).toBeVisible()
 
-    // Wait > one silent poll cycle (2.5s) to ensure tab does not appear / flicker.
+    await page.getByTestId('conversation-resource-toggle').click()
+    await expect(page.getByTestId('conversation-artifact-panel')).toHaveAttribute('data-drawer-mode', 'resources')
+    await expect(page.getByTestId('react-artifact-card-ide')).toBeVisible()
+    await expect(page.getByTestId('react-artifact-card-app')).toHaveCount(0)
+    await expect(page.getByTestId('react-artifact-tab-novnc')).toHaveCount(0)
+
+    // Wait > one silent poll cycle (2.5s) to ensure the app card does not appear / flicker.
     await page.waitForTimeout(3000)
 
+    await expect(page.getByTestId('react-artifact-card-app')).toHaveCount(0)
     await expect(page.getByTestId('react-artifact-tab-novnc')).toHaveCount(0)
     await expect(page.getByText('尚未注册预览端口')).toHaveCount(0)
     await expect(page.getByText('正在刷新')).toHaveCount(0)
@@ -237,11 +259,14 @@ test.describe('Clarify empty app preview', () => {
 
     await page.getByTestId('nav-pending-row').filter({ hasText: '澄清空预览验收' }).click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
-    await page.getByTestId('conversation-panel-toggle').click()
+    await page.getByTestId('conversation-resource-toggle').click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
-    await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible({ timeout: 15_000 })
+    const appCard = page.getByTestId('react-artifact-card-app')
+    await expect(appCard).toBeVisible({ timeout: 15_000 })
+    await expect(appCard).toContainText('应用预览')
+    await appCard.click()
+    await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible()
     await expect(page.getByTestId('react-artifact-tab-novnc')).toContainText('应用预览')
-    await page.getByTestId('react-artifact-tab-novnc').click()
     await expect(page.getByText('尚未注册预览端口')).toHaveCount(0)
 
     await page.screenshot({ path: `${SHOT}/02-clarify-with-ports.png`, fullPage: true })
@@ -255,9 +280,12 @@ test.describe('Clarify empty app preview', () => {
     await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
     await row.click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
-    await page.getByTestId('conversation-panel-toggle').click()
+    await page.getByTestId('conversation-resource-toggle').click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeVisible()
-    await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible({ timeout: 15_000 })
+    const appCard = page.getByTestId('react-artifact-card-app')
+    await expect(appCard).toBeVisible({ timeout: 15_000 })
+    await appCard.click()
+    await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible()
     await page.waitForTimeout(3000)
     await expect(page.getByTestId('react-artifact-tab-novnc')).toBeVisible()
 
