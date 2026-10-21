@@ -69,6 +69,9 @@ import type GateApproval from '@/components/run/GateApproval.vue'
 import type { AcpEvent, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
 
+/** Input idle time after which a focused, emptied field stops holding list auto-apply. */
+export const TYPING_IDLE_MS = 2000
+
 export function useGatesInbox() {
 
 const router = useRouter()
@@ -701,6 +704,11 @@ function startStartingPoll() {
 function selectFromQuery(): boolean {
   const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
   if (!hit) return false
+  // Same gate already selected: keep the object. A fresh row for the same key
+  // would retrigger watch(active) → loadActiveRun(true) and remount the chat
+  // (and its focused composer) on every silent list reload.
+  // rebindActiveFromList already swaps it in for starting↔parked.
+  if (active.value && itemKey(active.value) === itemKey(hit)) return true
   active.value = hit
   return true
 }
@@ -947,9 +955,34 @@ function fieldHasDraft(el: HTMLElement): boolean {
   if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) return el.value.trim().length > 0
   return (el.textContent || '').trim().length > 0
 }
+/**
+ * The user typed into the focused field within the last TYPING_IDLE_MS. Clearing
+ * a draft (Ctrl+A, Backspace) and typing on must not count as "done editing":
+ * the hold lasts until the field blurs or input has been idle for a while.
+ */
+const typingRecently = ref(false)
+let typingIdleTimer: ReturnType<typeof setTimeout> | null = null
+function clearTypingIdle() {
+  if (typingIdleTimer) clearTimeout(typingIdleTimer)
+  typingIdleTimer = null
+  typingRecently.value = false
+}
 function syncFocusedFieldDraft() {
   const el = typeof document !== 'undefined' ? document.activeElement : null
-  focusedFieldHasDraft.value = isTextEntry(el) && fieldHasDraft(el)
+  const entry = isTextEntry(el)
+  focusedFieldHasDraft.value = entry && fieldHasDraft(el)
+  if (!entry) clearTypingIdle()
+}
+function onFieldInput(e: Event) {
+  syncFocusedFieldDraft()
+  const el = typeof document !== 'undefined' ? document.activeElement : null
+  if (!isTextEntry(el) || (e.target instanceof Node && !el.contains(e.target))) return
+  typingRecently.value = true
+  if (typingIdleTimer) clearTimeout(typingIdleTimer)
+  typingIdleTimer = setTimeout(() => {
+    typingIdleTimer = null
+    typingRecently.value = false
+  }, TYPING_IDLE_MS)
 }
 function onFocusOut() {
   // activeElement is still the old field during focusout; read it next tick.
@@ -958,11 +991,15 @@ function onFocusOut() {
 
 /**
  * List auto-apply waits while the user is working: a non-empty gate form or
- * clarify draft, a non-empty draft in the focused field, or a processing intent
- * (approve / confirm in flight). Pending membership changes apply once this clears.
+ * clarify draft, a non-empty draft in the focused field, typing in the focused
+ * field within TYPING_IDLE_MS (an emptied draft the user keeps typing into), or
+ * a processing intent (approve / confirm in flight). Pending membership changes
+ * apply once this clears: on blur, or after input has gone idle.
  */
 let releaseAutoApplyHold: (() => void) | null = null
-const autoApplyHeld = computed(() => isEditing.value || focusedFieldHasDraft.value || processingLock.value)
+const autoApplyHeld = computed(
+  () => isEditing.value || focusedFieldHasDraft.value || typingRecently.value || processingLock.value,
+)
 
 function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
@@ -1022,9 +1059,40 @@ watch(lastAutoAppliedAt, () => {
   void syncListAfterAutoApply()
 })
 
+/**
+ * Snapshot the focused text field so a silent list reload can never take the
+ * caret away. If the field is still connected nothing happens; if a re-render
+ * replaced it, focus moves to its replacement (same data-testid) with the same
+ * selection — but only when focus fell to <body>, never away from a field the
+ * user moved to themselves.
+ */
+function captureFocus(): (() => void) | null {
+  if (typeof document === 'undefined') return null
+  const el = document.activeElement
+  if (!isTextEntry(el)) return null
+  const tid = el.getAttribute('data-testid')
+  const sel =
+    el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement
+      ? { start: el.selectionStart, end: el.selectionEnd }
+      : null
+  return () => {
+    if (el.isConnected || !tid) return
+    const cur = document.activeElement
+    if (cur && cur !== document.body) return
+    const next = document.querySelector(`[data-testid="${CSS.escape(tid)}"]`)
+    if (!(next instanceof HTMLElement) || !isTextEntry(next)) return
+    next.focus({ preventScroll: true })
+    if (sel && (next instanceof HTMLInputElement || next instanceof HTMLTextAreaElement)) {
+      const max = next.value.length
+      next.setSelectionRange(Math.min(sel.start ?? max, max), Math.min(sel.end ?? max, max))
+    }
+  }
+}
+
 let autoApplyGen = 0
 async function syncListAfterAutoApply() {
   const gen = ++autoApplyGen
+  const restoreFocus = captureFocus()
   const prevKey = active.value ? itemKey(active.value) : null
   const scrollTop = listEl.value?.scrollTop ?? null
   await loadList()
@@ -1033,8 +1101,9 @@ async function syncListAfterAutoApply() {
   // current selection untouched; the processed banner still covers removal.
   if (!autoApplyHeld.value) syncActiveAfterApply(listItems.value, prevKey)
   else checkProcessedWhileEditing()
+  await nextTick()
+  restoreFocus?.()
   if (scrollTop != null) {
-    await nextTick()
     if (listEl.value && listEl.value.scrollTop !== scrollTop) listEl.value.scrollTop = scrollTop
   }
 }
@@ -2166,7 +2235,7 @@ onMounted(() => {
   syncFocusedFieldDraft()
   document.addEventListener('focusin', syncFocusedFieldDraft)
   document.addEventListener('focusout', onFocusOut)
-  document.addEventListener('input', syncFocusedFieldDraft)
+  document.addEventListener('input', onFieldInput)
   document.addEventListener('visibilitychange', onVisible)
   window.addEventListener('focus', onFocus)
 })
@@ -2177,7 +2246,8 @@ onUnmounted(() => {
   window.removeEventListener('focus', onFocus)
   document.removeEventListener('focusin', syncFocusedFieldDraft)
   document.removeEventListener('focusout', onFocusOut)
-  document.removeEventListener('input', syncFocusedFieldDraft)
+  document.removeEventListener('input', onFieldInput)
+  clearTypingIdle()
   // Leaving the page: this page no longer holds the list, so apply what is pending.
   releaseAutoApplyHold?.()
   releaseAutoApplyHold = null
@@ -2341,6 +2411,7 @@ function itemSecondary(it: InboxItem) {
     isClarifyEditing,
     isEditing,
     focusedFieldHasDraft,
+    typingRecently,
     autoApplyHeld,
     activeRun,
     activeRunLoading,
