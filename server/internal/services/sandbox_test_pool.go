@@ -532,9 +532,7 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 		_ = os.RemoveAll(row.HomeDir)
 	}
 	if isAgentSandboxPurpose(row.Purpose) {
-		if s.agentOnDestroy != nil {
-			s.agentOnDestroy(row.ThreadID, row.Token)
-		}
+		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
 	} else if row.Purpose == "test" {
 		s.unregisterTestScheduler(row.Token)
 		if row.RunID != "" {

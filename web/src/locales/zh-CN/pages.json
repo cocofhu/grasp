@@ -3185,6 +3185,8 @@
     },
     "reactArtifactStage": {
       "workflowTab": "工作流产物",
+      "workflowHeading": "工作流",
+      "currentMark": "当前",
       "closeTab": "关闭",
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
@@ -4312,6 +4314,10 @@
     },
     "conversationWorkspace": {
       "conversation": "对话",
+      "resources": "资源",
+      "resourceTip": "资源",
+      "openResources": "打开资源",
+      "closeResources": "关闭资源",
       "artifacts": "产物",
       "openArtifacts": "打开产物",
       "closeArtifacts": "关闭产物",

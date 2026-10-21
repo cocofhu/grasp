@@ -38,6 +38,7 @@ import {
   publicGateContentKey,
   remainingSecFromExpiresAt,
   type PublicGateActiveItem,
+  type PublicGateArtifactsResult,
   type PublicGateDecideResult,
   type PublicGatePreview,
   type PublicGatePreviewKnown,
@@ -57,7 +58,7 @@ import {
   type LiveView,
 } from '@/lib/inbox/liveVariants'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
+import type { AcpEvent, Artifact, ClarifyImage, ClarifyTurn, NodeRun, NodeRunStatus, NodeType, ReactAnnotation, Run } from '@/lib/shared/types'
 
 const PUBLIC_SHARE_RUN_ID = 'public-share'
 
@@ -173,6 +174,40 @@ let stuckTimer: number | null = null
 
 const publicArtifacts = ref<Artifact[]>([])
 const publicRunGraph = ref<Run | null>(null)
+/** Real workflow node for this share. Empty until artifacts include it — never the synthetic chat id. */
+const publicStageNodeId = ref('')
+
+const NODE_RUN_STATUSES = new Set<NodeRunStatus>([
+  'pending',
+  'running',
+  'waiting_human',
+  'completed',
+  'failed',
+  'skipped',
+  'cancelled',
+])
+
+function isNodeRunStatus(value: string): value is NodeRunStatus {
+  return NODE_RUN_STATUSES.has(value as NodeRunStatus)
+}
+
+function nodeRunsFromPublic(raw: PublicGateArtifactsResult['nodeRuns']): Record<string, NodeRun> {
+  const out: Record<string, NodeRun> = {}
+  if (!raw) return out
+  for (const [key, row] of Object.entries(raw)) {
+    if (!row) continue
+    const nodeId = String(row.nodeId || key || '').trim()
+    const status = String(row.status || '').trim()
+    if (!nodeId || !isNodeRunStatus(status)) continue
+    const iteration = Number(row.iteration)
+    out[nodeId] = {
+      nodeId,
+      status,
+      ...(Number.isFinite(iteration) && iteration > 0 ? { iteration } : {}),
+    }
+  }
+  return out
+}
 
 function clearStuckTimer() {
   if (stuckTimer != null) {
@@ -465,10 +500,12 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
   if (!isReview.value || !token.value || chatOnly.value) {
     publicArtifacts.value = []
     publicRunGraph.value = null
+    publicStageNodeId.value = ''
     return
   }
   if (!isActive.value) {
     publicArtifacts.value = []
+    publicStageNodeId.value = ''
     return
   }
   abortArtifacts()
@@ -496,6 +533,8 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
       updatedAt: a.updatedAt,
       revision: a.revision,
     }))
+    publicStageNodeId.value = String(res.nodeId || '').trim()
+    const nodeRuns = nodeRunsFromPublic(res.nodeRuns)
     if (res.nodes?.length) {
       publicRunGraph.value = {
         id: PUBLIC_SHARE_RUN_ID,
@@ -507,7 +546,7 @@ async function loadPublicArtifacts(opts?: { silent?: boolean }) {
         durationSec: 0,
         progress: 0,
         branch: '',
-        nodeRuns: {},
+        nodeRuns,
         nodes: res.nodes.map((n) => ({
           id: n.id,
           type: n.type as NodeType,
@@ -1648,6 +1687,7 @@ defineExpose({
         ref="shellRef"
         class="min-h-0 flex-1"
         :chat-only="chatOnly"
+        :split-drawer="usePublicArtifactStage"
       >
         <template #stage>
           <div
@@ -1657,7 +1697,7 @@ defineExpose({
           >
             <ReactArtifactStage
               run-id="public-share"
-              node-id="public-gate"
+              :node-id="publicStageNodeId"
               :artifacts="publicStageArtifacts"
               :preview-artifact="publicPreviewName"
               :run="publicRunGraph"
