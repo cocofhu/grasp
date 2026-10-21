@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import Icon from '@/components/ui/Icon.vue'
 
 export type HomeWorkflowOption = { id: string; name: string }
 
@@ -242,8 +243,11 @@ onBeforeUnmount(() => {
       @click="togglePanel"
       @keydown="onTriggerKeydown"
     >
+      <Icon name="workflow" :size="14" class="home-workflow-select__glyph" />
       <span class="home-workflow-select__label" :title="selectedName">{{ selectedName }}</span>
-      <span class="home-workflow-select__chev" aria-hidden="true" />
+      <svg class="home-workflow-select__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+        <path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
     </button>
 
     <!-- Teleport to body so .home-shell__content overflow-y-auto cannot clip the downward panel (g1.2) -->
@@ -260,6 +264,7 @@ onBeforeUnmount(() => {
         @click.stop
       >
         <div class="home-workflow-select__search-wrap">
+          <Icon name="search" :size="14" class="home-workflow-select__search-icon" />
           <input
             ref="searchInput"
             v-model="search"
@@ -296,8 +301,12 @@ onBeforeUnmount(() => {
             >
               <span
                 class="home-workflow-select__opt-name"
+                :title="p.name"
                 v-html="highlightName(p.name, search.trim())"
               />
+              <svg class="home-workflow-select__check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                <path d="m4.2 8 2.5 2.5 5.1-5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
             </button>
           </template>
           <div
@@ -308,6 +317,7 @@ onBeforeUnmount(() => {
             {{ t('common.empty.noMatchingWorkflows') }}
           </div>
         </div>
+        <div class="home-workflow-select__rule" aria-hidden="true" />
         <!-- plan g1.1 — sticky create footer; not a selectable workflow option -->
         <button
           type="button"
@@ -336,31 +346,48 @@ onBeforeUnmount(() => {
   height: 32px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+  gap: 6px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: transparent;
-  color: rgb(var(--c-accent-2));
-  padding: 0 10px;
+  background: linear-gradient(180deg, rgb(var(--c-surface)), rgb(var(--c-elevated) / 0.55));
+  color: rgb(var(--c-txt));
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  transition: border-color 0.15s ease;
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.025);
+  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .home-workflow-select__trigger:hover:not(:disabled),
 .home-workflow-select--open .home-workflow-select__trigger {
-  border-color: rgb(var(--c-line-strong));
+  border-color: rgb(var(--c-accent) / 0.3);
+  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.045);
+}
+
+.home-workflow-select__trigger:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.65);
+  outline-offset: 3px;
 }
 
 .home-workflow-select__trigger:disabled {
   cursor: default;
   color: rgb(var(--c-txt3));
+  opacity: 0.65;
+}
+
+.home-workflow-select__trigger:disabled .home-workflow-select__glyph {
+  color: rgb(var(--c-txt3));
+}
+
+.home-workflow-select__glyph {
+  flex-shrink: 0;
+  color: rgb(var(--c-accent));
 }
 
 .home-workflow-select__label {
+  flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -368,11 +395,15 @@ onBeforeUnmount(() => {
 }
 
 .home-workflow-select__chev {
-  width: 0;
-  height: 0;
-  border: 4px solid transparent;
-  border-top-color: rgb(var(--c-txt3));
+  width: 12px;
+  height: 12px;
+  color: rgb(var(--c-txt3));
   flex-shrink: 0;
+  transition: transform 0.18s ease;
+}
+
+.home-workflow-select--open .home-workflow-select__chev {
+  transform: rotate(180deg);
 }
 
 /* plan g1.1 — panel opens below trigger (top), never bottom/upward.
@@ -380,25 +411,46 @@ onBeforeUnmount(() => {
    the documented downward default if styles apply without inline overrides.
    Flex column so create footer stays pinned while the list scrolls. */
 .home-workflow-select__panel {
+  --wf-surface: rgb(var(--c-elevated));
+  --wf-border: rgb(var(--c-line) / 0.9);
+  --wf-shadow: 0 16px 44px rgb(0 0 0 / 0.22), 0 3px 10px rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.05);
   position: fixed;
   left: 0;
   top: calc(100% + 6px);
   width: min(320px, 78vw);
-  border: 1px solid rgb(var(--c-line-strong));
-  border-radius: 12px;
+  box-sizing: border-box;
+  border: 1px solid var(--wf-border);
+  border-radius: 16px;
   overflow: hidden;
-  background: rgb(var(--c-elevated));
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+  background: var(--wf-surface);
+  box-shadow: var(--wf-shadow);
   z-index: 60;
   display: flex;
   flex-direction: column;
+  padding: 8px;
   max-height: min(360px, calc(100vh - 24px));
+  transform-origin: 28px 0;
+  animation: home-workflow-enter 0.18s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+html.light .home-workflow-select__panel {
+  --wf-surface: rgb(var(--c-surface));
+  --wf-border: rgb(232 230 240);
+  --wf-shadow: 0 16px 44px rgb(48 36 85 / 0.09), 0 3px 10px rgb(48 36 85 / 0.035), inset 0 1px 0 rgb(255 255 255 / 0.9);
 }
 
 .home-workflow-select__search-wrap {
-  padding: 8px;
-  border-bottom: 1px solid rgb(var(--c-line) / 0.7);
+  position: relative;
+  margin-bottom: 6px;
   flex-shrink: 0;
+}
+
+.home-workflow-select__search-icon {
+  position: absolute;
+  left: 10px;
+  top: 9px;
+  color: rgb(var(--c-txt3));
+  pointer-events: none;
 }
 
 .home-workflow-select__search {
@@ -408,9 +460,13 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: rgb(var(--c-surface));
   color: rgb(var(--c-txt));
-  padding: 0 10px;
+  padding: 0 10px 0 32px;
   font-size: 13px;
   outline: none;
+}
+
+html.light .home-workflow-select__search {
+  background: rgb(var(--c-elevated));
 }
 
 .home-workflow-select__search::placeholder {
@@ -419,12 +475,12 @@ onBeforeUnmount(() => {
 
 .home-workflow-select__search:focus {
   border-color: rgb(var(--c-accent));
+  background: rgb(var(--c-surface));
 }
 
 .home-workflow-select__list {
   max-height: 220px;
   overflow: auto;
-  padding: 4px;
   flex: 1 1 auto;
   min-height: 0;
 }
@@ -432,20 +488,22 @@ onBeforeUnmount(() => {
 .home-workflow-select__opt {
   width: 100%;
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
   text-align: left;
-  border: 0;
-  border-radius: 8px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: transparent;
   color: rgb(var(--c-txt));
-  padding: 8px 10px;
+  padding: 6px 9px;
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
 }
 
 .home-workflow-select__opt-name {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -453,18 +511,45 @@ onBeforeUnmount(() => {
 
 .home-workflow-select__opt:hover,
 .home-workflow-select__opt--active {
-  background: rgb(var(--c-accent) / 0.16);
+  background: rgb(var(--c-accent) / 0.045);
   color: rgb(var(--c-txt));
 }
 
 .home-workflow-select__opt--current {
   color: rgb(var(--c-accent-2));
+  border-color: rgb(var(--c-accent) / 0.06);
+  background: rgb(var(--c-accent) / 0.075);
+  font-weight: 600;
+}
+
+.home-workflow-select__opt--current:hover,
+.home-workflow-select__opt--current.home-workflow-select__opt--active {
+  background: rgb(var(--c-accent) / 0.11);
+}
+
+.home-workflow-select__opt:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.6);
+  outline-offset: -2px;
+}
+
+.home-workflow-select__check {
+  width: 15px;
+  height: 15px;
+  margin-left: auto;
+  flex-shrink: 0;
+  opacity: 0;
+  color: rgb(var(--c-accent));
+}
+
+.home-workflow-select__opt--current .home-workflow-select__check {
+  opacity: 1;
 }
 
 .home-workflow-select__opt :deep(mark) {
-  background: rgb(var(--c-accent) / 0.35);
+  background: rgb(var(--c-accent) / 0.2);
   color: inherit;
   padding: 0 1px;
+  border-radius: 2px;
 }
 
 .home-workflow-select__empty {
@@ -474,21 +559,31 @@ onBeforeUnmount(() => {
   font-size: 12px;
 }
 
+.home-workflow-select__rule {
+  height: 1px;
+  margin: 4px 4px 0;
+  background: rgb(var(--c-line) / 0.9);
+  flex-shrink: 0;
+}
+
 /* plan g1.1 — divider + plus/label; pinned under scrollable list; no aria-selected */
 .home-workflow-select__create {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 36px;
   flex-shrink: 0;
-  border: 0;
-  border-top: 1px solid rgb(var(--c-line) / 0.7);
+  margin-top: 4px;
+  border: 1px solid transparent;
+  border-radius: 9px;
   background: transparent;
   color: rgb(var(--c-txt));
-  padding: 10px 14px;
+  padding: 6px 9px;
   font-size: 13px;
   cursor: pointer;
   text-align: left;
+  transition: background 0.14s ease;
 }
 
 .home-workflow-select__create:hover,
@@ -508,6 +603,30 @@ onBeforeUnmount(() => {
   line-height: 1;
   color: rgb(var(--c-txt2));
   flex-shrink: 0;
+}
+
+@keyframes home-workflow-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-workflow-select__panel {
+    animation: none;
+  }
+
+  .home-workflow-select__trigger,
+  .home-workflow-select__chev,
+  .home-workflow-select__opt,
+  .home-workflow-select__create {
+    transition: none;
+  }
 }
 
 @media (max-width: 520px) {
