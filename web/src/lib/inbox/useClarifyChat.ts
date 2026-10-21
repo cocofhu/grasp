@@ -4,6 +4,7 @@ import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } fro
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
+import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   emptyFailDisplayText,
@@ -125,7 +126,8 @@ const showAnnotationChips = computed(() => props.reviewMode || props.annotateEna
 
 const { t: translate, locale } = useI18n()
 
-const persistedTurns = computed(() => props.turns ?? [])
+// A takeover's opening turn carries the auto phase (turns[0].events): continue it.
+const persistedTurns = computed(() => expandAutoPhase(props.turns ?? []))
 
 const thinking = ref(false)
 /** Review confirm mid-state: re-validating product (not Agent thinking). */

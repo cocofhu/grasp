@@ -7,12 +7,12 @@ import pages from '@/locales/zh-CN/pages.json'
 import ReviewShell from './ReviewShell.vue'
 import { useConversationArtifacts, type ConversationArtifacts } from '@/lib/chat/conversationArtifacts'
 import { registerStageLinks } from '@/lib/run/stageLinks'
-import { ensureConversationDrawer, resetConversationDrawers } from '@/lib/chat/conversationDrawer'
+import { ensureConversationDrawer, readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 enableAutoUnmount(afterEach)
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); resetConversationDrawers() })
 
-function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean } = {}) {
+function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean; splitDrawer?: boolean; rememberArtifactPanel?: boolean } = {}) {
   const mountedChat = vi.fn()
   const mountedStage = vi.fn()
   let artifacts: ConversationArtifacts | null = null
@@ -137,5 +137,125 @@ describe('ReviewShell conversation layout', () => {
       expect(host.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
       expect(openPreview).toHaveBeenCalledOnce()
     } finally { unregister() }
+  })
+})
+
+describe('ReviewShell artifact panel session', () => {
+  it('stays open across pending and recent scopes, stays closed after the user closes, and does not open the previous file', async () => {
+    const openArtifact = vi.fn()
+    const openPreview = vi.fn()
+    const links = { hasArtifact: () => true, openArtifact, canOpenPreview: () => true, openPreview }
+    const unregisterPending = registerStageLinks('run-pending', links)
+    const unregisterRecent = registerStageLinks('run-recent', links)
+    try {
+      const pending = mountShell({
+        rememberArtifactPanel: true,
+        splitDrawer: true,
+        scopeKey: 'approval:run-pending:gate:1',
+        runId: 'run-pending',
+      })
+      expect(pending.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+      expect(readArtifactPanelOpen()).toBe(false)
+      expect(localStorage.length).toBe(0)
+
+      await pending.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+      expect(pending.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(pending.wrapper.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('artifacts')
+      expect(readArtifactPanelOpen()).toBe(true)
+      expect(openArtifact).not.toHaveBeenCalled()
+      expect(localStorage.length).toBe(0)
+
+      const epoch = ensureConversationDrawer('run-pending')!.resetEpoch
+      await pending.wrapper.setProps({ scopeKey: 'inbox:run-pending:node:2' })
+      expect(pending.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(pending.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
+      expect(readArtifactPanelOpen()).toBe(true)
+      expect(openArtifact).not.toHaveBeenCalled()
+      expect(ensureConversationDrawer('run-pending')!.resetEpoch).toBe(epoch + 1)
+
+      pending.wrapper.unmount()
+      const recent = mountShell({
+        rememberArtifactPanel: true,
+        splitDrawer: true,
+        scopeKey: 'run-review:run-recent:node:1',
+        runId: 'run-recent',
+      })
+      expect(recent.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(recent.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
+      expect(openArtifact).not.toHaveBeenCalled()
+
+      await recent.wrapper.get('[data-testid="conversation-panel-close"]').trigger('click')
+      expect(readArtifactPanelOpen()).toBe(false)
+      expect(recent.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+
+      await recent.wrapper.setProps({ scopeKey: 'run-clarify:run-recent:node:2' })
+      expect(recent.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+      expect(recent.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
+      expect(readArtifactPanelOpen()).toBe(false)
+
+      recent.wrapper.unmount()
+      const closed = mountShell({
+        rememberArtifactPanel: true,
+        scopeKey: 'approval:run-pending:gate:3',
+        runId: 'run-pending',
+      })
+      expect(closed.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+      await closed.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+      expect(readArtifactPanelOpen()).toBe(true)
+      closed.wrapper.unmount()
+
+      const swapped = mountShell({
+        rememberArtifactPanel: true,
+        splitDrawer: true,
+        scopeKey: 'run-review:run-recent:node:3',
+        runId: 'run-recent',
+      })
+      expect(swapped.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      await swapped.wrapper.setProps({ scopeKey: 'inbox:run-recent:other:1' })
+      expect(swapped.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(openArtifact).not.toHaveBeenCalled()
+      expect(openPreview).not.toHaveBeenCalled()
+      expect(localStorage.length).toBe(0)
+    } finally {
+      unregisterPending()
+      unregisterRecent()
+    }
+  })
+
+  it('opens a cited file once and does not open it again when the scope changes', async () => {
+    const openArtifact = vi.fn()
+    const unregister = registerStageLinks('run-1', { hasArtifact: () => true, openArtifact, canOpenPreview: () => false, openPreview: vi.fn() })
+    try {
+      const host = mountShell({ rememberArtifactPanel: true, splitDrawer: true })
+      await host.openArtifact({ name: 'review.json', runId: 'run-1' })
+      expect(openArtifact).toHaveBeenCalledTimes(1)
+      expect(openArtifact).toHaveBeenCalledWith('review.json')
+      expect(readArtifactPanelOpen()).toBe(true)
+      await host.wrapper.setProps({ scopeKey: 'run:node:2' })
+      expect(host.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+      expect(openArtifact).toHaveBeenCalledTimes(1)
+      expect(readArtifactPanelOpen()).toBe(true)
+    } finally { unregister() }
+  })
+
+  it('keeps chat-only and public shells from rewriting the session switch', async () => {
+    writeArtifactPanelOpen(true)
+    const embedded = mountShell({ chatOnly: true, rememberArtifactPanel: true, scopeKey: 'embedded-review:1' })
+    expect(embedded.wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(false)
+    expect(embedded.wrapper.find('[data-testid="review-shell-stage"]').exists()).toBe(false)
+    expect(readArtifactPanelOpen()).toBe(true)
+    await embedded.wrapper.setProps({ scopeKey: 'embedded-review:2' })
+    expect(readArtifactPanelOpen()).toBe(true)
+
+    resetConversationDrawers()
+    const pub = mountShell({ rememberArtifactPanel: false, scopeKey: 'public-review:1', runId: 'public-share' })
+    expect(pub.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+    await pub.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    expect(pub.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(true)
+    expect(readArtifactPanelOpen()).toBe(false)
+    writeArtifactPanelOpen(true)
+    await pub.wrapper.setProps({ scopeKey: 'public-review:2' })
+    expect(pub.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
+    expect(readArtifactPanelOpen()).toBe(true)
   })
 })

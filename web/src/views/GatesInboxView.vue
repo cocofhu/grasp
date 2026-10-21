@@ -167,6 +167,7 @@ const {
   clarifyComposerNodeId,
   clarifyComposerIteration,
   clarifyComposerTurns,
+  activeNodeTask,
   clarifyComposerDone,
   inboxClarifyStageKind,
   inboxReviewState,
@@ -355,6 +356,7 @@ const listFadeKey = computed(() =>
           class="min-h-0 flex-1"
           :host-confirm-flow="false"
           split-drawer
+          remember-artifact-panel
         >
           <template #stage>
             <ReactConnectingState
@@ -397,6 +399,7 @@ const listFadeKey = computed(() =>
               v-model:attachments="clarifyAttachments"
               v-model:annotations="clarifyAnnotations"
               :turns="clarifyComposerTurns"
+              :node-task="activeNodeTask"
               :seed-human-text="activeHomeSeed?.text"
               :seed-human-images="activeHomeSeed?.images ?? []"
               :done="clarifyComposerDone"
@@ -470,6 +473,7 @@ const listFadeKey = computed(() =>
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
               split-drawer
+              remember-artifact-panel
             >
               <template #stage>
                 <ReactConnectingState
@@ -512,6 +516,7 @@ const listFadeKey = computed(() =>
                   v-model:attachments="clarifyAttachments"
                   v-model:annotations="clarifyAnnotations"
                   :turns="clarifyComposerTurns"
+                  :node-task="activeNodeTask"
                   :seed-human-text="activeHomeSeed?.text"
                   :seed-human-images="activeHomeSeed?.images ?? []"
                   :done="clarifyComposerDone"

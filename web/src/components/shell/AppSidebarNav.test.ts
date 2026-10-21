@@ -132,6 +132,7 @@ import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
+import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -153,6 +154,7 @@ beforeEach(() => {
   routeState.meta = {}
   knownInboxProcessingLock.value = false
   localStorage.clear()
+  resetConversationDrawers()
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
   const toast = useToast()
@@ -1406,6 +1408,27 @@ describe('AppSidebarNav', () => {
     const shortMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
     expect(shortMenu.style.top).toBe(`${window.innerHeight - 72}px`)
 
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('pending rows leave the artifact panel switch alone', () => {
+  it('does not rewrite the session switch when opening a pending row', async () => {
+    writeArtifactPanelOpen(true)
+    gateMocks.displayedItems.value = [
+      { type: 'gate', runId: 'run-1', nodeId: 'g1', title: '发布前确认', runTitle: '发布前确认', workflowName: 'w' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'c1', label: '需求规格', runTitle: '需求规格', kind: 'clarify', workflowName: 'w' },
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+    const rows = wrapper.get('[data-testid="nav-pending-approvals"]').findAll('[data-testid="nav-pending-row"]')
+    await rows[1].trigger('click')
+    await rows[0].trigger('click')
+    expect(readArtifactPanelOpen()).toBe(true)
+    writeArtifactPanelOpen(false)
+    await rows[1].trigger('click')
+    expect(readArtifactPanelOpen()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })

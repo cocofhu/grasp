@@ -208,6 +208,11 @@ type Run struct {
 	StartedAt   time.Time                 `json:"startedAt"`
 	DurationSec int                       `json:"durationSec"`
 	CreatedAt   time.Time                 `json:"-"`
+	// LastActivityAt is the latest user/agent activity on the run (node
+	// enter/exit, status change, conversation turns, ACP events — the latter
+	// debounced). nil on rows that predate the column; readers fall back to
+	// started_at / created_at.
+	LastActivityAt *time.Time `gorm:"index" json:"lastActivityAt,omitempty"`
 }
 
 const (
@@ -334,6 +339,12 @@ type StateRun struct {
 	Attempt      int               `json:"attempt"`
 	StartedAt    *time.Time        `json:"startedAt,omitempty"`
 	DurationSec  int               `json:"durationSec"`
+	// Mode is auto (default) or manual. A user takeover flips this visit to
+	// manual for good: the same (run, node, iteration) never returns to auto.
+	// Empty is treated as auto for rows that predate the column.
+	Mode string `gorm:"default:auto" json:"mode,omitempty"`
+	// TakenOverAt is when the user interrupted this auto visit (nil = never).
+	TakenOverAt *time.Time `json:"takenOverAt,omitempty"`
 	// ArtifactBaseRev is each live artifact's revision when this execution
 	// started. A conclusion counts as written on this visit only when the
 	// live revision moves past that baseline. ArtifactBaseSet distinguishes
@@ -363,6 +374,10 @@ type RunVariable struct {
 	Name  string `json:"name"`
 	Type  string `json:"type"`
 	Value any    `gorm:"serializer:json" json:"value"`
+	// Secret is carried over from a workspace variable flagged secret, so
+	// display-only derivations (task previews) can mask
+	// the value. Execution still sees the real value.
+	Secret bool `json:"secret,omitempty"`
 }
 
 // Artifact is a platform-stored run product written via the artifact-store MCP.
@@ -456,6 +471,9 @@ type ReactConversation struct {
 	Messages  []ReactMessage `gorm:"serializer:json" json:"turns"`
 	// PreviewArtifact is the artifact name pinned by set_artifact_preview for the ReAct UI.
 	PreviewArtifact string `json:"previewArtifact,omitempty"`
+	// Takeover marks a manual session opened by interrupting an auto visit;
+	// it is driven through the review path regardless of the node's caps.
+	Takeover bool `json:"takeover,omitempty"`
 }
 
 // Turns returns the transcript as a non-nil slice so JSON clients always get [].
@@ -493,6 +511,21 @@ type ReactMessage struct {
 	// Live marks a human turn produced by a Live variant request; the chat
 	// renders a Live card for it (state comes from the LiveSession row).
 	Live *LiveRef `json:"live,omitempty"`
+	// Events is the aggregated ACP timeline (thinking, tool calls, messages)
+	// behind this turn when the platform has it. Today only the opening turn
+	// of a takeover conversation carries it: the interrupted auto phase's
+	// timeline, so the chat continues it instead of showing bare narration.
+	Events []AcpEvent `json:"events,omitempty"`
+	// StartedAt / EndedAt bound the activity behind this turn when known.
+	// Today only a takeover's opening turn sets them: the interrupted auto
+	// phase's start (the visit's start) and end (when the takeover settled).
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
+	// Narration is the interrupted auto phase's final agent message, set only
+	// on a takeover's opening turn when it is not already prepended to Text
+	// (i.e. when Events carry the auto phase). Public share / embed previews
+	// show it instead of the raw events.
+	Narration string `json:"narration,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`
@@ -975,3 +1008,34 @@ const WorkspaceID = "default"
 
 // DefaultWorkspaceName is the display name of a newly created workspace.
 const DefaultWorkspaceName = "工作区"
+
+// Node visit modes (StateRun.Mode).
+const (
+	NodeModeAuto   = "auto"
+	NodeModeManual = "manual"
+)
+
+// IsManual reports whether this visit was taken over by the user.
+func (s StateRun) IsManual() bool { return s.Mode == NodeModeManual }
+
+// ManualVisitLive reports whether sr is a live taken-over visit: manual, the
+// node's latest iteration, and still running (unwinding) or waiting_human.
+// Such a visit is driven through the review path (see ManualReviewCaps).
+func ManualVisitLive(sr StateRun, latestIter int) bool {
+	return sr.IsManual() && sr.Iteration == latestIter &&
+		(sr.Status == "running" || sr.Status == "waiting_human")
+}
+
+// ManualReviewCaps is the effective capability view of a live taken-over
+// visit: a clone with Review=true, so every reader (engine, MCP host, share
+// links, embed) treats the session exactly like a post-run review. It never
+// mutates caps and returns caps unchanged for nil / clarify / already-review.
+// The clone must never be persisted into a run graph.
+func ManualReviewCaps(caps *AgentCapabilities) *AgentCapabilities {
+	if caps == nil || caps.Clarify() || caps.Review {
+		return caps
+	}
+	clone := *caps
+	clone.Review = true
+	return &clone
+}
