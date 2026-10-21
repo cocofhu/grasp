@@ -45,7 +45,8 @@ export interface RunChain {
 /**
  * Wire shape of GET /api/runs/:id/conversation-chain (#850, feature/conversation-chain @ 3410ac20).
  * One segment per (nodeId, iteration), execution order. clarify/review/takeover
- * segments always carry turns (role/text/at only, possibly empty); agent
+ * segments always carry turns (role/text/at, plus questions/tools/parts/forms
+ * when the turn has them; images and the raw event log are omitted); agent
  * segments carry eventCount only. endedAt only once ended. name may be "".
  * task only on Agent-node agent/clarify/review/takeover segments.
  */
@@ -58,7 +59,7 @@ export interface RunChainWireSegment {
   status?: string
   startedAt?: string
   endedAt?: string
-  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at'>>
+  turns?: Array<Pick<ClarifyTurn, 'role' | 'text' | 'at' | 'questions' | 'tools' | 'parts' | 'forms'>>
   eventCount?: number
   task?: string
   /**
@@ -83,6 +84,11 @@ export type ChainNodeMeta = ReadonlyArray<{ id: string; label?: unknown; type?: 
 const TERMINAL = new Set(['completed', 'failed', 'cancelled'])
 export function isRunTerminal(status: string | undefined | null): boolean {
   return !!status && TERMINAL.has(status)
+}
+
+/** Text, or the structured detail the prior fold renders. */
+function turnHasDetail(t: ClarifyTurn): boolean {
+  return !!String(t.text ?? '').trim() || !!t.questions?.length || !!t.tools?.length || !!t.parts?.length || !!t.forms?.length
 }
 
 function segKind(kind: string | undefined, hasTurns: boolean): ChainSegment['kind'] {
@@ -122,8 +128,8 @@ export function normalizeRunChain(res: RunChainResponse, nodes?: ChainNodeMeta):
     segments: (res.segments ?? [])
       .filter((s) => !isPlumbingSegment(s, meta.get(s.nodeId)?.type as string | undefined))
       .map((s) => {
-        // Blank turns (e.g. a bare 确认并流转 with no text) carry nothing to show.
-        const turns = ((s.turns ?? []) as ClarifyTurn[]).filter((t) => String(t.text ?? '').trim())
+        // A bare 确认并流转 (no text and no structured detail) carries nothing to show.
+        const turns = ((s.turns ?? []) as ClarifyTurn[]).filter(turnHasDetail)
         return {
           nodeId: s.nodeId,
           iteration: s.iteration ?? 1,

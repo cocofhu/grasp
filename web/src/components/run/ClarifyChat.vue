@@ -17,6 +17,8 @@ export type ClarifyPriorSegment = {
   open: boolean
   /** Consecutive auto nodes folded into one row (Linear-style grouping): their labels. */
   group?: string[]
+  /** Folded auto nodes, each still addressable for its own execution record. */
+  members?: { nodeId: string; iteration: number; label: string }[]
 }
 /** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
 export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
@@ -44,7 +46,8 @@ import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createClarifyChatAnchors } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
-import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
+import { api } from '@/lib/api/api'
+import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
 import {
   clampDemoWindow,
   isClarifyDemoEscapeMessage,
@@ -59,6 +62,8 @@ import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
+  AcpEvent,
+  AgentPart,
   ClarifyTurn,
   ClarifyImage,
   ReactAnnotation,
@@ -68,7 +73,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
-import { hasFailedTool } from '@/lib/run/acpTools'
+import { hasFailedTool, partsFromAcp } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -431,6 +436,9 @@ function openImagePreview(images: ClarifyImage[], index: number) {
  * into one row — like Linear's grouped activity — so a long auto stretch
  * reads as one step, not a ladder of identical lines.
  */
+function autoMember(seg: ClarifyPriorSegment) {
+  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label }
+}
 const priorRows = computed<ClarifyPriorSegment[]>(() => {
   const rows: ClarifyPriorSegment[] = []
   for (const seg of props.priorSegments ?? []) {
@@ -439,15 +447,23 @@ const priorRows = computed<ClarifyPriorSegment[]>(() => {
       rows[rows.length - 1] = {
         ...last,
         group: [...(last.group ?? [last.label]), seg.label],
+        members: [...(last.members?.length ? last.members : [autoMember(last)]), autoMember(seg)],
         endedAt: seg.endedAt,
         nodeId: last.nodeId,
       }
       continue
     }
-    rows.push(seg)
+    rows.push(seg.kind === 'auto' ? { ...seg, members: seg.members?.length ? seg.members : [autoMember(seg)] } : seg)
   }
   return rows
 })
+function autoMembers(seg: ClarifyPriorSegment) {
+  return seg.members?.length ? seg.members : [autoMember(seg)]
+}
+function priorExpandable(seg: ClarifyPriorSegment): boolean {
+  if (seg.kind === 'auto') return true
+  return (seg.kind === 'chat' || seg.kind === 'gate') && seg.turns.length > 0
+}
 function segSeconds(seg: ClarifyPriorSegment): number | null {
   if (!seg.endedAt || !seg.at) return null
   const sec = (Date.parse(seg.endedAt) - Date.parse(seg.at)) / 1000
@@ -500,6 +516,91 @@ function priorSegmentTitle(seg: ClarifyPriorSegment): string {
   if (seg.kind === 'chat') return translate('pages.clarify.segmentChat', { name: seg.label, n: seg.turns.length })
   if (seg.group && seg.group.length > 1) return translate('pages.clarify.segmentAutoGroup', { names: seg.group.join('、') })
   return translate('pages.clarify.segmentAuto', { name: seg.label })
+}
+
+type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[] }
+const autoOpen = ref<Record<string, boolean>>({})
+const autoRecords = ref<Record<string, AutoRecord>>({})
+let autoLoadCtrl: AbortController | null = null
+function priorRowKey(seg: ClarifyPriorSegment) {
+  return `${seg.nodeId}:${seg.iteration}`
+}
+function priorDetailsOpen(seg: ClarifyPriorSegment) {
+  return seg.kind === 'auto' ? !!autoOpen.value[priorRowKey(seg)] : seg.open
+}
+function autoRecordKey(member: { nodeId: string; iteration: number }) {
+  return `${props.runId}:${member.nodeId}:${member.iteration}`
+}
+function autoRecord(member: { nodeId: string; iteration: number }): AutoRecord {
+  return autoRecords.value[autoRecordKey(member)] ?? { status: 'loading' }
+}
+/** Timeline steps for a finished auto visit. Prefer the persisted timeline; fall back to flat events. */
+function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
+  const fromTimeline = partsFromAcp(events)
+  if (fromTimeline?.length) return fromTimeline
+  const parts: AgentPart[] = []
+  for (const ev of events || []) {
+    if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })
+    else if (ev.kind === 'tool_call' && ev.title) parts.push({ kind: 'tool', title: ev.title, status: ev.status })
+  }
+  return parts.length ? parts : undefined
+}
+async function loadAutoRecords(seg: ClarifyPriorSegment) {
+  if (!autoLoadCtrl) autoLoadCtrl = new AbortController()
+  const signal = autoLoadCtrl.signal
+  await Promise.all(autoMembers(seg).map(async (member) => {
+    const key = autoRecordKey(member)
+    const cur = autoRecords.value[key]
+    if (cur?.status === 'ready' || cur?.status === 'loading') return
+    autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading' } }
+    try {
+      const res = await api.nodeEvents(props.runId, member.nodeId, { signal })
+      if (signal.aborted) return
+      if (res.unavailable) throw new Error(res.error || 'unavailable')
+      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events) } }
+    } catch {
+      if (signal.aborted) return
+      autoRecords.value = { ...autoRecords.value, [key]: { status: 'error' } }
+    }
+  }))
+}
+function onPriorToggle(seg: ClarifyPriorSegment, ev: Event) {
+  if (seg.kind !== 'auto') return
+  const open = (ev.currentTarget as HTMLDetailsElement).open
+  const key = priorRowKey(seg)
+  if (!!autoOpen.value[key] !== open) autoOpen.value = { ...autoOpen.value, [key]: open }
+  if (open) void loadAutoRecords(seg)
+}
+function priorChoiceEchoes(turns: ClarifyTurn[], index: number) {
+  const rows = parseChoiceSummary(turns[index]?.text || '')
+  if (!rows) return []
+  const questions: ReactQuestion[] = []
+  for (let j = index - 1; j >= 0; j--) {
+    const turn = turns[j]
+    if (turn?.role === 'agent' && turn.questions?.length) {
+      questions.push(...turn.questions)
+      break
+    }
+  }
+  return choiceEchoRows(rows, questions)
+}
+function priorSelectedLabels(turns: ClarifyTurn[], agentIndex: number, q: ReactQuestion): string[] {
+  for (let j = agentIndex + 1; j < turns.length; j++) {
+    const turn = turns[j]
+    if (turn.role !== 'human') {
+      if (turn.questions?.length) break
+      continue
+    }
+    const parsed = parseChoiceSummary(turn.text)
+    if (!parsed) continue
+    const row = parsed.find((item) => item.q === q.prompt)
+    if (!row) return []
+    return restoreChoiceAnswers(row.answers, q.options.map((option) => option.label))
+  }
+  return []
+}
+function priorOptionSelected(turns: ClarifyTurn[], agentIndex: number, q: ReactQuestion, label: string) {
+  return priorSelectedLabels(turns, agentIndex, q).includes(label)
 }
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
@@ -828,6 +929,7 @@ watch(showDemoWindow, (open) => {
 
 /** The newest request keeps only a loading headline until the agent stops working on it. */
 onBeforeUnmount(() => {
+  autoLoadCtrl?.abort()
   stopDemoPointer()
   detachDemoWindowListeners()
   if (previewFocus.value) closePreviewFocus()
@@ -923,24 +1025,63 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <template v-if="priorSegments && priorSegments.length">
         <template v-for="seg in priorRows" :key="seg.nodeId + ':' + seg.iteration">
           <details
-            v-if="(seg.kind === 'chat' || seg.kind === 'gate') && seg.turns.length"
+            v-if="priorExpandable(seg)"
             class="chat-thought chat-meta clarify-prior-segment w-full"
             data-testid="clarify-prior-segment"
             :data-node-id="seg.nodeId"
             :data-kind="seg.kind"
-            :open="seg.open"
+            :open="priorDetailsOpen(seg)"
+            @toggle="onPriorToggle(seg, $event)"
           >
-            <summary class="chat-thought-summary" data-testid="clarify-prior-summary">
+            <summary class="chat-thought-summary clarify-status-row" data-testid="clarify-prior-summary">
               <ThoughtSummaryStatus
                 :completed="seg.status !== 'failed' && seg.status !== 'cancelled'"
                 :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
                 :title="priorSegmentTitle(seg)"
                 :done-label="priorSegmentMeta(seg)"
-              :interrupted-label="priorSegmentMeta(seg)"
+                :interrupted-label="priorSegmentMeta(seg)"
               />
               <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
             </summary>
-            <div class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+            <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+              <template v-if="seg.kind === 'auto'">
+                <div
+                  v-for="member in autoMembers(seg)"
+                  :key="member.nodeId + ':' + member.iteration"
+                  data-testid="clarify-auto-record"
+                  :data-node-id="member.nodeId"
+                >
+                  <div
+                    v-if="autoMembers(seg).length > 1"
+                    class="text-[12px] font-medium text-txt2"
+                    data-testid="clarify-auto-record-label"
+                  >{{ member.label }}</div>
+                  <p
+                    v-if="autoRecord(member).status === 'error'"
+                    class="text-[12px] leading-relaxed text-txt2"
+                    data-testid="clarify-auto-record-status"
+                  >{{ translate('pages.clarify.priorRecordFailed') }}</p>
+                  <p
+                    v-else-if="autoRecord(member).status === 'ready' && !autoRecord(member).parts?.length"
+                    class="text-[12px] leading-relaxed text-txt2"
+                    data-testid="clarify-auto-record-status"
+                  >{{ translate('pages.clarify.priorRecordEmpty') }}</p>
+                  <p
+                    v-else-if="autoRecord(member).status !== 'ready'"
+                    class="text-[12px] leading-relaxed text-txt2"
+                    data-testid="clarify-auto-record-status"
+                  >{{ translate('pages.clarify.priorRecordLoading') }}</p>
+                  <AgentTimeline
+                    v-else
+                    :parts="autoRecord(member).parts!"
+                    :completed="seg.status === 'completed'"
+                    :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
+                    :run-id="runId"
+                    message-test-id="clarify-prior-agent-message"
+                  />
+                </div>
+              </template>
+              <template v-else>
               <div
                 v-for="(pt, pi) in seg.turns"
                 :key="pi"
@@ -949,16 +1090,127 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                 :data-turn-role="pt.role"
               >
                 <div
-                  v-if="pt.role === 'human'"
+                  v-if="pt.role === 'human' && priorChoiceEchoes(seg.turns, pi).length"
+                  class="chat-user-message chat-response-summary min-w-0 max-w-[88%]"
+                  data-testid="clarify-prior-choice"
+                >
+                  <div class="chat-response-heading flex items-center gap-2 text-txt2">
+                    <Icon name="check" :size="16" /> {{ translate('pages.clarify.myChoice') }}
+                  </div>
+                  <div
+                    v-for="(echo, ri) in priorChoiceEchoes(seg.turns, pi)"
+                    :key="ri"
+                    class="chat-response-row min-w-0 max-w-full"
+                  >
+                    <div
+                      v-if="echo.showPrompt"
+                      class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]"
+                    >{{ echo.prompt }}</div>
+                    <div class="chat-response-answers flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1">
+                      <span
+                        v-for="(answer, ai) in [...echo.cards.map((card) => card.label), ...echo.texts]"
+                        :key="ai"
+                        class="min-w-0 max-w-full break-words text-txt [overflow-wrap:anywhere]"
+                        data-testid="clarify-prior-choice-answer"
+                      >{{ answer }}</span>
+                    </div>
+                  </div>
+                </div>
+                <div
+                  v-else-if="pt.role === 'human' && parseFormSummary(pt.text)"
+                  class="chat-user-message chat-response-summary min-w-0 max-w-[88%]"
+                  data-testid="clarify-prior-form"
+                >
+                  <div class="chat-response-heading flex items-center gap-2 text-txt2">
+                    <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
+                  </div>
+                  <div
+                    v-for="(row, ri) in parseFormSummary(pt.text)!"
+                    :key="ri"
+                    class="chat-response-row min-w-0 max-w-full"
+                  >
+                    <div class="chat-response-question mb-1 min-w-0 break-words text-txt2 [overflow-wrap:anywhere]">{{ row.label }}</div>
+                    <div class="min-w-0 break-words text-txt [overflow-wrap:anywhere] whitespace-pre-wrap">{{ row.value }}</div>
+                  </div>
+                </div>
+                <div
+                  v-else-if="pt.role === 'human'"
                   class="chat-user-message max-w-[88%] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
                 >{{ pt.text }}</div>
-                <div v-else class="chat-prose md w-full" v-html="renderChatMarkdown(pt.text)" />
+                <div v-else class="min-w-0 w-full">
+                  <AgentTimeline
+                    v-if="pt.parts?.length"
+                    :parts="pt.parts"
+                    :completed="true"
+                    :run-id="runId"
+                    message-test-id="clarify-prior-agent-message"
+                  />
+                  <template v-else>
+                    <AgentToolGroup v-if="pt.tools?.length" :tools="pt.tools" :run-id="runId" />
+                    <div v-if="pt.text?.trim()" class="chat-prose md w-full" v-html="renderChatMarkdown(pt.text)" />
+                  </template>
+                  <div
+                    v-if="pt.questions?.length"
+                    class="clarify-request clarify-request--history mt-2 min-w-0"
+                    data-testid="clarify-prior-questions"
+                  >
+                    <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
+                      <Icon name="chat" :size="16" />
+                      {{ translate('pages.clarify.questionsThisRound', { n: pt.questions.length }) }}
+                      <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
+                    </div>
+                    <div v-for="(q, qi) in pt.questions" :key="q.id || qi" class="mb-3 last:mb-0">
+                      <div class="mb-1.5 min-w-0 text-[12px] leading-snug text-txt2 [overflow-wrap:anywhere]">
+                        <span class="text-txt3">{{ qi + 1 }}.</span> {{ q.prompt }}
+                      </div>
+                      <div
+                        v-for="o in q.options"
+                        :key="o.id"
+                        class="flex items-start gap-1.5 py-0.5 text-[12px]"
+                        data-testid="clarify-prior-option"
+                        :data-selected="priorOptionSelected(seg.turns, pi, q, o.label) ? 'true' : 'false'"
+                      >
+                        <Icon
+                          v-if="priorOptionSelected(seg.turns, pi, q, o.label)"
+                          name="check"
+                          :size="12"
+                          class="mt-0.5 shrink-0 text-accent"
+                        />
+                        <span v-else class="mt-0.5 inline-block h-3 w-3 shrink-0" aria-hidden="true" />
+                        <span
+                          class="min-w-0 break-words [overflow-wrap:anywhere]"
+                          :class="priorOptionSelected(seg.turns, pi, q, o.label) ? 'text-accent' : 'text-txt2'"
+                        >{{ o.label }}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <div
+                    v-if="pt.forms?.length"
+                    class="clarify-request clarify-request--history mt-2 min-w-0"
+                    data-testid="clarify-prior-forms"
+                  >
+                    <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
+                      <Icon name="ci" :size="16" />
+                      {{ translate('pages.clarify.formsThisRound', { n: pt.forms.length }) }}
+                      <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
+                    </div>
+                    <div v-for="(form, fi) in pt.forms" :key="fi" class="mb-2 last:mb-0">
+                      <div v-if="form.title" class="mb-1 break-words text-[13px] text-txt2 [overflow-wrap:anywhere]">{{ form.title }}</div>
+                      <div
+                        v-for="field in form.fields"
+                        :key="field.name"
+                        class="mb-1 break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
+                      >{{ field.label }}</div>
+                    </div>
+                  </div>
+                </div>
               </div>
+              </template>
             </div>
           </details>
           <div
             v-else
-            class="clarify-handoff-step chat-meta flex w-full min-w-0"
+            class="clarify-handoff-step clarify-status-row chat-meta flex w-full min-w-0"
             data-testid="clarify-prior-segment"
             :data-node-id="seg.nodeId"
             :data-kind="seg.kind"
@@ -973,7 +1225,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </div>
         </template>
         <div
-          class="clarify-handoff-step clarify-segment-divider chat-meta flex w-full min-w-0"
+          class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
           data-testid="clarify-segment-divider"
           role="separator"
         >
@@ -1992,6 +2244,20 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 .clarify-question-kind { grid-column: 2; }
 .clarify-request button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
 [data-testid="clarify-turn-bottom-time"] { margin-top: 6px; }
+/* Keep the line's height. Only the glyphs appear on hover, so the bubble does not shift. */
+@media (hover: hover) and (pointer: fine) {
+  .clarify-turn [data-testid="clarify-turn-bottom-time"] {
+    opacity: 0;
+    transition: opacity .15s ease;
+  }
+  .clarify-turn:hover [data-testid="clarify-turn-bottom-time"],
+  .clarify-turn:focus-within [data-testid="clarify-turn-bottom-time"] {
+    opacity: 1;
+  }
+}
+@media (hover: hover) and (pointer: fine) and (prefers-reduced-motion: reduce) {
+  .clarify-turn [data-testid="clarify-turn-bottom-time"] { transition: none; }
+}
 [data-testid="clarify-hot-actions"],
 [data-testid="clarify-cold-actions"] {
   width: 100%;
@@ -2047,6 +2313,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 
 /* A quiet phase label; the message and caret carry the streaming activity. */
 .clarify-handoff-step { padding: 6px 8px; margin-inline: -8px; width: calc(100% + 16px); }
+/* Prior summary and the hand-off rows share one check column. */
+.clarify-status-row { margin-inline: -8px; padding: 6px 8px; width: calc(100% + 16px); }
 /* History ends here: a hairline (same token as markdown <hr>) then the current node. */
 .clarify-segment-divider { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgb(var(--c-line) / .7); border-radius: 0; }
 /* New in-stream status rows settle in quietly (no slide on reduced motion). */
