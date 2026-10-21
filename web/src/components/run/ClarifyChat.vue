@@ -519,7 +519,8 @@ const primaryKind = computed<ComposerPrimaryKind>(() => {
 })
 const primaryDisabled = computed(() => {
   if (primaryKind.value === 'stop') return false
-  // Following the run after a hand-off: send / confirm stay locked until the next node waits.
+  // Following the run after a hand-off (#850): send and confirm stay locked
+  // until the run's next node waits for the user. 停止 is never locked.
   if (props.composerLocked) return true
   if (primaryKind.value === 'confirm') return confirmDisabled.value
   return composerSending.value || !hasComposerDraft()
@@ -538,6 +539,7 @@ const primaryTestid = computed(() => {
 })
 function onPrimary(kind: ComposerPrimaryKind) {
   if (kind === 'stop') cancelReview()
+  else if (props.composerLocked) return
   else if (kind === 'confirm') finishEarly()
   else send()
 }

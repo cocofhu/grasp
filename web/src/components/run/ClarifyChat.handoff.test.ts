@@ -244,6 +244,30 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     expect(w.get('[data-testid="clarify-input"]').attributes('disabled')).toBeUndefined()
     w.unmount()
   })
+
+  it('composerLocked locks the single primary action (确认并流转 and 发送) while following', async () => {
+    const at = new Date().toISOString()
+    const w = mountChat({ handoff: { phase: 'done', at }, followTail: { kind: 'auto', label: '实现', at }, composerLocked: true })
+    await flushPromises()
+    const confirm = w.get('[data-testid="clarify-confirm-flow"]')
+    expect(confirm.attributes('disabled')).toBeDefined()
+    await confirm.trigger('click')
+    await flushPromises()
+    expect(w.emitted('finish')).toBeUndefined()
+    // A draft turns the primary into 发送; it stays locked as well.
+    await w.setProps({ draft: '还有一点' })
+    const send = w.get('[data-testid="clarify-send-icon"]')
+    expect(send.attributes('disabled')).toBeDefined()
+    await send.trigger('click')
+    await flushPromises()
+    expect(w.emitted('send')).toBeUndefined()
+    // The next node waits for the user: unlocked again.
+    await w.setProps({ composerLocked: false, handoff: null, followTail: null })
+    expect(w.get('[data-testid="clarify-send-icon"]').attributes('disabled')).toBeUndefined()
+    await w.setProps({ draft: '' })
+    expect(w.get('[data-testid="clarify-confirm-flow"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
 })
 
 describe('ClarifyChat done footer: specific ended state (run live page)', () => {
