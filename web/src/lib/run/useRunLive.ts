@@ -27,6 +27,8 @@ export const LIVE_POLL_MS = 4000
 const REFRESH_DEBOUNCE_MS = 400
 
 /** What the live page shows for the node on screen. */
+/** Why the page ended in place: the run waits at a gate, or the run itself ended. */
+export type LiveEndState = { kind: 'gate'; label: string } | { kind: 'run'; status: string }
 export type LiveMode = 'observe' | 'chat'
 /** Hand-off row after 确认并流转 on this page (same shape as ClarifyChat's). */
 export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
@@ -79,6 +81,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   /** Locked between 确认并流转 and the next node (the composer itself is never replaced). */
   const composerLocked = computed(() => mode.value === 'chat' && !!handoff.value)
   let chatBusy = false
+  const endState = ref<LiveEndState | null>(null)
 
   let ws: WebSocket | null = null
   let wsRun = ''
@@ -145,6 +148,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
    */
   function continueTo(next: string, m: LiveMode, c: RunCurrentNode | null) {
     ended.value = false
+    endState.value = null
     stopping.value = false
     handoff.value = null
     confirmError.value = null
@@ -192,10 +196,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
         // The observed node itself was parked for a person (Stop elsewhere).
         return goToChat(d.nodeId)
       }
-      if (c?.kind === 'gate') return finish()
+      if (c?.kind === 'gate') {
+        const label = (typeof c.name === 'string' && c.name.trim()) || String(r.nodes?.find((n) => n.id === c.id)?.label || '') || c.id
+        endState.value = { kind: 'gate', label }
+        return finish()
+      }
       return continueTo(d.nodeId, 'chat', c)
     }
-    if (d.kind === 'detail') return shown ? finish() : leaveTo(runDetailPath(id))
+    if (d.kind === 'detail') {
+      if (!shown) return leaveTo(runDetailPath(id))
+      endState.value = { kind: 'run', status: String(r.status || '') }
+      return finish()
+    }
     if (d.kind === 'follow') {
       if (shown) return continueTo(d.nodeId, 'observe', c)
       notifyRecentActivity()
@@ -431,6 +443,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     // A new route (sidebar click / follow while opening) starts a fresh page.
     if (ended.value) pollTimer = window.setInterval(poll, LIVE_POLL_MS)
     ended.value = false
+    endState.value = null
     shown = false
     mode.value = 'observe'
     chain.value = null
@@ -450,6 +463,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     iteration,
     stopping,
     ended,
+    endState,
     task,
     mode,
     chatKind,

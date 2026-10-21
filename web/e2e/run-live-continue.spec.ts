@@ -8,7 +8,7 @@
 import { expect, test, type Page, type WebSocketRoute } from '@playwright/test'
 
 const RUN = 'run-live-e2e'
-type Phase = 'impl' | 'verify' | 'done'
+type Phase = 'impl' | 'verify' | 'done' | 'gate'
 
 const nodes = [
   { id: 'input', type: 'input', label: '输入', position: { x: 0, y: 0 }, config: {} },
@@ -35,7 +35,7 @@ function runFor(phase: Phase) {
     workflowId: 'wf-live-e2e',
     workflowName: '实现+验证',
     title: '登录页改版',
-    status: phase === 'done' ? 'completed' : 'running',
+    status: phase === 'done' ? 'completed' : phase === 'gate' ? 'waiting_human' : 'running',
     trigger: 'manual',
     startedAt: at(0),
     nodes,
@@ -53,9 +53,10 @@ function runFor(phase: Phase) {
     artifacts: [],
     trace: [],
     vars: [],
-    ...(phase === 'done' ? {} : { currentNode: cur(phase) }),
+    ...(phase === 'done' ? {} : { currentNode: phase === 'gate' ? GATE : cur(phase) }),
   }
 }
+const GATE = { id: 'ship', name: '上线审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' }
 
 function chainFor(phase: Phase) {
   const seg = (id: 'impl' | 'verify', status: string, s: number, e?: number) => ({
@@ -63,6 +64,7 @@ function chainFor(phase: Phase) {
     startedAt: at(s), ...(e ? { endedAt: at(e) } : {}), task: cur(id).task, eventCount: 3,
   })
   const segments = [seg('impl', phase === 'impl' ? 'running' : 'completed', 1, phase === 'impl' ? undefined : 13)]
+  if (phase === 'gate') return { runId: RUN, status: 'waiting_human', currentNode: GATE, segments }
   if (phase !== 'impl') segments.push(seg('verify', phase === 'verify' ? 'running' : 'completed', 14, phase === 'verify' ? undefined : 30))
   return { runId: RUN, status: phase === 'done' ? 'completed' : 'running', ...(phase === 'done' ? {} : { currentNode: cur(phase) }), segments }
 }
@@ -153,7 +155,27 @@ for (const theme of ['light', 'dark'] as const) {
     await expect(page.getByText('本轮没有输出')).toHaveCount(0)
     await expect(page.getByText('验证完成：登录页改版无回归。')).toBeVisible()
     await expect(page.getByTestId('clarify-segment-divider')).toHaveCount(1)
+    // The footer names how the run ended (not the generic 「交互已完成，进入下一步」).
+    await expect(page.getByTestId('clarify-done-note')).toHaveText('运行已完成')
+    await expect(page.getByText('交互已完成，进入下一步')).toHaveCount(0)
     expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
   })
 }
 
+
+test('live page: the watched node ends at a gate → ends in place and names the gate', async ({ page }) => {
+  const { state, send } = await setup(page)
+  await expect(page.getByTestId('clarify-observe-stop')).toBeVisible()
+  send(acp('impl', [T1, { kind: 'message', text: '实现完成，登录页已改版。' }]))
+  await expect(page.getByText('实现完成，登录页已改版。')).toBeVisible()
+  state.phase = 'gate'
+  send(acp('impl', [T1, { kind: 'message', text: '实现完成，登录页已改版。' }], false))
+  send({ type: 'node_enter', runId: RUN, nodeId: 'ship', iteration: 1, kind: 'gate', mode: 'manual', name: '上线审批' })
+  send({ type: 'status', runId: RUN, status: 'waiting_human' })
+  await expect(page.getByTestId('clarify-done-note')).toHaveText('「上线审批」人工审批 · 待审批')
+  await expect(page.getByTestId('clarify-observe-stop')).toHaveCount(0)
+  await expect(busy(page)).toHaveCount(0)
+  await expect(page.getByText('实现完成，登录页已改版。')).toBeVisible()
+  await expect(page.getByText('本轮没有输出')).toHaveCount(0)
+  expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
+})

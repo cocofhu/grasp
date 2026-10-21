@@ -240,3 +240,28 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     w.unmount()
   })
 })
+
+describe('ClarifyChat done footer: specific ended state (run live page)', () => {
+  it.each([
+    [{ text: '「上线审批」人工审批 · 待审批', tone: 'wait' }, 'text-txt3'],
+    [{ text: '运行已完成', tone: 'ok' }, 'text-ok'],
+    [{ text: '运行失败', tone: 'muted' }, 'text-txt3'],
+  ] as const)('%o replaces the generic 「交互已完成，进入下一步」 in the same footer', async (note, cls) => {
+    const w = mountChat({ done: true, doneNote: note })
+    await flushPromises()
+    const f = w.get('[data-testid="clarify-done-note"]')
+    expect(f.text()).toBe(note.text)
+    expect(f.classes()).toContain(cls)
+    expect(f.classes()).toEqual(expect.arrayContaining(['border-t', 'border-line', 'p-3', 'text-center', 'text-[12px]']))
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it('without a note the generic done footer stays (/gates and older callers)', async () => {
+    const w = mountChat({ done: true })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-done-note"]').exists()).toBe(false)
+    expect(w.text()).toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+})

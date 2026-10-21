@@ -105,6 +105,12 @@ const props = withDefaults(
     nodeLabel?: string
     /** Same composer, locked (following the run after a hand-off): no typing / attach / primary. */
     composerLocked?: boolean
+    /**
+     * Specific ended state for the done footer (run live page: waiting at a
+     * gate / run finished). Same footer element; ok = the done style, muted =
+     * the closed style. Absent: the generic 「交互已完成，进入下一步」.
+     */
+    doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     /** Row under the hand-off while following the run. */
     followTail?: ClarifyFollowTail | null
   }>(),
@@ -1625,7 +1631,16 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 
     <slot v-if="done || !active || coldSession" name="composer-controls" :compact="false" />
 
-    <div v-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
+    <div
+      v-if="showDoneChrome && doneNote?.text"
+      class="border-t border-line p-3 text-center text-[12px]"
+      :class="doneNote.tone === 'ok' ? 'text-ok' : 'text-txt3'"
+      data-testid="clarify-done-note"
+      :data-tone="doneNote.tone"
+    >
+      <Icon v-if="doneNote.tone !== 'wait'" :name="doneNote.tone === 'ok' ? 'check' : 'close'" :size="13" class="-mt-0.5 mr-1 inline" />{{ doneNote.text }}
+    </div>
+    <div v-else-if="showDoneChrome" class="border-t border-line p-3 text-center text-[12px] text-ok">
       <Icon name="check" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.done') }}
     </div>
     <!-- Success ceremony in flight after done: keep composer mounted-off until hold→done (g2.3). -->

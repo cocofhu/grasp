@@ -36,6 +36,7 @@ const {
   iteration,
   stopping,
   ended,
+  endState,
   task,
   mode,
   chatKind,
@@ -50,6 +51,20 @@ const {
   confirm,
   reload,
 } = useRunLive(runId, requestedNode, chatRef)
+/**
+ * Where the run is when the page ended in place, in the app's existing words:
+ * a gate waiting 「X」人工审批 · 待审批 (the gate row title + the 待审批 label),
+ * or the run's end 运行已完成 / 运行失败 / 运行已取消 (the /gates follow row).
+ */
+const doneNote = computed(() => {
+  const e = endState.value
+  if (!e) return null
+  if (e.kind === 'gate') return { text: `${t('pages.clarify.segmentGate', { name: e.label })} · ${t('nav.pendingApprovals')}`, tone: 'wait' as const }
+  const st = e.status.toLowerCase()
+  if (st === 'failed') return { text: t('pages.clarify.followEndedFailed'), tone: 'muted' as const }
+  if (st === 'cancelled' || st === 'canceled') return { text: t('pages.clarify.followEndedCancelled'), tone: 'muted' as const }
+  return { text: t('pages.clarify.followEnded'), tone: 'ok' as const }
+})
 const draft = ref('')
 const attachments = ref<ClarifyImage[]>([])
 const annotations = ref<ReactAnnotation[]>([])
@@ -120,6 +135,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
                   :handoff="handoff"
                   :composer-locked="composerLocked"
                   :confirm-error="confirmError"
+                  :done-note="doneNote"
                   @takeover="takeover"
                   @send="onSend"
                   @finish="confirm"

@@ -127,9 +127,10 @@ describe('useRunLive (auto node → Stop → chat)', () => {
 
   // User rule: once the user is looking at a node, the page never jumps by itself.
   it.each([
-    ['a gate', { id: 'r1', status: 'waiting_human', currentNode: cur('gate', 'gate', 'manual', 'waiting_human') }],
-    ['the end of the run', { id: 'r1', status: 'succeeded' }],
-  ])('stays on the page when the node on screen finishes (run moved to %s): no navigation, shown as done', async (_label, next) => {
+    ['a gate', { id: 'r1', status: 'waiting_human', currentNode: { ...cur('gate', 'gate', 'manual', 'waiting_human'), name: '上线审批' } }, { kind: 'gate', label: '上线审批' }],
+    ['the end of the run', { id: 'r1', status: 'succeeded' }, { kind: 'run', status: 'succeeded' }],
+    ['a failed run', { id: 'r1', status: 'failed' }, { kind: 'run', status: 'failed' }],
+  ])('stays on the page when the node on screen finishes (run moved to %s): no navigation, shown as done', async (_label, next, endState) => {
     const { live, router, surface, wrapper } = await setup()
     const replace = vi.spyOn(router, 'replace')
     const push = vi.spyOn(router, 'push')
@@ -142,6 +143,8 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().ended.value).toBe(true)
     expect(live().nodeId.value).toBe('impl')
     expect(surface.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'impl' })
+    // Suggestion 3: the specific state (gate waiting by name / how the run ended).
+    expect(live().endState.value).toEqual(endState)
     // Later frames and polls no longer route the page either.
     const calls = mocks.getRun.mock.calls.length
     FakeSocket.last?.send({ type: 'snapshot', run: next })

@@ -85,6 +85,8 @@ const props = withDefaults(
     /** Node task (opening User Message): takeover task or the chain segment's task. */
     nodeTask?: string
     composerLocked?: boolean
+    /** Specific ended state for the done footer (see ClarifyChat). */
+    doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     followTail?: ClarifyFollowTail | null
   }>(),
   {
@@ -301,6 +303,7 @@ function onConfirm() {
       :prior-segments="priorSegments ?? []"
       :node-label="nodeLabel"
       :composer-locked="!!composerLocked"
+      :done-note="doneNote ?? null"
       :follow-tail="followTail ?? null"
       @takeover="emit('takeover')"
       @send="(text, images, anns) => emit('send', text, images, anns)"
