@@ -78,7 +78,7 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
     expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
     expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    expect(w.get('[data-testid="cli-model-command"] code').text()).toBe('cursor-agent')
+    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
     w.unmount()
   })
 
@@ -176,7 +176,8 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('单个 Agent 已选择时以单个 Agent 为准')
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('通用授权')
+    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('单个 Agent 已选择时以单个 Agent 为准')
     expect(w.text()).not.toContain('这一类还没有已保存的授权')
     await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
     expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
