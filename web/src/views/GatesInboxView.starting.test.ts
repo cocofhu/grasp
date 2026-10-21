@@ -257,7 +257,12 @@ describe('GatesInboxView starting approvals', () => {
     await flushPromises()
     await nextTick()
     await flushPromises()
-    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(true)
+    const connecting = wrapper.get('[data-testid="react-connecting-sidebar"]')
+    // The run's first message opens the chat; the boot checklist is a row under it.
+    const seed = connecting.get('[data-testid="react-connecting-seed"]')
+    expect(seed.text()).toContain('把登录做清楚')
+    const boot = connecting.get('[data-testid="clarify-boot-loader"]')
+    expect(seed.element.compareDocumentPosition(boot.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
 
     mocks.listGates.mockResolvedValue(paged([parkedItem()]))
     mocks.inboxContext.mockResolvedValue(parkedContext)

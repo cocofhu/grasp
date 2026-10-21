@@ -13,21 +13,20 @@ import {
 } from './inboxDisplay'
 
 describe('sidebarRunTitle', () => {
-  it('uses the readable run title and falls back to Run # without the run- prefix', () => {
-    expect(sidebarRunTitle({ runId: 'run-abc', runTitle: '把登录做清楚' })).toBe('把登录做清楚')
-    expect(sidebarRunTitle({ runId: 'run-abc123', runTitle: '  ' })).toBe('Run #abc123')
-    expect(sidebarRunTitle({ runId: 'run-abc123' })).toBe('Run #abc123')
-    expect(sidebarRunTitle({ runId: 'custom-id' })).toBe('Run #custom-id')
+  it('uses the readable run title, then the workflow name, and never a Run # stand-in', () => {
+    expect(sidebarRunTitle({ runTitle: '把登录做清楚', workflowName: 'wf' })).toBe('把登录做清楚')
+    expect(sidebarRunTitle({ runTitle: '  ', workflowName: '需求交付' })).toBe('需求交付')
+    expect(sidebarRunTitle({ runTitle: '', workflowName: '' })).toBe('')
+    expect(sidebarRunTitle({})).toBe('')
   })
 
   it('shows repo names and hides other raw JSON', () => {
     expect(
       sidebarRunTitle({
-        runId: 'run-r',
         runTitle: '[{"name":"approving","url":"https://git.example/approving.git"}]',
       }),
     ).toBe('approving')
-    expect(sidebarRunTitle({ runId: 'run-j', runTitle: '{"foo":1}' })).toBe('Run #j')
+    expect(sidebarRunTitle({ runTitle: '{"foo":1}', workflowName: 'wf' })).toBe('wf')
   })
 })
 

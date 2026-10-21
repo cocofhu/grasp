@@ -63,6 +63,7 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
+import { clipRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -799,9 +800,29 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
     return [pinned, ...items]
   }
   const seed = peekHomeApproveHandoff() || homeSeed.value
-  const ghost = makeIncomingGhost(t, String(seed?.text || ''))
+  const ghost = withRunTitle(makeIncomingGhost(t, String(seed?.text || '')))
   incomingGhost.value = ghost
   return [ghost, ...items]
+}
+
+/** Run title read while a ghost had no handoff text; reused by rebuilt ghosts of the same run. */
+const ghostRunTitles = new Map<string, { title: string; workflowName: string }>()
+/** An untitled starting row of a run whose title is known gets it; a titled one is never rewritten. */
+function withRunTitle(it: InboxItem): InboxItem {
+  const known = ghostRunTitles.get(it.runId)
+  if (!known || it.type !== 'clarify' || !isStartingInboxItem(it) || it.runTitle?.trim() || it.workflowName) return it
+  return { ...it, runTitle: known.title, label: it.label || known.title, workflowName: known.workflowName }
+}
+function fillGhostTitle(runId: string, run: Pick<Run, 'title' | 'workflowName'>) {
+  const title = clipRunTitle(String(run.title || '').trim())
+  const workflowName = String(run.workflowName || '').trim()
+  if (!title && !workflowName) return
+  if (!ghostRunTitles.has(runId)) ghostRunTitles.set(runId, { title, workflowName })
+  const fill = (it: InboxItem): InboxItem => (it.runId === runId ? withRunTitle(it) : it)
+  const ghost = incomingGhost.value
+  if (ghost && fill(ghost) !== ghost) incomingGhost.value = fill(ghost)
+  if (listItems.value.some((it) => fill(it) !== it)) listItems.value = listItems.value.map(fill)
+  if (active.value && fill(active.value) !== active.value) active.value = fill(active.value)
 }
 
 /**
@@ -823,6 +844,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
   incomingGhostConfirmInFlight = key
   try {
     const run = await api.getRun(target.runId)
+    fillGhostTitle(target.runId, run)
     // A newer navigation may have re-armed a different target while we awaited.
     const cur = incomingTarget()
     if (!cur || `${cur.runId}:${cur.nodeId || INCOMING_GHOST_NODE_ID}` !== key) return
@@ -2147,14 +2169,26 @@ const inboxRemoteKind = computed(() =>
   }),
 )
 
-/** Keep the chat (and home-chat attachments) up while the product stage is still loading. */
+/** Run whose chat shell is on screen. */
+const shellRunId = ref('')
+/**
+ * Keep the chat (and home-chat attachments) up while the product stage is still
+ * loading. A same-run node switch (hand-off) keeps the shell while the next
+ * node's context loads: one run, one chat.
+ */
 const showClarifyReviewShell = computed(
   () =>
     !!active.value &&
     active.value.type === 'clarify' &&
     !startFailedActive.value &&
-    (activeStarting.value || !!activeClarify.value || !!activeHomeSeed.value),
+    (activeStarting.value ||
+      !!activeClarify.value ||
+      !!activeHomeSeed.value ||
+      (activeRunLoading.value && shellRunId.value === active.value.runId)),
 )
+watch(showClarifyReviewShell, (shown) => {
+  shellRunId.value = shown && active.value ? active.value.runId : ''
+}, { immediate: true })
 const clarifyComposerNodeId = computed(
   () => activeClarify.value?.nodeId || active.value?.nodeId || '',
 )

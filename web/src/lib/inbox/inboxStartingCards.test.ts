@@ -66,9 +66,10 @@ describe('makeIncomingGhost', () => {
     expect(ghost.updatedAt).toBe('T0')
   })
 
-  it('falls back to a placeholder label and node id', () => {
+  it('leaves the title empty without seed text (no stand-in) and falls back to a node id', () => {
     const ghost = makeIncomingGhost({ runId: 'run-1', nodeId: '' }, '', 'T0')
-    expect(ghost.label).toBe('…')
+    expect(ghost.label).toBe('')
+    expect(ghost.runTitle).toBe('')
     expect(ghost.nodeId).toBe('incoming')
   })
 })

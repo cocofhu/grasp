@@ -3,13 +3,12 @@ import { truncateText } from '@/lib/shared/format'
 import type { InboxItem } from '@/lib/shared/types'
 
 /**
- * Sidebar pending-row label. Same readable rule as the run list, then
- * `Run #` plus the id without a `run-` prefix when nothing readable remains.
+ * Sidebar run-row label: the same rule as the run lists (readable title, else
+ * the workflow name). Empty while neither is known yet; the row then shows a
+ * placeholder bar instead of a stand-in text that would later change.
  */
-export function sidebarRunTitle(it: Pick<InboxItem, 'runId' | 'runTitle'>): string {
-  const name = displayRunTitle(it.runTitle)
-  if (name) return name
-  return `Run #${it.runId.replace(/^run-/, '')}`
+export function sidebarRunTitle(it: { runTitle?: string; workflowName?: string }): string {
+  return displayRunTitle(it.runTitle) || String(it.workflowName || '').trim()
 }
 
 /** Secondary-line run label: non-empty runTitle (truncated) or `Run #id`. */
