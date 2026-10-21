@@ -36,6 +36,7 @@ import {
 } from '@/lib/agent/openCodeProvider'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
 import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { backendKind } from '@/lib/workspace/credentialKinds'
@@ -369,30 +370,26 @@ onMounted(() => {
         class="scroll-area min-h-0 flex-1 overflow-y-auto p-4"
         data-testid="shared-agent-meta"
       >
-        <div class="mb-4 max-w-3xl">
-          <h3 class="text-sm font-semibold text-txt">{{ t('pages.agentStudio.meta.layoutTitle') }}</h3>
-          <p class="mt-1 text-[12px] leading-6 text-txt3" v-html="t('pages.agentStudio.meta.layoutIntro')" />
-        </div>
-
         <div class="max-w-3xl space-y-4">
           <div>
             <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.acpBackend') }}</div>
-            <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.acpBackendDesc') }}</p>
-            <div class="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
               <button
                 v-for="b in ACP_BACKENDS"
                 :key="b.id"
                 type="button"
-                class="rounded-lg border px-2 py-3 text-center transition"
+                class="flex flex-col items-center gap-2 rounded-lg border px-2 py-3 text-center transition"
                 :class="
                   draft.acpBackend === b.id
                     ? 'border-accent bg-accent-dim text-txt'
                     : 'border-line bg-base text-txt2 hover:border-line-strong'
                 "
+                :data-testid="`acp-backend-${b.id}`"
+                :aria-pressed="draft.acpBackend === b.id"
                 @click="selectAcpBackend(b.id)"
               >
+                <CredentialProviderLogo :provider="b.id" match="provider" :selected="draft.acpBackend === b.id" />
                 <div class="text-[12px] font-semibold">{{ b.label }}</div>
-                <div class="mt-0.5 font-mono text-[10px] text-txt3">{{ b.id }}</div>
               </button>
             </div>
           </div>
@@ -400,10 +397,7 @@ onMounted(() => {
           <CliRuntimeCard
             v-if="aiKind"
             :draft="draft"
-            :description="t('pages.workspace.sharedAgent.runtimeDesc')"
             :credential-title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
-            :credential-hint="t('pages.workspace.sharedAgent.genericCredentialHint')"
-            :model-hint="t('pages.workspace.sharedAgent.modelHint')"
             :focus-tick="focusModelTick"
             data-testid="shared-generic-credential"
           />
@@ -416,9 +410,9 @@ onMounted(() => {
               mode="select"
               :allow-add="false"
               allow-clear
+              hide-hint
               :selected-id="draft.openCodeCredentialId"
               :title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
-              :hint="t('pages.workspace.sharedAgent.genericCredentialHint')"
               @update:selected-id="draft.openCodeCredentialId = $event"
             />
           </div>
@@ -474,32 +468,29 @@ onMounted(() => {
 
           <label class="block">
             <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
-            <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.configRootDesc') }}</p>
             <input
               v-model="draft.layout.configRoot"
               :placeholder="defaultConfigRootFor(draft.acpBackend)"
               spellcheck="false"
-              class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
+              data-testid="meta-config-root"
+              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
               @input="configRootTouched = true"
             />
           </label>
           <label class="block">
             <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.workspaceDir') }}</span>
-            <p class="mb-1.5 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.workspaceDirDesc') }}</p>
             <input
               v-model="draft.layout.workspaceDir"
               :placeholder="DEFAULT_WORKSPACE_DIR"
               spellcheck="false"
-              class="rounded-md w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
+              data-testid="meta-workspace-dir"
+              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
             />
           </label>
         </div>
 
         <div class="mt-5 max-w-3xl">
-          <div class="mb-1.5 text-[11px] uppercase tracking-wider text-txt3">
-            {{ t('pages.agentStudio.meta.derivedPaths') }}
-          </div>
-          <div class="overflow-hidden border-y border-line/60">
+          <div class="overflow-hidden border-y border-line/60" data-testid="derived-paths-table">
             <table class="w-full text-left text-[12px]">
               <tbody>
                 <tr

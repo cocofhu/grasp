@@ -24,6 +24,7 @@ async function mountSelect(
     variant?: 'full' | 'compact'
     hideAutoSub?: boolean
     emptyMode?: 'auto' | 'required'
+    hideCommand?: boolean
   } = {},
 ) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
@@ -73,7 +74,23 @@ describe('CliModelSelect trigger', () => {
     expect(trigger).toContain('自动')
     expect(trigger).toContain('由 Cursor 决定用哪个模型')
     expect(w.get('[data-testid="cli-model-command"]').text()).toContain('cursor-agent')
+    expect(w.get('[data-testid="cli-model-command"]').text()).toContain('不指定 --model，使用 CLI 默认')
     expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
+  })
+
+  it('hides the launch command for meta and keeps 恢复自动', async () => {
+    mocks.load.mockResolvedValue(catalog)
+    const w = await mountSelect({ hideCommand: true })
+    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
+    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('不指定 --model，使用 CLI 默认')
+    expect(w.find('[data-testid="cli-model-reset"]').exists()).toBe(false)
+    await w.setProps({ modelValue: 'gpt-5' })
+    await flushPromises()
+    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
+    expect(w.get('[data-testid="cli-model-reset"]').text()).toContain('恢复自动')
+    await w.get('[data-testid="cli-model-reset"]').trigger('click')
+    expect(w.emitted('update:modelValue')?.[0]).toEqual([''])
   })
 
   it('shows the picked model, its context and the --model flag', async () => {
