@@ -6,6 +6,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
+import { acceptConfirmFlow } from './helpers/confirmFlow'
 import { PAGE_CAPS, PREVIEW_REVIEW_CAPS } from '../src/test/capsFixtures'
 
 mkdirSync('/tmp/preview-review-inbox-screenshots', { recursive: true })
@@ -288,6 +289,7 @@ test.describe('preview review in Gates Inbox', () => {
     await pendingRow(page, '应用预览验收').click()
     await expect(page.getByRole('button', { name: '确认并流转' })).toBeVisible({ timeout: 15_000 })
     await page.getByRole('button', { name: '确认并流转' }).click()
+    await acceptConfirmFlow(page)
 
     // Item removed locally + refresh; gate remains.
     await expect(pendingRow(page, '应用预览验收')).toHaveCount(0, {

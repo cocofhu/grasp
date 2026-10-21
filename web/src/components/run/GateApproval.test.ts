@@ -10,6 +10,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { Gate, Run } from '@/lib/shared/types'
 import { listPrimaryProducts } from '@/lib/inbox/gateUpstream'
 import { CONTENT_FIT_PREVIEW_MAX_VH } from '@/lib/shared/htmlPreviewSandbox'
+import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 
 vi.mock('@novnc/novnc/lib/rfb.js', () => ({
   default: class MockRFB {},
@@ -1665,8 +1666,14 @@ describe('GateApproval product editor state machine', () => {
     await wrapper.findAll('button').find((b) => b.text().includes('确认并流转'))!.trigger('click')
     await flushPromises()
 
-    expect(confirmSpy).toHaveBeenCalled()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('未保存的编辑将被丢弃。')
     expect(wrapper.emitted('resolve')).toBeFalsy()
+    expect(wrapper.text()).toContain('有未保存修改')
+    ;(document.body.querySelector('[data-testid="confirm-flow-dialog-cancel"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.emitted('resolve')).toBeFalsy()
+    expect(wrapper.text()).toContain('有未保存修改')
     confirmSpy.mockRestore()
     wrapper.unmount()
   })
@@ -2365,6 +2372,12 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     const approveBtn = form.findAll('button').find((b) => b.text().includes('确认并流转'))!
     await approveBtn.trigger('click')
     await flushPromises()
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-discard"]')?.textContent).toContain(
+      '未发送的草稿将被丢弃',
+    )
+    expect(wrapper.emitted('resolve')).toBeFalsy()
+    expect(confirmSpy).not.toHaveBeenCalled()
+    await acceptConfirmFlowDialog()
 
     expect(wrapper.emitted('resolve')?.[0]?.[0]).toBe('approve')
     expect(apiMocks.createPreviewIssue).not.toHaveBeenCalled()
@@ -3463,6 +3476,10 @@ describe('GateApproval ReAct annotations', () => {
 
     await wrapper.find('[data-testid="review-composer-pass"]').trigger('click')
     await flushPromises()
+    expect(wrapper.emitted('resolve')).toBeFalsy()
+    expect(vm.reactText).toBe('未发送草稿')
+    expect(confirmSpy).not.toHaveBeenCalled()
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('resolve')?.[0]?.[0]).toBe('approve')
     expect(vm.reactAnnotations).toEqual([])
     expect(vm.reactText).toBe('')
@@ -3739,6 +3756,9 @@ describe('GateApproval cold footer pending + loadProduct gen (专项三 g4)', ()
     await approve!.trigger('click')
     await approve!.trigger('click')
     await flushPromises()
+    expect(wrapper.emitted('resolve')).toBeFalsy()
+    expect(document.querySelectorAll('[data-testid="confirm-flow-dialog-accept"]')).toHaveLength(1)
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('resolve')?.length).toBe(1)
     expect(wrapper.emitted('resolve')?.[0]?.[0]).toBe('approve')
     expect(approve!.text()).toContain('批准中')
@@ -3756,7 +3776,7 @@ describe('GateApproval cold footer pending + loadProduct gen (专项三 g4)', ()
     await flushPromises()
     const approve = wrapper.findAll('[data-testid="review-composer-pass"]').find((b) => /确认并流转|批准/.test(b.text()))
     await approve!.trigger('click')
-    await flushPromises()
+    await acceptConfirmFlowDialog()
     await wrapper.setProps({ submitError: 'gate still open' })
     await flushPromises()
     const again = wrapper.findAll('[data-testid="review-composer-pass"]').find((b) => /确认并流转|批准/.test(b.text()))
@@ -3765,7 +3785,7 @@ describe('GateApproval cold footer pending + loadProduct gen (专项三 g4)', ()
     expect(again!.text()).not.toContain('批准中')
     expect(wrapper.text()).toContain('gate still open')
     await again!.trigger('click')
-    await flushPromises()
+    await acceptConfirmFlowDialog()
     expect(wrapper.emitted('resolve')?.length).toBe(2)
     wrapper.unmount()
   })

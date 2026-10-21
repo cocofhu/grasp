@@ -204,20 +204,100 @@ describe('useGateApproval actions', () => {
     app.unmount()
   })
 
-  it('discards an unsent unified draft when approving', async () => {
+  it('discards an unsent unified draft only after confirming approve', async () => {
     const { approval, app, emit } = withApproval()
     await flushPromises()
+    const confirm = vi.spyOn(window, 'confirm')
     approval.reactText.value = 'unsent'
     approval.reactImages.value = [{ data: 'x', mimeType: 'image/png' }]
     approval.reactAnnotations.value = [{ selector: '#save' }]
     approval.pickedSelector.value = '#save'
 
     approval.choose('pass')
+    expect(approval.confirmFlowDialogOpen.value).toBe(true)
+    expect(approval.confirmFlowDiscard.value).toBe('draft')
+    expect(confirm).not.toHaveBeenCalled()
+    expect(approval.reactText.value).toBe('unsent')
+    expect(emit).not.toHaveBeenCalled()
+
+    approval.dismissConfirmFlow()
+    expect(approval.reactText.value).toBe('unsent')
+    expect(approval.pickedSelector.value).toBe('#save')
+    expect(emit).not.toHaveBeenCalled()
+
+    approval.choose('pass')
+    approval.choose('pass')
+    approval.acceptConfirmFlow()
     expect(approval.reactText.value).toBe('')
     expect(approval.reactImages.value).toEqual([])
     expect(approval.reactAnnotations.value).toEqual([])
     expect(approval.pickedSelector.value).toBe('')
     expect(emit).toHaveBeenCalledWith('resolve', 'pass', expect.any(Object))
+    expect(confirm).not.toHaveBeenCalled()
+    app.unmount()
+  })
+
+  it('names unsaved edits, an unsent draft, or both in one dialog', async () => {
+    const { approval, app, emit } = withApproval()
+    await flushPromises()
+    approval.productDirty.value = true
+    approval.choose('pass')
+    expect(approval.confirmFlowDiscard.value).toBe('edits')
+    approval.dismissConfirmFlow()
+
+    approval.productDirty.value = false
+    approval.reactText.value = 'draft only'
+    approval.choose('approve')
+    expect(approval.confirmFlowDialogOpen.value).toBe(true)
+    expect(approval.confirmFlowDiscard.value).toBe('draft')
+    approval.dismissConfirmFlow()
+
+    approval.productDirty.value = true
+    approval.choose('pass')
+    expect(approval.confirmFlowDiscard.value).toBe('both')
+    expect(emit).not.toHaveBeenCalled()
+    approval.dismissConfirmFlow()
+    expect(approval.productDirty.value).toBe(true)
+    expect(approval.reactText.value).toBe('draft only')
+    app.unmount()
+  })
+
+  it('does not submit a positive action that became unavailable, and still uses window.confirm for revert', async () => {
+    const { approval, app, emit, props } = withApproval()
+    await flushPromises()
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    approval.choose('pass')
+    approval.resolved.value = 'busy'
+    approval.acceptConfirmFlow()
+    expect(emit).not.toHaveBeenCalled()
+    expect(approval.confirmFlowDialogOpen.value).toBe(false)
+
+    approval.resolved.value = null
+    props.gate = gate({ form: [{ key: 'note', label: 'Note', required: true }] })
+    await nextTick()
+    approval.formText.value.note = 'ready'
+    approval.choose('pass')
+    approval.formText.value.note = ''
+    approval.acceptConfirmFlow()
+    expect(emit).not.toHaveBeenCalled()
+    expect(approval.formError.value).toBeTruthy()
+
+    approval.formText.value.note = 'kept'
+    approval.productDirty.value = true
+    approval.choose('revise')
+    expect(approval.confirmFlowDialogOpen.value).toBe(false)
+    expect(confirm).toHaveBeenCalled()
+    expect(emit).not.toHaveBeenCalled()
+    expect(approval.productDirty.value).toBe(true)
+    app.unmount()
+  })
+
+  it('does not open the confirm dialog when sending a revision', async () => {
+    const { approval, app } = withApproval()
+    await flushPromises()
+    approval.reactText.value = 'send me'
+    await approval.sendReactRevise()
+    expect(approval.confirmFlowDialogOpen.value).toBe(false)
     app.unmount()
   })
 
@@ -698,6 +778,9 @@ describe('useGateApproval actions', () => {
     approval.actionSubmitting.value = false
     approval.resolved.value = null
     approval.onComposerPass()
+    expect(approval.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    approval.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledWith('resolve', 'pass', expect.any(Object))
 
     approval.resolved.value = null

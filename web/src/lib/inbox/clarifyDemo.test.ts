@@ -3,6 +3,7 @@ import {
   choiceEchoRows,
   demoOptionsOf,
   matchSelectedLabels,
+  restoreChoiceAnswers,
   selectedDemoOption,
   selectedPreviewOptions,
 } from './clarifyDemo'
@@ -42,6 +43,28 @@ describe('selectedDemoOption', () => {
   })
   it('returns null when selected has no demo', () => {
     expect(selectedDemoOption(q, ['B'])).toBeNull()
+  })
+})
+
+const chipLabel = '留在输入框上方，改成和项目标签、文件芯片一样的单行芯片'
+const scopeLabel = '输入区、已发送消息、反馈记录一起改'
+
+describe('restoreChoiceAnswers', () => {
+  it('keeps a long label that equals shorter labels joined by the separator', () => {
+    const long = '方案 A、方案 B'
+    expect(restoreChoiceAnswers(['方案 A', '方案 B'], [long, '方案 A', '方案 B'])).toEqual([long])
+    expect(restoreChoiceAnswers(['方案 A', '方案 B', '自己写的'], [long, '方案 A', '方案 B'])).toEqual([
+      long,
+      '自己写的',
+    ])
+  })
+
+  it('keeps custom text that contains the separator when no label matches inside it', () => {
+    expect(restoreChoiceAnswers(['不是', '选项'], ['方案 A'])).toEqual(['不是、选项'])
+    expect(restoreChoiceAnswers(['方案 A', '自己写', '一段'], ['方案 A', '方案 B'])).toEqual([
+      '方案 A',
+      '自己写、一段',
+    ])
   })
 })
 
@@ -103,4 +126,79 @@ describe('choiceEchoRows', () => {
     expect(unknown?.cards).toEqual([])
     expect(unknown?.texts).toEqual(['A'])
   })
+
+  it('renders one preview card for a label that contains the separator', () => {
+    const placed = questionWith(chipLabel, '<p>chip</p>')
+    const [echo] = choiceEchoRows(
+      [{ q: '芯片放哪', answers: chipLabel.split('、') }],
+      [placed],
+    )
+    expect(echo?.cards.map((card) => card.label)).toEqual([chipLabel])
+    expect(echo?.texts).toEqual([])
+    expect(echo?.showPrompt).toBe(false)
+  })
+
+  it('keeps a separator-bearing label without a preview as one sentence', () => {
+    const scope: ReactQuestion = {
+      id: 'scope',
+      prompt: '改哪些',
+      options: [
+        { id: 'all', label: scopeLabel },
+        { id: 'input', label: '只改输入区' },
+      ],
+    }
+    const [echo] = choiceEchoRows(
+      [{ q: '改哪些', answers: scopeLabel.split('、') }],
+      [scope],
+    )
+    expect(echo?.cards).toEqual([])
+    expect(echo?.texts).toEqual([scopeLabel])
+    expect(echo?.showPrompt).toBe(true)
+  })
+
+  it('still separates plain multi-select labels from custom text', () => {
+    const [echo] = choiceEchoRows(
+      [{ q: '布局', answers: ['方案 A', '方案 B', '自己写的'] }],
+      [{
+        ...previewQ,
+        options: [
+          { id: 'a', label: '方案 A', demoHtml: '<p>a</p>' },
+          { id: 'b', label: '方案 B', demoHtml: '<p>b</p>' },
+          { id: 'c', label: '方案 C' },
+        ],
+      }],
+    )
+    expect(echo?.cards.map((card) => card.id)).toEqual(['a'])
+    expect(echo?.texts).toEqual(['方案 B', '自己写的'])
+  })
+
+  it('prefers one long label over the shorter labels it is made of', () => {
+    const long = '方案 A、方案 B'
+    const [echo] = choiceEchoRows(
+      [{ q: '布局', answers: ['方案 A', '方案 B'] }],
+      [{
+        id: 'layout',
+        prompt: '布局',
+        options: [
+          { id: 'long', label: long, demoHtml: '<p>long</p>' },
+          { id: 'a', label: '方案 A', demoHtml: '<p>a</p>' },
+          { id: 'b', label: '方案 B', demoHtml: '<p>b</p>' },
+        ],
+      }],
+    )
+    expect(echo?.cards.map((card) => card.id)).toEqual(['long'])
+    expect(echo?.texts).toEqual([])
+  })
 })
+
+function questionWith(label: string, demoHtml: string): ReactQuestion {
+  return {
+    id: 'place',
+    prompt: '芯片放哪',
+    options: [
+      { id: 'chip', label, demoHtml },
+      { id: 'above', label: '放在消息列表上方', demoHtml: '<p>above</p>' },
+      { id: 'menu', label: '收进输入框里的菜单', demoHtml: '<p>menu</p>' },
+    ],
+  }
+}
