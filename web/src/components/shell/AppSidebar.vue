@@ -191,6 +191,7 @@ async function onHideNav() {
   box-shadow: 0 0 0 1px rgb(var(--c-line) / .6), 0 2px 8px rgb(0 0 0 / .025);
 }
 .app-desktop-sidebar.is-settings {
+  overflow: hidden;
   border-radius: 0;
   background: var(--sidebar-rail-bg);
 }

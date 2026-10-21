@@ -251,10 +251,21 @@ onUnmounted(() => stopShutdownPolling())
   padding-top: 0;
   padding-bottom: 0;
 }
+.settings-shell-content:has(.usage-page) {
+  height: auto;
+  flex: none;
+}
 .settings-shell-content :deep(.route-view-wrap:has(.settings-document)),
 .settings-shell-content :deep(.route-view-wrap:has([data-testid="settings-panel"])) {
   height: auto;
   min-height: 100%;
+  flex: none;
+  overflow: visible;
+}
+/* Usage stats is one long document. A nested h-full scroller left a body-colored
+   gap under the last table once the inner box and the shell height diverged. */
+.settings-shell-content :deep(.route-view-wrap:has(.usage-page)) {
+  height: auto;
   flex: none;
   overflow: visible;
 }
