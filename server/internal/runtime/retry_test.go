@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -63,6 +64,53 @@ func TestIsPoisonedResumeFailure(t *testing.T) {
 	}
 	if isRetryableSandboxErr(errors.New(phrase)) {
 		t.Fatal("the provider phrase must not discard the sandbox")
+	}
+}
+
+func TestRenderRecoveryTranscriptKeepsRecentDialogue(t *testing.T) {
+	short := renderRecoveryTranscript([]models.ReactMessage{
+		{
+			Role: "agent", Text: "用亮色吗",
+			Questions: []models.ReactQuestion{{Prompt: "用亮色吗", Options: []models.ReactOption{{Label: "亮色"}}}},
+		},
+		{Role: "human", Text: "先看截图", Images: []models.PromptImage{{Name: "shot.png"}}},
+		{Role: "agent", Text: "(澄清回复失败:boom)"},
+	})
+	for _, want := range []string{"用亮色吗", "亮色", "shot.png", "get_clarified_requirement"} {
+		if !strings.Contains(short, want) {
+			t.Errorf("short transcript missing %q", want)
+		}
+	}
+	if strings.Contains(short, "澄清回复失败") || strings.Contains(short, "更早的记录已截断") {
+		t.Fatalf("short transcript = %q", short)
+	}
+
+	var history []models.ReactMessage
+	for i := 0; i < 300; i++ {
+		history = append(history, models.ReactMessage{
+			Role: "human",
+			Text: fmt.Sprintf("早期-%04d-%s", i, strings.Repeat("甲", 80)),
+		})
+	}
+	history = append(history, models.ReactMessage{Role: "human", Text: "最新决定用亮色"})
+	out := renderRecoveryTranscript(history)
+	if !strings.Contains(out, "get_clarified_requirement") {
+		t.Fatal("preamble dropped")
+	}
+	if !strings.Contains(out, "最新决定用亮色") {
+		t.Fatal("newest turn dropped")
+	}
+	if !strings.Contains(out, "更早的记录已截断") {
+		t.Fatal("missing truncation marker")
+	}
+	if strings.Contains(out, "早期-0000") {
+		t.Fatal("oldest turn kept")
+	}
+	if len([]rune(out)) > recoveryTranscriptMaxRunes {
+		t.Fatalf("len = %d, cap %d", len([]rune(out)), recoveryTranscriptMaxRunes)
+	}
+	if strings.Index(out, "更早的记录已截断") > strings.Index(out, "最新决定用亮色") {
+		t.Fatal("truncation marker landed after the recent turn")
 	}
 }
 

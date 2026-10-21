@@ -807,14 +807,19 @@ func historyWithoutTrailingHuman(history []models.ReactMessage) []models.ReactMe
 // stays bounded.
 const recoveryTranscriptMaxRunes = 12000
 
+const recoveryTranscriptPreamble = "已写入的平台产物若存在，请先用 get_clarified_requirement 与 get_plan 读取，不要凭记忆重写。\n" +
+	"工具的输出和思考过程没有保留。需要文件内容时请重新读取。\n\n"
+
+const recoveryTranscriptTruncMark = "…(更早的记录已截断)\n"
+
 // renderRecoveryTranscript is the dialogue a new CLI session gets after the
 // previous Cursor chat id was dropped. It keeps questions, choices, attachment
 // names and tool names. Tool results and private reasoning are not in the
 // persisted turn, so the new session is told to re-read files and saved products.
+// When the dialogue exceeds the cap, the preamble stays and the oldest turns
+// are dropped so the fresh session still sees the latest decisions.
 func renderRecoveryTranscript(history []models.ReactMessage) string {
 	var b strings.Builder
-	b.WriteString("已写入的平台产物若存在，请先用 get_clarified_requirement 与 get_plan 读取，不要凭记忆重写。\n")
-	b.WriteString("工具的输出和思考过程没有保留。需要文件内容时请重新读取。\n\n")
 	for _, m := range history {
 		if isClarifyFailedOpenText(m.Text) {
 			continue
@@ -882,11 +887,21 @@ func renderRecoveryTranscript(history []models.ReactMessage) string {
 			b.WriteString("\n")
 		}
 	}
-	out := b.String()
-	if r := []rune(out); len(r) > recoveryTranscriptMaxRunes {
-		return string(r[:recoveryTranscriptMaxRunes]) + "\n…(更早的记录已截断)\n"
+	body := b.String()
+	prefix := recoveryTranscriptPreamble
+	if len([]rune(prefix+body)) <= recoveryTranscriptMaxRunes {
+		return prefix + body
 	}
-	return out
+	mark := recoveryTranscriptTruncMark
+	budget := recoveryTranscriptMaxRunes - len([]rune(prefix)) - len([]rune(mark))
+	if budget < 0 {
+		budget = 0
+	}
+	br := []rune(body)
+	if len(br) > budget {
+		body = string(br[len(br)-budget:])
+	}
+	return prefix + mark + body
 }
 
 func recoveryToolLines(m models.ReactMessage) []string {
