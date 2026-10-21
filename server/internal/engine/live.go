@@ -316,6 +316,16 @@ func (e *Engine) ReactReplyLiveCtxAs(owner, runID, nodeID, text string, images [
 // through the queue. A react_only comment cannot authorize Live tool writes,
 // even when its body includes a forged liveCtx.
 func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, "", text, images, annotations, ctx, allowLive)
+}
+
+// ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxAs carrying the sender's
+// optional clientMessageID with the queued turn.
+func (e *Engine) ReactReplyLiveCtxWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, true)
+}
+
+func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -331,7 +341,7 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 		}
 	}
 	if sess == nil && allowLive {
-		return e.ReactReplyAs(owner, runID, nodeID, text, images, annotations, false)
+		return e.reactReply(owner, runID, nodeID, text, images, annotations, false, false, false, clientMessageID)
 	}
 	if strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
 		return errors.New("text, images, or annotations required")
@@ -340,7 +350,7 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 		return err
 	}
 	if e.nodeIsClarify(runID, nodeID) {
-		dropped := &DroppedTurn{Text: text, Images: images, Annotations: annotations}
+		dropped := &DroppedTurn{ClientMessageID: clientMessageID, Text: text, Images: images, Annotations: annotations}
 		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, dropped); err != nil {
 			return err
 		}
@@ -352,7 +362,7 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 	effective := renderReviewHuman(text, annotations)
 	item := &reviewQueueItem{
 		ID: uuid.NewString(), Text: text, Images: images, Annotations: annotations,
-		Source: "node", Owner: owner, LiveWritesDenied: !allowLive,
+		Source: "node", Owner: owner, LiveWritesDenied: !allowLive, ClientMessageID: clientMessageID,
 	}
 	if sess != nil {
 		if !liveVariantExists(sess, ctx.Current) {

@@ -154,7 +154,8 @@ func TestSandboxTerminalWS(t *testing.T) {
 }
 
 // TestRunEventsWSClarifyVisitEnded: a WS chat to an ended clarify visit gets
-// the same contract as HTTP 409, echoing the dropped turn.
+// the same contract as HTTP 409 (dropped + clientMessageId), on the sending
+// connection only; another subscriber of the run sees nothing.
 func TestRunEventsWSClarifyVisitEnded(t *testing.T) {
 	h := newHarness(t)
 	now := time.Now()
@@ -171,12 +172,22 @@ func TestRunEventsWSClarifyVisitEnded(t *testing.T) {
 		t.Fatalf("dial: %v", err)
 	}
 	defer c.Close()
+	other, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/api/runs/"+runID+"/events"), h.wsHeader())
+	if err != nil {
+		t.Fatalf("dial other: %v", err)
+	}
+	defer other.Close()
 	c.SetReadDeadline(time.Now().Add(3 * time.Second))
 	if _, _, err := c.ReadMessage(); err != nil {
 		t.Fatalf("snapshot: %v", err)
 	}
+	other.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := other.ReadMessage(); err != nil {
+		t.Fatalf("other snapshot: %v", err)
+	}
+	const cid = "0f8e2a6c-3b1d-4c7e-9a5f-6d2b8c4e1a70"
 	if err := c.WriteJSON(map[string]any{
-		"type": "chat", "nodeId": "react", "content": "我的回答",
+		"type": "chat", "nodeId": "react", "content": "我的回答", "clientMessageId": cid,
 		"images":      []map[string]any{{"data": "QUJD", "mimeType": "image/png", "name": "a.png"}},
 		"annotations": []map[string]any{{"selector": "#x", "note": "改这里"}},
 	}); err != nil {
@@ -211,7 +222,19 @@ func TestRunEventsWSClarifyVisitEnded(t *testing.T) {
 	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "改这里" {
 		t.Fatalf("annotations=%v", d["annotations"])
 	}
-	if _, has := d["clientId"]; has {
-		t.Fatalf("WS chat carries no client id; clientId must be omitted: %v", d)
+	if f["clientMessageId"] != cid {
+		t.Fatalf("clientMessageId=%v want %s", f["clientMessageId"], cid)
+	}
+	// The other subscriber must not receive the reject (it carries the
+	// sender's content). Drain until a short deadline; any error frame fails.
+	other.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+	for {
+		_, msg, err := other.ReadMessage()
+		if err != nil {
+			break // deadline: nothing more arrived
+		}
+		if strings.Contains(string(msg), "clarify_visit_ended") || strings.Contains(string(msg), "我的回答") {
+			t.Fatalf("enqueue reject leaked to another subscriber: %s", msg)
+		}
 	}
 }
