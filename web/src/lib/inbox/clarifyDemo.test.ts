@@ -1,12 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   choiceEchoRows,
-  demoGridColsClass,
   demoOptionsOf,
   matchSelectedLabels,
   selectedDemoOption,
   selectedPreviewOptions,
-  useSideBySide,
 } from './clarifyDemo'
 import type { ReactQuestion } from '../shared/types'
 
@@ -24,31 +22,6 @@ const q: ReactQuestion = {
 describe('demoOptionsOf', () => {
   it('keeps only non-empty demoHtml', () => {
     expect(demoOptionsOf(q).map((o) => o.id)).toEqual(['a', 'd'])
-  })
-})
-
-describe('useSideBySide', () => {
-  it('is true for 1–3 demos', () => {
-    expect(useSideBySide(demoOptionsOf(q))).toBe(true)
-  })
-  it('is false for >3 demos', () => {
-    const many = Array.from({ length: 4 }, (_, i) => ({
-      id: `o${i}`,
-      label: `L${i}`,
-      demoHtml: '<!doctype html><html></html>',
-    }))
-    expect(useSideBySide(many)).toBe(false)
-  })
-  it('is false when no demos', () => {
-    expect(useSideBySide([])).toBe(false)
-  })
-})
-
-describe('demoGridColsClass', () => {
-  it('adapts column count', () => {
-    expect(demoGridColsClass(1)).toContain('grid-cols-1')
-    expect(demoGridColsClass(2)).toContain('sm:grid-cols-2')
-    expect(demoGridColsClass(3)).toContain('sm:grid-cols-3')
   })
 })
 
@@ -73,8 +46,8 @@ describe('selectedDemoOption', () => {
 })
 
 describe('selectedPreviewOptions', () => {
-  it('keeps every selected preview in answer order and skips blanks', () => {
-    expect(selectedPreviewOptions(q, ['D', 'B', 'A', 'D']).map((o) => o.id)).toEqual(['d', 'a'])
+  it('keeps the first selected preview in option order and skips blanks', () => {
+    expect(selectedPreviewOptions(q, ['D', 'B', 'A', 'D']).map((o) => o.id)).toEqual(['a'])
   })
 })
 
@@ -106,11 +79,18 @@ describe('choiceEchoRows', () => {
       [previewQ, plain],
     )
     expect(echoes[0]?.showPrompt).toBe(true)
-    expect(echoes[0]?.cards.map((card) => card.id)).toEqual(['b', 'a'])
-    expect(echoes[0]?.texts).toEqual([])
+    expect(echoes[0]?.cards.map((card) => card.id)).toEqual(['a'])
+    expect(echoes[0]?.texts).toEqual(['B'])
     expect(echoes[1]?.showPrompt).toBe(true)
     expect(echoes[1]?.cards).toEqual([])
     expect(echoes[1]?.texts).toEqual(['左'])
+  })
+
+  it('keeps extra selected preview labels in the text answer', () => {
+    const [echo] = choiceEchoRows([{ q: '布局', answers: ['B', 'A', '自己写'] }], [previewQ])
+    expect(echo?.cards.map((card) => card.id)).toEqual(['a'])
+    expect(echo?.texts).toEqual(['B', '自己写'])
+    expect(echo?.showPrompt).toBe(false)
   })
 
   it('does not invent a card when the answer matches nothing', () => {

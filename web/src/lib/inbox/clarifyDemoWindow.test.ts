@@ -10,29 +10,32 @@ import {
 } from './clarifyDemoWindow'
 
 describe('placeClarifyDemoWindow', () => {
-  it('centers a viewport-minus-margin window on a wide screen', () => {
+  it('centers a 720×560 window on a 1280×900 screen', () => {
     const box = placeClarifyDemoWindow({ w: 1280, h: 900 })
-    expect(box).toEqual({ x: 28, y: 28, w: 1224, h: 844 })
-    expect(box.w).toBeGreaterThan(560)
-    expect(box.h).toBeGreaterThan(520)
+    expect(box).toEqual({ x: 280, y: 170, w: 720, h: 560 })
   })
 
-  it('keeps the 28px margin on a 390-wide viewport when the usable side is still at least 160', () => {
+  it('shrinks to the 28px margin and stays centered when the width cannot hold 720', () => {
     const box = placeClarifyDemoWindow({ w: 390, h: 900 })
-    expect(box).toEqual({ x: 28, y: 28, w: 334, h: 844 })
+    expect(box).toEqual({ x: 28, y: 170, w: 334, h: 560 })
   })
 
   it('uses an 8px margin when a 28px margin would leave less than 160 on either axis', () => {
     const box = placeClarifyDemoWindow({ w: 200, h: 900 })
-    expect(box).toEqual({ x: 8, y: 8, w: 184, h: 884 })
+    expect(box).toEqual({ x: 8, y: 170, w: 184, h: 560 })
+  })
+
+  it('shrinks the height to the margin and stays centered on a short viewport', () => {
+    const box = placeClarifyDemoWindow({ w: 1280, h: 500 })
+    expect(box).toEqual({ x: 280, y: 28, w: 720, h: 444 })
+    expect(box.y + box.h).toBeLessThanOrEqual(500)
   })
 
   it('still returns a positive centered box when the chat would have filled the viewport', () => {
     const box = placeClarifyDemoWindow({ w: 1280, h: 900 })
+    expect(box).toEqual({ x: 280, y: 170, w: 720, h: 560 })
     expect(box.w).toBeGreaterThan(0)
     expect(box.h).toBeGreaterThan(0)
-    expect(box.x).toBe(28)
-    expect(box.y).toBe(28)
   })
 })
 
