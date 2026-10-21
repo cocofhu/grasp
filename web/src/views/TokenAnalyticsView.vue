@@ -671,8 +671,8 @@ const fxCount = computed(() => fxChips.value.length)
 </script>
 
 <template>
-  <div class="flex h-full min-h-0 min-w-0 flex-col" data-testid="token-analytics-page">
-    <div class="token-analytics-main min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto">
+  <div class="usage-page min-w-0" data-testid="token-analytics-page">
+    <div class="token-analytics-main min-w-0">
       <div class="usage-content">
         <header class="usage-page-header" data-testid="token-analytics-header">
           <div class="min-w-0">
@@ -1323,7 +1323,7 @@ const fxCount = computed(() => fxChips.value.length)
   width: 100%;
   max-width: 1480px;
   margin: 0 auto;
-  padding: 0 0 40px;
+  padding: 0 0 8px;
 }
 .usage-page-header {
   display: flex;
@@ -1441,7 +1441,7 @@ const fxCount = computed(() => fxChips.value.length)
 }
 /* 1440: keep 3 columns (six columns squeezed 输入/输出 and the cache bar). */
 @media (max-width: 639px) {
-  .usage-content { padding-bottom: 24px; }
+  .usage-content { padding-bottom: 8px; }
   .usage-page-header { flex-direction: column; gap: 16px; margin-bottom: 20px; }
   .usage-controls { padding: 16px 0; }
   .usage-control-row { flex-direction: column; align-items: stretch; gap: 8px; }

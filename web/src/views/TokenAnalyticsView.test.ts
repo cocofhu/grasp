@@ -104,10 +104,13 @@ describe('TokenAnalyticsView', () => {
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue(sampleData)
   })
 
-  it('loads global stats with h-full root and three KPI cards', async () => {
+  it('loads global stats as a flowing page and three KPI cards', async () => {
     const wrapper = mount(TokenAnalyticsView, { global: { plugins: [i18n] } })
     await flushPromises()
-    expect(wrapper.find('[data-testid="token-analytics-page"]').classes()).toContain('h-full')
+    const root = wrapper.find('[data-testid="token-analytics-page"]')
+    expect(root.classes()).toContain('usage-page')
+    expect(root.classes()).not.toContain('h-full')
+    expect(wrapper.find('.token-analytics-main').classes()).not.toContain('overflow-y-auto')
     expect(wrapper.find('[data-testid="token-analytics-kpis"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="token-analytics-kpi-total"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="token-analytics-kpi-merge"]').exists()).toBe(true)

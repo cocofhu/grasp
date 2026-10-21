@@ -460,7 +460,7 @@ const settingsItems = settingsNavItems
 
 <template>
   <nav
-    class="sidebar-workspace-nav scroll-area flex-1 overflow-y-auto px-3 py-2"
+    class="sidebar-workspace-nav scroll-area min-h-0 flex-1 overflow-y-auto px-3 py-2"
     data-testid="app-sidebar-nav"
     :data-nav-mode="settingsChrome ? 'settings' : 'workspace'"
   >
