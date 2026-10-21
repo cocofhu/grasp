@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -43,7 +42,20 @@ func (e *Engine) execAgent(c *execCtx, node *models.Node) nodeOutcome {
 func (e *Engine) runAutoAgent(c *execCtx, node *models.Node) nodeOutcome {
 	req := e.nodeReq(c, node)
 	req.ReattachSandbox, c.reattachSandbox = c.reattachSandbox, ""
-	res, err := e.provider.RunAgent(context.Background(), req)
+	ctx, ar := e.beginAutoAgent(c, node)
+	settled := false
+	defer func() {
+		// A panicking provider must not leave the visit registered as
+		// takeover-able (nor leak its cancel func).
+		if !settled {
+			e.settleAutoAgent(c.run.ID, node.ID, ar)
+		}
+	}()
+	res, err := e.provider.RunAgent(ctx, req)
+	settled = true
+	if e.settleAutoAgent(c.run.ID, node.ID, ar) {
+		return e.enterTakeover(c, node, res, err)
+	}
 	if errors.Is(err, runtime.ErrCodexLoginRejected) {
 		return nodeOutcome{status: "failed", err: err.Error(), outputMd: "Agent 执行失败:" + err.Error(),
 			events: res.Events, usage: res.Usage, usageByModel: res.UsageByModel}

@@ -170,6 +170,7 @@ const {
   clarifyComposerNodeId,
   clarifyComposerIteration,
   clarifyComposerTurns,
+  activeNodeTask,
   clarifyComposerDone,
   inboxClarifyStageKind,
   inboxReviewState,
@@ -432,6 +433,7 @@ const listFadeKey = computed(() =>
               v-model:attachments="clarifyAttachments"
               v-model:annotations="clarifyAnnotations"
               :turns="clarifyComposerTurns"
+              :node-task="activeNodeTask"
               :seed-human-text="activeHomeSeed?.text"
               :seed-human-images="activeHomeSeed?.images ?? []"
               :done="clarifyComposerDone"
@@ -547,6 +549,7 @@ const listFadeKey = computed(() =>
                   v-model:attachments="clarifyAttachments"
                   v-model:annotations="clarifyAnnotations"
                   :turns="clarifyComposerTurns"
+                  :node-task="activeNodeTask"
                   :seed-human-text="activeHomeSeed?.text"
                   :seed-human-images="activeHomeSeed?.images ?? []"
                   :done="clarifyComposerDone"

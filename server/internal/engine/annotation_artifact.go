@@ -260,7 +260,7 @@ func (e *Engine) syncGateAnnotationOutputs(c *execCtx, gateNodeID string, gateIt
 	outs["preview_annotations_json"] = content
 	outs["preview_annotations_count"] = count
 	sr.Outputs = outs
-	logDB(e.db.Save(&sr), c.run.ID, "sync gate outputs after annotation artifact write")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "sync gate outputs after annotation artifact write")
 	c.nodeOutputs[gateNodeID] = outs
 }
 
@@ -279,7 +279,7 @@ func (e *Engine) clearGateAnnotationOutputs(c *execCtx, gateNodeID string, gateI
 	delete(outs, "preview_annotations_json")
 	delete(outs, "preview_annotations_count")
 	sr.Outputs = outs
-	logDB(e.db.Save(&sr), c.run.ID, "clear gate outputs after annotation artifact clear")
+	logDB(e.db.Omit(stateRunTakeoverCols...).Save(&sr), c.run.ID, "clear gate outputs after annotation artifact clear")
 	c.nodeOutputs[gateNodeID] = outs
 }
 

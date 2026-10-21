@@ -39,3 +39,25 @@ func TestResolveStartVarsWorkspaceSeedAndOverride(t *testing.T) {
 		t.Fatalf("idea = %v", by["idea"])
 	}
 }
+
+// A secret workspace variable stays Secret on the run (also when a graph
+// variable overlays it); its value is unchanged.
+func TestResolveStartVarsKeepsSecretFlag(t *testing.T) {
+	wsVars := []models.WorkspaceVariable{
+		{Name: "tok", Type: "string", Value: "s3cr3t", Secret: true},
+		{Name: "over", Type: "string", Value: "ws", Secret: true},
+		{Name: "plain", Type: "string", Value: "p"},
+	}
+	g := models.Graph{Variables: []models.Variable{{Name: "over", Type: "string", Value: "graph"}}}
+	out, err := resolveStartVars(g, nil, wsVars)
+	if err != nil {
+		t.Fatal(err)
+	}
+	by := map[string]models.RunVariable{}
+	for _, rv := range out {
+		by[rv.Name] = rv
+	}
+	if !by["tok"].Secret || by["tok"].Value != "s3cr3t" || !by["over"].Secret || by["over"].Value != "graph" || by["plain"].Secret {
+		t.Fatalf("secret flags: %+v", by)
+	}
+}
