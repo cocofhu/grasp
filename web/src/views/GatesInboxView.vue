@@ -356,7 +356,7 @@ const listFadeKey = computed(() =>
           :run-id="active.runId"
           v-else-if="showClarifyReviewShell"
           ref="reviewShellRef"
-          :key="active.runId + active.nodeId"
+          :key="active.runId"
           class="min-h-0 flex-1"
           :host-confirm-flow="false"
           split-drawer
@@ -391,9 +391,11 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
+              :seed-text="activeHomeSeed?.text || ''"
             />
             <ReviewComposer
               v-else
+              :key="`${active.runId}:${active.nodeId}`"
               ref="reviewChatRef"
               :mode="composerMode"
               :run-id="active.runId"
@@ -478,7 +480,7 @@ const listFadeKey = computed(() =>
               :run-id="active.runId"
               v-else-if="showClarifyReviewShell"
               ref="reviewShellRef"
-              :key="active.runId + active.nodeId"
+              :key="active.runId"
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
               split-drawer
@@ -513,9 +515,11 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
+              :seed-text="activeHomeSeed?.text || ''"
             />
                 <ReviewComposer
                   v-else
+                  :key="`${active.runId}:${active.nodeId}`"
                   ref="reviewChatRef"
                   :mode="composerMode"
                   :run-id="active.runId"

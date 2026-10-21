@@ -15,7 +15,10 @@ import {
 import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
-import type { InboxItem } from '@/lib/shared/types'
+import type { InboxItem, Run } from '@/lib/shared/types'
+import { keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
+import { onRecentActivity, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
+import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
   settingsItemKey,
@@ -48,7 +51,7 @@ const {
   itemKey,
   patchRunTitle,
 } = usePendingGates()
-const { pins, pin: pinRow, unpin: unpinRow, isPinned } = useSidebarPins()
+const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
@@ -69,11 +72,78 @@ function pendingTooltip(it: InboxItem): string {
   return node ? `${name} · ${node}` : name
 }
 
-const pendingRows = computed(() => {
+const pendingItems = computed(() => {
   const shown = new Set(displayedItems.value.map(itemKey))
   const extras = sidebarExtras.value.filter((it) => !shown.has(itemKey(it)))
   return [...extras, ...displayedItems.value]
 })
+const pendingRunIds = computed(() => new Set(pendingItems.value.map((it) => it.runId)))
+
+/** Unfinished runs (queued / running / waiting_human) for「正在执行」. */
+const runningRuns = ref<Run[]>([])
+const runningById = computed(() => new Map(runningRuns.value.map((r) => [r.id, r])))
+/**
+ * A run whose pending item just left (hand-off confirmed) stays in place, marked
+ * running, until the next running-run read says whether it is still going.
+ */
+const carriedRows = ref<InboxItem[]>([])
+let runningRequest: AbortController | null = null
+const { ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+
+async function loadRunningRuns() {
+  runningRequest?.abort()
+  const controller = new AbortController()
+  runningRequest = controller
+  try {
+    if (!(await ensureWorkspaceLoaded()) || runningRequest !== controller) return
+    const result = await api.listRuns({
+      page: 1,
+      pageSize: 50,
+      status: RUNNING_RUN_STATUSES,
+      sort: 'last_activity',
+      order: 'desc',
+      signal: controller.signal,
+    })
+    if (runningRequest !== controller || !Array.isArray(result?.items)) return
+    runningRuns.value = result.items
+    carriedRows.value = []
+  } catch {
+    // Keep the last list; the next poll retries.
+  } finally {
+    if (runningRequest === controller) runningRequest = null
+  }
+}
+
+/** Run order last shown; see keepRowOrder. */
+let shownRunOrder: string[] = []
+const pendingRows = computed(() => {
+  const rows = mergeRunRows(pendingItems.value, runningRuns.value, activeInboxKey.value)
+  const listed = new Set(rows.map((r) => r.runId))
+  const merged = [...rows, ...carriedRows.value.filter((c) => !listed.has(c.runId))]
+  const ordered = keepRowOrder(merged, shownRunOrder)
+  shownRunOrder = ordered.map((r) => r.runId)
+  return ordered
+})
+watch(pendingItems, (next, prev) => {
+  const still = new Set(next.map((it) => it.runId))
+  const left = (prev ?? []).filter(
+    (it, i, arr) => !still.has(it.runId) && arr.findIndex((x) => x.runId === it.runId) === i,
+  )
+  if (!left.length) return
+  const carried = carriedRows.value.slice()
+  for (const it of left) {
+    if (startFailedKeys.value.includes(itemKey(it)) || carried.some((c) => c.runId === it.runId)) continue
+    carried.push({ ...it, state: undefined } as InboxItem)
+  }
+  carriedRows.value = carried
+  void loadRunningRuns()
+})
+
+/** Row with no pending item: a run that is executing on its own (or just handed off). */
+function isRunOnlyRow(it: InboxItem): boolean {
+  return !pendingRunIds.value.has(it.runId)
+}
+
 const pendingRunTitles = computed(() => {
   const titles: Record<string, string> = {}
   for (const item of pendingRows.value) {
@@ -82,7 +152,9 @@ const pendingRunTitles = computed(() => {
   return titles
 })
 
-const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, itemKey, pins.value))
+const runPins = computed(() => pins.value.map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
+const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
+const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, (it) => it.runId, runPins.value))
 
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
@@ -109,7 +181,7 @@ let rowPress: RowPress | null = null
 const menuItem = computed(() => {
   const key = menu.value?.key
   if (!key) return null
-  return pendingRows.value.find((it) => itemKey(it) === key) ?? null
+  return pendingRows.value.find((it) => it.runId === key) ?? null
 })
 
 function setRenameInput(el: unknown) {
@@ -135,20 +207,22 @@ function shareBlockReason(it: InboxItem): 'starting' | 'locked' | 'used' | null 
 }
 
 function pendingMenuHeight(it: InboxItem): number {
-  const rows = isShareableInboxItem(it) ? 3 : 2
+  const rows = !isRunOnlyRow(it) && isShareableInboxItem(it) ? 3 : 2
   return MENU_CHROME + rows * MENU_ROW_HEIGHT
 }
 
 function openMenu(it: InboxItem, x: number, y: number) {
   if (editingKey.value) return
   const height = pendingMenuHeight(it)
-  const width = shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
+  const width = !isRunOnlyRow(it) && shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menu.value = { key: itemKey(it), x: left, y: top }
+  menu.value = { key: it.runId, x: left, y: top }
 }
 
-const menuShareVisible = computed(() => !!menuItem.value && isShareableInboxItem(menuItem.value))
+const menuShareVisible = computed(
+  () => !!menuItem.value && !isRunOnlyRow(menuItem.value) && isShareableInboxItem(menuItem.value),
+)
 const menuShareReason = computed(() => (menuItem.value ? shareBlockReason(menuItem.value) : null))
 const menuShareDisabled = computed(() => menuShareReason.value !== null)
 const menuShareLabel = computed(() => {
@@ -190,7 +264,7 @@ function onRowPressEnd() {
 function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
   if (event.pointerType === 'mouse' || editingKey.value) return
   clearRowPress()
-  const key = itemKey(it)
+  const key = it.runId
   const timer = window.setTimeout(() => {
     if (!rowPress || rowPress.key !== key) return
     const x = rowPress.x
@@ -200,7 +274,7 @@ function onPendingPointerDown(event: PointerEvent, it: InboxItem) {
       suppressPendingClick.value = false
     }, 400)
     clearRowPress()
-    const row = pendingRows.value.find((item) => itemKey(item) === key)
+    const row = pendingRows.value.find((item) => item.runId === key)
     if (!row || editingKey.value) return
     openMenu(row, x, y)
   }, LONG_PRESS_MS)
@@ -239,7 +313,7 @@ function cancelEdit() {
 async function beginRename(it: InboxItem) {
   if (saving.value) return
   closeMenu()
-  editingKey.value = itemKey(it)
+  editingKey.value = it.runId
   renameDraft.value = displayRunTitle(it.runTitle)
   await nextTick()
   const el = renameInput.value
@@ -256,8 +330,8 @@ function refocusRename() {
 }
 
 async function commitRename(it: InboxItem) {
-  if (saving.value || editingKey.value !== itemKey(it)) return
-  if (!pendingRows.value.some((row) => itemKey(row) === itemKey(it))) {
+  if (saving.value || editingKey.value !== it.runId) return
+  if (!pendingRows.value.some((row) => row.runId === it.runId)) {
     cancelEdit()
     return
   }
@@ -284,6 +358,8 @@ async function commitRename(it: InboxItem) {
     const saved = await api.updateRunTitle(runId, next)
     const title = saved.title?.trim() || next
     patchRunTitle(runId, title)
+    runningRuns.value = runningRuns.value.map((r) => (r.id === runId ? { ...r, title } : r))
+    carriedRows.value = carriedRows.value.map((r) => (r.runId === runId ? { ...r, runTitle: title } : r))
     if (epoch !== editEpoch.value) return
     editingKey.value = null
     renameDraft.value = ''
@@ -302,7 +378,7 @@ function onRenameEscape() {
 }
 
 function onRenameBlur(it: InboxItem) {
-  const key = itemKey(it)
+  const key = it.runId
   window.setTimeout(() => {
     if (saving.value || editingKey.value !== key) return
     if (document.activeElement === renameInput.value) return
@@ -313,9 +389,9 @@ function onRenameBlur(it: InboxItem) {
 function onMenuPin() {
   const it = menuItem.value
   if (!it) return
-  const key = itemKey(it)
-  if (isPinned(key)) unpinRow(key)
-  else pinRow(key)
+  if (isRowPinned(it)) {
+    for (const p of pins.value) if (pinRunId(p.itemKey) === it.runId) unpinRow(p.itemKey)
+  } else pinRow(it.runId)
   closeMenu()
 }
 
@@ -341,9 +417,9 @@ function onMenuShare() {
 }
 
 watch(pendingRows, (rows) => {
-  if (menu.value && !rows.some((it) => itemKey(it) === menu.value?.key)) closeMenu()
+  if (menu.value && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
   if (!editingKey.value) return
-  if (rows.some((it) => itemKey(it) === editingKey.value)) return
+  if (rows.some((it) => it.runId === editingKey.value)) return
   editEpoch.value++
   editingKey.value = null
   renameDraft.value = ''
@@ -351,6 +427,13 @@ watch(pendingRows, (rows) => {
 })
 
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
+  if (isRunOnlyRow(it)) {
+    const run = runningById.value.get(it.runId)
+    if (!run) return 'pulse'
+    const mark = recentRunMark(run)
+    if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
+    return 'motion' in mark ? mark.motion : null
+  }
   if (startFailedKeys.value.includes(itemKey(it))) return null
   if (isStartingInboxItem(it)) return 'spin'
   if (isReplyingInboxItem(it)) return 'pulse'
@@ -359,6 +442,11 @@ function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
 
 /** Waiting on a person: static type mark. Executing rows keep motion; start-failed rows stay blank. */
 function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: string }> {
+  if (isRunOnlyRow(it)) {
+    const run = runningById.value.get(it.runId)
+    const mark = run ? recentRunMark(run) : null
+    return mark && 'icon' in mark ? [mark.icon] : []
+  }
   if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
   const tone = inboxBadgeTone(it)
   if (tone === 'replying') return []
@@ -368,8 +456,10 @@ function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: strin
 }
 
 function isPendingActive(it: InboxItem): boolean {
-  if (route.path !== '/gates' && !route.path.startsWith('/gates/')) return false
-  return activeInboxKey.value === itemKey(it)
+  const onInbox = route.path === '/gates' || route.path.startsWith('/gates/')
+  if (onInbox && activeInboxKey.value?.startsWith(`${it.runId}:`)) return true
+  const run = runningById.value.get(it.runId)
+  return isRunOnlyRow(it) && !!run && recentRunActive(run, route)
 }
 
 function onPendingRow(it: InboxItem) {
@@ -378,14 +468,22 @@ function onPendingRow(it: InboxItem) {
     suppressPendingClick.value = false
     return
   }
-  void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
+  if (isRunOnlyRow(it)) {
+    const run = runningById.value.get(it.runId)
+    void router.push(run ? recentRunTarget(run) : { path: '/gates', query: { run: it.runId } })
+  } else {
+    void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
+  }
   onNavigate()
 }
 function pollRefresh() {
+  if (!document.hidden) void loadRunningRuns()
   return peek({ source: 'sidebar-poll' })
 }
+const offRunActivity = onRecentActivity(() => void loadRunningRuns())
 onMounted(() => {
   refresh({ source: 'mount' })
+  void loadRunningRuns()
   timer = window.setInterval(pollRefresh, 15000)
   chromeHasMounted.value = true
   document.addEventListener('mousedown', onDocMouseDown)
@@ -393,6 +491,8 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   if (timer) clearInterval(timer)
+  offRunActivity()
+  runningRequest?.abort()
   clearRowPress()
   document.removeEventListener('mousedown', onDocMouseDown)
   document.removeEventListener('keydown', onDocKeydown)
@@ -402,7 +502,8 @@ watch(
   () => route.path,
   () => {
     refresh({ source: 'navigate' })
-    },
+    void loadRunningRuns()
+  },
 )
 
 function isActive(to: string) {
@@ -532,16 +633,17 @@ const settingsItems = settingsNavItems
 
     <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
       <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        <span>{{ t('nav.pendingApprovals') }}</span>
+        <span>{{ t('nav.runningRuns') }}</span>
         <span class="sidebar-section-count">{{ pendingRows.length }}</span>
       </div>
-      <template v-for="it in orderedPendingRows" :key="itemKey(it)">
+      <template v-for="it in orderedPendingRows" :key="it.runId">
         <div
-          v-if="editingKey === itemKey(it)"
+          v-if="editingKey === it.runId"
           class="nav-item mb-0.5 w-full min-w-0 cursor-text text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
-          :data-key="itemKey(it)"
+          :data-key="it.runId"
+          :data-node-id="it.nodeId"
           :data-motion="rowMotion(it) || undefined"
           data-editing="true"
           :aria-current="isPendingActive(it) ? 'true' : undefined"
@@ -549,7 +651,7 @@ const settingsItems = settingsNavItems
           @contextmenu.prevent
         >
           <span
-            v-if="isPinned(itemKey(it))"
+            v-if="isRowPinned(it)"
             class="flex shrink-0 text-accent"
             data-testid="nav-pending-pin"
             aria-hidden="true"
@@ -591,7 +693,8 @@ const settingsItems = settingsNavItems
           class="nav-item mb-0.5 w-full min-w-0 text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
-          :data-key="itemKey(it)"
+          :data-key="it.runId"
+          :data-node-id="it.nodeId"
           :data-motion="rowMotion(it) || undefined"
           :title="pendingTooltip(it)"
           :aria-current="isPendingActive(it) ? 'true' : undefined"
@@ -601,14 +704,15 @@ const settingsItems = settingsNavItems
           @keydown.f2.prevent="beginRename(it)"
         >
           <span
-            v-if="isPinned(itemKey(it))"
+            v-if="isRowPinned(it)"
             class="flex shrink-0 text-accent"
             data-testid="nav-pending-pin"
             aria-hidden="true"
           >
             <Icon name="pin" :size="12" />
           </span>
-          <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ sidebarRunTitle(it) }}</span>
+          <span v-if="sidebarRunTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ sidebarRunTitle(it) }}</span>
+          <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
           <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
           <template v-else>
@@ -651,8 +755,8 @@ const settingsItems = settingsNavItems
         data-testid="nav-pending-menu-pin"
         @click="onMenuPin"
       >
-        <Icon :name="isPinned(itemKey(menuItem)) ? 'close' : 'pin'" :size="14" />
-        <span>{{ isPinned(itemKey(menuItem)) ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
+        <Icon :name="isRowPinned(menuItem) ? 'close' : 'pin'" :size="14" />
+        <span>{{ isRowPinned(menuItem) ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
         type="button"
@@ -791,6 +895,17 @@ const settingsItems = settingsNavItems
 .nav-row-title {
   text-align: start;
   font-weight: 400;
+}
+.nav-row-title-skeleton {
+  display: flex;
+  align-items: center;
+}
+.nav-row-title-skeleton > span {
+  display: block;
+  width: 60%;
+  height: 8px;
+  border-radius: 9999px;
+  background: rgb(var(--c-txt) / 0.08);
 }
 
 .nav-row-type-icon {

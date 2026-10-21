@@ -42,18 +42,21 @@ beforeEach(() => {
 })
 afterEach(() => { vi.useRealTimers(); document.body.replaceChildren() })
 
-describe('sidebar 最近 (activity order, marks, targets)', () => {
-  it('requests last_activity order and renders pending-row marks and chat targets', async () => {
+describe('sidebar 历史执行 (finished runs, activity order, targets)', () => {
+  it('requests finished runs only, in last_activity order, under the 历史执行 heading', async () => {
+    mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed'), r('d', undefined, 'failed'), r('e', undefined, 'cancelled')], total: 3 })
     const { wrapper } = await setup('/')
-    expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ sort: 'last_activity', order: 'desc' }))
+    expect(mocks.listRuns).toHaveBeenCalledWith(
+      expect.objectContaining({ status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc' }),
+    )
+    expect(wrapper.get('[data-testid="sidebar-recent"] h3').text()).toBe('历史执行')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
-    expect(order(wrapper)).toEqual(['a', 'b', 'c'])
-    expect(rows[0].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
-    expect(rows[0].attributes('href')).toBe('/runs/a/live?node=impl')
-    expect(rows[1].get('[data-testid="sidebar-recent-type-icon"]').classes()).toContain('nav-row-type-icon--approval')
-    expect(rows[1].attributes('href')).toBe('/gates?run=b&node=gate')
-    expect(rows[2].find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
-    expect(rows[2].attributes('href')).toBe('/runs/c')
+    expect(order(wrapper)).toEqual(['c', 'd', 'e'])
+    expect(rows[0].attributes('href')).toBe('/runs/c')
+    expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
+    expect(rows[1].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
+    expect(rows[2].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
