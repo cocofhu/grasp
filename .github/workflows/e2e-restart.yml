@@ -19,6 +19,9 @@ on:
       - ".github/workflows/e2e-restart.yml"
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 concurrency:
   group: e2e-restart-${{ github.ref }}
   cancel-in-progress: true

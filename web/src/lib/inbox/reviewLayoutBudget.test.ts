@@ -153,7 +153,7 @@ describe('outer sash drag clamp (canvas minWidth is 0, not REVIEW_CANVAS_MIN)', 
       configurable: true,
     })
     try {
-      expect(estimateOuterWorkspace()).toBe(1082)
+      expect(estimateOuterWorkspace()).toBe(1026)
     } finally {
       Object.defineProperty(globalThis, 'window', { value: orig, configurable: true })
     }

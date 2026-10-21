@@ -326,6 +326,41 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('parses wrapped choice prompts without changing one-line rows', () => {
+    const { chat, app } = withChat()
+    expect(chat.parseChoiceSummary('我的选择:\n- 整行题干 → 方案 A、方案 B')).toEqual([
+      { q: '整行题干', answers: ['方案 A', '方案 B'] },
+    ])
+    expect(chat.parseChoiceSummary('我的选择:\n- 第一段\n\n第二段 → 方案 A')).toEqual([
+      { q: '第一段\n\n第二段', answers: ['方案 A'] },
+    ])
+    expect(chat.parseChoiceSummary('My choices:\n- Prompt\ncontinued → Alpha、Beta')).toEqual([
+      { q: 'Prompt\ncontinued', answers: ['Alpha', 'Beta'] },
+    ])
+    expect(chat.parseChoiceSummary('我的选择:\n- 题一 → A\n- 题二\n续行 → B、C')).toEqual([
+      { q: '题一', answers: ['A'] },
+      { q: '题二\n续行', answers: ['B', 'C'] },
+    ])
+    expect(chat.parseChoiceSummary('我的选择:\n- 只有题干\n没有箭头')).toBeNull()
+    expect(chat.parseChoiceSummary('plain')).toBeNull()
+    app.unmount()
+  })
+
+  it('matches a wrapped prompt to the question that was asked', () => {
+    const prompt = '第一段\n\n第二段'
+    const q = question({ prompt, options: [{ id: 'a', label: '方案 A' }, { id: 'b', label: '方案 B' }] })
+    const { chat, app } = withChat({
+      turns: [
+        { role: 'agent', text: 'ask', at: '1', questions: [q] },
+        { role: 'human', text: `我的选择:\n- ${prompt} → 方案 A、其他说明`, at: '2' },
+      ],
+    })
+    const rows = chat.choiceRowsForAgentTurn(0)
+    expect(rows).toEqual([{ q: prompt, answers: ['方案 A', '其他说明'] }])
+    expect(chat.selectedLabelsForQuestion(q, rows)).toEqual(['方案 A', '其他说明'])
+    app.unmount()
+  })
+
   it('applies recommended choices and maps selected demo options', async () => {
     const q = question({
       options: [

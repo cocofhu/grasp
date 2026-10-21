@@ -21,9 +21,29 @@ type Driver struct {
 
 	sandboxes map[string]*entry
 
-	LastCreate        *driver.Spec
-	LastReinstall     *driver.Spec
-	ReinstallPreserve *bool
+	// Guarded by mu: Create/Reinstall run on service goroutines, so tests
+	// read them through LastCreate / LastReinstall.
+	lastCreate        *driver.Spec
+	lastReinstall     *driver.Spec
+	reinstallPreserve *bool
+}
+
+// LastCreate returns the Spec of the most recent Create, or nil.
+func (d *Driver) LastCreate() *driver.Spec {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.lastCreate
+}
+
+// LastReinstall returns the Spec and preserveData flag of the most recent
+// Reinstall, or nil, false, false when Reinstall has not run.
+func (d *Driver) LastReinstall() (spec *driver.Spec, preserveData, called bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.lastReinstall == nil {
+		return nil, false, false
+	}
+	return d.lastReinstall, d.reinstallPreserve != nil && *d.reinstallPreserve, true
 }
 
 type entry struct {
@@ -102,7 +122,7 @@ func (d *Driver) Create(_ context.Context, spec driver.Spec) (*driver.Handle, er
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	cp := spec
-	d.LastCreate = &cp
+	d.lastCreate = &cp
 	eps := d.endpointsFor(spec)
 	d.sandboxes[spec.ID] = &entry{spec: spec, status: driver.StatusRunning, eps: eps, createdAt: time.Now()}
 	return &driver.Handle{
@@ -147,9 +167,9 @@ func (d *Driver) Reinstall(_ context.Context, spec driver.Spec, preserveData boo
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	cp := spec
-	d.LastReinstall = &cp
+	d.lastReinstall = &cp
 	p := preserveData
-	d.ReinstallPreserve = &p
+	d.reinstallPreserve = &p
 	eps := d.endpointsFor(spec)
 	d.sandboxes[spec.ID] = &entry{spec: spec, status: driver.StatusRunning, eps: eps}
 	return nil

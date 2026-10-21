@@ -2172,6 +2172,76 @@ ${'保留原文 '.repeat(60)}`
     wrapper.unmount()
   })
 
+  it('counts new artifact citations on the artifact icon and removes the badge after viewing', async () => {
+    const existing = { id: 'answer-1', role: 'assistant', content: '已有报告', status: 'ok', citations: [{ type: 'artifact', targetId: 'art-a1b2c3d4' }] }
+    apiMocks.listPmMessages.mockResolvedValue({ items: [existing], hasMore: true })
+    const wrapper = mountChat()
+    await flushPromises()
+    const button = () => wrapper.get('[data-testid="pm-chat-artifacts"]')
+    expect(wrapper.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(button().attributes('aria-label')).toBe('打开产物')
+
+    const arrived = {
+      id: 'answer-2',
+      role: 'assistant',
+      content: '新的引用',
+      status: 'ok',
+      citations: [
+        { type: 'run', targetId: 'run-a1b2c3d4' },
+        { type: 'workflow', targetId: 'wf-deadbeef' },
+        { type: 'gate', targetId: 'run-a1b2c3d4:human_gate' },
+        { type: 'plan', targetId: 'g1' },
+        { type: 'artifact', targetId: 'research.json' },
+      ],
+    }
+    apiMocks.listPmMessages.mockResolvedValue({ items: [existing, arrived], hasMore: true })
+    serverFrame(lastSocket(), { type: 'session', event: 'turn_done', interrupted: false })
+    await flushPromises()
+    const badge = button().get('[data-testid="artifact-unread-badge"]')
+    expect(badge.text()).toBe('1')
+    expect(badge.attributes('aria-hidden')).toBe('true')
+    expect(badge.attributes('hidden')).toBeUndefined()
+    expect(button().attributes('aria-label')).toContain('1 项未查看')
+    const glyph = button().get('[data-testid="artifact-unread-glyph"]')
+    expect(glyph.element.contains(badge.element)).toBe(true)
+    expect(glyph.text()).not.toContain('产物')
+    expect(button().text()).toContain('产物')
+
+    apiMocks.listPmMessages.mockResolvedValueOnce({ items: [{ id: 'older', role: 'assistant', content: '更早', status: 'ok', citations: [{ type: 'artifact', targetId: 'old.md' }] }], hasMore: false })
+    wrapper.findComponent(ChatMessageRail).vm.$emit('loadEarlier')
+    await flushPromises()
+    expect(button().get('[data-testid="artifact-unread-badge"]').text()).toBe('1')
+
+    await button().trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(button().attributes('aria-label')).toBe('关闭产物')
+    expect(button().html()).not.toContain('artifact-unread-badge')
+
+    const whileOpen = { id: 'answer-3', role: 'assistant', content: '面板开着', status: 'ok', citations: [{ type: 'artifact', targetId: 'open.md' }] }
+    apiMocks.listPmMessages.mockResolvedValue({ items: [existing, arrived, whileOpen], hasMore: false })
+    serverFrame(lastSocket(), { type: 'session', event: 'turn_done', interrupted: false })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+
+    await button().trigger('click')
+    await flushPromises()
+    const afterClose = { id: 'answer-4', role: 'assistant', content: '重新计数', status: 'ok', citations: [{ type: 'artifact', targetId: 'again.md' }] }
+    apiMocks.listPmMessages.mockResolvedValue({ items: [existing, arrived, whileOpen, afterClose], hasMore: false })
+    serverFrame(lastSocket(), { type: 'session', event: 'turn_done', interrupted: false })
+    await flushPromises()
+    expect(button().get('[data-testid="artifact-unread-badge"]').text()).toBe('1')
+
+    apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thread-1', agentAvailable: true, title: '交付验收' }, { id: 'thread-2', agentAvailable: true, title: '发布复盘' }] })
+    apiMocks.listPmMessages.mockResolvedValue({ items: [{ id: 'other', role: 'assistant', content: '另一条', status: 'ok', citations: [{ type: 'artifact', targetId: 'other.md' }] }], hasMore: false })
+    await (wrapper.vm as unknown as { selectThread: (id: string) => Promise<void> }).selectThread('thread-2')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(button().attributes('aria-label')).toBe('打开产物')
+    wrapper.unmount()
+  })
+
   it('clears the open artifact when the active thread changes', async () => {
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thread-1', agentAvailable: true, title: '交付验收' }, { id: 'thread-2', agentAvailable: true, title: '发布复盘' }] })
     const wrapper = mountChat()

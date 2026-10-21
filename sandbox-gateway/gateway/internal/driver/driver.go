@@ -47,16 +47,16 @@ type Resources struct {
 // all integration behavior rides through Env (e.g. GIT_REPOS, AGENT_PROVIDER,
 // ROOT_PASSWORD, SSH_KEY, ACP_BRIDGE_PASSWORD). The gateway stays kind-agnostic.
 type Spec struct {
-	ID           string            // gateway-assigned id (also seeds the resource name)
-	Image        string            // container image ref
-	Env          map[string]string // environment injected into the container
-	Ports         []int            // public ports published to host / LoadBalancer (session/ide/ssh/app)
-	InternalPorts []int            // cdp/novnc — cluster/container network only, not published externally
-	WorkspaceDir string            // WORKSPACE_DIR inside the container
-	Mounts       []string          // extra docker "-v host:container[:ro]" specs (docker only)
-	Config       *ConfigInject     // optional rules/skills/mcp injection
-	Labels       map[string]string // caller-supplied labels/metadata
-	Resources    Resources         // CPU / memory / disk limits
+	ID            string            // gateway-assigned id (also seeds the resource name)
+	Image         string            // container image ref
+	Env           map[string]string // environment injected into the container
+	Ports         []int             // public ports published to host / LoadBalancer (session/ide/ssh/app)
+	InternalPorts []int             // cdp/novnc — cluster/container network only, not published externally
+	WorkspaceDir  string            // WORKSPACE_DIR inside the container
+	Mounts        []string          // extra docker "-v host:container[:ro]" specs (docker only)
+	Config        *ConfigInject     // optional rules/skills/mcp injection
+	Labels        map[string]string // caller-supplied labels/metadata
+	Resources     Resources         // CPU / memory / disk limits
 }
 
 // Handle is the driver's view of a live sandbox.

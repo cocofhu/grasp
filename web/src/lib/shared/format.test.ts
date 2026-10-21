@@ -1,5 +1,5 @@
 import { beforeAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { formatTrigger, fmtCompactDuration, fmtDuration, fmtMultiAvgDuration, relTime } from './format'
+import { formatTrigger, fmtCompactDuration, fmtDuration, fmtMultiAvgDuration, fmtTurnElapsed, relTime, wallClockSec } from './format'
 import { i18n } from './i18n'
 import { loadLocaleMessages } from './loadLocaleMessages'
 
@@ -30,6 +30,28 @@ describe('fmtCompactDuration', () => {
     expect(fmtDuration(3458)).toBe('57:38')
     expect(fmtDuration(245)).toBe('04:05')
     expect(fmtDuration(0)).toBe('00:00')
+  })
+})
+
+describe('fmtTurnElapsed', () => {
+  it('uses the tool-duration grammar and treats under a second as 1s', () => {
+    expect(fmtTurnElapsed(42)).toBe('42s')
+    expect(fmtTurnElapsed(3 * 60 + 34)).toBe('3m 34s')
+    expect(fmtTurnElapsed(4 * 60)).toBe('4m')
+    expect(fmtTurnElapsed(3600 + 3 * 60)).toBe('1h 3m')
+    expect(fmtTurnElapsed(3600)).toBe('1h')
+    expect(fmtTurnElapsed(3600 + 3 * 60 + 40)).toBe('1h 3m')
+    expect(fmtTurnElapsed(0)).toBe('1s')
+    expect(fmtTurnElapsed(0.4)).toBe('1s')
+    expect(fmtTurnElapsed(Number.NaN)).toBe('')
+    expect(fmtTurnElapsed(-1)).toBe('')
+  })
+
+  it('returns null when either wall-clock bound is missing', () => {
+    expect(wallClockSec(undefined, '2026-10-20T00:00:42Z')).toBeNull()
+    expect(wallClockSec('2026-10-20T00:00:00Z', undefined)).toBeNull()
+    expect(wallClockSec('2026-10-20T00:00:42Z', '2026-10-20T00:00:00Z')).toBeNull()
+    expect(wallClockSec('2026-10-20T00:00:00Z', '2026-10-20T00:00:42Z')).toBe(42)
   })
 })
 

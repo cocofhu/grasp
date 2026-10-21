@@ -194,6 +194,30 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   return [seed, ...list]
 }
 const liveAgentIdx = ref(-1)
+type OutputClock = { text: string; startedAt: string; endedAt: string }
+/** Page-session wall clocks, kept after the live bubble is replaced by the transcript. */
+const outputClocks = ref<OutputClock[]>([])
+
+function rememberOutputClock(row: ClarifyTurn) {
+  if (row.role !== 'agent' || !row.startedAt || !row.endedAt) return
+  const text = row.text || ''
+  const same = outputClocks.value.find((c) => c.startedAt === row.startedAt && c.text === text)
+  if (same) {
+    same.endedAt = row.endedAt
+    return
+  }
+  outputClocks.value.push({ text, startedAt: row.startedAt, endedAt: row.endedAt })
+}
+
+function markOutputStart(row: ClarifyTurn, reset = false) {
+  if (reset || !row.startedAt) row.startedAt = new Date().toISOString()
+  if (reset) delete row.endedAt
+}
+
+function markOutputEnd(row: ClarifyTurn) {
+  if (!row.endedAt) row.endedAt = new Date().toISOString()
+  rememberOutputClock(row)
+}
 /**
  * Coalesced per-block markdown HTML for the live streaming agent bubble.
  * Settled blocks keep their string (and DOM); only the open block re-renders.
@@ -344,8 +368,9 @@ onBeforeUnmount(() => {
   thoughtPreview.reset()
 })
 
-/** zh-CN choice prefix; server-formatted replies (models.FormatChoiceReply) always use it. */
+/** Choice prefixes the UI and models.FormatChoiceReply emit. Both are recognized in either locale. */
 const CHOICE_PREFIX_ZH = '我的选择:'
+const CHOICE_PREFIX_EN = 'My choices:'
 const choicePrefix = computed(() => translate('pages.clarify.choicePrefix'))
 /** zh-CN form-summary prefix, recognized regardless of the viewer's locale. */
 const FORM_PREFIX_ZH = '我的填写:'
@@ -359,12 +384,13 @@ const skipPrefix = computed(() => translate('pages.clarify.skipPrefix'))
 const skipUserReplyLabel = computed(() => translate('pages.clarify.skipUserReplyLabel'))
 
 function textHasChoicePrefix(text: string): boolean {
-  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH)
+  return text.startsWith(choicePrefix.value) || text.startsWith(CHOICE_PREFIX_ZH) || text.startsWith(CHOICE_PREFIX_EN)
 }
 
 function stripChoicePrefix(text: string): string {
   if (text.startsWith(choicePrefix.value)) return text.slice(choicePrefix.value.length)
   if (text.startsWith(CHOICE_PREFIX_ZH)) return text.slice(CHOICE_PREFIX_ZH.length)
+  if (text.startsWith(CHOICE_PREFIX_EN)) return text.slice(CHOICE_PREFIX_EN.length)
   return text
 }
 
@@ -521,6 +547,35 @@ const displayTurns = computed<ClarifyTurn[]>(() => {
   }
   return prependSeedHuman(list)
 })
+
+/** Start/end for each visible agent reply: its own stamps, else this page's remembered clock. */
+const outputBoundsByIndex = computed(() => {
+  const turns = displayTurns.value
+  const pool = outputClocks.value.map((c) => ({ ...c }))
+  const out = new Map<number, { startedAt: string; endedAt: string }>()
+  for (let i = turns.length - 1; i >= 0; i--) {
+    const t = turns[i]!
+    if (t.role !== 'agent') continue
+    if (t.startedAt && t.endedAt) {
+      out.set(i, { startedAt: t.startedAt, endedAt: t.endedAt })
+      const idx = pool.findIndex((c) => c.startedAt === t.startedAt && c.text === (t.text || ''))
+      if (idx >= 0) pool.splice(idx, 1)
+      continue
+    }
+    const text = t.text || ''
+    for (let c = pool.length - 1; c >= 0; c--) {
+      if (pool[c]!.text !== text) continue
+      out.set(i, { startedAt: pool[c]!.startedAt, endedAt: pool[c]!.endedAt })
+      pool.splice(c, 1)
+      break
+    }
+  }
+  return out
+})
+
+function outputBounds(index: number): { startedAt?: string; endedAt?: string } {
+  return outputBoundsByIndex.value.get(index) || {}
+}
 
 /** Single-image lightbox for human history attachments (no gallery / Esc). */
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview: closeImagePreview } =
@@ -1095,8 +1150,10 @@ function submitChoices() {
   sendMessage(text)
 }
 
-// A submitted "我的选择:" human turn is rendered as structured cards instead of
-// a raw markdown bullet list. Returns null for any other message.
+// A submitted "我的选择:" / "My choices:" human turn is rendered as structured
+// cards instead of a raw markdown bullet list. A bullet may wrap: lines that
+// do not start another "- " stay in the same item, then the first "→" splits
+// the prompt from answers. Returns null for any other message.
 interface ChoiceRow {
   q: string
   answers: string[]
@@ -1104,15 +1161,26 @@ interface ChoiceRow {
 function parseChoiceSummary(text: string): ChoiceRow[] | null {
   if (!text || !textHasChoicePrefix(text)) return null
   const bodyText = stripChoicePrefix(text)
-  const rows: ChoiceRow[] = []
+  const chunks: string[] = []
+  let buf: string[] | null = null
   for (const raw of bodyText.split('\n')) {
-    const line = raw.trim()
-    if (!line.startsWith('- ')) continue
-    const body = line.slice(2)
-    const idx = body.indexOf('→')
+    const line = raw.replace(/\r$/, '')
+    const trimmed = line.trim()
+    if (trimmed.startsWith('- ')) {
+      if (buf) chunks.push(buf.join('\n'))
+      buf = [trimmed.slice(2)]
+      continue
+    }
+    if (buf) buf.push(line)
+  }
+  if (buf) chunks.push(buf.join('\n'))
+
+  const rows: ChoiceRow[] = []
+  for (const chunk of chunks) {
+    const idx = chunk.indexOf('→')
     if (idx === -1) continue
-    const q = body.slice(0, idx).trim()
-    const answers = body
+    const q = chunk.slice(0, idx).trim()
+    const answers = chunk
       .slice(idx + 1)
       .split('、')
       .map((a) => a.trim())
@@ -1185,11 +1253,11 @@ function cancelReview() {
     queued.value = []
   }
   if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
-    liveTurns.value[liveAgentIdx.value].streaming = false
-    liveTurns.value[liveAgentIdx.value].interrupted = true
-    if (!liveTurns.value[liveAgentIdx.value].text) {
-      liveTurns.value[liveAgentIdx.value].text = '(已中断)'
-    }
+    const row = liveTurns.value[liveAgentIdx.value]
+    row.streaming = false
+    row.interrupted = true
+    if (!row.text) row.text = '(已中断)'
+    markOutputEnd(row)
   }
   liveAgentIdx.value = -1
   messageReveal.reset()
@@ -1220,6 +1288,7 @@ function endLiveStreaming() {
   for (const turn of liveTurns.value) {
     if (turn.role !== 'agent' || !turn.streaming) continue
     turn.streaming = false
+    markOutputEnd(turn)
     flushed = true
   }
   if (flushed) {
@@ -1343,11 +1412,12 @@ function applyQueueState(
     !persistedCompletedLiveHuman(persistedTurns.value, activeItem.text ?? '')
   ) {
     const text = activeItem.text ?? ''
+    const started = new Date().toISOString()
     liveTurns.value = [
       {
         role: 'human',
         text,
-        at: new Date().toISOString(),
+        at: started,
         images: activeItem.images,
         annotations: activeItem.annotations,
       },
@@ -1355,7 +1425,8 @@ function applyQueueState(
         role: 'agent',
         text: '',
         thought: '',
-        at: new Date().toISOString(),
+        at: started,
+        startedAt: started,
         streaming: true,
       },
     ]
@@ -1430,13 +1501,15 @@ function applyReviewFrame(frame: {
         existingAgent.questions = undefined
         existingAgent.interrupted = false
         existingAgent.streaming = true
-        existingAgent.at = new Date().toISOString()
+        markOutputStart(existingAgent, true)
+        existingAgent.at = existingAgent.startedAt || new Date().toISOString()
         liveAgentIdx.value = last - 1
       } else {
+        const started = new Date().toISOString()
         liveTurns.value.push({
           role: 'human',
           text: humanText,
-          at: new Date().toISOString(),
+          at: started,
           images,
           annotations,
         })
@@ -1445,7 +1518,8 @@ function applyReviewFrame(frame: {
             role: 'agent',
             text: '',
             thought: '',
-            at: new Date().toISOString(),
+            at: started,
+            startedAt: started,
             streaming: true,
           }) - 1
       }
@@ -1463,6 +1537,7 @@ function applyReviewFrame(frame: {
         agent.streaming = false
         agent.at = new Date().toISOString()
         if (frame.interrupted) agent.interrupted = true
+        markOutputEnd(agent)
         // Reveal flush before markdown flush (plan g1.2).
         messageReveal.flush()
         thoughtReveal.flush()
@@ -1477,11 +1552,12 @@ function applyReviewFrame(frame: {
     }
     case 'error': {
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
-        liveTurns.value[liveAgentIdx.value].streaming = false
-        liveTurns.value[liveAgentIdx.value].text =
-          liveTurns.value[liveAgentIdx.value].text || frame.message || 'error'
-        liveTurns.value[liveAgentIdx.value].at = new Date().toISOString()
-        if (frame.interrupted) liveTurns.value[liveAgentIdx.value].interrupted = true
+        const agent = liveTurns.value[liveAgentIdx.value]
+        agent.streaming = false
+        agent.text = agent.text || frame.message || 'error'
+        agent.at = new Date().toISOString()
+        if (frame.interrupted) agent.interrupted = true
+        markOutputEnd(agent)
         messageReveal.flush()
         thoughtReveal.flush()
         streamPreview.flush()
@@ -1564,11 +1640,13 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
   let first = liveAgentIdx.value
   while (first > 0 && liveTurns.value[first - 1]?.role === 'agent') first--
   while (liveTurns.value.length < first + segs.length) {
+    const started = new Date().toISOString()
     liveTurns.value.push({
       role: 'agent',
       text: '',
       thought: '',
-      at: new Date().toISOString(),
+      at: started,
+      startedAt: started,
       streaming: true,
     })
   }
@@ -1580,6 +1658,7 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
     row.text = seg.message
     row.streaming = last
     row.handoff = !last
+    if (!last) markOutputEnd(row)
     setRowTools(row, last ? tools : [], last ? parts : undefined)
     if (last) {
       liveAgentIdx.value = first + i
@@ -1749,6 +1828,7 @@ function retryLastFailed() {
       text: '',
       thought: '',
       at: new Date().toISOString(),
+      startedAt: new Date().toISOString(),
       streaming: true,
     },
   ]
@@ -1899,6 +1979,7 @@ function retryLastFailed() {
     pendingFormsOpen,
     pendingInteractiveOpen,
     displayTurns,
+    outputBounds,
     attachNotice,
     queueNotice,
     queueToast,

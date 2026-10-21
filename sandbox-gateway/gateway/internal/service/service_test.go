@@ -230,11 +230,11 @@ func TestCreatePersistsSANDBOX_INJECT(t *testing.T) {
 		t.Fatalf("user env lost: %v", env)
 	}
 	deadline := time.Now().Add(2 * time.Second)
-	for drv.LastCreate == nil && time.Now().Before(deadline) {
+	for drv.LastCreate() == nil && time.Now().Before(deadline) {
 		time.Sleep(10 * time.Millisecond)
 	}
-	if drv.LastCreate == nil || drv.LastCreate.Env["SANDBOX_INJECT"] == "" {
-		t.Fatalf("driver Create never saw SANDBOX_INJECT: %+v", drv.LastCreate)
+	if created := drv.LastCreate(); created == nil || created.Env["SANDBOX_INJECT"] == "" {
+		t.Fatalf("driver Create never saw SANDBOX_INJECT: %+v", created)
 	}
 }
 
@@ -287,19 +287,20 @@ func TestReinstallPassesPersistedInjectEnv(t *testing.T) {
 	}
 	deadline = time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if drv.LastReinstall != nil {
+		if _, _, called := drv.LastReinstall(); called {
 			break
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
-	if drv.LastReinstall == nil {
+	spec, preserve, called := drv.LastReinstall()
+	if !called {
 		t.Fatal("driver Reinstall never called")
 	}
-	if got := drv.LastReinstall.Env["SANDBOX_INJECT"]; got != "http://bundle/seed.tgz|/root/.cursor" {
+	if got := spec.Env["SANDBOX_INJECT"]; got != "http://bundle/seed.tgz|/root/.cursor" {
 		t.Fatalf("reinstall Spec.Env SANDBOX_INJECT=%q", got)
 	}
-	if drv.ReinstallPreserve == nil || !*drv.ReinstallPreserve {
-		t.Fatalf("preserveData not forwarded: %v", drv.ReinstallPreserve)
+	if !preserve {
+		t.Fatal("preserveData not forwarded")
 	}
 }
 
@@ -834,16 +835,17 @@ func TestReinstallNotFoundAndWorkspaceFromEnv(t *testing.T) {
 	}
 	deadline := time.Now().Add(3 * time.Second)
 	for time.Now().Before(deadline) {
-		if drv.LastReinstall != nil && drv.LastReinstall.WorkspaceDir == "/from/env" {
+		if spec, _, _ := drv.LastReinstall(); spec != nil && spec.WorkspaceDir == "/from/env" {
 			return
 		}
 		time.Sleep(30 * time.Millisecond)
 	}
-	if drv.LastReinstall == nil {
+	spec, _, called := drv.LastReinstall()
+	if !called {
 		t.Fatal("reinstall not called")
 	}
-	if drv.LastReinstall.WorkspaceDir != "/from/env" {
-		t.Fatalf("workspace=%q", drv.LastReinstall.WorkspaceDir)
+	if spec.WorkspaceDir != "/from/env" {
+		t.Fatalf("workspace=%q", spec.WorkspaceDir)
 	}
 	_ = st
 }

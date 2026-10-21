@@ -61,7 +61,7 @@ async function onHideNav() {
     id="app-desktop-sidebar"
     class="app-desktop-sidebar hidden h-full min-w-0 shrink-0 md:flex"
     :class="[
-      sidebarHidden ? 'w-0 border-r-0 overflow-hidden' : 'w-[304px] overflow-visible',
+      sidebarHidden ? 'w-0 border-r-0 overflow-hidden' : 'w-[360px] overflow-visible',
       { 'is-settings': settingsChrome },
     ]"
     data-testid="app-desktop-sidebar"
@@ -105,7 +105,7 @@ async function onHideNav() {
       </div>
     </nav>
     <div
-      class="app-sidebar-card flex h-full w-[248px] min-w-[248px] flex-col bg-surface"
+      class="app-sidebar-card flex h-full w-[304px] min-w-[304px] flex-col bg-surface"
       data-testid="app-sidebar-card"
     >
       <div

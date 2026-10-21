@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineComponent } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
@@ -23,7 +26,7 @@ function mountFrame(props: { label: string; html: string; highlighted?: boolean;
     props,
     global: {
       plugins: [i18n],
-      stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+      stubs: { HtmlPreview: HtmlPreviewStub },
     },
   })
 }
@@ -38,7 +41,11 @@ describe('ClarifyDemoFrame', () => {
     expect(root.classes()).toContain('rounded-lg')
     expect(root.classes()).not.toContain('rounded-none')
     const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
-    expect(enlarge.text()).toContain('放大')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.text()).not.toContain('Enlarge')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    expect(enlarge.attributes('title')).toBe('放大')
+    expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
     const preview = wrapper.get('[data-testid="html-preview"]')
     expect(preview.attributes('data-mode')).toBe('demo')
     expect(preview.attributes('data-enlargeable')).toBe('0')
@@ -56,7 +63,7 @@ describe('ClarifyDemoFrame', () => {
             messages: { 'zh-CN': { ...common, ...pages } },
           }),
         ],
-        stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+        stubs: { HtmlPreview: HtmlPreviewStub },
       },
     })
     expect(wrapper.find('[data-testid="clarify-demo-enlarge"]').exists()).toBe(false)
@@ -75,6 +82,29 @@ describe('ClarifyDemoFrame', () => {
     wrapper.unmount()
   })
 
+  it('keeps the selected mark and enlarge outside the truncated name', () => {
+    const label = '产物抽屉顶部加一条只读工作流，资源抽屉不放，名字长到顶栏放不下'
+    const wrapper = mountFrame({
+      label,
+      html: '<p>a</p>',
+      highlighted: true,
+      selected: true,
+    })
+    const name = wrapper.get('[data-testid="clarify-demo-label"]')
+    expect(name.text()).toBe(label)
+    expect(name.classes()).toEqual(expect.arrayContaining(['truncate', 'min-w-0', 'flex-1']))
+    expect(name.text()).not.toContain('已选')
+    const selected = wrapper.get('[data-testid="clarify-demo-selected"]')
+    expect(selected.text()).toContain('已选')
+    expect(selected.classes()).toEqual(expect.arrayContaining(['shrink-0', 'whitespace-nowrap']))
+    expect(name.element.contains(selected.element)).toBe(false)
+    const enlarge = wrapper.get('[data-testid="clarify-demo-enlarge"]')
+    expect(enlarge.classes()).toContain('shrink-0')
+    expect(enlarge.text()).not.toContain('放大')
+    expect(enlarge.attributes('aria-label')).toBe('放大')
+    wrapper.unmount()
+  })
+
   it('shows selected marker and highlighted border', () => {
     const wrapper = mountFrame({
       label: '方案 B',
@@ -85,5 +115,15 @@ describe('ClarifyDemoFrame', () => {
     expect(wrapper.text()).toMatch(/已选|✓/)
     expect(wrapper.get('[data-testid="clarify-demo-frame"]').classes()).toContain('border-accent')
     wrapper.unmount()
+  })
+
+  it('fills the expanded preview and leaves the inline demo height at 140px', () => {
+    const here = dirname(fileURLToPath(import.meta.url))
+    const frameSrc = readFileSync(join(here, 'ClarifyDemoFrame.vue'), 'utf8')
+    const previewSrc = readFileSync(join(here, '../ui/HtmlPreview.vue'), 'utf8')
+    expect(frameSrc).not.toContain('70vh')
+    expect(frameSrc).toContain('height: 100%')
+    expect(frameSrc).toContain('height: auto')
+    expect(previewSrc).toContain('h-[140px]')
   })
 })

@@ -116,7 +116,7 @@ func (b *Bridge) newLivenessMonitor(p provider.Session) *livenessMonitor {
 // provider.ErrTurnRecover so the bridge can resume once; the next one stops
 // the turn with provider.ErrTurnStuck. Running past max stops it with
 // provider.ErrTurnTimeout. While it runs, a liveness heartbeat goes out every
-// livenessHeartbeatEvery.
+// b.livenessBeat.
 func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Duration) func() {
 	if idle <= 0 && max <= 0 {
 		return func() {}
@@ -127,12 +127,13 @@ func (b *Bridge) watchTurn(p provider.Session, th *promptTurn, idle, max time.Du
 		start = time.Now()
 	}
 	mon := b.newLivenessMonitor(p)
+	sampleEvery, beatEvery := b.livenessSample, b.livenessBeat
 	go func() {
 		t := time.NewTicker(watchdogTick(idle, max))
 		defer t.Stop()
-		sample := time.NewTicker(livenessSampleEvery)
+		sample := time.NewTicker(sampleEvery)
 		defer sample.Stop()
-		beat := time.NewTicker(livenessHeartbeatEvery)
+		beat := time.NewTicker(beatEvery)
 		defer beat.Stop()
 		lastBeat := time.Now()
 		for {

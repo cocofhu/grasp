@@ -2,6 +2,10 @@
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import ConversationWorkspace from './ConversationWorkspace.vue'
 import pages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
@@ -9,10 +13,10 @@ import enPages from '@/locales/en/pages.json'
 let wrapper: VueWrapper | undefined
 let resizeObserver: ResizeObserverCallback
 const i18n = () => createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
-function mountWorkspace(open = false) {
+function mountWorkspace(open = false, extra: Record<string, unknown> = {}) {
   wrapper = mount(ConversationWorkspace, {
     attachTo: document.body,
-    props: { scopeKey: 'run-a/node-a', open, 'onUpdate:open': value => { void wrapper?.setProps({ open: value }) } },
+    props: { scopeKey: 'run-a/node-a', open, 'onUpdate:open': value => { void wrapper?.setProps({ open: value }) }, ...extra },
     slots: { default: '<textarea aria-label="消息">未发送的问题</textarea>', panel: '<input aria-label="产物内容" value="draft" />' },
     global: { plugins: [i18n()] },
   })
@@ -83,6 +87,95 @@ describe('ConversationWorkspace', () => {
     const w = mountWorkspace()
     expect(w.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
     expect(w.get('[data-testid="conversation-panel-toggle"]').text()).toContain('产物')
+  })
+
+  it('puts a counted badge on the artifact icon and removes the node after viewing', async () => {
+    const w = mountWorkspace()
+    const button = () => w.get('[data-testid="conversation-panel-toggle"]')
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(button().attributes('aria-label')).toBe('打开产物')
+
+    notifyRunArtifactEdit()
+    await flushPromises()
+    const first = button().get('[data-testid="artifact-unread-badge"]')
+    expect(first.text()).toBe('1')
+    expect(first.attributes('aria-hidden')).toBe('true')
+    expect(first.attributes('hidden')).toBeUndefined()
+    expect(button().attributes('aria-label')).toBe('打开产物，1 项未查看')
+    const glyph = button().get('[data-testid="artifact-unread-glyph"]')
+    expect(glyph.element.contains(first.element)).toBe(true)
+    expect(glyph.get('[data-icon="chat-artifacts"]').exists()).toBe(true)
+    expect(glyph.text()).not.toContain('产物')
+    expect(button().text()).toContain('产物')
+
+    notifyRunArtifactEdit()
+    await flushPromises()
+    const second = button().get('[data-testid="artifact-unread-badge"]')
+    expect(second.text()).toBe('2')
+    expect(second.element).not.toBe(first.element)
+    expect(button().attributes('aria-label')).toBe('打开产物，2 项未查看')
+
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(button().attributes('aria-label')).toBe('关闭产物')
+    expect(button().html()).not.toContain('artifact-unread-badge')
+
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+
+    await button().trigger('click')
+    await flushPromises()
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(button().get('[data-testid="artifact-unread-badge"]').text()).toBe('1')
+  })
+
+  it('clears the badge when the conversation scope changes and caps the label at 99+', async () => {
+    const w = mountWorkspace()
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(w.get('[data-testid="artifact-unread-badge"]').text()).toBe('1')
+    await w.setProps({ scopeKey: 'run-b/node-b' })
+    await flushPromises()
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-label')).toBe('打开产物')
+
+    for (let i = 0; i < 99; i += 1) notifyRunArtifactEdit()
+    await flushPromises()
+    const capped = w.get('[data-testid="artifact-unread-badge"]')
+    expect(capped.text()).toBe('99+')
+    expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-label')).toBe('打开产物，99 项及以上未查看')
+    const cappedNode = capped.element
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(w.get('[data-testid="artifact-unread-badge"]').element).toBe(cappedNode)
+    expect(w.get('[data-testid="artifact-unread-badge"]').text()).toBe('99+')
+  })
+
+  it('does not keep a badge for a hidden toolbar', async () => {
+    const w = mountWorkspace(false, { showToolbar: false })
+    notifyRunArtifactEdit()
+    notifyRunArtifactEdit()
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-toggle"]').exists()).toBe(false)
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+    await w.setProps({ showToolbar: true })
+    await flushPromises()
+    expect(w.find('[data-testid="artifact-unread-badge"]').exists()).toBe(false)
+  })
+
+  it('pops the badge once and stays still when motion is reduced', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'ArtifactUnreadMark.vue'), 'utf8')
+    expect(src).toMatch(/animation:\s*artifact-unread-pop 280ms ease/)
+    expect(src).toMatch(/@keyframes artifact-unread-pop[\s\S]*opacity:\s*0[\s\S]*scale\(0\.55\)[\s\S]*opacity:\s*1[\s\S]*scale\(1\)/)
+    expect(src).toMatch(/background:\s*rgb\(var\(--c-accent\)\)/)
+    expect(src).toMatch(/box-shadow:\s*0 0 0 1\.5px rgb\(var\(--c-surface\)\)/)
+    expect(src).toMatch(/color:\s*#fff/)
+    expect(src).not.toMatch(/--c-err|bg-err/)
+    expect(src).not.toMatch(/\shidden\b/)
+    expect(src).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.artifact-unread-badge\s*\{[^}]*animation:\s*none/)
   })
 })
 

@@ -18,7 +18,14 @@ vi.mock('@/lib/agent/openCodeCatalog', () => ({
 }))
 vi.mock('@/lib/agent/cliCatalog', () => ({
   loadCliModels: (id: string) =>
-    Promise.resolve(id === 'cursor' ? [{ id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: ['reasoning'], context: 400 }] : []),
+    Promise.resolve(
+      id === 'cursor'
+        ? [
+            { id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: ['reasoning'], context: 400 },
+            { id: 'grok-4.7-xhigh', name: 'Grok 4.7 Extra High', vendor: 'xai' },
+          ]
+        : [],
+    ),
 }))
 
 const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages, ...canvas } } })
@@ -162,6 +169,21 @@ describe('ModelPicker states', () => {
   it('says auto when a CLI Agent pins no model', async () => {
     const w = await mountPicker({ agent: { name: 'C', acpBackend: 'cursor' } })
     expect(w.get('[data-testid="model-picker-cli-model"]').text()).toContain('自动')
+  })
+
+  it('shows a listed Cursor model name and its vendor mark', async () => {
+    const w = await mountPicker({ agent: { name: 'C', acpBackend: 'cursor', env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' } } })
+    const chip = w.get('[data-testid="model-picker-cli-model"]')
+    expect(chip.text()).toContain('Grok 4.7 Extra High')
+    expect(chip.text()).toContain('--model grok-4.7-xhigh')
+    expect(chip.get('[data-vendor-mark]').attributes('data-vendor-mark')).toBe('xai')
+  })
+
+  it('keeps an unlisted Cursor id as the raw id with an unknown mark', async () => {
+    const w = await mountPicker({ agent: { name: 'C', acpBackend: 'cursor', env: { ACP_BRIDGE_MODEL: 'my-private-model' } } })
+    const chip = w.get('[data-testid="model-picker-cli-model"]')
+    expect(chip.text()).toContain('my-private-model')
+    expect(chip.get('[data-vendor-mark]').attributes('data-vendor-mark')).toBe('unknown')
   })
 
   it('asks for an Agent first', async () => {

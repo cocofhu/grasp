@@ -56,7 +56,7 @@ func TestBadJSONDecodeEmpty(t *testing.T) {
 	if len(s.Env()) != 0 {
 		t.Fatalf("env: %v", s.Env())
 	}
-	// EndpointsJSON that is valid JSON but not object → decodeIntMap returns empty on type mismatch... 
+	// EndpointsJSON that is valid JSON but not object → decodeIntMap returns empty on type mismatch...
 	// actually Unmarshal into map fails for array → empty
 	if len(s.Endpoints()) != 0 {
 		t.Fatalf("endpoints: %v", s.Endpoints())

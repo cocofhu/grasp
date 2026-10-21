@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import ArtifactUnreadMark from '@/components/chat/ArtifactUnreadMark.vue'
 import Icon from '@/components/ui/Icon.vue'
+import {
+  artifactButtonAriaLabel,
+  nextRunArtifactUnread,
+  onRunArtifactEdit,
+  runArtifactUnreadOnPanel,
+} from '@/lib/chat/artifactUnread'
 import { conversationPanelVisibleKey } from '@/lib/chat/conversationArtifacts'
 
 const props = withDefaults(defineProps<{
@@ -43,6 +50,18 @@ const panelTitle = computed(() => {
 const headingIcon = computed(() => {
   if (!props.splitModes) return 'artifact'
   return mode.value === 'resources' ? 'stage-resources' : 'doc'
+})
+const artifactPanelOpen = computed(() => props.splitModes ? open.value && mode.value === 'artifacts' : open.value)
+const unreadCount = ref(0)
+const artifactToggleLabel = computed(() => artifactButtonAriaLabel(artifactPanelOpen.value, unreadCount.value, {
+  open: t('pages.conversationWorkspace.openArtifacts'),
+  close: t('pages.conversationWorkspace.closeArtifacts'),
+  unread: (count) => t('pages.conversationWorkspace.openArtifactsUnread', { n: count }),
+  cap: t('pages.conversationWorkspace.openArtifactsUnreadCap'),
+}))
+const stopArtifactEdit = onRunArtifactEdit(() => {
+  if (!props.showToolbar || !props.panelEnabled) return
+  unreadCount.value = nextRunArtifactUnread(unreadCount.value, artifactPanelOpen.value, 'artifact')
 })
 let observer: ResizeObserver | undefined
 let returnFocus: HTMLElement | null = null
@@ -131,6 +150,7 @@ function resizeByKey(event: KeyboardEvent) {
   saveWidth()
   restorePassage(restore)
 }
+watch(artifactPanelOpen, value => { unreadCount.value = runArtifactUnreadOnPanel(unreadCount.value, value) }, { flush: 'sync' })
 watch(open, async value => {
   const restore = capturePassage()
   if (value) returnFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -158,12 +178,13 @@ watch(mode, (value) => {
 })
 watch(() => props.scopeKey, () => {
   open.value = false
+  unreadCount.value = 0
   if (props.splitModes) mode.value = null
   dragging.value = false
   returnFocus = null
 })
 watch(() => props.storageKey, readWidth)
-watch(() => props.panelEnabled, enabled => { if (!enabled) open.value = false })
+watch(() => props.panelEnabled, enabled => { if (!enabled) { open.value = false; unreadCount.value = 0 } })
 watch(compact, async value => { if (value && open.value) { await nextTick(); closeButton.value?.focus() } })
 onMounted(() => {
   readWidth()
@@ -178,7 +199,7 @@ onMounted(() => {
     observer.observe(root.value)
   }
 })
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
 </script>
 
 <template>
@@ -190,9 +211,9 @@ onBeforeUnmount(() => observer?.disconnect())
           <slot name="actions" />
           <div v-if="panelEnabled && splitModes" class="flex items-center gap-0.5">
             <button ref="resourceToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-resource-toggle" :aria-pressed="mode === 'resources'" :aria-expanded="mode === 'resources'" :aria-label="mode === 'resources' ? t('pages.conversationWorkspace.closeResources') : t('pages.conversationWorkspace.openResources')" :title="t('pages.conversationWorkspace.resourceTip')" @click="toggleMode('resources')"><Icon name="stage-resources" :size="16" aria-hidden="true" /></button>
-            <button ref="artifactToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-panel-toggle" :aria-pressed="mode === 'artifacts'" :aria-expanded="mode === 'artifacts'" :aria-label="mode === 'artifacts' ? t('pages.conversationWorkspace.closeArtifacts') : t('pages.conversationWorkspace.openArtifacts')" :title="t('pages.conversationWorkspace.artifacts')" @click="toggleMode('artifacts')"><Icon name="doc" :size="16" aria-hidden="true" /></button>
+            <button ref="artifactToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-panel-toggle" :aria-pressed="mode === 'artifacts'" :aria-expanded="mode === 'artifacts'" :aria-label="artifactToggleLabel" :title="t('pages.conversationWorkspace.artifacts')" @click="toggleMode('artifacts')"><ArtifactUnreadMark :count="unreadCount" :panel-open="artifactPanelOpen"><Icon name="doc" :size="16" aria-hidden="true" /></ArtifactUnreadMark></button>
           </div>
-          <button v-else-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="open ? t('pages.conversationWorkspace.closeArtifacts') : t('pages.conversationWorkspace.openArtifacts')" @click="open = !open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" />{{ t('pages.conversationWorkspace.artifacts') }}</button>
+          <button v-else-if="panelEnabled" ref="toggle" type="button" class="conversation-panel-toggle" data-testid="conversation-panel-toggle" :aria-expanded="open" :aria-label="artifactToggleLabel" @click="open = !open"><ArtifactUnreadMark :count="unreadCount" :panel-open="open"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.conversationWorkspace.artifacts') }}</button>
         </div>
       </slot>
     </header>
@@ -215,7 +236,7 @@ onBeforeUnmount(() => observer?.disconnect())
 .conversation-workspace { display: flex; position: relative; min-width: 0; min-height: 0; height: 100%; flex: 1; flex-direction: column; overflow: hidden; background: rgb(var(--c-surface)); }
 .conversation-toolbar { display: flex; min-height: 44px; flex: none; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid rgb(var(--c-line) / .65); }
 .conversation-heading { display: inline-flex; align-items: center; gap: 8px; color: rgb(var(--c-txt2)); font-size: 12px; font-weight: 500; }
-.conversation-panel-toggle, .conversation-close { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; border: 1px solid transparent; border-radius: 9px; padding: 0 10px; color: rgb(var(--c-txt2)); font-size: 12px; transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }
+.conversation-panel-toggle, .conversation-close { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; overflow: visible; border: 1px solid transparent; border-radius: 9px; padding: 0 10px; color: rgb(var(--c-txt2)); font-size: 12px; transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }
 .conversation-panel-toggle:hover, .conversation-close:hover { background: rgb(var(--c-txt) / .05); color: rgb(var(--c-txt)); }
 .conversation-panel-toggle[aria-expanded="true"] { border-color: rgb(var(--c-accent) / .12); background: rgb(var(--c-accent-dim)); color: rgb(var(--c-accent-2)); }
 .conversation-panel-toggle:focus-visible, .conversation-close:focus-visible, .conversation-mode-toggle:focus-visible { outline: 2px solid rgb(var(--c-accent) / .5); outline-offset: 2px; }

@@ -25,6 +25,12 @@ const HtmlPreviewStub = defineComponent({
     '<div data-testid="html-preview" :data-mode="mode" :data-enlargeable="enlargeable ? \'1\' : \'0\'">{{ html }}</div>',
 })
 
+const IconStub = defineComponent({
+  name: 'Icon',
+  props: { name: String, size: [Number, String] },
+  template: '<svg class="app-icon" :data-icon="name" :width="size" :height="size" />',
+})
+
 function mountChat(turns: ClarifyTurn[], provide?: Record<symbol, unknown>) {
   const i18n = createI18n({
     legacy: false,
@@ -43,7 +49,7 @@ function mountChat(turns: ClarifyTurn[], provide?: Record<symbol, unknown>) {
     attachTo: document.body,
     global: {
       plugins: [i18n],
-      stubs: { Icon: true, HtmlPreview: HtmlPreviewStub },
+      stubs: { Icon: IconStub, HtmlPreview: HtmlPreviewStub },
       provide,
     },
   })
@@ -74,6 +80,15 @@ function wallPreviews(): HTMLElement[] {
 
 function dialog(): HTMLElement | null {
   return document.body.querySelector('[role="dialog"]')
+}
+
+function mockViewport(w: number, h: number) {
+  vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(w)
+  vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(h)
+}
+
+function pointer(target: EventTarget, type: 'pointerdown' | 'pointermove' | 'pointerup', x: number, y: number) {
+  target.dispatchEvent(new PointerEvent(type, { clientX: x, clientY: y, bubbles: true, button: 0, pointerId: 1 }))
 }
 
 function scrollerPreviews(wrapper: ReturnType<typeof mountChat>): HTMLElement[] {
@@ -137,6 +152,16 @@ describe('ClarifyChat option preview window', () => {
     expect(scroller.contains(wall.element)).toBe(true)
     expect(wrapper.findAll('[data-testid="clarify-option-enlarge"]')).toHaveLength(3)
     expect(wrapper.findAll('[data-testid="clarify-demo-enlarge"]')).toHaveLength(3)
+    for (const enlarge of [
+      ...wrapper.findAll('[data-testid="clarify-option-enlarge"]'),
+      ...wrapper.findAll('[data-testid="clarify-demo-enlarge"]'),
+    ]) {
+      expect(enlarge.text()).not.toContain('放大')
+      expect(enlarge.text()).not.toContain('Enlarge')
+      expect(enlarge.attributes('aria-label')).toBe('放大')
+      expect(enlarge.attributes('title')).toBe('放大')
+      expect(enlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
+    }
     expect(wrapper.text()).toContain('纯文字')
     expect(wrapper.text()).toContain('空白')
     expect(dialog()).toBeNull()
@@ -276,7 +301,12 @@ describe('ClarifyChat option preview window', () => {
     ])
     expect(inline[1]!.text()).toContain('已选')
 
-    await history[2]!.get('[data-testid="clarify-option-enlarge"]').trigger('click')
+    const historyEnlarge = history[2]!.get('[data-testid="clarify-option-enlarge"]')
+    expect(historyEnlarge.text()).not.toContain('放大')
+    expect(historyEnlarge.text()).not.toContain('Enlarge')
+    expect(historyEnlarge.attributes('aria-label')).toBe('放大')
+    expect(historyEnlarge.get('[data-icon="expand"]').attributes('width')).toBe('11')
+    await historyEnlarge.trigger('click')
     await flushPromises()
     expect(wallPreviews()).toHaveLength(1)
     expect(wallPreviews()[0]?.textContent).toContain('old-c')
@@ -333,7 +363,7 @@ describe('ClarifyChat option preview window', () => {
     wrapper.unmount()
   })
 
-  it('closes from the header and Escape without clearing the choice or covering the chat', async () => {
+  it('closes from the header and Escape without clearing the choice or adding a page mask', async () => {
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
@@ -365,9 +395,10 @@ describe('ClarifyChat option preview window', () => {
     const box = dialog()!
     expect(box.className).not.toContain('inset-0')
     expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
-    const left = Number.parseFloat(box.style.left)
-    const width = Number.parseFloat(box.style.width)
-    expect(left + width).toBeLessThanOrEqual(860)
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
     expect(box.contains(wrapper.get('[data-testid="clarify-inline-demos"]').element)).toBe(false)
     ;(document.body.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLButtonElement).click()
     await flushPromises()
@@ -407,6 +438,170 @@ describe('ClarifyChat option preview window', () => {
     await flushPromises()
     expect(dialog()).toBeNull()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    wrapper.unmount()
+  })
+
+  it('drags from the title bar, resizes from the edges, and restores the default box on reopen', async () => {
+    const wrapper = mountChat([agent([threeUp])])
+    await flushPromises()
+    mockViewport(1280, 900)
+    await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
+    await flushPromises()
+    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await flushPromises()
+
+    const box = dialog()!
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+    expect(box.textContent).toContain('窗口放大查看')
+    expect(box.textContent).toContain('方案 C')
+    expect(box.querySelector('[data-testid="clarify-demo-frame"]')?.className).toContain('clarify-demo-expanded')
+    expect(box.querySelector('[data-testid="clarify-preview-wall"]')?.className).toContain('flex-1')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    const title = box.querySelector('[data-testid="clarify-demo-window-titlebar"]') as HTMLElement
+    expect(title.className).toContain('cursor-grab')
+    pointer(title, 'pointerdown', 40, 40)
+    pointer(window, 'pointermove', 60, 60)
+    pointer(window, 'pointerup', 60, 60)
+    await flushPromises()
+    expect(box.style.left).toBe('48px')
+    expect(box.style.top).toBe('48px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    pointer(window, 'pointermove', 900, 900)
+    await flushPromises()
+    expect(box.style.left).toBe('48px')
+    expect(box.style.width).toBe('1224px')
+
+    pointer(title, 'pointerdown', 200, 80)
+    pointer(window, 'pointermove', 900, 700)
+    pointer(window, 'pointerup', 900, 700)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.top).toBe('56px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+
+    const close = box.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLElement
+    pointer(close, 'pointerdown', 1200, 40)
+    pointer(window, 'pointermove', 400, 400)
+    pointer(window, 'pointerup', 400, 400)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.top).toBe('56px')
+    expect(dialog()).toBeTruthy()
+
+    const east = box.querySelector('[data-testid="clarify-demo-window-resize-e"]') as HTMLElement
+    pointer(east, 'pointerdown', 1280, 200)
+    pointer(window, 'pointermove', 1180, 200)
+    pointer(window, 'pointerup', 1180, 200)
+    await flushPromises()
+    expect(box.style.left).toBe('56px')
+    expect(box.style.width).toBe('1124px')
+    expect(box.style.height).toBe('844px')
+
+    const south = box.querySelector('[data-testid="clarify-demo-window-resize-s"]') as HTMLElement
+    pointer(south, 'pointerdown', 400, 900)
+    pointer(window, 'pointermove', 400, 780)
+    pointer(window, 'pointerup', 400, 780)
+    await flushPromises()
+    expect(box.style.top).toBe('56px')
+    expect(box.style.height).toBe('724px')
+    expect(box.style.width).toBe('1124px')
+
+    const west = box.querySelector('[data-testid="clarify-demo-window-resize-w"]') as HTMLElement
+    const right = 56 + 1124
+    pointer(west, 'pointerdown', 56, 200)
+    pointer(window, 'pointermove', 156, 200)
+    pointer(window, 'pointerup', 156, 200)
+    await flushPromises()
+    expect(Number.parseFloat(box.style.left) + Number.parseFloat(box.style.width)).toBe(right)
+    expect(box.style.left).toBe('156px')
+    expect(box.style.width).toBe('1024px')
+
+    const north = box.querySelector('[data-testid="clarify-demo-window-resize-n"]') as HTMLElement
+    const bottom = 56 + 724
+    pointer(north, 'pointerdown', 400, 56)
+    pointer(window, 'pointermove', 400, 136)
+    pointer(window, 'pointerup', 400, 136)
+    await flushPromises()
+    expect(Number.parseFloat(box.style.top) + Number.parseFloat(box.style.height)).toBe(bottom)
+    expect(box.style.top).toBe('136px')
+    expect(box.style.height).toBe('644px')
+
+    const corner = box.querySelector('[data-testid="clarify-demo-window-resize-se"]') as HTMLElement
+    pointer(corner, 'pointerdown', 1180, 780)
+    pointer(window, 'pointermove', 200, 200)
+    pointer(window, 'pointerup', 200, 200)
+    await flushPromises()
+    expect(box.style.left).toBe('156px')
+    expect(box.style.top).toBe('136px')
+    expect(Number.parseFloat(box.style.width)).toBeGreaterThanOrEqual(480)
+    expect(Number.parseFloat(box.style.height)).toBeGreaterThanOrEqual(320)
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    const held = {
+      left: box.style.left,
+      top: box.style.top,
+      width: box.style.width,
+      height: box.style.height,
+    }
+    await wrapper.get('[data-testid="clarify-inline-demos"]').findAll('[data-testid="clarify-demo-enlarge"]')[1]!.trigger('click')
+    await flushPromises()
+    expect(wallPreviews()[0]?.textContent).toContain('preview-b')
+    expect(box.style.left).toBe(held.left)
+    expect(box.style.top).toBe(held.top)
+    expect(box.style.width).toBe(held.width)
+    expect(box.style.height).toBe(held.height)
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+
+    mockViewport(1000, 700)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(box.style.width).not.toBe('944px')
+    expect(Number.parseFloat(box.style.left) + Number.parseFloat(box.style.width)).toBeLessThanOrEqual(1000)
+    expect(Number.parseFloat(box.style.top) + Number.parseFloat(box.style.height)).toBeLessThanOrEqual(700)
+    expect(Number.parseFloat(box.style.left)).toBeGreaterThanOrEqual(0)
+    expect(Number.parseFloat(box.style.top)).toBeGreaterThanOrEqual(0)
+
+    ;(box.querySelector('[data-testid="clarify-demo-window-close"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(dialog()).toBeNull()
+
+    mockViewport(1280, 900)
+    await wrapper.findAll('[data-testid="clarify-option-enlarge"]')[2]!.trigger('click')
+    await flushPromises()
+    const reopened = dialog()!
+    expect(reopened.style.left).toBe('28px')
+    expect(reopened.style.top).toBe('28px')
+    expect(reopened.style.width).toBe('1224px')
+    expect(reopened.style.height).toBe('844px')
+    expect(reopened.textContent).toContain('窗口放大查看')
+    expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
+    expect(scrollerPreviews(wrapper)).toHaveLength(3)
+    wrapper.unmount()
+  })
+
+  it('recomputes the centered default when the viewport changes before a drag', async () => {
+    const wrapper = mountChat([agent([threeUp])])
+    await flushPromises()
+    mockViewport(1280, 900)
+    await wrapper.find('[data-testid="clarify-option-enlarge"]').trigger('click')
+    await flushPromises()
+    expect(dialog()?.style.width).toBe('1224px')
+
+    mockViewport(390, 900)
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(dialog()?.style.left).toBe('28px')
+    expect(dialog()?.style.top).toBe('28px')
+    expect(dialog()?.style.width).toBe('334px')
+    expect(dialog()?.style.height).toBe('844px')
     wrapper.unmount()
   })
 
@@ -506,6 +701,236 @@ describe('ClarifyChat option preview window', () => {
     expect(host.drawerOpen()).toBe(false)
     wrapper.unmount()
     expect(close).toHaveBeenCalled()
+  })
+
+  it('echoes a one-line choice as the selected preview inside the bubble', async () => {
+    const prompt = '工作流放在哪？三种都已经带上这个资源按钮。'
+    const picked = '产物抽屉顶部加一条只读工作流，资源抽屉不放'
+    const q = question({
+      id: 'flow',
+      prompt,
+      options: [
+        option('flow', picked, '<p>preview-flow</p>'),
+        option('button', '再加一个「工作流」按钮，和资源、产物并列', '<p>preview-button</p>'),
+        option('split', '右侧不加工作流，只把资源和产物分开', '<p>preview-split</p>'),
+      ],
+    })
+    const wrapper = mountChat([
+      agent([q]),
+      { role: 'human', text: `我的选择:\n- ${prompt} → ${picked}`, at: '2026-07-18T00:01:00Z' },
+    ])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-human-message"]').exists()).toBe(false)
+    const inline = wrapper.get('[data-testid="clarify-inline-demos"]')
+    const frames = inline.findAll('[data-testid="clarify-demo-frame"]')
+    expect(frames).toHaveLength(3)
+    expect(inline.element.querySelector('.grid')?.className).toContain('sm:grid-cols-3')
+    expect(frames[0]!.classes()).toContain('border-accent')
+    expect(frames[0]!.get('[data-testid="clarify-demo-selected"]').text()).toContain('已选')
+    expect(frames[1]!.find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
+    expect(frames[2]!.find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
+    const name = frames[0]!.get('[data-testid="clarify-demo-label"]')
+    expect(name.classes()).toContain('truncate')
+    expect(name.element.contains(frames[0]!.get('[data-testid="clarify-demo-selected"]').element)).toBe(false)
+
+    const summary = wrapper.get('[data-testid="clarify-choice-summary"]')
+    expect(summary.classes()).toContain('chat-user-message')
+    expect(summary.find('.chat-response-question').exists()).toBe(false)
+    expect(summary.text()).not.toContain(prompt)
+    const bubbleFrames = summary.findAll('[data-testid="clarify-demo-frame"]')
+    expect(bubbleFrames).toHaveLength(1)
+    expect(bubbleFrames[0]!.get('[data-testid="clarify-demo-label"]').text()).toBe(picked)
+    expect(bubbleFrames[0]!.get('[data-testid="clarify-demo-selected"]').text()).toContain('已选')
+    expect(bubbleFrames[0]!.get('[data-testid="html-preview"]').attributes('data-mode')).toBe('demo')
+    expect(bubbleFrames[0]!.get('[data-testid="html-preview"]').text()).toContain('preview-flow')
+    expect(summary.get('[data-testid="clarify-choice-demos"]').classes()).toContain('flex-col')
+    expect(summary.find('.grid').exists()).toBe(false)
+    expect(summary.element.parentElement?.className).toContain('w-[88%]')
+    wrapper.unmount()
+  })
+
+  it('joins a wrapped prompt and enlarges the same read-only window', async () => {
+    const prompt = '资源按你的说法加在对话栏右侧。\n\n工作流放哪？'
+    const picked = '产物抽屉顶部'
+    const other = '再加一个工作流按钮'
+    const third = '右侧不加工作流'
+    const q = question({
+      id: 'flow',
+      prompt,
+      options: [
+        option('flow', picked, '<p>preview-flow</p>'),
+        option('button', other, '<p>preview-button</p>'),
+        option('split', third, '<p>preview-split</p>'),
+      ],
+    })
+    const wrapper = mountChat([
+      agent([q]),
+      { role: 'human', text: `我的选择:\n- ${prompt} → ${picked}`, at: '2026-07-18T00:01:00Z' },
+    ])
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-human-message"]').exists()).toBe(false)
+    const frames = wrapper.get('[data-testid="clarify-inline-demos"]').findAll('[data-testid="clarify-demo-frame"]')
+    expect(frames).toHaveLength(3)
+    expect(frames[0]!.text()).toContain('已选')
+    expect(frames[1]!.text()).not.toContain('已选')
+    expect(frames[2]!.text()).not.toContain('已选')
+
+    const summary = wrapper.get('[data-testid="clarify-choice-summary"]')
+    expect(summary.text()).not.toContain('工作流放哪')
+    expect(summary.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
+    expect(summary.get('[data-testid="html-preview"]').text()).toContain('preview-flow')
+
+    vi.spyOn(window, 'innerWidth', 'get').mockReturnValue(1280)
+    vi.spyOn(window, 'innerHeight', 'get').mockReturnValue(900)
+
+    await summary.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(dialog()?.textContent).toContain('窗口放大查看')
+    expect(dialog()?.textContent).toContain(picked)
+    expect(dialog()?.querySelector('[data-testid="clarify-demo-selected"]')).toBeTruthy()
+    expect(dialog()?.querySelector('[data-testid="clarify-demo-frame"]')?.className).toContain('clarify-demo-expanded')
+    expect(dialog()?.querySelector('[data-testid="clarify-demo-enlarge"]')).toBeNull()
+    expect(document.body.querySelector('.fixed.inset-0')).toBeNull()
+    const scroller = wrapper.get('[data-testid="clarify-scroller"]').element
+    expect(scroller.contains(dialog())).toBe(false)
+    const box = dialog()!
+    expect(box.style.left).toBe('28px')
+    expect(box.style.top).toBe('28px')
+    expect(box.style.width).toBe('1224px')
+    expect(box.style.height).toBe('844px')
+
+    await frames[1]!.get('[data-testid="clarify-demo-enlarge"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelectorAll('[role="dialog"]')).toHaveLength(1)
+    expect(dialog()?.textContent).toContain(other)
+    expect(dialog()?.querySelector('[data-testid="clarify-demo-selected"]')).toBeNull()
+    expect(dialog()?.querySelector('[data-testid="clarify-demo-enlarge"]')).toBeNull()
+
+    await frames[0]!.trigger('click')
+    expect(dialog()?.textContent).toContain(other)
+    expect(frames[0]!.text()).toContain('已选')
+    expect(frames[1]!.text()).not.toContain('已选')
+
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    await flushPromises()
+    expect(dialog()).toBeNull()
+    expect(frames[0]!.text()).toContain('已选')
+    expect(frames[1]!.text()).not.toContain('已选')
+    expect(summary.get('[data-testid="clarify-demo-selected"]').text()).toContain('已选')
+    wrapper.unmount()
+  })
+
+  it('keeps more than three history previews on the selected card only', async () => {
+    const q = question({
+      id: 'many',
+      prompt: '四种布局',
+      options: [
+        option('a', '方案 A', '<p>preview-a</p>'),
+        option('b', '方案 B', '<p>preview-b</p>'),
+        option('c', '方案 C', '<p>preview-c</p>'),
+        option('d', '方案 D', '<p>preview-d</p>'),
+      ],
+    })
+    const wrapper = mountChat([
+      agent([q]),
+      { role: 'human', text: '我的选择:\n- 四种布局 → 方案 C', at: '2026-07-18T00:01:00Z' },
+    ])
+    await flushPromises()
+    const inline = wrapper.get('[data-testid="clarify-inline-demos"]')
+    expect(inline.find('.grid').exists()).toBe(false)
+    expect(inline.findAll('[data-testid="html-preview"]').map((el) => el.text())).toEqual([
+      expect.stringContaining('preview-c'),
+    ])
+    const summary = wrapper.get('[data-testid="clarify-choice-summary"]')
+    expect(summary.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
+    expect(summary.get('[data-testid="html-preview"]').text()).toContain('preview-c')
+    expect(summary.find('.chat-response-question').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('keeps text answers when a choice has no preview, a custom note, or several questions', async () => {
+    const plain = question({
+      id: 'plain',
+      prompt: '纯文字题',
+      options: [option('l', '左'), option('r', '右')],
+    })
+    const mixed = question({
+      id: 'mixed',
+      prompt: '可以多选并自填',
+      allowMultiple: true,
+      options: [
+        option('a', '方案 A', '<p>preview-a</p>'),
+        option('b', '方案 B', '<p>preview-b</p>'),
+        option('c', '纯文字项'),
+      ],
+    })
+    const missed = question({
+      id: 'missed',
+      prompt: '对不上的题',
+      options: [option('a', '方案 A', '<p>preview-a</p>')],
+    })
+    const textOnly = mountChat([
+      agent([plain]),
+      { role: 'human', text: '我的选择:\n- 纯文字题 → 左、右', at: '1' },
+    ])
+    await flushPromises()
+    const plainSummary = textOnly.get('[data-testid="clarify-choice-summary"]')
+    expect(plainSummary.find('[data-testid="clarify-demo-frame"]').exists()).toBe(false)
+    expect(plainSummary.get('.chat-response-question').text()).toContain('纯文字题')
+    expect(plainSummary.findAll('[data-testid="clarify-choice-answer"]').map((el) => el.text())).toEqual(['左', '右'])
+    textOnly.unmount()
+
+    const both = mountChat([
+      agent([mixed]),
+      { role: 'human', text: '我的选择:\n- 可以多选并自填 → 方案 A、方案 B、自己写的', at: '1' },
+    ])
+    await flushPromises()
+    const mixedSummary = both.get('[data-testid="clarify-choice-summary"]')
+    expect(mixedSummary.find('.chat-response-question').exists()).toBe(false)
+    expect(mixedSummary.findAll('[data-testid="clarify-demo-label"]').map((el) => el.text())).toEqual(['方案 A', '方案 B'])
+    expect(mixedSummary.get('[data-testid="clarify-choice-demos"]').classes()).toContain('flex-col')
+    expect(mixedSummary.find('.grid').exists()).toBe(false)
+    expect(mixedSummary.findAll('[data-testid="clarify-choice-answer"]').map((el) => el.text())).toEqual(['自己写的'])
+    const inline = both.get('[data-testid="clarify-inline-demos"]')
+    expect(inline.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(2)
+    expect(inline.findAll('[data-testid="clarify-demo-selected"]')).toHaveLength(2)
+    both.unmount()
+
+    const grouped = mountChat([
+      agent([
+        question({
+          id: 'card',
+          prompt: '有预览的题',
+          options: [
+            option('a', '方案 A', '<p>preview-a</p>'),
+            option('b', '方案 B', '<p>preview-b</p>'),
+          ],
+        }),
+        plain,
+      ]),
+      { role: 'human', text: '我的选择:\n- 有预览的题 → 方案 A\n- 纯文字题 → 右', at: '1' },
+    ])
+    await flushPromises()
+    const rows = grouped.findAll('[data-testid="clarify-choice-row"]')
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.get('.chat-response-question').text()).toContain('有预览的题')
+    expect(rows[0]!.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
+    expect(rows[1]!.get('.chat-response-question').text()).toContain('纯文字题')
+    expect(rows[1]!.find('[data-testid="clarify-demo-frame"]').exists()).toBe(false)
+    expect(rows[1]!.get('[data-testid="clarify-choice-answer"]').text()).toBe('右')
+    grouped.unmount()
+
+    const unmatched = mountChat([
+      agent([missed]),
+      { role: 'human', text: '我的选择:\n- 对不上的题 → 没有这个选项', at: '1' },
+    ])
+    await flushPromises()
+    const missedSummary = unmatched.get('[data-testid="clarify-choice-summary"]')
+    expect(missedSummary.find('[data-testid="clarify-demo-frame"]').exists()).toBe(false)
+    expect(missedSummary.get('[data-testid="clarify-choice-answer"]').text()).toBe('没有这个选项')
+    expect(unmatched.get('[data-testid="clarify-inline-demos"]').find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
+    unmatched.unmount()
   })
 })
 
