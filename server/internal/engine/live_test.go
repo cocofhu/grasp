@@ -383,8 +383,17 @@ func TestLiveGenerateAcceptFlow(t *testing.T) {
 	if len(ready.Variants) != 3 || ready.File != "src/App.vue" {
 		t.Fatalf("ready = %+v", ready)
 	}
-	if p.liveGuardCalls == 0 {
-		time.Sleep(50 * time.Millisecond)
+	// The agent reports "ready" from inside the generate turn, so the turn
+	// may still be on the review FIFO here; confirm would then fail with the
+	// busy error instead of ErrLiveOpen. Wait for the turn to finish.
+	if err := eng.waitReviewReadyForTest(runID, "preview", waitPollTimeout); err != nil {
+		t.Fatal(err)
+	}
+	p.mu.Lock()
+	guards := p.liveGuardCalls
+	p.mu.Unlock()
+	if guards == 0 {
+		t.Fatal("generate turn must install the Live guard")
 	}
 
 	// Confirm is blocked while the session is open.
@@ -1066,5 +1075,52 @@ func TestInterruptedChatAcceptanceRetriesFrozenRequestWithoutLiveCtx(t *testing.
 	}
 	if err := eng.checkLiveClosed(runID, "preview"); err != nil {
 		t.Fatalf("retried cleanup still blocks confirm: %v", err)
+	}
+}
+
+// Regression for the TestLiveGenerateAcceptFlow flake: the agent's "ready"
+// report lands while the generate turn is still running, so a session in
+// state ready does not mean the review FIFO is idle. The turn is held right
+// after the report to make that window deterministic.
+func TestLiveReadyArrivesBeforeGenerateTurnEnds(t *testing.T) {
+	eng, _, p, runID := setupLive(t)
+	release := make(chan struct{})
+	agentReports(eng, p, func(human string) *mcp.LiveReport {
+		if strings.Contains(human, "op: generate") {
+			p.setLiveMarkers("sid001")
+			return &mcp.LiveReport{SID: "sid001", State: "ready", File: "src/App.vue",
+				Variants: []models.LiveVariant{{N: 1, Label: "层级"}, {N: 2, Label: "紧凑"}}}
+		}
+		return nil
+	})
+	p.mu.Lock()
+	report := p.reviseHook
+	p.reviseHook = func(req runtime.NodeReq, human string) {
+		report(req, human)
+		if strings.Contains(human, "op: generate") {
+			<-release // the turn is still running after the report
+		}
+	}
+	p.mu.Unlock()
+
+	if _, err := eng.ReactLiveAs("user:a", runID, "preview", genEvent("sid001")); err != nil {
+		t.Fatal(err)
+	}
+	waitLiveState(t, eng, runID, "sid001", models.LiveStateReady)
+	if eng.ReviewSessionReady(runID, "preview") {
+		t.Fatal("generate turn should still be running after the ready report")
+	}
+	// Confirming in this window hits the busy check, not ErrLiveOpen: this is
+	// exactly what the flaky test ran into.
+	if err := eng.ReactConfirmAs("user:a", runID, "preview", "", nil, nil, false); err == nil || errors.Is(err, ErrLiveOpen) {
+		t.Fatalf("confirm during the generate turn: err=%v, want the busy error", err)
+	}
+
+	close(release)
+	if err := eng.waitReviewReadyForTest(runID, "preview", waitPollTimeout); err != nil {
+		t.Fatal(err)
+	}
+	if err := eng.ReactConfirmAs("user:a", runID, "preview", "", nil, nil, false); !errors.Is(err, ErrLiveOpen) {
+		t.Fatalf("confirm after the turn: err=%v, want ErrLiveOpen", err)
 	}
 }
