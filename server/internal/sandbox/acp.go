@@ -505,6 +505,55 @@ func hasContent(r *ChatResult) bool {
 	return r.Narration != "" || r.Plan != nil || len(r.ToolCalls) > 0
 }
 
+// RestartAgent asks the bridge to drop the current CLI session and handshake a
+// new one in the same container ({op:restart_agent}). The workspace, cwd and
+// MCP servers stay. The new process has an empty resume id, so the next chat
+// does not --resume a session the provider can no longer continue.
+func (c *ACPClient) RestartAgent(ctx context.Context) error {
+	if !c.IsConnected() {
+		return fmt.Errorf("%w: not connected", ErrConnClosed)
+	}
+	release := c.acquireReader()
+	defer release()
+	c.drainEvents()
+	if err := c.send(map[string]any{"op": "restart_agent"}); err != nil {
+		c.mu.Lock()
+		c.connected = false
+		c.mu.Unlock()
+		return fmt.Errorf("%w: send restart_agent: %v", ErrConnClosed, err)
+	}
+	c.mu.Lock()
+	done := c.done
+	c.mu.Unlock()
+	timer := time.NewTimer(2 * time.Minute)
+	defer timer.Stop()
+	for {
+		select {
+		case raw := <-c.eventCh:
+			op, sessionID := parseOpAndSession(raw)
+			switch op {
+			case "connected":
+				if sessionID != "" {
+					c.setConnected(sessionID)
+				}
+				c.lg.Info().Str("session", sessionID).Msg("acp agent restarted")
+				return nil
+			case "error":
+				return fmt.Errorf("acp error: %s", parseErrorMessage(raw))
+			}
+		case <-timer.C:
+			return fmt.Errorf("restart_agent timeout")
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
+			c.mu.Lock()
+			c.connected = false
+			c.mu.Unlock()
+			return fmt.Errorf("%w: connection closed", ErrConnClosed)
+		}
+	}
+}
+
 // Cancel sends {op:cancel}; fire-and-forget (the bridge does not ack).
 func (c *ACPClient) Cancel() error {
 	if !c.IsConnected() {

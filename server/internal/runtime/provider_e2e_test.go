@@ -226,6 +226,89 @@ func TestReactOpenPausesThenReplyFinishes(t *testing.T) {
 	}
 }
 
+const poisonedResumeError = "exit status 1; stderr: NonRetriableError: Provider Error We're having trouble connecting to the model provider. This might be temporary - please try again in a moment."
+
+func TestReactReplyRestartsPoisonedResumeInPlace(t *testing.T) {
+	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(turn int) turnAction {
+			switch turn {
+			case 0:
+				return turnAction{narration: "need info", questions: []models.ReactQuestion{{ID: "q1", Prompt: "?", Options: []models.ReactOption{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}}}
+			case 1:
+				return turnAction{sendError: poisonedResumeError}
+			case 2:
+				return turnAction{narration: "context restored"}
+			default:
+				return turnAction{narration: "继续"}
+			}
+		}
+	})
+	open := clarifyFirstTurn(p, req)
+	if len(open.Questions) == 0 {
+		t.Fatal("expected opening question")
+	}
+	hist := []models.ReactMessage{
+		{
+			Role: "agent", Text: "need info",
+			Questions: []models.ReactQuestion{{ID: "q1", Prompt: "用亮色吗", Options: []models.ReactOption{{ID: "a", Label: "亮色"}}}},
+			Parts:     []models.AcpPart{{Kind: "tool", Title: "Read", Summary: "/root/workspace/grasp/README.md"}},
+		},
+		{Role: "human", Text: "先看截图", Images: []models.PromptImage{{Name: "shot.png", MimeType: "image/png"}}},
+		{Role: "human", Text: "默认用亮色主题"},
+	}
+	reply := p.ReactReply(context.Background(), req, hist, "默认用亮色主题", nil, false)
+	if reply.Err != nil || reply.Msg != "继续" {
+		t.Fatalf("restarted reply = msg %q err %v", reply.Msg, reply.Err)
+	}
+	if mgr.createCount() != 1 {
+		t.Fatalf("create count = %d, want 1 (same sandbox)", mgr.createCount())
+	}
+	br := mgr.bridge(0)
+	if br.restartCount() != 1 {
+		t.Fatalf("restart count = %d, want 1", br.restartCount())
+	}
+	if br.promptCount() != 4 {
+		t.Fatalf("prompts = %d, want 4 (open, failed resume, prime, resend)", br.promptCount())
+	}
+	prime := br.promptAt(2)
+	for _, want := range []string{"会话恢复", "用亮色吗", "亮色", "Read", "shot.png", "get_clarified_requirement"} {
+		if !strings.Contains(prime, want) {
+			t.Errorf("prime missing %q: %q", want, prime)
+		}
+	}
+	if !strings.Contains(br.promptAt(3), "默认用亮色主题") {
+		t.Errorf("resend prompt = %q", br.promptAt(3))
+	}
+}
+
+func TestReactReplyKeepsSessionWhenFailureHadOutput(t *testing.T) {
+	p, _, _, mgr, req := reactSetup(t, func(int) chatFunc {
+		return func(turn int) turnAction {
+			if turn == 0 {
+				return turnAction{narration: "need info", questions: []models.ReactQuestion{{ID: "q1", Prompt: "?", Options: []models.ReactOption{{ID: "a", Label: "A"}, {ID: "b", Label: "B"}}}}}
+			}
+			return turnAction{narration: "partial work", sendError: poisonedResumeError}
+		}
+	})
+	if open := clarifyFirstTurn(p, req); len(open.Questions) == 0 {
+		t.Fatal("expected opening question")
+	}
+	hist := []models.ReactMessage{{Role: "agent", Text: "need info"}, {Role: "human", Text: "answer"}}
+	reply := p.ReactReply(context.Background(), req, hist, "answer", nil, false)
+	if reply.Err == nil || !strings.Contains(reply.Msg, "trouble connecting to the model provider") {
+		t.Fatalf("partial failure should stay on the card, got msg %q err %v", reply.Msg, reply.Err)
+	}
+	if mgr.createCount() != 1 {
+		t.Fatalf("create count = %d, want 1", mgr.createCount())
+	}
+	if mgr.bridge(0).restartCount() != 0 {
+		t.Fatal("a turn that already narrated must not restart the agent")
+	}
+	if mgr.bridge(0).promptCount() != 2 {
+		t.Fatalf("prompts = %d, want 2", mgr.bridge(0).promptCount())
+	}
+}
+
 func TestReactReplyRehydratesAfterSessionLoss(t *testing.T) {
 	p, _, store, mgr, req := reactSetup(t, func(attempt int) chatFunc {
 		return func(turn int) turnAction {
