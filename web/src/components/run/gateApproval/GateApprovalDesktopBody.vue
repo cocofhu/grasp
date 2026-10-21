@@ -129,18 +129,15 @@ const coldFormKey = computed(() =>
 const labelledFormFields = computed(() => (gate.value.form ?? []).filter((f) => f.key !== coldFormKey.value))
 /** Cold centred column (plain text body like the chat transcript) on desktop, non-fill bodies. */
 const coldColumn = computed(() => !canReactRevise.value && !useFillLayout.value && !isMobile.value)
-/** Same help copy as the hot-path lines, as one footer hint for the cold composer. */
-const coldHint = computed(() => {
-  if (isColdSession.value) return helpColdText.value
-  if (usesPreviewIssues.value && openPreviewIssueCount.value === 0) {
-    return `${t('pages.clarify.confirmFlow')} ${t('pages.gateApproval.helpApproveDetail')} · ${t('pages.reviewComposer.send')} ${helpReviseDetailNoIssuesText.value}`
-  }
-  if (usesPreviewIssues.value && openPreviewIssueCount.value >= 1) return helpReviseWithIssuesText.value
-  if (canEditProducts.value) {
-    return `${t('pages.clarify.confirmFlow')} ${t('pages.gateApproval.helpApproveDetail')} · ${t('pages.reviewComposer.send')} ${t('pages.gateApproval.helpReviseDetail')}`
-  }
-  return ''
+/** Which hot-path help line the cold composer footer shows (same copy and <b> emphasis as main). */
+const coldHintKind = computed<'cold' | 'approve-send-no-issues' | 'issues' | 'approve-send' | null>(() => {
+  if (isColdSession.value) return 'cold'
+  if (usesPreviewIssues.value && openPreviewIssueCount.value === 0) return 'approve-send-no-issues'
+  if (usesPreviewIssues.value && openPreviewIssueCount.value >= 1) return 'issues'
+  if (canEditProducts.value) return 'approve-send'
+  return null
 })
+const coldField = computed(() => (coldFormKey.value ? gate.value.form?.find((f) => f.key === coldFormKey.value) ?? null : null))
 </script>
 
 <template>
@@ -380,7 +377,29 @@ const coldHint = computed(() => {
           <Icon name="spinner" :size="14" class="animate-spin text-accent" />
           {{ t('pages.gateApproval.loadingPreviewIssues') }}
         </div>
-        <GateApprovalColdActions v-else-if="!canReactRevise" layout="desktop" :form-key="coldFormKey" :hint="coldHint" />
+        <template v-else-if="!canReactRevise">
+          <label v-if="coldField" class="label" data-testid="gate-cold-label">{{ coldField.label }} <span v-if="coldField.required" class="text-err">*</span></label>
+          <GateApprovalColdActions layout="desktop" :form-key="coldFormKey" :has-hint="coldHintKind != null">
+            <template #hint>
+              <template v-if="coldHintKind === 'cold'">{{ helpColdText }}</template>
+              <template v-else-if="coldHintKind === 'approve-send-no-issues'">
+                <b class="font-medium text-txt2">{{ t('pages.clarify.confirmFlow') }}</b>
+                {{ t('pages.gateApproval.helpApproveDetail') }}
+                <span class="mx-1">·</span>
+                <b class="font-medium text-txt2">{{ t('pages.reviewComposer.send') }}</b>
+                {{ helpReviseDetailNoIssuesText }}
+              </template>
+              <template v-else-if="coldHintKind === 'issues'">{{ helpReviseWithIssuesText }}</template>
+              <template v-else-if="coldHintKind === 'approve-send'">
+                <b class="font-medium text-txt2">{{ t('pages.clarify.confirmFlow') }}</b>
+                {{ t('pages.gateApproval.helpApproveDetail') }}
+                <span class="mx-1">·</span>
+                <b class="font-medium text-txt2">{{ t('pages.reviewComposer.send') }}</b>
+                {{ t('pages.gateApproval.helpReviseDetail') }}
+              </template>
+            </template>
+          </GateApprovalColdActions>
+        </template>
         <div v-else>
           <p
             v-if="isColdSession"

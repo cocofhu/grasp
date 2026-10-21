@@ -39,7 +39,9 @@ const props = withDefaults(defineProps<{
   handoffOut?: boolean
   /** Confirm-shaped exits other than 确认并流转 (cold gate: 退回 arrow, in-flight spinner). Default per kind. */
   icon?: string
-}>(), { disabled: false, busy: false, title: undefined, testid: undefined, handoffOut: false, icon: undefined })
+  /** Confirm-shaped but not the filled primary (main's chat-action-secondary): cold gate return/reject, or approve while a comment is drafted. */
+  secondary?: boolean
+}>(), { disabled: false, busy: false, title: undefined, testid: undefined, handoffOut: false, icon: undefined, secondary: false })
 
 const emit = defineEmits<{ click: [kind: ComposerPrimaryKind] }>()
 const el = ref<HTMLButtonElement | null>(null)
@@ -86,8 +88,9 @@ onBeforeUnmount(() => {
     ref="el"
     type="button"
     class="composer-primary"
-    :class="shownKind === 'confirm' ? 'chat-action-confirm h-9 shrink-0 inline-flex' : shownKind === 'stop' ? 'chat-action-button chat-action-stop' : 'chat-action-button chat-action-primary'"
+    :class="shownKind === 'confirm' ? (secondary ? 'chat-action-secondary h-9 shrink-0 inline-flex' : 'chat-action-confirm h-9 shrink-0 inline-flex') : shownKind === 'stop' ? 'chat-action-button chat-action-stop' : 'chat-action-button chat-action-primary'"
     :data-kind="shownKind"
+    :data-variant="shownKind === 'confirm' && secondary ? 'secondary' : undefined"
     :data-testid="testid"
     :title="title ?? (shownKind === 'confirm' ? undefined : label)"
     :aria-label="shownKind === 'confirm' ? undefined : label"

@@ -3960,9 +3960,41 @@ describe('GateApproval cold exit uses the chat composer (desktop body)', () => {
     expect(primaries[0].attributes('data-kind')).toBe('confirm')
     expect(primaries[0].text()).toContain('确认并流转')
     expect(wrapper.find('[data-gate-cold-actions]').html()).not.toMatch(/bg-ok/)
-    // The old labelled form block is gone; the field lives in the composer only.
-    expect(wrapper.findAll('label.label').some((l) => l.text().includes('评审意见'))).toBe(false)
-    expect(wrapper.find('[data-testid="gate-cold-help"]').text()).toContain('确认并流转')
+    // The field keeps main's label above the composer.
+    expect(wrapper.get('[data-testid="gate-cold-label"]').text()).toBe('评审意见')
+    const help = wrapper.get('[data-testid="gate-cold-help"]')
+    expect(help.text()).toContain('确认并流转')
+    // Cold session: main's plain cold help line (no string-spliced fragments).
+    expect(help.text()).not.toContain('·')
+    wrapper.unmount()
+  })
+
+  it('a drafted comment turns 确认并流转 into the non-primary (secondary) style; clearing restores it', async () => {
+    const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: false }), run: baseRun(), compact: false })
+    await flushPromises()
+    const input = wrapper.find('[data-testid="gate-cold-composer"] textarea')
+    await input.setValue('请补充后再提交')
+    let pass = wrapper.get('[data-testid="review-composer-pass"]')
+    expect(pass.classes()).toContain('chat-action-secondary')
+    expect(pass.classes()).not.toContain('chat-action-confirm')
+    expect(pass.attributes('data-variant')).toBe('secondary')
+    await input.setValue('   ')
+    pass = wrapper.get('[data-testid="review-composer-pass"]')
+    expect(pass.classes()).toContain('chat-action-confirm')
+    expect(pass.attributes('data-variant')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('required first field shows the required asterisk', async () => {
+    const wrapper = mountApproval({
+      gate: baseGate({ reactSessionAlive: false, form: [{ key: 'comment', label: '评审意见', required: true }] }),
+      run: baseRun(),
+      compact: false,
+    })
+    await flushPromises()
+    const label = wrapper.get('[data-testid="gate-cold-label"]')
+    expect(label.text()).toBe('评审意见 *')
+    expect(label.find('.text-err').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -3987,7 +4019,7 @@ describe('GateApproval cold exit uses the chat composer (desktop body)', () => {
       compact: false,
     })
     await flushPromises()
-    expect(two.findAll('label.label').map((l) => l.text())).toEqual([expect.stringContaining('风险说明')])
+    expect(two.findAll('label.label').map((l) => l.text())).toEqual([expect.stringContaining('风险说明'), '评审意见'])
     expect(two.find('[data-testid="gate-cold-composer"] textarea').exists()).toBe(true)
     two.unmount()
 

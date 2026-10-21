@@ -5,7 +5,7 @@ import Icon from '../../ui/Icon.vue'
 import ParagraphInput from '../../ui/ParagraphInput.vue'
 import ComposerShell from '../ComposerShell.vue'
 import ComposerPrimaryAction from '../ComposerPrimaryAction.vue'
-import { actionIcon } from './gateApprovalActions'
+import { actionIcon, POSITIVE_ACTION_IDS } from './gateApprovalActions'
 
 /**
  * Cold gate exit (no live ReAct session): the same ComposerShell + single
@@ -19,8 +19,8 @@ const props = defineProps<{
   layout: 'mobile' | 'content-fit' | 'desktop'
   /** gate.form key rendered as the composer input (desktop body). */
   formKey?: string | null
-  /** Footer hint (cold help line). */
-  hint?: string
+  /** The parent fills the #hint slot (cold help line, with main's <b> emphasis). */
+  hasHint?: boolean
 }>()
 
 const { s } = useGateApprovalCtx()
@@ -36,12 +36,28 @@ const inputLocked = computed(() => s.actionSubmitting || s.resolved != null)
 function pending(id: string): boolean {
   return s.actionSubmitting && s.resolved === id
 }
+
+/** Any gate.form field has unsent text or images (the comment the user is writing). */
+const hasDraft = computed(() =>
+  (s.gate.form ?? []).some(
+    (f) => (s.formText[f.key] ?? '').trim().length > 0 || (s.formImages[f.key]?.length ?? 0) > 0,
+  ),
+)
+/**
+ * Only the positive action (确认并流转 / 通过) is the filled primary, and only
+ * while no comment is drafted, like the chat composer where a draft takes the
+ * primary away from 确认并流转. Return/reject actions keep main's neutral
+ * secondary styling.
+ */
+function secondary(id: string): boolean {
+  return !POSITIVE_ACTION_IDS.has(id) || hasDraft.value
+}
 </script>
 
 <template>
   <ComposerShell
     :show-chrome="!!field"
-    :show-footer="!field || !!hint"
+    :show-footer="!field || !!hasHint"
     box-test-id="gate-cold-composer"
     footer-test-id="gate-cold-footer"
     data-gate-cold-actions
@@ -79,6 +95,7 @@ function pending(id: string): boolean {
         v-for="a in s.footerActions"
         :key="a.id"
         kind="confirm"
+        :secondary="secondary(a.id)"
         :icon="pending(a.id) ? 'spinner' : actionIcon(a.id)"
         :label="pending(a.id) ? s.actionPendingLabel(a.id) : a.label"
         :title="s.actionButtonTitle(a.id) || undefined"
@@ -88,8 +105,8 @@ function pending(id: string): boolean {
         @click="s.onSidebarAction(a.id)"
       />
     </template>
-    <template v-if="hint" #hint>
-      <p class="m-0 min-w-0 leading-snug [overflow-wrap:anywhere]" data-testid="gate-cold-help">{{ hint }}</p>
+    <template v-if="hasHint" #hint>
+      <p class="m-0 min-w-0 leading-snug [overflow-wrap:anywhere]" data-testid="gate-cold-help"><slot name="hint" /></p>
     </template>
     <template v-if="!field" #footer>
       <ComposerPrimaryAction

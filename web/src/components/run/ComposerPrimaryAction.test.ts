@@ -69,4 +69,18 @@ describe('ComposerPrimaryAction icon override', () => {
     const plain = mount(C, { props: { kind: 'confirm', label: '确认并流转' } })
     expect(plain.find('.animate-spin').exists()).toBe(false)
   })
+
+  it('secondary confirm uses main\'s chat-action-secondary instead of the filled primary', async () => {
+    const { mount } = await import('@vue/test-utils')
+    const { default: C } = await import('./ComposerPrimaryAction.vue')
+    const back = mount(C, { props: { kind: 'confirm', label: '退回修改', icon: 'arrow-left', secondary: true } })
+    const btn = back.get('button')
+    expect(btn.classes()).toContain('chat-action-secondary')
+    expect(btn.classes()).not.toContain('chat-action-confirm')
+    expect(btn.attributes('data-variant')).toBe('secondary')
+    expect(btn.text()).toContain('退回修改')
+    // secondary only affects confirm-shaped buttons
+    const send = mount(C, { props: { kind: 'send', label: '发送', secondary: true } })
+    expect(send.get('button').classes()).toContain('chat-action-primary')
+  })
 })
