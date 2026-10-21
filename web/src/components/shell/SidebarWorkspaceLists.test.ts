@@ -69,7 +69,7 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(rows[0].text()).toBe('运行 0')
     expect(rows[0].attributes('href')).toBe('/runs/r0')
     expect(rows[0].attributes('aria-current')).toBe('page')
-    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, sort: 'started_at', order: 'desc', signal: expect.any(AbortSignal) })
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.getWorkflow).not.toHaveBeenCalled()
     expect(mocks.openLaunch).not.toHaveBeenCalled()

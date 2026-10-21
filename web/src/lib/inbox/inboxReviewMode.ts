@@ -7,6 +7,9 @@ export type InboxClarifySession = {
   turns: ClarifyTurn[]
   done: boolean
   previewArtifact?: string
+  takeover?: boolean
+  /** Taken-over node's task (see Run.clarifyByNode). */
+  task?: string
 }
 
 /** Resolve the open clarify/review session for an inbox item's node. */
