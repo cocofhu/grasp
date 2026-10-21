@@ -119,7 +119,9 @@ export function buildArtifactVersionChoices(
   const live = artifactRevision({ revision: liveRevision })
   const seen = new Set<number>()
   const choices: ArtifactVersionChoice[] = []
-  for (const row of archived || []) {
+  // A paginated envelope is not a version list; iterating it blanks the stage.
+  const rows = Array.isArray(archived) ? archived : []
+  for (const row of rows) {
     const rev = artifactRevision(row)
     if (rev === live || seen.has(rev)) continue
     seen.add(rev)
