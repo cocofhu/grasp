@@ -12,6 +12,7 @@ import { setTheme } from '@/lib/shared/theme'
 import { i18n as appI18n } from '@/lib/shared/i18n'
 import { locale as appLocale, setLocale } from '@/lib/shared/locale'
 import ReviewShell from '@/components/run/ReviewShell.vue'
+import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 
 const mocks = vi.hoisted(() => ({
@@ -133,6 +134,7 @@ beforeEach(() => {
   vi.stubGlobal('WebSocket', FakeWebSocket)
   window.location.hash = ''
   localStorage.clear()
+  resetConversationDrawers()
   setTheme('dark')
 })
 
@@ -2269,9 +2271,13 @@ it('resets the public conversation panel for a new credential without exposing t
   })
   const wrapper = mountView()
   await flushPromises()
+  expect(wrapper.getComponent(ReviewShell).props('rememberArtifactPanel')).toBe(false)
+  expect(readArtifactPanelOpen()).toBe(false)
   const firstScope = wrapper.getComponent(ReviewShell).props('scopeKey')
   await wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
   expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('true')
+  expect(readArtifactPanelOpen()).toBe(false)
+  writeArtifactPanelOpen(true)
   window.history.replaceState(null, '', `#t=${secondToken}`)
   window.dispatchEvent(new HashChangeEvent('hashchange'))
   await flushPromises()
@@ -2280,4 +2286,5 @@ it('resets the public conversation panel for a new credential without exposing t
   expect(`${firstScope} ${secondScope}`).not.toContain(firstToken)
   expect(`${firstScope} ${secondScope}`).not.toContain(secondToken)
   expect(wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-expanded')).toBe('false')
+  expect(readArtifactPanelOpen()).toBe(true)
 })

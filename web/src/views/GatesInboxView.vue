@@ -395,6 +395,7 @@ const listFadeKey = computed(() =>
           class="min-h-0 flex-1"
           :host-confirm-flow="false"
           split-drawer
+          remember-artifact-panel
         >
           <template #stage>
             <ReactConnectingState
@@ -515,6 +516,7 @@ const listFadeKey = computed(() =>
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
               split-drawer
+              remember-artifact-panel
             >
               <template #stage>
                 <ReactConnectingState

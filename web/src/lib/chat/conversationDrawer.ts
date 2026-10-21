@@ -13,6 +13,23 @@ export interface ConversationDrawerEntry {
 
 const drawers = reactive(new Map<string, ConversationDrawerEntry>())
 
+/**
+ * One artifact-panel switch for the current page session.
+ * Not keyed by run. Memory only: a full reload starts closed.
+ * null means the user has not opened or closed it yet.
+ */
+let artifactPanelSession: boolean | null = null
+
+/** Read the session switch. Missing means collapsed. */
+export function readArtifactPanelOpen(): boolean {
+  return artifactPanelSession === true
+}
+
+/** Write only when the user opens or closes the artifact panel. */
+export function writeArtifactPanelOpen(open: boolean): void {
+  artifactPanelSession = open
+}
+
 function keyOf(runId?: string | null): string {
   return String(runId || '').trim()
 }
@@ -37,4 +54,5 @@ export function peekConversationDrawer(runId?: string | null): ConversationDrawe
 
 export function resetConversationDrawers(): void {
   drawers.clear()
+  artifactPanelSession = null
 }
