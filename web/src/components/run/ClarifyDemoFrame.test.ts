@@ -117,13 +117,15 @@ describe('ClarifyDemoFrame', () => {
     wrapper.unmount()
   })
 
-  it('fills the expanded preview and leaves the inline demo height at 140px', () => {
+  it('sets the inline preview body to 168px and leaves the HtmlPreview demo height at 140px', () => {
     const here = dirname(fileURLToPath(import.meta.url))
     const frameSrc = readFileSync(join(here, 'ClarifyDemoFrame.vue'), 'utf8')
     const previewSrc = readFileSync(join(here, '../ui/HtmlPreview.vue'), 'utf8')
+    expect(frameSrc).toContain('height: 168px')
     expect(frameSrc).not.toContain('70vh')
     expect(frameSrc).toContain('height: 100%')
     expect(frameSrc).toContain('height: auto')
     expect(previewSrc).toContain('h-[140px]')
+    expect(previewSrc).not.toContain('h-[168px]')
   })
 })

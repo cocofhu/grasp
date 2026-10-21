@@ -13,11 +13,9 @@ import {
 } from '@/lib/inbox/clarifyEmptyFail'
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import {
-  demoGridColsClass,
   demoOptionsOf,
   restoreChoiceAnswers,
   selectedDemoOption,
-  useSideBySide,
 } from '@/lib/inbox/clarifyDemo'
 import type {
   AgentPart,
@@ -1112,11 +1110,14 @@ watch(
     if (!key) return
     // Preselect the recommended option (if any) so the user only
     // confirms; never auto-pick the first when nothing was recommended.
+    // immediate: run detail and the gate mount this chat only after the
+    // current question is already in props, so the id key never "changes".
     for (const q of activeQuestions.value) {
       const rec = q.options.find((o) => o.recommended)
       if (rec && !(sel.value[q.id]?.length ?? 0)) sel.value[q.id] = [rec.id]
     }
   },
+  { immediate: true },
 )
 const curQuestion = computed<ReactQuestion | null>(() => activeQuestions.value[step.value] || null)
 const isFirstCard = computed(() => step.value <= 0)
@@ -1212,8 +1213,6 @@ function selectedLabelsForQuestion(q: ReactQuestion, rows: ChoiceRow[] | null): 
 }
 
 function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
-  const demos = demoOptionsOf(q)
-  if (!demos.length || useSideBySide(demos)) return null
   return q.options.find((o) => isSelected(q.id, o.id) && !!o.demoHtml?.trim()) ?? null
 }
 
@@ -2016,10 +2015,8 @@ function retryLastFailed() {
     closeImagePreview,
     renderMarkdown,
     relTime,
-    demoGridColsClass,
     demoOptionsOf,
     selectedDemoOption,
-    useSideBySide,
     isSessionBusy: () => sessionBusy.value,
   }
 }

@@ -27,7 +27,7 @@ const { t } = useI18n()
     class="overflow-hidden rounded-lg border bg-elevated transition-colors"
     :class="[
       highlighted ? 'border-accent shadow-[0_0_0_1px_rgba(123,97,255,0.3)]' : 'border-line',
-      expanded ? 'clarify-demo-expanded' : '',
+      expanded ? 'clarify-demo-expanded' : 'clarify-demo-inline',
     ]"
     data-testid="clarify-demo-frame"
   >
@@ -55,6 +55,10 @@ const { t } = useI18n()
 </template>
 
 <style scoped>
+/* Inline body only. HtmlPreview's demo iframe stays 140px for artifact thumbnails. */
+.clarify-demo-inline :deep(iframe) {
+  height: 168px;
+}
 .clarify-demo-expanded {
   display: flex;
   height: 100%;
