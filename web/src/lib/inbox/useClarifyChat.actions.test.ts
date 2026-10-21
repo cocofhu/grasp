@@ -362,6 +362,38 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('preselects a recommended option that is already present on mount', async () => {
+    const q = question({
+      options: [
+        { id: 'a', label: 'A', demoHtml: '<b>A</b>' },
+        { id: 'b', label: 'B', recommended: true, demoHtml: '<b>B</b>' },
+      ],
+    })
+    const { chat, app } = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    expect(chat.isSelected(q.id, 'b')).toBe(true)
+    expect(chat.isSelected(q.id, 'a')).toBe(false)
+    expect(chat.selectedDemoForInteractive(q)?.id).toBe('b')
+    app.unmount()
+
+    const plain = question({
+      id: 'plain',
+      options: [
+        { id: 'a', label: 'A', demoHtml: '<b>A</b>' },
+        { id: 'b', label: 'B' },
+      ],
+    })
+    const bare = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [plain] }],
+    })
+    await nextTick()
+    expect(bare.chat.sel.value[plain.id] ?? []).toEqual([])
+    expect(bare.chat.selectedDemoForInteractive(plain)).toBeNull()
+    bare.app.unmount()
+  })
+
   it('applies recommended choices and maps selected demo options', async () => {
     const q = question({
       options: [

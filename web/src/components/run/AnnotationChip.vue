@@ -18,15 +18,14 @@ defineEmits<{ remove: [] }>()
 
 const { t } = useI18n()
 
+/** Collapse newlines so a quote stays one paragraph before the single-line ellipsis. */
+function oneLine(value: string | undefined): string {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
 const kind = computed<'field' | 'quote' | 'unbound'>(() => {
   if (!isQuoteAnnotation(props.ann)) return 'field'
   return props.ann.jsonPath || props.ann.selector ? 'quote' : 'unbound'
-})
-
-const chipClass = computed(() => {
-  if (kind.value === 'field') return 'border-accent/40 bg-accent/10 text-accent-2'
-  if (kind.value === 'quote') return 'border-ok/40 bg-ok/10 text-ok'
-  return 'border-txt2/35 bg-txt2/8 text-txt2'
 })
 
 const kindLabel = computed(() => {
@@ -35,49 +34,55 @@ const kindLabel = computed(() => {
   return t('pages.reviewComposer.chipUnbound')
 })
 
-const path = computed(() => props.ann.jsonPath || props.ann.selector || '')
-/** Whole-field chips often set label === path (e.g. #launchInput); show once. */
-const fieldLabel = computed(() => {
-  const label = (props.ann.label || '').trim()
-  const p = path.value
-  if (!label || label === p) return ''
-  return label
+const path = computed(() => oneLine(props.ann.jsonPath || props.ann.selector || ''))
+const quoteText = computed(() => (isQuoteAnnotation(props.ann) ? oneLine(props.ann.quote) : ''))
+const labelText = computed(() => oneLine(props.ann.label))
+
+/** Excerpt when present; otherwise the path/selector, and the label only if there is no path. */
+const body = computed(() => quoteText.value || path.value || labelText.value)
+const bodyMono = computed(() => !quoteText.value && !!path.value)
+const showTruncated = computed(() => !!props.ann.truncated && !!quoteText.value)
+
+/**
+ * Kind, full body, a label/path that differs from the body, and soft-truncation
+ * live in the tooltip and accessible name — not as a second line or a badge.
+ * Identical strings are kept once (path === label).
+ */
+const hoverTitle = computed(() => {
+  const parts: string[] = []
+  const push = (value: string) => {
+    if (!value || parts.includes(value)) return
+    parts.push(value)
+  }
+  push(kindLabel.value)
+  push(body.value)
+  push(path.value)
+  push(labelText.value)
+  if (showTruncated.value) push(t('pages.reviewComposer.chipTruncated'))
+  return parts.join(' · ')
 })
-const showFieldPath = computed(() => !!path.value)
-const showFieldLabel = computed(() => kind.value === 'field' && !!fieldLabel.value)
 </script>
 
 <template>
   <span
-    class="rounded-md inline-flex max-w-full items-start gap-1 border px-1.5 py-0.5 text-[11px] leading-snug"
-    :class="chipClass"
-    :title="ann.note || ann.url || path || ann.quote || ''"
+    class="chip max-w-full min-w-0"
+    role="group"
+    :title="hoverTitle"
+    :aria-label="hoverTitle"
     :data-testid="testId"
     :data-chip-kind="kind"
   >
-    <Icon v-if="kind === 'field'" name="crosshair" :size="10" class="mt-0.5 shrink-0" />
-    <span v-else class="mt-0.5 shrink-0 text-[12px] leading-none" aria-hidden="true">❝</span>
-    <span class="flex min-w-0 flex-col gap-0.5">
-      <span class="text-[9px] font-semibold uppercase tracking-wide opacity-75">{{ kindLabel }}</span>
-      <span v-if="showFieldPath" class="truncate font-mono text-[9px] text-txt3" :title="path">{{ path }}</span>
-      <span v-if="kind !== 'field'" class="break-words [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:3] overflow-hidden">
-        {{ ann.quote }}
-        <span
-          v-if="ann.truncated"
-          class="rounded-lg ml-1 inline-block border border-current px-0.5 text-[9px] opacity-80"
-        >{{ t('pages.reviewComposer.chipTruncated') }}</span>
-      </span>
-      <span v-else-if="showFieldLabel" class="truncate">{{ fieldLabel }}</span>
-      <span v-else-if="kind === 'field' && !showFieldPath" class="truncate">{{ ann.label || path }}</span>
-    </span>
+    <Icon v-if="kind === 'field'" name="crosshair" :size="12" class="shrink-0" aria-hidden="true" />
+    <span v-else class="shrink-0 leading-none" aria-hidden="true">❝</span>
+    <span class="min-w-0 truncate" :class="bodyMono ? 'font-mono' : undefined">{{ body }}</span>
     <button
       v-if="removable"
       type="button"
-      class="mt-0.5 shrink-0 text-txt3 hover:text-txt"
+      class="shrink-0 text-txt3 hover:text-txt"
       :aria-label="t('pages.reviewComposer.removeChip')"
       @click="$emit('remove')"
     >
-      <Icon name="close" :size="9" />
+      <Icon name="close" :size="12" />
     </button>
   </span>
 </template>

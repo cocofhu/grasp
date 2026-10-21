@@ -1365,6 +1365,7 @@ onBeforeUnmount(() => {
         hide-version-chip
         :share-token="token"
         :annotatable="artifactAnnotatable(artifactByName(name))"
+        :preview-active="activePreviewName === name"
         class="min-h-0 flex-1"
       />
     </div>

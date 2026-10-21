@@ -338,7 +338,7 @@ describe('ClarifyChat', () => {
     expect(wrapper.text()).toContain('选择部署方式')
     const optionBtn = wrapper.findAll('button').find((b) => b.text().includes('Kubernetes'))
     expect(optionBtn).toBeTruthy()
-    await optionBtn!.trigger('click')
+    expect(optionBtn!.attributes('aria-pressed')).toBe('true')
     await flushPromises()
     const submitBtn = wrapper.findAll('button').find((b) => b.text().includes('确认选择'))
     expect(submitBtn).toBeTruthy()
@@ -2490,8 +2490,10 @@ describe('ClarifyChat', () => {
     async function pickAndSubmit(wrapper: ReturnType<typeof mountChat>, label: string) {
       const optionBtn = wrapper.findAll('button').find((b) => b.text().includes(label))
       expect(optionBtn).toBeTruthy()
-      await optionBtn!.trigger('click')
-      await flushPromises()
+      if (optionBtn!.attributes('aria-pressed') !== 'true') {
+        await optionBtn!.trigger('click')
+        await flushPromises()
+      }
       const submitBtn = submitChoices(wrapper)
       expect(submitBtn).toBeTruthy()
       await submitBtn!.trigger('click')
@@ -2791,6 +2793,8 @@ describe('ClarifyChat', () => {
         .find((el) => el.text() === 'Kubernetes')
       expect(short).toBeTruthy()
       expect(short!.text()).toBe('Kubernetes')
+      await wrapper.findAll('[data-testid="clarify-option-btn"]')[1]!.trigger('click')
+      await flushPromises()
       await wrapper.findAll('[data-testid="clarify-option-btn"]')[0]!.trigger('click')
       await flushPromises()
       const submitBtn = wrapper.findAll('button').find((b) => b.text().includes('确认选择'))

@@ -183,4 +183,61 @@ describe('workspace workflow management', () => {
     expect(router.currentRoute.value.path).toBe('/workflows')
     wrapper.unmount()
   })
+  it('insets the name column 12px from the hover row and keeps the last column flush', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'WorkflowsView.vue'), 'utf8')
+    const style = src.match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
+    const rule = (selector: string) => {
+      const found = style.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`))?.[0]
+      expect(found, selector).toBeTruthy()
+      return found!
+    }
+    expect(style).not.toMatch(/th:first-child|td:first-child/)
+    expect(style).not.toMatch(/padding-left:\s*0/)
+    const headerRule = rule('.workflow-directory th')
+    const cellRule = rule('.workflow-directory td')
+    const lastRule = rule('.workflow-directory th:last-child, .workflow-directory td:last-child')
+    const toolbarRule = rule('.workflow-toolbar')
+    const nameRule = rule('.workflow-name')
+    expect(headerRule).toMatch(/padding:\s*0 12px/)
+    expect(cellRule).toMatch(/padding:\s*15px 12px/)
+    expect(lastRule).toMatch(/padding-right:\s*0/)
+    expect(toolbarRule).toMatch(/padding:\s*4px 0 18px/)
+    expect(style).toContain('.workflow-row:hover { background: rgb(var(--c-txt) / .018); }')
+    expect(style).toMatch(/@container workflow-directory \(max-width:\s*740px\) \{[\s\S]*?\.workflow-row \{[^}]*padding:\s*16px 0 16px 12px;/)
+    expect(style).not.toMatch(/\.workflow-search \{[^}]*margin-left/)
+    expect(src).toContain('<WorkspacePage title-key="nav.workflows" description-key="nav.workflowsHint">')
+
+    const described = { ...head, id: 'wf-desc', name: '自我迭代', description: '持续改进自身流程' }
+    const plain = { ...head, id: 'wf-plain', name: '无描述流程', description: '' }
+    const longName = { ...head, id: 'wf-long', name: '超长工作流名称'.repeat(12), description: '超长描述会在名称同一左缘省略'.repeat(8) }
+    mocks.listWorkflows.mockResolvedValueOnce([described, plain, longName])
+    const { wrapper } = await setup()
+    const sheet = document.createElement('style')
+    sheet.textContent = [headerRule, cellRule, lastRule, toolbarRule, nameRule].join('\n')
+    document.head.appendChild(sheet)
+    document.body.appendChild(wrapper.element)
+    const table = wrapper.get('[data-testid="workflows-desktop-table"]')
+    const nameHeader = table.findAll('thead th')[0]
+    const nameCells = table.findAll('.workflow-name-cell')
+    const actionCell = table.get('[data-testid="wf-actions-cell"]')
+    expect(nameHeader.text()).toBe('名称')
+    expect(getComputedStyle(nameHeader.element).paddingLeft).toBe('12px')
+    expect(nameCells).toHaveLength(3)
+    const namePadding = nameCells.map((cell) => getComputedStyle(cell.element).paddingLeft)
+    expect(namePadding).toEqual(['12px', '12px', '12px'])
+    expect(table.findAll('.workflow-description')).toHaveLength(2)
+    expect(nameCells[1].find('.workflow-description').exists()).toBe(false)
+    expect(getComputedStyle(actionCell.element).paddingRight).toBe('0px')
+    expect(getComputedStyle(table.findAll('thead th').at(-1)!.element).paddingRight).toBe('0px')
+    expect(getComputedStyle(wrapper.get('.workflow-toolbar').element).paddingLeft).toBe('0px')
+    const longButton = nameCells[2].get('.workflow-name')
+    expect(longButton.text()).toContain('超长工作流名称')
+    expect(getComputedStyle(longButton.element).textOverflow).toBe('ellipsis')
+    expect(getComputedStyle(longButton.element).overflow).toBe('hidden')
+    sheet.remove()
+    wrapper.unmount()
+  })
 })
