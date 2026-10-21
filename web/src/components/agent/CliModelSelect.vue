@@ -37,13 +37,21 @@ const props = withDefaults(
     hideAutoSub?: boolean
     /** auto: empty is the CLI default. required: empty is not a choice — hide Auto until a model is picked. */
     emptyMode?: 'auto' | 'required'
+    /**
+     * Hide the launch-command echo and its note.
+     * Meta panels set this. The 恢复自动 button stays on the same row.
+     * Wizards leave it off.
+     */
+    hideCommand?: boolean
   }>(),
-  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto' },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const { t } = useI18n()
 const allowAuto = computed(() => props.emptyMode !== 'required')
+const showReset = computed(() => !!props.modelValue && !props.disabled && allowAuto.value)
+const showCommandRow = computed(() => (props.hideCommand ? showReset.value : allowAuto.value || !!props.modelValue))
 
 const TAG_ICON: Record<CliModelTag, string> = { vision: 'eye', reasoning: 'brain', fast: 'trigger' }
 const FULL_WIDTH = 600
@@ -349,9 +357,9 @@ defineExpose({ focus: () => trigger.value?.focus() })
       <Icon name="chevron-down" :size="14" class="cms-chevron shrink-0 text-txt3" :class="{ 'is-open': open }" />
     </button>
 
-    <!-- What the CLI will be launched with -->
-    <div v-if="allowAuto || modelValue" class="mt-1.5 flex min-h-[20px] items-center gap-2 px-0.5 text-[11px] text-txt3">
-      <Transition name="ui-fade" mode="out-in">
+    <!-- What the CLI will be launched with. Meta hides the echo and keeps 恢复自动. -->
+    <div v-if="showCommandRow" class="mt-1.5 flex min-h-[20px] items-center gap-2 px-0.5 text-[11px] text-txt3">
+      <Transition v-if="!hideCommand" name="ui-fade" mode="out-in">
         <span :key="command" class="flex min-w-0 flex-1 items-center gap-1.5" data-testid="cli-model-command">
           <Icon name="terminal" :size="12" class="shrink-0" />
           <code class="truncate rounded bg-elevated px-1.5 py-0.5 font-mono text-[10.5px] text-txt2">{{ command }}</code>
@@ -360,7 +368,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
         </span>
       </Transition>
       <button
-        v-if="modelValue && !disabled && allowAuto"
+        v-if="showReset"
         type="button"
         class="shrink-0 font-medium text-accent-2 transition hover:underline"
         data-testid="cli-model-reset"

@@ -12,8 +12,7 @@ cache="${XDG_CACHE_HOME:-$HOME/.cache}/grasp-ci"
 mkdir -p "$cache"
 # Stdlib findings follow the Go that builds this binary. CI pins
 # actions/setup-go go-version 1.26.10: the 1.26.x floating spec still resolves
-# to 1.26.8 in actions/go-versions, which is below the 2026-10-08 fixes
-# and GO-2026-6809 (fixed in 1.26.10).
+# to 1.26.8 in actions/go-versions. 1.26.9 still reports GO-2026-6809, fixed in 1.26.10.
 # Local runs need Go >= 1.26.10 and < 1.27. Cache per Go version so an older
 # toolchain cannot reuse a newer scanner, or the reverse.
 go_ver="$(go env GOVERSION)"

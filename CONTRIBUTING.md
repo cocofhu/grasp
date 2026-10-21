@@ -283,8 +283,7 @@ cd docs && npm_config_registry=https://registry.npmjs.org npm run audit:check
   the binaries. `actions/setup-go` `go-version: "1.26.x"` still resolves to
   1.26.8 from the actions/go-versions manifest, so CI pins `1.26.10` (an exact
   version missing from that manifest is downloaded from go.dev/dl). An older
-  1.26 patch still reports the 2026-10-08 standard-library findings and
-  GO-2026-6809 (crypto/x509, fixed in 1.26.10). Called
+  1.26 patch still reports standard-library findings. 1.26.9 still reports GO-2026-6809, fixed in 1.26.10. Called
   findings fail unless listed in `govulncheck-allowlist.json` with `id`,
   `module`, `reason`, and `expires`. Expired entries fail the check. The
   allowlist is empty; do not exempt findings fixed by this toolchain or by
