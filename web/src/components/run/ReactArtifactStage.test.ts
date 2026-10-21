@@ -129,8 +129,13 @@ const stubs = {
     template: '<div data-testid="novnc-stub" :data-inspectable="inspectable ? \'1\' : \'0\'" />',
   }),
   ArtifactPreview: defineComponent({
-    props: { artifact: Object, annotatable: Boolean },
-    template: '<div data-testid="artifact-preview">{{ artifact?.name }}|{{ annotatable ? \'on\' : \'off\' }}{{ artifact?.content ? \'|\' + artifact.content : \'\' }}</div>',
+    props: {
+      artifact: Object,
+      annotatable: Boolean,
+      previewActive: { type: Boolean, default: true },
+    },
+    template:
+      '<div data-testid="artifact-preview" :data-preview-active="previewActive ? \'1\' : \'0\'">{{ artifact?.name }}|{{ annotatable ? \'on\' : \'off\' }}{{ artifact?.content ? \'|\' + artifact.content : \'\' }}</div>',
   }),
   AppPreviewPanel: defineComponent({
     props: { runId: String, nodeId: String },
@@ -1337,6 +1342,32 @@ describe('ReactArtifactStage', () => {
     // #356 merges/hides same-node visual_*.page.html when page.html is present
     expect(wrapper.find('[data-testid="react-artifact-card-visual_bqc5.page.html"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="react-artifact-card-page.html"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('tells the web preview when its tab is hidden and selected again', async () => {
+    const live = art({ id: 'live', name: 'page.html', kind: 'html', nodeId: 'visual_bqc5' })
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [live],
+        runId: 'run-1',
+        nodeId: 'visual_bqc5',
+        node: PAGE_NODE,
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await flushPromises()
+    const preview = () =>
+      wrapper.get('[data-testid="react-artifact-preview-page.html"] [data-testid="artifact-preview"]')
+    expect(preview().attributes('data-preview-active')).toBe('1')
+    await wrapper.get('[data-testid="react-artifact-tab-grid"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="react-artifact-preview-page.html"]').exists()).toBe(true)
+    expect(preview().attributes('data-preview-active')).toBe('0')
+    await wrapper.get('[data-testid="react-artifact-tab-page.html"]').trigger('click')
+    await flushPromises()
+    expect(preview().attributes('data-preview-active')).toBe('1')
     wrapper.unmount()
   })
 
