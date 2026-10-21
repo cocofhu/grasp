@@ -10,7 +10,6 @@ import {
   type BackendId,
 } from '@/lib/shared/regionPolicy'
 import {
-  DEFAULT_CONFIG_ROOT,
   DEFAULT_WORKSPACE_DIR,
   defaultConfigRootFor,
   kvToRec,
@@ -30,7 +29,8 @@ import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
 import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
 import { gitKind } from '@/lib/workspace/credentialKinds'
 import { api } from '@/lib/api/api'
-import { readCliModel, switchCliModelEnv } from '@/lib/agent/cliModelEnv'
+import { readCliEffort, readCliModel, switchCliModelEnv, writeCliEffort, writeCliModel } from '@/lib/agent/cliModelEnv'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import { useToast } from '@/lib/composables/useToast'
 import AgentCredentialBindings from '@/components/agent/AgentCredentialBindings.vue'
 
@@ -45,12 +45,15 @@ const { t } = useI18n()
 const toast = useToast()
 
 let configRootTouched = false
+/** Session-only. Turning the switch off keeps the pickers open until a choice is saved or the Agent changes. */
+const customizing = ref(false)
 
 
 watch(
   () => props.agentName,
   () => {
     configRootTouched = false
+    customizing.value = false
   },
 )
 
@@ -94,20 +97,56 @@ function selectAcpBackend(id: BackendId) {
 
 const showCliRuntime = computed(() => !!props.draft.acpBackend && props.draft.acpBackend !== 'opencode')
 
-/** The workspace's shared model applies only while the Agent runs the same CLI (see ExtendOverlay). */
+/** The workspace's shared model and credential apply only while the Agent runs the same CLI. */
 const sharedBaseline = ref<{ acpBackend: string; model: string } | null>(null)
 onMounted(async () => {
   try {
     const cfg = await api.getSharedAgentConfig()
-    sharedBaseline.value = { acpBackend: cfg.acpBackend || '', model: readCliModel(cfg.env || {}) }
+    sharedBaseline.value = {
+      acpBackend: cfg.acpBackend || '',
+      model: readCliModel(cfg.env || {}),
+    }
   } catch {
-    /* The hint is optional; the card works without it. */
+    /* The status is optional; the card works without it. */
   }
 })
-const inheritedModel = computed(() => {
+const sameSharedCli = computed(() => {
   const s = sharedBaseline.value
-  return s && s.acpBackend === props.draft.acpBackend ? s.model : ''
+  return !!s && s.acpBackend === props.draft.acpBackend
 })
+const inheritedModel = computed(() => (sameSharedCli.value ? sharedBaseline.value?.model || '' : ''))
+const sharedBackend = computed(() => ACP_BACKENDS.find((b) => b.id === sharedBaseline.value?.acpBackend) || null)
+
+function hasOwnRuntime(): boolean {
+  const env = kvToRec(props.draft.env)
+  return !!(readCliModel(env) || readCliEffort(env))
+}
+
+/** Default is inherit. A stored credential is not an edit; a pinned model is. */
+const inheriting = computed(
+  () => !!sharedBackend.value && !customizing.value && props.draft.acpBackend === sharedBackend.value.id && !hasOwnRuntime(),
+)
+
+function clearRuntimeOverrides() {
+  props.draft.aiCredentialId = ''
+  props.draft.openCodeCredentialId = ''
+  const env = writeCliEffort(writeCliModel(kvToRec(props.draft.env), ''), '')
+  delete env[OPENCODE_PROVIDER_ENV]
+  delete env[OPENCODE_BASE_URL_ENV]
+  delete env[OPENCODE_MODEL_VISION_ENV]
+  props.draft.env = recToKV(env)
+}
+
+function setInherit(on: boolean) {
+  if (!on) {
+    customizing.value = true
+    return
+  }
+  customizing.value = false
+  const backend = sharedBackend.value
+  if (backend && props.draft.acpBackend !== backend.id) props.draft.acpBackend = backend.id
+  clearRuntimeOverrides()
+}
 
 function onSelectCredential(id: string) {
   if (props.draft.openCodeCredentialId === id) return
@@ -154,32 +193,30 @@ watch(
   },
 )
 
-function joinConfigPath(root: string, sub: string): string {
-  return (root || DEFAULT_CONFIG_ROOT).replace(/\/+$/, '') + '/' + sub
-}
-
-const derivedPaths = computed(() => {
-  const root = props.draft.layout.configRoot || DEFAULT_CONFIG_ROOT
-  return [
-    { label: t('pages.agentStudio.configPaths.mcp'), path: joinConfigPath(root, 'mcp.json'), note: t('pages.agentStudio.configPaths.mcpNote') },
-    { label: t('pages.agentStudio.configPaths.rules'), path: joinConfigPath(root, 'rules/'), note: t('pages.agentStudio.configPaths.rulesNote') },
-    { label: t('pages.agentStudio.configPaths.skills'), path: joinConfigPath(root, 'skills/'), note: t('pages.agentStudio.configPaths.skillsNote') },
-    { label: t('pages.agentStudio.configPaths.commands'), path: joinConfigPath(root, 'commands/'), note: t('pages.agentStudio.configPaths.commandsNote') },
-    { label: t('pages.agentStudio.configPaths.env'), path: 'container-env', note: t('pages.agentStudio.configPaths.envNote') },
-  ]
-})
 </script>
 
 <template>
   <div class="scroll-area min-h-0 flex-1 overflow-auto p-4">
-    <div class="mb-4 max-w-3xl">
-      <p class="text-[12px] leading-5 text-txt3">
-        {{ t('pages.agentStudio.tree.metaRenameHint') }}
-      </p>
-    </div>
-
     <div class="max-w-3xl space-y-4">
-      <div>
+      <div v-if="sharedBackend" class="rounded-xl border border-line bg-base px-3.5 py-3" data-test="agent-inherit-default">
+        <div class="flex items-center justify-between gap-4">
+          <div class="min-w-0 text-[13px] font-medium text-txt">{{ t('pages.agentStudio.cliModel.inheritDefault') }}</div>
+          <AppSwitch
+            :model-value="inheriting"
+            data-test="agent-inherit-default-switch"
+            :aria-label="t('pages.agentStudio.cliModel.inheritDefault')"
+            @update:model-value="setInherit"
+          />
+        </div>
+        <div v-if="inheriting" class="mt-3 flex items-center gap-2.5 border-t border-line/70 pt-3" data-test="agent-inherit-backend">
+          <CredentialProviderLogo :provider="sharedBackend.id" match="provider" selected />
+          <div class="min-w-0">
+            <div class="text-[12px] font-semibold text-txt">{{ sharedBackend.label }}</div>
+            <div class="text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.inheritDefaultFrom') }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-if="!inheriting">
         <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.acpBackend') }}</div>
         <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
           <button
@@ -201,7 +238,7 @@ const derivedPaths = computed(() => {
           </button>
         </div>
       </div>
-      <div v-if="showMetaRegionBlock" class="border-t border-dashed border-line pt-4">
+      <div v-if="!inheriting && showMetaRegionBlock" class="border-t border-dashed border-line pt-4">
         <div class="text-[12px] font-medium text-txt2">
           {{ t('pages.agentStudio.meta.regionTitle') }}
           <span class="rounded-md ml-1.5 inline-block border border-accent/30 bg-accent-dim px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent-2">{{ t('pages.agentStudio.meta.regionNewBadge') }}</span>
@@ -229,13 +266,13 @@ const derivedPaths = computed(() => {
         </div>
       </div>
       <CliRuntimeCard
-        v-if="showCliRuntime"
+        v-if="!inheriting && showCliRuntime"
         :key="agentName"
         :draft="draft"
         :inherited-model="inheritedModel"
         :focus-tick="focusModelTick"
       />
-      <div v-if="showOpenCode" class="border-t border-dashed border-line pt-4">
+      <div v-if="!inheriting && showOpenCode" class="border-t border-dashed border-line pt-4">
         <OpenCodeCredentialPicker
           mode="select"
           hide-hint
@@ -257,7 +294,7 @@ const derivedPaths = computed(() => {
           @update:selected-id="draft.sshHostsCredentialId = $event"
         />
       </div>
-      <label class="block">
+      <label v-if="!inheriting" class="block">
         <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
         <input
           v-model="draft.layout.configRoot"
@@ -268,7 +305,7 @@ const derivedPaths = computed(() => {
           @input="configRootTouched = true"
         />
       </label>
-      <label class="block">
+      <label v-if="!inheriting" class="block">
         <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.workspaceDir') }}</span>
         <input
           v-model="draft.layout.workspaceDir"
@@ -280,23 +317,9 @@ const derivedPaths = computed(() => {
       </label>
     </div>
 
-    <div class="mt-5 max-w-3xl">
-      <div class="overflow-x-auto border-y border-line/60" data-testid="derived-paths-table">
-        <table class="w-full text-left text-[12px]">
-          <tbody>
-            <tr v-for="(e, i) in derivedPaths" :key="e.label" :class="i % 2 ? 'bg-base/40' : ''">
-              <td class="px-3 py-2 text-txt2">{{ e.label }}</td>
-              <td class="px-3 py-2"><code class="rounded bg-base px-1.5 py-0.5 font-mono text-accent-2">{{ e.path }}</code></td>
-              <td class="px-3 py-2 text-txt3">{{ e.note }}</td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <AgentCredentialBindings v-if="!inheriting" :draft="draft" />
 
-    <AgentCredentialBindings :draft="draft" />
-
-    <p class="mt-3 max-w-3xl text-[11px] leading-5 text-txt3">
+    <p v-if="!inheriting" class="mt-3 max-w-3xl text-[11px] leading-5 text-txt3">
       {{ t('pages.agentStudio.meta.capabilitiesNote') }}
     </p>
 
