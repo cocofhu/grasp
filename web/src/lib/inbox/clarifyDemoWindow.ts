@@ -13,6 +13,9 @@ export const DEMO_WINDOW_TIGHT_MARGIN = 8
 const DEMO_WINDOW_USEFUL = 160
 export const DEMO_WINDOW_MIN_W = 480
 export const DEMO_WINDOW_MIN_H = 320
+/** Default enlarge window caps. Smaller viewports shrink inside the margin. */
+export const DEMO_WINDOW_MAX_W = 720
+export const DEMO_WINDOW_MAX_H = 560
 
 function roundBox(box: DemoWindowBox): DemoWindowBox {
   return {
@@ -37,17 +40,20 @@ export function demoWindowMargin(viewport: { w: number; h: number }): number {
 }
 
 /**
- * Default rectangle: viewport minus the margin on every side, so the window is centered.
+ * Default rectangle: centered, at most 720×560, and inside the viewport margin.
  * Chat geometry is ignored; the window may cover the conversation.
+ * A viewport that cannot hold the cap shrinks the box to the margin and keeps it centered.
  */
 export function placeClarifyDemoWindow(viewport: { w: number; h: number }): DemoWindowBox {
   const { w: vw, h: vh } = viewportSize(viewport)
   const margin = demoWindowMargin({ w: vw, h: vh })
+  const w = Math.min(DEMO_WINDOW_MAX_W, Math.max(0, vw - margin * 2))
+  const h = Math.min(DEMO_WINDOW_MAX_H, Math.max(0, vh - margin * 2))
   return roundBox({
-    x: margin,
-    y: margin,
-    w: vw - margin * 2,
-    h: vh - margin * 2,
+    x: (vw - w) / 2,
+    y: (vh - h) / 2,
+    w,
+    h,
   })
 }
 

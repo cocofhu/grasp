@@ -247,14 +247,14 @@ function onToggle(index: number, last: boolean, e: Event) {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  min-height: 32px;
+  min-height: 24px;
   margin: 0;
   padding: 0;
   border: 0;
   background: none;
-  color: rgb(var(--c-txt3));
+  color: rgb(var(--c-txt2));
   font: inherit;
-  font-size: 13.5px;
+  font-size: 13px;
   line-height: 1;
   letter-spacing: 0.01em;
   cursor: pointer;
@@ -267,10 +267,10 @@ function onToggle(index: number, last: boolean, e: Event) {
 }
 .agent-elapsed-chevron {
   flex-shrink: 0;
-  color: rgb(var(--c-txt3));
+  color: rgb(var(--c-txt2));
   transition: transform var(--dur-ui, 160ms);
 }
-.agent-elapsed:hover .agent-elapsed-chevron { color: rgb(var(--c-txt2)); }
+.agent-elapsed:hover .agent-elapsed-chevron { color: rgb(var(--c-txt)); }
 .agent-elapsed[aria-expanded='true'] .agent-elapsed-chevron { transform: rotate(90deg); }
 .agent-elapsed-work { margin: 14px 0 2px; }
 .agent-elapsed-thought {
@@ -285,7 +285,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed-note { margin-bottom: 18px; }
 .agent-elapsed-rule {
   height: 1px;
-  margin: 12px 0 18px;
+  margin: 4px 0 8px;
   border: 0;
   background: rgb(var(--c-line));
 }
