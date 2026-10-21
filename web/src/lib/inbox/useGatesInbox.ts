@@ -291,9 +291,17 @@ const FOLLOW_WS_FALLBACK_MS = 10000
  * reads node_enter / status (no stream projection, no reconnect — poll covers).
  */
 let followWs: WebSocket | null = null
+/**
+ * The follow socket is opened before the 确认并流转 POST so the next node's
+ * node_enter is not lost while the POST, refresh and hand-off hold run; a
+ * node_enter seen before the follow tail exists is remembered and makes the
+ * follow re-read the chain at once instead of waiting for the safety poll.
+ */
+let followSawNodeEnter = false
 function closeFollowWs() {
   const ws = followWs
   followWs = null
+  followSawNodeEnter = false
   if (ws) {
     ws.onmessage = ws.onclose = ws.onerror = null
     try {
@@ -344,6 +352,7 @@ function openFollowWs(runId: string) {
  */
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
+  if (!ft) followSawNodeEnter = true
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
   if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
     const label =
@@ -451,6 +460,7 @@ function scheduleFollow(submitted: InboxItem, submittedKey: string) {
 async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<boolean> {
   followItem = submitted
   openFollowWs(submitted.runId)
+  followSawNodeEnter = false
   const chain = await loadRunChain(submitted.runId)
   followFailures = chain ? 0 : 1
   const tail: FollowTail = chain
@@ -458,7 +468,11 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   followTail.value = tail
   if (tail.kind === 'ended') closeFollowWs()
-  else scheduleFollow(submitted, submittedKey)
+  else if (followSawNodeEnter) {
+    // The run moved again while the chain was being read.
+    followSawNodeEnter = false
+    kickFollow()
+  } else scheduleFollow(submitted, submittedKey)
   return true
 }
 watch(
@@ -2277,6 +2291,8 @@ async function onClarifySend(
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
     handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
+    // Socket first, then the POST: the next node's node_enter can arrive right after it.
+    openFollowWs(it.runId)
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -2308,6 +2324,8 @@ async function onClarifySend(
       : e?.message || t('pages.gatesInbox.reviewFinishFailed')
     if (force && isSandboxBusyError(e)) clarifyConfirmCanAbort.value = true
     if (force) {
+      // The hand-off did not happen: drop the socket opened for it (unless already following).
+      if (!followTail.value) closeFollowWs()
       // Align with RunDetail: bottom status bar, not toast.
       clarifyConfirmError.value = msg
       if (handoffState.value?.key === submittedKey) handoffState.value = null
@@ -2350,6 +2368,8 @@ async function onClarifySend(
         // Same run first: its next waiting node continues below; else follow the live run.
         stayed = (await continueInRun(submittedItem, submittedKey)) || (await beginFollow(submittedItem, submittedKey))
       }
+      // Not following (same-run chat continued below, or left): drop the early socket.
+      if (!followTail.value) closeFollowWs()
       if (!stayed && handoffState.value?.key === submittedKey) handoffState.value = null
       if (leaving && !stayed) {
         if (!pickHandoffNext(submittedItem, submittedKey)) {
