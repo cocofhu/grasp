@@ -13,6 +13,8 @@ const props = defineProps<{
   items?: CredentialItem[]
   title?: string
   hint?: string
+  /** Meta panels omit the hint paragraph. Other callers keep it. */
+  hideHint?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -90,7 +92,7 @@ onMounted(() => {
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="text-[12px] font-medium text-txt2">{{ title || t('pages.workspace.credentials.pickTitle') }}</div>
-        <p class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ hint || t('pages.workspace.credentials.pickHint') }}</p>
+        <p v-if="!hideHint" class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ hint || t('pages.workspace.credentials.pickHint') }}</p>
       </div>
       <AppButton
         v-if="selectedId"

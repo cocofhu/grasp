@@ -1,4 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
+
+/** Recommended options are already pressed on mount; a click would toggle them off. */
+async function ensureOptionPressed(page: Page, index: number) {
+  const button = page.getByTestId('clarify-option-btn').nth(index)
+  if ((await button.getAttribute('aria-pressed')) !== 'true') await button.click()
+  await expect(button).toHaveAttribute('aria-pressed', 'true')
+}
 
 for (const width of [1440, 390, 240]) {
   for (const lang of ['zh-CN', 'en']) {
@@ -20,8 +27,7 @@ for (const width of [1440, 390, 240]) {
       expect(geometry.kind.right).toBeLessThanOrEqual(width)
       expect(geometry.prompt.right).toBeLessThanOrEqual(width)
       expect(geometry.overflow).toBe(false)
-      await page.getByTestId('clarify-option-btn').first().click()
-      await expect(page.getByTestId('clarify-option-btn').first()).toHaveAttribute('aria-pressed', 'true')
+      await ensureOptionPressed(page, 0)
       await page.getByRole('button', { name: lang === 'en' ? 'Confirm selection' : '确认选择', exact: true }).click()
       await expect(page.getByTestId('question-layout-submission')).toContainText(lang === 'en' ? 'Conversation layout' : '聊天布局')
     })
@@ -34,8 +40,8 @@ test('short multi-select metadata remains separate after resizing', async ({ pag
   const prompt = page.getByTestId('clarify-question-prompt')
   const kind = page.getByText('多选', { exact: true })
   await expect(kind).toHaveText('多选')
-  await page.getByTestId('clarify-option-btn').nth(0).click()
-  await page.getByTestId('clarify-option-btn').nth(1).click()
+  await ensureOptionPressed(page, 0)
+  await ensureOptionPressed(page, 1)
   await page.setViewportSize({ width: 390, height: 700 })
   const titleBox = (await prompt.boundingBox())!
   const kindBox = (await kind.boundingBox())!

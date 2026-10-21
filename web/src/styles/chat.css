@@ -20,11 +20,11 @@
 .chat-prose .md {
   min-width: 0;
   font-size: 15px;
-  line-height: 1.85;
+  line-height: 1.65;
   color: rgb(var(--c-txt));
   overflow-wrap: anywhere;
 }
-.chat-thread .chat-prose p { margin-block: .65em; }
+.chat-thread .chat-prose p { margin-block: .5em; }
 .chat-thread .chat-prose :is(h1, h2, h3, h4) {
   margin-block: 1.35em .5em;
   color: rgb(var(--c-txt));
