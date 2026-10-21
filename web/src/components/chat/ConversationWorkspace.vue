@@ -20,7 +20,9 @@ const props = withDefaults(defineProps<{
   showToolbar?: boolean
   /** Sandbox stage: icon-only resource and artifact toggles share this drawer. */
   splitModes?: boolean
-}>(), { title: '', storageKey: 'grasp.conversation.panelWidth', panelWidth: 440, panelEnabled: true, showToolbar: true, splitModes: false })
+  /** Keep the open flag across scope changes. The parent owns that session switch. */
+  retainOpen?: boolean
+}>(), { title: '', storageKey: 'grasp.conversation.panelWidth', panelWidth: 440, panelEnabled: true, showToolbar: true, splitModes: false, retainOpen: false })
 const open = defineModel<boolean>('open', { default: false })
 const mode = defineModel<'resources' | 'artifacts' | null>('mode', { default: null })
 provide(conversationPanelVisibleKey, computed(() => open.value && props.panelEnabled))
@@ -182,9 +184,11 @@ watch(mode, (value) => {
   if (open.value !== shouldOpen) open.value = shouldOpen
 })
 watch(() => props.scopeKey, () => {
-  open.value = false
+  if (!props.retainOpen) {
+    open.value = false
+    if (props.splitModes) mode.value = null
+  }
   unreadCount.value = 0
-  if (props.splitModes) mode.value = null
   dragging.value = false
   returnFocus = null
 })
