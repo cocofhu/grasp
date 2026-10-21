@@ -228,8 +228,16 @@ wait`)
 		t.Fatalf("due = %+v", shells)
 	}
 	terminateShells(shells)
+	// terminateShells returns once the shell is gone or after SIGKILL; under
+	// heavy load the kernel can take a moment more to tear it down, so poll.
+	deadline := time.Now().Add(2 * time.Second)
+	for (sh.alive() || b.waiting()) && time.Now().Before(deadline) {
+		time.Sleep(15 * time.Millisecond)
+	}
 	if sh.alive() || b.waiting() {
-		t.Fatal("background shell survived terminate")
+		stat, err := os.ReadFile(filepath.Join(procRoot, strconv.Itoa(ownPID), "stat"))
+		t.Fatalf("background shell survived terminate: alive=%v waiting=%v /proc/%d/stat=%q err=%v",
+			sh.alive(), b.waiting(), ownPID, stat, err)
 	}
 }
 
