@@ -31,3 +31,20 @@ func TestTakeoverSessionShareableLikeReview(t *testing.T) {
 		t.Fatalf("plain auto agent visit: err=%v, want ErrNotReviewSession", err)
 	}
 }
+
+// A takeover opening turn whose text is empty but which carries the auto
+// phase's narration must still reach public previews; a turn with neither is
+// dropped as before.
+func TestSanitizeTurnsKeepsNarrationOnlyTurn(t *testing.T) {
+	got := SanitizeTurns([]models.ReactMessage{
+		{Role: "agent", Text: "", Narration: "我已经完成了登录页的初稿。", At: "2026-10-21T10:00:00+08:00"},
+		{Role: "agent", Text: "", Narration: "   "},
+		{Role: "human", Text: "", Narration: "人类消息不带叙述"},
+	})
+	if len(got) != 1 {
+		t.Fatalf("turns = %+v, want only the narration-bearing agent turn", got)
+	}
+	if got[0].Role != "agent" || got[0].Narration != "我已经完成了登录页的初稿。" || got[0].Text != "" {
+		t.Fatalf("turn = %+v", got[0])
+	}
+}
