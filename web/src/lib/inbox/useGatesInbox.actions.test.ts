@@ -144,7 +144,7 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
-import { useGatesInbox } from './useGatesInbox'
+import { TYPING_IDLE_MS, useGatesInbox } from './useGatesInbox'
 import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
 const gateItem = (id = 'run-gate', over: Record<string, unknown> = {}): InboxItem =>
@@ -600,6 +600,150 @@ describe('useGatesInbox actions', () => {
     expect(mocks.listGates).toHaveBeenCalledTimes(1)
     expect(inbox.listItems.value.map((it) => it.runId)).toContain('run-new')
     expect(`${inbox.active.value!.runId}:${inbox.active.value!.nodeId}`).toBe(selectedKey)
+    app.unmount()
+  })
+
+  it('keeps holding while a focused field is cleared and typed into again, then applies once input is idle', async () => {
+    const { inbox, app } = await withInbox()
+    const field = document.createElement('textarea')
+    document.body.appendChild(field)
+    field.focus()
+    document.dispatchEvent(new FocusEvent('focusin'))
+    const type = async (value: string) => {
+      field.value = value
+      field.dispatchEvent(new Event('input', { bubbles: true }))
+      await nextTick()
+    }
+    vi.useFakeTimers()
+    try {
+      await type('有草稿')
+      expect(shared.autoApplyHold!()).toBe(true)
+      mocks.autoApplyPending.mockClear()
+
+      // Ctrl+A, Backspace: the draft is empty but the user is still typing.
+      await type('')
+      expect(inbox.focusedFieldHasDraft.value).toBe(false)
+      expect(inbox.typingRecently.value).toBe(true)
+      expect(shared.autoApplyHold!()).toBe(true)
+      expect(mocks.autoApplyPending).not.toHaveBeenCalled()
+
+      vi.advanceTimersByTime(TYPING_IDLE_MS - 200)
+      await type('继续')
+      vi.advanceTimersByTime(TYPING_IDLE_MS + 200)
+      await nextTick()
+      // Idle, but a draft is in the field: still held.
+      expect(shared.autoApplyHold!()).toBe(true)
+      expect(mocks.autoApplyPending).not.toHaveBeenCalled()
+
+      await type('')
+      vi.advanceTimersByTime(TYPING_IDLE_MS - 200)
+      await nextTick()
+      expect(mocks.autoApplyPending).not.toHaveBeenCalled()
+      vi.advanceTimersByTime(400)
+      await nextTick()
+      // Empty and idle for TYPING_IDLE_MS: the pending change applies once.
+      expect(shared.autoApplyHold!()).toBe(false)
+      expect(mocks.autoApplyPending).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+      field.remove()
+      app.unmount()
+    }
+  })
+
+  it('applies on blur right after typing without waiting for the idle timer', async () => {
+    const { inbox, app } = await withInbox()
+    const field = document.createElement('textarea')
+    document.body.appendChild(field)
+    field.focus()
+    document.dispatchEvent(new FocusEvent('focusin'))
+    field.value = 'x'
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    field.value = ''
+    field.dispatchEvent(new Event('input', { bubbles: true }))
+    await nextTick()
+    expect(shared.autoApplyHold!()).toBe(true)
+    mocks.autoApplyPending.mockClear()
+    field.blur()
+    document.dispatchEvent(new FocusEvent('focusout'))
+    await nextTick()
+    await nextTick()
+    expect(inbox.typingRecently.value).toBe(false)
+    expect(mocks.autoApplyPending).toHaveBeenCalledTimes(1)
+    field.remove()
+    app.unmount()
+  })
+
+  it('keeps the deep-linked selection object across a silent reload so the chat is not remounted', async () => {
+    mocks.listGates.mockResolvedValue({ items: [gateItem(), clarifyItem()], total: 2 })
+    const { inbox, app } = await withInbox('/inbox?run=run-chat&node=react')
+    await flushPromises()
+    const before = inbox.active.value
+    expect(before?.runId).toBe('run-chat')
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem('run-new'), gateItem(), clarifyItem()],
+      total: 3,
+    })
+    shared.lastAutoAppliedAt.value = Date.now()
+    await flushPromises()
+    expect(inbox.listItems.value.map((it) => it.runId)).toContain('run-new')
+    // Same object: watch(active) does not reload the run / remount the composer.
+    expect(inbox.active.value).toBe(before)
+    app.unmount()
+  })
+
+  it('puts focus and the caret back if a silent reload re-renders the focused composer', async () => {
+    const { app } = await withInbox()
+    const mk = () => {
+      const ta = document.createElement('textarea')
+      ta.setAttribute('data-testid', 'clarify-input')
+      ta.value = '继续输入'
+      document.body.appendChild(ta)
+      return ta
+    }
+    const old = mk()
+    old.focus()
+    old.setSelectionRange(2, 2)
+    let replacement: HTMLTextAreaElement | null = null
+    mocks.listGates.mockImplementation(async () => {
+      old.remove()
+      replacement = mk()
+      return { items: [gateItem(), clarifyItem()], total: 2 }
+    })
+    shared.lastAutoAppliedAt.value = Date.now()
+    await flushPromises()
+    await nextTick()
+    expect(replacement).not.toBeNull()
+    expect(document.activeElement).toBe(replacement)
+    expect(replacement!.selectionStart).toBe(2)
+    expect(replacement!.selectionEnd).toBe(2)
+    replacement!.remove()
+    app.unmount()
+  })
+
+  it('never pulls focus back once the user moved to another field', async () => {
+    const { app } = await withInbox()
+    const old = document.createElement('textarea')
+    old.setAttribute('data-testid', 'clarify-input')
+    document.body.appendChild(old)
+    old.focus()
+    const other = document.createElement('input')
+    document.body.appendChild(other)
+    let replacement: HTMLTextAreaElement | null = null
+    mocks.listGates.mockImplementation(async () => {
+      old.remove()
+      replacement = document.createElement('textarea')
+      replacement.setAttribute('data-testid', 'clarify-input')
+      document.body.appendChild(replacement)
+      other.focus()
+      return { items: [gateItem()], total: 1 }
+    })
+    shared.lastAutoAppliedAt.value = Date.now()
+    await flushPromises()
+    await nextTick()
+    expect(document.activeElement).toBe(other)
+    replacement!.remove()
+    other.remove()
     app.unmount()
   })
 
