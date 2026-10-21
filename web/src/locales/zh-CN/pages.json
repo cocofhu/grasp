@@ -3473,6 +3473,15 @@
       "stepQuestions": {
         "title": "正在整理第一轮问题…",
         "hint": "正在整理需要向你确认的事项。"
+      },
+      "checklist": {
+        "title": "正在启动 Agent",
+        "done": "环境已就绪",
+        "doneMeta": "{n} 步 · {d}",
+        "doneMetaNoTime": "{n} 步",
+        "sandbox": "启动沙箱",
+        "workspace": "准备工作区",
+        "agent": "连接 Agent"
       }
     },
     "nodeOutput": {

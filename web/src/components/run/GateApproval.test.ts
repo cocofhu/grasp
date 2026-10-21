@@ -3962,3 +3962,139 @@ describe('GateApproval cold footer pending + loadProduct gen (专项三 g4)', ()
     wrapper.unmount()
   })
 })
+
+describe('GateApproval cold exit uses the chat composer (desktop body)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    breakpointMocks.isMobile.value = false
+    apiMocks.listPreviewIssues.mockResolvedValue({ issues: [] })
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
+    apiMocks.artifactContent.mockResolvedValue({ content: '# doc' })
+  })
+
+  it('gives every cold footer action its own testid (positive keeps review-composer-pass)', async () => {
+    for (const form of [[], [{ key: 'comment', label: '评审意见' }]]) {
+      const wrapper = mountApproval({
+        gate: baseGate({
+          reactSessionAlive: false,
+          form,
+          actions: [
+            // Two positive edges both render (visibleActions keeps every pass id).
+            { id: 'approve', label: '批准' },
+            { id: 'pass', label: '通过' },
+          ],
+        }),
+        run: baseRun(),
+        compact: false,
+      })
+      await flushPromises()
+      const buttons = wrapper.get('[data-gate-cold-actions]').findAll('[data-action-id]')
+      const ids = buttons.map((b) => b.attributes('data-testid'))
+      expect(buttons.length).toBeGreaterThan(1)
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(wrapper.findAll('[data-testid="review-composer-pass"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="review-composer-pass"]').attributes('data-action-id')).toBe('approve')
+      for (const b of buttons) {
+        const id = b.attributes('data-action-id')
+        if (id !== 'approve') expect(b.attributes('data-testid')).toBe(`review-composer-action-${id}`)
+      }
+      wrapper.unmount()
+    }
+  })
+
+  it('renders 评审意见 as the ComposerShell input with one chat-action-confirm primary (no bg-ok)', async () => {
+    const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: false }), run: baseRun(), compact: false })
+    await flushPromises()
+    const box = wrapper.find('[data-testid="gate-cold-composer"]')
+    expect(box.exists()).toBe(true)
+    expect(box.classes()).toContain('chat-composer')
+    expect(box.find('textarea').exists()).toBe(true)
+    expect(box.find('[data-testid="paragraph-input-attach"]').exists()).toBe(true)
+    const primaries = wrapper.findAll('[data-testid="review-composer-pass"]')
+    expect(primaries).toHaveLength(1)
+    expect(primaries[0].classes()).toContain('chat-action-confirm')
+    expect(primaries[0].attributes('data-kind')).toBe('confirm')
+    expect(primaries[0].text()).toContain('确认并流转')
+    expect(wrapper.find('[data-gate-cold-actions]').html()).not.toMatch(/bg-ok/)
+    // The field keeps main's label above the composer.
+    expect(wrapper.get('[data-testid="gate-cold-label"]').text()).toBe('评审意见')
+    const help = wrapper.get('[data-testid="gate-cold-help"]')
+    expect(help.text()).toContain('确认并流转')
+    // Cold session: main's plain cold help line (no string-spliced fragments).
+    expect(help.text()).not.toContain('·')
+    wrapper.unmount()
+  })
+
+  it('a drafted comment turns 确认并流转 into the non-primary (secondary) style; clearing restores it', async () => {
+    const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: false }), run: baseRun(), compact: false })
+    await flushPromises()
+    const input = wrapper.find('[data-testid="gate-cold-composer"] textarea')
+    await input.setValue('请补充后再提交')
+    let pass = wrapper.get('[data-testid="review-composer-pass"]')
+    expect(pass.classes()).toContain('chat-action-secondary')
+    expect(pass.classes()).not.toContain('chat-action-confirm')
+    expect(pass.attributes('data-variant')).toBe('secondary')
+    await input.setValue('   ')
+    pass = wrapper.get('[data-testid="review-composer-pass"]')
+    expect(pass.classes()).toContain('chat-action-confirm')
+    expect(pass.attributes('data-variant')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('required first field shows the required asterisk', async () => {
+    const wrapper = mountApproval({
+      gate: baseGate({ reactSessionAlive: false, form: [{ key: 'comment', label: '评审意见', required: true }] }),
+      run: baseRun(),
+      compact: false,
+    })
+    await flushPromises()
+    const label = wrapper.get('[data-testid="gate-cold-label"]')
+    expect(label.text()).toBe('评审意见 *')
+    expect(label.find('.text-err').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('composer text is submitted as gate.form.comment through the same resolve call', async () => {
+    const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: false }), run: baseRun(), compact: false })
+    await flushPromises()
+    await wrapper.find('[data-testid="gate-cold-composer"] textarea').setValue('缺表头说明')
+    await wrapper.find('[data-testid="review-composer-pass"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('resolve')).toBeUndefined()
+    await acceptConfirmFlowDialog()
+    const ev = wrapper.emitted('resolve')
+    expect(ev?.length).toBe(1)
+    expect(ev?.[0]?.[0]).toBe('approve')
+    expect(JSON.stringify(ev?.[0]?.[1])).toContain('缺表头说明')
+    expect(wrapper.find('[data-testid="review-composer-pass"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('extra form fields stay labelled above the composer; no form → footer-only shell', async () => {
+    const two = mountApproval({
+      gate: baseGate({ reactSessionAlive: false, form: [{ key: 'comment', label: '评审意见' }, { key: 'risk', label: '风险说明', required: true }] }),
+      run: baseRun(),
+      compact: false,
+    })
+    await flushPromises()
+    expect(two.findAll('label.label').map((l) => l.text())).toEqual([expect.stringContaining('风险说明'), '评审意见'])
+    expect(two.find('[data-testid="gate-cold-composer"] textarea').exists()).toBe(true)
+    two.unmount()
+
+    const none = mountApproval({ gate: baseGate({ reactSessionAlive: false, form: [] }), run: baseRun(), compact: false })
+    await flushPromises()
+    expect(none.find('[data-testid="gate-cold-composer"]').exists()).toBe(false)
+    const pass = none.find('[data-testid="gate-cold-footer"] [data-testid="review-composer-pass"]')
+    expect(pass.exists()).toBe(true)
+    expect(pass.classes()).toContain('chat-action-confirm')
+    none.unmount()
+  })
+
+  it('hot session keeps GateApprovalComposer (cold composer not mounted)', async () => {
+    const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: true }), run: baseRun(), compact: false })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="gate-cold-composer"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="review-composer-gate"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+})

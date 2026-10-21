@@ -3473,6 +3473,15 @@
       "stepQuestions": {
         "title": "Preparing the first questions…",
         "hint": "Gathering what we need to confirm with you."
+      },
+      "checklist": {
+        "title": "Starting Agent",
+        "done": "Environment ready",
+        "doneMeta": "{n} steps · {d}",
+        "doneMetaNoTime": "{n} steps",
+        "sandbox": "Start sandbox",
+        "workspace": "Prepare workspace",
+        "agent": "Connect Agent"
       }
     },
     "nodeOutput": {

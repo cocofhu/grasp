@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   runArtifacts: vi.fn(),
   runEventsWsUrl: vi.fn((id: string) => `ws://test/runs/${id}/events`),
   listGatePrimaryArtifacts: vi.fn(),
+  getRunNodeSandbox: vi.fn(),
 }))
 
 const routeState = vi.hoisted(() => ({ query: {} as Record<string, string> }))
@@ -32,6 +33,7 @@ vi.mock('@/lib/api/api', async () => {
       runArtifacts: mocks.runArtifacts,
       runEventsWsUrl: mocks.runEventsWsUrl,
       listGatePrimaryArtifacts: mocks.listGatePrimaryArtifacts,
+      getRunNodeSandbox: mocks.getRunNodeSandbox,
     },
   }
 })
@@ -77,6 +79,7 @@ import GatesInboxView from './GatesInboxView.vue'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { setHomeApproveHandoff, takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 import { CLARIFY_CAPS } from '@/test/capsFixtures'
+import { bootKey, bootSteps, clearBootRecords, getBootRecord } from '@/lib/run/bootRecord'
 
 function paged(items: InboxItem[]) {
   return { items, total: items.length, page: 1, pageSize: 20 }
@@ -219,6 +222,8 @@ beforeEach(async () => {
   if (filterState.workflowSelected) filterState.workflowSelected.value = ''
   mocks.listGates.mockResolvedValue(paged([]))
   mocks.listGatePrimaryArtifacts.mockResolvedValue({ items: [] })
+  mocks.getRunNodeSandbox.mockResolvedValue(null)
+  clearBootRecords()
   mocks.getRun.mockResolvedValue({ id: 'run-unknown', status: 'running' })
   await usePendingGates().refresh({ mode: 'force' })
 })
@@ -266,6 +271,58 @@ describe('GatesInboxView starting approvals', () => {
     expect(composer.exists()).toBe(true)
     expect(composer.props('turns')).toHaveLength(1)
     expect(composer.props('seedHumanText')).toBe('把登录做清楚')
+    wrapper.unmount()
+  })
+
+  it('boot checklist ticks on the real sandbox states and goes live on park', async () => {
+    const t0 = Date.parse('2026-10-21T00:00:00Z')
+    const iso = (sec: number) => new Date(t0 + sec * 1000).toISOString()
+    const starting = { ...startingItem(), requestedAt: iso(0), updatedAt: iso(0) }
+    mocks.listGates.mockResolvedValue(paged([starting]))
+    mocks.inboxContext.mockResolvedValue(startingContext)
+    mocks.getRunNodeSandbox.mockResolvedValue({ status: 'creating', createdAt: iso(1), updatedAt: iso(1) })
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    const key = bootKey('run-boot', 'ap', 1)
+    expect(getBootRecord(key)?.nodeStartedAt).toBe(t0)
+    expect(wrapper.findAll('[data-testid="clarify-boot-step"]').map((s) => s.attributes('data-state')))
+      .toEqual(['running', 'pending', 'pending'])
+
+    mocks.listGates.mockResolvedValue(paged([{ ...parkedItem(), requestedAt: iso(0) }]))
+    mocks.inboxContext.mockResolvedValue(parkedContext)
+    mocks.getRunNodeSandbox.mockResolvedValue({ status: 'running', createdAt: iso(1), updatedAt: iso(12) })
+    liveSocket().emit('status', { runId: 'run-boot' })
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+
+    expect(wrapper.find('[data-testid="react-connecting-sidebar"]').exists()).toBe(false)
+    expect(getBootRecord(key)?.live).toBe(true)
+    expect(bootSteps(getBootRecord(key))).toEqual([
+      { id: 'sandbox', state: 'done', sec: 12 },
+      { id: 'workspace', state: 'done', sec: null },
+      { id: 'agent', state: 'done', sec: null },
+    ])
+    wrapper.unmount()
+  })
+
+  it('a boot failure never marks the boot record live', async () => {
+    mocks.listGates.mockResolvedValue(paged([startingItem()]))
+    mocks.inboxContext.mockResolvedValue(startingContext)
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    mocks.listGates.mockResolvedValue(paged([]))
+    mocks.getRun.mockResolvedValue({ id: 'run-boot', status: 'failed', error: 'sandbox setup failed' })
+    liveSocket().emit('status', { runId: 'run-boot' })
+    await flushPromises()
+    await nextTick()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="inbox-start-failed"]').exists()).toBe(true)
+    expect(getBootRecord(bootKey('run-boot', 'ap', 1))?.live).toBe(false)
     wrapper.unmount()
   })
 
