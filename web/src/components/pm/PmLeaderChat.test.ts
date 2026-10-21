@@ -2246,6 +2246,7 @@ ${'保留原文 '.repeat(60)}`
     apiMocks.listPmThreads.mockResolvedValue({ items: [{ id: 'thread-1', agentAvailable: true, title: '交付验收' }, { id: 'thread-2', agentAvailable: true, title: '发布复盘' }] })
     const wrapper = mountChat()
     await flushPromises()
+    expect(wrapper.find('[data-testid="conversation-resource-toggle"]').exists()).toBe(false)
     await wrapper.get('[data-testid="pm-chat-artifacts"]').trigger('click')
     expect(wrapper.findComponent(ConversationWorkspace).props('open')).toBe(true)
     await (wrapper.vm as unknown as { selectThread: (id: string) => Promise<void> }).selectThread('thread-2')

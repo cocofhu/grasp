@@ -173,6 +173,9 @@ describe('reactArtifactPreview helpers', () => {
     expect(buildArtifactVersionChoices(2, [{ artifactId: 'x', revision: 2, nodeId: 'n', sizeBytes: 1, createdAt: 't' }])).toEqual([
       { index: 2, revision: 2, latest: true, available: true },
     ])
+    expect(buildArtifactVersionChoices(1, { items: [] } as unknown as [])).toEqual([
+      { index: 1, revision: 1, latest: true, available: true },
+    ])
   })
 
   it('uses sandbox remote only for clarify Agents without set_preview', () => {
