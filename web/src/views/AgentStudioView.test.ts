@@ -2376,6 +2376,67 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
   })
 
+  // S-d: both prompts answered with 保存并切换 — each side is saved once, then the switch happens.
+  it('narrow screens: 保存并切换 twice saves the defaults once and alpha once, then lands on beta', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    breakpointMocks.isMobile.value = true
+    await flushPromises()
+    mocks.saveAgent.mockClear()
+    await wrapper.get('[data-testid="studio-defaults-pane"] [data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    await clickModal(wrapper, '保存并切换')
+    expect(sharedState.save).toHaveBeenCalledTimes(1)
+    expect(mocks.saveAgent).not.toHaveBeenCalled()
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '保存并切换')
+    expect(sharedState.save).toHaveBeenCalledTimes(1)
+    expect(mocks.saveAgent).toHaveBeenCalledTimes(1)
+    expect(mocks.saveAgent.mock.calls[0][0]).toMatchObject({ name: 'alpha' })
+    expect(JSON.stringify(mocks.saveAgent.mock.calls[0][0])).toContain('/root/workspace-edited')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(pane(wrapper)).toBe(false)
+  })
+
+  it('narrow screens: after 取消 on the switch prompt the sheet stays as it was and Esc closes it', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    breakpointMocks.isMobile.value = true
+    await flushPromises()
+    const sheet = () => document.querySelector('[data-test="sidebar-sheet"]')
+    const esc = async () => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+      await flushPromises()
+    }
+    await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    // Esc while the prompt is up leaves both in place.
+    await esc()
+    expect(modal(wrapper).exists()).toBe(true)
+    expect(sheet()).not.toBeNull()
+    await clickModal(wrapper, '取消')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(sheet()).not.toBeNull()
+    expect(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="alpha"]')?.getAttribute('aria-current')).toBeTruthy()
+    expect(router.currentRoute.value.query).toEqual({ agent: 'alpha', studioTab: 'meta' })
+    await esc()
+    expect(sheet()).toBeNull()
+    expect(router.currentRoute.value.query).toEqual({ agent: 'alpha', studioTab: 'meta' })
+    expect(mocks.saveAgent).not.toHaveBeenCalled()
+  })
+
   // S3 / S4: the URL alone decides
   it('pushing the old link while an Agent is open shows the defaults; Back leaves them', async () => {
     mocks.listAgents.mockResolvedValue(agents())
