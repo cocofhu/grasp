@@ -381,7 +381,11 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	})
 	// Cancel finalizes the StateRun; clarifyVisitLive must refuse new turns.
 	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 1, Status: "cancelled"})
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{"text": "answer"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/react/reply", map[string]any{
+		"text":        "answer",
+		"images":      []map[string]any{{"data": "QUJD", "mimeType": "image/png", "name": "a.png"}},
+		"annotations": []map[string]any{{"selector": "#x", "note": "改这里"}},
+	})
 	if w.Code != http.StatusConflict {
 		t.Fatalf("react reply after cancel: %d %s", w.Code, w.Body.String())
 	}
@@ -397,6 +401,16 @@ func TestReactReplyClarifyVisitEndedHTTP(t *testing.T) {
 	}
 	if strings.Contains(w.Body.String(), "续跑后") {
 		t.Fatalf("must not embed resume hint: %s", w.Body.String())
+	}
+	d, _ := body["dropped"].(map[string]any)
+	if d == nil || d["text"] != "answer" {
+		t.Fatalf("dropped=%v", body["dropped"])
+	}
+	if a, _ := d["attachments"].([]any); len(a) != 1 || a[0].(map[string]any)["data"] != "QUJD" {
+		t.Fatalf("attachments=%v", d["attachments"])
+	}
+	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "改这里" {
+		t.Fatalf("annotations=%v", d["annotations"])
 	}
 }
 

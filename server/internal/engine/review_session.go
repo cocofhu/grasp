@@ -144,6 +144,13 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 				}
 			}
 		},
+		ErrorExtra: func(err error) map[string]any {
+			var ve *ClarifyVisitEndedError
+			if errors.As(err, &ve) {
+				return ve.FrameExtra()
+			}
+			return nil
+		},
 		CancelTurn: func() { e.cancelLaneProviderTurn(runID, producerID, lane) },
 		OnIdle:     func() { e.dropLaneSessionIfIdle(runID, producerID, lane) },
 	})
@@ -367,7 +374,11 @@ func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []model
 		return 0, errors.New("text, images, or annotations required")
 	}
 	if kind == sessionKindClarify {
-		if err := e.errIfClarifyVisitEnded(runID, producerID, autoRetryOnResume); err != nil {
+		// Best-effort early refusal. A Cancel landing after this check is
+		// caught again when the turn starts (executeClarifyTurn), which sends
+		// the same contract as a WS error frame.
+		dropped := &DroppedTurn{Text: text, Images: images, Annotations: annotations}
+		if err := e.errIfClarifyVisitEnded(runID, producerID, autoRetryOnResume, dropped); err != nil {
 			return 0, err
 		}
 	}
@@ -574,7 +585,12 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 		// The error reaches the page as the turn's error frame, so the
 		// message is not lost silently. HTTP callers that hit the same
 		// condition at enqueue get 409 clarify_visit_ended.
-		return false, clarifyVisitEndedErr(item.AutoRetryOnResume)
+		// pump publishes it as a WS error frame with the same contract
+		// (newReviewSession ErrorExtra), echoing the dropped turn.
+		return false, &ClarifyVisitEndedError{
+			AutoRetryOnResume: item.AutoRetryOnResume, NodeID: s.producerID, Iteration: conv.Iteration,
+			Dropped: &DroppedTurn{Text: item.Text, Images: item.Images, Annotations: item.Annotations},
+		}
 	}
 
 	// The questions this answer responds to, captured before the human turn is

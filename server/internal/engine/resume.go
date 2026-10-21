@@ -373,6 +373,14 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	if retryLast && force {
 		return errors.New("retryLast cannot be combined with force")
 	}
+	// A clarify reply to an ended visit is refused before attachments are
+	// ingested so the 409 echoes them exactly as the client sent them.
+	if !force && !retryLast && e.nodeIsClarify(runID, nodeID) {
+		dropped := &DroppedTurn{Text: humanText, Images: images, Annotations: annotations}
+		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, dropped); err != nil {
+			return err
+		}
+	}
 	var err error
 	if !retryLast {
 		images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)

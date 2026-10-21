@@ -147,8 +147,10 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	}
 	// Clarify visits that already ended must 409 before the Live request is
 	// accepted; ordinary user Live never auto-redelivers on resume.
-	if err := e.errIfClarifyVisitEnded(runID, nodeID, false); err != nil {
-		return nil, err
+	if e.nodeIsClarify(runID, nodeID) {
+		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, nil); err != nil {
+			return nil, err
+		}
 	}
 	if ev.Replace {
 		if err := e.discardIdleLiveForReplace(owner, runID, nodeID, ev.SID); err != nil {
@@ -336,6 +338,12 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 	}
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
 		return err
+	}
+	if e.nodeIsClarify(runID, nodeID) {
+		dropped := &DroppedTurn{Text: text, Images: images, Annotations: annotations}
+		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, dropped); err != nil {
+			return err
+		}
 	}
 	images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)
 	if err != nil {

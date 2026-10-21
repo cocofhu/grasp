@@ -367,19 +367,15 @@ func writeReactReplyError(c *gin.Context, err error) {
 	}
 	var visitEnded *engine.ClarifyVisitEndedError
 	if errors.As(err, &visitEnded) {
-		c.JSON(http.StatusConflict, gin.H{
+		body := gin.H{
 			"error":             visitEnded.Error(),
 			"code":              "clarify_visit_ended",
 			"autoRetryOnResume": visitEnded.AutoRetryOnResume,
-		})
-		return
-	}
-	if errors.Is(err, engine.ErrClarifyVisitEnded) {
-		c.JSON(http.StatusConflict, gin.H{
-			"error":             "运行已结束，这条消息没有发送",
-			"code":              "clarify_visit_ended",
-			"autoRetryOnResume": false,
-		})
+		}
+		if d := visitEnded.DroppedPayload(); d != nil {
+			body["dropped"] = d
+		}
+		c.JSON(http.StatusConflict, body)
 		return
 	}
 	if errors.Is(err, engine.ErrLiveOpen) {

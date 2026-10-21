@@ -83,6 +83,9 @@ type Config[T any] struct {
 	// CancelTurn asks the runtime to stop its turn (e.g. ACP cancel). Cancel
 	// calls it even with no active item, to stop a turn started elsewhere.
 	CancelTurn func()
+	// ErrorExtra (optional) adds fields to the error frame for a failed turn,
+	// e.g. a machine-readable code. Its keys override message/interrupted.
+	ErrorExtra func(err error) map[string]any
 }
 
 // Session is one chat's FIFO and pump. Use New.
@@ -384,7 +387,13 @@ func (s *Session[T]) pump() {
 		s.mu.Unlock()
 
 		if err != nil && !wasCancel {
-			s.publish(EventError, map[string]any{"message": err.Error(), "interrupted": false})
+			frame := map[string]any{"message": err.Error(), "interrupted": false}
+			if s.cfg.ErrorExtra != nil {
+				for k, v := range s.cfg.ErrorExtra(err) {
+					frame[k] = v
+				}
+			}
+			s.publish(EventError, frame)
 		} else {
 			s.publish(EventTurnDone, map[string]any{"interrupted": wasCancel})
 		}

@@ -2,10 +2,12 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/engine"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pagebridge"
 
@@ -152,7 +154,12 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 		if run, ok := h.Runs.Get(runID); ok {
 			if n := run.Graph.FindNode(nodeID); n != nil && n.Caps.Clarify() {
 				if _, err := h.Eng.EnqueueClarifyTurnAs(owner, runID, nodeID, m.Content, m.Images, m.Annotations); err != nil {
-					h.publishReviewWSError(runID, nodeID, err.Error())
+					var ve *engine.ClarifyVisitEndedError
+					if errors.As(err, &ve) {
+						h.publishReviewWSFrame(runID, nodeID, ve.FrameExtra())
+					} else {
+						h.publishReviewWSError(runID, nodeID, err.Error())
+					}
 				}
 				return
 			}
@@ -166,10 +173,18 @@ func (h *Handlers) handleRunWSControl(runID, owner string, data []byte) {
 // publishReviewWSError pushes a type:"review" event:"error" frame so WS clients
 // see enqueue/cancel failures (aligned with SandboxChat error frames).
 func (h *Handlers) publishReviewWSError(runID, nodeID, message string) {
-	msg, err := json.Marshal(map[string]any{
-		"type": "review", "runId": runID, "nodeId": nodeID,
-		"event": "error", "message": message,
-	})
+	h.publishReviewWSFrame(runID, nodeID, map[string]any{"message": message})
+}
+
+// publishReviewWSFrame is publishReviewWSError with extra fields (code,
+// autoRetryOnResume, dropped, ...); extra keys may not change type/event.
+func (h *Handlers) publishReviewWSFrame(runID, nodeID string, extra map[string]any) {
+	frame := map[string]any{"runId": runID, "nodeId": nodeID}
+	for k, v := range extra {
+		frame[k] = v
+	}
+	frame["type"], frame["event"] = "review", "error"
+	msg, err := json.Marshal(frame)
 	if err != nil {
 		return
 	}

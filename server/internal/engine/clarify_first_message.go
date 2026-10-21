@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 
@@ -92,6 +93,12 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 		// Marked AutoRetryOnResume so a visit-ended refusal tells callers the
 		// latch will be released and ResumeFrom will redeliver.
 		if _, err := e.EnqueueClarifyFirstMessageAs("", runID, nodeID, text, images); err != nil {
+			// No client sent this turn, so broadcast the refusal for any open
+			// page ("续跑后会自动重新发送").
+			var ve *ClarifyVisitEndedError
+			if errors.As(err, &ve) {
+				e.publishClarifyVisitEnded(runID, ve)
+			}
 			log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
 				Msg("clarify first message: deliver failed; releasing latch")
 			e.releaseClarifyFirstMessageLatch(runID)

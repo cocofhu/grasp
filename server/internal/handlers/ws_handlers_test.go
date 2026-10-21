@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"encoding/json"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -149,5 +150,68 @@ func TestSandboxTerminalWS(t *testing.T) {
 	_, msg, err := c.ReadMessage()
 	if err != nil || !strings.Contains(string(msg), "error") {
 		t.Fatalf("terminal error frame: %v %s", err, msg)
+	}
+}
+
+// TestRunEventsWSClarifyVisitEnded: a WS chat to an ended clarify visit gets
+// the same contract as HTTP 409, echoing the dropped turn.
+func TestRunEventsWSClarifyVisitEnded(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	runID := "rw-clar-ended"
+	h.db.Create(&models.Run{ID: runID, Status: "cancelled", StartedAt: now, Graph: models.Graph{
+		Nodes: []models.Node{{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "澄清"}},
+	}})
+	h.db.Create(&models.ReactConversation{RunID: runID, NodeID: "react", Iteration: 2, Messages: []models.ReactMessage{{Role: "agent", Text: "q?"}}})
+	h.db.Create(&models.StateRun{RunID: runID, NodeID: "react", Iteration: 2, Status: "cancelled"})
+	srv := httptest.NewServer(h.r)
+	defer srv.Close()
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/api/runs/"+runID+"/events"), h.wsHeader())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	if _, _, err := c.ReadMessage(); err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if err := c.WriteJSON(map[string]any{
+		"type": "chat", "nodeId": "react", "content": "我的回答",
+		"images":      []map[string]any{{"data": "QUJD", "mimeType": "image/png", "name": "a.png"}},
+		"annotations": []map[string]any{{"selector": "#x", "note": "改这里"}},
+	}); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	var f map[string]any
+	for i := 0; i < 5; i++ {
+		_, msg, err := c.ReadMessage()
+		if err != nil {
+			break
+		}
+		var m map[string]any
+		if json.Unmarshal(msg, &m) == nil && m["event"] == "error" {
+			f = m
+			break
+		}
+	}
+	if f == nil {
+		t.Fatal("no error frame")
+	}
+	if f["type"] != "review" || f["code"] != "clarify_visit_ended" || f["message"] != "运行已结束，这条消息没有发送" ||
+		f["autoRetryOnResume"] != false || f["nodeId"] != "react" || f["iteration"] != float64(2) {
+		t.Fatalf("frame=%v", f)
+	}
+	d, _ := f["dropped"].(map[string]any)
+	if d == nil || d["text"] != "我的回答" {
+		t.Fatalf("dropped=%v", f["dropped"])
+	}
+	if a, _ := d["attachments"].([]any); len(a) != 1 || a[0].(map[string]any)["data"] != "QUJD" {
+		t.Fatalf("attachments must echo as sent: %v", d["attachments"])
+	}
+	if a, _ := d["annotations"].([]any); len(a) != 1 || a[0].(map[string]any)["note"] != "改这里" {
+		t.Fatalf("annotations=%v", d["annotations"])
+	}
+	if _, has := d["clientId"]; has {
+		t.Fatalf("WS chat carries no client id; clientId must be omitted: %v", d)
 	}
 }
