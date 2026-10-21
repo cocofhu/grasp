@@ -5,8 +5,8 @@ export type ResourceListItem = { id: string; label: string; count?: number; icon
 const props = defineProps<{ nodes: ResourceListItem[]; pinned?: ResourceListItem[]; activeKey?: string; title: string; total?: number; searchPlaceholder?: string; emptyText?: string; noMatchText?: string; loading?: boolean }>()
 const emit = defineEmits<{ select: [id: string]; contextmenu: [event: MouseEvent, id: string] }>()
 const query = ref('')
-// While searching, "nothing created yet" copy would contradict the pinned items above.
-const emptyMessage = computed(() => query.value.trim() ? (props.noMatchText ?? (props.pinned?.length ? '' : props.emptyText)) : props.emptyText)
+// With pinned items above, "nothing created yet" copy would contradict them; while searching, use no-match copy.
+const emptyMessage = computed(() => query.value.trim() ? (props.noMatchText ?? (props.pinned?.length ? '' : props.emptyText)) : (props.pinned?.length ? '' : props.emptyText))
 const filtered = computed(() => props.nodes.filter((node) => node.label.toLocaleLowerCase().includes(query.value.trim().toLocaleLowerCase())))
 </script>
 <template>

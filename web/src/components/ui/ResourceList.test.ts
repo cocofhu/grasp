@@ -29,4 +29,10 @@ describe('ResourceList empty copy', () => {
     await w.get('input[type="search"]').setValue('zzz')
     expect(w.get('[data-testid="resource-list-empty"]').text()).toBe('暂无工作区，请先创建工作区。')
   })
+
+  it('a pinned list with no items shows no "nothing created yet" copy', () => {
+    const w = mount(ResourceList, { props: { ...base, nodes: [], pinned: [{ id: 'd', label: 'Agent 默认配置' }] }, global: { stubs: { Icon: true } } })
+    expect(w.get('[data-testid="resource-list-pinned"]').text()).toContain('Agent 默认配置')
+    expect(w.find('[data-testid="resource-list-empty"]').exists()).toBe(false)
+  })
 })

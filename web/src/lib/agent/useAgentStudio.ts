@@ -451,14 +451,15 @@ async function leaveConfirmSave() {
     error.value = String(e?.message || e)
     return
   }
-  leaveConfirmCfg.value = null
+  // onSave/onDiscard may chain a follow-up prompt; only close the one that was answered.
+  if (leaveConfirmCfg.value === c) leaveConfirmCfg.value = null
 }
 
 function leaveConfirmDiscard() {
   const c = leaveConfirmCfg.value
   if (!c) return
   c.onDiscard()
-  leaveConfirmCfg.value = null
+  if (leaveConfirmCfg.value === c) leaveConfirmCfg.value = null
 }
 
 function leaveConfirmCancel() {

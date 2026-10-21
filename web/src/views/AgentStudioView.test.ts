@@ -2329,6 +2329,53 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     expect(wrapper.findAll('input').some((i) => (i.element as HTMLInputElement).value === '/root/workspace-edited')).toBe(true)
   })
 
+  const dirtyAlphaMeta = async (wrapper: W) => {
+    await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
+    const ws = wrapper.findAll('input').find((i) => (i.element as HTMLInputElement).value === '/root/workspace')!
+    await ws.setValue('/root/workspace-edited')
+  }
+
+  // Both the defaults and the Agent unsaved: the second prompt must survive closing the first.
+  it('defaults and alpha both unsaved: two 放弃并切换 clicks land on beta', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    await pick(wrapper, 'beta')
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    await clickModal(wrapper, '放弃并切换')
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '放弃并切换')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+    expect(pane(wrapper)).toBe(false)
+  })
+
+  it('narrow screens use 保存并切换 / 丢弃并切换 for the unsaved Agent prompt too', async () => {
+    mocks.listAgents.mockResolvedValue(agents())
+    const { wrapper, router } = await mountAt('/agents?agent=alpha')
+    await dirtyAlphaMeta(wrapper)
+    await pick(wrapper, DEFAULTS)
+    sharedState.dirty = true
+    breakpointMocks.isMobile.value = true
+    await flushPromises()
+    await wrapper.get('[data-testid="studio-defaults-pane"] [data-test="sidebar-switch"]').trigger('click')
+    await flushPromises()
+    ;(document.querySelector('[data-test="sidebar-sheet"] [data-resource-key="beta"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(modal(wrapper).text()).toContain('Agent 默认配置')
+    await clickModal(wrapper, '丢弃并切换')
+    expect(modal(wrapper).text()).toContain('「alpha」')
+    expect(modal(wrapper).text()).toContain('保存并切换')
+    expect(modal(wrapper).text()).not.toContain('放弃并切换')
+    expect(router.currentRoute.value.query).toEqual({ view: 'defaults' })
+    await clickModal(wrapper, '丢弃并切换')
+    expect(modal(wrapper).exists()).toBe(false)
+    expect(router.currentRoute.value.query).toEqual({ agent: 'beta' })
+  })
+
   // S3 / S4: the URL alone decides
   it('pushing the old link while an Agent is open shows the defaults; Back leaves them', async () => {
     mocks.listAgents.mockResolvedValue(agents())

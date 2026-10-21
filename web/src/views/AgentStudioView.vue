@@ -185,25 +185,38 @@ function agentQuery(): Record<string, string> {
   return q
 }
 /** Defaults → Agent. The URL only changes once every confirm has passed. */
-function leaveDefaultsTo(key: string, after?: () => void) {
+function leaveDefaultsTo(key: string) {
   const apply = () => {
     // Coming back to the same Agent keeps the tab it was on; another Agent starts on Files.
     if (key !== activeName.value) select(key)
     void router.replace({ query: agentQuery() })
-    after?.()
   }
+  // The Agent itself may be unsaved too: same prompts as switching Agents (sheet on narrow screens).
   const switchAgent = () => {
-    if (key !== activeName.value && dirty.value) {
-      confirmCfg.value = {
-        title: t('pages.agentStudio.dialogs.discardTitle'),
-        message: t('pages.agentStudio.dialogs.discardMessage', { name: activeName.value }),
-        confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
-        danger: true,
-        ok: apply,
+    if (key === activeName.value || !dirty.value) return apply()
+    if (isMobile.value) {
+      leaveConfirmCfg.value = {
+        title: t('pages.agentStudio.dialogs.leaveUnsavedTitle'),
+        message: t('pages.agentStudio.dialogs.leaveUnsavedSwitchMessage', { name: activeName.value }),
+        saveText: t('pages.agentStudio.dialogs.saveAndSwitch'),
+        discardText: t('pages.agentStudio.dialogs.discardAndSwitch'),
+        onSave: async () => {
+          if (!(await save())) return false
+          justSaved.value = true
+          apply()
+          return true
+        },
+        onDiscard: apply,
       }
       return
     }
-    apply()
+    confirmCfg.value = {
+      title: t('pages.agentStudio.dialogs.discardTitle'),
+      message: t('pages.agentStudio.dialogs.discardMessage', { name: activeName.value }),
+      confirmText: t('pages.agentStudio.dialogs.discardConfirm'),
+      danger: true,
+      ok: apply,
+    }
   }
   if (!sharedPanelRef.value?.dirty) return switchAgent()
   const name = t('nav.sharedAgent')

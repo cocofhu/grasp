@@ -81,6 +81,9 @@ test('with no Agents the empty state still opens Agent 默认配置, and the old
   await expect(page.getByTestId('agent-studio-empty-team')).toBeVisible()
   await page.getByTestId('agent-studio-empty-defaults').click()
   await expect(page.getByTestId('studio-defaults-pane')).toBeVisible()
+  // Only the pinned item in the list; no "暂无工作区" copy under it.
+  await expect(page.getByTestId('resource-list-pinned')).toBeVisible()
+  await expect(page.getByTestId('agent-resource-sidebar').getByTestId('resource-list-empty')).toHaveCount(0)
   await expect(page.getByTestId('workspace-shared-agent-panel')).toBeVisible()
 
   await page.goto(`/workspace-config.html?view=${encodeURIComponent('/settings/shared-agent')}`)
