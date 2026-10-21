@@ -932,6 +932,77 @@ describe('ClarifyChat option preview window', () => {
     expect(unmatched.get('[data-testid="clarify-inline-demos"]').find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
     unmatched.unmount()
   })
+
+  it('echoes a separator-bearing preview once and keeps the plain label whole', async () => {
+    const chip = '留在输入框上方，改成和项目标签、文件芯片一样的单行芯片'
+    const scope = '输入区、已发送消息、反馈记录一起改'
+    const place = question({
+      id: 'place',
+      prompt: '芯片放哪',
+      options: [
+        option('chip', chip, '<p>preview-chip</p>'),
+        option('above', '放在消息列表上方', '<p>preview-above</p>'),
+        option('menu', '收进输入框里的菜单', '<p>preview-menu</p>'),
+      ],
+    })
+    const range = question({
+      id: 'range',
+      prompt: '改哪些',
+      options: [option('all', scope), option('input', '只改输入区')],
+    })
+    const wrapper = mountChat([
+      agent([place, range]),
+      {
+        role: 'human',
+        text: `我的选择:\n- 芯片放哪 → ${chip}\n- 改哪些 → ${scope}`,
+        at: '1',
+      },
+    ])
+    await flushPromises()
+
+    const inline = wrapper.get('[data-testid="clarify-inline-demos"]')
+    const frames = inline.findAll('[data-testid="clarify-demo-frame"]')
+    expect(frames).toHaveLength(3)
+    expect(frames[0]!.get('[data-testid="clarify-demo-selected"]').text()).toContain('已选')
+    expect(frames[1]!.find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
+    expect(frames[2]!.find('[data-testid="clarify-demo-selected"]').exists()).toBe(false)
+
+    const rows = wrapper.findAll('[data-testid="clarify-choice-row"]')
+    expect(rows).toHaveLength(2)
+    const bubbleFrames = rows[0]!.findAll('[data-testid="clarify-demo-frame"]')
+    expect(bubbleFrames).toHaveLength(1)
+    expect(bubbleFrames[0]!.get('[data-testid="clarify-demo-label"]').text()).toBe(chip)
+    expect(bubbleFrames[0]!.get('[data-testid="html-preview"]').text()).toContain('preview-chip')
+    expect(rows[0]!.find('[data-testid="clarify-choice-answer"]').exists()).toBe(false)
+    expect(rows[1]!.find('[data-testid="clarify-demo-frame"]').exists()).toBe(false)
+    expect(rows[1]!.findAll('[data-testid="clarify-choice-answer"]').map((el) => el.text())).toEqual([scope])
+    wrapper.unmount()
+  })
+
+  it('restores a separator-bearing label under the English choice prefix', async () => {
+    const chip = '留在输入框上方，改成和项目标签、文件芯片一样的单行芯片'
+    const place = question({
+      id: 'place',
+      prompt: 'Where should the chip sit?',
+      options: [
+        option('chip', chip, '<p>preview-chip</p>'),
+        option('above', 'Above the list', '<p>preview-above</p>'),
+      ],
+    })
+    const wrapper = mountChat([
+      agent([place]),
+      { role: 'human', text: `My choices:\n- Where should the chip sit? → ${chip}`, at: '1' },
+    ])
+    await flushPromises()
+    const frames = wrapper.get('[data-testid="clarify-inline-demos"]').findAll('[data-testid="clarify-demo-frame"]')
+    expect(frames[0]!.text()).toContain('已选')
+    expect(frames[1]!.text()).not.toContain('已选')
+    const summary = wrapper.get('[data-testid="clarify-choice-summary"]')
+    expect(summary.findAll('[data-testid="clarify-demo-frame"]')).toHaveLength(1)
+    expect(summary.get('[data-testid="clarify-demo-label"]').text()).toBe(chip)
+    expect(summary.find('[data-testid="clarify-choice-answer"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 })
 
 function overlaps(

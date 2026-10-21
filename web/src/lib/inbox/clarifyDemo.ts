@@ -45,6 +45,57 @@ export interface ChoiceEcho {
   question: ReactQuestion | null
 }
 
+/** Same separator used when a submitted choice joins several answers into one line. */
+const CHOICE_ANSWER_SEPARATOR = '、'
+
+function labelMatchesAt(answer: string, index: number, label: string): boolean {
+  if (!label || index >= answer.length || !answer.startsWith(label, index)) return false
+  const after = index + label.length
+  return after === answer.length || answer[after] === CHOICE_ANSWER_SEPARATOR
+}
+
+/**
+ * Turn the arrow-side answer back into complete option labels and custom text.
+ * Fragments were split on every separator, so they are joined first. Labels are
+ * tried longest-first, and a label is taken only when the separator or the end
+ * follows it. A long label that equals several shorter labels joined by the
+ * separator wins. Text that matches no label stays one piece, even if it
+ * contains the separator.
+ */
+export function restoreChoiceAnswers(answers: string[], labels: string[]): string[] {
+  const answer = answers.join(CHOICE_ANSWER_SEPARATOR).trim()
+  if (!answer) return []
+  const sorted = [...new Set(labels.filter((label) => label.length > 0))].sort(
+    (a, b) => b.length - a.length,
+  )
+  const parts: string[] = []
+  let i = 0
+  while (i < answer.length) {
+    if (answer[i] === CHOICE_ANSWER_SEPARATOR) {
+      i += 1
+      continue
+    }
+    const matched = sorted.find((label) => labelMatchesAt(answer, i, label))
+    if (matched) {
+      parts.push(matched)
+      i += matched.length
+      continue
+    }
+    let end = answer.length
+    for (let j = i + 1; j < answer.length; j++) {
+      if (answer[j] !== CHOICE_ANSWER_SEPARATOR) continue
+      if (sorted.some((label) => labelMatchesAt(answer, j + 1, label))) {
+        end = j
+        break
+      }
+    }
+    const custom = answer.slice(i, end).trim()
+    if (custom) parts.push(custom)
+    i = end
+  }
+  return parts
+}
+
 /** Selected answers that carry a preview, in the order the reply listed them. */
 export function selectedPreviewOptions(q: ReactQuestion, answers: string[]): ReactOption[] {
   const cards: ReactOption[] = []
@@ -70,13 +121,16 @@ export function choiceEchoRows(
   const single = rows.length === 1
   return rows.map((row) => {
     const question = questions.find((q) => q.prompt === row.q) ?? null
-    const cards = question ? selectedPreviewOptions(question, row.answers) : []
+    const answers = question
+      ? restoreChoiceAnswers(row.answers, question.options.map((option) => option.label))
+      : row.answers
+    const cards = question ? selectedPreviewOptions(question, answers) : []
     const cardLabels = new Set(cards.map((card) => card.label))
     return {
       prompt: row.q,
       showPrompt: !(single && cards.length > 0),
       cards,
-      texts: row.answers.filter((answer) => !cardLabels.has(answer)),
+      texts: answers.filter((answer) => !cardLabels.has(answer)),
       question,
     }
   })
