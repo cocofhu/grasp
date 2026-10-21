@@ -14,6 +14,7 @@ import {
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import {
   demoOptionsOf,
+  restoreChoiceAnswers,
   selectedDemoOption,
 } from '@/lib/inbox/clarifyDemo'
 import type {
@@ -1206,7 +1207,10 @@ function choiceRowsForAgentTurn(turnIndex: number): ChoiceRow[] | null {
 
 function selectedLabelsForQuestion(q: ReactQuestion, rows: ChoiceRow[] | null): string[] {
   if (!rows) return []
-  return rows.find((r) => r.q === q.prompt)?.answers ?? []
+  const row = rows.find((r) => r.q === q.prompt)
+  if (!row) return []
+  // Saved text still splits on every dunhao. Restore whole labels before highlighting.
+  return restoreChoiceAnswers(row.answers, q.options.map((option) => option.label))
 }
 
 function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
