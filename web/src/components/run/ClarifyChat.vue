@@ -730,6 +730,17 @@ function historyPreviewOption(q: ReactQuestion, turnIndex: number) {
   return selectedDemoOption(q, selectedLabelsForQuestion(q, choiceRowsForAgentTurn(turnIndex)))
 }
 
+function historyOptionPicked(q: ReactQuestion, turnIndex: number, label: string) {
+  return selectedLabelsForQuestion(q, choiceRowsForAgentTurn(turnIndex)).includes(label)
+}
+
+/** Accessible name keeps the option copy and the existing enlarge copy. Neither word is painted. */
+function historyPreviewAria(label: string, selected: boolean) {
+  const enlarge = translate('pages.clarify.demoEnlarge')
+  if (!selected) return `${label}，${enlarge}`
+  return `${label}，${translate('pages.clarify.demoSelected')}，${enlarge}`
+}
+
 const focusedOption = computed(() => {
   const focus = previewFocus.value
   if (!focus) return null
@@ -1771,27 +1782,39 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     data-testid="clarify-recommended-chip"
                   >{{ translate('pages.clarify.recommendedLabel', { label: o.label }) }}</span>
                 </div>
-                <div v-if="demoOptionsOf(q).length" class="mt-1.5 space-y-1">
+                <div v-if="demoOptionsOf(q).length" class="mt-1.5 flex flex-col gap-1.5">
                   <div
                     v-for="o in demoOptionsOf(q)"
                     :key="o.id"
-                    class="flex items-center gap-2 text-[12px] text-txt2"
                     data-testid="clarify-history-option"
                   >
-                    <span class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{{ o.label }}</span>
-                    <span
-                      v-if="selectedLabelsForQuestion(q, choiceRowsForAgentTurn(i)).includes(o.label)"
-                      class="shrink-0 text-accent"
-                    >✓ {{ translate('pages.clarify.demoSelected') }}</span>
                     <button
                       type="button"
-                      class="inline-flex shrink-0 items-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
+                      class="clarify-history-preview"
+                      :class="{ 'is-selected': historyOptionPicked(q, i, o.label) }"
                       data-testid="clarify-option-enlarge"
-                      :aria-label="translate('pages.clarify.demoEnlarge')"
-                      :title="translate('pages.clarify.demoEnlarge')"
+                      :aria-label="historyPreviewAria(o.label, historyOptionPicked(q, i, o.label))"
                       @click="openPreviewFocus(q, o.id, true, i)"
                     >
-                      <Icon name="expand" :size="11" aria-hidden="true" />
+                      <svg class="clarify-history-thumb" viewBox="0 0 36 26" aria-hidden="true">
+                        <rect x="0.6" y="0.6" width="34.8" height="24.8" rx="4" />
+                        <path d="M5 7h10" />
+                        <path d="M5 12h22" />
+                        <path d="M5 16.5h16" />
+                      </svg>
+                      <span class="clarify-history-preview-label">{{ o.label }}</span>
+                      <span
+                        v-if="historyOptionPicked(q, i, o.label)"
+                        class="clarify-history-preview-picked"
+                      >✓ {{ translate('pages.clarify.demoSelected') }}</span>
+                      <span class="clarify-history-preview-go" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                          <path d="M6.25 2.75H2.75V6.25" />
+                          <path d="M2.75 2.75 6.5 6.5" />
+                          <path d="M9.75 13.25h3.5V9.75" />
+                          <path d="M13.25 13.25 9.5 9.5" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 </div>
@@ -2288,6 +2311,84 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   padding: 2px 0 2px 14px;
 }
 .clarify-request--history { border-color: rgb(var(--c-line)); }
+.clarify-history-preview {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 38px;
+  padding: 6px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 10px;
+  background: rgb(var(--c-surface));
+  color: rgb(var(--c-txt2));
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--dur-ui), background var(--dur-ui);
+}
+.clarify-history-preview:hover {
+  border-color: rgb(var(--c-line-strong));
+  background: rgb(var(--c-base));
+}
+.clarify-history-preview.is-selected {
+  border-color: rgb(var(--c-accent) / .4);
+  background: rgb(var(--c-accent) / .04);
+}
+.clarify-history-preview.is-selected:hover {
+  border-color: rgb(var(--c-accent) / .65);
+  background: rgb(var(--c-accent) / .04);
+}
+.clarify-history-preview:hover .clarify-history-preview-go {
+  color: rgb(var(--c-accent-2));
+  background: rgb(var(--c-accent-dim));
+}
+.clarify-history-thumb {
+  display: block;
+  width: 36px;
+  height: 26px;
+  flex: none;
+}
+.clarify-history-thumb rect {
+  fill: rgb(var(--c-base));
+  stroke: rgb(var(--c-line));
+}
+.clarify-history-preview.is-selected .clarify-history-thumb rect {
+  fill: rgb(var(--c-surface));
+  stroke: rgb(var(--c-line-strong));
+}
+.clarify-history-thumb path {
+  fill: none;
+  stroke: rgb(var(--c-elevated));
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.clarify-history-thumb path:first-of-type { stroke: rgb(var(--c-txt3)); }
+.clarify-history-preview-label {
+  min-width: 0;
+  flex: 1;
+  overflow-wrap: anywhere;
+}
+.clarify-history-preview-picked {
+  flex: none;
+  color: rgb(var(--c-accent));
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.clarify-history-preview-go {
+  display: inline-flex;
+  width: 26px;
+  height: 26px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: rgb(var(--c-txt2));
+  transition: color var(--dur-ui), background var(--dur-ui);
+}
 .clarify-question-heading {
   display: grid;
   grid-template-columns: 16px minmax(0, 1fr);
@@ -2327,6 +2428,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   [data-testid="clarify-option-btn"],
   [data-testid="clarify-other-row"],
   [data-testid="clarify-form-input"] { min-height: 44px; }
+}
+@media (max-width: 767px), (pointer: coarse) {
+  .clarify-history-preview { min-height: 44px; }
 }
 
 /* Placeholder must wrap to the textarea width — UA default often clips the 2nd line. */
@@ -2400,6 +2504,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   50% { opacity: .9; }
 }
 @media (prefers-reduced-motion: reduce) {
+  .clarify-history-preview,
+  .clarify-history-preview-go { transition: none; }
   .clarify-row-enter-active, .clarify-row-leave-active { transition: none; }
   .clarify-row-enter-from { transform: none; }
   .deck-enter-active, .deck-leave-active { transition: none; }
