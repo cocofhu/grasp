@@ -354,11 +354,13 @@ const listFadeKey = computed(() =>
           :key="active.runId + active.nodeId"
           class="min-h-0 flex-1"
           :host-confirm-flow="false"
+          split-drawer
         >
           <template #stage>
             <ReactConnectingState
               v-if="activeStarting"
               mode="stage"
+              hide-home-tab
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
             />
@@ -467,11 +469,13 @@ const listFadeKey = computed(() =>
               :key="active.runId + active.nodeId"
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
+              split-drawer
             >
               <template #stage>
                 <ReactConnectingState
               v-if="activeStarting"
               mode="stage"
+              hide-home-tab
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
             />

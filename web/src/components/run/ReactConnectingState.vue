@@ -13,11 +13,14 @@ const props = withDefaults(
     sandboxPhase?: string | null
     /** Boot record key (runId:nodeId:iteration) driving the checklist. */
     bootKey?: string | null
+    /** Sandbox drawer already titles the panel; don't repeat the old home tab. */
+    hideHomeTab?: boolean
   }>(),
   {
     mode: 'sidebar',
     sandboxPhase: null,
     bootKey: null,
+    hideHomeTab: false,
   },
 )
 
@@ -48,6 +51,7 @@ onMounted(() => {
     aria-busy="true"
   >
     <div
+      v-if="!hideHomeTab"
       class="flex shrink-0 gap-1 border-b border-line px-3 py-2"
       data-testid="react-connecting-stage-tabs"
       role="tablist"

@@ -628,6 +628,49 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 	if list["nodes"] == nil {
 		t.Fatal("expected sanitized graph nodes for stage filtering")
 	}
+	if list["nodeId"] != "research1" {
+		t.Fatalf("public workflow node id: %+v", list["nodeId"])
+	}
+	runs, _ := list["nodeRuns"].(map[string]any)
+	research, _ := runs["research1"].(map[string]any)
+	if research["status"] != "waiting_human" || research["nodeId"] != "research1" {
+		t.Fatalf("research execution status: %+v", runs)
+	}
+	if _, leaked := research["outputMd"]; leaked {
+		t.Fatalf("status must not include execution payload: %+v", research)
+	}
+	if _, leaked := research["events"]; leaked {
+		t.Fatalf("status must not include events: %+v", research)
+	}
+	if _, leaked := research["usage"]; leaked {
+		t.Fatalf("status must not include token usage: %+v", research)
+	}
+	if _, ok := runs["clarify"]; ok {
+		t.Fatalf("nodes without a state must be omitted, not invented as pending: %+v", runs)
+	}
+	h.db.Create(&models.StateRun{
+		RunID: "run-rev-arts", NodeID: "clarify", Iteration: 1, Status: "completed", NodeType: "agent",
+		OutputMd: "SECRET-OUTPUT",
+	})
+	h.db.Create(&models.StateRun{
+		RunID: "run-rev-arts", NodeID: "research1", Iteration: 2, Status: "running", NodeType: "agent",
+	})
+	again := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: token}))
+	againRuns, _ := again["nodeRuns"].(map[string]any)
+	clarify, _ := againRuns["clarify"].(map[string]any)
+	if clarify["status"] != "completed" {
+		t.Fatalf("clarify status: %+v", againRuns)
+	}
+	latest, _ := againRuns["research1"].(map[string]any)
+	if latest["status"] != "running" {
+		t.Fatalf("latest research status should win: %+v", againRuns)
+	}
+	if _, leaked := clarify["outputMd"]; leaked {
+		t.Fatalf("completed status leaked output: %+v", clarify)
+	}
+	if _, ok := againRuns["hg-r"]; ok {
+		t.Fatalf("gate node without a state was invented: %+v", againRuns)
+	}
 
 	body := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts/research.json/content", nil, map[string]string{headerShareToken: token})
 	if body.Code != 200 {
