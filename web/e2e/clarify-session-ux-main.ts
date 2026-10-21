@@ -5,9 +5,11 @@ import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import ClarifyChat from '../src/components/run/ClarifyChat.vue'
 import type { ClarifyTurn } from '../src/lib/shared/types'
+import { initClarifyTab } from '../src/lib/inbox/clarifyDraftStash'
 
 initLocale()
 setTheme('light')
+void initClarifyTab()
 
 /**
  * Clarify (non-reviewMode) harness — Demo Cancel keep-queue + refresh resume.

@@ -2,14 +2,22 @@
 import { createI18n } from 'vue-i18n'
 import { defineComponent, h, ref } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
-import { clarifyTabId, putClarifyOutbox } from '@/lib/inbox/clarifyDraftStash'
+import {
+  clarifyTabId,
+  initClarifyTab,
+  putClarifyOutbox,
+  resetClarifyTabForTest,
+  sweepClarifyStash,
+} from '@/lib/inbox/clarifyDraftStash'
 import ClarifyChat from './ClarifyChat.vue'
 
 enableAutoUnmount(afterEach)
+// Ordinary tests run in a tab whose duplicate check is already done.
+beforeEach(() => resetClarifyTabForTest({ checked: true }))
 afterEach(() => {
   document.body.replaceChildren()
   localStorage.clear()
@@ -33,7 +41,7 @@ type ChatApi = {
 const AUTO = '运行已结束，这条消息没有发送；续跑后会自动发送'
 const KEPT = '运行已结束，草稿已保留；续跑后会回到输入框'
 /** This tab's stash key (per user + tab + run + node). */
-const STASH_KEY = () => `grasp-clarify-stash:anon:${clarifyTabId()}:run-1:react-1`
+const STASH_KEY = 'grasp-clarify-stash:anon:run-1:react-1'
 const OUTBOX_KEY = 'grasp-clarify-outbox:anon:run-1:react-1'
 
 /** What the host (onClarifySend) records for a send from this tab. */
@@ -147,7 +155,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '还在吗' }, RESEND)
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('还在吗')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('还在吗')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
 
     isActive.value = true
@@ -156,10 +164,10 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     // Resumed and refilled: the "resend after resume" notice is done (S14).
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
     // Kept until it is actually sent again.
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('还在吗')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('还在吗')
     await wrapper.find('[data-testid="clarify-send-icon"]').trigger('click')
     await flushPromises()
-    expect(localStorage.getItem(STASH_KEY())).toBeNull()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
   })
 
   it('composer open: the refill is stashed too, mirrors edits, and clears when emptied', async () => {
@@ -168,13 +176,13 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '刷新也不能丢' }, RESEND)
     await flushPromises()
     expect(draft.value).toBe('刷新也不能丢')
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新也不能丢')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('刷新也不能丢')
     await wrapper.find('[data-testid="clarify-input"]').setValue('刷新也不能丢！')
     await flushPromises()
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新也不能丢！')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('刷新也不能丢！')
     await wrapper.find('[data-testid="clarify-input"]').setValue('')
     await flushPromises()
-    expect(localStorage.getItem(STASH_KEY())).toBeNull()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
   })
 
   it('autoRetryOnResume: restores nothing, only says it will be sent after resume', async () => {
@@ -183,7 +191,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '' }, AUTO, { autoRetryOnResume: true })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY())).toBeNull()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
   })
 
@@ -229,7 +237,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY())).toBeNull()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
     // The dropped turn's empty slot is gone for every viewer.
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('别人的回复')
@@ -245,7 +253,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     })
     await flushPromises()
     expect(draft.value).toBe('')
-    expect(localStorage.getItem(STASH_KEY())).toBeNull()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
   })
 
@@ -324,7 +332,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     await wrapper.find('[data-testid="clarify-input"]').setValue('正在打的草稿')
     isActive.value = false
     await flushPromises()
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('正在打的草稿')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('正在打的草稿')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(KEPT)
     // Simulate a refresh: the in-memory draft is gone, the stash is not.
     draft.value = ''
@@ -334,15 +342,15 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
   })
 
   it('stash is restored on mount after a refresh when the composer is open', async () => {
-    localStorage.setItem(
-      STASH_KEY(),
+    sessionStorage.setItem(
+      STASH_KEY,
       JSON.stringify({ text: '刷新前的草稿', images: [], annotations: [], at: Date.now() }),
     )
     const { draft } = mountHost()
     await flushPromises()
     expect(draft.value).toBe('刷新前的草稿')
     // Still kept until sent or cleared (another refresh must not lose it).
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('刷新前的草稿')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('刷新前的草稿')
   })
 
   it('clears the notice on the next send', async () => {
@@ -356,31 +364,89 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(wrapper.find('[data-testid="clarify-send-notice"]').exists()).toBe(false)
   })
 
-  it('S18: a stash written by another open tab is never refilled here', async () => {
-    const other = 'tab-other'
-    localStorage.setItem(`grasp-clarify-tab-alive:${other}`, String(Date.now()))
+  it('B4: nothing that another tab could refill is written to localStorage', async () => {
+    const { wrapper, chat, isActive } = mountHost()
+    await typeAndSend(wrapper, '只给发送的标签页')
+    isActive.value = false
+    await flushPromises()
+    chat.value!.restoreUnsentQueued({ text: '只给发送的标签页' }, RESEND)
+    await flushPromises()
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('只给发送的标签页')
+    for (let i = 0; i < localStorage.length; i++) expect(localStorage.key(i)).not.toMatch(/^grasp-clarify-/)
+  })
+
+  it('B4: a stash left in localStorage by an earlier build is removed, never refilled', async () => {
     localStorage.setItem(
-      `grasp-clarify-stash:anon:${other}:run-1:react-1`,
-      JSON.stringify({ text: '另一个标签页发的', images: [], annotations: [], at: Date.now(), tab: other }),
+      'grasp-clarify-stash:anon:old-tab:run-1:react-1',
+      JSON.stringify({ text: '旧版本留下的', images: [], annotations: [], at: Date.now() }),
     )
+    sweepClarifyStash(Date.now(), true)
     const { draft } = mountHost()
     await flushPromises()
     expect(draft.value).toBe('')
-    // The sender's copy is untouched.
-    expect(localStorage.getItem(`grasp-clarify-stash:anon:${other}:run-1:react-1`)).not.toBeNull()
+    expect(localStorage.getItem('grasp-clarify-stash:anon:old-tab:run-1:react-1')).toBeNull()
   })
 
-  it('S18: a stash left by a closed tab is adopted (refilled once, moved to this tab)', async () => {
-    const gone = 'tab-gone'
-    localStorage.setItem(
-      `grasp-clarify-stash:anon:${gone}:run-1:react-1`,
-      JSON.stringify({ text: '关掉的标签页留下的', images: [], annotations: [], at: Date.now(), tab: gone }),
-    )
-    const { draft } = mountHost()
+  it('B4 + LeaderBot: once sent, a refresh does not bring the text back', async () => {
+    const { wrapper, chat } = mountHost()
+    await typeAndSend(wrapper, '发出去就不要再回来')
+    chat.value!.restoreUnsentQueued({ text: '发出去就不要再回来' }, RESEND)
     await flushPromises()
-    expect(draft.value).toBe('关掉的标签页留下的')
-    expect(localStorage.getItem(`grasp-clarify-stash:anon:${gone}:run-1:react-1`)).toBeNull()
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('关掉的标签页留下的')
+    expect(sessionStorage.getItem(STASH_KEY)).not.toBeNull()
+    await wrapper.find('[data-testid="clarify-send-icon"]').trigger('click')
+    await flushPromises()
+    expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
+    wrapper.unmount()
+    // "Refresh": a new mount of the same tab.
+    const again = mountHost()
+    await flushPromises()
+    expect(again.draft.value).toBe('')
+  })
+
+  it('S22: a duplicated tab (same id answered by a live tab) drops the copied stash and outbox', async () => {
+    resetClarifyTabForTest()
+    sessionStorage.setItem('grasp-clarify-tab-id', 'dup-id')
+    sessionStorage.setItem(
+      STASH_KEY,
+      JSON.stringify({ text: '复制过来的', images: [], annotations: [], at: Date.now() }),
+    )
+    outbox('cm-dup', '复制过来的')
+    // The original tab, still open, owns "dup-id".
+    const original = new BroadcastChannel('grasp-clarify-tab')
+    original.onmessage = (e) => {
+      if (e.data?.type === 'ping' && e.data.id === 'dup-id') original.postMessage({ type: 'taken', id: 'dup-id' })
+    }
+    try {
+      const { draft } = mountHost()
+      await initClarifyTab()
+      await flushPromises()
+      expect(draft.value).toBe('')
+      expect(sessionStorage.getItem(STASH_KEY)).toBeNull()
+      expect(sessionStorage.getItem(OUTBOX_KEY)).toBeNull()
+      expect(clarifyTabId()).not.toBe('dup-id')
+    } finally {
+      original.close()
+      resetClarifyTabForTest({ checked: true })
+    }
+  })
+
+  it('S22: a refreshed tab (nobody answers its id) keeps its stash and refills', async () => {
+    resetClarifyTabForTest()
+    sessionStorage.setItem('grasp-clarify-tab-id', 'my-id')
+    sessionStorage.setItem(
+      STASH_KEY,
+      JSON.stringify({ text: '刷新后还是我的', images: [], annotations: [], at: Date.now() }),
+    )
+    try {
+      const { draft } = mountHost()
+      expect(draft.value).toBe('')
+      await initClarifyTab()
+      await flushPromises()
+      expect(draft.value).toBe('刷新后还是我的')
+      expect(clarifyTabId()).toBe('my-id')
+    } finally {
+      resetClarifyTabForTest({ checked: true })
+    }
   })
 
   it('S19: refusals arriving out of order come back in send order, ahead of new typing', async () => {
@@ -396,7 +462,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     chat.value!.restoreUnsentQueued({ text: '第三条', at: 3000 }, RESEND)
     await flushPromises()
     expect(draft.value).toBe('第一条\n第二条\n第三条\n后来打的')
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).text).toBe('第一条\n第二条\n第三条\n后来打的')
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).text).toBe('第一条\n第二条\n第三条\n后来打的')
   })
 
   it('S19: same order when the composer is closed (stash) and on resume', async () => {
@@ -421,7 +487,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(wrapper.find('[data-testid="clarify-stash-notice"]').text()).toBe(
       '有 1 张图片太大，没能一起保留，续跑后请重新添加',
     )
-    expect(JSON.parse(localStorage.getItem(STASH_KEY())!).images).toEqual([])
+    expect(JSON.parse(sessionStorage.getItem(STASH_KEY)!).images).toEqual([])
     // Still said after resume (the image is not back), gone once sent.
     isActive.value = true
     await flushPromises()

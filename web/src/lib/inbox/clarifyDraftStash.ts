@@ -4,8 +4,11 @@ import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 /**
  * Clarify text that could not stay in a composer: a reply refused because the
  * run ended (clarify_visit_ended), or a draft whose composer closed when the
- * run ended. Kept per user+run+node in localStorage so it survives a refresh
- * and comes back when the run resumes and the composer reappears. Cleared once
+ * run ended. Kept per user+run+node in this tab's sessionStorage, so it
+ * survives a refresh of the same tab and comes back when the run resumes and
+ * the composer reappears. Only the tab that sent a message ever gets it back:
+ * nothing is shared through localStorage, and closing that tab loses it
+ * (accepted, like a tab closed before the refusal arrived). Cleared as soon as
  * the refilled text is sent or the user empties the composer.
  *
  * The outbox is the per-tab (sessionStorage) record of replies this tab sent
@@ -24,23 +27,22 @@ export type RescuedPart = { text: string; at: number }
 
 /** What a read returns: the content plus who owns it and how it was trimmed. */
 export type ClarifyStashRead = ClarifyDraftStash & {
-  /** Tab that wrote it (the sender); other live tabs must not refill it. */
-  tab?: string
   /** Rescued messages at the head of `text`, oldest send first. */
   parts?: RescuedPart[]
   /** Inline images left out because they exceeded the size budget. */
   imagesDropped?: number
 }
 
-type Stored = ClarifyDraftStash & { at: number; tab?: string; parts?: RescuedPart[]; imagesDropped?: number }
+type Stored = ClarifyDraftStash & { at: number; parts?: RescuedPart[]; imagesDropped?: number }
 
 const STASH_PREFIX = 'grasp-clarify-stash:'
 const OUTBOX_PREFIX = 'grasp-clarify-outbox:'
 const TAB_ID_KEY = 'grasp-clarify-tab-id'
-const TAB_ALIVE_PREFIX = 'grasp-clarify-tab-alive:'
-/** A tab heartbeat older than this means that tab is gone (closed / crashed). */
-export const TAB_ALIVE_MS = 15_000
-const TAB_BEAT_MS = 5_000
+/** Earlier builds kept these in localStorage (shared by tabs); swept on load. */
+const LEGACY_LOCAL_PREFIXES = ['grasp-clarify-stash:', 'grasp-clarify-tab-alive:']
+const TAB_CHANNEL = 'grasp-clarify-tab'
+/** How long a starting tab waits for another tab to claim the same id. */
+export const TAB_CHECK_MS = 150
 /** Unsent text older than this is dropped on the next sweep. */
 export const STASH_TTL_MS = 7 * 24 * 60 * 60 * 1000
 /** Inline (base64) image bytes kept per entry; ref-only images are always kept. */
@@ -56,31 +58,8 @@ function userKey(): string {
   }
 }
 
-/**
- * Per user + tab + run + node. Per tab so that two tabs of the same user never
- * both refill one message: only the tab that sent it does. A stash whose tab
- * is gone (closed) is adopted by the next tab that shows that composer.
- */
-function stashKey(runId: string, nodeId: string, tab = clarifyTabId()): string {
-  return `${STASH_PREFIX}${userKey()}:${tab}:${runId}:${nodeId}`
-}
-
-/** Stash keys of other, closed tabs for this user+run+node. */
-function orphanStashKeys(runId: string, nodeId: string): string[] {
-  const store = storage('local')
-  if (!store) return []
-  const head = `${STASH_PREFIX}${userKey()}:`
-  const tail = `:${runId}:${nodeId}`
-  const mine = stashKey(runId, nodeId)
-  const out: string[] = []
-  for (let i = 0; i < store.length; i++) {
-    const k = store.key(i)
-    if (!k || k === mine || !k.startsWith(head) || !k.endsWith(tail)) continue
-    const tab = k.slice(head.length, k.length - tail.length)
-    if (!tab || tab.includes(':') || isOtherLiveTab(tab)) continue
-    out.push(k)
-  }
-  return out
+function stashKey(runId: string, nodeId: string): string {
+  return `${STASH_PREFIX}${userKey()}:${runId}:${nodeId}`
 }
 
 function outboxKey(runId: string, nodeId: string): string {
@@ -137,7 +116,6 @@ function normalize(v: Partial<Stored> | null | undefined): Stored | null {
     images: Array.isArray(v.images) ? v.images : [],
     annotations: Array.isArray(v.annotations) ? v.annotations : [],
     at: typeof v.at === 'number' ? v.at : 0,
-    ...(typeof v.tab === 'string' && v.tab ? { tab: v.tab } : {}),
     ...(Array.isArray(v.parts)
       ? {
           parts: v.parts.filter(
@@ -165,14 +143,14 @@ export function sweepClarifyStash(now = Date.now(), force = false): void {
   swept = true
   const ls = storage('local')
   if (ls) {
-    const stale: string[] = []
+    const legacy: string[] = []
     for (let i = 0; i < ls.length; i++) {
       const k = ls.key(i)
-      if (k && k.startsWith(TAB_ALIVE_PREFIX) && !(now - Number(ls.getItem(k)) <= TAB_ALIVE_MS * 4)) stale.push(k)
+      if (k && LEGACY_LOCAL_PREFIXES.some((p) => k.startsWith(p))) legacy.push(k)
     }
-    for (const k of stale) ls.removeItem(k)
+    for (const k of legacy) ls.removeItem(k)
   }
-  for (const [kind, prefix] of [['local', STASH_PREFIX], ['session', OUTBOX_PREFIX]] as const) {
+  for (const [kind, prefix] of [['session', STASH_PREFIX], ['session', OUTBOX_PREFIX]] as const) {
     const store = storage(kind)
     if (!store) continue
     const keys: string[] = []
@@ -210,7 +188,6 @@ function readKey(store: Storage, k: string): ClarifyStashRead | null {
     if (!s || Date.now() - s.at > STASH_TTL_MS) return null
     const out: ClarifyStashRead = { text: s.text, images: s.images, annotations: s.annotations }
     if (isEmpty(out)) return null
-    if (s.tab) out.tab = s.tab
     if (s.parts?.length) out.parts = s.parts
     if (s.imagesDropped) out.imagesDropped = s.imagesDropped
     return out
@@ -219,38 +196,24 @@ function readKey(store: Storage, k: string): ClarifyStashRead | null {
   }
 }
 
-/**
- * This tab's stash for user+run+node. With `adopt`, stashes left by closed
- * tabs of the same user are moved into this tab's first (their sender is
- * gone, so nobody else will refill them); live tabs' stashes are never read.
- */
-export function readClarifyStash(
-  runId: string,
-  nodeId: string,
-  opts: { adopt?: boolean } = {},
-): ClarifyStashRead | null {
-  if (!runId || !nodeId) return null
-  sweepClarifyStash()
-  const store = storage('local')
-  if (!store) return null
-  if (opts.adopt) {
-    for (const k of orphanStashKeys(runId, nodeId)) {
-      const o = readKey(store, k)
-      store.removeItem(k)
-      if (o) stashClarifyDraft(runId, nodeId, o, o.parts?.length ? { at: o.parts[0].at } : {})
-    }
-  }
-  return readKey(store, stashKey(runId, nodeId))
+/** This tab's stash for user+run+node (null until the duplicate-tab check is done). */
+export function readClarifyStash(runId: string, nodeId: string): ClarifyStashRead | null {
+  if (!tabChecked) return null
+  return readOwnStash(runId, nodeId)
 }
 
-/** localStorage key of a run+node stash (for `storage` event listeners). */
-export function clarifyStashKey(runId: string, nodeId: string): string {
-  return stashKey(runId, nodeId)
+/** Ungated read, for adding to the stash (writes never refill anything). */
+function readOwnStash(runId: string, nodeId: string): ClarifyStashRead | null {
+  if (!runId || !nodeId) return null
+  sweepClarifyStash()
+  const store = storage('session')
+  if (!store) return null
+  return readKey(store, stashKey(runId, nodeId))
 }
 
 export function clearClarifyStash(runId: string, nodeId: string): void {
   if (!runId || !nodeId) return
-  storage('local')?.removeItem(stashKey(runId, nodeId))
+  storage('session')?.removeItem(stashKey(runId, nodeId))
 }
 
 /** Text joined first-in-first; duplicates (already contained) are skipped. */
@@ -308,9 +271,9 @@ export function stashClarifyDraft(
   opts: { at?: number; parts?: RescuedPart[] } = {},
 ): { imagesDropped: number } {
   if (!runId || !nodeId) return { imagesDropped: 0 }
-  const store = storage('local')
+  const store = storage('session')
   if (!store) return { imagesDropped: 0 }
-  const prev = readClarifyStash(runId, nodeId)
+  const prev = readOwnStash(runId, nodeId)
   let text: string
   let parts: RescuedPart[] | undefined
   if (opts.parts) {
@@ -330,7 +293,6 @@ export function stashClarifyDraft(
     images: budget.kept,
     annotations: uniqueByJson([...(prev?.annotations ?? []), ...add.annotations]),
     at: Date.now(),
-    tab: clarifyTabId(),
     ...(parts?.length ? { parts } : {}),
   }
   const imagesDropped = budget.dropped + (prev?.imagesDropped ?? 0)
@@ -356,68 +318,123 @@ export function stashClarifyDraft(
   return { imagesDropped: budget.dropped }
 }
 
-/* ---------------- tab ownership ---------------- */
-
-let tabIdCache: string | null = null
-let beating = false
-
-function beat(id: string) {
-  try {
-    localStorage.setItem(TAB_ALIVE_PREFIX + id, String(Date.now()))
-  } catch {
-    /* ignore */
-  }
-}
+/* ---------------- duplicate tabs (S22) ---------------- */
 
 /**
- * This tab's id: kept in sessionStorage, so it survives a refresh of the same
- * tab but differs between tabs. Starts a heartbeat other tabs can read.
+ * "Duplicate tab" copies sessionStorage, so the copy would hold the sender's
+ * outbox and stash and refill them a second time. Each tab keeps an id in
+ * sessionStorage; on start it asks the other tabs over a BroadcastChannel
+ * whether anyone already has that id. A live tab answering means this tab is
+ * the copy: it takes a new id and drops the copied outbox and stash. Until the
+ * check is done (TAB_CHECK_MS, or at once without BroadcastChannel) nothing is
+ * read from them.
  */
-export function clarifyTabId(): string {
-  if (tabIdCache) return tabIdCache
-  let id = ''
+let tabIdCache: string | null = null
+let tabChecked = false
+let tabStarted = false
+let channel: BroadcastChannel | null = null
+let checkDone: Promise<void> = Promise.resolve()
+
+function storedTabId(): string {
   try {
-    id = sessionStorage.getItem(TAB_ID_KEY) || ''
+    let id = sessionStorage.getItem(TAB_ID_KEY) || ''
     if (!id) {
       id = newClientMessageId()
       sessionStorage.setItem(TAB_ID_KEY, id)
     }
+    return id
   } catch {
-    id = newClientMessageId()
+    return tabIdCache || newClientMessageId()
   }
-  tabIdCache = id
-  if (!beating && typeof window !== 'undefined') {
-    beating = true
-    beat(id)
-    window.setInterval(() => beat(id), TAB_BEAT_MS)
-    // Closing (or reloading) this tab frees its stash for other tabs at once;
-    // a reload re-claims it on the next beat.
-    window.addEventListener('pagehide', () => {
+}
+
+function dropCopiedState() {
+  const store = storage('session')
+  if (!store) return
+  const keys: string[] = []
+  for (let i = 0; i < store.length; i++) {
+    const k = store.key(i)
+    if (k && (k.startsWith(STASH_PREFIX) || k.startsWith(OUTBOX_PREFIX))) keys.push(k)
+  }
+  for (const k of keys) store.removeItem(k)
+}
+
+/** This tab's id (unique among open tabs once the start-up check has run). */
+export function clarifyTabId(): string {
+  if (!tabIdCache) tabIdCache = storedTabId()
+  return tabIdCache
+}
+
+/**
+ * Start the duplicate-tab check and keep answering other tabs' checks. Called
+ * once at app start (and lazily by the chat). Resolves when reads are safe.
+ */
+export function initClarifyTab(): Promise<void> {
+  if (tabStarted) return checkDone
+  tabStarted = true
+  const id = clarifyTabId()
+  const BC = typeof BroadcastChannel !== 'undefined' ? BroadcastChannel : null
+  if (!BC) {
+    tabChecked = true
+    return checkDone
+  }
+  try {
+    channel = new BC(TAB_CHANNEL)
+  } catch {
+    tabChecked = true
+    return checkDone
+  }
+  const ch = channel
+  ch.onmessage = (e: MessageEvent) => {
+    const m = e.data as { type?: string; id?: string } | null
+    if (!m || typeof m.id !== 'string') return
+    if (m.type === 'ping' && m.id === clarifyTabId()) ch.postMessage({ type: 'taken', id: m.id })
+  }
+  checkDone = new Promise<void>((resolve) => {
+    let done = false
+    const finish = () => {
+      if (done) return
+      done = true
+      if (channel === ch) tabChecked = true
+      resolve()
+    }
+    const onTaken = (e: MessageEvent) => {
+      const m = e.data as { type?: string; id?: string } | null
+      if (!m || m.type !== 'taken' || m.id !== id || done) return
+      // Another open tab owns this id: this tab is its copy.
+      dropCopiedState()
+      tabIdCache = newClientMessageId()
       try {
-        localStorage.removeItem(TAB_ALIVE_PREFIX + id)
+        sessionStorage.setItem(TAB_ID_KEY, tabIdCache)
       } catch {
         /* ignore */
       }
-    })
-    window.addEventListener('pageshow', () => beat(id))
-  }
-  return id
+      ch.removeEventListener('message', onTaken)
+      finish()
+    }
+    ch.addEventListener('message', onTaken)
+    ch.postMessage({ type: 'ping', id })
+    setTimeout(() => {
+      ch.removeEventListener('message', onTaken)
+      finish()
+    }, TAB_CHECK_MS)
+  })
+  return checkDone
 }
 
-/** True when `tab` is another tab that is still open. */
-export function isOtherLiveTab(tab: string | undefined, now = Date.now()): boolean {
-  if (!tab || tab === clarifyTabId()) return false
-  try {
-    const ts = Number(localStorage.getItem(TAB_ALIVE_PREFIX + tab))
-    return Number.isFinite(ts) && ts > 0 && now - ts <= TAB_ALIVE_MS
-  } catch {
-    return false
-  }
+/** Whether the duplicate-tab check is done (reads are safe). */
+export function clarifyTabReady(): boolean {
+  return tabChecked
 }
 
-/** Test hook: forget the cached tab id (a "new tab"). */
-export function resetClarifyTabForTest(): void {
+/** Test hook: a fresh tab (forget id and check state). */
+export function resetClarifyTabForTest(opts: { checked?: boolean } = {}): void {
+  channel?.close()
+  channel = null
   tabIdCache = null
+  tabStarted = false
+  tabChecked = !!opts.checked
+  checkDone = Promise.resolve()
 }
 
 /* ---------------- outbox (per tab) ---------------- */
@@ -508,8 +525,13 @@ export function takeClarifyOutbox(
   runId: string,
   nodeId: string,
   id: string | undefined | null,
+  /**
+   * `own`: the caller answers a request this very page sent (HTTP 409), so the
+   * duplicate-tab check is not needed. WS frames pass nothing and wait for it.
+   */
+  opts: { own?: boolean } = {},
 ): (ClarifyDraftStash & { at: number; imagesDropped?: number }) | null {
-  if (!runId || !nodeId || !id) return null
+  if (!runId || !nodeId || !id || (!tabChecked && !opts.own)) return null
   const box = readOutbox(runId, nodeId)
   const e = box[id]
   if (!e || Date.now() - e.at > STASH_TTL_MS) return null

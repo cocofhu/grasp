@@ -1,14 +1,13 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getAuthState } from '@/lib/composables/useAuth'
 import {
   INLINE_IMAGE_BUDGET,
   STASH_TTL_MS,
   ackClarifyOutboxText,
   budgetImages,
-  clarifyTabId,
   insertRescued,
-  isOtherLiveTab,
+  resetClarifyTabForTest,
   clearClarifyStash,
   dropClarifyOutbox,
   mergeClarifyText,
@@ -27,6 +26,8 @@ function countKeys(st: Storage, prefix: string): number {
   return n
 }
 
+
+beforeEach(() => resetClarifyTabForTest({ checked: true }))
 
 afterEach(() => {
   localStorage.clear()
@@ -51,7 +52,7 @@ describe('clarifyDraftStash', () => {
   it('ignores empty payloads, bad JSON and missing ids', () => {
     stashClarifyDraft('r', 'n', { text: '  ', images: [], annotations: [] })
     expect(readClarifyStash('r', 'n')).toBeNull()
-    localStorage.setItem(`grasp-clarify-stash:anon:${clarifyTabId()}:r:n`, '{oops')
+    sessionStorage.setItem('grasp-clarify-stash:anon:r:n', '{oops')
     expect(readClarifyStash('r', 'n')).toBeNull()
     stashClarifyDraft('', 'n', { text: 'x', images: [], annotations: [] })
     expect(readClarifyStash('', 'n')).toBeNull()
@@ -60,8 +61,8 @@ describe('clarifyDraftStash', () => {
   it('keeps the text when images exceed the storage quota', () => {
     const store = new Map<string, string>()
     let calls = 0
-    const g = vi.spyOn(localStorage, 'getItem').mockImplementation((k: string) => store.get(k) ?? null)
-    const st = vi.spyOn(localStorage, 'setItem').mockImplementation((k: string, v: string) => {
+    const g = vi.spyOn(sessionStorage, 'getItem').mockImplementation((k: string) => store.get(k) ?? null)
+    const st = vi.spyOn(sessionStorage, 'setItem').mockImplementation((k: string, v: string) => {
       if (k.startsWith('grasp-clarify-stash:')) {
         calls += 1
         if (calls === 1) throw new Error('QuotaExceededError')
@@ -102,7 +103,7 @@ describe('clarifyDraftStash', () => {
     vi.setSystemTime(Date.now() + STASH_TTL_MS + 1)
     expect(readClarifyStash('r', 'n')).toBeNull()
     sweepClarifyStash(Date.now(), true)
-    expect(countKeys(localStorage, 'grasp-clarify-stash:')).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-stash:')).toBe(0)
     expect(countKeys(sessionStorage, 'grasp-clarify-outbox:')).toBe(0)
   })
 
@@ -129,7 +130,7 @@ describe('clarifyDraftStash', () => {
     spy.mockRestore()
     putClarifyOutbox('r', 'n', a, { text: '一', images: [], annotations: [] })
     putClarifyOutbox('r', 'n', b, { text: '二', images: [], annotations: [] })
-    expect(countKeys(localStorage, 'grasp-clarify-stash:')).toBe(0)
+    expect(countKeys(sessionStorage, 'grasp-clarify-stash:')).toBe(0)
     expect(takeClarifyOutbox('r', 'n', 'nope')).toBeNull()
     expect(takeClarifyOutbox('r', 'n', undefined)).toBeNull()
     expect(takeClarifyOutbox('r', 'n', a)).toMatchObject({ text: '一', images: [], annotations: [] })
@@ -167,22 +168,4 @@ describe('clarifyDraftStash', () => {
     expect(takeClarifyOutbox('r', 'n', 'id')!.imagesDropped).toBe(1)
   })
 
-  it('per tab: another live tab\'s stash is invisible; a closed tab\'s is adopted', () => {
-    localStorage.setItem('grasp-clarify-tab-alive:live', String(Date.now()))
-    localStorage.setItem(
-      'grasp-clarify-stash:anon:live:r:n',
-      JSON.stringify({ text: '活着的', images: [], annotations: [], at: Date.now() }),
-    )
-    localStorage.setItem(
-      'grasp-clarify-stash:anon:dead:r:n',
-      JSON.stringify({ text: '关掉的', images: [], annotations: [], at: Date.now() }),
-    )
-    expect(readClarifyStash('r', 'n')).toBeNull()
-    expect(readClarifyStash('r', 'n', { adopt: true })!.text).toBe('关掉的')
-    expect(localStorage.getItem('grasp-clarify-stash:anon:dead:r:n')).toBeNull()
-    expect(localStorage.getItem('grasp-clarify-stash:anon:live:r:n')).not.toBeNull()
-    expect(isOtherLiveTab('live')).toBe(true)
-    expect(isOtherLiveTab('dead')).toBe(false)
-    expect(isOtherLiveTab(clarifyTabId())).toBe(false)
-  })
 })

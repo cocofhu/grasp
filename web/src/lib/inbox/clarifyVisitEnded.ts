@@ -75,7 +75,7 @@ export function handleClarifyVisitEnded(
   // The 409 answers this very request: local copy (the caller's arguments,
   // then the persisted outbox) first; `dropped` only fills gaps. A ref-only
   // image in `dropped` is used only when no local copy (with preview data) exists.
-  const outbox = takeClarifyOutbox(ctx.runId, ctx.nodeId, ctx.clientMessageId)
+  const outbox = takeClarifyOutbox(ctx.runId, ctx.nodeId, ctx.clientMessageId, { own: true })
   const local: Sent = {
     text: ctx.sent.text || outbox?.text,
     images: ctx.sent.images?.length ? ctx.sent.images : outbox?.images,

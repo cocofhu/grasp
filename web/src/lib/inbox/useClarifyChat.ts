@@ -8,6 +8,8 @@ import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
 import {
   ackClarifyOutboxText,
+  clarifyTabReady,
+  initClarifyTab,
   insertRescued,
   type RescuedPart,
   clearClarifyStash,
@@ -1461,12 +1463,17 @@ function noteImagesDropped(n: number | undefined) {
 
 /**
  * Restore this tab's run+node stash once the composer is open again (run
- * resumed). Another open tab's stash is never refilled here (S18): only the
- * tab that sent a message puts it back. A closed tab's stash is adopted.
+ * resumed). The stash lives in this tab's sessionStorage, so only the tab
+ * that sent a message ever puts it back (S18 / B4).
  */
 function restoreStashedDraft() {
   if (!composerOpen()) return
-  const s = readClarifyStash(props.runId, props.nodeId, { adopt: true })
+  if (!clarifyTabReady()) {
+    // Duplicate-tab check still running: a copied tab must not refill.
+    void initClarifyTab().then(restoreStashedDraft)
+    return
+  }
+  const s = readClarifyStash(props.runId, props.nodeId)
   if (!s) return
   stashLive = true
   mergeIntoComposer(s.text, s.images, s.annotations, false, { parts: s.parts })

@@ -10,8 +10,10 @@ import {
   handleClarifyVisitEnded,
   readDropped,
 } from './clarifyVisitEnded'
-import { readClarifyStash } from './clarifyDraftStash'
-import { vi, afterEach } from 'vitest'
+import { readClarifyStash, resetClarifyTabForTest } from './clarifyDraftStash'
+import { vi, afterEach, beforeEach } from 'vitest'
+
+beforeEach(() => resetClarifyTabForTest({ checked: true }))
 
 /** Stash / outbox keys only (the tab id and heartbeat live alongside). */
 function countKeys(st: Storage, prefix: string): number {
@@ -51,7 +53,10 @@ describe('clarifyVisitEndedNotice', () => {
 
 describe('handleClarifyVisitEnded', () => {
   const zh = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhPages } }).global
-  afterEach(() => localStorage.clear())
+  afterEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
 
   it('hands the message to a mounted chat', () => {
     const restoreUnsentQueued = vi.fn()
@@ -73,7 +78,7 @@ describe('handleClarifyVisitEnded', () => {
     const r = handleClarifyVisitEnded(ended(false), zh.t, { chat: null, runId: 'r', nodeId: 'n', sent: { text: 'hi' } })
     expect(r?.shownInChat).toBe(false)
     expect(readClarifyStash('r', 'n')?.text).toBe('hi')
-    localStorage.clear()
+    sessionStorage.clear()
     handleClarifyVisitEnded(ended(true), zh.t, { chat: null, runId: 'r', nodeId: 'n', sent: { text: 'hi' } })
     expect(readClarifyStash('r', 'n')).toBeNull()
   })
