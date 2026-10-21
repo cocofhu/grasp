@@ -41,6 +41,18 @@ export function isSandboxBusyError(e: unknown): e is Error & { status?: number; 
   return (e as { code?: string }).code === 'sandbox_busy'
 }
 
+/**
+ * 409 clarify_visit_ended: the clarify visit (run) already ended, so the reply
+ * was not sent. autoRetryOnResume marks the system first message that resume
+ * redelivers on its own.
+ */
+export function isClarifyVisitEndedError(
+  e: unknown,
+): e is Error & { status?: number; code: 'clarify_visit_ended'; autoRetryOnResume?: boolean } {
+  if (!e || typeof e !== 'object') return false
+  return (e as { code?: string }).code === 'clarify_visit_ended'
+}
+
 export async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const method = (init?.method ?? 'GET').toUpperCase()
   if (mutationsBlocked() && isMutationMethod(method)) {
@@ -76,13 +88,14 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
     }
     if (!isDraining()) apiState.online = false
     let msg = `${res.status} ${path}`
-    const extra: { code?: string; runningOpId?: string; alias?: string } = {}
+    const extra: { code?: string; runningOpId?: string; alias?: string; autoRetryOnResume?: boolean } = {}
     try {
       const body = await res.json()
       if (body?.error) msg = body.error
       if (typeof body?.code === 'string') extra.code = body.code
       if (typeof body?.runningOpId === 'string') extra.runningOpId = body.runningOpId
       if (typeof body?.alias === 'string') extra.alias = body.alias
+      if (typeof body?.autoRetryOnResume === 'boolean') extra.autoRetryOnResume = body.autoRetryOnResume
     } catch {
       // non-JSON error body; keep the status line
     }

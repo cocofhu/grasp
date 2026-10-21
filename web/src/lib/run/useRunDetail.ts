@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
+import { clarifyVisitEndedNotice } from '@/lib/inbox/clarifyVisitEnded'
 import { useToast } from '@/lib/composables/useToast'
 import {
   applyOuterSashMem,
@@ -92,6 +93,10 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  restoreUnsentQueued?: (
+    sent: { text: string; images?: import('@/lib/shared/types').ClarifyImage[]; annotations?: import('@/lib/shared/types').ReactAnnotation[] },
+    notice: string,
+  ) => void
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -636,6 +641,14 @@ async function onClarifySend(
     // already completed) instead of leaving the input enabled to re-click.
     console.warn('reactReply failed', e?.message || e)
     const msg = e?.message || t('pages.runDetail.gateError')
+    // Run/visit already ended: the reply was never sent. Hand it back to the
+    // composer with a notice instead of an error reply (no confirm-error bar).
+    const visitEnded = clarifyVisitEndedNotice(e, t)
+    if (visitEnded && !force) {
+      if (!retryLast) reviewChatRef.value?.restoreUnsentQueued?.({ text, images, annotations: anns }, visitEnded)
+      else clarifyConfirmError.value = visitEnded
+      return
+    }
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
     if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
     if (force && isSandboxBusyError(e)) {

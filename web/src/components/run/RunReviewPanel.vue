@@ -63,6 +63,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  restoreUnsentQueued?: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) => void
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -75,6 +76,8 @@ defineExpose({
   applyAcpEvents: (events: any[] | undefined, nodeId?: string) =>
     reviewChatRef.value?.applyAcpEvents?.(events, nodeId),
   discardLastQueued: () => reviewChatRef.value?.discardLastQueued?.(),
+  restoreUnsentQueued: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) =>
+    reviewChatRef.value?.restoreUnsentQueued?.(sent, notice),
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),
   isChatReady: () => !!reviewChatRef.value?.isChatReady?.(),
   playConfirmCeremony: async () => {

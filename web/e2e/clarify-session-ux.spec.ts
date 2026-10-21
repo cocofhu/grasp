@@ -119,4 +119,29 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-thought')).not.toHaveAttribute('open')
     await page.screenshot({ path: path.join(shotDir, '08-clarify-four-phase-done.png'), fullPage: true })
   })
+
+  test('运行已结束(409 clarify_visit_ended)：回填输入框、保留后打的字、焦点不丢', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+
+    await sendClarify(page, '运行结束后才到的回复')
+    const queue = page.getByTestId('clarify-review-queue')
+    await expect(queue).toContainText('运行结束后才到的回复')
+    const box = page.locator('[data-testid="clarify-input"]')
+    await box.click()
+    await page.keyboard.type('又打了几个字')
+
+    await page.getByTestId('sim-visit-ended').click()
+    // The sim button took focus; the chat hands it back to the composer.
+    await expect(box).toBeFocused()
+    await expect(box).toHaveValue('运行结束后才到的回复\n又打了几个字')
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+    await expect(page.getByTestId('clarify-queue-item')).toHaveCount(0)
+    await expect(page.getByTestId('clarify-scroller')).not.toContainText('运行结束后才到的回复')
+
+    // Keep typing: nothing is lost and the caret stays at the end.
+    await page.keyboard.type('！')
+    await expect(box).toHaveValue('运行结束后才到的回复\n又打了几个字！')
+  })
 })

@@ -292,6 +292,33 @@ describe('useRunDetail actions', () => {
     expect(discardLastQueued).toHaveBeenCalled()
     expect(detail.clarifyConfirmError.value).toBe('dialogue already done')
 
+    // Run ended (409 clarify_visit_ended): hand the text back to the composer
+    // with the notice; no confirm-error bar, no plain discard.
+    const restoreUnsentQueued = vi.fn()
+    discardLastQueued.mockClear()
+    detail.reviewChatRef.value = { discardLastQueued, restoreUnsentQueued }
+    const ended = (autoRetryOnResume: boolean) =>
+      Object.assign(new Error('运行已结束，这条消息没有发送'), {
+        status: 409,
+        code: 'clarify_visit_ended',
+        autoRetryOnResume,
+      })
+    mocks.reactReply.mockRejectedValueOnce(ended(false))
+    await detail.onClarifySend('late', [{ data: 'aGk=', mimeType: 'image/png' }])
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      { text: 'late', images: [{ data: 'aGk=', mimeType: 'image/png' }], annotations: [] },
+      '运行已结束，这条消息没有发送；续跑后请重新发送',
+    )
+    expect(discardLastQueued).not.toHaveBeenCalled()
+    expect(detail.clarifyConfirmError.value).toBeNull()
+    mocks.reactReply.mockRejectedValueOnce(ended(true))
+    await detail.onClarifySend('first')
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      { text: 'first', images: [], annotations: [] },
+      '运行已结束，这条消息没有发送；续跑后会自动发送',
+    )
+    expect(detail.clarifyConfirmError.value).toBeNull()
+
     // Force finish refreshes the snapshot instead of rolling back.
     mocks.getRun.mockClear()
     await detail.onClarifySend('done', [], [], true)

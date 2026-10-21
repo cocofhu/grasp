@@ -132,6 +132,7 @@ const chatRef = ref<{
   ) => void
   cancelReview: () => void
   discardLastQueued: () => void
+  restoreUnsentQueued: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) => void
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
@@ -159,6 +160,8 @@ defineExpose({
   ) => chatRef.value?.applyQueueState?.(waiting, items, busy, activeItem),
   cancelReview: () => chatRef.value?.cancelReview(),
   discardLastQueued: () => chatRef.value?.discardLastQueued(),
+  restoreUnsentQueued: (sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] }, notice: string) =>
+    chatRef.value?.restoreUnsentQueued(sent, notice),
   isChatReady: () => !!chatRef.value,
   /**
    * Platform session busy from ClarifyChat (thinking / queued / live slot).

@@ -1,4 +1,4 @@
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
@@ -589,6 +589,8 @@ function imagePreviewLabel(images: ClarifyImage[], index: number): string {
 }
 
 const attachNotice = ref<string | null>(null)
+/** A reply the server refused (e.g. clarify_visit_ended); its text is back in the composer. */
+const sendNotice = ref<string | null>(null)
 const queueNotice = ref<string | null>(null)
 const queueToast = ref<string | null>(null)
 let queueToastTimer = 0
@@ -665,7 +667,7 @@ async function editQueuedItem(index: number) {
     attachments.value = []
     annotations.value = []
     attachNotice.value = null
-    sendMessage(prepared.text, prepared.images, prepared.annotations)
+    sendMessage(prepared.text, prepared.images, prepared.annotations, t)
     // Append keeps the target index stable.
   }
 
@@ -826,14 +828,24 @@ function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
 }
 
-function sendMessage(text: string, imgs: ClarifyImage[] = [], anns: ReactAnnotation[] = []) {
+/** Composer text behind an optimistic row (before any skip-envelope wrap). */
+const composerOrigin = new WeakMap<object, string>()
+
+function sendMessage(
+  text: string,
+  imgs: ClarifyImage[] = [],
+  anns: ReactAnnotation[] = [],
+  composerText?: string,
+) {
   // Skip envelopes keep a trailing newline so an empty third line stays present
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
   // Enqueue only — bubbles materialize on turn_begin (AgentChatTester / Demo).
   // Busy may still enqueue; never open a concurrent turn via optimistic pending.
-  queued.value.push({ text: t, images: imgs, annotations: cloneReactAnnotations(anns) })
+  const item: QueueItem = { text: t, images: imgs, annotations: cloneReactAnnotations(anns) }
+  if (composerText !== undefined) composerOrigin.set(item, composerText)
+  queued.value.push(item)
   thinking.value = true
   emit('send', t, imgs, anns)
   stickToBottom.value = true
@@ -895,6 +907,7 @@ async function sendFromComposer(): Promise<boolean> {
       if (attachments.value === originalImages && JSON.stringify(attachments.value) === JSON.stringify(imgs)) attachments.value = []
       if (annotations.value === originalAnnotations && JSON.stringify(annotations.value) === JSON.stringify(anns)) annotations.value = []
       attachNotice.value = null
+      sendNotice.value = null
     } finally {
       composerSending.value = false
     }
@@ -904,8 +917,9 @@ async function sendFromComposer(): Promise<boolean> {
   attachments.value = []
   annotations.value = []
   attachNotice.value = null
+  sendNotice.value = null
   // Always forward cloned images/annotations — skip only rewrites text.
-  sendMessage(prepared.text, prepared.images, prepared.annotations)
+  sendMessage(prepared.text, prepared.images, prepared.annotations, t)
   return true
 }
 
@@ -1330,6 +1344,80 @@ function discardLastQueued() {
   if (queued.value.length === 0 && liveAgentIdx.value < 0) {
     thinking.value = false
   }
+}
+
+/**
+ * Parent calls this when reactReply(force=false) was refused because the
+ * clarify visit already ended (409 clarify_visit_ended): the message was never
+ * sent. Drop its optimistic row, put its text and attachments back into the
+ * composer ahead of anything typed since (never overwriting it), keep focus in
+ * the composer, and show `notice` instead of a chat reply.
+ */
+function restoreUnsentQueued(
+  sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] },
+  notice: string,
+) {
+  let idx = -1
+  for (let i = queued.value.length - 1; i >= 0; i--) {
+    if (!queued.value[i].id && queued.value[i].text === sent.text) {
+      idx = i
+      break
+    }
+  }
+  const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
+  if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
+
+  const origin = item ? composerOrigin.get(toRaw(item)) : undefined
+  const text = (origin ?? item?.text ?? sent.text ?? '').trim()
+  const imgs = item?.images ?? sent.images ?? []
+  const anns = item?.annotations ?? sent.annotations ?? []
+
+  const el = textareaRef.value
+  const hadFocus = !!el && document.activeElement === el
+  const selStart = hadFocus ? el!.selectionStart : 0
+  const selEnd = hadFocus ? el!.selectionEnd : 0
+  const current = draft.value
+  let shift = 0
+  if (text) {
+    if (!current.trim()) {
+      draft.value = text
+      shift = text.length - current.length
+    } else if (!current.includes(text)) {
+      const prefix = `${text}\n`
+      draft.value = prefix + current
+      shift = prefix.length
+    }
+  }
+  const imgKey = (im: ClarifyImage) => JSON.stringify(im)
+  const haveImgs = new Set(attachments.value.map(imgKey))
+  const backImgs = cloneClarifyImages(imgs).filter((im) => !haveImgs.has(imgKey(im)))
+  if (backImgs.length) attachments.value = [...backImgs, ...attachments.value]
+  const annKey = (a: ReactAnnotation) => JSON.stringify(a)
+  const haveAnns = new Set(annotations.value.map(annKey))
+  const backAnns = cloneReactAnnotations(anns).filter((a) => !haveAnns.has(annKey(a)))
+  if (backAnns.length) annotations.value = [...backAnns, ...annotations.value]
+
+  sendNotice.value = notice
+  void nextTick(() => {
+    autoGrow()
+    const box = textareaRef.value
+    if (!box) return
+    const active = document.activeElement as HTMLElement | null
+    // Never pull focus out of another field the user moved to.
+    const elsewhere =
+      !!active &&
+      active !== box &&
+      active !== document.body &&
+      (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))
+    if (elsewhere) return
+    if (active !== box) box.focus({ preventScroll: true })
+    if (hadFocus) {
+      box.setSelectionRange(selStart + shift, selEnd + shift)
+    } else {
+      const end = box.value.length
+      box.setSelectionRange(end, end)
+    }
+  })
 }
 
 /** Idle is authoritative: no live turn may keep its caret, tracked or not. */
@@ -1960,6 +2048,8 @@ function retryLastFailed() {
     confirmFlowPlaying,
     cancelReview,
     discardLastQueued,
+    restoreUnsentQueued,
+    sendNotice,
     forceAuthoritativeIdle,
     settleAfterTurnEnd,
     applyQueueState,

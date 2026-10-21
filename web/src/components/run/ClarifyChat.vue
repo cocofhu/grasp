@@ -122,6 +122,7 @@ defineExpose({
   applyQueueState: chat.applyQueueState,
   cancelReview: chat.cancelReview,
   discardLastQueued: chat.discardLastQueued,
+  restoreUnsentQueued: chat.restoreUnsentQueued,
   isSessionBusy: chat.isSessionBusy,
   reorderQueuedItems: chat.reorderQueuedItems,
   playConfirmCeremony: chat.playConfirmCeremony,
@@ -243,6 +244,7 @@ const {
   displayTurns,
   outputBounds,
   attachNotice,
+  sendNotice,
   sel,
   other,
   otherChecked,
@@ -1329,6 +1331,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       aria-live="polite"
     />
     <div v-else-if="!active && !coldSession" class="border-t border-line p-3 text-center text-[12px] text-txt3">
+      <div v-if="sendNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-left text-[12px] text-err" data-testid="clarify-send-notice" role="alert">
+        {{ sendNotice }}
+      </div>
       <Icon name="close" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.closed') }}
     </div>
     <div v-else-if="coldSession" class="shrink-0 border-t border-line p-3" data-testid="clarify-cold-actions">
@@ -1368,6 +1373,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           test-id="clarify-annotation-chip"
           @remove="removeAnnotation(ai)"
         />
+      </div>
+      <div v-if="sendNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err" data-testid="clarify-send-notice" role="alert">
+        {{ sendNotice }}
       </div>
       <div v-if="attachNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err" data-testid="clarify-attach-notice" role="alert">
         {{ attachNotice }}

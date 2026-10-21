@@ -24,7 +24,15 @@ const App = defineComponent({
       applyReviewFrame?: (f: Record<string, unknown>) => void
       applyAcpEvents?: (e: { kind: string; text: string }[]) => void
       isSessionBusy?: () => boolean
+      restoreUnsentQueued?: (sent: { text: string }, notice: string) => void
     } | null>(null)
+    /** Last text the chat emitted for sending (host would POST it). */
+    let lastSent = ''
+
+    /** Host got 409 clarify_visit_ended for the last send (run ended). */
+    function simVisitEnded() {
+      chatRef.value?.restoreUnsentQueued?.({ text: lastSent }, i18n.global.t('pages.clarify.visitEndedResend'))
+    }
 
     /** Host narrow-update gate mirror (RunDetail/GatesInbox busy skip). */
     function maybeHostRefresh(reason: string) {
@@ -241,6 +249,16 @@ const App = defineComponent({
             '模拟四阶段完成',
           ),
           h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-visit-ended',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => simVisitEnded(),
+            },
+            '模拟运行已结束(409)',
+          ),
+          h(
             'span',
             {
               'data-testid': 'host-skip-refresh',
@@ -261,6 +279,9 @@ const App = defineComponent({
           annotateEnabled: true,
           hideFinish: true,
           sendLabel: '发送澄清回复',
+          onSend: (text: string) => {
+            lastSent = text
+          },
         }),
       ])
   },
