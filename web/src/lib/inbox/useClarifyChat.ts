@@ -14,6 +14,7 @@ import {
 import { relTime as formatRelTime } from '@/lib/shared/format'
 import {
   demoOptionsOf,
+  restoreChoiceAnswers,
   selectedDemoOption,
 } from '@/lib/inbox/clarifyDemo'
 import type {
@@ -48,6 +49,7 @@ import {
 } from '@/lib/inbox/composerAutoGrow'
 import type { Ref } from 'vue'
 import { useConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import {
   cloneAnnotations as cloneReactAnnotations,
   cloneImages as cloneClarifyImages,
@@ -1205,7 +1207,10 @@ function choiceRowsForAgentTurn(turnIndex: number): ChoiceRow[] | null {
 
 function selectedLabelsForQuestion(q: ReactQuestion, rows: ChoiceRow[] | null): string[] {
   if (!rows) return []
-  return rows.find((r) => r.q === q.prompt)?.answers ?? []
+  const row = rows.find((r) => r.q === q.prompt)
+  if (!row) return []
+  // Saved text still splits on every dunhao. Restore whole labels before highlighting.
+  return restoreChoiceAnswers(row.answers, q.options.map((option) => option.label))
 }
 
 function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
@@ -1215,18 +1220,64 @@ function selectedDemoForInteractive(q: ReactQuestion): ReactOption | null {
 function send() {
   sendFromComposer()
 }
+
+const confirmFlowDialogOpen = ref(false)
+const confirmFlowDiscard = ref<ConfirmFlowDiscard>('none')
+let pendingFlowConfirm: 'finish' | 'abort' | null = null
+
+function canFinishAbort() {
+  return !(props.done || !props.confirmCanAbort || composerSending.value ||
+    (!props.coldSession && hasComposerDraft()))
+}
+
+function canFinishEarly() {
+  if (props.done || (!props.active && !props.coldSession)) return false
+  if (validating.value || confirmDisabled.value) return false
+  return true
+}
+
+function requestFlowConfirm(kind: 'finish' | 'abort') {
+  if (confirmFlowDialogOpen.value) return
+  pendingFlowConfirm = kind
+  // Clarify keeps a hidden cold-session draft; confirm does not discard it.
+  confirmFlowDiscard.value = 'none'
+  confirmFlowDialogOpen.value = true
+}
+
+function dismissConfirmFlow() {
+  confirmFlowDialogOpen.value = false
+  pendingFlowConfirm = null
+}
+
+function acceptConfirmFlow() {
+  if (!confirmFlowDialogOpen.value || !pendingFlowConfirm) return
+  const kind = pendingFlowConfirm
+  confirmFlowDialogOpen.value = false
+  pendingFlowConfirm = null
+  if (kind === 'abort') commitFinishAbort()
+  else commitFinishEarly()
+}
+
 // Clarify: force Agent wrap-up (disabled while thinking).
 // Review: accept store snapshot only when ready (not thinking / queue empty).
 function finishAbort() {
-  if (props.done || !props.confirmCanAbort || composerSending.value ||
-    (!props.coldSession && hasComposerDraft())) return
+  if (!canFinishAbort()) return
+  requestFlowConfirm('abort')
+}
+
+function commitFinishAbort() {
+  if (!canFinishAbort()) return
   emit('finish-abort')
 }
 
 function finishEarly() {
-  if (props.done || (!props.active && !props.coldSession)) return
-  // Click intent: play overlay immediately; parent force must not wait for done (g1.1).
-  if (validating.value || confirmDisabled.value) return
+  if (!canFinishEarly()) return
+  requestFlowConfirm('finish')
+}
+
+function commitFinishEarly() {
+  if (!canFinishEarly()) return
+  // Click intent: play overlay only after the in-app confirm; parent force must not wait for done (g1.1).
   validating.value = true
   void playConfirmCeremony()
   emit('finish')
@@ -1916,6 +1967,10 @@ function retryLastFailed() {
     send,
     finishEarly,
     finishAbort,
+    confirmFlowDialogOpen,
+    confirmFlowDiscard,
+    acceptConfirmFlow,
+    dismissConfirmFlow,
     playConfirmCeremony,
     showDoneChrome,
     confirmFlowPlaying,
