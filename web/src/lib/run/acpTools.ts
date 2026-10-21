@@ -67,6 +67,11 @@ export function timelineFolds(parts: readonly AgentPart[] | undefined): boolean 
   return messages > 1
 }
 
+/** Any tool step in this reply failed (such a finished reply stays unfolded, as before #843). */
+export function hasFailedTool(parts: readonly AgentPart[] | undefined): boolean {
+  return (parts || []).some((p) => p.kind === 'tool' && (p.status || '').toLowerCase() === 'failed')
+}
+
 /** Groups consecutive tool steps into one block, keeping everything else in order. */
 export function timelineBlocks(parts: readonly AgentPart[] | undefined): TimelineBlock[] {
   const out: TimelineBlock[] = []

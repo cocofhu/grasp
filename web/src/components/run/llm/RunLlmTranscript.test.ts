@@ -294,7 +294,7 @@ describe('RunLlmTranscript', () => {
             kind: 'timeline',
             parts: [
               { kind: 'thought', text: 'secret reasoning' },
-              { kind: 'tool', title: 'Read', status: 'failed' },
+              { kind: 'tool', title: 'Read', status: 'completed' },
               { kind: 'message', text: '正文在线下' },
             ],
           },
@@ -306,7 +306,6 @@ describe('RunLlmTranscript', () => {
     await flushPromises()
     const elapsed = w.get('[data-testid="agent-timeline-elapsed"]')
     expect(elapsed.text()).toContain('用时 3m 34s')
-    expect(elapsed.text()).toContain('1 个失败')
     expect(elapsed.text()).not.toContain('已中断')
     expect(w.find('[data-testid="llm-turn-elapsed"]').exists()).toBe(false)
     expect(w.get('[data-testid="llm-answer-text"]').text()).toContain('正文在线下')
@@ -319,6 +318,37 @@ describe('RunLlmTranscript', () => {
     expect(w.get('[data-testid="agent-timeline-rule"]').element.compareDocumentPosition(
       w.get('[data-testid="llm-answer-text"]').element,
     ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  })
+  it('keeps a finished timeline with a failed tool unfolded and the header duration, as before #843', async () => {
+    llmTranscript.mockResolvedValue({
+      executions: [{
+        id: 1,
+        nodeId: 'a',
+        iteration: 1,
+        status: 'completed',
+        startedAt: '2026-10-01T00:00:00Z',
+        events: [
+          { t: 0, kind: 'prompt', text: 'q', at: '2026-10-01T00:00:00Z' },
+          {
+            t: 1,
+            kind: 'timeline',
+            parts: [
+              { kind: 'thought', text: 'secret reasoning' },
+              { kind: 'tool', title: 'Read', status: 'failed' },
+              { kind: 'message', text: '正文在线下' },
+            ],
+          },
+          { t: 2, kind: 'turn_end', at: '2026-10-01T00:03:34Z' },
+        ],
+      }],
+    })
+    const w = mountView({ run: run({ trace: [] }) })
+    await flushPromises()
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(w.get('[data-testid="llm-turn-elapsed"]').text()).toContain('3m 34s')
+    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
+    expect(w.get('[data-testid="llm-answer-text"]').text()).toContain('正文在线下')
   })
 
   it('shows the empty state for a run without executions', async () => {

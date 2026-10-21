@@ -42,6 +42,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -708,6 +709,12 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
+/** A settled reply with a failed tool call stays unfolded (see AgentTimeline settled). */
+function turnHasFailedTool(t: ClarifyTurn): boolean {
+  if (t.parts?.length) return hasFailedTool(t.parts)
+  return (t.tools || []).some((tool) => (tool.status || '').toLowerCase() === 'failed')
+}
+
 function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
   if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
   return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
@@ -1041,6 +1048,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :live-ref="liveCards.full.get(i)!"
               agent
             />
+            <!--
+              A reply with a failed tool call does not fold (AgentTimeline), so it
+              keeps the pre-#843 completion footnote: 已完成 + when it ended.
+            -->
+            <div
+              v-if="showTurnCompleted(t) && turnHasFailedTool(t)"
+              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
+              data-testid="clarify-turn-completed"
+            >
+              <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
+              <span>{{ locale && relTime(t.at) }}</span>
+            </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div

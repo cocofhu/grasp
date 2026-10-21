@@ -297,6 +297,34 @@ describe('ClarifyChat', () => {
     bare.unmount()
   })
 
+  it('shows a reply with a failed tool call inline with the completion footnote, as before #843', () => {
+    const w = mountChat({
+      turns: [{
+        role: 'agent',
+        text: '没跑通',
+        at: '2026-10-20T00:03:34Z',
+        startedAt: '2026-10-20T00:00:00Z',
+        endedAt: '2026-10-20T00:03:34Z',
+        tools: [{ title: 'Shell', status: 'failed' }],
+        parts: [
+          { kind: 'thought', text: '先跑测试' },
+          { kind: 'tool', title: 'Shell', status: 'failed', output: 'exit 1' },
+          { kind: 'message', text: '没跑通' },
+        ],
+      }],
+    })
+    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
+    expect(w.get('[data-testid="clarify-agent-message"]').text()).toBe('没跑通')
+    const done = w.get('[data-testid="clarify-turn-completed"]')
+    expect(done.text()).toContain('已完成')
+    const msg = w.get('[data-testid="clarify-agent-message"]').element
+    expect(msg.compareDocumentPosition(done.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    w.unmount()
+  })
+
   it('shows closed hint when inactive', () => {
     const wrapper = mountChat({ active: false })
     expect(wrapper.text()).toMatch(/已关闭|不可再回复/)
