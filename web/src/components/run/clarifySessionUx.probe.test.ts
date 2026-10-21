@@ -320,37 +320,130 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     w.unmount()
   })
 
-  it('AnnotationChip path===label shows once', () => {
+  function mountChip(ann: ReactAnnotation, extra: { removable?: boolean; testId?: string } = {}) {
     const i18n = createI18n({
       legacy: false,
       locale: 'zh-CN',
       messages: { 'zh-CN': { ...common, ...pages } },
     })
-    const ann: ReactAnnotation = { label: '#launchInput', selector: '#launchInput' }
-    const w = mount(AnnotationChip, {
-      props: { ann, testId: 'chip-dup' },
+    return mount(AnnotationChip, {
+      props: { ann, ...extra },
       global: { plugins: [i18n], stubs: { Icon: true } },
     })
+  }
+
+  it('AnnotationChip path===label shows once', () => {
+    const ann: ReactAnnotation = { label: '#launchInput', selector: '#launchInput' }
+    const w = mountChip(ann, { testId: 'chip-dup' })
     const text = w.text()
     const matches = text.match(/#launchInput/g) || []
     expect(matches.length).toBe(1)
+    const title = w.attributes('title') || ''
+    expect(title).toContain('整字段')
+    expect(title.match(/#launchInput/g) || []).toHaveLength(1)
+    expect(w.attributes('aria-label')).toBe(title)
     w.unmount()
   })
 
-  it('AnnotationChip path!==label shows both', () => {
-    const i18n = createI18n({
-      legacy: false,
-      locale: 'zh-CN',
-      messages: { 'zh-CN': { ...common, ...pages } },
-    })
+  it('AnnotationChip path!==label shows path in body and label in title', () => {
     const ann: ReactAnnotation = { label: '启动输入', jsonPath: '#launchInput' }
-    const w = mount(AnnotationChip, {
-      props: { ann },
-      global: { plugins: [i18n], stubs: { Icon: true } },
-    })
+    const w = mountChip(ann)
     expect(w.text()).toContain('#launchInput')
-    expect(w.text()).toContain('启动输入')
+    expect(w.text()).not.toContain('启动输入')
+    expect(w.text()).not.toContain('整字段')
+    const title = w.attributes('title') || ''
+    expect(title).toContain('#launchInput')
+    expect(title).toContain('启动输入')
+    expect(title).toContain('整字段')
+    expect(w.attributes('aria-label')).toBe(title)
+    expect(w.find('.font-mono').exists()).toBe(true)
     w.unmount()
+  })
+
+  it('AnnotationChip renders field, quote, and unbound as one neutral line', () => {
+    const field = mountChip({ label: '启动输入', jsonPath: '#launchInput' })
+    expect(field.attributes('data-chip-kind')).toBe('field')
+    expect(field.classes()).toEqual(expect.arrayContaining(['chip', 'max-w-full', 'min-w-0']))
+    expect(field.classes().join(' ')).not.toMatch(/accent|border-ok|bg-ok/)
+    expect(field.html()).not.toMatch(/uppercase|text-\[9px\]/)
+    expect(field.html()).toContain('crosshair')
+    expect(field.find('.truncate').exists()).toBe(true)
+    expect(field.text()).not.toContain('整字段')
+    field.unmount()
+
+    const labelOnly = mountChip({ label: '仅标签' })
+    expect(labelOnly.attributes('data-chip-kind')).toBe('field')
+    expect(labelOnly.text()).toContain('仅标签')
+    expect(labelOnly.find('.font-mono').exists()).toBe(false)
+    expect((labelOnly.attributes('title') || '').match(/仅标签/g) || []).toHaveLength(1)
+    labelOnly.unmount()
+
+    const quote = mountChip({
+      label: 'Hero',
+      jsonPath: 'summary',
+      selector: '#hero',
+      quote: '第一行\n第二行',
+    })
+    expect(quote.attributes('data-chip-kind')).toBe('quote')
+    expect(quote.text()).toContain('第一行 第二行')
+    expect(quote.text()).not.toContain('段落摘录')
+    expect(quote.text()).not.toContain('summary')
+    expect(quote.text()).not.toContain('Hero')
+    expect(quote.text()).toContain('❝')
+    expect(quote.find('.font-mono').exists()).toBe(false)
+    const quoteTitle = quote.attributes('title') || ''
+    expect(quoteTitle).toContain('段落摘录')
+    expect(quoteTitle).toContain('第一行 第二行')
+    expect(quoteTitle).toContain('summary')
+    expect(quoteTitle).toContain('Hero')
+    expect(quote.attributes('aria-label')).toBe(quoteTitle)
+    quote.unmount()
+
+    const unbound = mountChip({ quote: '未绑定原文', label: '未绑定原文' })
+    expect(unbound.attributes('data-chip-kind')).toBe('unbound')
+    expect(unbound.text().match(/未绑定原文/g) || []).toHaveLength(1)
+    expect(unbound.text()).not.toContain('未绑定字段')
+    const unboundTitle = unbound.attributes('title') || ''
+    expect(unboundTitle).toContain('未绑定字段')
+    expect(unboundTitle.match(/未绑定原文/g) || []).toHaveLength(1)
+    expect(unbound.find('.font-mono').exists()).toBe(false)
+    unbound.unmount()
+  })
+
+  it('AnnotationChip removable toggle only shows remove on pending chips', async () => {
+    const ann: ReactAnnotation = { label: '字段', selector: '#field' }
+    const pending = mountChip(ann, { removable: true })
+    const remove = pending.get('button')
+    expect(remove.attributes('aria-label')).toBe('移除引用')
+    await remove.trigger('click')
+    expect(pending.emitted('remove')).toHaveLength(1)
+    pending.unmount()
+
+    const readonly = mountChip(ann)
+    expect(readonly.find('button').exists()).toBe(false)
+    readonly.unmount()
+  })
+
+  it('AnnotationChip ellipsizes long text and keeps soft truncation in the title', () => {
+    const longPath = 'selector.'.repeat(20) + 'end'
+    const long = mountChip({ jsonPath: longPath, label: longPath })
+    expect(long.get('.truncate').text()).toBe(longPath)
+    expect(long.find('.truncate').classes()).toContain('truncate')
+    expect((long.attributes('title') || '').split(longPath).length - 1).toBe(1)
+    long.unmount()
+
+    const quote = '已软截断的摘录原文'
+    const cut = mountChip({ quote, jsonPath: 'body', truncated: true })
+    expect(cut.text()).toContain(quote)
+    expect(cut.text()).not.toContain('已截断')
+    expect(cut.html()).not.toContain('chipTruncated')
+    const title = cut.attributes('title') || ''
+    expect(title).toContain('段落摘录')
+    expect(title).toContain(quote)
+    expect(title).toContain('body')
+    expect(title).toContain('已截断')
+    expect(cut.attributes('aria-label')).toContain('已截断')
+    cut.unmount()
   })
 
   it('props.turns catching human while live streaming does not double human bubble', async () => {
@@ -507,7 +600,9 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     await w.find('[data-testid="clarify-queue-edit"]').trigger('click')
     await flushPromises()
     expect(w.find('textarea').element.value).toBe('仅帧权威')
-    expect(w.find('[data-testid="clarify-annotation-chip"]').text()).toContain('字段')
+    const restored = w.find('[data-testid="clarify-annotation-chip"]')
+    expect(restored.text()).toContain('goals[0]')
+    expect(restored.attributes('title')).toContain('字段')
     w.unmount()
   })
 
@@ -548,7 +643,9 @@ describe('[approving] ClarifyChat clarify-path UX (non-reviewMode)', () => {
     await flushPromises()
     // Composer has queued item chips; draft chips live on the queue row.
     expect(w.find('textarea').element.value).toBe('队列正文')
-    expect(w.find('[data-testid="clarify-annotation-chip"]').text()).toContain('队列点')
+    const restored = w.find('[data-testid="clarify-annotation-chip"]')
+    expect(restored.text()).toContain('#queued')
+    expect(restored.attributes('title')).toContain('队列点')
     expect(w.find('[data-testid="clarify-queue-item"]').text()).toContain('新草稿')
     expect(w.find('[data-testid="clarify-review-queue"]').text()).toMatch(/批注/)
     w.unmount()
