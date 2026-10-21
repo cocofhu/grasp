@@ -29,6 +29,7 @@ const props = withDefaults(defineProps<ArtifactPreviewProps>(), {
   hideVersionChip: false,
   annotatable: false,
   shareToken: '',
+  previewActive: true,
 })
 const emit = defineEmits<ArtifactPreviewEmit>()
 
@@ -227,6 +228,7 @@ const htmlCanvasOverlay = computed(
           fill-parent
           :inspectable="canAnnotate"
           :modal-title="modalTitle"
+          :presented="previewActive"
           class="h-full min-h-0"
           @pick="onHtmlPick"
         >

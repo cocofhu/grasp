@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
+import { nextTick } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
@@ -291,6 +292,40 @@ describe('ArtifactPreview HTML toolbar actions', () => {
     resolveCopy(true)
     await flushPromises()
     expect(btn.attributes('aria-label')).toBe('复制')
+    wrapper.unmount()
+  })
+
+  it('loads html that arrives while the preview tab is hidden', async () => {
+    let resolveContent!: (value: { content: string }) => void
+    apiMocks.artifactContent.mockReturnValue(
+      new Promise((resolve) => {
+        resolveContent = resolve
+      }),
+    )
+    const wrapper = mountPreview(art({ id: 'page', name: 'page.html', content: undefined }), {
+      hideDelete: true,
+      hideVersionChip: true,
+      previewActive: false,
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="html-preview-canvas-overlay"]').text()).toContain('加载')
+    resolveContent({ content: '<p id="late">晚到的页面</p>' })
+    await flushPromises()
+    const host = wrapper.get('[data-testid="html-preview-pin-host"]').element as HTMLElement
+    host.style.display = 'block'
+    Object.defineProperty(host, 'clientWidth', { configurable: true, get: () => 800 })
+    Object.defineProperty(host, 'clientHeight', { configurable: true, get: () => 600 })
+    await wrapper.setProps({ previewActive: true })
+    for (let i = 0; i < 4; i++) {
+      await nextTick()
+      await flushPromises()
+      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+    }
+    const iframe = wrapper.get('[data-testid="html-preview-pin-host"] iframe')
+    expect(iframe.attributes('srcdoc')).toContain('晚到的页面')
+    expect(Number(iframe.attributes('data-preview-epoch'))).toBeGreaterThan(0)
+    expect(iframe.attributes('sandbox')).toBe('allow-scripts allow-forms')
+    expect(wrapper.find('[data-testid="html-preview-canvas-overlay"]').exists()).toBe(false)
     wrapper.unmount()
   })
 })
