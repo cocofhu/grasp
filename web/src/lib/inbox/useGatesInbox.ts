@@ -13,6 +13,7 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { addClarifyAnnotation, useClarifyDraft } from '@/lib/inbox/useClarifyDraft'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { beginBoot, bootKey, markBootLive, observeBootSandbox } from '@/lib/run/bootRecord'
 import {
   applyInboxReplyingState,
   inboxSecondaryLine,
@@ -373,6 +374,12 @@ const activeStarting = computed(
 /** Gateway lifecycle while starting (pulling | creating | …) for ClarifyBootLoader. */
 const startingSandboxPhase = ref<string | null>(null)
 
+/** Boot record key of the selected starting card (lib/run/bootRecord.ts). */
+const startingBootKey = computed(() => {
+  const it = active.value
+  return activeStarting.value && it ? bootKey(it.runId, it.nodeId, it.iteration) : null
+})
+
 async function refreshStartingSandboxPhase() {
   if (!activeStarting.value || !active.value) {
     startingSandboxPhase.value = null
@@ -387,6 +394,7 @@ async function refreshStartingSandboxPhase() {
   try {
     const sb = await api.getRunNodeSandbox(runId, nodeId)
     startingSandboxPhase.value = sb?.status ? String(sb.status) : null
+    observeBootSandbox(bootKey(runId, nodeId, active.value?.iteration), sb)
   } catch {
     // Keep last known phase; list poll / next tick retries.
   }
@@ -1152,6 +1160,23 @@ watch(
   active,
   (it) => {
     setActiveInboxKey(it ? itemKey(it) : null)
+  },
+  { immediate: true },
+)
+
+watch(
+  startingBootKey,
+  (key, prev) => {
+    if (key) beginBoot(key, active.value?.requestedAt)
+    if (!prev || key === prev) return
+    const it = active.value
+    // Same card left `starting` without a boot failure → the session is live.
+    if (!it || bootKey(it.runId, it.nodeId, it.iteration) !== prev || startFailedActive.value) return
+    markBootLive(prev)
+    // Ready usually lands between two polls: read the row once for its server timestamp.
+    void api.getRunNodeSandbox(it.runId, it.nodeId)
+      .then((sb) => observeBootSandbox(prev, sb))
+      .catch(() => {})
   },
   { immediate: true },
 )
@@ -2398,6 +2423,7 @@ function itemSecondary(it: InboxItem) {
     startFailedActive,
     activeStarting,
     startingSandboxPhase,
+    startingBootKey,
     incomingGhostConfirmInFlight,
     STARTING_POLL_MS,
     STARTING_POLL_MAX_TICKS,
