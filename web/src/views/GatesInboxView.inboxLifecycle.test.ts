@@ -1075,6 +1075,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       [],
       false,
       false,
+      expect.stringMatching(/\S/),
     )
     const ws = FakeWebSocket.instances.find((w) => w.url.includes('run-a'))
     expect(ws).toBeTruthy()

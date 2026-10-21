@@ -3,7 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import zhPages from '@/locales/zh-CN/pages.json'
 import enPages from '@/locales/en/pages.json'
-import { clarifyVisitEndedNotice, handleClarifyVisitEnded, readDropped } from './clarifyVisitEnded'
+import {
+  beginClarifySend,
+  clarifyVisitEndedNotice,
+  failClarifySend,
+  handleClarifyVisitEnded,
+  readDropped,
+} from './clarifyVisitEnded'
 import { readClarifyStash } from './clarifyDraftStash'
 import { vi, afterEach } from 'vitest'
 
@@ -74,5 +80,51 @@ describe('handleClarifyVisitEnded', () => {
       annotations: undefined,
     })
     expect(readDropped({ text: 'a', clientId: 'c', attachments: [{ data: 'x', mimeType: 'image/png' }] }).images).toHaveLength(1)
+  })
+})
+
+describe('beginClarifySend / 409 outbox', () => {
+  const zh = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': zhPages } }).global
+  afterEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  it('gives ordinary sends an id + outbox entry; force/retryLast get none', () => {
+    const sent = { text: 'hi', images: [], annotations: [] }
+    expect(beginClarifySend('r', 'n', sent, { force: true })).toBeUndefined()
+    expect(beginClarifySend('r', 'n', sent, { retryLast: true })).toBeUndefined()
+    expect(sessionStorage.length).toBe(0)
+    const id = beginClarifySend('r', 'n', sent, {})!
+    expect(id).toMatch(/\S/)
+    failClarifySend('r', 'n', id)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('409: local copy first, then the outbox, then dropped (ref-only only as a last resort)', () => {
+    const local = { data: 'aGk=', mimeType: 'image/png', name: 'a.png' }
+    const id = beginClarifySend('r', 'n', { text: '原文', images: [local], annotations: [] }, {})
+    const restore = vi.fn()
+    const err = Object.assign(ended(false), {
+      dropped: { clientMessageId: id, text: '原文', attachments: [{ ref: 'blob:1', mimeType: 'image/png' }] },
+    })
+    handleClarifyVisitEnded(err, zh.t, {
+      chat: { restoreUnsentQueued: restore },
+      runId: 'r',
+      nodeId: 'n',
+      sent: {},
+      clientMessageId: id,
+    })
+    expect(restore.mock.calls[0][0]).toMatchObject({ text: '原文', images: [local] })
+    // Consumed by the 409: no later frame can refill it again.
+    expect(sessionStorage.length).toBe(0)
+
+    const restore2 = vi.fn()
+    handleClarifyVisitEnded(
+      Object.assign(ended(false), { dropped: { text: '服务端', attachments: [{ ref: 'blob:2', mimeType: 'image/png' }] } }),
+      zh.t,
+      { chat: { restoreUnsentQueued: restore2 }, runId: 'r', nodeId: 'n', sent: {} },
+    )
+    expect(restore2.mock.calls[0][0]).toMatchObject({ text: '服务端', images: [{ ref: 'blob:2', mimeType: 'image/png' }] })
   })
 })

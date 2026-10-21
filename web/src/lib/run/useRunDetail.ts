@@ -6,7 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
-import { handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
+import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
 import { useToast } from '@/lib/composables/useToast'
 import {
   applyOuterSashMem,
@@ -627,11 +627,22 @@ async function onClarifySend(
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
   // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
   if (force) void playConfirmFlowCeremony(reviewChatRef.value)
+  const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
     } else {
-      await api.reactReply(runId.value, nodeId, text, images, force, anns, false, abortRunning)
+      await api.reactReply(
+        runId.value,
+        nodeId,
+        text,
+        images,
+        force,
+        anns,
+        false,
+        abortRunning,
+        ...(clientMessageId ? [clientMessageId] : []),
+      )
     }
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
@@ -648,11 +659,13 @@ async function onClarifySend(
           nodeId,
           sent: { text, images, annotations: anns },
           retryLast,
+          clientMessageId,
         })
     if (visitEnded) {
       if (!visitEnded.shownInChat) toast.warn(visitEnded.notice)
       return
     }
+    failClarifySend(runId.value, nodeId, clientMessageId)
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
     if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
     if (force && isSandboxBusyError(e)) {

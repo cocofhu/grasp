@@ -155,7 +155,7 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.locator('[data-testid="clarify-input"]')).toHaveCount(0)
     await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
     await expect(page.getByTestId('clarify-scroller')).not.toContainText('取消时发出的回复')
-    const stash = await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:run-clarify-e2e:clarify'))
+    const stash = await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))
     expect(JSON.parse(stash!).text).toBe('取消时发出的回复')
 
     // Survives a refresh; the harness reloads with the run resumed.
@@ -163,11 +163,13 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
     const box = page.locator('[data-testid="clarify-input"]')
     await expect(box).toHaveValue('取消时发出的回复')
-    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:run-clarify-e2e:clarify'))).toBeNull()
+    // Kept until it is really sent (another refresh must not lose it).
+    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))).not.toBeNull()
 
     await page.getByTestId('clarify-send-label').click()
     await expect(page.getByTestId('clarify-review-queue')).toContainText('取消时发出的回复')
     await expect(box).toHaveValue('')
+    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:anon:run-clarify-e2e:clarify'))).toBeNull()
   })
 
   test('运行结束时正在打的草稿：先暂存，续跑后回到输入框', async ({ page }) => {

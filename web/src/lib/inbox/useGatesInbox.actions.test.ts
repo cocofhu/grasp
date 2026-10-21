@@ -369,6 +369,7 @@ describe('useGatesInbox actions', () => {
       expect.arrayContaining([expect.objectContaining({ selector: '#buy' })]),
       false,
       false,
+      expect.stringMatching(/\S/),
     )
     expect(mocks.patchItemReplying).toHaveBeenCalledWith('run-chat:react', true)
 

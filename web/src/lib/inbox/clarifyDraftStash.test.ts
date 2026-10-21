@@ -1,10 +1,28 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { clearClarifyStash, mergeClarifyText, readClarifyStash, stashClarifyDraft } from './clarifyDraftStash'
+import { getAuthState } from '@/lib/composables/useAuth'
+import {
+  INLINE_IMAGE_BUDGET,
+  STASH_TTL_MS,
+  ackClarifyOutboxText,
+  budgetImages,
+  clearClarifyStash,
+  dropClarifyOutbox,
+  mergeClarifyText,
+  newClientMessageId,
+  putClarifyOutbox,
+  readClarifyStash,
+  stashClarifyDraft,
+  sweepClarifyStash,
+  takeClarifyOutbox,
+} from './clarifyDraftStash'
 
 afterEach(() => {
   localStorage.clear()
+  sessionStorage.clear()
+  getAuthState().user = null
   vi.restoreAllMocks()
+  vi.useRealTimers()
 })
 
 describe('clarifyDraftStash', () => {
@@ -22,7 +40,7 @@ describe('clarifyDraftStash', () => {
   it('ignores empty payloads, bad JSON and missing ids', () => {
     stashClarifyDraft('r', 'n', { text: '  ', images: [], annotations: [] })
     expect(readClarifyStash('r', 'n')).toBeNull()
-    localStorage.setItem('grasp-clarify-stash:r:n', '{oops')
+    localStorage.setItem('grasp-clarify-stash:anon:r:n', '{oops')
     expect(readClarifyStash('r', 'n')).toBeNull()
     stashClarifyDraft('', 'n', { text: 'x', images: [], annotations: [] })
     expect(readClarifyStash('', 'n')).toBeNull()
@@ -47,5 +65,61 @@ describe('clarifyDraftStash', () => {
     expect(mergeClarifyText('a\nb', 'b')).toBe('a\nb')
     expect(mergeClarifyText('b', 'a b')).toBe('a b')
     expect(mergeClarifyText('a', 'c')).toBe('a\nc')
+  })
+
+  it('is per user: another account on the same browser never sees it', () => {
+    getAuthState().user = { username: 'alice', expiresAt: '' }
+    stashClarifyDraft('r', 'n', { text: 'alice 的', images: [], annotations: [] })
+    getAuthState().user = { username: 'bob', expiresAt: '' }
+    expect(readClarifyStash('r', 'n')).toBeNull()
+    getAuthState().user = { username: 'alice', expiresAt: '' }
+    expect(readClarifyStash('r', 'n')?.text).toBe('alice 的')
+  })
+
+  it('expires after 7 days and the sweep removes old stash and outbox entries', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-01T00:00:00Z'))
+    stashClarifyDraft('r', 'n', { text: '旧的', images: [], annotations: [] })
+    putClarifyOutbox('r', 'n', 'id-1', { text: '旧的', images: [], annotations: [] })
+    vi.setSystemTime(Date.now() + STASH_TTL_MS + 1)
+    expect(readClarifyStash('r', 'n')).toBeNull()
+    sweepClarifyStash(Date.now(), true)
+    expect(localStorage.length).toBe(0)
+    expect(sessionStorage.length).toBe(0)
+  })
+
+  it('caps inline image bytes and keeps ref-only images', () => {
+    const big = { data: 'x'.repeat(INLINE_IMAGE_BUDGET - 10), mimeType: 'image/png', name: 'big' }
+    const second = { data: 'y'.repeat(100), mimeType: 'image/png', name: 'second' }
+    const ref = { ref: 'blob:1', mimeType: 'image/png', name: 'ref' }
+    expect(budgetImages([big, second, ref]).map((i) => i.name)).toEqual(['big', 'ref'])
+    stashClarifyDraft('r', 'n', { text: 't', images: [big, second, ref], annotations: [] })
+    expect(readClarifyStash('r', 'n')!.images.map((i) => i.name)).toEqual(['big', 'ref'])
+  })
+
+  it('outbox: per tab (sessionStorage), take consumes, drop and ack forget', () => {
+    const a = newClientMessageId()
+    const b = newClientMessageId()
+    expect(a).not.toBe(b)
+    const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    expect(a).toMatch(UUID)
+    // Non-secure origin (no randomUUID): still a valid v4 UUID (server rejects others).
+    const spy = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => {
+      throw new Error('insecure context')
+    })
+    expect(newClientMessageId()).toMatch(UUID)
+    spy.mockRestore()
+    putClarifyOutbox('r', 'n', a, { text: '一', images: [], annotations: [] })
+    putClarifyOutbox('r', 'n', b, { text: '二', images: [], annotations: [] })
+    expect(localStorage.length).toBe(0)
+    expect(takeClarifyOutbox('r', 'n', 'nope')).toBeNull()
+    expect(takeClarifyOutbox('r', 'n', undefined)).toBeNull()
+    expect(takeClarifyOutbox('r', 'n', a)).toEqual({ text: '一', images: [], annotations: [] })
+    expect(takeClarifyOutbox('r', 'n', a)).toBeNull()
+    ackClarifyOutboxText('r', 'n', '二')
+    expect(takeClarifyOutbox('r', 'n', b)).toBeNull()
+    putClarifyOutbox('r', 'n', a, { text: '三', images: [], annotations: [] })
+    dropClarifyOutbox('r', 'n', a)
+    expect(sessionStorage.length).toBe(0)
   })
 })

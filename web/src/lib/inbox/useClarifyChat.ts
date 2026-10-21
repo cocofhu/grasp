@@ -5,7 +5,14 @@ import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
-import { clearClarifyStash, readClarifyStash, stashClarifyDraft } from '@/lib/inbox/clarifyDraftStash'
+import {
+  ackClarifyOutboxText,
+  clearClarifyStash,
+  readClarifyStash,
+  replaceClarifyStash,
+  stashClarifyDraft,
+  takeClarifyOutbox,
+} from '@/lib/inbox/clarifyDraftStash'
 import {
   emptyFailDisplayText,
   isEmptyFailedAgent,
@@ -918,6 +925,7 @@ async function sendFromComposer(): Promise<boolean> {
       if (annotations.value === originalAnnotations && JSON.stringify(annotations.value) === JSON.stringify(anns)) annotations.value = []
       attachNotice.value = null
       sendNotice.value = null
+      if (!hasComposerDraft()) releaseStash()
     } finally {
       composerSending.value = false
     }
@@ -928,6 +936,7 @@ async function sendFromComposer(): Promise<boolean> {
   annotations.value = []
   attachNotice.value = null
   sendNotice.value = null
+  releaseStash()
   // Always forward cloned images/annotations — skip only rewrites text.
   sendMessage(prepared.text, prepared.images, prepared.annotations, t)
   return true
@@ -1417,12 +1426,19 @@ function mergeIntoComposer(text: string, imgs: ClarifyImage[], anns: ReactAnnota
   })
 }
 
+/**
+ * True while the composer holds text rescued from a refused send (or a draft
+ * kept when the run ended). The run+node stash then mirrors the composer
+ * until that text is sent or cleared, so a refresh never loses it.
+ */
+let stashLive = false
+
 /** Restore a run+node stash once the composer is open again (run resumed). */
 function restoreStashedDraft() {
   if (!composerOpen()) return
   const s = readClarifyStash(props.runId, props.nodeId)
   if (!s) return
-  clearClarifyStash(props.runId, props.nodeId)
+  stashLive = true
   mergeIntoComposer(s.text, s.images, s.annotations, false)
 }
 
@@ -1434,11 +1450,39 @@ function stashComposerDraft(): boolean {
     images: cloneClarifyImages(attachments.value),
     annotations: cloneReactAnnotations(annotations.value),
   })
+  stashLive = true
   return true
 }
 
+/** Composer sent or emptied: the rescued text is gone on purpose. */
+function releaseStash() {
+  if (!stashLive) return
+  stashLive = false
+  clearClarifyStash(props.runId, props.nodeId)
+}
+
+watch(
+  () => [draft.value, attachments.value, annotations.value] as const,
+  () => {
+    if (!stashLive || !composerOpen()) return
+    if (!hasComposerDraft()) {
+      releaseStash()
+      return
+    }
+    replaceClarifyStash(props.runId, props.nodeId, {
+      text: draft.value,
+      images: cloneClarifyImages(attachments.value),
+      annotations: cloneReactAnnotations(annotations.value),
+    })
+  },
+  { deep: true, flush: 'post' },
+)
+
 watch(composerOpen, (open, wasOpen) => {
   if (open) {
+    // Resumed: the text is back in the composer, so the
+    // "resend after resume" / "draft kept" notice has done its job.
+    if (!wasOpen) sendNotice.value = null
     restoreStashedDraft()
     return
   }
@@ -1489,15 +1533,15 @@ function restoreUnsentQueued(
   const imgs = item?.images ?? sent.images ?? []
   const anns = item?.annotations ?? sent.annotations ?? []
   if (!text && !imgs.length && !anns.length) return
-  if (composerOpen()) {
-    mergeIntoComposer(text, imgs, anns, true)
-  } else {
-    stashClarifyDraft(props.runId, props.nodeId, {
-      text,
-      images: cloneClarifyImages(imgs),
-      annotations: cloneReactAnnotations(anns),
-    })
-  }
+  // Always stash (even with the composer open): a refresh or /gates dropping
+  // this item before the user resends must not lose it. Cleared on send/clear.
+  stashClarifyDraft(props.runId, props.nodeId, {
+    text,
+    images: cloneClarifyImages(imgs),
+    annotations: cloneReactAnnotations(anns),
+  })
+  stashLive = true
+  if (composerOpen()) mergeIntoComposer(text, imgs, anns, true)
 }
 
 /** Notice copy for a clarify_visit_ended refusal. */
@@ -1685,25 +1729,23 @@ let liveTurnOrigin: {
  */
 function applyVisitEndedFrame(frame: {
   autoRetryOnResume?: boolean
-  dropped?: ClarifyDroppedPayload | null
+  clientMessageId?: string
 }) {
-  const dropped = frame.dropped ?? {}
   const auto = !!frame.autoRetryOnResume
-  let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
+  // Broadcast frames carry no text and no `dropped`: the reply is ours to put
+  // back only when its clientMessageId is in this tab's outbox. Other viewers
+  // just lose the empty live slot (no refill, no stash, no notice).
+  const mine = auto ? null : takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId)
   const idx = liveAgentIdx.value
   const agent = idx >= 0 ? liveTurns.value[idx] : null
   const origin = liveTurnOrigin
-  const turnMatches =
-    !!agent &&
-    !!origin &&
-    (!dropped.clientId || !origin.id || dropped.clientId === origin.id) &&
-    (!dropped.text || !origin.text || dropped.text.trim() === origin.text.trim() || dropped.clientId === origin.id)
-  if (agent && turnMatches && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
+  let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
+  if (agent && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
     // Drop the empty agent slot and the human bubble this turn opened.
     const human = idx > 0 ? liveTurns.value[idx - 1] : null
-    const removeHuman = origin!.newHuman && human?.role === 'human'
+    const removeHuman = !!origin?.newHuman && human?.role === 'human'
     liveTurns.value.splice(removeHuman ? idx - 1 : idx, removeHuman ? 2 : 1)
-    if (removeHuman) local = { text: origin!.text, images: origin!.images, annotations: origin!.annotations }
+    if (removeHuman && origin) local = { text: origin.text, images: origin.images, annotations: origin.annotations }
     liveAgentIdx.value = -1
     messageReveal.reset()
     thoughtReveal.reset()
@@ -1715,16 +1757,21 @@ function applyVisitEndedFrame(frame: {
     liveAgentIdx.value = -1
   }
   liveTurnOrigin = null
-  restoreUnsentQueued(
-    local ?? {
-      clientId: dropped.clientId,
-      text: dropped.text,
-      images: dropped.attachments ?? dropped.images,
-      annotations: dropped.annotations,
-    },
-    visitEndedNotice(auto),
-    { autoRetryOnResume: auto },
-  )
+  if (auto) {
+    // System first message: resume resends it; nothing to put back.
+    restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
+  } else if (mine) {
+    // Same text as the live bubble: its images still carry preview data.
+    const sameTurn = !!local && local.text.trim() === mine.text.trim()
+    restoreUnsentQueued(
+      {
+        text: mine.text,
+        images: sameTurn && local!.images.length ? local!.images : mine.images,
+        annotations: mine.annotations.length ? mine.annotations : (sameTurn ? local!.annotations : []),
+      },
+      visitEndedNotice(false),
+    )
+  }
   settleAfterTurnEnd()
 }
 
@@ -1745,7 +1792,8 @@ function applyReviewFrame(frame: {
   /** error: clarify_visit_ended (run ended; the reply was dropped, not answered). */
   code?: string
   autoRetryOnResume?: boolean
-  dropped?: ClarifyDroppedPayload | null
+  /** Echo of the request's clientMessageId (only when the request had one). */
+  clientMessageId?: string
 }) {
   // Defense: ignore frames for other producer sessions on the same run.
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
@@ -1831,6 +1879,8 @@ function applyReviewFrame(frame: {
       break
     }
     case 'turn_done': {
+      // Answered: this tab's outbox copy is no longer needed.
+      if (liveTurnOrigin?.text) ackClarifyOutboxText(props.runId, props.nodeId, liveTurnOrigin.text)
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
         const agent = liveTurns.value[liveAgentIdx.value]
         agent.streaming = false

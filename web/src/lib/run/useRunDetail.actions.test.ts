@@ -282,7 +282,20 @@ describe('useRunDetail actions', () => {
     await nextTick()
 
     await detail.onClarifySend('hello')
-    expect(mocks.reactReply).toHaveBeenCalledWith('run-1', 'n1', 'hello', [], false, [], false, false)
+    expect(mocks.reactReply).toHaveBeenCalledWith(
+      'run-1',
+      'n1',
+      'hello',
+      [],
+      false,
+      [],
+      false,
+      false,
+      expect.stringMatching(/\S/),
+    )
+    // Each send gets its own id, kept in this tab's outbox until answered.
+    const sentId = mocks.reactReply.mock.calls[0][8] as string
+    expect(sessionStorage.getItem('grasp-clarify-outbox:anon:run-1:n1')).toContain(sentId)
 
     // Failure rolls back the optimistic queued row and shows the error.
     const discardLastQueued = vi.fn()

@@ -1,5 +1,11 @@
 import { isClarifyVisitEndedError } from '@/lib/api/httpCore'
-import { stashClarifyDraft } from '@/lib/inbox/clarifyDraftStash'
+import {
+  dropClarifyOutbox,
+  newClientMessageId,
+  putClarifyOutbox,
+  stashClarifyDraft,
+  takeClarifyOutbox,
+} from '@/lib/inbox/clarifyDraftStash'
 import type { ClarifyImage, ReactAnnotation } from '@/lib/shared/types'
 
 type Translate = (key: string) => string
@@ -45,22 +51,36 @@ export function readDropped(raw: unknown): Sent {
 export function handleClarifyVisitEnded(
   e: unknown,
   t: Translate,
-  ctx: { chat: VisitEndedChat; runId: string; nodeId: string; sent: Sent; retryLast?: boolean },
+  ctx: {
+    chat: VisitEndedChat
+    runId: string
+    nodeId: string
+    sent: Sent
+    retryLast?: boolean
+    /** The id this send carried; its outbox entry is consumed here. */
+    clientMessageId?: string
+  },
 ): { notice: string; shownInChat: boolean } | null {
   const notice = clarifyVisitEndedNotice(e, t)
   if (!notice || !isClarifyVisitEndedError(e)) return null
   const auto = !!e.autoRetryOnResume
   const dropped = readDropped(e.dropped)
-  // Local optimistic copy first; `dropped` fills gaps.
+  // The 409 answers this very request: local copy (the caller's arguments,
+  // then the persisted outbox) first; `dropped` only fills gaps. A ref-only
+  // image in `dropped` is used only when no local copy (with preview data) exists.
+  const outbox = takeClarifyOutbox(ctx.runId, ctx.nodeId, ctx.clientMessageId)
+  const local: Sent = {
+    text: ctx.sent.text || outbox?.text,
+    images: ctx.sent.images?.length ? ctx.sent.images : outbox?.images,
+    annotations: ctx.sent.annotations?.length ? ctx.sent.annotations : outbox?.annotations,
+  }
   const sent: Sent = ctx.retryLast
     ? {}
     : {
         clientId: dropped.clientId,
-        text: ctx.sent.text || dropped.text,
-        images: ctx.sent.images?.length ? ctx.sent.images : (dropped.images ?? ctx.sent.images),
-        annotations: ctx.sent.annotations?.length
-          ? ctx.sent.annotations
-          : (dropped.annotations ?? ctx.sent.annotations),
+        text: local.text || dropped.text,
+        images: local.images?.length ? local.images : (dropped.images ?? local.images),
+        annotations: local.annotations?.length ? local.annotations : (dropped.annotations ?? local.annotations),
       }
   if (ctx.chat?.restoreUnsentQueued) {
     ctx.chat.restoreUnsentQueued(sent, notice, { autoRetryOnResume: auto })
@@ -74,4 +94,26 @@ export function handleClarifyVisitEnded(
     })
   }
   return { notice, shownInChat: false }
+}
+
+/**
+ * Start one clarify send from a host: a fresh clientMessageId plus its outbox
+ * entry (per tab), so a later clarify_visit_ended frame for it can be matched.
+ * retryLast / force sends carry no user message and get no id.
+ */
+export function beginClarifySend(
+  runId: string,
+  nodeId: string,
+  sent: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] },
+  opts: { force?: boolean; retryLast?: boolean },
+): string | undefined {
+  if (opts.force || opts.retryLast) return undefined
+  const id = newClientMessageId()
+  putClarifyOutbox(runId, nodeId, id, sent)
+  return id
+}
+
+/** A send failed for a reason other than clarify_visit_ended: forget its outbox entry. */
+export function failClarifySend(runId: string, nodeId: string, id: string | undefined): void {
+  dropClarifyOutbox(runId, nodeId, id)
 }
