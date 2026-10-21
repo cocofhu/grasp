@@ -6,6 +6,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
+import { beginClarifySend, failClarifySend, handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
 import { useToast } from '@/lib/composables/useToast'
 import {
   applyOuterSashMem,
@@ -92,6 +93,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -625,17 +627,45 @@ async function onClarifySend(
   if (anns !== annotations) lastStagedAppPreviewPick.value = null
   // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
   // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
+  const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
     } else {
-      await api.reactReply(runId.value, nodeId, text, images, force, anns, false, abortRunning)
+      await api.reactReply(
+        runId.value,
+        nodeId,
+        text,
+        images,
+        force,
+        anns,
+        false,
+        abortRunning,
+        ...(clientMessageId ? [clientMessageId] : []),
+      )
     }
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
     console.warn('reactReply failed', e?.message || e)
     const msg = e?.message || t('pages.runDetail.gateError')
+    // Run/visit already ended: the reply was never sent. Hand it back to the
+    // composer with a notice instead of an error reply (no confirm-error bar).
+    const visitEnded = force
+      ? null
+      : handleClarifyVisitEnded(e, t, {
+          chat: reviewChatRef.value,
+          runId: runId.value,
+          nodeId,
+          sent: { text, images, annotations: anns },
+          retryLast,
+          clientMessageId,
+        })
+    if (visitEnded) {
+      if (!visitEnded.shownInChat) toast.warn(visitEnded.notice)
+      return
+    }
+    failClarifySend(runId.value, nodeId, clientMessageId)
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
     if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
     if (force && isSandboxBusyError(e)) {

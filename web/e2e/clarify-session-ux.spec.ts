@@ -4,6 +4,34 @@ import { fileURLToPath } from 'node:url'
 
 const shotDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../.tmp-clarify-ux-shots')
 
+/** This tab's stash for the harness run (key carries the per-tab id). */
+type Page = import('@playwright/test').Page
+const STASH = 'grasp-clarify-stash:anon:run-clarify-e2e:clarify'
+
+/** This tab's stash for the harness run (sessionStorage: only the sender tab has it). */
+async function readStash(page: Page): Promise<string | null> {
+  return page.evaluate((k) => sessionStorage.getItem(k), STASH)
+}
+
+/** Any clarify key in the storage every tab shares (must stay empty). */
+async function sharedClarifyKeys(page: Page): Promise<string[]> {
+  return page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith('grasp-clarify-')))
+}
+
+async function openHarness(page: Page) {
+  await page.setViewportSize({ width: 1100, height: 900 })
+  await page.goto('/clarify-session-ux.html')
+  await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+}
+
+/** A tab that never sent anything: nothing refilled, nothing stashed, no notice. */
+async function expectNothingRefilled(page: Page) {
+  await expect(page.locator('[data-testid="clarify-input"]')).toHaveValue('')
+  await expect(page.getByTestId('clarify-send-notice')).toHaveCount(0)
+  expect(await readStash(page)).toBeNull()
+  expect(await sharedClarifyKeys(page)).toEqual([])
+}
+
 async function sendClarify(page: import('@playwright/test').Page, text: string) {
   const box = page.locator('[data-testid="clarify-input"]')
   await box.fill(text)
@@ -118,5 +146,158 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     // Thought default-collapsed after message / done.
     await expect(page.getByTestId('clarify-thought')).not.toHaveAttribute('open')
     await page.screenshot({ path: path.join(shotDir, '08-clarify-four-phase-done.png'), fullPage: true })
+  })
+
+  test('运行已结束(409 clarify_visit_ended)：回填输入框、保留后打的字、焦点不丢', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+
+    await sendClarify(page, '运行结束后才到的回复')
+    const queue = page.getByTestId('clarify-review-queue')
+    await expect(queue).toContainText('运行结束后才到的回复')
+    const box = page.locator('[data-testid="clarify-input"]')
+    await box.click()
+    await page.keyboard.type('又打了几个字')
+
+    await page.getByTestId('sim-visit-ended').click()
+    // The sim button took focus; the chat hands it back to the composer.
+    await expect(box).toBeFocused()
+    await expect(box).toHaveValue('运行结束后才到的回复\n又打了几个字')
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+    await expect(page.getByTestId('clarify-queue-item')).toHaveCount(0)
+    await expect(page.getByTestId('clarify-scroller')).not.toContainText('运行结束后才到的回复')
+
+    // Keep typing: nothing is lost and the caret stays at the end.
+    await page.keyboard.type('！')
+    await expect(box).toHaveValue('运行结束后才到的回复\n又打了几个字！')
+  })
+
+  test('取消运行的同时发送：原文暂存，续跑后回到输入框并能发出去', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+
+    await sendClarify(page, '取消时发出的回复')
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveCount(0)
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+    await expect(page.getByTestId('clarify-scroller')).not.toContainText('取消时发出的回复')
+    const stash = await readStash(page)
+    expect(JSON.parse(stash!).text).toBe('取消时发出的回复')
+
+    // Survives a refresh; the harness reloads with the run resumed.
+    await page.reload()
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    const box = page.locator('[data-testid="clarify-input"]')
+    await expect(box).toHaveValue('取消时发出的回复')
+    // Kept until it is really sent (another refresh must not lose it).
+    expect(await readStash(page)).not.toBeNull()
+
+    await page.getByTestId('clarify-send-label').click()
+    await expect(page.getByTestId('clarify-review-queue')).toContainText('取消时发出的回复')
+    await expect(box).toHaveValue('')
+    expect(await readStash(page)).toBeNull()
+  })
+
+  test('运行结束时正在打的草稿：先暂存，续跑后回到输入框', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    const box = page.locator('[data-testid="clarify-input"]')
+    await box.fill('还没发的草稿')
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.getByTestId('clarify-send-notice')).toBeVisible()
+    await page.getByTestId('sim-resume').click()
+    await expect(box).toHaveValue('还没发的草稿')
+  })
+
+  test('同一用户三个标签页同时开着：只有发送的 A 回填，B、C 刷新后也没有', async ({ page, context }) => {
+    await openHarness(page)
+    await sendClarify(page, '只在发送的标签页回来')
+    // B and C open at the same time, before the refusal arrives.
+    const [tabB, tabC] = await Promise.all([context.newPage(), context.newPage()])
+    await Promise.all([openHarness(tabB), openHarness(tabC)])
+    // A's reply is refused because the run is being cancelled.
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+    // Every tab sees the run end, then all resume together.
+    await Promise.all([tabB, tabC].map((t) => t.getByTestId('sim-cancel-race').click()))
+    await Promise.all([page, tabB, tabC].map((t) => t.getByTestId('sim-resume').click()))
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveValue('只在发送的标签页回来')
+    await expectNothingRefilled(tabB)
+    await expectNothingRefilled(tabC)
+    await Promise.all([tabB.reload(), tabC.reload()])
+    for (const t of [tabB, tabC]) {
+      await expect(t.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+      await expectNothingRefilled(t)
+    }
+    // A sends it; a refresh of A afterwards does not bring it back either.
+    await page.getByTestId('clarify-send-label').click()
+    await expect(page.getByTestId('clarify-review-queue')).toContainText('只在发送的标签页回来')
+    expect(await readStash(page)).toBeNull()
+    await page.reload()
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveValue('')
+  })
+
+  test('A 被拒后刷新、再续跑：A 回填，同时开着的 B 不回填', async ({ page, context }) => {
+    await openHarness(page)
+    const tabB = await context.newPage()
+    await openHarness(tabB)
+    await sendClarify(page, '刷新后还在发送的标签页')
+    await page.getByTestId('sim-cancel-race').click()
+    await tabB.getByTestId('sim-cancel-race').click()
+    // A refreshes (the harness reloads with the run resumed); B resumes too.
+    await Promise.all([page.reload(), tabB.getByTestId('sim-resume').click()])
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveValue('刷新后还在发送的标签页')
+    await expectNothingRefilled(tabB)
+  })
+
+  test('清空输入框后暂存立即删除，刷新也不会回来', async ({ page }) => {
+    await openHarness(page)
+    await sendClarify(page, '我不要了')
+    await page.getByTestId('sim-cancel-race').click()
+    await page.getByTestId('sim-resume').click()
+    const box = page.locator('[data-testid="clarify-input"]')
+    await expect(box).toHaveValue('我不要了')
+    await box.fill('')
+    await expect.poll(() => readStash(page)).toBeNull()
+    await page.reload()
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    await expect(box).toHaveValue('')
+  })
+
+  test('发送的标签页关掉后：原文不会出现在别的标签页（接受丢失）', async ({ page, context }) => {
+    await openHarness(page)
+    await sendClarify(page, '标签页关了就没了')
+    await page.getByTestId('sim-cancel-race').click()
+    expect(JSON.parse((await readStash(page))!).text).toBe('标签页关了就没了')
+    await page.close()
+    const tabB = await context.newPage()
+    await openHarness(tabB)
+    await expectNothingRefilled(tabB)
+  })
+
+  test('复制标签页（sessionStorage 被拷贝）：副本不回填，原标签页照常回填', async ({ page, context }) => {
+    await openHarness(page)
+    await sendClarify(page, '复制出来的标签页别回填')
+    await page.getByTestId('sim-cancel-race').click()
+    // Chrome's "Duplicate" copies sessionStorage into the new tab.
+    const copied = await page.evaluate(() => JSON.stringify(Object.fromEntries(Object.entries(sessionStorage))))
+    const dup = await context.newPage()
+    await dup.addInitScript((data) => {
+      if (sessionStorage.getItem('__dup_seeded')) return
+      for (const [k, v] of Object.entries(JSON.parse(data) as Record<string, string>)) sessionStorage.setItem(k, v)
+      sessionStorage.setItem('__dup_seeded', '1')
+    }, copied)
+    await openHarness(dup)
+    await expectNothingRefilled(dup)
+    expect(await dup.evaluate(() => sessionStorage.getItem('grasp-clarify-tab-id'))).not.toBe(
+      await page.evaluate(() => sessionStorage.getItem('grasp-clarify-tab-id')),
+    )
+    await page.getByTestId('sim-resume').click()
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveValue('复制出来的标签页别回填')
   })
 })

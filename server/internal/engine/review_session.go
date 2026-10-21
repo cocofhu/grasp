@@ -60,6 +60,12 @@ type reviewQueueItem struct {
 	LiveChat *models.LiveCtx
 	// LiveWritesDenied is server-derived share permission, never client input.
 	LiveWritesDenied bool
+	// AutoRetryOnResume marks the system first-message turn that ResumeFrom
+	// will redeliver. Surfaced on ClarifyVisitEndedError for the frontend.
+	AutoRetryOnResume bool
+	// ClientMessageID is the sender's optional message id (never shown to the
+	// agent); echoed on a visit-ended drop frame.
+	ClientMessageID string
 }
 
 func reviewItemView(it *reviewQueueItem) chatsession.ItemView {
@@ -140,6 +146,13 @@ func (e *Engine) newReviewSession(runID, producerID, lane, linkID string, kind s
 					e.failCancelledQueuedLive(runID, producerID, it.Live.SID)
 				}
 			}
+		},
+		ErrorExtra: func(err error) map[string]any {
+			var ve *ClarifyVisitEndedError
+			if errors.As(err, &ve) {
+				return ve.FrameExtra(false)
+			}
+			return nil
 		},
 		CancelTurn: func() { e.cancelLaneProviderTurn(runID, producerID, lane) },
 		OnIdle:     func() { e.dropLaneSessionIfIdle(runID, producerID, lane) },
@@ -256,7 +269,7 @@ func (e *Engine) EnqueueReviewTurn(runID, producerID, text string, images []mode
 
 // EnqueueReviewTurnAs is EnqueueReviewTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueReviewTurnAs(owner, runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner)
+	return e.enqueueReactTurn(runID, producerID, text, images, annotations, source, gateNodeID, sessionKindReview, false, owner, false, "")
 }
 
 // EnqueueClarifyTurn queues a classic react (需求澄清) turn onto the same platform
@@ -267,7 +280,28 @@ func (e *Engine) EnqueueClarifyTurn(runID, nodeID, text string, images []models.
 
 // EnqueueClarifyTurnAs is EnqueueClarifyTurn sent by owner (a pagebridge owner id).
 func (e *Engine) EnqueueClarifyTurnAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner)
+	return e.EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, "", text, images, annotations)
+}
+
+// EnqueueClarifyTurnWithIDAs is EnqueueClarifyTurnAs carrying the sender's
+// optional clientMessageID with the queued turn.
+func (e *Engine) EnqueueClarifyTurnWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation) (waiting int, err error) {
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, false, owner, false, clientMessageID)
+}
+
+// EnqueueClarifyFirstMessageAs queues Run.FirstMessage for a clarify visit.
+// AutoRetryOnResume is true so a visit-ended refusal tells the client resume
+// will redeliver this turn (see fireClarifyFirstMessage).
+func (e *Engine) EnqueueClarifyFirstMessageAs(owner, runID, nodeID, text string, images []models.PromptImage) (waiting int, err error) {
+	var conv models.ReactConversation
+	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		return 0, errors.New("no react conversation")
+	}
+	if conv.Done {
+		return 0, errors.New("react already done")
+	}
+	return e.enqueueReactTurn(runID, nodeID, text, images, nil, "node", "", sessionKindClarify, false, owner, true, "")
 }
 
 // EnqueueClarifyRetryLast re-runs the latest human turn without inserting a new
@@ -294,7 +328,7 @@ func (e *Engine) enqueueClarifyRetryLast(owner, runID, nodeID string) (waiting i
 	if !ok {
 		return 0, errors.New("没有可重试的上一轮用户消息")
 	}
-	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner)
+	return e.enqueueReactTurn(runID, nodeID, text, images, annotations, "node", "", sessionKindClarify, true, owner, false, "")
 }
 
 // lastRetryableHuman finds the latest human whose following agent (if any) is
@@ -341,27 +375,38 @@ func isRetryableEmptyOrFailedAgent(m models.ReactMessage) bool {
 		strings.Contains(t, "复审修改失败")
 }
 
-func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string) (waiting int, err error) {
+func (e *Engine) enqueueReactTurn(runID, producerID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, source, gateNodeID string, kind sessionKind, retryLast bool, owner string, autoRetryOnResume bool, clientMessageID string) (waiting int, err error) {
 	if e.IsHalted() {
 		return 0, errors.New("server is shutting down")
 	}
 	if !retryLast && strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
 		return 0, errors.New("text, images, or annotations required")
 	}
+	if kind == sessionKindClarify {
+		// Best-effort early refusal. A Cancel landing after this check is
+		// caught again when the turn starts (executeClarifyTurn), which sends
+		// the same contract as a WS error frame.
+		dropped := &DroppedTurn{ClientMessageID: clientMessageID, Text: text, Images: images, Annotations: annotations}
+		if err := e.errIfClarifyVisitEnded(runID, producerID, autoRetryOnResume, dropped); err != nil {
+			return 0, err
+		}
+	}
 	images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)
 	if err != nil {
 		return 0, fmt.Errorf("ingest attachments: %w", err)
 	}
 	item := &reviewQueueItem{
-		ID:          uuid.NewString(),
-		Text:        text,
-		Effective:   renderReviewHuman(text, annotations),
-		Images:      images,
-		Annotations: annotations,
-		Source:      source,
-		GateNodeID:  gateNodeID,
-		RetryLast:   retryLast,
-		Owner:       owner,
+		ID:                uuid.NewString(),
+		Text:              text,
+		Effective:         renderReviewHuman(text, annotations),
+		Images:            images,
+		Annotations:       annotations,
+		Source:            source,
+		GateNodeID:        gateNodeID,
+		RetryLast:         retryLast,
+		Owner:             owner,
+		AutoRetryOnResume: autoRetryOnResume,
+		ClientMessageID:   clientMessageID,
 	}
 	return e.enqueueReviewItem(runID, producerID, kind, item)
 }
@@ -535,6 +580,29 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	if conv.Done {
 		return false, errors.New("react already done")
 	}
+	// A turn queued or started during a visit that has since ended (run
+	// cancelled / failed, or a ResumeFrom opened a new visit) must not touch
+	// that visit's conversation or the run.
+	if !e.clarifyVisitLive(s.runID, s.producerID, conv.Iteration) {
+		log.Info().Str("run_id", s.runID).Str("node", s.producerID).Int("iteration", conv.Iteration).
+			Msg("clarify turn dropped: its visit already ended")
+		// A dropped Live request would otherwise stay generating forever, and
+		// Live sessions are per run+node, so it would block the resumed
+		// visit's confirm. Settle it like a request cancelled in the queue.
+		if item.Live != nil {
+			e.failCancelledQueuedLive(s.runID, s.producerID, item.Live.SID)
+		}
+		// The error reaches the page as the turn's error frame, so the
+		// message is not lost silently. HTTP callers that hit the same
+		// condition at enqueue get 409 clarify_visit_ended.
+		// pump publishes it as a WS error frame with the same contract
+		// (newReviewSession ErrorExtra), echoing the dropped turn.
+		return false, &ClarifyVisitEndedError{
+			AutoRetryOnResume: item.AutoRetryOnResume, NodeID: s.producerID, Iteration: conv.Iteration,
+			ClientMessageID: item.ClientMessageID,
+			Dropped:         &DroppedTurn{Text: item.Text, Images: item.Images, Annotations: item.Annotations},
+		}
+	}
 
 	// The questions this answer responds to, captured before the human turn is
 	// appended — without them the recorded answer reads as a bare fragment.
@@ -573,7 +641,14 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 	}
 
 	cancelled := s.CancelRequested() || ctx.Err() != nil
-	if cancelled || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
+	// The run may have been cancelled (or failed, or resumed into a new visit)
+	// while the provider call was in flight. Cancel does not interrupt this
+	// FIFO turn, so its reply would otherwise finish the stale visit and write
+	// a terminal status over the cancelled — or already resumed — run. Treat
+	// it as interrupted: keep the reply in the transcript, settle Live and
+	// record feedback as interrupted, attribute usage to this visit, and stop.
+	stale := !e.clarifyVisitLive(s.runID, s.producerID, conv.Iteration)
+	if cancelled || stale || (item.Live != nil && (t.Interrupted || t.Err != nil)) {
 		interrupted = true
 	}
 	if item.Live != nil {
@@ -598,10 +673,17 @@ func (e *Engine) executeClarifyTurn(ctx context.Context, s *reviewSession, item 
 
 	if interrupted {
 		logDB(e.db.Save(&conv), s.runID, "save clarify agent turn (interrupted)")
-		e.flushMcpCalls(s.runID, s.producerID)
-		e.flushTokenUsage(s.runID, s.producerID, t.Usage, t.UsageByModel)
-		log.Info().Str("run_id", s.runID).Str("node", s.producerID).
-			Msg("clarify turn interrupted by Cancel; queue kept for next item")
+		// Pin to this visit: after a ResumeFrom the latest StateRun is the
+		// new visit's.
+		e.flushMcpCallsAt(s.runID, s.producerID, conv.Iteration)
+		e.flushTokenUsageAt(s.runID, s.producerID, conv.Iteration, t.Usage, t.UsageByModel)
+		if stale {
+			log.Info().Str("run_id", s.runID).Str("node", s.producerID).Int("iteration", conv.Iteration).
+				Msg("clarify turn outcome dropped: its visit ended while the turn was in flight")
+		} else {
+			log.Info().Str("run_id", s.runID).Str("node", s.producerID).
+				Msg("clarify turn interrupted by Cancel; queue kept for next item")
+		}
 		e.broker.Publish(s.runID, jsonMsg("react", s.runID, s.producerID))
 		return true, nil
 	}
@@ -852,4 +934,24 @@ func (e *Engine) publishReviewLane(runID, nodeID, lane, event string, extra map[
 		return
 	}
 	e.broker.Publish(runID, msg)
+}
+
+// clarifyVisitLive reports whether the clarify visit (runID, nodeID,
+// iteration) can still take a turn's outcome: the run is not terminal and that
+// visit's StateRun is still active (running / waiting_human). Cancel finalizes
+// active StateRuns, and ResumeFrom opens a new iteration, so either makes an
+// older visit's in-flight turn stale.
+func (e *Engine) clarifyVisitLive(runID, nodeID string, iteration int) bool {
+	switch e.runStatus(runID) {
+	case "cancelled", "failed", "completed", "":
+		return false
+	}
+	var sr models.StateRun
+	if err := e.db.Select("status").Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, iteration).
+		Order("id desc").First(&sr).Error; err != nil {
+		// No row for this visit (legacy / not yet written): fall back to the
+		// run-status check above.
+		return true
+	}
+	return sr.Status == "running" || sr.Status == "waiting_human"
 }

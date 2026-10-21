@@ -7,6 +7,7 @@ import { i18n } from './lib/shared/i18n'
 import { initLocale } from './lib/shared/locale'
 import { installIdleScrollbar } from './lib/shared/idleScrollbar'
 import { vHoverInk } from './lib/shared/hoverInkDirective'
+import { initClarifyTab } from './lib/inbox/clarifyDraftStash'
 
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
@@ -16,6 +17,8 @@ import './styles/global.css'
 import './lib/shared/theme'
 
 installIdleScrollbar()
+// Before anything reads clarify stash/outbox: a duplicated tab drops its copies (S22).
+void initClarifyTab()
 
 async function bootstrap() {
   const localeReady = initLocale()

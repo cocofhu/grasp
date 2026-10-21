@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_AGENT_TOOLS, partsFromAcp, sameParts, sameTools, timelineBlocks, timelineFolds, toolsFromAcp } from './acpTools'
+import { MAX_AGENT_TOOLS, hasFailedTool, partsFromAcp, sameParts, sameTools, timelineBlocks, timelineFolds, toolsFromAcp } from './acpTools'
 
 describe('toolsFromAcp', () => {
   it('keeps tool_call rows in order with name and status only', () => {
@@ -103,5 +103,14 @@ describe('timelineBlocks tool duration', () => {
   it('carries durationMs onto the tool', () => {
     const [b] = timelineBlocks([{ kind: 'tool', title: 'Shell', durationMs: 4200 }, { kind: 'tool', title: 'Read' }])
     expect(b).toMatchObject({ kind: 'tools', tools: [{ title: 'Shell', durationMs: 4200 }, { title: 'Read' }] })
+  })
+})
+
+describe('hasFailedTool', () => {
+  it('is true only when a tool step failed', () => {
+    expect(hasFailedTool(undefined)).toBe(false)
+    expect(hasFailedTool([{ kind: 'message', text: 'failed' }])).toBe(false)
+    expect(hasFailedTool([{ kind: 'tool', title: 'Read', status: 'completed' }])).toBe(false)
+    expect(hasFailedTool([{ kind: 'tool', title: 'Shell', status: 'FAILED' }])).toBe(true)
   })
 })

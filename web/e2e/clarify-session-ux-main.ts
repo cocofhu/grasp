@@ -5,9 +5,11 @@ import { initLocale } from '../src/lib/shared/locale'
 import { setTheme } from '../src/lib/shared/theme'
 import ClarifyChat from '../src/components/run/ClarifyChat.vue'
 import type { ClarifyTurn } from '../src/lib/shared/types'
+import { initClarifyTab } from '../src/lib/inbox/clarifyDraftStash'
 
 initLocale()
 setTheme('light')
+void initClarifyTab()
 
 /**
  * Clarify (non-reviewMode) harness — Demo Cancel keep-queue + refresh resume.
@@ -24,7 +26,23 @@ const App = defineComponent({
       applyReviewFrame?: (f: Record<string, unknown>) => void
       applyAcpEvents?: (e: { kind: string; text: string }[]) => void
       isSessionBusy?: () => boolean
+      restoreUnsentQueued?: (sent: { text: string }, notice: string) => void
     } | null>(null)
+    /** Last text the chat emitted for sending (host would POST it). */
+    let lastSent = ''
+    /** Run open for input (false = run cancelled / ended, true = resumed). */
+    const runActive = ref(true)
+
+    /** Host got 409 clarify_visit_ended for the last send (run ended). */
+    function simVisitEnded() {
+      chatRef.value?.restoreUnsentQueued?.({ text: lastSent }, i18n.global.t('pages.clarify.visitEndedResend'))
+    }
+    /** Run cancelled while the reply was in flight: status push first, then the 409. */
+    async function simCancelRace() {
+      runActive.value = false
+      await nextTick()
+      simVisitEnded()
+    }
 
     /** Host narrow-update gate mirror (RunDetail/GatesInbox busy skip). */
     function maybeHostRefresh(reason: string) {
@@ -241,6 +259,38 @@ const App = defineComponent({
             '模拟四阶段完成',
           ),
           h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-visit-ended',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => simVisitEnded(),
+            },
+            '模拟运行已结束(409)',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-cancel-race',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => void simCancelRace(),
+            },
+            '模拟取消时发送',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-resume',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => {
+                runActive.value = true
+              },
+            },
+            '模拟续跑',
+          ),
+          h(
             'span',
             {
               'data-testid': 'host-skip-refresh',
@@ -256,11 +306,14 @@ const App = defineComponent({
           iteration: 1,
           turns: turns.value,
           done: false,
-          active: true,
+          active: runActive.value,
           reviewMode: false,
           annotateEnabled: true,
           hideFinish: true,
           sendLabel: '发送澄清回复',
+          onSend: (text: string) => {
+            lastSent = text
+          },
         }),
       ])
   },

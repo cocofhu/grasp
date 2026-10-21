@@ -145,6 +145,13 @@ func (e *Engine) ReactLiveWithAttachmentsAs(owner, runID, nodeID string, ev mode
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
 		return nil, err
 	}
+	// Clarify visits that already ended must 409 before the Live request is
+	// accepted; ordinary user Live never auto-redelivers on resume.
+	if e.nodeIsClarify(runID, nodeID) {
+		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, nil); err != nil {
+			return nil, err
+		}
+	}
 	if ev.Replace {
 		if err := e.discardIdleLiveForReplace(owner, runID, nodeID, ev.SID); err != nil {
 			return nil, err
@@ -309,6 +316,16 @@ func (e *Engine) ReactReplyLiveCtxAs(owner, runID, nodeID, text string, images [
 // through the queue. A react_only comment cannot authorize Live tool writes,
 // even when its body includes a forged liveCtx.
 func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, "", text, images, annotations, ctx, allowLive)
+}
+
+// ReactReplyLiveCtxWithIDAs is ReactReplyLiveCtxAs carrying the sender's
+// optional clientMessageID with the queued turn.
+func (e *Engine) ReactReplyLiveCtxWithIDAs(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx) error {
+	return e.reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text, images, annotations, ctx, true)
+}
+
+func (e *Engine) reactReplyLiveCtx(owner, runID, nodeID, clientMessageID, text string, images []models.PromptImage, annotations []models.ReactAnnotation, ctx *models.LiveCtx, allowLive bool) error {
 	if e.IsHalted() {
 		return errors.New("server is shutting down")
 	}
@@ -324,13 +341,19 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 		}
 	}
 	if sess == nil && allowLive {
-		return e.ReactReplyAs(owner, runID, nodeID, text, images, annotations, false)
+		return e.reactReply(owner, runID, nodeID, text, images, annotations, false, false, false, clientMessageID)
 	}
 	if strings.TrimSpace(text) == "" && len(images) == 0 && len(annotations) == 0 {
 		return errors.New("text, images, or annotations required")
 	}
 	if err := e.reviewConvOpen(runID, nodeID); err != nil {
 		return err
+	}
+	if e.nodeIsClarify(runID, nodeID) {
+		dropped := &DroppedTurn{ClientMessageID: clientMessageID, Text: text, Images: images, Annotations: annotations}
+		if err := e.errIfClarifyVisitEnded(runID, nodeID, false, dropped); err != nil {
+			return err
+		}
 	}
 	images, err = blob.IngestPromptImages(context.Background(), e.blobs, images)
 	if err != nil {
@@ -339,7 +362,7 @@ func (e *Engine) ReactReplyLiveCtxWithPermissionAs(owner, runID, nodeID, text st
 	effective := renderReviewHuman(text, annotations)
 	item := &reviewQueueItem{
 		ID: uuid.NewString(), Text: text, Images: images, Annotations: annotations,
-		Source: "node", Owner: owner, LiveWritesDenied: !allowLive,
+		Source: "node", Owner: owner, LiveWritesDenied: !allowLive, ClientMessageID: clientMessageID,
 	}
 	if sess != nil {
 		if !liveVariantExists(sess, ctx.Current) {

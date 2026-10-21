@@ -282,7 +282,20 @@ describe('useRunDetail actions', () => {
     await nextTick()
 
     await detail.onClarifySend('hello')
-    expect(mocks.reactReply).toHaveBeenCalledWith('run-1', 'n1', 'hello', [], false, [], false, false)
+    expect(mocks.reactReply).toHaveBeenCalledWith(
+      'run-1',
+      'n1',
+      'hello',
+      [],
+      false,
+      [],
+      false,
+      false,
+      expect.stringMatching(/\S/),
+    )
+    // Each send gets its own id, kept in this tab's outbox until answered.
+    const sentId = mocks.reactReply.mock.calls[0][8] as string
+    expect(sessionStorage.getItem('grasp-clarify-outbox:anon:run-1:n1')).toContain(sentId)
 
     // Failure rolls back the optimistic queued row and shows the error.
     const discardLastQueued = vi.fn()
@@ -291,6 +304,49 @@ describe('useRunDetail actions', () => {
     await detail.onClarifySend('again')
     expect(discardLastQueued).toHaveBeenCalled()
     expect(detail.clarifyConfirmError.value).toBe('dialogue already done')
+
+    // Run ended (409 clarify_visit_ended): hand the text back to the composer
+    // with the notice; no confirm-error bar, no plain discard.
+    const restoreUnsentQueued = vi.fn()
+    discardLastQueued.mockClear()
+    detail.reviewChatRef.value = { discardLastQueued, restoreUnsentQueued }
+    const ended = (autoRetryOnResume: boolean) =>
+      Object.assign(new Error('运行已结束，这条消息没有发送'), {
+        status: 409,
+        code: 'clarify_visit_ended',
+        autoRetryOnResume,
+      })
+    mocks.reactReply.mockRejectedValueOnce(ended(false))
+    await detail.onClarifySend('late', [{ data: 'aGk=', mimeType: 'image/png' }])
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        text: 'late',
+        images: [{ data: 'aGk=', mimeType: 'image/png' }],
+        annotations: [],
+        // Send time from the outbox, so several refusals keep send order.
+        at: expect.any(Number),
+      }),
+      '运行已结束，这条消息没有发送；续跑后请重新发送',
+      { autoRetryOnResume: false },
+    )
+    expect(discardLastQueued).not.toHaveBeenCalled()
+    expect(detail.clarifyConfirmError.value).toBeNull()
+    // `dropped` fills what the local copy lacks (clientId).
+    mocks.reactReply.mockRejectedValueOnce(Object.assign(ended(false), { dropped: { clientId: 'c-1', text: 'late2' } }))
+    await detail.onClarifySend('late2')
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientId: 'c-1', text: 'late2' }),
+      '运行已结束，这条消息没有发送；续跑后请重新发送',
+      { autoRetryOnResume: false },
+    )
+    mocks.reactReply.mockRejectedValueOnce(ended(true))
+    await detail.onClarifySend('first')
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      expect.objectContaining({ text: 'first' }),
+      '运行已结束，这条消息没有发送；续跑后会自动发送',
+      { autoRetryOnResume: true },
+    )
+    expect(detail.clarifyConfirmError.value).toBeNull()
 
     // Force finish refreshes the snapshot instead of rolling back.
     mocks.getRun.mockClear()

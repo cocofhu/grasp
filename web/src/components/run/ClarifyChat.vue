@@ -67,6 +67,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
+import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -188,6 +189,7 @@ defineExpose({
   applyQueueState: chat.applyQueueState,
   cancelReview: chat.cancelReview,
   discardLastQueued: chat.discardLastQueued,
+  restoreUnsentQueued: chat.restoreUnsentQueued,
   isSessionBusy: chat.isSessionBusy,
   reorderQueuedItems: chat.reorderQueuedItems,
   playConfirmCeremony: chat.playConfirmCeremony,
@@ -310,6 +312,8 @@ const {
   displayTurns,
   outputBounds,
   attachNotice,
+  sendNotice,
+  stashNotice,
   sel,
   other,
   otherChecked,
@@ -854,6 +858,12 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
+/** A settled reply with a failed tool call stays unfolded (see AgentTimeline settled). */
+function turnHasFailedTool(t: ClarifyTurn): boolean {
+  if (t.parts?.length) return hasFailedTool(t.parts)
+  return (t.tools || []).some((tool) => (tool.status || '').toLowerCase() === 'failed')
+}
+
 function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number) {
   if (liveCards.value.newest.get(live.sid) !== i || live.op === 'accept' || live.op === 'discard') return false
   return isLiveBusy(liveHost?.store.sessions[live.sid]?.state)
@@ -1253,6 +1263,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               :live-ref="liveCards.full.get(i)!"
               agent
             />
+            <!--
+              A reply with a failed tool call does not fold (AgentTimeline), so it
+              keeps the pre-#843 completion footnote: 已完成 + when it ended.
+            -->
+            <div
+              v-if="showTurnCompleted(t) && turnHasFailedTool(t)"
+              class="chat-meta mt-1.5 flex items-center justify-between gap-2"
+              data-testid="clarify-turn-completed"
+            >
+              <span class="text-txt2">{{ translate('pages.clarify.turnCompleted') }}</span>
+              <span>{{ locale && relTime(t.at) }}</span>
+            </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
           <div
@@ -1679,6 +1701,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       aria-live="polite"
     />
     <div v-else-if="!active && !coldSession" class="border-t border-line p-3 text-center text-[12px] text-txt3">
+      <div v-if="sendNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-left text-[12px] text-err" data-testid="clarify-send-notice" role="alert">
+        {{ sendNotice }}
+      </div>
+      <div v-if="stashNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-left text-[12px] text-err" data-testid="clarify-stash-notice" role="alert">
+        {{ stashNotice }}
+      </div>
       <Icon name="close" :size="13" class="-mt-0.5 mr-1 inline" />{{ translate('pages.clarify.closed') }}
     </div>
     <div v-else-if="coldSession" class="shrink-0 border-t border-line p-3" data-testid="clarify-cold-actions">
@@ -1718,6 +1746,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           test-id="clarify-annotation-chip"
           @remove="removeAnnotation(ai)"
         />
+      </div>
+      <div v-if="sendNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err" data-testid="clarify-send-notice" role="alert">
+        {{ sendNotice }}
+      </div>
+      <div v-if="stashNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err" data-testid="clarify-stash-notice" role="alert">
+        {{ stashNotice }}
       </div>
       <div v-if="attachNotice" class="rounded-md mb-2 border border-err/40 bg-err/10 px-2.5 py-1.5 text-[12px] text-err" data-testid="clarify-attach-notice" role="alert">
         {{ attachNotice }}

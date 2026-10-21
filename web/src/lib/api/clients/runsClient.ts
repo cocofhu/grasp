@@ -264,10 +264,20 @@ export const runsClient = {
     annotations: ReactAnnotation[] = [],
     retryLast = false,
     abortRunning = false,
+    /** Per-send id echoed by clarify_visit_ended (409 and WS) to match this tab's outbox. */
+    clientMessageId?: string,
   ) =>
     req<{ status: string; waiting?: number }>(`/runs/${runId}/react/${nodeId}/reply`, {
       method: 'POST',
-      body: JSON.stringify({ text, images, force, annotations, retryLast, abortRunning }),
+      body: JSON.stringify({
+        text,
+        images,
+        force,
+        annotations,
+        retryLast,
+        abortRunning,
+        ...(clientMessageId ? { clientMessageId } : {}),
+      }),
     }),
   /** 轮级 Cancel for node-inline review (clears FIFO + aborts active ACP turn). */
   reactCancel: (runId: string, nodeId: string) =>

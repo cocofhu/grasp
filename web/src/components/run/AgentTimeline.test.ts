@@ -208,29 +208,31 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
   })
 
-  it('writes failures on the elapsed line and prefers them over interrupted', async () => {
+  it('keeps a finished reply with failed tool calls unfolded, as before #843', async () => {
     const failed = mountTimeline({
       completed: true,
       interrupted: true,
       startedAt,
       endedAt,
       parts: [
-        { kind: 'tool', title: 'Read', status: 'failed', output: 'secret-out' },
-        { kind: 'tool', title: 'Shell', status: 'failed' },
+        { kind: 'thought', text: '先跑测试' },
+        { kind: 'tool', title: 'Read', status: 'completed' },
+        { kind: 'tool', title: 'Shell', status: 'failed', output: 'exit 1' },
         { kind: 'message', text: '没做成' },
       ],
     })
-    const line = failed.get('[data-testid="agent-timeline-elapsed"]')
-    expect(line.text()).toContain('用时 3m 34s')
-    expect(line.text()).toContain('2 个失败')
-    expect(line.text()).not.toContain('已中断')
-    expect([...line.element.children].map((el) => el.getAttribute('data-testid'))).toEqual([
-      'agent-timeline-elapsed-time',
-      'agent-timeline-elapsed-chevron',
-      'agent-timeline-elapsed-status',
-    ])
-    expect(failed.find('[data-testid="agent-tool-output"]').exists()).toBe(false)
+    // No elapsed fold, no rule: the steps render inline in arrival order.
+    expect(failed.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
+    expect(failed.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    expect(failed.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
+    expect(order(failed)).toEqual(['agent-timeline-thought', 'agent-tool-group', 'agent-timeline-message'])
+    const group = failed.get('[data-testid="agent-tool-group"]')
+    expect(group.text()).toContain('1 个失败')
+    expect(group.text()).toContain('运行命令')
     expect(failed.get('[data-testid="agent-timeline-message"]').text()).toBe('没做成')
+    // Turns without a failure still fold (#843).
+    const ok = mountTimeline({ completed: true, startedAt, endedAt })
+    expect(ok.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
     const stopped = mountTimeline({
       interrupted: true,
       startedAt: '2026-10-20T00:00:00.000Z',

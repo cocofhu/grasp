@@ -1,4 +1,4 @@
-import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount, toRaw } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { renderChatMarkdownBlocks, renderMarkdown, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
@@ -6,6 +6,18 @@ import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { expandAutoPhase } from '@/lib/run/takeoverTimeline'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
+import {
+  ackClarifyOutboxText,
+  clarifyTabReady,
+  initClarifyTab,
+  insertRescued,
+  type RescuedPart,
+  clearClarifyStash,
+  readClarifyStash,
+  replaceClarifyStash,
+  stashClarifyDraft,
+  takeClarifyOutbox,
+} from '@/lib/inbox/clarifyDraftStash'
 import {
   emptyFailDisplayText,
   isEmptyFailedAgent,
@@ -98,6 +110,15 @@ export type ClarifyChatModels = {
   draft: Ref<string>
   attachments: Ref<ClarifyImage[]>
   annotations: Ref<ReactAnnotation[]>
+}
+
+/** Optional `dropped` payload of a clarify_visit_ended error (HTTP 409 / WS). */
+export type ClarifyDroppedPayload = {
+  clientId?: string
+  text?: string
+  attachments?: ClarifyImage[]
+  images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
 }
 
 export function useClarifyChat(
@@ -591,6 +612,8 @@ function imagePreviewLabel(images: ClarifyImage[], index: number): string {
 }
 
 const attachNotice = ref<string | null>(null)
+/** A reply the server refused (e.g. clarify_visit_ended); its text is back in the composer. */
+const sendNotice = ref<string | null>(null)
 const queueNotice = ref<string | null>(null)
 const queueToast = ref<string | null>(null)
 let queueToastTimer = 0
@@ -667,7 +690,7 @@ async function editQueuedItem(index: number) {
     attachments.value = []
     annotations.value = []
     attachNotice.value = null
-    sendMessage(prepared.text, prepared.images, prepared.annotations)
+    sendMessage(prepared.text, prepared.images, prepared.annotations, t)
     // Append keeps the target index stable.
   }
 
@@ -828,14 +851,24 @@ function removeAttachment(i: number) {
   attachments.value.splice(i, 1)
 }
 
-function sendMessage(text: string, imgs: ClarifyImage[] = [], anns: ReactAnnotation[] = []) {
+/** Composer text behind an optimistic row (before any skip-envelope wrap). */
+const composerOrigin = new WeakMap<object, string>()
+
+function sendMessage(
+  text: string,
+  imgs: ClarifyImage[] = [],
+  anns: ReactAnnotation[] = [],
+  composerText?: string,
+) {
   // Skip envelopes keep a trailing newline so an empty third line stays present
   // (trim would collapse "回答已跳过\n用户回复\n" → two lines).
   const t = textHasSkipPrefix(text) ? text.replace(/^\s+/, '') : text.trim()
   if ((!t && imgs.length === 0 && anns.length === 0) || props.done || !props.active) return
   // Enqueue only — bubbles materialize on turn_begin (AgentChatTester / Demo).
   // Busy may still enqueue; never open a concurrent turn via optimistic pending.
-  queued.value.push({ text: t, images: imgs, annotations: cloneReactAnnotations(anns) })
+  const item: QueueItem = { text: t, images: imgs, annotations: cloneReactAnnotations(anns) }
+  if (composerText !== undefined) composerOrigin.set(item, composerText)
+  queued.value.push(item)
   thinking.value = true
   emit('send', t, imgs, anns)
   stickToBottom.value = true
@@ -897,6 +930,8 @@ async function sendFromComposer(): Promise<boolean> {
       if (attachments.value === originalImages && JSON.stringify(attachments.value) === JSON.stringify(imgs)) attachments.value = []
       if (annotations.value === originalAnnotations && JSON.stringify(annotations.value) === JSON.stringify(anns)) annotations.value = []
       attachNotice.value = null
+      sendNotice.value = null
+      if (!hasComposerDraft()) releaseStash()
     } finally {
       composerSending.value = false
     }
@@ -906,8 +941,10 @@ async function sendFromComposer(): Promise<boolean> {
   attachments.value = []
   annotations.value = []
   attachNotice.value = null
+  sendNotice.value = null
+  releaseStash()
   // Always forward cloned images/annotations — skip only rewrites text.
-  sendMessage(prepared.text, prepared.images, prepared.annotations)
+  sendMessage(prepared.text, prepared.images, prepared.annotations, t)
   return true
 }
 
@@ -1334,6 +1371,251 @@ function discardLastQueued() {
   }
 }
 
+/** The composer is on screen and accepts input. */
+function composerOpen(): boolean {
+  return !props.done && !!props.active && !props.coldSession
+}
+
+/**
+ * Put text/attachments back into the composer ahead of anything typed since
+ * (never overwriting it). With `focus`, keep focus in the composer (caret
+ * stays where the user was typing) unless they moved to another field.
+ */
+function mergeIntoComposer(
+  text: string,
+  imgs: ClarifyImage[],
+  anns: ReactAnnotation[],
+  focus: boolean,
+  order: { at?: number; parts?: RescuedPart[] } = {},
+) {
+  const el = textareaRef.value
+  const hadFocus = !!el && document.activeElement === el
+  const selStart = hadFocus ? el!.selectionStart : 0
+  const selEnd = hadFocus ? el!.selectionEnd : 0
+  const current = draft.value
+  const t = text.trim()
+  let shift = 0
+  if (t) {
+    if (typeof order.at === 'number') {
+      // Rescued message: keep rescued ones in send order, ahead of new typing.
+      const r = insertRescued(current, rescuedHead, { text: t, at: order.at })
+      rescuedHead = r.head
+      draft.value = r.text
+      shift = r.text.length - current.length
+    } else if (!current.trim()) {
+      draft.value = t
+      shift = t.length - current.length
+      rescuedHead = order.parts?.length && t.startsWith(order.parts.map((p) => p.text).join('\n')) ? order.parts : []
+    } else if (!current.includes(t)) {
+      const prefix = `${t}\n`
+      draft.value = prefix + current
+      shift = prefix.length
+      rescuedHead = []
+    }
+  }
+  const imgKey = (im: ClarifyImage) => JSON.stringify(im)
+  const haveImgs = new Set(attachments.value.map(imgKey))
+  const backImgs = cloneClarifyImages(imgs).filter((im) => !haveImgs.has(imgKey(im)))
+  if (backImgs.length) attachments.value = [...backImgs, ...attachments.value]
+  const annKey = (a: ReactAnnotation) => JSON.stringify(a)
+  const haveAnns = new Set(annotations.value.map(annKey))
+  const backAnns = cloneReactAnnotations(anns).filter((a) => !haveAnns.has(annKey(a)))
+  if (backAnns.length) annotations.value = [...backAnns, ...annotations.value]
+
+  void nextTick(() => {
+    autoGrow()
+    const box = textareaRef.value
+    if (!box) return
+    if (hadFocus) {
+      if (document.activeElement !== box) box.focus({ preventScroll: true })
+      box.setSelectionRange(selStart + shift, selEnd + shift)
+      return
+    }
+    if (!focus) return
+    const active = document.activeElement as HTMLElement | null
+    // Never pull focus out of another field the user moved to.
+    const elsewhere =
+      !!active &&
+      active !== box &&
+      active !== document.body &&
+      (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))
+    if (elsewhere) return
+    box.focus({ preventScroll: true })
+    const end = box.value.length
+    box.setSelectionRange(end, end)
+  })
+}
+
+/**
+ * True while the composer holds text rescued from a refused send (or a draft
+ * kept when the run ended). The run+node stash then mirrors the composer
+ * until that text is sent or cleared, so a refresh never loses it.
+ */
+let stashLive = false
+/** Rescued messages at the head of the draft, oldest send first (S19). */
+let rescuedHead: RescuedPart[] = []
+
+/** Inline images left out of the stash for size (S21); null when none. */
+const stashNotice = ref<string | null>(null)
+function noteImagesDropped(n: number | undefined) {
+  if (n && n > 0) stashNotice.value = translate('pages.clarify.stashImagesDropped', { n })
+}
+
+/**
+ * Restore this tab's run+node stash once the composer is open again (run
+ * resumed). The stash lives in this tab's sessionStorage, so only the tab
+ * that sent a message ever puts it back (S18 / B4).
+ */
+function restoreStashedDraft() {
+  if (!composerOpen()) return
+  if (!clarifyTabReady()) {
+    // Duplicate-tab check still running: a copied tab must not refill.
+    void initClarifyTab().then(restoreStashedDraft)
+    return
+  }
+  const s = readClarifyStash(props.runId, props.nodeId)
+  if (!s) return
+  stashLive = true
+  mergeIntoComposer(s.text, s.images, s.annotations, false, { parts: s.parts })
+  noteImagesDropped(s.imagesDropped)
+}
+
+/** Composer closed (run ended) or is going away: keep the unsent draft per run+node. */
+function stashComposerDraft(): boolean {
+  if (!hasComposerDraft()) return false
+  const r = stashClarifyDraft(props.runId, props.nodeId, {
+    text: draft.value,
+    images: cloneClarifyImages(attachments.value),
+    annotations: cloneReactAnnotations(annotations.value),
+  })
+  noteImagesDropped(r.imagesDropped)
+  stashLive = true
+  return true
+}
+
+/** Composer sent or emptied: the rescued text is gone on purpose. */
+function releaseStash() {
+  rescuedHead = []
+  stashNotice.value = null
+  if (!stashLive) return
+  stashLive = false
+  clearClarifyStash(props.runId, props.nodeId)
+}
+
+watch(
+  () => [draft.value, attachments.value, annotations.value] as const,
+  () => {
+    if (!stashLive || !composerOpen()) return
+    if (!hasComposerDraft()) {
+      releaseStash()
+      return
+    }
+    const headText = rescuedHead.map((p) => p.text).join('\n')
+    if (rescuedHead.length && !draft.value.startsWith(headText)) rescuedHead = []
+    replaceClarifyStash(
+      props.runId,
+      props.nodeId,
+      {
+        text: draft.value,
+        images: cloneClarifyImages(attachments.value),
+        annotations: cloneReactAnnotations(annotations.value),
+      },
+      rescuedHead,
+    )
+  },
+  { deep: true, flush: 'post' },
+)
+
+watch(composerOpen, (open, wasOpen) => {
+  if (open) {
+    // Resumed: the text is back in the composer, so the
+    // "resend after resume" / "draft kept" notice has done its job.
+    if (!wasOpen) sendNotice.value = null
+    restoreStashedDraft()
+    return
+  }
+  // Run ended under an unsent draft: the composer disappears, the draft must not.
+  // A refused-send notice already says what happened; keep it.
+  if (wasOpen && !props.done && stashComposerDraft() && !sendNotice.value) {
+    sendNotice.value = translate('pages.clarify.draftKept')
+  }
+})
+onMounted(restoreStashedDraft)
+onBeforeUnmount(() => {
+  // Leaving while the run is closed for input (run ended): keep the draft for resume.
+  if (!props.done && !props.active && !props.coldSession) stashComposerDraft()
+})
+
+/**
+ * Parent (HTTP 409) or the WS error frame calls this when a clarify reply was
+ * refused because the clarify visit already ended (code clarify_visit_ended):
+ * the message was never sent. Drop its optimistic row and, unless resume will
+ * redeliver it on its own (autoRetryOnResume), put its text, attachments and
+ * annotations back: into the composer when it is open (ahead of anything typed
+ * since, focus kept), else into the run+node stash restored after resume.
+ * Shows `notice` instead of any chat reply.
+ */
+function restoreUnsentQueued(
+  sent: {
+    text?: string
+    images?: ClarifyImage[]
+    annotations?: ReactAnnotation[]
+    clientId?: string
+    /** Send time (outbox), so several refusals come back in send order. */
+    at?: number
+    /** Inline images the outbox already had to leave out. */
+    imagesDropped?: number
+  },
+  notice: string,
+  opts: { autoRetryOnResume?: boolean } = {},
+) {
+  // Local optimistic copy first: by id (clientId), then by text.
+  let idx = -1
+  if (sent.clientId) idx = queued.value.findIndex((q) => q.id === sent.clientId)
+  if (idx < 0 && sent.text) {
+    for (let i = queued.value.length - 1; i >= 0; i--) {
+      if (!queued.value[i].id && queued.value[i].text === sent.text) {
+        idx = i
+        break
+      }
+    }
+  }
+  const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
+  if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
+  sendNotice.value = notice
+  if (opts.autoRetryOnResume) return
+
+  const origin = item ? composerOrigin.get(toRaw(item)) : undefined
+  const text = (origin ?? item?.text ?? sent.text ?? '').trim()
+  const imgs = item?.images ?? sent.images ?? []
+  const anns = item?.annotations ?? sent.annotations ?? []
+  if (!text && !imgs.length && !anns.length) return
+  // Always stash (even with the composer open): a refresh or /gates dropping
+  // this item before the user resends must not lose it. Cleared on send/clear.
+  const at = typeof sent.at === 'number' ? sent.at : Date.now()
+  const r = stashClarifyDraft(
+    props.runId,
+    props.nodeId,
+    {
+      text,
+      images: cloneClarifyImages(imgs),
+      annotations: cloneReactAnnotations(anns),
+    },
+    { at },
+  )
+  // With the composer open the images are back in it; only say so when they are not.
+  noteImagesDropped((composerOpen() ? 0 : r.imagesDropped) + (sent.imagesDropped ?? 0))
+  stashLive = true
+  if (composerOpen()) mergeIntoComposer(text, imgs, anns, true, { at })
+}
+
+/** Notice copy for a clarify_visit_ended refusal. */
+function visitEndedNotice(autoRetryOnResume: boolean | undefined): string {
+  return autoRetryOnResume
+    ? translate('pages.clarify.visitEndedAutoRetry')
+    : translate('pages.clarify.visitEndedResend')
+}
+
 /** Idle is authoritative: no live turn may keep its caret, tracked or not. */
 function endLiveStreaming() {
   let flushed = false
@@ -1495,6 +1777,72 @@ function applyQueueState(
   thinking.value = liveAgentIdx.value >= 0 || queued.value.length > 0 || !!busy
 }
 
+/** What the live turn opened by the latest turn_begin carried (local copy). */
+let liveTurnOrigin: {
+  id?: string
+  text: string
+  images: ClarifyImage[]
+  annotations: ReactAnnotation[]
+  newHuman: boolean
+} | null = null
+
+/**
+ * WS error frame with code clarify_visit_ended: the run ended, so the reply
+ * was dropped (at turn start, or at WS enqueue). It is not an answer — never
+ * write it into an agent bubble. Remove the turn it opened and hand the text
+ * back (local optimistic copy first, `dropped` as fallback).
+ */
+function applyVisitEndedFrame(frame: {
+  autoRetryOnResume?: boolean
+  clientMessageId?: string
+}) {
+  const auto = !!frame.autoRetryOnResume
+  // Broadcast frames carry no text and no `dropped`: the reply is ours to put
+  // back only when its clientMessageId is in this tab's outbox. Other viewers
+  // just lose the empty live slot (no refill, no stash, no notice).
+  const mine = auto ? null : takeClarifyOutbox(props.runId, props.nodeId, frame.clientMessageId)
+  const idx = liveAgentIdx.value
+  const agent = idx >= 0 ? liveTurns.value[idx] : null
+  const origin = liveTurnOrigin
+  let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
+  if (agent && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
+    // Drop the empty agent slot and the human bubble this turn opened.
+    const human = idx > 0 ? liveTurns.value[idx - 1] : null
+    const removeHuman = !!origin?.newHuman && human?.role === 'human'
+    liveTurns.value.splice(removeHuman ? idx - 1 : idx, removeHuman ? 2 : 1)
+    if (removeHuman && origin) local = { text: origin.text, images: origin.images, annotations: origin.annotations }
+    liveAgentIdx.value = -1
+    messageReveal.reset()
+    thoughtReveal.reset()
+    streamPreview.reset()
+    thoughtPreview.reset()
+  } else if (agent) {
+    agent.streaming = false
+    markOutputEnd(agent)
+    liveAgentIdx.value = -1
+  }
+  liveTurnOrigin = null
+  if (auto) {
+    // System first message: resume resends it; nothing to put back.
+    restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
+  } else if (mine) {
+    // Same text as the live bubble: its images still carry preview data.
+    const sameTurn = !!local && local.text.trim() === mine.text.trim()
+    restoreUnsentQueued(
+      {
+        text: mine.text,
+        images: sameTurn && local!.images.length ? local!.images : mine.images,
+        annotations: mine.annotations.length ? mine.annotations : (sameTurn ? local!.annotations : []),
+        at: mine.at,
+        // Same turn: the live bubble's images are complete, nothing was lost.
+        imagesDropped: sameTurn && local!.images.length ? 0 : mine.imagesDropped,
+      },
+      visitEndedNotice(false),
+    )
+  }
+  settleAfterTurnEnd()
+}
+
 /** Parent feeds review/clarify WS frames here (shared session protocol). */
 function applyReviewFrame(frame: {
   event?: string
@@ -1509,6 +1857,11 @@ function applyReviewFrame(frame: {
   sandboxDesynced?: boolean
   sandboxRunningOpId?: string
   activeItem?: SessionFrameItem
+  /** error: clarify_visit_ended (run ended; the reply was dropped, not answered). */
+  code?: string
+  autoRetryOnResume?: boolean
+  /** Echo of the request's clientMessageId (only when the request had one). */
+  clientMessageId?: string
 }) {
   // Defense: ignore frames for other producer sessions on the same run.
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
@@ -1529,6 +1882,15 @@ function applyReviewFrame(frame: {
           ? auth.annotations
           : local?.annotations
       const humanText = text || local?.text || ''
+      liveTurnOrigin = {
+        id: auth?.id,
+        text: (local ? composerOrigin.get(toRaw(local)) : undefined) ?? humanText,
+        // Prefer the local copy: it still has inline data/preview, while the
+        // server item may already be ref-only (blob:…) after upload.
+        images: local?.images?.length ? local.images : (images ?? []),
+        annotations: local?.annotations?.length ? local.annotations : (annotations ?? []),
+        newHuman: false,
+      }
       // Cover retry: reuse trailing live human + failed/empty agent instead of duplicating.
       const last = liveTurns.value.length
       const existingHuman = last >= 2 ? liveTurns.value[last - 2] : null
@@ -1558,6 +1920,7 @@ function applyReviewFrame(frame: {
         liveAgentIdx.value = last - 1
       } else {
         const started = new Date().toISOString()
+        liveTurnOrigin.newHuman = true
         liveTurns.value.push({
           role: 'human',
           text: humanText,
@@ -1584,6 +1947,8 @@ function applyReviewFrame(frame: {
       break
     }
     case 'turn_done': {
+      // Answered: this tab's outbox copy is no longer needed.
+      if (liveTurnOrigin?.text) ackClarifyOutboxText(props.runId, props.nodeId, liveTurnOrigin.text)
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
         const agent = liveTurns.value[liveAgentIdx.value]
         agent.streaming = false
@@ -1603,6 +1968,10 @@ function applyReviewFrame(frame: {
       break
     }
     case 'error': {
+      if (frame.code === 'clarify_visit_ended') {
+        applyVisitEndedFrame(frame)
+        break
+      }
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
         const agent = liveTurns.value[liveAgentIdx.value]
         agent.streaming = false
@@ -1978,6 +2347,10 @@ function retryLastFailed() {
     confirmFlowPlaying,
     cancelReview,
     discardLastQueued,
+    restoreUnsentQueued,
+    visitEndedNotice,
+    sendNotice,
+    stashNotice,
     forceAuthoritativeIdle,
     settleAfterTurnEnd,
     applyQueueState,
