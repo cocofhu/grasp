@@ -10,6 +10,7 @@ import { i18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import type { ClarifyImage, ClarifyTurn, ReactAnnotation } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
+import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import { LIVE_CARD_HOST, createLiveStore, type LiveCardHost } from '@/lib/inbox/liveVariants'
 
 enableAutoUnmount(afterEach)
@@ -183,6 +184,12 @@ describe('ClarifyChat takeover turns (re-review after Stop)', () => {
     expect((wrapper.get('[data-testid="clarify-input"]').element as HTMLTextAreaElement).disabled).toBe(false)
     expect(wrapper.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
     await confirm.trigger('click')
+    await flushPromises()
+    // 确认并流转 opens the in-app confirm (#868); finish is emitted on 确认流转.
+    expect(wrapper.emitted('finish')).toBeUndefined()
+    // AppModal is stubbed here without its footer, so accept through the dialog's own event.
+    wrapper.findComponent(ConfirmFlowDialog).vm.$emit('confirm')
+    await flushPromises()
     expect(wrapper.emitted('finish')).toHaveLength(1)
   })
 
@@ -341,7 +348,8 @@ describe('ClarifyChat observe mode: one busy indicator', () => {
     'interactive chat (%s) keeps its indicators unchanged',
     (_label, turns) => {
       const wrapper = mountChat({ reviewMode: true, observe: false, turns })
-      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 1, bottomTime: 1 })
+      // No bottom time while the turn is still running (#851); the status sits at the reply's end.
+      expect(busyCopies(wrapper)).toEqual({ thinking: 1, generating: 1, bottomTime: 0 })
     },
   )
 
@@ -350,6 +358,7 @@ describe('ClarifyChat observe mode: one busy indicator', () => {
     const interactive = busyCopies(mountChat({ reviewMode: true, observe: false, turns: outputting }))
     expect(observed).toEqual(interactive)
     expect(observed.thinking).toBe(0)
-    expect(observed.bottomTime).toBe(1)
+    // Time appears once the turn ends (#851), in both views.
+    expect(observed.bottomTime).toBe(0)
   })
 })
