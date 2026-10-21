@@ -70,6 +70,8 @@ const props = withDefaults(
     observe?: boolean
     /** Takeover accepted (state=stopping); waiting for node_takeover waiting_human. */
     stopping?: boolean
+    /** Taken-over node's task: shown as the opening User Message, above the auto-phase fold row. */
+    nodeTask?: string
   }>(),
   {
     active: true,
@@ -86,6 +88,7 @@ const props = withDefaults(
     seedHumanImages: () => [],
     observe: false,
     stopping: false,
+    nodeTask: '',
   },
 )
 
@@ -706,6 +709,18 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
+      <!-- Taken-over node: what it was asked to do, as the conversation's first User Message (same user-bubble style). -->
+      <div
+        v-if="nodeTask?.trim()"
+        class="clarify-turn flex justify-end"
+        data-turn-role="human"
+        data-testid="clarify-node-task"
+      >
+        <span class="sr-only">{{ translate('pages.clarify.me') }}</span>
+        <div class="min-w-0 max-w-[88%]">
+          <div class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ nodeTask.trim() }}</div>
+        </div>
+      </div>
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
       <div
         v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t))"

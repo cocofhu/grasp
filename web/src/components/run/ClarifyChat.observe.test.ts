@@ -51,6 +51,7 @@ function mountChat(opts: {
   liveHost?: LiveCardHost
   observe?: boolean
   stopping?: boolean
+  nodeTask?: string
 } = {}) {
   const i18n = createI18n({
     legacy: false,
@@ -81,6 +82,7 @@ function mountChat(opts: {
       sendRequest: opts.sendRequest,
       observe: opts.observe ?? false,
       stopping: opts.stopping ?? false,
+      nodeTask: opts.nodeTask,
     },
     global: {
       plugins: [i18n],
@@ -223,6 +225,40 @@ describe('ClarifyChat takeover opening turn (turns[0].events = auto phase)', () 
     expect(rows).toHaveLength(2)
     expect(rows[0]!.get('[data-testid="agent-timeline-elapsed-time"]').text()).toBe('用时 1m 5s')
     expect(rows[1]!.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(false)
+  })
+
+  const takeoverOpening = (): ClarifyTurn[] => [{
+    role: 'agent',
+    text: '已中断自动执行，本节点转为人工接管（不会再自动执行）。',
+    at: '2026-10-21T00:01:06Z',
+    startedAt: '2026-10-21T00:00:00Z',
+    endedAt: '2026-10-21T00:01:05Z',
+    events: [{ t: 1, kind: 'timeline', parts: [{ kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '改了一半' }] }],
+  }]
+
+  it('task present: the node task is the opening User Message, above the fold row and the takeover note', () => {
+    const wrapper = mountChat({ reviewMode: true, turns: takeoverOpening(), nodeTask: '  根据需求实现登录页并补齐单测\n验收：•••  ' })
+    const bubble = wrapper.get('[data-testid="clarify-node-task"]')
+    expect(bubble.attributes('data-turn-role')).toBe('human')
+    const msg = bubble.get('.chat-user-message')
+    expect(msg.text()).toBe('根据需求实现登录页并补齐单测\n验收：•••')
+    expect(msg.classes()).toEqual(expect.arrayContaining(['whitespace-pre-wrap', 'break-words']))
+    const html = wrapper.html()
+    const at = (id: string) => html.indexOf(id)
+    expect(at('clarify-node-task')).toBeGreaterThan(-1)
+    expect(at('clarify-node-task')).toBeLessThan(at('agent-timeline-elapsed'))
+    expect(at('clarify-node-task')).toBeLessThan(html.indexOf('已中断自动执行'))
+    // First human-role row in the transcript.
+    expect(wrapper.findAll('[data-turn-role]')[0]!.attributes('data-testid')).toBe('clarify-node-task')
+  })
+
+  it('task absent or blank: no opening User Message (layout as before)', () => {
+    for (const nodeTask of [undefined, '', '   ']) {
+      const wrapper = mountChat({ reviewMode: true, turns: takeoverOpening(), nodeTask })
+      expect(wrapper.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+      wrapper.unmount()
+    }
   })
 
   it('no duration on the fold row when the span is incomplete', () => {

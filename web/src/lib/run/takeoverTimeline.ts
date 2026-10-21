@@ -54,3 +54,12 @@ export function expandAutoPhase(turns: readonly ClarifyTurn[]): ClarifyTurn[] {
   if (span && rows.length) Object.assign(rows[rows.length - 1]!, span)
   return [...rows, opening, ...turns.slice(1)]
 }
+
+/**
+ * Opening User Message of a taken-over conversation: the node's task as the
+ * backend sends it (clarifyByNode[nodeId].task — interpolated prompt, secrets
+ * masked, truncated at 280 chars). Empty when absent; never derived here.
+ */
+export function takeoverTask(conv: { takeover?: boolean; task?: string } | null | undefined): string {
+  return (conv?.task ?? '').trim()
+}

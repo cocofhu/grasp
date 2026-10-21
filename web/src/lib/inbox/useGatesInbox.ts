@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
+import { takeoverTask } from '@/lib/run/takeoverTimeline'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
@@ -58,8 +59,7 @@ import {
   knownInboxProcessingLock,
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import { notifyRecentActivity, runLivePath } from '@/lib/run/recentRuns'
-import { runningAutoNode } from '@/lib/run/runLive'
+import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -1655,6 +1655,8 @@ const clarifyComposerNodeId = computed(
 )
 const clarifyComposerIteration = computed(() => activeClarify.value?.iteration ?? 1)
 const clarifyComposerTurns = computed(() => activeClarify.value?.turns ?? [])
+/** Taken-over node's task, shown as the conversation's opening User Message. */
+const activeNodeTask = computed(() => takeoverTask(activeClarify.value))
 const clarifyComposerDone = computed(() => activeClarify.value?.done ?? false)
 
 const inboxClarifyStageKind = computed(() => (activeRunLoadError.value ? 'loadFailed' : 'pending'))
@@ -2011,9 +2013,6 @@ async function onClarifySend(
       }
       endProcessingIntent(submittedItem)
       if (finished) notifyRecentActivity()
-      if (finished && submittedItem.type === 'clarify' && submittedItem.takeover) {
-        void followRunAfterTakeoverConfirm(submittedItem.runId, submittedItem.nodeId)
-      }
       if (finished) {
         clarifyConfirmError.value = null
         toast.success(
@@ -2032,32 +2031,6 @@ async function onClarifySend(
   if (ok) {
     patchVisibleCardBusy(it.runId, it.nodeId, true)
     notifyRecentActivity()
-  }
-}
-
-/**
- * A taken-over node was confirmed: the next node starts automatically again.
- * Follow the run into its live view while the user is still on this page.
- */
-const FOLLOW_TAKEOVER_TRIES = 12
-const FOLLOW_TAKEOVER_STEP_MS = 500
-async function followRunAfterTakeoverConfirm(runId: string, fromNodeId: string) {
-  for (let i = 0; i < FOLLOW_TAKEOVER_TRIES; i++) {
-    if (route.path !== '/gates') return
-    try {
-      const r = await api.getRun(runId)
-      if (route.path !== '/gates') return
-      // Server currentNode (kind=agent, mode=auto, state=running).
-      const next = runningAutoNode(r)
-      if (next && next.id !== fromNodeId) {
-        await router.push({ path: runLivePath(runId), query: { node: next.id } })
-        return
-      }
-      if (r.status !== 'running' && r.status !== 'queued') return
-    } catch {
-      /* transient: retry */
-    }
-    await new Promise((resolve) => setTimeout(resolve, FOLLOW_TAKEOVER_STEP_MS))
   }
 }
 
@@ -2329,6 +2302,7 @@ function itemSecondary(it: InboxItem) {
     clarifyComposerNodeId,
     clarifyComposerIteration,
     clarifyComposerTurns,
+    activeNodeTask,
     clarifyComposerDone,
     inboxClarifyStageKind,
     inboxReviewState,

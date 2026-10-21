@@ -1117,12 +1117,14 @@ export interface Run {
     done: boolean
     previewArtifact?: string
     takeover?: boolean
+    /** Taken-over node's task (interpolated prompt, secrets masked, ≤280 chars). Only with takeover. */
+    task?: string
   }
   // Per-node react conversations, keyed by node id (a run may have several
   // react nodes). Lets each react node show its own dialogue immediately.
   clarifyByNode?: Record<
     string,
-    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean }
+    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string }
   >
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
   reactSessions?: Record<

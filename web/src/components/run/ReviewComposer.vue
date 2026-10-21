@@ -77,6 +77,8 @@ const props = withDefaults(
     /** Read-only auto stream; Stop emits takeover (ClarifyChat observe). */
     observe?: boolean
     stopping?: boolean
+    /** Taken-over node's task (opening User Message). */
+    nodeTask?: string
   }>(),
   {
     iteration: 1,
@@ -286,6 +288,7 @@ function onConfirm() {
       :confirm-error="confirmError"
       :confirm-can-abort="confirmCanAbort"
       :observe="observe"
+      :node-task="nodeTask"
       :stopping="stopping"
       @takeover="emit('takeover')"
       @send="(text, images, anns) => emit('send', text, images, anns)"

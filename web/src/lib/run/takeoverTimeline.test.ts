@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { AcpEvent, ClarifyTurn } from '@/lib/shared/types'
-import { autoPhaseRows, expandAutoPhase } from './takeoverTimeline'
+import { autoPhaseRows, expandAutoPhase, takeoverTask } from './takeoverTimeline'
 
 const opening = '已中断自动执行，本节点转为人工接管（不会再自动执行）。'
 const at = '2026-10-21T00:00:01Z'
@@ -68,5 +68,17 @@ describe('takeover opening turn: turns[0].events (auto phase)', () => {
       const out = expandAutoPhase([{ role: 'agent', text: opening, at, ...half, events: [ev({ kind: 'message', text: 'x' })] }])
       expect(out.every((t) => !t.startedAt && !t.endedAt)).toBe(true)
     }
+  })
+})
+
+describe('takeoverTask (opening User Message)', () => {
+  it('uses the backend task as sent, trimmed', () => {
+    expect(takeoverTask({ takeover: true, task: '  实现登录页 •••…  ' })).toBe('实现登录页 •••…')
+  })
+  it('is empty when the backend sends no task', () => {
+    expect(takeoverTask({ takeover: true })).toBe('')
+    expect(takeoverTask({ takeover: true, task: '   ' })).toBe('')
+    expect(takeoverTask(null)).toBe('')
+    expect(takeoverTask(undefined)).toBe('')
   })
 })
