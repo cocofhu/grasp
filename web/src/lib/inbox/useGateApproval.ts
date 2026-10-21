@@ -35,6 +35,7 @@ import type { AcpEvent, AgentTool, ClarifyImage, Gate, GateShareInboxStatus, Run
 import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
+import { confirmFlowDiscardKind, type ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 import { gateApprovalKey, type GateApprovalProductEditorExpose } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
@@ -1011,11 +1012,69 @@ function clearUnifiedDraft() {
   hotRejectHistorySynced.value = false
 }
 
-function choose(id: string) {
+const confirmFlowDialogOpen = ref(false)
+const confirmFlowDiscard = ref<ConfirmFlowDiscard>('none')
+let pendingChooseId: string | null = null
+let pendingChooseRecheck: (() => boolean) | null = null
+
+function defaultPositiveRecheck(id: string) {
+  return () => {
+    if (actionSubmitting.value || resolved.value != null) return false
+    const err = validate(id)
+    if (err) {
+      formError.value = err
+      return false
+    }
+    return true
+  }
+}
+
+function openPositiveConfirm(id: string, recheck: () => boolean) {
+  if (confirmFlowDialogOpen.value) return
+  pendingChooseId = id
+  pendingChooseRecheck = recheck
+  confirmFlowDiscard.value = confirmFlowDiscardKind(productDirty.value, hasUnsentReactDraft.value)
+  confirmFlowDialogOpen.value = true
+}
+
+function dismissConfirmFlow() {
+  confirmFlowDialogOpen.value = false
+  pendingChooseId = null
+  pendingChooseRecheck = null
+}
+
+function acceptConfirmFlow() {
+  if (!confirmFlowDialogOpen.value || !pendingChooseId) return
+  const id = pendingChooseId
+  const recheck = pendingChooseRecheck
+  confirmFlowDialogOpen.value = false
+  pendingChooseId = null
+  pendingChooseRecheck = null
+  if (recheck && !recheck()) return
+  if (productDirty.value) {
+    productEditorRef.value?.discard()
+    productDirty.value = false
+  }
+  if (hasUnsentReactDraft.value) clearUnifiedDraft()
+  commitChoose(id)
+}
+
+function commitChoose(id: string) {
+  formError.value = null
+  actionSubmitting.value = true
+  resolved.value = id
+  emit('resolve', id, buildFormPayload())
+}
+
+function choose(id: string, recheck?: () => boolean) {
   if (actionSubmitting.value || resolved.value != null) return
   const err = validate(id)
   if (err) {
     formError.value = err
+    return
+  }
+  if (POSITIVE_ACTION_IDS.has(id)) {
+    openPositiveConfirm(id, recheck ?? defaultPositiveRecheck(id))
     return
   }
   if (productDirty.value) {
@@ -1030,14 +1089,7 @@ function choose(id: string) {
     productEditorRef.value?.discard()
     productDirty.value = false
   }
-  // Pass/approve: silently discard unsent draft (no confirm).
-  if (POSITIVE_ACTION_IDS.has(id) && hasUnsentReactDraft.value) {
-    clearUnifiedDraft()
-  }
-  formError.value = null
-  actionSubmitting.value = true
-  resolved.value = id
-  emit('resolve', id, buildFormPayload())
+  commitChoose(id)
 }
 
 const isEditing = computed(() => {
@@ -1654,7 +1706,16 @@ const composerPassDisabled = computed(
 function onComposerPass() {
   if (!showHotPass.value || composerPassDisabled.value) return
   const a = passAction.value
-  if (a) choose(a.id)
+  if (!a) return
+  choose(a.id, () => {
+    if (!showHotPass.value || composerPassDisabled.value) return false
+    const err = validate(a.id)
+    if (err) {
+      formError.value = err
+      return false
+    }
+    return true
+  })
 }
 
 /** PreviewIssues hot reject syncs history; non-preview uses draft-only revise. */
@@ -1814,6 +1875,10 @@ provide(gateApprovalKey, {
     validate,
     clearUnifiedDraft,
     choose,
+    confirmFlowDialogOpen,
+    confirmFlowDiscard,
+    acceptConfirmFlow,
+    dismissConfirmFlow,
     forceReactAuthoritativeIdle,
     settleReactAfterTurnEnd,
     applyReviewFrame,

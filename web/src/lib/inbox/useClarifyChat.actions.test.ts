@@ -8,6 +8,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import type { ClarifyImage, ReactAnnotation, ReactQuestion } from '@/lib/shared/types'
 
 import { useClarifyChat } from './useClarifyChat'
+import { confirmFlowCeremonyKey, type ConfirmFlowCeremony } from './confirmFlowCeremony'
 
 const image = (name = 'shot.png', over: Partial<ClarifyImage> = {}): ClarifyImage => ({
   data: 'aGVsbG8=',
@@ -642,9 +643,13 @@ describe('useClarifyChat actions', () => {
   it('emits finish-abort when the host allows it', () => {
     const { chat, app, emit, props } = withChat({ confirmCanAbort: true })
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledWith('finish-abort')
     props.confirmCanAbort = false
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(false)
     expect(emit).toHaveBeenCalledTimes(1)
     app.unmount()
   })
@@ -661,6 +666,7 @@ describe('useClarifyChat actions', () => {
     }
 
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(false)
     expect(emit).not.toHaveBeenCalled()
     expect(models.draft.value).toBe(original.text)
     expect(models.attachments.value).toEqual(original.images)
@@ -671,6 +677,9 @@ describe('useClarifyChat actions', () => {
     models.attachments.value = []
     models.annotations.value = []
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
     app.unmount()
   })
@@ -690,6 +699,8 @@ describe('useClarifyChat actions', () => {
     complete(true)
     await sending
     chat.finishAbort()
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
     app.unmount()
   })
@@ -700,6 +711,9 @@ describe('useClarifyChat actions', () => {
     chat.queued.value.push({ text: '已排队', images: [], annotations: [] })
     expect(chat.confirmDisabled.value).toBe(true)
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
     app.unmount()
   })
@@ -710,6 +724,10 @@ describe('useClarifyChat actions', () => {
     models.attachments.value = [image()]
     models.annotations.value = [annotation()]
     chat.finishAbort()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(chat.confirmFlowDiscard.value).toBe('none')
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish-abort')
     expect(models.draft.value).toBe('隐藏的草稿')
     expect(models.attachments.value).toEqual([image()])
@@ -720,6 +738,10 @@ describe('useClarifyChat actions', () => {
   it('supports finish and confirm flows and releases validation on errors', async () => {
     const clarify = withChat()
     clarify.chat.finishEarly()
+    expect(clarify.chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(clarify.chat.validating.value).toBe(false)
+    expect(clarify.emit).not.toHaveBeenCalled()
+    clarify.chat.acceptConfirmFlow()
     expect(clarify.emit).toHaveBeenCalledWith('finish')
     // Confirm-flow uses validating chrome, not thinking placeholder (plan g2.1).
     expect(clarify.chat.validating.value).toBe(true)
@@ -730,6 +752,8 @@ describe('useClarifyChat actions', () => {
 
     const review = withChat({ reviewMode: true })
     review.chat.finishEarly()
+    expect(review.emit).not.toHaveBeenCalled()
+    review.chat.acceptConfirmFlow()
     expect(review.chat.validating.value).toBe(true)
     expect(review.emit).toHaveBeenCalledWith('finish')
     review.props.confirmError = 'validation failed'
@@ -765,6 +789,9 @@ describe('useClarifyChat actions', () => {
     models.annotations.value = []
     expect(chat.confirmDisabled.value).toBe(false)
     chat.finishEarly()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
     app.unmount()
   })
@@ -780,6 +807,9 @@ describe('useClarifyChat actions', () => {
     props.finishDisabled = false
     expect(chat.confirmDisabled.value).toBe(false)
     chat.finishEarly()
+    expect(chat.confirmFlowDiscard.value).toBe('none')
+    expect(models.draft.value).toBe('隐藏的草稿')
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
     expect(models.draft.value).toBe('隐藏的草稿')
     expect(models.attachments.value).toEqual([image()])
@@ -1167,6 +1197,7 @@ describe('acknowledged composer transport', () => {
     expect(models.draft.value).toBe('')
     expect(chat.confirmDisabled.value).toBe(false)
     chat.finishEarly()
+    chat.acceptConfirmFlow()
     expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
     app.unmount()
   })
@@ -1229,6 +1260,87 @@ describe('acknowledged composer transport', () => {
     expect(chat.queued.value.map((item) => item.id)).toEqual(['other'])
     expect(models.draft.value).toBe('')
     expect(emit).not.toHaveBeenCalledWith('queue-remove', 'other', 0)
+    app.unmount()
+  })
+})
+
+describe('confirm-flow dialog before clarify submit', () => {
+  it('does not emit, discard, or play the ceremony until the dialog is confirmed', () => {
+    const play = vi.fn(async () => {})
+    let chat!: ReturnType<typeof useClarifyChat>
+    const emit = vi.fn()
+    const props = reactive({
+      runId: 'run-1',
+      nodeId: 'node-1',
+      iteration: 0,
+      turns: [],
+      done: false,
+      active: true,
+    })
+    const models = {
+      draft: ref(''),
+      attachments: ref<ClarifyImage[]>([]),
+      annotations: ref<ReactAnnotation[]>([]),
+    }
+    const ceremony = {
+      phase: ref('idle'),
+      reduceMotion: ref(false),
+      playToken: ref(0),
+      playing: ref(false),
+      play,
+      reset: vi.fn(),
+    } as ConfirmFlowCeremony
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages } },
+    })
+    const Comp = defineComponent({
+      setup() {
+        chat = useClarifyChat(props as never, emit as never, models)
+        return () => null
+      },
+    })
+    const app = createApp(Comp)
+    app.use(i18n)
+    app.provide(confirmFlowCeremonyKey, ceremony)
+    app.mount(document.createElement('div'))
+
+    chat.finishEarly()
+    expect(chat.confirmFlowDialogOpen.value).toBe(true)
+    expect(emit).not.toHaveBeenCalled()
+    expect(play).not.toHaveBeenCalled()
+    expect(chat.validating.value).toBe(false)
+
+    chat.finishEarly()
+    expect(emit).not.toHaveBeenCalled()
+    chat.dismissConfirmFlow()
+    expect(chat.confirmFlowDialogOpen.value).toBe(false)
+    expect(emit).not.toHaveBeenCalled()
+    expect(play).not.toHaveBeenCalled()
+
+    chat.finishEarly()
+    chat.thinking.value = true
+    chat.acceptConfirmFlow()
+    expect(emit).not.toHaveBeenCalled()
+    expect(play).not.toHaveBeenCalled()
+    expect(chat.confirmFlowDialogOpen.value).toBe(false)
+
+    chat.thinking.value = false
+    chat.finishEarly()
+    chat.acceptConfirmFlow()
+    expect(emit).toHaveBeenCalledExactlyOnceWith('finish')
+    expect(play).toHaveBeenCalledOnce()
+    expect(chat.validating.value).toBe(true)
+    app.unmount()
+  })
+
+  it('does not open the dialog when sending', async () => {
+    const { chat, models, emit, app } = withChat()
+    models.draft.value = '先发送'
+    await chat.sendFromComposer()
+    expect(emit).toHaveBeenCalledWith('send', '先发送', [], [])
+    expect(chat.confirmFlowDialogOpen.value).toBe(false)
     app.unmount()
   })
 })

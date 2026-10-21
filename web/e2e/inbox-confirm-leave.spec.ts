@@ -6,6 +6,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
+import { acceptConfirmFlow } from './helpers/confirmFlow'
 
 const SHOT = '/tmp/inbox-confirm-leave-shots'
 mkdirSync(SHOT, { recursive: true })
@@ -301,6 +302,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await page.screenshot({ path: `${SHOT}/01-before-confirm.png`, fullPage: true })
 
     await confirm.first().click()
+    await acceptConfirmFlow(page)
 
     // Must leave before delayed reactReply resolves (plan g1.2 / ~3s SLA).
     await expect(opened).toHaveCount(0, { timeout: 1500 })
@@ -335,6 +337,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
     await confirm.first().click()
+    await acceptConfirmFlow(page)
 
     // First left; second auto-selected while first reply still pending.
     await expect(opened).toHaveCount(0, { timeout: 1500 })
@@ -347,6 +350,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await expect(confirmB.first()).toBeEnabled()
     await page.screenshot({ path: `${SHOT}/08-neighbor-ready-while-first-pending.png`, fullPage: true })
     await confirmB.first().click()
+    await acceptConfirmFlow(page)
 
     // Second must also leave before either delayed reply resolves (no global lock swallow).
     await expect(second).toHaveCount(0, { timeout: 1500 })
@@ -374,6 +378,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     const confirm = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
     await expect(confirm.first()).toBeVisible({ timeout: 15_000 })
     await confirm.first().click()
+    await acceptConfirmFlow(page)
 
     // Brief leave then restore on failure (g1.3).
     await expect.poll(() => state.replyResolved, { timeout: 5000 }).toBe(true)
@@ -389,6 +394,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     state.replyResolved = false
     state.replyDelayMs = 100
     await page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' })).first().click()
+    await acceptConfirmFlow(page)
     await expect(opened).toHaveCount(0, { timeout: 5000 })
     await page.screenshot({ path: `${SHOT}/05-retry-left.png`, fullPage: true })
   })
@@ -413,6 +419,7 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await expect(pass.first()).toBeVisible({ timeout: 15_000 })
     await page.screenshot({ path: `${SHOT}/06-gate-before.png`, fullPage: true })
     await pass.first().click()
+    await acceptConfirmFlow(page)
 
     await expect(gateTitle).toHaveCount(0, { timeout: 1500 })
     expect(state.resumeResolved).toBe(false)
