@@ -146,7 +146,9 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const r = await api.nodeEvents(runId.value, nodeId.value)
       if (disposed || seededKey !== key || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
-      if (!task.value && typeof r.task === 'string' && r.task.trim()) task.value = r.task.trim()
+      // Top-level task on the first (non-paged) page only.
+      const sent = 'task' in r ? r.task : undefined
+      if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
       if (!lastEvents && r.events?.length) chat.value?.applyAcpEvents(r.events, nodeId.value)
     } catch {
       /* stream frames still arrive over WS */
