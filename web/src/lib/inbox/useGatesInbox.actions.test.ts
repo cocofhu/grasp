@@ -211,6 +211,8 @@ async function withInbox(path = '/inbox') {
     routes: [
       { path: '/', component: { template: '<div />' } },
       { path: '/inbox', component: { template: '<div />' } },
+      { path: '/gates', component: { template: '<div />' } },
+      { path: '/runs/:id/:rest(.*)*', component: { template: '<div />' } },
     ],
   })
   await router.push(path)
@@ -551,6 +553,36 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'ended', status: 'completed' })
     expect(inbox.clarifyComposerDone.value).toBe(false)
     expect(inbox.clarifyComposerLocked.value).toBe(true)
+    app.unmount()
+  })
+
+  // User rule: after 确认并流转 on a taken-over node the page must not jump
+  // (GraspReview: it used to push to the next node's live view, then run detail).
+  it('confirming a taken-over node does not navigate, even when the next node is running auto', async () => {
+    mocks.listGates.mockResolvedValue({ items: [clarifyItem('run-take', { takeover: true })], total: 1 })
+    mocks.getRun.mockImplementation(async (runId: string) =>
+      contextRun(runId, { status: 'running', currentNode: { id: 'verify', name: 'verify', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } }),
+    )
+    const { inbox, app, router } = await withInbox('/gates?run=run-take&node=react')
+    inbox.selectItem(inbox.listItems.value[0]!)
+    await flushPromises()
+    inbox.reviewChatRef.value = { discardLastQueued: vi.fn(), isSessionBusy: () => false }
+    const before = router.currentRoute.value.fullPath
+    const replace = vi.spyOn(router, 'replace')
+    const push = vi.spyOn(router, 'push')
+    vi.useFakeTimers()
+    try {
+      mocks.reactReply.mockResolvedValueOnce({})
+      await inbox.onClarifySend('done', [], [], true)
+      await vi.advanceTimersByTimeAsync(8000)
+    } finally {
+      vi.useRealTimers()
+    }
+    await flushPromises()
+    // #850: the chain hand-off replaces the v2 success toast (toast only when the row is still listed); the no-navigation rule is what matters here.
+    expect(push).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe(before)
     app.unmount()
   })
 

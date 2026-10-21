@@ -22,6 +22,9 @@ type CurrentNode struct {
 	Kind      string `json:"kind"`
 	Mode      string `json:"mode"`
 	State     string `json:"state"`
+	// Task is the node's task preview; only the run detail sets it (Agent
+	// nodes with a non-blank prompt).
+	Task string `json:"task,omitempty"`
 }
 
 // Current node kinds.
