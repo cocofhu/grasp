@@ -89,6 +89,8 @@ async function setup(page: Page) {
     w.__router.afterEach((to) => w.__navs.push(to.fullPath))
   })
   await expect.poll(() => state.ws !== null).toBe(true)
+  // Tag the mounted view: an in-place continue must not remount it.
+  await page.locator('#app > div > *').first().evaluate((el) => { el.setAttribute('data-e2e-mount', '1') })
   const send = (frame: unknown) => state.ws!.send(JSON.stringify(frame))
   return { state, send, navs }
 }
@@ -162,7 +164,10 @@ for (const theme of ['light', 'dark'] as const) {
     // The footer names how the run ended (not the generic 「交互已完成，进入下一步」).
     await expect(page.getByTestId('clarify-done-note')).toHaveText('运行已完成')
     await expect(page.getByText('交互已完成，进入下一步')).toHaveCount(0)
-    expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([])
+    // ?node= follows the node on screen (router.replace, query only) so a refresh lands on 验证;
+    // nothing else routes, and the view was not remounted.
+    expect(await page.evaluate(() => (window as unknown as { __navs: string[] }).__navs)).toEqual([`/runs/${RUN}/live?node=verify`])
+    await expect(page.locator('[data-e2e-mount="1"]')).toHaveCount(1)
   })
 }
 

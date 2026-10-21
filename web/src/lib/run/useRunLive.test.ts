@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { defineComponent, h, ref, watch } from 'vue'
+import { computed, defineComponent, h, ref, watch } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createI18n } from 'vue-i18n'
@@ -34,7 +34,8 @@ async function setup() {
   let live!: ReturnType<typeof useRunLive>
   const Harness = defineComponent({
     setup() {
-      live = useRunLive(ref('r1'), ref(String(router.currentRoute.value.query.node || '')), ref(surface))
+      // Like RunLiveView: ?node= is read reactively from the route.
+      live = useRunLive(ref('r1'), computed(() => String(router.currentRoute.value.query.node || '')), ref(surface))
       return () => h('div')
     },
   })
@@ -166,7 +167,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     let live!: ReturnType<typeof useRunLive>
     const Harness = defineComponent({
       setup() {
-        live = useRunLive(ref('r1'), ref('impl'), chatRef)
+        live = useRunLive(ref('r1'), computed(() => String(router.currentRoute.value.query.node || '')), chatRef)
         // Like :key="surfaceKey": a new node mounts a new surface on the next render.
         watch(live.nodeId, (_n, old) => {
           if (!old) return // first node: the surface that is already mounted
@@ -204,7 +205,9 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     FakeSocket.last!.send({ type: 'acp', nodeId: 'verify', events: later, busy: true })
     expect(next.applyAcpEvents).toHaveBeenLastCalledWith(later, 'verify')
     expect((next.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin')).toHaveLength(1)
-    // Polls keep reading 「follow 验证」 (the URL still says impl): no re-seed, no new turn.
+    // ?node= follows the node on screen (replace, same page); later polls: no re-seed, no new turn.
+    expect(replace).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=verify')
     await live.reload()
     await flushPromises()
     await live.reload()
@@ -217,7 +220,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     await flushPromises()
     expect(live.ended.value).toBe(true)
     expect(next.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'verify' })
-    expect(replace).not.toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledTimes(1)
     wrapper.unmount()
   })
 
@@ -235,10 +238,17 @@ describe('useRunLive (auto node → Stop → chat)', () => {
       ],
     })
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
+    const push = vi.spyOn(router, 'push')
+    const gets = mocks.getRun.mock.calls.length
     await live().reload()
     await flushPromises()
-    expect(replace).not.toHaveBeenCalled()
-    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
+    // ?node= now names the node on screen (refresh lands there): replace, no push.
+    expect(replace).toHaveBeenCalledExactlyOnceWith({ path: '/runs/r1/live', query: { node: 'test' } })
+    expect(push).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
+    // The URL change is not a new page: no reload, no reset of the continued conversation.
+    expect(mocks.getRun.mock.calls.length).toBe(gets + 1)
+    expect((surface.applyReviewFrame as ReturnType<typeof vi.fn>).mock.calls.filter(([f]) => f.event === 'turn_begin' && f.nodeId === 'test')).toHaveLength(1)
     expect(live().nodeId.value).toBe('test')
     expect(live().mode.value).toBe('observe')
     expect(live().ended.value).toBe(false)
@@ -257,7 +267,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     mocks.getRun.mockResolvedValue(chatRun)
     await live().reload()
     await flushPromises()
-    expect(replace).not.toHaveBeenCalled()
+    expect(replace).toHaveBeenCalledExactlyOnceWith({ path: '/runs/r1/live', query: { node: 'accept' } })
     expect(live().mode.value).toBe('chat')
     expect(live().chatKind.value).toBe('clarify')
     expect(live().nodeId.value).toBe('accept')
@@ -278,8 +288,8 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     await live().reload()
     await flushPromises()
     expect(live().ended.value).toBe(true)
-    expect(replace).not.toHaveBeenCalled()
-    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
+    expect(replace).toHaveBeenCalledTimes(1)
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=accept')
     wrapper.unmount()
   })
 
@@ -294,6 +304,35 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().handoff.value).toBeNull()
     expect(live().composerLocked.value).toBe(false)
     wrapper.unmount()
+  })
+
+  it('a refresh after an in-place continue opens the node on screen, without re-routing', async () => {
+    const { live, router, wrapper } = await setup()
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
+    await live().reload()
+    await flushPromises()
+    const url = router.currentRoute.value.fullPath
+    expect(url).toBe('/runs/r1/live?node=test')
+    wrapper.unmount()
+    // Reload the page at that URL.
+    const replace = vi.spyOn(router, 'replace')
+    const again = await (async () => {
+      const r2 = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
+      await r2.push(url)
+      const surface: LiveChatSurface = { applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn() }
+      let l!: ReturnType<typeof useRunLive>
+      const H = defineComponent({ setup() { l = useRunLive(ref('r1'), computed(() => String(r2.currentRoute.value.query.node || '')), ref(surface)); return () => h('div') } })
+      const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })
+      const w = mount(H, { global: { plugins: [r2, i18n] } })
+      await flushPromises()
+      return { l, r2, w, surface }
+    })()
+    expect(again.l.nodeId.value).toBe('test')
+    expect(again.l.mode.value).toBe('observe')
+    expect(again.r2.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
+    expect(again.surface.applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({ event: 'turn_begin', nodeId: 'test' }))
+    expect(replace).not.toHaveBeenCalled()
+    again.w.unmount()
   })
 
   it('still routes while opening: a stale ?node= follows to the node the run is on now', async () => {

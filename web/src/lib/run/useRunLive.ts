@@ -85,6 +85,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   let ws: WebSocket | null = null
   let wsRun = ''
+  /** `${run}:${node}` this page wrote into ?node= itself (not a new route). */
+  let selfRoute = ''
   let pollTimer: number | undefined
   let refreshTimer: number | undefined
   let disposed = false
@@ -163,6 +165,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     aheadEvents = null
     task.value = typeof c?.task === 'string' ? c.task.trim() : ''
     shown = true
+    syncUrlNode(next)
     notifyRecentActivity()
     connect(runId.value)
     void loadChain()
@@ -171,6 +174,18 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     // this render); ACP frames that arrive before that are kept in lastEvents
     // and replayed on it.
     if (m === 'observe') void nextTick(() => seed())
+  }
+
+  /**
+   * Keep ?node= on the node on screen so a refresh lands there. Same path, so
+   * the view is not remounted; replace, so Back does not step through nodes.
+   * The route watcher below skips this change (the page is already there).
+   */
+  function syncUrlNode(next: string) {
+    if (requestedNode.value === next) return
+    selfRoute = `${runId.value}:${next}`
+    const query = { ...router.currentRoute.value.query, node: next }
+    void router.replace({ path: runLivePath(runId.value), query })
   }
 
   /**
@@ -209,8 +224,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       return finish()
     }
     if (d.kind === 'follow') {
-      // The URL keeps the node the page was opened on, so every later poll
-      // reads as 「follow」: only a node the page is not showing yet continues.
+      // Shown already: only a node the page is not showing yet continues
+      // (a poll racing the ?node= update still reads 「follow」 for this one).
       if (shown) return d.nodeId === nodeId.value ? observeCurrent(c) : continueTo(d.nodeId, 'observe', c)
       notifyRecentActivity()
       stopping.value = false
@@ -451,6 +466,12 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   watch([runId, requestedNode], () => {
     if (disposed) return
+    // ?node= caught up with an in-place continue: same page, nothing to reload.
+    if (selfRoute && selfRoute === `${runId.value}:${requestedNode.value}`) {
+      selfRoute = ''
+      return
+    }
+    selfRoute = ''
     loading.value = !run.value || run.value.id !== runId.value
     stopping.value = false
     // A new route (sidebar click / follow while opening) starts a fresh page.
