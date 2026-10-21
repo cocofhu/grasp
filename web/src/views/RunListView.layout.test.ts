@@ -88,9 +88,25 @@ describe('RunListView status segments', () => {
   it('renders the five segments with 全部 active by default', async () => {
     const { wrapper } = await setup()
     const segs = wrapper.findAll('[data-testid^="run-seg-"]')
-    expect(segs.map((s) => s.text())).toEqual([zh.segAll, zh.segActive, zh.segWaiting, zh.segDone, zh.segFailed])
+    expect(segs.map((s) => s.get('[data-testid="seg-label"]').text())).toEqual([zh.segAll, zh.segActive, zh.segWaiting, zh.segDone, zh.segFailed])
     expect(wrapper.get('[data-testid="run-seg-all"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-testid="run-seg-active"]').attributes('aria-pressed')).toBe('false')
+    wrapper.unmount()
+  })
+
+  it('shows the result count on the active segment and the workflow filter, like main', async () => {
+    const { wrapper } = await setup()
+    const counts = wrapper.findAll('[data-testid="seg-count"]')
+    expect(counts).toHaveLength(1)
+    expect(wrapper.get('[data-testid="run-seg-all"] [data-testid="seg-count"]').text()).toBe('3')
+    expect(wrapper.findComponent({ name: 'WorkflowFilter' }).props('count')).toBe(3)
+
+    mocks.listRuns.mockResolvedValue({ items: [RUNNING], total: 1 })
+    await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="run-seg-active"] [data-testid="seg-count"]').text()).toBe('1')
+    expect(wrapper.find('[data-testid="run-seg-all"] [data-testid="seg-count"]').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'WorkflowFilter' }).props('count')).toBe(1)
     wrapper.unmount()
   })
 

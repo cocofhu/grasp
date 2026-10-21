@@ -499,15 +499,23 @@ onUnmounted(() => {
           v-for="seg in STATUS_SEGMENTS"
           :key="seg.id"
           type="button"
-          class="whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
           :class="segActive(seg) ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"
-        >{{ t(seg.labelKey) }}</button>
+        >
+          <span data-testid="seg-label">{{ t(seg.labelKey) }}</span>
+          <!-- Same result count main's StatusFilter trigger shows, on the active segment. -->
+          <span
+            v-if="segActive(seg)"
+            class="chip h-5 shrink-0 py-0 font-normal leading-none"
+            data-testid="seg-count"
+          >{{ total }}</span>
+        </button>
       </div>
       <div class="flex items-center gap-2">
-        <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" />
+        <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" :count="total" />
         <TagFilter v-model="selectedTags" v-model:open="tagFilterOpen" />
       </div>
     </div>
