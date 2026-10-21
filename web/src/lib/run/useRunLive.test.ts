@@ -123,13 +123,58 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
-  it('follows the run to the next auto node once this one is done', async () => {
-    const { live, router, wrapper } = await setup()
-    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
+  // User rule: once the user is looking at a node, the page never jumps by itself.
+  it.each([
+    ['the next auto node', { id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') }],
+    ['the next node parked for a person', { id: 'r1', status: 'waiting_human', currentNode: cur('gate', 'gate', 'manual', 'waiting_human') }],
+    ['the end of the run', { id: 'r1', status: 'succeeded' }],
+  ])('stays on the page when the node on screen finishes (run moved to %s): no navigation, shown as done', async (_label, next) => {
+    const { live, router, surface, wrapper } = await setup()
+    const replace = vi.spyOn(router, 'replace')
+    const push = vi.spyOn(router, 'push')
+    mocks.getRun.mockResolvedValue(next)
     await live().reload()
     await flushPromises()
+    expect(replace).not.toHaveBeenCalled()
+    expect(push).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
+    expect(live().ended.value).toBe(true)
+    expect(live().nodeId.value).toBe('impl')
+    expect(surface.applyReviewFrame).toHaveBeenLastCalledWith({ event: 'turn_done', nodeId: 'impl' })
+    // Later frames and polls no longer route the page either.
+    const calls = mocks.getRun.mock.calls.length
+    FakeSocket.last?.send({ type: 'snapshot', run: next })
+    await live().reload()
+    await flushPromises()
+    expect(replace).not.toHaveBeenCalled()
+    expect(mocks.getRun.mock.calls.length).toBe(calls)
+    wrapper.unmount()
+  })
+
+  it('still routes while opening: a stale ?node= follows to the node the run is on now', async () => {
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'running', currentNode: cur('test', 'agent', 'auto', 'running') })
+    const { router, wrapper } = await setup()
     expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=test')
     wrapper.unmount()
+  })
+
+  it('opens with the node task from currentNode.task', async () => {
+    mocks.getRun.mockResolvedValue({ ...autoRun, currentNode: { ...autoRun.currentNode, task: '  实现登录页改版  ' } })
+    mocks.nodeEvents.mockResolvedValue({ events: [], task: '另一个' })
+    const { live, wrapper } = await setup()
+    expect(live().task.value).toBe('实现登录页改版')
+    wrapper.unmount()
+  })
+
+  it('falls back to the node events task, and shows none when neither is sent', async () => {
+    mocks.nodeEvents.mockResolvedValue({ events: [], task: '部署 ••• 到 预发' })
+    const a = await setup()
+    expect(a.live().task.value).toBe('部署 ••• 到 预发')
+    a.wrapper.unmount()
+    mocks.nodeEvents.mockResolvedValue({ events: [] })
+    const b = await setup()
+    expect(b.live().task.value).toBe('')
+    b.wrapper.unmount()
   })
 
   it('already_manual while the auto call still unwinds waits like taken_over, without an error', async () => {
@@ -144,7 +189,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
-  it('409 run_not_running shows the re-read run status with the error toast and refreshes to run detail', async () => {
+  it('409 run_not_running shows the re-read run status with the error toast, refreshes and ends in place', async () => {
     const { live, router, wrapper } = await setup()
     mocks.takeoverNode.mockRejectedValue(Object.assign(new Error('run_not_running'), { status: 409, current: { runStatus: 'cancelled' } }))
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'cancelled' })
@@ -155,7 +200,8 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(mocks.show).not.toHaveBeenCalled()
     expect(mocks.getRun.mock.calls.length).toBeGreaterThan(before)
     expect(live().stopping.value).toBe(false)
-    expect(router.currentRoute.value.fullPath).toBe('/runs/r1')
+    expect(live().ended.value).toBe(true)
+    expect(router.currentRoute.value.fullPath).toBe('/runs/r1/live?node=impl')
     wrapper.unmount()
   })
 

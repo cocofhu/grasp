@@ -20,7 +20,10 @@ const REFRESH_DEBOUNCE_MS = 400
 /**
  * Live view of an auto node: read-only stream (nodeEvents seed + run WS acp
  * frames) and Stop → POST takeover → the node's chat (re-review with
- * 确认并流转). Follows the run to the next auto node when this one finishes.
+ * 确认并流转). Once a node is on screen the page never navigates by itself:
+ * when that node finishes (the run moved on or ended), the stream stops and
+ * the view shows the node as done (`ended`). Only the user's Stop, or this
+ * same node being parked for a person, opens its chat.
  */
 export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat: Ref<LiveChatSurface | null>) {
   const router = useRouter()
@@ -33,6 +36,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const nodeId = ref('')
   const iteration = ref(1)
   const stopping = ref(false)
+  /** The node on screen finished; the view stays here, read-only. */
+  const ended = ref(false)
+  /** Node task preview (currentNode.task / nodeEvents task), shown as the opening User Message. */
+  const task = ref('')
 
   let ws: WebSocket | null = null
   let wsRun = ''
@@ -42,6 +49,8 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   let loadGen = 0
   let seededKey = ''
   let lastEvents: AcpEvent[] | null = null
+  /** A node has been shown on this page: from now on, no automatic navigation. */
+  let shown = false
 
   function leaveTo(target: Parameters<typeof router.replace>[0]) {
     if (disposed) return
@@ -55,14 +64,33 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     leaveTo({ path: '/gates', query: { run: runId.value, node } })
   }
 
-  /** Route on the server's run.currentNode (GET /runs/:id or the WS snapshot frame). */
+  /** The node on screen finished: stop streaming and stay on this page. */
+  function finish() {
+    if (ended.value) return
+    ended.value = true
+    stopping.value = false
+    stop()
+    chat.value?.applyReviewFrame({ event: 'turn_done', nodeId: nodeId.value })
+    notifyRecentActivity()
+  }
+
+  /**
+   * Route on the server's run.currentNode (GET /runs/:id or the WS snapshot
+   * frame). follow / detail / another node's chat only route the page while
+   * it is opening; after a node was shown they end it in place.
+   */
   function applyRun(r: Run, id: string) {
+    if (ended.value) return
     run.value = r
     loadError.value = false
     const d = decideLive(r, requestedNode.value)
-    if (d.kind === 'chat') return goToChat(d.nodeId)
-    if (d.kind === 'detail') return leaveTo(runDetailPath(id))
+    if (d.kind === 'chat') {
+      if (!shown || d.nodeId === nodeId.value) return goToChat(d.nodeId)
+      return finish()
+    }
+    if (d.kind === 'detail') return shown ? finish() : leaveTo(runDetailPath(id))
     if (d.kind === 'follow') {
+      if (shown) return finish()
       notifyRecentActivity()
       stopping.value = false
       void router.replace({ path: runLivePath(id), query: { node: d.nodeId } })
@@ -72,7 +100,10 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       nodeId.value = d.nodeId
       seededKey = ''
       lastEvents = null
+      task.value = ''
     }
+    shown = true
+    if (d.task) task.value = d.task
     if (d.iteration != null) iteration.value = d.iteration
     if (d.stopping) stopping.value = true
     connect(id)
@@ -80,6 +111,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   }
 
   async function load() {
+    if (ended.value) return
     const gen = ++loadGen
     const id = runId.value
     try {
@@ -114,6 +146,9 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const r = await api.nodeEvents(runId.value, nodeId.value)
       if (disposed || seededKey !== key || isNodeEventsUnavailable(r)) return
       // A WS frame newer than the snapshot may already be on screen.
+      // Top-level task on the first (non-paged) page only.
+      const sent = 'task' in r ? r.task : undefined
+      if (!task.value && typeof sent === 'string' && sent.trim()) task.value = sent.trim()
       if (!lastEvents && r.events?.length) chat.value?.applyAcpEvents(r.events, nodeId.value)
     } catch {
       /* stream frames still arrive over WS */
@@ -194,7 +229,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       const code = takeoverErrorCode(e)
       if (code === 'run_not_running') {
         // The run was cancelled / failed under us: say so, then refresh (the
-        // view leaves for run detail once the run is no longer active).
+        // view ends in place once the run is no longer active).
         stopping.value = false
         const status = takeoverConflictRunStatus(e)
         toast.error(t('pages.runLive.run_not_running', { status: status ? t(`common.status.${status}`, status) : '-' }))
@@ -227,11 +262,16 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     if (disposed) return
     loading.value = !run.value || run.value.id !== runId.value
     stopping.value = false
+    // A new route (sidebar click / follow while opening) starts a fresh page.
+    if (ended.value) pollTimer = window.setInterval(poll, LIVE_POLL_MS)
+    ended.value = false
+    shown = false
     void load()
   }, { immediate: true })
   watch(chat, () => { void seed() })
-  pollTimer = window.setInterval(() => { if (!document.hidden) void load() }, LIVE_POLL_MS)
+  function poll() { if (!document.hidden) void load() }
+  pollTimer = window.setInterval(poll, LIVE_POLL_MS)
   onBeforeUnmount(() => { disposed = true; stop() })
 
-  return { run, loading, loadError, nodeId, iteration, stopping, takeover, reload: load, onFrame }
+  return { run, loading, loadError, nodeId, iteration, stopping, ended, task, takeover, reload: load, onFrame }
 }
