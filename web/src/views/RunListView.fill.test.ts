@@ -12,9 +12,10 @@ const sandboxSrc = readFileSync(join(dir, 'SandboxListView.vue'), 'utf8')
 const zhCommon = readFileSync(join(dir, '../locales/zh-CN/common.json'), 'utf8')
 const zhPages = readFileSync(join(dir, '../locales/zh-CN/pages.json'), 'utf8')
 
+// Flat page structure (same as 用量统计): no bordered/shadowed .card panel around the list.
 const EMPTY_CARD_CLASS =
-  'card flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto'
-const FILL_CARD_CLASS = 'card flex min-h-0 flex-1 flex-col overflow-hidden'
+  'flex min-h-0 flex-1 flex-col items-center justify-center overflow-auto'
+const FILL_CARD_CLASS = 'flex min-h-0 flex-1 flex-col overflow-hidden'
 
 describe('RunListView fill height chain (g1)', () => {
   it('root uses flex h-full min-h-0 flex-col without calc(100vh) (g1.1)', () => {
@@ -33,6 +34,7 @@ describe('RunListView fill height chain (g1)', () => {
     expect(emptyCards.length).toBeGreaterThanOrEqual(4)
     expect(src).toMatch(new RegExp(FILL_CARD_CLASS.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
     expect(src).toMatch(/class="flex min-h-0 flex-1 flex-col overflow-hidden"/)
+    expect(src).not.toMatch(/class="card\b/)
   })
 
   it('loading skeleton still uses SKELETON_ROWS=6 at top, not centered empty (g1.4)', () => {
@@ -93,11 +95,12 @@ describe('RunListView empty / fail split out of table (g2)', () => {
 })
 
 describe('RunListView sticky table + pager pin (g3)', () => {
-  it('desktop table wrap is overflow-auto with sticky elevated thead (g3.1)', () => {
+  it('desktop table wrap is overflow-auto with sticky page-coloured thead (g3.1)', () => {
     expect(src).toMatch(/class="min-h-0 flex-1 overflow-auto"/)
     expect(src).toMatch(/thead th\s*\{[^}]*position:\s*sticky/s)
     expect(src).toMatch(/thead th\s*\{[^}]*top:\s*0/s)
-    expect(src).toMatch(/thead th\s*\{[^}]*background:\s*rgb\(var\(--c-elevated\)\)/s)
+    expect(src).toMatch(/thead th\s*\{[^}]*background:\s*rgb\(var\(--c-surface\)\)/s)
+    expect(src).toMatch(/thead th\s*\{[^}]*box-shadow:\s*inset 0 -1px 0 rgb\(var\(--c-line\)\)/s)
   })
 
   it('Pagination shrink-0 still gates on total > PAGE_SIZE and binds page (g3.2)', () => {

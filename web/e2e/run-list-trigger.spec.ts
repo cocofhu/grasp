@@ -72,29 +72,33 @@ async function gotoRunList(
   await expect(page.locator('table')).toBeVisible({ timeout: 15_000 })
 }
 
-function triggerCell(page: import('@playwright/test').Page, title: string) {
-  return page.locator('tr', { hasText: title }).locator('td').nth(2)
+/** Trigger now sits in the run cell's meta line; the default (manual) is omitted. */
+function triggerLabel(page: import('@playwright/test').Page, title: string) {
+  return page.locator('tr', { hasText: title }).getByTestId('run-trigger')
 }
 
-test.describe('RunListView 触发列统一展示', () => {
-  test('中文：三码映射，自由串原样', async ({ page }) => {
+test.describe('RunListView 触发方式展示', () => {
+  test('中文：三码映射，自由串原样，手动（默认）不显示', async ({ page }) => {
     await gotoRunList(page, 'zh')
-    await expect(triggerCell(page, '标准 manual')).toHaveText('手动')
-    await expect(triggerCell(page, '标准 api')).toHaveText('API')
-    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('工作区助手 MCP')
-    await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
-    await expect(triggerCell(page, '未映射-自由串')).toHaveText('qq:cron-timezone-bug')
-    const triggerTexts = await page.locator('table tbody tr td:nth-child(3)').allTextContents()
+    await expect(page.locator('tr', { hasText: '标准 manual' })).toBeVisible()
+    await expect(triggerLabel(page, '标准 manual')).toHaveCount(0)
+    await expect(triggerLabel(page, '标准 api')).toHaveText('API')
+    await expect(triggerLabel(page, '标准 pm_mcp')).toHaveText('工作区助手 MCP')
+    await expect(triggerLabel(page, '未映射-channel')).toHaveText('channel')
+    await expect(triggerLabel(page, '未映射-自由串')).toHaveText('qq:cron-timezone-bug')
+    const triggerTexts = await page.getByTestId('run-trigger').allTextContents()
     expect(triggerTexts).toEqual(
-      expect.arrayContaining(['手动', 'API', '工作区助手 MCP', 'channel', 'qq:cron-timezone-bug']),
+      expect.arrayContaining(['API', '工作区助手 MCP', 'channel', 'qq:cron-timezone-bug']),
     )
+    expect(triggerTexts).not.toContain('手动')
   })
 
-  test('英文：manual→Manual', async ({ page }) => {
+  test('英文：映射为英文，Manual 不显示', async ({ page }) => {
     await gotoRunList(page, 'en')
-    await expect(triggerCell(page, '标准 manual')).toHaveText('Manual')
-    await expect(triggerCell(page, '标准 api')).toHaveText('API')
-    await expect(triggerCell(page, '标准 pm_mcp')).toHaveText('Workspace assistant MCP')
-    await expect(triggerCell(page, '未映射-channel')).toHaveText('channel')
+    await expect(page.locator('tr', { hasText: '标准 manual' })).toBeVisible()
+    await expect(triggerLabel(page, '标准 manual')).toHaveCount(0)
+    await expect(triggerLabel(page, '标准 api')).toHaveText('API')
+    await expect(triggerLabel(page, '标准 pm_mcp')).toHaveText('Workspace assistant MCP')
+    await expect(triggerLabel(page, '未映射-channel')).toHaveText('channel')
   })
 })
