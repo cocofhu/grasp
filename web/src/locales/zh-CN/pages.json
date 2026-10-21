@@ -3133,6 +3133,8 @@
       "handoffStepTo": "流转到「{name}」",
       "handoffDone": "已确认并流转",
       "handoffDoneTo": "已流转到「{name}」",
+      "handoffFrom": "「{name}」的交接说明",
+      "handoffFromPlatform": "「{name}」未留交接，平台代写",
       "segmentChat": "「{name}」· {n} 条消息",
       "segmentAuto": "「{name}」自动执行",
       "segmentGate": "「{name}」人工审批",

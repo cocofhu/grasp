@@ -25,7 +25,13 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 	if err != nil {
 
 		req := e.nodeReq(c, node)
-		t := e.provider.ReactOpen(context.Background(), req)
+		carried := e.interruptedDialogue(c.run.ID, node.ID, iter)
+		var t runtime.ReactTurn
+		if rr, ok := e.provider.(runtime.ReactResumer); ok && len(carried) > 0 {
+			t = rr.ReactResume(context.Background(), req, carried)
+		} else {
+			t = e.provider.ReactOpen(context.Background(), req)
+		}
 		if t.SetupErr != nil {
 			fullErr := ""
 			if t.SetupErr != nil {
@@ -39,12 +45,12 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 				events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel, sandboxSetup: true,
 			}
 		}
-		msgs := []models.ReactMessage{}
+		msgs := append([]models.ReactMessage{}, carried...)
 		skipEmpty := strings.TrimSpace(t.Msg) == "" && len(t.Questions) == 0 && len(t.Forms) == 0
 		if !skipEmpty {
-			msgs = []models.ReactMessage{{Role: "agent", Text: t.Msg,
+			msgs = append(msgs, models.ReactMessage{Role: "agent", Text: t.Msg,
 				At: time.Now().Format(time.RFC3339), Questions: t.Questions, Forms: t.Forms,
-				OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)}}
+				OpID: t.OpID, Tools: models.ToolsFromEvents(t.Events), Parts: models.PartsForReply(t.Events, t.Msg)})
 		}
 		conv = models.ReactConversation{RunID: c.run.ID, NodeID: node.ID, Iteration: iter, Done: t.Done,
 			Messages: msgs}
@@ -62,6 +68,34 @@ func (e *Engine) execClarifyEnter(c *execCtx, node *models.Node) nodeOutcome {
 		return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…", events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel}
 	}
 	return nodeOutcome{status: "paused", outputMd: "等待人工回复(ReAct 澄清)…"}
+}
+
+// interruptedDialogue is the open dialogue of this node's previous visit when
+// that visit failed or was cancelled (the run is continuing from the failure
+// position): the resumed visit carries it on instead of starting blank. An
+// Agent reply the interruption cut off is dropped (the reply it answered is
+// asked again). A previous visit that completed (a loop back) starts a new
+// dialogue.
+func (e *Engine) interruptedDialogue(runID, nodeID string, iter int) []models.ReactMessage {
+	var prev models.StateRun
+	if err := e.db.Select("iteration", "status").
+		Where("run_id = ? AND node_id = ? AND iteration < ?", runID, nodeID, iter).
+		Order("iteration desc, id desc").First(&prev).Error; err != nil {
+		return nil
+	}
+	if prev.Status != "failed" && prev.Status != "cancelled" {
+		return nil
+	}
+	var conv models.ReactConversation
+	if err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, prev.Iteration).
+		Order("id desc").First(&conv).Error; err != nil || conv.Done {
+		return nil
+	}
+	msgs := conv.Messages
+	for len(msgs) > 0 && msgs[len(msgs)-1].Role == "agent" && msgs[len(msgs)-1].Interrupted {
+		msgs = msgs[:len(msgs)-1]
+	}
+	return msgs
 }
 
 // setReactPreviewArtifact pins an existing artifact onto the latest react conversation

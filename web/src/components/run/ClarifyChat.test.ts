@@ -299,7 +299,7 @@ describe('ClarifyChat', () => {
     bare.unmount()
   })
 
-  it('shows a reply with a failed tool call inline with the completion footnote, as before #843', () => {
+  it('folds a reply with a failed tool call and counts the failure on the fold line', async () => {
     const w = mountChat({
       turns: [{
         role: 'agent',
@@ -315,15 +315,33 @@ describe('ClarifyChat', () => {
         ],
       }],
     })
-    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
-    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
-    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
-    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
+    const line = w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(line.text()).toContain('3m 34s')
+    expect(line.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
     expect(w.get('[data-testid="clarify-agent-message"]').text()).toBe('没跑通')
-    const done = w.get('[data-testid="clarify-turn-completed"]')
-    expect(done.text()).toContain('已完成')
-    const msg = w.get('[data-testid="clarify-agent-message"]').element
-    expect(msg.compareDocumentPosition(done.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(w.find('[data-testid="clarify-turn-completed"]').exists()).toBe(false)
+    await line.trigger('click')
+    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
+    w.unmount()
+  })
+
+  it('times a reloaded reply from the question it answers when it has no start/end of its own', () => {
+    const w = mountChat({
+      turns: [
+        { role: 'human', text: '跑一下', at: '2026-10-20T00:00:00Z' },
+        {
+          role: 'agent',
+          text: '跑完了',
+          at: '2026-10-20T00:01:05Z',
+          parts: [
+            { kind: 'thought', text: '先看看' },
+            { kind: 'message', text: '跑完了' },
+          ],
+        },
+      ],
+    })
+    expect(w.get('[data-testid="agent-timeline-elapsed-time"]').text()).toContain('1m 5s')
     w.unmount()
   })
 

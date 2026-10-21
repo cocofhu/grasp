@@ -63,7 +63,7 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
-import { clipRunTitle } from '@/lib/run/runTitle'
+import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
   homeApproveHandoffMatchesRun,
@@ -82,6 +82,7 @@ import {
   normalizeRunChain,
   priorSegments,
   runChainFromRun,
+  seedChainBoots,
   segmentKey,
   type ChainSegment,
   type RunChain,
@@ -155,6 +156,17 @@ const activeHomeSeed = computed(() => {
   const s = homeSeed.value || peekHomeApproveHandoff()
   if (!s || !homeApproveHandoffMatchesRun(s, it.runId)) return null
   return s
+})
+/**
+ * Backend copy of each run's opening message, kept once seen: a context reload
+ * nulls activeRun first, and the queued row must not blink out meanwhile.
+ */
+const queuedFirstMessages = ref<Record<string, string>>({})
+/** The run's opening message while the agent starts: the home hand-off, else the backend's queued copy (survives reload). */
+const activeQueuedFirstMessage = computed(() => {
+  const it = active.value
+  if (!it) return ''
+  return activeHomeSeed.value?.text?.trim() || queuedFirstMessages.value[it.runId] || ''
 })
 const mobileView = ref<'list' | 'detail'>('list')
 const listScrollTop = ref(0)
@@ -241,7 +253,10 @@ async function fetchRunChain(runId: string): Promise<RunChain | null> {
 }
 async function loadRunChain(runId: string): Promise<RunChain | null> {
   const c = await fetchRunChain(runId)
-  if (c) runChains.value = { ...runChains.value, [runId]: c }
+  if (c) {
+    seedChainBoots(c)
+    runChains.value = { ...runChains.value, [runId]: c }
+  }
   return c
 }
 type PriorSegmentView = ChainSegment & { open: boolean }
@@ -485,6 +500,29 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
     kickFollow()
   } else scheduleFollow(submitted, submittedKey)
   return true
+}
+/** A confirmed conversation reopened by a reload: its transcript, the 已流转 row, then the run followed in place. */
+async function resumeHandedOff(run: Run, nodeId: string) {
+  const conv = run.clarifyByNode![nodeId]!
+  const item: InboxItem = {
+    ...makeIncomingGhost({ runId: run.id, nodeId }, '', run.startedAt || new Date().toISOString()),
+    state: undefined,
+    iteration: conv.iteration ?? run.nodeRuns?.[nodeId]?.iteration ?? 1,
+    workflowId: run.workflowId,
+    workflowName: run.workflowName || '',
+    runTitle: displayRunTitle(run.title) || undefined,
+    label: String((run.nodes ?? []).find((n) => n.id === nodeId)?.label || nodeId),
+    done: true,
+  }
+  const key = itemKey(item)
+  listItems.value = listItems.value.filter((it) => itemKey(it) !== key)
+  activeRun.value = run
+  activeRunLoadError.value = false
+  followItem = item
+  followTail.value = { key, runId: run.id, kind: 'waiting', at: new Date().toISOString() }
+  active.value = item
+  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), target: nextNodeLabel(nodeId) }
+  await beginFollow(item, key)
 }
 watch(
   () => (active.value ? itemKey(active.value) : ''),
@@ -799,10 +837,15 @@ function mergeIncomingGhost(items: InboxItem[]): InboxItem[] {
   if (pinned && pinned.runId === t.runId && !isStartingInboxItem(pinned)) {
     return [pinned, ...items]
   }
-  const seed = peekHomeApproveHandoff() || homeSeed.value
-  const ghost = withRunTitle(makeIncomingGhost(t, String(seed?.text || '')))
+  const ghost = withRunTitle(makeIncomingGhost(t, seedTextForRun(t.runId)))
   incomingGhost.value = ghost
   return [ghost, ...items]
+}
+
+/** Home handoff text, only when it belongs to this run (another run's text must never title it). */
+function seedTextForRun(runId: string): string {
+  const seed = peekHomeApproveHandoff() || homeSeed.value
+  return seed && homeApproveHandoffMatchesRun(seed, runId) ? String(seed.text || '') : ''
 }
 
 /** Run title read while a ghost had no handoff text; reused by rebuilt ghosts of the same run. */
@@ -852,7 +895,7 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
       const ghost =
         incomingGhost.value && itemKey(incomingGhost.value) === key
           ? incomingGhost.value
-          : makeIncomingGhost(target, String((peekHomeApproveHandoff() || homeSeed.value)?.text || ''))
+          : makeIncomingGhost(target, seedTextForRun(target.runId))
       incomingArmed.value = false
       incomingGhost.value = null
       queryWaitGen++
@@ -860,6 +903,16 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
       return
     }
     if (isClarifyStillStarting(run, nodeId)) return
+
+    // Reload after 确认并流转: the confirmed chat left the inbox, so it is not a
+    // pending row any more. Rebuild it from the run and follow on, as before the reload.
+    if (run.clarifyByNode?.[nodeId]?.done) {
+      incomingArmed.value = false
+      incomingGhost.value = null
+      queryWaitGen++
+      await resumeHandedOff(run, nodeId)
+      return
+    }
 
     // Parked but maybe filtered out of loadList — pin the real pending row
     // and keep armed so later filtered loadList passes still merge it (g2.1).
@@ -1578,6 +1631,12 @@ function isActive(it: InboxItem) {
 }
 
 const activeRun = ref<Run | null>(null)
+watch(activeRun, (run) => {
+  const text = run && Object.values(run.clarifyByNode ?? {}).find((c) => c.firstMessage?.trim())?.firstMessage?.trim()
+  if (run && text && queuedFirstMessages.value[run.id] !== text) {
+    queuedFirstMessages.value = { ...queuedFirstMessages.value, [run.id]: text }
+  }
+})
 const activeRunLoading = ref(false)
 const activeRunLoadError = ref(false)
 
@@ -2097,6 +2156,8 @@ async function loadActiveRun(hard = true) {
     projectAfterLoad = hard && (target.type === 'clarify' || target.type === 'gate')
   } catch (e) {
     if (isAbortError(e) || signal.aborted) return
+    // A reload reopened this confirmed chat meanwhile (resumeHandedOff): it is followed, not gone.
+    if (isFollowingActive()) return
     if (isIncomingContextPending(target)) {
       if (hard) activeRunLoadError.value = false
       return
@@ -2864,6 +2925,7 @@ function itemSecondary(it: InboxItem) {
     startFailedItem,
     incomingArmed,
     activeHomeSeed,
+    activeQueuedFirstMessage,
     mobileView,
     listScrollTop,
     listEl,

@@ -14,10 +14,18 @@ test.describe('Agent 工具调用时间线', () => {
       await expect(panel).toBeHidden()
       await expect(page.getByTestId('conversation-panel-toggle')).toHaveAttribute('aria-expanded', 'false')
 
-      // This reply has a failed tool call, so it stays inline as before #843 instead of folding into 用时.
-      await expect(page.getByTestId('agent-timeline-elapsed')).toHaveCount(0)
+      // A finished reply with a failed tool call folds like any other turn.
+      // The fold line names the elapsed time and how many tools failed; the reply
+      // stays under the line. Opening the fold shows the tool groups, and a failed
+      // call is already expanded.
+      const elapsed = page.getByTestId('agent-timeline-elapsed')
+      await expect(elapsed).toBeVisible()
+      await expect(elapsed.getByTestId('agent-timeline-elapsed-time')).toHaveText('用时 3m 34s')
+      await expect(elapsed.getByTestId('agent-timeline-elapsed-failed')).toHaveText('1 个失败')
       await expect(page.getByTestId('agent-timeline-message')).toHaveText('计划已写入，调研结论缺少 findings，下一轮补上。')
+      await expect(page.getByTestId('agent-tool-group')).toHaveCount(0)
 
+      await elapsed.click()
       const groups = page.getByTestId('agent-tool-group')
       await expect(groups).toHaveCount(2)
       await expect(groups.nth(0)).toHaveAttribute('data-state', 'done')

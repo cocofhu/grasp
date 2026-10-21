@@ -1129,7 +1129,7 @@ export interface Run {
   // react nodes). Lets each react node show its own dialogue immediately.
   clarifyByNode?: Record<
     string,
-    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string }
+    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string; firstMessage?: string }
   >
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
   reactSessions?: Record<

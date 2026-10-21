@@ -36,6 +36,23 @@ func (e *Engine) releaseClarifyFirstMessageLatch(runID string) {
 		UpdateColumn("first_message_delivered_at", nil), runID, "release clarify first message latch")
 }
 
+// visitHumanTurns reports whether the visit's dialogue has a human turn, and
+// whether its last message is a human turn still waiting for an answer.
+func (e *Engine) visitHumanTurns(runID, nodeID string, iter int) (has, unanswered bool) {
+	var conv models.ReactConversation
+	if err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", runID, nodeID, iter).
+		Order("id desc").First(&conv).Error; err != nil {
+		return false, false
+	}
+	for _, m := range conv.Messages {
+		if m.Role == "human" {
+			has = true
+		}
+	}
+	n := len(conv.Messages)
+	return has, n > 0 && conv.Messages[n-1].Role == "human"
+}
+
 // fireClarifyFirstMessage delivers Run.FirstMessage into a clarify node's
 // sandbox right after that node parks, so the launcher (home chat) can navigate
 // away immediately instead of polling for the pause and sending it itself.
@@ -49,11 +66,24 @@ func (e *Engine) fireClarifyFirstMessage(c *execCtx, node *models.Node) {
 	if c == nil || c.run == nil || node == nil || !node.Caps.Clarify() {
 		return
 	}
+	runID, nodeID := c.run.ID, node.ID
+	if has, unanswered := e.visitHumanTurns(runID, nodeID, c.iter[nodeID]); has {
+		// The dialogue carried over from an interrupted visit already has it;
+		// a reply the interruption left unanswered is answered now.
+		if unanswered {
+			go func() {
+				if _, err := e.EnqueueClarifyRetryLast(runID, nodeID); err != nil {
+					log.Warn().Err(err).Str("run_id", runID).Str("node_id", nodeID).
+						Msg("resumed clarify: re-answer last reply failed")
+				}
+			}()
+		}
+		return
+	}
 	msg := c.run.FirstMessage
 	if msg == nil || (strings.TrimSpace(msg.Text) == "" && len(msg.Images) == 0) {
 		return
 	}
-	runID, nodeID := c.run.ID, node.ID
 	now := time.Now()
 	res := e.db.Model(&models.Run{}).
 		Where("id = ? AND first_message_delivered_at IS NULL", runID).

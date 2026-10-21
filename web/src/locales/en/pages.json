@@ -3133,6 +3133,8 @@
       "handoffStepTo": "Hand off to {name}",
       "handoffDone": "Confirmed and handed off",
       "handoffDoneTo": "Handed off to {name}",
+      "handoffFrom": "Handoff from {name}",
+      "handoffFromPlatform": "Handoff from {name} (written by the platform)",
       "segmentChat": "{name} · {n} messages",
       "segmentAuto": "{name} ran automatically",
       "segmentGate": "{name} approval",

@@ -84,6 +84,7 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Token != "" {
 		fields["token"] = info.Token
 	}
+	s.markVisitSandboxReady(info.RunID, info.NodeID, fields["updated_at"].(time.Time))
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
 	// swapping its placeholder name for the gateway id. Falls back to an upsert
 	// by name when no placeholder exists (registry without RunSandboxBeginner).
@@ -112,6 +113,23 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	s.mu.Lock()
 	s.runActive[info.Name] = true
 	s.mu.Unlock()
+}
+
+// markVisitSandboxReady stamps the node's active visit with the first time its
+// sandbox came up, so the boot steps stay readable after the sandbox is gone.
+func (s *SandboxService) markVisitSandboxReady(runID, nodeID string, at time.Time) {
+	if runID == "" || nodeID == "" {
+		return
+	}
+	var sr models.StateRun
+	if err := s.db.Select("id").Where("run_id = ? AND node_id = ? AND status IN ?", runID, nodeID,
+		[]string{"running", "waiting_human"}).Order("id desc").First(&sr).Error; err != nil {
+		return
+	}
+	if err := s.db.Model(&models.StateRun{}).Where("id = ? AND sandbox_ready_at IS NULL", sr.ID).
+		Update("sandbox_ready_at", at).Error; err != nil {
+		log.Warn().Err(err).Str("run", runID).Str("node", nodeID).Msg("stamp sandbox ready failed")
+	}
 }
 
 // RetireRunSandbox keeps a finished run's node sandbox alive for a debug TTL

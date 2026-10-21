@@ -115,6 +115,7 @@ const {
   startFailedItem,
   incomingArmed,
   activeHomeSeed,
+  activeQueuedFirstMessage,
   mobileView,
   listScrollTop,
   listEl,
@@ -391,7 +392,7 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
-              :seed-text="activeHomeSeed?.text || ''"
+              :seed-text="activeQueuedFirstMessage"
             />
             <ReviewComposer
               v-else
@@ -515,7 +516,7 @@ const listFadeKey = computed(() =>
               v-if="activeStarting"
               :sandbox-phase="startingSandboxPhase"
               :boot-key="startingBootKey"
-              :seed-text="activeHomeSeed?.text || ''"
+              :seed-text="activeQueuedFirstMessage"
             />
                 <ReviewComposer
                   v-else

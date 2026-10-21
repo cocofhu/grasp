@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/models"
@@ -39,11 +40,29 @@ type ChainSegment struct {
 	EventCount *int         `json:"eventCount,omitempty"`
 	Decision   string       `json:"decision,omitempty"`
 	Task       string       `json:"task,omitempty"`
+	// Handoff is the note this visit left for the next node (outputs.handoff);
+	// HandoffSource is agent or platform (written for a silent upstream).
+	Handoff       string `json:"handoff,omitempty"`
+	HandoffSource string `json:"handoffSource,omitempty"`
+	// Boot is the visit's sandbox start-up; nil when it has none (yet).
+	Boot *ChainBoot `json:"boot,omitempty"`
 
 	// StateRunID / NodeType are internal (task derivation in the handler).
 	StateRunID uint   `json:"-"`
 	NodeType   string `json:"-"`
 }
+
+// ChainBoot is one visit's sandbox start-up: Status is pulling / creating
+// while it boots, ready (ReadyAt set) once the Agent is connected.
+type ChainBoot struct {
+	Status  string     `json:"status"`
+	ReadyAt *time.Time `json:"readyAt,omitempty"`
+}
+
+// Chain boot statuses.
+const (
+	ChainBootReady = "ready"
+)
 
 // Gate decisions surfaced on gate segments.
 const (
@@ -77,7 +96,7 @@ func terminalVisit(status string) bool {
 // only counted (chainEventCounts).
 var chainStateColumns = []string{
 	"id", "run_id", "node_id", "node_type", "iteration", "status", "outputs",
-	"vars_before", "started_at", "duration_sec", "mode", "taken_over_at",
+	"vars_before", "started_at", "duration_sec", "mode", "taken_over_at", "sandbox_ready_at",
 }
 
 // chainEventCounts returns len(events) per StateRun id of the run, computed
@@ -122,7 +141,7 @@ func (s *RunService) chainEventCounts(runID string) map[uint]int {
 // iteration. until / untilIter cut the chain after the matching segment
 // (inclusive); untilIter 0 means the node's last execution. It also returns
 // the StateRun rows of the kept segments (same order, without events) for
-// callers that derive more (task previews). Read-only, three queries.
+// callers that derive more (task previews). Read-only, four queries.
 //
 // Gate hot-revise (gate-ReAct) turns are stored on the upstream producer's
 // conversation; they are moved to the gate visit they happened in
@@ -159,8 +178,11 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		rows = append(rows, sr)
 	}
 
+	booting := s.bootingSandboxes(run.ID)
+
 	// Attribute gate turns over the whole chain, before any cut.
 	ownTurns, gateTurns := attributeGateTurns(run.Graph, rows, convByVisit)
+	dropCarriedTurns(rows, ownTurns)
 
 	if until != "" {
 		cut := -1
@@ -197,6 +219,11 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		if end, ok := visitEnd(sr); ok {
 			seg.EndedAt = &end
 		}
+		if h, _ := sr.Outputs[models.OutputHandoff].(string); strings.TrimSpace(h) != "" {
+			seg.Handoff = strings.TrimSpace(h)
+			seg.HandoffSource, _ = sr.Outputs[models.OutputHandoffSource].(string)
+		}
+		seg.Boot = visitBoot(sr, booting)
 		switch kind {
 		case CurrentKindClarify, CurrentKindReview, CurrentKindTakeover:
 			seg.Turns = chainTurns(msgs)
@@ -212,6 +239,63 @@ func (s *RunService) ConversationChain(run models.Run, until string, untilIter i
 		segs = append(segs, seg)
 	}
 	return segs, rows, nil
+}
+
+// bootingSandboxes maps node id → status of the run's node sandboxes still
+// starting (pulling / creating).
+func (s *RunService) bootingSandboxes(runID string) map[string]string {
+	var rows []models.Sandbox
+	s.db.Select("node_id", "status").
+		Where("run_id = ? AND purpose = ? AND status IN ?", runID, "run", []string{"pulling", "creating"}).
+		Find(&rows)
+	out := make(map[string]string, len(rows))
+	for _, r := range rows {
+		out[r.NodeID] = r.Status
+	}
+	return out
+}
+
+func visitBoot(sr models.StateRun, booting map[string]string) *ChainBoot {
+	if sr.SandboxReadyAt != nil {
+		return &ChainBoot{Status: ChainBootReady, ReadyAt: sr.SandboxReadyAt}
+	}
+	if sr.Status != "running" && sr.Status != "waiting_human" {
+		return nil
+	}
+	if st, ok := booting[sr.NodeID]; ok {
+		return &ChainBoot{Status: st}
+	}
+	return nil
+}
+
+// dropCarriedTurns empties an interrupted visit's turns when the visit that
+// continued it from the failure position carried them on: they show once,
+// in the resumed visit.
+func dropCarriedTurns(rows []models.StateRun, own map[visitKey][]models.ReactMessage) {
+	for i, sr := range rows {
+		if sr.Status != "failed" && sr.Status != "cancelled" {
+			continue
+		}
+		k := visitKey{sr.NodeID, sr.Iteration}
+		old := own[k]
+		if len(old) == 0 {
+			continue
+		}
+		for _, next := range rows[i+1:] {
+			if next.NodeID != sr.NodeID {
+				continue
+			}
+			cur := own[visitKey{next.NodeID, next.Iteration}]
+			if len(cur) >= len(old) && sameMessage(cur[len(old)-1], old[len(old)-1]) && sameMessage(cur[0], old[0]) {
+				own[k] = []models.ReactMessage{}
+			}
+			break
+		}
+	}
+}
+
+func sameMessage(a, b models.ReactMessage) bool {
+	return a.Role == b.Role && a.Text == b.Text && a.At == b.At
 }
 
 type visitKey struct {

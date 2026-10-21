@@ -87,6 +87,26 @@ export function observeBootSandbox(key: string, sb: BootSandboxObservation | nul
   if (status === 'running' && rec.readyAt == null) rec.readyAt = updatedAt
 }
 
+/**
+ * Fill a visit's record from the server (conversation chain `boot`): status
+ * pulling / creating while booting, ready with the time the sandbox came up.
+ * A ready visit is live (the Agent is connected when the server stamps it).
+ */
+export function seedBoot(key: string, nodeStartedAt: string | null | undefined, boot: { status?: string; readyAt?: string } | null | undefined): void {
+  const status = String(boot?.status || '').trim().toLowerCase()
+  if (!status) return
+  beginBoot(key, nodeStartedAt)
+  const rec = records.get(key)
+  if (!rec) return
+  if (status === 'ready') {
+    rec.sandboxStatus = 'running'
+    if (rec.readyAt == null) rec.readyAt = parseTs(boot?.readyAt)
+    rec.live = true
+    return
+  }
+  if (!rec.live && rec.readyAt == null) rec.sandboxStatus = status
+}
+
 /** The item left `starting`: session is live. */
 export function markBootLive(key: string): void {
   const rec = records.get(key)

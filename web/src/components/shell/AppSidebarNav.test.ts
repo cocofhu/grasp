@@ -240,6 +240,28 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
+  it('names the row after the run whether or not it is selected', async () => {
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{ id: 'run-s', workflowId: 'wf', workflowName: 'w', title: '启动服务 我来指定需求', status: 'running', startedAt: 'T0' }],
+      total: 1,
+    })
+    const wrapper = mountNav()
+    await flushPromises()
+    const title = () => wrapper.get('[data-key="run-s"]').get('.nav-row-title').text()
+    expect(title()).toBe('启动服务 我来指定需求')
+    // Selecting it opens a starting item whose own title came from elsewhere.
+    gateMocks.sidebarExtras.value = [
+      { type: 'clarify', runId: 'run-s', nodeId: 'ap', label: '哦哦发哦佛啊', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '哦哦发哦佛啊' },
+    ]
+    gateMocks.activeInboxKey.value = 'run-s:ap'
+    routeState.path = '/gates'
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-s"]').classes()).toContain('active')
+    expect(title()).toBe('启动服务 我来指定需求')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('shows a blank title bar instead of a stand-in while a starting run has no title yet', async () => {
     gateMocks.sidebarExtras.value = [
       { type: 'clarify', runId: 'run-new', nodeId: 'incoming', label: '', kind: 'clarify', state: 'starting', workflowName: '', runTitle: '' },

@@ -208,10 +208,9 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
   })
 
-  it('keeps a finished reply with failed tool calls unfolded, as before #843', async () => {
+  it('folds a finished reply with failed tool calls and says how many failed', async () => {
     const failed = mountTimeline({
       completed: true,
-      interrupted: true,
       startedAt,
       endedAt,
       parts: [
@@ -221,18 +220,18 @@ describe('AgentTimeline', () => {
         { kind: 'message', text: '没做成' },
       ],
     })
-    // No elapsed fold, no rule: the steps render inline in arrival order.
-    expect(failed.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
-    expect(failed.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
+    const line = failed.get('[data-testid="agent-timeline-elapsed"]')
+    expect(line.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(true)
+    expect(line.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(line.attributes('aria-label')).toContain('1 个失败')
     expect(failed.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
-    expect(order(failed)).toEqual(['agent-timeline-thought', 'agent-tool-group', 'agent-timeline-message'])
+    expect(failed.get('[data-testid="agent-timeline-message"]').text()).toBe('没做成')
+    await line.trigger('click')
     const group = failed.get('[data-testid="agent-tool-group"]')
     expect(group.text()).toContain('1 个失败')
     expect(group.text()).toContain('运行命令')
-    expect(failed.get('[data-testid="agent-timeline-message"]').text()).toBe('没做成')
-    // Turns without a failure still fold (#843).
     const ok = mountTimeline({ completed: true, startedAt, endedAt })
-    expect(ok.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
+    expect(ok.find('[data-testid="agent-timeline-elapsed-failed"]').exists()).toBe(false)
     const stopped = mountTimeline({
       interrupted: true,
       startedAt: '2026-10-20T00:00:00.000Z',
@@ -255,6 +254,13 @@ describe('AgentTimeline', () => {
       ],
     })
     expect(sub.get('[data-testid="agent-timeline-elapsed"]').text()).toBe('用时 1s')
+  })
+
+  it('names the fold when the reply has no start/end, instead of a bare chevron', () => {
+    const w = mountTimeline({ completed: true })
+    const line = w.get('[data-testid="agent-timeline-elapsed"]')
+    expect(line.find('[data-testid="agent-timeline-elapsed-time"]').exists()).toBe(false)
+    expect(line.get('[data-testid="agent-timeline-elapsed-process"]').text()).toBe('本轮过程')
   })
 
   it('opens the fold when expand-all is on, ahead of the default collapse', () => {

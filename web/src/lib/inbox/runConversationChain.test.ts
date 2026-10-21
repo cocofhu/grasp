@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Run } from '@/lib/shared/types'
-import { activeSegment, clipTask, isPlumbingNode, isRunTerminal, normalizeRunChain, priorSegments, runChainFromRun } from './runConversationChain'
+import { bootKey, bootSteps, clearBootRecords, getBootRecord } from '@/lib/run/bootRecord'
+import { activeSegment, chainBootPending, clipTask, isPlumbingNode, isRunTerminal, normalizeRunChain, priorSegments, runChainFromRun, seedChainBoots } from './runConversationChain'
 
 function run(over: Partial<Run> = {}): Run {
   return {
@@ -41,6 +42,48 @@ describe('runConversationChain', () => {
     expect(activeSegment(c, 'a')?.task).toBe('做 A')
     expect(clipTask('x'.repeat(300))).toHaveLength(281)
     expect(clipTask('  ')).toBe('')
+  })
+
+  it('carries the note each visit handed to the next node', () => {
+    const c = normalizeRunChain({
+      runId: 'r1',
+      status: 'running',
+      segments: [
+        { nodeId: 'a', handoff: '  交给 B  ', handoffSource: 'platform' },
+        { nodeId: 'b', handoff: '   ' },
+      ],
+    })
+    expect(c.segments[0]).toMatchObject({ handoff: '交给 B', handoffSource: 'platform' })
+    expect(c.segments[1]!.handoff).toBeUndefined()
+    const r = run()
+    const first = Object.keys(r.nodeRuns)[0]!
+    r.nodeRuns[first] = { ...r.nodeRuns[first]!, outputs: { handoff: '上游说明' } }
+    expect(runChainFromRun(r).segments.find((s) => s.nodeId === first)).toMatchObject({ handoff: '上游说明', handoffSource: 'agent' })
+  })
+
+  it('keeps each visit\'s boot and seeds the boot records from it', () => {
+    clearBootRecords()
+    const c = normalizeRunChain({
+      runId: 'r1',
+      status: 'running',
+      segments: [
+        { nodeId: 'a', startedAt: '2026-10-21T05:00:00Z', status: 'completed', boot: { status: 'ready', readyAt: '2026-10-21T05:00:28Z' } },
+        { nodeId: 'b', startedAt: '2026-10-21T05:01:00Z', status: 'running', boot: { status: 'creating' } },
+        { nodeId: 'c', status: 'completed', boot: null },
+      ],
+    })
+    expect(c.segments.map((s) => s.boot)).toEqual([{ status: 'ready', readyAt: '2026-10-21T05:00:28Z' }, { status: 'creating', readyAt: undefined }, undefined])
+    seedChainBoots(c)
+    const a = getBootRecord(bootKey('r1', 'a', 1))
+    expect(a?.live).toBe(true)
+    expect(bootSteps(a).map((s) => [s.state, s.sec])).toEqual([['done', 28], ['done', null], ['done', null]])
+    expect(bootSteps(getBootRecord(bootKey('r1', 'b', 1))).map((s) => s.state)).toEqual(['running', 'pending', 'pending'])
+    expect(getBootRecord(bootKey('r1', 'c', 1))).toBeNull()
+    expect(chainBootPending(c, 'a', 1)).toBe(false)
+    expect(chainBootPending(c, 'b', 1)).toBe(true)
+    expect(chainBootPending(c, 'c', 1)).toBe(false)
+    expect(chainBootPending(c, 'd', 1)).toBe(true)
+    clearBootRecords()
   })
 
   it('marks a running node without a conversation as auto', () => {

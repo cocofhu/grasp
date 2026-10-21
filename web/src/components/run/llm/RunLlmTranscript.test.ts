@@ -319,7 +319,7 @@ describe('RunLlmTranscript', () => {
       w.get('[data-testid="llm-answer-text"]').element,
     ) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
-  it('keeps a finished timeline with a failed tool unfolded and the header duration, as before #843', async () => {
+  it('folds a finished timeline with a failed tool and counts it on the fold line', async () => {
     llmTranscript.mockResolvedValue({
       executions: [{
         id: 1,
@@ -344,10 +344,8 @@ describe('RunLlmTranscript', () => {
     })
     const w = mountView({ run: run({ trace: [] }) })
     await flushPromises()
-    expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(false)
-    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(false)
-    expect(w.get('[data-testid="llm-turn-elapsed"]').text()).toContain('3m 34s')
-    expect(w.get('[data-testid="agent-tool-group"]').text()).toContain('1 个失败')
+    expect(w.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(w.find('[data-testid="agent-timeline-work"]').exists()).toBe(false)
     expect(w.get('[data-testid="llm-answer-text"]').text()).toContain('正文在线下')
   })
 

@@ -5,12 +5,15 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { notifyRecentActivity, recentCurrentNode, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { bootKey, markBootLive } from '@/lib/run/bootRecord'
 import {
   activeSegment,
+  chainBootPending,
   clipTask,
   normalizeRunChain,
   priorSegments as chainPriorSegments,
   runChainFromRun,
+  seedChainBoots,
   type ChainSegment,
   type RunChain,
 } from '@/lib/inbox/runConversationChain'
@@ -138,6 +141,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if ((e as { status?: number })?.status === 404 && run.value) c = runChainFromRun(run.value)
     }
     if (!c || disposed || id !== runId.value) return
+    seedChainBoots(c)
     chain.value = c
     const seg = activeSegment(c, nodeId.value, iteration.value)
     if (seg?.task) task.value = clipTask(seg.task)
@@ -331,6 +335,11 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
         return
       }
       const events = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
+      if (events.length && observeBooting()) {
+        // The Agent is streaming: boot is over; the chain brings its ready time.
+        markBootLive(bootKey(runId.value, nodeId.value, iteration.value))
+        void loadChain()
+      }
       if (events.length) {
         // Snapshots are cumulative: keep the latest for a surface not seeded yet.
         lastEvents = events
@@ -491,7 +500,15 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     void load()
   }, { immediate: true })
   watch(chat, () => { void seed() }, { flush: 'post' })
-  function poll() { if (!document.hidden) void load() }
+  /** The observed node's sandbox is still starting: its boot steps follow the chain. */
+  function observeBooting() {
+    return mode.value === 'observe' && !ended.value && !!nodeId.value && !lastEvents && chainBootPending(chain.value, nodeId.value, iteration.value)
+  }
+  function poll() {
+    if (document.hidden) return
+    void load()
+    if (observeBooting()) void loadChain()
+  }
   pollTimer = window.setInterval(poll, LIVE_POLL_MS)
   onBeforeUnmount(() => { disposed = true; stop() })
 

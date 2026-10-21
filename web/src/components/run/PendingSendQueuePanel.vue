@@ -16,6 +16,8 @@ const props = defineProps<{
   notice?: string | null
   toast?: string | null
   panelTestId?: string
+  /** Messages the platform sends on its own (no edit / cancel / reorder). */
+  readonly?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -80,13 +82,14 @@ function onDrop(toIndex: number, e: DragEvent) {
         data-testid="clarify-queue-item"
         class="flex min-w-0 flex-wrap items-center gap-2 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2 transition-colors"
         :class="dragIndex === qi ? 'opacity-60 shadow-sm' : ''"
-        draggable="true"
+        :draggable="!readonly"
         @dragstart="onDragStart(qi, $event)"
         @dragend="onDragEnd"
         @dragover="onDragOver"
         @drop="onDrop(qi, $event)"
       >
         <button
+          v-if="!readonly"
           type="button"
           class="flex shrink-0 cursor-grab items-center p-0.5 text-txt3 active:cursor-grabbing"
           :title="t('pages.clarify.queueDragTitle')"
@@ -109,7 +112,7 @@ function onDrop(toIndex: number, e: DragEvent) {
         <span v-if="q.annotations.length" class="shrink-0 rounded-full border border-line px-1.5 text-[9px] text-txt3">
           {{ t('pages.clarify.queueAnnotationBadge') }}
         </span>
-        <span class="flex shrink-0 gap-0.5">
+        <span v-if="!readonly" class="flex shrink-0 gap-0.5">
           <button
             type="button"
             class="flex h-6 w-6 items-center justify-center rounded-md text-txt3 hover:bg-base hover:text-txt"

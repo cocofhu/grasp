@@ -14,6 +14,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import { i18n as appI18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import { confirmFlowCeremonyKey } from '@/lib/inbox/confirmFlowCeremony'
+import { beginBoot, bootKey, clearBootRecords, markBootLive, seedBoot } from '@/lib/run/bootRecord'
 import type { ClarifyTurn } from '@/lib/shared/types'
 import ClarifyChat from './ClarifyChat.vue'
 
@@ -151,6 +152,62 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+  it('opens with the note the node above handed over, in place of the step task', async () => {
+    const handedOver = [prior[0]!, { ...prior[1]!, handoff: '  导出已实现,请重点验收编码  ', handoffSource: 'agent' as const }]
+    const w = mountChat({ priorSegments: handedOver, nodeLabel: '验收测试', nodeTask: '根据需求编写并执行验收用例' })
+    await flushPromises()
+    const note = w.get('[data-testid="clarify-incoming-handoff"]')
+    expect(note.attributes('data-turn-role')).toBe('human')
+    expect(note.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「编码」的交接说明')
+    expect(note.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe('导出已实现,请重点验收编码')
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    const html = w.html()
+    expect(html.indexOf('clarify-incoming-handoff')).toBeGreaterThan(html.indexOf('clarify-segment-divider'))
+    await w.setProps({ priorSegments: [prior[0]!, { ...handedOver[1]!, handoffSource: 'platform' as const }] })
+    expect(w.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「编码」未留交接，平台代写')
+    w.unmount()
+  })
+
+  it('times each upstream reply from the question it answers, folded like this node\'s replies', async () => {
+    const w = mountChat({
+      priorSegments: [{
+        ...prior[0]!,
+        at: '2026-10-14T00:00:00Z',
+        turns: [
+          { role: 'agent' as const, text: '先问一句', at: '2026-10-14T00:00:30Z', parts: [{ kind: 'thought' as const, text: '想想' }, { kind: 'message' as const, text: '先问一句' }] },
+          { role: 'human' as const, text: '启动服务 我来指定需求', at: '2026-10-14T00:01:00Z' },
+          { role: 'agent' as const, text: '好的', at: '2026-10-14T00:13:44Z', parts: [{ kind: 'thought' as const, text: '启动' }, { kind: 'message' as const, text: '好的' }] },
+        ],
+      }],
+    })
+    await flushPromises()
+    const times = w.findAll('[data-testid="clarify-prior-segment"] [data-testid="agent-timeline-elapsed-time"]')
+    expect(times.map((x) => x.text())).toEqual(['用时 30s', '用时 12m 44s'])
+    expect(w.find('[data-testid="clarify-prior-segment"] [data-testid="agent-timeline-work"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('puts 环境已就绪 on the 已流转到 line instead of a row of its own', async () => {
+    clearBootRecords()
+    beginBoot(bootKey('run-1', 'implement', 1), null)
+    markBootLive(bootKey('run-1', 'implement', 1))
+    const w = mountChat({ priorSegments: prior, nodeLabel: '交付', nodeTask: '合入目标分支' })
+    await flushPromises()
+    const divider = w.get('[data-testid="clarify-segment-divider"]')
+    expect(divider.attributes('data-boot')).toBe('merged')
+    expect(divider.get('[data-testid="clarify-boot-done-title"]').text()).toBe('已流转到「交付」')
+    expect(divider.get('[data-testid="clarify-boot-done-meta"]').text()).toBe('环境已就绪 · 3 步')
+    expect(w.findAll('[data-testid="clarify-boot-done"]')).toHaveLength(1)
+    await divider.get('[data-testid="clarify-boot-done-head"]').trigger('click')
+    expect(divider.findAll('[data-testid="clarify-boot-done-step"]')).toHaveLength(3)
+    // No chain above: the summary keeps its own row.
+    await w.setProps({ priorSegments: [] })
+    expect(w.find('[data-testid="clarify-segment-divider"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-boot-done-title"]').text()).toBe('环境已就绪')
+    w.unmount()
+    clearBootRecords()
+  })
+
   it('folds older nodes by default and renders nothing without a chain', async () => {
     const w = mountChat({ priorSegments: [{ ...prior[0], open: false }] })
     await flushPromises()
@@ -241,12 +298,51 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+  it('reads Q/A all the way down: every node opens with the note handed to it', async () => {
+    nodeEvents.mockImplementation(async (_run: string, nodeId: string) => ({
+      events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '想' }, { kind: 'message', text: `${nodeId} 完成` }] }],
+      live: false,
+    }))
+    const at = (m: number) => `2026-10-21T05:0${m}:00Z`
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: at(0), endedAt: at(1), open: true,
+          task: '澄清需求', handoff: '做导出', turns: [{ role: 'human', text: '我要导出', at: at(0) }, { role: 'agent', text: '好', at: at(1) }] },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: at(1), endedAt: at(2), turns: [], open: false,
+          handoff: '已实现,请测' },
+        { nodeId: 'test_review', iteration: 1, label: '测试评审', kind: 'auto', status: 'completed', at: at(2), endedAt: at(3), turns: [], open: false,
+          handoff: '测试通过', handoffSource: 'platform' },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    // The run's first node starts from the user's own message: no bubble of its own.
+    const first = w.findAll('[data-testid="clarify-prior-segment"]')[0]!
+    expect(first.find('[data-testid="clarify-incoming-handoff"]').exists()).toBe(false)
+    expect(first.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    const auto = w.findAll('[data-testid="clarify-prior-segment"]')[1]!
+    ;(auto.element as HTMLDetailsElement).open = true
+    await auto.trigger('toggle')
+    await flushPromises()
+    const records = w.findAll('[data-testid="clarify-auto-record"]')
+    const asks = records.map((r) => r.get('[data-testid="clarify-incoming-handoff-text"]').text())
+    expect(asks).toEqual(['做导出', '已实现,请测'])
+    for (const r of records) {
+      const order = r.findAll('[data-turn-role], [data-testid="agent-timeline"]').map((x) => x.attributes('data-turn-role') || 'agent')
+      expect(order).toEqual(['human', 'agent'])
+    }
+    // Below the separator this node asks with 测试评审's (platform-written) note.
+    const current = w.findAll('[data-testid="clarify-incoming-handoff-from"]').at(-1)!
+    expect(current.text()).toBe('「测试评审」未留交接，平台代写')
+    w.unmount()
+  })
+
   it('opens an auto row and shows each node record', async () => {
     nodeEvents.mockImplementation(async (_run: string, nodeId: string) => {
       if (nodeId === 'implement') {
         return { events: [{ kind: 'timeline', parts: [{ kind: 'tool', title: 'Bash', status: 'completed' }, { kind: 'message', text: '实现完成' }] }], live: false }
       }
-      return { events: [{ kind: 'timeline', parts: [{ kind: 'message', text: '测试通过' }] }], live: false }
+      return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '跑测试' }, { kind: 'message', text: '测试通过' }] }], live: false }
     })
     const w = mountChat({
       priorSegments: [
@@ -265,12 +361,45 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     await flushPromises()
     const records = w.findAll('[data-testid="clarify-auto-record"]')
     expect(records.map((r) => r.attributes('data-node-id'))).toEqual(['implement', 'test_review'])
-    expect(records[0].text()).toContain('实现')
     expect(records[0].text()).toContain('实现完成')
     expect(records[1].text()).toContain('测试通过')
+    // Each node reads like a chat reply: its own 用时 fold, no extra node caption.
+    expect(w.find('[data-testid="clarify-auto-record-label"]').exists()).toBe(false)
+    expect(records.map((r) => r.get('[data-testid="agent-timeline-elapsed-time"]').text())).toEqual(['用时 6s', '用时 1m 23s'])
     expect(nodeEvents).toHaveBeenCalledWith('run-1', 'implement', expect.anything())
     expect(nodeEvents).toHaveBeenCalledWith('run-1', 'test_review', expect.anything())
     w.unmount()
+  })
+
+  it('shows the three boot steps while this node boots, and each finished node keeps its own', async () => {
+    clearBootRecords()
+    nodeEvents.mockResolvedValue({ events: [{ kind: 'timeline', parts: [{ kind: 'message', text: '实现完成' }] }], live: false })
+    seedBoot(bootKey('run-1', 'implement', 1), '2026-10-21T05:00:00Z', { status: 'ready', readyAt: '2026-10-21T05:00:28Z' })
+    seedBoot(bootKey('run-1', 'test_review', 1), '2026-10-21T05:01:00Z', { status: 'creating' })
+    const live: ClarifyTurn[] = [{ role: 'agent', text: '', at: '2026-10-21T05:01:00Z', streaming: true }]
+    const w = mountChat({
+      nodeId: 'test_review',
+      turns: live,
+      observe: true,
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', endedAt: '2026-10-21T05:00:59Z', turns: [], open: false },
+      ],
+      nodeLabel: '测试评审',
+    })
+    await flushPromises()
+    // Booting: the checklist stands in for 思考中.
+    const loader = w.get('[data-testid="clarify-boot-loader"]')
+    expect(loader.findAll('[data-testid="clarify-boot-step"]').map((s) => s.attributes('data-state'))).toEqual(['running', 'pending', 'pending'])
+    expect(w.text()).not.toContain('思考中')
+    // History: the finished node opens with its boot row (time from the server).
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-boot-done-meta"]').text()).toBe('3 步 · 28s')
+    w.unmount()
+    clearBootRecords()
   })
 
   it('says when an auto record cannot be loaded', async () => {

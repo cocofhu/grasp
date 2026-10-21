@@ -188,6 +188,20 @@ func ClarifySlimNodeIDs(node *models.Node, currentNodeID string, artifacts []mod
 	return out
 }
 
+// NodeStatuses returns each executed node's latest visit (nodeId, iteration,
+// status) so inbox views can show where the whole run stands; nodes never
+// entered are absent.
+func (s *RunService) NodeStatuses(runID string) map[string]map[string]any {
+	var states []models.StateRun
+	s.db.Select("id", "node_id", "iteration", "status").
+		Where("run_id = ?", runID).Order("iteration asc, id asc").Find(&states)
+	out := make(map[string]map[string]any, len(states))
+	for _, st := range states {
+		out[st.NodeID] = map[string]any{"nodeId": st.NodeID, "iteration": st.Iteration, "status": st.Status}
+	}
+	return out
+}
+
 // SlimNodeExecutions returns upstream node execution history with only
 // iteration + status + outputs (no events/mcpCalls/varsSnapshot).
 // Conclusion *_json snapshots stay on each execution. The inbox product
