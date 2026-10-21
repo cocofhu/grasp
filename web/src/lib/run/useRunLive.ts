@@ -284,7 +284,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       if (m.nodeId !== nodeId.value) {
         if (m.nodeId) {
           const ahead = Array.isArray(m.events) ? (m.events as AcpEvent[]) : []
-          if (ahead.length) aheadEvents = { nodeId: m.nodeId, events: ahead }
+          if (ahead.length) aheadEvents = { nodeId: String(m.nodeId), events: ahead }
           scheduleRefresh()
         }
         return
