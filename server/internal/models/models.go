@@ -375,7 +375,7 @@ type RunVariable struct {
 	Type  string `json:"type"`
 	Value any    `gorm:"serializer:json" json:"value"`
 	// Secret is carried over from a workspace variable flagged secret, so
-	// display-only derivations (conversation-chain task previews) can mask
+	// display-only derivations (task previews) can mask
 	// the value. Execution still sees the real value.
 	Secret bool `json:"secret,omitempty"`
 }
@@ -526,6 +526,11 @@ type ReactMessage struct {
 	// producer's conversation; this tag lets read views attribute it to the
 	// gate instead.
 	GateNodeID string `json:"gateNodeId,omitempty"`
+	// Narration is the interrupted auto phase's final agent message, set only
+	// on a takeover's opening turn when it is not already prepended to Text
+	// (i.e. when Events carry the auto phase). Public share / embed previews
+	// show it instead of the raw events.
+	Narration string `json:"narration,omitempty"`
 	// Interrupted marks an agent turn that was stopped mid-stream by 轮级 Cancel.
 	// Partial narration is retained; the session stays parked for further edits.
 	Interrupted bool `json:"interrupted,omitempty"`

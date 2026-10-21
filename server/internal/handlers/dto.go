@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -173,6 +175,42 @@ func reactConversationDTO(conv models.ReactConversation) gin.H {
 	return out
 }
 
+func visitKeyOf(nodeID string, iter int) string {
+	if iter < 1 {
+		iter = 1
+	}
+	return nodeID + "#" + strconv.Itoa(iter)
+}
+
+// takeoverTasks returns the task preview (engine.SegmentTasks: read-only
+// interpolation of node.config.prompt, secret vars masked, trimmed, 280
+// runes + "…") of every taken-over visit that has a takeover conversation,
+// keyed by visitKeyOf. Empty prompts have no entry.
+func (h *Handlers) takeoverTasks(r models.Run, states []models.StateRun, convs []models.ReactConversation) map[string]string {
+	want := map[string]bool{}
+	for _, c := range convs {
+		if c.Takeover {
+			want[visitKeyOf(c.NodeID, c.Iteration)] = true
+		}
+	}
+	if len(want) == 0 || h.Eng == nil {
+		return nil
+	}
+	// SegmentTasks needs execution order (StateRun id); States is per-node.
+	ordered := append([]models.StateRun(nil), states...)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].ID < ordered[j].ID })
+	byID := h.Eng.SegmentTasks(r, ordered, func(sr models.StateRun) bool {
+		return want[visitKeyOf(sr.NodeID, sr.Iteration)]
+	})
+	out := make(map[string]string, len(byID))
+	for _, sr := range states {
+		if t, ok := byID[sr.ID]; ok {
+			out[visitKeyOf(sr.NodeID, sr.Iteration)] = t
+		}
+	}
+	return out
+}
+
 func runSummaryDTO(r models.Run, currentNodeLabel string) gin.H {
 	out := gin.H{
 		"id": r.ID, "workflowId": r.WorkflowID, "workflowName": r.WorkflowName,
@@ -284,8 +322,14 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 	// Per-node conversations so each react node renders its own dialogue history
 	// (a run may have several react nodes).
 	clarifyByNode := gin.H{}
-	for _, conv := range h.Runs.Conversations(r.ID) {
-		clarifyByNode[conv.NodeID] = reactConversationDTO(conv)
+	convs := h.Runs.Conversations(r.ID)
+	takeoverTasks := h.takeoverTasks(r, states, convs)
+	for _, conv := range convs {
+		dto := reactConversationDTO(conv)
+		if t := takeoverTasks[visitKeyOf(conv.NodeID, conv.Iteration)]; t != "" {
+			dto["task"] = t
+		}
+		clarifyByNode[conv.NodeID] = dto
 	}
 	out["clarifyByNode"] = clarifyByNode
 	// Authoritative busy/queue for refresh resume (clarify + review sessions).
