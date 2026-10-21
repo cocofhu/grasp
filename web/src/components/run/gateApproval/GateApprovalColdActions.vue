@@ -52,6 +52,15 @@ const hasDraft = computed(() =>
 function secondary(id: string): boolean {
   return !POSITIVE_ACTION_IDS.has(id) || hasDraft.value
 }
+/**
+ * One testid per footer action. The positive action keeps main's
+ * `review-composer-pass` (the 确认并流转 hook e2e and tests rely on); every other
+ * action is `review-composer-action-<id>` so several actions stay distinguishable.
+ */
+const passActionId = computed(() => s.footerActions.find((a) => POSITIVE_ACTION_IDS.has(a.id))?.id ?? null)
+function actionTestId(id: string): string {
+  return id === passActionId.value ? 'review-composer-pass' : `review-composer-action-${id}`
+}
 </script>
 
 <template>
@@ -101,7 +110,8 @@ function secondary(id: string): boolean {
         :title="s.actionButtonTitle(a.id) || undefined"
         :busy="pending(a.id)"
         :disabled="s.isActionDisabled(a.id) || s.reactSending"
-        testid="review-composer-pass"
+        :testid="actionTestId(a.id)"
+        :data-action-id="a.id"
         @click="s.onSidebarAction(a.id)"
       />
     </template>
@@ -119,7 +129,8 @@ function secondary(id: string): boolean {
         :title="s.actionButtonTitle(a.id) || undefined"
         :busy="pending(a.id)"
         :disabled="s.isActionDisabled(a.id) || s.reactSending"
-        testid="review-composer-pass"
+        :testid="actionTestId(a.id)"
+        :data-action-id="a.id"
         @click="s.onSidebarAction(a.id)"
       />
     </template>

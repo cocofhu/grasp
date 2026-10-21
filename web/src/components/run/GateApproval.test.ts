@@ -3948,6 +3948,36 @@ describe('GateApproval cold exit uses the chat composer (desktop body)', () => {
     apiMocks.artifactContent.mockResolvedValue({ content: '# doc' })
   })
 
+  it('gives every cold footer action its own testid (positive keeps review-composer-pass)', async () => {
+    for (const form of [[], [{ key: 'comment', label: '评审意见' }]]) {
+      const wrapper = mountApproval({
+        gate: baseGate({
+          reactSessionAlive: false,
+          form,
+          actions: [
+            // Two positive edges both render (visibleActions keeps every pass id).
+            { id: 'approve', label: '批准' },
+            { id: 'pass', label: '通过' },
+          ],
+        }),
+        run: baseRun(),
+        compact: false,
+      })
+      await flushPromises()
+      const buttons = wrapper.get('[data-gate-cold-actions]').findAll('[data-action-id]')
+      const ids = buttons.map((b) => b.attributes('data-testid'))
+      expect(buttons.length).toBeGreaterThan(1)
+      expect(new Set(ids).size).toBe(ids.length)
+      expect(wrapper.findAll('[data-testid="review-composer-pass"]')).toHaveLength(1)
+      expect(wrapper.get('[data-testid="review-composer-pass"]').attributes('data-action-id')).toBe('approve')
+      for (const b of buttons) {
+        const id = b.attributes('data-action-id')
+        if (id !== 'approve') expect(b.attributes('data-testid')).toBe(`review-composer-action-${id}`)
+      }
+      wrapper.unmount()
+    }
+  })
+
   it('renders 评审意见 as the ComposerShell input with one chat-action-confirm primary (no bg-ok)', async () => {
     const wrapper = mountApproval({ gate: baseGate({ reactSessionAlive: false }), run: baseRun(), compact: false })
     await flushPromises()
