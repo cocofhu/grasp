@@ -189,6 +189,7 @@ defineExpose({
   applyQueueState: chat.applyQueueState,
   cancelReview: chat.cancelReview,
   discardLastQueued: chat.discardLastQueued,
+  releaseConfirmPending: chat.releaseConfirmPending,
   restoreUnsentQueued: chat.restoreUnsentQueued,
   isSessionBusy: chat.isSessionBusy,
   reorderQueuedItems: chat.reorderQueuedItems,

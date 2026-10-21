@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -141,6 +143,111 @@ func TestApproveClearsPrematureNodeComplete(t *testing.T) {
 	if conv.Done {
 		t.Fatal("premature node_complete must not finish clarify")
 	}
+}
+
+// TestForceConfirmRetriesWhileStillWaiting: a confirm that wrote Done but
+// never left waiting_human can be confirmed again. A finished node cannot.
+func TestForceConfirmRetriesWhileStillWaiting(t *testing.T) {
+	eng, db, _ := setupEngineGraphP(t, clarifyOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "predev")
+	var conv models.ReactConversation
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		t.Fatalf("conv: %v", err)
+	}
+	conv.Done = true
+	if err := db.Save(&conv).Error; err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	if err := eng.ReactReply(run.ID, "predev", "再发一句", nil, nil, false); err == nil || !strings.Contains(err.Error(), "react already done") {
+		t.Fatalf("non-force while waiting must stay rejected, got %v", err)
+	}
+	if err := eng.ReactReply(run.ID, "predev", "确认并流转", nil, nil, true); err != nil {
+		t.Fatalf("retry confirm: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "completed")
+	if err := eng.ReactReply(run.ID, "predev", "再来", nil, nil, true); err == nil || !strings.Contains(err.Error(), "react already done") {
+		t.Fatalf("completed confirm must stay rejected, got %v", err)
+	}
+}
+
+// TestForceConfirmRetriesWhenRunStillRunning: the early Done write can leave
+// the run "running" while the node visit is still waiting_human. 确认并流转
+// must reopen that dialogue. A finished node still rejects.
+func TestForceConfirmRetriesWhenRunStillRunning(t *testing.T) {
+	eng, db, _ := setupEngineGraphP(t, clarifyOnlyGraph())
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "predev")
+	if err := db.Model(&models.Run{}).Where("id = ?", run.ID).Update("status", "running").Error; err != nil {
+		t.Fatalf("mark running: %v", err)
+	}
+	var conv models.ReactConversation
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		t.Fatalf("conv: %v", err)
+	}
+	conv.Done = true
+	if err := db.Save(&conv).Error; err != nil {
+		t.Fatalf("mark done: %v", err)
+	}
+	if err := eng.ReactReply(run.ID, "predev", "确认并流转", nil, nil, true); err != nil {
+		t.Fatalf("retry confirm while run running: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "completed")
+}
+
+// TestForceChatErrorReopensConversation: a confirm whose model call fails
+// (Done + Err) leaves the dialogue open and the run waiting, so the next
+// confirm can finish it.
+func TestForceChatErrorReopensConversation(t *testing.T) {
+	eng, db, p := setupEngineGraphP(t, clarifyOnlyGraph())
+	p.reactChatErr = errors.New("model provider unavailable")
+	run, err := eng.StartRun("wf", nil, "test")
+	if err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	waitReactPause(t, db, run.ID, "predev")
+	err = eng.ReactReply(run.ID, "predev", "确认并流转", nil, nil, true)
+	if err == nil || !strings.Contains(err.Error(), "model provider unavailable") {
+		t.Fatalf("force chat error: %v", err)
+	}
+	var conv models.ReactConversation
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
+		Order("iteration desc, id desc").First(&conv).Error; err != nil {
+		t.Fatalf("conv: %v", err)
+	}
+	if conv.Done {
+		t.Fatal("chat error must reopen the conversation")
+	}
+	var runRow models.Run
+	if err := db.First(&runRow, "id = ?", run.ID).Error; err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	if runRow.Status != "waiting_human" {
+		t.Fatalf("run status=%q, want waiting_human", runRow.Status)
+	}
+	var sr models.StateRun
+	if err := db.Where("run_id = ? AND node_id = ?", run.ID, "predev").
+		Order("iteration desc, id desc").First(&sr).Error; err != nil {
+		t.Fatalf("state: %v", err)
+	}
+	if sr.Status != "waiting_human" {
+		t.Fatalf("node status=%q, want waiting_human", sr.Status)
+	}
+	p.mu.Lock()
+	p.reactChatErr = nil
+	p.mu.Unlock()
+	if err := eng.ReactReply(run.ID, "predev", "确认并流转", nil, nil, true); err != nil {
+		t.Fatalf("retry confirm: %v", err)
+	}
+	waitRunStatus(t, db, run.ID, "completed")
 }
 
 func TestApproveFailsWithoutNodeComplete(t *testing.T) {

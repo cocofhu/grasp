@@ -165,6 +165,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  releaseConfirmPending?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -2432,10 +2433,22 @@ async function onClarifySend(
   abortRunning = false,
 ) {
   const it = active.value
-  if (!it || it.type !== 'clarify' || it.done) return
+  if (!it || it.type !== 'clarify' || it.done) {
+    if (force) reviewChatRef.value?.releaseConfirmPending?.()
+    return
+  }
   // Suppress duplicate force on the same triple only — neighbor confirm must proceed
   // while an earlier reactReply(force) is still in flight (plan g1.2 / f1).
-  if (force && (isProcessedTriple(it) || isProcessingIntent(it))) return
+  if (force && isProcessingIntent(it)) {
+    // The in-flight confirm owns 校验中. Drop a parallel error so the button
+    // is not left clickable on top of "react already done".
+    clarifyConfirmError.value = null
+    return
+  }
+  if (force && isProcessedTriple(it)) {
+    reviewChatRef.value?.releaseConfirmPending?.()
+    return
+  }
   // Force-finish leaves pending — short-circuit at intent moment (symmetric with gate).
   // Ordinary turn replies stay pending and must not markProcessed.
   const submittedKey = itemKey(it)
@@ -2498,7 +2511,10 @@ async function onClarifySend(
       // The hand-off did not happen: drop the socket opened for it (unless already following).
       if (!followTail.value) closeFollowWs()
       // Align with RunDetail: bottom status bar, not toast.
+      // Release even when msg equals the previous confirmError — that watch
+      // does not run, and the button would stay on 校验中.
       clarifyConfirmError.value = msg
+      reviewChatRef.value?.releaseConfirmPending?.()
       if (handoffState.value?.key === submittedKey) handoffState.value = null
       restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
@@ -2525,6 +2541,10 @@ async function onClarifySend(
     failClarifySend(it.runId, it.nodeId, clientMessageId)
     // Non-force enqueue failed: roll back optimistic queue + surface error.
     if (!retryLast) reviewChatRef.value?.discardLastQueued?.()
+    // A confirm already left the dialogue pending (conv.Done). This reply is
+    // refused immediately; showing it under the composer unlocks 确认并流转
+    // while the hand-off row is still 校验中, and the next click does not send.
+    if (handoffState.value?.key === submittedKey && handoffState.value.phase === 'pending') return
     clarifyConfirmError.value = msg
   }
   const finished = force && ok
