@@ -42,20 +42,29 @@ func (e *Engine) dispatch() {
 // then returns (either at capacity or with the queue empty).
 func (e *Engine) drainQueue() {
 	for {
-		// Synchronize the halt check with taking a counted slot. Once Halt
-		// returns, every admitted driver must already be visible to maintenance.
+		// Hold the halt read lock from the halt check through the claim and
+		// the driver spawn. Once Halt returns, no queued run can be promoted
+		// any more, and every admitted driver is already visible to
+		// maintenance. Releasing the lock before the claim (as before) let a
+		// tick that passed the check claim a run queued after Halt returned.
 		e.haltMu.RLock()
 		if e.halted || !e.sem.TryAcquire() {
 			e.haltMu.RUnlock()
 			return // at capacity; a Release + wake will resume draining
 		}
+		runID, from, ok, noStart := e.claimNextQueued()
+		if ok {
+			go e.runAdmitted(runID, from)
+		}
 		e.haltMu.RUnlock()
-		runID, from, ok := e.claimNextQueued()
+		if noStart != "" {
+			// failRun → finish does provider / store work; keep it outside the lock.
+			e.failRun(noStart, "工作流没有可执行节点")
+		}
 		if !ok {
 			e.sem.Release()
 			return // nothing admittable right now
 		}
-		go e.runAdmitted(runID, from)
 	}
 }
 
@@ -73,7 +82,9 @@ func (e *Engine) drainQueue() {
 // the read and the write is skipped (RowsAffected == 0) rather than double-run.
 // Returns ok=false when there is nothing to admit; the caller then releases the
 // tentatively-taken slot.
-func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool) {
+// noStartRunID is set (with ok=false) when the claimed run has no start node;
+// the caller fails it outside the halt lock.
+func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool, noStartRunID string) {
 	var head models.Run
 	if err := e.db.Where("status = ?", "queued").
 		Order("priority desc, created_at asc, id asc").First(&head).Error; err != nil {
@@ -84,17 +95,17 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool) {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			log.Error().Err(err).Msg("dispatcher: claim next queued run failed (will retry)")
 		}
-		return "", "", false
+		return "", "", false, ""
 	}
 
 	var candidates []models.Run
 	if err := e.db.Where("status = ? AND priority = ?", "queued", head.Priority).
 		Order("created_at asc, id asc").Find(&candidates).Error; err != nil {
 		log.Error().Err(err).Msg("dispatcher: load same-priority queued runs failed (will retry)")
-		return "", "", false
+		return "", "", false, ""
 	}
 	if len(candidates) == 0 {
-		return "", "", false
+		return "", "", false, ""
 	}
 
 	run := pickQueuedByRemainingHumanGate(candidates)
@@ -106,10 +117,10 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool) {
 		Updates(updates)
 	if res.Error != nil {
 		log.Error().Str("run_id", run.ID).Err(res.Error).Msg("dispatcher: claim update failed (will retry)")
-		return "", "", false
+		return "", "", false, ""
 	}
 	if res.RowsAffected == 0 {
-		return "", "", false // lost the row (cancelled / claimed elsewhere)
+		return "", "", false, "" // lost the row (cancelled / claimed elsewhere)
 	}
 	msg, _ := json.Marshal(map[string]any{"type": "status", "runId": run.ID, "status": "running"})
 	e.broker.Publish(run.ID, msg)
@@ -118,8 +129,7 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool) {
 	if !hasFrom {
 		start := run.Graph.StartNode()
 		if start == nil {
-			e.failRun(run.ID, "工作流没有可执行节点")
-			return "", "", false
+			return "", "", false, run.ID
 		}
 		fromNodeID = start.ID
 	} else {
@@ -127,7 +137,7 @@ func (e *Engine) claimNextQueued() (runID, fromNodeID string, ok bool) {
 		fromNodeID = from
 	}
 	log.Info().Str("run_id", run.ID).Str("node_id", fromNodeID).Str("transition", "admit").Msg("run admitted from queue")
-	return run.ID, fromNodeID, true
+	return run.ID, fromNodeID, true, ""
 }
 
 // pickQueuedByRemainingHumanGate chooses among same-priority queued candidates
