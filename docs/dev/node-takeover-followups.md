@@ -16,3 +16,11 @@
 - 位置：`server/internal/services/run.go` 的 `runListOrderBy`。
 - 现状：排序表达式是 `COALESCE(last_activity_at, CASE … started_at/created_at END)`，用不上 `last_activity_at` 上的索引，表大了会全表排序。现有的 `started_at` 排序里的 CASE 也有同样问题。
 - 建议：建 run 时就写入 `last_activity_at`，并回填历史行，然后直接 `ORDER BY last_activity_at`。
+
+## Pre-existing flake: engine TestClarifyFirstMessageRedeliveredAfterCancelResume
+- Fails intermittently under `-race` on main `8e8a4823` too, so it is not caused by this PR.
+- Reproduced on a clean main worktree (2026-10-21) with
+  `GOAMD64=v3 go test -race -count=300 -cpu 1,2,8 -run 'TestClarifyFirstMessageRedeliveredAfterCancelResume$' ./internal/engine`: 1 failure.
+- Failure: `clarify_first_message_test.go:163: run … did not reach "waiting_human" (got "failed")`, after 45 s.
+- Runs that did not fail: 100 single runs, and 8 full engine `-race` runs.
+- Not fixed here. If it turns CI red, re-run the job.

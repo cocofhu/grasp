@@ -9,7 +9,7 @@ import { isObservableNode, recentCurrentNode } from './recentRuns'
  * (the caller keeps the one it has).
  */
 export type LiveDecision =
-  | { kind: 'observe'; nodeId: string; iteration?: number; stopping?: boolean }
+  | { kind: 'observe'; nodeId: string; iteration?: number; stopping?: boolean; task?: string }
   | { kind: 'chat'; nodeId: string }
   | { kind: 'follow'; nodeId: string }
   | { kind: 'detail' }
@@ -29,13 +29,23 @@ export function runningAutoNode(run: Run): RunCurrentNode | null {
  * A taken-over node still unwinding (kind=takeover, state=stopping) keeps the
  * stream with the spinner; a node parked for a person goes to its chat; a
  * finished node follows the run to its next auto node; else run detail.
+ * useRunLive only acts on follow / detail / another node's chat while it is
+ * still routing the page it was opened on; once a node is on screen, the
+ * page stays put and shows that node as finished.
  */
 export function decideLive(run: Run, requested: string): LiveDecision {
   const cur = recentCurrentNode(run)
   if (cur) {
     if (isObservableNode(cur)) {
       if (requested && requested !== cur.id) return { kind: 'follow', nodeId: cur.id }
-      return { kind: 'observe', nodeId: cur.id, iteration: cur.iteration || 1, ...(cur.state === 'stopping' ? { stopping: true } : {}) }
+      const task = typeof cur.task === 'string' ? cur.task.trim() : ''
+      return {
+        kind: 'observe',
+        nodeId: cur.id,
+        iteration: cur.iteration || 1,
+        ...(cur.state === 'stopping' ? { stopping: true } : {}),
+        ...(task ? { task } : {}),
+      }
     }
     // gate / clarify / review / takeover parked for a person (or busy in a manual turn).
     return { kind: 'chat', nodeId: cur.id }

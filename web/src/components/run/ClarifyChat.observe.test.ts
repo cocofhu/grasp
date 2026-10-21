@@ -141,6 +141,25 @@ describe('ClarifyChat observe mode (auto node, read-only + Stop)', () => {
     expect(wrapper.emitted('takeover')).toHaveLength(1)
   })
 
+  it('live auto view opens with the node task as the User Message when sent, none when absent', () => {
+    const turns: ClarifyTurn[] = [{ role: 'human', text: '', at: '2026-10-21T00:00:00Z' }, { role: 'agent', text: '开始执行', at: '2026-10-21T00:00:01Z' }]
+    const withTask = mountChat({ observe: true, reviewMode: true, turns, nodeTask: '运行测试并修复失败用例' })
+    const bubble = withTask.get('[data-testid="clarify-node-task"]')
+    expect(bubble.text()).toContain('运行测试并修复失败用例')
+    expect(withTask.findAll('[data-turn-role]')[0]!.attributes('data-testid')).toBe('clarify-node-task')
+    expect(withTask.findAll('[data-turn-role="human"]')).toHaveLength(1)
+    const without = mountChat({ observe: true, reviewMode: true, turns })
+    expect(without.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+  })
+
+  it('a finished live node stays on screen as done: the existing done footer replaces the read-only composer', () => {
+    const wrapper = mountChat({ observe: true, reviewMode: true, done: true, nodeTask: '运行测试', turns: [{ role: 'agent', text: '全部通过', at: '2026-10-21T00:00:00Z' }] })
+    expect(wrapper.text()).toContain('交互已完成，进入下一步')
+    expect(wrapper.text()).toContain('全部通过')
+    expect(wrapper.find('[data-testid="clarify-node-task"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+  })
+
   it('hides the blank human turn that opens an auto stream', () => {
     const wrapper = mountChat({ observe: true, turns: [{ role: 'human', text: '', at: '2026-10-21T00:00:00Z' }, { role: 'agent', text: '开始执行', at: '2026-10-21T00:00:01Z' }] })
     expect(wrapper.findAll('[data-turn-role="human"]')).toHaveLength(0)
