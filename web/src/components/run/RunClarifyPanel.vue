@@ -137,6 +137,7 @@ defineExpose({
     ref="reviewShellRef"
     class="h-full min-h-0"
     split-drawer
+    remember-artifact-panel
   >
     <template #stage>
       <ReactConnectingState v-if="!clarify" mode="stage" hide-home-tab />
