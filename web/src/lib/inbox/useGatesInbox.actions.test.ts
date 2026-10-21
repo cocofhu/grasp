@@ -396,6 +396,7 @@ describe('useGatesInbox actions', () => {
       expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
         expect.objectContaining({ text: 'late reply', images: [] }),
         notice,
+        { autoRetryOnResume },
       )
       expect(inbox.clarifyConfirmError.value).toBeNull()
     }

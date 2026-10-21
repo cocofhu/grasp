@@ -11,14 +11,20 @@ import ClarifyChat from './ClarifyChat.vue'
 enableAutoUnmount(afterEach)
 afterEach(() => {
   document.body.replaceChildren()
+  localStorage.clear()
 })
 
 type ChatApi = {
   restoreUnsentQueued: (
-    sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] },
+    sent: { text?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; clientId?: string },
     notice: string,
+    opts?: { autoRetryOnResume?: boolean },
   ) => void
+  applyReviewFrame: (frame: Record<string, unknown>) => void
 }
+const AUTO = '运行已结束，这条消息没有发送；续跑后会自动发送'
+const KEPT = '运行已结束，草稿已保留；续跑后会回到输入框'
+const STASH_KEY = 'grasp-clarify-stash:run-1:react-1'
 
 const RESEND = '运行已结束，这条消息没有发送；续跑后请重新发送'
 
@@ -118,15 +124,106 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(attachments.value.map((a) => a.name)).toEqual(['a.png', 'b.png'])
   })
 
-  it('shows the notice even when the composer has closed because the run ended', async () => {
+  it('composer already closed: stashes by run+node and refills it once the run resumes', async () => {
     const { wrapper, chat, isActive, draft } = mountHost()
     await typeAndSend(wrapper, '还在吗')
     isActive.value = false
     await flushPromises()
     chat.value!.restoreUnsentQueued({ text: '还在吗' }, RESEND)
     await flushPromises()
-    expect(draft.value).toBe('还在吗')
+    expect(draft.value).toBe('')
+    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('还在吗')
     expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
+
+    isActive.value = true
+    await flushPromises()
+    expect(draft.value).toBe('还在吗')
+    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+  })
+
+  it('autoRetryOnResume: restores nothing, only says it will be sent after resume', async () => {
+    const { wrapper, chat, draft } = mountHost()
+    await typeAndSend(wrapper, '用户消息')
+    chat.value!.restoreUnsentQueued({ text: '' }, AUTO, { autoRetryOnResume: true })
+    await flushPromises()
+    expect(draft.value).toBe('')
+    expect(localStorage.getItem(STASH_KEY)).toBeNull()
+    expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
+  })
+
+  it('WS error frame after turn_begin: no agent bubble with the error, text back in the composer', async () => {
+    const { wrapper, chat, draft } = mountHost()
+    await typeAndSend(wrapper, '排在后面的回复')
+    chat.value!.applyReviewFrame({ event: 'queue_state', nodeId: 'react-1', waiting: 0, items: [], busy: true })
+    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { id: 'srv-1', text: '排在后面的回复' } })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).toContain('排在后面的回复')
+    chat.value!.applyReviewFrame({
+      event: 'error',
+      nodeId: 'react-1',
+      message: '运行已结束，这条消息没有发送',
+      code: 'clarify_visit_ended',
+      autoRetryOnResume: false,
+      dropped: { clientId: 'srv-1', text: '排在后面的回复' },
+    })
+    await flushPromises()
+    const scroller = wrapper.find('[data-testid="clarify-scroller"]').text()
+    expect(scroller).not.toContain('运行已结束')
+    expect(scroller).not.toContain('排在后面的回复')
+    expect(draft.value).toBe('排在后面的回复')
+    expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(RESEND)
+  })
+
+  it('WS error frame without a local copy falls back to dropped', async () => {
+    const { chat, draft } = mountHost()
+    chat.value!.applyReviewFrame({
+      event: 'error',
+      nodeId: 'react-1',
+      code: 'clarify_visit_ended',
+      dropped: { text: '从别处发出的回复', annotations: [] },
+    })
+    await flushPromises()
+    expect(draft.value).toBe('从别处发出的回复')
+  })
+
+  it('WS error frame for the system first message: removes its bubbles, restores nothing', async () => {
+    const { wrapper, chat, draft } = mountHost()
+    chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '做一个待办清单' } })
+    await flushPromises()
+    chat.value!.applyReviewFrame({
+      event: 'error',
+      nodeId: 'react-1',
+      message: '运行已结束，这条消息没有发送',
+      code: 'clarify_visit_ended',
+      autoRetryOnResume: true,
+      dropped: { text: '' },
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('运行已结束')
+    expect(draft.value).toBe('')
+    expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(AUTO)
+  })
+
+  it('a draft in progress when the run ends is kept (stash + notice) and returns on resume', async () => {
+    const { wrapper, isActive, draft } = mountHost()
+    await wrapper.find('[data-testid="clarify-input"]').setValue('正在打的草稿')
+    isActive.value = false
+    await flushPromises()
+    expect(JSON.parse(localStorage.getItem(STASH_KEY)!).text).toBe('正在打的草稿')
+    expect(wrapper.find('[data-testid="clarify-send-notice"]').text()).toBe(KEPT)
+    // Simulate a refresh: the in-memory draft is gone, the stash is not.
+    draft.value = ''
+    isActive.value = true
+    await flushPromises()
+    expect(draft.value).toBe('正在打的草稿')
+  })
+
+  it('stash is restored on mount after a refresh when the composer is open', async () => {
+    localStorage.setItem(STASH_KEY, JSON.stringify({ text: '刷新前的草稿', images: [], annotations: [] }))
+    const { draft } = mountHost()
+    await flushPromises()
+    expect(draft.value).toBe('刷新前的草稿')
+    expect(localStorage.getItem(STASH_KEY)).toBeNull()
   })
 
   it('clears the notice on the next send', async () => {

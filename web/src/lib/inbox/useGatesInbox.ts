@@ -3,7 +3,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { isSandboxBusyError } from '@/lib/api/httpCore'
-import { clarifyVisitEndedNotice } from '@/lib/inbox/clarifyVisitEnded'
+import { handleClarifyVisitEnded } from '@/lib/inbox/clarifyVisitEnded'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
 import { adaptInboxContextToRun } from '@/lib/inbox/inboxContext'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
@@ -143,10 +143,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
-  restoreUnsentQueued?: (
-    sent: { text: string; images?: import('@/lib/shared/types').ClarifyImage[]; annotations?: import('@/lib/shared/types').ReactAnnotation[] },
-    notice: string,
-  ) => void
+  restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
@@ -1986,13 +1983,15 @@ async function onClarifySend(
     }
     // Run/visit already ended: the reply was never sent. Hand it back to the
     // composer with a notice instead of an error reply (no confirm-error bar).
-    const visitEnded = clarifyVisitEndedNotice(e, t)
+    const visitEnded = handleClarifyVisitEnded(e, t, {
+      chat: reviewChatRef.value,
+      runId: it.runId,
+      nodeId: it.nodeId,
+      sent: { text, images, annotations: mergedAnnotations },
+      retryLast,
+    })
     if (visitEnded) {
-      if (!retryLast) {
-        reviewChatRef.value?.restoreUnsentQueued?.({ text, images, annotations: mergedAnnotations }, visitEnded)
-      } else {
-        clarifyConfirmError.value = visitEnded
-      }
+      if (!visitEnded.shownInChat) toast.warn(visitEnded.notice)
       return
     }
     // Non-force enqueue failed: roll back optimistic queue + surface error.

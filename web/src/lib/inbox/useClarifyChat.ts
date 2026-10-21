@@ -5,6 +5,7 @@ import { createStreamMarkdownPreview } from '@/lib/shared/streamMarkdownPreview'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { partsFromAcp, sameParts, sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { mergePersistedAndLiveTurns, persistedCompletedLiveHuman } from '@/lib/inbox/mergeClarifyLiveTurns'
+import { clearClarifyStash, readClarifyStash, stashClarifyDraft } from '@/lib/inbox/clarifyDraftStash'
 import {
   emptyFailDisplayText,
   isEmptyFailedAgent,
@@ -97,6 +98,15 @@ export type ClarifyChatModels = {
   draft: Ref<string>
   attachments: Ref<ClarifyImage[]>
   annotations: Ref<ReactAnnotation[]>
+}
+
+/** Optional `dropped` payload of a clarify_visit_ended error (HTTP 409 / WS). */
+export type ClarifyDroppedPayload = {
+  clientId?: string
+  text?: string
+  attachments?: ClarifyImage[]
+  images?: ClarifyImage[]
+  annotations?: ReactAnnotation[]
 }
 
 export function useClarifyChat(
@@ -1346,44 +1356,30 @@ function discardLastQueued() {
   }
 }
 
+/** The composer is on screen and accepts input. */
+function composerOpen(): boolean {
+  return !props.done && !!props.active && !props.coldSession
+}
+
 /**
- * Parent calls this when reactReply(force=false) was refused because the
- * clarify visit already ended (409 clarify_visit_ended): the message was never
- * sent. Drop its optimistic row, put its text and attachments back into the
- * composer ahead of anything typed since (never overwriting it), keep focus in
- * the composer, and show `notice` instead of a chat reply.
+ * Put text/attachments back into the composer ahead of anything typed since
+ * (never overwriting it). With `focus`, keep focus in the composer (caret
+ * stays where the user was typing) unless they moved to another field.
  */
-function restoreUnsentQueued(
-  sent: { text: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[] },
-  notice: string,
-) {
-  let idx = -1
-  for (let i = queued.value.length - 1; i >= 0; i--) {
-    if (!queued.value[i].id && queued.value[i].text === sent.text) {
-      idx = i
-      break
-    }
-  }
-  const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
-  if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
-
-  const origin = item ? composerOrigin.get(toRaw(item)) : undefined
-  const text = (origin ?? item?.text ?? sent.text ?? '').trim()
-  const imgs = item?.images ?? sent.images ?? []
-  const anns = item?.annotations ?? sent.annotations ?? []
-
+function mergeIntoComposer(text: string, imgs: ClarifyImage[], anns: ReactAnnotation[], focus: boolean) {
   const el = textareaRef.value
   const hadFocus = !!el && document.activeElement === el
   const selStart = hadFocus ? el!.selectionStart : 0
   const selEnd = hadFocus ? el!.selectionEnd : 0
   const current = draft.value
+  const t = text.trim()
   let shift = 0
-  if (text) {
+  if (t) {
     if (!current.trim()) {
-      draft.value = text
-      shift = text.length - current.length
-    } else if (!current.includes(text)) {
-      const prefix = `${text}\n`
+      draft.value = t
+      shift = t.length - current.length
+    } else if (!current.includes(t)) {
+      const prefix = `${t}\n`
       draft.value = prefix + current
       shift = prefix.length
     }
@@ -1397,11 +1393,16 @@ function restoreUnsentQueued(
   const backAnns = cloneReactAnnotations(anns).filter((a) => !haveAnns.has(annKey(a)))
   if (backAnns.length) annotations.value = [...backAnns, ...annotations.value]
 
-  sendNotice.value = notice
   void nextTick(() => {
     autoGrow()
     const box = textareaRef.value
     if (!box) return
+    if (hadFocus) {
+      if (document.activeElement !== box) box.focus({ preventScroll: true })
+      box.setSelectionRange(selStart + shift, selEnd + shift)
+      return
+    }
+    if (!focus) return
     const active = document.activeElement as HTMLElement | null
     // Never pull focus out of another field the user moved to.
     const elsewhere =
@@ -1410,14 +1411,100 @@ function restoreUnsentQueued(
       active !== document.body &&
       (active.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(active.tagName))
     if (elsewhere) return
-    if (active !== box) box.focus({ preventScroll: true })
-    if (hadFocus) {
-      box.setSelectionRange(selStart + shift, selEnd + shift)
-    } else {
-      const end = box.value.length
-      box.setSelectionRange(end, end)
-    }
+    box.focus({ preventScroll: true })
+    const end = box.value.length
+    box.setSelectionRange(end, end)
   })
+}
+
+/** Restore a run+node stash once the composer is open again (run resumed). */
+function restoreStashedDraft() {
+  if (!composerOpen()) return
+  const s = readClarifyStash(props.runId, props.nodeId)
+  if (!s) return
+  clearClarifyStash(props.runId, props.nodeId)
+  mergeIntoComposer(s.text, s.images, s.annotations, false)
+}
+
+/** Composer closed (run ended) or is going away: keep the unsent draft per run+node. */
+function stashComposerDraft(): boolean {
+  if (!hasComposerDraft()) return false
+  stashClarifyDraft(props.runId, props.nodeId, {
+    text: draft.value,
+    images: cloneClarifyImages(attachments.value),
+    annotations: cloneReactAnnotations(annotations.value),
+  })
+  return true
+}
+
+watch(composerOpen, (open, wasOpen) => {
+  if (open) {
+    restoreStashedDraft()
+    return
+  }
+  // Run ended under an unsent draft: the composer disappears, the draft must not.
+  // A refused-send notice already says what happened; keep it.
+  if (wasOpen && !props.done && stashComposerDraft() && !sendNotice.value) {
+    sendNotice.value = translate('pages.clarify.draftKept')
+  }
+})
+onMounted(restoreStashedDraft)
+onBeforeUnmount(() => {
+  // Leaving while the run is closed for input (run ended): keep the draft for resume.
+  if (!props.done && !props.active && !props.coldSession) stashComposerDraft()
+})
+
+/**
+ * Parent (HTTP 409) or the WS error frame calls this when a clarify reply was
+ * refused because the clarify visit already ended (code clarify_visit_ended):
+ * the message was never sent. Drop its optimistic row and, unless resume will
+ * redeliver it on its own (autoRetryOnResume), put its text, attachments and
+ * annotations back: into the composer when it is open (ahead of anything typed
+ * since, focus kept), else into the run+node stash restored after resume.
+ * Shows `notice` instead of any chat reply.
+ */
+function restoreUnsentQueued(
+  sent: { text?: string; images?: ClarifyImage[]; annotations?: ReactAnnotation[]; clientId?: string },
+  notice: string,
+  opts: { autoRetryOnResume?: boolean } = {},
+) {
+  // Local optimistic copy first: by id (clientId), then by text.
+  let idx = -1
+  if (sent.clientId) idx = queued.value.findIndex((q) => q.id === sent.clientId)
+  if (idx < 0 && sent.text) {
+    for (let i = queued.value.length - 1; i >= 0; i--) {
+      if (!queued.value[i].id && queued.value[i].text === sent.text) {
+        idx = i
+        break
+      }
+    }
+  }
+  const item = idx >= 0 ? queued.value.splice(idx, 1)[0] : null
+  if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
+  sendNotice.value = notice
+  if (opts.autoRetryOnResume) return
+
+  const origin = item ? composerOrigin.get(toRaw(item)) : undefined
+  const text = (origin ?? item?.text ?? sent.text ?? '').trim()
+  const imgs = item?.images ?? sent.images ?? []
+  const anns = item?.annotations ?? sent.annotations ?? []
+  if (!text && !imgs.length && !anns.length) return
+  if (composerOpen()) {
+    mergeIntoComposer(text, imgs, anns, true)
+  } else {
+    stashClarifyDraft(props.runId, props.nodeId, {
+      text,
+      images: cloneClarifyImages(imgs),
+      annotations: cloneReactAnnotations(anns),
+    })
+  }
+}
+
+/** Notice copy for a clarify_visit_ended refusal. */
+function visitEndedNotice(autoRetryOnResume: boolean | undefined): string {
+  return autoRetryOnResume
+    ? translate('pages.clarify.visitEndedAutoRetry')
+    : translate('pages.clarify.visitEndedResend')
 }
 
 /** Idle is authoritative: no live turn may keep its caret, tracked or not. */
@@ -1581,6 +1668,66 @@ function applyQueueState(
   thinking.value = liveAgentIdx.value >= 0 || queued.value.length > 0 || !!busy
 }
 
+/** What the live turn opened by the latest turn_begin carried (local copy). */
+let liveTurnOrigin: {
+  id?: string
+  text: string
+  images: ClarifyImage[]
+  annotations: ReactAnnotation[]
+  newHuman: boolean
+} | null = null
+
+/**
+ * WS error frame with code clarify_visit_ended: the run ended, so the reply
+ * was dropped (at turn start, or at WS enqueue). It is not an answer — never
+ * write it into an agent bubble. Remove the turn it opened and hand the text
+ * back (local optimistic copy first, `dropped` as fallback).
+ */
+function applyVisitEndedFrame(frame: {
+  autoRetryOnResume?: boolean
+  dropped?: ClarifyDroppedPayload | null
+}) {
+  const dropped = frame.dropped ?? {}
+  const auto = !!frame.autoRetryOnResume
+  let local: { text: string; images: ClarifyImage[]; annotations: ReactAnnotation[] } | null = null
+  const idx = liveAgentIdx.value
+  const agent = idx >= 0 ? liveTurns.value[idx] : null
+  const origin = liveTurnOrigin
+  const turnMatches =
+    !!agent &&
+    !!origin &&
+    (!dropped.clientId || !origin.id || dropped.clientId === origin.id) &&
+    (!dropped.text || !origin.text || dropped.text.trim() === origin.text.trim() || dropped.clientId === origin.id)
+  if (agent && turnMatches && !(agent.text || '').trim() && !(agent.thought || '').trim()) {
+    // Drop the empty agent slot and the human bubble this turn opened.
+    const human = idx > 0 ? liveTurns.value[idx - 1] : null
+    const removeHuman = origin!.newHuman && human?.role === 'human'
+    liveTurns.value.splice(removeHuman ? idx - 1 : idx, removeHuman ? 2 : 1)
+    if (removeHuman) local = { text: origin!.text, images: origin!.images, annotations: origin!.annotations }
+    liveAgentIdx.value = -1
+    messageReveal.reset()
+    thoughtReveal.reset()
+    streamPreview.reset()
+    thoughtPreview.reset()
+  } else if (agent) {
+    agent.streaming = false
+    markOutputEnd(agent)
+    liveAgentIdx.value = -1
+  }
+  liveTurnOrigin = null
+  restoreUnsentQueued(
+    local ?? {
+      clientId: dropped.clientId,
+      text: dropped.text,
+      images: dropped.attachments ?? dropped.images,
+      annotations: dropped.annotations,
+    },
+    visitEndedNotice(auto),
+    { autoRetryOnResume: auto },
+  )
+  settleAfterTurnEnd()
+}
+
 /** Parent feeds review/clarify WS frames here (shared session protocol). */
 function applyReviewFrame(frame: {
   event?: string
@@ -1595,6 +1742,10 @@ function applyReviewFrame(frame: {
   sandboxDesynced?: boolean
   sandboxRunningOpId?: string
   activeItem?: SessionFrameItem
+  /** error: clarify_visit_ended (run ended; the reply was dropped, not answered). */
+  code?: string
+  autoRetryOnResume?: boolean
+  dropped?: ClarifyDroppedPayload | null
 }) {
   // Defense: ignore frames for other producer sessions on the same run.
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
@@ -1615,6 +1766,13 @@ function applyReviewFrame(frame: {
           ? auth.annotations
           : local?.annotations
       const humanText = text || local?.text || ''
+      liveTurnOrigin = {
+        id: auth?.id,
+        text: (local ? composerOrigin.get(toRaw(local)) : undefined) ?? humanText,
+        images: images ?? [],
+        annotations: annotations ?? [],
+        newHuman: false,
+      }
       // Cover retry: reuse trailing live human + failed/empty agent instead of duplicating.
       const last = liveTurns.value.length
       const existingHuman = last >= 2 ? liveTurns.value[last - 2] : null
@@ -1644,6 +1802,7 @@ function applyReviewFrame(frame: {
         liveAgentIdx.value = last - 1
       } else {
         const started = new Date().toISOString()
+        liveTurnOrigin.newHuman = true
         liveTurns.value.push({
           role: 'human',
           text: humanText,
@@ -1689,6 +1848,10 @@ function applyReviewFrame(frame: {
       break
     }
     case 'error': {
+      if (frame.code === 'clarify_visit_ended') {
+        applyVisitEndedFrame(frame)
+        break
+      }
       if (liveAgentIdx.value >= 0 && liveTurns.value[liveAgentIdx.value]) {
         const agent = liveTurns.value[liveAgentIdx.value]
         agent.streaming = false
@@ -2049,6 +2212,7 @@ function retryLastFailed() {
     cancelReview,
     discardLastQueued,
     restoreUnsentQueued,
+    visitEndedNotice,
     sendNotice,
     forceAuthoritativeIdle,
     settleAfterTurnEnd,

@@ -306,16 +306,26 @@ describe('useRunDetail actions', () => {
     mocks.reactReply.mockRejectedValueOnce(ended(false))
     await detail.onClarifySend('late', [{ data: 'aGk=', mimeType: 'image/png' }])
     expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
-      { text: 'late', images: [{ data: 'aGk=', mimeType: 'image/png' }], annotations: [] },
+      { clientId: undefined, text: 'late', images: [{ data: 'aGk=', mimeType: 'image/png' }], annotations: [] },
       '运行已结束，这条消息没有发送；续跑后请重新发送',
+      { autoRetryOnResume: false },
     )
     expect(discardLastQueued).not.toHaveBeenCalled()
     expect(detail.clarifyConfirmError.value).toBeNull()
+    // `dropped` fills what the local copy lacks (clientId).
+    mocks.reactReply.mockRejectedValueOnce(Object.assign(ended(false), { dropped: { clientId: 'c-1', text: 'late2' } }))
+    await detail.onClarifySend('late2')
+    expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
+      expect.objectContaining({ clientId: 'c-1', text: 'late2' }),
+      '运行已结束，这条消息没有发送；续跑后请重新发送',
+      { autoRetryOnResume: false },
+    )
     mocks.reactReply.mockRejectedValueOnce(ended(true))
     await detail.onClarifySend('first')
     expect(restoreUnsentQueued).toHaveBeenLastCalledWith(
-      { text: 'first', images: [], annotations: [] },
+      expect.objectContaining({ text: 'first' }),
       '运行已结束，这条消息没有发送；续跑后会自动发送',
+      { autoRetryOnResume: true },
     )
     expect(detail.clarifyConfirmError.value).toBeNull()
 

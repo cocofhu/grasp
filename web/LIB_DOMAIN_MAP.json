@@ -62,6 +62,7 @@
     "inbox": [
       "clarifyDemo.ts",
       "clarifyDemoWindow.ts",
+      "clarifyDraftStash.ts",
       "clarifyEmptyFail.ts",
       "clarifyInboxStage.ts",
       "clarifyVisitEnded.ts",
@@ -225,7 +226,7 @@
     "artifacts": 1,
     "chat": 5,
     "composables": 19,
-    "inbox": 35,
+    "inbox": 36,
     "pm": 7,
     "run": 58,
     "shared": 39,
