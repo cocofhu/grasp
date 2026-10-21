@@ -30,7 +30,7 @@ const takenRun = { id: 'r1', status: 'waiting_human', currentNode: cur('impl', '
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:p(.*)*', component: { template: '<div />' } }] })
   await router.push('/runs/r1/live?node=impl')
-  const surface: LiveChatSurface = { applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn() }
+  const surface: LiveChatSurface = { applyReviewFrame: vi.fn(), applyAcpEvents: vi.fn(), releaseConfirmPending: vi.fn() }
   let live!: ReturnType<typeof useRunLive>
   const Harness = defineComponent({
     setup() {
@@ -56,6 +56,14 @@ beforeEach(() => {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('useRunLive (auto node → Stop → chat)', () => {
+  it('confirm before the chat is open does not send and releases the spinner', async () => {
+    const { live, surface, wrapper } = await setup()
+    await live().confirm()
+    expect(mocks.reactReply).not.toHaveBeenCalled()
+    expect(surface.releaseConfirmPending).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('seeds a busy turn, replays the snapshot, then streams acp frames read-only', async () => {
     const { surface, wrapper } = await setup()
     expect(surface.applyReviewFrame).toHaveBeenNthCalledWith(1, expect.objectContaining({ event: 'queue_state', busy: true, nodeId: 'impl' }))
@@ -294,7 +302,7 @@ describe('useRunLive (auto node → Stop → chat)', () => {
   })
 
   it('a rejected 确认并流转 in the continued chat shows the error and unlocks the composer', async () => {
-    const { live, wrapper } = await setup()
+    const { live, surface, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'waiting_human'), clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns: [], done: false } } })
     await live().reload()
     await flushPromises()
@@ -303,6 +311,12 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     expect(live().confirmError.value).toBe('产物契约未满足')
     expect(live().handoff.value).toBeNull()
     expect(live().composerLocked.value).toBe(false)
+    expect(surface.releaseConfirmPending).toHaveBeenCalledTimes(1)
+    mocks.reactReply.mockRejectedValueOnce(new Error('产物契约未满足'))
+    await live().confirm()
+    expect(live().confirmError.value).toBe('产物契约未满足')
+    expect(live().handoff.value).toBeNull()
+    expect(surface.releaseConfirmPending).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
 

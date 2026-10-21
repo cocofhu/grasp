@@ -454,9 +454,11 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 
 	// Hold the per-conversation lock across the whole reply (including the slow
 	// provider call) so a duplicate submit — e.g. after a page refresh re-enables
-	// the "确认完成" button while this request is still in flight — waits here,
-	// then reads conv.Done == true below and is rejected with "react already done"
-	// instead of appending a second turn and advancing the FSM twice.
+	// the button while this request is still in flight — waits here. A confirm
+	// that already advanced the node leaves conv.Done set and is rejected with
+	// "react already done". A confirm that only marked Done while the visit is
+	// still waiting_human (the send failed, or the process restarted after that
+	// early write) is reopened below so the same click can run again.
 	unlock := e.lockResume(runID + ":" + nodeID)
 	defer unlock()
 
@@ -478,7 +480,16 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		return errors.New("no react conversation")
 	}
 	if conv.Done {
-		return errors.New("react already done")
+		// The early Done write is how a confirm leaves the inbox before the
+		// model call returns. If that call never finished the visit, the next
+		// 确认并流转 must be able to run again. Clarify and review share this
+		// gate; reviewReply still owns the review wrap-up below.
+		if force && e.confirmStillWaiting(runID, nodeID, c.run.Status) {
+			conv.Done = false
+			logDB(e.db.Save(&conv), runID, "reopen react for retry confirm")
+		} else {
+			return errors.New("react already done")
+		}
 	}
 
 	// Review force: human turn is recorded, then git wrap-up + finalize.
@@ -543,9 +554,16 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		Interrupted: t.Interrupted, OpID: t.OpID, Tools: models.ToolsFromEvents(replyEvents), Parts: models.PartsForReply(replyEvents, t.Msg)}
 	conv.Messages = append(conv.Messages, agentMsg)
 
-	if !t.Done {
+	// A model/send error (including finishReact's agent-chat failure, which
+	// comes back Done with Err set) stays in the dialogue. Product-contract
+	// misses have Err == nil and still fail the node below.
+	if !t.Done || t.Err != nil {
 		conv.Done = false
-		logDB(e.db.Save(&conv), runID, "reopen react after force stay-open")
+		why := "reopen react after force stay-open"
+		if t.Err != nil {
+			why = "reopen react after force chat error"
+		}
+		logDB(e.db.Save(&conv), runID, why)
 		// Persist this turn's MCP tool calls now (the node stays paused without a
 		// saveState) so the timeline reflects every react round, not just the
 		// opening one.
@@ -554,6 +572,9 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 		e.broker.Publish(runID, jsonMsg("react", runID, nodeID))
 		if t.Interrupted {
 			return errConfirmTurnTimeout
+		}
+		if t.Err != nil {
+			return t.Err
 		}
 		return errors.New("仍有待确认问题或收尾未完成，无法确认并流转")
 	}
@@ -565,20 +586,6 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	// wrap-up stays on this synchronous path.
 	e.recordFeedback(e.confirmRoundFeedbackEvent(runID, nodeID, models.FeedbackKindClarify,
 		conv.Iteration, humanMsg, agentMsg, t.AgentSummary))
-
-	if t.Err != nil {
-		outcome := nodeOutcome{status: "failed", err: t.Err.Error(), outputMd: t.Msg,
-			retryable: true, events: t.Events, usage: t.Usage, usageByModel: t.UsageByModel}
-		e.saveState(c, node, outcome)
-		e.appendTrace(c, models.TraceEntry{NodeID: nodeID, Event: "resume", Detail: "react 失败"})
-		next := e.routeFailure(c, node, outcome)
-		if next == "" {
-			e.finish(runID, "failed")
-			return nil
-		}
-		go e.resumeAdmitted(runID, next)
-		return nil
-	}
 
 	// Finalize: require node_complete, enforce produces, then optional RPC.
 	outcome := e.finishAgentOutcome(c, node, t.Result, func(r runtime.NodeResult) nodeOutcome {
@@ -607,6 +614,26 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 	}
 	go e.resumeAdmitted(runID, next)
 	return nil
+}
+
+// confirmStillWaiting reports that a force confirm has not finished this
+// visit. The node's latest execution is still waiting for a person. The run
+// itself may still say "running": the early Done write makes pauseStillPending
+// false, so finish(waiting_human) never lands and the run stays "running".
+// A confirm that already advanced the FSM leaves this node completed, failed,
+// or cancelled, and a late duplicate stays "react already done".
+func (e *Engine) confirmStillWaiting(runID, nodeID, runStatus string) bool {
+	switch runStatus {
+	case "waiting_human", "running":
+	default:
+		return false
+	}
+	var sr models.StateRun
+	if err := e.db.Where("run_id = ? AND node_id = ?", runID, nodeID).
+		Order("iteration desc, id desc").First(&sr).Error; err != nil {
+		return false
+	}
+	return sr.Status == "waiting_human"
 }
 
 // ResumeFrom re-drives a terminated (failed/cancelled) run from a chosen node,

@@ -93,6 +93,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: AcpEvent[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  releaseConfirmPending?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
@@ -586,6 +587,9 @@ const gateError = ref<string | null>(null)
 const gateSubmitting = ref(false)
 const clarifyConfirmError = ref<string | null>(null)
 const clarifyConfirmCanAbort = ref(false)
+// True while reactReply(force) has not returned. A parallel ordinary reply
+// must not surface "react already done" and unlock 确认并流转.
+let clarifyForceInFlight = false
 async function onGateResolve(action: string, form: Record<string, any> = {}) {
   if (!run.value.gate || gateSubmitting.value) return
   gateSubmitting.value = true
@@ -615,7 +619,10 @@ async function onClarifySend(
   abortRunning = false,
 ) {
   const conv = selClarify.value
-  if (!conv || conv.done) return
+  if (!conv || conv.done) {
+    if (force) reviewChatRef.value?.releaseConfirmPending?.()
+    return
+  }
   const nodeId = conv.nodeId
   clarifyConfirmError.value = null
   if (!abortRunning) clarifyConfirmCanAbort.value = false
@@ -628,6 +635,7 @@ async function onClarifySend(
   // Click intent: play overlay before wrap-up HTTP (plan g1.1); never wait for forceOk/done.
   // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
   const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
+  if (force) clarifyForceInFlight = true
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
@@ -668,12 +676,16 @@ async function onClarifySend(
     failClarifySend(runId.value, nodeId, clientMessageId)
     // Non-force: roll back optimistic pending-send row so FR4 / send lock is not stuck.
     if (!force && !retryLast) reviewChatRef.value?.discardLastQueued?.()
+    if (!force && clarifyForceInFlight) return
     if (force && isSandboxBusyError(e)) {
       clarifyConfirmCanAbort.value = true
       clarifyConfirmError.value = t('pages.clarify.sandboxBusy')
     } else {
       clarifyConfirmError.value = msg
     }
+    if (force) reviewChatRef.value?.releaseConfirmPending?.()
+  } finally {
+    if (force) clarifyForceInFlight = false
   }
   // Enqueue returns before the turn finishes — avoid wiping live bubbles.
   // Force finish still needs a snapshot refresh.

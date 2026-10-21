@@ -75,6 +75,7 @@ const reviewChatRef = ref<{
   applyReviewFrame?: (frame: any) => boolean | void
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
+  releaseConfirmPending?: () => void
   restoreUnsentQueued?: RestoreUnsent
   isSessionBusy?: () => boolean
   isChatReady?: () => boolean
@@ -98,6 +99,7 @@ defineExpose({
   applyAcpEvents: (events: any[] | undefined, nodeId?: string) =>
     reviewChatRef.value?.applyAcpEvents?.(events, nodeId),
   discardLastQueued: () => reviewChatRef.value?.discardLastQueued?.(),
+  releaseConfirmPending: () => reviewChatRef.value?.releaseConfirmPending?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
     reviewChatRef.value?.restoreUnsentQueued?.(...args),
   isSessionBusy: () => !!reviewChatRef.value?.isSessionBusy?.(),

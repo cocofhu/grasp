@@ -44,6 +44,7 @@ function mountChat(opts: {
   annotateEnabled?: boolean
   annotations?: ReactAnnotation[]
   attachments?: { data: string; mimeType: string; name?: string }[]
+  handoff?: { phase: 'pending' | 'done'; at: string; target?: string } | null
   seedHumanText?: string
   seedHumanImages?: { data: string; mimeType: string; name?: string }[]
   hideFinish?: boolean
@@ -73,6 +74,7 @@ function mountChat(opts: {
       annotateEnabled: opts.annotateEnabled ?? false,
       annotations: opts.annotations ?? [],
       attachments: opts.attachments ?? [],
+      handoff: opts.handoff ?? null,
       seedHumanText: opts.seedHumanText ?? '',
       seedHumanImages: opts.seedHumanImages ?? [],
       hideFinish: opts.hideFinish ?? false,
@@ -669,6 +671,52 @@ describe('ClarifyChat', () => {
     expect((wrapper.find('[data-testid="clarify-confirm-flow"]').element as HTMLButtonElement).disabled).toBe(
       false,
     )
+    wrapper.unmount()
+  })
+
+  it('same confirmError leaves 校验中 until releaseConfirmPending', async () => {
+    const wrapper = mountChat({
+      turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
+    })
+    const clickConfirm = async () => {
+      await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
+      await flushPromises()
+      await acceptConfirmFlowDialog()
+    }
+    await clickConfirm()
+    expect(wrapper.text()).toContain('校验中…')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('校验中…')
+
+    await clickConfirm()
+    expect(wrapper.text()).toContain('校验中…')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(wrapper.text()).toContain('校验中…')
+    ;(wrapper.vm as { releaseConfirmPending: () => void }).releaseConfirmPending()
+    await flushPromises()
+    const btn = wrapper.find('[data-testid="clarify-confirm-flow"]')
+    expect(btn.text()).toContain('确认并流转')
+    expect((btn.element as HTMLButtonElement).disabled).toBe(false)
+    expect(wrapper.text()).not.toContain('校验中…')
+    wrapper.unmount()
+  })
+
+  it('pending host handoff keeps the confirm button on 校验中 when the same error arrives', async () => {
+    const wrapper = mountChat({
+      turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
+      handoff: { phase: 'pending', at: '2026-08-21T17:01:00+08:00' },
+    })
+    await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
+    await flushPromises()
+    await acceptConfirmFlowDialog()
+    const btn = () => wrapper.find('[data-testid="clarify-confirm-flow"]')
+    expect(btn().text()).toContain('校验中')
+    await wrapper.setProps({ confirmError: 'react already done' })
+    await flushPromises()
+    expect(btn().text()).toContain('校验中')
+    expect((btn().element as HTMLButtonElement).disabled).toBe(true)
     wrapper.unmount()
   })
 

@@ -94,6 +94,8 @@ export type ClarifyChatProps = {
   confirmCanAbort?: boolean
   seedHumanText?: string
   seedHumanImages?: ClarifyImage[]
+  /** Host hand-off row; while pending, that confirm owns the 校验中 state. */
+  handoff?: { phase: 'pending' | 'done' } | null
 }
 
 export type ClarifyChatEmit = {
@@ -803,10 +805,20 @@ watch(
   () => props.confirmError,
   (err) => {
     if (!err) return
+    // The host hand-off row is still pending: that confirm owns the spinner.
+    // A parallel reply (often "react already done") must not turn the button
+    // back into a clickable 确认并流转 that then no-ops.
+    if (props.handoff?.phase === 'pending') return
     validating.value = false
     if (queued.value.length === 0 && liveAgentIdx.value < 0) thinking.value = false
   },
 )
+
+// Hosts call this when a confirm click does not send, or when the same
+// confirmError is reported again (the watch above only runs on a change).
+function releaseConfirmPending() {
+  validating.value = false
+}
 
 function addFiles(files: ArrayLike<File> | null | undefined) {
   if (!files) return
@@ -2374,6 +2386,7 @@ function retryLastFailed() {
     inputPlaceholder,
     thinking,
     validating,
+    releaseConfirmPending,
     queued,
     liveTurns,
     showClarifyEmptyHint,

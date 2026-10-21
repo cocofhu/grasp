@@ -150,6 +150,7 @@ const chatRef = ref<{
   ) => void
   cancelReview: () => void
   discardLastQueued: () => void
+  releaseConfirmPending?: () => void
   restoreUnsentQueued: RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -178,6 +179,7 @@ defineExpose({
   ) => chatRef.value?.applyQueueState?.(waiting, items, busy, activeItem),
   cancelReview: () => chatRef.value?.cancelReview(),
   discardLastQueued: () => chatRef.value?.discardLastQueued(),
+  releaseConfirmPending: () => chatRef.value?.releaseConfirmPending?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
     chatRef.value?.restoreUnsentQueued(...args),
   isChatReady: () => !!chatRef.value,

@@ -51,6 +51,9 @@ type fakeProvider struct {
 	reactForceStayOpen bool
 	// reactInterrupted: force wrap-up returns Done:false + Interrupted (timeout).
 	reactInterrupted bool
+	// reactChatErr: force wrap-up returns Done with this send/chat error
+	// (finishReact's agent-chat failure). The dialogue must stay open.
+	reactChatErr error
 	// sandboxBusy / sandboxDesynced drive SessionBridgeInspector for confirm-gate tests.
 	sandboxBusy      bool
 	sandboxDesynced  bool
@@ -490,12 +493,21 @@ func (f *fakeProvider) reactReply(ctx context.Context, req runtime.NodeReq, hist
 	skip := f.reactSkipProduces
 	stayOpen := f.reactForceStayOpen
 	interrupted := f.reactInterrupted
+	chatErr := f.reactChatErr
 	hold := f.reactHold
 	tools := append([]models.AcpEvent(nil), f.reactTools...)
 	f.mu.Unlock()
 	if interrupted {
 		return runtime.ReactTurn{Msg: "半截旁白", Done: false, Interrupted: true,
 			Events: []models.AcpEvent{{Kind: "message", Text: "idle-timeout"}}}
+	}
+	if force && chatErr != nil {
+		return runtime.ReactTurn{
+			Msg:    "(澄清回复失败:" + chatErr.Error() + ")",
+			Done:   true,
+			Err:    chatErr,
+			Events: []models.AcpEvent{{Kind: "message", Text: "react reply chat failed: " + chatErr.Error()}},
+		}
 	}
 	if hold != nil {
 		select {
