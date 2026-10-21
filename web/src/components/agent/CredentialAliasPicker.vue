@@ -109,7 +109,7 @@ onMounted(() => {
       class="mt-2 py-3 text-[12px] text-txt3"
       data-testid="credential-alias-empty"
     >
-      {{ t('pages.workspace.credentials.pickEmpty') }}
+      {{ t('pages.workspace.credentials.pickEmptyNamed', { kind: t(`pages.workspace.credentials.kinds.${kind}`) }) }}
     </div>
     <div v-else class="mt-2 divide-y divide-line/60">
       <button
