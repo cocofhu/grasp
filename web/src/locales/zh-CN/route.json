@@ -32,6 +32,7 @@
     "assistantSettings": "助手设置",
     "notificationPolicy": "通知策略",
     "externalMcp": "外部 MCP",
-    "workspaceInfo": "工作区信息"
+    "workspaceInfo": "工作区信息",
+    "runLive": "实时执行"
   }
 }

@@ -748,6 +748,10 @@ export interface NodeRun {
   usage?: TokenUsage | null
   /** Per-model breakdown after ingest merge / bridge backfill. */
   usageByModel?: TokenUsageByModel | null
+  /** auto | manual. manual = this execution was taken over (never returns to auto). */
+  mode?: RunNodeMode
+  /** When the user took this execution over (manual only). */
+  takenOverAt?: string
 }
 
 export interface Artifact {
@@ -903,10 +907,19 @@ export interface ClarifyTurn {
   tools?: AgentTool[]
   /** Thought / tool / message steps in order; rendered instead of the rails when set. */
   parts?: AgentPart[]
-  /** Wall clock when this reply started outputting (this page session). */
+  /**
+   * Wall clock when this reply started outputting (this page session). A
+   * takeover's opening turn carries it from the server: the auto phase's start.
+   */
   startedAt?: string
-  /** Wall clock when this reply stopped. */
+  /** Wall clock when this reply stopped (takeover opening turn: when the takeover took effect). */
   endedAt?: string
+  /**
+   * Aggregated ACP timeline behind this turn (prompt stripped). Today only the
+   * opening agent turn of a takeover conversation carries it: the interrupted
+   * auto phase. Absent when there are none.
+   */
+  events?: AcpEvent[]
 }
 
 /** One tool call shown in the folded tool row of an agent turn. */
@@ -1005,6 +1018,8 @@ export interface ClarifyInboxItem {
   tags?: string[]
   /** Present on kind=review only (leak-free chip, no plaintext token). */
   shareLink?: GateShareInboxStatus
+  /** kind=review raised by a user takeover of an auto node (POST …/takeover). */
+  takeover?: boolean
 }
 
 export type InboxItem = GateInboxItem | ClarifyInboxItem
@@ -1028,6 +1043,35 @@ export interface RunVar {
   value: any
 }
 
+/** Execution mode of one node visit. A taken-over visit stays manual. */
+export type RunNodeMode = 'auto' | 'manual'
+
+/**
+ * currentNode on the run list summary (GET /api/runs), the run detail
+ * (GET /api/runs/:id) and the run WS snapshot frame (same server derivation).
+ * kind priority on the server:
+ * takeover > gate > clarify > review > agent. mode is auto only for kind=agent.
+ * state busy = a manual session turn is running (offer Stop).
+ */
+export interface RunCurrentNode {
+  id: string
+  name: string
+  iteration: number
+  kind: 'agent' | 'gate' | 'clarify' | 'review' | 'takeover'
+  mode: RunNodeMode
+  state: 'running' | 'stopping' | 'waiting_human' | 'busy'
+}
+
+/** POST /api/runs/:id/nodes/:nodeId/takeover 200 body (idempotent). */
+export interface NodeTakeoverResult {
+  status: 'taken_over' | 'already_manual'
+  runId: string
+  nodeId: string
+  iteration: number
+  mode: 'manual'
+  state: 'stopping' | 'waiting_human'
+}
+
 export interface Run {
   id: string
   workflowId: string
@@ -1045,6 +1089,10 @@ export interface Run {
   branch?: string
   /** Current workflow node label for running/waiting_human runs (list summary). */
   currentNodeLabel?: string
+  /** Last agent / human activity (list + detail; falls back to startedAt / createdAt server-side). */
+  lastActivityAt?: string
+  /** The node the run is on now (list, detail, WS snapshot; running / waiting_human runs only). */
+  currentNode?: RunCurrentNode
   /** Admission priority: high | normal | low (default normal). */
   priority?: 'high' | 'normal' | 'low'
   tags?: string[]
@@ -1068,12 +1116,15 @@ export interface Run {
     turns: ClarifyTurn[]
     done: boolean
     previewArtifact?: string
+    takeover?: boolean
+    /** Taken-over node's task (interpolated prompt, secrets masked, ≤280 chars). Only with takeover. */
+    task?: string
   }
   // Per-node react conversations, keyed by node id (a run may have several
   // react nodes). Lets each react node show its own dialogue immediately.
   clarifyByNode?: Record<
     string,
-    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string }
+    { nodeId: string; iteration?: number; turns: ClarifyTurn[]; done: boolean; previewArtifact?: string; takeover?: boolean; task?: string }
   >
   /** Authoritative busy/queue snapshots for refresh-resume (clarify + review). */
   reactSessions?: Record<

@@ -1,0 +1,112 @@
+// @vitest-environment happy-dom
+import { ref } from 'vue'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import { createI18n } from 'vue-i18n'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import nav from '@/locales/zh-CN/nav.json'
+import common from '@/locales/zh-CN/common.json'
+const mocks = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref } = require('vue') as typeof import('vue')
+  const signedInWorkspace = { name: 'Workspace', description: '', variables: [] }
+  return { signedInWorkspace, workspace: ref<typeof signedInWorkspace | null>(signedInWorkspace), entries: ref<{ workflowId: string; favoritedAt: number }[]>([]), listWorkflowCatalog: vi.fn(), listRuns: vi.fn(), getWorkflow: vi.fn(), openLaunch: vi.fn(), error: vi.fn() }
+})
+vi.mock('@/lib/api/api', () => ({ api: mocks }))
+vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, loading: ref(false), ensureLoaded: async () => mocks.workspace.value }) }))
+vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.error }) }))
+vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => ({ openLaunch: mocks.openLaunch }) }))
+vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: (id: string) => { mocks.entries.value = mocks.entries.value.some((item) => item.workflowId === id) ? mocks.entries.value.filter((item) => item.workflowId !== id) : [{ workflowId: id, favoritedAt: Date.now() }, ...mocks.entries.value] } }) }))
+import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { RECENT_POLL_MS, RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
+const catalog = Array.from({ length: 14 }, (_, index) => ({ id: `wf-${index}`, name: `流程 ${index}`, description: `说明 ${index}`, status: index % 2 ? 'draft' : 'published', version: 2, publishedVersion: 1, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}` }))
+async function setup(path = '/workflows/wf-3/edit') {
+  const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
+  await router.push(path)
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...nav, ...common } } })
+  const wrapper = mount(SidebarWorkspaceLists, { attachTo: document.body, global: { plugins: [router, i18n] } })
+  await flushPromises()
+  return { wrapper, router }
+}
+
+const cur = (id: string, kind: string, mode: string, state: string) => ({ id, name: id, iteration: 1, kind, mode, state })
+const r = (id: string, currentNode?: ReturnType<typeof cur>, status = 'running') => ({ id, title: `运行 ${id}`, workflowName: 'wf', status, currentNode })
+const order = (w: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) => w.findAll('[data-testid="sidebar-recent-run"]').map((x) => x.attributes('data-run-id'))
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  mocks.workspace.value = mocks.signedInWorkspace
+  mocks.entries.value = []
+  mocks.listWorkflowCatalog.mockResolvedValue([])
+  mocks.listRuns.mockResolvedValue({ items: [r('a', cur('impl', 'agent', 'auto', 'running')), r('b', cur('gate', 'gate', 'gate', 'waiting_human'), 'waiting_human'), r('c', undefined, 'completed')], total: 3 })
+})
+afterEach(() => { vi.useRealTimers(); document.body.replaceChildren() })
+
+describe('sidebar 最近 (activity order, marks, targets)', () => {
+  it('requests last_activity order and renders pending-row marks and chat targets', async () => {
+    const { wrapper } = await setup('/')
+    expect(mocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ sort: 'last_activity', order: 'desc' }))
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(order(wrapper)).toEqual(['a', 'b', 'c'])
+    expect(rows[0].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
+    expect(rows[0].attributes('href')).toBe('/runs/a/live?node=impl')
+    expect(rows[1].get('[data-testid="sidebar-recent-type-icon"]').classes()).toContain('nav-row-type-icon--approval')
+    expect(rows[1].attributes('href')).toBe('/gates?run=b&node=gate')
+    expect(rows[2].find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
+    expect(rows[2].attributes('href')).toBe('/runs/c')
+    wrapper.unmount()
+  })
+
+  it('a poll reorders the list without touching focus, text or selection in the composer', async () => {
+    const composer = document.createElement('textarea')
+    document.body.append(composer)
+    const { wrapper } = await setup('/gates?run=b&node=gate')
+    composer.focus()
+    composer.value = '正在输入的草稿'
+    composer.setSelectionRange(2, 4)
+    mocks.listRuns.mockResolvedValue({ items: [r('c', cur('impl', 'agent', 'auto', 'running')), r('a', undefined, 'completed'), r('b', cur('gate', 'gate', 'gate', 'waiting_human'), 'waiting_human')], total: 3 })
+    vi.advanceTimersByTime(RECENT_POLL_MS)
+    await flushPromises()
+    expect(mocks.listRuns).toHaveBeenCalledTimes(2)
+    expect(order(wrapper)).toEqual(['c', 'a', 'b'])
+    expect(document.activeElement).toBe(composer)
+    expect(composer.value).toBe('正在输入的草稿')
+    expect([composer.selectionStart, composer.selectionEnd]).toEqual([2, 4])
+    wrapper.unmount()
+  })
+
+  it('holds a reorder while a recent row has focus or the pointer, then applies it', async () => {
+    const { wrapper } = await setup('/')
+    const first = wrapper.findAll('[data-testid="sidebar-recent-run"]')[0]
+    ;(first.element as HTMLElement).focus()
+    mocks.listRuns.mockResolvedValue({ items: [r('b', cur('gate', 'gate', 'gate', 'waiting_human'), 'waiting_human'), r('a', cur('impl', 'agent', 'auto', 'running'))], total: 2 })
+    vi.advanceTimersByTime(RECENT_POLL_MS)
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['a', 'b', 'c'])
+    expect(document.activeElement).toBe(first.element)
+    const list = first.element.parentElement as HTMLElement
+    list.dispatchEvent(new Event('pointerenter'))
+    ;(first.element as HTMLElement).blur()
+    list.dispatchEvent(new FocusEvent('focusout'))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['a', 'b', 'c'])
+    list.dispatchEvent(new Event('pointerleave'))
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['b', 'a'])
+    wrapper.unmount()
+  })
+
+  it('refreshes on a local activity relay and skips polls while hidden', async () => {
+    const { wrapper } = await setup('/')
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true })
+    vi.advanceTimersByTime(RECENT_POLL_MS)
+    await flushPromises()
+    expect(mocks.listRuns).toHaveBeenCalledTimes(1)
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => false })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 20))
+    await flushPromises()
+    expect(mocks.listRuns).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+})
