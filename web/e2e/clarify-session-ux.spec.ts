@@ -144,4 +144,41 @@ test.describe('ClarifyChat 非 reviewMode 澄清会话', () => {
     await page.keyboard.type('！')
     await expect(box).toHaveValue('运行结束后才到的回复\n又打了几个字！')
   })
+
+  test('取消运行的同时发送：原文暂存，续跑后回到输入框并能发出去', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+
+    await sendClarify(page, '取消时发出的回复')
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.locator('[data-testid="clarify-input"]')).toHaveCount(0)
+    await expect(page.getByTestId('clarify-send-notice')).toHaveText('运行已结束，这条消息没有发送；续跑后请重新发送')
+    await expect(page.getByTestId('clarify-scroller')).not.toContainText('取消时发出的回复')
+    const stash = await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:run-clarify-e2e:clarify'))
+    expect(JSON.parse(stash!).text).toBe('取消时发出的回复')
+
+    // Survives a refresh; the harness reloads with the run resumed.
+    await page.reload()
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    const box = page.locator('[data-testid="clarify-input"]')
+    await expect(box).toHaveValue('取消时发出的回复')
+    expect(await page.evaluate(() => localStorage.getItem('grasp-clarify-stash:run-clarify-e2e:clarify'))).toBeNull()
+
+    await page.getByTestId('clarify-send-label').click()
+    await expect(page.getByTestId('clarify-review-queue')).toContainText('取消时发出的回复')
+    await expect(box).toHaveValue('')
+  })
+
+  test('运行结束时正在打的草稿：先暂存，续跑后回到输入框', async ({ page }) => {
+    await page.setViewportSize({ width: 1100, height: 900 })
+    await page.goto('/clarify-session-ux.html')
+    await expect(page.getByTestId('clarify-ux-root')).toBeVisible({ timeout: 15_000 })
+    const box = page.locator('[data-testid="clarify-input"]')
+    await box.fill('还没发的草稿')
+    await page.getByTestId('sim-cancel-race').click()
+    await expect(page.getByTestId('clarify-send-notice')).toBeVisible()
+    await page.getByTestId('sim-resume').click()
+    await expect(box).toHaveValue('还没发的草稿')
+  })
 })

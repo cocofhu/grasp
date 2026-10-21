@@ -186,6 +186,46 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
     expect(draft.value).toBe('从别处发出的回复')
   })
 
+  it('WS frame dropped at turn start: ref-only attachments come back when there is no local copy', async () => {
+    const { chat, draft, attachments } = mountHost()
+    chat.value!.applyReviewFrame({
+      type: 'review',
+      event: 'error',
+      nodeId: 'react-1',
+      code: 'clarify_visit_ended',
+      autoRetryOnResume: false,
+      interrupted: false,
+      iteration: 1,
+      dropped: { text: '', attachments: [{ ref: 'blob:abc', mimeType: 'image/png', name: 'a.png' }] },
+    })
+    await flushPromises()
+    expect(draft.value).toBe('')
+    expect(attachments.value).toEqual([{ ref: 'blob:abc', mimeType: 'image/png', name: 'a.png' }])
+  })
+
+  it('WS frame after turn_begin prefers the local image copy over the ref-only server item', async () => {
+    const { wrapper, chat, attachments } = mountHost()
+    const local: ClarifyImage = { data: 'aGk=', mimeType: 'image/png', name: 'a.png' }
+    attachments.value = [local]
+    await flushPromises()
+    await typeAndSend(wrapper, '看图')
+    chat.value!.applyReviewFrame({
+      event: 'turn_begin',
+      nodeId: 'react-1',
+      item: { id: 'srv-2', text: '看图', images: [{ ref: 'blob:abc', mimeType: 'image/png' }] },
+    })
+    chat.value!.applyReviewFrame({
+      event: 'error',
+      nodeId: 'react-1',
+      code: 'clarify_visit_ended',
+      autoRetryOnResume: false,
+      interrupted: false,
+      dropped: { text: '看图', attachments: [{ ref: 'blob:abc', mimeType: 'image/png' }] },
+    })
+    await flushPromises()
+    expect(attachments.value).toEqual([local])
+  })
+
   it('WS error frame for the system first message: removes its bubbles, restores nothing', async () => {
     const { wrapper, chat, draft } = mountHost()
     chat.value!.applyReviewFrame({ event: 'turn_begin', nodeId: 'react-1', item: { text: '做一个待办清单' } })
@@ -196,7 +236,7 @@ describe('ClarifyChat: reply refused because the run ended (clarify_visit_ended)
       message: '运行已结束，这条消息没有发送',
       code: 'clarify_visit_ended',
       autoRetryOnResume: true,
-      dropped: { text: '' },
+      dropped: {},
     })
     await flushPromises()
     expect(wrapper.find('[data-testid="clarify-scroller"]').text()).not.toContain('运行已结束')

@@ -1769,8 +1769,10 @@ function applyReviewFrame(frame: {
       liveTurnOrigin = {
         id: auth?.id,
         text: (local ? composerOrigin.get(toRaw(local)) : undefined) ?? humanText,
-        images: images ?? [],
-        annotations: annotations ?? [],
+        // Prefer the local copy: it still has inline data/preview, while the
+        // server item may already be ref-only (blob:…) after upload.
+        images: local?.images?.length ? local.images : (images ?? []),
+        annotations: local?.annotations?.length ? local.annotations : (annotations ?? []),
         newHuman: false,
       }
       // Cover retry: reuse trailing live human + failed/empty agent instead of duplicating.

@@ -28,10 +28,18 @@ const App = defineComponent({
     } | null>(null)
     /** Last text the chat emitted for sending (host would POST it). */
     let lastSent = ''
+    /** Run open for input (false = run cancelled / ended, true = resumed). */
+    const runActive = ref(true)
 
     /** Host got 409 clarify_visit_ended for the last send (run ended). */
     function simVisitEnded() {
       chatRef.value?.restoreUnsentQueued?.({ text: lastSent }, i18n.global.t('pages.clarify.visitEndedResend'))
+    }
+    /** Run cancelled while the reply was in flight: status push first, then the 409. */
+    async function simCancelRace() {
+      runActive.value = false
+      await nextTick()
+      simVisitEnded()
     }
 
     /** Host narrow-update gate mirror (RunDetail/GatesInbox busy skip). */
@@ -259,6 +267,28 @@ const App = defineComponent({
             '模拟运行已结束(409)',
           ),
           h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-cancel-race',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => void simCancelRace(),
+            },
+            '模拟取消时发送',
+          ),
+          h(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'sim-resume',
+              class: 'px-3 py-1.5 rounded border text-sm',
+              onClick: () => {
+                runActive.value = true
+              },
+            },
+            '模拟续跑',
+          ),
+          h(
             'span',
             {
               'data-testid': 'host-skip-refresh',
@@ -274,7 +304,7 @@ const App = defineComponent({
           iteration: 1,
           turns: turns.value,
           done: false,
-          active: true,
+          active: runActive.value,
           reviewMode: false,
           annotateEnabled: true,
           hideFinish: true,
