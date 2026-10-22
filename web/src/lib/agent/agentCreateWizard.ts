@@ -1,11 +1,7 @@
 import type { Agent, AgentCapabilities, AgentFile, MCPServer } from '@/lib/api/api'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
-import {
-  AGENT_SETTINGS_REL_PATH,
-  BACKEND_AUTH_HINTS,
-  hasAuthKeyConfigured,
-} from '@/lib/agent/backendAuthGuide'
+import { AGENT_SETTINGS_REL_PATH, BACKEND_AUTH_HINTS } from '@/lib/agent/backendAuthGuide'
 import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 import { switchOpenCodeEnv } from '@/lib/agent/openCodeProvider'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
@@ -80,7 +76,15 @@ export type WizardDraft = {
   cliBackend: WizardBackendId
   authMode: WizardAuthMode
   customConfigContent: string
+  /** Non-OpenCode workspace credential. Empty means inherit shared Agent config. */
+  aiCredentialId?: string
+  /** OpenCode model-vendor credential. Empty means inherit shared Agent config. */
+  openCodeCredentialId?: string
   gitCredentialType?: GitCredentialType
+  /** GitHub, GitLab, or SSH key credential for the selected Git type. */
+  gitCredentialId?: string
+  /** Known-hosts credential. Only sent when Git type is SSH and the user picked one. */
+  sshHostsCredentialId?: string
   configRoot: string
   env: WizardKV[]
   mcp: WizardMCP[]
@@ -135,7 +139,11 @@ export function freshDraft(): WizardDraft {
     cliBackend: CLI_BACKEND_DEFAULT,
     authMode: 'apiKey',
     customConfigContent: '',
+    aiCredentialId: '',
+    openCodeCredentialId: '',
     gitCredentialType: undefined,
+    gitCredentialId: '',
+    sshHostsCredentialId: '',
     configRoot: configRootFor(APIKEY_BACKEND),
     env: [],
     mcp: [],
@@ -162,9 +170,23 @@ export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
   syncStartPathFields(draft, id)
   draft.acpBackend = id
   draft.configRoot = configRootFor(id)
+  if (prev !== id) {
+    draft.aiCredentialId = ''
+    draft.openCodeCredentialId = ''
+  }
   draft.env = recToKV(
     switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.env), id), id), prev, id).env,
   )
+}
+
+function trimmedId(value?: string): string {
+  return value?.trim() || ''
+}
+
+/** Credential id for the current Backend. The other field is ignored so a stale pick is not sent. */
+export function selectedModelCredentialId(draft: WizardDraft): string {
+  if (draft.authMode === 'customConfig') return ''
+  return trimmedId(draft.acpBackend === 'opencode' ? draft.openCodeCredentialId : draft.aiCredentialId)
 }
 
 /** Switch start path; CLI restores the last CLI backend that was picked. */
@@ -322,10 +344,21 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   const env = stripSecretKeysFromRecord(normalizeWizardRegions(envDraft))
   const useTemplate = hasRoleTemplate(draft)
   const files = collectFiles(draft)
+  const modelCredentialId = selectedModelCredentialId(draft)
+  const gitCredentialId = draft.gitCredentialType ? trimmedId(draft.gitCredentialId) : ''
+  const sshHostsCredentialId =
+    draft.gitCredentialType === 'ssh' ? trimmedId(draft.sshHostsCredentialId) : ''
   return {
     name,
     acpBackend: draft.acpBackend || APIKEY_BACKEND,
+    ...(modelCredentialId
+      ? draft.acpBackend === 'opencode'
+        ? { openCodeCredentialId: modelCredentialId }
+        : { aiCredentialId: modelCredentialId }
+      : {}),
     ...(draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
+    ...(gitCredentialId ? { gitCredentialId } : {}),
+    ...(sshHostsCredentialId ? { sshHostsCredentialId } : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
     files,
     mcp: draft.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
@@ -364,17 +397,30 @@ export type ReviewSummaryItem = {
   detail?: string
 }
 
+/** Aliases resolved by the wizard. Ids are the fallback when a name is unknown. */
+export type WizardReviewNames = {
+  model?: string
+  git?: string
+  sshHosts?: string
+}
+
 /** Build confirmation-page summary chips aligned to the 5-step wizard IA. */
-export function buildReviewSummary(draft: WizardDraft): ReviewSummaryItem[] {
+export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames = {}): ReviewSummaryItem[] {
   const normalizedEnv = normalizeRegions(kvToRec(draft.env), draft.acpBackend, 'strict').env
   const region = regionSummary(normalizedEnv, draft.acpBackend, 'strict')
   const name = draft.name.trim() || '—'
-  const gitN = envConfiguredCount(draft, true)
-  const authViaKey =
-    draft.authMode === 'apiKey' && hasAuthKeyConfigured(draft.env, draft.acpBackend)
+  const modelCredentialId = selectedModelCredentialId(draft)
+  const authViaCredential = !!modelCredentialId
   const authViaConfig = hasCustomConfigWritten(draft)
-  const authConfigured = authViaKey || authViaConfig
+  const authConfigured = authViaCredential || authViaConfig
   const apiKeySkipped = !!draft.skipped.apiKey || !authConfigured
+  const gitParts: string[] = []
+  if (trimmedId(draft.gitCredentialId)) gitParts.push(names.git || trimmedId(draft.gitCredentialId))
+  if (draft.gitCredentialType === 'ssh' && trimmedId(draft.sshHostsCredentialId)) {
+    gitParts.push(names.sshHosts || trimmedId(draft.sshHostsCredentialId))
+  }
+  if (draft.env.some((entry) => entry.k.trim() === 'GIT_REPOS')) gitParts.push('GIT_REPOS')
+  if (!gitParts.length && draft.gitCredentialType) gitParts.push(draft.gitCredentialType)
 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
@@ -406,20 +452,16 @@ export function buildReviewSummary(draft: WizardDraft): ReviewSummaryItem[] {
       kind: authConfigured ? 'ok' : 'empty',
       labelKey: authViaConfig
         ? 'pages.agentStudio.wizard.review.customConfigWritten'
-        : authViaKey
+        : authViaCredential
           ? 'pages.agentStudio.wizard.review.apiKeyConfigured'
           : 'pages.agentStudio.wizard.review.apiKeySkipped',
+      detail: authViaCredential ? names.model || modelCredentialId : undefined,
     },
     {
       key: 'git',
-      kind: gitN > 0 || draft.gitCredentialType ? 'ok' : 'empty',
+      kind: gitParts.length ? 'ok' : 'empty',
       labelKey: 'pages.agentStudio.wizard.review.git',
-      detail:
-        gitN > 0
-          ? String(gitN)
-          : draft.gitCredentialType
-            ? draft.gitCredentialType
-            : undefined,
+      detail: gitParts.length ? gitParts.join(' · ') : undefined,
     },
   ]
   if (apiKeySkipped && !authConfigured) {

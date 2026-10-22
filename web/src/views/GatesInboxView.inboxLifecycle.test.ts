@@ -94,6 +94,7 @@ vi.mock('@/lib/inbox/useClarifyDraft', async () => {
 // races and sidebar totalCount stay covered — do not stub the composable away.
 
 import GatesInboxView from './GatesInboxView.vue'
+import { beginInboxCancelDeparture, endInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { setHomeApproveHandoff, takeHomeApproveHandoff } from '@/lib/run/homeApproveHandoff'
 import { CLARIFY_CAPS, IMPLEMENT_CAPS } from '@/test/capsFixtures'
@@ -297,6 +298,7 @@ async function reloadInboxList() {
 
 beforeEach(async () => {
   vi.clearAllMocks()
+  endInboxCancelDeparture()
   routeState.query = {}
   composerFrames.applied = []
   composerFrames.acp = []
@@ -1954,6 +1956,40 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     expect(usePendingGates().hasPendingUpdate.value).toBe(false)
     expect(inboxCallsFor('run-a', 'clarify-a')).toHaveLength(contextCallsBeforeSend)
     expect(wrapper.find('[data-testid="review-composer-stub"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps the open conversation when that run is being cancelled, and does not open the next row or the empty inbox', async () => {
+    const a = gateItem('a')
+    const b = gateItem('b')
+    let list = [a, b]
+    mocks.listGates.mockImplementation(async () => paged(list))
+
+    const wrapper = mountInbox()
+    await flushPromises()
+    await nextTick()
+    await selectByQuery('run-a', 'gate-a')
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+
+    beginInboxCancelDeparture('run-a')
+    list = [b]
+    await reloadInboxList()
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(wrapper.findComponent({ name: 'EmptyState' }).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('没有待审批项')
+
+    list = []
+    await reloadInboxList()
+    expect(activeDetail(wrapper)).toEqual({ runId: 'run-a', nodeId: 'gate-a' })
+    expect(wrapper.findComponent({ name: 'EmptyState' }).exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('没有待审批项')
+
+    endInboxCancelDeparture('run-a')
+    await reloadInboxList()
+    expect(activeDetail(wrapper)).toBeNull()
+    const empty = wrapper.findComponent({ name: 'EmptyState' })
+    expect(empty.exists()).toBe(true)
+    expect(empty.props('title')).toBe('没有待审批项')
     wrapper.unmount()
   })
 })

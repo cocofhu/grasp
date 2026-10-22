@@ -152,8 +152,12 @@ describe('useAgentCreateWizard coverage', () => {
 
     wizard.onApiKeyInput(' key-value ')
     expect(wizard.apiKeyInput.value).toBe(' key-value ')
+    expect(wizard.authConfigured.value).toBe(false)
+    wizard.draft.value.acpBackend = 'cursor'
+    wizard.draft.value.aiCredentialId = 'cred-1'
     expect(wizard.authConfigured.value).toBe(true)
     expect(wizard.showAuthReminder.value).toBe(false)
+    wizard.draft.value.aiCredentialId = ''
     wizard.onApiKeyInput('')
     expect(wizard.authConfigured.value).toBe(false)
     wizard.draft.value.acpBackend = 'cursor'
@@ -182,13 +186,26 @@ describe('useAgentCreateWizard coverage', () => {
   it('marks Git selection, annotates picks, and derives presentation helpers', () => {
     const { wizard, app } = mountWizard()
     wizard.draft.value.skipped.git = true
+    wizard.onGitCredentialType('github_https')
+    wizard.onGitCredentialId('gh-1')
     wizard.onGitCredentialType('ssh')
     expect(wizard.draft.value.gitCredentialType).toBe('ssh')
+    expect(wizard.draft.value.gitCredentialId).toBe('')
     expect(wizard.draft.value.skipped.git).toBeUndefined()
+    wizard.onGitCredentialId('key-1')
+    wizard.onSshHostsCredentialId('hosts-1')
+    expect(wizard.draft.value.sshHostsCredentialId).toBe('hosts-1')
     expect(wizard.chipClass('ok')).toContain('border-ok')
     expect(wizard.chipClass('def')).toContain('border-accent')
     expect(wizard.chipClass('empty')).toContain('border-line')
     expect(wizard.headSub.value).toContain('basics')
+    wizard.upsertEnv('GIT_REPOS', '${vars.repos}')
+    wizard.draft.value.step = 3
+    wizard.goSkip()
+    expect(wizard.draft.value.gitCredentialType).toBeUndefined()
+    expect(wizard.draft.value.gitCredentialId).toBe('')
+    expect(wizard.draft.value.sshHostsCredentialId).toBe('')
+    expect(wizard.draft.value.env.some((entry) => entry.k === 'GIT_REPOS')).toBe(false)
     wizard.draft.value.step = 4
     expect(wizard.headSub.value).toContain('review')
     expect(wizard.reviewItems.value.length).toBeGreaterThan(0)

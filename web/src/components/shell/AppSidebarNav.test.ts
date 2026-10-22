@@ -141,6 +141,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 }))
 
 import enNav from '@/locales/en/nav.json'
+import { endInboxCancelDeparture, inboxCancelDepartureRunId } from '@/lib/inbox/inboxCancelDeparture'
 import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
@@ -201,6 +202,7 @@ beforeEach(() => {
   favMocks.displayItems.value = []
   favMocks.hydrateDisplay.mockResolvedValue(undefined)
   breakpointMocks.isMobile.value = false
+  endInboxCancelDeparture()
   routeState.path = '/dashboard'
   routeState.query = {}
   routeState.meta = {}
@@ -1836,6 +1838,168 @@ describe('AppSidebarNav cancel run', () => {
     resolveCancel({ status: 'cancelled' })
     await flushPromises()
     expect(document.querySelector('[role="dialog"]')).toBeNull()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  function pendingClarify(runId: string, nodeId: string, runTitle: string) {
+    return {
+      type: 'clarify',
+      runId,
+      nodeId,
+      label: '需求澄清',
+      kind: 'clarify',
+      workflowName: 'w',
+      runTitle,
+    }
+  }
+
+  async function confirmFromMenu(wrapper: ReturnType<typeof mountNav>, key = 'run-1') {
+    openCancelMenu(wrapper, key)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+  }
+
+  it('opens the new-request page when cancelling the inbox conversation on screen', async () => {
+    routeState.path = '/gates'
+    routeState.query = { run: 'run-1', node: 'a' }
+    gateMocks.displayedItems.value = [
+      pendingClarify('run-1', 'a', '把登录做清楚'),
+      pendingClarify('run-2', 'b', '另一条'),
+    ]
+    let refreshAfterLeave = false
+    let leftBeforeRefreshSettled = false
+    apiMocks.listRuns.mockImplementation(() => {
+      if (refreshAfterLeave && !leftBeforeRefreshSettled) {
+        leftBeforeRefreshSettled =
+          routerMocks.push.mock.calls.length === 1 && inboxCancelDepartureRunId() === 'run-1'
+      }
+      const items = unfinishedRunsFromInbox().filter((item) => !refreshAfterLeave || item.id !== 'run-1')
+      return Promise.resolve({ items, total: items.length })
+    })
+    const wrapper = mountNav(true)
+    await flushPromises()
+    refreshAfterLeave = true
+    await confirmFromMenu(wrapper)
+    expect(leftBeforeRefreshSettled).toBe(true)
+    expect(routerMocks.push).toHaveBeenCalledTimes(1)
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/dashboard' })
+    expect(routerMocks.push.mock.calls[0]?.[0]).not.toHaveProperty('query')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(useToast().toasts.value.some((item) => item.message === '已取消运行')).toBe(true)
+    expect(wrapper.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual(['run-2'])
+    expect(inboxCancelDepartureRunId()).toBeNull()
+    expect(wrapper.text()).not.toContain('没有待审批项')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('treats a query-less inbox and an array run query as the open conversation', async () => {
+    gateMocks.activeInboxKey.value = 'run-1:a'
+    routeState.path = '/gates'
+    routeState.query = {}
+    gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    await confirmFromMenu(wrapper)
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/dashboard' })
+
+    routerMocks.push.mockClear()
+    routeState.query = { run: ['run-1'] }
+    gateMocks.activeInboxKey.value = null
+    gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
+    await flushPromises()
+    await confirmFromMenu(wrapper)
+    expect(routerMocks.push).toHaveBeenCalledTimes(1)
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/dashboard' })
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('stays on the conversation and keeps the existing error when cancel fails', async () => {
+    routeState.path = '/gates'
+    routeState.query = { run: 'run-1', node: 'a' }
+    gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    openCancelMenu(wrapper)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    apiMocks.cancelRun.mockRejectedValueOnce(Object.assign(new Error('already finished'), { status: 400 }))
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    expect(routeState.path).toBe('/gates')
+    expect(routeState.query).toEqual({ run: 'run-1', node: 'a' })
+    expect(document.querySelector('[data-testid="nav-pending-cancel-error"]')?.textContent).toContain('当前状态不可取消')
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(inboxCancelDepartureRunId()).toBeNull()
+    expect(wrapper.find('[data-key="run-1"]').exists()).toBe(true)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('does not change the page when the cancelled run is not the open inbox conversation', async () => {
+    gateMocks.displayedItems.value = [
+      pendingClarify('run-1', 'a', '把登录做清楚'),
+      pendingClarify('run-2', 'b', '另一条'),
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const pages: Array<{ path: string; query: Record<string, unknown> }> = [
+      { path: '/dashboard', query: {} },
+      { path: '/board', query: {} },
+      { path: '/runs', query: {} },
+      { path: '/runs/run-1', query: {} },
+      { path: '/runs/run-1/live', query: { node: 'a' } },
+      { path: '/gates', query: { run: 'run-2', node: 'b' } },
+    ]
+    for (const page of pages) {
+      routerMocks.push.mockClear()
+      routeState.path = page.path
+      routeState.query = { ...page.query }
+      await nextTick()
+      await confirmFromMenu(wrapper, 'run-1')
+      expect(routerMocks.push).not.toHaveBeenCalled()
+      expect(routeState.path).toBe(page.path)
+      expect(routeState.query).toEqual(page.query)
+      expect(document.querySelector('[role="dialog"]')).toBeNull()
+    }
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('holds the open conversation until the leave finishes, and does not navigate before success', async () => {
+    routeState.path = '/gates'
+    routeState.query = { run: 'run-1', node: 'a' }
+    gateMocks.displayedItems.value = [
+      pendingClarify('run-1', 'a', '把登录做清楚'),
+      pendingClarify('run-2', 'b', '另一条'),
+    ]
+    let resolveCancel: (value: { status: string }) => void = () => {}
+    apiMocks.cancelRun.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveCancel = resolve
+      }),
+    )
+    const wrapper = mountNav(true)
+    await flushPromises()
+    openCancelMenu(wrapper)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await Promise.resolve()
+    expect(inboxCancelDepartureRunId()).toBe('run-1')
+    expect(routerMocks.push).not.toHaveBeenCalled()
+    resolveCancel({ status: 'cancelled' })
+    await flushPromises()
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/dashboard' })
+    expect(inboxCancelDepartureRunId()).toBeNull()
     wrapper.unmount()
     vi.useRealTimers()
   })

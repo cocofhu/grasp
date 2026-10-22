@@ -93,6 +93,21 @@ describe('AgentGitGuide', () => {
     expect(added).toEqual(['GIT_REPOS'])
   })
 
+  it('已有 GIT_REPOS 时按钮显示已添加且不再追加', async () => {
+    const added: string[] = []
+    const wrapper = mountGuide([{ k: 'GIT_REPOS', v: '${vars.repos}' }], {
+      credentialType: 'github_https',
+      upsertEnv: (key) => {
+        added.push(key)
+      },
+    })
+    const button = wrapper.get('[data-test="git-apply-recommended"]')
+    expect(button.text()).toContain('已添加推荐变量')
+    expect(button.attributes('disabled')).toBeDefined()
+    await button.trigger('click')
+    expect(added).toEqual([])
+  })
+
   it('向导文案强调并存不互斥，不含「点一个即可」（g1.3 / review v3）', () => {
     const wrapper = mountGuide([])
     const text = wrapper.text()

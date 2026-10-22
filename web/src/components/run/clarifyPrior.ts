@@ -2,20 +2,24 @@ import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 import type { ClarifyNodeAsk } from './ClarifyHandoffBubble.vue'
 
 /**
- * What a node starts from: the note of the visit that routed into it, else its own task.
+ * What a node starts from: the nearest note an earlier node handed over, else its own task.
  * A resume re-enters the same node (no new transition), so earlier visits of nodeId
- * are this node's own history, not its upstream — walk back past them.
+ * are this node's own history, not its upstream — walk back past them, even when
+ * that visit only has a platform-written failure note. A different node's visit
+ * with an empty note is not an upstream either; keep walking. The first non-empty
+ * note wins (so a later return, such as test review, is not replaced by an older
+ * one). Only when the whole chain has no note do we fall back to the task.
  */
 export function nodeAsk(list: readonly ClarifyPriorSegment[], index: number, task?: string, nodeId?: string): ClarifyNodeAsk | null {
-  let up: ClarifyPriorSegment | undefined
   for (let i = index - 1; i >= 0; i--) {
     const s = list[i]
-    if (nodeId && s?.nodeId === nodeId) continue
-    up = s
-    break
+    if (!s || (nodeId && s.nodeId === nodeId)) continue
+    const text = s.handoff?.trim()
+    if (!text) continue
+    return { kind: 'handoff', text, from: s.label, source: s.handoffSource || 'agent' }
   }
-  if (up?.handoff?.trim()) return { kind: 'handoff', text: up.handoff.trim(), from: up.label, source: up.handoffSource || 'agent' }
-  return task?.trim() ? { kind: 'task', text: task.trim() } : null
+  const own = task?.trim()
+  return own ? { kind: 'task', text: own } : null
 }
 
 export function priorAsk(list: readonly ClarifyPriorSegment[], nodeId: string, iteration: number): ClarifyNodeAsk | null {

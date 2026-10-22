@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
+import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
 import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
@@ -12,6 +13,7 @@ import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 
 import { kvToRec, recToKV } from '@/lib/agent/agentCreateWizard'
 import { readCliModel, writeCliModel } from '@/lib/agent/cliModelEnv'
+import { gitKind } from '@/lib/workspace/credentialKinds'
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
 import type { AgentCreateWizardProps, AgentCreateWizardEmit } from '@/lib/agent/useAgentCreateWizard'
 
@@ -29,6 +31,7 @@ const {
   envHelpOpen,
   stepAnimKey,
   apiKeyInput,
+  credentialItems,
   customConfigError,
   openCodeBaseError,
   openCodeModelError,
@@ -58,11 +61,15 @@ const {
   setAuthMode,
   onCustomConfigInput,
   onApiKeyInput,
+  onModelCredential,
   onOpenCodeProvider,
   onOpenCodeBaseURL,
   onOpenCodeModel,
   onOpenCodeVision,
   onGitCredentialType,
+  onGitCredentialId,
+  onSshHostsCredentialId,
+  removeGitRepos,
   goPrev,
   goSkip,
   goNext,
@@ -72,6 +79,11 @@ const {
 } = useAgentCreateWizard(props, emit)
 
 const cliModel = computed(() => readCliModel(kvToRec(draft.value.env)))
+const gitAliasKind = computed(() => (draft.value.gitCredentialType ? gitKind(draft.value.gitCredentialType) : undefined))
+const gitReposEntry = computed(() => draft.value.env.find((entry) => entry.k === 'GIT_REPOS'))
+const modelCredentialId = computed(() =>
+  draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId || '' : draft.value.aiCredentialId || '',
+)
 function setCliModel(id: string) {
   draft.value.env = recToKV(writeCliModel(kvToRec(draft.value.env), id))
 }
@@ -232,6 +244,7 @@ function setCliModel(id: string) {
 
                 <template v-else-if="currentStep.id === 'apiKey'">
                   <WizardApiKeyStepPanel
+                    pick-credential
                     :acp-backend="draft.acpBackend"
                     :config-root="draft.configRoot"
                     :auth-mode="draft.authMode"
@@ -242,6 +255,8 @@ function setCliModel(id: string) {
                     :env="kvToRec(draft.env)"
                     :open-code-base-error="openCodeBaseError"
                     :open-code-model-error="openCodeModelError"
+                    :credential-items="credentialItems"
+                    :selected-credential-id="modelCredentialId"
                     @update:auth-mode="setAuthMode"
                     @update:api-key-input="onApiKeyInput"
                     @update:custom-config-content="onCustomConfigInput"
@@ -249,6 +264,7 @@ function setCliModel(id: string) {
                     @update:open-code-base-url="onOpenCodeBaseURL"
                     @update:open-code-model="onOpenCodeModel"
                     @update:open-code-vision="onOpenCodeVision"
+                    @update:selected-credential-id="onModelCredential"
                   />
                 </template>
 
@@ -266,6 +282,49 @@ function setCliModel(id: string) {
                     @update:credential-type="onGitCredentialType"
                     @help="envHelpOpen = true"
                   />
+                  <CredentialAliasPicker
+                    v-if="gitAliasKind"
+                    :kind="gitAliasKind.id"
+                    :items="credentialItems"
+                    :selected-id="draft.gitCredentialId"
+                    :empty-text="t('pages.agentStudio.wizard.git.emptySkip')"
+                    @update:selected-id="onGitCredentialId"
+                  />
+                  <CredentialAliasPicker
+                    v-if="draft.gitCredentialType === 'ssh'"
+                    kind="ssh_hosts"
+                    :items="credentialItems"
+                    :selected-id="draft.sshHostsCredentialId"
+                    :empty-text="t('pages.agentStudio.wizard.git.hostsEmpty')"
+                    @update:selected-id="onSshHostsCredentialId"
+                  />
+                  <div
+                    v-if="gitReposEntry"
+                    class="mt-3 flex items-center gap-1.5"
+                    data-test="wizard-git-repos"
+                  >
+                    <input
+                      :value="gitReposEntry.k"
+                      readonly
+                      aria-label="GIT_REPOS"
+                      class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt"
+                    />
+                    <input
+                      :value="gitReposEntry.v"
+                      readonly
+                      aria-label="${vars.repos}"
+                      class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt2"
+                    />
+                    <button
+                      type="button"
+                      class="text-txt3 hover:text-err"
+                      data-test="wizard-git-repos-remove"
+                      :aria-label="t('pages.agentStudio.dialogs.delete')"
+                      @click="removeGitRepos"
+                    >
+                      ×
+                    </button>
+                  </div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'review'">

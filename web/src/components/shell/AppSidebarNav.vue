@@ -10,6 +10,10 @@ import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/
 import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import {
+  beginInboxCancelDeparture,
+  endInboxCancelDeparture,
+} from '@/lib/inbox/inboxCancelDeparture'
+import {
   INBOX_SHARE_INTENT_QUERY,
   INBOX_SHARE_INTENT_VALUE,
   knownInboxProcessingLock,
@@ -477,19 +481,58 @@ function mapCancelRunError(e: unknown): string {
   return msg || t('pages.runDetail.cancelErrorGeneric')
 }
 
+function routeQueryRunId(): string {
+  const q = route.query.run
+  if (Array.isArray(q)) return String(q[0] ?? '')
+  return typeof q === 'string' ? q : ''
+}
+
+/** The main area is this run's inbox conversation, not another page or another run. */
+function isCurrentInboxConversation(it: InboxItem): boolean {
+  const onInbox = route.path === '/gates' || route.path.startsWith('/gates/')
+  if (!onInbox) return false
+  const qRun = routeQueryRunId()
+  if (qRun) return qRun === it.runId
+  return !!activeInboxKey.value?.startsWith(`${it.runId}:`)
+}
+
 async function confirmCancelRun() {
   const target = cancelTarget.value
   if (!target || cancellingRun.value) return
   cancellingRun.value = true
   cancelRunError.value = ''
+  const leavingInbox = isCurrentInboxConversation(target)
+  // Hold the open conversation for the whole request, so a list refresh that
+  // lands before the response cannot paint the empty inbox or open the next row.
+  if (leavingInbox) beginInboxCancelDeparture(target.runId)
+  let cancelled = false
   try {
     await api.cancelRun(target.runId)
-    cancelTarget.value = null
-    toast.success(t('pages.runDetail.cancelSuccess'))
-    await loadRunningRuns()
+    cancelled = true
   } catch (e) {
     cancelRunError.value = mapCancelRunError(e)
+  }
+  if (!cancelled) {
+    if (leavingInbox) endInboxCancelDeparture(target.runId)
+    cancellingRun.value = false
+    return
+  }
+  cancelTarget.value = null
+  toast.success(t('pages.runDetail.cancelSuccess'))
+  // Leave /gates before the running-list refresh settles. A later refresh must
+  // not pull the new-request page back onto the empty inbox, and must not open
+  // another running row in its place.
+  if (leavingInbox) {
+    try {
+      await router.push({ path: '/dashboard' })
+    } catch {
+      /* navigation aborted; the hold ends after the list refresh */
+    }
+  }
+  try {
+    await loadRunningRuns()
   } finally {
+    if (leavingInbox) endInboxCancelDeparture(target.runId)
     cancellingRun.value = false
   }
 }
