@@ -510,7 +510,7 @@ function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
     if (!run) return 'pulse'
     const mark = recentRunMark(run)
     if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
-    return 'motion' in mark ? mark.motion : null
+    return null
   }
   if (startFailedKeys.value.includes(itemKey(it))) return null
   if (isStartingInboxItem(it)) return 'spin'
@@ -528,9 +528,7 @@ function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: strin
   if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
   const tone = inboxBadgeTone(it)
   if (tone === 'replying') return []
-  if (tone === 'gate') return [{ name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' }]
-  if (tone === 'review') return [{ name: 'pending-review', toneClass: 'nav-row-type-icon--review' }]
-  return [{ name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' }]
+  return [{ name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }]
 }
 
 function isPendingActive(it: InboxItem): boolean {
@@ -721,7 +719,7 @@ const settingsItems = settingsNavItems
       <template v-for="it in orderedPendingRows" :key="it.runId">
         <div
           v-if="editingKey === it.runId"
-          class="nav-item mb-0.5 w-full min-w-0 cursor-text text-start"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
@@ -772,7 +770,7 @@ const settingsItems = settingsNavItems
           v-else
           v-hover-ink
           type="button"
-          class="nav-item mb-0.5 w-full min-w-0 text-start"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
@@ -1046,6 +1044,8 @@ const settingsItems = settingsNavItems
   stroke-width: 1.6;
 }
 .nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
+.nav-row-type-icon--accent { color: rgb(var(--c-accent-2)); }
+.nav-row-type-icon--hold { color: rgb(var(--c-warn)); }
 
 .pending-row-menu__item {
   display: flex;

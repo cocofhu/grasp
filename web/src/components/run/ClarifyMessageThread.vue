@@ -30,6 +30,7 @@ import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import Icon from '../ui/Icon.vue'
+import LlmSystemRow from './llm/LlmSystemRow.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 
 type ChoiceRows = { q: string; answers: string[] }[] | null
@@ -52,6 +53,8 @@ const props = withDefaults(
     priorsOnly?: boolean
     /** Open conversation under the folds (LLM transcript). */
     turns?: ClarifyTurn[]
+    /** Process rows for the open visit (流转 / 等人 / 结束). */
+    currentNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string }[]
     loadError?: boolean
     showEmpty?: boolean
     parseChoiceSummary?: (text: string) => ChoiceRows
@@ -68,6 +71,7 @@ const props = withDefaults(
     dividerTitle: '',
     priorsOnly: false,
     turns: () => [],
+    currentNotes: () => [],
     loadError: false,
     showEmpty: false,
   },
@@ -136,6 +140,7 @@ const priorRows = computed<ClarifyPriorSegment[]>(() => {
         members: [...(last.members?.length ? last.members : [autoMember(last)]), autoMember(seg)],
         endedAt: seg.endedAt,
         nodeId: last.nodeId,
+        notes: [...(last.notes || []), ...(seg.notes || [])],
       }
       continue
     }
@@ -327,6 +332,14 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
 
     <template v-if="priorSegments && priorSegments.length">
       <template v-for="seg in priorRows" :key="seg.nodeId + ':' + seg.iteration">
+        <LlmSystemRow
+          v-for="note in seg.notes || []"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
         <details
           v-if="priorExpandable(seg)"
           class="chat-thought chat-meta clarify-prior-segment w-full"
@@ -559,6 +572,14 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
     </template>
 
     <template v-if="!priorsOnly">
+      <LlmSystemRow
+        v-for="note in currentNotes"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader
         v-if="bootStarting && bootRecordKey && getBootRecord(bootRecordKey)"

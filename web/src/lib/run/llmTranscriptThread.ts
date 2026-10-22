@@ -15,15 +15,26 @@ export interface LlmThreadModel {
   priors: ClarifyPriorSegment[]
   currentTurns: ClarifyTurn[]
   current: LlmThreadCurrent | null
+  currentNotes: LlmSystemNote[]
   conversational: boolean
 }
 
 type NodeItem = Extract<LlmTranscriptItem, { type: 'node' }>
+type TraceItem = Extract<LlmTranscriptItem, { type: 'trace' }>
+
+export interface LlmSystemNote {
+  key: string
+  event: string
+  nodeLabel: string
+  toLabel?: string
+  edgeKind?: string
+}
 
 interface ExecGroup {
   node: NodeItem
   turns: LlmTurn[]
   error?: string
+  notes: LlmSystemNote[]
 }
 
 function withMessage(parts: AgentPart[], text?: string): AgentPart[] {
@@ -99,13 +110,29 @@ function segmentKind(nodeType: string, turns: LlmTurn[]): ClarifyPriorSegment['k
   return 'auto'
 }
 
+function noteOf(item: TraceItem): LlmSystemNote {
+  return {
+    key: item.key,
+    event: item.event,
+    nodeLabel: item.label,
+    toLabel: item.toLabel,
+    edgeKind: item.edgeKind,
+  }
+}
+
 function groupItems(items: LlmTranscriptItem[]): ExecGroup[] {
   const groups: ExecGroup[] = []
   let current: ExecGroup | null = null
+  const hold: LlmSystemNote[] = []
   for (const item of items) {
-    if (item.type === 'trace') continue
+    if (item.type === 'trace') {
+      const note = noteOf(item)
+      if (current) current.notes.push(note)
+      else hold.push(note)
+      continue
+    }
     if (item.type === 'node') {
-      current = { node: item, turns: [] }
+      current = { node: item, turns: [], notes: hold.splice(0) }
       groups.push(current)
       continue
     }
@@ -129,6 +156,7 @@ function toSegment(group: ExecGroup): ClarifyPriorSegment {
     endedAt: endedFrom(node.startedAt, node.durationSec),
     turns: clarifyTurnsFromLlm(group.turns, group.error),
     open: false,
+    notes: group.notes,
   }
 }
 
@@ -150,7 +178,7 @@ export function llmTranscriptThread(run: Run, items: LlmTranscriptItem[]): LlmTh
   const groups = groupItems(items)
   const last = groups[groups.length - 1]
   const priors = groups.slice(0, -1).map(toSegment)
-  if (!last) return { priors, currentTurns: [], current: null, conversational: false }
+  if (!last) return { priors, currentTurns: [], current: null, currentNotes: [], conversational: false }
   const currentTurns = clarifyTurnsFromLlm(last.turns, last.error)
   const current: LlmThreadCurrent = {
     nodeId: last.node.nodeId,
@@ -163,6 +191,7 @@ export function llmTranscriptThread(run: Run, items: LlmTranscriptItem[]): LlmTh
     priors,
     currentTurns,
     current,
+    currentNotes: last.notes,
     conversational: llmNodeConversational(run, current.nodeId, current.iteration),
   }
 }

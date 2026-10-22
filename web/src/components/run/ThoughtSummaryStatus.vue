@@ -26,6 +26,8 @@ const props = withDefaults(
     doneLabel?: string
     /** Badge when interrupted (default「已中断」); run-ended rows show the time instead. */
     interruptedLabel?: string
+    /** Icon while busy. Generating / hand-off / preparing stay on the arc; auto-run uses the breath dot. */
+    busyIcon?: string
   }>(),
   {
     busy: false,
@@ -35,6 +37,7 @@ const props = withDefaults(
     busyLabel: '',
     doneLabel: '',
     interruptedLabel: '',
+    busyIcon: '',
   },
 )
 
@@ -62,20 +65,26 @@ const label = computed(() => {
   if (state.value === 'interrupted') return props.interruptedLabel || t('pages.clarify.thoughtInterrupted')
   return ''
 })
+
+const iconName = computed(() => {
+  if (state.value === 'generating') return props.busyIcon || 'arc-spinner'
+  if (state.value === 'interrupted') return 'warn-pulse'
+  if (state.value === 'done') return 'check-draw'
+  return 'sparkles'
+})
 </script>
 
 <template>
   <span
-    class="thought-summary-status inline-flex min-w-0 flex-1 items-center"
+    class="thought-summary-status grasp-status-host inline-flex min-w-0 flex-1 items-center"
     :data-state="dataState"
     data-testid="thought-summary-state"
   >
     <Icon
-      :key="state"
-      :name="state === 'generating' ? 'spinner' : state === 'interrupted' ? 'alert' : state === 'done' ? 'check' : 'sparkles'"
-      :size="12"
+      :key="iconName"
+      :name="iconName"
+      :size="16"
       class="thought-summary-icon"
-      :class="{ 'thought-summary-icon--running': state === 'generating' }"
       aria-hidden="true"
     />
     <span class="thought-summary-title">{{ title || t('pages.clarify.thought') }}</span>
@@ -95,7 +104,7 @@ const label = computed(() => {
   font-size: 12px;
   line-height: 20px;
 }
-.thought-summary-icon { flex-shrink: 0; width: 12px; height: 12px; }
+.thought-summary-icon { flex-shrink: 0; width: 16px; height: 16px; }
 .thought-summary-title { min-width: 0; font-weight: 500; }
 .thought-summary-badge {
   flex-shrink: 0;
@@ -106,14 +115,7 @@ const label = computed(() => {
 }
 .thought-summary-status[data-state="streaming"] .thought-summary-icon,
 .thought-summary-status[data-state="streaming"] .thought-summary-badge { color: rgb(var(--c-accent-2)); }
+.thought-summary-status[data-state="done"] .thought-summary-icon { color: rgb(var(--c-ok)); }
 .thought-summary-status[data-state="interrupted"] .thought-summary-icon,
 .thought-summary-status[data-state="interrupted"] .thought-summary-badge { color: var(--chat-error, rgb(var(--c-err))); }
-.thought-summary-icon--running { animation: thought-summary-spin 1.4s linear infinite; }
-@keyframes thought-summary-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) {
-  .thought-summary-icon--running {
-    animation: none !important;
-    transform: none;
-  }
-}
 </style>

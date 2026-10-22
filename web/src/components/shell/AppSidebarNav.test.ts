@@ -281,7 +281,8 @@ describe('AppSidebarNav', () => {
     })
     await flushPromises()
     expect(keys()).toEqual(['run-x', 'run-y'])
-    expect(rowX().attributes('data-motion')).toBe('pulse')
+    expect(rowX().attributes('data-motion')).toBeUndefined()
+    expect(rowX().get('icon-stub').attributes('name')).toBe('breath-dot')
     expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
     await rowX().trigger('click')
     expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-x/live', query: { node: 'impl' } })
@@ -1113,17 +1114,17 @@ describe('AppSidebarNav', () => {
       expect(icon.html()).toContain(glyph)
       expect(row.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
     }
-    expectTypeIcon(rows[3], 'nav-row-type-icon--chat', 'M8 5h8')
-    expect(rows[3].html()).not.toContain('m8.5 12')
-    expectTypeIcon(rows[4], 'nav-row-type-icon--review', 'm-6 4')
-    expectTypeIcon(rows[5], 'nav-row-type-icon--approval', 'm8.5 12')
+    expectTypeIcon(rows[3], 'nav-row-type-icon--hold', 'M3.8 20a6.4')
+    expect(rows[3].html()).not.toContain('M8 5h8')
+    expectTypeIcon(rows[4], 'nav-row-type-icon--hold', 'cx="18.6"')
+    expectTypeIcon(rows[5], 'nav-row-type-icon--hold', 'grasp-user-dot')
     expect(rows[5].html()).not.toContain('M8 5h8')
 
     gateMocks.activeInboxKey.value = 'run-c:c'
     routeState.path = '/gates'
     await nextTick()
     expect(rows[3].classes()).toContain('active')
-    expectTypeIcon(rows[3], 'nav-row-type-icon--chat', 'M8 5h8')
+    expectTypeIcon(rows[3], 'nav-row-type-icon--hold', 'M3.8 20a6.4')
 
     gateMocks.activeInboxKey.value = 'run-s:s'
     await nextTick()
