@@ -743,8 +743,8 @@ function editWorkflow() {
                 </template>
 
                 <template v-else-if="currentStep.id === 'key'">
-                  <p class="onb-lede">
-                    {{ t(draft.acpBackend === 'codex' ? 'pages.onboarding.apiKey.codexMeta' : 'pages.onboarding.apiKey.meta') }}
+                  <p v-if="draft.acpBackend === 'codex'" class="onb-lede">
+                    {{ t('pages.onboarding.apiKey.codexMeta') }}
                   </p>
                   <section class="onb-cred mt-6" data-testid="onboarding-section-key">
                     <header class="onb-cred-head">
@@ -783,6 +783,7 @@ function editWorkflow() {
                         v-if="draft.acpBackend === 'opencode'"
                         class="mb-4"
                         columns
+                        hide-catalog-hints
                         :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
                         :base-url="draft.openCodeBaseURL"
                         :model="draft.openCodeModel"
@@ -866,9 +867,6 @@ function editWorkflow() {
                         />
                       </label>
                     </div>
-                    <p class="onb-hint">
-                      {{ t('pages.onboarding.gitUser.hint') }}
-                    </p>
                     <div class="mt-5 flex items-center gap-3">
                       <div class="onb-sub flex-1">
                         {{ t('pages.onboarding.git.repoCredSection') }}
@@ -905,14 +903,8 @@ function editWorkflow() {
                           />
                         </label>
                       </div>
-                      <p class="onb-hint" data-testid="onboarding-repo-hint">
-                        {{
-                          repoDirName
-                            ? t('pages.onboarding.repo.cloneTo', {
-                                dir: repoDirName,
-                              })
-                            : t('pages.onboarding.repo.hint')
-                        }}
+                      <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
+                        {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
                       <div class="onb-label mt-4">
                         {{ t('pages.onboarding.repo.credSection') }}
@@ -981,9 +973,6 @@ function editWorkflow() {
                           {{ t('pages.onboarding.repo.sshSavedToCredentials') }}
                         </p>
                       </div>
-                      <p class="onb-hint">
-                        {{ t('pages.onboarding.git.foot') }}
-                      </p>
                     </template>
                   </section>
                 </template>
@@ -1056,9 +1045,6 @@ function editWorkflow() {
                         </dd>
                       </div>
                     </dl>
-                    <p class="onb-hint mt-3">
-                      {{ t('pages.onboarding.workflow.reuseHint') }}
-                    </p>
                   </section>
                   <p v-if="createError" class="onb-note is-err mt-3" data-testid="onboarding-create-error">
                     {{ createError }}

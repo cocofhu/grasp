@@ -208,7 +208,9 @@ describe('workspace workflow management', () => {
     expect(style).toContain('.workflow-row:hover { background: rgb(var(--c-txt) / .018); }')
     expect(style).toMatch(/@container workflow-directory \(max-width:\s*740px\) \{[\s\S]*?\.workflow-row \{[^}]*padding:\s*16px 0 16px 12px;/)
     expect(style).not.toMatch(/\.workflow-search \{[^}]*margin-left/)
-    expect(src).toContain('<WorkspacePage title-key="nav.workflows" description-key="nav.workflowsHint">')
+    expect(src).toContain('<WorkspacePage title-key="nav.workflows">')
+    expect(src).not.toContain('description-key="nav.workflowsHint"')
+    expect(src).not.toContain('pages.workflowList.subtitle')
 
     const described = { ...head, id: 'wf-desc', name: '自我迭代', description: '持续改进自身流程' }
     const plain = { ...head, id: 'wf-plain', name: '无描述流程', description: '' }

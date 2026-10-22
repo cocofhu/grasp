@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
@@ -306,5 +309,48 @@ describe('OpenCodeProviderFields', () => {
     expect(adv.text()).toContain('厂商前缀')
     expect(adv.text()).toContain('deepseek/deepseek-flash')
     wrapper.unmount()
+  })
+
+  it('hides catalog hints only when asked, and keeps typed-endpoint copy', async () => {
+    const shown = mountFields()
+    await flushPromises()
+    expect(shown.get('[data-test="opencode-base-hint"]').text()).toContain('一般不用填写')
+    expect(shown.get('[data-test="opencode-model-hint"]').text()).toContain('deepseek-flash')
+    expect(shown.get('[data-test="opencode-vision-hint"]').text()).toContain('勾选后，模型才能看图')
+    shown.unmount()
+
+    const wrapper = mountFields({ hideCatalogHints: true })
+    await flushPromises()
+    expect(wrapper.find('[data-test="opencode-model-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="opencode-base-hint"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="opencode-vision-hint"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="opencode-model-vision"]').text()).toContain('视觉理解')
+    expect(wrapper.get('[data-test="opencode-model-vision-input"]').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('一般不用填写')
+    expect(wrapper.text()).not.toContain('选择列表里的模型')
+    expect(wrapper.text()).not.toContain('勾选后，模型才能看图')
+
+    await wrapper.setProps({ provider: 'custom' })
+    await flushPromises()
+    expect(wrapper.get('[data-test="opencode-model-hint"]').text()).toContain('请直接填写它提供的模型名')
+    const hint = wrapper.get('[data-test="opencode-base-hint"]').text()
+    expect(hint).not.toContain('一般不用填写')
+    expect(hint).toContain('/v1')
+    expect(wrapper.get('[data-test="opencode-model-vision"]').text()).toContain('视觉理解')
+    expect(wrapper.find('[data-test="opencode-vision-hint"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('leaves catalog hints visible for credentials, shared agents, and the agent wizard', () => {
+    const dir = dirname(fileURLToPath(import.meta.url))
+    const callers = [
+      'WizardApiKeyStepPanel.vue',
+      'OpenCodeCredentialPicker.vue',
+      '../workspace/WorkspaceCredentialsPanel.vue',
+      '../workspace/WorkspaceSharedAgentPanel.vue',
+    ]
+    for (const rel of callers) {
+      expect(readFileSync(join(dir, rel), 'utf8')).not.toContain('hide-catalog-hints')
+    }
   })
 })

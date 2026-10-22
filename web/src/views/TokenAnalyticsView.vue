@@ -680,7 +680,6 @@ const fxCount = computed(() => fxChips.value.length)
               {{ t('pages.tokenAnalytics.title') }}
               <span v-if="loading && data" class="inline-block h-3 w-3 animate-spin rounded-full border-2 border-accent/30 border-t-accent" data-testid="token-analytics-refreshing" :aria-label="t('pages.tokenAnalytics.loading')" />
             </h1>
-            <p class="m-0 text-[13px] leading-6 text-txt3">{{ t('pages.tokenAnalytics.subtitle') }}</p>
           </div>
           <div class="usage-page-actions">
             <AppButton variant="outline" size="sm" data-testid="token-analytics-pricing" @click="pricingOpen = true">
@@ -865,6 +864,7 @@ const fxCount = computed(() => fxChips.value.length)
         </div>
         <div v-else-if="data" class="transition-opacity" :class="loading ? 'opacity-70' : ''">
           <section id="overview" class="usage-overview" data-testid="token-analytics-kpis" :aria-label="t('pages.tokenAnalytics.sections.overview')">
+            <p class="m-0 mb-3 text-[12px] leading-5 text-txt3" data-testid="token-analytics-overview-hint">{{ t('pages.tokenAnalytics.sections.overviewHint') }}</p>
             <div class="usage-kpi-grid">
               <div
                 class="usage-metric"

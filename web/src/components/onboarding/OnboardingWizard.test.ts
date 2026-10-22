@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -443,11 +446,12 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await walkToTeam(wrapper, {
       onGit: async () => {
-        const hint = () => wrapper.find('[data-testid="onboarding-repo-hint"]').text()
-        expect(hint()).toBe('pages.onboarding.repo.hint')
+        const hint = () => wrapper.find('[data-testid="onboarding-repo-hint"]')
+        expect(hint().exists()).toBe(false)
+        expect(wrapper.text()).not.toContain('pages.onboarding.repo.hint')
         await wrapper.find('[data-testid="onboarding-repo-url"]').setValue('https://github.com/org/web.git')
         await wrapper.find('[data-testid="onboarding-repo-branch"]').setValue('develop')
-        expect(hint()).toBe('pages.onboarding.repo.cloneTo')
+        expect(hint().text()).toBe('pages.onboarding.repo.cloneTo')
       },
     })
     await next(wrapper)
@@ -709,6 +713,80 @@ describe('OnboardingWizard', () => {
     expect(wrapper.emitted('close')).toBeFalsy()
     expect(wrapper.find('[data-testid="onboarding-success"]').exists()).toBe(false)
     expect(activeStep(wrapper)).toBe('onboarding-rail-workflow')
+  })
+
+  it('hides annotated wizard copy and keeps the replacement sentences', async () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'OnboardingWizard.vue'), 'utf8')
+    expect(src).toMatch(
+      /\.onb-team\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s*20px\s*minmax\(0,\s*1fr\)\s*20px\s*minmax\(0,\s*1fr\)\s*20px\s*minmax\(0,\s*1fr\)/,
+    )
+    expect(src).toContain("t('pages.onboarding.repo.cloneTo', { dir: repoDirName })")
+    expect(src).toContain("t('pages.onboarding.toastOk')")
+    expect(src).not.toContain('pages.onboarding.workflow.reuseHint')
+    expect(src).not.toContain('pages.onboarding.gitUser.hint')
+    expect(src).not.toContain('pages.onboarding.git.foot')
+    expect(src).not.toContain('pages.onboarding.apiKey.meta')
+    const zhOnboarding = (await import('@/locales/zh-CN/pages.json')).default.pages.onboarding
+    const enOnboarding = (await import('@/locales/en/pages.json')).default.pages.onboarding
+    expect(zhOnboarding.emptyDesc).toContain('不会自动开跑')
+    expect(zhOnboarding.emptyDescCreate).toContain('不会自动开跑')
+    expect(zhOnboarding.toastOk).toContain('未自动开跑')
+    expect(enOnboarding.emptyDesc).toContain('Does not start a run')
+    expect(enOnboarding.emptyDescCreate).toContain('Does not start a run')
+    expect(enOnboarding.toastOk).toMatch(/not started automatically/i)
+
+    const wrapper = await mountWizard()
+    await next(wrapper)
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-key')
+    expect(wrapper.text()).not.toContain('pages.onboarding.apiKey.meta')
+    expect(wrapper.text()).toContain('pages.onboarding.apiKey.hint')
+    expect(wrapper.text()).toContain('pages.agentStudio.openCode.modelHintTyped')
+    expect(wrapper.text()).not.toMatch(/pages\.agentStudio\.openCode\.modelHint(?!Typed)/)
+    expect(wrapper.text()).toContain('pages.agentStudio.openCode.baseHintOwn')
+    expect(wrapper.text()).not.toMatch(/pages\.agentStudio\.openCode\.baseHint(?!Own)/)
+    expect(wrapper.text()).not.toContain('pages.agentStudio.openCode.visionHint')
+    expect(wrapper.get('[data-test="opencode-model-vision"]').text()).toContain('pages.agentStudio.openCode.visionLabel')
+    expect(wrapper.get('[data-test="opencode-model-vision-input"]').exists()).toBe(true)
+
+    const codex = await mountWizard()
+    await goToCliKey(codex, 'codex')
+    expect(codex.text()).toContain('pages.onboarding.apiKey.codexMeta')
+    expect(codex.text()).not.toContain('pages.onboarding.apiKey.meta')
+
+    const git = await mountWizard()
+    await next(git)
+    await next(git)
+    await fillOpenCodeAuth(git)
+    await next(git)
+    expect(activeStep(git)).toBe('onboarding-rail-git')
+    expect(git.text()).toContain('pages.onboarding.git.meta')
+    expect(git.text()).toContain('pages.onboarding.gitUser.nameLabel')
+    expect(git.text()).toContain('pages.onboarding.gitUser.emailLabel')
+    expect(git.text()).not.toContain('pages.onboarding.gitUser.hint')
+    expect(git.text()).not.toContain('pages.onboarding.git.foot')
+    await git.get('[data-testid="onboarding-git-type-github_https"]').trigger('click')
+    expect(git.find('[data-testid="onboarding-github-token"]').exists()).toBe(true)
+    await git.get('[data-testid="onboarding-git-type-gitlab_https"]').trigger('click')
+    expect(git.find('[data-testid="onboarding-gitlab-token"]').exists()).toBe(true)
+    await git.get('[data-testid="onboarding-git-type-ssh"]').trigger('click')
+    expect(git.find('[data-testid="onboarding-ssh-key"]').exists()).toBe(true)
+
+    await fillIdentity(git)
+    await next(git)
+    expect(git.find('[data-testid="onboarding-team-card-clarify"]').exists()).toBe(true)
+    expect(git.find('[data-testid="onboarding-team-card-implement"]').exists()).toBe(true)
+    expect(git.find('[data-testid="onboarding-team-card-test_review"]').exists()).toBe(true)
+    expect(git.find('[data-testid="onboarding-team-card-deliver"]').exists()).toBe(true)
+    expect(git.findAll('.onb-team-arrow')).toHaveLength(3)
+
+    await next(git)
+    expect(activeStep(git)).toBe('onboarding-rail-workflow')
+    expect(git.text()).toContain('pages.onboarding.workflow.meta')
+    expect(git.text()).toContain('pages.onboarding.workflow.summary')
+    expect(git.text()).toContain('pages.onboarding.workflow.failLoop')
+    expect(git.text()).not.toContain('pages.onboarding.workflow.reuseHint')
+    expect(git.find('[data-testid="onboarding-preview-node-implement"]').exists()).toBe(true)
   })
 
   it('retry continues in the workspace from the preferences step', async () => {

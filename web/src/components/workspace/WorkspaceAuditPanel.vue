@@ -649,7 +649,6 @@ onUnmounted(() => {
     </div>
 
     <template v-else>
-      <p class="audit-intro">{{ t('pages.workspace.audit.description') }}</p>
       <div class="audit-toolbar">
         <div class="seg" role="group" :aria-label="t('pages.workspace.audit.title')" data-testid="workspace-audit-mode">
           <button type="button" :class="{ on: mode === 'run' }" :aria-pressed="mode === 'run'" data-testid="workspace-audit-mode-run" @click="setMode('run')">
@@ -992,14 +991,6 @@ onUnmounted(() => {
   flex-direction: column;
   overflow: hidden;
   container-type: inline-size;
-}
-
-.audit-intro {
-  flex: none;
-  margin: -6px 0 20px;
-  color: rgb(var(--c-txt3));
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .audit-toolbar {
@@ -1822,10 +1813,6 @@ tr.detail td {
 }
 
 @media (max-width:767px) {
-  .audit-intro {
-    margin-bottom: 16px;
-    font-size: 12px;
-  }
   .audit-toolbar {
     align-items: flex-start;
   }

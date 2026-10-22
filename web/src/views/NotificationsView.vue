@@ -170,7 +170,6 @@ defineExpose({
   <div class="notifications-page flex h-full min-h-0 min-w-0 flex-col" data-testid="notifications-page">
     <header class="notifications-header">
       <h1>{{ t('pages.notifications.title') }}</h1>
-      <p>{{ t('pages.notifications.subtitle') }}</p>
     </header>
 
     <div class="notifications-toolbar">
@@ -266,14 +265,6 @@ defineExpose({
   font-size: 20px;
   font-weight: 600;
   letter-spacing: -.02em;
-}
-
-.notifications-header p {
-  max-width: 760px;
-  margin: 8px 0 0;
-  color: rgb(var(--c-txt3));
-  font-size: 13px;
-  line-height: 1.7;
 }
 
 .notifications-toolbar {
@@ -506,9 +497,6 @@ defineExpose({
 @media (max-width: 767px) {
   .notifications-header {
     margin-bottom: 16px;
-  }
-  .notifications-header p {
-    font-size: 12px;
   }
   .notifications-toolbar {
     gap: 0;

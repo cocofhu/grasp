@@ -103,7 +103,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 </script>
 
 <template>
-<WorkspacePage title-key="nav.workflows" description-key="nav.workflowsHint">
+<WorkspacePage title-key="nav.workflows">
 <div class="flex min-h-0 min-w-0 flex-1 flex-col" data-testid="workflows-page">
   <div class="workflow-toolbar">
     <label class="workflow-search">
