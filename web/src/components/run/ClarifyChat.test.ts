@@ -726,11 +726,14 @@ describe('ClarifyChat', () => {
       turns: [{ role: 'agent', text: '要做登录吗', at: '2026-08-21T17:00:00+08:00' }],
       handoff: { phase: 'pending', at: '2026-08-21T17:01:00+08:00' },
     })
-    await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
-    await flushPromises()
-    await acceptConfirmFlowDialog()
     const btn = () => wrapper.find('[data-testid="clarify-confirm-flow"]')
     expect(btn().text()).toContain('校验中')
+    expect((btn().element as HTMLButtonElement).disabled).toBe(true)
+    expect(wrapper.get('[data-testid="clarify-input"]').attributes('disabled')).toBeUndefined()
+    await wrapper.find('[data-testid="clarify-confirm-flow"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]')).toBeNull()
+    expect(wrapper.emitted('finish')).toBeUndefined()
     await wrapper.setProps({ confirmError: 'react already done' })
     await flushPromises()
     expect(btn().text()).toContain('校验中')
