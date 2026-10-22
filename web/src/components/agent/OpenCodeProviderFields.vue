@@ -21,6 +21,11 @@ const props = defineProps<{
   requireModel?: boolean
   /** Two-column grid (vendor | model, base URL | vision) without the advanced notes; one column on narrow screens. */
   columns?: boolean
+  /**
+   * Install wizard only. Hides the catalog model, default-address, and vision
+   * supplement lines. Typed-model and self-hosted address copy stay.
+   */
+  hideCatalogHints?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -154,11 +159,17 @@ const showVision = computed(() => {
 })
 
 /** A gateway absent from the catalog has no list to offer; ids are typed in. */
+const typedModelHint = computed(
+  () => ownEndpoint.value || (!modelsLoading.value && !models.value.length),
+)
+
 const modelHint = computed(() =>
-  ownEndpoint.value || (!modelsLoading.value && !models.value.length)
+  typedModelHint.value
     ? t('pages.agentStudio.openCode.modelHintTyped')
     : t('pages.agentStudio.openCode.modelHint'),
 )
+
+const showModelHint = computed(() => !(props.hideCatalogHints && !typedModelHint.value))
 
 onMounted(async () => {
   catalog.value = await loadOpenCodeProviders()
@@ -236,7 +247,7 @@ watch(
         data-test="opencode-model"
         @update:model-value="emit('update:model', $event)"
       />
-      <p class="mt-1 text-[11px] text-txt3">{{ modelHint }}</p>
+      <p v-if="showModelHint" class="mt-1 text-[11px] text-txt3" data-test="opencode-model-hint">{{ modelHint }}</p>
       <p v-if="modelUnknown" class="mt-1 text-[11px] text-warn" data-test="opencode-model-unknown">
         {{ t('pages.agentStudio.openCode.modelUnknown') }}
       </p>
@@ -271,7 +282,7 @@ watch(
         data-test="opencode-base-url"
         @input="emit('update:baseUrl', ($event.target as HTMLInputElement).value)"
       />
-      <p class="mt-1 text-[11px] text-txt3" data-test="opencode-base-hint">
+      <p v-if="!hideCatalogHints || ownEndpoint" class="mt-1 text-[11px] text-txt3" data-test="opencode-base-hint">
         {{ t(ownEndpoint ? 'pages.agentStudio.openCode.baseHintOwn' : 'pages.agentStudio.openCode.baseHint') }}
       </p>
       <p v-if="requireBase" class="mt-1 text-[11px] text-err" data-test="opencode-base-required">
@@ -294,7 +305,7 @@ watch(
         <span class="block text-[12px] font-medium text-txt">
           {{ t('pages.agentStudio.openCode.visionLabel') }}
         </span>
-        <span class="mt-0.5 block text-[11px] leading-5 text-txt3">
+        <span v-if="!hideCatalogHints" class="mt-0.5 block text-[11px] leading-5 text-txt3" data-test="opencode-vision-hint">
           {{ t('pages.agentStudio.openCode.visionHint') }}
         </span>
       </span>

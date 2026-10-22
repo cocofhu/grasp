@@ -317,6 +317,21 @@ describe('NotificationsView pagination (g1/g2/g4)', () => {
     wrapper.unmount()
   })
 
+  it('hides the annotated subtitle and keeps filters, mark-all, and the empty state', async () => {
+    expect(viewSrc).not.toContain('pages.notifications.subtitle')
+    const { wrapper } = await mountView([])
+    expect(wrapper.get('.notifications-header').text()).toBe('通知')
+    expect(wrapper.get('[data-testid="notifications-filter-all"]').text()).toContain('全部')
+    expect(wrapper.get('[data-testid="notifications-filter-unread"]').text()).toContain('未读')
+    expect(wrapper.get('[data-testid="notifications-filter-read"]').text()).toContain('已读')
+    expect(wrapper.get('[data-testid="notifications-mark-all"]').text()).toContain('全部已读')
+    expect(wrapper.text()).toContain('暂无通知')
+    expect(wrapper.text()).toContain('执行完成或失败后才会出现在这里')
+    expect(wrapper.text()).not.toContain('查看工作流完成与失败的消息，及时了解执行结果。')
+    expect(wrapper.text()).not.toContain('Review completed and failed workflows and their results.')
+    wrapper.unmount()
+  })
+
   it('mark-all-read still clears the whole pool unread count (g1.5)', async () => {
     const { wrapper } = await mountView(makeItems(25))
     await wrapper.find('[data-testid="notifications-pagination"]').findAll('button.pg-btn')[1]!.trigger('click')

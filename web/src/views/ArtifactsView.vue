@@ -346,7 +346,6 @@ onBeforeUnmount(() => {
           <h2 class="text-lg font-semibold text-txt">{{ t('pages.artifacts.title') }}</h2>
           <span v-if="!firstLoad && !treeFailedNoCache" class="text-xs tabular-nums text-txt3" data-testid="artifacts-total">{{ t('pages.artifacts.total', { n: treeTotal }) }}</span>
         </div>
-        <p class="mt-1 text-sm text-txt3">{{ t('pages.artifacts.subtitle') }}</p>
       </div>
       <button
         v-if="!noArtifacts && !treeFailedNoCache"

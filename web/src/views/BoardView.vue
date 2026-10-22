@@ -159,7 +159,6 @@ onUnmounted(() => {
     <header class="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3" data-testid="board-toolbar">
       <div class="min-w-0">
         <h2 v-if="!embedded" class="text-lg font-semibold text-txt">{{ t('pages.board.title') }}</h2>
-        <p class="text-[13px] leading-6 text-txt3">{{ t('pages.board.subtitle') }}</p>
       </div>
       <nav class="flex flex-wrap items-center gap-2 text-xs" :aria-label="t('pages.board.actionsLabel')">
         <RouterLink to="/stats" class="board-text-link" data-testid="board-usage-link"><Icon name="chart" :size="14" />{{ t('pages.board.usage') }}</RouterLink>
