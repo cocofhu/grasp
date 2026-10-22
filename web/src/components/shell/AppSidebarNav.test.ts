@@ -96,6 +96,10 @@ const apiMocks = vi.hoisted(() => ({
   listRuns: vi.fn(),
 }))
 
+const workspaceMocks = vi.hoisted(() => ({
+  ensureLoaded: vi.fn(async () => ({ name: 'ws' })),
+}))
+
 vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
@@ -104,7 +108,7 @@ vi.mock('@/lib/api/api', () => ({
 }))
 
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({ ensureLoaded: async () => ({ name: 'ws' }) }),
+  useWorkspaceContext: () => ({ ensureLoaded: () => workspaceMocks.ensureLoaded() }),
 }))
 
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({
@@ -140,6 +144,45 @@ import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
+/** Runs the default listRuns stub treats as still unfinished, in sidebar order. */
+function unfinishedRunsFromInbox() {
+  const displayed = gateMocks.displayedItems.value as Array<{
+    runId?: string
+    nodeId?: string
+    runTitle?: string
+    workflowName?: string
+  }>
+  const extras = gateMocks.sidebarExtras.value as Array<{
+    runId?: string
+    nodeId?: string
+    runTitle?: string
+    workflowName?: string
+  }>
+  const keyOf = (it: { runId?: string; nodeId?: string }) =>
+    gateMocks.itemKey({ runId: String(it.runId ?? ''), nodeId: String(it.nodeId ?? '') })
+  const shown = new Set(displayed.map((it) => keyOf(it)))
+  const pending = [...extras.filter((it) => !shown.has(keyOf(it))), ...displayed]
+  const seen = new Set<string>()
+  const items = []
+  for (const it of pending) {
+    const id = String(it.runId ?? '')
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    items.push({
+      id,
+      workflowId: 'wf',
+      workflowName: typeof it.workflowName === 'string' ? it.workflowName : '',
+      title: typeof it.runTitle === 'string' ? it.runTitle : '',
+      status: 'waiting_human',
+      trigger: 'manual',
+      startedAt: 'T0',
+      durationSec: 0,
+      progress: 0,
+    })
+  }
+  return items
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   favMocks.unfavorite.mockReset()
@@ -164,7 +207,13 @@ beforeEach(() => {
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
   apiMocks.listRuns.mockReset()
-  apiMocks.listRuns.mockResolvedValue({ items: [], total: 0 })
+  // Inbox rows in these tests stand in for unfinished runs unless a case stubs listRuns itself.
+  apiMocks.listRuns.mockImplementation(() => {
+    const items = unfinishedRunsFromInbox()
+    return Promise.resolve({ items, total: items.length })
+  })
+  workspaceMocks.ensureLoaded.mockReset()
+  workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
   const toast = useToast()
   for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
   vi.useFakeTimers()
@@ -218,7 +267,13 @@ describe('AppSidebarNav', () => {
     expect(rowX().classes()).toContain('active')
 
     // The run reports its auto node: same row, same title, still executing.
-    resolveRuns({ items: [runRow({ id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' })], total: 1 })
+    resolveRuns({
+      items: [
+        runRow({ id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' }),
+        { id: 'run-y', workflowId: 'wf', workflowName: 'w', title: '另一个', status: 'waiting_human', startedAt: 'T0' },
+      ],
+      total: 2,
+    })
     await flushPromises()
     expect(keys()).toEqual(['run-x', 'run-y'])
     expect(rowX().attributes('data-motion')).toBe('pulse')
@@ -236,6 +291,64 @@ describe('AppSidebarNav', () => {
     expect(rowX().attributes('data-node-id')).toBe('deliver')
     expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
     expect(wrapper.text()).not.toContain('Run #')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps the same 7 unfinished runs when the inbox has other runs and history opens', async () => {
+    const unfinished = Array.from({ length: 7 }, (_, i) => ({
+      id: `run-${i}`,
+      workflowId: 'wf',
+      workflowName: 'w',
+      title: `执行 ${i}`,
+      status: 'running',
+      startedAt: 'T0',
+    }))
+    const inboxFor = (runId: string, title: string) => ({
+      type: 'clarify' as const,
+      runId,
+      nodeId: 'n',
+      label: '节点',
+      kind: 'clarify',
+      workflowName: 'w',
+      runTitle: title,
+    })
+    const extras = Array.from({ length: 4 }, (_, i) => inboxFor(`extra-${i}`, `多余 ${i}`))
+    apiMocks.listRuns.mockResolvedValue({ items: unfinished, total: 7 })
+    gateMocks.displayedItems.value = [
+      ...unfinished.map((r) => inboxFor(r.id, r.title)),
+      ...extras,
+      inboxFor('hist-done', '已结束的历史'),
+    ]
+    const wrapper = mountNav()
+    await flushPromises()
+    const keys = () => wrapper.findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    const count = () => wrapper.get('.sidebar-section-count').text()
+    expect(keys()).toEqual(unfinished.map((r) => r.id))
+    expect(count()).toBe('7')
+
+    routeState.path = '/runs/hist-done'
+    await flushPromises()
+    expect(routeState.path).toBe('/runs/hist-done')
+    expect(keys()).toEqual(unfinished.map((r) => r.id))
+    expect(count()).toBe('7')
+    expect(wrapper.text()).not.toContain('多余')
+    expect(wrapper.text()).not.toContain('已结束的历史')
+
+    apiMocks.listRuns.mockRejectedValueOnce(new Error('offline'))
+    gateMocks.displayedItems.value = extras
+    await flushPromises()
+    expect(keys()).toEqual(unfinished.map((r) => r.id))
+    expect(count()).toBe('7')
+
+    gateMocks.displayedItems.value = unfinished.map((r) => inboxFor(r.id, r.title))
+    await flushPromises()
+    workspaceMocks.ensureLoaded.mockImplementationOnce(async () => null)
+    gateMocks.displayedItems.value = extras
+    await flushPromises()
+    expect(keys()).toEqual(unfinished.map((r) => r.id))
+    expect(count()).toBe('7')
+
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -1130,7 +1243,8 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-b', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第二条' },
       { type: 'clarify', runId: 'run-c', nodeId: 'c', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '第三条' },
     ]
-    await nextTick()
+    routeState.path = '/workflows'
+    await flushPromises()
     expect(again.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual([
       'run-c',
       'run-d',
