@@ -94,6 +94,7 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
 const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
   listRuns: vi.fn(),
+  cancelRun: vi.fn(),
 }))
 
 const workspaceMocks = vi.hoisted(() => ({
@@ -104,6 +105,7 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
+    cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
   },
 }))
 
@@ -207,6 +209,8 @@ beforeEach(() => {
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
   apiMocks.listRuns.mockReset()
+  apiMocks.cancelRun.mockReset()
+  apiMocks.cancelRun.mockResolvedValue({ status: 'cancelled' })
   // Inbox rows in these tests stand in for unfinished runs unless a case stubs listRuns itself.
   apiMocks.listRuns.mockImplementation(() => {
     const items = unfinishedRunsFromInbox()
@@ -1167,9 +1171,13 @@ describe('AppSidebarNav', () => {
     expect(enNav.nav.pendingPin).toBe('Pin')
     expect(enNav.nav.pendingUnpin).toBe('Unpin')
     expect(enNav.nav.pendingRename).toBe('Rename')
+    expect(enNav.nav.pendingCancelRun).toBe('Cancel run')
+    expect(enNav.nav.pendingCancelConfirm).toContain('Running')
     expect(enNav.nav.pendingNameEmpty).toBe('Name cannot be empty')
     expect(enNav.nav.pendingNameTooLong).toBe('80 characters maximum')
     expect(enNav.nav.pendingRenameFailed).toBe('Save failed')
+    expect(nav.nav.pendingCancelRun).toBe('取消运行')
+    expect(nav.nav.pendingCancelConfirm).toContain('正在执行')
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -1197,6 +1205,11 @@ describe('AppSidebarNav', () => {
     expect(menu).toBeTruthy()
     expect(menu?.textContent).toContain('置顶')
     expect(menu?.textContent).toContain('重命名')
+    expect(menu?.textContent).toContain('取消运行')
+    const firstMenuItems = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')]
+    expect(firstMenuItems.at(-1)?.getAttribute('data-testid')).toBe('nav-pending-menu-cancel')
+    expect(firstMenuItems.at(-1)?.className).toBe(firstMenuItems[0]?.className)
+    expect(firstMenuItems.at(-1)?.className).not.toContain('text-err')
     expect(wrapper.find('[data-testid="nav-pending-rename-input"]').exists()).toBe(false)
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
@@ -1449,6 +1462,9 @@ describe('AppSidebarNav', () => {
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
     await vi.advanceTimersByTimeAsync(1)
     expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('重命名')
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')?.textContent).toContain('取消运行')
+    const longPressItems = [...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')]
+    expect(longPressItems.at(-1)?.getAttribute('data-testid')).toBe('nav-pending-menu-cancel')
     routerMocks.push.mockClear()
     await row.trigger('click')
     expect(routerMocks.push).not.toHaveBeenCalled()
@@ -1556,6 +1572,7 @@ describe('AppSidebarNav', () => {
       'nav-pending-menu-pin',
       'nav-pending-menu-rename',
       'nav-pending-menu-share',
+      'nav-pending-menu-cancel',
     ])
     const share = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
     expect(share.textContent).toContain('分享审批')
@@ -1588,6 +1605,7 @@ describe('AppSidebarNav', () => {
     expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
     expect(document.querySelector('[data-testid="nav-pending-menu-pin"]')).toBeTruthy()
     expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeTruthy()
 
     routerMocks.push.mockClear()
     openRow('run-s')
@@ -1640,12 +1658,161 @@ describe('AppSidebarNav', () => {
     openRow('run-g', window.innerHeight - 4)
     await nextTick()
     const clamped = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
-    expect(clamped.style.top).toBe(`${window.innerHeight - 104}px`)
+    expect(clamped.style.top).toBe(`${window.innerHeight - 136}px`)
     openRow('run-x', window.innerHeight - 4)
     await nextTick()
     const shortMenu = document.querySelector('[data-testid="nav-pending-menu"]') as HTMLElement
-    expect(shortMenu.style.top).toBe(`${window.innerHeight - 72}px`)
+    expect(shortMenu.style.top).toBe(`${window.innerHeight - 104}px`)
 
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('AppSidebarNav cancel run', () => {
+  function openCancelMenu(wrapper: ReturnType<typeof mountNav>, key = 'run-1') {
+    wrapper.get(`[data-key="${key}"]`).element.dispatchEvent(
+      new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 30 }),
+    )
+  }
+
+  it('opens a themed confirm first, dismisses without calling cancel, then cancels and refreshes', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'a', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+      { type: 'clarify', runId: 'run-2', nodeId: 'b', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '另一条' },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="nav-pending-row"]')).toHaveLength(2)
+
+    openCancelMenu(wrapper)
+    await nextTick()
+    const cancelItem = document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement
+    expect(cancelItem.textContent).toContain('取消运行')
+    expect(cancelItem.className).toContain('pending-row-menu__item')
+    expect(cancelItem.className).not.toContain('text-err')
+    cancelItem.click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
+    expect(apiMocks.cancelRun).not.toHaveBeenCalled()
+    const dialog = document.querySelector('[role="dialog"]')
+    expect(dialog?.textContent).toContain('取消运行？')
+    expect(dialog?.textContent).toContain('不可恢复')
+    expect(dialog?.textContent).toContain('正在执行')
+
+    ;(document.querySelector('[data-testid="nav-pending-cancel-dismiss"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(apiMocks.cancelRun).not.toHaveBeenCalled()
+    expect(wrapper.findAll('[data-testid="nav-pending-row"]')).toHaveLength(2)
+
+    openCancelMenu(wrapper)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    document.querySelector('[role="dialog"]')?.parentElement?.querySelector('.absolute.inset-0')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    await nextTick()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(apiMocks.cancelRun).not.toHaveBeenCalled()
+
+    openCancelMenu(wrapper)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    apiMocks.listRuns.mockImplementation(() => {
+      const items = unfinishedRunsFromInbox().filter((item) => item.id !== 'run-1')
+      return Promise.resolve({ items, total: items.length })
+    })
+    const listCalls = apiMocks.listRuns.mock.calls.length
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(apiMocks.cancelRun).toHaveBeenCalledTimes(1)
+    expect(apiMocks.cancelRun).toHaveBeenCalledWith('run-1')
+    expect(apiMocks.listRuns.mock.calls.length).toBeGreaterThan(listCalls)
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(useToast().toasts.value.some((item) => item.message === '已取消运行')).toBe(true)
+    expect(wrapper.findAll('[data-testid="nav-pending-row"]').map((row) => row.attributes('data-key'))).toEqual(['run-2'])
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps cancel available when share is blocked, and maps finished or missing errors', async () => {
+    gateMocks.displayedItems.value = [
+      {
+        type: 'clarify',
+        kind: 'clarify',
+        state: 'starting',
+        runId: 'run-s',
+        nodeId: 's',
+        label: '需求澄清',
+        workflowName: 'w',
+        runTitle: '启动中',
+      },
+    ]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    openCancelMenu(wrapper, 'run-s')
+    await nextTick()
+    const share = document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement
+    expect(share.disabled).toBe(true)
+    const cancelItem = document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement
+    expect(cancelItem.disabled).toBe(false)
+    cancelItem.click()
+    await nextTick()
+
+    apiMocks.cancelRun.mockRejectedValueOnce(Object.assign(new Error('already finished'), { status: 400 }))
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="nav-pending-cancel-error"]')?.textContent).toContain('当前状态不可取消')
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
+    expect(useToast().toasts.value.some((item) => item.message === '已取消运行')).toBe(false)
+    expect(wrapper.find('[data-key="run-s"]').exists()).toBe(true)
+
+    apiMocks.cancelRun.mockRejectedValueOnce(Object.assign(new Error('not found'), { status: 404 }))
+    ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.querySelector('[data-testid="nav-pending-cancel-error"]')?.textContent).toContain('运行不存在或已删除')
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('blocks a second confirm and close while cancel is in flight', async () => {
+    gateMocks.displayedItems.value = [
+      { type: 'clarify', runId: 'run-1', nodeId: 'a', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
+    ]
+    let resolveCancel: (value: { status: string }) => void = () => {}
+    apiMocks.cancelRun.mockImplementation(
+      () => new Promise((resolve) => {
+        resolveCancel = resolve
+      }),
+    )
+    const wrapper = mountNav(true)
+    await flushPromises()
+    openCancelMenu(wrapper)
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    const confirm = document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement
+    const dismiss = document.querySelector('[data-testid="nav-pending-cancel-dismiss"]') as HTMLButtonElement
+    confirm.click()
+    await Promise.resolve()
+    expect(confirm.disabled).toBe(true)
+    expect(dismiss.disabled).toBe(true)
+    expect(confirm.textContent).toContain('取消中')
+    confirm.click()
+    dismiss.click()
+    document.querySelector('[role="dialog"]')?.parentElement?.querySelector('button')?.dispatchEvent(
+      new MouseEvent('click', { bubbles: true }),
+    )
+    await nextTick()
+    expect(apiMocks.cancelRun).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
+    resolveCancel({ status: 'cancelled' })
+    await flushPromises()
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
     wrapper.unmount()
     vi.useRealTimers()
   })
