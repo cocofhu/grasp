@@ -166,6 +166,29 @@ describe('Icon', () => {
     wrapper.unmount()
   })
 
+  it('renders pin as a filled PushpinOutlined with no stroke (plan g2.1)', () => {
+    const wrapper = mount(Icon, { props: { name: 'pin', size: 12 } })
+    const html = wrapper.html()
+    const svg = wrapper.find('svg')
+    const path = wrapper.find('path')
+    expect(html).not.toContain('M14.4 2.8')
+    expect(html).toContain('M878.3 392.1')
+    expect(html).toContain('scale(0.0234375)')
+    expect(svg.attributes('viewBox')).toBe('0 0 24 24')
+    expect(svg.attributes('width')).toBe('12')
+    expect(svg.attributes('fill')).toBe('currentColor')
+    expect(svg.attributes('stroke')).toBe('none')
+    expect(svg.attributes('stroke-width')).toBeUndefined()
+    expect(path.attributes('fill')).toBe('currentColor')
+    expect(path.attributes('stroke')).toBe('none')
+    wrapper.unmount()
+
+    const filled = mount(Icon, { props: { name: 'star-filled', size: 12 } })
+    expect(filled.find('svg').attributes('stroke')).toBe('currentColor')
+    expect(filled.find('svg').attributes('stroke-width')).toBe('1.2')
+    filled.unmount()
+  })
+
   it('replaces a known solid icon with the unknown-name fallback', async () => {
     const fallback = mount(Icon, { props: { name: 'unknown-icon-xyz' } })
     const wrapper = mount(Icon, { props: { name: 'chat-stop' } })
