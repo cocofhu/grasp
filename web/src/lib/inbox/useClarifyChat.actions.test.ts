@@ -324,6 +324,153 @@ describe('useClarifyChat actions', () => {
     )
     expect(chat.parseChoiceSummary('plain')).toBeNull()
     expect(chat.parseChoiceSummary('我的选择:\n- bad')).toBeNull()
+    const sentMulti = String(emit.mock.calls.at(-1)![1])
+    expect(sentMulti).toContain('美国')
+    expect(sentMulti).toContain('其他地区')
+    app.unmount()
+  })
+
+  it('single-select keeps one source, ignores blank or residual other text, and does not restore the other source', async () => {
+    const q = question()
+    const q2 = question({
+      id: 'q2',
+      prompt: '选择区域',
+      options: [
+        { id: 'cn', label: '中国' },
+        { id: 'us', label: '美国' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'questions', at: '1', questions: [q, q2] }],
+    })
+    await nextTick()
+    expect(chat.isSelected('q1', 'dev')).toBe(true)
+
+    chat.toggleOther(q)
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    expect(chat.isSelected('q1', 'dev')).toBe(false)
+    expect(chat.sel.value.q1 ?? []).toEqual([])
+    expect(chat.isOtherSelected('q2')).toBe(false)
+    chat.other.value.q1 = '   '
+    expect(chat.otherAnswered(q)).toBe(false)
+    expect(chat.someAnswered.value).toBe(false)
+    chat.submitChoices()
+    expect(emit).not.toHaveBeenCalled()
+
+    chat.other.value.q1 = '只要这句'
+    chat.pick(q2, 'cn')
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    chat.pick(q, 'prod')
+    expect(chat.isSelected('q1', 'prod')).toBe(true)
+    expect(chat.isSelected('q1', 'dev')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    expect(chat.other.value.q1).toBe('只要这句')
+    chat.pick(q, 'prod')
+    expect(chat.isSelected('q1', 'prod')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.other.value.q1).toBe('只要这句')
+    expect(chat.someAnswered.value).toBe(true)
+
+    chat.toggleOther(q)
+    chat.toggleOther(q)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.sel.value.q1 ?? []).toEqual([])
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择区域 → 中国')
+    app.unmount()
+  })
+
+  it('single-select apply recommended clears other and submits only that label', async () => {
+    const q = question()
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggleOther(q)
+    chat.other.value.q1 = '不要带上'
+    expect(chat.someAnswered.value).toBe(true)
+    chat.submitRecommended()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 开发')
+    app.unmount()
+
+    const plain = question({
+      id: 'plain',
+      options: [
+        { id: 'a', label: '甲' },
+        { id: 'b', label: '乙' },
+      ],
+    })
+    const bare = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [plain] }],
+    })
+    await nextTick()
+    bare.chat.toggleOther(plain)
+    bare.chat.other.value.plain = '   '
+    expect(bare.chat.someAnswered.value).toBe(false)
+    bare.chat.submitChoices()
+    expect(bare.emit).not.toHaveBeenCalled()
+    bare.chat.other.value.plain = '补充'
+    bare.chat.applyRecommended()
+    expect(bare.chat.isSelected('plain', 'a')).toBe(true)
+    expect(bare.chat.isOtherSelected('plain')).toBe(false)
+    expect(bare.chat.other.value.plain).toBe('补充')
+    bare.chat.submitChoices()
+    expect(String(bare.emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 甲')
+    bare.app.unmount()
+  })
+
+  it('multi-select still submits several presets together with other text', async () => {
+    const q = question({
+      id: 'q2',
+      prompt: '选择区域',
+      allowMultiple: true,
+      options: [
+        { id: 'cn', label: '中国' },
+        { id: 'us', label: '美国' },
+        { id: 'eu', label: '欧洲' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'questions', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggle(q, 'cn')
+    chat.toggle(q, 'us')
+    chat.toggleOther(q)
+    chat.other.value.q2 = '其他地区'
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    expect(chat.isSelected('q2', 'us')).toBe(true)
+    expect(chat.isSelected('q2', 'eu')).toBe(false)
+    expect(chat.isOtherSelected('q2')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择区域 → 中国、美国、其他地区')
+    app.unmount()
+  })
+
+  it('multi-select apply recommended still fills one preset and keeps other', async () => {
+    const q = question({
+      allowMultiple: true,
+      options: [
+        { id: 'dev', label: '开发', recommended: true },
+        { id: 'prod', label: '生产' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggle(q, 'prod')
+    chat.toggleOther(q)
+    chat.other.value.q1 = '其他环境'
+    chat.applyRecommended()
+    expect(chat.isSelected('q1', 'dev')).toBe(true)
+    expect(chat.isSelected('q1', 'prod')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 开发、其他环境')
     app.unmount()
   })
 
