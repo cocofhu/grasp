@@ -569,6 +569,103 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     clearBootRecords()
   })
 
+  it('fills the reply from the narration when the timeline has no message', async () => {
+    const handoff = '交接说明只留在气泡里'
+    const narration = '这次执行的完整回复'
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: narration },
+        { kind: 'timeline', parts: [
+          { kind: 'thought', text: '想过' },
+          { kind: 'tool', title: 'Shell', status: 'completed' },
+          { kind: 'message', text: '   ' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-21T05:00:00Z', open: false,
+          turns: [{ role: 'human', text: '需求', at: '2026-10-21T05:00:00Z' }], handoff },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:10Z', endedAt: '2026-10-21T05:10:34Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"][data-node-id="implement"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(handoff)
+    expect(record.get('[data-testid="clarify-prior-agent-message"]').text()).toBe(narration)
+    expect(record.findAll('[data-testid="clarify-prior-agent-message"]')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('does not invent a reply when the timeline and the narration are both empty', async () => {
+    const handoff = '不要把交接说明当成回复'
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: '上一段的回复' },
+        { kind: 'segment' },
+        { kind: 'message', text: '  \n' },
+        { kind: 'timeline', parts: [
+          { kind: 'tool', title: 'Shell', status: 'failed' },
+          { kind: 'tool', title: 'Read', status: 'completed' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-21T05:00:00Z', open: false,
+          turns: [], handoff },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:10Z', endedAt: '2026-10-21T05:10:47Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"][data-node-id="implement"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(handoff)
+    expect(record.find('[data-testid="clarify-prior-agent-message"]').exists()).toBe(false)
+    expect(record.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(record.text()).not.toContain('上一段的回复')
+    w.unmount()
+  })
+
+  it('does not append the narration again when the timeline already has a message', async () => {
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: '完整叙述不该再贴一份' },
+        { kind: 'timeline', parts: [
+          { kind: 'message', text: '时间线里的回复' },
+          { kind: 'tool', title: 'Read', status: 'completed' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', endedAt: '2026-10-21T05:00:20Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.findAll('[data-testid="clarify-prior-agent-message"]').map((m) => m.text())).toEqual(['时间线里的回复'])
+    expect(record.text()).not.toContain('完整叙述不该再贴一份')
+    w.unmount()
+  })
+
   it('says when an auto record cannot be loaded', async () => {
     nodeEvents.mockRejectedValue(new Error('down'))
     const w = mountChat({
