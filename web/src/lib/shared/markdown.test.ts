@@ -111,6 +111,11 @@ describe('renderChatMarkdown', () => {
     expect(chat).toContain('x')
   })
 
+  it('treats ATX headings with or without a space after the hashes', () => {
+    expect(renderChatMarkdown('## 上游交接')).toMatch(/<h2[^>]*>上游交接<\/h2>/)
+    expect(renderChatMarkdown('##上游交接')).toMatch(/<h2[^>]*>上游交接<\/h2>/)
+  })
+
   it('keeps fenced code characters that look like tags', () => {
     const html = renderChatMarkdown('```html\n<script>alert(1)</script>\n```')
     expect(html).toContain('language-html')

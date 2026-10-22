@@ -109,6 +109,31 @@ chatMarked.use({
       return escapeHtmlText(text)
     },
   },
+  extensions: [
+    {
+      name: 'tightHeading',
+      level: 'block',
+      start(src) {
+        return /^ {0,3}#{1,6}[^\s#]/.test(src) ? 0 : undefined
+      },
+      tokenizer(src) {
+        const cap = /^ {0,3}(#{1,6})([^\s#].*?)(?:\n+|$)/.exec(src)
+        if (!cap) return
+        let text = cap[2].trim()
+        if (/#$/.test(text)) {
+          const trimmed = text.replace(/#+$/, '')
+          if (!trimmed || / $/.test(trimmed)) text = trimmed.trim()
+        }
+        return {
+          type: 'heading',
+          raw: cap[0],
+          depth: cap[1].length,
+          text,
+          tokens: this.lexer.inlineTokens(text),
+        }
+      },
+    },
+  ],
 })
 
 /**

@@ -1176,7 +1176,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <span>{{ locale && relTime(t.at) }}</span>
             </div>
           </template>
-          <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
+          <!-- Human free-text bubble: chat markdown so tags stay visible and never execute. -->
           <ChatUserMessage
             v-else-if="humanBubbleText(t)"
             test-id="clarify-human-message"
