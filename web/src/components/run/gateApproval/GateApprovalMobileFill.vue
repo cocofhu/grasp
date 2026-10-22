@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { toRefs } from 'vue'
+import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { useGateApprovalCtx } from './gateApprovalContext'
 import Icon from '../../ui/Icon.vue'
 import ParagraphInput from '../../ui/ParagraphInput.vue'
@@ -118,6 +119,14 @@ const {
   onSidebarAction,
   renderMarkdown,
 } = s
+const conversationRunName = useConversationToolbarRunName(() => ({
+  run: run.value,
+  fallback: {
+    runId: gate.value.runId,
+    runTitle: gate.value.runTitle,
+    workflowName: gate.value.workflowName,
+  },
+}))
 </script>
 
 <template>
@@ -128,6 +137,7 @@ const {
       <ReviewShell
         :scope-key="`approval:${gate.runId}:${gate.nodeId}:${gate.iteration ?? 1}`"
         :run-id="gate.runId"
+        :run-name="conversationRunName"
         class="min-h-0 flex-1"
         :host-confirm-flow="false"
         remember-artifact-panel

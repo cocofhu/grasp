@@ -78,9 +78,11 @@ async function openStatsPage(page: import('@playwright/test').Page) {
   })
   await page.goto('/token-analytics.html')
   await expect(page.getByTestId('shell-main-dashboard')).toBeVisible({ timeout: 15_000 })
-  await page.getByRole('link', { name: '设置', exact: true }).click()
-  await page.getByRole('link', { name: '用量统计', exact: true }).click()
+  const statsLink = page.getByTestId('sidebar-app-rail').getByRole('link', { name: '用量统计', exact: true })
+  await statsLink.click()
   await expect(page.getByTestId('token-analytics-page')).toBeVisible({ timeout: 15_000 })
+  await expect(statsLink).toHaveAttribute('aria-current', 'page')
+  await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
 }
 
 test.describe('Global token analytics', () => {

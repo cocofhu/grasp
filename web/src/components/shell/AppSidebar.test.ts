@@ -70,14 +70,15 @@ describe('AppSidebar', () => {
     ['/gates/run-1', '/dashboard'],
     ['/workflows/wf-1', '/workflows'],
     ['/runs/run-1', '/runs'],
+    ['/stats', '/stats'],
   ])('labels the app rail and marks the current section for %s', (path, activeHref) => {
     routeState.path = path
     const wrapper = mountSidebar()
     const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
     expect(rail.attributes('aria-label')).toBe('工作区导航')
     const links = rail.findAll('a.sidebar-app-rail__item')
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/settings'])
-    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['新需求', '工作流', '运行', '设置'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/stats', '/settings'])
+    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['新需求', '工作流', '运行', '用量统计', '设置'])
     expect(links.every((link) => link.attributes('title') === link.attributes('aria-label'))).toBe(true)
     expect(links.filter((link) => link.attributes('aria-current') === 'page').map((link) => link.attributes('href'))).toEqual([activeHref])
     expect(links.filter((link) => link.classes().includes('is-active')).map((link) => link.attributes('href'))).toEqual([activeHref])
@@ -95,7 +96,7 @@ describe('AppSidebar', () => {
     expect(wrapper.get('[data-testid="sidebar-settings-title"]').text()).toBe('设置')
     expect(wrapper.find('[data-testid="sidebar-brand-lockup"]').exists()).toBe(false)
     const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
-    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/settings'])
+    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/stats', '/settings'])
     expect(rail.findAll('[aria-current="page"]').map((link) => link.attributes('href'))).toEqual(['/settings'])
     expect(wrapper.get('[data-testid="app-sidebar-card"]').classes()).toEqual(expect.arrayContaining(['w-[304px]', 'min-w-[304px]']))
     expect(wrapper.find('[data-testid="desktop-nav-hide"]').exists()).toBe(true)

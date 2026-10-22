@@ -12,6 +12,7 @@ import { listPrimaryProducts } from '@/lib/inbox/gateUpstream'
 import { CONTENT_FIT_PREVIEW_MAX_VH } from '@/lib/shared/htmlPreviewSandbox'
 import { acceptConfirmFlowDialog } from '@/test/acceptConfirmFlowDialog'
 import { resetConversationDrawers } from '@/lib/chat/conversationDrawer'
+import { sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 
 vi.mock('@novnc/novnc/lib/rfb.js', () => ({
   default: class MockRFB {},
@@ -2460,6 +2461,55 @@ describe('GateApproval HTML preview load gate (fillPreview)', () => {
     expect(form.findAll('button').some((b) => b.text().includes('确认并流转'))).toBe(true)
     expect(form.findAll('button').every((b) => !b.text().includes('返回修改'))).toBe(true)
     expect(wrapper.text()).toContain('确认并流转')
+    wrapper.unmount()
+  })
+})
+
+describe('GateApproval conversation toolbar run name', () => {
+  const pageHtmlForToolbar = '<!doctype html><html><body><h1>短文</h1></body></html>'
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    breakpointMocks.isMobile.value = false
+    apiMocks.listPreviewIssues.mockResolvedValue({ issues: [] })
+    apiMocks.artifactContent.mockResolvedValue({ content: pageHtmlForToolbar })
+    apiMocks.listGatePrimaryArtifacts.mockImplementation(serverPrimaryArtifacts)
+  })
+
+  it('content-fit shows the loaded run name and follows a later title', async () => {
+    const { gate, run } = visualGateRun(pageHtmlForToolbar)
+    const titled = { ...run, title: '优化这里的段间距', workflowName: '产品迭代' }
+    const wrapper = mountApproval({
+      fillPreview: true,
+      gate: { ...gate, runTitle: '旧快照', workflowName: '其它' },
+      run: titled,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="content-fit-scroll"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe(
+      sidebarRunTitle({ runTitle: '优化这里的段间距', workflowName: '产品迭代' }),
+    )
+    await wrapper.setProps({ run: { ...titled, title: '丙' } })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('丙')
+    wrapper.unmount()
+  })
+
+  it('mobile fill shows the loaded run name', async () => {
+    breakpointMocks.isMobile.value = true
+    const { gate, run } = visualGateRun(pageHtmlForToolbar)
+    const titled = { ...run, title: '优化这里的段间距', workflowName: '产品迭代' }
+    const wrapper = mountApproval({
+      fillPreview: true,
+      mobileFillRemaining: true,
+      gate: { ...gate, runTitle: '旧快照' },
+      run: titled,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="mobile-fill-remaining"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe(
+      sidebarRunTitle({ runTitle: titled.title, workflowName: titled.workflowName }),
+    )
     wrapper.unmount()
   })
 })

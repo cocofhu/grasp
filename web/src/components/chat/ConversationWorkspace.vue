@@ -13,6 +13,12 @@ import { CONVERSATION_PANEL_SHOWN_EVENT, conversationPanelVisibleKey } from '@/l
 
 const props = withDefaults(defineProps<{
   title?: string
+  /**
+   * Current run's display name. Omit to keep the fixed 「对话」 label (public
+   * share has no run name). Pass '' when this is a run whose name is not ready:
+   * the heading shows the same placeholder bar as an untitled sidebar row.
+   */
+  runName?: string
   scopeKey: string
   storageKey?: string
   panelWidth?: number
@@ -41,6 +47,9 @@ const dragging = ref(false)
 const compact = computed(() => canvasWidth.value > 0 && canvasWidth.value < 800)
 const maxWidth = computed(() => Math.max(280, Math.min(880, canvasWidth.value - 364)))
 const width = computed(() => Math.max(280, Math.min(maxWidth.value, preferredWidth.value)))
+const runNameProvided = computed(() => props.runName !== undefined)
+const runNameLabel = computed(() => (props.runName ?? '').trim())
+const runNamePending = computed(() => runNameProvided.value && !runNameLabel.value)
 const panelTitle = computed(() => {
   if (props.splitModes) {
     return mode.value === 'resources'
@@ -215,8 +224,12 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
   <div ref="root" class="conversation-workspace chat-thread" :class="{ 'is-compact': compact, 'is-resizing': dragging }" data-testid="conversation-workspace" :data-panel-open="open && panelEnabled ? 'true' : 'false'">
     <header v-if="showToolbar" class="conversation-toolbar">
       <slot name="toolbar">
-        <span class="conversation-heading"><Icon name="chat" :size="15" aria-hidden="true" />{{ t('pages.conversationWorkspace.conversation') }}</span>
-        <div class="ml-auto flex min-w-0 items-center gap-2">
+        <span class="conversation-heading">
+          <Icon name="chat" :size="15" class="shrink-0" aria-hidden="true" />
+          <span v-if="runNamePending" class="conversation-title-skeleton" data-testid="conversation-title-skeleton" aria-hidden="true"><span /></span>
+          <span v-else class="min-w-0 truncate" data-testid="conversation-title" :title="runNameLabel || undefined">{{ runNameLabel || t('pages.conversationWorkspace.conversation') }}</span>
+        </span>
+        <div class="ml-auto flex shrink-0 items-center gap-2">
           <slot name="actions" />
           <div v-if="panelEnabled && splitModes" class="flex items-center gap-0.5">
             <button ref="resourceToggle" type="button" class="conversation-mode-toggle" data-testid="conversation-resource-toggle" :aria-pressed="mode === 'resources'" :aria-expanded="mode === 'resources'" :aria-label="mode === 'resources' ? t('pages.conversationWorkspace.closeResources') : t('pages.conversationWorkspace.openResources')" :title="t('pages.conversationWorkspace.resourceTip')" @click="toggleMode('resources')"><Icon name="stage-resources" :size="16" aria-hidden="true" /></button>
@@ -244,7 +257,9 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
 <style scoped>
 .conversation-workspace { display: flex; position: relative; min-width: 0; min-height: 0; height: 100%; flex: 1; flex-direction: column; overflow: hidden; background: rgb(var(--c-surface)); }
 .conversation-toolbar { display: flex; min-height: 44px; flex: none; align-items: center; gap: 12px; padding: 4px 16px; border-bottom: 1px solid rgb(var(--c-line) / .65); }
-.conversation-heading { display: inline-flex; align-items: center; gap: 8px; color: rgb(var(--c-txt2)); font-size: 12px; font-weight: 500; }
+.conversation-heading { display: inline-flex; min-width: 0; flex: 1 1 auto; align-items: center; gap: 8px; overflow: hidden; color: rgb(var(--c-txt2)); font-size: 12px; font-weight: 500; }
+.conversation-title-skeleton { display: flex; width: 7.5rem; align-items: center; }
+.conversation-title-skeleton > span { display: block; width: 60%; height: 8px; border-radius: 9999px; background: rgb(var(--c-txt) / 0.08); }
 .conversation-panel-toggle, .conversation-close { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; overflow: visible; border: 1px solid transparent; border-radius: 9px; padding: 0 10px; color: rgb(var(--c-txt2)); font-size: 12px; transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui); }
 .conversation-panel-toggle:hover, .conversation-close:hover { background: rgb(var(--c-txt) / .05); color: rgb(var(--c-txt)); }
 .conversation-panel-toggle[aria-expanded="true"] { border-color: rgb(var(--c-accent) / .12); background: rgb(var(--c-accent-dim)); color: rgb(var(--c-accent-2)); }
