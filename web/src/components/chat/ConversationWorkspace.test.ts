@@ -306,3 +306,51 @@ describe('ConversationWorkspace split modes', () => {
     expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
   })
 })
+
+describe('ConversationWorkspace toolbar run name', () => {
+  const longName = '优化这里的段间距'.repeat(8)
+
+  it('keeps the fixed label when no run name is passed', () => {
+    const w = mountWorkspace()
+    const title = w.get('[data-testid="conversation-title"]')
+    expect(title.text()).toBe('对话')
+    expect(title.attributes('title')).toBeUndefined()
+    expect(w.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(false)
+    expect(w.get('.conversation-heading').get('[data-icon="chat"]').exists()).toBe(true)
+    expect(w.get('[data-testid="conversation-panel-toggle"]').text()).toContain('产物')
+  })
+
+  it('shows the run name on one line and puts the full name on title', async () => {
+    const w = mountWorkspace(false, { runName: longName })
+    const title = w.get('[data-testid="conversation-title"]')
+    expect(title.text()).toBe(longName)
+    expect(title.attributes('title')).toBe(longName)
+    expect(title.classes()).toContain('truncate')
+    expect(w.get('.conversation-heading').text()).not.toContain('对话')
+    expect(w.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(false)
+    await w.setProps({ runName: '丙' })
+    expect(w.get('[data-testid="conversation-title"]').text()).toBe('丙')
+    expect(w.get('[data-testid="conversation-title"]').attributes('title')).toBe('丙')
+  })
+
+  it('shows the sidebar placeholder when the run name is blank', async () => {
+    const w = mountWorkspace(false, { runName: '' })
+    expect(w.find('[data-testid="conversation-title"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-title-skeleton"]').find('span').exists()).toBe(true)
+    expect(w.get('.conversation-heading').text()).not.toContain('对话')
+    expect(w.get('.conversation-heading').text()).not.toContain('Conversation')
+    expect(w.get('.conversation-heading').get('[data-icon="chat"]').exists()).toBe(true)
+    await w.setProps({ runName: '把登录做清楚' })
+    expect(w.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-title"]').text()).toBe('把登录做清楚')
+  })
+
+  it('shows the run name in English instead of Conversation', () => {
+    wrapper = mount(ConversationWorkspace, {
+      props: { scopeKey: 'run-a', runName: '优化这里的段间距' },
+      global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: enPages } })] },
+    })
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('优化这里的段间距')
+    expect(wrapper.get('.conversation-heading').text()).not.toContain('Conversation')
+  })
+})
