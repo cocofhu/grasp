@@ -171,9 +171,9 @@ describe('GatesInboxView list first-load tri-state (plan g1 / g2 / g3.2)', () =>
 
     const desktop = src.slice(src.indexOf('<!-- Desktop: existing panel'))
     // Content with rows first; empty-path order is skeleton → error → EmptyState.
-    expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"')).toBeGreaterThan(-1)
+    expect(desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation)"')).toBeGreaterThan(-1)
     expect(desktop.indexOf('v-else-if="!isMobile && showListSkeleton"')).toBeGreaterThan(
-      desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"'),
+      desktop.indexOf('v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation)"'),
     )
     expect(desktop.indexOf('v-else-if="!isMobile && showListError"')).toBeGreaterThan(
       desktop.indexOf('v-else-if="!isMobile && showListSkeleton"'),

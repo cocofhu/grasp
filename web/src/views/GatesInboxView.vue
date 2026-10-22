@@ -17,6 +17,7 @@ import AppInlineError from '@/components/ui/AppInlineError.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import { computed } from 'vue'
 import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
+import { isInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
 import { useGatesInbox } from '@/lib/inbox/useGatesInbox'
 
 const {
@@ -206,6 +207,14 @@ const {
   pageControlByNode,
 } = useGatesInbox()
 
+/**
+ * Sidebar is cancelling this conversation and will open the new-request page.
+ * Keep the conversation on screen so the pending-empty state cannot flash.
+ */
+const holdingCancelledConversation = computed(
+  () => !!active.value && isInboxCancelDeparture(active.value.runId),
+)
+
 /** Page-control state for the chat in view; empty until this user has turned it on in a drawer. */
 const inboxPageControl = computed(() => {
   const map = pageControlByNode.value
@@ -258,7 +267,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     </div>
 
     <!-- Mobile list view -->
-    <template v-if="isMobile && mobileView === 'list'">
+    <template v-if="isMobile && mobileView === 'list' && !holdingCancelledConversation">
       <RefreshStrip v-if="showListRefresh" data-testid="gates-inbox-refresh-strip" />
       <div
         v-if="showListSkeleton"
@@ -331,7 +340,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     </template>
 
     <!-- Mobile detail view -->
-    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
+    <div v-else-if="isMobile && (mobileView === 'detail' || holdingCancelledConversation) && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
       data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
       <div v-if="active && isShareableInboxItem(active)" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
@@ -460,7 +469,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
 
     <!-- Desktop: existing panel only. Pending rows live in the sidebar. -->
     <div
-      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"
+      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation)"
       class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >

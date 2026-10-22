@@ -56,6 +56,7 @@ import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
 import { inboxShareKind, isHumanGateInboxItem, isShareableInboxItem } from '@/lib/inbox/gateShareLink'
+import { inboxCancelDepartureRunId, isInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
 import {
   INBOX_SHARE_INTENT_QUERY,
   INBOX_SHARE_INTENT_VALUE,
@@ -950,7 +951,10 @@ async function confirmIncomingGhostStillNeeded(target: { runId: string; nodeId: 
     incomingArmed.value = false
     incomingGhost.value = null
     queryWaitGen++ // stop waitForQueryItem from polling a dead deep link
-    if (listItems.value.some((it) => itemKey(it) === key)) {
+    if (holdsCancelledConversation()) {
+      // The open conversation is leaving for the new-request page. Do not drop
+      // it or open whatever row is still pending.
+    } else if (listItems.value.some((it) => itemKey(it) === key)) {
       const prevList = listItems.value.slice()
       listItems.value = listItems.value.filter((it) => itemKey(it) !== key)
       if (active.value && itemKey(active.value) === key) {
@@ -1172,13 +1176,27 @@ async function waitForQueryItem() {
 }
 
 /**
+ * Sidebar cancel of the conversation on screen. Hold that conversation until
+ * the sidebar finishes leaving /gates, so a list refresh cannot clear it
+ * (empty inbox) or replace it with the next pending row.
+ */
+function holdsCancelledConversation(): boolean {
+  const departing = inboxCancelDepartureRunId()
+  if (!departing) return false
+  if (active.value?.runId === departing) return true
+  return queryText(route.query.run) === departing
+}
+
+/**
  * List non-empty + invalid/missing active → pick first valid item.
  * Empty list → clear active (full empty inbox). Never leave a Run # - shell.
+ * A sidebar cancel of this conversation skips both: the page is about to leave.
  */
 function ensureValidActive({ keepActive = false }: { keepActive?: boolean } = {}) {
   if (processingLock.value) return
   // Following a run after hand-off: the confirmed conversation stays although it left the list.
   if (isFollowingActive()) return
+  if (holdsCancelledConversation()) return
   if (selectFromQuery({ keepActive })) {
     applyHomeHandoff()
     return
@@ -1230,6 +1248,7 @@ function pickHandoffNext(submitted: InboxItem, removedKey: string): boolean {
 }
 
 function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
+  if (holdsCancelledConversation()) return
   active.value = pickNextActiveAfterRemove(prevList, removedKey, itemKey)
   showProcessedBanner.value = false
   if (isMobile.value && !listItems.value.length) mobileView.value = 'list'
@@ -1237,6 +1256,7 @@ function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
 
 /** Quietly converge when inbox-context 404 means the item left pending. */
 function handleLeftInboxContext(it: InboxItem) {
+  if (isInboxCancelDeparture(it.runId) && holdsCancelledConversation()) return
   markProcessed(it)
   const key = itemKey(it)
   const prevList = listItems.value.some((row) => itemKey(row) === key)
@@ -1453,6 +1473,7 @@ function syncActiveAfterApply(list: InboxItem[], prevKey: string | null) {
   // Processing intent owns selection until converge/unlock — ignore list-apply swaps.
   if (processingLock.value) return
   if (isFollowingActive()) return
+  if (holdsCancelledConversation()) return
   if (!active.value && list.length) {
     active.value = list[0]
     return
