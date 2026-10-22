@@ -82,8 +82,11 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
   const turns = computed<ClarifyTurn[]>(() =>
     mode.value === 'chat' ? (run.value?.clarifyByNode?.[nodeId.value]?.turns ?? []) : [],
   )
-  /** Locked between 确认并流转 and the next node (the composer itself is never replaced). */
-  const composerLocked = computed(() => mode.value === 'chat' && !!handoff.value)
+  /**
+   * Locked only after confirm succeeds, while the same composer follows a
+   * non-waiting node. `handoff.pending` (产物校验中) must not lock typing.
+   */
+  const composerLocked = computed(() => mode.value === 'chat' && handoff.value?.phase === 'done')
   let chatBusy = false
   const endState = ref<LiveEndState | null>(null)
 

@@ -464,11 +464,21 @@ watch(composerBlocksConfirm, (blocked) => {
 }, { flush: 'pre' })
 
 /**
+ * 校验中 / host handoff.pending: keep the primary on「校验中…」and refuse a
+ * second confirm. Input and attachments stay usable — only observe and a true
+ * follow lock (#850) disable the textarea / 「+」.
+ */
+const confirmBusy = computed(() => validating.value || props.handoff?.phase === 'pending')
+const composerInputLocked = computed(() => !!props.observe || !!props.composerLocked)
+
+/**
  * The composer shows exactly one primary action (fix-post-launch/button-states.md):
  * draft or send in flight → 发送; session busy → 停止;
  * finishable → 确认并流转; otherwise a disabled 发送.
+ * While confirmBusy, the slot stays 确认并流转 even if the user starts a draft.
  */
 const primaryKind = computed<ComposerPrimaryKind>(() => {
+  if (confirmBusy.value) return 'confirm'
   if (composerSending.value || hasComposerDraft()) return 'send'
   if (sessionBusy.value) return 'stop'
   if (!props.hideFinish) return 'confirm'
@@ -479,13 +489,14 @@ const primaryDisabled = computed(() => {
   // Following the run after a hand-off (#850): send and confirm stay locked
   // until the run's next node waits for the user. 停止 is never locked.
   if (props.composerLocked) return true
+  if (confirmBusy.value) return true
   if (primaryKind.value === 'confirm') return confirmDisabled.value
   return composerSending.value || !hasComposerDraft()
 })
 const primaryLabel = computed(() => {
   if (primaryKind.value === 'stop') return translate('common.buttons.stop')
   if (primaryKind.value === 'confirm') {
-    return validating.value ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow')
+    return confirmBusy.value ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlow')
   }
   return composerSending.value ? translate('common.buttons.sending') : clarifySendAria.value
 })
@@ -496,7 +507,7 @@ const primaryTestid = computed(() => {
 })
 function onPrimary(kind: ComposerPrimaryKind) {
   if (kind === 'stop') cancelReview()
-  else if (props.composerLocked) return
+  else if (props.composerLocked || confirmBusy.value) return
   else if (kind === 'confirm') finishEarly()
   else send()
 }
@@ -1691,7 +1702,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
             :placeholder="observe ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
-            :disabled="observe || composerLocked"
+            :disabled="composerInputLocked"
             data-testid="clarify-input"
             @input="onTextInput"
             @keydown="onComposerKeydown"
@@ -1707,7 +1718,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :title="translate('pages.clarify.addImage')"
             :aria-label="translate('pages.clarify.addImage')"
             data-testid="clarify-attach-btn"
-            :disabled="observe || composerLocked"
+            :disabled="composerInputLocked"
             @click="fileInput?.click()"
           >
             <Icon name="plus" :size="18" />
@@ -1744,7 +1755,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             class="m-0 min-w-0 text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]"
             data-testid="clarify-confirm-hint"
           >
-            {{ validating ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlowHint') }}
+            {{ confirmBusy ? translate('pages.clarify.validating') : translate('pages.clarify.confirmFlowHint') }}
           </p>
         </template>
       </ComposerShell>

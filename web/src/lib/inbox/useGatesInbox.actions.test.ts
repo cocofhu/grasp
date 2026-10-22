@@ -435,6 +435,8 @@ describe('useGatesInbox actions', () => {
     // Inline hand-off: the conversation stays and shows the pending row at click.
     expect(inbox.active.value?.runId).toBe('run-chat')
     expect(inbox.activeHandoff.value?.phase).toBe('pending')
+    // 校验中 is not a follow lock — input stays available until followTail matches.
+    expect(inbox.clarifyComposerLocked.value).toBe(false)
     await finishing
     // Success is shown inline, not as a toast. v3: no jump — the conversation stays,
     // the row turns done and (chain unavailable here) a waiting row follows the run.

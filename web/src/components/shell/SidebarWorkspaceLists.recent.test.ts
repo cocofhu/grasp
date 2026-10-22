@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -6,6 +9,14 @@ import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import nav from '@/locales/zh-CN/nav.json'
 import common from '@/locales/zh-CN/common.json'
+
+const listSrc = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'SidebarWorkspaceLists.vue'), 'utf8')
+function styleBlock(selector: string): string {
+  const style = listSrc.slice(listSrc.indexOf('<style scoped>'))
+  const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+  expect(found, selector).not.toBeNull()
+  return found![0]
+}
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
@@ -55,7 +66,38 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(rows[0].attributes('href')).toBe('/runs/c')
     expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
     expect(rows[1].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
+    expect(rows[1].find('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
+    expect(rows[1].find('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('失败')
     expect(rows[2].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
+    expect(rows[2].find('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-cancelled')
+    expect(rows[2].find('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('已取消')
+    expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
+    for (const row of rows) {
+      const icon = row.get('[data-icon="history"]')
+      expect(icon.attributes('width')).toBe('16')
+      expect(icon.attributes('aria-hidden')).toBe('true')
+      expect(row.find('[data-icon="chat"]').exists()).toBe(false)
+    }
+    wrapper.unmount()
+  })
+
+  it('marks the current history row and aligns color tokens with 正在执行', async () => {
+    mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed'), r('d', undefined, 'failed'), r('e', undefined, 'cancelled')], total: 3 })
+    const { wrapper } = await setup('/runs/c')
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(rows[0].classes()).toContain('is-active')
+    expect(rows[0].attributes('aria-current')).toBe('page')
+    expect(rows[1].classes()).not.toContain('is-active')
+    expect(rows[1].attributes('aria-current')).toBeUndefined()
+    expect(styleBlock('\\.workspace-list-heading')).toContain('color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))')
+    expect(styleBlock('\\.workspace-recent-row')).toContain('color: rgb(var(--c-txt2))')
+    expect(styleBlock('\\.workspace-recent-row:hover')).toContain('color: rgb(var(--c-txt))')
+    expect(styleBlock('\\.workspace-recent-row:hover')).toContain('rgb(var(--c-txt) / .04)')
+    const active = styleBlock('\\.workspace-recent-row\\.is-active, \\.workspace-recent-row\\.is-active:hover')
+    expect(active).toContain('color: rgb(var(--c-txt))')
+    expect(active).toContain('light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+    expect(styleBlock('\\.workspace-recent-ended\\.is-failed')).toContain('light-dark(#d17a7a, #e08a8a)')
+    expect(styleBlock('\\.workspace-recent-ended\\.is-cancelled')).toContain('light-dark(#b4b4bb, #6f6f78)')
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     wrapper.unmount()
   })

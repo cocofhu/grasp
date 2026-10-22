@@ -2308,6 +2308,7 @@ const clarifyInputActive = computed(() =>
 /**
  * Following the run after a hand-off: the same composer stays mounted (never the
  * closed/done footer) but is locked until the run's next node waits for the user.
+ * Confirm pending (校验中) is not a follow lock — input stays available.
  */
 const clarifyComposerLocked = computed(() => isFollowingActive())
 

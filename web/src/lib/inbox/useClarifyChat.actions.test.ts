@@ -1368,6 +1368,26 @@ describe('confirm-flow dialog before clarify submit', () => {
     app.unmount()
   })
 
+  it('does not send a composer draft while validating or host handoff is pending', async () => {
+    const { chat, models, emit, props, app } = withChat()
+    models.draft.value = '校验中写下的草稿'
+    chat.validating.value = true
+    expect(await chat.sendFromComposer()).toBe(false)
+    expect(emit).not.toHaveBeenCalled()
+    expect(models.draft.value).toBe('校验中写下的草稿')
+    chat.validating.value = false
+    props.handoff = { phase: 'pending' }
+    await nextTick()
+    expect(await chat.sendFromComposer()).toBe(false)
+    expect(emit).not.toHaveBeenCalled()
+    expect(models.draft.value).toBe('校验中写下的草稿')
+    props.handoff = null
+    await nextTick()
+    expect(await chat.sendFromComposer()).toBe(true)
+    expect(emit).toHaveBeenCalledWith('send', '校验中写下的草稿', [], [])
+    app.unmount()
+  })
+
   it('does not open the dialog when sending', async () => {
     const { chat, models, emit, app } = withChat()
     models.draft.value = '先发送'

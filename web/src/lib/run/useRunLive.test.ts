@@ -301,6 +301,24 @@ describe('useRunLive (auto node → Stop → chat)', () => {
     wrapper.unmount()
   })
 
+  it('pending 确认并流转 does not lock the composer; success still locks while following', async () => {
+    const { live, wrapper } = await setup()
+    mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'waiting_human'), clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns: [], done: false } } })
+    await live().reload()
+    await flushPromises()
+    let release: (value?: unknown) => void = () => {}
+    mocks.reactReply.mockImplementationOnce(() => new Promise((resolve) => { release = resolve }))
+    const finishing = live().confirm()
+    await flushPromises()
+    expect(live().handoff.value?.phase).toBe('pending')
+    expect(live().composerLocked.value).toBe(false)
+    release({})
+    await finishing
+    expect(live().handoff.value?.phase).toBe('done')
+    expect(live().composerLocked.value).toBe(true)
+    wrapper.unmount()
+  })
+
   it('a rejected 确认并流转 in the continued chat shows the error and unlocks the composer', async () => {
     const { live, surface, wrapper } = await setup()
     mocks.getRun.mockResolvedValue({ id: 'r1', status: 'waiting_human', currentNode: cur('accept', 'review', 'manual', 'waiting_human'), clarifyByNode: { accept: { nodeId: 'accept', iteration: 1, turns: [], done: false } } })
