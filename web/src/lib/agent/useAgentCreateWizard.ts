@@ -3,7 +3,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type Agent } from '@/lib/api/api'
+import { api, type Agent, type CredentialItem } from '@/lib/api/api'
 import {
   ACP_BACKENDS,
   CLI_BACKENDS,
@@ -30,16 +30,10 @@ import { buildTemplateOptions } from '@/lib/agent/agentTemplateOptions'
 import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect.vue'
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { backendForStartPath } from '@/lib/shared/startPath'
-import { authGuideFor, defaultSettingsPlaceholder, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
+import { authGuideFor, defaultSettingsPlaceholder } from '@/lib/agent/backendAuthGuide'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
-import {
-  applyOpenCodeFields,
-  openCodeCustomBaseRequired,
-  openCodeFieldsFromEnv,
-  openCodeModelRequired,
-  type OpenCodeProviderId,
-} from '@/lib/agent/openCodeProvider'
+import { applyOpenCodeFields, type OpenCodeProviderId } from '@/lib/agent/openCodeProvider'
 
 export interface AgentCreateWizardProps {
   open: boolean
@@ -69,6 +63,7 @@ const openCodeBaseError = ref(false)
 const openCodeModelError = ref(false)
 const customConfigDraft = ref('')
 const templateRows = ref<AgentTemplate[]>([])
+const credentialItems = ref<CredentialItem[]>([])
 const templateOptions = computed<AgentTemplateOption[]>(() => buildTemplateOptions(templateRows.value, t, te))
 
 const showDescField = computed(() => !hasRoleTemplate(draft.value))
@@ -94,8 +89,19 @@ async function loadTemplates() {
   }
 }
 
+async function loadCredentials() {
+  try {
+    const res = await api.listCredentials()
+    credentialItems.value = res?.items || []
+  } catch {
+    // A failed list is the same as having nothing to pick; the step can still be skipped.
+    credentialItems.value = []
+  }
+}
+
 onMounted(() => {
   void loadTemplates()
+  void loadCredentials()
 })
 
 function onTemplateSelect(id: string) {
@@ -108,7 +114,21 @@ function onTemplateSelect(id: string) {
 
 const currentStep = computed(() => WIZARD_STEPS[draft.value.step])
 const progressPct = computed(() => ((draft.value.step + 1) / WIZARD_STEPS.length) * 100)
-const reviewItems = computed(() => buildReviewSummary(draft.value))
+function credentialAlias(id?: string): string {
+  const trimmed = id?.trim() || ''
+  if (!trimmed) return ''
+  return credentialItems.value.find((item) => item.id === trimmed)?.name || trimmed
+}
+
+const reviewItems = computed(() =>
+  buildReviewSummary(draft.value, {
+    model: credentialAlias(
+      draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId,
+    ),
+    git: credentialAlias(draft.value.gitCredentialId),
+    sshHosts: credentialAlias(draft.value.sshHostsCredentialId),
+  }),
+)
 const currentRegionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
 const currentRegion = computed(() => {
   const policy = currentRegionPolicy.value
@@ -121,7 +141,8 @@ const authConfigured = computed(() => {
     const parsed = parseCustomConfigJson(draft.value.customConfigContent)
     return parsed.ok && parsed.normalized !== ''
   }
-  return hasAuthKeyConfigured(draft.value.env, draft.value.acpBackend)
+  const id = draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId
+  return !!id?.trim()
 })
 const showAuthReminder = computed(() => !authConfigured.value)
 
@@ -152,6 +173,7 @@ watch(
       openCodeModelError.value = false
       stepAnimKey.value++
       void loadTemplates()
+      void loadCredentials()
       nextTick(() => {
         document.getElementById('wiz-name-input')?.focus()
       })
@@ -244,6 +266,22 @@ function clearAuthKeys() {
   apiKeyInput.value = ''
 }
 
+function clearModelCredentials() {
+  draft.value.aiCredentialId = ''
+  draft.value.openCodeCredentialId = ''
+}
+
+function onModelCredential(id: string) {
+  if (draft.value.acpBackend === 'opencode') {
+    draft.value.openCodeCredentialId = id
+    draft.value.aiCredentialId = ''
+  } else {
+    draft.value.aiCredentialId = id
+    draft.value.openCodeCredentialId = ''
+  }
+  if (id.trim()) markConfigured('apiKey')
+}
+
 function setAuthMode(mode: WizardAuthMode) {
   if (mode === draft.value.authMode) return
   customConfigError.value = false
@@ -255,6 +293,7 @@ function setAuthMode(mode: WizardAuthMode) {
     return
   }
   clearAuthKeys()
+  clearModelCredentials()
   draft.value.authMode = mode
   draft.value.customConfigContent =
     customConfigDraft.value || defaultSettingsPlaceholder(draft.value.acpBackend)
@@ -309,8 +348,26 @@ function onApiKeyInput(value: string) {
 }
 
 function onGitCredentialType(value: GitCredentialType) {
+  if (draft.value.gitCredentialType !== value) {
+    draft.value.gitCredentialId = ''
+    draft.value.sshHostsCredentialId = ''
+  }
   draft.value.gitCredentialType = value
   markConfigured('git')
+}
+
+function onGitCredentialId(id: string) {
+  draft.value.gitCredentialId = id
+  if (id.trim()) markConfigured('git')
+}
+
+function onSshHostsCredentialId(id: string) {
+  draft.value.sshHostsCredentialId = id
+  if (id.trim()) markConfigured('git')
+}
+
+function removeGitRepos() {
+  draft.value.env = draft.value.env.filter((entry) => entry.k !== 'GIT_REPOS')
 }
 
 function goPrev() {
@@ -326,9 +383,17 @@ function goSkip() {
   draft.value.skipped[step.id] = true
   if (step.id === 'apiKey') {
     clearAuthKeys()
+    clearModelCredentials()
     draft.value.customConfigContent = ''
     customConfigDraft.value = ''
     customConfigError.value = false
+    draft.value.authMode = 'apiKey'
+  }
+  if (step.id === 'git') {
+    draft.value.gitCredentialType = undefined
+    draft.value.gitCredentialId = ''
+    draft.value.sshHostsCredentialId = ''
+    removeGitRepos()
   }
   draft.value.step++
   stepAnimKey.value++
@@ -336,17 +401,6 @@ function goSkip() {
 }
 
 function validateApiKeyStep(): boolean {
-  if (draft.value.acpBackend === 'opencode' && draft.value.authMode === 'apiKey') {
-    const fields = openCodeFieldsFromEnv(kvToRec(draft.value.env))
-    if (openCodeModelRequired(fields.model)) {
-      openCodeModelError.value = true
-      return false
-    }
-    if (openCodeCustomBaseRequired(fields.provider, fields.baseURL)) {
-      openCodeBaseError.value = true
-      return false
-    }
-  }
   if (draft.value.authMode !== 'customConfig') return true
   const parsed = parseCustomConfigJson(draft.value.customConfigContent)
   if (!parsed.ok) {
@@ -424,6 +478,7 @@ function chipClass(kind: string) {
   envHelpOpen,
   stepAnimKey,
   apiKeyInput,
+  credentialItems,
   customConfigError,
   openCodeBaseError,
   openCodeModelError,
@@ -454,11 +509,15 @@ function chipClass(kind: string) {
   setAuthMode,
   onCustomConfigInput,
   onApiKeyInput,
+  onModelCredential,
   onOpenCodeProvider,
   onOpenCodeBaseURL,
   onOpenCodeModel,
   onOpenCodeVision,
   onGitCredentialType,
+  onGitCredentialId,
+  onSshHostsCredentialId,
+  removeGitRepos,
   goPrev,
   goSkip,
   goNext,

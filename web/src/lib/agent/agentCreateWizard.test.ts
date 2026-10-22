@@ -143,6 +143,61 @@ describe('assembleCreatePayload', () => {
     d.name = 'x'
     d.gitCredentialType = 'ssh'
     expect(assembleCreatePayload(d).gitCredentialType).toBe('ssh')
+    expect(assembleCreatePayload(d)).not.toHaveProperty('gitCredentialId')
+    expect(assembleCreatePayload(d)).not.toHaveProperty('sshHostsCredentialId')
+  })
+
+  it('writes the selected credential ids and omits them when unset', () => {
+    const cursor = freshDraft()
+    cursor.name = 'cursor-agent'
+    cursor.acpBackend = 'cursor'
+    cursor.aiCredentialId = 'cred-cursor'
+    cursor.openCodeCredentialId = 'cred-should-not-send'
+    cursor.gitCredentialType = 'github_https'
+    cursor.gitCredentialId = 'cred-gh'
+    cursor.sshHostsCredentialId = 'cred-hosts'
+    cursor.env = [
+      { k: 'GRASP_CURSOR_API_KEY', v: 'sk-test' },
+      { k: 'GITHUB_TOKEN', v: 'ghp-x' },
+      { k: 'GIT_SSH_PRIVATE_KEY', v: 'key' },
+      { k: 'GIT_SSH_KNOWN_HOSTS', v: 'hosts' },
+      { k: 'GIT_REPOS', v: '${vars.repos}' },
+    ]
+    const cursorPayload = assembleCreatePayload(cursor)
+    expect(cursorPayload.aiCredentialId).toBe('cred-cursor')
+    expect(cursorPayload).not.toHaveProperty('openCodeCredentialId')
+    expect(cursorPayload.gitCredentialType).toBe('github_https')
+    expect(cursorPayload.gitCredentialId).toBe('cred-gh')
+    expect(cursorPayload).not.toHaveProperty('sshHostsCredentialId')
+    expect(cursorPayload.env).toEqual({ GIT_REPOS: '${vars.repos}' })
+
+    const opencode = freshDraft()
+    opencode.name = 'oc-agent'
+    opencode.openCodeCredentialId = 'cred-oc'
+    opencode.aiCredentialId = 'cred-cursor'
+    const ocPayload = assembleCreatePayload(opencode)
+    expect(ocPayload.openCodeCredentialId).toBe('cred-oc')
+    expect(ocPayload).not.toHaveProperty('aiCredentialId')
+
+    const blank = freshDraft()
+    blank.name = 'blank-agent'
+    blank.acpBackend = 'cursor'
+    const blankPayload = assembleCreatePayload(blank)
+    expect(blankPayload).not.toHaveProperty('aiCredentialId')
+    expect(blankPayload).not.toHaveProperty('openCodeCredentialId')
+    expect(blankPayload).not.toHaveProperty('gitCredentialType')
+    expect(blankPayload).not.toHaveProperty('gitCredentialId')
+  })
+
+  it('sends the SSH known-hosts id only for SSH', () => {
+    const d = freshDraft()
+    d.name = 'ssh-agent'
+    d.gitCredentialType = 'ssh'
+    d.gitCredentialId = 'key-1'
+    d.sshHostsCredentialId = 'hosts-1'
+    const payload = assembleCreatePayload(d)
+    expect(payload.gitCredentialId).toBe('key-1')
+    expect(payload.sshHostsCredentialId).toBe('hosts-1')
   })
 
   it('strictly normalizes region env without adding a top-level region', () => {
@@ -218,15 +273,44 @@ describe('hasPathDeps / buildReviewSummary', () => {
     expect(items.find((i) => i.key === 'git')?.kind).toBe('empty')
   })
 
-  it('marks API Key configured when auth env is present', () => {
-    const d = freshDraft()
-    d.name = 'n'
-    d.acpBackend = 'cursor'
-    d.startPath = 'cli'
-    d.env = [{ k: 'GRASP_CURSOR_API_KEY', v: 'crsr_demo' }]
-    const items = buildReviewSummary(d)
-    expect(items.find((i) => i.key === 'apiKey')?.kind).toBe('ok')
+  it('marks API Key configured from the selected credential alias, not a pasted secret', () => {
+    const pasted = freshDraft()
+    pasted.name = 'n'
+    pasted.acpBackend = 'cursor'
+    pasted.startPath = 'cli'
+    pasted.env = [{ k: 'GRASP_CURSOR_API_KEY', v: 'crsr_demo' }]
+    expect(buildReviewSummary(pasted).find((i) => i.key === 'apiKey')?.kind).toBe('empty')
+
+    const picked = freshDraft()
+    picked.name = 'n'
+    picked.acpBackend = 'cursor'
+    picked.aiCredentialId = 'cred-cursor'
+    const items = buildReviewSummary(picked, { model: '工作号' })
+    const apiKey = items.find((i) => i.key === 'apiKey')
+    expect(apiKey?.kind).toBe('ok')
+    expect(apiKey?.detail).toBe('工作号')
     expect(items.find((i) => i.key === 'authReminder')).toBeUndefined()
+    expect(items.find((i) => i.key === 'git')?.kind).toBe('empty')
+  })
+
+  it('shows Git as configured when a credential or GIT_REPOS is present', () => {
+    const repos = freshDraft()
+    repos.name = 'n'
+    repos.gitCredentialType = 'github_https'
+    repos.env = [{ k: 'GIT_REPOS', v: '${vars.repos}' }]
+    const reposGit = buildReviewSummary(repos).find((i) => i.key === 'git')
+    expect(reposGit?.kind).toBe('ok')
+    expect(reposGit?.detail).toBe('GIT_REPOS')
+
+    const cred = freshDraft()
+    cred.name = 'n'
+    cred.gitCredentialType = 'ssh'
+    cred.gitCredentialId = 'key-1'
+    cred.sshHostsCredentialId = 'hosts-1'
+    cred.env = [{ k: 'GIT_REPOS', v: '${vars.repos}' }]
+    const credGit = buildReviewSummary(cred, { git: '部署私钥', sshHosts: '已知主机' }).find((i) => i.key === 'git')
+    expect(credGit?.kind).toBe('ok')
+    expect(credGit?.detail).toBe('部署私钥 · 已知主机 · GIT_REPOS')
   })
 
   it('writes settings.json and omits auth env in custom config mode', () => {
