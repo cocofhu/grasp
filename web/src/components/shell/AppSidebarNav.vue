@@ -92,19 +92,28 @@ function rowTitle(it: InboxItem): string {
   return sidebarRunTitle({ runTitle: rowRunTitle(it), workflowName: run?.workflowName || it.workflowName })
 }
 /**
- * A run whose pending item just left (hand-off confirmed) stays in place, marked
- * running, until the next running-run read says whether it is still going.
+ * A run whose pending item just left (hand-off confirmed) can stay in place
+ * until the next unfinished-run read, but only if that run was already in the
+ * previous unfinished list. A read that is aborted, skipped, or fails drops
+ * these placeholders instead of leaving them in the count.
  */
 const carriedRows = ref<InboxItem[]>([])
 let runningRequest: AbortController | null = null
 const { ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+
+function dropCarriedRows(controller: AbortController) {
+  if (runningRequest === controller) carriedRows.value = []
+}
 
 async function loadRunningRuns() {
   runningRequest?.abort()
   const controller = new AbortController()
   runningRequest = controller
   try {
-    if (!(await ensureWorkspaceLoaded()) || runningRequest !== controller) return
+    if (!(await ensureWorkspaceLoaded()) || runningRequest !== controller) {
+      dropCarriedRows(controller)
+      return
+    }
     const result = await api.listRuns({
       page: 1,
       pageSize: 50,
@@ -113,11 +122,16 @@ async function loadRunningRuns() {
       order: 'desc',
       signal: controller.signal,
     })
-    if (runningRequest !== controller || !Array.isArray(result?.items)) return
+    if (runningRequest !== controller || !Array.isArray(result?.items)) {
+      dropCarriedRows(controller)
+      return
+    }
     runningRuns.value = result.items
     carriedRows.value = []
   } catch {
-    // Keep the last list; the next poll retries.
+    // Keep the last unfinished list. Placeholders from a read that did not
+    // land must not stay in the count; the next poll retries.
+    dropCarriedRows(controller)
   } finally {
     if (runningRequest === controller) runningRequest = null
   }
@@ -128,15 +142,23 @@ let shownRunOrder: string[] = []
 const pendingRows = computed(() => {
   const rows = mergeRunRows(pendingItems.value, runningRuns.value, activeInboxKey.value)
   const listed = new Set(rows.map((r) => r.runId))
-  const merged = [...rows, ...carriedRows.value.filter((c) => !listed.has(c.runId))]
+  const unfinished = new Set(runningRuns.value.map((r) => r.id))
+  const merged = [
+    ...rows,
+    ...carriedRows.value.filter((c) => !listed.has(c.runId) && unfinished.has(c.runId)),
+  ]
   const ordered = keepRowOrder(merged, shownRunOrder)
   shownRunOrder = ordered.map((r) => r.runId)
   return ordered
 })
 watch(pendingItems, (next, prev) => {
   const still = new Set(next.map((it) => it.runId))
+  const unfinished = new Set(runningRuns.value.map((r) => r.id))
   const left = (prev ?? []).filter(
-    (it, i, arr) => !still.has(it.runId) && arr.findIndex((x) => x.runId === it.runId) === i,
+    (it, i, arr) =>
+      !still.has(it.runId) &&
+      unfinished.has(it.runId) &&
+      arr.findIndex((x) => x.runId === it.runId) === i,
   )
   if (!left.length) return
   const carried = carriedRows.value.slice()
