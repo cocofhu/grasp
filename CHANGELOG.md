@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Clarify chat:** parent classes, styles, accessibility attributes and native
+  events now reach the chat column, resolving the Vue attribute warning in the
+  review composer.
+
 - **Conversation actions:** uses one readable purple for submissions and flow
   confirmation, neutral secondary/disabled buttons and quieter recommendation
   labels, including compact approval layouts.
