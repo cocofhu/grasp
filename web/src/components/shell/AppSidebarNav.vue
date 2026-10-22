@@ -6,7 +6,7 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import {
@@ -585,6 +585,7 @@ watch(
 )
 
 function isActive(to: string) {
+  if (to === '/board') return isBoardSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 

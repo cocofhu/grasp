@@ -1,18 +1,25 @@
 import { describe, expect, it } from 'vitest'
-import { sidebarNavGroups } from './sidebarNav'
+import enNav from '@/locales/en/nav.json'
+import zhNav from '@/locales/zh-CN/nav.json'
+import { isBoardSectionPath, sidebarNavGroups } from './sidebarNav'
 
 describe('sidebarNav (plan g1.1)', () => {
-  it('workspace primary is exactly home / workflows / runs / usage / settings', () => {
+  it('workspace primary is exactly home / board / workflows / usage / settings', () => {
     expect(sidebarNavGroups).toHaveLength(1)
     expect(sidebarNavGroups[0].titleKey).toBeUndefined()
     const items = sidebarNavGroups[0].items
     expect(items.map((i) => i.to)).toEqual([
       '/dashboard',
+      '/board',
       '/workflows',
-      '/runs',
       '/stats',
       '/settings',
     ])
+    expect(items.find((i) => i.to === '/board')).toEqual({
+      to: '/board',
+      icon: 'board',
+      labelKey: 'nav.board',
+    })
     expect(items.find((i) => i.to === '/workflows')).toEqual({
       to: '/workflows',
       icon: 'workflow',
@@ -23,6 +30,8 @@ describe('sidebarNav (plan g1.1)', () => {
       icon: 'chart',
       labelKey: 'nav.stats',
     })
+    expect(zhNav.nav.board).toBe('看板')
+    expect(enNav.nav.board).toBe('Board')
   })
 
   it('does not expose collapsed pages or config group as workspace primary', () => {
@@ -31,15 +40,27 @@ describe('sidebarNav (plan g1.1)', () => {
     expect(allTos).not.toContain('/artifacts')
     expect(allTos).not.toContain('/agents')
     expect(allTos).not.toContain('/sandboxes')
-    expect(allTos).not.toContain('/board')
+    expect(allTos).toContain('/board')
+    expect(allTos).not.toContain('/runs')
     expect(allTos).not.toContain('/integrations')
     expect(allTos).not.toContain('/triggers')
     expect(sidebarNavGroups.some((g) => g.titleKey === 'nav.groupConfig')).toBe(false)
   })
 
-  it('keeps the runs label key and does not put gates in the workspace nav', () => {
+  it('keeps the board label key and does not put gates or runs in the workspace nav', () => {
     const items = sidebarNavGroups[0].items
-    expect(items.find((i) => i.to === '/runs')?.labelKey).toBe('nav.runs')
+    expect(items.find((i) => i.to === '/board')?.labelKey).toBe('nav.board')
+    expect(items.find((i) => i.to === '/runs')).toBeUndefined()
     expect(items.find((i) => i.to === '/gates')).toBeUndefined()
+  })
+
+  it('treats the kanban and run list/detail as the board section', () => {
+    expect(isBoardSectionPath('/board')).toBe(true)
+    expect(isBoardSectionPath('/runs')).toBe(true)
+    expect(isBoardSectionPath('/runs/run-1')).toBe(true)
+    expect(isBoardSectionPath('/runs/run-1/live')).toBe(true)
+    expect(isBoardSectionPath('/dashboard')).toBe(false)
+    expect(isBoardSectionPath('/workflows')).toBe(false)
+    expect(isBoardSectionPath('/gates')).toBe(false)
   })
 })

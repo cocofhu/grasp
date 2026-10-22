@@ -11,7 +11,7 @@ import SidebarAccountMenu from './SidebarAccountMenu.vue'
 import { authApi } from '@/lib/api/api'
 import { useAuth } from '@/lib/composables/useAuth'
 import { clearAllEmbedSessions } from '@/lib/inbox/embedChat'
-import { sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import {
@@ -30,7 +30,8 @@ const railItems = sidebarNavGroups[0]?.items.filter((item) => item.to !== '/sett
 
 function isRailActive(to: string) {
   if (settingsChrome.value) return false
-  if (to === '/dashboard' && (route.path.startsWith('/gates') || ['/board', '/requirements', '/assistant'].includes(route.path))) return true
+  if (to === '/dashboard' && (route.path.startsWith('/gates') || ['/requirements', '/assistant'].includes(route.path))) return true
+  if (to === '/board') return isBoardSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
 

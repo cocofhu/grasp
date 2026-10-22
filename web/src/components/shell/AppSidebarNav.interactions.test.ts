@@ -66,7 +66,7 @@ describe('AppSidebarNav interactions', () => {
     await flushPromises()
     vi.advanceTimersByTime(15000)
     expect(mocks.peek).toHaveBeenCalledWith({ source: 'sidebar-poll' })
-    await w.find('[data-to="/runs"]').trigger('click')
+    await w.find('[data-to="/board"]').trigger('click')
     expect(w.emitted('navigate')).toBeTruthy()
     route.path = '/runs'
     await w.vm.$nextTick()

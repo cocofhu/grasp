@@ -6,6 +6,10 @@ import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import shell from '@/locales/zh-CN/shell.json'
 import nav from '@/locales/zh-CN/nav.json'
+import enCommon from '@/locales/en/common.json'
+import enPages from '@/locales/en/pages.json'
+import enShell from '@/locales/en/shell.json'
+import enNav from '@/locales/en/nav.json'
 import { __resetSidebarHiddenForTests, setSidebarHidden } from '@/lib/shared/sidebarHidden'
 
 const routeState = { path: '/dashboard', meta: {} as Record<string, unknown> }
@@ -68,8 +72,10 @@ describe('AppSidebar', () => {
   it.each([
     ['/dashboard', '/dashboard'],
     ['/gates/run-1', '/dashboard'],
+    ['/board', '/board'],
     ['/workflows/wf-1', '/workflows'],
-    ['/runs/run-1', '/runs'],
+    ['/runs', '/board'],
+    ['/runs/run-1', '/board'],
     ['/stats', '/stats'],
   ])('labels the app rail and marks the current section for %s', (path, activeHref) => {
     routeState.path = path
@@ -77,11 +83,34 @@ describe('AppSidebar', () => {
     const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
     expect(rail.attributes('aria-label')).toBe('工作区导航')
     const links = rail.findAll('a.sidebar-app-rail__item')
-    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/stats', '/settings'])
-    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['新需求', '工作流', '运行', '用量统计', '设置'])
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/board', '/workflows', '/stats', '/settings'])
+    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['新需求', '看板', '工作流', '用量统计', '设置'])
     expect(links.every((link) => link.attributes('title') === link.attributes('aria-label'))).toBe(true)
     expect(links.filter((link) => link.attributes('aria-current') === 'page').map((link) => link.attributes('href'))).toEqual([activeHref])
     expect(links.filter((link) => link.classes().includes('is-active')).map((link) => link.attributes('href'))).toEqual([activeHref])
+    wrapper.unmount()
+  })
+
+  it('uses English board labels on the rail without changing order', () => {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'en',
+      messages: { en: { ...enCommon, ...enPages, ...enShell, ...enNav } },
+    })
+    const wrapper = mount(AppSidebar, {
+      global: {
+        plugins: [i18n],
+        stubs: {
+          BrandLogo: { template: '<div data-testid="brand" />' },
+          AppSidebarNav: { template: '<nav data-testid="nav" />' },
+          ShellChromeControls: { template: '<div data-testid="shell-chrome-controls" />' },
+          Icon: true,
+        },
+      },
+    })
+    const links = wrapper.get('[data-testid="sidebar-app-rail"]').findAll('a.sidebar-app-rail__item')
+    expect(links.map((link) => link.attributes('href'))).toEqual(['/dashboard', '/board', '/workflows', '/stats', '/settings'])
+    expect(links.map((link) => link.attributes('aria-label'))).toEqual(['New request', 'Board', 'Workflows', 'Usage', 'Settings'])
     wrapper.unmount()
   })
 
@@ -96,7 +125,7 @@ describe('AppSidebar', () => {
     expect(wrapper.get('[data-testid="sidebar-settings-title"]').text()).toBe('设置')
     expect(wrapper.find('[data-testid="sidebar-brand-lockup"]').exists()).toBe(false)
     const rail = wrapper.get('[data-testid="sidebar-app-rail"]')
-    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/workflows', '/runs', '/stats', '/settings'])
+    expect(rail.findAll('a.sidebar-app-rail__item').map((link) => link.attributes('href'))).toEqual(['/dashboard', '/board', '/workflows', '/stats', '/settings'])
     expect(rail.findAll('[aria-current="page"]').map((link) => link.attributes('href'))).toEqual(['/settings'])
     expect(wrapper.get('[data-testid="app-sidebar-card"]').classes()).toEqual(expect.arrayContaining(['w-[304px]', 'min-w-[304px]']))
     expect(wrapper.find('[data-testid="desktop-nav-hide"]').exists()).toBe(true)
