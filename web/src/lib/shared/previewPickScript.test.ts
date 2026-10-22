@@ -784,6 +784,23 @@ describe('preview-pick.js floating chat window', () => {
     expect(mark?.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 72 88')
     expect(mark?.querySelectorAll('circle')).toHaveLength(2)
     expect(mark?.querySelectorAll('path')).toHaveLength(3)
+    const outline = mark?.querySelector('path')?.getAttribute('d') || ''
+    const head = outline.split(/[cC]/)[0] || ''
+    const nums = head.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
+    const pts: { x: number; y: number }[] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push({ x: nums[i]!, y: nums[i + 1]! })
+    const peaks: number[] = []
+    for (let i = 1; i < pts.length - 1; i++) {
+      if (pts[i]!.y < pts[i - 1]!.y && pts[i]!.y < pts[i + 1]!.y) peaks.push(i)
+    }
+    // Two ear tips only. A third crown spike (the rejected y=16 point between y=12 tips)
+    // is another local high. The valley between the tips must sit well below them:
+    // 12 viewBox units is about 4px on the 30px-tall mark.
+    expect(peaks).toHaveLength(2)
+    const earY = Math.max(pts[peaks[0]!]!.y, pts[peaks[1]!]!.y)
+    for (let i = peaks[0]! + 1; i < peaks[1]!; i++) {
+      expect(pts[i]!.y).toBeGreaterThanOrEqual(earY + 12)
+    }
     expect(markHtml).toContain('currentColor')
     expect(markHtml).toContain('M6 47h14')
     expect(markRule).toContain('width:24px')

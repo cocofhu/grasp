@@ -1218,7 +1218,7 @@
       '<span class="drag" data-role="drawer-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
       '<span class="mark" aria-hidden="true">' +
       '<svg viewBox="0 0 72 88" fill="none" aria-hidden="true">' +
-      '<path d="M24 36 L16 12 L30 32 L36 16 L42 32 L56 12 L48 36 C60 40 64 52 64 64 C64 76 56 80 50 72 C46 82 40 74 36 76 C32 78 28 74 24 76 C20 74 14 82 10 72 C6 80 4 72 4 64 C4 52 8 40 24 36Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<path d="M24 36 L16 12 L36 32 L56 12 L48 36 C60 40 64 52 64 64 C64 76 56 80 50 72 C46 82 40 74 36 76 C32 78 28 74 24 76 C20 74 14 82 10 72 C6 80 4 72 4 64 C4 52 8 40 24 36Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>' +
       '<circle cx="30" cy="50" r="2.5" fill="currentColor"/>' +
       '<circle cx="42" cy="50" r="2.5" fill="currentColor"/>' +
       '<path d="M36 55.2 34.1 58.4h3.8Z" fill="currentColor"/>' +
