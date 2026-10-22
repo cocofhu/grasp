@@ -478,8 +478,8 @@ function sealFollowProcess() {
   const next = followProcess.value.map((seg) => {
     if (!seg.live) return seg
     changed = true
-    const times = runId ? chainVisitTimes(runId, seg.nodeId, seg.iteration) : {}
-    return { ...seg, live: false, endedAt: seg.endedAt || times.endedAt || now }
+    const times = runId ? chainVisitTimes(runId, seg.nodeId, seg.iteration) : undefined
+    return { ...seg, live: false, endedAt: seg.endedAt || times?.endedAt || now }
   })
   if (changed) followProcess.value = next
 }

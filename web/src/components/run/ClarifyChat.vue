@@ -1,5 +1,4 @@
 <script lang="ts">
-import type { AgentPart, ClarifyTurn } from '@/lib/shared/types'
 /** Host-owned inline hand-off after 确认并流转 (see useGatesInbox.activeHandoff). */
 export type ClarifyHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
 /** Earlier node of the same run shown above this conversation (useGatesInbox.activeChainSegments). */
