@@ -337,6 +337,25 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+  it('a rerun asks with the node that routed here, not its own failed platform handoff', async () => {
+    const w = mountChat({
+      nodeId: 'test_review',
+      nodeLabel: '测试评审',
+      nodeTask: '按交接说明核验取消运行实现',
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-22T08:01:03Z', endedAt: '2026-10-22T08:07:44Z', turns: [], open: false,
+          handoff: '侧栏已加取消运行' },
+        { nodeId: 'test_review', iteration: 1, label: '测试评审', kind: 'auto', status: 'failed', at: '2026-10-22T08:07:44Z', endedAt: '2026-10-22T08:15:36Z', turns: [], open: false,
+          handoff: '上游节点执行失败,未留下交接说明。失败原因:未调用 node_complete 标记完成', handoffSource: 'platform' },
+      ],
+    })
+    await flushPromises()
+    const current = w.findAll('[data-testid="clarify-incoming-handoff-from"]').at(-1)!
+    expect(current.text()).toBe('「实现」的交接说明')
+    expect(w.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe('侧栏已加取消运行')
+    w.unmount()
+  })
+
   it('opens an auto row and shows each node record', async () => {
     nodeEvents.mockImplementation(async (_run: string, nodeId: string) => {
       if (nodeId === 'implement') {

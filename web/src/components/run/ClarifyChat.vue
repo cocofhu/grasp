@@ -858,7 +858,7 @@ const followTailView = computed<FollowTailView | null>(() => {
   if (ft.status === 'cancelled') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedCancelled') }
   return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
 })
-const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask))
+const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask, props.nodeId))
 
 
 /** A legacy (timeline-less) reply with a failed tool call keeps its completion footnote. */
@@ -926,6 +926,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         priors-only
         :run-id="runId"
         :prior-segments="priorSegments"
+        :node-id="nodeId"
         :node-label="nodeLabel"
         :node-task="nodeTask"
         :boot-summary="bootSummary"
