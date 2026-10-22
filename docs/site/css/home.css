@@ -45,7 +45,24 @@
   align-content: center;
 }
 
+.hero__eyebrow {
+  margin: 0 0 0.85rem;
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  padding: 0.28rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid rgba(123, 97, 255, 0.28);
+  background: rgba(123, 97, 255, 0.08);
+  color: #5b45d6;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+}
+
 .hero__brand {
+
   margin: 0 0 1.35rem;
   font-family: var(--font-display);
   font-size: clamp(3.25rem, 8.5vw, 5.25rem);

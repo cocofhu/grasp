@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Grasp</title>
-  <meta name="description" content="Agent workflows with human collaboration — a new multi-agent paradigm. Grasp.">
+  <meta name="description" content="Human-on-the-Loop coding workflows: clarify, review, and approve in one clean workspace. Grasp.">
   <link rel="alternate" hreflang="zh-CN" href="https://www.approving-ai.com/">
   <link rel="alternate" hreflang="en" href="https://www.approving-ai.com/en/">
   <link rel="alternate" hreflang="x-default" href="https://www.approving-ai.com/">
@@ -22,7 +22,7 @@
       <a class="site-header__brand" href="{{BASE}}/en/">Grasp</a>
       <nav class="site-header__nav" aria-label="Main navigation">
         <a class="site-header__link" href="{{BASE}}/en/guide/quick-start/">Docs</a>
-        <a class="site-header__link" href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">GitHub</a>
+        <a class="site-header__link" href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">GitHub</a>
         <nav class="lang-switch" aria-label="Language">
           <a class="lang-switch__link" href="{{BASE_SLASH}}" data-locale-set="zh-CN">中文</a>
           <span class="lang-switch__sep" aria-hidden="true">|</span>
@@ -38,13 +38,14 @@
       <div class="hero__shell">
         <div class="hero__content">
           <p class="hero__brand" data-reveal>Grasp</p>
+          <p class="hero__eyebrow" data-reveal>Human-on-the-Loop</p>
           <h1 class="hero__headline" data-reveal>
-            <span>Agent workflows with human collaboration —</span>
-            <span>a new multi-agent paradigm.</span>
+            <span>Agents run in sandboxes.</span>
+            <span>You keep the decisions.</span>
           </h1>
-          <p class="hero__support" data-reveal>Grasp turns coding agents into trusted workflows: visual orchestration, sandboxed execution, and human Approve gates at critical steps.</p>
+          <p class="hero__support" data-reveal>Grasp turns coding agents into trusted workflows: visual orchestration and sandboxed execution, with quieter chat and a unified inbox for clarify and Approve — people gate the steps that matter.</p>
           <div class="hero__cta" data-reveal>
-            <a class="btn btn--primary" href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">Repository</a>
+            <a class="btn btn--primary" href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">GitHub</a>
             <a class="btn btn--ghost" href="{{BASE}}/en/guide/quick-start/">Quick start</a>
             <span class="hero__cta-note">This site was built by this workflow</span>
           </div>
@@ -55,6 +56,8 @@
               <li>Claude Code</li>
               <li>CodeBuddy</li>
               <li>Trae</li>
+              <li>OpenCode</li>
+              <li>Codex</li>
             </ul>
           </div>
         </div>
@@ -136,8 +139,8 @@
     <section class="showcase showcase--alt" id="showcase-approve" data-showcase="approve" aria-label="Approve demo">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
-          <h2 class="showcase__title">Human–agent collaboration, made simple</h2>
-          <p class="showcase__lead showcase__lead--single">Review is the bottleneck. Unified Inbox: central clarify &amp; approve, then each Run continues.</p>
+          <h2 class="showcase__title">Review, without the noise</h2>
+          <p class="showcase__lead showcase__lead--single">Review is the bottleneck. A unified Inbox collects clarify and gates; quieter chat keeps artifacts beside the thread so Approve stays easy, then each Run continues.</p>
         </header>
         <div class="showcase__stage" data-stage="approve">
           <div class="panel panel--light">
@@ -210,8 +213,8 @@
     <section class="showcase" id="showcase-pm" data-showcase="pm" aria-label="PM demo">
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
-          <h2 class="showcase__title">Project management, redefined</h2>
-          <p class="showcase__lead">Every project gets a PM. Connect your usual IM and manage work from your phone.<br>Next: richer org roles — director, GM, and beyond. OPC, for real.</p>
+          <h2 class="showcase__title">Run workflows from your IM</h2>
+          <p class="showcase__lead">Bind a PM agent and connect Feishu, DingTalk, WeCom, or QQ — follow runs and hand out tasks from your phone.<br>Chat is orchestration; clarify, gates, and parallel work still land in the same Human-on-the-Loop loop.</p>
         </header>
         <div class="showcase__stage" data-stage="pm">
           <div class="panel panel--light">
@@ -294,7 +297,7 @@
       <div class="showcase__inner showcase__inner--wide">
         <header class="showcase__intro">
           <h2 class="showcase__title">Parallel scheduling, faster iteration</h2>
-          <p class="showcase__lead">Agents run in sandboxes, coordinated by the PM — iteration gets another gear.</p>
+          <p class="showcase__lead">Agents run in parallel sandboxes; gates still funnel into one Inbox so people only step in where it matters.</p>
         </header>
         <div class="showcase__stage" data-stage="parallel">
           <div class="panel">
@@ -592,7 +595,7 @@
         <ul class="capabilities__list">
           <li class="capabilities__item">
             <strong class="capabilities__name">Visual orchestration</strong>
-            <span class="capabilities__body">Canvas FSM with live states; parallel requirement lanes and a Gates Inbox.</span>
+            <span class="capabilities__body">Canvas FSM with live states; parallel lanes and a unified Inbox — quieter chat and review.</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">Real Docker sandboxes</strong>
@@ -600,15 +603,19 @@
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">Multi-agent backends</strong>
-            <span class="capabilities__body">Cursor, Claude Code, CodeBuddy, Trae — pick acpBackend per agent.</span>
+            <span class="capabilities__body">Cursor, Claude Code, CodeBuddy, Trae, OpenCode, Codex — pick acpBackend per agent.</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">Artifact contract + MCP</strong>
             <span class="capabilities__body">write_artifact / set_* / node_complete — isolated by run token.</span>
           </li>
           <li class="capabilities__item">
-            <strong class="capabilities__name">Project credentials for sandbox Git</strong>
-            <span class="capabilities__body">Project credential UI first for GITHUB_* / GITLAB_* / SSH; env fallback remains, with GitLab auto-MR and GitHub gh support.</span>
+            <strong class="capabilities__name">Workspace credentials &amp; sandbox Git</strong>
+            <span class="capabilities__body">Workspace credentials UI for API keys / GITHUB_* / GITLAB_* / SSH; push branches and open PRs / MRs from the sandbox.</span>
+          </li>
+          <li class="capabilities__item">
+            <strong class="capabilities__name">PM over IM</strong>
+            <span class="capabilities__body">Bind a PM agent to QQ, WeCom, Feishu, or DingTalk and start or follow runs from chat.</span>
           </li>
           <li class="capabilities__item">
             <strong class="capabilities__name">Single-repo self-host</strong>
@@ -626,9 +633,9 @@
         <a href="{{BASE}}/en/guide/quick-start/">Quick start</a>
         <a href="{{BASE}}/en/help/configuration/">Configuration</a>
         <a href="{{BASE}}/en/help/gateway/">Gateway</a>
-        <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">Source</a>
+        <a href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">Source</a>
       </nav>
-      <p class="site-footer__meta">MIT · <a href="https://github.com/cocofhu/approving" rel="noopener noreferrer" target="_blank">cocofhu/approving</a></p>
+      <p class="site-footer__meta">MIT · <a href="https://github.com/cocofhu/grasp" rel="noopener noreferrer" target="_blank">cocofhu/grasp</a></p>
     </div>
   </footer>
 

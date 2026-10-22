@@ -2,7 +2,7 @@
 
 <img src="media/logo-light.svg" alt="Grasp" width="420" />
 
-<p>Coding agent workflow orchestration with human approval gates in one workspace</p>
+<p>Human-on-the-Loop coding workflows — agents run in sandboxes; you clarify, review, and approve in one clean workspace</p>
 
 [![Release](https://img.shields.io/github/v/release/cocofhu/grasp)](https://github.com/cocofhu/grasp/releases)
 [![License](https://img.shields.io/github/license/cocofhu/grasp)](LICENSE)
@@ -30,7 +30,7 @@ Over the past two years I built 150+ personal projects with coding agents, and t
 1. **Switching across projects is expensive**: bouncing between IDEs makes it hard to track which project is running and where it stopped.
 2. **Parallel agent output is hard to read**: models dump long walls of text, burying the actual changes and open questions in chat logs.
 
-I built Grasp to manage coding work in one workspace. It wires coding agents into workflows on a finite-state-machine (FSM) canvas, clarifies requirements before code is written, and turns verbose agent output into structured artifacts and visual previews that are quick to review at approval gates.
+I built Grasp so coding work stays in one workspace under **Human-on-the-Loop**: agents draft and execute; people clarify requirements, review artifacts, and approve gates before the workflow moves on. Workflows live on a finite-state-machine (FSM) canvas. Chat and review surfaces are quieter now — structured specs, plans, previews, and diffs instead of raw log walls — so the decision that matters is easy to find.
 
 Supported agent backends: **Cursor, Claude Code, CodeBuddy, Trae, OpenCode, and Codex**. Each agent step runs inside an isolated Docker sandbox.
 
@@ -40,11 +40,14 @@ https://github.com/user-attachments/assets/47728d1f-54a1-485e-967e-28d8c716ed36
 
 ## Features
 
+- **Human-on-the-Loop by design**: clarify before code, review after each risky step, and approve at explicit human gates. Agents move fast; people keep the decisions.
 - **FSM workflow canvas**: Six node types (agent, input, output, assign, branch, human gate), with explicit `success`, `fail`, and `rollback` edges, `when` guards, and checkpoints.
+- **Cleaner chat & review**: shared reading column, quieter message chrome, artifact previews beside the conversation, and Confirm & continue in the composer — less noise when you need to decide.
 - **Visual requirement clarification**: Start a task from the home page with one sentence. A clarify agent aligns on scope through multi-turn Q&A and produces a structured spec, execution plan, and optional `page.html` preview.
-- **Human gates and unified inbox**: Runs pause at gate nodes for approval or rejection from a single inbox; one-time share links let reviewers without an account inspect and approve.
+- **Human gates and unified inbox**: Runs pause at gate nodes for approval or rejection from a single inbox (clarify + gates together); one-time share links let reviewers without an account inspect and approve.
 - **Structured artifacts (Artifact MCP)**: Artifacts are isolated per run. Nodes must submit their declared required artifacts before the engine transitions forward.
 - **Docker sandboxes and Git delivery**: Agents run in isolated containers and can push branches or open PRs / MRs via `gh`, `glab`, or SSH.
+- **PM over IM (optional)**: Bind a PM agent to QQ, WeCom, Feishu, or DingTalk and start or follow runs from chat.
 - **Observability**: State transition timeline, node handoff notes, sandbox logs, live desktop preview (noVNC), and token / cost tracking by workflow, source, and model.
 
 <table>
@@ -87,7 +90,7 @@ The default login is `admin` / `demo1234` (for local evaluation only; configure 
 ### Running your first workflow
 
 1. Sign in with the demo account. Opening the workspace for the first time launches the setup wizard.
-2. In the wizard (or **Project Credentials**), select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, or `codex`, and save the corresponding API key (`codex` uses your `~/.codex/auth.json` login file instead of an API key; Git credentials are optional). Finishing the wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
+2. In the wizard (or **Settings → Credentials**), select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, or `codex`, and save the corresponding API key (`codex` uses your `~/.codex/auth.json` login file instead of an API key; Git credentials are optional). Finishing the wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
 3. Start a run from the home page with a single prompt, or open the canvas to customize nodes and `success` / `fail` / `rollback` edges.
 4. When a run pauses at a human gate, review the spec, preview page, or code diff from the inbox to approve or reject.
 
