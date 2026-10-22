@@ -30,8 +30,12 @@ export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; 
 </script>
 
 <script setup lang="ts">
-import { fmtTurnElapsed } from '@/lib/shared/format'
 import Icon from '../ui/Icon.vue'
+import ChatTurnAttachments from './ChatTurnAttachments.vue'
+import ChatUserMessage from './ChatUserMessage.vue'
+import ClarifyMessageThread from './ClarifyMessageThread.vue'
+import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
+import { nodeAsk } from './clarifyPrior'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
@@ -43,7 +47,7 @@ import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
-import ClarifyHandoffBubble, { type ClarifyNodeAsk } from './ClarifyHandoffBubble.vue'
+import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
 import StreamMarkdown from './StreamMarkdown.vue'
 import AnnotationChip from './AnnotationChip.vue'
 import LiveVariantCard from './LiveVariantCard.vue'
@@ -52,8 +56,7 @@ import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
 import { createClarifyChatAnchors } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
-import { api } from '@/lib/api/api'
-import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
+import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
 import {
   clampDemoWindow,
   isClarifyDemoEscapeMessage,
@@ -68,8 +71,6 @@ import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
-  AcpEvent,
-  AgentPart,
   ClarifyTurn,
   ClarifyImage,
   ReactAnnotation,
@@ -79,8 +80,7 @@ import { isImageAttachment, attachmentDisplayName } from '@/lib/shared/attachmen
 import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
-import { replySpan } from '@/lib/inbox/turnSpan'
-import { hasFailedTool, partsFromAcp } from '@/lib/run/acpTools'
+import { hasFailedTool } from '@/lib/run/acpTools'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -158,9 +158,6 @@ const bootStarting = computed(() => {
   const rec = getBootRecord(bootRecordKey.value)
   return !!rec && !rec.live
 })
-function visitBootKey(nodeId: string, iteration: number) {
-  return makeBootKey(props.runId, nodeId, iteration)
-}
 /** A reply placeholder with nothing in it yet (思考中). */
 function isWaitingAgentTurn(t: ClarifyTurn): boolean {
   return t.role === 'agent' && !!t.streaming && !String(t.text || '').trim() && !t.parts?.length && !t.tools?.length
@@ -456,177 +453,6 @@ function openImagePreview(images: ClarifyImage[], index: number) {
 }
 
 /** Clarify passes its own reply copy; review uses the shared send copy. */
-/**
- * Earlier nodes as transcript rows. Consecutive unattended (auto) nodes fold
- * into one row — like Linear's grouped activity — so a long auto stretch
- * reads as one step, not a ladder of identical lines.
- */
-function autoMember(seg: ClarifyPriorSegment) {
-  return { nodeId: seg.nodeId, iteration: seg.iteration, label: seg.label, at: seg.at, endedAt: seg.endedAt }
-}
-const priorRows = computed<ClarifyPriorSegment[]>(() => {
-  const rows: ClarifyPriorSegment[] = []
-  for (const seg of props.priorSegments ?? []) {
-    const last = rows[rows.length - 1]
-    if (seg.kind === 'auto' && last && last.kind === 'auto' && last.status === 'completed' && seg.status === 'completed') {
-      rows[rows.length - 1] = {
-        ...last,
-        group: [...(last.group ?? [last.label]), seg.label],
-        members: [...(last.members?.length ? last.members : [autoMember(last)]), autoMember(seg)],
-        endedAt: seg.endedAt,
-        nodeId: last.nodeId,
-      }
-      continue
-    }
-    rows.push(seg.kind === 'auto' ? { ...seg, members: seg.members?.length ? seg.members : [autoMember(seg)] } : seg)
-  }
-  return rows
-})
-function autoMembers(seg: ClarifyPriorSegment) {
-  return seg.members?.length ? seg.members : [autoMember(seg)]
-}
-function priorExpandable(seg: ClarifyPriorSegment): boolean {
-  if (seg.kind === 'auto') return true
-  return (seg.kind === 'chat' || seg.kind === 'gate') && seg.turns.length > 0
-}
-function segSeconds(seg: ClarifyPriorSegment): number | null {
-  if (!seg.endedAt || !seg.at) return null
-  const sec = (Date.parse(seg.endedAt) - Date.parse(seg.at)) / 1000
-  return Number.isFinite(sec) && sec >= 0 ? sec : null
-}
-/** Right-hand meta of a fold row: 用时 (Codex「Worked for」) when the node ended, else when it ran. */
-function priorSegmentMeta(seg: ClarifyPriorSegment): string {
-  const sec = segSeconds(seg)
-  const time = sec == null ? '' : fmtTurnElapsed(sec)
-  return time ? translate('pages.clarify.turnElapsed', { time }) : relTime(seg.at)
-}
-type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean; title: string; busyLabel: string; doneLabel: string; interruptedLabel: string }
-/**
- * Tail row after a hand-off. Title = what the run is doing; right label =
- * what happens next (where the conversation continues), so the disabled
- * composer never reads as broken.
- */
-const followTailView = computed<FollowTailView | null>(() => {
-  const ft = props.followTail
-  if (!ft) return null
-  const at = relTime(ft.at)
-  const base = { busy: false, completed: false, interrupted: false, busyLabel: '', doneLabel: at, interruptedLabel: at }
-  if (ft.kind === 'auto') {
-    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followAutoTo', { name: ft.label }) : translate('pages.clarify.followAuto'), busyLabel: translate('pages.clarify.followAutoBadge') }
-  }
-  if (ft.kind === 'waiting') {
-    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followWaitingTo', { name: ft.label }) : translate('pages.clarify.followWaiting'), busyLabel: translate('pages.clarify.followWaitingBadge') }
-  }
-  if (ft.kind === 'error') {
-    return { ...base, busy: true, title: translate('pages.clarify.followError'), busyLabel: translate('pages.clarify.followErrorBadge') }
-  }
-  if (ft.status === 'failed') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedFailed') }
-  if (ft.status === 'cancelled') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedCancelled') }
-  return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
-})
-
-/**
- * Fold-row title of an earlier node. Gate segments (人工审批, optionally with
- * the reject / re-review discussion as turns) keep the approval line; a
- * rejected decision is spelled out. Today's backend folds gate discussions
- * into the upstream node's chat segment — that renders as a plain chat row.
- */
-function priorSegmentTitle(seg: ClarifyPriorSegment): string {
-  if (seg.kind === 'gate') {
-    const d = String(seg.decision || '').toLowerCase()
-    return /^(reject|rejected|fail|failed|revise)$/.test(d)
-      ? translate('pages.clarify.segmentGateRejected', { name: seg.label })
-      : translate('pages.clarify.segmentGate', { name: seg.label })
-  }
-  if (seg.kind === 'chat') return translate('pages.clarify.segmentChat', { name: seg.label, n: seg.turns.length })
-  if (seg.group && seg.group.length > 1) return translate('pages.clarify.segmentAutoGroup', { names: seg.group.join('、') })
-  return translate('pages.clarify.segmentAuto', { name: seg.label })
-}
-
-type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[] }
-const autoOpen = ref<Record<string, boolean>>({})
-const autoRecords = ref<Record<string, AutoRecord>>({})
-let autoLoadCtrl: AbortController | null = null
-function priorRowKey(seg: ClarifyPriorSegment) {
-  return `${seg.nodeId}:${seg.iteration}`
-}
-function priorDetailsOpen(seg: ClarifyPriorSegment) {
-  return seg.kind === 'auto' ? !!autoOpen.value[priorRowKey(seg)] : seg.open
-}
-function autoRecordKey(member: { nodeId: string; iteration: number }) {
-  return `${props.runId}:${member.nodeId}:${member.iteration}`
-}
-function autoRecord(member: { nodeId: string; iteration: number }): AutoRecord {
-  return autoRecords.value[autoRecordKey(member)] ?? { status: 'loading' }
-}
-/** Timeline steps for a finished auto visit. Prefer the persisted timeline; fall back to flat events. */
-function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
-  const fromTimeline = partsFromAcp(events)
-  if (fromTimeline?.length) return fromTimeline
-  const parts: AgentPart[] = []
-  for (const ev of events || []) {
-    if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })
-    else if (ev.kind === 'tool_call' && ev.title) parts.push({ kind: 'tool', title: ev.title, status: ev.status })
-  }
-  return parts.length ? parts : undefined
-}
-async function loadAutoRecords(seg: ClarifyPriorSegment) {
-  if (!autoLoadCtrl) autoLoadCtrl = new AbortController()
-  const signal = autoLoadCtrl.signal
-  await Promise.all(autoMembers(seg).map(async (member) => {
-    const key = autoRecordKey(member)
-    const cur = autoRecords.value[key]
-    if (cur?.status === 'ready' || cur?.status === 'loading') return
-    autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading' } }
-    try {
-      const res = await api.nodeEvents(props.runId, member.nodeId, { signal })
-      if (signal.aborted) return
-      if (res.unavailable) throw new Error(res.error || 'unavailable')
-      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events) } }
-    } catch {
-      if (signal.aborted) return
-      autoRecords.value = { ...autoRecords.value, [key]: { status: 'error' } }
-    }
-  }))
-}
-function onPriorToggle(seg: ClarifyPriorSegment, ev: Event) {
-  if (seg.kind !== 'auto') return
-  const open = (ev.currentTarget as HTMLDetailsElement).open
-  const key = priorRowKey(seg)
-  if (!!autoOpen.value[key] !== open) autoOpen.value = { ...autoOpen.value, [key]: open }
-  if (open) void loadAutoRecords(seg)
-}
-function priorChoiceEchoes(turns: ClarifyTurn[], index: number) {
-  const rows = parseChoiceSummary(turns[index]?.text || '')
-  if (!rows) return []
-  const questions: ReactQuestion[] = []
-  for (let j = index - 1; j >= 0; j--) {
-    const turn = turns[j]
-    if (turn?.role === 'agent' && turn.questions?.length) {
-      questions.push(...turn.questions)
-      break
-    }
-  }
-  return choiceEchoRows(rows, questions)
-}
-function priorSelectedLabels(turns: ClarifyTurn[], agentIndex: number, q: ReactQuestion): string[] {
-  for (let j = agentIndex + 1; j < turns.length; j++) {
-    const turn = turns[j]
-    if (turn.role !== 'human') {
-      if (turn.questions?.length) break
-      continue
-    }
-    const parsed = parseChoiceSummary(turn.text)
-    if (!parsed) continue
-    const row = parsed.find((item) => item.q === q.prompt)
-    if (!row) return []
-    return restoreChoiceAnswers(row.answers, q.options.map((option) => option.label))
-  }
-  return []
-}
-function priorOptionSelected(turns: ClarifyTurn[], agentIndex: number, q: ReactQuestion, label: string) {
-  return priorSelectedLabels(turns, agentIndex, q).includes(label)
-}
 const clarifySendAria = computed(() => props.sendLabel || translate('pages.reviewComposer.send'))
 const composerBlocksConfirm = computed(() => composerSending.value || (!props.coldSession && hasComposerDraft()))
 const abortConfirmButton = ref<HTMLButtonElement | null>(null)
@@ -954,7 +780,6 @@ watch(showDemoWindow, (open) => {
 
 /** The newest request keeps only a loading headline until the agent stops working on it. */
 onBeforeUnmount(() => {
-  autoLoadCtrl?.abort()
   stopDemoPointer()
   detachDemoWindowListeners()
   if (previewFocus.value) closePreviewFocus()
@@ -986,28 +811,32 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
-/** Raw (unfolded) chain position of each prior visit, to find the node it was handed from. */
-function priorIndex(nodeId: string, iteration: number): number {
-  return (props.priorSegments || []).findIndex((s) => s.nodeId === nodeId && s.iteration === iteration)
-}
-/** What a node starts from: the note of the visit right before it, else its own task. */
-function nodeAsk(index: number, task?: string): ClarifyNodeAsk | null {
-  const list = props.priorSegments || []
-  const up = index > 0 ? list[index - 1] : undefined
-  if (up?.handoff?.trim()) return { kind: 'handoff', text: up.handoff.trim(), from: up.label, source: up.handoffSource || 'agent' }
-  return task?.trim() ? { kind: 'task', text: task.trim() } : null
-}
-function priorAsk(nodeId: string, iteration: number): ClarifyNodeAsk | null {
-  const i = priorIndex(nodeId, iteration)
-  // The run's first node starts from the user's own message, already in its turns.
-  return i < 1 ? null : nodeAsk(i, props.priorSegments?.[i]?.task)
-}
-const currentAsk = computed(() => nodeAsk((props.priorSegments || []).length, props.nodeTask))
+type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean; title: string; busyLabel: string; doneLabel: string; interruptedLabel: string }
+/**
+ * Tail row after a hand-off. Title = what the run is doing; right label =
+ * what happens next (where the conversation continues), so the disabled
+ * composer never reads as broken.
+ */
+const followTailView = computed<FollowTailView | null>(() => {
+  const ft = props.followTail
+  if (!ft) return null
+  const at = relTime(ft.at)
+  const base = { busy: false, completed: false, interrupted: false, busyLabel: '', doneLabel: at, interruptedLabel: at }
+  if (ft.kind === 'auto') {
+    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followAutoTo', { name: ft.label }) : translate('pages.clarify.followAuto'), busyLabel: translate('pages.clarify.followAutoBadge') }
+  }
+  if (ft.kind === 'waiting') {
+    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followWaitingTo', { name: ft.label }) : translate('pages.clarify.followWaiting'), busyLabel: translate('pages.clarify.followWaitingBadge') }
+  }
+  if (ft.kind === 'error') {
+    return { ...base, busy: true, title: translate('pages.clarify.followError'), busyLabel: translate('pages.clarify.followErrorBadge') }
+  }
+  if (ft.status === 'failed') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedFailed') }
+  if (ft.status === 'cancelled') return { ...base, interrupted: true, title: translate('pages.clarify.followEndedCancelled') }
+  return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
+})
+const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask))
 
-/** An upstream reply's span: from the question it answers (or the segment's start) to when it was stored. */
-function priorReplySpan(seg: ClarifyPriorSegment, index: number) {
-  return replySpan(seg.turns[index - 1], seg.turns[index]!, seg.at)
-}
 
 /** A legacy (timeline-less) reply with a failed tool call keeps its completion footnote. */
 function turnHasFailedTool(t: ClarifyTurn): boolean {
@@ -1069,234 +898,19 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         {{ translate('pages.clarify.clarifyEmptyHint') }}
       </p>
-      <!-- Continuous run transcript: earlier nodes fold above, then a separator into this node. -->
-      <template v-if="priorSegments && priorSegments.length">
-        <template v-for="seg in priorRows" :key="seg.nodeId + ':' + seg.iteration">
-          <details
-            v-if="priorExpandable(seg)"
-            class="chat-thought chat-meta clarify-prior-segment w-full"
-            data-testid="clarify-prior-segment"
-            :data-node-id="seg.nodeId"
-            :data-kind="seg.kind"
-            :open="priorDetailsOpen(seg)"
-            @toggle="onPriorToggle(seg, $event)"
-          >
-            <summary class="chat-thought-summary clarify-status-row" data-testid="clarify-prior-summary">
-              <ThoughtSummaryStatus
-                :completed="seg.status !== 'failed' && seg.status !== 'cancelled'"
-                :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
-                :title="priorSegmentTitle(seg)"
-                :done-label="priorSegmentMeta(seg)"
-                :interrupted-label="priorSegmentMeta(seg)"
-              />
-              <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
-            </summary>
-            <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
-              <template v-if="seg.kind === 'auto'">
-                <div
-                  v-for="member in autoMembers(seg)"
-                  :key="member.nodeId + ':' + member.iteration"
-                  data-testid="clarify-auto-record"
-                  :data-node-id="member.nodeId"
-                >
-                  <ClarifyHandoffBubble v-if="priorAsk(member.nodeId, member.iteration)" class="mb-3" :ask="priorAsk(member.nodeId, member.iteration)!" />
-                  <ClarifyBootLoader phase="done" variant="inline" :boot-key="visitBootKey(member.nodeId, member.iteration)" />
-                  <p
-                    v-if="autoRecord(member).status === 'error'"
-                    class="text-[12px] leading-relaxed text-txt2"
-                    data-testid="clarify-auto-record-status"
-                  >{{ translate('pages.clarify.priorRecordFailed') }}</p>
-                  <p
-                    v-else-if="autoRecord(member).status === 'ready' && !autoRecord(member).parts?.length"
-                    class="text-[12px] leading-relaxed text-txt2"
-                    data-testid="clarify-auto-record-status"
-                  >{{ translate('pages.clarify.priorRecordEmpty') }}</p>
-                  <p
-                    v-else-if="autoRecord(member).status !== 'ready'"
-                    class="text-[12px] leading-relaxed text-txt2"
-                    data-testid="clarify-auto-record-status"
-                  >{{ translate('pages.clarify.priorRecordLoading') }}</p>
-                  <AgentTimeline
-                    v-else
-                    :parts="autoRecord(member).parts!"
-                    :completed="seg.status === 'completed'"
-                    :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
-                    :run-id="runId"
-                    :started-at="member.at"
-                    :ended-at="member.endedAt"
-                    message-test-id="clarify-prior-agent-message"
-                  />
-                </div>
-              </template>
-              <template v-else>
-              <ClarifyHandoffBubble v-if="seg.kind === 'chat' && priorAsk(seg.nodeId, seg.iteration)" :ask="priorAsk(seg.nodeId, seg.iteration)!" />
-              <ClarifyBootLoader v-if="seg.kind === 'chat'" phase="done" variant="inline" :boot-key="visitBootKey(seg.nodeId, seg.iteration)" />
-              <div
-                v-for="(pt, pi) in seg.turns"
-                :key="pi"
-                class="flex"
-                :class="pt.role === 'human' ? 'justify-end' : ''"
-                :data-turn-role="pt.role"
-              >
-                <div
-                  v-if="pt.role === 'human' && priorChoiceEchoes(seg.turns, pi).length"
-                  class="chat-user-message chat-response-summary min-w-0 max-w-[88%]"
-                  data-testid="clarify-prior-choice"
-                >
-                  <div class="chat-response-heading flex items-center gap-2 text-txt2">
-                    <Icon name="check" :size="16" /> {{ translate('pages.clarify.myChoice') }}
-                  </div>
-                  <div
-                    v-for="(echo, ri) in priorChoiceEchoes(seg.turns, pi)"
-                    :key="ri"
-                    class="chat-response-row min-w-0 max-w-full"
-                  >
-                    <div
-                      v-if="echo.showPrompt"
-                      class="chat-response-question mb-1 min-w-0 max-w-full break-words text-txt2 [overflow-wrap:anywhere]"
-                    >{{ echo.prompt }}</div>
-                    <div class="chat-response-answers flex min-w-0 max-w-full flex-wrap gap-x-2 gap-y-1">
-                      <span
-                        v-for="(answer, ai) in [...echo.cards.map((card) => card.label), ...echo.texts]"
-                        :key="ai"
-                        class="min-w-0 max-w-full break-words text-txt [overflow-wrap:anywhere]"
-                        data-testid="clarify-prior-choice-answer"
-                      >{{ answer }}</span>
-                    </div>
-                  </div>
-                </div>
-                <div
-                  v-else-if="pt.role === 'human' && parseFormSummary(pt.text)"
-                  class="chat-user-message chat-response-summary min-w-0 max-w-[88%]"
-                  data-testid="clarify-prior-form"
-                >
-                  <div class="chat-response-heading flex items-center gap-2 text-txt2">
-                    <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
-                  </div>
-                  <div
-                    v-for="(row, ri) in parseFormSummary(pt.text)!"
-                    :key="ri"
-                    class="chat-response-row min-w-0 max-w-full"
-                  >
-                    <div class="chat-response-question mb-1 min-w-0 break-words text-txt2 [overflow-wrap:anywhere]">{{ row.label }}</div>
-                    <div class="min-w-0 break-words text-txt [overflow-wrap:anywhere] whitespace-pre-wrap">{{ row.value }}</div>
-                  </div>
-                </div>
-                <div
-                  v-else-if="pt.role === 'human'"
-                  class="chat-user-message max-w-[88%] whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
-                >{{ pt.text }}</div>
-                <div v-else class="min-w-0 w-full">
-                  <AgentTimeline
-                    v-if="pt.parts?.length"
-                    :parts="pt.parts"
-                    :completed="true"
-                    :run-id="runId"
-                    :started-at="priorReplySpan(seg, pi)?.startedAt"
-                    :ended-at="priorReplySpan(seg, pi)?.endedAt"
-                    message-test-id="clarify-prior-agent-message"
-                  />
-                  <template v-else>
-                    <AgentToolGroup v-if="pt.tools?.length" :tools="pt.tools" :run-id="runId" />
-                    <div v-if="pt.text?.trim()" class="chat-prose md w-full" v-html="renderChatMarkdown(pt.text)" />
-                  </template>
-                  <div
-                    v-if="pt.questions?.length"
-                    class="clarify-request clarify-request--history mt-2 min-w-0"
-                    data-testid="clarify-prior-questions"
-                  >
-                    <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                      <Icon name="chat" :size="16" />
-                      {{ translate('pages.clarify.questionsThisRound', { n: pt.questions.length }) }}
-                      <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
-                    </div>
-                    <div v-for="(q, qi) in pt.questions" :key="q.id || qi" class="mb-3 last:mb-0">
-                      <div class="mb-1.5 min-w-0 text-[12px] leading-snug text-txt2 [overflow-wrap:anywhere]">
-                        <span class="text-txt3">{{ qi + 1 }}.</span> {{ q.prompt }}
-                      </div>
-                      <div
-                        v-for="o in q.options"
-                        :key="o.id"
-                        class="flex items-start gap-1.5 py-0.5 text-[12px]"
-                        data-testid="clarify-prior-option"
-                        :data-selected="priorOptionSelected(seg.turns, pi, q, o.label) ? 'true' : 'false'"
-                      >
-                        <Icon
-                          v-if="priorOptionSelected(seg.turns, pi, q, o.label)"
-                          name="check"
-                          :size="12"
-                          class="mt-0.5 shrink-0 text-accent"
-                        />
-                        <span v-else class="mt-0.5 inline-block h-3 w-3 shrink-0" aria-hidden="true" />
-                        <span
-                          class="min-w-0 break-words [overflow-wrap:anywhere]"
-                          :class="priorOptionSelected(seg.turns, pi, q, o.label) ? 'text-accent' : 'text-txt2'"
-                        >{{ o.label }}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div
-                    v-if="pt.forms?.length"
-                    class="clarify-request clarify-request--history mt-2 min-w-0"
-                    data-testid="clarify-prior-forms"
-                  >
-                    <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                      <Icon name="ci" :size="16" />
-                      {{ translate('pages.clarify.formsThisRound', { n: pt.forms.length }) }}
-                      <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
-                    </div>
-                    <div v-for="(form, fi) in pt.forms" :key="fi" class="mb-2 last:mb-0">
-                      <div v-if="form.title" class="mb-1 break-words text-[13px] text-txt2 [overflow-wrap:anywhere]">{{ form.title }}</div>
-                      <div
-                        v-for="field in form.fields"
-                        :key="field.name"
-                        class="mb-1 break-words text-[12px] text-txt2 [overflow-wrap:anywhere]"
-                      >{{ field.label }}</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              </template>
-            </div>
-          </details>
-          <div
-            v-else
-            class="clarify-handoff-step clarify-status-row chat-meta flex w-full min-w-0"
-            data-testid="clarify-prior-segment"
-            :data-node-id="seg.nodeId"
-            :data-kind="seg.kind"
-          >
-            <ThoughtSummaryStatus
-              :completed="seg.status !== 'failed' && seg.status !== 'cancelled'"
-              :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
-              :title="priorSegmentTitle(seg)"
-              :done-label="priorSegmentMeta(seg)"
-              :interrupted-label="priorSegmentMeta(seg)"
-            />
-          </div>
-        </template>
-        <div
-          class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
-          data-testid="clarify-segment-divider"
-          :role="bootSummary ? undefined : 'separator'"
-          :data-boot="bootSummary ? 'merged' : undefined"
-        >
-          <!-- This node's 环境已就绪 rides on the hand-off line instead of a row of its own. -->
-          <ClarifyBootLoader
-            v-if="bootSummary"
-            phase="done"
-            variant="inline"
-            :boot-key="bootRecordKey"
-            :title="dividerTitle"
-          />
-          <ThoughtSummaryStatus
-            v-else
-            :completed="true"
-            :title="dividerTitle"
-            :done-label="translate('pages.clarify.segmentCurrent')"
-          />
-        </div>
-      </template>
+      <ClarifyMessageThread
+        v-if="priorSegments && priorSegments.length"
+        priors-only
+        :run-id="runId"
+        :prior-segments="priorSegments"
+        :node-label="nodeLabel"
+        :node-task="nodeTask"
+        :boot-summary="bootSummary"
+        :boot-record-key="bootRecordKey"
+        :divider-title="dividerTitle"
+        :parse-choice-summary="parseChoiceSummary"
+        :parse-form-summary="parseFormSummary"
+      />
       <!--
         Below the separator: the note the upstream node handed this one, else
         what this node is doing (the chain segment's / taken-over node's task),
@@ -1321,55 +935,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       >
         <span class="sr-only">{{ translate(t.role === 'human' ? 'pages.clarify.me' : 'pages.llmTranscript.speaker.agent') }}</span>
         <div class="min-w-0" :class="turnColumnClass(t, i)">
-          <div v-if="t.images && t.images.length" class="mb-1.5 flex flex-wrap gap-1.5" :class="t.role === 'human' ? 'justify-end' : ''">
-            <!-- human history: images → lightbox; non-images → filename chip -->
-            <template v-if="t.role === 'human'">
-              <template v-for="(im, ii) in t.images" :key="ii">
-                <ChatImageThumb
-                  v-if="isImageAttachment(im)"
-                  mode="previewable"
-                  size="md"
-                  fit="contain"
-                  thumb-class="rounded-md"
-                  :src="imgSrc(im)"
-                  :label="imagePreviewLabel(t.images, ii)"
-                  test-id="clarify-history-image-thumb"
-                  @preview="openImagePreview(t.images!, ii)"
-                />
-                <div
-                  v-else
-                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                  data-testid="clarify-history-file-chip"
-                  :title="imagePreviewLabel(t.images, ii)"
-                >
-                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                  <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
-                </div>
-              </template>
-            </template>
-            <!-- agent history: locked thumbs / filename chips (FR-f7) -->
-            <template v-else>
-              <template v-for="(im, ii) in t.images" :key="ii">
-                <ChatImageThumb
-                  v-if="isImageAttachment(im)"
-                  mode="locked"
-                  size="md"
-                  thumb-class="rounded-md"
-                  :src="imgSrc(im)"
-                  :label="imagePreviewLabel(t.images, ii)"
-                  test-id="clarify-agent-image-thumb"
-                />
-                <div
-                  v-else
-                  class="chat-file-chip rounded-md flex max-w-[200px] items-center gap-2 border border-line bg-elevated px-2 py-1.5"
-                  data-testid="clarify-agent-file-chip"
-                >
-                  <Icon name="artifact" :size="16" class="shrink-0 text-txt2" aria-hidden="true" />
-                  <span class="min-w-0 truncate text-[12px] text-txt">{{ imagePreviewLabel(t.images, ii) }}</span>
-                </div>
-              </template>
-            </template>
-          </div>
+          <ChatTurnAttachments
+            v-if="t.images && t.images.length"
+            :images="t.images"
+            :role="t.role"
+            @preview="openImagePreview(t.images!, $event)"
+          />
           <!-- Live variant request card (state from the preview drawer, if any) -->
           <LiveVariantCard
             v-if="liveHost && t.role === 'human' && t.live"
@@ -1462,14 +1033,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Agent busy / thought / message (Demo: four-phase + restrained done) -->
           <template v-else-if="t.role === 'agent'">
             <!-- Waiting first token: pulse + 思考中… inside bubble -->
-            <div
-              v-if="t.streaming && !t.thought && !agentHasMessage(t)"
-              class="chat-meta inline-flex items-center gap-2.5 py-2"
-              data-testid="clarify-busy-placeholder"
-            >
-              <InboxMotionMark kind="pulse" />
-              <span>{{ translate('pages.clarify.thinkingBusy') }}</span>
-            </div>
+            <ClarifyThinkingRow v-if="t.streaming && !t.thought && !agentHasMessage(t)" />
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
               v-if="turnProcessParts(t).length"
@@ -1588,11 +1152,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             </div>
           </template>
           <!-- Human free-text bubble: plain text so tags stay visible and never execute. -->
-          <div
+          <ChatUserMessage
             v-else-if="humanBubbleText(t)"
-            class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]"
-            data-testid="clarify-human-message"
-          >{{ humanBubbleText(t) }}</div>
+            test-id="clarify-human-message"
+            :text="humanBubbleText(t)"
+          />
 
           <!-- Structured choice questions (ask_question). The latest agent turn
                shows an interactive card deck (one question per card); earlier
@@ -1903,17 +1467,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             the next step will appear), never only at the top. Same pulse +
             思考中… / shimmer 输出中 styles as before.
           -->
-          <div
+          <ClarifyThinkingRow
             v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
-            class="chat-meta mt-1 inline-flex items-center gap-2 font-normal"
-            :class="agentTailOutputting(t) ? 'clarify-outputting' : ''"
-            data-testid="clarify-busy-status"
-            :data-state="agentTailOutputting(t) ? 'outputting' : 'thinking'"
-            role="status"
-          >
-            <InboxMotionMark v-if="!agentTailOutputting(t)" kind="pulse" />
-            <span>{{ agentTailOutputting(t) ? translate('pages.clarify.outputting') : translate('pages.clarify.thinkingBusy') }}</span>
-          </div>
+            variant="status"
+            :outputting="agentTailOutputting(t)"
+          />
           <!-- No timestamp until the turn has ended. -->
           <div
             v-else-if="!showTurnCompleted(t) && !(t.role === 'agent' && t.streaming)"

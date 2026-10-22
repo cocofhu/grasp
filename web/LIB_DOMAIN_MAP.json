@@ -128,6 +128,7 @@
       "liveLogRehydrate.ts",
       "liveLogSnapshotCache.ts",
       "llmTranscript.ts",
+      "llmTranscriptThread.ts",
       "mergeAcpEvents.ts",
       "mergeRunChrome.ts",
       "nodeEventsResponse.ts",
@@ -235,7 +236,7 @@
     "composables": 18,
     "inbox": 39,
     "pm": 7,
-    "run": 63,
+    "run": 64,
     "shared": 39,
     "workflow": 3,
     "workspace": 5
