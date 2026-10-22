@@ -11,7 +11,7 @@ afterEach(() => { mounted.splice(0).forEach((wrapper) => wrapper.unmount()) })
 async function setup(path = '/settings') {
   useAuth().setUser({ username: 'navigation-user', expiresAt: '2099-01-01T00:00:00Z' })
   const router = createRouter({ history: createMemoryHistory(), routes: [
-    ...['/settings', '/settings/credentials', '/board', '/workflows', '/requirements', '/assistant', '/dashboard', '/runs'].map((path) => ({ path, component: { render: () => null } })),
+    ...['/settings', '/settings/credentials', '/settings/audit', '/board', '/workflows', '/requirements', '/assistant', '/dashboard', '/runs', '/stats'].map((path) => ({ path, component: { render: () => null } })),
     { path: '/workflows/:id/edit', component: { render: () => null }, meta: { full: true } },
   ] })
   await router.push(path)
@@ -60,6 +60,23 @@ describe('sidebar navigation context', () => {
     stop()
     navigation.requestMode(new MouseEvent('click'), '/workflows', 'workspace')
     await router.push('/workflows')
+    expect(navigation.settingsChrome.value).toBe(false)
+  })
+  it('keeps /stats in workspace mode on a direct visit, a later jump, and an account switch', async () => {
+    const { router, navigation } = await setup('/stats')
+    expect(navigation.settingsChrome.value).toBe(false)
+    await router.push('/settings')
+    expect(navigation.settingsChrome.value).toBe(true)
+    await router.push('/stats?window=7d')
+    expect(navigation.settingsChrome.value).toBe(false)
+    navigation.requestMode(new MouseEvent('click'), '/settings', 'settings')
+    await router.push('/settings/audit')
+    expect(navigation.settingsChrome.value).toBe(true)
+    navigation.requestMode(new MouseEvent('click'), '/stats', 'workspace')
+    await router.push('/stats')
+    expect(navigation.settingsChrome.value).toBe(false)
+    useAuth().setUser({ username: 'stats-user', expiresAt: '2099-01-01T00:00:00Z' })
+    await nextTick()
     expect(navigation.settingsChrome.value).toBe(false)
   })
   it('resets navigation context when accounts change', async () => {

@@ -9,7 +9,6 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/assistant', icon: 'chat', labelKey: 'nav.assistant' },
   { to: '/settings/schedules', icon: 'clock', labelKey: 'nav.schedules' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
-  { to: '/stats', icon: 'chart', labelKey: 'nav.stats' },
   { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
   { to: '/agents', icon: 'robot', labelKey: 'nav.agents', groupKey: 'nav.groupExecution' },
@@ -26,7 +25,6 @@ export const settingsNavItems: SettingsNavItem[] = [
 
 export const SETTINGS_CHROME_PREFIXES = [
   '/notifications',
-  '/stats',
   '/artifacts',
   '/agents',
   '/sandboxes',

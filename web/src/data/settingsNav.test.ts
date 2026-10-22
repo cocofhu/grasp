@@ -8,10 +8,12 @@ describe('workspace settings navigation', () => {
     expect(paths).toEqual(expect.arrayContaining(['/board', '/workflows', '/requirements', '/assistant', '/settings/notification-policy', '/settings/assistant', '/settings/external-mcp', '/settings/schedules', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']))
     expect(settingsNavItems.filter((item) => item.groupKey).map((item) => item.groupKey)).toEqual(['nav.groupWorkspaceTools', 'nav.groupExecution', 'nav.groupPlatform'])
     expect(new Set(paths.filter((path) => path !== '/settings')).size).toBe(paths.filter((path) => path !== '/settings').length)
+    expect(paths).not.toContain('/stats')
+    expect(paths[paths.indexOf('/artifacts') + 1]).toBe('/settings/audit')
   })
   it('keeps operational tools and full pages in workspace chrome', () => {
-    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/workflows', '/runs', '/gates']) expect(isSettingsChrome(path)).toBe(false)
-    for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/stats', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
+    for (const path of ['/dashboard', '/board', '/requirements', '/assistant', '/workflows', '/runs', '/gates', '/stats']) expect(isSettingsChrome(path)).toBe(false)
+    for (const path of ['/settings', '/settings/credentials', '/agents', '/artifacts', '/notifications']) expect(isSettingsChrome(path)).toBe(true)
     expect(isSettingsChrome('/sandboxes/1/console', true)).toBe(false)
   })
   it('separates exact general settings, integrations, notification policy and messages', () => {
@@ -22,6 +24,6 @@ describe('workspace settings navigation', () => {
     expect(settingsItemActive(find('integrations'), '/settings', { integrations: '1' })).toBe(true)
     expect(settingsItemActive(find('notificationPolicy'), '/notifications', {})).toBe(false)
     expect(settingsItemActive(find('notifications'), '/notifications', {})).toBe(true)
-    expect(shellNavPaths()).toEqual(expect.arrayContaining(['/dashboard', '/workflows', '/settings/credentials']))
+    expect(shellNavPaths()).toEqual(expect.arrayContaining(['/dashboard', '/workflows', '/settings/credentials', '/stats']))
   })
 })

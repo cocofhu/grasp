@@ -328,19 +328,22 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/gates"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('新需求')
     expect(wrapper.text()).not.toContain('待办')
-    expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
+    expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
     const workspace = wrapper.find('[data-testid="nav-workspace-chrome"]')
     expect(workspace.exists()).toBe(true)
     expect(workspace.findAll('a.nav-item').map((l) => l.attributes('data-to'))).toEqual([
       '/dashboard',
       '/workflows',
       '/runs',
+      '/stats',
       '/settings',
     ])
     expect(workspace.find('[data-to="/workflows"]').text()).toContain('工作流')
+    expect(workspace.find('[data-to="/stats"]').text()).toContain('用量统计')
     expect(wrapper.text()).not.toContain('配置')
     await wrapper.setProps({ rail: true })
     expect(workspace.findAll('a.nav-item').map((link) => link.attributes('data-to'))).toEqual(['/dashboard'])
+    expect(workspace.find('[data-to="/stats"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -373,13 +376,41 @@ describe('AppSidebarNav', () => {
     expect(wrapper.findAll('[data-testid="settings-nav-group"]').map((heading) => heading.text())).toEqual(['工作区工具', '执行配置', '平台配置'])
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
-    expect(wrapper.find('[data-to="/stats"]').exists()).toBe(true)
+    expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
+    const settingsTos = categoryLinks.map((link) => link.attributes('data-to'))
+    expect(settingsTos[settingsTos.indexOf('/artifacts') + 1]).toBe('/settings/audit')
     expect(wrapper.find('[data-testid="nav-settings-integrations"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('返回工作区')
     expect(wrapper.text()).toContain('常规')
     expect(wrapper.find('[data-to="/agents"]').text()).toContain('智能体')
     expect(wrapper.text()).not.toContain('待办')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('highlights usage stats in the workspace list and hides that text on the wide sidebar', async () => {
+    routeState.path = '/stats'
+    routeState.query = { window: '7d' }
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="nav-settings-chrome"]').exists()).toBe(false)
+    const links = wrapper.find('[data-testid="nav-workspace-chrome"]').findAll('a.nav-item')
+    expect(links.map((link) => link.attributes('data-to'))).toEqual([
+      '/dashboard',
+      '/workflows',
+      '/runs',
+      '/stats',
+      '/settings',
+    ])
+    const stats = wrapper.get('[data-to="/stats"]')
+    expect(stats.classes()).toContain('active')
+    expect(stats.text()).toContain('用量统计')
+    expect(wrapper.get('[data-to="/settings"]').classes()).not.toContain('active')
+    await wrapper.setProps({ rail: true })
+    expect(wrapper.find('[data-testid="nav-workspace-chrome"]').findAll('a.nav-item').map((link) => link.attributes('data-to'))).toEqual(['/dashboard'])
+    expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
   })
@@ -884,7 +915,7 @@ describe('AppSidebarNav', () => {
     expect(pendingRow.classes()).not.toContain('active')
     expect(getComputedStyle(runs.element).fontWeight).toBe('600')
     expect(getComputedStyle(pendingTitle.element).fontWeight).toBe('400')
-    for (const to of ['/dashboard', '/workflows', '/runs', '/settings']) {
+    for (const to of ['/dashboard', '/workflows', '/runs', '/stats', '/settings']) {
       expect(wrapper.get(`[data-to="${to}"]`).find('.nav-row-title').exists()).toBe(false)
     }
 
