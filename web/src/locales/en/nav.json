@@ -18,6 +18,8 @@
     "pendingPin": "Pin",
     "pendingUnpin": "Unpin",
     "pendingRename": "Rename",
+    "pendingCancelRun": "Cancel run",
+    "pendingCancelConfirm": "Only this run is stopped; the sidebar Running list will refresh that row after success.",
     "pendingShareStarting": "Starting",
     "pendingShareLocked": "Processing",
     "pendingShareUsed": "Link already used",

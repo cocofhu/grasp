@@ -3,6 +3,8 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { computed, ref, watch, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
+import AppButton from '../ui/AppButton.vue'
+import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { sidebarNavGroups } from '@/data/sidebarNav'
 import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
@@ -192,7 +194,7 @@ const LONG_PRESS_MOVE_PX = 8
 const MENU_WIDTH = 168
 /** Blocked share copy is longer than the two-item menu, so the clamp must follow it. */
 const MENU_WIDTH_BLOCKED = 280
-/** Two items used to be a flat 72: 8px of menu padding plus 32px per row. */
+/** 8px of menu padding plus 32px per row (pin, rename, cancel, optional share). */
 const MENU_CHROME = 8
 const MENU_ROW_HEIGHT = 32
 const MENU_MARGIN = 8
@@ -238,7 +240,7 @@ function shareBlockReason(it: InboxItem): 'starting' | 'locked' | 'used' | null 
 }
 
 function pendingMenuHeight(it: InboxItem): number {
-  const rows = !isRunOnlyRow(it) && isShareableInboxItem(it) ? 3 : 2
+  const rows = !isRunOnlyRow(it) && isShareableInboxItem(it) ? 4 : 3
   return MENU_CHROME + rows * MENU_ROW_HEIGHT
 }
 
@@ -445,6 +447,51 @@ function onMenuShare() {
     },
   })
   onNavigate()
+}
+
+const cancelTarget = ref<InboxItem | null>(null)
+const cancellingRun = ref(false)
+const cancelRunError = ref('')
+
+function onMenuCancel() {
+  const it = menuItem.value
+  if (!it || cancellingRun.value) return
+  closeMenu()
+  cancelRunError.value = ''
+  cancelTarget.value = it
+}
+
+function closeCancelConfirm() {
+  if (cancellingRun.value) return
+  cancelTarget.value = null
+  cancelRunError.value = ''
+}
+
+function mapCancelRunError(e: unknown): string {
+  const status = (e as { status?: number })?.status
+  const msg = e instanceof Error ? e.message : String(e || '')
+  if (status === 404 || /not found/i.test(msg)) return t('pages.runDetail.cancelErrorNotFound')
+  if (status === 400 || /already finished|cannot cancel/i.test(msg)) {
+    return t('pages.runDetail.cancelErrorNotCancellable')
+  }
+  return msg || t('pages.runDetail.cancelErrorGeneric')
+}
+
+async function confirmCancelRun() {
+  const target = cancelTarget.value
+  if (!target || cancellingRun.value) return
+  cancellingRun.value = true
+  cancelRunError.value = ''
+  try {
+    await api.cancelRun(target.runId)
+    cancelTarget.value = null
+    toast.success(t('pages.runDetail.cancelSuccess'))
+    await loadRunningRuns()
+  } catch (e) {
+    cancelRunError.value = mapCancelRunError(e)
+  } finally {
+    cancellingRun.value = false
+  }
 }
 
 watch(pendingRows, (rows) => {
@@ -814,8 +861,58 @@ const settingsItems = settingsNavItems
         <Icon name="copy" :size="14" />
         <span>{{ menuShareLabel }}</span>
       </button>
+      <button
+        type="button"
+        role="menuitem"
+        class="pending-row-menu__item"
+        data-testid="nav-pending-menu-cancel"
+        @click="onMenuCancel"
+      >
+        <Icon name="close" :size="14" />
+        <span>{{ t('nav.pendingCancelRun') }}</span>
+      </button>
     </div>
   </Teleport>
+  <AppModal
+    :open="!!cancelTarget"
+    :title="t('pages.runDetail.cancelTitle')"
+    :width="440"
+    @close="closeCancelConfirm"
+  >
+    <div class="space-y-3 text-sm text-txt2">
+      <div class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">
+        <Icon name="alert" :size="14" class="mt-0.5 shrink-0" />
+        {{ t('pages.runDetail.cancelWarning') }}
+      </div>
+      <p>{{ t('nav.pendingCancelConfirm') }}</p>
+      <div
+        v-if="cancelRunError"
+        class="flex items-start gap-2 rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err"
+        data-testid="nav-pending-cancel-error"
+      >
+        <Icon name="alert" :size="14" class="mt-0.5" />{{ cancelRunError }}
+      </div>
+    </div>
+    <template #footer>
+      <AppButton
+        variant="ghost"
+        data-testid="nav-pending-cancel-dismiss"
+        :disabled="cancellingRun"
+        @click="closeCancelConfirm"
+      >
+        {{ t('common.buttons.cancel') }}
+      </AppButton>
+      <AppButton
+        data-testid="nav-pending-cancel-confirm"
+        variant="danger"
+        icon="close"
+        :disabled="cancellingRun"
+        @click="confirmCancelRun"
+      >
+        {{ cancellingRun ? t('common.buttons.cancelling') : t('common.buttons.confirmCancelRun') }}
+      </AppButton>
+    </template>
+  </AppModal>
 </template>
 
 <style scoped>

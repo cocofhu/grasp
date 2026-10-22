@@ -18,6 +18,8 @@
     "pendingPin": "置顶",
     "pendingUnpin": "取消置顶",
     "pendingRename": "重命名",
+    "pendingCancelRun": "取消运行",
+    "pendingCancelConfirm": "仅停止这一次 Run；取消成功后侧栏「正在执行」将刷新该行。",
     "pendingShareStarting": "启动中",
     "pendingShareLocked": "正在处理",
     "pendingShareUsed": "链接已使用",
