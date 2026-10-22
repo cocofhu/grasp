@@ -15,6 +15,7 @@ const (
 	GlobalTokenStatsSourceWorkflow = "workflow"
 	GlobalTokenStatsSourcePM       = "pm"
 	GlobalTokenStatsSourceStudio   = "studio"
+	GlobalTokenStatsSourceSolo     = "solo"
 
 	// TokenStatsWindowCustom is echoed when an explicit from/to range is used.
 	TokenStatsWindowCustom = "custom"
@@ -38,7 +39,7 @@ type GlobalTokenStatsQuery struct {
 	Granularity      string // optional hour|day|week override
 	Timezone         string
 	UTCOffsetMinutes *int
-	Source           string // all|workflow|pm|studio
+	Source           string // all|workflow|pm|studio|solo
 	Status           string // ok|failed|cancelled
 	Phase            string // production|interactive|chat
 	ModelKey         string
@@ -60,6 +61,7 @@ type GlobalTokenStatsKPI struct {
 	WorkflowTotal    int64    `json:"workflowTotal"`
 	PmTotal          int64    `json:"pmTotal"`
 	StudioTotal      int64    `json:"studioTotal"`
+	SoloTotal        int64    `json:"soloTotal"`
 	FailedTotal      int64    `json:"failedTotal"`
 	RunCount         int      `json:"runCount"`
 	ThreadCount      int      `json:"threadCount"`
@@ -112,7 +114,7 @@ type GlobalTokenStatsNamedBucket struct {
 type GlobalTokenStatsTreeNode struct {
 	Key      string                     `json:"key"`
 	Name     string                     `json:"name"`
-	Kind     string                     `json:"kind"` // workflow|pm|studio|nodeType
+	Kind     string                     `json:"kind"` // workflow|pm|studio|solo|nodeType
 	Value    int64                      `json:"value"`
 	Cost     float64                    `json:"cost,omitempty"`
 	Children []GlobalTokenStatsTreeNode `json:"children,omitempty"`
@@ -571,7 +573,7 @@ func filterRowsByWindow(rows []globalTokenUsageRow, win windowSlice, loc *time.L
 
 type tokenBucketAgg struct {
 	input, output, cacheRead, cacheWrite int64
-	workflow, pm, studio, failed         int64
+	workflow, pm, studio, solo, failed   int64
 	cost                                 float64
 }
 
@@ -581,6 +583,7 @@ type globalAgg struct {
 	workflowTot  int64
 	pmTot        int64
 	studioTot    int64
+	soloTot      int64
 	failedTot    int64
 	cost         float64
 	unpricedTot  int64
@@ -738,6 +741,8 @@ func aggregateGlobalRows(rows []globalTokenUsageRow, loc *time.Location, bucketW
 			agg.pmTot += total
 		case GlobalTokenStatsSourceStudio:
 			agg.studioTot += total
+		case GlobalTokenStatsSourceSolo:
+			agg.soloTot += total
 		default:
 			agg.workflowTot += total
 		}
@@ -881,6 +886,8 @@ func addTreeRow(p *treeAgg, row globalTokenUsageRow) {
 		mid = p.child("_pm", "PM", "pm")
 	case GlobalTokenStatsSourceStudio:
 		mid = p.child("_studio", "Studio", "studio")
+	case GlobalTokenStatsSourceSolo:
+		mid = p.child("_solo", "Solo", "solo")
 	default:
 		wfKey := orDefault(row.workflowID, "_unknown")
 		mid = p.child(wfKey, orDefault(row.workflowName, wfKey), "workflow")
@@ -951,6 +958,8 @@ func addUsageToBucket(b *tokenBucketAgg, u models.TokenUsage, source string) {
 		b.pm += tot
 	case GlobalTokenStatsSourceStudio:
 		b.studio += tot
+	case GlobalTokenStatsSourceSolo:
+		b.solo += tot
 	default:
 		b.workflow += tot
 	}
@@ -980,6 +989,7 @@ func bucketsFromAgg(buckets map[string]*tokenBucketAgg, nowLocal time.Time, win 
 			WorkflowTotal:    b.workflow,
 			PmTotal:          b.pm,
 			StudioTotal:      b.studio,
+			SoloTotal:        b.solo,
 			FailedTotal:      b.failed,
 			InputTokens:      b.input,
 			OutputTokens:     b.output,
@@ -1005,6 +1015,7 @@ func buildGlobalKPI(cur, prev *globalAgg) GlobalTokenStatsKPI {
 		WorkflowTotal:    cur.workflowTot,
 		PmTotal:          cur.pmTot,
 		StudioTotal:      cur.studioTot,
+		SoloTotal:        cur.soloTot,
 		FailedTotal:      cur.failedTot,
 		RunCount:         len(cur.runSet),
 		ThreadCount:      len(cur.threadSet),
@@ -1052,6 +1063,7 @@ func trendFromBuckets(buckets map[string]*tokenBucketAgg) []TokenStatsBucket {
 			WorkflowTotal: b.workflow,
 			PmTotal:       b.pm,
 			StudioTotal:   b.studio,
+			SoloTotal:     b.solo,
 			Cost:          b.cost,
 		})
 	}

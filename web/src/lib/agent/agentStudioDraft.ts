@@ -27,6 +27,8 @@ export type AgentStudioDraft = {
   gitCredentialId?: string
   sshHostsCredentialId?: string
   gitCredentialType?: GitCredentialType
+  /** undefined inherits the workspace default; [] injects no repository credentials. */
+  repoIds?: string[]
   files: DraftFile[]
   mcp: DraftMCP[]
   env: KV[]
@@ -125,6 +127,7 @@ export function toDraft(a: Agent): AgentStudioDraft {
     gitCredentialId: a.gitCredentialId || '',
     sshHostsCredentialId: a.sshHostsCredentialId || '',
     gitCredentialType: a.gitCredentialType,
+    ...(a.repoIds ? { repoIds: [...a.repoIds] } : {}),
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
     mcp: (a.mcp || []).map(apiMcpToDraft),
     env: recToKV(a.env),
@@ -146,6 +149,7 @@ export function fromDraftRaw(d: AgentStudioDraft): Agent {
     ...(d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
     ...(d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
     ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
+    ...(d.repoIds ? { repoIds: [...d.repoIds] } : {}),
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
     env: kvToRec(d.env),

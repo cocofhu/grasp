@@ -6,7 +6,7 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { isBoardSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
 import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import {
@@ -555,7 +555,9 @@ function onPendingRow(it: InboxItem) {
   onNavigate()
 }
 function pollRefresh() {
-  if (!document.hidden) void loadRunningRuns()
+  if (!document.hidden) {
+    void loadRunningRuns()
+  }
   return peek({ source: 'sidebar-poll' })
 }
 const offRunActivity = onRecentActivity(() => void loadRunningRuns())
@@ -585,6 +587,7 @@ watch(
 )
 
 function isActive(to: string) {
+  if (to === '/dashboard') return isHomeSectionPath(route.path)
   if (to === '/board') return isBoardSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }

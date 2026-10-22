@@ -18,3 +18,14 @@ export const sidebarNavGroups: SidebarNavGroup[] = [
 export function isBoardSectionPath(path: string): boolean {
   return path === '/board' || path === '/runs' || path.startsWith('/runs/')
 }
+
+/** Solo starts from Home; /solo/:id is just the chat. */
+export function isHomeSectionPath(path: string): boolean {
+  return (
+    path === '/dashboard' ||
+    path.startsWith('/gates') ||
+    path.startsWith('/solo') ||
+    path === '/requirements' ||
+    path === '/assistant'
+  )
+}

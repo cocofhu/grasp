@@ -25,6 +25,7 @@ type agentExportJSON struct {
 	AiCredentialID       string                    `json:"aiCredentialId,omitempty"`
 	GitCredentialID      string                    `json:"gitCredentialId,omitempty"`
 	SshHostsCredentialID string                    `json:"sshHostsCredentialId,omitempty"`
+	RepoIDs              *[]string                 `json:"repoIds,omitempty"`
 	AcpBackend           string                    `json:"acpBackend,omitempty"`
 	MCP                  []MCPServer               `json:"mcp,omitempty"`
 	Env                  map[string]string         `json:"env,omitempty"`
@@ -67,6 +68,7 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 		AiCredentialID:       a.AiCredentialID,
 		GitCredentialID:      a.GitCredentialID,
 		SshHostsCredentialID: a.SshHostsCredentialID,
+		RepoIDs:              a.RepoIDs,
 		AcpBackend:           a.AcpBackend,
 		MCP:                  a.MCP,
 		Env:                  a.Env,
@@ -264,6 +266,7 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 		AiCredentialID:       export.AiCredentialID,
 		GitCredentialID:      export.GitCredentialID,
 		SshHostsCredentialID: export.SshHostsCredentialID,
+		RepoIDs:              export.RepoIDs,
 		Files:                files,
 		MCP:                  export.MCP,
 		Env:                  export.Env,

@@ -43,6 +43,7 @@ type Handlers struct {
 	Pm                *services.PmService
 	PmProgress        *services.PmProgress
 	PmTurns           *services.PmTurnRunner
+	Solo              *services.SoloService
 	PMMCP             *pmmcp.Host
 	MemoryMCP         *memorymcp.Host
 	ContextMCP        *contextmcp.Host

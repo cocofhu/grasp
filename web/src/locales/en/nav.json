@@ -62,6 +62,8 @@
     "noMatchingWorkflows": "No matching workflows",
     "pinWorkflow": "Pin {name}",
     "unpinWorkflow": "Unpin {name}",
-    "runWorkflow": "Run {name}"
+    "runWorkflow": "Run {name}",
+    "solo": "Solo chats",
+    "projects": "Repositories"
   }
 }

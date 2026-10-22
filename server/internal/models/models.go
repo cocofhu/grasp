@@ -840,7 +840,7 @@ type Sandbox struct {
 	ID             uint   `gorm:"primaryKey" json:"id"`
 	Name           string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
 	Profile        string `json:"profile"`                          // bound Agent name
-	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent"
+	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
 	Status         string `json:"status"`                           // pulling|creating|running|stopped|error
 	Host           string `json:"-"`
 	ACPPort        int    `json:"-"`
@@ -1009,6 +1009,7 @@ func AllModels() []any {
 		&WorkspaceMcpApiKey{},
 		&LiveSession{},
 		&TokenUsageEvent{},
+		&Project{}, &SoloSession{}, &SoloMessage{},
 	}
 }
 

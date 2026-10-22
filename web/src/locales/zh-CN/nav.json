@@ -62,6 +62,8 @@
     "noMatchingWorkflows": "没有匹配的工作流",
     "pinWorkflow": "置顶 {name}",
     "unpinWorkflow": "取消置顶 {name}",
-    "runWorkflow": "运行 {name}"
+    "runWorkflow": "运行 {name}",
+    "solo": "Solo 对话",
+    "projects": "仓库"
   }
 }

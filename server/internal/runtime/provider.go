@@ -80,6 +80,9 @@ type Options struct {
 	// SelectedCredential resolves one coding-backend or Git credential the
 	// Agent picked. A missing id returns ok=false and must not fall back.
 	SelectedCredential SelectedCredentialFunc
+	// RepoCredentials resolves the Agent's selected repositories into
+	// per-repository Git credentials. Nil injects none.
+	RepoCredentials RepoCredentialsFunc
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
@@ -109,6 +112,7 @@ type SharedAgentView struct {
 	AcpBackend           string
 	AiCredentialID       string
 	OpenCodeCredentialID string
+	RepoIDs              []string
 	MCP                  []SharedMCPView
 	Env                  map[string]string
 	Layout               SharedLayoutView

@@ -143,6 +143,26 @@ type Spec struct {
 	// Empty fields are omitted (do not create/clear the corresponding file).
 	SSHPrivateKey string
 	SSHKnownHosts string
+	// RepoCredentials are per-repository Git secrets layered over the host-wide
+	// credential. They ride in the SSH staging bundle, never in env.
+	RepoCredentials []RepoCredential
+}
+
+// Repo credential kinds understood by startup.sh.
+const (
+	RepoCredentialGitHubHTTPS = "github_https"
+	RepoCredentialGitLabHTTPS = "gitlab_https"
+	RepoCredentialSSH         = "ssh"
+)
+
+// RepoCredential grants access to exactly one repository URL, so different
+// repositories on one host can use different tokens or SSH keys. Secret is a
+// token for the HTTPS kinds and a private key for ssh.
+type RepoCredential struct {
+	URL        string
+	Kind       string
+	Secret     string
+	KnownHosts string
 }
 
 // SSHInjectStagingDir is the in-sandbox destination for the SSH file inject
@@ -412,11 +432,12 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	// the runtime bundle into GRASP_RUNTIME_URL. SSH staging must land before
 	// git clone; startup.sh runs inject first. All share one auth token.
 	var bundleIDs []string
-	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, runtimeData); inj.ok() {
+	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, runtimeData); inj.ok() {
 		if len(inj.parts) > 0 {
 			env["SANDBOX_INJECT"] = strings.Join(inj.parts, ",")
 			log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
 				Bool("ssh", strings.TrimSpace(spec.SSHPrivateKey) != "" || strings.TrimSpace(spec.SSHKnownHosts) != "").
+				Int("repo_credentials", len(spec.RepoCredentials)).
 				Msg("sandbox config+ssh inject via SANDBOX_INJECT")
 		}
 		if inj.runtimeURL != "" {
@@ -543,7 +564,7 @@ func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
 // buildMultiInject registers the optional SSH staging, ConfigHome and runtime
 // bundles under one bearer token. The zero plan means nothing to inject (or no
 // inject store / reachable base URL).
-func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, runtime []byte) injectPlan {
+func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, repoCreds []RepoCredential, runtime []byte) injectPlan {
 	if m.bundles == nil {
 		return injectPlan{}
 	}
@@ -564,7 +585,7 @@ func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts stri
 		plan.ids = append(plan.ids, id)
 		return base + "/sandbox-inject/" + id + ".tgz"
 	}
-	if sshData, err := PackSSHInjectTarGz(sshKey, sshHosts); err != nil {
+	if sshData, err := PackSSHInjectBundle(sshKey, sshHosts, repoCreds); err != nil {
 		log.Warn().Err(err).Msg("pack ssh inject bundle failed")
 	} else if sshData != nil {
 		u := put(sshData)

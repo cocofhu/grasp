@@ -183,6 +183,8 @@ export interface Agent {
   /** Known-hosts credential selected when Git uses SSH. */
   sshHostsCredentialId?: string
   gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
+  /** Repositories whose own Git credentials are injected. Missing inherits the workspace default; [] injects none. */
+  repoIds?: string[]
   files?: AgentFile[]
   mcp?: MCPServer[]
   env?: Record<string, string>
@@ -199,6 +201,8 @@ export interface SharedAgentConfig {
   aiCredentialId?: string
   /** Workspace credential id for the OpenCode generic authorization. Empty means unset. */
   openCodeCredentialId?: string
+  /** Repositories whose own Git credentials every Agent inherits unless it overrides. */
+  repoIds?: string[]
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -548,4 +552,114 @@ export interface WorkflowCatalogItem {
   lastRunAt?: string
   showOnHome?: boolean
   needsRepo?: boolean
+}
+
+export type GitCredentialType = '' | 'github_https' | 'gitlab_https' | 'ssh'
+
+/** A Git repository registered for Solo sessions. Env never holds secrets. */
+export interface Project {
+  id: string
+  name: string
+  description?: string
+  repoUrl: string
+  defaultBranch?: string
+  repoDirName?: string
+  /** This repository's own access method. Empty means none configured. */
+  gitCredentialType?: GitCredentialType
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
+  env?: Record<string, string>
+  credentialBindings?: Record<string, string | null>
+  createdBy?: string
+  lastUsedAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ProjectInput {
+  name: string
+  description?: string
+  repoUrl: string
+  defaultBranch?: string
+  repoDirName?: string
+  gitCredentialType?: GitCredentialType
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
+  env?: Record<string, string>
+  credentialBindings?: Record<string, string | null>
+}
+
+export type SoloStatus = 'starting' | 'running' | 'closed' | 'error'
+
+export interface SoloSandboxInfo {
+  id: number
+  name: string
+  /** pulling | creating | running | error | stopped */
+  status: string
+  containerStatus?: string
+  connected: boolean
+  hasCodeServer: boolean
+  error?: string
+  createdAt?: string
+}
+
+export interface SoloSession {
+  id: string
+  userId: string
+  title: string
+  agentName: string
+  projectId?: string
+  /** Project config frozen when the session started. */
+  project?: Project
+  branch?: string
+  sandboxId?: number
+  status: SoloStatus
+  error?: string
+  restarts: number
+  lastActiveAt?: string
+  closedAt?: string
+  createdAt: string
+  updatedAt: string
+  busy: boolean
+  waiting: number
+  sandbox?: SoloSandboxInfo
+  backend?: BackendId | string
+  model?: string
+}
+
+export interface SoloSessionList {
+  sessions: SoloSession[]
+  maxSandboxes: number
+}
+
+export interface SoloCreateBody {
+  agentName: string
+  projectId?: string
+  branch?: string
+  title?: string
+  text?: string
+  images?: ClarifyImage[]
+}
+
+export interface SoloMessage {
+  id: string
+  sessionId: string
+  role: 'user' | 'assistant' | 'system'
+  content: string
+  images?: ClarifyImage[]
+  /** Raw ACP frames of an assistant turn, replayed into the timeline. */
+  events?: unknown[]
+  status?: '' | 'ok' | 'failed' | 'stopped'
+  error?: string
+  usage?: TokenUsage
+  usageByModel?: TokenUsageByModel
+  durationMs?: number
+  createdAt: string
+}
+
+export type SoloEnvSource = 'platform' | 'agent' | 'project' | 'credential' | 'system'
+
+export interface SoloEnvEntry {
+  key: string
+  source: SoloEnvSource
 }

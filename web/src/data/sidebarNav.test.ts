@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import enNav from '@/locales/en/nav.json'
 import zhNav from '@/locales/zh-CN/nav.json'
-import { isBoardSectionPath, sidebarNavGroups } from './sidebarNav'
+import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from './sidebarNav'
 
 describe('sidebarNav (plan g1.1)', () => {
   it('workspace primary is exactly home / board / workflows / usage / settings', () => {
@@ -62,5 +62,13 @@ describe('sidebarNav (plan g1.1)', () => {
     expect(isBoardSectionPath('/dashboard')).toBe(false)
     expect(isBoardSectionPath('/workflows')).toBe(false)
     expect(isBoardSectionPath('/gates')).toBe(false)
+  })
+
+  it('treats Solo chat as the home section', () => {
+    expect(isHomeSectionPath('/dashboard')).toBe(true)
+    expect(isHomeSectionPath('/solo')).toBe(true)
+    expect(isHomeSectionPath('/solo/abc')).toBe(true)
+    expect(isHomeSectionPath('/gates/run-1')).toBe(true)
+    expect(isHomeSectionPath('/board')).toBe(false)
   })
 })

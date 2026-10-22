@@ -49,6 +49,10 @@ type SandboxService struct {
 	ttl    atomic.Int64 // idle TTL for interactive test sandboxes (ns)
 	runTTL atomic.Int64 // retention TTL for finished run node sandboxes (ns)
 	max    atomic.Int64 // max concurrently live interactive test sandboxes
+	// maxSolo caps concurrently live resident Solo sandboxes.
+	maxSolo atomic.Int64
+	// soloOnDestroy tells the Solo service a purpose=solo sandbox is gone.
+	soloOnDestroy func(sandboxID uint)
 	// maxRetention caps how far leases can push a run sandbox's deadline (ns).
 	maxRetention atomic.Int64
 
@@ -118,6 +122,8 @@ type SandboxOptions struct {
 	// MaxRetention caps lease-extended run sandbox lifetime. 0 = 24h.
 	MaxRetention time.Duration
 	Max          int
+	// MaxSolo caps resident Solo sandboxes. 0 = 5.
+	MaxSolo int
 	// SharedAgent optional baseline used by Open / OpenAgentSandbox.
 	SharedAgent *SharedAgentService
 	// Credentials resolves UI-managed workspace credential environment values
@@ -192,6 +198,10 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 	s.runTTL.Store(int64(opts.RunTTL))
 	s.maxRetention.Store(int64(opts.MaxRetention))
 	s.max.Store(int64(opts.Max))
+	if opts.MaxSolo <= 0 {
+		opts.MaxSolo = 5
+	}
+	s.maxSolo.Store(int64(opts.MaxSolo))
 	return s
 }
 

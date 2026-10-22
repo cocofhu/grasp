@@ -217,6 +217,15 @@
       "types.ts",
       "vncReconnect.ts"
     ],
+    "solo": [
+      "acpTurn.ts",
+      "projectForm.ts",
+      "soloErrors.ts",
+      "soloPrefs.ts",
+      "useSoloChat.ts",
+      "useSoloLauncher.ts",
+      "useSoloSessions.ts"
+    ],
     "workflow": [
       "agentCapabilities.ts",
       "graphValidation.ts",
@@ -240,6 +249,7 @@
     "pm": 7,
     "run": 65,
     "shared": 39,
+    "solo": 7,
     "workflow": 3,
     "workspace": 5
   }

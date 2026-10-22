@@ -20,6 +20,8 @@ type sharedAgentBody struct {
 	MCP                  []services.MCPServer `json:"mcp"`
 	Env                  map[string]string    `json:"env"`
 	Layout               services.AgentLayout `json:"layout"`
+	// RepoIDs nil keeps the saved selection so older clients do not clear it.
+	RepoIDs *[]string `json:"repoIds"`
 }
 
 func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
@@ -35,8 +37,13 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 	if mcp == nil {
 		mcp = []services.MCPServer{}
 	}
+	repoIDs := cfg.RepoIDs
+	if repoIDs == nil {
+		repoIDs = []string{}
+	}
 	return gin.H{
 		"acpBackend":           cfg.AcpBackend,
+		"repoIds":              repoIDs,
 		"gitCredentialType":    cfg.GitCredentialType,
 		"aiCredentialId":       cfg.AiCredentialID,
 		"openCodeCredentialId": cfg.OpenCodeCredentialID,
@@ -76,6 +83,11 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		MCP:                  b.MCP,
 		Env:                  b.Env,
 		Layout:               b.Layout,
+	}
+	if b.RepoIDs != nil {
+		cfg.RepoIDs = *b.RepoIDs
+	} else {
+		cfg.RepoIDs = h.SharedAgent.Get().RepoIDs
 	}
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}

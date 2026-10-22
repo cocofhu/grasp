@@ -21,6 +21,7 @@ type SharedAgentConfig struct {
 	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
 	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
 	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
+	RepoIDs              []string          `json:"repoIds"`
 	Files                []AgentFile       `json:"files"`
 	MCP                  []MCPServer       `json:"mcp"`
 	Env                  map[string]string `json:"env"`
@@ -33,6 +34,7 @@ type sharedAgentDisk struct {
 	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
 	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
 	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
+	RepoIDs              []string          `json:"repoIds,omitempty"`
 	MCP                  []MCPServer       `json:"mcp,omitempty"`
 	Env                  map[string]string `json:"env,omitempty"`
 	Layout               *AgentLayout      `json:"layout,omitempty"`
@@ -101,6 +103,7 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
 		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
+		RepoIDs:              NormalizeRepoIDs(cfg.RepoIDs),
 		Files:                files,
 		MCP:                  mcps,
 		Env:                  env,
@@ -135,6 +138,7 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
 		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
+		RepoIDs:              NormalizeRepoIDs(cfg.RepoIDs),
 		MCP:                  cfg.MCP,
 		Env:                  cfg.Env,
 		Layout:               &layout,
@@ -187,12 +191,14 @@ func (c SharedAgentConfig) AsAgent() Agent {
 	if env == nil {
 		env = map[string]string{}
 	}
+	repoIDs := NormalizeRepoIDs(c.RepoIDs)
 	return Agent{
 		Name:                 "",
 		AcpBackend:           c.AcpBackend,
 		GitCredentialType:    c.GitCredentialType,
 		AiCredentialID:       c.AiCredentialID,
 		OpenCodeCredentialID: c.OpenCodeCredentialID,
+		RepoIDs:              &repoIDs,
 		Files:                c.Files,
 		MCP:                  c.MCP,
 		Env:                  env,
@@ -217,12 +223,16 @@ func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime
 		CredentialBindings:   agent.CredentialBindings,
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
+		RepoIDs:              base.RepoIDs,
 		Capabilities:         agent.Capabilities,
 		AcpBackend:           pickNonEmpty(agent.AcpBackend, base.AcpBackend),
 		GitCredentialType:    pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
 		Files:                mergeFiles(base.Files, agent.Files),
 		MCP:                  mergeMCP(base.MCP, agent.MCP),
 		Layout:               mergeLayout(base.Layout, agent.Layout),
+	}
+	if agent.RepoIDs != nil {
+		out.RepoIDs = normalizeRepoIDsPtr(agent.RepoIDs)
 	}
 	if out.AcpBackend != "" {
 		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)

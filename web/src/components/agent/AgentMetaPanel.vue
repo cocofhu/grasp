@@ -33,6 +33,7 @@ import { readCliEffort, readCliModel, switchCliModelEnv, writeCliEffort, writeCl
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import { useToast } from '@/lib/composables/useToast'
 import AgentCredentialBindings from '@/components/agent/AgentCredentialBindings.vue'
+import RepoAccessPicker from '@/components/agent/RepoAccessPicker.vue'
 
 const props = defineProps<{
   draft: AgentStudioDraft
@@ -99,6 +100,7 @@ const showCliRuntime = computed(() => !!props.draft.acpBackend && props.draft.ac
 
 /** The workspace's shared model and credential apply only while the Agent runs the same CLI. */
 const sharedBaseline = ref<{ acpBackend: string; model: string } | null>(null)
+const sharedRepoIds = ref<string[]>([])
 onMounted(async () => {
   try {
     const cfg = await api.getSharedAgentConfig()
@@ -106,6 +108,7 @@ onMounted(async () => {
       acpBackend: cfg.acpBackend || '',
       model: readCliModel(cfg.env || {}),
     }
+    sharedRepoIds.value = cfg.repoIds || []
   } catch {
     /* The status is optional; the card works without it. */
   }
@@ -303,6 +306,12 @@ watch(
           @update:selected-id="draft.sshHostsCredentialId = $event"
         />
       </div>
+      <RepoAccessPicker
+        :key="agentName"
+        :model-value="draft.repoIds"
+        :inherited="sharedRepoIds"
+        @update:model-value="draft.repoIds = $event"
+      />
       <label v-if="!inheriting" class="block">
         <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
         <input

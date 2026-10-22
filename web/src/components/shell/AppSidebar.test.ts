@@ -24,6 +24,7 @@ vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return {
     ...actual,
+    api: { ...actual.api, listSoloSessions: vi.fn().mockResolvedValue({ sessions: [], maxSandboxes: 0 }) },
     authApi: { logout: vi.fn().mockResolvedValue(undefined) },
   }
 })
@@ -72,6 +73,7 @@ describe('AppSidebar', () => {
   it.each([
     ['/dashboard', '/dashboard'],
     ['/gates/run-1', '/dashboard'],
+    ['/solo/abc', '/dashboard'],
     ['/board', '/board'],
     ['/workflows/wf-1', '/workflows'],
     ['/runs', '/board'],
