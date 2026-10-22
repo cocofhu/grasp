@@ -1111,16 +1111,24 @@ function toggle(q: ReactQuestion, oid: string) {
   const cur = sel.value[q.id] || []
   if (q.allowMultiple) {
     sel.value[q.id] = cur.includes(oid) ? cur.filter((x) => x !== oid) : [...cur, oid]
-  } else {
-    sel.value[q.id] = cur.includes(oid) ? [] : [oid]
+    return
   }
+  // Single-select domain includes preset options and 「其他」. Replacing or
+  // clearing a preset must drop the other checkbox and must not restore it.
+  sel.value[q.id] = cur.includes(oid) ? [] : [oid]
+  otherChecked.value[q.id] = false
 }
 function isOtherSelected(qid: string): boolean {
   return !!otherChecked.value[qid]
 }
 
 function toggleOther(q: ReactQuestion) {
-  otherChecked.value[q.id] = !otherChecked.value[q.id]
+  const next = !otherChecked.value[q.id]
+  otherChecked.value[q.id] = next
+  // Checking 「其他」 on a single-select question clears presets. Unchecking
+  // leaves sel empty so the previous preset does not come back. Typing in the
+  // input never checks this box; residual text stays in `other` either way.
+  if (next && !q.allowMultiple) sel.value[q.id] = []
 }
 
 function otherAnswered(q: ReactQuestion): boolean {
@@ -1148,6 +1156,9 @@ function applyRecommended() {
   for (const q of activeQuestions.value) {
     const id = autoPickId(q)
     sel.value[q.id] = id ? [id] : []
+    // Multi-select still fills only the one recommended (or first) preset and
+    // leaves an already-checked 「其他」 alone. Single-select drops that check.
+    if (!q.allowMultiple) otherChecked.value[q.id] = false
   }
 }
 function submitRecommended() {

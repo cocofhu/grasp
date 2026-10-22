@@ -205,7 +205,6 @@
 
 .chat-choice-option { min-height: 40px; }
 .chat-choice-option[aria-pressed="true"],
-.chat-choice-other:focus-within,
 .chat-choice-other.is-selected { border-color: rgb(var(--c-accent) / .45); background: rgb(var(--c-accent) / .045); color: rgb(var(--c-txt)); }
 .chat-choice-option:hover { border-color: rgb(var(--c-line-strong)); }
 .chat-choice-option[aria-pressed="true"]:hover { border-color: rgb(var(--c-accent) / .65); }
