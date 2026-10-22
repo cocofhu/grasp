@@ -39,6 +39,8 @@ const props = withDefaults(
   defineProps<{
     runId: string
     priorSegments?: ClarifyPriorSegment[]
+    /** Visit on screen. Earlier visits of this node are its own history, not its upstream. */
+    nodeId?: string
     nodeLabel?: string
     nodeTask?: string
     /** Current visit's boot is live, so the divider carries 环境已就绪. */
@@ -57,6 +59,7 @@ const props = withDefaults(
   }>(),
   {
     priorSegments: () => [],
+    nodeId: '',
     nodeLabel: '',
     nodeTask: '',
     bootSummary: false,
@@ -270,7 +273,7 @@ function visitBootKey(nodeId: string, iteration: number) {
 const resolvedDividerTitle = computed(() =>
   props.dividerTitle || (props.nodeLabel ? translate('pages.clarify.handoffDoneTo', { name: props.nodeLabel }) : translate('pages.clarify.handoffDone')),
 )
-const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask))
+const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask, props.nodeId))
 const hasPriors = computed(() => (props.priorSegments?.length || 0) > 0)
 
 function turnParts(turn: ClarifyTurn): AgentPart[] {

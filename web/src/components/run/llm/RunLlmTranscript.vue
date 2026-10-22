@@ -194,6 +194,7 @@ async function onFinish() {
         :run-id="run.id"
         :prior-segments="thread.priors"
         :turns="thread.currentTurns"
+        :node-id="thread.current?.nodeId || ''"
         :node-label="thread.current?.label || ''"
         :boot-summary="bootSummary"
         :boot-starting="bootStarting"
