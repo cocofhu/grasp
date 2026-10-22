@@ -318,6 +318,9 @@ func (h *Handlers) runDetailDTO(r models.Run) gin.H {
 		"durationSec": effectiveRunDuration(r), "progress": r.Progress, "branch": r.Branch,
 		"attempt": r.Attempt, "nodeRuns": nodeRuns, "nodeExecutions": nodeExecutions, "artifacts": arts,
 		"vars": vars, "trace": r.Trace,
+		// Same run-level title as ListRuns (runSummaryDTO). Keep it on the
+		// run object — do not reuse or overwrite the nested gate.title.
+		"title":      r.Title,
 		"priority":   models.PriorityLabel(r.Priority),
 		"tags":       runTagsDTO(r.Tags),
 		"sandboxEnv": services.MaskedSandboxEnv(r.SandboxEnv),

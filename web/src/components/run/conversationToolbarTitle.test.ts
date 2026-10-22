@@ -158,6 +158,78 @@ describe('run conversation toolbar titles', () => {
     wrapper.unmount()
   })
 
+  it('live view uses GetRun title, not the workflow name, without a pending row', async () => {
+    usePendingGates().displayedItems.value = []
+    liveMocks.getRun.mockResolvedValue({
+      ...stubRun('这个行高有点高了', '自我迭代'),
+      currentNode: { id: 'c1', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/runs/:id/live', component: defineComponent({ template: '<div />' }) }],
+    })
+    await router.push('/runs/run-1/live')
+    const wrapper = mount(RunLiveView, {
+      global: {
+        plugins: [router, i18n()],
+        stubs: {
+          ...quietChildren,
+          ReviewComposer: defineComponent({
+            name: 'ReviewComposer',
+            setup(_, { expose }) {
+              expose({
+                applyReviewFrame: () => {},
+                applyAcpEvents: () => {},
+                releaseConfirmPending: () => {},
+              })
+              return () => null
+            },
+          }),
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('这个行高有点高了')
+    expect(wrapper.get('[data-testid="conversation-title"]').attributes('title')).toBe('这个行高有点高了')
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).not.toBe('自我迭代')
+    wrapper.unmount()
+  })
+
+  it('live view falls back to the workflow name when GetRun title is empty', async () => {
+    usePendingGates().displayedItems.value = []
+    liveMocks.getRun.mockResolvedValue({
+      ...stubRun('', '自我迭代'),
+      currentNode: { id: 'c1', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' },
+    })
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/runs/:id/live', component: defineComponent({ template: '<div />' }) }],
+    })
+    await router.push('/runs/run-1/live')
+    const wrapper = mount(RunLiveView, {
+      global: {
+        plugins: [router, i18n()],
+        stubs: {
+          ...quietChildren,
+          ReviewComposer: defineComponent({
+            name: 'ReviewComposer',
+            setup(_, { expose }) {
+              expose({
+                applyReviewFrame: () => {},
+                applyAcpEvents: () => {},
+                releaseConfirmPending: () => {},
+              })
+              return () => null
+            },
+          }),
+        },
+      },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-testid="conversation-title"]').text()).toBe('自我迭代')
+    wrapper.unmount()
+  })
+
   it('live view shows sidebarRunTitle for the open run', async () => {
     liveMocks.getRun.mockResolvedValue({
       ...stubRun('优化这里的段间距'),

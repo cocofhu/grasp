@@ -45,6 +45,19 @@ describe('conversationToolbarRunName', () => {
     })).toBe('')
   })
 
+  it('uses the loaded GetRun title when there is no inbox pending row', () => {
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '这个行高有点高了', workflowName: '自我迭代' },
+      fallback: { runId: 'run-1', runTitle: '这个行高有点高了', workflowName: '自我迭代' },
+      pendingRows: [],
+    })).toBe('这个行高有点高了')
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '', workflowName: '自我迭代' },
+      fallback: { runId: 'run-1', runTitle: '', workflowName: '自我迭代' },
+      pendingRows: [],
+    })).toBe('自我迭代')
+  })
+
   it('uses a renamed pending row, then the loaded run, and hides raw JSON', () => {
     expect(conversationToolbarRunName({
       run: { id: 'run-1', title: '甲', workflowName: '产品迭代' },

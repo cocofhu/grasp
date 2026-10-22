@@ -224,3 +224,116 @@ func TestUpdateRunTitleHTTP(t *testing.T) {
 		}
 	})
 }
+
+// GetRun must emit the same run-level title as ListRuns so the conversation
+// toolbar can match the sidebar row. Nested gate.title is a different field.
+func TestGetRunExposesTitleMatchingList(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	if err := h.db.Create(&models.Run{
+		ID: "rd-title", WorkflowID: "wf-self", WorkflowName: "自我迭代",
+		Title: "这个行高有点高了", Status: "running", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}}},
+	}).Error; err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+
+	detail := h.do(http.MethodGet, "/api/runs/rd-title", nil)
+	if detail.Code != http.StatusOK {
+		t.Fatalf("get run: %d %s", detail.Code, detail.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(detail.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["title"] != "这个行高有点高了" {
+		t.Fatalf("detail title=%v want 这个行高有点高了", got["title"])
+	}
+	if got["workflowName"] != "自我迭代" {
+		t.Fatalf("workflowName=%v", got["workflowName"])
+	}
+
+	list := h.do(http.MethodGet, "/api/runs", nil)
+	if list.Code != http.StatusOK {
+		t.Fatalf("list: %d %s", list.Code, list.Body)
+	}
+	var items []map[string]any
+	if err := decodePageItems(list.Body.Bytes(), &items); err != nil {
+		t.Fatal(err)
+	}
+	var listed map[string]any
+	for _, it := range items {
+		if it["id"] == "rd-title" {
+			listed = it
+			break
+		}
+	}
+	if listed == nil {
+		t.Fatal("list missing rd-title")
+	}
+	if listed["title"] != got["title"] {
+		t.Fatalf("list title=%v detail title=%v", listed["title"], got["title"])
+	}
+}
+
+func TestGetRunTitleDoesNotCollideWithGateTitle(t *testing.T) {
+	h := newHarness(t)
+	now := time.Now()
+	if err := h.db.Create(&models.Run{
+		ID: "rd-gate-title", WorkflowID: "wf-self", WorkflowName: "自我迭代",
+		Title: "这个行高有点高了", Status: "waiting_human", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{
+			{ID: "impl", Type: "agent", Caps: testAutoCaps},
+			{ID: "gate", Type: "human_gate"},
+		}},
+	}).Error; err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	if err := h.db.Create(&models.StateRun{
+		RunID: "rd-gate-title", NodeID: "gate", Iteration: 1, Status: "waiting_human",
+	}).Error; err != nil {
+		t.Fatalf("seed state: %v", err)
+	}
+	if err := h.db.Create(&models.Gate{
+		RunID: "rd-gate-title", NodeID: "gate", Iteration: 1, Title: "审批", RequestedAt: now,
+	}).Error; err != nil {
+		t.Fatalf("seed gate: %v", err)
+	}
+
+	w := h.do(http.MethodGet, "/api/runs/rd-gate-title", nil)
+	if w.Code != http.StatusOK {
+		t.Fatalf("get run: %d %s", w.Code, w.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["title"] != "这个行高有点高了" {
+		t.Fatalf("top-level title=%v (must stay the run title)", got["title"])
+	}
+	gate, _ := got["gate"].(map[string]any)
+	if gate == nil {
+		t.Fatal("expected nested gate")
+	}
+	if gate["title"] != "审批" {
+		t.Fatalf("gate.title=%v want 审批", gate["title"])
+	}
+
+	if err := h.db.Create(&models.Run{
+		ID: "rd-empty-title", WorkflowName: "自我迭代", Title: "", Status: "running", StartedAt: now,
+		Graph: models.Graph{Nodes: []models.Node{{ID: "in", Type: "input"}}},
+	}).Error; err != nil {
+		t.Fatalf("seed empty: %v", err)
+	}
+	empty := h.do(http.MethodGet, "/api/runs/rd-empty-title", nil)
+	if empty.Code != http.StatusOK {
+		t.Fatalf("empty get: %d %s", empty.Code, empty.Body)
+	}
+	var emptyGot map[string]any
+	if err := json.Unmarshal(empty.Body.Bytes(), &emptyGot); err != nil {
+		t.Fatal(err)
+	}
+	if title, ok := emptyGot["title"].(string); !ok || title != "" {
+		t.Fatalf("empty title must be present as \"\", got %v (%T)", emptyGot["title"], emptyGot["title"])
+	}
+}
