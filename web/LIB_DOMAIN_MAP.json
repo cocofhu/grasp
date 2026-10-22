@@ -152,6 +152,7 @@
       "streamTextReveal.ts",
       "structuredArtifacts.ts",
       "takeoverTimeline.ts",
+      "thoughtParagraphs.ts",
       "tokenUsage.ts",
       "toolLabels.ts",
       "useArtifactPreview.ts",
@@ -237,7 +238,7 @@
     "composables": 18,
     "inbox": 40,
     "pm": 7,
-    "run": 64,
+    "run": 65,
     "shared": 39,
     "workflow": 3,
     "workspace": 5
