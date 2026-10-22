@@ -11,7 +11,9 @@ import (
 
 // MaterializeAttachments writes base64 image/file attachments under a unique
 // /tmp directory and returns absolute paths the agent can open with ordinary
-// Read tools. Caller must os.RemoveAll(dir) when the turn finishes.
+// Read tools. Within one batch the first safe basename is kept; later copies
+// of that name get a numeric suffix before the extension so bytes are not
+// overwritten. Caller must os.RemoveAll(dir) when the turn finishes.
 func MaterializeAttachments(files []PromptImage) (dir string, paths []string, err error) {
 	dir, err = os.MkdirTemp("", "sbx-attach-*")
 	if err != nil {
@@ -19,13 +21,18 @@ func MaterializeAttachments(files []PromptImage) (dir string, paths []string, er
 	}
 	cleanup := func() { _ = os.RemoveAll(dir) }
 	paths = make([]string, 0, len(files))
+	used := make(map[string]struct{}, len(files))
 	for i, f := range files {
 		raw, derr := DecodeAttachmentData(f.Data)
 		if derr != nil {
 			cleanup()
 			return "", nil, fmt.Errorf("attach: decode #%d: %w", i+1, derr)
 		}
-		name := AttachmentFileName(i, f)
+		name, nerr := uniqueAttachmentName(used, AttachmentFileName(i, f))
+		if nerr != nil {
+			cleanup()
+			return "", nil, fmt.Errorf("attach: name #%d: %w", i+1, nerr)
+		}
 		p, jerr := underRoot(dir, name)
 		if jerr != nil {
 			cleanup()
@@ -38,6 +45,30 @@ func MaterializeAttachments(files []PromptImage) (dir string, paths []string, er
 		paths = append(paths, p)
 	}
 	return dir, paths, nil
+}
+
+// uniqueAttachmentName returns name on first use. A later duplicate becomes
+// stem-N.ext (image.png, then image-2.png), skipping any suffix already taken
+// in this batch. The chosen name is recorded in used.
+func uniqueAttachmentName(used map[string]struct{}, name string) (string, error) {
+	if _, ok := used[name]; !ok {
+		used[name] = struct{}{}
+		return name, nil
+	}
+	ext := filepath.Ext(name)
+	stem := strings.TrimSuffix(name, ext)
+	// A realistic batch is tiny. The cap only stops a pathological set of
+	// names that already occupy every stem-N.ext we would try.
+	const maxAttachmentNameSuffix = 10000
+	for n := 2; n <= maxAttachmentNameSuffix; n++ {
+		candidate := fmt.Sprintf("%s-%d%s", stem, n, ext)
+		if _, ok := used[candidate]; ok {
+			continue
+		}
+		used[candidate] = struct{}{}
+		return candidate, nil
+	}
+	return "", fmt.Errorf("duplicate name %q", name)
 }
 
 // DecodeAttachmentData decodes standard or raw base64 attachment payloads.
