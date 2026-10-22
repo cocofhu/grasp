@@ -199,6 +199,10 @@ type Agent struct {
 	GitCredentialID string `json:"gitCredentialId,omitempty"`
 	// SshHostsCredentialID is the known-hosts credential used when Git is SSH.
 	SshHostsCredentialID string `json:"sshHostsCredentialId,omitempty"`
+	// RepoIDs lists the registered repositories whose own Git credentials are
+	// injected per repository. Nil inherits the workspace default; an empty
+	// list injects none.
+	RepoIDs *[]string `json:"repoIds,omitempty"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.
 	Files []AgentFile `json:"files"`
 	// MCP lists the MCP servers wired into the sandbox for this agent.
@@ -223,6 +227,7 @@ type agentConfig struct {
 	AiCredentialID       string                    `json:"aiCredentialId,omitempty"`
 	GitCredentialID      string                    `json:"gitCredentialId,omitempty"`
 	SshHostsCredentialID string                    `json:"sshHostsCredentialId,omitempty"`
+	RepoIDs              *[]string                 `json:"repoIds,omitempty"`
 	MCP                  []MCPServer               `json:"mcp,omitempty"`
 	Env                  map[string]string         `json:"env,omitempty"`
 	Layout               *AgentLayout              `json:"layout,omitempty"`
@@ -289,6 +294,7 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
 		GitCredentialID:      strings.TrimSpace(cfg.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(cfg.SshHostsCredentialID),
+		RepoIDs:              normalizeRepoIDsPtr(cfg.RepoIDs),
 		Files:                s.readFiles(name),
 		MCP:                  cfg.MCP,
 		Env:                  env,
@@ -470,6 +476,7 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 		AiCredentialID:       strings.TrimSpace(a.AiCredentialID),
 		GitCredentialID:      strings.TrimSpace(a.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(a.SshHostsCredentialID),
+		RepoIDs:              normalizeRepoIDsPtr(a.RepoIDs),
 		MCP:                  a.MCP,
 		Env:                  a.Env,
 		Layout:               &layout,

@@ -108,6 +108,7 @@ type agentFile struct {
 	AiCredentialID       string             `json:"aiCredentialId,omitempty"`
 	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
 	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
+	RepoIDs              *[]string          `json:"repoIds,omitempty"`
 	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
 	MCP                  []agentMCP         `json:"mcp"`
 	Env                  map[string]string  `json:"env"`
@@ -210,6 +211,10 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 		shared.AiCredentialID, shared.OpenCodeCredentialID,
 		kindOf,
 	)
+	if agent.RepoIDs == nil {
+		ids := append([]string(nil), shared.RepoIDs...)
+		out.RepoIDs = &ids
+	}
 	return out
 }
 

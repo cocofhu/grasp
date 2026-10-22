@@ -36,6 +36,7 @@ import {
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import RepoAccessPicker from '@/components/agent/RepoAccessPicker.vue'
 import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
 import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { backendKind } from '@/lib/workspace/credentialKinds'
@@ -117,6 +118,7 @@ function sharedToDraft(cfg: SharedAgentConfig): AgentStudioDraft {
     aiCredentialId: cfg.aiCredentialId || '',
     openCodeCredentialId: cfg.openCodeCredentialId || '',
     gitCredentialType: cfg.gitCredentialType as AgentStudioDraft['gitCredentialType'],
+    repoIds: cfg.repoIds || [],
     files: cfg.files || [],
     mcp: cfg.mcp || [],
     env: cfg.env || {},
@@ -155,6 +157,7 @@ async function save(): Promise<boolean> {
       gitCredentialType: payload.gitCredentialType || '',
       aiCredentialId: draft.value.aiCredentialId || '',
       openCodeCredentialId: draft.value.openCodeCredentialId || '',
+      repoIds: draft.value.repoIds || [],
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -430,6 +433,8 @@ defineExpose({ dirty, save })
               @update:vision="patchSharedOpenCode({ vision: $event })"
             />
           </div>
+
+          <RepoAccessPicker :model-value="draft.repoIds" shared @update:model-value="draft.repoIds = $event || []" />
 
           <label class="block">
             <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>

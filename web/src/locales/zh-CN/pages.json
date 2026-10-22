@@ -2934,7 +2934,36 @@
         "inspectorEdit": "在 Agent 配置中修改",
         "wizardHint": "不确定就先用自动，之后可以在 Agent 配置里改。"
       },
-      "pmScopeTag": "工作区助手"
+      "pmScopeTag": "工作区助手",
+      "repoAccess": {
+        "title": "仓库权限",
+        "desc": "选中的仓库会在沙箱启动时注入各自的访问凭据：HTTPS 按仓库路径区分 token，SSH 为每个仓库配置独立私钥，可与上面的 Git 凭据同时生效。只注入权限，不会自动克隆。",
+        "sharedDesc": "所有 Agent 默认继承这里选中的仓库权限，单个 Agent 可以在元信息里改为自定义。每个仓库按自己的访问凭据注入，只注入权限，不会自动克隆。",
+        "selected": "已选 {n} 个",
+        "manage": "管理仓库",
+        "inherit": "沿用默认配置",
+        "inheritHint": "继承「Agent 默认配置」中选中的仓库权限",
+        "inheritedEmpty": "默认配置还没有选择仓库，当前不会注入任何仓库级凭据。",
+        "loadFailed": "仓库列表加载失败",
+        "retry": "重试",
+        "empty": "还没有登记仓库",
+        "emptyHint": "在「仓库」设置里添加仓库并选择访问凭据后，就可以在这里勾选。",
+        "add": "添加仓库",
+        "search": "搜索仓库名称或地址",
+        "selectAll": "全选可用",
+        "clear": "清空",
+        "deleted": "仓库已被删除",
+        "remove": "移除",
+        "noCredential": "未配置访问凭据",
+        "mismatch": "地址与访问方式不匹配",
+        "noCredentialHint": "先在仓库设置里为它选择与地址匹配的访问凭据",
+        "noMatch": "没有匹配的仓库",
+        "access": {
+          "github_https": "GitHub HTTPS",
+          "gitlab_https": "GitLab HTTPS",
+          "ssh": "SSH"
+        }
+      }
     },
     "runLaunch": {
       "title": "启动运行 · {name}",
@@ -4385,6 +4414,257 @@
       "server_halting": "服务正在停机，请稍后重试",
       "run_not_found": "运行不存在",
       "node_not_found": "节点不存在"
+    },
+    "solo": {
+      "title": "Solo 对话",
+      "capacity": "运行中 {n} / {max} 个沙箱",
+      "newSession": "新建会话",
+      "filterActive": "运行中",
+      "filterAll": "全部",
+      "emptyActive": "没有运行中的会话",
+      "emptyList": "还没有 Solo 会话",
+      "showAll": "查看全部会话",
+      "untitled": "未命名会话",
+      "noProject": "未绑定仓库",
+      "backToList": "返回会话列表",
+      "closeSession": "关闭",
+      "limitTitle": "Solo 沙箱已达上限",
+      "limitHint": "最多同时运行 {max} 个 Solo 沙箱。关闭一个不再使用的会话后再试。",
+      "limitFreed": "已有空位，可以重新启动了",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "closed": "已关闭",
+        "error": "异常"
+      },
+      "phase": {
+        "preparing": "等待沙箱就绪…",
+        "running": "Agent 正在处理"
+      },
+      "access": {
+        "none": "未配置凭据",
+        "github_https": "GitHub 令牌",
+        "gitlab_https": "GitLab 令牌",
+        "ssh": "SSH 密钥"
+      },
+      "agentSelect": {
+        "placeholder": "选择 Agent",
+        "search": "搜索 Agent 或 CLI",
+        "empty": "没有匹配的 Agent",
+        "noAgents": "还没有 Agent，先去智能体页创建一个",
+        "manage": "管理 Agent"
+      },
+      "projectSelect": {
+        "none": "不绑定仓库",
+        "noneHint": "空白工作区，不克隆仓库",
+        "group": "仓库",
+        "search": "搜索仓库",
+        "empty": "没有匹配的仓库",
+        "create": "添加仓库",
+        "manage": "管理仓库"
+      },
+      "create": {
+        "title": "新建 Solo 会话",
+        "agent": "Agent",
+        "project": "仓库",
+        "branch": "分支",
+        "branchPlaceholder": "默认分支",
+        "titleLabel": "标题（可选）",
+        "titlePlaceholder": "留空则用第一条消息作为标题",
+        "firstMessage": "第一条消息（可选）",
+        "firstMessagePlaceholder": "告诉 Agent 先做什么；留空则只启动沙箱",
+        "residentHint": "沙箱会一直运行，直到你手动关闭。首条消息会在沙箱就绪后自动执行。",
+        "submit": "启动"
+      },
+      "home": {
+        "modeLabel": "首页模式",
+        "modeWorkflow": "工作流",
+        "modeSolo": "Solo",
+        "placeholders": [
+          "直接和 Agent 对话，比如：帮我看看登录接口为什么偶发 500",
+          "让 Agent 在仓库里改个 bug 并推一个分支",
+          "问问 Agent 这个仓库的模块是怎么组织的"
+        ],
+        "start": "开始 Solo 对话",
+        "noAgent": "请先选择一个 Agent",
+        "recent": "进行中的 Solo",
+        "viewAll": "全部会话",
+        "projects": "仓库",
+        "projectsEmpty": "把常用的 Git 仓库添加进来，下次启动时直接选择。"
+      },
+      "header": {
+        "rename": "重命名",
+        "console": "终端",
+        "vscode": "VS Code",
+        "env": "环境",
+        "more": "更多",
+        "close": "关闭",
+        "restart": "重新启动",
+        "delete": "删除会话",
+        "editProject": "编辑仓库配置"
+      },
+      "link": {
+        "reconnecting": "连接已断开，正在重连…"
+      },
+      "startup": {
+        "title": "正在准备沙箱",
+        "pulling": "拉取镜像",
+        "creating": "创建容器",
+        "clone": "克隆仓库 {repo}",
+        "agent": "启动 {agent}",
+        "hint": "首次拉取镜像可能需要几分钟。你可以先发消息，沙箱就绪后会自动执行。"
+      },
+      "errorCard": {
+        "title": "沙箱不可用",
+        "unknown": "沙箱启动失败或已被销毁。",
+        "retry": "重新启动",
+        "logs": "查看沙箱",
+        "edit": "修改仓库配置"
+      },
+      "chat": {
+        "placeholder": "给 {agent} 发消息，Enter 发送，Shift+Enter 换行",
+        "send": "发送",
+        "stop": "停止",
+        "attach": "添加附件",
+        "queue": "排队中 {n} 条",
+        "removeQueued": "移出队列",
+        "turnFailed": "本轮执行失败",
+        "stopped": "已停止",
+        "generating": "正在生成…",
+        "waitingSandbox": "沙箱就绪后开始执行",
+        "empty": "{agent} 已就绪，开始对话吧",
+        "imagesOnly": "（附件）",
+        "plan": "计划"
+      },
+      "closedBar": {
+        "text": "会话已关闭，沙箱已释放。重新启动会创建新沙箱并重新克隆仓库，之前的对话会作为上下文发给 Agent。",
+        "restart": "重新启动"
+      },
+      "close": {
+        "title": "关闭 Solo 会话",
+        "body": "关闭后沙箱会被销毁，沙箱里未提交或未推送的改动将丢失。",
+        "busy": "Agent 正在执行，关闭会中断当前任务。",
+        "pushFirst": "先让 Agent 提交并推送",
+        "pushFirstHint": "发一条消息让 Agent 把改动推到远端，完成后再关闭",
+        "pushPrompt": "请提交当前所有改动并推送到远端分支，完成后告诉我分支名和提交摘要。",
+        "confirm": "关闭并释放沙箱"
+      },
+      "delete": {
+        "title": "删除会话",
+        "body": "会删除这个会话和全部消息记录，此操作不可撤销。",
+        "bodyActive": "会先关闭沙箱，再删除这个会话和全部消息记录，此操作不可撤销。",
+        "confirm": "删除"
+      },
+      "env": {
+        "title": "会话环境",
+        "agent": "Agent",
+        "backend": "CLI",
+        "model": "模型",
+        "repo": "仓库",
+        "branch": "分支",
+        "access": "访问方式",
+        "remoteDefault": "远端默认分支",
+        "snapshotHint": "仓库配置在会话启动时固定，之后修改需要重新启动会话才会生效。",
+        "vars": "环境变量",
+        "hint": "只显示变量名和来源，不显示值。",
+        "all": "全部",
+        "empty": "沙箱启动后可查看",
+        "source": {
+          "platform": "平台",
+          "agent": "Agent",
+          "project": "仓库",
+          "credential": "凭据",
+          "system": "系统"
+        }
+      },
+      "errors": {
+        "solo_limit": "Solo 沙箱已达上限，请先关闭一个会话",
+        "session_closed": "会话已关闭，请先重新启动",
+        "session_error": "沙箱不可用，请重新启动会话",
+        "content_required": "消息不能为空",
+        "agent_not_found": "Agent 不存在",
+        "project_not_found": "仓库不存在",
+        "name_required": "请填写仓库名称",
+        "name_too_long": "仓库名称最长 80 个字",
+        "name_taken": "已有同名仓库",
+        "repo_url_invalid": "仓库地址格式不正确",
+        "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
+        "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
+        "git_type_invalid": "不支持的访问方式",
+        "env_key_invalid": "变量名格式不正确",
+        "env_key_reserved": "包含平台保留的变量名",
+        "env_key_sensitive": "包含敏感变量，请改用凭据绑定",
+        "binding_key_invalid": "凭据绑定的变量名不可用"
+      }
+    },
+    "projects": {
+      "title": "仓库",
+      "subtitle": "为 Solo 会话登记 Git 仓库。启动会话时自动克隆，并按配置注入访问凭据和环境变量。",
+      "new": "添加仓库",
+      "edit": "编辑仓库",
+      "search": "搜索仓库",
+      "empty": "还没有仓库",
+      "emptyHint": "添加一个 Git 仓库，之后在首页或 Solo 页选择它即可启动带仓库的会话。",
+      "envCount": "{n} 个变量",
+      "bindingCount": "{n} 个凭据绑定",
+      "lastUsed": "{time}使用",
+      "neverUsed": "从未使用",
+      "start": "开始 Solo",
+      "delete": {
+        "title": "删除仓库",
+        "body": "确定删除仓库「{name}」？已启动的会话不受影响，它们保存了启动时的仓库配置。",
+        "active": "仍有 {n} 个运行中的会话使用此仓库。"
+      },
+      "form": {
+        "sectionBasic": "基本信息",
+        "name": "名称",
+        "namePlaceholder": "例如 grasp-web",
+        "description": "描述",
+        "descriptionPlaceholder": "可选，说明这个仓库是做什么的",
+        "sectionRepo": "仓库",
+        "repoUrl": "仓库地址",
+        "repoUrlPlaceholder": "https://github.com/acme/app.git 或 git{'@'}github.com:acme/app.git",
+        "repoUrlRequired": "请填写仓库地址",
+        "repoUrlInvalid": "支持 https://、ssh:// 或 git{'@'}host:path 格式",
+        "defaultBranch": "默认分支",
+        "defaultBranchPlaceholder": "留空使用远端默认分支",
+        "repoDir": "目录名",
+        "repoDirPlaceholder": "默认取仓库名",
+        "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
+        "sectionAccess": "访问方式",
+        "accessHint": {
+          "none": "不给这个仓库注入访问凭据。公开仓库可留空；私有仓库请在这里单独选择。",
+          "github_https": "通过 HTTPS 使用 GitHub 个人令牌",
+          "gitlab_https": "通过 HTTPS 使用 GitLab 访问令牌",
+          "ssh": "使用 SSH 私钥，可附带 known_hosts"
+        },
+        "mismatch": {
+          "https": "仓库地址是 SSH 格式，但访问方式是 HTTPS 令牌，克隆可能失败。",
+          "ssh": "仓库地址是 HTTPS 格式，但访问方式是 SSH 密钥，克隆可能失败。"
+        },
+        "credential": "凭据",
+        "credentialPlaceholder": "选择凭据",
+        "hosts": "SSH known_hosts",
+        "hostsNone": "不使用（跳过主机校验）",
+        "noCredential": "还没有对应类型的凭据。",
+        "manageCredentials": "去凭据页添加",
+        "sectionEnv": "环境变量",
+        "envHint": "注入到沙箱的非敏感变量，会覆盖 Agent 的同名变量。令牌、密码等请改用下方的凭据绑定。",
+        "envKey": "变量名",
+        "envValue": "值",
+        "addEnv": "添加变量",
+        "keyProblem": {
+          "invalid": "只能包含字母、数字和下划线，且不能以数字开头",
+          "reserved": "由平台注入，不能在这里配置",
+          "sensitive": "看起来是敏感值，请改用凭据绑定"
+        },
+        "sectionBindings": "凭据绑定",
+        "bindingsHint": "把工作区凭据按变量名注入沙箱，值不会出现在页面或日志里。",
+        "bindingKey": "变量名",
+        "bindingCred": "选择凭据",
+        "addBinding": "添加绑定",
+        "save": "保存"
+      }
     }
   }
 }

@@ -106,6 +106,7 @@ vi.mock('@/lib/api/api', () => ({
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
+    listSoloSessions: () => Promise.resolve({ sessions: [], maxSandboxes: 0 }),
   },
 }))
 

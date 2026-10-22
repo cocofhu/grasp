@@ -240,6 +240,9 @@ type SandboxConfig struct {
 	RunSandboxMaxRetentionHours int `yaml:"run_sandbox_max_retention_hours"`
 	// MaxTestSandboxes caps concurrently live interactive sandboxes. 0 = 5.
 	MaxTestSandboxes int `yaml:"max_test_sandboxes"`
+	// MaxSoloSandboxes caps resident Solo session sandboxes. They have no idle
+	// TTL, so this is the only bound on their count. 0 = 5.
+	MaxSoloSandboxes int `yaml:"max_solo_sandboxes"`
 	// MemoryMB is the memory limit (MiB) requested for every sandbox the
 	// platform creates. It covers dockerd, browsers and the agent's own builds,
 	// so a value too low gets the whole sandbox OOM-killed. 0 = default 8192.
@@ -545,6 +548,9 @@ func setDefaults(c *Config) {
 	}
 	if c.Sandbox.MaxTestSandboxes == 0 {
 		c.Sandbox.MaxTestSandboxes = 5
+	}
+	if c.Sandbox.MaxSoloSandboxes == 0 {
+		c.Sandbox.MaxSoloSandboxes = 5
 	}
 	if c.Sandbox.MemoryMB == 0 {
 		c.Sandbox.MemoryMB = 8192

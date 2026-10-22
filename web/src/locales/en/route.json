@@ -33,6 +33,8 @@
     "notificationPolicy": "Notification policy",
     "externalMcp": "External MCP",
     "workspaceInfo": "Workspace information",
-    "runLive": "Live run"
+    "runLive": "Live run",
+    "solo": "Solo chats",
+    "projects": "Repositories"
   }
 }

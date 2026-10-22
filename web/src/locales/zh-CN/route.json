@@ -33,6 +33,8 @@
     "notificationPolicy": "通知策略",
     "externalMcp": "外部 MCP",
     "workspaceInfo": "工作区信息",
-    "runLive": "实时执行"
+    "runLive": "实时执行",
+    "solo": "Solo 对话",
+    "projects": "仓库"
   }
 }

@@ -12,6 +12,7 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
   { to: '/agents', icon: 'robot', labelKey: 'nav.agents', groupKey: 'nav.groupExecution' },
+  { to: '/settings/projects', icon: 'git', labelKey: 'nav.projects' },
   { to: '/settings/credentials', icon: 'key', labelKey: 'nav.credentials' },
   { to: '/settings/variables', icon: 'variable', labelKey: 'nav.variables' },
   { to: '/settings/assistant', icon: 'chat', labelKey: 'nav.assistantSettings' },

@@ -225,6 +225,7 @@ func main() {
 				AcpBackend:           cfg.AcpBackend,
 				AiCredentialID:       cfg.AiCredentialID,
 				OpenCodeCredentialID: cfg.OpenCodeCredentialID,
+				RepoIDs:              cfg.RepoIDs,
 				MCP:                  mcp,
 				Env:                  cfg.Env,
 				Layout: runtime.SharedLayoutView{
@@ -238,6 +239,9 @@ func main() {
 		CredentialReferences: credentialSvc.ResolveReferences,
 		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
+		RepoCredentials: func(ids []string) []sandbox.RepoCredential {
+			return services.ResolveRepoCredentials(db, ids, credentialSvc.ResolveSelectedValue)
+		},
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -349,6 +353,7 @@ func main() {
 		RunTTL:               cfg.RunSandboxTTL(),
 		MaxRetention:         cfg.RunSandboxMaxRetention(),
 		Max:                  cfg.Sandbox.MaxTestSandboxes,
+		MaxSolo:              cfg.Sandbox.MaxSoloSandboxes,
 		SharedAgent:          sharedAgentSvc,
 		Credentials:          credentialSvc.ResolveEnv,
 		CredentialReferences: credentialSvc.ResolveReferences,
@@ -480,6 +485,8 @@ func main() {
 	runNotifySvc.SetDeliverer(channelMgr)
 	cronSched.Start(sweeperCtx)
 
+	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
+
 	h := &handlers.Handlers{
 		WF:                wfSvc,
 		Workspace:         workspaceSvc,
@@ -500,6 +507,7 @@ func main() {
 		Pm:                pmSvc,
 		PmProgress:        pmProgress,
 		PmTurns:           pmTurns,
+		Solo:              soloSvc,
 		PMMCP:             pmMCP,
 		MemoryMCP:         memoryMCP,
 		ContextMCP:        contextMCP,
@@ -540,8 +548,8 @@ func main() {
 			gateAutoSvc.BeginMaintenance()
 			channelMgr.BeginMaintenance()
 		}
-		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance()}
-		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
+		state := map[string]any{"draining": coord.IsDraining(), "workflowDrivers": eng.ActiveDrivers(), "pmThreads": pmTurns.ActiveThreads(), "cronExecutions": cronSched.ActiveExecutions(), "automaticApprovals": gateAutoSvc.PendingMaintenance(), "channelPending": channelMgr.PendingMaintenance(), "soloTurns": soloSvc.ActiveCount()}
+		safe := coord.IsDraining() && eng.ActiveDrivers() == 0 && pmTurns.ActiveThreads() == 0 && soloSvc.ActiveCount() == 0 && cronSched.ActiveExecutions() == 0 && gateAutoSvc.PendingMaintenance() == 0 && channelMgr.PendingMaintenance() == 0
 		state["safeToStop"] = safe && maintenancePrepared.Load()
 		if begin && safe {
 			if err := sbxSvc.PrepareWorkspaceMaintenance(ctx); err != nil {

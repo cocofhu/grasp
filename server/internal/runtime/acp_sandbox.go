@@ -576,6 +576,9 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	// SSH comes only from workspace credentials.
 	sandbox.ApplySSHCredentials(&spec, creds["GIT_SSH_PRIVATE_KEY"], creds["GIT_SSH_KNOWN_HOSTS"])
+	if c.opts.RepoCredentials != nil && agentCfg.RepoIDs != nil {
+		spec.RepoCredentials = c.opts.RepoCredentials(*agentCfg.RepoIDs)
+	}
 	return spec, nil
 }
 

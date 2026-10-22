@@ -282,6 +282,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
 	ApplySSHCredentialsToSpec(&spec, creds)
+	spec.RepoCredentials = s.repoCredentials(agent)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -388,10 +389,15 @@ func (s *SandboxService) ChatWithTimeout(ctx context.Context, id uint, text stri
 	s.mu.Unlock()
 	// Suspend TTL while the turn runs.
 	s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("destroy_at", nil)
+	resident := row.Purpose == SandboxPurposeSolo
 	defer func() {
 		s.mu.Lock()
 		ls.busy = false
 		s.mu.Unlock()
+		if resident {
+			s.db.Model(&models.Sandbox{}).Where("id = ?", id).Update("updated_at", time.Now())
+			return
+		}
 		at := time.Now().Add(s.TTL())
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{"destroy_at": &at, "updated_at": time.Now()})
 	}()
@@ -451,8 +457,17 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	if agent.Layout.ConfigRoot != "" {
 		sb.ConfigRoot = agent.Layout.ConfigRoot
 	}
-	specs := s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent,
-		s.testMcpVars(row.RunID, row.Token, row.Profile))
+	var specs []sandbox.MCPServerSpec
+	if row.Purpose == SandboxPurposeSolo {
+		mcpVars := runtime.MergeEnvIntoTemplateVars(nil, envauth.StripSecretEnvKeys(agent.Env))
+		if s.credentialReferences != nil {
+			mcpVars = runtime.MergeEnvIntoTemplateVars(s.credentialReferences(), mcpVars)
+		}
+		specs = filterAgentPlatformMCP(resolveAgentMCP(agent.MCP, mcpVars))
+	} else {
+		specs = s.buildTestSandboxSpecs(row.Profile, row.RunID, row.Token, agent,
+			s.testMcpVars(row.RunID, row.Token, row.Profile))
+	}
 	// Rebuild + SSH-sync ConfigHome so remote pods missing mcp.json/rules
 	// (hostPath ignored by K8s gateway) heal on reconnect.
 	if s.mgr != nil {
@@ -533,6 +548,8 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	}
 	if isAgentSandboxPurpose(row.Purpose) {
 		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
+	} else if row.Purpose == SandboxPurposeSolo {
+		defer s.invokeSoloDestroyHook(row.ID)
 	} else if row.Purpose == "test" {
 		s.unregisterTestScheduler(row.Token)
 		if row.RunID != "" {
@@ -582,7 +599,7 @@ func (s *SandboxService) CleanupIdle(ctx context.Context) (destroyed, skipped in
 		return 0, 0
 	}
 	for i := range rows {
-		if s.isBusyRow(&rows[i]) {
+		if s.isBusyRow(&rows[i]) || rows[i].Purpose == SandboxPurposeSolo {
 			skipped++
 			continue
 		}
@@ -719,7 +736,7 @@ func (s *SandboxService) ReconcileOnStartup(ctx context.Context, adopted map[str
 			tracked[row.Name] = true
 			if sb, err := s.mgr.Attach(ctx, row.Name); err == nil {
 				upd := map[string]any{"status": "running", "host": sb.Host, "acp_port": sb.Port, "code_server_port": sb.CodeServerPort}
-				if row.DestroyAt == nil {
+				if row.DestroyAt == nil && row.Purpose != SandboxPurposeSolo {
 					at := time.Now().Add(s.TTL())
 					upd["destroy_at"] = &at
 				}
@@ -784,11 +801,14 @@ func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sa
 	if row.HomeDir != "" {
 		_ = os.RemoveAll(row.HomeDir)
 	}
-	if row.Purpose == "test" {
+	switch row.Purpose {
+	case "test":
 		if row.RunID != "" {
 			s.host.UnregisterRun(row.RunID)
 		}
-	} else {
+	case SandboxPurposeSolo:
+		defer s.invokeSoloDestroyHook(row.ID)
+	default:
 		s.releaseRunMCP(row.RunID, row.ID)
 	}
 	s.db.Delete(&models.Sandbox{}, row.ID)

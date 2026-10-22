@@ -14,6 +14,7 @@ import { artifactsClient } from './clients/artifactsClient'
 import { settingsClient } from './clients/settingsClient'
 import { statsClient } from './clients/statsClient'
 import { notificationsClient } from './clients/notificationsClient'
+import { soloClient } from './clients/soloClient'
 
 export const api = {
   ...workspaceClient,
@@ -26,6 +27,7 @@ export const api = {
   ...settingsClient,
   ...statsClient,
   ...notificationsClient,
+  ...soloClient,
 }
 
 export const authApi = {

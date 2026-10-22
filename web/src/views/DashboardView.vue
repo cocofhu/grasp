@@ -17,6 +17,15 @@ import { useBrandSettings } from '@/lib/composables/useBrandSettings'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import type { Workflow } from '@/lib/shared/types'
+import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
+import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
+import SoloProjectSelect from '@/components/solo/SoloProjectSelect.vue'
+import SoloBranchChip from '@/components/solo/SoloBranchChip.vue'
+import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
+import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
+import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
+import { soloPrefs, type HomeMode } from '@/lib/solo/soloPrefs'
+import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
@@ -63,6 +72,50 @@ const {
 const { homeSubtitle } = useBrandSettings()
 const heroCopy = computed(() => homeSubtitle.value || t('pages.dashboard.heroSubtitle'))
 
+const homeMode = ref<HomeMode>(soloPrefs.homeMode())
+const solo = useSoloLauncher()
+const soloAgents = solo.agents
+const soloProjects = solo.projects
+const soloAgentName = solo.agentName
+const soloProjectId = solo.projectId
+const soloBranch = solo.branch
+const soloProject = solo.project
+const soloLimitOpen = solo.limitOpen
+const projectDrawerOpen = ref(false)
+let soloLoaded = false
+
+function ensureSoloLoaded() {
+  if (soloLoaded) return
+  soloLoaded = true
+  void solo.load()
+}
+
+watch(homeMode, (m) => {
+  soloPrefs.setHomeMode(m)
+  if (m === 'solo') ensureSoloLoaded()
+  solo.error.value = ''
+})
+
+const composerBusy = computed(() => (homeMode.value === 'solo' ? solo.creating.value : sending.value))
+const composerCanSend = computed(() => (homeMode.value === 'solo' ? solo.canStart.value : canSend.value))
+
+async function submitComposer() {
+  if (homeMode.value !== 'solo') {
+    await send()
+    return
+  }
+  const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })))
+  if (started) {
+    draft.value = ''
+    attachments.value = []
+  }
+}
+
+function onProjectSaved(p: Parameters<typeof solo.onProjectSaved>[0]) {
+  projectDrawerOpen.value = false
+  solo.onProjectSaved(p)
+}
+
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
@@ -96,7 +149,7 @@ const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 10
 
 const placeholderLines = computed(() => {
-  const raw = tm('pages.dashboard.placeholders') as unknown
+  const raw = tm(homeMode.value === 'solo' ? 'pages.solo.home.placeholders' : 'pages.dashboard.placeholders') as unknown
   if (Array.isArray(raw) && raw.length > 0) {
     const lines = raw.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     if (lines.length > 0) return lines
@@ -192,7 +245,7 @@ function onComposerKeydown(e: KeyboardEvent) {
   if (composing.value || e.isComposing || e.keyCode === 229) return
   if (!(e.ctrlKey || e.metaKey)) return
   e.preventDefault()
-  void send()
+  void submitComposer()
 }
 
 function onComposerFocus() {
@@ -322,7 +375,7 @@ function onWindowKeydown(e: KeyboardEvent) {
 
 function onComposerSubmit(e: Event) {
   e.preventDefault()
-  void send()
+  void submitComposer()
 }
 
 const WORKFLOW_SCROLL_EPS = 2
@@ -533,6 +586,7 @@ function onWorkflowEnterAnimationEnd(e: AnimationEvent) {
 }
 
 onMounted(() => {
+  if (homeMode.value === 'solo') ensureSoloLoaded()
   nextTick(() => {
     autoGrow()
     syncWorkflowNav()
@@ -569,6 +623,17 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="home-composer-wrap w-full">
+        <div class="mb-3 flex justify-center">
+          <HomeModeSwitch v-model="homeMode" />
+        </div>
+        <p
+          v-if="homeMode === 'solo' && solo.error.value"
+          class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
+          data-testid="home-solo-error"
+          role="alert"
+        >
+          {{ solo.error.value }}
+        </p>
         <p
           v-if="attachNotice"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
@@ -638,7 +703,7 @@ onBeforeUnmount(() => {
               :class="overflowScroll ? 'scroll-area max-h-[200px] overflow-y-auto' : 'overflow-y-hidden'"
               data-testid="home-composer-input"
               rows="3"
-              :disabled="sending"
+              :disabled="composerBusy"
               autocomplete="off"
               @input="onTextInput"
               @keydown="onComposerKeydown"
@@ -665,41 +730,74 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="home-composer__plus flex h-8 w-8 shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
-              :disabled="sending"
+              :disabled="composerBusy"
               :title="t('pages.clarify.addImage')"
               data-testid="home-composer-plus"
               @click="openFilePicker"
             >
               <Icon name="plus" :size="16" />
             </button>
-            <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
-            <HomeWorkflowSelect
-              :workflows="homeWorkflows"
-              :model-value="selectedId"
-              :disabled="sending"
-              @update:model-value="selectWorkflow"
-              @create="onCreateFromSelect"
-            />
-            <HomePrioritySelect
-              :model-value="launchPriority"
-              :disabled="!homeWorkflows.length || sending"
-              @update:model-value="selectPriority"
-            />
+            <template v-if="homeMode === 'workflow'">
+              <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
+              <HomeWorkflowSelect
+                :workflows="homeWorkflows"
+                :model-value="selectedId"
+                :disabled="sending"
+                @update:model-value="selectWorkflow"
+                @create="onCreateFromSelect"
+              />
+              <HomePrioritySelect
+                :model-value="launchPriority"
+                :disabled="!homeWorkflows.length || sending"
+                @update:model-value="selectPriority"
+              />
+            </template>
+            <div v-else class="flex min-w-0 flex-wrap items-center gap-2">
+              <SoloAgentSelect
+                v-model="soloAgentName"
+                :agents="soloAgents"
+                :loading="solo.loading.value"
+                :disabled="solo.creating.value"
+              />
+              <SoloProjectSelect
+                v-model="soloProjectId"
+                :projects="soloProjects"
+                :loading="solo.loading.value"
+                :disabled="solo.creating.value"
+                @create="projectDrawerOpen = true"
+              />
+              <SoloBranchChip
+                v-if="soloProject"
+                v-model="soloBranch"
+                :default-branch="soloProject.defaultBranch"
+                :disabled="solo.creating.value"
+              />
+            </div>
             <div class="flex-1" />
             <button
               type="submit"
               class="home-composer__send flex h-8 w-8 shrink-0 items-center justify-center text-base disabled:opacity-[0.28]"
               data-testid="home-composer-send"
-              :disabled="sending || !canSend"
-              :aria-label="t('pages.dashboard.send')"
+              :disabled="composerBusy || !composerCanSend"
+              :aria-label="homeMode === 'solo' ? t('pages.solo.home.start') : t('pages.dashboard.send')"
               :title="t('pages.dashboard.sendShortcut')"
             >
-              <Icon name="arrow-up" :size="16" />
+              <Icon v-if="composerBusy && homeMode === 'solo'" name="spinner" :size="15" class="animate-spin" />
+              <Icon v-else name="arrow-up" :size="16" />
             </button>
           </div>
         </form>
       </div>
 
+      <HomeSoloPanel
+        v-if="homeMode === 'solo'"
+        :projects="soloProjects"
+        :project-id="soloProjectId"
+        @pick-project="soloProjectId = $event"
+        @new-project="projectDrawerOpen = true"
+      />
+
+      <template v-else>
       <div
         v-if="loadError"
         class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
@@ -889,7 +987,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </div>
+      </template>
     </div>
+
+    <ProjectDrawer :open="projectDrawerOpen" @close="projectDrawerOpen = false" @saved="onProjectSaved" />
+    <SoloLimitModal :open="soloLimitOpen" @close="soloLimitOpen = false" />
 
     <Teleport to="body">
       <div

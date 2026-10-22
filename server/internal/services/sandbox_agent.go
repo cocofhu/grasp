@@ -199,8 +199,65 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	log.Info().Str("name", name).Str("profile", profile).Str("thread", threadID).
 		Bool("reuse", opts.Reuse).Uint("id", row.ID).Msg("agent sandbox creating")
-	go s.startAgentContainer(row.ID, name, profile, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent)
+	go s.startAgentContainer(row.ID, name, profile, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent, agentContainerExtra{})
 	return row, false, nil
+}
+
+// agentContainerExtra carries the Solo-only knobs of startAgentContainer.
+// The zero value keeps the PM / cron behavior.
+type agentContainerExtra struct {
+	Repos []sandbox.RepoSpec
+	// Env is layered above the Agent env and below workspace credentials.
+	Env map[string]string
+	// RepoCredentials are per-repository secrets layered on the Agent's
+	// host-wide Git credential. They never replace the Agent choice.
+	RepoCredentials []sandbox.RepoCredential
+	// Bindings apply after the Agent's credential bindings.
+	Bindings map[string]*string
+	// Resident leaves destroy_at NULL so the sweeper never reclaims the sandbox.
+	Resident bool
+	// OnEnv receives the env key provenance once the env is final.
+	OnEnv func(sources map[string]string)
+	// OnFail runs after the row is marked as error.
+	OnFail func(err error)
+	// OnReady runs after the row is marked as running.
+	OnReady func()
+}
+
+// Env key provenance labels reported to the Solo environment panel.
+const (
+	EnvSourcePlatform   = "platform"
+	EnvSourceAgent      = "agent"
+	EnvSourceProject    = "project"
+	EnvSourceCredential = "credential"
+	EnvSourceSystem     = "system"
+)
+
+// envTracker labels keys that a layering stage added or changed.
+type envTracker struct {
+	sources map[string]string
+	prev    map[string]string
+}
+
+func newEnvTracker() *envTracker {
+	return &envTracker{sources: map[string]string{}, prev: map[string]string{}}
+}
+
+func (t *envTracker) mark(env map[string]string, label string) {
+	for k, v := range env {
+		if old, ok := t.prev[k]; !ok || old != v {
+			t.sources[k] = label
+		}
+	}
+	for k := range t.prev {
+		if _, ok := env[k]; !ok {
+			delete(t.sources, k)
+		}
+	}
+	t.prev = make(map[string]string, len(env))
+	for k, v := range env {
+		t.prev[k] = v
+	}
 }
 
 // OpenAgentSandboxFresh always creates a new agent sandbox (no thread reuse).
@@ -217,18 +274,23 @@ func (s *SandboxService) OpenAgentSandboxFresh(ctx context.Context, profile, thr
 	return row, err
 }
 
-func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent) {
+func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, runID, sharedToken string, platformSpecs []sandbox.MCPServerSpec, agent Agent, extra agentContainerExtra) {
 	// Cover on-demand image pull + create (same budget as Manager createTimeout / g2.3).
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Minute)
 	defer cancel()
 
 	fail := func(err error) {
 		log.Warn().Err(err).Str("name", name).Uint("id", id).Msg("agent sandbox start failed")
-		s.invokeAgentDestroyHook(threadID, sharedToken)
+		if !extra.Resident {
+			s.invokeAgentDestroyHook(threadID, sharedToken)
+		}
 		at := time.Now().Add(2 * time.Minute)
 		s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 			"status": "error", "error": truncErr(err), "destroy_at": &at, "updated_at": time.Now(),
 		})
+		if extra.OnFail != nil {
+			extra.OnFail(err)
+		}
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -269,6 +331,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	specs = append(specs, platformSpecs...)
 	specs = dedupeMCPByName(specs)
 
+	track := newEnvTracker()
 	env := map[string]string{}
 	for k, v := range s.env {
 		if envauth.IsSecretEnvKey(k) {
@@ -277,15 +340,25 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		}
 		env[k] = v
 	}
+	track.mark(env, EnvSourcePlatform)
 	for k, v := range agentEnv {
 		if strings.Contains(v, "GRASP_ARTIFACT") {
 			continue
 		}
 		env[k] = v
 	}
+	track.mark(env, EnvSourceAgent)
 	for k, v := range vars {
 		env[k] = v
 	}
+	track.mark(env, EnvSourceSystem)
+	for k, v := range envauth.StripSecretEnvKeys(extra.Env) {
+		if envauth.IsPlatformReservedEnvKey(k) {
+			continue
+		}
+		env[k] = v
+	}
+	track.mark(env, EnvSourceProject)
 	// Workspace credentials are the highest-priority source. Apply them after
 	// template/Agent vars so interactive, PM and cron sandboxes match workflow
 	// resolver precedence.
@@ -310,6 +383,10 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		SshHostsCredentialID: agent.SshHostsCredentialID,
 	}, s.selectedCredential)
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
+	if len(extra.Bindings) > 0 {
+		runtime.ApplyCredentialBindings(env, creds, extra.Bindings, s.selectedCredential)
+	}
+	track.mark(env, EnvSourceCredential)
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil {
@@ -322,6 +399,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 	env = merged
+	track.mark(env, EnvSourceCredential)
 	ocDoc := runtime.OpenCodeConfigForEnvWithCatalog(
 		context.Background(), backend, env, s.openCodeCatalog,
 	)
@@ -362,7 +440,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	env["GRASP_THREAD_ID"] = threadID
 	env["GRASP_RUN_ID"] = runID
 	sandbox.ApplyPasswords(env, sharedToken)
-	env["GIT_REPOS"] = sandbox.EncodeRepos(nil)
+	env["GIT_REPOS"] = sandbox.EncodeRepos(extra.Repos)
+	track.mark(env, EnvSourceSystem)
+	if extra.OnEnv != nil {
+		extra.OnEnv(track.sources)
+	}
 
 	spec := sandbox.Spec{
 		Name:         name,
@@ -373,6 +455,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		WorkspaceDir: agent.Layout.WorkspaceDir,
 	}
 	ApplySSHCredentialsToSpec(&spec, creds)
+	spec.RepoCredentials = mergeRepoCredentials(s.repoCredentials(agent), extra.RepoCredentials)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -394,17 +477,27 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 
-	destroyAt := time.Now().Add(s.TTL())
+	var destroyAt *time.Time
+	if !extra.Resident {
+		at := time.Now().Add(s.TTL())
+		destroyAt = &at
+	}
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 		"status": "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "",
-		"destroy_at": &destroyAt, "updated_at": time.Now(),
+		"destroy_at": destroyAt, "updated_at": time.Now(),
 	})
 	if res.Error != nil || res.RowsAffected == 0 {
 		acp.Close()
 		sb.Destroy(context.Background())
 		_ = os.RemoveAll(home)
-		s.invokeAgentDestroyHook(threadID, sharedToken)
+		if extra.Resident {
+			if extra.OnFail != nil {
+				extra.OnFail(fmt.Errorf("sandbox record removed during start"))
+			}
+		} else {
+			s.invokeAgentDestroyHook(threadID, sharedToken)
+		}
 		return
 	}
 	s.mu.Lock()
@@ -416,7 +509,10 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Str("thread", threadID).
-		Uint("id", id).Msg("agent sandbox opened")
+		Uint("id", id).Bool("resident", extra.Resident).Msg("agent sandbox opened")
+	if extra.OnReady != nil {
+		extra.OnReady()
+	}
 }
 
 func (s *SandboxService) activeAgentSandboxCount() int {
