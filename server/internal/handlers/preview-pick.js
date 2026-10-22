@@ -387,8 +387,8 @@
     '.dhead .drag{display:grid;grid-template-columns:repeat(2,3px);grid-auto-rows:3px;gap:3px;' +
     'opacity:.32;flex:none;color:inherit}' +
     '.dhead .drag i{width:3px;height:3px;border-radius:50%;background:currentColor}' +
-    '.dhead .mark{width:22px;height:22px;border-radius:7px;flex:none;display:grid;place-items:center;' +
-    'background:linear-gradient(135deg,#6366f1,#8b5cf6);color:#fff;font-size:10px;font-weight:700;letter-spacing:.02em}' +
+    '.dhead .mark{width:24px;height:30px;flex:none;display:grid;place-items:center}' +
+    '.dhead .mark svg{width:24px;height:30px;display:block}' +
     '.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600;letter-spacing:-0.01em;' +
     'line-height:20px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}' +
     '.dhead button{width:30px;height:30px;padding:0;display:grid;place-items:center;flex:none;' +
@@ -1216,7 +1216,14 @@
       '<div class="drawer" data-role="drawer" hidden>' +
       '<div class="dhead" data-role="drawer-head">' +
       '<span class="drag" data-role="drawer-grip" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></span>' +
-      '<span class="mark" aria-hidden="true">PH</span>' +
+      '<span class="mark" aria-hidden="true">' +
+      '<svg viewBox="0 0 72 88" fill="none" aria-hidden="true">' +
+      '<path d="M24 36 L16 12 L36 32 L56 12 L48 36 C60 40 64 52 64 64 C64 76 56 80 50 72 C46 82 40 74 36 76 C32 78 28 74 24 76 C20 74 14 82 10 72 C6 80 4 72 4 64 C4 52 8 40 24 36Z" stroke="currentColor" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>' +
+      '<circle cx="30" cy="50" r="2.5" fill="currentColor"/>' +
+      '<circle cx="42" cy="50" r="2.5" fill="currentColor"/>' +
+      '<path d="M36 55.2 34.1 58.4h3.8Z" fill="currentColor"/>' +
+      '<path d="M6 47h14M7 52h13M8 42h12M52 47h14M52 52h13M52 42h12" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>' +
+      '</svg></span>' +
       '<span data-role="drawer-title"></span>' +
       '<button type="button" data-role="drawer-theme"></button>' +
       '<button type="button" data-role="drawer-close" class="close">' +
