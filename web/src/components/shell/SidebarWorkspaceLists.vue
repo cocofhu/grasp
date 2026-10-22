@@ -91,7 +91,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <div v-if="runsFailed" class="workspace-list-state" role="alert"><span>{{ t('nav.workspaceLoadFailed') }}</span><button type="button" @click="loadRuns">{{ t('nav.workspaceRetry') }}</button></div>
       <p v-else-if="!runs.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <RecentReorderList v-else ref="recentListEl">
-        <RouterLink v-for="run in runs" :key="run.id" :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><Icon name="chat" :size="14" /><span class="workspace-list-title">{{ runTitle(run) }}</span><span v-if="endedBadly(run)" class="workspace-recent-ended" data-testid="sidebar-recent-ended" :title="t(`common.status.${run.status}`)" aria-hidden="true" /></RouterLink>
+        <RouterLink v-for="run in runs" :key="run.id" :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><Icon name="history" :size="16" aria-hidden="true" /><span class="workspace-list-title">{{ runTitle(run) }}</span><span v-if="endedBadly(run)" class="workspace-recent-ended" :class="{ 'is-failed': run.status === 'failed', 'is-cancelled': run.status === 'cancelled' }" data-testid="sidebar-recent-ended" :title="t(`common.status.${run.status}`)" aria-hidden="true" /></RouterLink>
       </RecentReorderList>
     </section>
   </div>
@@ -99,14 +99,18 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 
 <style scoped>
 .workspace-lists { min-width: 0; font-size: 13px; }
-.workspace-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; padding: 0 8px; font-size: 11px; font-weight: 600; color: rgb(var(--c-txt3)); }
+.workspace-list-heading { display: flex; align-items: center; justify-content: space-between; margin: 0 0 8px; padding: 0 8px; font-size: 11px; font-weight: 600; color: color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3))); }
 .workspace-list-heading > a:first-child { display: flex; align-items: center; gap: 7px; min-width: 0; min-height: 30px; }
 .workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
 .workspace-list-state { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
 .workspace-list-state button { color: rgb(var(--c-accent-2)); }
-.workspace-recent-row { display: flex; align-items: center; gap: 9px; min-height: 35px; padding: 7px 8px; border-radius: 8px; color: rgb(var(--c-txt3)); }
-.workspace-recent-row:hover, .workspace-recent-row.is-active { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .035); }
-.workspace-recent-ended { flex: none; width: 6px; height: 6px; border-radius: 9999px; background: rgb(var(--c-txt3) / .55); }
+.workspace-recent-row { display: flex; align-items: center; gap: 9px; min-height: 35px; padding: 7px 8px; border-radius: 8px; color: rgb(var(--c-txt2)); }
+.workspace-recent-row :deep(.app-icon) { flex: none; color: inherit; }
+.workspace-recent-row:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .04); }
+.workspace-recent-row.is-active, .workspace-recent-row.is-active:hover { color: rgb(var(--c-txt)); background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065)); }
+.workspace-recent-ended { flex: none; width: 6px; height: 6px; border-radius: 9999px; }
+.workspace-recent-ended.is-failed { background: light-dark(#d17a7a, #e08a8a); }
+.workspace-recent-ended.is-cancelled { background: light-dark(#b4b4bb, #6f6f78); }
 a:focus-visible, button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .6); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
