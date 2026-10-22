@@ -29,13 +29,34 @@ const run = (id: string, over: Partial<Run> = {}): Run =>
   }) as Run
 
 describe('mergeRunRows', () => {
-  it('shows one row per run, the open item winning over a sibling of the same run', () => {
-    const rows = mergeRunRows([item('r1', 'clarify'), item('r2', 'a'), item('r1', 'review')], [], 'r1:review')
+  it('shows one row per unfinished run, the open item winning over a sibling of the same run', () => {
+    const rows = mergeRunRows(
+      [item('r1', 'clarify'), item('r2', 'a'), item('r1', 'review'), item('r9', 'extra')],
+      [run('r1'), run('r2')],
+      'r1:review',
+    )
     expect(rows.map((r) => `${r.runId}:${r.nodeId}`)).toEqual(['r1:review', 'r2:a'])
-    expect(mergeRunRows([item('r1', 'clarify'), item('r1', 'review')], [], null).map((r) => r.nodeId)).toEqual(['clarify'])
+    expect(mergeRunRows([item('r1', 'clarify'), item('r1', 'review')], [run('r1')], null).map((r) => r.nodeId)).toEqual(['clarify'])
   })
 
-  it('adds running runs without a pending item after the pending ones, never twice', () => {
+  it('follows the unfinished list order and still decorates a run that has a pending item', () => {
+    const rows = mergeRunRows([item('r2', 'a'), item('r1', 'clarify')], [run('r1'), run('r2')], null)
+    expect(rows.map((r) => `${r.runId}:${r.nodeId}`)).toEqual(['r1:clarify', 'r2:a'])
+  })
+
+  it('does not append inbox runs that are outside the unfinished list', () => {
+    const running = Array.from({ length: 7 }, (_, i) => run(`run-${i}`))
+    const pending = [
+      ...running.map((r) => item(r.id, 'node', r.title)),
+      ...Array.from({ length: 4 }, (_, i) => item(`extra-${i}`, 'node', `多余 ${i}`)),
+    ]
+    const rows = mergeRunRows(pending, running, null)
+    expect(rows).toHaveLength(7)
+    expect(rows.map((r) => r.runId)).toEqual(running.map((r) => r.id))
+    expect(rows.every((r) => r.nodeId === 'node')).toBe(true)
+  })
+
+  it('adds running runs without a pending item after the ones that have one, never twice', () => {
     const rows = mergeRunRows(
       [item('r1', 'clarify')],
       [run('r1'), run('r3', { currentNode: { id: 'impl', name: '实现', iteration: 2, kind: 'agent', mode: 'auto', state: 'running' } })],
