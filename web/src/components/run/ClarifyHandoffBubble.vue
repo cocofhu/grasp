@@ -2,8 +2,11 @@
 /**
  * The question a node starts from, as a user bubble: the note the node before
  * it handed over, else the node's own task. Keeps a chained transcript Q/A/Q/A.
+ * Body uses the same chat markdown as assistant replies; the source line does not.
  */
 import { useI18n } from 'vue-i18n'
+import { renderChatMarkdown } from '@/lib/shared/markdown'
+import ChatUserMessage from './ChatUserMessage.vue'
 
 export type ClarifyNodeAsk =
   | { kind: 'handoff'; text: string; from: string; source: 'agent' | 'platform' }
@@ -29,7 +32,11 @@ const { t } = useI18n()
           ? t('pages.clarify.handoffFromPlatform', { name: ask.from })
           : t('pages.clarify.handoffFrom', { name: ask.from }) }}
       </div>
-      <div class="whitespace-pre-wrap break-words [overflow-wrap:anywhere]" data-testid="clarify-incoming-handoff-text">{{ ask.text }}</div>
+      <div
+        class="chat-prose md break-words [overflow-wrap:anywhere]"
+        data-testid="clarify-incoming-handoff-text"
+        v-html="renderChatMarkdown(ask.text)"
+      />
     </div>
   </div>
   <div
@@ -40,7 +47,7 @@ const { t } = useI18n()
   >
     <span class="sr-only">{{ t('pages.clarify.me') }}</span>
     <div class="min-w-0 max-w-[88%]">
-      <div class="chat-user-message whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ ask.text }}</div>
+      <ChatUserMessage :text="ask.text" />
     </div>
   </div>
 </template>
