@@ -32,6 +32,19 @@ function clarifyRow(runId: string, title: string) {
   }
 }
 
+function unfinishedRun(item: Record<string, unknown>) {
+  return {
+    id: item.runId,
+    workflowId: item.workflowId,
+    workflowName: item.workflowName,
+    title: item.runTitle,
+    status: 'waiting_human',
+    startedAt: NOW,
+    lastActivityAt: NOW,
+    currentNode: { id: item.nodeId, name: item.label, iteration: item.iteration ?? 1 },
+  }
+}
+
 async function mockInbox(page: Page, state: { items: Record<string, unknown>[] }) {
   await installWorkspaceApiDefaults(page)
   await routeApi(page, '**/api/**', async (route) => {
@@ -40,6 +53,14 @@ async function mockInbox(page: Page, state: { items: Record<string, unknown>[] }
     const path = url.pathname
     if (req.method() === 'GET' && path === '/api/gates') {
       await route.fulfill({ json: { items: state.items, total: state.items.length } })
+      return
+    }
+    // 正在执行只跟随未结束运行查询。新到达的待处理项要出现在侧栏，名单里必须有对应运行。
+    if (req.method() === 'GET' && (path === '/api/runs' || path === '/api/runs/')) {
+      const status = url.searchParams.get('status') ?? ''
+      const unfinished = ['queued', 'running', 'waiting_human'].some((s) => status.split(',').includes(s))
+      const items = unfinished ? state.items.map(unfinishedRun) : []
+      await route.fulfill({ json: { items, total: items.length, page: 1, pageSize: 50, hasMore: false } })
       return
     }
     if (req.method() === 'GET' && /\/api\/runs\/[^/]+\/inbox-context/.test(path)) {
@@ -69,6 +90,7 @@ async function mockInbox(page: Page, state: { items: Record<string, unknown>[] }
 const peekNow = (page: Page) => page.evaluate(() => window.dispatchEvent(new Event('focus')))
 
 test('clearing the draft and typing on keeps focus and every character while updates are pending', async ({ page }) => {
+  test.setTimeout(45_000)
   const state = { items: [clarifyRow(RUN, '输入保护验收')] }
   await mockInbox(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
@@ -104,7 +126,8 @@ test('clearing the draft and typing on keeps focus and every character while upd
   // without moving focus, the caret or the composer element.
   await page.keyboard.press('ControlOrMeta+A')
   await page.keyboard.press('Backspace')
-  await expect(page.getByTestId('nav-pending-row').filter({ hasText: '新到达 A' })).toBeVisible({ timeout: 6_000 })
+  // 侧栏成员来自未结束运行查询，约 15s 轮询才写回；空闲后等到这一轮即可。
+  await expect(page.getByTestId('nav-pending-row').filter({ hasText: '新到达 A' })).toBeVisible({ timeout: 20_000 })
   await expect(input).toBeFocused()
   await page.keyboard.type('更新后继续', { delay: 30 })
   await expect(input).toHaveValue('更新后继续')
