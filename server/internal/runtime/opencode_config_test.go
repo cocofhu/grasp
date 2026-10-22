@@ -538,3 +538,91 @@ func TestRequireOpenCodePlaceholderKey(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A catalog-shaped vendor we know the endpoint of: the base URL is filled in,
+// the partner headers ride along, and the key lands on the vendor's own env var.
+func TestOpenCodeConfigForEnv_AimlapiDefaultsEndpointAndHeaders(t *testing.T) {
+	env := map[string]string{
+		EnvOpenCodeProvider: "aimlapi",
+		EnvOpenCodeAPIKey:   "sk-aiml",
+		EnvACPBridgeModel:   "openai/gpt-5",
+	}
+	doc := OpenCodeConfigForEnv(BackendOpenCode, env)
+	if doc == nil {
+		t.Fatal("expected config")
+	}
+	if doc["model"] != "aimlapi/openai/gpt-5" {
+		t.Fatalf("model=%v", doc["model"])
+	}
+	prov, _ := doc["provider"].(map[string]any)
+	aiml, _ := prov["aimlapi"].(map[string]any)
+	if aiml == nil {
+		t.Fatalf("provider block missing: %#v", doc)
+	}
+	opts, _ := aiml["options"].(map[string]any)
+	if opts["baseURL"] != "https://api.aimlapi.com/v1" {
+		t.Fatalf("baseURL=%v", opts["baseURL"])
+	}
+	headers, _ := opts["headers"].(map[string]any)
+	if headers["X-AIMLAPI-Source"] != "agent/grasp" || headers["X-AIMLAPI-Partner-ID"] == nil {
+		t.Fatalf("attribution headers missing: %#v", opts)
+	}
+	mergeOpenCodeVendorEnv(env)
+	if env["AIMLAPI_API_KEY"] != "sk-aiml" {
+		t.Fatalf("AIMLAPI_API_KEY=%q", env["AIMLAPI_API_KEY"])
+	}
+}
+
+// Pointing the aimlapi provider elsewhere keeps the explicit base URL and
+// drops the partner headers: they belong to that host, not to the vendor id.
+func TestOpenCodeConfigForEnv_AimlapiHeadersOnlyOnItsHost(t *testing.T) {
+	doc := OpenCodeConfigForEnv(BackendOpenCode, map[string]string{
+		EnvOpenCodeProvider: "aimlapi",
+		EnvOpenCodeBaseURL:  "https://proxy.example/v1",
+		EnvOpenCodeAPIKey:   "sk-aiml",
+		EnvACPBridgeModel:   "gpt-5",
+	})
+	prov, _ := doc["provider"].(map[string]any)
+	aiml, _ := prov["aimlapi"].(map[string]any)
+	opts, _ := aiml["options"].(map[string]any)
+	if opts["baseURL"] != "https://proxy.example/v1" {
+		t.Fatalf("explicit base URL must win: %v", opts["baseURL"])
+	}
+	if _, ok := opts["headers"]; ok {
+		t.Fatalf("partner headers must not follow the vendor id to another host: %#v", opts)
+	}
+	// A look-alike host does not count either.
+	doc = OpenCodeConfigForEnv(BackendOpenCode, map[string]string{
+		EnvOpenCodeProvider: "aimlapi",
+		EnvOpenCodeBaseURL:  "https://api.aimlapi.com.evil.example/v1",
+		EnvOpenCodeAPIKey:   "sk-aiml",
+	})
+	prov, _ = doc["provider"].(map[string]any)
+	aiml, _ = prov["aimlapi"].(map[string]any)
+	opts, _ = aiml["options"].(map[string]any)
+	if _, ok := opts["headers"]; ok {
+		t.Fatalf("look-alike host must not get partner headers: %#v", opts)
+	}
+}
+
+// When the catalog does not list aimlapi it brings the OpenAI-compatible
+// adapter under its display name; when it does, the vendor's own adapter stays.
+func TestOpenCodeConfigForEnv_AimlapiAdapterFollowsCatalog(t *testing.T) {
+	env := map[string]string{
+		EnvOpenCodeProvider: "aimlapi",
+		EnvOpenCodeAPIKey:   "sk-aiml",
+		EnvACPBridgeModel:   "gpt-5",
+	}
+	doc := OpenCodeConfigForEnvWithCatalog(context.Background(), BackendOpenCode, env, &stubCatalog{known: map[string]bool{}, readable: true})
+	prov, _ := doc["provider"].(map[string]any)
+	aiml, _ := prov["aimlapi"].(map[string]any)
+	if aiml["npm"] != openCodeCompatibleNPM || aiml["name"] != "AI/ML API" {
+		t.Fatalf("unlisted vendor must bring the compatible adapter under its name: %#v", aiml)
+	}
+	doc = OpenCodeConfigForEnvWithCatalog(context.Background(), BackendOpenCode, env, &stubCatalog{known: map[string]bool{"aimlapi": true}, models: map[string][]string{"aimlapi": {"gpt-5"}}, readable: true})
+	prov, _ = doc["provider"].(map[string]any)
+	aiml, _ = prov["aimlapi"].(map[string]any)
+	if _, ok := aiml["npm"]; ok {
+		t.Fatalf("listed vendor must keep its own adapter: %#v", aiml)
+	}
+}

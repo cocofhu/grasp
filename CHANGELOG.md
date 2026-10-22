@@ -4,6 +4,13 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **AI/ML API as an OpenCode vendor:** pick `aimlapi` in the Agent wizard and
+  leave the service address blank: Grasp fills in `https://api.aimlapi.com/v1`,
+  maps the key to `AIMLAPI_API_KEY`, and declares the OpenAI-compatible adapter
+  when the model catalog does not list the vendor yet. It heads the offline
+  vendor shortlist and is not flagged as self-hosted. Requests to
+  `api.aimlapi.com` carry AI/ML API attribution headers; an explicit service
+  address still wins and sends none.
 - **Conversation actions:** uses one readable purple for submissions and flow
   confirmation, neutral secondary/disabled buttons and quieter recommendation
   labels, including compact approval layouts.

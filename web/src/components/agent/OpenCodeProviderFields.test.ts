@@ -198,6 +198,18 @@ describe('OpenCodeProviderFields', () => {
     wrapper.unmount()
   })
 
+  it('offers AI/ML API ahead of the catalog and does not call it self-hosted', async () => {
+    // The catalog has not caught up with the vendor; the server knows its endpoint.
+    const wrapper = mountFields({ provider: 'aimlapi', model: 'openai/gpt-5' })
+    await flushPromises()
+    await openPanel(wrapper, 'opencode-provider')
+    const options = wrapper.findAll('[data-test^="app-select-option-"]').map((o) => o.attributes('data-test'))
+    expect(options[0]).toBe('app-select-option-aimlapi')
+    expect(options).toContain('app-select-option-deepseek')
+    expect(wrapper.find('[data-test="opencode-provider-self-hosted"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('stays quiet about a custom gateway model', async () => {
     openCodeModels.mockResolvedValue({ models: [] })
     const wrapper = mountFields({ provider: 'custom', model: 'my-model', baseUrl: 'https://llm.example/v1' })

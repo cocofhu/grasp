@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-21（OpenCode 新增 AI/ML API 厂商，内置默认地址）
+
+- 日期：2026-10-21
+- 范围：`server/internal/runtime/opencode_config.go`、`web/src/lib/agent/openCodeProvider.ts`、`web/src/components/agent/OpenCodeProviderFields.vue`、`web/src/locales/{en,zh-CN}/pages.json` 及对应测试
+- 做了什么：服务端为 `aimlapi` 提供默认地址 `https://api.aimlapi.com/v1`、密钥环境变量 `AIMLAPI_API_KEY`，目录未收录时以「AI/ML API」名义声明 OpenAI 兼容适配器；仅当请求实际发往 `api.aimlapi.com` 时附带 `X-AIMLAPI-Source` / `X-AIMLAPI-Partner-ID` 归因头，显式填写的地址优先且不带归因头。前端把 `aimlapi` 放在离线候选首位，目录未收录时仍在厂商下拉中提供，不标记为自托管，不要求填写 API Base。
+- 为什么：AI/ML API 是兼容 OpenAI 的聚合网关（1,000+ 模型），此前只能当作自托管端点手填地址接入，请求也不带归因。
+- 如何验证：server `gofmt`、`go vet ./internal/runtime/`、`go test ./internal/runtime/` 通过（新增 3 条 aimlapi 用例）；web `npm run lint`、`npx vue-tsc --noEmit`、`vitest run` 全绿（466 个文件 / 4344 条用例）；Playwright `onboarding-wizard.spec.ts`、`agent-create-wizard.spec.ts` 7 条通过（含英文向导无滚动检查）。
+
 ### 2026-10-20（聊天操作配色与主次层级统一）
 
 - 日期：2026-10-20

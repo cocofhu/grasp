@@ -3,6 +3,7 @@ package runtime
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"regexp"
 	"strings"
 )
@@ -16,7 +17,38 @@ const (
 	EnvACPBridgeModel       = "ACP_BRIDGE_MODEL"
 	DefaultOpenCodeProvider = "openai"
 	openCodeCompatibleNPM   = "@ai-sdk/openai-compatible"
+
+	// AI/ML API is an OpenAI-compatible gateway that OpenCode's catalog may not
+	// list yet. Naming it here gives it a default endpoint, a key env var and a
+	// display name, so it works from the shortlist without a typed base URL.
+	openCodeAimlapiProvider = "aimlapi"
+	openCodeAimlapiBaseURL  = "https://api.aimlapi.com/v1"
+	openCodeAimlapiHost     = "api.aimlapi.com"
+	openCodeAimlapiName     = "AI/ML API"
 )
+
+// openCodeAimlapiHeaders identify Grasp to AI/ML API. They are attached only
+// when requests actually go to that host: a user who points the aimlapi
+// provider at a proxy or another gateway gets no partner headers.
+var openCodeAimlapiHeaders = map[string]any{
+	"X-AIMLAPI-Source":     "agent/grasp",
+	"X-AIMLAPI-Partner-ID": "part_QPAs0caiEwu0J1XLDIyZ2kyI",
+}
+
+func openCodeDefaultBaseURL(provider string) string {
+	if provider == openCodeAimlapiProvider {
+		return openCodeAimlapiBaseURL
+	}
+	return ""
+}
+
+func openCodeIsAimlapiHost(baseURL string) bool {
+	u, err := url.Parse(strings.TrimSpace(baseURL))
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(u.Hostname(), openCodeAimlapiHost)
+}
 
 // openCodeProviderID is the shape of an OpenCode catalog provider id.
 var openCodeProviderID = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -68,6 +100,8 @@ func openCodeNativeAPIKey(provider string) string {
 		return "DASHSCOPE_API_KEY"
 	case "xai":
 		return "XAI_API_KEY"
+	case openCodeAimlapiProvider:
+		return "AIMLAPI_API_KEY"
 	default:
 		return ""
 	}
@@ -131,6 +165,11 @@ func OpenCodeConfigForEnvWithCatalog(
 		model = strings.TrimSpace(env[EnvACPBridgeModel])
 		key = strings.TrimSpace(env[EnvOpenCodeAPIKey])
 	}
+	// A vendor we know the endpoint of does not make the user type it; an
+	// explicit base URL still wins, so a proxy in front of it keeps working.
+	if baseURL == "" {
+		baseURL = openCodeDefaultBaseURL(provider)
+	}
 	ownAdapter := openCodeNeedsAdapter(ctx, provider, catalog)
 	if !ownAdapter && baseURL == "" && model == "" && key == "" {
 		return nil
@@ -157,6 +196,13 @@ func OpenCodeConfigForEnvWithCatalog(
 	}
 	if baseURL != "" {
 		options["baseURL"] = baseURL
+	}
+	if provider == openCodeAimlapiProvider && openCodeIsAimlapiHost(baseURL) {
+		headers := make(map[string]any, len(openCodeAimlapiHeaders))
+		for k, v := range openCodeAimlapiHeaders {
+			headers[k] = v
+		}
+		options["headers"] = headers
 	}
 	prov := map[string]any{"options": options}
 	if ownAdapter {
@@ -260,8 +306,11 @@ func openCodeNeedsModelDecl(
 // openCodeProviderName is the label shown by OpenCode for a vendor we declare.
 // The reserved id keeps its historical label; a typed-in id is its own name.
 func openCodeProviderName(provider string) string {
-	if provider == "custom" {
+	switch provider {
+	case "custom":
 		return "Custom"
+	case openCodeAimlapiProvider:
+		return openCodeAimlapiName
 	}
 	return provider
 }

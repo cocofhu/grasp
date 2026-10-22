@@ -2413,6 +2413,7 @@
         "credentialReplaceSave": "Save",
         "credentialVendorModel": "{vendor} · {model}",
         "providers": {
+          "aimlapi": "AI/ML API (1,000+ models)",
           "openai": "OpenAI",
           "anthropic": "Anthropic",
           "google": "Google Gemini",

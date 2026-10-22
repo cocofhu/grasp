@@ -6,6 +6,7 @@ import { loadOpenCodeModels, loadOpenCodeProviders } from '@/lib/agent/openCodeC
 import {
   OPENCODE_CUSTOM_PROVIDER,
   OPENCODE_FALLBACK_PROVIDERS,
+  OPENCODE_KNOWN_ENDPOINTS,
   openCodeModelFromCatalog,
   openCodeModelWithProvider,
   type OpenCodeProviderId,
@@ -63,7 +64,13 @@ const providerOptions = computed(() => {
     label: p.name || p.id,
     hint: p.id,
   }))
-  return [...fromCatalog, customOption]
+  // A vendor the server knows the endpoint of is offered even when the catalog
+  // has not caught up with it, and it sits where the shortlist puts it.
+  const listed = new Set(catalog.value.map((p) => p.id.trim().toLowerCase()))
+  const known = OPENCODE_FALLBACK_PROVIDERS.filter(
+    (p) => p.id in OPENCODE_KNOWN_ENDPOINTS && !listed.has(p.id),
+  ).map((p) => ({ value: p.id, label: t(p.labelKey), hint: p.id }))
+  return [...known, ...fromCatalog, customOption]
 })
 
 /**
@@ -131,6 +138,8 @@ const selfHostedVendor = computed(() => {
   if (custom.value || catalogLoading.value || !catalog.value.length) return false
   const id = props.provider.trim().toLowerCase()
   if (!id) return false
+  // The server fills in the endpoint for these, so nothing is self-hosted about them.
+  if (id in OPENCODE_KNOWN_ENDPOINTS) return false
   return !catalog.value.some((p) => p.id.trim().toLowerCase() === id)
 })
 

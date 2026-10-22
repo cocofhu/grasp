@@ -23,6 +23,7 @@ export const OPENCODE_CUSTOM_PROVIDER = 'custom'
  * a hand-written model list rots into ids OpenCode rejects.
  */
 export const OPENCODE_FALLBACK_PROVIDERS: { id: OpenCodeProviderId; labelKey: string }[] = [
+  { id: 'aimlapi', labelKey: 'pages.agentStudio.openCode.providers.aimlapi' },
   { id: 'openai', labelKey: 'pages.agentStudio.openCode.providers.openai' },
   { id: 'anthropic', labelKey: 'pages.agentStudio.openCode.providers.anthropic' },
   { id: 'google', labelKey: 'pages.agentStudio.openCode.providers.google' },
@@ -151,10 +152,19 @@ export function switchOpenCodeEnv(
   return out
 }
 
+/**
+ * Vendors the server knows the endpoint of, so an empty API Base is filled in
+ * rather than required — even when the catalog has never heard of them.
+ */
+export const OPENCODE_KNOWN_ENDPOINTS: Record<string, string> = {
+  aimlapi: 'https://api.aimlapi.com/v1',
+}
+
 export function openCodeCustomBaseRequired(provider: string, baseURL: string): boolean {
   if (baseURL.trim()) return false
   const id = normalizeOpenCodeProvider(provider)
   if (id === 'custom') return true
+  if (id in OPENCODE_KNOWN_ENDPOINTS) return false
   // A readable catalog that does not list the typed id means the server must
   // declare it as an OpenAI-compatible endpoint, which has no default URL.
   return openCodeCatalogKnowsProvider(id) === false

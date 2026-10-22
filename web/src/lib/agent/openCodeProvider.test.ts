@@ -28,6 +28,16 @@ describe('openCodeProvider', () => {
     expect(openCodeCustomBaseRequired('openai', '')).toBe(false)
   })
 
+  it('does not require a base URL for a vendor whose endpoint the server knows', () => {
+    // aimlapi may be absent from the catalog; the server fills its endpoint in.
+    expect(openCodeCustomBaseRequired('aimlapi', '')).toBe(false)
+    expect(openCodeCustomBaseRequired('AIMLAPI', '')).toBe(false)
+  })
+
+  it('lists AI/ML API first on the offline shortlist', () => {
+    expect(OPENCODE_FALLBACK_PROVIDERS[0]?.id).toBe('aimlapi')
+  })
+
   it('requires a model id', () => {
     expect(openCodeModelRequired('')).toBe(true)
     expect(openCodeModelRequired('  ')).toBe(true)
