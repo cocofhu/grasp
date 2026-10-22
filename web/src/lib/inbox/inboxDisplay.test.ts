@@ -5,6 +5,7 @@ import {
   inboxBadgeTone,
   inboxRunLabel,
   inboxSecondaryLine,
+  conversationToolbarRunName,
   sidebarRunTitle,
   isInboxProgressItem,
   isReplyingInboxItem,
@@ -27,6 +28,43 @@ describe('sidebarRunTitle', () => {
       }),
     ).toBe('approving')
     expect(sidebarRunTitle({ runTitle: '{"foo":1}', workflowName: 'wf' })).toBe('wf')
+  })
+})
+
+describe('conversationToolbarRunName', () => {
+  it('matches sidebarRunTitle for a loaded run and falls through when the name is blank', () => {
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '把登录做清楚', workflowName: '产品迭代' },
+    })).toBe(sidebarRunTitle({ runTitle: '把登录做清楚', workflowName: '产品迭代' }))
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '  ', workflowName: '产品迭代' },
+    })).toBe('产品迭代')
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '', workflowName: '' },
+      fallback: { runId: 'run-1', runTitle: '', workflowName: '' },
+    })).toBe('')
+  })
+
+  it('uses a renamed pending row, then the loaded run, and hides raw JSON', () => {
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '甲', workflowName: '产品迭代' },
+      fallback: { runId: 'run-1', runTitle: '甲', workflowName: '产品迭代' },
+      pendingRows: [{ runId: 'run-1', runTitle: '丙', workflowName: '产品迭代' }],
+    })).toBe('丙')
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '优化这里的段间距', workflowName: '产品迭代' },
+      fallback: { runId: 'run-1', runTitle: '旧快照', workflowName: '其它' },
+    })).toBe(sidebarRunTitle({ runTitle: '优化这里的段间距', workflowName: '产品迭代' }))
+    expect(conversationToolbarRunName({
+      run: { id: 'run-1', title: '{"foo":1}', workflowName: '产品迭代' },
+    })).toBe('产品迭代')
+    expect(conversationToolbarRunName({
+      fallback: {
+        runId: 'run-1',
+        runTitle: '[{"name":"approving","url":"https://git.example/approving.git"}]',
+        workflowName: '产品迭代',
+      },
+    })).toBe('approving')
   })
 })
 

@@ -6,6 +6,7 @@ import { findGraphNode, isPreviewNode } from '@/lib/shared/clarifyInteractive'
  * Run 详情「澄清」面板壳：OpenDesign 产物舞台 + ReAct 聊天。
  */
 import { computed, ref } from 'vue'
+import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
@@ -82,6 +83,10 @@ const reviewChatRef = ref<{
   playConfirmCeremony?: () => Promise<void>
 } | null>(null)
 
+const conversationRunName = useConversationToolbarRunName(() => ({
+  run: props.run,
+  fallback: { runId: props.runId, runTitle: props.run?.title, workflowName: props.run?.workflowName },
+}))
 const artifacts = computed(() => props.run?.artifacts || [])
 const previewArtifact = computed(() => props.clarify?.previewArtifact || '')
 const graphNode = computed(() => findGraphNode(props.run?.nodes, props.nodeId) || null)
@@ -142,6 +147,7 @@ defineExpose({
   <ReviewShell
     :scope-key="`run-clarify:${runId}:${clarify?.nodeId || nodeId}:${clarify?.iteration ?? 1}`"
     :run-id="runId"
+    :run-name="conversationRunName"
     v-else
     ref="reviewShellRef"
     class="h-full min-h-0"

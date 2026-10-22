@@ -11,6 +11,31 @@ export function sidebarRunTitle(it: { runTitle?: string; workflowName?: string }
   return displayRunTitle(it.runTitle) || String(it.workflowName || '').trim()
 }
 
+/**
+ * Toolbar label for the open run. Same words as a sidebar row (`sidebarRunTitle`).
+ * A pending-row title that differs from the loaded run is a sidebar rename
+ * (`patchRunTitle`) and replaces the snapshot the page still holds. Otherwise
+ * the loaded run title wins, then the caller's own snapshot. Empty when none
+ * of those is readable and there is no workflow name — the toolbar then shows
+ * the untitled placeholder instead of 「对话」.
+ */
+export function conversationToolbarRunName(input: {
+  run?: { id?: string; title?: string; workflowName?: string } | null
+  fallback?: { runId?: string; runTitle?: string; workflowName?: string } | null
+  pendingRows?: readonly { runId: string; runTitle?: string; workflowName?: string }[]
+}): string {
+  const runId = input.run?.id || input.fallback?.runId
+  const pending = runId ? input.pendingRows?.find((row) => row.runId === runId) : undefined
+  const loaded = displayRunTitle(input.run?.title)
+  const pendingTitle = displayRunTitle(pending?.runTitle)
+  const snapshot = displayRunTitle(input.fallback?.runTitle)
+  const runTitle = pendingTitle && pendingTitle !== loaded ? pendingTitle : (loaded || pendingTitle || snapshot)
+  const workflowName = [input.run?.workflowName, pending?.workflowName, input.fallback?.workflowName]
+    .map((value) => String(value ?? '').trim())
+    .find((value) => value.length > 0) || ''
+  return sidebarRunTitle({ runTitle, workflowName })
+}
+
 /** Secondary-line run label: non-empty runTitle (truncated) or `Run #id`. */
 export function inboxRunLabel(it: Pick<InboxItem, 'runId' | 'runTitle'>): string {
   const title = it.runTitle?.trim()

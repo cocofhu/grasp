@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
+import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import { useRoute } from 'vue-router'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
@@ -75,6 +76,10 @@ function onSend(text: string, images: ClarifyImage[], anns: ReactAnnotation[]) {
   void send(text, images, anns)
 }
 const stageNode = computed(() => findGraphNode(run.value?.nodes, nodeId.value) || null)
+const conversationRunName = useConversationToolbarRunName(() => ({
+  run: run.value,
+  fallback: { runId: runId.value, runTitle: run.value?.title, workflowName: run.value?.workflowName },
+}))
 const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.value}`)
 </script>
 
@@ -101,6 +106,7 @@ const surfaceKey = computed(() => `${runId.value}:${nodeId.value}:${iteration.va
               :key="surfaceKey"
               :scope-key="`live:${surfaceKey}`"
               :run-id="runId"
+              :run-name="conversationRunName"
               class="min-h-0 flex-1"
               :host-confirm-flow="false"
               split-drawer

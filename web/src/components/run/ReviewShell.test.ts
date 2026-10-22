@@ -12,7 +12,7 @@ import { ensureConversationDrawer, readArtifactPanelOpen, resetConversationDrawe
 enableAutoUnmount(afterEach)
 afterEach(() => { document.body.replaceChildren(); localStorage.clear(); resetConversationDrawers() })
 
-function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean; splitDrawer?: boolean; rememberArtifactPanel?: boolean } = {}) {
+function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boolean; hostConfirmFlow?: boolean; splitDrawer?: boolean; rememberArtifactPanel?: boolean; runName?: string } = {}) {
   const mountedChat = vi.fn()
   const mountedStage = vi.fn()
   let artifacts: ConversationArtifacts | null = null
@@ -34,6 +34,33 @@ function mountShell(props: { scopeKey?: string; runId?: string; chatOnly?: boole
   })
   return { wrapper, mountedChat, mountedStage, openArtifact: (target: Parameters<ConversationArtifacts['open']>[0]) => artifacts!.open(target) }
 }
+
+describe('ReviewShell toolbar run name', () => {
+  it('shows a passed run name and keeps 对话 when the name is omitted', async () => {
+    const named = mountShell({ runName: '优化这里的段间距' })
+    expect(named.wrapper.get('[data-testid="conversation-title"]').text()).toBe('优化这里的段间距')
+    expect(named.wrapper.get('[data-testid="conversation-title"]').attributes('title')).toBe('优化这里的段间距')
+    await named.wrapper.setProps({ runName: '丙' })
+    expect(named.wrapper.get('[data-testid="conversation-title"]').text()).toBe('丙')
+    const plain = mountShell()
+    expect(plain.wrapper.get('[data-testid="conversation-title"]').text()).toBe('对话')
+    expect(plain.wrapper.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(false)
+  })
+
+  it('does not render the toolbar for chat-only, even with a run name', () => {
+    const host = mountShell({ chatOnly: true, runName: '不会出现' })
+    expect(host.wrapper.find('.conversation-toolbar').exists()).toBe(false)
+    expect(host.wrapper.find('[data-testid="conversation-title"]').exists()).toBe(false)
+    expect(host.wrapper.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(false)
+  })
+
+  it('shows the placeholder bar for an empty run name', () => {
+    const host = mountShell({ runName: '' })
+    expect(host.wrapper.find('[data-testid="conversation-title-skeleton"]').exists()).toBe(true)
+    expect(host.wrapper.find('[data-testid="conversation-title"]').exists()).toBe(false)
+    expect(host.wrapper.get('.conversation-heading').text()).not.toContain('对话')
+  })
+})
 
 describe('ReviewShell conversation layout', () => {
   it('starts with the conversation and keeps both the draft and product mounted while toggling', async () => {

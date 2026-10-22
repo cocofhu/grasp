@@ -5,6 +5,7 @@ import { takeoverTask } from '@/lib/run/takeoverTimeline'
  * Run 详情「复审」面板壳：ReviewShell + 产物舞台 + ReviewComposer。
  */
 import { computed, ref } from 'vue'
+import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
@@ -75,6 +76,10 @@ const reviewChatRef = ref<{
 } | null>(null)
 
 const remoteKind = computed(() => (isAppPreviewRemoteNode(props.node) ? 'app' : 'off'))
+const conversationRunName = useConversationToolbarRunName(() => ({
+  run: props.run,
+  fallback: { runId: props.run.id, runTitle: props.run.title, workflowName: props.run.workflowName },
+}))
 
 defineExpose({
   applyReviewFrame: (frame: any) => reviewChatRef.value?.applyReviewFrame?.(frame),
@@ -102,6 +107,7 @@ defineExpose({
   <ReviewShell
     :scope-key="`run-review:${run.id}:${clarify?.nodeId || node.id}:${clarify?.iteration ?? 1}`"
     :run-id="run.id"
+    :run-name="conversationRunName"
     ref="reviewShellRef"
     class="h-full min-h-0"
     split-drawer
