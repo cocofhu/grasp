@@ -88,6 +88,8 @@ import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
+defineOptions({ inheritAttrs: false })
+
 const props = withDefaults(
   defineProps<{
     runId: string
@@ -881,11 +883,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 
 <template>
   <!--
-    Multi-root (image preview sibling): parent class fallthrough is ignored.
-    Bake min-h-0 flex-1 so page-control status + this column share shell height
+    Forward parent attributes to the chat column, alongside the image preview.
+    Keep min-h-0 flex-1 so page-control status + this column share shell height
     and shrink-0 confirm footer is not clipped (plan g1.3).
   -->
-  <div ref="chatRoot" class="chat-thread flex h-full min-h-0 min-w-0 flex-1 flex-col" data-review-composer>
+  <div ref="chatRoot" class="chat-thread flex h-full min-h-0 min-w-0 flex-1 flex-col" data-review-composer v-bind="$attrs">
     <div class="relative flex min-h-0 flex-1 flex-col">
     <ChatMessageRail
       :items="messageRailItems"

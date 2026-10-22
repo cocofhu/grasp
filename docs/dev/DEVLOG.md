@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-22（澄清聊天接收父级属性）
+
+- 日期：2026-10-22
+- 范围：`web/src/components/run/ClarifyChat.vue`、`ClarifyChat.footerShrink.test.ts`、CHANGELOG。
+- 做了什么：显式把父级属性绑定到聊天主列，覆盖 class、style、id、ARIA 和原生事件。
+- 为什么：聊天主列与图片预览构成多个根节点，父级属性无法自动继承，审批页面因此持续产生 Vue 警告（#815、#682 后续）。
+- 如何验证：固定基线新增两例因属性丢失失败，修复后通过；完整 Web 单测 494 文件 / 4848 项通过，Lines 91.46%；lint 0 error、vue-tsc、生产构建、docs 构建及 actionlint / shellcheck-error 通过。Windows 关键路径 195/196，首次安装向导团队页高度断言在同一基线也以 21px 溢出失败；聊天底栏几何验收通过。
+
 ### 2026-10-20（聊天操作配色与主次层级统一）
 
 - 日期：2026-10-20

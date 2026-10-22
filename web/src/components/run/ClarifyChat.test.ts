@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -472,6 +475,180 @@ describe('ClarifyChat', () => {
     const wrapper = mountChat({ turns: [OTHER_QUESTION_TURN] })
     expect(wrapper.find('[data-testid="clarify-other-checkbox"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="clarify-other-row"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').classes()).toContain('rounded-full')
+    wrapper.unmount()
+  })
+
+  const SINGLE_RECOMMENDED_TURN: ClarifyTurn = {
+    role: 'agent',
+    text: '',
+    at: '2026-07-18T00:00:00Z',
+    questions: [
+      {
+        id: 'q1',
+        prompt: '选择部署方式',
+        options: [
+          { id: 'k8s', label: 'Kubernetes', recommended: true },
+          { id: 'vm', label: '虚拟机' },
+        ],
+      },
+    ],
+  }
+
+  function optionBtn(wrapper: ReturnType<typeof mountChat>, label: string) {
+    return wrapper.findAll('[data-testid="clarify-option-btn"]').find((b) => b.text().includes(label))
+  }
+
+  function selectedSourceCount(wrapper: ReturnType<typeof mountChat>) {
+    const presets = wrapper
+      .findAll('[data-testid="clarify-option-btn"]')
+      .filter((b) => b.attributes('aria-pressed') === 'true').length
+    const other = wrapper.find('[data-testid="clarify-other-row"]').classes().includes('is-selected') ? 1 : 0
+    return presets + other
+  }
+
+  it('single-select: checking other clears the preset and leaves only other selected', async () => {
+    const wrapper = mountChat({ turns: [SINGLE_RECOMMENDED_TURN] })
+    expect(optionBtn(wrapper, 'Kubernetes')!.attributes('aria-pressed')).toBe('true')
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await flushPromises()
+    expect(optionBtn(wrapper, 'Kubernetes')!.attributes('aria-pressed')).toBe('false')
+    expect(optionBtn(wrapper, '虚拟机')!.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-testid="clarify-other-row"]').classes()).toContain('is-selected')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').find('icon-stub').exists()).toBe(true)
+    expect(optionBtn(wrapper, 'Kubernetes')!.find('icon-stub').exists()).toBe(false)
+    expect(selectedSourceCount(wrapper)).toBe(1)
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').classes()).toContain('rounded-full')
+    await wrapper.find('[data-testid="clarify-other-input"]').setValue('只要补充')
+    await flushPromises()
+    const submitBtn = submitChoicesBtn(wrapper)!
+    expect((submitBtn.element as HTMLButtonElement).disabled).toBe(false)
+    await submitBtn.trigger('click')
+    await flushPromises()
+    expect(String(wrapper.emitted('send')![0][0])).toBe('我的选择:\n- 选择部署方式 → 只要补充')
+    wrapper.unmount()
+  })
+
+  it('single-select: picking a preset clears other and omits residual text', async () => {
+    const wrapper = mountChat({ turns: [OTHER_QUESTION_TURN] })
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await wrapper.find('[data-testid="clarify-other-input"]').setValue('残留说明')
+    await optionBtn(wrapper, 'Kubernetes')!.trigger('click')
+    await flushPromises()
+    expect(optionBtn(wrapper, 'Kubernetes')!.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="clarify-other-row"]').classes()).not.toContain('is-selected')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').find('icon-stub').exists()).toBe(false)
+    expect((wrapper.find('[data-testid="clarify-other-input"]').element as HTMLInputElement).value).toBe('残留说明')
+    expect(selectedSourceCount(wrapper)).toBe(1)
+    const submitBtn = submitChoicesBtn(wrapper)!
+    await submitBtn.trigger('click')
+    await flushPromises()
+    expect(String(wrapper.emitted('send')![0][0])).toBe('我的选择:\n- 选择部署方式 → Kubernetes')
+    wrapper.unmount()
+  })
+
+  it('single-select: blank other after clearing a preset cannot submit, and unchecking does not restore it', async () => {
+    const wrapper = mountChat({ turns: [SINGLE_RECOMMENDED_TURN] })
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await wrapper.find('[data-testid="clarify-other-input"]').setValue('   ')
+    await flushPromises()
+    expect(optionBtn(wrapper, 'Kubernetes')!.attributes('aria-pressed')).toBe('false')
+    expect(selectedSourceCount(wrapper)).toBe(1)
+    expect((submitChoicesBtn(wrapper)!.element as HTMLButtonElement).disabled).toBe(true)
+
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="clarify-other-row"]').classes()).not.toContain('is-selected')
+    expect(optionBtn(wrapper, 'Kubernetes')!.attributes('aria-pressed')).toBe('false')
+    expect((wrapper.find('[data-testid="clarify-other-input"]').element as HTMLInputElement).value).toBe('   ')
+    expect(selectedSourceCount(wrapper)).toBe(0)
+    expect((submitChoicesBtn(wrapper)!.element as HTMLButtonElement).disabled).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('single-select: adopt recommendation submits only the recommended label', async () => {
+    const wrapper = mountChat({ turns: [SINGLE_RECOMMENDED_TURN] })
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await wrapper.find('[data-testid="clarify-other-input"]').setValue('不要带上')
+    await flushPromises()
+    expect((submitChoicesBtn(wrapper)!.element as HTMLButtonElement).disabled).toBe(false)
+    const adopt = wrapper.findAll('button').find((b) => b.text().includes('采用推荐'))
+    expect(adopt).toBeTruthy()
+    await adopt!.trigger('click')
+    await flushPromises()
+    expect(String(wrapper.emitted('send')![0][0])).toBe('我的选择:\n- 选择部署方式 → Kubernetes')
+    wrapper.unmount()
+  })
+
+  it('single-select: empty other keeps confirm disabled until adopt recommendation', async () => {
+    const wrapper = mountChat({ turns: [SINGLE_RECOMMENDED_TURN] })
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await flushPromises()
+    expect((submitChoicesBtn(wrapper)!.element as HTMLButtonElement).disabled).toBe(true)
+    const adopt = wrapper.findAll('button').find((b) => b.text().includes('采用推荐'))
+    await adopt!.trigger('click')
+    await flushPromises()
+    expect(String(wrapper.emitted('send')![0][0])).toBe('我的选择:\n- 选择部署方式 → Kubernetes')
+    wrapper.unmount()
+  })
+
+  it('single-select: focusing an unchecked other input does not paint the selected fill', async () => {
+    const wrapper = mountChat({ turns: [OTHER_QUESTION_TURN] })
+    const input = wrapper.find('[data-testid="clarify-other-input"]')
+    await input.trigger('focus')
+    await input.setValue('只是在输入')
+    await flushPromises()
+    const row = wrapper.find('[data-testid="clarify-other-row"]')
+    expect(row.classes()).not.toContain('is-selected')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').attributes('aria-pressed')).toBe('false')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').find('icon-stub').exists()).toBe(false)
+    expect(selectedSourceCount(wrapper)).toBe(0)
+    expect((submitChoicesBtn(wrapper)!.element as HTMLButtonElement).disabled).toBe(true)
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/chat.css'), 'utf8')
+    expect(css).toMatch(
+      /\.chat-choice-option\[aria-pressed="true"\],\s*\.chat-choice-other\.is-selected\s*\{[^}]*background:\s*rgb\(var\(--c-accent\)/,
+    )
+    expect(css).not.toMatch(/\.chat-choice-other:focus-within/)
+    wrapper.unmount()
+  })
+
+  it('multi-select still submits presets together with other text', async () => {
+    const wrapper = mountChat({
+      turns: [
+        {
+          role: 'agent',
+          text: '',
+          at: '2026-07-18T00:00:00Z',
+          questions: [
+            {
+              id: 'q2',
+              prompt: '选择区域',
+              allowMultiple: true,
+              options: [
+                { id: 'cn', label: '中国' },
+                { id: 'us', label: '美国' },
+              ],
+            },
+          ],
+        },
+      ],
+    })
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').classes()).toContain('rounded')
+    expect(wrapper.find('[data-testid="clarify-other-checkbox"]').classes()).not.toContain('rounded-full')
+    await optionBtn(wrapper, '中国')!.trigger('click')
+    await optionBtn(wrapper, '美国')!.trigger('click')
+    await wrapper.find('[data-testid="clarify-other-checkbox"]').trigger('click')
+    await wrapper.find('[data-testid="clarify-other-input"]').setValue('其他地区')
+    await flushPromises()
+    expect(optionBtn(wrapper, '中国')!.attributes('aria-pressed')).toBe('true')
+    expect(optionBtn(wrapper, '美国')!.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="clarify-other-row"]').classes()).toContain('is-selected')
+    expect(selectedSourceCount(wrapper)).toBe(3)
+    await submitChoicesBtn(wrapper)!.trigger('click')
+    await flushPromises()
+    expect(String(wrapper.emitted('send')![0][0])).toBe('我的选择:\n- 选择区域 → 中国、美国、其他地区')
     wrapper.unmount()
   })
 
