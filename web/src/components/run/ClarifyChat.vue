@@ -25,7 +25,7 @@ export type ClarifyPriorSegment = {
   /** Folded auto nodes, each still addressable for its own execution record. */
   members?: { nodeId: string; iteration: number; label: string; at?: string; endedAt?: string }[]
   /** LLM process rows that belong with this visit (流转 / 等人 / 退回 / 结束). */
-  notes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string }[]
+  notes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
 }
 /** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
 export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
@@ -37,6 +37,7 @@ import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
 import ClarifyMessageThread from './ClarifyMessageThread.vue'
 import LlmSystemRow from './llm/LlmSystemRow.vue'
+import { notesAfterVisit, notesBesideTurn } from '@/lib/run/llmTranscriptThread'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import { nodeAsk } from './clarifyPrior'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
@@ -134,7 +135,7 @@ const props = withDefaults(
     /** Row under the hand-off while following the run. */
     followTail?: ClarifyFollowTail | null
     /** LLM process rows for this open visit. */
-    systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string }[]
+    systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
   }>(),
   {
     active: true,
@@ -948,7 +949,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
       <LlmSystemRow
-        v-for="note in systemNotes"
+        v-for="note in notesBesideTurn(systemNotes, -1, displayTurns.length)"
         :key="note.key"
         :event="note.event"
         :node-label="note.nodeLabel"
@@ -1532,7 +1533,23 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           >{{ locale && relTime(t.at) }}</div>
         </div>
       </div>
+        <LlmSystemRow
+          v-for="note in notesBesideTurn(systemNotes, i, displayTurns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
+      <LlmSystemRow
+        v-for="note in notesAfterVisit(systemNotes, displayTurns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && bootSummaryAt < 0"
         phase="done"

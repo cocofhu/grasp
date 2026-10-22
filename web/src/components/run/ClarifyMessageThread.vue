@@ -31,6 +31,7 @@ import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import Icon from '../ui/Icon.vue'
 import LlmSystemRow from './llm/LlmSystemRow.vue'
+import { notesAfterVisit, notesBesideTurn } from '@/lib/run/llmTranscriptThread'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 
 type ChoiceRows = { q: string; answers: string[] }[] | null
@@ -54,7 +55,7 @@ const props = withDefaults(
     /** Open conversation under the folds (LLM transcript). */
     turns?: ClarifyTurn[]
     /** Process rows for the open visit (流转 / 等人 / 结束). */
-    currentNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string }[]
+    currentNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
     loadError?: boolean
     showEmpty?: boolean
     parseChoiceSummary?: (text: string) => ChoiceRows
@@ -332,14 +333,6 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
 
     <template v-if="priorSegments && priorSegments.length">
       <template v-for="seg in priorRows" :key="seg.nodeId + ':' + seg.iteration">
-        <LlmSystemRow
-          v-for="note in seg.notes || []"
-          :key="note.key"
-          :event="note.event"
-          :node-label="note.nodeLabel"
-          :to-label="note.toLabel"
-          :edge-kind="note.edgeKind"
-        />
         <details
           v-if="priorExpandable(seg)"
           class="chat-thought chat-meta clarify-prior-segment w-full"
@@ -360,6 +353,14 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
           </summary>
           <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+            <LlmSystemRow
+              v-for="note in notesBesideTurn(seg.notes, -1, seg.turns.length)"
+              :key="note.key"
+              :event="note.event"
+              :node-label="note.nodeLabel"
+              :to-label="note.toLabel"
+              :edge-kind="note.edgeKind"
+            />
             <template v-if="seg.kind === 'auto' && !seg.turns.length">
               <div
                 v-for="member in autoMembers(seg)"
@@ -404,9 +405,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 variant="inline"
                 :boot-key="visitBootKey(seg.nodeId, seg.iteration)"
               />
+              <template v-for="(pt, pi) in seg.turns" :key="pi">
               <div
-                v-for="(pt, pi) in seg.turns"
-                :key="pi"
                 class="flex"
                 :class="pt.role === 'human' ? 'justify-end' : ''"
                 :data-turn-role="pt.role"
@@ -530,6 +530,15 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   </div>
                 </div>
               </div>
+              <LlmSystemRow
+                v-for="note in notesBesideTurn(seg.notes, pi, seg.turns.length)"
+                :key="note.key"
+                :event="note.event"
+                :node-label="note.nodeLabel"
+                :to-label="note.toLabel"
+                :edge-kind="note.edgeKind"
+              />
+              </template>
             </template>
           </div>
         </details>
@@ -548,6 +557,24 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             :interrupted-label="priorSegmentMeta(seg)"
           />
         </div>
+        <template v-if="!priorExpandable(seg)">
+          <LlmSystemRow
+            v-for="note in notesBesideTurn(seg.notes, -1, seg.turns.length)"
+            :key="note.key"
+            :event="note.event"
+            :node-label="note.nodeLabel"
+            :to-label="note.toLabel"
+            :edge-kind="note.edgeKind"
+          />
+        </template>
+        <LlmSystemRow
+          v-for="note in notesAfterVisit(seg.notes, seg.turns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
       <div
         class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
@@ -572,20 +599,20 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
     </template>
 
     <template v-if="!priorsOnly">
-      <LlmSystemRow
-        v-for="note in currentNotes"
-        :key="note.key"
-        :event="note.event"
-        :node-label="note.nodeLabel"
-        :to-label="note.toLabel"
-        :edge-kind="note.edgeKind"
-      />
       <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader
         v-if="bootStarting && bootRecordKey && getBootRecord(bootRecordKey)"
         phase="starting"
         variant="inline"
         :boot-key="bootRecordKey"
+      />
+      <LlmSystemRow
+        v-for="note in notesBesideTurn(currentNotes, -1, turns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
       />
       <template v-for="(turn, index) in turns" :key="index">
         <ClarifyBootLoader
@@ -632,7 +659,23 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             </template>
           </div>
         </div>
+        <LlmSystemRow
+          v-for="note in notesBesideTurn(currentNotes, index, turns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
+      <LlmSystemRow
+        v-for="note in notesAfterVisit(currentNotes, turns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <ClarifyBootLoader
         v-if="bootSummary && !hasPriors && firstAgentAt < 0"
         phase="done"

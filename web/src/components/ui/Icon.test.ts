@@ -249,6 +249,7 @@ describe('Icon', () => {
     expect(reduce).toMatch(/\.grasp-check-draw\s*\{\s*stroke-dashoffset:\s*0/)
     expect(reduce).toMatch(/\.grasp-heart-ring\s*\{\s*opacity:\s*0\.28/)
     expect(reduce).toMatch(/transform:\s*none/)
+    expect(reduce).toMatch(/\.grasp-status\[data-hover="user"\] \.grasp-user-dot[\s\S]*transform:\s*none !important/)
     expect(css).toMatch(/animation:\s*grasp-arc-spin 0\.85s linear infinite/)
     expect(css).toMatch(/animation:\s*grasp-heart-ring 2\.1s ease-out infinite/)
     expect(css).toMatch(/animation:\s*grasp-check-draw 3s ease-out infinite/)

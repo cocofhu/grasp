@@ -28,13 +28,44 @@ export interface LlmSystemNote {
   nodeLabel: string
   toLabel?: string
   edgeKind?: string
+  /** Clarify-turn index this row follows. -1 sits after the node header, before the first turn. */
+  afterTurn: number
 }
+
+const CLOSING_EVENTS = new Set(['exit', 'transition', 'rollback'])
+
+function noteClosesVisit(note: { event: string; afterTurn?: number }, turnCount: number): boolean {
+  if (!CLOSING_EVENTS.has(note.event)) return false
+  return (note.afterTurn ?? -1) >= turnCount - 1
+}
+
+/** Trace rows that belong beside a turn: pause and resume, and anything that is not the visit's close. */
+export function notesBesideTurn<T extends { event: string; afterTurn?: number }>(
+  notes: T[] | undefined,
+  turnIndex: number,
+  turnCount: number,
+): T[] {
+  return (notes || []).filter((note) => (note.afterTurn ?? -1) === turnIndex && !noteClosesVisit(note, turnCount))
+}
+
+/** Exit, transition, and rollback that close the visit, drawn after its conversation. */
+export function notesAfterVisit<T extends { event: string; afterTurn?: number }>(
+  notes: T[] | undefined,
+  turnCount: number,
+): T[] {
+  return (notes || []).filter((note) => noteClosesVisit(note, turnCount))
+}
+
+type NoteDraft = Omit<LlmSystemNote, 'afterTurn'>
+
+type ExecEntry =
+  | { type: 'turn'; turn: LlmTurn }
+  | { type: 'error'; text: string }
+  | { type: 'note'; note: NoteDraft }
 
 interface ExecGroup {
   node: NodeItem
-  turns: LlmTurn[]
-  error?: string
-  notes: LlmSystemNote[]
+  entries: ExecEntry[]
 }
 
 function withMessage(parts: AgentPart[], text?: string): AgentPart[] {
@@ -110,7 +141,7 @@ function segmentKind(nodeType: string, turns: LlmTurn[]): ClarifyPriorSegment['k
   return 'auto'
 }
 
-function noteOf(item: TraceItem): LlmSystemNote {
+function noteOf(item: TraceItem): NoteDraft {
   return {
     key: item.key,
     event: item.event,
@@ -123,29 +154,50 @@ function noteOf(item: TraceItem): LlmSystemNote {
 function groupItems(items: LlmTranscriptItem[]): ExecGroup[] {
   const groups: ExecGroup[] = []
   let current: ExecGroup | null = null
-  const hold: LlmSystemNote[] = []
+  const hold: ExecEntry[] = []
   for (const item of items) {
     if (item.type === 'trace') {
-      const note = noteOf(item)
-      if (current) current.notes.push(note)
-      else hold.push(note)
+      const entry: ExecEntry = { type: 'note', note: noteOf(item) }
+      if (current) current.entries.push(entry)
+      else hold.push(entry)
       continue
     }
     if (item.type === 'node') {
-      current = { node: item, turns: [], notes: hold.splice(0) }
+      current = { node: item, entries: hold.splice(0) }
       groups.push(current)
       continue
     }
     if (!current) continue
-    if (item.type === 'turn') current.turns.push(item.turn)
-    else if (item.type === 'error') current.error = item.text
+    if (item.type === 'turn') current.entries.push({ type: 'turn', turn: item.turn })
+    else if (item.type === 'error') current.entries.push({ type: 'error', text: item.text })
   }
   return groups
 }
 
+/** Keep trace rows in the order they happened, slotted against the bubbles already drawn. */
+function materialize(group: ExecGroup): { turns: ReturnType<typeof clarifyTurnsFromLlm>; notes: LlmSystemNote[]; llmTurns: LlmTurn[] } {
+  const turns: ReturnType<typeof clarifyTurnsFromLlm> = []
+  const notes: LlmSystemNote[] = []
+  const llmTurns: LlmTurn[] = []
+  for (const entry of group.entries) {
+    if (entry.type === 'note') {
+      notes.push({ ...entry.note, afterTurn: turns.length - 1 })
+      continue
+    }
+    if (entry.type === 'error') {
+      turns.push(...clarifyTurnsFromLlm([], entry.text))
+      continue
+    }
+    llmTurns.push(entry.turn)
+    turns.push(...clarifyTurnsFromLlm([entry.turn]))
+  }
+  return { turns, notes, llmTurns }
+}
+
 function toSegment(group: ExecGroup): ClarifyPriorSegment {
   const node = group.node
-  const kind = segmentKind(node.nodeType, group.turns)
+  const { turns, notes, llmTurns } = materialize(group)
+  const kind = segmentKind(node.nodeType, llmTurns)
   return {
     nodeId: node.nodeId,
     iteration: node.iteration,
@@ -154,9 +206,9 @@ function toSegment(group: ExecGroup): ClarifyPriorSegment {
     status: node.status,
     at: node.startedAt || '',
     endedAt: endedFrom(node.startedAt, node.durationSec),
-    turns: clarifyTurnsFromLlm(group.turns, group.error),
+    turns,
     open: false,
-    notes: group.notes,
+    notes,
   }
 }
 
@@ -179,19 +231,19 @@ export function llmTranscriptThread(run: Run, items: LlmTranscriptItem[]): LlmTh
   const last = groups[groups.length - 1]
   const priors = groups.slice(0, -1).map(toSegment)
   if (!last) return { priors, currentTurns: [], current: null, currentNotes: [], conversational: false }
-  const currentTurns = clarifyTurnsFromLlm(last.turns, last.error)
+  const { turns: currentTurns, notes, llmTurns } = materialize(last)
   const current: LlmThreadCurrent = {
     nodeId: last.node.nodeId,
     iteration: last.node.iteration,
     label: last.node.label,
-    kind: segmentKind(last.node.nodeType, last.turns),
+    kind: segmentKind(last.node.nodeType, llmTurns),
     status: last.node.status,
   }
   return {
     priors,
     currentTurns,
     current,
-    currentNotes: last.notes,
+    currentNotes: notes,
     conversational: llmNodeConversational(run, current.nodeId, current.iteration),
   }
 }

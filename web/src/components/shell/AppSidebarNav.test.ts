@@ -903,10 +903,10 @@ describe('AppSidebarNav', () => {
     expect(rows.map((row) => row.text())).toEqual(['发布前确认', '需求规格', '代码评审'])
     expect(rows[0].find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
     expect(rows[0].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
-    expect(rows[1].attributes('data-motion')).toBe('spin')
-    expect(rows[1].find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
-    expect(rows[2].attributes('data-motion')).toBe('pulse')
-    expect(rows[2].find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
+    expect(rows[1].attributes('data-motion')).toBeUndefined()
+    expect(rows[1].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
+    expect(rows[2].attributes('data-motion')).toBeUndefined()
+    expect(rows[2].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('breath-dot')
     expect(rows[2].text()).not.toContain('正在回复')
 
     rows[0].element.classList.add('check')
@@ -980,10 +980,12 @@ describe('AppSidebarNav', () => {
     }
 
     expectRowStart(rows[0], 'nav-pending-type-icon')
-    expectRowStart(rows[1], 'inbox-motion-spin')
-    expectRowStart(rows[2], 'inbox-motion-spin')
+    expectRowStart(rows[1], 'nav-pending-type-icon')
+    expect(rows[1].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
+    expectRowStart(rows[2], 'nav-pending-type-icon')
     expect(rows[2].get('.nav-row-title').text()).toBe(longLabel)
-    expectRowStart(rows[3], 'inbox-motion-pulse')
+    expectRowStart(rows[3], 'nav-pending-type-icon')
+    expect(rows[3].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('breath-dot')
 
     expect(rows[0].classes()).not.toContain('active')
     gateMocks.activeInboxKey.value = 'run-1:g1'
@@ -1085,17 +1087,22 @@ describe('AppSidebarNav', () => {
     const rows = wrapper.get('[data-testid="nav-pending-approvals"]').findAll('[data-testid="nav-pending-row"]')
     expect(rows).toHaveLength(6)
 
-    const expectOnlyMotion = (row: (typeof rows)[number], testId: 'inbox-motion-spin' | 'inbox-motion-pulse') => {
-      const mark = row.get(`[data-testid="${testId}"]`)
+    const expectStatusIcon = (row: (typeof rows)[number], name: string, toneClass: string, glyph: string) => {
+      expect(row.find('[data-testid="inbox-motion-spin"]').exists()).toBe(false)
+      expect(row.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
+      expect(row.attributes('data-motion')).toBeUndefined()
       expect(row.findAll('svg')).toHaveLength(1)
-      expect(mark.element.tagName.toLowerCase()).toBe('svg')
-      expect(row.find('[data-testid="nav-pending-type-icon"]').exists()).toBe(false)
-      expect(row.get('.nav-row-title').element.nextElementSibling).toBe(mark.element)
+      const icon = row.get('[data-testid="nav-pending-type-icon"]')
+      expect(icon.attributes('data-icon')).toBe(name)
+      expect(icon.attributes('width')).toBe('16')
+      expect(icon.attributes('height')).toBe('16')
+      expect(icon.classes()).toContain('nav-row-type-icon')
+      expect(icon.classes()).toContain(toneClass)
+      expect(icon.html()).toContain(glyph)
+      expect(row.get('.nav-row-title').element.nextElementSibling).toBe(icon.element)
     }
-    expectOnlyMotion(rows[0], 'inbox-motion-spin')
-    expect(rows[0].attributes('data-motion')).toBe('spin')
-    expectOnlyMotion(rows[1], 'inbox-motion-pulse')
-    expect(rows[1].attributes('data-motion')).toBe('pulse')
+    expectStatusIcon(rows[0], 'arc-spinner', 'nav-row-type-icon--accent', 'M12 3A9 9 0 1 1 3 12')
+    expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
 
     expect(rows[2].attributes('data-motion')).toBeUndefined()
     expect(rows[2].findAll('svg')).toHaveLength(0)
@@ -1107,8 +1114,8 @@ describe('AppSidebarNav', () => {
       expect(row.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(false)
       expect(row.findAll('svg')).toHaveLength(1)
       const icon = row.get('[data-testid="nav-pending-type-icon"]')
-      expect(icon.attributes('width')).toBe('14')
-      expect(icon.attributes('height')).toBe('14')
+      expect(icon.attributes('width')).toBe('16')
+      expect(icon.attributes('height')).toBe('16')
       expect(icon.classes()).toContain('nav-row-type-icon')
       expect(icon.classes()).toContain(toneClass)
       expect(icon.html()).toContain(glyph)
@@ -1129,12 +1136,12 @@ describe('AppSidebarNav', () => {
     gateMocks.activeInboxKey.value = 'run-s:s'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
-    expectOnlyMotion(rows[0], 'inbox-motion-spin')
+    expectStatusIcon(rows[0], 'arc-spinner', 'nav-row-type-icon--accent', 'M12 3A9 9 0 1 1 3 12')
 
     gateMocks.activeInboxKey.value = 'run-p:p'
     await nextTick()
     expect(rows[1].classes()).toContain('active')
-    expectOnlyMotion(rows[1], 'inbox-motion-pulse')
+    expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
 
     wrapper.unmount()
     vi.useRealTimers()
@@ -1180,8 +1187,8 @@ describe('AppSidebarNav', () => {
     expect(rows[0].attributes('title')).toBe('把登录做清楚 · 需求澄清')
     expect(rows[2].attributes('title')).toBe('w · 需求澄清')
     expect(rows[4].attributes('title')).toBe('approving · 人工门禁')
-    expect(rows[0].attributes('data-motion')).toBe('spin')
-    expect(rows[0].find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    expect(rows[0].attributes('data-motion')).toBeUndefined()
+    expect(rows[0].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     await rows[1].trigger('click')
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'clarify' } })
     expect(enNav.nav.pendingPin).toBe('Pin')
@@ -1329,7 +1336,7 @@ describe('AppSidebarNav', () => {
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
     let input = wrapper.get('[data-testid="nav-pending-rename-input"]')
     expect((input.element as HTMLInputElement).value).toBe('把登录做清楚')
-    expect(wrapper.get('[data-key="run-1"]').find('[data-testid="inbox-motion-spin"]').exists()).toBe(true)
+    expect(wrapper.get('[data-key="run-1"]').get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     routerMocks.push.mockClear()
     await wrapper.get('[data-editing="true"]').trigger('click')
     expect(routerMocks.push).not.toHaveBeenCalled()

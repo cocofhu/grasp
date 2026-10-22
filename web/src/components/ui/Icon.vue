@@ -310,12 +310,13 @@ const hover = computed(() => statusHover[props.name])
     filter: brightness(1.25);
     stroke-width: 1.7;
   }
+  .grasp-status-host:hover .grasp-status[data-hover="user"] .grasp-user-dot,
   .grasp-status-host:hover .grasp-status .grasp-wake,
   .grasp-status-host:hover .grasp-status .grasp-quiet,
   .grasp-status-host:hover .grasp-status .grasp-arc-node,
   .grasp-status-host:hover .grasp-status .grasp-user-dot {
     animation: none !important;
-    transform: none;
+    transform: none !important;
   }
 }
 </style>
