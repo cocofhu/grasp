@@ -113,8 +113,8 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
     <div class="workflow-toolbar-actions">
       <AppButton variant="ghost" icon="input" @click="triggerImport">{{ t('common.buttons.import') }}</AppButton>
       <div class="relative" data-new-workflow-menu @click.stop>
-        <AppButton variant="primary" icon="plus" data-testid="new-workflow-button" :aria-expanded="newWorkflowMenuOpen" aria-haspopup="menu" @click="toggleNewWorkflowMenu">
-          {{ t('common.buttons.newWorkflow') }}<Icon name="chevron-down" :size="14" />
+        <AppButton variant="primary" class="workflow-new-trigger" data-testid="new-workflow-button" :aria-expanded="newWorkflowMenuOpen" aria-haspopup="menu" @click="toggleNewWorkflowMenu">
+          <span class="workflow-new-main"><Icon name="plus" :size="16" />{{ t('common.buttons.newWorkflow') }}</span><span class="workflow-new-caret" data-testid="new-workflow-caret"><Icon name="chevron-down" :size="14" /></span>
         </AppButton>
         <NewWorkflowMenu :open="newWorkflowMenuOpen" @scratch="newWorkflow" @baseline="openBaselineModal" />
       </div>
@@ -342,6 +342,11 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 <style scoped>
 .workflow-toolbar { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 0 18px; }
 .workflow-toolbar-actions { display: flex; align-items: center; gap: 6px; }
+.workflow-new-trigger { align-items: stretch; height: 36px; gap: 0; padding: 0; border-radius: 8px; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.45); }
+:global(html.light .workflow-new-trigger) { box-shadow: 0 1px 1px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.06); }
+.workflow-new-trigger :deep(> span:not(.hover-ink)) { display: flex; height: 100%; align-items: stretch; gap: 0; }
+.workflow-new-main { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px 0 12px; }
+.workflow-new-caret { display: inline-flex; align-items: center; padding: 0 10px; box-shadow: inset 1px 0 0 rgba(255, 255, 255, 0.28); }
 .workflow-search { display: flex; width: min(320px, 100%); min-width: 0; height: 36px; align-items: center; gap: 8px; border: 1px solid rgb(var(--c-line)); border-radius: 8px; padding: 0 10px; color: rgb(var(--c-txt3)); }
 .workflow-search:focus-within { border-color: rgb(var(--c-accent) / .5); }
 .workflow-search input { width: 100%; min-width: 0; background: transparent; color: rgb(var(--c-txt)); font-size: 13px; outline: none; }
