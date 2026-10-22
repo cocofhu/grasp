@@ -341,7 +341,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
               :done-label="priorSegmentMeta(seg)"
               :interrupted-label="priorSegmentMeta(seg)"
             />
-            <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
+            <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
           </summary>
           <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
             <template v-if="seg.kind === 'auto' && !seg.turns.length">
@@ -649,8 +649,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
   padding: 2px 0 2px 14px;
 }
 .clarify-request--history { border-color: rgb(var(--c-line)); }
-.clarify-handoff-step { padding: 6px 8px; margin-inline: -8px; width: calc(100% + 16px); }
-.clarify-status-row { margin-inline: -8px; padding: 6px 8px; width: calc(100% + 16px); }
+.clarify-handoff-step { padding: 0 8px; margin-inline: -8px; width: calc(100% + 16px); }
+.clarify-status-row { margin-inline: -8px; padding: 0 8px; width: calc(100% + 16px); }
 .clarify-segment-divider { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgb(var(--c-line) / .7); border-radius: 0; }
 .clarify-prior-body { opacity: .72; }
 .clarify-prior-body:hover { opacity: 1; }

@@ -122,7 +122,7 @@ function openPreview() {
 <template>
   <div
     v-if="tools.length"
-    class="agent-tools chat-meta mb-3 w-full min-w-0"
+    class="agent-tools chat-meta w-full min-w-0"
     data-testid="agent-tool-group"
     :data-state="overall"
   >
@@ -134,9 +134,9 @@ function openPreview() {
       data-testid="agent-tool-group-head"
       @click="open = !open"
     >
-      <Icon v-if="overall === 'running'" name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
-      <Icon v-else-if="overall === 'failed'" name="alert" :size="16" class="agent-tool-icon agent-tool-failed" aria-hidden="true" />
-      <Icon v-else name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+      <Icon v-if="overall === 'running'" name="spinner" :size="12" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+      <Icon v-else-if="overall === 'failed'" name="alert" :size="12" class="agent-tool-icon agent-tool-failed" aria-hidden="true" />
+      <Icon v-else name="check" :size="12" class="agent-tool-icon" aria-hidden="true" />
       <span class="agent-tools-count">{{ t('pages.clarify.toolsUsed', { n: tools.length }, tools.length) }}</span>
       <span v-if="failedCount && overall === 'failed'" class="agent-tools-count agent-tool-failed" data-testid="agent-tool-group-failed">{{
         t('pages.clarify.toolFailedCount', { n: failedCount })
@@ -147,7 +147,7 @@ function openPreview() {
       <span v-else class="agent-tools-context" data-testid="agent-tool-group-names">{{ names }}</span>
       <Icon
         name="chevron-down"
-        :size="16"
+        :size="12"
         class="agent-tool-chevron"
         :class="{ 'rotate-180': open }"
         aria-hidden="true"

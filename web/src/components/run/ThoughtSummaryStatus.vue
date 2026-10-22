@@ -73,7 +73,7 @@ const label = computed(() => {
     <Icon
       :key="state"
       :name="state === 'generating' ? 'spinner' : state === 'interrupted' ? 'alert' : state === 'done' ? 'check' : 'sparkles'"
-      :size="16"
+      :size="12"
       class="thought-summary-icon"
       :class="{ 'thought-summary-icon--running': state === 'generating' }"
       aria-hidden="true"
@@ -90,12 +90,12 @@ const label = computed(() => {
 
 <style scoped>
 .thought-summary-status {
-  gap: 8px;
+  gap: 6px;
   color: var(--chat-muted, rgb(var(--c-txt2)));
   font-size: 12px;
-  line-height: 1.65;
+  line-height: 20px;
 }
-.thought-summary-icon { flex-shrink: 0; }
+.thought-summary-icon { flex-shrink: 0; width: 12px; height: 12px; }
 .thought-summary-title { min-width: 0; font-weight: 500; }
 .thought-summary-badge {
   flex-shrink: 0;
