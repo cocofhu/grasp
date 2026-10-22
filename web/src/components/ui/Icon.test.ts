@@ -1,4 +1,6 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 import Icon from './Icon.vue'
@@ -198,5 +200,66 @@ describe('Icon', () => {
     expect(wrapper.find('svg').attributes('fill')).toBe('none')
     wrapper.unmount()
     fallback.unmount()
+  })
+
+  it('draws the ten status primitives without replacing check, play, user, or history', () => {
+    const shapes: Record<string, string> = {
+      'arc-spinner': 'M12 3A9 9 0 1 1 3 12',
+      'breath-dot': 'grasp-heart-ring',
+      'check-draw': 'grasp-check-draw',
+      'warn-pulse': 'M12 3.2L21.2 19.6H2.8z',
+      'bubble-idle': 'grasp-bdot-a',
+      'user-hold': 'grasp-user-dot',
+      'arrow-flow': 'M14.2 6.6l6.2 5.4-6.2 5.4',
+      'history-back': 'M4.2 4.2v4.6h4.6',
+      'play-continue': 'M9.2 6.4l10.4 5.6-10.4 5.6z',
+      'quiet-dot': 'grasp-quiet',
+    }
+    for (const [name, mark] of Object.entries(shapes)) {
+      const wrapper = mount(Icon, { props: { name, size: 16 } })
+      const svg = wrapper.find('svg')
+      expect(svg.attributes('data-icon')).toBe(name)
+      expect(svg.classes()).toContain('grasp-status')
+      expect(svg.attributes('data-hover')).toBeTruthy()
+      expect(svg.html()).toContain(mark)
+      expect(svg.attributes('width')).toBe('16')
+      wrapper.unmount()
+    }
+
+    const legacy: Record<string, string> = {
+      check: 'M5 12l5 5 9-11',
+      play: 'M7 5l12 7-12 7z',
+      user: 'M4 21a8 8 0 0 1 16 0',
+      history: 'M3 3v5h5',
+    }
+    for (const [name, path] of Object.entries(legacy)) {
+      const wrapper = mount(Icon, { props: { name, size: 16 } })
+      const svg = wrapper.find('svg')
+      expect(svg.html()).toContain(path)
+      expect(svg.classes()).not.toContain('grasp-status')
+      expect(svg.attributes('data-hover')).toBeUndefined()
+      wrapper.unmount()
+    }
+  })
+
+  it('stops status loops under reduced motion and leaves the check fully drawn', () => {
+    const css = readFileSync(join(process.cwd(), 'src/components/ui/Icon.vue'), 'utf8')
+    const reduce = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
+    expect(reduce).toMatch(/animation:\s*none !important/)
+    expect(reduce).toMatch(/\.grasp-check-draw\s*\{\s*stroke-dashoffset:\s*0/)
+    expect(reduce).toMatch(/\.grasp-heart-ring\s*\{\s*opacity:\s*0\.28/)
+    expect(reduce).toMatch(/transform:\s*none/)
+    expect(reduce).toMatch(/\.grasp-status\[data-hover="user"\] \.grasp-user-dot[\s\S]*transform:\s*none !important/)
+    expect(css).toMatch(/animation:\s*grasp-arc-spin 0\.85s linear infinite/)
+    expect(css).toMatch(/animation:\s*grasp-heart-ring 2\.1s ease-out infinite/)
+    expect(css).toMatch(/animation:\s*grasp-check-draw 3s ease-out infinite/)
+    expect(css).toMatch(/grasp-static-wake 320ms ease-out 1/)
+    expect(css).toMatch(/grasp-dot-wake 280ms ease-out 1/)
+    expect(css).toMatch(/animation-duration:\s*0\.45s/)
+    expect(css).toMatch(/scale\(1\.1\)/)
+    expect(css).toMatch(/stroke-width:\s*2\.35/)
+    const drawn = mount(Icon, { props: { name: 'check-draw', size: 16 } })
+    expect(drawn.find('.grasp-check-draw').attributes('d')).toBe('M7.6 12.4l3.6 3.6L18.2 7.4')
+    drawn.unmount()
   })
 })

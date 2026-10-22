@@ -102,6 +102,17 @@ const paths: Record<string, string> = {
   'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><ellipse cx="12" cy="12" rx="3.3" ry="8"/>',
   'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
   'stage-resources': '<rect x="3.2" y="3.2" width="7" height="7" rx="1.6"/><rect x="13.8" y="3.2" width="7" height="7" rx="1.6"/><rect x="3.2" y="13.8" width="7" height="7" rx="1.6"/><rect x="13.8" y="13.8" width="7" height="7" rx="1.6"/>',
+  // Status primitives. Names sit beside check / play / user / history; those paths stay as they are.
+  'arc-spinner': '<g class="grasp-arc-spin"><path d="M12 3A9 9 0 1 1 3 12"/><circle class="grasp-arc-node" cx="3" cy="12" r="1.65" fill="currentColor" stroke="none"/></g>',
+  'breath-dot': '<circle class="grasp-heart-ring" cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.15"/><circle class="grasp-heart-core" cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>',
+  'check-draw': '<circle class="grasp-check-node" cx="6.2" cy="12.2" r="1.55" fill="currentColor" stroke="none"/><path class="grasp-check-draw" d="M7.6 12.4l3.6 3.6L18.2 7.4"/>',
+  'warn-pulse': '<g class="grasp-wake"><path d="M12 3.2L21.2 19.6H2.8z"/><path d="M12 9.2v5.2"/><circle cx="12" cy="17.4" r="0.85" fill="currentColor" stroke="none"/></g>',
+  'bubble-idle': '<path d="M20.5 11.5a7.5 7.5 0 0 1-10.4 6.9L4.2 19.6l.6-5.2A7.5 7.5 0 1 1 20.5 11.5z"/><circle class="grasp-bdot-a" cx="9.2" cy="11.4" r="1.05" fill="currentColor" stroke="none"/><circle class="grasp-bdot-b" cx="12" cy="11.4" r="1.05" fill="currentColor" stroke="none"/><circle class="grasp-bdot-c" cx="14.8" cy="11.4" r="1.05" fill="currentColor" stroke="none"/>',
+  'user-hold': '<circle cx="10.2" cy="8" r="3.2"/><path d="M3.8 20a6.4 6.4 0 0 1 12.8 0"/><circle class="grasp-user-dot" cx="18.6" cy="11.5" r="1.55" fill="currentColor" stroke="none"/>',
+  'arrow-flow': '<g class="grasp-wake"><circle cx="4.6" cy="12" r="1.35" fill="currentColor" stroke="none"/><path d="M6.4 12h11.2"/><path d="M14.2 6.6l6.2 5.4-6.2 5.4"/></g>',
+  'history-back': '<g class="grasp-wake"><path d="M4.2 4.2v4.6h4.6"/><path d="M4.3 13.2A8.2 8.2 0 1 0 7.2 6.1L4.2 8.8"/><circle cx="12" cy="12" r="1.45" fill="currentColor" stroke="none"/><path d="M12 8.2v3.2l3.2 1.6"/></g>',
+  'play-continue': '<g class="grasp-wake"><circle cx="5.4" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M9.2 6.4l10.4 5.6-10.4 5.6z"/></g>',
+  'quiet-dot': '<g class="grasp-quiet"><circle cx="12" cy="12" r="5.2" opacity="0.45"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none" opacity="0.55"/></g>',
 }
 
 /** Icons that render with solid fill (favorited star). */
@@ -113,6 +124,21 @@ const size = computed(() => props.size ?? 18)
 const body = computed(() => paths[props.name] ?? paths.dot)
 const filled = computed(() => filledNames.has(props.name))
 const unstroked = computed(() => unstrokedNames.has(props.name))
+
+/** Hover family for the ten status primitives. Absent for every other name. */
+const statusHover: Record<string, 'spin' | 'breath' | 'live' | 'static' | 'dot' | 'user'> = {
+  'arc-spinner': 'spin',
+  'breath-dot': 'breath',
+  'check-draw': 'live',
+  'bubble-idle': 'live',
+  'warn-pulse': 'static',
+  'arrow-flow': 'static',
+  'history-back': 'static',
+  'play-continue': 'static',
+  'quiet-dot': 'dot',
+  'user-hold': 'user',
+}
+const hover = computed(() => statusHover[props.name])
 </script>
 
 <template>
@@ -127,8 +153,170 @@ const unstroked = computed(() => unstrokedNames.has(props.name))
     :stroke-width="unstroked ? undefined : (filled ? 1.2 : 1.7)"
     stroke-linecap="round"
     stroke-linejoin="round"
-    :class="{ 'icon-spinner': props.name === 'spinner' }"
+    :class="{ 'icon-spinner': props.name === 'spinner', 'grasp-status': !!hover }"
+    :data-hover="hover || undefined"
     :style="props.name === 'spinner' ? { display: 'block', transformOrigin: 'center' } : undefined"
     v-html="body"
   />
 </template>
+
+<style>
+/* Status primitives. A row opts in with grasp-status-host; the icon is grasp-status. */
+@keyframes grasp-arc-spin { to { transform: rotate(360deg); } }
+@keyframes grasp-heart-ring {
+  0% { r: 3.4; opacity: 0.4; }
+  100% { r: 7.2; opacity: 0; }
+}
+@keyframes grasp-heart-ring-hot {
+  0% { r: 3.4; opacity: 0.7; }
+  70% { r: 10; opacity: 0; }
+  100% { r: 10; opacity: 0; }
+}
+@keyframes grasp-heart-core {
+  0%, 100% { opacity: 0.92; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.03); }
+}
+@keyframes grasp-check-node {
+  0%, 12% { opacity: 0.2; }
+  22%, 100% { opacity: 1; }
+}
+@keyframes grasp-check-draw {
+  0%, 18% { stroke-dashoffset: 26; }
+  55%, 100% { stroke-dashoffset: 0; }
+}
+@keyframes grasp-bubble-a {
+  0%, 100% { opacity: 0.3; }
+  25% { opacity: 0.85; }
+}
+@keyframes grasp-bubble-b {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 0.85; }
+}
+@keyframes grasp-bubble-c {
+  0%, 100% { opacity: 0.3; }
+  75% { opacity: 0.85; }
+}
+@keyframes grasp-user-dot {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@keyframes grasp-static-wake {
+  0% { transform: rotate(0deg) scale(1); opacity: 0.75; }
+  40% { transform: rotate(5deg) scale(1.1); opacity: 1; }
+  100% { transform: rotate(0deg) scale(1); opacity: 1; }
+}
+@keyframes grasp-dot-wake {
+  0% { transform: scale(1); opacity: 0.5; }
+  45% { transform: scale(1.12); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.8; }
+}
+@keyframes grasp-arc-node-hot {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.2); }
+}
+
+.grasp-arc-spin {
+  transform-origin: 12px 12px;
+  transform-box: view-box;
+  animation: grasp-arc-spin 0.85s linear infinite;
+}
+.grasp-arc-node {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.grasp-heart-ring { animation: grasp-heart-ring 2.1s ease-out infinite; }
+.grasp-heart-core {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: grasp-heart-core 2.1s ease-in-out infinite;
+}
+.grasp-check-node { animation: grasp-check-node 3s ease-out infinite; }
+.grasp-check-draw {
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+  animation: grasp-check-draw 3s ease-out infinite;
+}
+.grasp-bdot-a { animation: grasp-bubble-a 2s ease-in-out infinite; }
+.grasp-bdot-b { animation: grasp-bubble-b 2s ease-in-out infinite; }
+.grasp-bdot-c { animation: grasp-bubble-c 2s ease-in-out infinite; }
+.grasp-user-dot { animation: grasp-user-dot 2s ease-in-out infinite; }
+.grasp-wake,
+.grasp-quiet {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+.grasp-status {
+  transform-origin: center;
+  transition: transform 160ms ease, filter 160ms ease, stroke-width 160ms ease;
+}
+.grasp-status-host:hover .grasp-status {
+  transform: scale(1.1);
+  filter: brightness(1.35);
+  stroke-width: 2.35;
+}
+.grasp-status-host:hover .grasp-status[data-hover="spin"] .grasp-arc-spin { animation-duration: 0.45s; }
+.grasp-status-host:hover .grasp-status[data-hover="spin"] .grasp-arc-node {
+  animation: grasp-arc-node-hot 0.45s ease-in-out infinite;
+}
+.grasp-status-host:hover .grasp-status[data-hover="breath"] .grasp-heart-ring {
+  animation: grasp-heart-ring-hot 1s ease-out infinite;
+}
+.grasp-status-host:hover .grasp-status[data-hover="breath"] .grasp-heart-core { animation-duration: 1s; }
+.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-check-draw,
+.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-check-node { animation-duration: 1.6s; }
+.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-a,
+.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-b,
+.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-c { animation-duration: 1.05s; }
+.grasp-status-host:hover .grasp-status[data-hover="static"] .grasp-wake {
+  animation: grasp-static-wake 320ms ease-out 1;
+}
+.grasp-status-host:hover .grasp-status[data-hover="dot"] .grasp-quiet {
+  animation: grasp-dot-wake 280ms ease-out 1;
+}
+.grasp-status-host:hover .grasp-status[data-hover="user"] .grasp-user-dot {
+  animation: none;
+  opacity: 1;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(1.15);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .grasp-arc-spin,
+  .grasp-heart-ring,
+  .grasp-heart-core,
+  .grasp-check-node,
+  .grasp-check-draw,
+  .grasp-bdot-a,
+  .grasp-bdot-b,
+  .grasp-bdot-c,
+  .grasp-user-dot,
+  .grasp-arc-node,
+  .grasp-wake,
+  .grasp-quiet {
+    animation: none !important;
+  }
+  .grasp-check-draw { stroke-dashoffset: 0; }
+  .grasp-check-node,
+  .grasp-heart-core,
+  .grasp-bdot-a,
+  .grasp-bdot-b,
+  .grasp-bdot-c,
+  .grasp-user-dot { opacity: 1; }
+  .grasp-heart-ring { opacity: 0.28; }
+  .grasp-status-host:hover .grasp-status {
+    transform: none;
+    filter: brightness(1.25);
+    stroke-width: 1.7;
+  }
+  .grasp-status-host:hover .grasp-status[data-hover="user"] .grasp-user-dot,
+  .grasp-status-host:hover .grasp-status .grasp-wake,
+  .grasp-status-host:hover .grasp-status .grasp-quiet,
+  .grasp-status-host:hover .grasp-status .grasp-arc-node,
+  .grasp-status-host:hover .grasp-status .grasp-user-dot {
+    animation: none !important;
+    transform: none !important;
+  }
+}
+</style>

@@ -2023,7 +2023,7 @@ describe('ClarifyChat', () => {
       const placeholder = wrapper.find('[data-testid="clarify-busy-placeholder"]')
       expect(placeholder.exists()).toBe(true)
       expect(placeholder.text()).toContain('思考中')
-      expect(placeholder.find('[data-testid="inbox-motion-pulse"]').exists()).toBe(true)
+      expect(placeholder.find('icon-stub').attributes('name')).toBe('breath-dot')
       expect(wrapper.find('[data-testid="clarify-agent-message"]').exists()).toBe(false)
       expect(wrapper.find('[data-testid="clarify-thought"]').exists()).toBe(false)
       wrapper.unmount()

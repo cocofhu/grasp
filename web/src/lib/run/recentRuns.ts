@@ -8,10 +8,10 @@ import type { Run, RunCurrentNode } from '@/lib/shared/types'
 
 export type RecentRun = Run
 
-/** Pending-row vocabulary (AppSidebarNav rowMotion / pendingTypeMarks). */
-export type RecentRunMark =
-  | { motion: 'spin' | 'pulse' }
-  | { icon: { name: 'pending-approval' | 'pending-review' | 'pending-chat'; toneClass: string } }
+/** Status primitive on a live sidebar row. */
+export type RecentRunMark = {
+  icon: { name: 'arc-spinner' | 'breath-dot' | 'user-hold'; toneClass: string }
+}
 
 const LIVE_STATES = new Set<RunCurrentNode['state']>(['running', 'stopping', 'waiting_human', 'busy'])
 
@@ -35,19 +35,19 @@ export function isObservableNode(n: RunCurrentNode | null | undefined): boolean 
 }
 
 /**
- * Same marks as 待审批 rows: spin = still starting / stopping, pulse = an agent
- * is working, static type icon = waiting on you. No new glyphs.
+ * Live sidebar row: starting or stopping is the arc, a machine at work is the
+ * breath dot, and anyone waiting (approval included) is the person-hold mark.
  */
 export function recentRunMark(run: RecentRun): RecentRunMark | null {
   const n = recentCurrentNode(run)
   if (!n) return null
-  if (n.state === 'stopping') return { motion: 'spin' }
-  // A clarify session that is still opening is the pending row's「启动中」.
-  if (n.state === 'running' && n.kind === 'clarify') return { motion: 'spin' }
-  if (n.state === 'running' || n.state === 'busy') return { motion: 'pulse' }
-  if (n.kind === 'gate') return { icon: { name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' } }
-  if (n.kind === 'review' || n.kind === 'takeover') return { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }
-  return { icon: { name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' } }
+  if (n.state === 'stopping' || (n.state === 'running' && n.kind === 'clarify')) {
+    return { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }
+  }
+  if (n.state === 'running' || n.state === 'busy') {
+    return { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }
+  }
+  return { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }
 }
 
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`

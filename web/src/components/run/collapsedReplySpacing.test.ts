@@ -48,8 +48,8 @@ describe('collapsed reply spacing', () => {
     expect(style).toContain('.agent-thought { margin: 0 0 2px;')
     expect(chat).toContain('.chat-thought { margin: 0 0 2px; }')
     expect(tools).toContain('margin: 0 0 2px;')
-    expect(status).toContain(':size="12"')
-    expect(status).toContain('width: 12px; height: 12px;')
+    expect(status).toContain(':size="16"')
+    expect(status).toContain('width: 16px; height: 16px;')
 
     const elapsed = block(style, '\\.agent-elapsed')
     expect(elapsed).toContain('min-height: 24px')

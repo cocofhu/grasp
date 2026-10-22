@@ -7,7 +7,7 @@ import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
-import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
+import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import {
   INBOX_SHARE_INTENT_QUERY,
@@ -505,32 +505,25 @@ watch(pendingRows, (rows) => {
 })
 
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
-  if (isRunOnlyRow(it)) {
-    const run = runningById.value.get(it.runId)
-    if (!run) return 'pulse'
-    const mark = recentRunMark(run)
-    if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
-    return 'motion' in mark ? mark.motion : null
-  }
-  if (startFailedKeys.value.includes(itemKey(it))) return null
-  if (isStartingInboxItem(it)) return 'spin'
-  if (isReplyingInboxItem(it)) return 'pulse'
+  if (!isRunOnlyRow(it)) return null
+  const run = runningById.value.get(it.runId)
+  if (!run) return 'pulse'
+  const mark = recentRunMark(run)
+  if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
   return null
 }
 
-/** Waiting on a person: static type mark. Executing rows keep motion; start-failed rows stay blank. */
+/** Starting is the arc, a reply in flight is the breath dot, and waiting is the person-hold mark. */
 function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: string }> {
   if (isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
     const mark = run ? recentRunMark(run) : null
     return mark && 'icon' in mark ? [mark.icon] : []
   }
-  if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
-  const tone = inboxBadgeTone(it)
-  if (tone === 'replying') return []
-  if (tone === 'gate') return [{ name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' }]
-  if (tone === 'review') return [{ name: 'pending-review', toneClass: 'nav-row-type-icon--review' }]
-  return [{ name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' }]
+  if (startFailedKeys.value.includes(itemKey(it))) return []
+  if (isStartingInboxItem(it)) return [{ name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' }]
+  if (isReplyingInboxItem(it)) return [{ name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' }]
+  return [{ name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }]
 }
 
 function isPendingActive(it: InboxItem): boolean {
@@ -721,7 +714,7 @@ const settingsItems = settingsNavItems
       <template v-for="it in orderedPendingRows" :key="it.runId">
         <div
           v-if="editingKey === it.runId"
-          class="nav-item mb-0.5 w-full min-w-0 cursor-text text-start"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
@@ -760,7 +753,7 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
-              :size="14"
+              :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
               data-testid="nav-pending-type-icon"
@@ -772,7 +765,7 @@ const settingsItems = settingsNavItems
           v-else
           v-hover-ink
           type="button"
-          class="nav-item mb-0.5 w-full min-w-0 text-start"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
@@ -802,7 +795,7 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
-              :size="14"
+              :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
               data-testid="nav-pending-type-icon"
@@ -1046,6 +1039,8 @@ const settingsItems = settingsNavItems
   stroke-width: 1.6;
 }
 .nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
+.nav-row-type-icon--accent { color: rgb(var(--c-accent-2)); }
+.nav-row-type-icon--hold { color: rgb(var(--c-warn)); }
 
 .pending-row-menu__item {
   display: flex;

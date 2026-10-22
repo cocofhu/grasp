@@ -24,6 +24,8 @@ export type ClarifyPriorSegment = {
   group?: string[]
   /** Folded auto nodes, each still addressable for its own execution record. */
   members?: { nodeId: string; iteration: number; label: string; at?: string; endedAt?: string }[]
+  /** LLM process rows that belong with this visit (流转 / 等人 / 退回 / 结束). */
+  notes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
 }
 /** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
 export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
@@ -34,6 +36,8 @@ import Icon from '../ui/Icon.vue'
 import ChatTurnAttachments from './ChatTurnAttachments.vue'
 import ChatUserMessage from './ChatUserMessage.vue'
 import ClarifyMessageThread from './ClarifyMessageThread.vue'
+import LlmSystemRow from './llm/LlmSystemRow.vue'
+import { notesAfterVisit, notesBesideTurn } from '@/lib/run/llmTranscriptThread'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import { nodeAsk } from './clarifyPrior'
 import ChatImageThumb from '../ui/ChatImageThumb.vue'
@@ -41,7 +45,6 @@ import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
 import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
-import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
@@ -133,6 +136,8 @@ const props = withDefaults(
     doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     /** Row under the hand-off while following the run. */
     followTail?: ClarifyFollowTail | null
+    /** LLM process rows for this open visit. */
+    systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
   }>(),
   {
     active: true,
@@ -150,6 +155,7 @@ const props = withDefaults(
     observe: false,
     stopping: false,
     nodeTask: '',
+    systemNotes: () => [],
   },
 )
 
@@ -836,7 +842,7 @@ function enlargeChoicePreview(question: ReactQuestion | null, optionId: string, 
   openPreviewFocus(question, optionId, true, agentTurnIndex)
 }
 
-type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean; title: string; busyLabel: string; doneLabel: string; interruptedLabel: string }
+type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean; title: string; busyLabel: string; doneLabel: string; interruptedLabel: string; busyIcon: string }
 /**
  * Tail row after a hand-off. Title = what the run is doing; right label =
  * what happens next (where the conversation continues), so the disabled
@@ -846,9 +852,9 @@ const followTailView = computed<FollowTailView | null>(() => {
   const ft = props.followTail
   if (!ft) return null
   const at = relTime(ft.at)
-  const base = { busy: false, completed: false, interrupted: false, busyLabel: '', doneLabel: at, interruptedLabel: at }
+  const base = { busy: false, completed: false, interrupted: false, busyLabel: '', doneLabel: at, interruptedLabel: at, busyIcon: 'arc-spinner' }
   if (ft.kind === 'auto') {
-    return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followAutoTo', { name: ft.label }) : translate('pages.clarify.followAuto'), busyLabel: translate('pages.clarify.followAutoBadge') }
+    return { ...base, busy: true, busyIcon: 'breath-dot', title: ft.label ? translate('pages.clarify.followAutoTo', { name: ft.label }) : translate('pages.clarify.followAuto'), busyLabel: translate('pages.clarify.followAutoBadge') }
   }
   if (ft.kind === 'waiting') {
     return { ...base, busy: true, title: ft.label ? translate('pages.clarify.followWaitingTo', { name: ft.label }) : translate('pages.clarify.followWaiting'), busyLabel: translate('pages.clarify.followWaitingBadge') }
@@ -944,6 +950,14 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       -->
       <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
+      <LlmSystemRow
+        v-for="note in notesBesideTurn(systemNotes, -1, displayTurns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <template v-for="(t, i) in displayTurns" :key="messageAnchorState.keys[i]">
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && i === bootSummaryAt"
@@ -1521,7 +1535,23 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           >{{ locale && relTime(t.at) }}</div>
         </div>
       </div>
+        <LlmSystemRow
+          v-for="note in notesBesideTurn(systemNotes, i, displayTurns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
+      <LlmSystemRow
+        v-for="note in notesAfterVisit(systemNotes, displayTurns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <ClarifyBootLoader
         v-if="bootSummary && !bootOnDivider && bootSummaryAt < 0"
         phase="done"
@@ -1565,11 +1595,12 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :busy-label="followTailView.busyLabel"
             :done-label="followTailView.doneLabel"
             :interrupted-label="followTailView.interruptedLabel"
+            :busy-icon="followTailView.busyIcon"
           />
         </div>
       </Transition>
-      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta flex items-center gap-2 pl-9">
-        <InboxMotionMark kind="pulse" />
+      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
+        <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
       </div>
       </div>

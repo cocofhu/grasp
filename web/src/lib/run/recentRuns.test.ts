@@ -16,16 +16,16 @@ const cur = (kind: RunCurrentNode['kind'], state: RunCurrentNode['state'], mode:
   ({ id: 'n1', name: 'N', iteration: 1, kind, mode, state })
 const run = (currentNode?: RunCurrentNode, status: Run['status'] = 'running') => ({ id: 'r1', status, currentNode }) as unknown as Run
 
-describe('recentRunMark reuses the 待审批 row icons', () => {
+describe('recentRunMark uses the status primitives', () => {
   it.each([
-    [cur('agent', 'running'), { motion: 'pulse' }],
-    [cur('review', 'busy', 'manual'), { motion: 'pulse' }],
-    [cur('agent', 'stopping', 'manual'), { motion: 'spin' }],
-    [cur('clarify', 'running', 'clarify'), { motion: 'spin' }],
-    [cur('gate', 'waiting_human', 'gate'), { icon: { name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' } }],
-    [cur('review', 'waiting_human', 'review'), { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }],
-    [cur('takeover', 'waiting_human', 'manual'), { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }],
-    [cur('clarify', 'waiting_human', 'clarify'), { icon: { name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' } }],
+    [cur('agent', 'running'), { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('review', 'busy', 'manual'), { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('agent', 'stopping', 'manual'), { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('clarify', 'running', 'clarify'), { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('gate', 'waiting_human', 'gate'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('review', 'waiting_human', 'review'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('takeover', 'waiting_human', 'manual'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('clarify', 'waiting_human', 'clarify'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
   ])('%o', (node, mark) => {
     expect(recentRunMark(run(node, node.state === 'waiting_human' ? 'waiting_human' : 'running'))).toEqual(mark)
   })

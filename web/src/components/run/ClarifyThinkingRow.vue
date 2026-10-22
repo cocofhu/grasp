@@ -5,7 +5,7 @@
  * ClarifyChat and the run LLM transcript.
  */
 import { useI18n } from 'vue-i18n'
-import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
+import Icon from '../ui/Icon.vue'
 
 withDefaults(
   defineProps<{
@@ -22,21 +22,21 @@ const { t } = useI18n()
 <template>
   <div
     v-if="variant === 'placeholder'"
-    class="chat-meta inline-flex items-center gap-2.5 py-2"
+    class="chat-meta grasp-status-host inline-flex items-center gap-2.5 py-2"
     data-testid="clarify-busy-placeholder"
   >
-    <InboxMotionMark kind="pulse" />
+    <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
     <span>{{ t('pages.clarify.thinkingBusy') }}</span>
   </div>
   <div
     v-else
-    class="chat-meta mt-1 inline-flex items-center gap-2 font-normal"
+    class="chat-meta grasp-status-host mt-1 inline-flex items-center gap-2 font-normal"
     :class="outputting ? 'clarify-outputting' : ''"
     data-testid="clarify-busy-status"
     :data-state="outputting ? 'outputting' : 'thinking'"
     role="status"
   >
-    <InboxMotionMark v-if="!outputting" kind="pulse" />
+    <Icon v-if="!outputting" name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
     <span>{{ outputting ? t('pages.clarify.outputting') : t('pages.clarify.thinkingBusy') }}</span>
   </div>
 </template>

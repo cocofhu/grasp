@@ -10,6 +10,7 @@ function mountStatus(props: {
   busy?: boolean
   completed?: boolean
   interrupted?: boolean
+  busyIcon?: string
 }) {
   const i18n = createI18n({
     legacy: false,
@@ -26,15 +27,23 @@ describe('ThoughtSummaryStatus', () => {
   it('replaces the running indicator when the turn completes or is interrupted', async () => {
     const w = mountStatus({ busy: true })
     expect(w.findAll('icon-stub')).toHaveLength(1)
-    expect(w.get('icon-stub').attributes('name')).toBe('spinner')
+    expect(w.get('icon-stub').attributes('name')).toBe('arc-spinner')
+    expect(w.get('[data-testid="thought-summary-state"]').classes()).toContain('grasp-status-host')
     await w.setProps({ busy: false, completed: true })
-    expect(w.find('icon-stub[name="spinner"]').exists()).toBe(false)
-    expect(w.get('icon-stub').attributes('name')).toBe('check')
+    expect(w.find('icon-stub[name="arc-spinner"]').exists()).toBe(false)
+    expect(w.get('icon-stub').attributes('name')).toBe('check-draw')
     expect(w.get('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('done')
     await w.setProps({ interrupted: true })
-    expect(w.get('icon-stub').attributes('name')).toBe('alert')
+    expect(w.get('icon-stub').attributes('name')).toBe('warn-pulse')
     expect(w.text()).toContain('已中断')
     expect(w.text()).not.toContain('已完成')
+    w.unmount()
+  })
+
+  it('a busy auto-run row uses the breath dot instead of the arc', () => {
+    const w = mountStatus({ busy: true, busyIcon: 'breath-dot' })
+    expect(w.get('icon-stub').attributes('name')).toBe('breath-dot')
+    expect(w.get('icon-stub').attributes('size')).toBe('16')
     w.unmount()
   })
 
