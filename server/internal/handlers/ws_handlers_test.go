@@ -44,6 +44,60 @@ func TestRunEventsWS(t *testing.T) {
 	}
 }
 
+// Snapshot uses the same runDetailDTO as GetRun, so it must carry the run title
+// and must not blank it after connect.
+func TestRunEventsWSSnapshotIncludesTitle(t *testing.T) {
+	h := newHarness(t)
+	if err := h.db.Create(&models.Run{
+		ID: "rw-title", WorkflowID: "wf-self", WorkflowName: "自我迭代",
+		Title: "这个行高有点高了", Status: "running", StartedAt: time.Now(),
+		Graph: models.Graph{Nodes: []models.Node{{ID: "in", Type: "input"}, {ID: "out", Type: "output"}}},
+	}).Error; err != nil {
+		t.Fatalf("seed run: %v", err)
+	}
+	srv := httptest.NewServer(h.r)
+	defer srv.Close()
+
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/api/runs/rw-title/events"), h.wsHeader())
+	if err != nil {
+		t.Fatalf("dial: %v", err)
+	}
+	defer c.Close()
+	c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	_, msg, err := c.ReadMessage()
+	if err != nil {
+		t.Fatalf("snapshot frame: %v", err)
+	}
+	var frame struct {
+		Type string         `json:"type"`
+		Run  map[string]any `json:"run"`
+	}
+	if err := json.Unmarshal(msg, &frame); err != nil {
+		t.Fatalf("decode snapshot: %v %s", err, msg)
+	}
+	if frame.Type != "snapshot" {
+		t.Fatalf("type=%q want snapshot", frame.Type)
+	}
+	if frame.Run["title"] != "这个行高有点高了" {
+		t.Fatalf("snapshot run.title=%v", frame.Run["title"])
+	}
+	if frame.Run["workflowName"] != "自我迭代" {
+		t.Fatalf("snapshot workflowName=%v", frame.Run["workflowName"])
+	}
+
+	detail := h.do("GET", "/api/runs/rw-title", nil)
+	if detail.Code != 200 {
+		t.Fatalf("get run: %d %s", detail.Code, detail.Body)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(detail.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["title"] != frame.Run["title"] {
+		t.Fatalf("GetRun title=%v snapshot title=%v", got["title"], frame.Run["title"])
+	}
+}
+
 // TestRunEventsWSReviewEnqueueError ensures review_chat failures surface as
 // type:"review" event:"error" (not silently dropped).
 func TestRunEventsWSReviewEnqueueError(t *testing.T) {
