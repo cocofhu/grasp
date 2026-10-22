@@ -153,12 +153,20 @@ describe('stream resume acceptance (g5.2 three surfaces × four scenarios)', () 
   it('g1.2: ACP busy=false must not stop busySeedRetry or clear platform session busy', () => {
     const inbox = readSrc('lib/inbox/useGatesInbox.ts')
     const runWs = readSrc('lib/run/useRunDetailWs.ts')
-    // Inbox: acp branch must not assign clarifyLiveBusy or stop retry on !busy.
-    const acpInbox = inbox.slice(inbox.indexOf("if (m.type === 'acp')"))
+    // Session socket documents g1.2. The follow socket's acp branch is earlier
+    // and only draws the current visit; it must not be the block under test.
+    const sessionMark = inbox.indexOf('ACP/sandbox busy is observational only')
+    expect(sessionMark).toBeGreaterThan(-1)
+    const acpInbox = inbox.slice(inbox.lastIndexOf("if (m.type === 'acp')", sessionMark))
     const acpInboxBlock = acpInbox.slice(0, acpInbox.indexOf('return') + 20)
     expect(acpInboxBlock).not.toMatch(/clarifyLiveBusy\.value = !!m\.busy/)
     expect(acpInboxBlock).not.toMatch(/if \(!m\.busy\) busySeedRetry\.stop\(\)/)
     expect(acpInboxBlock).toMatch(/observational only|must not overwrite platform|g1\.2/)
+    const followFn = inbox.slice(inbox.indexOf('function onFollowAcp'))
+    const followEnd = followFn.indexOf('\nasync function ')
+    const followBody = followFn.slice(0, followEnd > 0 ? followEnd : 1200)
+    expect(followBody).not.toMatch(/clarifyLiveBusy/)
+    expect(followBody).not.toMatch(/busySeedRetry/)
     // Run: ACP may update liveBusy for LiveLog, but must not stop dialogue retry.
     const acpRun = runWs.slice(runWs.indexOf("if (m.type === 'acp' && m.nodeId)"))
     const acpRunBlock = acpRun.slice(0, 600)
