@@ -10,6 +10,7 @@ import AgentCreateWizard from './AgentCreateWizard.vue'
 import { WIZARD_STEPS } from '@/lib/agent/agentCreateWizard'
 
 const createAgent = vi.fn(async (payload: unknown) => payload)
+const listCredentials = vi.fn(async () => ({ items: [] as Array<Record<string, unknown>> }))
 /** Concurrent noise: run-tags 404 must not break git help (g3/g4). */
 const listRunTags = vi.fn(async () => {
   throw Object.assign(new Error('not found'), { status: 404 })
@@ -39,6 +40,7 @@ vi.mock('@/lib/api/api', () => ({
     getSharedAgentConfig: () => getSharedAgentConfig(),
     openCodeProviders: async () => ({ providers: [] }),
     openCodeModels: async () => ({ models: [] }),
+    listCredentials: () => listCredentials(),
   },
 }))
 
@@ -80,6 +82,7 @@ function railLabels(): string[] {
 
 afterEach(() => {
   document.body.innerHTML = ''
+  listCredentials.mockResolvedValue({ items: [] })
 })
 
 describe('AgentCreateWizard 5-step IA', () => {
@@ -142,13 +145,10 @@ describe('AgentCreateWizard 5-step IA', () => {
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
 
-    expect(document.body.textContent).toContain('如何获取')
+    expect(document.body.textContent).toContain('请到工作区凭据保存')
+    expect(document.body.textContent).not.toContain('如何获取')
+    expect(document.body.querySelector('[data-test="api-key-input"]')).toBeNull()
     expect(document.body.textContent).not.toContain('CURSOR_API_KEY')
-    expect(document.body.textContent).toContain('Cursor Dashboard')
-    const dash = Array.from(document.body.querySelectorAll('a')).find((a) =>
-      a.href.includes('cursor.com/dashboard'),
-    )
-    expect(dash).toBeTruthy()
 
     buttonByText('跳过').click()
     await wrapper.vm.$nextTick()
@@ -181,6 +181,9 @@ describe('AgentCreateWizard 5-step IA', () => {
     const payload = createAgent.mock.calls[0][0]
     expect(payload.acpBackend).toBe('opencode')
     expect(payload.layout?.configRoot).toBe('/root/.config/opencode')
+    expect(payload).not.toHaveProperty('aiCredentialId')
+    expect(payload).not.toHaveProperty('openCodeCredentialId')
+    expect(payload).not.toHaveProperty('gitCredentialId')
     wrapper.unmount()
   })
 
@@ -358,6 +361,139 @@ describe('AgentCreateWizard 5-step IA', () => {
     const payload = createAgent.mock.calls.at(-1)?.[0] as { name: string; templateId?: string }
     expect(payload.name).toBe('qa-1')
     expect(payload.templateId).toBe('test')
+    wrapper.unmount()
+  })
+
+  it('selects saved credentials, shows GIT_REPOS on the Git step, and posts ids without secrets', async () => {
+    listCredentials.mockResolvedValue({
+      items: [
+        {
+          id: 'c1',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+        },
+        {
+          id: 'revoked',
+          name: '已撤销',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+          revokedAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'g1',
+          name: 'org-read',
+          type: 'git',
+          provider: 'github',
+          envKey: 'GITHUB_TOKEN',
+          configured: true,
+        },
+        {
+          id: 'gl1',
+          name: 'gl-read',
+          type: 'git',
+          provider: 'gitlab',
+          envKey: 'GITLAB_TOKEN',
+          configured: true,
+        },
+        {
+          id: 's1',
+          name: '部署私钥',
+          type: 'ssh',
+          provider: 'ssh',
+          envKey: 'GIT_SSH_PRIVATE_KEY',
+          configured: true,
+        },
+        {
+          id: 'h1',
+          name: '已知主机',
+          type: 'ssh',
+          provider: 'ssh',
+          envKey: 'GIT_SSH_KNOWN_HOSTS',
+          configured: true,
+        },
+      ],
+    })
+    createAgent.mockClear()
+    const wrapper = mountWizard()
+    await flushPromises()
+    fillName('cred-agent')
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('用编码工具账号').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('Cursor').click()
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await flushPromises()
+
+    expect(document.body.textContent).toContain('工作号')
+    expect(document.body.textContent).not.toContain('已撤销')
+    expect(document.body.querySelector('[data-test="api-key-input"]')).toBeNull()
+    ;(document.body.querySelector('[data-testid="credential-alias-option-c1"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+
+    ;(document.body.querySelector('[data-test="git-choice-github_https"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('org-read')
+    expect(document.body.textContent).not.toContain('gl-read')
+    expect(document.body.textContent).not.toContain('部署私钥')
+    ;(document.body.querySelector('[data-testid="credential-alias-option-g1"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    ;(document.body.querySelector('[data-test="git-apply-recommended"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    const repos = document.body.querySelector('[data-test="wizard-git-repos"]')
+    const inputs = repos?.querySelectorAll('input')
+    expect(inputs?.[0]?.value).toBe('GIT_REPOS')
+    expect(inputs?.[1]?.value).toBe('${vars.repos}')
+    ;(document.body.querySelector('[data-test="git-apply-recommended"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    expect(document.body.querySelectorAll('[data-test="wizard-git-repos"]')).toHaveLength(1)
+
+    ;(document.body.querySelector('[data-test="git-choice-ssh"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="credential-alias-option-g1"]')).toBeNull()
+    expect(document.body.textContent).toContain('部署私钥')
+    expect(document.body.textContent).toContain('已知主机')
+    ;(document.body.querySelector('[data-testid="credential-alias-option-s1"]') as HTMLButtonElement).click()
+    ;(document.body.querySelector('[data-testid="credential-alias-option-h1"]') as HTMLButtonElement).click()
+    await wrapper.vm.$nextTick()
+    buttonByText('下一步').click()
+    await wrapper.vm.$nextTick()
+
+    expect(document.body.textContent).toContain('工作号')
+    expect(document.body.textContent).toContain('部署私钥')
+    expect(document.body.textContent).toContain('GIT_REPOS')
+    expect(document.body.textContent).not.toContain('API Key · 未配置')
+    buttonByText('创建并进入 Studio').click()
+    await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
+    const payload = createAgent.mock.calls.at(-1)?.[0] as {
+      aiCredentialId?: string
+      openCodeCredentialId?: string
+      gitCredentialType?: string
+      gitCredentialId?: string
+      sshHostsCredentialId?: string
+      env?: Record<string, string>
+    }
+    expect(payload.aiCredentialId).toBe('c1')
+    expect(payload).not.toHaveProperty('openCodeCredentialId')
+    expect(payload.gitCredentialType).toBe('ssh')
+    expect(payload.gitCredentialId).toBe('s1')
+    expect(payload.sshHostsCredentialId).toBe('h1')
+    expect(payload.env?.GIT_REPOS).toBe('${vars.repos}')
+    expect(payload.env).not.toHaveProperty('GITHUB_TOKEN')
+    expect(payload.env).not.toHaveProperty('GITLAB_TOKEN')
+    expect(payload.env).not.toHaveProperty('GIT_SSH_PRIVATE_KEY')
+    expect(payload.env).not.toHaveProperty('GIT_SSH_KNOWN_HOSTS')
+    expect(payload.env).not.toHaveProperty('GRASP_CURSOR_API_KEY')
+    listCredentials.mockResolvedValue({ items: [] })
     wrapper.unmount()
   })
 })

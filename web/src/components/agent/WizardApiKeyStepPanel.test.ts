@@ -79,6 +79,89 @@ describe('WizardApiKeyStepPanel custom config editor', () => {
     wrapper.unmount()
   })
 
+  it('offers saved aliases instead of a paste box that create would drop', async () => {
+    const wrapper = mountPanel({
+      pickCredential: true,
+      authMode: 'apiKey',
+      acpBackend: 'cursor',
+      configRoot: '/root/.cursor',
+      authGuide: authGuideFor('cursor'),
+      credentialItems: [
+        {
+          id: 'c1',
+          name: '工作号',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+        },
+        {
+          id: 'revoked',
+          name: '已撤销',
+          type: 'ai',
+          provider: 'cursor',
+          envKey: 'GRASP_CURSOR_API_KEY',
+          configured: true,
+          revokedAt: '2026-01-01T00:00:00Z',
+        },
+      ],
+      selectedCredentialId: '',
+    })
+    expect(wrapper.find('[data-test="api-key-input"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('选择已有授权')
+    expect(wrapper.text()).toContain('工作号')
+    expect(wrapper.text()).not.toContain('已撤销')
+    expect(wrapper.text()).not.toContain('如何获取')
+    await wrapper.get('[data-testid="credential-alias-option-c1"]').trigger('click')
+    expect(wrapper.emitted('update:selectedCredentialId')?.[0]).toEqual(['c1'])
+    wrapper.unmount()
+  })
+
+  it('lets the step be skipped when the backend has no saved credential', () => {
+    const wrapper = mountPanel({
+      pickCredential: true,
+      authMode: 'apiKey',
+      acpBackend: 'cursor',
+      authGuide: authGuideFor('cursor'),
+      credentialItems: [],
+    })
+    expect(wrapper.find('[data-test="api-key-input"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('直接跳过')
+    expect(wrapper.find('[data-test="custom-config-editor-host"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('still blocks on invalid custom config while credential picking is available', () => {
+    const wrapper = mountPanel({ pickCredential: true, customConfigError: true })
+    expect(wrapper.get('[data-test="custom-config-error"]').text()).toContain('JSON')
+    expect(wrapper.find('[data-test="api-key-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lists an OpenCode model-vendor credential without vendor paste fields', () => {
+    const wrapper = mountPanel({
+      pickCredential: true,
+      acpBackend: 'opencode',
+      configRoot: '/root/.config/opencode',
+      authMode: 'apiKey',
+      authGuide: authGuideFor('opencode'),
+      credentialItems: [
+        {
+          id: 'oc1',
+          name: '厂商号',
+          type: 'ai',
+          provider: 'opencode',
+          envKey: 'GRASP_OPENCODE_API_KEY',
+          configured: true,
+        },
+      ],
+    })
+    expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="api-key-input"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('厂商号')
+    wrapper.unmount()
+  })
+
   it('shows OpenCode vendor fields and emits base URL updates', async () => {
     const guide = authGuideFor('opencode')
     const wrapper = mountPanel({

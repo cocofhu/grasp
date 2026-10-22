@@ -2294,6 +2294,7 @@
         "repoUrlHint": "在工作流全局变量中配置 repos（每个仓 clone 到 /root/workspace/<name>/）；沙箱 startup.sh 据此 clone 并选择凭据方案",
         "recommendedEnv": "推荐环境变量",
         "applyRecommended": "添加推荐变量",
+        "applyRecommendedDone": "已添加推荐变量",
         "newBadge": "新",
         "statusOk": "配置形态完整",
         "statusErr": "凭据配置形态不完整",
@@ -2669,7 +2670,11 @@
         },
         "apiKey": {
           "meta": "Token 类鉴权请写到「共享Agent配置」；本步可跳过，创建时不会把 API Key 写入单个 Agent。",
+          "metaPick": "当前 Backend 已经有授权时，直接选择这条凭据。本步可跳过，创建时不会把 API Key 写入单个 Agent 的环境变量。",
           "modeGroup": "鉴权方式",
+          "modeSaved": "选择已有授权",
+          "modeSavedHint": "使用工作区里已保存的凭据，不把密钥写入这个 Agent",
+          "emptySkip": "当前 Backend 还没有已保存的授权。请到工作区凭据保存，或直接跳过。",
           "modeApiKey": "粘贴 API Key",
           "modeApiKeyHint": "仅作参考，创建时不会写入单个 Agent；请到共享 Agent 配置保存",
           "modeCustomConfig": "自定义配置",
@@ -2750,7 +2755,9 @@
           "howTo": "如何获取"
         },
         "git": {
-          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过，之后在 Studio 再配；Token 在工作区凭据中配置。"
+          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过。已经配过的凭据可以直接选择。",
+          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。",
+          "hostsEmpty": "还没有已保存的已知主机，可以不选。"
         },
         "env": {
           "meta": "注入沙箱的环境变量。区域保留键由 Agent 步骤统一管理，密钥仅保存在 Agent 配置中。"

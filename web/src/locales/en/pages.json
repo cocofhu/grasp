@@ -2294,6 +2294,7 @@
         "repoUrlHint": "Configure repos in workflow globals (each clones to /root/workspace/<name>/); sandbox startup.sh clones and picks credentials from it",
         "recommendedEnv": "Recommended env vars",
         "applyRecommended": "Add recommended vars",
+        "applyRecommendedDone": "Recommended vars added",
         "newBadge": "new",
         "statusOk": "Configuration shape complete",
         "statusErr": "Credential configuration shape incomplete",
@@ -2669,7 +2670,11 @@
         },
         "apiKey": {
           "meta": "Put Token auth in Workspace shared Agent config; you can skip this step — create will not write API Keys into a single Agent.",
+          "metaPick": "When this Backend already has a credential, pick it here. You can skip this step. Create does not write the API key into this Agent's environment.",
           "modeGroup": "Auth method",
+          "modeSaved": "Use a saved credential",
+          "modeSavedHint": "Use a credential already saved in the workspace. The secret is not written into this Agent",
+          "emptySkip": "This Backend has no saved credential yet. Save one under workspace credentials, or skip this step.",
           "modeApiKey": "Paste API Key",
           "modeApiKeyHint": "Reference only; it is not written into a single Agent. Save it in the workspace shared Agent config",
           "modeCustomConfig": "Custom config",
@@ -2750,7 +2755,9 @@
           "howTo": "How to get it"
         },
         "git": {
-          "meta": "Pick GitHub / GitLab / SSH, or skip and configure later in Studio; tokens are configured in workspace credentials."
+          "meta": "Pick GitHub / GitLab / SSH, or skip. Credentials already saved in the workspace can be selected here.",
+          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step.",
+          "hostsEmpty": "No saved known hosts yet. You can leave this unset."
         },
         "env": {
           "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."

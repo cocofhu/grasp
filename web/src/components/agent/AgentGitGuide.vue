@@ -28,12 +28,16 @@ const recommendations: { key: string; value: string }[] = [
   { key: 'GIT_REPOS', value: '${vars.repos}' },
 ]
 
+const recommendedApplied = computed(() =>
+  recommendations.every((item) => props.env.some((entry) => entry.k === item.key)),
+)
+
 function selectType(type: GitCredentialType) {
   emit('update:credentialType', type)
 }
 
 function applyRecommended() {
-  if (!props.credentialType) return
+  if (!props.credentialType || recommendedApplied.value) return
   for (const item of recommendations) {
     if (!props.env.some((entry) => entry.k === item.key)) {
       props.upsertEnv(item.key, item.value)
@@ -95,9 +99,14 @@ defineExpose({ isGitEnvKey })
           size="sm"
           variant="outline"
           data-test="git-apply-recommended"
+          :disabled="recommendedApplied"
           @click="applyRecommended"
         >
-          {{ t('pages.agentStudio.git.applyRecommended') }}
+          {{
+            recommendedApplied
+              ? t('pages.agentStudio.git.applyRecommendedDone')
+              : t('pages.agentStudio.git.applyRecommended')
+          }}
         </AppButton>
       </div>
     </div>

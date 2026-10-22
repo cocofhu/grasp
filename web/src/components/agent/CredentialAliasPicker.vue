@@ -15,6 +15,8 @@ const props = defineProps<{
   hint?: string
   /** Meta panels omit the hint paragraph. Other callers keep it. */
   hideHint?: boolean
+  /** Replaces the default empty copy. Callers that can skip pass their own sentence. */
+  emptyText?: string
 }>()
 
 const emit = defineEmits<{
@@ -109,7 +111,7 @@ onMounted(() => {
       class="mt-2 py-3 text-[12px] text-txt3"
       data-testid="credential-alias-empty"
     >
-      {{ t('pages.workspace.credentials.pickEmptyNamed', { kind: t(`pages.workspace.credentials.kinds.${kind}`) }) }}
+      {{ emptyText || t('pages.workspace.credentials.pickEmptyNamed', { kind: t(`pages.workspace.credentials.kinds.${kind}`) }) }}
     </div>
     <div v-else class="mt-2 divide-y divide-line/60">
       <button

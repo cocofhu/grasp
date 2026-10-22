@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
+import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import {
   agentConfigRelPath,
@@ -10,6 +11,8 @@ import {
   type BackendAuthGuide,
 } from '@/lib/agent/backendAuthGuide'
 import type { WizardAuthMode, WizardBackendId } from '@/lib/agent/agentCreateWizard'
+import type { CredentialItem } from '@/lib/api/api'
+import { backendKind } from '@/lib/workspace/credentialKinds'
 import {
   openCodeCustomBaseRequired,
   openCodeFieldsFromEnv,
@@ -27,6 +30,10 @@ const props = defineProps<{
   env?: Record<string, string>
   openCodeBaseError?: boolean
   openCodeModelError?: boolean
+  /** Single-agent wizard picks a saved credential instead of pasting a secret. */
+  pickCredential?: boolean
+  credentialItems?: CredentialItem[]
+  selectedCredentialId?: string
 }>()
 
 const emit = defineEmits<{
@@ -37,6 +44,7 @@ const emit = defineEmits<{
   'update:openCodeBaseUrl': [value: string]
   'update:openCodeModel': [value: string]
   'update:openCodeVision': [value: boolean]
+  'update:selectedCredentialId': [id: string]
 }>()
 
 const { t } = useI18n()
@@ -44,6 +52,7 @@ const { t } = useI18n()
 const settingsAbsPath = computed(() => settingsFileAbsPath(props.configRoot, props.acpBackend))
 const configRelPath = computed(() => agentConfigRelPath(props.acpBackend))
 const configNoteKey = computed(() => customConfigNoteKey(props.acpBackend))
+const credentialKind = computed(() => (props.pickCredential ? backendKind(props.acpBackend)?.id : undefined))
 const openCode = computed(() => openCodeFieldsFromEnv(props.env || {}))
 const showOpenCode = computed(() => props.acpBackend === 'opencode' && props.authMode === 'apiKey')
 const codexLogin = computed(() => props.acpBackend === 'codex')
@@ -63,7 +72,9 @@ function setMode(mode: WizardAuthMode) {
 
 <template>
   <div>
-    <p class="sec-meta">{{ t('pages.agentStudio.wizard.apiKey.meta') }}</p>
+    <p class="sec-meta">
+      {{ t(pickCredential ? 'pages.agentStudio.wizard.apiKey.metaPick' : 'pages.agentStudio.wizard.apiKey.meta') }}
+    </p>
     <div class="mb-3 rounded-lg border border-accent/30 bg-accent-dim/40 px-3 py-2.5 text-[12px] leading-5 text-txt2">
       {{
         t('pages.agentStudio.wizard.apiKey.backendBanner', {
@@ -74,7 +85,7 @@ function setMode(mode: WizardAuthMode) {
     </div>
 
     <div
-      v-if="!codexLogin"
+      v-if="pickCredential || !codexLogin"
       class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
       role="group"
       :aria-label="t('pages.agentStudio.wizard.apiKey.modeGroup')"
@@ -91,9 +102,11 @@ function setMode(mode: WizardAuthMode) {
         data-test="auth-mode-api-key"
         @click="setMode('apiKey')"
       >
-        <strong class="block text-[13px] text-txt">{{ t('pages.agentStudio.wizard.apiKey.modeApiKey') }}</strong>
+        <strong class="block text-[13px] text-txt">
+          {{ t(pickCredential ? 'pages.agentStudio.wizard.apiKey.modeSaved' : 'pages.agentStudio.wizard.apiKey.modeApiKey') }}
+        </strong>
         <span class="mt-1 block text-[11px] leading-5 text-txt3">
-          {{ t('pages.agentStudio.wizard.apiKey.modeApiKeyHint') }}
+          {{ t(pickCredential ? 'pages.agentStudio.wizard.apiKey.modeSavedHint' : 'pages.agentStudio.wizard.apiKey.modeApiKeyHint') }}
         </span>
       </button>
       <button
@@ -115,7 +128,21 @@ function setMode(mode: WizardAuthMode) {
       </button>
     </div>
 
-    <div v-if="showLoginPane">
+    <div v-if="pickCredential && authMode === 'apiKey'">
+      <CredentialAliasPicker
+        v-if="credentialKind"
+        :kind="credentialKind"
+        :items="credentialItems"
+        :selected-id="selectedCredentialId"
+        :empty-text="t('pages.agentStudio.wizard.apiKey.emptySkip')"
+        @update:selected-id="emit('update:selectedCredentialId', $event)"
+      />
+      <p v-else class="mt-2 py-3 text-[12px] text-txt3" data-test="api-key-empty">
+        {{ t('pages.agentStudio.wizard.apiKey.emptySkip') }}
+      </p>
+    </div>
+
+    <div v-else-if="showLoginPane">
       <OpenCodeProviderFields
         v-if="showOpenCode"
         class="mb-4"
