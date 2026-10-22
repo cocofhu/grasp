@@ -778,7 +778,27 @@ describe('preview-pick.js floating chat window', () => {
     expect(title.textContent).toBe('Page Harness CoCo')
     expect(title.getAttribute('title')).toBe('Page Harness CoCo')
     expect(grip).not.toBeNull()
-    expect(mark?.textContent).toBe('PH')
+    const markHtml = mark?.innerHTML || ''
+    const markRule = css.match(/\.dhead \.mark\{([^}]+)\}/)?.[1] || ''
+    expect(mark?.textContent ?? '').not.toContain('PH')
+    expect(mark?.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 72 88')
+    expect(mark?.querySelectorAll('circle')).toHaveLength(2)
+    expect(mark?.querySelectorAll('path')).toHaveLength(3)
+    expect(markHtml).toContain('currentColor')
+    expect(markHtml).toContain('M6 47h14')
+    expect(markRule).toContain('width:24px')
+    expect(markRule).toContain('height:30px')
+    expect(markRule).not.toContain('color:')
+    expect(markRule).not.toContain('linear-gradient')
+    expect(markRule).not.toContain('#6366f1')
+    expect(markRule).not.toContain('#8b5cf6')
+    expect(markRule).not.toContain('#fff')
+    expect(css).toMatch(/\.drawer\{[^}]*color:#e5e7eb/)
+    expect(css).toContain('.drawer.light{color:#18181b')
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    expect(drawer.classList.contains('light')).toBe(false)
+    expect(p.win.getComputedStyle(mark as Element).color).toBe('#e5e7eb')
+    expect(p.win.getComputedStyle(title).color).toBe('#e5e7eb')
     expect(buttons.length).toBe(2)
     expect(css).toContain('.dhead{display:flex;align-items:center;gap:9px;height:48px')
     expect(css).toContain('.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600')
@@ -799,6 +819,10 @@ describe('preview-pick.js floating chat window', () => {
     const css = p.shadow.querySelector('style')?.textContent || ''
     const rule = css.match(/\.dhead \[data-role="drawer-title"\]\{([^}]+)\}/)?.[1] || ''
     expect(drawer.classList.contains('light')).toBe(true)
+    const mark = p.shadow.querySelector('.mark') as HTMLElement
+    expect(mark.querySelector('svg')).not.toBeNull()
+    expect(p.win.getComputedStyle(mark).color).toBe('#18181b')
+    expect(p.win.getComputedStyle(title).color).toBe('#18181b')
     expect(title.textContent).toBe('Page Harness CoCo')
     expect(title.getAttribute('title')).toBe('Page Harness CoCo')
     expect(rule).toContain('font-size:14px')
