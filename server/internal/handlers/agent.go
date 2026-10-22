@@ -49,7 +49,7 @@ func (b agentBody) toAgent(name string) services.Agent {
 		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
 		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID), RepoIDs: b.RepoIDs,
-		Files:                b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
+		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
 
