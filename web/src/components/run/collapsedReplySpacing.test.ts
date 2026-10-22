@@ -5,7 +5,9 @@ import { describe, expect, it } from 'vitest'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const timeline = readFileSync(join(here, 'AgentTimeline.vue'), 'utf8')
+const tools = readFileSync(join(here, 'agentToolGroup.css'), 'utf8')
 const chat = readFileSync(join(here, '../../styles/chat.css'), 'utf8')
+const status = readFileSync(join(here, 'ThoughtSummaryStatus.vue'), 'utf8')
 
 function block(css: string, selector: string): string {
   const found = css.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
@@ -16,7 +18,39 @@ function block(css: string, selector: string): string {
 describe('collapsed reply spacing', () => {
   const style = timeline.slice(timeline.indexOf('<style scoped>'))
 
-  it('keeps the elapsed row and hairline on the shared timeline styles', () => {
+  it('locks process fold rows at 20px and only raises them for a coarse pointer', () => {
+    const thought = block(style, '\\.agent-thought-summary')
+    expect(thought).toContain('height: 20px')
+    expect(thought).toContain('min-height: 20px')
+    expect(thought).toContain('max-height: 20px')
+    expect(thought).toContain('line-height: 20px')
+    expect(thought).not.toContain('min-height: 32px')
+
+    const chatSummary = block(chat, '\\.chat-thought-summary')
+    expect(chatSummary).toContain('height: 20px')
+    expect(chatSummary).toContain('min-height: 20px')
+    expect(chatSummary).toContain('max-height: 20px')
+
+    const toolsHead = block(tools, '\\.agent-tools-head')
+    expect(toolsHead).toContain('height: 20px')
+    expect(toolsHead).toContain('min-height: 20px')
+    expect(toolsHead).toContain('max-height: 20px')
+
+    expect(style).toMatch(/@media \(pointer: coarse\)/)
+    expect(style).toMatch(/\.agent-thought-summary \{ height: 44px; min-height: 44px; max-height: 44px;/)
+    expect(chat).toMatch(/@media \(pointer: coarse\)[\s\S]*\.chat-thought-summary \{ height: 44px; min-height: 44px; max-height: 44px;/)
+    expect(tools).toMatch(/@media \(pointer: coarse\)[\s\S]*\.agent-tools-head \{ height: 44px; min-height: 44px; max-height: 44px;/)
+
+    expect(style).not.toMatch(/@media \(max-width:\s*767px\)[^{]*\{[^}]*\.agent-thought-summary/)
+    expect(chat).not.toMatch(/@media \(max-width:\s*767px\)[^{]*\{[^}]*\.chat-thought-summary/)
+    expect(tools).not.toMatch(/@media \(max-width:\s*767px\)[^{]*\{[^}]*\.agent-tools-head/)
+
+    expect(style).toContain('.agent-thought { margin: 0 0 2px;')
+    expect(chat).toContain('.chat-thought { margin: 0 0 2px; }')
+    expect(tools).toContain('margin: 0 0 2px;')
+    expect(status).toContain(':size="12"')
+    expect(status).toContain('width: 12px; height: 12px;')
+
     const elapsed = block(style, '\\.agent-elapsed')
     expect(elapsed).toContain('min-height: 24px')
     expect(elapsed).toContain('font-size: 13px')
@@ -35,7 +69,25 @@ describe('collapsed reply spacing', () => {
     expect(rule).toContain('height: 1px')
     expect(rule).toContain('margin: 4px 0 8px')
     expect(rule).toContain('background: rgb(var(--c-line))')
-    expect(style).toContain('.agent-elapsed,\n  .agent-thought-summary { min-height: 44px; }')
+  })
+
+  it('renders thought as 12.5px / 1.45 paragraphs with an 8px gap', () => {
+    for (const [css, selector] of [
+      [style, '\\.agent-thought-body'],
+      [style, '\\.agent-elapsed-thought'],
+      [chat, '\\.chat-thought-body'],
+    ] as const) {
+      const body = block(css, selector)
+      expect(body).toContain('font-size: 12.5px')
+      expect(body).toContain('line-height: 1.45')
+      expect(body).not.toContain('line-height: 1.8')
+      expect(body).not.toContain('line-height: 1.75')
+      expect(body).not.toContain('whitespace-pre-wrap')
+      expect(css).toMatch(new RegExp(`${selector} p\\s*\\{[^}]*margin:\\s*0 0 8px`))
+    }
+    expect(timeline).not.toMatch(/agent-thought-body whitespace-pre-wrap/)
+    expect(timeline).not.toMatch(/agent-elapsed-thought whitespace-pre-wrap/)
+    expect(timeline).toContain('thoughtParagraphs(')
   })
 
   it('uses the Codex prose rhythm and leaves other blocks alone', () => {

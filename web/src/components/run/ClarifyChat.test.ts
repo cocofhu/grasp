@@ -1921,7 +1921,7 @@ describe('ClarifyChat', () => {
       vm.applyAcpEvents([{ kind: 'thought', text: longThought }], 'react-1')
       await flushPromises()
 
-      const thoughtBody = wrapper.find('[data-testid="clarify-thought"] .whitespace-pre-wrap')
+      const thoughtBody = wrapper.find('[data-testid="clarify-thought"] .chat-thought-body')
       expect(thoughtBody.exists()).toBe(true)
       expect(thoughtBody.text()).toBe(longThought)
       expect(thoughtBody.text()).toContain('结尾标记END')
@@ -2535,7 +2535,7 @@ describe('ClarifyChat', () => {
 
       const thought = wrapper.find('[data-testid="clarify-thought"]')
       expect(thought.exists()).toBe(true)
-      const thoughtBody = thought.find('.whitespace-pre-wrap')
+      const thoughtBody = thought.find('.chat-thought-body')
       expect(thoughtBody.exists()).toBe(true)
       expect(thoughtBody.classes().join(' ')).toMatch(/overflow-wrap:anywhere/)
       expect(thoughtBody.classes()).toContain('break-words')

@@ -9,6 +9,7 @@ import { computed, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AgentPart } from '@/lib/shared/types'
 import { timelineBlocks, timelineFolds } from '@/lib/run/acpTools'
+import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import { createStreamTextReveal } from '@/lib/run/streamTextReveal'
 import { fmtTurnElapsed, wallClockSec } from '@/lib/shared/format'
 import { renderChatMarkdown, renderChatMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
@@ -210,7 +211,9 @@ function onToggle(index: number, last: boolean, e: Event) {
       <div v-if="processOpen && workBlocks.length" :id="workId" class="agent-elapsed-work" data-testid="agent-timeline-work">
         <template v-for="b in workBlocks" :key="b.key">
           <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :expanded="expanded" :run-id="runId" />
-          <div v-else-if="b.kind === 'thought'" class="agent-elapsed-thought whitespace-pre-wrap" data-testid="agent-timeline-thought">{{ b.text }}</div>
+          <div v-else-if="b.kind === 'thought'" class="agent-elapsed-thought" data-testid="agent-timeline-thought">
+            <p v-for="(para, pi) in thoughtParagraphs(b.text)" :key="pi">{{ para }}</p>
+          </div>
           <div v-else class="chat-prose md agent-elapsed-note min-w-0" :data-testid="messageTestId">
             <span v-html="renderChatMarkdown(b.text)" />
           </div>
@@ -226,7 +229,7 @@ function onToggle(index: number, last: boolean, e: Event) {
         <AgentToolGroup v-if="b.kind === 'tools'" :tools="b.tools" :busy="streaming" :expanded="expanded" :run-id="runId" />
         <details
           v-else-if="b.kind === 'thought'"
-          class="agent-thought chat-meta mb-3 w-full min-w-0"
+          class="agent-thought chat-meta w-full min-w-0"
           data-testid="agent-timeline-thought"
           :open="isOpen(b.index, b.last)"
           @toggle="onToggle(b.index, b.last, $event)"
@@ -237,9 +240,11 @@ function onToggle(index: number, last: boolean, e: Event) {
               :completed="!streaming && completed"
               :interrupted="!streaming && interrupted"
             />
-            <Icon name="chevron-down" :size="16" class="agent-thought-chevron" aria-hidden="true" />
+            <Icon name="chevron-down" :size="12" class="agent-thought-chevron" aria-hidden="true" />
           </summary>
-          <div class="agent-thought-body whitespace-pre-wrap">{{ streaming && b.last ? liveThought : b.text }}</div>
+          <div class="agent-thought-body">
+            <p v-for="(para, pi) in thoughtParagraphs(streaming && b.last ? liveThought : b.text)" :key="pi">{{ para }}</p>
+          </div>
         </details>
         <div
           v-else
@@ -289,12 +294,14 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed[aria-expanded='true'] .agent-elapsed-chevron { transform: rotate(90deg); }
 .agent-elapsed-work { margin: 14px 0 2px; }
 .agent-elapsed-thought {
-  margin: 0 0 18px;
+  margin: 0 0 8px;
   color: rgb(var(--c-txt3));
-  font-size: 13px;
-  line-height: 1.75;
+  font-size: 12.5px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
 }
+.agent-elapsed-thought p { margin: 0 0 8px; }
+.agent-elapsed-thought p:last-child { margin-bottom: 0; }
 .agent-elapsed-thought:last-child,
 .agent-elapsed-note:last-child { margin-bottom: 4px; }
 .agent-elapsed-note { margin-bottom: 18px; }
@@ -304,38 +311,46 @@ function onToggle(index: number, last: boolean, e: Event) {
   border: 0;
   background: rgb(var(--c-line));
 }
-.agent-thought { color: var(--chat-muted, rgb(var(--c-txt2))); }
+.agent-thought { margin: 0 0 2px; color: var(--chat-muted, rgb(var(--c-txt2))); }
 .agent-thought-summary {
   display: flex;
   min-width: 0;
-  min-height: 32px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
   align-items: center;
-  gap: 8px;
-  border-radius: 6px;
-  padding: 4px 6px;
+  gap: 6px;
+  border-radius: 4px;
+  padding: 0 4px;
   cursor: pointer;
   list-style: none;
   user-select: none;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
   transition: background-color var(--dur-ui), color var(--dur-ui);
 }
 .agent-thought-summary::-webkit-details-marker { display: none; }
 .agent-thought-summary:hover { background: rgb(var(--c-elevated) / .6); color: rgb(var(--c-txt)); }
 .agent-thought-summary:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
-.agent-thought-chevron { flex-shrink: 0; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
+.agent-thought-summary :deep(.app-icon) { flex: none; width: 12px; height: 12px; }
+.agent-thought-chevron { flex-shrink: 0; width: 12px; height: 12px; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
 .agent-thought[open] > .agent-thought-summary .agent-thought-chevron { transform: rotate(180deg); }
 .agent-thought-body {
   min-width: 0;
-  margin: 3px 0 0 13px;
+  margin: 2px 0 8px 13px;
   border-left: 1px solid rgb(var(--c-line) / .8);
-  padding: 3px 6px 8px 15px;
+  padding: 2px 6px 6px 15px;
   overflow-wrap: anywhere;
   color: rgb(var(--c-txt2));
   font-size: 12.5px;
-  line-height: 1.8;
+  line-height: 1.45;
 }
-@media (max-width: 767px) {
+.agent-thought-body p { margin: 0 0 8px; }
+.agent-thought-body p:last-child { margin-bottom: 0; }
+@media (pointer: coarse) {
   .agent-elapsed,
-  .agent-thought-summary { min-height: 44px; }
+  .agent-thought-summary { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .agent-elapsed-chevron,

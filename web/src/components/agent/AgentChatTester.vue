@@ -13,6 +13,7 @@ import AgentTimeline from '@/components/run/AgentTimeline.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import ThoughtSummaryStatus from '@/components/run/ThoughtSummaryStatus.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
+import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import StreamMarkdown from '@/components/run/StreamMarkdown.vue'
 import { renderMarkdown, renderMarkdownBlocks, type MarkdownBlockCache } from '@/lib/shared/markdown'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
@@ -1062,8 +1063,10 @@ onBeforeUnmount(() => {
           />
           <!-- thought -->
           <details v-if="turn.thought && !turn.steps?.length" class="chat-thought chat-meta">
-            <summary class="chat-thought-summary"><ThoughtSummaryStatus :busy="turn.streaming" :completed="!turn.streaming && !turn.error" :interrupted="!turn.streaming && !!turn.error" /><Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" /></summary>
-            <div class="chat-thought-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ turn.thought }}</div>
+            <summary class="chat-thought-summary"><ThoughtSummaryStatus :busy="turn.streaming" :completed="!turn.streaming && !turn.error" :interrupted="!turn.streaming && !!turn.error" /><Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" /></summary>
+            <div class="chat-thought-body break-words [overflow-wrap:anywhere]">
+              <p v-for="(para, pi) in thoughtParagraphs(turn.thought)" :key="pi">{{ para }}</p>
+            </div>
           </details>
           <!-- plan -->
           <div v-if="turn.plan.length" class="border-l border-line/70 pl-3 text-[12px] leading-6">

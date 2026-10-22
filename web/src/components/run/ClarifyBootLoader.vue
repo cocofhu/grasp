@@ -156,11 +156,11 @@ const doneMeta = computed(() => {
       data-testid="clarify-boot-head"
       @click="checklistOpen = !checklistOpen"
     >
-      <Icon name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+      <Icon name="spinner" :size="12" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
       <span class="agent-tools-count" data-testid="clarify-boot-title">{{ t('pages.clarifyBootLoader.checklist.title') }}</span>
       <span v-if="elapsedLabel" class="tabular-nums text-txt3" data-testid="clarify-boot-elapsed">{{ elapsedLabel }}</span>
       <span class="agent-tools-context text-txt3" data-testid="clarify-boot-context">{{ currentTitle }}</span>
-      <Icon name="chevron-down" :size="16" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
+      <Icon name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
     </button>
     <ul v-if="checklistOpen" class="agent-tool-list" data-testid="clarify-boot-checklist">
       <li
@@ -192,11 +192,11 @@ const doneMeta = computed(() => {
         data-testid="clarify-boot-done-head"
         @click="doneOpen = !doneOpen"
       >
-        <Icon name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+        <Icon name="check" :size="12" class="agent-tool-icon" aria-hidden="true" />
         <span class="agent-tools-count" data-testid="clarify-boot-done-title">{{ title || t('pages.clarifyBootLoader.checklist.done') }}</span>
         <span class="tabular-nums text-txt3" data-testid="clarify-boot-done-meta">{{ doneMeta }}</span>
         <span class="agent-tools-context text-txt3" />
-        <Icon name="chevron-down" :size="16" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
+        <Icon name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
       </button>
       <ul v-if="doneOpen" class="agent-tool-list">
         <li v-for="c in checklist" :key="c.id" class="agent-tool-row-main" data-state="done" data-testid="clarify-boot-done-step">

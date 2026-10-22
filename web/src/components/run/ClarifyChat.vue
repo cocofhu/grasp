@@ -81,6 +81,7 @@ import { imgSrc } from '@/lib/shared/compositeText'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import { useClarifyChat } from '@/lib/inbox/useClarifyChat'
 import { hasFailedTool } from '@/lib/run/acpTools'
+import { thoughtParagraphs } from '@/lib/run/thoughtParagraphs'
 import ComposerPrimaryAction, { type ComposerPrimaryKind } from './ComposerPrimaryAction.vue'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 
@@ -1078,7 +1079,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               <!-- Thought: open while thought-only; default collapsed once message starts -->
               <details
                 v-if="t.thought"
-                class="chat-thought chat-meta mb-2 w-full"
+                class="chat-thought chat-meta w-full"
                 data-testid="clarify-thought"
                 :open="isThoughtOpen(i, t)"
                 @toggle="onThoughtToggle(i, $event)"
@@ -1092,9 +1093,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                     :completed="showTurnCompleted(t)"
                     :interrupted="!!t.interrupted"
                   />
-                  <Icon name="chevron-down" :size="16" class="chat-thought-chevron" aria-hidden="true" />
+                  <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
                 </summary>
-                <div class="chat-thought-body whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{{ agentThoughtDisplay(t, i) }}</div>
+                <div class="chat-thought-body break-words [overflow-wrap:anywhere]">
+                  <p v-for="(para, pi) in thoughtParagraphs(agentThoughtDisplay(t, i))" :key="pi">{{ para }}</p>
+                </div>
               </details>
               <AgentToolGroup v-if="t.tools?.length && !isRetryableFailedAgent(t)" :tools="t.tools" :busy="!!t.streaming" :run-id="runId" />
               <!-- Message body + streaming caret -->
@@ -2040,9 +2043,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
 }
 
 /* A quiet phase label; the message and caret carry the streaming activity. */
-.clarify-handoff-step { padding: 6px 8px; margin-inline: -8px; width: calc(100% + 16px); }
+.clarify-handoff-step { padding: 0 8px; margin-inline: -8px; width: calc(100% + 16px); }
 /* Prior summary and the hand-off rows share one check column. */
-.clarify-status-row { margin-inline: -8px; padding: 6px 8px; width: calc(100% + 16px); }
+.clarify-status-row { margin-inline: -8px; padding: 0 8px; width: calc(100% + 16px); }
 /* History ends here: a hairline (same token as markdown <hr>) then the current node. */
 .clarify-segment-divider { margin-top: 6px; padding-top: 10px; border-top: 1px solid rgb(var(--c-line) / .7); border-radius: 0; }
 /* New in-stream status rows settle in quietly (no slide on reduced motion). */

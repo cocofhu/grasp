@@ -1,5 +1,6 @@
 /* Folded tool-row styles shared by AgentToolGroup and ClarifyBootLoader (boot checklist). */
 .agent-tools {
+  margin: 0 0 2px;
   color: var(--chat-muted, rgb(var(--c-txt2)));
   font-size: 12px;
   line-height: 1.65;
@@ -15,10 +16,18 @@
 }
 .agent-tools-head {
   width: 100%;
-  min-height: 32px;
-  padding: 4px 6px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
+  gap: 6px;
+  border-radius: 4px;
+  padding: 0 4px;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
   transition: background-color var(--dur-ui), color var(--dur-ui);
 }
+.agent-tools-head .app-icon { flex: none; width: 12px; height: 12px; }
 .agent-tools-head:hover,
 button.agent-tool-row-main:hover {
   background: rgb(var(--c-elevated) / .6);
@@ -117,8 +126,10 @@ button.agent-tool-row-main:focus-visible,
 }
 .agent-tool-code--failed { border-left: 2px solid rgb(var(--c-err) / .45); padding-left: 12px; }
 .agent-tool-running.animate-spin { animation-duration: 1.4s; }
+@media (pointer: coarse) {
+  .agent-tools-head { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
+}
 @media (max-width: 767px) {
-  .agent-tools-head,
   button.agent-tool-row-main,
   .agent-tool-action { min-height: 44px; }
   .agent-tool-row-main { gap: 6px; }

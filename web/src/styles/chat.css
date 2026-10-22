@@ -114,24 +114,41 @@
 .chat-thread .text-err { color: var(--chat-error); }
 .chat-thread .chat-file-chip { gap: 8px; border-radius: 10px; background: rgb(var(--c-elevated) / .5); color: rgb(var(--c-txt2)); }
 .chat-thread .chat-file-chip .app-icon { color: rgb(var(--c-txt2)); }
+.chat-thought { margin: 0 0 2px; }
 .chat-thought-summary {
   display: flex;
-  min-height: 32px;
+  height: 20px;
+  min-height: 20px;
+  max-height: 20px;
   align-items: center;
-  gap: 8px;
-  border-radius: 6px;
-  padding: 4px 6px;
+  gap: 6px;
+  border-radius: 4px;
+  padding: 0 4px;
   list-style: none;
   cursor: pointer;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
   transition: background var(--dur-ui);
 }
 .chat-thought-summary::-webkit-details-marker { display: none; }
 .chat-thought-summary::marker { content: none; }
 .chat-thought-summary:hover { background: rgb(var(--c-elevated) / .6); }
 .chat-thought-summary:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
-.chat-thought-chevron { flex: none; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
+.chat-thought-summary .app-icon { flex: none; width: 12px; height: 12px; }
+.chat-thought-chevron { flex: none; width: 12px; height: 12px; color: rgb(var(--c-txt3)); transition: transform var(--dur-ui); }
 .chat-thought[open] > .chat-thought-summary .chat-thought-chevron { transform: rotate(180deg); }
-.chat-thought-body { margin: 3px 0 0 13px; border-left: 1px solid rgb(var(--c-line) / .8); padding: 3px 6px 8px 15px; color: rgb(var(--c-txt2)); font-size: 12.5px; line-height: 1.8; overflow-wrap: anywhere; }
+.chat-thought-body {
+  margin: 2px 0 8px 13px;
+  border-left: 1px solid rgb(var(--c-line) / .8);
+  padding: 2px 6px 6px 15px;
+  color: rgb(var(--c-txt2));
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.chat-thought-body p { margin: 0 0 8px; }
+.chat-thought-body p:last-child { margin-bottom: 0; }
 .chat-action-button,
 .chat-action-confirm,
 .chat-action-secondary {
@@ -201,8 +218,10 @@
 .chat-typing i:nth-child(3) { animation-delay: 320ms; }
 @keyframes chat-breathe { 0%, 100% { opacity: .35; } 50% { opacity: 1; } }
 
+@media (pointer: coarse) {
+  .chat-thought-summary { height: 44px; min-height: 44px; max-height: 44px; line-height: 44px; }
+}
 @media (max-width: 767px), (pointer: coarse) {
-  .chat-thought-summary { min-height: 44px; }
   .chat-action-button, .chat-action-confirm, .chat-action-secondary, .chat-choice-option, .chat-choice-other { min-width: 44px; min-height: 44px; }
   .chat-request-back { min-height: 44px; }
   .chat-composer .chat-toolbar { height: auto; min-height: 52px; padding-block: 4px; }
