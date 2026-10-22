@@ -928,6 +928,9 @@ const composerSending = ref(false)
 
 async function sendFromComposer(): Promise<boolean> {
   if (composerSending.value) return false
+  // In-flight 确认并流转 owns the primary slot. Drafts stay local until the
+  // product check returns — a parallel reply would be dropped as "already done".
+  if (validating.value || props.handoff?.phase === 'pending') return false
   const t = draft.value.trim()
   const imgs = cloneClarifyImages(attachments.value)
   const anns = cloneReactAnnotations(annotations.value)
