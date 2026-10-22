@@ -52,6 +52,7 @@ import {
   createBusySeedRetryController,
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
+import { agentPartsFromEvents, sameParts } from '@/lib/run/acpTools'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
@@ -72,7 +73,7 @@ import {
   type HomeApproveHandoff,
 } from '@/lib/run/homeApproveHandoff'
 import type GateApproval from '@/components/run/GateApproval.vue'
-import type { AcpEvent, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
+import type { AcpEvent, AgentPart, Gate, GateInboxItem, GateShareInboxStatus, InboxItem, Run } from '@/lib/shared/types'
 import type { PageControlState } from '@/lib/inbox/embedPageControl'
 import {
   activeSegment,
@@ -180,6 +181,7 @@ const reviewChatRef = ref<{
   applyAcpEvents?: (events: any[] | undefined, nodeId?: string) => boolean | void
   discardLastQueued?: () => void
   releaseConfirmPending?: () => void
+  settleConfirmedTurn?: () => void
   restoreUnsentQueued?: import('@/lib/inbox/clarifyVisitEnded').RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -295,8 +297,28 @@ watch(
  * unattended / not started yet / run ended — until the run's next waiting
  * node appears (then it opens below, same transcript).
  */
-type FollowTail = { key: string; runId: string; kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
+type FollowTail = {
+  key: string
+  runId: string
+  kind: 'waiting' | 'auto' | 'ended' | 'error'
+  label?: string
+  status?: string
+  at: string
+  nodeId?: string
+  iteration?: number
+}
+/** One downstream auto visit drawn under the hand-off row, keyed by node and iteration. */
+type FollowProcessSegment = {
+  nodeId: string
+  iteration: number
+  label: string
+  parts: AgentPart[]
+  live: boolean
+  startedAt: string
+  endedAt?: string
+}
 const followTail = ref<FollowTail | null>(null)
+const followProcess = ref<FollowProcessSegment[]>([])
 let followTimer: ReturnType<typeof setTimeout> | null = null
 let followItem: InboxItem | null = null
 let followInFlight = false
@@ -308,16 +330,23 @@ const FOLLOW_ERROR_AFTER = 2
  * Poll cadence. With the run socket open, node_enter / status frames drive
  * the follow and the poll is only a safety net (node_enter is not re-pushed on
  * a server-restart reattach; the waiting row also needs the list to show the
- * parked node). Without a socket: the old 2 s poll.
+ * parked node). Without a socket: the old 2 s poll, which also refills steps
+ * from the node record.
  */
 const FOLLOW_POLL_MS = 2000
 const FOLLOW_WS_FALLBACK_MS = 10000
 /**
- * Dedicated socket on WS /runs/:id/events while following: the active-run
- * socket is closed by beginProcessingIntent on 确认并流转, and this one only
- * reads node_enter / status (no stream projection, no reconnect — poll covers).
+ * Dedicated socket on WS /runs/:id/events while following. The active-run
+ * socket is closed by beginProcessingIntent on 确认并流转; this one keeps
+ * node_enter / status and projects the current downstream node's acp steps
+ * into the conversation still on screen. It reconnects after a drop; the poll
+ * covers the gap.
  */
 let followWs: WebSocket | null = null
+/** Latest acp snapshot seen before the follow tail (or for a node not current yet). */
+let followEarlyAcp = new Map<string, { nodeId: string; iteration?: number; events: AcpEvent[] }>()
+/** Bumped on every acp write so an older nodeEvents fill cannot overwrite it. */
+let followSnapGen = 0
 /**
  * The follow socket is opened before the 确认并流转 POST so the next node's
  * node_enter is not lost while the POST, refresh and hand-off hold run; a
@@ -325,10 +354,20 @@ let followWs: WebSocket | null = null
  * follow re-read the chain at once instead of waiting for the safety poll.
  */
 let followSawNodeEnter = false
+const followReconnect = createWsReconnectController({
+  connect: () => {
+    const id = followTail.value?.runId
+    if (id) openFollowWs(id)
+  },
+  shouldReconnect: () => {
+    const ft = followTail.value
+    return !!ft && ft.kind !== 'ended' && !!followItem && !!active.value && itemKey(active.value) === ft.key
+  },
+})
 function closeFollowWs() {
+  followReconnect.markIntentionalClose()
   const ws = followWs
   followWs = null
-  followSawNodeEnter = false
   if (ws) {
     ws.onmessage = ws.onclose = ws.onerror = null
     try {
@@ -344,18 +383,35 @@ function followWsLive(runId: string): boolean {
 function openFollowWs(runId: string) {
   if (followWsLive(runId)) return
   closeFollowWs()
-  if (typeof WebSocket === 'undefined' || (typeof process !== 'undefined' && process.env.VITEST)) return
+  if (typeof WebSocket === 'undefined') return
   let ws: WebSocket
   try {
     ws = new WebSocket(api.runEventsWsUrl(runId))
   } catch {
+    // closeFollowWs marked the drop intentional; this failure still wants a retry.
+    followReconnect.markOpened()
+    followReconnect.onClose()
     return
   }
   ;(ws as WebSocket & { _runId?: string })._runId = runId
   followWs = ws
+  // The replacement close above marked the drop intentional. This socket's
+  // own close must reconnect. markOpened also resets the backoff.
+  followReconnect.markOpened()
   ws.onmessage = (ev) => {
     if (followWs !== ws) return
-    let m: { type?: string; runId?: string; nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }
+    let m: {
+      type?: string
+      runId?: string
+      nodeId?: string
+      iteration?: number
+      name?: string
+      kind?: string
+      mode?: string
+      events?: AcpEvent[]
+      busy?: boolean
+      status?: string
+    }
     try {
       m = JSON.parse(String(ev.data))
     } catch {
@@ -363,12 +419,18 @@ function openFollowWs(runId: string) {
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
     else if (m.type === 'status') kickFollow()
+    else if (m.type === 'acp') onFollowAcp(runId, m)
   }
   ws.onclose = () => {
     if (followWs !== ws) return
     followWs = null
-    // Socket gone: fall back to the 2 s poll right away.
-    if (followTail.value && followItem) scheduleFollow(followItem, followTail.value.key)
+    const ft = followTail.value
+    const item = followItem
+    // Gap: chain poll updates the status line; node records refill steps.
+    if (ft && item && active.value && itemKey(active.value) === ft.key && ft.kind !== 'ended') {
+      void followStep(item, ft.key)
+    }
+    followReconnect.onClose()
   }
 }
 /**
@@ -377,16 +439,184 @@ function openFollowWs(runId: string) {
  * re-read chain + list. input/output plumbing visits are skipped (the status
  * frame / run end will follow).
  */
-function onFollowNodeEnter(runId: string, m: { nodeId?: string; name?: string; kind?: string; mode?: string }) {
+function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
   if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
     const label =
       m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
-    followTail.value = { ...ft, kind: m.mode === 'auto' ? 'auto' : 'waiting', label, at: new Date().toISOString() }
+    setFollowTail({
+      ...ft,
+      kind: m.mode === 'auto' ? 'auto' : 'waiting',
+      label,
+      nodeId: m.nodeId,
+      iteration: typeof m.iteration === 'number' ? m.iteration : ft.iteration,
+      at: new Date().toISOString(),
+    })
+    if (m.mode === 'auto') void fillFollowFromNodeEvents()
   }
   kickFollow()
+}
+function earlyAcpKey(nodeId: string, iteration?: number) {
+  return `${nodeId}:${iteration ?? ''}`
+}
+function rememberEarlyAcp(m: { nodeId?: string; iteration?: number; events?: AcpEvent[] }) {
+  const nodeId = m.nodeId || ''
+  const events = Array.isArray(m.events) ? m.events : []
+  if (!nodeId || !events.length) return
+  followEarlyAcp.set(earlyAcpKey(nodeId, m.iteration), { nodeId, iteration: m.iteration, events })
+}
+function chainVisitTimes(runId: string, nodeId: string, iteration: number) {
+  const seg = runChains.value[runId]?.segments.find((s) => s.nodeId === nodeId && s.iteration === iteration)
+  return { startedAt: seg?.at, endedAt: seg?.endedAt }
+}
+function sealFollowProcess() {
+  const now = new Date().toISOString()
+  const runId = followTail.value?.runId
+  let changed = false
+  const next = followProcess.value.map((seg) => {
+    if (!seg.live) return seg
+    changed = true
+    const times = runId ? chainVisitTimes(runId, seg.nodeId, seg.iteration) : {}
+    return { ...seg, live: false, endedAt: seg.endedAt || times.endedAt || now }
+  })
+  if (changed) followProcess.value = next
+}
+/** Keep one segment per node visit. Switching nodes folds the previous one. */
+function ensureAutoSegment(tail: FollowTail) {
+  if (tail.kind !== 'auto' || !tail.nodeId) {
+    sealFollowProcess()
+    return
+  }
+  const iteration = tail.iteration ?? 1
+  const now = new Date().toISOString()
+  const list = followProcess.value.map((seg) =>
+    seg.live && (seg.nodeId !== tail.nodeId || seg.iteration !== iteration)
+      ? { ...seg, live: false, endedAt: seg.endedAt || chainVisitTimes(tail.runId, seg.nodeId, seg.iteration).endedAt || now }
+      : seg,
+  )
+  const idx = list.findIndex((s) => s.nodeId === tail.nodeId && s.iteration === iteration)
+  if (idx < 0) {
+    const times = chainVisitTimes(tail.runId, tail.nodeId, iteration)
+    list.push({
+      nodeId: tail.nodeId,
+      iteration,
+      label: tail.label || tail.nodeId,
+      parts: [],
+      live: true,
+      startedAt: times.startedAt || now,
+    })
+  } else if (tail.label && list[idx]!.label !== tail.label) {
+    list[idx] = { ...list[idx]!, label: tail.label }
+  }
+  followProcess.value = list
+}
+function writeFollowParts(nodeId: string, iteration: number, label: string, events: AcpEvent[], live: boolean) {
+  const parsed = agentPartsFromEvents(events)
+  const now = new Date().toISOString()
+  const list = followProcess.value.slice()
+  const idx = list.findIndex((s) => s.nodeId === nodeId && s.iteration === iteration)
+  const runId = followTail.value?.runId || ''
+  if (idx < 0) {
+    if (!parsed?.length && !live) return
+    const times = chainVisitTimes(runId, nodeId, iteration)
+    list.push({
+      nodeId,
+      iteration,
+      label,
+      parts: parsed ?? [],
+      live,
+      startedAt: times.startedAt || now,
+      endedAt: live ? undefined : times.endedAt || now,
+    })
+  } else {
+    const prev = list[idx]!
+    const parts = parsed?.length ? parsed : prev.parts
+    if (sameParts(prev.parts, parts) && prev.live === live && (label || prev.label) === prev.label) return
+    list[idx] = {
+      ...prev,
+      label: label || prev.label,
+      parts,
+      live,
+      endedAt: live ? undefined : prev.endedAt || chainVisitTimes(runId, nodeId, iteration).endedAt || now,
+    }
+  }
+  followProcess.value = list
+}
+function replayEarlyAcp(tail: FollowTail) {
+  if (!tail.nodeId) return
+  const hit =
+    followEarlyAcp.get(earlyAcpKey(tail.nodeId, tail.iteration)) ||
+    followEarlyAcp.get(earlyAcpKey(tail.nodeId)) ||
+    [...followEarlyAcp.values()].find(
+      (e) => e.nodeId === tail.nodeId && (e.iteration == null || tail.iteration == null || e.iteration === tail.iteration),
+    )
+  if (!hit) return
+  for (const [key, value] of followEarlyAcp) {
+    if (value.nodeId === tail.nodeId) followEarlyAcp.delete(key)
+  }
+  followSnapGen++
+  writeFollowParts(tail.nodeId, tail.iteration ?? hit.iteration ?? 1, tail.label || tail.nodeId, hit.events, tail.kind === 'auto')
+}
+function setFollowTail(next: FollowTail) {
+  followTail.value = next
+  if (next.kind === 'auto' && next.nodeId) ensureAutoSegment(next)
+  else sealFollowProcess()
+  replayEarlyAcp(next)
+}
+/**
+ * ACP for the node we are following is drawn into that visit only.
+ * A snapshot for some other node is kept until that node is current,
+ * or folded into an already-shown visit without reopening it.
+ */
+function onFollowAcp(runId: string, m: { nodeId?: string; iteration?: number; events?: AcpEvent[] }) {
+  const ft = followTail.value
+  const events = Array.isArray(m.events) ? m.events : []
+  if (!ft || ft.runId !== runId || !active.value || itemKey(active.value) !== ft.key) {
+    rememberEarlyAcp(m)
+    return
+  }
+  const nodeId = m.nodeId || ''
+  if (!nodeId || !events.length) return
+  const iteration = typeof m.iteration === 'number' ? m.iteration : undefined
+  const sameVisit =
+    ft.kind === 'auto' && !!ft.nodeId && nodeId === ft.nodeId && (iteration == null || ft.iteration == null || iteration === ft.iteration)
+  if (!sameVisit) {
+    const seg = followProcess.value.find((s) => s.nodeId === nodeId && (iteration == null || s.iteration === iteration))
+    if (seg) {
+      followSnapGen++
+      writeFollowParts(seg.nodeId, seg.iteration, seg.label, events, false)
+      return
+    }
+    rememberEarlyAcp({ nodeId, iteration, events })
+    return
+  }
+  followSnapGen++
+  writeFollowParts(nodeId, iteration ?? ft.iteration ?? 1, ft.label || nodeId, events, true)
+}
+async function fillFollowFromNodeEvents() {
+  const ft = followTail.value
+  if (!ft || ft.kind !== 'auto' || !ft.nodeId || !followItem) return
+  if (!active.value || itemKey(active.value) !== ft.key) return
+  const nodeId = ft.nodeId
+  const iteration = ft.iteration ?? 1
+  const gen = followSnapGen
+  try {
+    const res = await api.nodeEvents(ft.runId, nodeId)
+    if (gen !== followSnapGen) return
+    const cur = followTail.value
+    if (!cur || cur.key !== ft.key || cur.nodeId !== nodeId || cur.kind === 'ended') return
+    if (!active.value || itemKey(active.value) !== ft.key) return
+    if (isNodeEventsUnavailable(res)) return
+    const events = (Array.isArray(res.events) ? res.events : []) as AcpEvent[]
+    const live = res.live !== false && cur.kind === 'auto'
+    if (!events.length && live) return
+    followSnapGen++
+    writeFollowParts(nodeId, iteration, cur.label || nodeId, events, live)
+  } catch {
+    /* the chain poll still moves the status line */
+  }
 }
 function kickFollow() {
   const ft = followTail.value
@@ -399,9 +629,13 @@ function stopFollow() {
   if (followTimer) clearTimeout(followTimer)
   followTimer = null
   followTail.value = null
+  followProcess.value = []
   followItem = null
   followAgain = false
   followFailures = 0
+  followSawNodeEnter = false
+  followEarlyAcp = new Map()
+  followSnapGen++
   closeFollowWs()
 }
 function isFollowingActive(): boolean {
@@ -410,12 +644,16 @@ function isFollowingActive(): boolean {
 const activeFollowTail = computed(() =>
   followTail.value && active.value && followTail.value.key === itemKey(active.value) ? followTail.value : null,
 )
+const activeFollowProcess = computed(() => (activeFollowTail.value ? followProcess.value : []))
 function tailFromChain(key: string, chain: RunChain): FollowTail {
   const at = new Date().toISOString()
-  if (isRunTerminal(chain.status)) return { key, runId: chain.runId, kind: 'ended', status: String(chain.status), at }
   const cur = chain.current
-  if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label: cur.name, at }
-  return { key, runId: chain.runId, kind: 'waiting', label: cur?.name, at }
+  const nodeId = cur?.id
+  const iteration = cur?.iteration
+  const label = cur?.name
+  if (isRunTerminal(chain.status)) return { key, runId: chain.runId, kind: 'ended', status: String(chain.status), at, nodeId, iteration, label }
+  if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
+  return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
@@ -454,11 +692,22 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
       /* soft */
     }
     if (await continueInRun(submitted, submittedKey)) return
+    const prevNode = followTail.value?.nodeId
+    const prevIter = followTail.value?.iteration
     if (chain) {
       followFailures = 0
-      followTail.value = tailFromChain(submittedKey, chain)
+      setFollowTail(tailFromChain(submittedKey, chain))
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
-      followTail.value = { ...followTail.value, kind: 'error', at: new Date().toISOString() }
+      setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
+    }
+    const ft = followTail.value
+    // Socket down, or the downstream node changed: the record fills steps the frames missed.
+    if (
+      ft?.kind === 'auto' &&
+      ft.nodeId &&
+      (!followWsLive(submitted.runId) || ft.nodeId !== prevNode || ft.iteration !== prevIter)
+    ) {
+      void fillFollowFromNodeEvents()
     }
     // Run done: stay on this conversation with the ended row (never jump to another run).
     if (followTail.value?.kind === 'ended') return closeFollowWs()
@@ -493,7 +742,8 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   const tail: FollowTail = chain
     ? tailFromChain(submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
-  followTail.value = tail
+  setFollowTail(tail)
+  if (tail.kind === 'auto') void fillFollowFromNodeEvents()
   if (tail.kind === 'ended') closeFollowWs()
   else if (followSawNodeEnter) {
     // The run moved again while the chain was being read.
@@ -2626,7 +2876,10 @@ async function onClarifySend(
     if (force && isSandboxBusyError(e)) clarifyConfirmCanAbort.value = true
     if (force) {
       // The hand-off did not happen: drop the socket opened for it (unless already following).
-      if (!followTail.value) closeFollowWs()
+      if (!followTail.value) {
+        followEarlyAcp = new Map()
+        closeFollowWs()
+      }
       // Align with RunDetail: bottom status bar, not toast.
       // Release even when msg equals the previous confirmError — that watch
       // does not run, and the button would stay on 校验中.
@@ -2665,6 +2918,9 @@ async function onClarifySend(
     clarifyConfirmError.value = msg
   }
   const finished = force && ok
+  // The visit socket was closed at the click, so turn_done never arrives.
+  // Success means that turn is over: drop 思考中 / 生成中. Failure stays retryable.
+  if (finished) reviewChatRef.value?.settleConfirmedTurn?.()
 
   // Force-finish: already left locally; sync counts and re-drop lagging ghosts.
   if (force) {
@@ -2958,6 +3214,7 @@ function itemSecondary(it: InboxItem) {
     activeHandoff,
     activeChainSegments,
     activeFollowTail,
+    activeFollowProcess,
     inboxConfirmFlow,
     inboxConfirmFlowPhase: inboxConfirmFlow.phase,
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,

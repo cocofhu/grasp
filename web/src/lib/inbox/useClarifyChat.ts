@@ -1646,6 +1646,16 @@ function visitEndedNotice(autoRetryOnResume: boolean | undefined): string {
     : translate('pages.clarify.visitEndedResend')
 }
 
+/**
+ * 确认并流转 succeeded: the visit is over, and the socket that would have
+ * delivered turn_done was closed at the click. Drop 思考中 / 生成中 on that
+ * turn. Confirm failure must not call this.
+ */
+function settleConfirmedTurn() {
+  endLiveStreaming()
+  thinking.value = false
+}
+
 /** Idle is authoritative: no live turn may keep its caret, tracked or not. */
 function endLiveStreaming() {
   let flushed = false
@@ -2405,6 +2415,7 @@ function retryLastFailed() {
     thinking,
     validating,
     releaseConfirmPending,
+    settleConfirmedTurn,
     queued,
     liveTurns,
     showClarifyEmptyHint,

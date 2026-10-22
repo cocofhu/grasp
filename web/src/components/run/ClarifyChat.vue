@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { AgentPart, ClarifyTurn } from '@/lib/shared/types'
 /** Host-owned inline hand-off after 确认并流转 (see useGatesInbox.activeHandoff). */
 export type ClarifyHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
 /** Earlier node of the same run shown above this conversation (useGatesInbox.activeChainSegments). */
@@ -29,6 +30,16 @@ export type ClarifyPriorSegment = {
 }
 /** Follow-the-run tail after a hand-off whose next node is not waiting for the user. */
 export type ClarifyFollowTail = { kind: 'waiting' | 'auto' | 'ended' | 'error'; label?: string; status?: string; at: string }
+/** Downstream auto visit drawn under the hand-off while following. One entry per node and iteration. */
+export type ClarifyFollowProcess = {
+  nodeId: string
+  iteration: number
+  label?: string
+  parts: AgentPart[]
+  live: boolean
+  startedAt?: string
+  endedAt?: string
+}
 </script>
 
 <script setup lang="ts">
@@ -74,6 +85,7 @@ import { EMBED_DEMO_PREVIEW_KEY } from '@/lib/inbox/embedDemoPreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { LIVE_CARD_HOST, isLiveBusy } from '@/lib/inbox/liveVariants'
 import type {
+  AgentPart,
   ClarifyTurn,
   ClarifyImage,
   ReactAnnotation,
@@ -136,6 +148,8 @@ const props = withDefaults(
     doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     /** Row under the hand-off while following the run. */
     followTail?: ClarifyFollowTail | null
+    /** Steps of the downstream auto nodes, in visit order. Empty when not following. */
+    followProcess?: ClarifyFollowProcess[] | null
     /** LLM process rows for this open visit. */
     systemNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
   }>(),
@@ -226,6 +240,7 @@ defineExpose({
   cancelReview: chat.cancelReview,
   discardLastQueued: chat.discardLastQueued,
   releaseConfirmPending: chat.releaseConfirmPending,
+  settleConfirmedTurn: chat.settleConfirmedTurn,
   restoreUnsentQueued: chat.restoreUnsentQueued,
   isSessionBusy: chat.isSessionBusy,
   reorderQueuedItems: chat.reorderQueuedItems,
@@ -848,6 +863,15 @@ type FollowTailView = { busy: boolean; completed: boolean; interrupted: boolean;
  * what happens next (where the conversation continues), so the disabled
  * composer never reads as broken.
  */
+const followProcessRows = computed(() => (props.followProcess || []).filter((seg) => seg.live || seg.parts.length))
+function followProcessOutputting(parts: AgentPart[]): boolean {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i]!
+    if (part.kind === 'tool') return false
+    if ((part.kind === 'message' || part.kind === 'thought') && part.text?.trim()) return part.kind === 'message'
+  }
+  return false
+}
 const followTailView = computed<FollowTailView | null>(() => {
   const ft = props.followTail
   if (!ft) return null
@@ -1599,6 +1623,35 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
         </div>
       </Transition>
+      <div
+        v-if="handoffRow && followTail && followProcessRows.length"
+        class="clarify-follow-process mt-1 flex w-full min-w-0 flex-col"
+        data-testid="clarify-follow-process"
+      >
+        <div
+          v-for="seg in followProcessRows"
+          :key="seg.nodeId + ':' + seg.iteration"
+          data-testid="clarify-follow-process-node"
+          :data-node-id="seg.nodeId"
+          :data-live="seg.live ? 'true' : 'false'"
+        >
+          <AgentTimeline
+            v-if="seg.parts.length"
+            :parts="seg.parts"
+            :streaming="seg.live"
+            :completed="!seg.live"
+            :run-id="runId"
+            :started-at="seg.startedAt"
+            :ended-at="seg.endedAt"
+            message-test-id="clarify-follow-agent-message"
+          />
+          <ClarifyThinkingRow
+            v-if="seg.live"
+            variant="status"
+            :outputting="followProcessOutputting(seg.parts)"
+          />
+        </div>
+      </div>
       <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
         <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
