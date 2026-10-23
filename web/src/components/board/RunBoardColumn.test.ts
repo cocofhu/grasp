@@ -24,6 +24,39 @@ function stubRun(partial: Partial<Run> & Pick<Run, 'id' | 'status'>): Run {
   }
 }
 
+/**
+ * happy-dom does not clamp scrollTop when content shrinks. Mirror the browser:
+ * assigning past the limit, or shrinking the content, clamps and emits scroll.
+ */
+function installScrollClamp(el: HTMLElement) {
+  let top = 0
+  let scrollHeight = 800
+  const clientHeight = 200
+  const limit = () => Math.max(0, scrollHeight - clientHeight)
+  Object.defineProperty(el, 'scrollHeight', { configurable: true, get: () => scrollHeight })
+  Object.defineProperty(el, 'clientHeight', { configurable: true, get: () => clientHeight })
+  Object.defineProperty(el, 'scrollTop', {
+    configurable: true,
+    get: () => top,
+    set(value: number) {
+      const next = Math.min(Math.max(0, value), limit())
+      if (next === top) return
+      top = next
+      el.dispatchEvent(new Event('scroll'))
+    },
+  })
+  return {
+    setContentHeight(next: number) {
+      scrollHeight = next
+      const max = limit()
+      if (top > max) {
+        top = max
+        el.dispatchEvent(new Event('scroll'))
+      }
+    },
+  }
+}
+
 function mountColumn(props: Record<string, unknown> = {}, slots: Record<string, string> = {}) {
   const i18n = createI18n({
     legacy: false,
@@ -143,6 +176,33 @@ describe('RunBoardColumn', () => {
     el.scrollTop = 0
     await wrapper.setProps({ items: items.map((item) => ({ ...item })) })
     expect((wrapper.get('[data-testid="run-board-column-body"]').element as HTMLElement).scrollTop).toBe(64)
+    wrapper.unmount()
+  })
+
+  it('restores the offset after a short list clamps scroll and the rows come back', async () => {
+    const items = Array.from({ length: 8 }, (_, i) =>
+      stubRun({ id: `run-${i}`, status: 'completed', title: `完成-${i}` }),
+    )
+    const wrapper = mountColumn({ items, total: 8, fill: true })
+    const body = wrapper.get('[data-testid="run-board-column-body"]')
+    const el = body.element as HTMLElement
+    const layout = installScrollClamp(el)
+
+    el.scrollTop = 220
+    expect(el.scrollTop).toBe(220)
+
+    layout.setContentHeight(40)
+    expect(el.scrollTop).toBe(0)
+    await wrapper.setProps({ items: [] })
+    expect(el.scrollTop).toBe(0)
+
+    layout.setContentHeight(800)
+    await wrapper.setProps({ items })
+    expect(el.scrollTop).toBe(220)
+
+    el.scrollTop = 80
+    await wrapper.setProps({ items: items.map((item) => ({ ...item })) })
+    expect(el.scrollTop).toBe(80)
     wrapper.unmount()
   })
 

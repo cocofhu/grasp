@@ -337,6 +337,22 @@ test.describe('工作区进度看板', () => {
     expect(topsAfter[0]).toBe(40)
     expect(topsAfter[2]).toBe(120)
 
+    await page.getByTestId('board-search-input').fill('看板已完成-1')
+    await expect(page.getByTestId('run-board-column').nth(0).getByText('没有匹配的任务')).toBeVisible()
+    const topsWhileEmpty = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
+      return bodies.map((el) => (el as HTMLElement).scrollTop)
+    })
+    expect(topsWhileEmpty[2]).toBe(120)
+
+    await page.getByTestId('board-search-input').fill('')
+    const topsRestored = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
+      return bodies.map((el) => (el as HTMLElement).scrollTop)
+    })
+    expect(topsRestored[0]).toBe(40)
+    expect(topsRestored[2]).toBe(120)
+
     const viewMore = page.getByTestId('board-view-more-completed')
     await expect(viewMore).toBeVisible()
     await viewMore.click()

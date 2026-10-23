@@ -40,6 +40,8 @@ const emit = defineEmits<{
 
 const bodyEl = ref<HTMLElement | null>(null)
 let savedScroll = 0
+/** Scroll events caused by restoring a saved offset must not overwrite it. */
+let ignoreScroll = 0
 
 const accentClass: Record<string, string> = {
   active: 'bg-accent-2',
@@ -62,22 +64,49 @@ function onActivateHeader() {
   emit('activate-header', props.status || '')
 }
 
+function scrollLimit(el: HTMLElement): number | null {
+  const client = el.clientHeight
+  if (client <= 0) return null
+  return Math.max(0, el.scrollHeight - client)
+}
+
+/**
+ * A shorter list, an empty search, or a hidden column makes the browser clamp
+ * scrollTop and emit scroll. That clamped value is not a user gesture.
+ */
+function isClampedOffset(el: HTMLElement, top: number): boolean {
+  if (top + 1 >= savedScroll) return false
+  const limit = scrollLimit(el)
+  return limit == null || savedScroll > limit + 1
+}
+
 function rememberScroll() {
-  if (bodyEl.value) savedScroll = bodyEl.value.scrollTop
+  if (ignoreScroll > 0) return
+  const el = bodyEl.value
+  if (!el) return
+  const top = el.scrollTop
+  if (isClampedOffset(el, top)) return
+  savedScroll = top
 }
 
 function restoreScroll() {
   const el = bodyEl.value
   if (!el || savedScroll <= 0) return
-  if (Math.abs(el.scrollTop - savedScroll) > 1) el.scrollTop = savedScroll
+  const limit = scrollLimit(el)
+  if (limit != null && savedScroll > limit + 1) return
+  if (Math.abs(el.scrollTop - savedScroll) <= 1) return
+  ignoreScroll += 1
+  el.scrollTop = savedScroll
+  queueMicrotask(() => {
+    ignoreScroll = Math.max(0, ignoreScroll - 1)
+  })
 }
 
 watch(
   () => props.items,
   async () => {
-    const top = savedScroll
     await nextTick()
-    if (bodyEl.value && top > 0) bodyEl.value.scrollTop = top
+    restoreScroll()
   },
 )
 onUpdated(restoreScroll)
