@@ -29,6 +29,7 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.e
 vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => ({ openLaunch: mocks.openLaunch }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: (id: string) => { mocks.entries.value = mocks.entries.value.some((item) => item.workflowId === id) ? mocks.entries.value.filter((item) => item.workflowId !== id) : [{ workflowId: id, favoritedAt: Date.now() }, ...mocks.entries.value] } }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import { RECENT_POLL_MS, RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
 import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 const catalog = Array.from({ length: 14 }, (_, index) => ({ id: `wf-${index}`, name: `流程 ${index}`, description: `说明 ${index}`, status: index % 2 ? 'draft' : 'published', version: 2, publishedVersion: 1, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}` }))
@@ -36,7 +37,7 @@ async function setup(path = '/workflows/wf-3/edit') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
   await router.push(path)
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...nav, ...common } } })
-  const wrapper = mount(SidebarWorkspaceLists, { attachTo: document.body, global: { plugins: [router, i18n] } })
+  const wrapper = mount(SidebarWorkspaceLists, { attachTo: document.body, global: { plugins: [router, i18n], directives: { 'hover-ink': vHoverInk } } })
   await flushPromises()
   return { wrapper, router }
 }
@@ -76,15 +77,18 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     for (const row of rows) {
       expect(row.find('[data-icon="history"]').exists()).toBe(false)
-      expect(row.element.firstElementChild).toBe(row.get('.workspace-list-title').element)
+      const content = [...row.element.children].find((el) => !el.classList.contains('hover-ink'))
+      expect(content).toBe(row.get('.workspace-list-title').element)
       const ended = row.find('[data-testid="sidebar-recent-ended"]')
       if (ended.exists()) expect(row.element.lastElementChild).toBe(ended.element)
       expect(row.find('[data-icon="chat"]').exists()).toBe(false)
+      expect(row.find('[data-testid="nav-pending-type-icon"]').exists()).toBe(false)
+      expect(row.find('[data-testid="nav-pending-pin"]').exists()).toBe(false)
     }
     wrapper.unmount()
   })
 
-  it('marks the current history row and aligns color tokens with 正在执行', async () => {
+  it('marks the current history row and aligns the row box and landing ink with 正在执行', async () => {
     mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed'), r('d', undefined, 'failed'), r('e', undefined, 'cancelled')], total: 3 })
     const { wrapper } = await setup('/runs/c')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
@@ -92,16 +96,35 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(rows[0].attributes('aria-current')).toBe('page')
     expect(rows[1].classes()).not.toContain('is-active')
     expect(rows[1].attributes('aria-current')).toBeUndefined()
+    expect(listSrc).toMatch(/<RouterLink\s+v-hover-ink\b/)
+    expect(listSrc).not.toMatch(/contextmenu|nav-pending-pin|beginRename/)
+    expect(rows[0].classes()).toContain('hover-ink-host')
+    expect(rows[0].find('.hover-ink').exists()).toBe(true)
+    expect(rows[0].element.firstElementChild?.classList.contains('hover-ink')).toBe(true)
     expect(styleBlock('\\.workspace-list-heading')).toContain('color-mix(in srgb, rgb(var(--c-txt2)) 70%, rgb(var(--c-txt3)))')
-    expect(styleBlock('\\.workspace-recent-row')).toContain('color: rgb(var(--c-txt2))')
-    expect(styleBlock('\\.workspace-recent-row:hover')).toContain('color: rgb(var(--c-txt))')
-    expect(styleBlock('\\.workspace-recent-row:hover')).toContain('rgb(var(--c-txt) / .04)')
+    const row = styleBlock('\\.workspace-recent-row')
+    expect(row).toContain('color: rgb(var(--c-txt2))')
+    expect(row).toContain('min-height: 36px')
+    expect(row).toContain('border-radius: 10px')
+    expect(row).toContain('padding: 8px 10px')
+    expect(row).toContain('gap: 10px')
+    expect(row).toContain('margin-bottom: 2px')
+    expect(row).toContain('font-size: 13px')
+    expect(row).toContain('--hover-ink-color: rgb(var(--c-txt) / .04)')
+    expect(row).not.toContain('background')
+    expect(styleBlock('\\.sidebar-tree-item > \\.workspace-recent-row')).toContain('padding-left: 6px')
+    const hover = styleBlock('\\.workspace-recent-row:hover')
+    expect(hover).toContain('color: rgb(var(--c-txt))')
+    expect(hover).not.toContain('background')
     const active = styleBlock('\\.workspace-recent-row\\.is-active, \\.workspace-recent-row\\.is-active:hover')
     expect(active).toContain('color: rgb(var(--c-txt))')
     expect(active).toContain('light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+    expect(styleBlock('\\.workspace-list-title')).toContain('font-weight: 400')
+    expect(styleBlock('\\.workspace-list-title')).toContain('font-size: 13px')
     expect(styleBlock('\\.workspace-recent-ended\\.is-failed')).toContain('light-dark(#d17a7a, #e08a8a)')
     expect(styleBlock('\\.workspace-recent-ended\\.is-cancelled')).toContain('light-dark(#b4b4bb, #6f6f78)')
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
+    expect(rows.every((item) => item.element.parentElement?.classList.contains('sidebar-tree-item'))).toBe(true)
     wrapper.unmount()
   })
 
@@ -155,6 +178,26 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 20))
     await flushPromises()
     expect(mocks.listRuns).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
+
+  it('shows failed and cancelled end icons after a relay without remounting', async () => {
+    mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed')], total: 1 })
+    const { wrapper } = await setup('/')
+    const list = wrapper.get('[data-testid="sidebar-recent"]')
+    expect(list.find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
+    mocks.listRuns.mockResolvedValue({
+      items: [r('d', undefined, 'failed'), r('e', undefined, 'cancelled'), r('c', undefined, 'completed')],
+      total: 3,
+    })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
+    await flushPromises()
+    const ended = (id: string) => wrapper.get(`[data-run-id="${id}"]`).find('[data-testid="sidebar-recent-ended"]')
+    expect(ended('d').classes()).toContain('is-failed')
+    expect(ended('e').classes()).toContain('is-cancelled')
+    expect(ended('c').exists()).toBe(false)
+    expect(list.element.isConnected).toBe(true)
     wrapper.unmount()
   })
 })
