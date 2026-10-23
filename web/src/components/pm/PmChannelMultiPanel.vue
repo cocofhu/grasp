@@ -116,7 +116,7 @@ const {
         :class="
           tab === 'list'
             ? 'border-accent text-txt'
-            : 'border-transparent text-txt2 hover:text-txt'
+            : 'border-transparent text-txt2'
         "
         data-testid="channel-tab-list"
         @click="tab = 'list'"
@@ -129,7 +129,7 @@ const {
         :class="
           tab === 'edit'
             ? 'border-accent text-txt'
-            : 'border-transparent text-txt2 hover:text-txt'
+            : 'border-transparent text-txt2'
         "
         data-testid="channel-tab-edit"
         @click="tab = 'edit'"
@@ -142,7 +142,7 @@ const {
         :class="
           tab === 'notify'
             ? 'border-accent text-txt'
-            : 'border-transparent text-txt2 hover:text-txt'
+            : 'border-transparent text-txt2'
         "
         data-testid="channel-tab-notify"
         @click="tab = 'notify'"

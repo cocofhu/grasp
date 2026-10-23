@@ -348,6 +348,19 @@ describe('NotificationsView pagination conventions (g4.4 / g1.5)', () => {
     expect(viewSrc).toMatch(/min-h-11 border-b-2 border-transparent px-4/)
   })
 
+  it('keeps unselected filter tabs on the secondary text color', async () => {
+    const { wrapper } = await mountView([])
+    const all = wrapper.get('[data-testid="notifications-filter-all"]')
+    const unread = wrapper.get('[data-testid="notifications-filter-unread"]')
+    expect(all.classes()).toEqual(expect.arrayContaining(['border-accent', 'text-txt']))
+    expect(all.classes()).not.toContain('hover:text-txt')
+    expect(unread.classes()).toContain('text-txt2')
+    expect(unread.classes()).not.toContain('hover:text-txt')
+    expect(unread.classes()).not.toContain('text-txt')
+    expect(viewSrc).not.toContain('hover:text-txt')
+    wrapper.unmount()
+  })
+
   it('gates Pagination on filteredTotal > PAGE_SIZE with shrink-0 and no pageSizeOptions', () => {
     expect(viewSrc).toMatch(/const PAGE_SIZE = NOTIFICATION_PAGE_SIZE/)
     expect(viewSrc).toMatch(/<Pagination[\s\S]*v-if="filteredTotal > PAGE_SIZE"/)

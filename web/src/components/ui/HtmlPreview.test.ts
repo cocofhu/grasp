@@ -822,3 +822,20 @@ describe('HtmlPreview reloads a sized frame', () => {
   })
 })
 
+describe('HtmlPreview device segment hover', () => {
+  it('deepens the unselected device one step and leaves the selected accent', () => {
+    const wrapper = mountPreview()
+    const toolbar = wrapper.get('[data-testid="html-preview-toolbar"]')
+    const desktop = toolbar.findAll('button').find((b) => b.text().includes('桌面'))
+    const mobile = toolbar.findAll('button').find((b) => b.text().includes('移动端'))
+    expect(desktop).toBeTruthy()
+    expect(mobile).toBeTruthy()
+    expect(desktop!.classes()).toContain('text-accent')
+    expect(desktop!.classes()).not.toContain('hover:text-txt')
+    expect(desktop!.classes()).not.toContain('hover:text-txt2')
+    expect(mobile!.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2']))
+    expect(mobile!.classes()).not.toContain('hover:text-txt')
+    wrapper.unmount()
+  })
+})
+

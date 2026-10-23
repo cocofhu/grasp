@@ -64,8 +64,8 @@ const MODES: { id: HomeMode; icon: string; key: string }[] = [
   background: transparent;
   transition: color 0.2s ease;
 }
-.home-mode__opt:hover {
-  color: rgb(var(--c-txt));
+.home-mode__opt:hover:not(.home-mode__opt--on) {
+  color: rgb(var(--c-txt2));
 }
 .home-mode__opt--on {
   color: rgb(var(--c-accent-2));

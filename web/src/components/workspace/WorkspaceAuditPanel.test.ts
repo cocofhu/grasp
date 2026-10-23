@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -178,6 +181,17 @@ describe('WorkspaceAuditPanel', () => {
     expect(w.get('[data-testid="workspace-audit-export"]').text()).toContain('导出')
     expect(w.text()).not.toContain('查看工作流与系统操作，追踪工具调用和执行结果。')
     expect(w.text()).not.toContain('Trace workflow and system actions, tool calls and execution results.')
+    w.unmount()
+  })
+
+  it('keeps audit mode hover below the selected text color', async () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'WorkspaceAuditPanel.vue'), 'utf8')
+    expect(src).toContain('.seg button:hover:not(.on) {\n  color: rgb(var(--c-txt2));\n}')
+    expect(src).not.toMatch(/\.seg button:hover[^{]*\{[^}]*--c-txt\)/)
+    const w = mountPanel()
+    await flushPromises()
+    expect(w.get('[data-testid="workspace-audit-mode-run"]').classes()).toContain('on')
+    expect(w.get('[data-testid="workspace-audit-mode-all"]').classes()).not.toContain('on')
     w.unmount()
   })
 })
