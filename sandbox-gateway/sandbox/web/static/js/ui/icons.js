@@ -33,7 +33,7 @@ const C = { body: '<rect class="front" x="9" y="9" width="11" height="11" rx="2"
   "quiet-dot": { body: '<g class="grasp-quiet"><circle cx="12" cy="12" r="5.2" opacity="0.45"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none" opacity="0.55"/></g>', duration: 1150, viewBox: "0 0 24 24", filled: !1, strokeWidth: 1.7, note: "低强度呼吸一次，保持静默状态" },
   "warn-pulse": { body: '<g class="grasp-wake"><path d="M12 3.2L21.2 19.6H2.8z"/><path d="M12 9.2v5.2"/><circle cx="12" cy="17.4" r="0.85" fill="currentColor" stroke="none"/></g>', duration: 1100, viewBox: "0 0 24 24", filled: !1, strokeWidth: 1.7, note: "边框强调一次，感叹号轻压回弹" },
   "chat-send": { body: '<g class="motion-target"><path d="M12 18V6m-6 6 6-6 6 6"/></g>', duration: 1050, viewBox: "0 0 24 24", filled: !1, strokeWidth: 1.7, note: "发送箭头向上送出，再回到待发送位置" },
-  "chat-stop": { body: '<g class="motion-target"><rect x="7" y="7" width="10" height="10" rx="2"/></g>', duration: 900, viewBox: "0 0 24 24", filled: !0, strokeWidth: 1.2, note: "停止方块收紧一次，再稳定回位" },
+  "chat-stop": { body: '<g class="motion-target"><rect x="3.75" y="3.75" width="16.5" height="16.5" rx="3"/></g>', duration: 900, viewBox: "0 0 24 24", filled: !0, strokeWidth: 0, note: "停止方块收紧一次，再稳定回位" },
   stop: F,
   send: N,
   play: O,
