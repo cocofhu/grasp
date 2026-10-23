@@ -45,6 +45,11 @@ export type ClarifyInboxContext = {
 
 export type InboxContextResponse = GateInboxContext | ClarifyInboxContext
 
+/** Item is no longer pending. HTTP 200 so the browser does not log a failed fetch. */
+export type InboxLeftPending = {
+  pending: false
+}
+
 /** Maps inbox-context API response to the Run subset GateApproval/ClarifyChat expect. */
 export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string): Run {
   const base: Run = {

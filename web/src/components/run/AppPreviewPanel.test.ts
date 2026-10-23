@@ -137,12 +137,18 @@ describe('AppPreviewPanel', () => {
   })
 
   it('says the sandbox is gone when ports exist but the node has none', async () => {
+    vi.useFakeTimers()
     apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="novnc-stub"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="app-preview-no-sandbox"]').exists()).toBe(true)
+    const sandboxCalls = apiMocks.getRunNodeSandbox.mock.calls.length
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(sandboxCalls)
     wrapper.unmount()
+    vi.useRealTimers()
   })
 
   it('shows the empty message with no sandbox and no ports', async () => {
@@ -261,27 +267,79 @@ describe('AppPreviewPanel', () => {
     wrapper.unmount()
   })
 
-  it('schedules a silent poll while the port list is empty', async () => {
+  it('stops polling once the sandbox is confirmed absent', async () => {
     vi.useFakeTimers()
-    const spy = vi.spyOn(global, 'setInterval')
     apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
     apiMocks.getRunNodeSandbox.mockResolvedValue(null)
     const wrapper = mountPanel()
     await flushPromises()
     expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
-    expect(spy).toHaveBeenCalled()
-    const callsBeforePoll = apiMocks.nodePreviews.mock.calls.length
+    expect(wrapper.text()).toMatch(/沙箱还没启动/)
+    const sandboxCalls = apiMocks.getRunNodeSandbox.mock.calls.length
+    const previewCalls = apiMocks.nodePreviews.mock.calls.length
     expect(wrapper.attributes('aria-busy')).toBe('false')
-    // Advance one empty-poll tick — must not flip visible loading.
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(sandboxCalls)
+    expect(apiMocks.nodePreviews.mock.calls.length).toBe(previewCalls)
+    expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="app-preview-load-error"]').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps polling while the sandbox is creating and stops once it is running', async () => {
+    vi.useFakeTimers()
+    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 4, status: 'creating' })
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox).toHaveBeenCalledTimes(1)
+    apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 4, status: 'running' })
     await vi.advanceTimersByTimeAsync(2500)
     await flushPromises()
-    expect(apiMocks.nodePreviews.mock.calls.length).toBeGreaterThan(callsBeforePoll)
     expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBeGreaterThan(1)
     expect(wrapper.attributes('aria-busy')).toBe('false')
+    const afterReady = apiMocks.getRunNodeSandbox.mock.calls.length
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(afterReady)
+    wrapper.unmount()
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(afterReady)
+    vi.useRealTimers()
+  })
+
+  it('drops the previous node timer when the preview switches nodes', async () => {
+    vi.useFakeTimers()
+    apiMocks.nodePreviews.mockResolvedValue({ ports: [] })
+    apiMocks.getRunNodeSandbox.mockResolvedValue({ id: 4, status: 'pulling' })
+    const wrapper = mountPanel()
+    await flushPromises()
+    apiMocks.getRunNodeSandbox.mockResolvedValue(null)
+    await wrapper.setProps({ nodeId: 'preview-2' })
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox).toHaveBeenCalledWith('run-1', 'preview-2')
+    const sandboxCalls = apiMocks.getRunNodeSandbox.mock.calls.length
+    await vi.advanceTimersByTimeAsync(5000)
+    await flushPromises()
+    expect(apiMocks.getRunNodeSandbox.mock.calls.length).toBe(sandboxCalls)
     expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(true)
     wrapper.unmount()
-    spy.mockRestore()
     vi.useRealTimers()
+  })
+
+  it('shows the port load failure when the sandbox query itself fails', async () => {
+    apiMocks.getRunNodeSandbox.mockRejectedValue(new Error('sandbox-backend-down'))
+    const wrapper = mountPanel()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="app-preview-load-error"]').exists()).toBe(true)
+    expect(wrapper.text()).toContain('端口列表加载失败，可重试。')
+    expect(wrapper.text()).not.toContain('sandbox-backend-down')
+    expect(wrapper.find('[data-testid="app-preview-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="app-preview-no-sandbox"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 })

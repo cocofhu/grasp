@@ -6,7 +6,7 @@ import type {
   ReactAnnotation,
   NodeTakeoverResult,
 } from '../../shared/types'
-import type { InboxContextResponse } from '../../inbox/inboxContext'
+import type { InboxContextResponse, InboxLeftPending } from '../../inbox/inboxContext'
 import type { RunChainResponse } from '../../inbox/runConversationChain'
 import type { EmbedTicket } from '../../inbox/embedChat'
 import { apiState, BASE, origin, req, wsUrl } from '../httpCore'
@@ -88,7 +88,7 @@ export const runsClient = {
     iteration: number,
     opts?: { signal?: AbortSignal },
   ) =>
-    req<InboxContextResponse>(
+    req<InboxContextResponse | InboxLeftPending>(
       `/runs/${runId}/inbox-context?nodeId=${encodeURIComponent(nodeId)}&iteration=${iteration}`,
       opts?.signal ? { signal: opts.signal } : undefined,
     ),
@@ -367,7 +367,6 @@ export const runsClient = {
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
     })
-    if (res.status === 404) return null
     if (!res.ok) {
       let msg = `${res.status} /runs/${runId}/nodes/${nodeId}/sandbox`
       try {
@@ -378,9 +377,14 @@ export const runsClient = {
       }
       throw new Error(msg)
     }
+    const body = await res.json()
     apiState.checked = true
     apiState.online = true
-    return (await res.json()) as SandboxView
+    // found:false is confirmed absence. Never turn that into a sandbox with no id.
+    if (body && typeof body === 'object' && (body as { found?: unknown }).found === false) {
+      return null
+    }
+    return body as SandboxView
   },
   nodePreviews: (runId: string, nodeId: string, opts?: { signal?: AbortSignal }) =>
     req<{ ports: PreviewPort[] }>(

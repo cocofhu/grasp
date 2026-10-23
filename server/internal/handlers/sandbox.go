@@ -137,14 +137,21 @@ func (h *Handlers) SandboxLog(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"content": content, "live": live, "found": true})
 }
 
-// RunNodeSandbox returns the sandbox for a workflow run's node. Responds 404
-// when no record exists or the container is not running.
+// RunNodeSandbox returns the sandbox for a workflow run's node.
+// creating and pulling return the sandbox view. A missing record, or a
+// container that is not running, is a confirmed absence: HTTP 200 with
+// found:false, matching NodeSandboxLog, so the browser does not log a failed
+// fetch. Other errors stay 5xx.
 func (h *Handlers) RunNodeSandbox(c *gin.Context) {
 	runID := c.Param("id")
 	nodeID := c.Param("nodeId")
 	v, err := h.Sbx.SandboxViewForRunNode(c.Request.Context(), runID, nodeID)
 	if err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		if errors.Is(err, services.ErrSandboxAbsent) {
+			c.JSON(http.StatusOK, gin.H{"found": false})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	c.JSON(http.StatusOK, v)

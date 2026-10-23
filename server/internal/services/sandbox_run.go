@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,6 +13,11 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
+
+// ErrSandboxAbsent means this run node has no sandbox row, or the container is
+// not running and the row is not still creating or pulling. Handlers answer
+// HTTP 200 with found:false so the browser does not log a failed fetch.
+var ErrSandboxAbsent = errors.New("not found")
 
 // BeginRunSandbox records a per-run node sandbox as "creating" BEFORE the (slow)
 // gateway provisioning completes, so it shows up in the sandbox list and the
@@ -290,18 +295,19 @@ func (s *SandboxService) archiveLog(ctx context.Context, name string) {
 
 // SandboxViewForRunNode returns the sandbox view for a workflow run's node,
 // using the same DB lookup as PreviewService.SandboxForRunNode (latest by
-// updated_at). Returns an error when no record exists or the container is not
-// running.
+// updated_at). ErrSandboxAbsent means there is no record, or the container is
+// not running and the row is not creating or pulling. creating and pulling
+// are returned as views so the UI can keep waiting.
 func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeID string) (*SandboxView, error) {
 	row, err := runNodeSandboxRow(s.db, runID, nodeID)
 	if err != nil {
-		return nil, fmt.Errorf("not found")
+		return nil, ErrSandboxAbsent
 	}
 	// A sandbox still provisioning (pulling image / creating container) is
-	// surfaced as-is so the UI can render pull/create loading instead of 404.
+	// surfaced as-is so the UI can render pull/create loading instead of absence.
 	// Running rows require a live container.
 	if row.Status != "creating" && row.Status != "pulling" && s.mgr.Status(ctx, row.Name) != "running" {
-		return nil, fmt.Errorf("not found")
+		return nil, ErrSandboxAbsent
 	}
 	v := s.view(ctx, &row)
 	return &v, nil

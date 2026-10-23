@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -724,11 +725,11 @@ func TestSandboxViewForRunNode(t *testing.T) {
 	}
 
 	ds.setStatus(row.Name, "exited")
-	if _, err := s.SandboxViewForRunNode(ctx, "runS", "n1"); err == nil {
-		t.Fatal("non-running container should 404")
+	if _, err := s.SandboxViewForRunNode(ctx, "runS", "n1"); !errors.Is(err, ErrSandboxAbsent) {
+		t.Fatalf("non-running container should be absent: %v", err)
 	}
-	if _, err := s.SandboxViewForRunNode(ctx, "no-run", "n1"); err == nil {
-		t.Fatal("missing record should 404")
+	if _, err := s.SandboxViewForRunNode(ctx, "no-run", "n1"); !errors.Is(err, ErrSandboxAbsent) {
+		t.Fatalf("missing record should be absent: %v", err)
 	}
 }
 

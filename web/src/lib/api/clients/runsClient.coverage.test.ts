@@ -176,7 +176,10 @@ describe('runsClient request coverage', () => {
     await runsClient.nodeSandboxLog('r', 'n', { signal })
     await runsClient.nodePreviews('r', 'n', { signal })
 
-    fetchMock.mockResolvedValueOnce(new Response('', { status: 404 }))
+    fetchMock.mockResolvedValueOnce(ok({ found: false }))
+    await expect(runsClient.getRunNodeSandbox('r', 'n')).resolves.toBeNull()
+
+    fetchMock.mockResolvedValueOnce(ok({ found: false, id: 4 }))
     await expect(runsClient.getRunNodeSandbox('r', 'n')).resolves.toBeNull()
 
     fetchMock.mockResolvedValueOnce(ok({ id: 'sandbox-1' }))

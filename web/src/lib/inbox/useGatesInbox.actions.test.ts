@@ -1620,11 +1620,11 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
-  it('handles inbox-context 404s and incoming-ghost transient checks', async () => {
+  it('handles inbox-context absence and incoming-ghost transient checks', async () => {
     const { inbox, app } = await withInbox()
     const first = inbox.listItems.value[0]!
     inbox.active.value = first
-    mocks.inboxContext.mockRejectedValueOnce(new Error('no pending inbox item'))
+    mocks.inboxContext.mockResolvedValueOnce({ pending: false })
     await inbox.loadActiveRun(true)
     expect(inbox.listItems.value.some((it) => it.runId === first.runId)).toBe(false)
 
