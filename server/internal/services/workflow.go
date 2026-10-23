@@ -189,6 +189,9 @@ func (s *WorkflowService) Save(wf *models.WorkflowDef) error {
 // change appends Version+1 with the given source in one transaction.
 // The incoming Version/PublishedVersion are ignored: the service owns them.
 func (s *WorkflowService) SaveAs(wf *models.WorkflowDef, source string) error {
+	if wf.Defaults != nil && wf.Defaults.Sandbox != nil && !models.ValidSandboxMode(wf.Defaults.Sandbox.Mode) {
+		return fmt.Errorf("unknown sandbox mode %q", wf.Defaults.Sandbox.Mode)
+	}
 	var existing models.WorkflowDef
 	if err := s.db.First(&existing, "id = ?", wf.ID).Error; err != nil {
 		if wf.Defaults != nil {

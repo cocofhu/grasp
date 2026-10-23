@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable `shared_run_sandbox_enabled` in platform settings and set the workflow's `defaults.sandbox.mode` to `shared`. When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
+
 - **Clarify chat:** parent classes, styles, accessibility attributes and native
   events now reach the chat column, resolving the Vue attribute warning in the
   review composer.
