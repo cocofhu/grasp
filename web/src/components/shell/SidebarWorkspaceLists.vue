@@ -95,7 +95,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <p v-else-if="!runs.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="run in runs" :key="run.id" class="sidebar-tree-item"><RouterLink :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(run) }}</span><Icon v-if="run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><Icon v-else-if="run.status === 'cancelled'" name="close" :size="14" :interactive="false" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" :title="t('common.status.cancelled')" aria-hidden="true" /></RouterLink></div>
+          <div v-for="run in runs" :key="run.id" class="sidebar-tree-item"><RouterLink :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(run) }}</span><Icon v-if="run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
         </RecentReorderList>
       </div>
       </div>
@@ -121,9 +121,23 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 .sidebar-tree-item > .workspace-recent-row { padding-left: 6px; }
 .workspace-recent-row:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .04); }
 .workspace-recent-row.is-active, .workspace-recent-row.is-active:hover { color: rgb(var(--c-txt)); background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065)); }
-.workspace-recent-ended { flex: none; }
+.workspace-recent-ended { flex: none; transform-box: view-box; transform-origin: center; transition: color 160ms ease; }
 .workspace-recent-ended.is-failed { color: light-dark(#d17a7a, #e08a8a); }
 .workspace-recent-ended.is-cancelled { color: light-dark(#b4b4bb, #6f6f78); }
+.workspace-recent-row:hover .workspace-recent-ended.is-failed,
+.workspace-recent-row.is-active .workspace-recent-ended.is-failed { color: light-dark(#be5555, #f0a0a0); }
+.workspace-recent-row:hover .workspace-recent-ended.is-cancelled,
+.workspace-recent-row.is-active .workspace-recent-ended.is-cancelled { color: light-dark(#71717a, #a1a1aa); }
+.workspace-recent-row:hover .workspace-recent-ended { animation: workspace-recent-ended-sway 1600ms linear 1; }
+@keyframes workspace-recent-ended-sway {
+  0% { transform: rotate(0deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  16% { transform: rotate(9deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  34% { transform: rotate(-6.5deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  52% { transform: rotate(4deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  68% { transform: rotate(-2deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  84% { transform: rotate(0.6deg); animation-timing-function: cubic-bezier(.45, 0, .55, 1); }
+  100% { transform: rotate(0deg); }
+}
 a:focus-visible, button:focus-visible { outline: 2px solid rgb(var(--c-accent) / .6); outline-offset: -2px; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
 </style>
