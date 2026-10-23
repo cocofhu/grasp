@@ -2303,6 +2303,174 @@ describe('自动过程 grouping and flight', () => {
     vi.useRealTimers()
   })
 
+  function layoutBox(left: number, top: number, width: number, height: number): DOMRect {
+    return {
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      toJSON() { return this },
+    } as DOMRect
+  }
+
+  /** happy-dom reports empty boxes, so give rows a layout and step animation frames by hand. */
+  function stubFlightGeometry() {
+    const original = Element.prototype.getBoundingClientRect
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const el = this as HTMLElement
+      const testId = el.dataset?.testid
+      if (testId === 'nav-flight-ghost') {
+        const top = Number.parseFloat(el.style.top) || 0
+        const left = Number.parseFloat(el.style.left) || 0
+        const width = Number.parseFloat(el.style.width) || 0
+        const height = Number.parseFloat(el.style.height) || 0
+        const match = /translate3d\(\s*([-\d.]+)px,\s*([-\d.]+)px/.exec(el.style.transform || '')
+        const dx = match ? Number(match[1]) : 0
+        const dy = match ? Number(match[2]) : 0
+        return layoutBox(left + dx, top + dy, width, height)
+      }
+      if (testId === 'nav-pending-row' && el.dataset.kind !== 'solo') {
+        if (el.dataset.section === 'auto') return layoutBox(40, 344, 220, 32)
+        if (el.dataset.section === 'running') return layoutBox(40, 174, 220, 32)
+      }
+      if (testId === 'nav-auto-heading') return layoutBox(12, 312, 220, 28)
+      if (testId === 'nav-running-heading') return layoutBox(12, 140, 220, 28)
+      return original.call(this)
+    })
+    const frames: Array<{ id: number; cb: FrameRequestCallback; cancelled: boolean }> = []
+    let seq = 1
+    const prevRaf = window.requestAnimationFrame.bind(window)
+    const prevCancel = window.cancelAnimationFrame.bind(window)
+    const request = (cb: FrameRequestCallback) => {
+      const id = seq++
+      frames.push({ id, cb, cancelled: false })
+      return id
+    }
+    const cancel = (id: number) => {
+      const frame = frames.find((item) => item.id === id)
+      if (frame) frame.cancelled = true
+    }
+    window.requestAnimationFrame = request as typeof window.requestAnimationFrame
+    window.cancelAnimationFrame = cancel as typeof window.cancelAnimationFrame
+    return {
+      pump() {
+        const batch = frames.splice(0).filter((frame) => !frame.cancelled)
+        for (const frame of batch) frame.cb(0)
+      },
+      restore() {
+        spy.mockRestore()
+        window.requestAnimationFrame = prevRaf
+        window.cancelAnimationFrame = prevCancel
+      },
+    }
+  }
+
+  async function ghostAfterMove() {
+    await flushPromises()
+    await nextTick()
+    const ghost = document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+    expect(ghost).toBeTruthy()
+    return ghost!
+  }
+
+  it('moves the ghost from the painted origin to the destination', async () => {
+    const geometry = stubFlightGeometry()
+    try {
+      gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '排队')]
+      const wrapper = mountNav(true)
+      await flushPromises()
+      armSidebarHandoff('run-x', 'clarify')
+      apiMocks.listRuns.mockResolvedValue({
+        items: [
+          run('run-x', '登录', 'running', auto('impl', '实现')),
+          run('run-y', '排队', 'waiting_human'),
+        ],
+        total: 2,
+      })
+      gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+      const ghost = await ghostAfterMove()
+      const origin = ghost.getBoundingClientRect()
+      expect(origin.y).toBe(174)
+      expect(ghost.style.transform).toBe('translate3d(0px, 0px, 0px)')
+      expect(ghost.style.transition).toBe('none')
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      const landed = ghost.getBoundingClientRect()
+      expect(landed.y).toBe(344)
+      expect(landed.y).not.toBe(origin.y)
+      expect(ghost.style.transition).toContain(`${SIDEBAR_FLIGHT_MS}ms`)
+      expect(SIDEBAR_FLIGHT_MS).toBeLessThanOrEqual(600)
+      expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves the ghost back onto the running row', async () => {
+    const wrapper = await show([run('run-x', '登录', 'running', auto('impl', '实现'))])
+    const geometry = stubFlightGeometry()
+    try {
+      apiMocks.listRuns.mockResolvedValue({
+        items: [run('run-x', '登录', 'waiting_human', { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' })],
+        total: 1,
+      })
+      routeState.path = '/board'
+      const ghost = await ghostAfterMove()
+      expect(ghost.getBoundingClientRect().y).toBe(344)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(344)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      expect(ghost.style.transition).toContain(`${SIDEBAR_FLIGHT_MS}ms`)
+      expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('back')
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves the ghost onto the folded heading', async () => {
+    const geometry = stubFlightGeometry()
+    try {
+      toggleSection('auto')
+      gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '另一个')]
+      const wrapper = mountNav(true)
+      await flushPromises()
+      armSidebarHandoff('run-x', 'clarify')
+      apiMocks.listRuns.mockResolvedValue({
+        items: [
+          run('run-x', '登录', 'running', auto('impl', '实现')),
+          run('run-y', '另一个', 'waiting_human'),
+        ],
+        total: 2,
+      })
+      gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+      const ghost = await ghostAfterMove()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      const landed = ghost.getBoundingClientRect()
+      expect(landed.x).toBe(12)
+      expect(landed.y).toBe(312)
+      expect(ghost.getAttribute('data-landing')).toBe('heading')
+      expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+      expect(wrapper.get('[data-testid="nav-auto-rows"]').isVisible()).toBe(false)
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
   it('keeps pin, rename, cancel and share on an automatic row', async () => {
     useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
     gateMocks.displayedItems.value = [{

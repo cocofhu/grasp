@@ -838,6 +838,7 @@ onBeforeUnmount(() => {
   offRunActivity()
   runningRequest?.abort()
   clearRowPress()
+  takeFlightMotion()
   for (const timer of flightTimers.values()) window.clearTimeout(timer)
   flightTimers.clear()
   document.removeEventListener('mousedown', onDocMouseDown)
@@ -883,7 +884,28 @@ const flightGhost = ref<{
   landing: 'row' | 'heading'
   style: Record<string, string>
 } | null>(null)
+const flightGhostEl = ref<HTMLElement | null>(null)
 const flightTimers = new Map<string, number>()
+/** Bumped to drop a move that was scheduled but not yet painted. */
+let flightMotion = 0
+const flightFrames: number[] = []
+
+function takeFlightMotion() {
+  flightMotion += 1
+  for (const id of flightFrames) cancelAnimationFrame(id)
+  flightFrames.length = 0
+  return flightMotion
+}
+
+function queueFlightFrame(motion: number, cb: () => void) {
+  const id = requestAnimationFrame(() => {
+    const at = flightFrames.indexOf(id)
+    if (at >= 0) flightFrames.splice(at, 1)
+    if (motion !== flightMotion) return
+    cb()
+  })
+  flightFrames.push(id)
+}
 
 function rowFlight(runId: string) {
   return flights.value[runId]?.kind
@@ -926,6 +948,7 @@ function scheduleFlightClear(runId: string) {
 }
 
 function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'heading') {
+  const motion = takeFlightMotion()
   flights.value = { ...flights.value, [runId]: { kind, landing } }
   scheduleFlightClear(runId)
   const from = rowRects.get(runId)
@@ -941,6 +964,8 @@ function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'headi
   const dy = to.top - from.top
   if (landing === 'row' && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
   const it = pendingRows.value.find((row) => row.runId === runId)
+  // Position only. Transform stays on the element so a later render cannot
+  // snap it to the destination before the origin has been painted.
   flightGhost.value = {
     runId,
     title: it ? rowTitle(it) : '',
@@ -951,21 +976,28 @@ function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'headi
       top: `${from.top}px`,
       width: `${from.width}px`,
       height: `${from.height}px`,
-      transform: 'translate3d(0, 0, 0)',
-      transition: 'none',
     },
   }
   void nextTick(() => {
-    const ghost = flightGhost.value
-    if (!ghost || ghost.runId !== runId) return
-    flightGhost.value = {
-      ...ghost,
-      style: {
-        ...ghost.style,
-        transition: `transform ${SIDEBAR_FLIGHT_MS}ms var(--ease-out-expo)`,
-        transform: `translate3d(${dx}px, ${dy}px, 0)`,
-      },
-    }
+    if (motion !== flightMotion) return
+    const el = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+    if (!el || flightGhost.value?.runId !== runId) return
+    // Commit the origin, then let that frame paint before writing the end
+    // transform. A nextTick write still lands before the first paint, so the
+    // transition has nothing to interpolate from.
+    el.style.transition = 'none'
+    el.style.transform = 'translate3d(0px, 0px, 0px)'
+    void el.offsetHeight
+    queueFlightFrame(motion, () => {
+      queueFlightFrame(motion, () => {
+        const live = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+        if (!live || flightGhost.value?.runId !== runId || motion !== flightMotion) return
+        live.style.transition = `transform ${SIDEBAR_FLIGHT_MS}ms var(--ease-out-expo)`
+        void live.offsetHeight
+        live.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`
+        scheduleFlightClear(runId)
+      })
+    })
   })
 }
 
@@ -1324,6 +1356,7 @@ const settingsItems = settingsNavItems
   <Teleport to="body">
     <div
       v-if="flightGhost"
+      ref="flightGhostEl"
       class="sidebar-flight-ghost"
       data-testid="nav-flight-ghost"
       :data-flight="flightGhost.kind"
