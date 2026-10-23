@@ -236,9 +236,16 @@ describe('AgentChatTester interactions', () => {
     await flushPromises()
     expect(w.find('[data-testid="stream-md"]').exists()).toBe(false)
     expect(w.find('[data-testid="agent-timeline-elapsed"]').exists()).toBe(true)
-    expect(w.find('[data-testid="tester-agent-message"]').exists()).toBe(false)
+    // Settled turns keep the last message under the elapsed rule, even when tools follow it.
+    expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-tool-group"]').exists()).toBe(false)
+    const folded = w.get('[data-testid="tester-agent-message"]')
+    expect(folded.text()).toContain('Hello')
+    const rule = w.get('[data-testid="agent-timeline-rule"]').element
+    expect(rule.compareDocumentPosition(folded.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
-    expect(w.find('[data-testid="tester-agent-message"]').text()).toContain('Hello')
+    expect(w.findAll('[data-testid="tester-agent-message"]')).toHaveLength(1)
+    expect(w.get('[data-testid="agent-timeline-work"]').text()).toContain('think')
 
     vm.input = 'again'
     vm.send()

@@ -194,9 +194,26 @@ function autoRecordKey(member: { nodeId: string; iteration: number }) {
 function autoRecord(member: { nodeId: string; iteration: number }): AutoRecord {
   return autoRecords.value[autoRecordKey(member)] ?? { status: 'loading' }
 }
+/** Full narration of the open row: the last non-empty kind=message before a sealed segment. */
+function openNarration(events: AcpEvent[] | undefined): string {
+  const list = events || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const ev = list[i]!
+    if (ev.kind === 'segment') break
+    if (ev.kind === 'message' && ev.text?.trim()) return ev.text
+  }
+  return ''
+}
 function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
   const fromTimeline = partsFromAcp(events)
-  if (fromTimeline?.length) return fromTimeline
+  if (fromTimeline?.length) {
+    const hasMessage = fromTimeline.some((part) => part.kind === 'message' && !!part.text?.trim())
+    if (hasMessage) return fromTimeline
+    // The step cap can drop the closing message while the same events still carry the full narration.
+    const narration = openNarration(events)
+    if (!narration) return fromTimeline
+    return [...fromTimeline, { kind: 'message', text: narration }]
+  }
   const parts: AgentPart[] = []
   for (const ev of events || []) {
     if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })

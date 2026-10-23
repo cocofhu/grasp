@@ -164,6 +164,65 @@ func TestTimelineCaps(t *testing.T) {
 	}
 }
 
+func TestTimelineKeepsClosingMessage(t *testing.T) {
+	long := strings.Repeat("回", maxStepText) + "收尾全文END"
+	if len(long) <= maxStepText {
+		t.Fatalf("message fixture too short: %d", len(long))
+	}
+
+	// The closing message sits past the step cap. Keep it whole, with no ellipsis,
+	// and drop earlier process steps so the row still fits.
+	r := &ChatResult{}
+	dispatchSessionUpdate("tool_call", map[string]any{"title": "FirstDropped", "rawInput": map[string]any{"path": "early.go"}}, r)
+	for range MaxTimelineSteps + 4 {
+		dispatchSessionUpdate("tool_call", map[string]any{"title": "Read"}, r)
+	}
+	msgChunk(r, long)
+	parts := timelineOf(t, r)
+	if len(parts) != MaxTimelineSteps {
+		t.Fatalf("steps = %d", len(parts))
+	}
+	last := parts[len(parts)-1]
+	if last.Kind != "message" || last.Text != long {
+		t.Fatalf("closing message dropped or cut: kind=%s len=%d", last.Kind, len(last.Text))
+	}
+	if strings.Contains(last.Text, "…") || strings.Contains(last.Text, "...") || strings.Contains(last.Text, "…(truncated)") {
+		t.Fatal("closing message must not gain an ellipsis")
+	}
+	for _, p := range parts {
+		if p.Title == "FirstDropped" || p.Summary == "early.go" {
+			t.Fatal("earlier process step should have been dropped")
+		}
+	}
+
+	// The message is followed by more than MaxTimelineSteps tools. It still
+	// stays, in full, ahead of the tools that fit.
+	early := &ChatResult{}
+	msgChunk(early, long)
+	dispatchSessionUpdate("tool_call", map[string]any{"title": "EarliestDropped", "status": "failed"}, early)
+	for range MaxTimelineSteps {
+		dispatchSessionUpdate("tool_call", map[string]any{"title": "Shell", "status": "failed"}, early)
+	}
+	got := timelineOf(t, early)
+	if len(got) != MaxTimelineSteps {
+		t.Fatalf("steps = %d", len(got))
+	}
+	if got[0].Kind != "message" || got[0].Text != long {
+		t.Fatalf("message before the cap window was dropped or cut: %+v", got[0].Kind)
+	}
+	if strings.Contains(got[0].Text, "…") || strings.Contains(got[0].Text, "...") || strings.Contains(got[0].Text, "…(truncated)") {
+		t.Fatal("kept message must not gain an ellipsis")
+	}
+	for _, p := range got {
+		if p.Title == "EarliestDropped" {
+			t.Fatal("making room for the message should drop an earlier tool")
+		}
+	}
+	if got[1].Kind != "tool" || got[1].Title != "Shell" || got[1].Status != "failed" {
+		t.Fatalf("tools after the message should remain: %+v", got[1])
+	}
+}
+
 func TestToolSummary(t *testing.T) {
 	cases := []struct {
 		in   string
