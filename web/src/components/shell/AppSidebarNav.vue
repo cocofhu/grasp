@@ -23,7 +23,7 @@ import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
 import { keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
-import { onRecentActivity, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -715,20 +715,29 @@ function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
   return null
 }
 
-/** Starting is the arc, a reply in flight is the breath dot, and waiting is the person-hold mark. */
+const ARC_MARK = { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' }
+const BREATH_MARK = { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' }
+const HOLD_MARK = { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }
+const QUEUE_MARK = { name: 'queue', toneClass: 'text-txt3' }
+
+/**
+ * One icon decision for every executing row. Inbox starting still wins. A
+ * current node counts only when this row is that node (or the row has no
+ * pending item); a newer waiting item is not painted with the previous node's mark.
+ */
 function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: string }> {
-  if (isRunOnlyRow(it)) {
-    const run = runningById.value.get(it.runId)
-    const mark = run ? recentRunMark(run) : null
-    if (mark && 'icon' in mark) return [mark.icon]
-    if (run?.status === 'queued') return [{ name: 'queue', toneClass: 'text-txt3' }]
-    if (run?.status === 'waiting_human') return [{ name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }]
-    return []
-  }
-  if (startFailedKeys.value.includes(itemKey(it))) return []
-  if (isStartingInboxItem(it)) return [{ name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' }]
-  if (isReplyingInboxItem(it)) return [{ name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' }]
-  return [{ name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }]
+  const pending = !isRunOnlyRow(it)
+  if (pending && startFailedKeys.value.includes(itemKey(it))) return []
+  if (isStartingInboxItem(it)) return [ARC_MARK]
+  const run = runningById.value.get(it.runId)
+  const node = run ? recentCurrentNode(run) : null
+  const sameNode = !pending || !node || node.id === it.nodeId
+  const mark = run && sameNode ? recentRunMark(run) : null
+  if (mark?.icon.name === 'arc-spinner') return [mark.icon]
+  if (isReplyingInboxItem(it) || mark?.icon.name === 'breath-dot') return [BREATH_MARK]
+  if (run?.status === 'queued') return [QUEUE_MARK]
+  if (mark || run?.status === 'waiting_human' || pending) return [HOLD_MARK]
+  return []
 }
 
 function isPendingActive(it: InboxItem): boolean {
@@ -1267,7 +1276,7 @@ const settingsItems = settingsNavItems
   --hover-ink-color: rgb(var(--c-txt) / .045);
 }
 .sidebar-workspace-nav .nav-create-action.active {
-  background: rgb(var(--c-txt) / .055);
+  background: transparent;
   font-weight: 600;
 }
 .nav-create-action > svg {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   applyInboxReplyingState,
+  currentInboxStateEpoch,
   inboxBadgeLabelKey,
   inboxBadgeTone,
   inboxRunLabel,
@@ -11,6 +12,8 @@ import {
   isReplyingInboxItem,
   isStartingInboxItem,
   mergeInboxReplyingFromRemote,
+  noteInboxStatePatch,
+  resetInboxStatePatches,
 } from './inboxDisplay'
 
 describe('sidebarRunTitle', () => {
@@ -197,6 +200,39 @@ describe('applyInboxReplyingState / mergeInboxReplyingFromRemote', () => {
     expect(merged[1].state).toBeUndefined()
     expect(merged[2].state).toBe('starting')
     expect(merged).toHaveLength(3)
+  })
+
+  it('settles starting and keeps a newer local write over an older snapshot', () => {
+    resetInboxStatePatches()
+    const starting = { type: 'clarify' as const, runId: 'r', nodeId: 'n', state: 'starting' as const }
+    const epoch = currentInboxStateEpoch()
+    const parked = mergeInboxReplyingFromRemote(
+      [starting],
+      [{ type: 'clarify' as const, runId: 'r', nodeId: 'n', state: 'replying' as const }],
+      undefined,
+      epoch,
+    )
+    expect(parked[0].state).toBe('replying')
+
+    const idle = applyInboxReplyingState(parked[0], false)
+    noteInboxStatePatch('r:n')
+    const stale = mergeInboxReplyingFromRemote(
+      [idle],
+      [{ type: 'clarify' as const, runId: 'r', nodeId: 'n', state: 'replying' as const }],
+      undefined,
+      epoch,
+    )
+    expect(stale[0].state).toBeUndefined()
+    expect(stale[0]).toBe(idle)
+
+    const fresh = mergeInboxReplyingFromRemote(
+      [idle],
+      [{ type: 'clarify' as const, runId: 'r', nodeId: 'n', state: 'replying' as const }],
+      undefined,
+      currentInboxStateEpoch(),
+    )
+    expect(fresh[0].state).toBe('replying')
+    resetInboxStatePatches()
   })
 })
 

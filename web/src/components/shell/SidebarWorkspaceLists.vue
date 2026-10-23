@@ -95,7 +95,7 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
       <p v-else-if="!runs.length" class="workspace-list-state">{{ t('nav.workspaceNoRuns') }}</p>
       <div v-else class="sidebar-tree">
         <RecentReorderList ref="recentListEl">
-          <div v-for="run in runs" :key="run.id" class="sidebar-tree-item"><RouterLink :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(run) }}</span><Icon v-if="run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
+          <div v-for="run in runs" :key="run.id" class="sidebar-tree-item"><RouterLink v-hover-ink :to="recentRunTarget(run)" class="workspace-recent-row" :class="{ 'is-active': recentRunActive(run, route) }" :aria-current="recentRunActive(run, route) ? 'page' : undefined" :title="runTitle(run)" data-testid="sidebar-recent-run" :data-run-id="run.id" :data-status="run.status" @click="emit('navigate')"><span class="workspace-list-title">{{ runTitle(run) }}</span><Icon v-if="run.status === 'failed'" name="alert" :size="14" :interactive="false" class="workspace-recent-ended is-failed" data-testid="sidebar-recent-ended" :title="t('common.status.failed')" aria-hidden="true" /><svg v-else-if="run.status === 'cancelled'" class="workspace-recent-ended is-cancelled" data-testid="sidebar-recent-ended" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" :title="t('common.status.cancelled')"><circle cx="12" cy="12" r="8.25" /><path d="M6.17 6.17 17.83 17.83" /></svg></RouterLink></div>
         </RecentReorderList>
       </div>
       </div>
@@ -114,12 +114,12 @@ onBeforeUnmount(() => { runsRequest?.abort(); window.clearInterval(recentTimer);
 .workspace-list-chevron { opacity: .7; transition: transform 160ms ease, opacity 160ms ease; }
 .workspace-list-toggle:hover .workspace-list-chevron { opacity: 1; }
 .workspace-list-chevron.is-collapsed { transform: rotate(-90deg); }
-.workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.workspace-list-title { min-width: 0; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 400; }
 .workspace-list-state { display: flex; flex-wrap: wrap; gap: 6px; padding: 9px 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
 .workspace-list-state button { color: rgb(var(--c-accent-2)); }
-.workspace-recent-row { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 10px; border-radius: 8px; color: rgb(var(--c-txt2)); }
+.workspace-recent-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; min-height: 36px; margin-bottom: 2px; padding: 8px 10px; border-radius: 10px; font-size: 13px; color: rgb(var(--c-txt2)); --hover-ink-color: rgb(var(--c-txt) / .04); }
 .sidebar-tree-item > .workspace-recent-row { padding-left: 6px; }
-.workspace-recent-row:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .04); }
+.workspace-recent-row:hover { color: rgb(var(--c-txt)); }
 .workspace-recent-row.is-active, .workspace-recent-row.is-active:hover { color: rgb(var(--c-txt)); background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065)); }
 .workspace-recent-ended { flex: none; transform-box: view-box; transform-origin: center; transition: color 160ms ease; }
 .workspace-recent-ended.is-failed { color: light-dark(#d17a7a, #e08a8a); }

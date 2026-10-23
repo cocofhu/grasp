@@ -9,6 +9,7 @@ vi.mock('@/lib/api/api', () => ({
 }))
 
 import { api } from '@/lib/api/api'
+import { resetInboxStatePatches } from '@/lib/inbox/inboxDisplay'
 import { usePendingGates } from '@/lib/inbox/usePendingGates'
 
 function clarify(id: string, state?: 'starting' | 'replying'): InboxItem {
@@ -46,6 +47,7 @@ const holdReleases: Array<() => void> = []
 
 describe('usePendingGates', () => {
   beforeEach(async () => {
+    resetInboxStatePatches()
     vi.mocked(api.listGates).mockReset()
     vi.mocked(api.listGates).mockResolvedValue(paged([]))
     usePendingGates().clearVisibleMembership()
@@ -438,6 +440,49 @@ describe('usePendingGates', () => {
     expect(pg.hasPendingUpdate.value).toBe(false)
     pg.patchItemReplying('run-1:node-1', false)
     expect('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined).toBeUndefined()
+  })
+
+  it('patches sidebar extras and ignores an older idle snapshot', async () => {
+    vi.mocked(api.listGates).mockResolvedValueOnce(paged([clarify('1'), clarify('2')], 2))
+    const pg = usePendingGates()
+    await pg.refresh({ mode: 'force' })
+    const other = pg.displayedItems.value[1]
+    pg.sidebarExtras.value = [{ ...clarify('9'), nodeId: 'extra', state: undefined }]
+    let release: (value: ReturnType<typeof paged>) => void = () => {}
+    vi.mocked(api.listGates).mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = resolve
+      }),
+    )
+    const flight = pg.peek({ source: 'sidebar-poll' })
+    pg.patchItemReplying('run-1:node-1', true)
+    pg.patchItemReplying('run-9:extra', true)
+    expect(pg.displayedItems.value[0]).toMatchObject({ state: 'replying' })
+    expect(pg.sidebarExtras.value[0]).toMatchObject({ state: 'replying' })
+    expect(pg.displayedItems.value[1]).toBe(other)
+    release(paged([clarify('1'), clarify('2')], 2))
+    await flight
+    expect(pg.displayedItems.value[0]).toMatchObject({ state: 'replying' })
+    expect(pg.sidebarExtras.value[0]).toMatchObject({ state: 'replying' })
+    expect(pg.displayedItems.value[1]).toBe(other)
+    expect(pg.displayedItems.value).toHaveLength(2)
+  })
+
+  it('syncDisplayedBaseline copies the loaded list state onto sidebar rows and extras', () => {
+    const pg = usePendingGates()
+    const shown = [clarify('1', 'starting'), clarify('2')]
+    pg.remoteItems.value = shown.map((it) => ({ ...it }))
+    pg.displayedItems.value = shown
+    pg.sidebarExtras.value = [{ ...clarify('9', 'starting'), nodeId: 'extra' }]
+    pg.syncDisplayedBaseline([
+      clarify('1'),
+      clarify('2', 'replying'),
+      { ...clarify('9'), nodeId: 'extra' },
+    ])
+    expect(pg.displayedItems.value[0] && ('state' in pg.displayedItems.value[0] ? pg.displayedItems.value[0].state : undefined)).toBeUndefined()
+    expect(pg.displayedItems.value[1]).toMatchObject({ state: 'replying' })
+    expect(pg.sidebarExtras.value[0] && ('state' in pg.sidebarExtras.value[0] ? pg.sidebarExtras.value[0].state : undefined)).toBeUndefined()
+    expect(pg.displayedItems.value).toHaveLength(2)
   })
 
   it('peek passes workflow and tag filters to listGates (plan g2.2)', async () => {

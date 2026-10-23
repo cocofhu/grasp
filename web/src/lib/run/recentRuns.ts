@@ -135,15 +135,36 @@ export function createRecentHold(doc: Document = document) {
 type Listener = () => void
 const listeners = new Set<Listener>()
 let relayTimer: ReturnType<typeof setTimeout> | null = null
+/** A notice arrived while a read was already waiting; run once more so it is not dropped. */
+let relayFollowUp = false
 
 export const RECENT_RELAY_DEBOUNCE_MS = 300
 
+function flushRecentActivity() {
+  relayTimer = null
+  const follow = relayFollowUp
+  relayFollowUp = false
+  for (const fn of [...listeners]) fn()
+  if (follow) scheduleRecentActivity()
+}
+
+function scheduleRecentActivity() {
+  relayTimer = setTimeout(flushRecentActivity, RECENT_RELAY_DEBOUNCE_MS)
+}
+
 export function notifyRecentActivity() {
-  if (relayTimer) return
-  relayTimer = setTimeout(() => {
-    relayTimer = null
-    for (const fn of [...listeners]) fn()
-  }, RECENT_RELAY_DEBOUNCE_MS)
+  if (relayTimer) {
+    relayFollowUp = true
+    return
+  }
+  scheduleRecentActivity()
+}
+
+/** Drop a pending relay. Tests use this so a cleared timer cannot stick the module. */
+export function resetRecentActivityRelayForTests(): void {
+  if (relayTimer) clearTimeout(relayTimer)
+  relayTimer = null
+  relayFollowUp = false
 }
 
 export function onRecentActivity(fn: Listener): () => void {
