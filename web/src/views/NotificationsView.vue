@@ -176,8 +176,8 @@ defineExpose({
       <div class="notifications-filters" role="group" :aria-label="t('pages.notifications.title')">
         <button
           v-for="opt in (['all', 'unread', 'read'] as const)" :key="opt" type="button"
-          class="notification-filter min-h-11 border-b-2 border-transparent px-4 text-[12px] text-txt2 hover:text-txt"
-          :class="filter === opt ? 'border-accent text-txt' : ''" :data-testid="`notifications-filter-${opt}`"
+          class="notification-filter min-h-11 border-b-2 border-transparent px-4 text-[12px]"
+          :class="filter === opt ? 'border-accent text-txt' : 'text-txt2'" :data-testid="`notifications-filter-${opt}`"
           :aria-pressed="filter === opt" @click="setFilter(opt)"
         >
           {{ t(`pages.notifications.filter.${opt}`) }}

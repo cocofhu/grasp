@@ -704,7 +704,7 @@ onBeforeUnmount(() => {
             </div>
             <button
               type="button"
-              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded bg-err text-white"
+              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded pending-attach-remove"
               data-testid="home-attach-remove"
               @click.stop="removeAttachment(ii)"
             >

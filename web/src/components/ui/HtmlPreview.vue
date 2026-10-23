@@ -816,7 +816,7 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
       <SlidingTabs :value="device" indicator-class="bg-accent-dim/50" class="flex overflow-hidden rounded-md border border-line text-[11px]">
         <button
           class="flex items-center gap-1 px-2 py-1 transition-colors"
-          :class="device === 'desktop' ? 'text-accent' : 'text-txt3 hover:text-txt'"
+          :class="device === 'desktop' ? 'text-accent' : 'text-txt3 hover:text-txt2'"
           :data-active="device === 'desktop'"
           @click="device = 'desktop'"
         >
@@ -824,7 +824,7 @@ watch(needsMessageListener, (enabled, wasEnabled) => {
         </button>
         <button
           class="flex items-center gap-1 border-l border-line px-2 py-1 transition-colors"
-          :class="device === 'mobile' ? 'text-accent' : 'text-txt3 hover:text-txt'"
+          :class="device === 'mobile' ? 'text-accent' : 'text-txt3 hover:text-txt2'"
           :data-active="device === 'mobile'"
           @click="device = 'mobile'"
         >

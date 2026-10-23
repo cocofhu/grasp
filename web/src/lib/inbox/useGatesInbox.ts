@@ -20,7 +20,9 @@ import {
   applyInboxReplyingState,
   inboxSecondaryLine,
   isStartingInboxItem,
+  currentInboxStateEpoch,
   mergeInboxReplyingFromRemote,
+  noteInboxStatePatch,
 } from '@/lib/inbox/inboxDisplay'
 import {
   inboxComposerMode,
@@ -115,6 +117,7 @@ const {
   setActiveInboxKey,
   patchItemReplying,
   syncDisplayedBaseline,
+  inboxRemoteObservedAt,
   clearVisibleMembership,
   hasPendingUpdate,
   lastPeekAt,
@@ -1284,7 +1287,10 @@ function patchVisibleCardBusy(runId: string, nodeId: string, busy: boolean) {
   const nextList = listItems.value.map((row) => {
     if (itemKey(row) !== key || row.type !== 'clarify') return row
     const patched = applyInboxReplyingState(row, busy)
-    if (patched !== row) listChanged = true
+    if (patched !== row) {
+      listChanged = true
+      noteInboxStatePatch(key)
+    }
     return patched
   })
   if (listChanged) listItems.value = nextList
@@ -1544,6 +1550,7 @@ async function loadList({
   showLoading = false,
   keepActive = false,
 }: { showLoading?: boolean; keepActive?: boolean } = {}) {
+  const snapshotEpoch = currentInboxStateEpoch()
   const gen = ++listLoadGeneration
   listLoadError.value = null
   if (showLoading) listLoading.value = true
@@ -1570,7 +1577,7 @@ async function loadList({
     // Independent loadList success path: repair invalid selection (no Run # - shell).
     if (!processingLock.value) ensureValidActive({ keepActive })
     // Align peek banner baseline with the visible list (plan g1.2 / g2.1).
-    syncDisplayedBaseline(listItems.value)
+    syncDisplayedBaseline(listItems.value, snapshotEpoch)
   } catch (err) {
     if (gen !== listLoadGeneration) return
     /* keep previous list on transient failure; surface error when nothing to show */
@@ -1850,7 +1857,12 @@ async function syncListAfterAutoApply() {
 // current page so badges follow sessionBusy without hanging the update banner.
 watch(remoteItems, (remote) => {
   if (!remote.length) return
-  const merged = mergeInboxReplyingFromRemote(listItems.value, remote, itemKey)
+  const merged = mergeInboxReplyingFromRemote(
+    listItems.value,
+    remote,
+    itemKey,
+    inboxRemoteObservedAt?.(),
+  )
   if (merged !== listItems.value) listItems.value = merged
 })
 
@@ -2280,7 +2292,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     }
     if (m.type === 'review') {
       // Sidebar「最近」has no channel of its own: relay turn boundaries.
-      if (m.event === 'turn_begin' || m.event === 'turn_done' || m.event === 'error') notifyRecentActivity()
+      if (
+        m.event === 'turn_begin' ||
+        m.event === 'turn_done' ||
+        m.event === 'error' ||
+        m.event === 'queue_state'
+      ) notifyRecentActivity()
       if (m.event === 'turn_begin') clarifyLiveBusy.value = true
       if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
         clarifyLiveBusy.value = !!m.busy

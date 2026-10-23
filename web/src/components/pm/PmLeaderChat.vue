@@ -677,7 +677,7 @@ function showConversationHistory() { artifactOpen.value = false }
             </div>
             <button
               type="button"
-              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center bg-err text-white"
+              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center pending-attach-remove"
               :disabled="busy"
               @click.stop="removeAttachment(ii)"
             >

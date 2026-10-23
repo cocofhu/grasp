@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 import {
   RECENT_RELAY_DEBOUNCE_MS,
   createRecentHold,
   notifyRecentActivity,
   onRecentActivity,
+  resetRecentActivityRelayForTests,
   recentRunActive,
   recentRunMark,
   recentRunTarget,
@@ -107,6 +108,12 @@ describe('createRecentHold', () => {
 })
 
 describe('local activity relay', () => {
+  beforeEach(() => { resetRecentActivityRelayForTests() })
+  afterEach(() => {
+    resetRecentActivityRelayForTests()
+    vi.useRealTimers()
+  })
+
   it('debounces bursts into one refresh', () => {
     vi.useFakeTimers()
     const fn = vi.fn()
@@ -118,6 +125,25 @@ describe('local activity relay', () => {
     notifyRecentActivity()
     vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
     expect(fn).toHaveBeenCalledTimes(1)
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('reads the latest state when a second notice arrives inside the window', () => {
+    vi.useFakeTimers()
+    let state = 'busy'
+    const seen: string[] = []
+    const off = onRecentActivity(() => { seen.push(state) })
+    notifyRecentActivity()
+    vi.advanceTimersByTime(100)
+    state = 'idle'
+    notifyRecentActivity()
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen.at(-1)).toBe('idle')
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen).toEqual(['idle', 'idle'])
+    off()
+    vi.clearAllTimers()
     vi.useRealTimers()
   })
 })

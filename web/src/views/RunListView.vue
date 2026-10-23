@@ -520,7 +520,7 @@ onUnmounted(() => {
           :key="seg.id"
           type="button"
           class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
-          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
+          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt2'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"
@@ -644,8 +644,7 @@ onUnmounted(() => {
               <div
                 v-if="showNodeLabel(r)"
                 :key="`${r.id}-${r.currentNodeLabel}`"
-                class="node-label-fade max-w-full truncate text-[11px]"
-                :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                class="node-label-fade max-w-full truncate text-[11px] text-txt3"
                 :title="r.currentNodeLabel!.length > 60 ? r.currentNodeLabel : undefined"
               >{{ truncateText(r.currentNodeLabel!, 60) }}</div>
             </div>
@@ -808,8 +807,7 @@ onUnmounted(() => {
                   <div
                     v-if="showNodeLabel(r)"
                     :key="`${r.id}-${r.currentNodeLabel}`"
-                    class="node-label-fade mt-1 truncate text-[11px]"
-                    :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                    class="node-label-fade mt-1 truncate text-[11px] text-txt3"
                     :title="r.currentNodeLabel!"
                   >{{ r.currentNodeLabel }}</div>
                 </td>

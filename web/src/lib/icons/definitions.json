@@ -40,12 +40,12 @@
     "note": "外框保持固定，提示符前移，光标闪烁两次"
   },
   "workflow": {
-    "body": "<circle class=\"node-a\" cx=\"6\" cy=\"6\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-b\" cx=\"6\" cy=\"18\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-c\" cx=\"18\" cy=\"12\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><path pathLength=\"1\" d=\"M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3\" opacity=\".55\"/><path class=\"signal\" pathLength=\"1\" d=\"M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3\" opacity=\"0\" stroke-width=\"2.5\"/>",
+    "body": "<circle class=\"node-a\" cx=\"6\" cy=\"6\" r=\"2.2\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-b\" cx=\"6\" cy=\"18\" r=\"2.2\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-c\" cx=\"18\" cy=\"12\" r=\"2.2\" fill=\"currentColor\" fill-opacity=\"0\"/><path pathLength=\"1\" d=\"M8.2 6C12 6 14 8.2 16.45 10.45M8.2 18C12 18 14 15.8 16.45 13.55\"/><path class=\"signal\" pathLength=\"1\" d=\"M8.2 6C12 6 14 8.2 16.45 10.45M8.2 18C12 18 14 15.8 16.45 13.55\" opacity=\"0\" stroke-width=\"2.5\"/>",
     "duration": 1250,
     "viewBox": "0 0 24 24",
     "filled": false,
     "strokeWidth": 1.7,
-    "note": "起点亮起，信号沿两条连线到达终点"
+    "note": "较小节点依次点亮，信号沿两条实线到达终点"
   },
   "check": {
     "body": "<path class=\"grasp-check-draw\" pathLength=\"1\" d=\"M5 12l5 5 9-11\"/>",
@@ -184,11 +184,11 @@
     "note": "发送箭头向上送出，再回到待发送位置"
   },
   "chat-stop": {
-    "body": "<g class=\"motion-target\"><rect x=\"7\" y=\"7\" width=\"10\" height=\"10\" rx=\"2\"/></g>",
+    "body": "<g class=\"motion-target\"><rect x=\"3.75\" y=\"3.75\" width=\"16.5\" height=\"16.5\" rx=\"3\"/></g>",
     "duration": 900,
     "viewBox": "0 0 24 24",
     "filled": true,
-    "strokeWidth": 1.2,
+    "strokeWidth": 0,
     "note": "停止方块收紧一次，再稳定回位"
   },
   "stop": {
@@ -360,12 +360,12 @@
     "note": "坐标轴固定，三条柱线从底部依次生长"
   },
   "board": {
-    "body": "<rect x=\"3\" y=\"4\" width=\"5\" height=\"16\"/><rect x=\"10\" y=\"4\" width=\"5\" height=\"16\"/><rect x=\"17\" y=\"4\" width=\"4\" height=\"16\"/>",
+    "body": "<rect x=\"3.1\" y=\"3.6\" width=\"5\" height=\"16.8\" rx=\"1.6\"/><rect x=\"9.5\" y=\"3.6\" width=\"5\" height=\"16.8\" rx=\"1.6\"/><rect x=\"15.9\" y=\"3.6\" width=\"5\" height=\"16.8\" rx=\"1.6\"/>",
     "duration": 570,
     "viewBox": "0 0 24 24",
     "filled": false,
     "strokeWidth": 1.7,
-    "note": "三列依次轻亮；当前原图没有内部卡片"
+    "note": "三根等宽圆角列依次变淡；没有内部卡片和外框"
   },
   "gate": {
     "body": "<path class=\"gate-shield\" d=\"M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z\"/><path class=\"gate-bars\" d=\"M9 9v6M15 9v6\"/>",

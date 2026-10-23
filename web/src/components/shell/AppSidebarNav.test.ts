@@ -151,6 +151,7 @@ import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
+import { RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 /** Runs the default listRuns stub treats as still unfinished, in sidebar order. */
@@ -749,6 +750,40 @@ describe('AppSidebarNav', () => {
     expect(src).toMatch(/chromeHasMounted/)
   })
 
+  it('keeps the new-request active row transparent and other selections gray', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    const createIdle = block('\\.sidebar-workspace-nav \\.nav-create-action')
+    expect(createIdle).toContain('background: transparent')
+    expect(createIdle).toContain('font-weight: 500')
+    expect(createIdle).toContain('--hover-ink-color: rgb(var(--c-txt) / .045)')
+
+    const createActive = block('\\.sidebar-workspace-nav \\.nav-create-action\\.active')
+    expect(createActive).toContain('background: transparent')
+    expect(createActive).toContain('font-weight: 600')
+    expect(createActive).not.toMatch(/rgb\(var\(--c-txt\)\s*\/\s*\.055\)/)
+
+    const itemActive = block('\\.sidebar-workspace-nav \\.nav-item\\.active')
+    expect(itemActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+
+    const settingsActive = block('\\.settings-directory \\.nav-item\\.active')
+    expect(settingsActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+
+    const genericAt = style.indexOf('.sidebar-workspace-nav .nav-item.active')
+    const createAt = style.indexOf('.sidebar-workspace-nav .nav-create-action.active')
+    expect(genericAt).toBeGreaterThanOrEqual(0)
+    expect(createAt).toBeGreaterThan(genericAt)
+  })
+
   it('workspace and settings nav-items use v-hover-ink (plan g2.1 / g2.3)', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
@@ -1238,6 +1273,128 @@ describe('AppSidebarNav', () => {
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
 
     wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('switches one executing row icon when state or currentNode changes, without remounting', async () => {
+    const node = (id: string, state: string, kind = 'clarify', mode = 'clarify') => ({
+      id, name: id, iteration: 1, kind, mode, state,
+    })
+    const run = (id: string, currentNode: ReturnType<typeof node> | undefined, status = 'running') => ({
+      id, workflowId: 'wf', workflowName: 'w', title: id, status, startedAt: 'T0', currentNode,
+    })
+    const row = (runId: string, nodeId: string, title: string, state?: string) => ({
+      type: 'clarify' as const,
+      runId,
+      nodeId,
+      label: title,
+      kind: 'clarify' as const,
+      workflowName: 'w',
+      runTitle: title,
+      ...(state ? { state } : {}),
+    })
+    const publish = async (items: ReturnType<typeof run>[]) => {
+      apiMocks.listRuns.mockResolvedValue({ items, total: items.length })
+      notifyRecentActivity()
+      await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+      await flushPromises()
+    }
+    gateMocks.displayedItems.value = [row('run-a', 'n1', '甲'), row('run-b', 'n2', '乙')]
+    const wrapper = mountNav()
+    await flushPromises()
+    const icon = (key: string) => wrapper.get(`[data-key="${key}"]`).get('[data-testid="nav-pending-type-icon"]').attributes('name')
+    const rowEl = wrapper.get('[data-key="run-a"]').element
+    expect(icon('run-a')).toBe('user-hold')
+    expect(icon('run-b')).toBe('user-hold')
+
+    const composer = document.createElement('textarea')
+    composer.value = '草稿还在'
+    document.body.append(composer)
+    composer.focus()
+
+    gateMocks.displayedItems.value = [row('run-a', 'n1', '甲', 'replying'), row('run-b', 'n2', '乙')]
+    await nextTick()
+    expect(icon('run-a')).toBe('breath-dot')
+    expect(icon('run-b')).toBe('user-hold')
+    expect(wrapper.get('[data-key="run-a"]').element).toBe(rowEl)
+
+    gateMocks.displayedItems.value = [row('run-a', 'n1', '甲'), row('run-b', 'n2', '乙')]
+    await nextTick()
+    expect(icon('run-a')).toBe('user-hold')
+    expect(icon('run-b')).toBe('user-hold')
+
+    gateMocks.displayedItems.value = [row('run-a', 'n1', '甲', 'starting'), row('run-b', 'n2', '乙')]
+    await nextTick()
+    expect(icon('run-a')).toBe('arc-spinner')
+    expect(icon('run-b')).toBe('user-hold')
+
+    await publish([
+      run('run-a', node('n1', 'busy', 'review', 'manual'), 'waiting_human'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-a')).toBe('arc-spinner')
+    expect(icon('run-b')).toBe('user-hold')
+
+    gateMocks.displayedItems.value = [row('run-a', 'n1', '甲'), row('run-b', 'n2', '乙')]
+    await nextTick()
+    expect(icon('run-a')).toBe('breath-dot')
+    expect(icon('run-b')).toBe('user-hold')
+    expect(wrapper.get('[data-key="run-a"]').element).toBe(rowEl)
+
+    await publish([
+      run('run-a', node('n1', 'running', 'clarify', 'clarify'), 'running'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-a')).toBe('arc-spinner')
+    expect(icon('run-b')).toBe('user-hold')
+
+    await publish([
+      run('run-a', node('n1', 'stopping', 'agent', 'manual'), 'running'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-a')).toBe('arc-spinner')
+    expect(icon('run-b')).toBe('user-hold')
+
+    await publish([
+      run('run-a', node('other', 'running', 'agent', 'auto'), 'running'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-a')).toBe('user-hold')
+    expect(icon('run-b')).toBe('user-hold')
+
+    await publish([
+      run('run-a', undefined, 'queued'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-a')).toBe('queue')
+    expect(icon('run-b')).toBe('user-hold')
+
+    gateMocks.sidebarExtras.value = [row('run-e', 'e', '占位')]
+    await publish([
+      run('run-a', undefined, 'queued'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+      run('run-e', node('e', 'waiting_human'), 'waiting_human'),
+    ])
+    expect(icon('run-e')).toBe('user-hold')
+    gateMocks.sidebarExtras.value = [row('run-e', 'e', '占位', 'replying')]
+    await nextTick()
+    expect(icon('run-e')).toBe('breath-dot')
+    expect(icon('run-a')).toBe('queue')
+    expect(icon('run-b')).toBe('user-hold')
+    await publish([
+      run('run-a', undefined, 'queued'),
+      run('run-b', node('n2', 'waiting_human'), 'waiting_human'),
+      run('run-e', node('e', 'running', 'clarify', 'clarify'), 'running'),
+    ])
+    expect(icon('run-e')).toBe('arc-spinner')
+    expect(icon('run-a')).toBe('queue')
+    expect(icon('run-b')).toBe('user-hold')
+
+    expect(composer.value).toBe('草稿还在')
+    expect(document.activeElement).toBe(composer)
+    composer.remove()
+    wrapper.unmount()
+    vi.clearAllTimers()
     vi.useRealTimers()
   })
 

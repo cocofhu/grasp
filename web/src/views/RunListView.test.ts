@@ -213,6 +213,29 @@ describe('RunListView duration column layout (g1.1 / g1.2 / g2.1)', () => {
   })
 })
 
+describe('RunListView waiting_human status cell', () => {
+  const mobileBlock = src.slice(
+    src.indexOf('<!-- Mobile card list -->'),
+    src.indexOf('<!-- Desktop table -->'),
+  )
+  const desktopBlock = src.slice(src.indexOf('<!-- Desktop table (loading skeleton or rows) -->'))
+
+  it('uses text-txt3 for the stage name on desktop and mobile', () => {
+    for (const block of [mobileBlock, desktopBlock]) {
+      expect(block).toMatch(/class="node-label-fade[^"]*text-txt3"/)
+      expect(block).not.toMatch(/waiting_human' \? 'text-warn'/)
+      expect(block).not.toMatch(/node-label-fade[^"]*text-warn/)
+    }
+  })
+
+  it('keeps the waiting_human progress fill on bg-accent and leaves failed/cancelled branches', () => {
+    expect(desktopBlock).toMatch(
+      /:class="r\.status === 'failed' \? 'bg-err' : r\.status === 'cancelled' \? 'bg-txt3' : 'bg-accent'"/,
+    )
+    expect(mobileBlock).toMatch(/class="h-full rounded-full bg-accent"/)
+  })
+})
+
 describe('RunListView sorting', () => {
   it('exposes a desktop sortable header for start time only (priority column removed)', () => {
     expect(src).toMatch(/applySortClick\('started_at'\)/)
