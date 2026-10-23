@@ -100,9 +100,14 @@ const apiMocks = vi.hoisted(() => ({
   cancelRun: vi.fn(),
 }))
 
-const workspaceMocks = vi.hoisted(() => ({
-  ensureLoaded: vi.fn(async () => ({ name: 'ws' })),
-}))
+const workspaceMocks = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { ref } = require('vue') as typeof import('vue')
+  return {
+    ensureLoaded: vi.fn(async () => ({ name: 'ws' })),
+    workspace: ref<{ name: string } | null>({ name: 'ws' }),
+  }
+})
 
 vi.mock('@/lib/api/api', () => ({
   api: {
@@ -114,7 +119,10 @@ vi.mock('@/lib/api/api', () => ({
 }))
 
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({
-  useWorkspaceContext: () => ({ ensureLoaded: () => workspaceMocks.ensureLoaded() }),
+  useWorkspaceContext: () => ({
+    ensureLoaded: () => workspaceMocks.ensureLoaded(),
+    workspace: workspaceMocks.workspace,
+  }),
 }))
 
 vi.mock('@/lib/run/useRunTerminalNotifications', () => ({
@@ -149,7 +157,8 @@ import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
 import AppSidebarNav from './AppSidebarNav.vue'
-import { RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
+import { RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity, resetRecentActivityRelayForTests } from '@/lib/run/recentRuns'
+import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 
 /** Runs the default listRuns stub treats as still unfinished, in sidebar order. */
@@ -229,6 +238,9 @@ beforeEach(() => {
   apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
   workspaceMocks.ensureLoaded.mockReset()
   workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
+  workspaceMocks.workspace.value = { name: 'ws' }
+  Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+  resetRecentActivityRelayForTests()
   const toast = useToast()
   for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
   vi.useFakeTimers()
@@ -2237,6 +2249,164 @@ describe('AppSidebarNav cancel run', () => {
     expect(routerMocks.push).toHaveBeenCalledWith({ path: '/dashboard' })
     expect(inboxCancelDepartureRunId()).toBeNull()
     wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('shows 正在执行 once the workspace becomes ready, without leaving the page', async () => {
+    const run = {
+      id: 'run-live',
+      workflowId: 'wf',
+      workflowName: 'w',
+      title: '登录还在跑',
+      status: 'running',
+      startedAt: 'T0',
+    }
+    const solo = {
+      id: 'solo-1',
+      title: '单独会话',
+      agentName: '需求澄清',
+      status: 'running',
+      restarts: 0,
+      busy: true,
+      waiting: 0,
+      createdAt: '2026-10-23T00:00:00Z',
+      updatedAt: '2026-10-23T00:00:00Z',
+    }
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
+    await useSoloSessions().refresh()
+    apiMocks.listSoloSessions.mockClear()
+    workspaceMocks.workspace.value = null
+    workspaceMocks.ensureLoaded.mockReset()
+    workspaceMocks.ensureLoaded.mockResolvedValueOnce(null)
+    workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
+    apiMocks.listRuns.mockResolvedValue({ items: [run], total: 1 })
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [solo], maxSandboxes: 1 })
+
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(routeState.path).toBe('/dashboard')
+    expect(apiMocks.listRuns).not.toHaveBeenCalled()
+    expect(apiMocks.listSoloSessions).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('正在执行')
+
+    workspaceMocks.workspace.value = { name: 'ws' }
+    await nextTick()
+    await flushPromises()
+
+    expect(routeState.path).toBe('/dashboard')
+    expect(apiMocks.listRuns).toHaveBeenCalledTimes(1)
+    expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({
+      status: 'queued,running,waiting_human',
+      sort: 'last_activity',
+      order: 'desc',
+    }))
+    expect(apiMocks.listSoloSessions).toHaveBeenCalledTimes(1)
+    const section = wrapper.get('[data-testid="nav-pending-approvals"]')
+    expect(section.text()).toContain('正在执行')
+    expect(section.get('[data-key="run-live"]').text()).toContain('登录还在跑')
+    expect(section.get('[data-kind="solo"]').attributes('data-key')).toBe('solo-1')
+    const create = wrapper.get('[data-to="/dashboard"]')
+    expect(create.text()).toContain('新需求')
+    expect(create.element.compareDocumentPosition(section.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('reads unfinished runs again when a hidden tab becomes visible', async () => {
+    const wrapper = mountNav()
+    await flushPromises()
+    const callsAfterMount = apiMocks.listRuns.mock.calls.length
+    expect(callsAfterMount).toBeGreaterThan(0)
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await vi.advanceTimersByTimeAsync(15000)
+    await flushPromises()
+    expect(apiMocks.listRuns.mock.calls.length).toBe(callsAfterMount)
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{ id: 'run-back', workflowId: 'wf', workflowName: 'w', title: '切回来了', status: 'queued', startedAt: 'T0' }],
+      total: 1,
+    })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(apiMocks.listRuns.mock.calls.length).toBe(callsAfterMount + 1)
+    expect(routeState.path).toBe('/dashboard')
+    expect(wrapper.get('[data-key="run-back"]').text()).toContain('切回来了')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"]').text()).toContain('正在执行')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps a landed unfinished list when activity notices arrive before the read returns', async () => {
+    const landed = {
+      items: [{ id: 'run-live', workflowId: 'wf', workflowName: 'w', title: '登录还在跑', status: 'running', startedAt: 'T0' }],
+      total: 1,
+    }
+    const pending: Array<{ resolve: (value: unknown) => void; reject: (reason: unknown) => void; signal?: AbortSignal }> = []
+    apiMocks.listRuns.mockImplementation((args?: { signal?: AbortSignal }) => new Promise((resolve, reject) => {
+      pending.push({ resolve, reject, signal: args?.signal })
+    }))
+
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(pending).toHaveLength(1)
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    expect(pending).toHaveLength(1)
+    expect(pending[0].signal?.aborted).toBe(false)
+
+    pending[0].resolve(landed)
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
+    expect(pending).toHaveLength(2)
+    expect(pending[0].signal?.aborted).toBe(false)
+
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    notifyRecentActivity()
+    await vi.advanceTimersByTimeAsync(RECENT_RELAY_DEBOUNCE_MS)
+    expect(pending).toHaveLength(2)
+    expect(pending[1].signal?.aborted).toBe(false)
+    expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
+
+    pending[1].reject(new Error('offline'))
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-live"]').text()).toContain('登录还在跑')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"]').text()).toContain('正在执行')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('hides 正在执行 when nothing is unfinished and on the settings nav', async () => {
+    apiMocks.listRuns.mockResolvedValue({ items: [], total: 0 })
+    apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
+    const wrapper = mountNav()
+    await flushPromises()
+    expect(wrapper.find('[data-to="/dashboard"]').text()).toContain('新需求')
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('正在执行')
+    wrapper.unmount()
+
+    routeState.path = '/settings'
+    apiMocks.listRuns.mockResolvedValue({
+      items: [{ id: 'run-1', workflowId: 'wf', workflowName: 'w', title: '还在跑', status: 'running', startedAt: 'T0' }],
+      total: 1,
+    })
+    const settings = mountNav()
+    await flushPromises()
+    expect(settings.find('[data-testid="nav-settings-chrome"]').exists()).toBe(true)
+    expect(settings.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    expect(settings.text()).not.toContain('正在执行')
+    expect(settings.text()).not.toContain('还在跑')
+    settings.unmount()
     vi.useRealTimers()
   })
 })
