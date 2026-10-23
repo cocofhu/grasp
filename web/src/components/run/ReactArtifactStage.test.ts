@@ -2235,4 +2235,27 @@ describe('ReactArtifactStage split drawer', () => {
     expect(wrapper.text()).toContain('Waiting for human')
     wrapper.unmount()
   })
+
+  it('does not lift unselected stage tabs on hover', async () => {
+    const wrapper = mount(ReactArtifactStage, {
+      props: {
+        artifacts: [art({ id: 'a1', name: 'research.json', kind: 'json' })],
+        runId: 'run-hover',
+        remoteKind: 'off',
+      },
+      global: { plugins: [i18n()], stubs },
+    })
+    await wrapper.get('[data-testid="react-artifact-card-research.json"]').trigger('click')
+    await flushPromises()
+    const grid = wrapper.get('[data-testid="react-artifact-tab-grid"]')
+    expect(grid.attributes('aria-selected')).toBe('false')
+    expect(grid.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2']))
+    expect(grid.classes()).not.toContain('hover:bg-elevated/60')
+    expect(grid.classes()).not.toContain('bg-elevated')
+    const selectedShell = wrapper.get('[data-testid="react-artifact-tab-research.json"]').element.parentElement as HTMLElement
+    expect(selectedShell.className).toContain('bg-elevated')
+    expect(selectedShell.className).toContain('text-txt')
+    expect(selectedShell.className).not.toContain('hover:bg-elevated')
+    wrapper.unmount()
+  })
 })
