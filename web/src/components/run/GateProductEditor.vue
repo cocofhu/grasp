@@ -432,7 +432,7 @@ defineExpose({
         :class="
           p.name === activeName
             ? 'border-accent-2 text-txt'
-            : 'border-transparent text-txt2 hover:text-txt'
+            : 'border-transparent text-txt2'
         "
         @click="selectProduct(p.name)"
       >
@@ -475,7 +475,7 @@ defineExpose({
         <button
           type="button"
           class="px-3 py-1 text-xs"
-          :class="mode === 'edit' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
+          :class="mode === 'edit' ? 'bg-overlay text-txt' : 'text-txt2'"
           :disabled="editTabDisabled"
           data-testid="gate-mode-edit"
           @click="setMode('edit')"
@@ -485,7 +485,7 @@ defineExpose({
         <button
           type="button"
           class="px-3 py-1 text-xs"
-          :class="mode === 'preview' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
+          :class="mode === 'preview' ? 'bg-overlay text-txt' : 'text-txt2'"
           data-testid="gate-mode-preview"
           @click="setMode('preview')"
         >

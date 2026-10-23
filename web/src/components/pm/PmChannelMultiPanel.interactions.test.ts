@@ -251,4 +251,17 @@ describe('PmChannelMultiPanel interactions', () => {
     await w.get('[data-testid="cron-deliver-target-input"]').trigger('keydown', { key: 'Escape' })
     w.unmount()
   })
+
+  it('keeps unselected channel tabs on the secondary text color', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    const list = w.get('[data-testid="channel-tab-list"]')
+    const edit = w.get('[data-testid="channel-tab-edit"]')
+    expect(list.classes()).toEqual(expect.arrayContaining(['border-accent', 'text-txt']))
+    expect(list.classes()).not.toContain('hover:text-txt')
+    expect(edit.classes()).toEqual(expect.arrayContaining(['border-transparent', 'text-txt2']))
+    expect(edit.classes()).not.toContain('hover:text-txt')
+    expect(edit.classes()).not.toContain('text-txt')
+    w.unmount()
+  })
 })

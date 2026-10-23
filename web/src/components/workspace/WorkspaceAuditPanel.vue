@@ -1022,8 +1022,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.seg button:hover {
-  color: rgb(var(--c-txt));
+.seg button:hover:not(.on) {
+  color: rgb(var(--c-txt2));
 }
 
 .seg button.on {

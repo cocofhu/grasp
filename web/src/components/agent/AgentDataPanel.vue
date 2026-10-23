@@ -304,7 +304,7 @@ const showSkeleton = computed(
           class="shrink-0 rounded px-2.5 text-[12px]"
           :class="[
             isMobile ? 'min-h-11 px-3 py-2.5' : 'py-1',
-            sub === k ? 'text-accent-2' : 'text-txt3 hover:text-txt',
+            sub === k ? 'text-accent-2' : 'text-txt3 hover:text-txt2',
           ]"
           :data-active="sub === k"
           @click="setSub(k)"
