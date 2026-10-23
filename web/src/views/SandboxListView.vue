@@ -146,6 +146,7 @@ function sourceText(s: SandboxView): string {
   if (s.purpose === 'run') {
     const wf = s.workflowName || s.workflowId || t('pages.sandboxes.source.workflow')
     const run = s.runId || '—'
+    if (s.shared) return `${wf} / run ${run} / ${t('pages.sandboxes.shared')}`
     return s.nodeId ? `${wf} / run ${run} / ${s.nodeId}` : `${wf} / run ${run}`
   }
   const key = sandboxSourceTextKey(s.purpose)
@@ -419,7 +420,7 @@ onBeforeUnmount(() => {
                     ><Icon name="workflow" :size="12" />{{ s.workflowName || s.workflowId || t('pages.sandboxes.source.workflow') }}</RouterLink>
                     <span v-else class="text-[12px] text-txt2">{{ s.workflowName || t('pages.sandboxes.source.workflow') }}</span>
                     <span class="font-mono text-[11px] text-txt3">
-                      run {{ shortId(s.runId) }}<template v-if="s.nodeId"> · {{ s.nodeId }}</template>
+                      run {{ shortId(s.runId) }}<template v-if="s.shared"> · <span data-testid="sandbox-shared-label">{{ t('pages.sandboxes.shared') }}</span></template><template v-else-if="s.nodeId"> · {{ s.nodeId }}</template>
                     </span>
                   </div>
                 </template>
@@ -565,7 +566,7 @@ onBeforeUnmount(() => {
                       ><Icon name="workflow" :size="12" />{{ s.workflowName || s.workflowId || t('pages.sandboxes.source.workflow') }}</RouterLink>
                       <span v-else class="text-[12px] text-txt2">{{ s.workflowName || t('pages.sandboxes.source.workflow') }}</span>
                       <span class="font-mono text-[11px] text-txt3">
-                        run {{ shortId(s.runId) }}<template v-if="s.nodeId"> · {{ s.nodeId }}</template>
+                        run {{ shortId(s.runId) }}<template v-if="s.shared"> · <span data-testid="sandbox-shared-label">{{ t('pages.sandboxes.shared') }}</span></template><template v-else-if="s.nodeId"> · {{ s.nodeId }}</template>
                       </span>
                     </div>
                   </template>

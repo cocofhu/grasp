@@ -1592,7 +1592,8 @@
         "value": "Value",
         "secret": "Secret",
         "plain": "Plain",
-        "secretBadge": "Secret"
+        "secretBadge": "Secret",
+        "sharedBadge": "Shared sandbox"
       },
       "gateRemoved": "Gate has been removed",
       "clarifyFailed": {
@@ -1889,7 +1890,8 @@
         "test_sandbox_ttl_minutes": "Test sandbox idle TTL",
         "max_test_sandboxes": "Max test sandboxes",
         "sandbox_memory_mb": "Sandbox memory limit",
-        "agent_idle_timeout_minutes": "Agent no-activity limit"
+        "agent_idle_timeout_minutes": "Agent no-activity limit",
+        "shared_run_sandbox_enabled": "Shared run sandbox"
       },
       "settings": {
         "max_concurrent_runs": "Max workflows in running state. Read-only when locked by GRASP_MAX_RUNS.",
@@ -1898,7 +1900,8 @@
         "test_sandbox_ttl_minutes": "Idle TTL for test sandboxes.",
         "max_test_sandboxes": "Reject new test sandboxes when active count reaches this (min 1).",
         "sandbox_memory_mb": "Memory per sandbox, shared by dockerd, the browser and the agent's builds/tests; exceeding it OOM-kills the whole sandbox. The agent prompt states this limit. Applies to newly created sandboxes (min 1024, must not exceed the gateway maxMemoryMB). Read-only when locked by GRASP_SANDBOX_MEMORY_MB.",
-        "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC."
+        "agent_idle_timeout_minutes": "When the agent shows no output, CPU or disk activity for this long, the sandbox tries to resume it once and, if it stays silent, stops the turn as stuck (the node retries once in a fresh sandbox). Agents running builds, tests or long reasoning keep CPU/IO busy and are not stopped. Applies from the next turn (2–120 minutes, default 20). Read-only when locked by GRASP_CHAT_IDLE_SEC.",
+        "shared_run_sandbox_enabled": "Lets a workflow opt into running every node of a run in one shared sandbox (Workflow defaults → Sandbox mode). Off keeps one sandbox per node for every workflow."
       },
       "units": {
         "mib": "MiB",
@@ -2010,7 +2013,8 @@
           "preview": "Preview",
           "manual": "Manual"
         }
-      }
+      },
+      "shared": "shared"
     },
     "sandboxConsole": {
       "back": "Back",
@@ -4379,7 +4383,13 @@
       "inherit": "Inherit default credential",
       "doNotInject": "Do not inject",
       "unavailable": "Unavailable",
-      "manageCredentials": "Manage credentials"
+      "manageCredentials": "Manage credentials",
+      "sandboxMode": {
+        "title": "Sandbox mode",
+        "per_node": "One sandbox per node",
+        "shared": "Shared sandbox",
+        "hint": "Nodes share one workspace. When the agent changes between nodes, the container env and credentials are re-initialized."
+      }
     },
     "chatNavigation": {
       "ariaLabel": "Conversation navigation",

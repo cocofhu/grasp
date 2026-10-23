@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/composables/useAuth'
 import { createListRequestSeq, httpStatusOf } from '@/lib/shared/listRequestSeq'
 import { isIntegrationsQuery } from '@/data/settingsNav'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppSwitch from '@/components/ui/AppSwitch.vue'
 import Icon from '@/components/ui/Icon.vue'
 import IntegrationsPanel from '@/components/settings/IntegrationsPanel.vue'
 import SettingsSection from '@/components/settings/SettingsSection.vue'
@@ -42,7 +43,7 @@ const groups = computed(() => [
     id: 'resources',
     title: t('pages.settings.groups.resources.title'),
     desc: t('pages.settings.groups.resources.desc'),
-    keys: ['sandbox_memory_mb', 'agent_idle_timeout_minutes'],
+    keys: ['sandbox_memory_mb', 'agent_idle_timeout_minutes', 'shared_run_sandbox_enabled'],
   },
 ])
 
@@ -53,6 +54,9 @@ const SETTING_UNITS: Record<string, string> = {
   sandbox_memory_mb: 'pages.settings.units.mib',
   agent_idle_timeout_minutes: 'common.minutes',
 }
+
+// 0/1 knobs rendered as an on/off switch instead of a number input.
+const SWITCH_SETTINGS = new Set(['shared_run_sandbox_enabled'])
 
 function settingDescription(key: string): string {
   return t(`pages.settings.settings.${key}`)
@@ -362,7 +366,16 @@ onBeforeUnmount(() => {
               </SettingsRow>
               <template v-for="key in group.keys" :key="key">
                 <SettingsRow v-if="itemOf(key)" :for="`setting-${key}`" :label="settingLabel(key)" :description="settingSummary(key)">
-                  <div class="flex items-center gap-2">
+                  <AppSwitch
+                    v-if="SWITCH_SETTINGS.has(key)"
+                    :id="`setting-${key}`"
+                    :model-value="Number(form[key]) === 1"
+                    :disabled="itemOf(key)!.locked || saving"
+                    :aria-label="settingLabel(key)"
+                    :data-testid="`setting-switch-${key}`"
+                    @update:model-value="form[key] = $event ? 1 : 0"
+                  />
+                  <div v-else class="flex items-center gap-2">
                     <input
                       :id="`setting-${key}`"
                       v-model.number="form[key]"

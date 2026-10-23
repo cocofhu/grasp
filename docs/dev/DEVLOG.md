@@ -35,7 +35,15 @@
   - server：`golangci-lint`、`go vet`、`gen-configdoc -check`、`go test ./...`、`cover-check-server.sh 90`（90.2%）、`TestRunAgent|TestReact` 均通过。
   - 新增单测：`runtime/acp_shared_test.go`（复用、同节点不 reprime、per-node 不变、挂起会话时回退、重试复用容器、reprime 失败换容器、运行结束退役、工作目录不同时回退、重启后接管）；`sandbox/reprime_test.go`；`services/sandbox_shared_test.go`；`engine/sandbox_mode_test.go`。
   - sandbox：`test-reprime.sh`、`test-inject.sh`、`test-runtime-bootstrap.sh`、`shellcheck-error.sh` 通过；运行时包构建产物里包含 `reprime.sh`。
-  - 未做：真实镜像的端到端验证（三节点、两种 Agent）；前端开关 UI（另开会话做）。
+  - 未做：真实镜像的端到端验证（三节点、两种 Agent）。
+
+### 2026-10-23（共享运行沙箱 Web 入口）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/workflow/WorkflowDefaultsPanel.vue`、`web/src/views/SettingsView.vue`、`web/src/components/run/RunSandboxEnvPanel.vue`、`web/src/views/RunDetailView.vue`、`web/src/views/SandboxListView.vue`、`web/src/lib/shared/types.ts`、`web/src/lib/api/apiTypes.ts`、两份 `pages.json` 及对应测试、CHANGELOG。
+- 做了什么：按服务端契约接入可选共享沙箱。设置页把 `shared_run_sandbox_enabled`（0/1）渲染为开关；开关为 1 时，工作流默认值面板出现「沙箱模式」单选（per_node / shared），选 shared 写入 `defaults.sandbox.mode`，选 per_node 删除该字段；Run 详情的运行环境页在 `run.sandboxMode === 'shared'` 时显示「共享沙箱」徽标；沙箱列表对 `shared: true` 的行用「共享」代替节点 id。
+- 为什么：共享沙箱默认关闭且要求零影响。旋钮缺失、为 0 或读取设置失败时面板保持原样，per_node 不往默认值里写字段，旧工作流的保存内容不变。
+- 如何验证：新增/扩展 WorkflowDefaultsPanel、SettingsView、SandboxListView、RunSandboxEnvPanel 单测；web 下 lint、vue-tsc、`npm test -- --coverage`、`npm run build` 通过。服务端字段由另一会话实现，未做端到端联调。
 
 ### 2026-10-22（澄清聊天接收父级属性）
 
