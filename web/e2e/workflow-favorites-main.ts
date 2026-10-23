@@ -206,7 +206,7 @@ async function bootstrap() {
       const fav = useWorkflowFavorites()
       return () =>
         h('div', { 'data-testid': 'shell-main-dashboard' }, [
-          h('p', '概览 · 快捷区从任意页面可用'),
+          h('p', '概览'),
           h(
             'button',
             {

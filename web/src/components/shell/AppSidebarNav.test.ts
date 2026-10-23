@@ -698,7 +698,10 @@ describe('AppSidebarNav', () => {
     const wrapper = mountNav()
     await flushPromises()
     expect(wrapper.find('[data-testid="nav-workspace-chrome"]').exists()).toBe(true)
+    // Stored favorites must not render a quick-workflow block or the starred name.
     expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('快捷工作流')
+    expect(wrapper.text()).not.toContain('夜间回归')
 
     routeState.path = '/agents'
     await flushPromises()
