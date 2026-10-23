@@ -191,6 +191,7 @@ const contextRun = (id: string, over: Record<string, unknown> = {}): Run =>
 
 class MockWebSocket {
   static instances: MockWebSocket[] = []
+  readyState = 1
   onopen: ((event: Event) => void) | null = null
   onmessage: ((event: MessageEvent) => void) | null = null
   onclose: ((event: CloseEvent) => void) | null = null
@@ -198,6 +199,7 @@ class MockWebSocket {
     MockWebSocket.instances.push(this)
   }
   close() {
+    this.readyState = 3
     this.onclose?.(new CloseEvent('close'))
   }
   open() {
@@ -513,6 +515,7 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeChainSegments.value.map((s) => [s.label, s.open])).toEqual([['Clarify', true]])
     expect(inbox.activeNodeTask.value).toBe('编写并执行验收用例')
     expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.clarifyComposerLocked.value).toBe(false)
     app.unmount()
   })
 
@@ -593,6 +596,126 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'waiting', label: '验收测试' })
     expect(inbox.clarifyComposerLocked.value).toBe(true)
     app.unmount()
+  })
+
+  it('confirm failure does not follow, and success settles the finished turn', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value[1]!
+    inbox.selectItem(clarify)
+    await nextTick()
+    const settle = vi.fn()
+    inbox.reviewChatRef.value = { settleConfirmedTurn: settle, releaseConfirmPending: vi.fn(), isSessionBusy: () => false }
+    mocks.reactReply.mockRejectedValueOnce(new Error('finish denied'))
+    await inbox.onClarifySend('done', [], [], true)
+    expect(settle).not.toHaveBeenCalled()
+    expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.activeFollowProcess.value).toEqual([])
+    expect(inbox.clarifyConfirmError.value).toBe('finish denied')
+
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'running',
+      currentNode: { id: 'implement', name: '实现', mode: 'auto', state: 'running', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns: [] }],
+    })
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    mocks.nodeEvents.mockResolvedValue({ events: [], live: true })
+    mocks.reactReply.mockResolvedValueOnce({})
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(settle).toHaveBeenCalledTimes(1)
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    app.unmount()
+  })
+
+  it('projects the downstream node steps into the followed conversation, refills after the socket drops, and stops when another item is selected', async () => {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'running',
+      currentNode: { id: 'implement', name: '实现', mode: 'auto', state: 'running', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns: [] }],
+    })
+    let pulls = 0
+    mocks.nodeEvents.mockImplementation(async () => {
+      pulls += 1
+      if (pulls === 1) {
+        return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }] }], live: true }
+      }
+      return {
+        events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }, { kind: 'tool', title: 'Bash', status: 'completed' }] }],
+        live: true,
+      }
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({ items: [gateItem(), clarifyItem()], total: 2 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.activeFollowProcess.value.map((s) => s.parts.map((p) => p.text || p.title))).toEqual([['第一步']])
+
+    const socket = MockWebSocket.instances.at(-1)!
+    expect(socket.url).toContain('run-chat')
+    socket.message({
+      type: 'acp',
+      nodeId: 'implement',
+      iteration: 1,
+      events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '先看导出' }, { kind: 'tool', title: 'Read', status: 'completed' }] }],
+    })
+    expect(inbox.activeFollowProcess.value[0]?.parts.map((p) => p.text || p.title)).toEqual(['先看导出', 'Read'])
+    socket.message({
+      type: 'acp',
+      nodeId: 'other',
+      events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '不该画到这段' }] }],
+    })
+    expect(inbox.activeFollowProcess.value.some((s) => s.nodeId === 'other')).toBe(false)
+
+    const beforeClose = pulls
+    const socketsBeforeDrop = MockWebSocket.instances.length
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval'] })
+    try {
+      socket.close()
+      await flushPromises()
+      expect(pulls).toBeGreaterThan(beforeClose)
+      expect(inbox.activeFollowProcess.value[0]?.parts.map((p) => p.text || p.title)).toEqual(['第一步', 'Bash'])
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(MockWebSocket.instances.length).toBeGreaterThan(socketsBeforeDrop)
+      expect(MockWebSocket.instances.at(-1)!.url).toContain('run-chat')
+    } finally {
+      vi.useRealTimers()
+    }
+
+    inbox.selectItem(inbox.listItems.value[0]!)
+    await nextTick()
+    expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.activeFollowProcess.value).toEqual([])
+    socket.message({
+      type: 'acp',
+      nodeId: 'implement',
+      events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '迟到的步骤' }] }],
+    })
+    expect(inbox.activeFollowProcess.value).toEqual([])
+    app.unmount()
+  })
+
+  it('failed and cancelled runs stay on this conversation and do not read as completed', async () => {
+    for (const status of ['failed', 'cancelled'] as const) {
+      mocks.listGates.mockResolvedValue({ items: [gateItem(), clarifyItem()], total: 2 })
+      mocks.runConversationChain.mockResolvedValue({ runId: 'run-chat', status, currentNode: null, segments: [] })
+      const { inbox, app } = await withInbox()
+      try {
+        inbox.selectItem(inbox.listItems.value[1]!)
+        await nextTick()
+        mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+        await inbox.onClarifySend('done', [], [], true)
+        await flushPromises()
+        expect(inbox.active.value?.runId).toBe('run-chat')
+        expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'ended', status })
+        expect(inbox.activeFollowProcess.value.every((s) => !s.live)).toBe(true)
+      } finally {
+        app.unmount()
+      }
+    }
   })
 
   it('#850 chain errors: only 404 falls back to GET /runs/:id; 400 keeps the main transcript', async () => {

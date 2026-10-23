@@ -685,6 +685,168 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
 
 })
 
+describe('follow process stays on the confirmed conversation', () => {
+  it('draws downstream steps under the follow row and folds them when the node ends', async () => {
+    const at = '2026-10-22T09:00:00Z'
+    const ended = '2026-10-22T09:03:40Z'
+    const w = mountChat({
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+      followProcess: [
+        {
+          nodeId: 'design',
+          iteration: 1,
+          label: '方案设计',
+          live: false,
+          startedAt: at,
+          endedAt: '2026-10-22T09:00:40Z',
+          parts: [{ kind: 'thought', text: '先出方案' }],
+        },
+        {
+          nodeId: 'implement',
+          iteration: 1,
+          label: '实现',
+          live: true,
+          startedAt: at,
+          parts: [{ kind: 'thought', text: '先看导出入口' }, { kind: 'tool', title: 'Read', status: 'completed' }],
+        },
+      ],
+    })
+    await flushPromises()
+    const nodes = w.findAll('[data-testid="clarify-follow-process-node"]')
+    expect(nodes.map((n) => n.attributes('data-node-id'))).toEqual(['design', 'implement'])
+    expect(nodes[0].attributes('data-live')).toBe('false')
+    expect(nodes[0].text()).toContain('用时')
+    expect(nodes[0].text()).not.toContain('生成中')
+    expect(nodes[1].attributes('data-live')).toBe('true')
+    expect(nodes[1].text()).toContain('先看导出入口')
+    expect(nodes[1].text()).toContain('使用了 1 个工具')
+    expect(nodes[1].text()).toMatch(/思考中|生成中/)
+    await w.setProps({
+      followTail: { kind: 'ended', status: 'failed', at },
+      followProcess: [
+        {
+          nodeId: 'implement',
+          iteration: 1,
+          label: '实现',
+          live: false,
+          startedAt: at,
+          endedAt: ended,
+          parts: [
+            { kind: 'thought', text: '先看导出入口' },
+            { kind: 'tool', title: 'Read', status: 'completed' },
+            { kind: 'message', text: '导出已做完' },
+          ],
+        },
+      ],
+    })
+    await flushPromises()
+    const done = w.get('[data-testid="clarify-follow-process"]')
+    expect(done.text()).toContain('用时')
+    expect(done.text()).not.toContain('思考中')
+    expect(done.text()).not.toContain('生成中')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('运行失败')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).not.toContain('运行已完成')
+    w.unmount()
+  })
+
+  it('settles 思考中 and 生成中 once the confirmed turn has ended', async () => {
+    const w = mountChat({ turns: [] })
+    await flushPromises()
+    w.vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'implement', item: { text: '请确认' } })
+    w.vm.applyAcpEvents(
+      [{ kind: 'timeline', t: 1, parts: [{ kind: 'thought', text: '还在收尾' }] }],
+      'implement',
+    )
+    await flushPromises()
+    expect(w.text()).toMatch(/思考中|生成中/)
+    w.vm.settleConfirmedTurn()
+    await flushPromises()
+    expect(w.text()).not.toContain('思考中')
+    expect(w.text()).not.toContain('生成中')
+    w.unmount()
+  })
+})
+
+describe('open auto records keep updating while the node runs', () => {
+  it('pulls again while the record is live, then stops and keeps the final steps', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] })
+    let pulls = 0
+    nodeEvents.mockImplementation(async () => {
+      pulls += 1
+      if (pulls === 1) {
+        return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }] }], live: true }
+      }
+      return {
+        events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }, { kind: 'tool', title: 'Read', status: 'completed' }] }],
+        live: false,
+      }
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'running', at: '2026-10-22T09:00:00Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    try {
+      await flushPromises()
+      const row = w.get('[data-testid="clarify-prior-segment"]')
+      ;(row.element as HTMLDetailsElement).open = true
+      await row.trigger('toggle')
+      await flushPromises()
+      expect(w.get('[data-testid="clarify-auto-record"]').text()).toContain('第一步')
+      expect(pulls).toBe(1)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+      const record = w.get('[data-testid="clarify-auto-record"]')
+      expect(record.text()).not.toContain('生成中')
+      expect(record.text()).not.toContain('思考中')
+      await record.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      expect(record.text()).toContain('第一步')
+      expect(record.text()).toContain('使用了 1 个工具')
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('still says the record failed to load when a later pull fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] })
+    let pulls = 0
+    nodeEvents.mockImplementation(async () => {
+      pulls += 1
+      if (pulls === 1) return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }] }], live: true }
+      throw new Error('down')
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'running', at: '2026-10-22T09:00:00Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    try {
+      await flushPromises()
+      const row = w.get('[data-testid="clarify-prior-segment"]')
+      ;(row.element as HTMLDetailsElement).open = true
+      await row.trigger('toggle')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(w.get('[data-testid="clarify-auto-record-status"]').text()).toContain('执行记录没有加载出来')
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+})
+
 describe('ClarifyChat locked composer while following the run (v3)', () => {
   it('gate segment: 人工审批 line, foldable turns when present, line only without turns', async () => {
     const at = '2026-10-21T05:00:00+08:00'

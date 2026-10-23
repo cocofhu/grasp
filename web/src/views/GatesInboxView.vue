@@ -176,6 +176,7 @@ const {
   activeChainSegments,
   clarifyComposerLocked,
   activeFollowTail,
+  activeFollowProcess,
   inboxClarifyStageKind,
   inboxReviewState,
   reviewActive,
@@ -432,6 +433,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               :prior-segments="activeChainSegments"
               :node-label="active?.type === 'clarify' ? active.label : undefined"
               :follow-tail="activeFollowTail"
+              :follow-process="activeFollowProcess"
               :composer-locked="clarifyComposerLocked"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
@@ -557,6 +559,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :prior-segments="activeChainSegments"
                   :node-label="active?.type === 'clarify' ? active.label : undefined"
                   :follow-tail="activeFollowTail"
+                  :follow-process="activeFollowProcess"
                   :composer-locked="clarifyComposerLocked"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"

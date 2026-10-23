@@ -5,7 +5,7 @@
  * history through this component; the run LLM transcript renders the whole
  * thread through it. Do not keep a second copy of these rows.
  */
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AcpEvent, AgentPart, ClarifyImage, ClarifyTurn, ReactQuestion } from '@/lib/shared/types'
 import { api } from '@/lib/api/api'
@@ -15,7 +15,7 @@ import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
 import { replySpan } from '@/lib/inbox/turnSpan'
-import { partsFromAcp } from '@/lib/run/acpTools'
+import { agentPartsFromEvents } from '@/lib/run/acpTools'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { fmtTurnElapsed, relTime as formatRelTime } from '@/lib/shared/format'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
@@ -108,6 +108,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (relClockTimer) clearInterval(relClockTimer)
   autoLoadCtrl?.abort()
+  stopAutoPoll()
 })
 function relTime(iso: string): string {
   void relClock.value
@@ -178,10 +179,27 @@ function priorSegmentTitle(seg: ClarifyPriorSegment): string {
   return translate('pages.clarify.segmentAuto', { name: seg.label })
 }
 
-type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[] }
+type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[]; live?: boolean }
 const autoOpen = ref<Record<string, boolean>>({})
 const autoRecords = ref<Record<string, AutoRecord>>({})
 let autoLoadCtrl: AbortController | null = null
+const autoInflight = new Set<string>()
+const autoPollTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** While a record is still live, pull the next snapshot on this cadence. */
+const AUTO_RECORD_POLL_MS = 2000
+function stopAutoPoll(key?: string) {
+  if (!key) {
+    for (const timer of autoPollTimers.values()) clearTimeout(timer)
+    autoPollTimers.clear()
+    return
+  }
+  const timer = autoPollTimers.get(key)
+  if (timer) clearTimeout(timer)
+  autoPollTimers.delete(key)
+}
+function isTerminalAutoStatus(status: string | undefined) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
 function priorRowKey(seg: ClarifyPriorSegment) {
   return `${seg.nodeId}:${seg.iteration}`
 }
@@ -205,38 +223,53 @@ function openNarration(events: AcpEvent[] | undefined): string {
   return ''
 }
 function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
-  const fromTimeline = partsFromAcp(events)
-  if (fromTimeline?.length) {
-    const hasMessage = fromTimeline.some((part) => part.kind === 'message' && !!part.text?.trim())
-    if (hasMessage) return fromTimeline
-    // The step cap can drop the closing message while the same events still carry the full narration.
-    const narration = openNarration(events)
-    if (!narration) return fromTimeline
-    return [...fromTimeline, { kind: 'message', text: narration }]
-  }
-  const parts: AgentPart[] = []
-  for (const ev of events || []) {
-    if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })
-    else if (ev.kind === 'tool_call' && ev.title) parts.push({ kind: 'tool', title: ev.title, status: ev.status })
-  }
-  return parts.length ? parts : undefined
+  const fromEvents = agentPartsFromEvents(events)
+  if (!fromEvents?.length) return fromEvents
+  const hasMessage = fromEvents.some((part) => part.kind === 'message' && !!part.text?.trim())
+  if (hasMessage) return fromEvents
+  // The step cap can drop the closing message while the same events still carry the full narration.
+  const narration = openNarration(events)
+  if (!narration) return fromEvents
+  return [...fromEvents, { kind: 'message', text: narration }]
 }
-async function loadAutoRecords(seg: ClarifyPriorSegment) {
+function scheduleAutoPoll(seg: ClarifyPriorSegment, member: { nodeId: string; iteration: number }) {
+  const key = autoRecordKey(member)
+  const rowKey = priorRowKey(seg)
+  stopAutoPoll(key)
+  autoPollTimers.set(key, setTimeout(() => {
+    autoPollTimers.delete(key)
+    if (!autoOpen.value[rowKey]) return
+    void loadAutoRecords(seg, { refresh: true })
+  }, AUTO_RECORD_POLL_MS))
+}
+async function loadAutoRecords(seg: ClarifyPriorSegment, opts?: { refresh?: boolean }) {
   if (!autoLoadCtrl) autoLoadCtrl = new AbortController()
   const signal = autoLoadCtrl.signal
+  // The open row may fold several auto visits. Load each member; do not
+  // look the row back up by its first node or the rest stay on the loading line.
+  const terminal = isTerminalAutoStatus(seg.status)
   await Promise.all(autoMembers(seg).map(async (member) => {
     const key = autoRecordKey(member)
     const cur = autoRecords.value[key]
-    if (cur?.status === 'ready' || cur?.status === 'loading') return
-    autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading' } }
+    if (autoInflight.has(key) || cur?.status === 'loading') return
+    if (cur?.status === 'ready' && !cur.live && !opts?.refresh) return
+    if (cur?.status === 'ready' && !cur.live && terminal) return
+    autoInflight.add(key)
+    if (cur?.status !== 'ready') autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading', parts: cur?.parts } }
     try {
       const res = await api.nodeEvents(props.runId, member.nodeId, { signal })
       if (signal.aborted) return
       if (res.unavailable) throw new Error(res.error || 'unavailable')
-      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events) } }
+      const live = !terminal && res.live === true
+      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events as AcpEvent[] | undefined), live } }
+      if (live && autoOpen.value[priorRowKey(seg)]) scheduleAutoPoll(seg, member)
+      else stopAutoPoll(key)
     } catch {
       if (signal.aborted) return
+      stopAutoPoll(key)
       autoRecords.value = { ...autoRecords.value, [key]: { status: 'error' } }
+    } finally {
+      autoInflight.delete(key)
     }
   }))
 }
@@ -245,8 +278,26 @@ function onPriorToggle(seg: ClarifyPriorSegment, ev: Event) {
   const open = (ev.currentTarget as HTMLDetailsElement).open
   const key = priorRowKey(seg)
   if (!!autoOpen.value[key] !== open) autoOpen.value = { ...autoOpen.value, [key]: open }
-  if (open && !seg.turns.length) void loadAutoRecords(seg)
+  if (!open) {
+    for (const member of autoMembers(seg)) stopAutoPoll(autoRecordKey(member))
+    return
+  }
+  if (!seg.turns.length) void loadAutoRecords(seg)
 }
+watch(
+  () => (props.priorSegments || []).map((s) => `${s.nodeId}:${s.iteration}:${s.status}`).join('|'),
+  () => {
+    for (const seg of props.priorSegments || []) {
+      if (seg.kind !== 'auto' || !isTerminalAutoStatus(seg.status)) continue
+      for (const member of autoMembers(seg)) {
+        const key = autoRecordKey(member)
+        stopAutoPoll(key)
+        const cur = autoRecords.value[key]
+        if (cur?.live) autoRecords.value = { ...autoRecords.value, [key]: { ...cur, live: false } }
+      }
+    }
+  },
+)
 function choiceRowsOf(text: string): ChoiceRows {
   return props.parseChoiceSummary?.(text) ?? null
 }
@@ -405,7 +456,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 <AgentTimeline
                   v-else
                   :parts="autoRecord(member).parts!"
-                  :completed="seg.status === 'completed'"
+                  :streaming="!!autoRecord(member).live"
+                  :completed="seg.status === 'completed' || !autoRecord(member).live"
                   :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
                   :run-id="runId"
                   :started-at="member.at"
