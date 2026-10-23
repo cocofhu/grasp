@@ -19,6 +19,17 @@ func SetAgentIdleTimeout(d time.Duration) {
 // settings service has not set one.
 func AgentIdleTimeout() time.Duration { return time.Duration(agentIdleTimeout.Load()) }
 
+// sharedRunEnabled is the platform switch for shared run sandboxes (settings
+// page shared_run_sandbox_enabled). Off until the settings service enables it.
+var sharedRunEnabled atomic.Bool
+
+// SetSharedRunEnabled turns the shared run sandbox mode on or off for runs
+// started afterwards.
+func SetSharedRunEnabled(on bool) { sharedRunEnabled.Store(on) }
+
+// SharedRunEnabled reports whether workflows may run in one shared sandbox.
+func SharedRunEnabled() bool { return sharedRunEnabled.Load() }
+
 // defaultMemoryMB is the platform-wide sandbox memory limit (settings page
 // sandbox_memory_mb). It is process-global because both the runtime provider
 // and the interactive sandbox service own their own Manager.

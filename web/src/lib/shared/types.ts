@@ -62,7 +62,11 @@ export interface WorkflowDefaults {
   variables: WorkspaceVariable[]
   notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
+  /** Opt-in: 'shared' runs every node of a run in one sandbox; absent = per_node. */
+  sandbox?: { mode: SandboxMode }
 }
+
+export type SandboxMode = 'per_node' | 'shared'
 
 export interface Workflow {
   id: string
@@ -1103,6 +1107,8 @@ export interface Run {
   tags?: string[]
   /** Immutable StartRun sandbox env snapshot (secrets masked as ****). */
   sandboxEnv?: SandboxEnvEntry[]
+  /** Pinned at start; 'shared' = one sandbox for every node of this run. */
+  sandboxMode?: SandboxMode
   attempt?: number
   // The graph snapshot this run executed (pinned at start). Lets the run detail
   // canvas render against exactly what ran, independent of later edits/deletion

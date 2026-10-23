@@ -208,6 +208,51 @@ describe('AgentTimeline', () => {
     expect(w.find('[data-testid="agent-timeline-thought"]').exists()).toBe(true)
   })
 
+  it('keeps the last message under the rule when tools follow it, and still counts failures', async () => {
+    const w = mountTimeline({
+      completed: true,
+      startedAt,
+      endedAt,
+      parts: [
+        { kind: 'thought', text: '先写回复' },
+        { kind: 'message', text: '第一段' },
+        { kind: 'message', text: '收尾回复' },
+        { kind: 'tool', title: 'Shell', status: 'failed' },
+        { kind: 'tool', title: 'Read', status: 'failed' },
+        { kind: 'tool', title: 'Grep', status: 'failed' },
+      ],
+    })
+    expect(order(w)).toEqual(['agent-timeline-elapsed', 'agent-timeline-rule', 'agent-timeline-message'])
+    expect(w.get('[data-testid="agent-timeline-message"]').text()).toBe('收尾回复')
+    expect(w.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('3 个失败')
+    expect(w.get('[data-testid="agent-timeline-elapsed"]').attributes('aria-label')).toContain('3 个失败')
+    await w.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+    const work = w.get('[data-testid="agent-timeline-work"]')
+    expect(work.text()).toContain('第一段')
+    expect(work.text()).toContain('运行命令')
+    expect(work.text()).not.toContain('收尾回复')
+    const messages = w.findAll('[data-testid="agent-timeline-message"]').map((m) => m.text())
+    expect(messages).toEqual(['第一段', '收尾回复'])
+    expect(messages.filter((text) => text === '收尾回复')).toHaveLength(1)
+  })
+
+  it('shows no reply body when the turn is only tools', () => {
+    const w = mountTimeline({
+      completed: true,
+      startedAt,
+      endedAt,
+      parts: [
+        { kind: 'tool', title: 'Shell', status: 'failed' },
+        { kind: 'message', text: '   ' },
+        { kind: 'tool', title: 'Read', status: 'completed' },
+      ],
+    })
+    expect(w.find('[data-testid="agent-timeline-message"]').exists()).toBe(false)
+    expect(w.find('[data-testid="agent-timeline-rule"]').exists()).toBe(true)
+    expect(w.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(w.get('[data-testid="agent-timeline-elapsed-time"]').text()).toContain('用时')
+  })
+
   it('folds a finished reply with failed tool calls and says how many failed', async () => {
     const failed = mountTimeline({
       completed: true,

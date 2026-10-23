@@ -166,6 +166,10 @@ type NodeReq struct {
 	// control-plane restart. RunAgent's first attempt reconnects to it and
 	// waits for the agent's turn instead of creating a sandbox.
 	ReattachSandbox string
+	// SandboxMode is the run's snapshotted sandbox mode (Run.SandboxMode).
+	// models.SandboxModeShared runs every node of the run in one sandbox;
+	// anything else keeps the per-node sandboxes.
+	SandboxMode string
 }
 
 // GitInfo is the VCS-agnostic push detection result.
@@ -395,6 +399,8 @@ type RunSandboxInfo struct {
 	// Token is the run-scoped secret also injected as container PASSWORD for
 	// code-server; SandboxProxy uses it for IDE auto-login.
 	Token string
+	// Shared marks the run's shared sandbox (sandbox mode "shared").
+	Shared bool
 }
 
 // SandboxRegistry records and clears live per-run node sandboxes. It is

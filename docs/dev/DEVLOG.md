@@ -20,6 +20,31 @@
 
 ## 记录
 
+### 2026-10-23（单沙箱跑完整个工作流：共享运行沙箱，默认关闭）
+
+- 日期：2026-10-23
+- 范围：`server/internal/runtime/acp_shared.go`、`acp_sandbox.go`、`acp_run_agent.go`、`acp_provider.go`；`server/internal/sandbox/reprime.go`、`resources.go`；`server/internal/services/sandbox_shared.go`、`sandbox_run.go`、`preview.go`、`settings.go`、`workflow.go`；`server/internal/engine/start_run.go`、`node_req.go`；`server/internal/models/models.go`；`server/internal/config/config.go`；`server/internal/handlers/settings.go`；`sandbox-gateway/sandbox/scripts/reprime.sh`、`sandbox-gateway/scripts/test-reprime.sh`、`scripts/build-sandbox-runtime.sh`
+- 做了什么：新增沙箱模式 `shared`，让一次运行的所有节点共用一个沙箱，工作区（包括未提交的改动、依赖和构建缓存）在节点间保留。
+  - 开关有两层，都打开才生效：平台设置 `shared_run_sandbox_enabled`（0/1，默认 0），以及工作流 `defaults.sandbox.mode`。启动运行时把模式快照到 `Run.SandboxMode`。
+  - 第一个节点照常建沙箱，同时记成该运行的共享沙箱。后续节点先比较 spec 指纹（env、配置根内容、SSH/仓库凭据）；不一致就经 SSH 执行 `reprime.sh`，换上新节点的 env、配置根和凭据并重启 backend。之后在默认 chat 上连一个新会话，并按 `vars.branches` 在工作区干净时切到对应分支。
+  - 节点结束只关闭会话，运行结束（`AbortRun`）时才把沙箱交给调试租约。可重试故障只重建会话，沙箱连不上或 reprime 失败才换新容器。
+  - 以下情况该节点回退成自建沙箱，和 per-node 模式一样：别的节点还挂着会话（审核、闸门等待打回、接管），或者需要的镜像或工作目录不同。
+  - `run+node` 的查询（沙箱视图、日志、预览）在节点自己没有沙箱行时，回退到该运行 `shared=true` 的那一行。
+- 为什么：每个节点都冷启动容器、重新克隆、重装依赖，耗时长；上游没提交的产出也带不到下游。
+- 如何验证：
+  - server：`golangci-lint`、`go vet`、`gen-configdoc -check`、`go test ./...`、`cover-check-server.sh 90`（90.2%）、`TestRunAgent|TestReact` 均通过。
+  - 新增单测：`runtime/acp_shared_test.go`（复用、同节点不 reprime、per-node 不变、挂起会话时回退、重试复用容器、reprime 失败换容器、运行结束退役、工作目录不同时回退、重启后接管）；`sandbox/reprime_test.go`；`services/sandbox_shared_test.go`；`engine/sandbox_mode_test.go`。
+  - sandbox：`test-reprime.sh`、`test-inject.sh`、`test-runtime-bootstrap.sh`、`shellcheck-error.sh` 通过；运行时包构建产物里包含 `reprime.sh`。
+  - 未做：真实镜像的端到端验证（三节点、两种 Agent）。
+
+### 2026-10-23（共享运行沙箱 Web 入口）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/workflow/WorkflowDefaultsPanel.vue`、`web/src/views/SettingsView.vue`、`web/src/components/run/RunSandboxEnvPanel.vue`、`web/src/views/RunDetailView.vue`、`web/src/views/SandboxListView.vue`、`web/src/lib/shared/types.ts`、`web/src/lib/api/apiTypes.ts`、两份 `pages.json` 及对应测试、CHANGELOG。
+- 做了什么：按服务端契约接入可选共享沙箱。设置页把 `shared_run_sandbox_enabled`（0/1）渲染为开关；开关为 1 时，工作流默认值面板出现「沙箱模式」单选（per_node / shared），选 shared 写入 `defaults.sandbox.mode`，选 per_node 删除该字段；Run 详情的运行环境页在 `run.sandboxMode === 'shared'` 时显示「共享沙箱」徽标；沙箱列表对 `shared: true` 的行用「共享」代替节点 id。
+- 为什么：共享沙箱默认关闭且要求零影响。旋钮缺失、为 0 或读取设置失败时面板保持原样，per_node 不往默认值里写字段，旧工作流的保存内容不变。
+- 如何验证：新增/扩展 WorkflowDefaultsPanel、SettingsView、SandboxListView、RunSandboxEnvPanel 单测；web 下 lint、vue-tsc、`npm test -- --coverage`、`npm run build` 通过。服务端字段由另一会话实现，未做端到端联调。
+
 ### 2026-10-22（澄清聊天接收父级属性）
 
 - 日期：2026-10-22

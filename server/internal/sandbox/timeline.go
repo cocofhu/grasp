@@ -18,7 +18,9 @@ type ChatStep struct {
 }
 
 const (
-	// MaxTimelineSteps caps the steps one row reports; later steps are dropped.
+	// MaxTimelineSteps caps the steps one row reports. A longer row drops
+	// earlier process steps so the recent ones fit. The last non-empty
+	// message is always kept, in full, with no ellipsis.
 	MaxTimelineSteps = 120
 	// maxStepText is the former per-step prose cap. Thought and message text
 	// are no longer cut to it; tests still use it as the size that used to truncate.
@@ -44,30 +46,54 @@ func (r *ChatResult) addTool(idx int) {
 	r.Timeline = append(r.Timeline, ChatStep{Kind: "tool", Tool: idx})
 }
 
+// timelineStepIndexes picks which timeline entries to report. At most
+// MaxTimelineSteps. When the row is longer, earlier process steps are
+// dropped. The last non-empty message of the whole timeline is always kept.
+func (r *ChatResult) timelineStepIndexes() []int {
+	lastMsg := -1
+	eligible := make([]int, 0, len(r.Timeline))
+	for i, st := range r.Timeline {
+		if st.Kind == "tool" {
+			if st.Tool < 0 || st.Tool >= len(r.ToolCalls) {
+				continue
+			}
+		} else if strings.TrimSpace(st.Text) == "" {
+			continue
+		} else if st.Kind == "message" {
+			lastMsg = i
+		}
+		eligible = append(eligible, i)
+	}
+	if len(eligible) <= MaxTimelineSteps {
+		return eligible
+	}
+	kept := append([]int(nil), eligible[len(eligible)-MaxTimelineSteps:]...)
+	if lastMsg >= 0 && lastMsg < kept[0] {
+		kept = append([]int{lastMsg}, kept[1:]...)
+	}
+	return kept
+}
+
 // timelineEvent renders the open row's steps (nil when there are none).
 func (r *ChatResult) timelineEvent(t int) *models.AcpEvent {
 	if len(r.Timeline) == 0 {
 		return nil
 	}
-	parts := make([]models.AcpPart, 0, min(len(r.Timeline), MaxTimelineSteps))
+	indexes := r.timelineStepIndexes()
+	if len(indexes) == 0 {
+		return nil
+	}
+	parts := make([]models.AcpPart, 0, len(indexes))
 	budget := maxTimelineText
-	for _, st := range r.Timeline {
-		if len(parts) == MaxTimelineSteps {
-			break
-		}
+	for _, i := range indexes {
+		st := r.Timeline[i]
 		if st.Kind == "tool" {
-			if st.Tool < 0 || st.Tool >= len(r.ToolCalls) {
-				continue
-			}
 			p := toolPart(r.ToolCalls[st.Tool])
 			budget -= len(p.Summary) + len(p.Input) + len(p.Output)
 			if budget < 0 {
 				p.Input, p.Output = "", ""
 			}
 			parts = append(parts, p)
-			continue
-		}
-		if strings.TrimSpace(st.Text) == "" {
 			continue
 		}
 		// Chat prose is the text the ReAct bubble shows. Deliver the accumulated

@@ -607,6 +607,9 @@ func (c *acpProvider) AbortRun(runID string) {
 			c.retireRunSandbox(sb, acp, home)
 			continue
 		}
+		if c.releaseSharedSandbox(sb, acp) {
+			continue
+		}
 		if acp != nil {
 			acp.Close()
 		}
@@ -616,6 +619,7 @@ func (c *acpProvider) AbortRun(runID string) {
 			sb.Destroy(context.Background())
 		}
 	}
+	c.retireSharedRunSandbox(runID)
 }
 
 func (c *acpProvider) closeSession(key string) {

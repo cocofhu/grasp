@@ -212,8 +212,25 @@ function autoRecordKey(member: { nodeId: string; iteration: number }) {
 function autoRecord(member: { nodeId: string; iteration: number }): AutoRecord {
   return autoRecords.value[autoRecordKey(member)] ?? { status: 'loading' }
 }
+/** Full narration of the open row: the last non-empty kind=message before a sealed segment. */
+function openNarration(events: AcpEvent[] | undefined): string {
+  const list = events || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const ev = list[i]!
+    if (ev.kind === 'segment') break
+    if (ev.kind === 'message' && ev.text?.trim()) return ev.text
+  }
+  return ''
+}
 function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
-  return agentPartsFromEvents(events)
+  const fromEvents = agentPartsFromEvents(events)
+  if (!fromEvents?.length) return fromEvents
+  const hasMessage = fromEvents.some((part) => part.kind === 'message' && !!part.text?.trim())
+  if (hasMessage) return fromEvents
+  // The step cap can drop the closing message while the same events still carry the full narration.
+  const narration = openNarration(events)
+  if (!narration) return fromEvents
+  return [...fromEvents, { kind: 'message', text: narration }]
 }
 function scheduleAutoPoll(seg: ClarifyPriorSegment, member: { nodeId: string; iteration: number }) {
   const key = autoRecordKey(member)

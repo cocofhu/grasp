@@ -463,3 +463,44 @@ describe('SettingsView grouped form behavior', () => {
     }
   })
 })
+
+describe('SettingsView shared run sandbox switch', () => {
+  it('renders the 0/1 knob as a switch and saves 1 when turned on', async () => {
+    apiMocks.getSettings.mockResolvedValue({
+      ...SETTINGS,
+      items: [...SETTINGS.items, { key: 'shared_run_sandbox_enabled', value: 0, min: 0, max: 1, source: 'config', locked: false }],
+    })
+    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.dashboard.mockResolvedValue({ running: 0 })
+    apiMocks.updateSettings.mockImplementation(async (patch: Record<string, number>) => ({
+      ...SETTINGS,
+      items: [...SETTINGS.items, { key: 'shared_run_sandbox_enabled', value: patch.shared_run_sandbox_enabled, min: 0, max: 1, source: 'db', locked: false }],
+    }))
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.find('#setting-shared_run_sandbox_enabled[type="number"]').exists()).toBe(false)
+    expect(w.find('#setting-sandbox_memory_mb[type="number"]').exists()).toBe(true)
+    const toggle = w.get('[data-testid="setting-switch-shared_run_sandbox_enabled"]')
+    expect(toggle.attributes('role')).toBe('switch')
+    expect(toggle.attributes('aria-checked')).toBe('false')
+    expect(w.text()).toContain(pages.pages.settings.labels.shared_run_sandbox_enabled)
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-checked')).toBe('true')
+    const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
+    await saveButton!.trigger('click')
+    await flushPromises()
+    expect(apiMocks.updateSettings).toHaveBeenCalledWith(expect.objectContaining({ shared_run_sandbox_enabled: 1, sandbox_memory_mb: 8192 }))
+    expect(w.get('[data-testid="setting-switch-shared_run_sandbox_enabled"]').attributes('aria-checked')).toBe('true')
+    w.unmount()
+  })
+
+  it('omits the switch when the server does not return the knob', async () => {
+    apiMocks.getSettings.mockResolvedValue(SETTINGS)
+    apiMocks.listSandboxes.mockResolvedValue([])
+    apiMocks.dashboard.mockResolvedValue({ running: 0 })
+    const w = mountSettings()
+    await flushPromises()
+    expect(w.find('[data-testid="setting-switch-shared_run_sandbox_enabled"]').exists()).toBe(false)
+    w.unmount()
+  })
+})
