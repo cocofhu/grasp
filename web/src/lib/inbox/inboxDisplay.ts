@@ -103,7 +103,42 @@ export function inboxBadgeTone(it: InboxStateItem): InboxBadgeTone {
   return 'clarify'
 }
 
-/** Merge sessionBusy onto a parked card without changing membership. starting wins. */
+/**
+ * Monotonic write counter. A list snapshot records the counter at request
+ * start; a row patched after that is newer and must not be covered by it.
+ */
+let inboxStateEpoch = 0
+const inboxStatePatchedEpoch = new Map<string, number>()
+
+export function currentInboxStateEpoch(): number {
+  return inboxStateEpoch
+}
+
+export function noteInboxStatePatch(key: string): void {
+  inboxStatePatchedEpoch.set(key, ++inboxStateEpoch)
+}
+
+/** True when this row was written after the snapshot began. */
+export function inboxStatePatchIsNewer(key: string, snapshotEpoch: number | undefined): boolean {
+  if (snapshotEpoch == null) return false
+  const patched = inboxStatePatchedEpoch.get(key)
+  return patched != null && patched > snapshotEpoch
+}
+
+export function resetInboxStatePatches(): void {
+  inboxStateEpoch = 0
+  inboxStatePatchedEpoch.clear()
+}
+
+function withInboxLiveState<T extends InboxStateItem>(
+  item: T,
+  state: 'replying' | 'starting' | undefined,
+): T {
+  if (item.state === state) return item
+  return { ...item, state }
+}
+
+/** Merge sessionBusy onto a parked card without changing membership. starting wins over busy. */
 export function applyInboxReplyingState<T extends InboxStateItem>(item: T, busy: boolean): T {
   if (item.type !== 'clarify' || isStartingInboxItem(item)) return item
   const next = busy ? 'replying' : undefined
@@ -111,27 +146,55 @@ export function applyInboxReplyingState<T extends InboxStateItem>(item: T, busy:
   return { ...item, state: next }
 }
 
-/** Merge remote state onto displayed rows when keys match; never add/remove rows. */
+/**
+ * Merge remote session state onto displayed rows when keys match; never add or
+ * remove rows. starting may settle to replying or idle once the remote row has
+ * left starting. A snapshot taken before the latest local write is ignored.
+ */
 export function mergeInboxReplyingFromRemote<T extends InboxStateItem & { runId: string; nodeId: string }>(
   displayed: T[],
   remote: T[],
   keyOf: (it: T) => string = (it) => `${it.runId}:${it.nodeId}`,
+  snapshotEpoch?: number,
 ): T[] {
   const remoteByKey = new Map(remote.map((it) => [keyOf(it), it]))
   let changed = false
   const next = displayed.map((it) => {
     const r = remoteByKey.get(keyOf(it))
     if (!r || r.type !== 'clarify' || it.type !== 'clarify') return it
+    if (inboxStatePatchIsNewer(keyOf(it), snapshotEpoch)) return it
+    let merged = it
     if (isStartingInboxItem(it) && !isStartingInboxItem(r)) {
-      // Parking transition is a real list-row change handled by loadList, not peek merge.
-      return it
+      merged = withInboxLiveState(it, r.state === 'replying' ? 'replying' : undefined)
+    } else if (!isStartingInboxItem(r) && !isStartingInboxItem(it)) {
+      merged = applyInboxReplyingState(it, r.state === 'replying')
     }
-    if (isStartingInboxItem(r) || isStartingInboxItem(it)) return it
-    const merged = applyInboxReplyingState(it, r.state === 'replying')
     if (merged !== it) changed = true
     return merged
   })
   return changed ? next : displayed
+}
+
+/**
+ * Full-list replace that still keeps a session state written after the snapshot
+ * began. Only the state field is retained; the remote row's other fields stay.
+ */
+export function keepNewerLocalInboxState<T extends InboxStateItem & { runId: string; nodeId: string }>(
+  remote: T[],
+  local: T[],
+  keyOf: (it: T) => string,
+  snapshotEpoch?: number,
+): T[] {
+  if (snapshotEpoch == null) return remote
+  const localByKey = new Map(local.map((it) => [keyOf(it), it]))
+  return remote.map((it) => {
+    if (it.type !== 'clarify') return it
+    const key = keyOf(it)
+    const prev = localByKey.get(key)
+    if (!prev || prev.type !== 'clarify' || !inboxStatePatchIsNewer(key, snapshotEpoch)) return it
+    const state = prev.state === 'starting' || prev.state === 'replying' ? prev.state : undefined
+    return withInboxLiveState(it, state)
+  })
 }
 
 /** Icon tile classes by tone. */

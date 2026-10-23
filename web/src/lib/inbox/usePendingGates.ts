@@ -3,7 +3,13 @@ import { i18n } from '@/lib/shared/i18n'
 import { beginRefresh, endRefresh } from '@/lib/shared/refreshChrome'
 import { createTimeoutController, isAbortError } from '@/lib/shared/loadingRequest'
 import { DEFAULT_LOADING_TIMEOUT_MS } from '@/lib/shared/loadingTypes'
-import { applyInboxReplyingState, mergeInboxReplyingFromRemote } from '@/lib/inbox/inboxDisplay'
+import {
+  applyInboxReplyingState,
+  currentInboxStateEpoch,
+  keepNewerLocalInboxState,
+  mergeInboxReplyingFromRemote,
+  noteInboxStatePatch,
+} from '@/lib/inbox/inboxDisplay'
 import { listAllPendingGates } from '@/lib/inbox/listAllPendingGates'
 import type { InboxItem } from '@/lib/shared/types'
 
@@ -123,6 +129,12 @@ let forcePromise: Promise<void> | null = null
  */
 let refreshGeneration = 0
 let abortCtrl: AbortController | null = null
+/** Epoch captured when the current remote snapshot was requested. */
+let lastSnapshotEpoch: number | undefined
+
+function inboxRemoteObservedAt(): number | undefined {
+  return lastSnapshotEpoch
+}
 
 async function fetchPeek(signal?: AbortSignal): Promise<{ items: InboxItem[]; total: number }> {
   // Align with GatesInbox loadList: use the live URL filter set (plan g2.2).
@@ -162,8 +174,9 @@ function dropLocallyRemoved(remote: InboxItem[]): InboxItem[] {
   return locallyRemoved.size ? remote.filter((it) => !isLocallyRemoved(it)) : remote
 }
 
-function setPending(rawRemote: InboxItem[], rawTotal: number) {
+function setPending(rawRemote: InboxItem[], rawTotal: number, snapshotEpoch?: number) {
   const remote = dropLocallyRemoved(rawRemote)
+  if (snapshotEpoch != null) lastSnapshotEpoch = snapshotEpoch
   remoteItems.value = remote
   totalCount.value = Math.max(0, rawTotal - (rawRemote.length - remote.length))
   const meta = diffMembership(remote)
@@ -178,7 +191,8 @@ function setPending(rawRemote: InboxItem[], rawTotal: number) {
   hasPendingUpdate.value = false
   pendingMeta.value = null
   adoptVisibleRemoteIntoDisplayed(remote)
-  displayedItems.value = mergeInboxReplyingFromRemote(displayedItems.value, remote, itemKey)
+  displayedItems.value = mergeInboxReplyingFromRemote(displayedItems.value, remote, itemKey, snapshotEpoch)
+  sidebarExtras.value = mergeInboxReplyingFromRemote(sidebarExtras.value, remote, itemKey, snapshotEpoch)
 }
 
 /** Pull remote rows the visible inbox already shows into the applied snapshot. */
@@ -197,25 +211,37 @@ function adoptVisibleRemoteIntoDisplayed(remote: InboxItem[]): void {
 
 /** Patch one visible/sidebar card's sessionBusy-derived state without peek diffs. */
 function patchItemReplying(key: string, busy: boolean): void {
+  let patched = false
   const apply = (arr: InboxItem[]) => {
     let changed = false
     const next = arr.map((it) => {
       if (itemKey(it) !== key || it.type !== 'clarify') return it
-      const patched = applyInboxReplyingState(it, busy)
-      if (patched !== it) changed = true
-      return patched
+      const updated = applyInboxReplyingState(it, busy)
+      if (updated !== it) changed = true
+      return updated
     })
+    if (changed) patched = true
     return changed ? next : arr
   }
   displayedItems.value = apply(displayedItems.value)
   remoteItems.value = apply(remoteItems.value)
+  sidebarExtras.value = apply(sidebarExtras.value)
+  if (patched) noteInboxStatePatch(key)
 }
 
-function applyRemoteToDisplayed(rawRemote: InboxItem[], rawTotal: number) {
-  const remote = dropLocallyRemoved(rawRemote)
+function applyRemoteToDisplayed(rawRemote: InboxItem[], rawTotal: number, snapshotEpoch?: number) {
+  const dropped = dropLocallyRemoved(rawRemote)
+  const remote = keepNewerLocalInboxState(
+    dropped,
+    [...displayedItems.value, ...sidebarExtras.value],
+    itemKey,
+    snapshotEpoch,
+  )
+  if (snapshotEpoch != null) lastSnapshotEpoch = snapshotEpoch
   remoteItems.value = remote
   totalCount.value = Math.max(0, rawTotal - (rawRemote.length - remote.length))
   displayedItems.value = remote
+  sidebarExtras.value = mergeInboxReplyingFromRemote(sidebarExtras.value, remote, itemKey, snapshotEpoch)
   hasPendingUpdate.value = false
   pendingMeta.value = null
 }
@@ -239,7 +265,7 @@ function syncPendingMetaFromDiff() {
  * "新增" (plan g1.2). Also rewrites displayedItems for keys already present in
  * the remote peek snapshot.
  */
-function syncDisplayedBaseline(visible: InboxItem[]): void {
+function syncDisplayedBaseline(visible: InboxItem[], snapshotEpoch?: number): void {
   visibleMembershipKeys = new Set(visible.map(itemKey))
   const remoteByKey = new Map(remoteItems.value.map((it) => [itemKey(it), it]))
   const displayedKeys = new Set(displayedItems.value.map(itemKey))
@@ -264,8 +290,19 @@ function syncDisplayedBaseline(visible: InboxItem[]): void {
       displayedItems.value,
       remoteItems.value,
       itemKey,
+      lastSnapshotEpoch,
+    )
+    sidebarExtras.value = mergeInboxReplyingFromRemote(
+      sidebarExtras.value,
+      remoteItems.value,
+      itemKey,
+      lastSnapshotEpoch,
     )
   }
+  // loadList's rows are the fresh snapshot. Copy their state onto the sidebar
+  // rows already on screen, including placeholders that peek does not list.
+  displayedItems.value = mergeInboxReplyingFromRemote(displayedItems.value, visible, itemKey, snapshotEpoch)
+  sidebarExtras.value = mergeInboxReplyingFromRemote(sidebarExtras.value, visible, itemKey, snapshotEpoch)
 }
 
 /** Inbox page left — stop using listItems as a peek baseline. */
@@ -335,12 +372,13 @@ async function peek(opts?: PeekOptions): Promise<void> {
   holder.flight = (async () => {
     ariaBusy.value = true
     try {
+      const snapshotEpoch = currentInboxStateEpoch()
       const { items: remote, total } = await fetchPeek(tc.signal)
       // Discard if a newer peek/force superseded this request.
       if (gen !== refreshGeneration) return
       lastRefreshSource.value = opts?.source ?? null
       error.value = null
-      setPending(remote, total)
+      setPending(remote, total, snapshotEpoch)
       lastPeekAt.value = Date.now()
     } catch (err) {
       if (gen !== refreshGeneration) return
@@ -358,7 +396,13 @@ async function peek(opts?: PeekOptions): Promise<void> {
 
 function applyPending(): void {
   if (!hasPendingUpdate.value) return
-  displayedItems.value = [...remoteItems.value]
+  displayedItems.value = keepNewerLocalInboxState(
+    remoteItems.value,
+    [...displayedItems.value, ...sidebarExtras.value],
+    itemKey,
+    lastSnapshotEpoch,
+  )
+  sidebarExtras.value = mergeInboxReplyingFromRemote(sidebarExtras.value, displayedItems.value, itemKey, lastSnapshotEpoch)
   hasPendingUpdate.value = false
   pendingMeta.value = null
 }
@@ -413,11 +457,12 @@ async function refresh(opts?: RefreshOptions): Promise<void> {
     ariaBusy.value = true
     if (isManual) beginRefresh('user_initiated')
     try {
+      const snapshotEpoch = currentInboxStateEpoch()
       const { items: remote, total } = await fetchPeek(tc.signal)
       if (gen !== refreshGeneration) return
       lastRefreshSource.value = opts?.source ?? null
       error.value = null
-      applyRemoteToDisplayed(remote, total)
+      applyRemoteToDisplayed(remote, total, snapshotEpoch)
     } catch (err) {
       if (gen !== refreshGeneration) return
       if (isAbortError(err) && !tc.timedOut) return
@@ -499,6 +544,7 @@ export function usePendingGates() {
     patchRunTitle,
     patchItemReplying,
     syncDisplayedBaseline,
+    inboxRemoteObservedAt,
     clearVisibleMembership,
     itemKey,
   }

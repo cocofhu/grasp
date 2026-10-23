@@ -157,4 +157,24 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(mocks.listRuns).toHaveBeenCalledTimes(2)
     wrapper.unmount()
   })
+
+  it('shows failed and cancelled end icons after a relay without remounting', async () => {
+    mocks.listRuns.mockResolvedValue({ items: [r('c', undefined, 'completed')], total: 1 })
+    const { wrapper } = await setup('/')
+    const list = wrapper.get('[data-testid="sidebar-recent"]')
+    expect(list.find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
+    mocks.listRuns.mockResolvedValue({
+      items: [r('d', undefined, 'failed'), r('e', undefined, 'cancelled'), r('c', undefined, 'completed')],
+      total: 3,
+    })
+    notifyRecentActivity()
+    await new Promise((res) => setTimeout(res, RECENT_RELAY_DEBOUNCE_MS + 30))
+    await flushPromises()
+    const ended = (id: string) => wrapper.get(`[data-run-id="${id}"]`).find('[data-testid="sidebar-recent-ended"]')
+    expect(ended('d').classes()).toContain('is-failed')
+    expect(ended('e').classes()).toContain('is-cancelled')
+    expect(ended('c').exists()).toBe(false)
+    expect(list.element.isConnected).toBe(true)
+    wrapper.unmount()
+  })
 })
