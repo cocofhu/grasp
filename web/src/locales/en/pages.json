@@ -263,6 +263,9 @@
       "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
+      "overviewRecords": "{n} execution records",
+      "searchLabel": "Search loaded tasks",
+      "searchPlaceholder": "Search loaded tasks",
       "actionsLabel": "Board actions",
       "refresh": "Refresh",
       "allRuns": "All runs",
@@ -316,6 +319,13 @@
       "filters": {
         "label": "Also show"
       },
+      "segments": {
+        "label": "Filter by status",
+        "all": "All",
+        "running": "Running",
+        "waitingHuman": "Waiting for human",
+        "completed": "Completed"
+      },
       "columns": {
         "active": "In progress",
         "running": "Running",
@@ -335,7 +345,8 @@
         "running": "No running requirements",
         "waitingHuman": "No requirements waiting for human",
         "completed": "No completed requirements yet",
-        "extra": "No runs in this status"
+        "extra": "No runs in this status",
+        "noMatch": "No matching tasks"
       },
       "truncated": {
         "showingFirst100": "Showing the first 100 — open the run list for the full set"

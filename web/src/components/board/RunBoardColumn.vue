@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { nextTick, onUpdated, ref, watch } from 'vue'
 import RunBoardCard from './RunBoardCard.vue'
 import type { Run } from '@/lib/shared/types'
 
@@ -12,9 +13,14 @@ const props = withDefaults(
     truncatedHint?: string
     /** Server-reported total; used for badge when truncated. */
     total?: number
+    /**
+     * Unfiltered loaded count. Search hides rows without changing the header badge.
+     * Falls back to items.length when omitted.
+     */
+    listedCount?: number
     loading?: boolean
     loadingText?: string
-    /** Fill parent height without max-height cap (dashboard preview only). */
+    /** Stretch to the parent height so the column body fills leftover space. */
     fill?: boolean
     /**
      * When true, column header is a focusable control that emits activate-header
@@ -32,6 +38,9 @@ const emit = defineEmits<{
   (e: 'activate-header', status: string): void
 }>()
 
+const bodyEl = ref<HTMLElement | null>(null)
+let savedScroll = 0
+
 const accentClass: Record<string, string> = {
   active: 'bg-accent-2',
   running: 'bg-info',
@@ -41,7 +50,7 @@ const accentClass: Record<string, string> = {
 }
 
 function badgeLabel(): string {
-  const n = props.items.length
+  const n = props.listedCount ?? props.items.length
   const total = props.total || 0
   if (total > n && n > 0) return `${n}/${total}`
   if (total > n) return String(total)
@@ -52,6 +61,26 @@ function onActivateHeader() {
   if (!props.headerActivatable) return
   emit('activate-header', props.status || '')
 }
+
+function rememberScroll() {
+  if (bodyEl.value) savedScroll = bodyEl.value.scrollTop
+}
+
+function restoreScroll() {
+  const el = bodyEl.value
+  if (!el || savedScroll <= 0) return
+  if (Math.abs(el.scrollTop - savedScroll) > 1) el.scrollTop = savedScroll
+}
+
+watch(
+  () => props.items,
+  async () => {
+    const top = savedScroll
+    await nextTick()
+    if (bodyEl.value && top > 0) bodyEl.value.scrollTop = top
+  },
+)
+onUpdated(restoreScroll)
 </script>
 
 <template>
@@ -63,7 +92,7 @@ function onActivateHeader() {
     <component
       :is="headerActivatable ? 'button' : 'div'"
       :type="headerActivatable ? 'button' : undefined"
-      class="flex min-h-12 w-full items-center gap-2 border-b border-line/70 bg-elevated/35 px-3.5 py-3 text-left"
+      class="flex min-h-12 w-full shrink-0 items-center gap-2 border-b border-line/70 bg-elevated/35 px-3.5 py-3 text-left"
       :class="
         headerActivatable
           ? 'cursor-pointer transition hover:bg-elevated focus-visible:bg-elevated focus-visible:outline focus-visible:outline-1 focus-visible:outline-offset-[-1px] focus-visible:outline-accent'
@@ -84,9 +113,11 @@ function onActivateHeader() {
       </span>
     </component>
     <div
-      class="scroll-area flex min-h-0 flex-1 flex-col overflow-y-auto"
-      :style="fill ? undefined : { maxHeight: 'min(52vh, 420px)' }"
+      ref="bodyEl"
+      class="run-board-column-body scroll-area flex min-h-0 flex-col overflow-y-auto"
+      :class="fill ? 'flex-1' : ''"
       data-testid="run-board-column-body"
+      @scroll.passive="rememberScroll"
     >
       <template v-if="loading && !items.length">
         <div
@@ -108,8 +139,28 @@ function onActivateHeader() {
       </div>
       <p v-if="truncatedHint" class="px-3.5 text-[11px] text-txt3">{{ truncatedHint }}</p>
     </div>
-    <div v-if="$slots.footer" class="px-3.5 pb-3 pt-1">
+    <div v-if="$slots.footer" class="run-board-column-foot shrink-0" data-testid="run-board-column-footer">
       <slot name="footer" />
     </div>
   </div>
 </template>
+
+<style scoped>
+.run-board-column-body { overscroll-behavior: contain; }
+.run-board-column-foot {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-top: 1px solid rgb(var(--c-line) / .7);
+  background: rgb(var(--c-elevated) / .35);
+  color: rgb(var(--c-txt3));
+  font-size: 12px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-board-column-body :deep(.run-board-card),
+  .run-board-column-body :deep(.run-board-progress) {
+    transition: none;
+  }
+}
+</style>

@@ -7,7 +7,9 @@ import RunBoardPreviewDrawer from '@/components/board/RunBoardPreviewDrawer.vue'
 import RunBoardStatusListModal from '@/components/board/RunBoardStatusListModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { serializeStatusQuery } from '@/lib/composables/useStatusFilter'
+import { runBoardTitle, runIdShort } from '@/lib/run/runBoard'
 import { useRunBoard, type BoardColumnKey } from '@/lib/run/useRunBoard'
 import type { Run } from '@/lib/shared/types'
 
@@ -45,10 +47,20 @@ const listModalOpen = ref(false)
 const listModalStatus = ref<string>('')
 const listModalTitle = ref('')
 
-const mainCols: { key: BoardColumnKey; accent: 'running' | 'waiting' | 'done'; titleKey: string; hintKey: string; emptyKey: string }[] = [
-  { key: 'running', accent: 'running', titleKey: 'pages.board.columns.running', hintKey: 'pages.board.hints.inProgress', emptyKey: 'pages.board.empty.running' },
-  { key: 'waiting_human', accent: 'waiting', titleKey: 'pages.board.columns.waitingHuman', hintKey: 'pages.board.hints.inReview', emptyKey: 'pages.board.empty.waitingHuman' },
-  { key: 'completed', accent: 'done', titleKey: 'pages.board.columns.completed', hintKey: 'pages.board.hints.doneRecent', emptyKey: 'pages.board.empty.completed' },
+const segments = [
+  { id: 'all', labelKey: 'pages.board.segments.all' },
+  { id: 'running', labelKey: 'pages.board.segments.running' },
+  { id: 'waiting_human', labelKey: 'pages.board.segments.waitingHuman' },
+  { id: 'completed', labelKey: 'pages.board.segments.completed' },
+] as const
+type SegmentId = (typeof segments)[number]['id']
+const segment = ref<SegmentId>('all')
+const search = ref('')
+
+const mainCols: { key: BoardColumnKey; accent: 'running' | 'waiting' | 'done'; titleKey: string; hintKey: string; emptyKey: string; dot: string }[] = [
+  { key: 'running', accent: 'running', titleKey: 'pages.board.columns.running', hintKey: 'pages.board.hints.inProgress', emptyKey: 'pages.board.empty.running', dot: 'bg-info' },
+  { key: 'waiting_human', accent: 'waiting', titleKey: 'pages.board.columns.waitingHuman', hintKey: 'pages.board.hints.inReview', emptyKey: 'pages.board.empty.waitingHuman', dot: 'bg-warn' },
+  { key: 'completed', accent: 'done', titleKey: 'pages.board.columns.completed', hintKey: 'pages.board.hints.doneRecent', emptyKey: 'pages.board.empty.completed', dot: 'bg-ok' },
 ]
 
 const extraCols: { key: BoardColumnKey; titleKey: string; emptyKey: string }[] = [
@@ -61,14 +73,59 @@ const visibleExtras = computed(() => extraCols.filter((c) => extraEnabled[c.key 
 
 const showInitialLoading = computed(() => loading.value && !hasLoaded.value)
 const refreshing = ref(false)
+
+function queryText(): string {
+  return search.value.trim().toLowerCase()
+}
+
+function matchesQuery(run: Run): boolean {
+  const q = queryText()
+  if (!q) return true
+  const title = runBoardTitle(run).toLowerCase()
+  const workflow = (run.workflowName || '').toLowerCase()
+  const shortId = runIdShort(run.id).toLowerCase()
+  return title.includes(q) || workflow.includes(q) || shortId.includes(q)
+}
+
+const filteredByKey = computed(() => {
+  // Read the query up front so an all-empty board still tracks search changes.
+  const q = queryText()
+  const out: Partial<Record<BoardColumnKey, Run[]>> = {}
+  for (const col of [...mainCols, ...extraCols]) {
+    out[col.key] = column(col.key).items.filter((run) => !q || matchesQuery(run))
+  }
+  return out
+})
+
 const overview = computed(() => mainCols.map((col) => {
   const state = column(col.key)
+  const unavailable = !hasLoaded.value || !!state.error
   return {
     key: col.key,
     label: col.key === 'completed' ? t('pages.board.overviewRecent') : t(col.titleKey),
-    count: !hasLoaded.value || state.error ? '—' : col.key === 'completed' ? state.items.length : state.total,
+    count: unavailable ? '—' : col.key === 'completed' ? state.items.length : state.total,
+    note: col.key === 'completed'
+      ? t('pages.board.overviewRecords', { n: unavailable ? '—' : state.total })
+      : t(col.hintKey),
+    dot: col.dot,
   }
 }))
+
+function visibleItems(key: BoardColumnKey): Run[] {
+  return filteredByKey.value[key] || []
+}
+
+function emptyTextFor(key: BoardColumnKey, fallbackKey: string): string {
+  const state = column(key)
+  if (queryText() && state.items.length > 0 && visibleItems(key).length === 0) {
+    return t('pages.board.empty.noMatch')
+  }
+  return t(fallbackKey)
+}
+
+function mainColumnVisible(key: string): boolean {
+  return segment.value === 'all' || segment.value === key
+}
 
 async function refreshBoard() {
   if (refreshing.value) return
@@ -105,7 +162,7 @@ function closePreview() {
 function openStatusList(status: string) {
   const col = mainCols.find((c) => c.key === status)
   if (!col) return
-  // Mutual exclusion with card preview drawer (f6).
+  // Mutual exclusion with card preview drawer (f6). Search does not filter this list.
   closePreview()
   listModalStatus.value = status
   listModalTitle.value = t(col.titleKey)
@@ -159,6 +216,7 @@ onUnmounted(() => {
     <header class="mb-4 flex shrink-0 flex-wrap items-start justify-between gap-3" data-testid="board-toolbar">
       <div class="min-w-0">
         <h2 v-if="!embedded" class="text-lg font-semibold text-txt">{{ t('pages.board.title') }}</h2>
+        <p class="text-sm text-txt2" :class="{ 'mt-1': !embedded }" data-testid="board-subtitle">{{ t('pages.board.subtitle') }}</p>
       </div>
       <nav class="flex flex-wrap items-center gap-2 text-xs" :aria-label="t('pages.board.actionsLabel')">
         <RouterLink to="/stats" class="board-text-link" data-testid="board-usage-link"><Icon name="chart" :size="14" />{{ t('pages.board.usage') }}</RouterLink>
@@ -168,10 +226,10 @@ onUnmounted(() => {
       </nav>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
+    <div class="board-scroll flex min-h-0 flex-1 overflow-y-auto flex-col">
     <div
       v-if="error"
-      class="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
+      class="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
       data-testid="board-load-error"
     >
       <span>{{ t('pages.board.loadFailed') }}</span>
@@ -185,48 +243,92 @@ onUnmounted(() => {
       </button>
     </div>
 
-    <section class="board-overview mb-5" :aria-label="t('pages.board.overview')" data-testid="board-overview">
-      <div class="board-overview-heading"><span class="inline-block h-1.5 w-1.5 rounded-full bg-ok/70" aria-hidden="true" /><span>{{ t('pages.board.overview') }}</span></div>
-      <dl class="board-overview-values">
-        <div v-for="item in overview" :key="item.key" :data-testid="`board-overview-${item.key}`"><dt>{{ item.label }}</dt><dd>{{ item.count }}</dd></div>
-      </dl>
+    <section class="board-overview shrink-0" :aria-label="t('pages.board.overview')" data-testid="board-overview">
+      <div v-for="item in overview" :key="item.key" class="board-metric" :data-testid="`board-overview-${item.key}`">
+        <div class="board-metric-value" data-testid="board-overview-value">{{ item.count }}</div>
+        <div class="min-w-0">
+          <div class="board-metric-label">
+            <span class="board-metric-dot" :class="item.dot" aria-hidden="true" />
+            <span>{{ item.label }}</span>
+          </div>
+          <p class="board-metric-note">{{ item.note }}</p>
+        </div>
+      </div>
     </section>
 
-    <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <span class="mr-1 text-xs text-txt3">{{ t('pages.board.filters.label') }}</span>
-        <button
-          v-for="key in (['queued', 'failed', 'cancelled'] as const)"
-          :key="key"
-          type="button"
-          class="rounded-md inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs transition"
-          :class="
-            extraEnabled[key]
-              ? 'border-line-strong bg-elevated text-txt'
-              : 'border-line bg-surface text-txt2 hover:border-line-strong'
-          "
-          :data-testid="`board-filter-${key}`"
-          @click="toggleExtra(key)"
+    <div class="board-filters mb-3 flex shrink-0 flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0">
+        <SlidingTabs
+          :value="segment"
+          class="board-segments inline-flex w-fit gap-1 rounded-lg bg-elevated p-1"
+          role="group"
+          :aria-label="t('pages.board.segments.label')"
+          indicator-class="rounded-md bg-surface shadow-sm"
+          indicator-testid="board-segment-indicator"
+          data-testid="board-segments"
         >
-          <Icon :name="extraEnabled[key] ? 'check' : 'plus'" :size="12" class="text-txt3" />
-          {{ t(`common.status.${key}`) }}
-        </button>
+          <button
+            v-for="seg in segments"
+            :key="seg.id"
+            type="button"
+            class="board-segment border-0 bg-transparent rounded-md px-3 py-1 text-[12px] leading-5"
+            :class="segment === seg.id ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
+            :aria-pressed="segment === seg.id"
+            :data-testid="`board-segment-${seg.id}`"
+            @click="segment = seg.id"
+          >
+            {{ t(seg.labelKey) }}
+          </button>
+        </SlidingTabs>
+        <div class="mt-2 flex flex-wrap items-center gap-2">
+          <span class="mr-1 text-xs text-txt3">{{ t('pages.board.filters.label') }}</span>
+          <button
+            v-for="key in (['queued', 'failed', 'cancelled'] as const)"
+            :key="key"
+            type="button"
+            class="board-chip rounded-md inline-flex items-center gap-1.5 border px-2.5 py-1 text-xs transition"
+            :class="
+              extraEnabled[key]
+                ? 'border-line-strong bg-elevated text-txt'
+                : 'border-line bg-surface text-txt2 hover:border-line-strong'
+            "
+            :data-testid="`board-filter-${key}`"
+            @click="toggleExtra(key)"
+          >
+            <Icon :name="extraEnabled[key] ? 'check' : 'plus'" :size="12" class="text-txt3" />
+            {{ t(`common.status.${key}`) }}
+          </button>
+        </div>
       </div>
-      <span class="text-[11px] text-txt3">{{ t('pages.board.toolbarHint') }}</span>
+      <label class="board-search" data-testid="board-search">
+        <Icon name="search" :size="15" />
+        <input
+          v-model="search"
+          type="search"
+          data-testid="board-search-input"
+          :aria-label="t('pages.board.searchLabel')"
+          :placeholder="t('pages.board.searchPlaceholder')"
+        />
+      </label>
     </div>
 
-    <div class="board-columns">
+    <div class="board-stage">
+    <div class="board-columns main" :class="segment === 'all' ? 'is-all' : 'is-single'" data-testid="board-main-columns">
       <RunBoardColumn
         v-for="col in mainCols"
+        v-show="mainColumnVisible(col.key)"
         :key="col.key"
+        class="board-column"
+        fill
         :title="t(col.titleKey)"
         :hint="t(col.hintKey)"
         :accent="col.accent"
-        :items="column(col.key).items"
+        :items="visibleItems(col.key)"
+        :listed-count="column(col.key).items.length"
         :total="column(col.key).total"
         :loading="showInitialLoading"
         :loading-text="t('pages.board.loading')"
-        :empty-text="t(col.emptyKey)"
+        :empty-text="emptyTextFor(col.key, col.emptyKey)"
         :truncated-hint="truncatedHint(col.key)"
         header-activatable
         :status="col.key"
@@ -243,28 +345,35 @@ onUnmounted(() => {
             {{ t('pages.board.viewMoreCompleted') }}
           </button>
         </template>
+        <template v-else #footer>
+          <span>{{ t('pages.board.toolbarHint') }}</span>
+        </template>
       </RunBoardColumn>
     </div>
 
     <div
       v-if="visibleExtras.length"
-      class="board-columns mt-3.5"
+      class="board-columns extra"
       data-testid="board-extra-columns"
     >
       <RunBoardColumn
         v-for="col in visibleExtras"
         :key="col.key"
+        class="board-column"
+        fill
         :title="t(col.titleKey)"
         :hint="t('pages.board.hints.extraFilter')"
         accent="extra"
-        :items="column(col.key).items"
+        :items="visibleItems(col.key)"
+        :listed-count="column(col.key).items.length"
         :total="column(col.key).total"
         :loading="loading && !column(col.key).items.length && !column(col.key).error"
         :loading-text="t('pages.board.loading')"
-        :empty-text="t(col.emptyKey)"
+        :empty-text="emptyTextFor(col.key, col.emptyKey)"
         :truncated-hint="truncatedHint(col.key)"
         @select="openPreview"
       />
+    </div>
     </div>
     </div>
 
@@ -282,28 +391,102 @@ onUnmounted(() => {
 
 <style scoped>
 .board-workbench { container: board-workbench / inline-size; }
-.board-columns { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-items: start; gap: 14px; }
-@container board-workbench (max-width: 1039px) {
-  .board-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.board-stage {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14px;
+  overflow: hidden;
 }
-@container board-workbench (max-width: 799px) {
-  .board-columns { grid-template-columns: minmax(0, 1fr); }
+.board-columns { display: grid; align-items: stretch; gap: 14px; min-height: 0; }
+.board-columns.main { flex: 1; }
+.board-columns.main.is-all { grid-template-columns: minmax(0, 0.96fr) minmax(0, 1.12fr) minmax(0, 0.96fr); }
+.board-columns.main.is-single { grid-template-columns: minmax(0, 1fr); }
+.board-columns.extra {
+  flex: 0 1 auto;
+  max-height: 42%;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
+.board-column { height: 100%; min-height: 0; }
 
 .board-text-link { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 6px; border-radius: 6px; color: rgb(var(--c-txt3)); }
 .board-text-link:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-txt) / .035); }
-.board-text-link:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
-.board-overview { display: flex; flex-wrap: wrap; align-items: center; gap: 18px 32px; border-block: 1px solid rgb(var(--c-line) / .7); padding: 15px 2px; }
-.board-overview-heading { display: flex; align-items: center; gap: 8px; color: rgb(var(--c-txt3)); font-size: 11px; }
-.board-overview-values { display: flex; flex: 1; gap: 40px; margin: 0; }
-.board-overview-values > div { display: flex; align-items: baseline; gap: 12px; }
-.board-overview-values dt { color: rgb(var(--c-txt3)); font-size: 12px; white-space: nowrap; }
-.board-overview-values dd { margin: 0; color: rgb(var(--c-txt)); font-size: 21px; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1; }
+.board-text-link:focus-visible,
+.board-segment:focus-visible,
+.board-chip:focus-visible { outline: 2px solid rgb(var(--c-accent) / .45); outline-offset: 2px; }
+.board-segment { border: 0; background: transparent; }
+.board-segment:hover { background: transparent; }
+
+.board-search {
+  display: flex;
+  width: min(240px, 100%);
+  height: 36px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  padding: 0 10px;
+  color: rgb(var(--c-txt3));
+  background: rgb(var(--c-surface));
+}
+.board-search:focus-within { border-color: rgb(var(--c-accent) / .5); }
+.board-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: rgb(var(--c-txt));
+  font-size: 13px;
+  outline: none;
+  box-shadow: none;
+}
+.board-search input:focus,
+.board-search input:focus-visible { outline: none; border: 0; box-shadow: none; }
+
+.board-overview {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0 0 20px;
+  border-block: 1px solid rgb(var(--c-line));
+}
+.board-metric { display: flex; align-items: center; gap: 16px; min-width: 0; padding: 16px 20px; }
+.board-metric + .board-metric { border-left: 1px solid rgb(var(--c-line)); }
+.board-metric:first-child { padding-left: 2px; }
+.board-metric-value {
+  min-width: 44px;
+  color: rgb(var(--c-txt));
+  font-size: 32px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 40px;
+}
+.board-metric-label { display: flex; align-items: center; gap: 8px; color: rgb(var(--c-txt)); font-size: 14px; font-weight: 500; }
+.board-metric-dot { width: 6px; height: 6px; flex: none; border-radius: 99px; }
+.board-metric-note { margin: 4px 0 0; color: rgb(var(--c-txt3)); font-size: 12px; }
+
+@container board-workbench (max-width: 1039px) {
+  .board-columns.main.is-all { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @container board-workbench (max-width: 799px) {
-  .board-overview { gap: 14px; padding-block: 16px; }
-  .board-overview-heading { width: 100%; }
-  .board-overview-values { justify-content: space-between; gap: 12px; }
-  .board-overview-values > div { flex-direction: column; gap: 8px; }
+  .board-stage { flex: none; overflow: visible; }
+  .board-columns.main,
+  .board-columns.extra { display: flex; flex: none; flex-direction: column; max-height: none; }
+  .board-column { height: auto; min-height: 0; }
+  .board-column :deep([data-testid="run-board-column-body"]) {
+    flex: none;
+    min-height: auto;
+    overflow: visible;
+  }
+  .board-search { width: 100%; height: 40px; }
+  .board-metric { gap: 8px; padding-inline: 12px; }
+  .board-metric-value { font-size: 28px; }
   .board-text-link { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .board-chip { transition: none; }
 }
 </style>
