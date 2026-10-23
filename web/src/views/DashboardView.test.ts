@@ -881,6 +881,42 @@ describe('DashboardView home composer', () => {
     vi.unstubAllGlobals()
   })
 
+  it('removes only the clicked home pending attachment', async () => {
+    class FakeReader {
+      result: string | ArrayBuffer | null = null
+      onload: null | (() => void) = null
+      readAsDataURL(file: File) {
+        this.result = `data:${file.type || 'application/octet-stream'};base64,QUJD`
+        queueMicrotask(() => this.onload?.())
+      }
+    }
+    vi.stubGlobal('FileReader', FakeReader as unknown as typeof FileReader)
+
+    const wrapper = mountDashboard()
+    await flushPromises()
+    const fileInput = wrapper.get('[data-testid="home-composer-file"]').element as HTMLInputElement
+    const dt = new DataTransfer()
+    dt.items.add(new File(['ABC'], '首页截图.png', { type: 'image/png' }))
+    dt.items.add(new File(['ABC'], '说明.pdf', { type: 'application/pdf' }))
+    Object.defineProperty(fileInput, 'files', { configurable: true, value: dt.files })
+    await wrapper.get('[data-testid="home-composer-file"]').trigger('change')
+    await flushPromises()
+
+    const removes = wrapper.findAll('[data-testid="home-attach-remove"]')
+    expect(removes).toHaveLength(2)
+    expect(removes[0].classes()).toContain('pending-attach-remove')
+    expect(removes[0].classes()).toContain('rounded')
+    expect(removes[0].classes()).not.toContain('rounded-full')
+    expect(removes[0].classes()).not.toContain('bg-err')
+    await removes[0].trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-testid="home-attach-remove"]')).toHaveLength(1)
+    expect(wrapper.find('[data-testid="home-draft-image-thumb"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="home-pending-file-chip"]').text()).toContain('说明.pdf')
+    wrapper.unmount()
+    vi.unstubAllGlobals()
+  })
+
   it('opens draft image preview, close keeps attachment, no unavailable overlay (g1.3)', async () => {
     class FakeReader {
       result: string | ArrayBuffer | null = null

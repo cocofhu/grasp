@@ -416,7 +416,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <Icon name="artifact" :size="15" class="shrink-0 text-txt2" />
                 <span class="min-w-0 truncate text-[12px] text-txt2">{{ attachmentDisplayName(im, ii) }}</span>
               </div>
-              <button type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-err text-white" @click="attach.removeAttachment(ii)">
+              <button type="button" class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove" @click="attach.removeAttachment(ii)">
                 <Icon name="close" :size="9" />
               </button>
             </div>
