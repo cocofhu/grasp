@@ -4,6 +4,22 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Settings navigation:** clicking the selected settings icon again returns to the previous workspace page, preserving its filters and URL fragment; a direct settings visit returns to Home.
+
+- **Sidebar consistency:** settings and workspace pages now use the same inset, rounded sidebar frame, keeping the left navigation icons and account avatar in the same positions when switching pages.
+
+- **Segmented tabs:** run status, usage filters, editor modes and other segmented controls now share the Home switch's smooth moving highlight. Run counts travel with the highlight and reuse the matching filter's count instead of briefly showing the previous tab's number.
+
+- **Home empty state:** removed the explanatory paragraph and view-all shortcut when no workflows are available on Home, keeping the create-workflow card without an empty spacer row.
+
+- **Home mode highlight:** Workflow and Solo now share one background highlight that slides and resizes with a soft spring easing. The previous option stays transparent, including during rapid switching; reduced-motion preferences are respected.
+
+- **Home mode switching:** switching between Workflow and Solo keeps the hero and mode switch anchored, and fades and slides the mode-specific controls and panels into place instead of shifting abruptly.
+
+- **Home workflow selector:** the inline workflow picker now uses the same flat, transparent treatment as the Solo selectors instead of appearing as a raised card.
+
+- **Workflow and Solo conversation headers:** Solo sessions now use the shared workflow conversation header sizing and compact drawer controls so both startup views have the same top bar.
+
 - **Solo home selectors:** the Agent and repository selectors now use a flat transparent treatment in the composer toolbar, with a subtle hover/open tint instead of a raised gradient and glow.
 
 - **Agent files editor:** fewer columns. Markdown files open in a single editor with an Edit / Split / Preview switch in the toolbar (no minimap), and version history opens from a toolbar button instead of taking a column on the right.

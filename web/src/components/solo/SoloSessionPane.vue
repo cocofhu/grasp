@@ -525,58 +525,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 .solo-workspace {
   background: rgb(var(--c-surface));
 }
-.solo-workspace :deep(.conversation-toolbar) {
-  height: 44px;
-  min-height: 44px;
-  max-height: 44px;
-}
-.solo-workspace :deep(.is-compact .conversation-mode-toggle) {
-  width: 32px;
-  height: 32px;
-}
-.solo-workspace :deep(.conversation-panel-heading) {
-  display: none;
-}
-.solo-workspace :deep(.is-compact .conversation-panel-heading) {
-  display: flex;
-}
-.solo-workspace .conversation-heading {
-  display: inline-flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  overflow: hidden;
-  color: rgb(var(--c-txt2));
-  font-size: 12px;
-  font-weight: 500;
-}
-.solo-workspace .conversation-mode-toggle {
-  display: inline-flex;
-  width: 32px;
-  height: 32px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid transparent;
-  border-radius: 8px;
-  color: rgb(var(--c-txt3));
-  background: transparent;
-  transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui);
-}
-.solo-workspace .conversation-mode-toggle:hover {
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-txt) / .04);
-}
-.solo-workspace .conversation-mode-toggle[aria-pressed="true"] {
-  border-color: rgb(var(--c-line));
-  color: rgb(var(--c-txt));
-  background: rgb(var(--c-base));
-}
-.solo-workspace .conversation-mode-toggle:focus-visible {
-  outline: 2px solid rgb(var(--c-accent) / .5);
-  outline-offset: 2px;
-}
 .solo-column {
   width: 100%;
   max-width: 780px;

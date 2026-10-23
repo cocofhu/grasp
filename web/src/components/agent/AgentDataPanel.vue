@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { computed, ref, watch, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
@@ -295,7 +296,7 @@ const showSkeleton = computed(
       <p class="mt-0.5 text-[12px] text-txt3">
         {{ t('pages.agentStudio.data.hint') }}
       </p>
-      <div class="mt-3 flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      <SlidingTabs :value="sub" indicator-class="rounded bg-accent-dim" class="mt-3 flex gap-1 overflow-x-auto [-webkit-overflow-scrolling:touch]">
         <button
           v-for="k in (['memory', 'context', 'jobs'] as const)"
           :key="k"
@@ -303,13 +304,14 @@ const showSkeleton = computed(
           class="shrink-0 rounded px-2.5 text-[12px]"
           :class="[
             isMobile ? 'min-h-11 px-3 py-2.5' : 'py-1',
-            sub === k ? 'bg-accent-dim text-accent-2' : 'text-txt3 hover:bg-elevated hover:text-txt',
+            sub === k ? 'text-accent-2' : 'text-txt3 hover:text-txt',
           ]"
+          :data-active="sub === k"
           @click="setSub(k)"
         >
           {{ t(`pages.agentStudio.data.tabs.${k}`) }}
         </button>
-      </div>
+      </SlidingTabs>
     </div>
 
     <div class="scroll-area min-h-0 flex-1 overflow-auto p-4">

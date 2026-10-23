@@ -254,17 +254,40 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
 test('settings and workspace retain the same app rail while changing directory', async ({ page }) => {
   await page.goto('/workspace.html')
   const rail = page.getByTestId('sidebar-app-rail')
-  const before = await rail.boundingBox()
-  await rail.locator('a[href="/settings"]').click()
+  await expect(rail).toBeVisible()
+  const railAppearance = () => rail.evaluate((nav) => {
+    const shell = nav.closest<HTMLElement>('[data-testid="app-desktop-sidebar"]')!
+    const shellStyle = getComputedStyle(shell)
+    return {
+      bounds: nav.getBoundingClientRect().toJSON(),
+      topIcon: nav.querySelector('a svg')!.getBoundingClientRect().toJSON(),
+      avatar: nav.querySelector('[data-testid="sidebar-user-avatar"]')!.getBoundingClientRect().toJSON(),
+      background: shellStyle.backgroundColor,
+      radius: shellStyle.borderRadius,
+      border: getComputedStyle(nav).borderRightWidth,
+    }
+  })
+  const before = await railAppearance()
+  const settingsToggle = page.getByTestId('sidebar-settings-toggle')
+  await settingsToggle.click()
   await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
-  await expect(rail.locator('a[href="/settings"]')).toHaveAttribute('aria-current', 'page')
-  expect((await rail.boundingBox())?.width).toBe(before?.width)
-  await rail.locator('a[href="/workflows"]').click()
+  await expect(settingsToggle).toHaveAttribute('aria-current', 'page')
+  await expect(settingsToggle).toHaveAttribute('aria-label', '返回工作区')
+  await expect.poll(railAppearance).toEqual(before)
+  await settingsToggle.click()
+  await expect(page.getByTestId('nav-workspace-chrome')).toBeVisible()
+  await expect(page.getByTestId('workflows-page')).toBeVisible()
+  await expect(settingsToggle).toHaveAttribute('aria-label', '设置')
+  await expect.poll(railAppearance).toEqual(before)
+  await settingsToggle.click()
+  await expect(page.getByTestId('sidebar-settings-title')).toBeVisible()
+  await rail.locator(':scope > a[href="/workflows"]').click()
   await expect(page.getByTestId('sidebar-workflows')).toHaveCount(0)
   await expect(page.getByTestId('workflows-page')).toBeVisible()
   await expect(page.getByTestId('sidebar-recent')).toBeVisible()
   await expect(page.getByTestId('sidebar-settings-title')).toHaveCount(0)
   await expect(rail.locator('a[href="/workflows"]')).toHaveAttribute('aria-current', 'page')
+  await expect.poll(railAppearance).toEqual(before)
 })
 
 test('workflow notification controls save the selected policy and custom events', async ({ page }) => {

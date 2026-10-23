@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
@@ -201,7 +202,7 @@ defineExpose({
           @input="onSearchInput"
         />
       </div>
-      <div class="rd-status-filter flex items-center gap-1" data-testid="requirement-drafts-filter" role="group" :aria-label="t('pages.workspace.requirementDrafts.filterAll')">
+      <SlidingTabs :value="filter" indicator-class="rounded-md bg-elevated" class="rd-status-filter flex items-center gap-1" data-testid="requirement-drafts-filter" role="group" :aria-label="t('pages.workspace.requirementDrafts.filterAll')">
         <button
           v-for="status in (['open', 'done', 'all'] as const)"
           :key="status"
@@ -213,7 +214,7 @@ defineExpose({
         >
           {{ t(`pages.workspace.requirementDrafts.${status === 'open' ? 'filterOpen' : status === 'done' ? 'filterDone' : 'filterAll'}`) }}
         </button>
-      </div>
+      </SlidingTabs>
       <AppButton
         variant="primary"
         size="sm"
@@ -835,10 +836,11 @@ defineExpose({
         data-testid="requirement-drafts-gantt"
       >
         <div class="flex items-center justify-between gap-3 border-b border-line/60 py-3">
-          <div class="rd-scale flex gap-1" data-testid="requirement-drafts-scale-segment">
+          <SlidingTabs :value="ganttScale" indicator-class="rounded-md bg-elevated" class="rd-scale flex gap-1" data-testid="requirement-drafts-scale-segment">
             <button
               type="button"
               :class="{ on: ganttScale === 'day' }"
+              :data-active="ganttScale === 'day'"
               data-testid="requirement-drafts-scale-day"
               @click="setGanttScale('day')"
             >
@@ -847,6 +849,7 @@ defineExpose({
             <button
               type="button"
               :class="{ on: ganttScale === 'week' }"
+              :data-active="ganttScale === 'week'"
               data-testid="requirement-drafts-scale-week"
               @click="setGanttScale('week')"
             >
@@ -855,12 +858,13 @@ defineExpose({
             <button
               type="button"
               :class="{ on: ganttScale === 'month' }"
+              :data-active="ganttScale === 'month'"
               data-testid="requirement-drafts-scale-month"
               @click="setGanttScale('month')"
             >
               {{ t('pages.workspace.requirementDrafts.scaleMonth') }}
             </button>
-          </div>
+          </SlidingTabs>
           <AppButton
             v-if="selectedDraft && !inspectorOpen"
             variant="ghost"
@@ -1323,8 +1327,8 @@ defineExpose({
 .rd-view-tabs button:hover { color: rgb(var(--c-txt)); }
 .rd-view-tabs button.on { border-color: rgb(var(--c-accent)); color: rgb(var(--c-txt)); }
 .rd-status-filter button, .rd-scale button { padding: 6px 10px; border-radius: 6px; color: rgb(var(--c-txt3)); font-size: 12px; white-space: nowrap; }
-.rd-status-filter button:hover, .rd-scale button:hover { color: rgb(var(--c-txt)); background: rgb(var(--c-elevated) / .5); }
-.rd-status-filter button.on, .rd-scale button.on { color: rgb(var(--c-txt)); background: rgb(var(--c-elevated)); font-weight: 600; }
+.rd-status-filter button:hover, .rd-scale button:hover { color: rgb(var(--c-txt)); }
+.rd-status-filter button.on, .rd-scale button.on { color: rgb(var(--c-txt)); font-weight: 600; }
 .draft-detail { overflow-y: auto; }
 @container requirement-workbench (max-width: 719px) {
   .rd-filter-toolbar { column-gap: 8px; }

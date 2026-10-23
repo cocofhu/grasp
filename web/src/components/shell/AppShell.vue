@@ -103,7 +103,7 @@ onUnmounted(() => stopShutdownPolling())
   >
     <div
       class="hidden h-full min-h-0 shrink-0 md:flex"
-      :class="!sidebarHidden && !settingsChrome ? 'py-[14px] pl-[14px]' : ''"
+      :class="!sidebarHidden ? 'py-[14px] pl-[14px]' : ''"
       data-testid="app-shell-sidebar-slot"
     >
       <AppSidebar />

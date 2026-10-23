@@ -810,9 +810,9 @@ describe('TokenAnalyticsView', () => {
     const labels = group.findAll('button').map((b) => b.text())
     // 自定义 is the last segment of the same control (one segmented style for every range).
     expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-testid="token-analytics-window-all"]').text()).toBe('全部历史')
-    expect(wrapper.find('[data-testid="token-analytics-window-30d"]').classes()).not.toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-30d"]').attributes('aria-pressed')).toBe('false')
     expect(api.getGlobalTokenStats).toHaveBeenCalledWith(
       expect.objectContaining({ window: 'all' }),
       expect.anything(),
@@ -826,7 +826,7 @@ describe('TokenAnalyticsView', () => {
     // Source stays a segmented control in the toolbar (same style as the time range).
     const sourceAll = wrapper.get('[data-testid="token-analytics-source-all"]')
     expect(sourceAll.text()).toBe('全部来源')
-    expect(sourceAll.classes()).toContain('bg-surface')
+    expect(sourceAll.attributes('aria-pressed')).toBe('true')
     // The five dimension filters live in the 筛选 popover, each labelled and defaulting to 全部.
     expect(wrapper.find('[data-testid="token-analytics-filters"]').exists()).toBe(false)
     await openFilterPopover(wrapper)
@@ -847,7 +847,7 @@ describe('TokenAnalyticsView', () => {
     const labels = group.findAll('button').map((b) => b.text())
     // 自定义 is the last segment of the same control (one segmented style for every range).
     expect(labels).toEqual(['近 24 小时', '近 7 天', '近 30 天', '近 90 天', '全部历史', '自定义'])
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('true')
 
     vi.mocked(api.getGlobalTokenStats).mockClear()
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue({
@@ -873,8 +873,8 @@ describe('TokenAnalyticsView', () => {
       expect.objectContaining({ window: '24h' }),
       expect.anything(),
     )
-    expect(wrapper.find('[data-testid="token-analytics-window-24h"]').classes()).toContain('bg-surface')
-    expect(wrapper.find('[data-testid="token-analytics-window-all"]').classes()).not.toContain('bg-surface')
+    expect(wrapper.find('[data-testid="token-analytics-window-24h"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-testid="token-analytics-window-all"]').attributes('aria-pressed')).toBe('false')
 
     vi.mocked(api.getGlobalTokenStats).mockClear()
     vi.mocked(api.getGlobalTokenStats).mockResolvedValue({ ...sampleData, window: '30d' })

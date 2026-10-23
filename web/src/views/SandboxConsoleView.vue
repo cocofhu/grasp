@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
@@ -393,15 +394,16 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div class="ml-4 flex gap-1">
+      <SlidingTabs :value="tab" class="ml-4 flex gap-1" indicator-class="rounded bg-accent-dim">
         <button
           v-for="item in tabItems"
           :key="item.k"
           class="flex items-center gap-1 rounded px-3 py-1 text-[12px] transition"
-          :class="tab === item.k ? 'bg-accent-dim text-txt' : 'text-txt3 hover:text-txt2'"
+          :class="tab === item.k ? 'text-txt' : 'text-txt3 hover:text-txt2'"
+          :data-active="tab === item.k"
           @click="tab = item.k as any"
         ><Icon :name="item.i" :size="13" />{{ item.l }}</button>
-      </div>
+      </SlidingTabs>
 
       <SandboxRetention v-if="sandbox" :sandbox="sandbox" compact class="ml-4" @updated="sandbox = $event" />
 

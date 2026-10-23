@@ -119,6 +119,9 @@ function onProjectSaved(p: Parameters<typeof solo.onProjectSaved>[0]) {
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const homeContentEl = ref<HTMLDivElement | null>(null)
+const homeBrandBlockEl = ref<HTMLDivElement | null>(null)
+const homeModeTopInset = ref<number | null>(null)
 const overflowScroll = ref(false)
 const workflowCardsEl = ref<HTMLDivElement | null>(null)
 const workflowCanScrollPrev = ref(false)
@@ -254,10 +257,6 @@ function onComposerFocus() {
 
 function onComposerBlur() {
   composerFocused.value = false
-}
-
-function goWorkflows() {
-  void router.push('/workflows')
 }
 
 function goEditWorkflow(id: string) {
@@ -585,6 +584,36 @@ function onWorkflowEnterAnimationEnd(e: AnimationEvent) {
   syncWorkflowNav()
 }
 
+/** Keep the hero's top position stable while switching the mode-specific tail. */
+function lockHomeModeTopInset() {
+  const content = homeContentEl.value
+  const brand = homeBrandBlockEl.value
+  if (!content || !brand) return
+  const inset =
+    brand.getBoundingClientRect().top
+    - content.getBoundingClientRect().top
+    + content.scrollTop
+  if (Number.isFinite(inset) && inset >= 0) homeModeTopInset.value = inset
+}
+
+function onHomeResize() {
+  homeModeTopInset.value = null
+  syncWorkflowNav()
+}
+
+watch(homeMode, () => {
+  lockHomeModeTopInset()
+})
+
+// Attachments intentionally use the existing flexible inset budget so the first
+// thumbnail row can fit without introducing a page scrollbar.
+watch(
+  () => attachments.value.length,
+  () => {
+    homeModeTopInset.value = null
+  },
+)
+
 onMounted(() => {
   if (homeMode.value === 'solo') ensureSoloLoaded()
   nextTick(() => {
@@ -592,7 +621,7 @@ onMounted(() => {
     syncWorkflowNav()
     bindWorkflowStripObserver()
   })
-  window.addEventListener('resize', syncWorkflowNav)
+  window.addEventListener('resize', onHomeResize)
   window.addEventListener('pointerdown', onWindowPointerDown)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('scroll', closeWorkflowMenu, true)
@@ -604,7 +633,7 @@ onBeforeUnmount(() => {
   clearWorkflowNavHold()
   workflowStripObserver?.disconnect()
   workflowStripObserver = null
-  window.removeEventListener('resize', syncWorkflowNav)
+  window.removeEventListener('resize', onHomeResize)
   window.removeEventListener('pointerdown', onWindowPointerDown)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('scroll', closeWorkflowMenu, true)
@@ -615,9 +644,12 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
+      ref="homeContentEl"
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-x-hidden overflow-y-auto px-4"
+      :class="{ 'home-shell__content--mode-locked': homeModeTopInset != null }"
+      :style="homeModeTopInset != null ? { '--home-mode-top-inset': `${homeModeTopInset}px` } : undefined"
     >
-      <div class="home-brand-block" data-testid="home-brand-block">
+      <div ref="homeBrandBlockEl" class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
         <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
@@ -737,42 +769,44 @@ onBeforeUnmount(() => {
             >
               <Icon name="plus" :size="16" />
             </button>
-            <template v-if="homeMode === 'workflow'">
-              <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
-              <HomeWorkflowSelect
-                :workflows="homeWorkflows"
-                :model-value="selectedId"
-                :disabled="sending"
-                @update:model-value="selectWorkflow"
-                @create="onCreateFromSelect"
-              />
-              <HomePrioritySelect
-                :model-value="launchPriority"
-                :disabled="!homeWorkflows.length || sending"
-                @update:model-value="selectPriority"
-              />
-            </template>
-            <div v-else class="flex min-w-0 flex-wrap items-center gap-2">
-              <SoloAgentSelect
-                v-model="soloAgentName"
-                :agents="soloAgents"
-                :loading="solo.loading.value"
-                :disabled="solo.creating.value"
-              />
-              <SoloProjectSelect
-                v-model="soloProjectId"
-                :projects="soloProjects"
-                :loading="solo.loading.value"
-                :disabled="solo.creating.value"
-                @create="projectDrawerOpen = true"
-              />
-              <SoloBranchChip
-                v-if="soloProject"
-                v-model="soloBranch"
-                :default-branch="soloProject.defaultBranch"
-                :disabled="solo.creating.value"
-              />
-            </div>
+            <Transition name="home-mode-controls" mode="out-in">
+              <div v-if="homeMode === 'workflow'" key="workflow" class="home-mode-controls flex min-w-0 items-center gap-2">
+                <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
+                <HomeWorkflowSelect
+                  :workflows="homeWorkflows"
+                  :model-value="selectedId"
+                  :disabled="sending"
+                  @update:model-value="selectWorkflow"
+                  @create="onCreateFromSelect"
+                />
+                <HomePrioritySelect
+                  :model-value="launchPriority"
+                  :disabled="!homeWorkflows.length || sending"
+                  @update:model-value="selectPriority"
+                />
+              </div>
+              <div v-else key="solo" class="home-mode-controls flex min-w-0 flex-wrap items-center gap-2">
+                <SoloAgentSelect
+                  v-model="soloAgentName"
+                  :agents="soloAgents"
+                  :loading="solo.loading.value"
+                  :disabled="solo.creating.value"
+                />
+                <SoloProjectSelect
+                  v-model="soloProjectId"
+                  :projects="soloProjects"
+                  :loading="solo.loading.value"
+                  :disabled="solo.creating.value"
+                  @create="projectDrawerOpen = true"
+                />
+                <SoloBranchChip
+                  v-if="soloProject"
+                  v-model="soloBranch"
+                  :default-branch="soloProject.defaultBranch"
+                  :disabled="solo.creating.value"
+                />
+              </div>
+            </Transition>
             <div class="flex-1" />
             <button
               type="submit"
@@ -789,74 +823,63 @@ onBeforeUnmount(() => {
         </form>
       </div>
 
-      <HomeSoloPanel
-        v-if="homeMode === 'solo'"
-        :projects="soloProjects"
-        :project-id="soloProjectId"
-        @pick-project="soloProjectId = $event"
-        @new-project="projectDrawerOpen = true"
-      />
+      <Transition name="home-mode-tail" mode="out-in">
+        <HomeSoloPanel
+          v-if="homeMode === 'solo'"
+          key="solo"
+          :projects="soloProjects"
+          :project-id="soloProjectId"
+          @pick-project="soloProjectId = $event"
+          @new-project="projectDrawerOpen = true"
+        />
 
-      <template v-else>
-      <div
-        v-if="loadError"
-        class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
-        data-testid="dashboard-load-error"
-      >
-        <span>{{ t('pages.board.loadFailed') }}</span>
-        <button
-          type="button"
-          class="rounded-md border border-err/40 px-2.5 py-1 text-xs text-err hover:bg-err/10"
-          data-testid="dashboard-retry"
-          @click="load()"
-        >
-          {{ t('pages.board.retry') }}
-        </button>
-      </div>
+        <div v-else key="workflow" class="home-mode-tail home-mode-tail--workflow w-full">
+          <div
+            v-if="loadError"
+            class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
+            data-testid="dashboard-load-error"
+          >
+            <span>{{ t('pages.board.loadFailed') }}</span>
+            <button
+              type="button"
+              class="rounded-md border border-err/40 px-2.5 py-1 text-xs text-err hover:bg-err/10"
+              data-testid="dashboard-retry"
+              @click="load()"
+            >
+              {{ t('pages.board.retry') }}
+            </button>
+          </div>
 
-      <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
-      <div
-        v-else-if="workflowRailRevealed"
-        class="home-workflow-enter home-workflow-enter--ready w-full"
-        data-testid="home-workflow-enter"
-        @animationend="onWorkflowEnterAnimationEnd"
-      >
+          <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
+          <div
+            v-else-if="workflowRailRevealed"
+            class="home-workflow-enter home-workflow-enter--ready w-full"
+            data-testid="home-workflow-enter"
+            @animationend="onWorkflowEnterAnimationEnd"
+          >
         <div
-          v-if="!homeWorkflows.length"
+          v-if="!homeWorkflows.length && unpublishedHomeWorkflows.length"
           class="mt-10 text-center"
           data-testid="home-workflows-empty"
         >
-          <template v-if="unpublishedHomeWorkflows.length">
-            <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
-              {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
-            </p>
-            <button
-              type="button"
-              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-              data-testid="home-go-publish"
-              @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
-            >
-              {{ t('pages.dashboard.goPublish') }}
-            </button>
-          </template>
-          <template v-else>
-            <p class="text-sm text-txt3">{{ t('pages.dashboard.noWorkflows') }}</p>
-            <button
-              type="button"
-              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-              data-testid="home-go-workflows"
-              @click="goWorkflows"
-            >
-              {{ t('pages.dashboard.goWorkflows') }}
-            </button>
-          </template>
+          <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
+            {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
+          </p>
+          <button
+            type="button"
+            class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
+            data-testid="home-go-publish"
+            @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
+          >
+            {{ t('pages.dashboard.goPublish') }}
+          </button>
         </div>
 
         <div
           class="home-workflow-rail-wrap w-full"
           :class="{
-            'mt-10': homeWorkflows.length > 0,
-            'mt-4': homeWorkflows.length === 0,
+            'mt-10': homeWorkflows.length > 0 || !unpublishedHomeWorkflows.length,
+            'mt-4': homeWorkflows.length === 0 && unpublishedHomeWorkflows.length > 0,
             'home-workflow-rail-wrap--has-left': workflowFadeLeft,
             'home-workflow-rail-wrap--has-right': workflowFadeRight,
           }"
@@ -985,9 +1008,10 @@ onBeforeUnmount(() => {
           >
             <Icon name="chevron-right" :size="16" />
           </button>
+          </div>
         </div>
-      </div>
-      </template>
+        </div>
+      </Transition>
     </div>
 
     <ProjectDrawer :open="projectDrawerOpen" @close="projectDrawerOpen = false" @saved="onProjectSaved" />
@@ -1095,6 +1119,13 @@ html.light .home-shell {
   min-height: 48px;
 }
 
+/* Mode-specific controls and panels can have very different heights. Freeze
+   the current inset for that switch so the hero stays anchored in place. */
+.home-shell__content.home-shell__content--mode-locked::before {
+  flex: 0 0 var(--home-mode-top-inset);
+  min-height: var(--home-mode-top-inset);
+}
+
 /* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
 .home-brand-block {
   --yume-w: 240px;
@@ -1149,6 +1180,40 @@ html.light .home-shell {
 .home-composer__toolbar {
   border-color: rgb(var(--c-line) / 0.55);
   background: color-mix(in srgb, rgb(var(--c-base)) 35%, rgb(var(--c-surface)));
+}
+
+.home-mode-controls {
+  flex: 0 1 auto;
+}
+
+.home-mode-controls-enter-active,
+.home-mode-controls-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out-expo);
+}
+
+.home-mode-controls-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.home-mode-controls-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.home-mode-tail-enter-active,
+.home-mode-tail-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s var(--ease-out-expo);
+}
+
+.home-mode-tail-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.home-mode-tail-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
 }
 
 .home-composer__input {
@@ -1589,6 +1654,8 @@ html.light .home-shell__card--selected .home-shell__card-top {
 @media (prefers-reduced-motion: reduce) {
   .home-composer,
   .home-composer__plus,
+  .home-mode-controls,
+  .home-mode-tail,
   .home-shell__card,
   .home-workflow-more,
   .home-workflow-art__node,
@@ -1612,6 +1679,13 @@ html.light .home-shell__card--selected .home-shell__card-top {
   .home-composer__ph-cursor {
     animation: none;
     opacity: 1;
+  }
+
+  .home-mode-controls-enter-active,
+  .home-mode-controls-leave-active,
+  .home-mode-tail-enter-active,
+  .home-mode-tail-leave-active {
+    transition: none;
   }
 
   .home-workflow-rail {

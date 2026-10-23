@@ -25,7 +25,7 @@ const router = useRouter()
 const route = useRoute()
 const { user, clearUser } = useAuth()
 const { isMobile } = useBreakpoint()
-const { settingsChrome, requestMode } = useSidebarNavigation()
+const { settingsChrome, settingsToggleTo, requestMode } = useSidebarNavigation()
 const railItems = sidebarNavGroups[0]?.items.filter((item) => item.to !== '/settings') ?? []
 
 function isRailActive(to: string) {
@@ -67,7 +67,7 @@ async function onHideNav() {
     ]"
     data-testid="app-desktop-sidebar"
     :data-nav-mode="settingsChrome ? 'settings' : 'workspace'"
-    :data-floating="sidebarHidden || settingsChrome ? 'false' : 'true'"
+    :data-floating="sidebarHidden ? 'false' : 'true'"
     :aria-hidden="sidebarHidden ? 'true' : undefined"
     :inert="sidebarHidden"
   >
@@ -87,12 +87,13 @@ async function onHideNav() {
       </RouterLink>
       <div class="sidebar-app-rail__bottom">
         <RouterLink
-          to="/settings"
-          @click.capture="requestMode($event, '/settings', 'settings')"
+          :to="settingsToggleTo"
+          @click.capture="requestMode($event, settingsToggleTo, settingsChrome ? 'workspace' : 'settings')"
           class="sidebar-app-rail__item"
+          data-testid="sidebar-settings-toggle"
           :class="{ 'is-active': settingsChrome }"
-          :aria-label="t('nav.settings')"
-          :title="t('nav.settings')"
+          :aria-label="t(settingsChrome ? 'nav.backWorkspace' : 'nav.settings')"
+          :title="t(settingsChrome ? 'nav.backWorkspace' : 'nav.settings')"
           :aria-current="settingsChrome ? 'page' : undefined"
         >
           <Icon name="settings" :size="20" />
@@ -190,19 +191,6 @@ async function onHideNav() {
 .app-desktop-sidebar .app-sidebar-card {
   background: var(--sidebar-panel-bg);
   box-shadow: 0 0 0 1px rgb(var(--c-line) / .6), 0 2px 8px rgb(0 0 0 / .025);
-}
-.app-desktop-sidebar.is-settings {
-  overflow: hidden;
-  border-radius: 0;
-  background: var(--sidebar-rail-bg);
-}
-.app-desktop-sidebar.is-settings .sidebar-app-rail {
-  border-right: 1px solid rgb(var(--c-line) / .45);
-}
-.app-desktop-sidebar.is-settings .app-sidebar-card {
-  border-radius: 0 !important;
-  border-right: 1px solid rgb(var(--c-line) / .6);
-  box-shadow: none;
 }
 .sidebar-settings-title {
   padding-left: 4px;

@@ -692,7 +692,7 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  it('shows workflow empty state when none are clarify-first', async () => {
+  it('shows only the new-workflow card when none are clarify-first', async () => {
     mocks.listWorkflows.mockResolvedValue([
       {
         ...approveWf,
@@ -707,20 +707,19 @@ describe('DashboardView home composer', () => {
     ])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="home-go-workflows"]').trigger('click')
-    expect(mocks.push).toHaveBeenCalledWith('/workflows')
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     wrapper.unmount()
   })
 
-  it('shows empty state prompting Show on Home when workflows are hidden (g3.2 / g3.3)', async () => {
+  it('keeps workflow creation without the empty-state navigation when workflows are hidden', async () => {
     mocks.listWorkflows.mockResolvedValue([{ ...approveWf, showOnHome: false }])
     const wrapper = mountDashboard()
     await flushPromises()
-    const empty = wrapper.get('[data-testid="home-workflows-empty"]')
-    expect(empty.text()).toContain('首页可见')
-    expect(empty.text()).not.toContain('丢失')
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     // plan g1.3 — zero visible workflows: select still openable for create
     expect(wrapper.get('[data-testid="home-workflow-select-trigger"]').element).toHaveProperty(
       'disabled',
@@ -1363,7 +1362,8 @@ describe('DashboardView home composer', () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
-    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
     await flushPromises()
@@ -1518,13 +1518,14 @@ describe('DashboardView home composer', () => {
     wrapper.unmount()
   })
 
-  // plan g2.1 — empty list: empty copy + add card in the same enter group
-  it('plan g2.1 — empty workflows reveal empty state and add card together', async () => {
+  // plan g2.1 — empty list: reveal the add card without an empty-state row
+  it('plan g2.1 — empty workflows reveal the add card without an empty-state row', async () => {
     mocks.listWorkflows.mockResolvedValue([])
     const wrapper = mountDashboard()
     await flushPromises()
     const enter = wrapper.get('[data-testid="home-workflow-enter"]')
-    expect(enter.find('[data-testid="home-workflows-empty"]').exists()).toBe(true)
+    expect(enter.find('[data-testid="home-workflows-empty"]').exists()).toBe(false)
+    expect(enter.find('[data-testid="home-go-workflows"]').exists()).toBe(false)
     expect(enter.find('[data-testid="home-new-workflow"]').exists()).toBe(true)
     expect(enter.classes()).toContain('home-workflow-enter--ready')
     wrapper.unmount()

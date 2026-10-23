@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 withDefaults(defineProps<{
   title: string
   hint?: string
@@ -21,14 +22,14 @@ const emit = defineEmits<{ (e: 'update:mode', v: string): void }>()
         <slot name="actions" />
       </div>
     </div>
-    <div v-if="modes?.length" class="mt-4 flex flex-wrap gap-1" role="group" :aria-label="title">
+    <SlidingTabs v-if="modes?.length" :value="mode" indicator-class="rounded-md bg-elevated" class="mt-4 flex flex-wrap gap-1" role="group" :aria-label="title">
       <button
         v-for="m in modes"
         :key="m.id"
         type="button"
         class="rounded-md px-2.5 py-1 text-xs transition-colors"
         :class="[
-          mode === m.id ? 'bg-elevated font-semibold text-txt' : 'text-txt3 hover:text-txt2',
+          mode === m.id ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt2',
           m.disabled ? 'cursor-not-allowed opacity-40' : '',
         ]"
         :disabled="m.disabled"
@@ -38,7 +39,7 @@ const emit = defineEmits<{ (e: 'update:mode', v: string): void }>()
       >
         {{ m.label }}
       </button>
-    </div>
+    </SlidingTabs>
     <slot />
   </section>
 </template>

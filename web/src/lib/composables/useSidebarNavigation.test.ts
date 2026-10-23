@@ -27,6 +27,7 @@ async function setup(path = '/settings') {
 describe('sidebar navigation context', () => {
   it('keeps settings across shared tools, drawer remounts and full editor round trips', async () => {
     const { router, navigation, wrapper, showChild } = await setup()
+    expect(navigation.settingsToggleTo.value).toBe('/dashboard')
     for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/credentials']) {
       await router.push(path)
       expect(navigation.settingsChrome.value).toBe(true)
@@ -37,6 +38,45 @@ describe('sidebar navigation context', () => {
     expect(navigation.settingsChrome.value).toBe(false)
     await router.push('/workflows')
     expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/dashboard')
+  })
+  it('returns from settings to the last workspace address including filters and hash', async () => {
+    const workspacePath = '/runs?status=failed,cancelled#run-list'
+    const { router, navigation } = await setup(workspacePath)
+    expect(navigation.settingsToggleTo.value).toBe('/settings')
+    navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'settings')
+    await router.push(navigation.settingsToggleTo.value)
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe(workspacePath)
+    await router.push('/settings/credentials')
+    expect(navigation.settingsToggleTo.value).toBe(workspacePath)
+    navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'workspace')
+    await router.push(navigation.settingsToggleTo.value)
+    expect(router.currentRoute.value.fullPath).toBe(workspacePath)
+    expect(navigation.settingsChrome.value).toBe(false)
+    expect(navigation.settingsToggleTo.value).toBe('/settings')
+    await router.push('/stats?window=7d')
+    await router.push('/settings')
+    expect(navigation.settingsToggleTo.value).toBe('/stats?window=7d')
+  })
+  it('returns to the workspace even when a shared settings tool already has the same address', async () => {
+    const { router, navigation } = await setup('/workflows')
+    await router.push('/settings')
+    await router.push('/workflows')
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/workflows')
+    navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'workspace')
+    await router.push(navigation.settingsToggleTo.value)
+    expect(navigation.settingsChrome.value).toBe(false)
+    expect(navigation.settingsToggleTo.value).toBe('/settings')
+  })
+  it('does not replace the workspace return address with a full editor opened from settings', async () => {
+    const { router, navigation } = await setup('/runs?status=completed')
+    await router.push('/settings')
+    await router.push('/workflows/wf/edit')
+    await router.push('/workflows')
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/runs?status=completed')
   })
   it('leaves direct workflow visits in workspace mode and explicitly returns home', async () => {
     const { router, navigation } = await setup('/workflows')
@@ -62,6 +102,36 @@ describe('sidebar navigation context', () => {
     await router.push('/workflows')
     expect(navigation.settingsChrome.value).toBe(false)
   })
+  it('retains the workspace return address when its navigation is blocked', async () => {
+    const { router, navigation } = await setup('/runs?status=completed')
+    await router.push('/settings')
+    const stop = router.beforeEach((to) => to.path === '/runs' ? false : undefined)
+    navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'workspace')
+    await router.push(navigation.settingsToggleTo.value)
+    expect(router.currentRoute.value.path).toBe('/settings')
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/runs?status=completed')
+    stop()
+    navigation.requestMode(new MouseEvent('click'), navigation.settingsToggleTo.value, 'workspace')
+    await router.push(navigation.settingsToggleTo.value)
+    expect(router.currentRoute.value.fullPath).toBe('/runs?status=completed')
+    expect(navigation.settingsChrome.value).toBe(false)
+  })
+  it.each([
+    { ctrlKey: true },
+    { metaKey: true },
+    { shiftKey: true },
+    { altKey: true },
+    { button: 1 },
+  ])('does not toggle shared-route context for a modified click: %j', async (options) => {
+    const { router, navigation } = await setup('/workflows')
+    await router.push('/settings')
+    await router.push('/workflows')
+    navigation.requestMode(new MouseEvent('click', options), navigation.settingsToggleTo.value, 'workspace')
+    await router.push('/workflows')
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/workflows')
+  })
   it('keeps /stats in workspace mode on a direct visit, a later jump, and an account switch', async () => {
     const { router, navigation } = await setup('/stats')
     expect(navigation.settingsChrome.value).toBe(false)
@@ -85,5 +155,14 @@ describe('sidebar navigation context', () => {
     useAuth().setUser({ username: 'another-user', expiresAt: '2099-01-01T00:00:00Z' })
     await nextTick()
     expect(navigation.settingsChrome.value).toBe(false)
+  })
+  it('clears the remembered workspace address when accounts change in settings', async () => {
+    const { router, navigation } = await setup('/runs?status=completed')
+    await router.push('/settings')
+    expect(navigation.settingsToggleTo.value).toBe('/runs?status=completed')
+    useAuth().setUser({ username: 'another-user', expiresAt: '2099-01-01T00:00:00Z' })
+    await nextTick()
+    expect(navigation.settingsChrome.value).toBe(true)
+    expect(navigation.settingsToggleTo.value).toBe('/dashboard')
   })
 })

@@ -6,6 +6,7 @@ import { useAuth } from './useAuth'
 type NavigationMode = 'workspace' | 'settings'
 interface SidebarNavigation {
   settingsChrome: ComputedRef<boolean>
+  settingsToggleTo: ComputedRef<string>
   requestMode: (event: MouseEvent | undefined, to: RouteLocationRaw, mode: NavigationMode) => void
 }
 const sidebarNavigationKey: InjectionKey<SidebarNavigation> = Symbol('sidebar-navigation')
@@ -16,8 +17,10 @@ export function provideSidebarNavigation(): SidebarNavigation {
   const router = useRouter()
   const { user } = useAuth()
   const mode = ref<NavigationMode>(isSettingsChrome(route.path) ? 'settings' : 'workspace')
+  const lastWorkspacePath = ref(mode.value === 'workspace' ? route.fullPath || route.path : '/dashboard')
   let requested: { path: string; mode: NavigationMode } | undefined
   const settingsChrome = computed(() => mode.value === 'settings' && route.meta.full !== true)
+  const settingsToggleTo = computed(() => settingsChrome.value ? lastWorkspacePath.value : '/settings')
 
   const removeHook = router.afterEach((to, _from, failure) => {
     const intent = requested
@@ -30,15 +33,22 @@ export function provideSidebarNavigation(): SidebarNavigation {
       if (isSettingsChrome(to.path)) mode.value = 'settings'
       else if (to.meta.full !== true && !settingsNavItems.some((item) => to.path === item.to || to.path.startsWith(`${item.to}/`))) mode.value = 'workspace'
     }
+    // Settings tools and their full-screen editors must not replace the page
+    // the user left. Record only successful navigation in workspace context.
+    if (mode.value === 'workspace' && to.path !== '/login' && !to.meta.public) {
+      lastWorkspacePath.value = to.fullPath
+    }
   })
   onScopeDispose(removeHook)
   watch(() => user.value?.username, () => {
     requested = undefined
+    lastWorkspacePath.value = '/dashboard'
     mode.value = user.value && isSettingsChrome(route.path) ? 'settings' : 'workspace'
   })
 
   const navigation: SidebarNavigation = {
     settingsChrome,
+    settingsToggleTo,
     requestMode(event, to, targetMode) {
       // New-tab clicks keep the current tab's navigation context.
       if (!event || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
@@ -52,8 +62,10 @@ export function provideSidebarNavigation(): SidebarNavigation {
 
 export function useSidebarNavigation(): SidebarNavigation {
   const route = useRoute()
+  const settingsChrome = computed(() => isSettingsChrome(route.path, route.meta.full === true))
   return inject(sidebarNavigationKey, {
-    settingsChrome: computed(() => isSettingsChrome(route.path, route.meta.full === true)),
+    settingsChrome,
+    settingsToggleTo: computed(() => settingsChrome.value ? '/dashboard' : '/settings'),
     requestMode: () => undefined,
   })
 }

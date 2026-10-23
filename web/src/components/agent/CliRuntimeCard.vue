@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
@@ -137,8 +138,10 @@ watch(
       data-test="agent-cli-model"
     >
       <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.cliModel.label') }}</div>
-      <div
+      <SlidingTabs
         v-if="canFollow && !showsInheritance"
+        :value="showingFollow"
+        indicator-class="rounded-lg bg-surface shadow-sm"
         class="mb-2.5 flex rounded-[10px] border border-line bg-base p-0.5"
         role="radiogroup"
         :aria-label="t('pages.agentStudio.cliModel.label')"
@@ -148,7 +151,7 @@ watch(
           type="button"
           role="radio"
           class="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-lg px-2.5 py-1.5 text-[12px] transition"
-          :class="showingFollow ? 'bg-surface font-semibold text-txt shadow-sm' : 'font-medium text-txt3 hover:text-txt2'"
+          :class="showingFollow ? 'font-semibold text-txt' : 'font-medium text-txt3 hover:text-txt2'"
           :aria-checked="showingFollow"
           data-test="agent-cli-model-follow"
           @click="followShared"
@@ -160,14 +163,14 @@ watch(
           type="button"
           role="radio"
           class="inline-flex min-h-8 flex-1 items-center justify-center rounded-lg px-2.5 py-1.5 text-[12px] transition"
-          :class="!showingFollow ? 'bg-surface font-semibold text-txt shadow-sm' : 'font-medium text-txt3 hover:text-txt2'"
+          :class="!showingFollow ? 'font-semibold text-txt' : 'font-medium text-txt3 hover:text-txt2'"
           :aria-checked="!showingFollow"
           data-test="agent-cli-model-own"
           @click="specifyOwn"
         >
           {{ t('pages.agentStudio.cliModel.specify') }}
         </button>
-      </div>
+      </SlidingTabs>
       <div
         v-if="showingFollow"
         class="rounded-xl border border-line bg-surface px-3.5 py-3"
@@ -211,7 +214,8 @@ watch(
       <p class="mb-2 text-[11px] text-txt3">
         {{ effortSupported ? t('pages.agentStudio.cliModel.effortDesc') : t('pages.agentStudio.cliModel.effortUnsupported') }}
       </p>
-      <div
+      <SlidingTabs
+        :value="cliEffort"
         class="segmented inline-flex flex-wrap rounded-lg border border-line bg-base p-0.5"
         :class="{ 'pointer-events-none opacity-50': !effortSupported }"
         role="radiogroup"
@@ -226,13 +230,13 @@ watch(
           :aria-checked="cliEffort === opt"
           :disabled="!effortSupported"
           class="segmented-item rounded-md px-3 py-1 text-[12px] transition"
-          :class="cliEffort === opt ? 'is-on bg-surface text-txt shadow-sm' : 'text-txt3 hover:text-txt2'"
+          :class="cliEffort === opt ? 'is-on text-txt' : 'text-txt3 hover:text-txt2'"
           :data-test="`agent-cli-effort-${opt}`"
           @click="setCliEffort(opt)"
         >
           {{ t(`pages.agentStudio.cliModel.effort.${opt}`) }}
         </button>
-      </div>
+      </SlidingTabs>
     </div>
   </section>
 </template>
