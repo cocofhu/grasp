@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-24（修复 DSH 镜像与重启 CI 配置）
+
+- 日期：2026-10-24
+- 范围：`.github/workflows/{ci-sandbox,publish-sandbox,e2e-restart}.yml`、`server/e2e/restart_reattach_test.go` 的手动命令说明。
+- 做了什么：CI/发布镜像的显式 `AGENT_PROVIDERS` 列表补入 `deepseek_harness`。重启续接 CI 构建当前提交的沙箱镜像，将同一镜像传给 gateway 与 server，并在运行真实模型测试前检查镜像级别及 OpenCode/DSH 可执行文件；同步手动测试命令。
+- 为什么：旧的显式安装列表覆盖 Dockerfile 新默认值，造成构建镜像缺少 dsh；重启测试使用发布镜像 2.2.0（级别 1），无法安装本次要求 `min_image=2` 的运行时，容器在模型调用前退出。
+- 如何验证：actionlint、shellcheck、diff 检查、runtime bootstrap 回归与 tagged E2E 编译/无 Key 跳过通过。实际运行时包在级别 1 时按约定退出 4、级别 2 安装成功；Compose 验证 gateway/server 均使用当前构建镜像。完整镜像和真实重启测试由推送后的 CI 再验证，未修改超时或放宽门禁。
+
 ### 2026-10-24（DSH PR 独立验证）
 
 - 日期：2026-10-24
