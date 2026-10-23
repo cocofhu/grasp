@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Icon motion and shapes:** functional icons across the app, sandbox chat and preview tools now share single-play hover and keyboard feedback, with reduced-motion support. Labels, logout, workflow, copy, delete and terminal glyphs are corrected; completed checks draw left to right without a dot. Only active loading states keep moving.
+
 - **Settings navigation:** clicking the selected settings icon again returns to the previous workspace page, preserving its filters and URL fragment; a direct settings visit returns to Home.
 
 - **Sidebar consistency:** settings and workspace pages now use the same inset, rounded sidebar frame, keeping the left navigation icons and account avatar in the same positions when switching pages.

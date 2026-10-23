@@ -615,7 +615,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
       <span class="truncate text-[13px] font-medium text-txt">{{ wf.name }}</span>
     </div>
     <div class="flex flex-1 flex-col items-center px-5 py-8 text-center">
-      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-info/35 bg-info/10 text-info">◇</div>
+      <div class="mb-3 flex h-10 w-10 items-center justify-center rounded-lg border border-info/35 bg-info/10 text-info"><Icon name="workflow-empty" :size="22" :interactive="false" /></div>
       <h3 class="text-[14px] font-semibold text-txt">{{ t('pages.workflowEditor.mobile.title') }}</h3>
       <p class="mt-2 max-w-[32ch] text-[12.5px] leading-relaxed text-txt2">{{ t('pages.workflowEditor.mobile.desc') }}</p>
       <button
@@ -686,7 +686,7 @@ const editable = computed(() => !hydrating.value && !hydrateFailed.value)
         data-testid="editor-save-status"
         :data-status="saver.status.value"
       >
-        <Icon v-if="saver.status.value === 'saving'" name="spinner" :size="12" class="animate-spin" />
+        <Icon v-if="saver.status.value === 'saving'" name="spinner" :size="12" />
         <Icon v-else-if="saver.status.value === 'saved'" name="check" :size="12" />
         <Icon v-else-if="saver.status.value === 'error'" name="alert" :size="12" />
         <span v-else class="h-1.5 w-1.5 rounded-full bg-warn" aria-hidden="true" />

@@ -374,7 +374,7 @@ const coldField = computed(() => (coldFormKey.value ? gate.value.form?.find((f) 
           v-else-if="usesPreviewIssues && previewIssuesLoading"
           class="flex items-center justify-center gap-2 py-2 text-xs text-txt3"
         >
-          <Icon name="spinner" :size="14" class="animate-spin text-accent" />
+          <Icon name="spinner" :size="14" class="text-accent" />
           {{ t('pages.gateApproval.loadingPreviewIssues') }}
         </div>
         <template v-else-if="!canReactRevise">

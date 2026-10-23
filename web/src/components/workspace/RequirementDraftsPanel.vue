@@ -469,7 +469,7 @@ defineExpose({
                   :class="{ 'is-open': !scheduleCollapsed }"
                   aria-hidden="true"
                 >
-                  ▾
+                  <Icon name="chevron-down" :size="13" :interactive="false" />
                 </span>
               </button>
               <div v-show="!scheduleCollapsed">

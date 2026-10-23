@@ -318,7 +318,7 @@ onMounted(() => {
               @click="togglePriorityPopover"
             >
               <PriorityBadge :priority="run.priority" hide-title />
-              <Icon
+              <Icon :interactive="false"
                 v-if="showPriorityChevron"
                 name="chevron-down"
                 :size="10"
@@ -350,7 +350,7 @@ onMounted(() => {
               :disabled="refreshing || runLoading"
               @click="loadRun(false)"
             >
-              <Icon name="refresh" :size="14" :class="{ 'animate-spin': refreshing }" />
+              <Icon name="refresh" :size="14" />
               {{ t('common.buttons.refresh') }}
             </button>
             <AppButton

@@ -376,7 +376,7 @@ function close() {
           :aria-label="loopbackBlocked ? t('pages.gatesInbox.share.createOnlyAria') : t('pages.gatesInbox.share.createCopyAria')"
           @click="createAndCopy"
         >
-          <Icon :name="busy ? 'spinner' : 'copy'" :size="16" :class="busy ? 'animate-spin' : ''" aria-hidden="true" />
+          <Icon :name="busy ? 'spinner' : 'copy'" :size="16" aria-hidden="true" />
           {{
             busy
               ? t('common.buttons.creating')
@@ -429,7 +429,7 @@ function close() {
             :aria-busy="busy ? 'true' : undefined"
             @click="copyExisting"
           >
-            <Icon :name="busy && busyKind === 'copy' ? 'spinner' : 'copy'" :size="14" :class="busy && busyKind === 'copy' ? 'animate-spin' : ''" aria-hidden="true" />
+            <Icon :name="busy && busyKind === 'copy' ? 'spinner' : 'copy'" :size="14" aria-hidden="true" />
             {{ busy && busyKind === 'copy' ? t('common.buttons.copying') : t('common.buttons.copy') }}
           </button>
           <button

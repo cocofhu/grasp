@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
@@ -128,9 +129,10 @@ function onDrop(target: string) {
         class="rounded-md mb-1 flex w-full items-center gap-2 border border-line bg-base px-2.5 py-1.5 text-left text-[12px] transition"
         :class="selectedSet.has(opt.value) ? 'cursor-not-allowed opacity-50' : 'hover:border-line-strong hover:bg-elevated'"
         :disabled="selectedSet.has(opt.value)"
+        :aria-label="opt.label"
         @click="add(opt.value)"
       >
-        <span>{{ selectedSet.has(opt.value) ? '✓' : '+' }}</span>
+        <Icon :name="selectedSet.has(opt.value) ? 'check' : 'plus'" :size="12" :interactive="false" />
         <span class="flex-1 truncate">{{ opt.label }}</span>
         <span v-if="selectedSet.has(opt.value)" class="text-[10px] text-warn">
           {{ t('pages.workflowEditor.inspector.outputSources.alreadyAdded') }}

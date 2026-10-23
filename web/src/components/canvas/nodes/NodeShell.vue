@@ -199,7 +199,7 @@ function pick(action: NodeMenuAction) {
     </div>
 
     <div v-if="badge" class="cnode-badge grasp-status-host" :class="badge.cls" :title="statusText" :aria-label="statusText" data-testid="canvas-node-badge">
-      <Icon :name="badge.icon" :size="16" />
+      <Icon :name="badge.icon" :busy="data.status === 'running'" :size="16" />
     </div>
     <template v-else-if="issueCount">
       <div class="cnode-badge is-err" :aria-label="t('canvas.node.issues', { n: issueCount })" data-testid="canvas-node-issues">{{ issueCount }}</div>

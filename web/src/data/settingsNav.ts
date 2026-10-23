@@ -16,10 +16,10 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/settings/credentials', icon: 'key', labelKey: 'nav.credentials' },
   { to: '/settings/variables', icon: 'variable', labelKey: 'nav.variables' },
   { to: '/settings/assistant', icon: 'chat', labelKey: 'nav.assistantSettings' },
-  { to: '/settings/notification-policy', icon: 'bell', labelKey: 'nav.notificationPolicy' },
+  { to: '/settings/notification-policy', icon: 'bell-settings', labelKey: 'nav.notificationPolicy' },
   { to: '/settings/external-mcp', icon: 'connector', labelKey: 'nav.externalMcp' },
   { to: '/settings', icon: 'settings', labelKey: 'nav.general', exact: true, groupKey: 'nav.groupPlatform' },
-  { to: '/settings', icon: 'connector', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
+  { to: '/settings', icon: 'integration', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
   { to: '/settings/workspace', icon: 'folder', labelKey: 'nav.workspaceInfo' },
   { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
 ]

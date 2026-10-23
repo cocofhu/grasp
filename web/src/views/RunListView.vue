@@ -743,8 +743,8 @@ onUnmounted(() => {
               <span class="th-inner">
                 {{ t('pages.runList.colStart') }}
                 <span class="sort-icon" aria-hidden="true">
-                  <svg class="up" viewBox="0 0 10 10"><path fill="currentColor" d="M5 2 L9 7 H1 Z" /></svg>
-                  <svg class="down" viewBox="0 0 10 10"><path fill="currentColor" d="M5 8 L1 3 H9 Z" /></svg>
+                  <Icon name="sort-ascending" :size="10" :interactive="false" class="up" />
+                  <Icon name="sort-descending" :size="10" :interactive="false" class="down" />
                 </span>
               </span>
             </th>

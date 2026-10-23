@@ -17,6 +17,7 @@ export const OVERLAY_CSS =
   'button:hover{background:var(--bg2)}' +
   'button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--acc);outline-offset:1px}' +
   'button:disabled{opacity:.45;cursor:not-allowed}' +
+  'button>.app-icon{vertical-align:middle}.disclosure>.app-icon{margin-right:3px}' +
   // Sits just above preview-pick's bar (right:16px; bottom:16px).
   // Every overlay layer stays below the chat drawer (preview-pick .drawer is 2147483647)
   // so a later-mounted host cannot cover the chat.
@@ -85,7 +86,7 @@ export const OVERLAY_CSS =
   'background:linear-gradient(100deg,rgba(123,97,255,.04) 20%,rgba(123,97,255,.22) 50%,rgba(123,97,255,.04) 80%);background-size:200% 100%;' +
   'animation:shine 1.2s linear infinite;outline:2px dashed rgba(123,97,255,.75);outline-offset:2px}' +
   '@keyframes shine{from{background-position:200% 0}to{background-position:-200% 0}}' +
-  '@media (prefers-reduced-motion:reduce){.shimmer{animation:none}button{transition:none}}' +
+  '@media (prefers-reduced-motion:reduce){.shimmer{animation:none}*,*::before,*::after{transition:none}}' +
   '.cframe{position:fixed;z-index:2147483644;pointer-events:none;border:1px solid var(--line2);border-radius:6px}' +
   '.cframe.sel{border:2px solid var(--acc);box-shadow:0 0 0 3px var(--acc-ring)}' +
   '.tag{position:fixed;z-index:2147483645;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;line-height:16px;' +

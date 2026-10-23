@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
@@ -162,11 +163,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @click="goToStats"
         @keydown="onActivateKey"
       >
-        <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
-          <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
-          <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
-        </svg>
+        <Icon name="token" :size="14" class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-xs leading-none text-txt">{{ fmtCompactTokenCount(cumulative) }}</span>
         <span
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[200px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -189,11 +186,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @click="goToStats"
         @keydown="onActivateKey"
       >
-        <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="3.4" y="5.2" width="17.2" height="15.2" rx="2.6" />
-          <path d="M8.2 3v4.2M15.8 3v4.2M3.4 10.2h17.2" />
-          <circle cx="12" cy="15.2" r="2.6" />
-        </svg>
+        <Icon name="calendar" :size="14" class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-xs leading-none text-txt">{{ fmtCompactTokenCount(today) }}</span>
         <span
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[200px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -216,10 +209,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @click="goToRuns"
         @keydown="onActivateKey($event, 'runs')"
       >
-        <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.2" />
-          <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
-        </svg>
+        <Icon name="runs" :size="14" class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-xs leading-none text-txt">{{ running }}</span>
         <span
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[160px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -242,9 +232,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @click="goToRuns"
         @keydown="onActivateKey($event, 'runs')"
       >
-        <svg class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 7.2h16M4 12h11.5M4 16.8h7" />
-        </svg>
+        <Icon name="queue" :size="14" class="sm-ico block h-3.5 w-3.5 shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-xs leading-none text-txt">{{ queued }}</span>
         <span
           class="sm-tip sm-kpi pointer-events-none absolute left-1/2 top-[calc(100%+6px)] z-40 hidden min-w-[160px] -translate-x-1/2 border border-line-strong bg-surface px-3 py-2.5 text-left font-sans shadow-card"
@@ -279,11 +267,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @mouseenter="onCompactZoneEnter('token')"
         @focus="onCompactZoneEnter('token')"
       >
-        <svg class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
-          <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
-          <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
-        </svg>
+        <Icon name="token" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ fmtCompactTokenCount(cumulative) }}</span>
         <span
           v-if="!usePortaledCompactTip"
@@ -292,11 +276,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
           data-testid="status-metrics-compact-token-tip"
         >
           <div class="sm-kpi-title">
-            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
-              <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
-              <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
-            </svg>
+            <Icon name="token" :size="14" class="sm-kpi-ico" :interactive="false" aria-hidden="true" />
             {{ t('shell.statusMetrics.cardTokenTitle') }}
           </div>
           <div class="sm-kpi-row">
@@ -321,15 +301,10 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         @mouseenter="onCompactZoneEnter('run')"
         @focus="onCompactZoneEnter('run')"
       >
-        <svg class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.2" />
-          <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
-        </svg>
+        <Icon name="runs" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ running }}</span>
         <span class="text-txt3">/</span>
-        <svg class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M4 7.2h16M4 12h11.5M4 16.8h7" />
-        </svg>
+        <Icon name="queue" :size="14" class="sm-ico block h-[13px] w-[13px] shrink-0 text-txt3" aria-hidden="true" />
         <span class="sm-val text-[11px] font-semibold leading-none text-txt">{{ queued }}</span>
         <span
           v-if="!usePortaledCompactTip"
@@ -338,10 +313,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
           data-testid="status-metrics-compact-run-tip"
         >
           <div class="sm-kpi-title">
-            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="8.2" />
-              <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
-            </svg>
+            <Icon name="runs" :size="14" class="sm-kpi-ico" :interactive="false" aria-hidden="true" />
             {{ t('shell.statusMetrics.cardRunTitle') }}
           </div>
           <div class="sm-kpi-row">
@@ -369,11 +341,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
       >
         <template v-if="activeCompactZone === 'token'">
           <div class="sm-kpi-title">
-            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <ellipse cx="12" cy="6.6" rx="7.2" ry="3.1" />
-              <path d="M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6" />
-              <path d="M4.8 11.5v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1v-4.7" />
-            </svg>
+            <Icon name="token" :size="14" class="sm-kpi-ico" :interactive="false" aria-hidden="true" />
             {{ t('shell.statusMetrics.cardTokenTitle') }}
           </div>
           <div class="sm-kpi-row">
@@ -387,10 +355,7 @@ function onCompactStripFocusOut(ev: FocusEvent) {
         </template>
         <template v-else-if="activeCompactZone === 'run'">
           <div class="sm-kpi-title">
-            <svg class="sm-kpi-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <circle cx="12" cy="12" r="8.2" />
-              <path d="M10.3 8.7l5.4 3.3-5.4 3.3z" />
-            </svg>
+            <Icon name="runs" :size="14" class="sm-kpi-ico" :interactive="false" aria-hidden="true" />
             {{ t('shell.statusMetrics.cardRunTitle') }}
           </div>
           <div class="sm-kpi-row">

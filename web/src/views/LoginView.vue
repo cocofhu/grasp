@@ -64,7 +64,7 @@ async function onSubmit() {
           data-testid="login-redirect-hint"
           class="mb-4 flex min-w-0 items-center gap-1.5 rounded-lg border border-info/25 bg-info/10 px-2.5 py-2 text-xs text-info"
         >
-          <Icon name="chevron-right" :size="14" class="shrink-0 rotate-[-45deg]" />
+          <Icon :interactive="false" name="chevron-right" :size="14" class="shrink-0 rotate-[-45deg]" />
           <span class="shrink-0 whitespace-nowrap">{{ t('pages.login.redirectHint') }}</span>
           <TruncatedTextTooltip
             :text="redirectTarget"

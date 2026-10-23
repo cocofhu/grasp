@@ -142,9 +142,9 @@ function groupStats(cases: TestCase[]) {
 }
 
 const CASE: Record<string, { icon: string; cls: string }> = {
-  passed: { icon: '✓', cls: 'text-ok' },
-  failed: { icon: '✕', cls: 'text-err' },
-  skipped: { icon: '⏭', cls: 'text-txt3' },
+  passed: { icon: 'check', cls: 'text-ok' },
+  failed: { icon: 'close', cls: 'text-err' },
+  skipped: { icon: 'skip', cls: 'text-txt3' },
 }
 function cs(s?: string) {
   return CASE[s || 'failed'] || CASE.failed
@@ -207,7 +207,7 @@ const SEV: Record<string, string> = {
           </div>
           <div class="space-y-1">
             <div v-for="(c, i) in g.cases" :key="c.id || `${gi}-${i}`" class="report-item group flex items-start gap-2 text-[13px]">
-              <span class="mt-0.5 shrink-0 font-bold" :class="cs(c.status).cls">{{ cs(c.status).icon }}</span>
+              <Icon :name="cs(c.status).icon" :size="15" :interactive="false" class="mt-0.5 shrink-0" :class="cs(c.status).cls" />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-1 text-txt2">
                   <span
@@ -327,9 +327,7 @@ const SEV: Record<string, string> = {
             class="relative aspect-[4/3] w-full overflow-hidden rounded-lg border border-dashed border-err/30 bg-err/[0.06]"
           >
             <div class="flex h-full flex-col items-center justify-center gap-2 p-3 text-center">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-err">
-                <circle cx="12" cy="12" r="10" /><path d="M12 8v4M12 16h.01" />
-              </svg>
+              <Icon name="alert" :size="24" class="text-err" :interactive="false" />
               <div class="text-[11px] font-semibold text-err">{{ t('pages.product.testResult.screenshotError') }}</div>
               <code v-if="shotStates[i]?.status === 'error'" class="max-w-full break-all rounded border border-line bg-base px-1.5 py-0.5 font-mono text-[9px] text-txt3">{{ shotStates[i].artifact }}</code>
             </div>
@@ -356,7 +354,7 @@ const SEV: Record<string, string> = {
             :title="t('pages.product.testResult.prev')"
             @click="step(-1)"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6 6 6" /></svg>
+            <Icon name="chevron-left" :size="16" />
           </button>
           <img
             :src="lightboxSrc()"
@@ -370,7 +368,7 @@ const SEV: Record<string, string> = {
             :title="t('pages.product.testResult.next')"
             @click="step(1)"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6" /></svg>
+            <Icon name="chevron-right" :size="16" />
           </button>
         </div>
         <div v-if="lightboxState.caption" class="max-w-2xl text-center text-[12px] leading-relaxed text-txt2">{{ lightboxState.caption }}</div>

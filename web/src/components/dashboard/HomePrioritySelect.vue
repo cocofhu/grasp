@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
@@ -189,13 +190,9 @@ onBeforeUnmount(() => {
       @click="togglePanel"
       @keydown="onTriggerKeydown"
     >
-      <svg class="home-priority-select__bolt" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-        <path d="m11.7 2.7-6 8.2h4l-1.4 6.4 6-8.2h-4l1.4-6.4Z" fill="currentColor" />
-      </svg>
+      <Icon name="priority-bolt" :size="16" class="home-priority-select__bolt" />
       <span class="home-priority-select__label">{{ selectedLabel }}</span>
-      <svg class="home-priority-select__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <Icon name="chevron-down" :size="16" :interactive="false" class="home-priority-select__chev" />
     </button>
 
     <!-- Teleport to body so .home-composer overflow-hidden cannot clip the panel (plan g1.2) -->
@@ -215,9 +212,7 @@ onBeforeUnmount(() => {
       >
         <div class="home-priority-select__heading" aria-hidden="true">
           <span class="home-priority-select__heading-icon">
-            <svg viewBox="0 0 20 20" fill="none">
-              <path d="m11.7 2.7-6 8.2h4l-1.4 6.4 6-8.2h-4l1.4-6.4Z" fill="currentColor" />
-            </svg>
+            <Icon name="priority-bolt" :size="16" :interactive="false" />
           </span>
           <span>{{ t('common.priority.label') }}</span>
           <span class="home-priority-select__current">{{ selectedLabel }}</span>
@@ -246,15 +241,9 @@ onBeforeUnmount(() => {
           :data-testid="`home-priority-select-option-${value}`"
           @click.stop="choose(value)"
         >
-          <svg class="home-priority-select__strength" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-            <rect x="3" y="11" width="3" height="5" rx="1.1" fill="currentColor" />
-            <rect x="8.5" y="7.5" width="3" height="8.5" rx="1.1" fill="currentColor" :opacity="value === 'low' ? 0.2 : 1" />
-            <rect x="14" y="4" width="3" height="12" rx="1.1" fill="currentColor" :opacity="value === 'high' ? 1 : 0.2" />
-          </svg>
+          <Icon :name="value === 'normal' ? 'priority-medium' : `priority-${value}`" :size="20" class="home-priority-select__strength" />
           <span>{{ t(`common.priority.${value}`) }}</span>
-          <svg class="home-priority-select__check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <path d="m4.2 8 2.5 2.5 5.1-5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-          </svg>
+          <Icon name="check" :size="16" :interactive="false" :motion-key="value === modelValue ? 1 : 0" class="home-priority-select__check" />
         </button>
       </div>
     </Teleport>

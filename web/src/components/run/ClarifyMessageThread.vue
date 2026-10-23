@@ -515,7 +515,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   data-testid="clarify-prior-form"
                 >
                   <div class="chat-response-heading flex items-center gap-2 text-txt2">
-                    <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
+                    <Icon name="form" :size="16" /> {{ translate('pages.clarify.myForm') }}
                   </div>
                   <div
                     v-for="(row, ri) in formRowsOf(pt.text)!"
@@ -586,7 +586,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                     data-testid="clarify-prior-forms"
                   >
                     <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                      <Icon name="ci" :size="16" />
+                      <Icon name="form" :size="16" />
                       {{ translate('pages.clarify.formsThisRound', { n: pt.forms.length }) }}
                       <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
                     </div>

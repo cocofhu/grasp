@@ -199,7 +199,7 @@ function showConversationHistory() { artifactOpen.value = false }
 
 <template>
   <div v-if="loading && !threads.length" class="flex min-h-0 flex-1 items-start justify-center pt-12" role="status">
-    <Icon name="spinner" :size="20" class="animate-spin text-txt3" />
+    <Icon name="spinner" :size="20" class="text-txt3" />
     <span class="sr-only">{{ t('pages.workspace.pm.loadingHistory') }}</span>
   </div>
 
@@ -282,8 +282,10 @@ function showConversationHistory() { artifactOpen.value = false }
             v-if="!turnBusy && !isChannelThread(th)"
             class="hidden text-xs text-txt3 group-hover:inline"
             data-testid="pm-thread-delete"
+            data-icon-motion-host
+            :title="t('common.buttons.delete')"
             @click.stop="removeThread(th.id)"
-          >×</span>
+          ><Icon name="close" :size="12" /></span>
         </button>
         <p v-if="!threads.length && !loading" class="px-2 py-4 text-xs text-txt3">
           {{ t('pages.workspace.pm.noThreads') }}
@@ -558,7 +560,7 @@ function showConversationHistory() { artifactOpen.value = false }
           <div class="min-w-0 flex-1">
             <div>
               <div v-if="resuming && !streamText && !finalizing" class="flex items-center gap-1.5 text-txt3">
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.resuming') }}
               </div>
               <div v-else-if="streamText" class="md chat-prose" v-html="streamHtml" />
@@ -567,7 +569,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 <span class="sr-only">{{ t('pages.workspace.pm.generating') }}</span>
               </div>
               <div v-else class="flex items-center gap-1.5 text-txt3">
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.generating') }}
               </div>
               <div
@@ -588,7 +590,7 @@ function showConversationHistory() { artifactOpen.value = false }
                   </button>
                 </template>
                 <template v-else>
-                  <Icon name="spinner" :size="13" class="animate-spin text-warn" />
+                  <Icon name="spinner" :size="13" class="text-warn" />
                   {{ t('pages.workspace.pm.finalizing') }}
                 </template>
               </div>
@@ -597,7 +599,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 class="mt-2 flex items-center gap-1.5 border-t border-line pt-2 text-[11px] text-accent-2"
                 data-testid="pm-stream-resuming-meta"
               >
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.resuming') }}
               </div>
             </div>
@@ -631,10 +633,7 @@ function showConversationHistory() { artifactOpen.value = false }
             class="rounded-full flex h-7 w-7 shrink-0 items-center justify-center border border-accent-2/35 bg-accent/15 text-accent-2"
             aria-hidden="true"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
+            <Icon name="lock" :size="14" :interactive="false" />
           </div>
           <div class="min-w-0">
             <strong class="block text-[13px] font-semibold text-txt">
@@ -819,7 +818,7 @@ function showConversationHistory() { artifactOpen.value = false }
           :aria-label="t('pages.workspace.pm.channelDetailClose')"
           data-testid="pm-channel-detail-close"
           @click="closeChannelDetail"
-        >×</button>
+        ><Icon name="close" :size="12" /></button>
       </div>
       <div class="flex flex-col gap-3 p-3.5">
         <div>

@@ -96,11 +96,7 @@ function onDrop(toIndex: number, e: DragEvent) {
           :aria-label="t('pages.clarify.queueDragAria')"
           @mousedown.stop
         >
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
-            <circle cx="9" cy="12" r="1.6" /><circle cx="15" cy="12" r="1.6" />
-            <circle cx="9" cy="18" r="1.6" /><circle cx="15" cy="18" r="1.6" />
-          </svg>
+          <Icon name="grip" :size="12" :disabled="dragIndex !== null" />
         </button>
         <span
           class="flex h-4 w-4 shrink-0 items-center justify-center rounded-full border border-line text-[9px] text-txt3"

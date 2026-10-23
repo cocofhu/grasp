@@ -109,7 +109,7 @@ const arrowBtn = 'flex h-6 w-6 shrink-0 items-center justify-center rounded-md b
         role="status"
         data-testid="live-variant-state"
       >
-        <Icon v-if="isLiveBusy(state)" name="spinner" :size="10" class="animate-spin" aria-hidden="true" />
+        <Icon v-if="isLiveBusy(state)" name="spinner" :size="10" aria-hidden="true" />
         {{ t(`pages.embedChat.live.states.${stateKey}`) }}
       </span>
     </div>

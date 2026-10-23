@@ -1,3 +1,4 @@
+import {hydrateRuntimeIcons, installRuntimeIconMotion, runtimeIcon} from '../ui/icons.js';
 import {renderMermaidInLightboxMount} from '../core/md.js';
 import {apiPath, chatApiPath} from '../core/paths.js';
 import {queueStateHasPendingWork} from '../ui/queue_panel.js';
@@ -5,6 +6,11 @@ import {setHeaderConnLive} from '../ws/session.js';
 import {announceReady, bindEmbedTheme, isEmbedded} from './embed.js';
 import {TabManager} from './tab_manager.js';
 import {modelDisplayName, modelPickerItems} from './tab_state.js';
+
+hydrateRuntimeIcons(document);
+const iconTemplate = document.getElementById('chatPaneTpl');
+if (iconTemplate) hydrateRuntimeIcons(iconTemplate.content);
+installRuntimeIconMotion(document);
 
 const panesEl = document.getElementById('chatPanes');
 const paneTpl = /** @type {HTMLTemplateElement|null} */ (document.getElementById('chatPaneTpl'));
@@ -512,7 +518,7 @@ function renderAttachPreview() {
             fd.className = 'cc-attach-file';
             const icon = document.createElement('span');
             icon.className = 'cc-attach-file-icon';
-            icon.textContent = '📄';
+            icon.innerHTML = runtimeIcon('doc', 18);
             const name = document.createElement('span');
             name.className = 'cc-attach-file-name';
             name.textContent = entry.file.name;
@@ -523,7 +529,9 @@ function renderAttachPreview() {
         }
         const rm = document.createElement('button');
         rm.className = 'cc-attach-remove';
-        rm.textContent = '✕';
+        rm.type = 'button';
+        rm.innerHTML = runtimeIcon('close', 12);
+        rm.setAttribute('aria-label', '移除附件');
         rm.title = '移除';
         rm.onclick = () => removeFile(i);
         item.appendChild(rm);

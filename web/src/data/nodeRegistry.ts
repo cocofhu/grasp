@@ -52,7 +52,7 @@ export const NODE_DEFS: Record<NodeType, NodeTypeDef> = {
     type: 'set_var',
     label: 'nodes.set_var.label',
     desc: 'nodes.set_var.desc',
-    icon: 'edit',
+    icon: 'variable',
     color: 'text-n-artifact',
     category: 'nodes.categories.control',
     fields: [{ key: 'assignments', label: 'nodes.set_var.fields.assignments.label', type: 'assignments' }],

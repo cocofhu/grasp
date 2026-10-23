@@ -1062,7 +1062,7 @@ function editWorkflow() {
                 <Icon name="chevron-left" :size="14" />{{ t('pages.onboarding.prev') }}
               </AppButton>
               <AppButton variant="primary" :disabled="creating" data-testid="onboarding-next" @click="goNext">
-                <Icon v-if="creating" name="spinner" :size="14" class="animate-spin" />
+                <Icon v-if="creating" name="spinner" :size="14" />
                 {{
                   creating
                     ? t('pages.onboarding.generating')

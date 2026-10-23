@@ -51,7 +51,7 @@ onBeforeUnmount(() => timer && clearInterval(timer))
 <template>
   <div class="solo-startup" data-testid="solo-startup-card" aria-live="polite">
     <div class="flex items-center gap-2">
-      <Icon name="spinner" :size="15" class="animate-spin text-accent" />
+      <Icon name="spinner" :size="15" class="text-accent" />
       <span class="text-[13px] font-medium text-txt">{{ t('pages.solo.startup.title') }}</span>
       <span v-if="session.sandbox?.name" class="ml-auto truncate font-mono text-[11px] text-txt3">{{ session.sandbox.name }}</span>
     </div>

@@ -1616,7 +1616,7 @@ defineExpose({
       aria-busy="true"
       data-testid="public-gate-loading"
     >
-      <Icon name="spinner" :size="28" class="animate-spin text-accent" aria-hidden="true" />
+      <Icon name="spinner" :size="28" class="text-accent" aria-hidden="true" />
       <p class="text-sm text-txt3">{{ t('pages.publicGate.loading') }}</p>
       <p v-if="maybeStuck" class="max-w-[40ch] text-xs text-txt3" data-testid="public-gate-maybe-stuck">
         {{ t('pages.publicGate.maybeStuck') }}
@@ -1888,7 +1888,7 @@ defineExpose({
             :aria-label="t('pages.publicGate.rejectAria')"
             @click="submitFinal('reject')"
           >
-            <Icon v-if="submitting" name="spinner" :size="16" class="animate-spin" aria-hidden="true" />
+            <Icon v-if="submitting" name="spinner" :size="16" aria-hidden="true" />
             {{ submitting ? t('pages.publicGate.submitting') : t('pages.publicGate.reject') }}
           </button>
         </div>

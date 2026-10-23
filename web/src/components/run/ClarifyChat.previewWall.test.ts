@@ -374,7 +374,7 @@ describe('ClarifyChat option preview window', () => {
     expect(historyEnlarge.classes()).not.toContain('is-selected')
     expect(historyEnlarge.find('[data-icon="expand"]').exists()).toBe(false)
     expect(historyEnlarge.get('svg[viewBox="0 0 36 26"]').attributes('aria-hidden')).toBe('true')
-    const historyMark = historyEnlarge.get('svg[viewBox="0 0 16 16"]')
+    const historyMark = historyEnlarge.get('[data-icon="preview-expand"]')
     expect(historyMark.attributes('width')).toBe('14')
     expect(historyMark.attributes('height')).toBe('14')
     const pickedRow = history[0]!.get('[data-testid="clarify-option-enlarge"]')

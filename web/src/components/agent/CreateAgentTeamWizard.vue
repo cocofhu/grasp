@@ -554,13 +554,13 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                       <div class="mb-1 flex items-center justify-between text-[11px] text-txt2">
                         <span>{{ t('pages.agentStudio.teamWizard.mcp.headers') }}</span>
                         <button type="button" class="text-accent-2" @click="m.headers.push({ k: '', v: '' })">
-                          + {{ t('pages.agentStudio.teamWizard.mcp.addHeader') }}
+                          <Icon name="plus" :size="12" class="inline align-middle" /> {{ t('pages.agentStudio.teamWizard.mcp.addHeader') }}
                         </button>
                       </div>
                       <div v-for="(h, hi) in m.headers" :key="hi" class="mb-1 grid grid-cols-[1fr_1.4fr_auto] gap-1">
                         <input v-model="h.k" class="rounded-md border border-line bg-base px-2 py-1 text-[11px]" placeholder="Header" />
                         <input v-model="h.v" class="rounded-md border border-line bg-base px-2 py-1 font-mono text-[11px]" placeholder="Value" />
-                        <button type="button" class="px-2 text-[11px] text-txt3" @click="m.headers.splice(hi, 1)">×</button>
+                        <button type="button" class="px-2 text-[11px] text-txt3" :aria-label="t('common.buttons.delete')" @click="m.headers.splice(hi, 1)"><Icon name="close" :size="12" /></button>
                       </div>
                     </template>
                     <template v-else>
@@ -571,8 +571,8 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <div class="flex flex-wrap gap-2">
                     <AppButton size="sm" variant="outline" icon="plus" @click="addMcp">{{ t('pages.agentStudio.teamWizard.mcp.add') }}</AppButton>
                     <AppButton size="sm" variant="ghost" @click="restoreArtifact">{{ t('pages.agentStudio.teamWizard.mcp.restoreArtifact') }}</AppButton>
-                    <AppButton size="sm" variant="ghost" @click="addNamedMcp('memory-store')">+ memory-store</AppButton>
-                    <AppButton size="sm" variant="ghost" @click="addNamedMcp('context-store')">+ context-store</AppButton>
+                    <AppButton size="sm" variant="ghost" icon="plus" @click="addNamedMcp('memory-store')">memory-store</AppButton>
+                    <AppButton size="sm" variant="ghost" icon="plus" @click="addNamedMcp('context-store')">context-store</AppButton>
                   </div>
                   <p class="mt-3 text-[11px] text-txt3">{{ t('pages.agentStudio.teamWizard.mcp.runVars') }}</p>
                 </template>

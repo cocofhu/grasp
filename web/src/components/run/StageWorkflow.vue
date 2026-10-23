@@ -28,7 +28,7 @@ function hasRecordedStatus(run: Run | null | undefined): boolean {
 }
 
 function iconOf(type: string) {
-  return NODE_DEFS[type as keyof typeof NODE_DEFS]?.icon || 'agent'
+  return NODE_DEFS[type as keyof typeof NODE_DEFS]?.icon || 'robot'
 }
 
 const rows = computed(() => {

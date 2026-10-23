@@ -1337,7 +1337,7 @@ describe('DashboardView home composer', () => {
     expect(vbX + vbW / 2).toBe(vbY + vbH / 2)
 
     // each stroke of the plus is centered on the viewBox center
-    const d = svg.get('path').attributes('d') ?? ''
+    const d = svg.findAll('path').map((path) => path.attributes('d') ?? '').join(' ')
     const vertical = d.match(/M(\d+) (\d+)v(\d+)/)
     const horizontal = d.match(/M(\d+) (\d+)h(\d+)/)
     expect(vertical).not.toBeNull()

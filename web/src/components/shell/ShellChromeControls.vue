@@ -34,6 +34,7 @@ const {
   previewItems,
   remainingCount,
   unreadCount,
+  notificationMotionKey,
   hasUnreadFailed,
   badgeLabel,
   markAllRead,
@@ -230,14 +231,14 @@ defineExpose({
             :class="{ 'is-active': theme !== 'dark' }"
             data-testid="shell-theme-icon-moon"
           >
-            <Icon name="moon" :size="layout === 'sidebar' ? 16 : 18" />
+            <Icon name="moon" :interactive="false" :size="layout === 'sidebar' ? 16 : 18" />
           </span>
           <span
             class="shell-theme-icon shell-theme-icon-sun"
             :class="{ 'is-active': theme === 'dark' }"
             data-testid="shell-theme-icon-sun"
           >
-            <Icon name="sun" :size="layout === 'sidebar' ? 16 : 18" />
+            <Icon name="sun" :interactive="false" :size="layout === 'sidebar' ? 16 : 18" />
           </span>
         </span>
       </button>
@@ -255,7 +256,7 @@ defineExpose({
           :aria-expanded="panelOpen ? 'true' : 'false'"
           @click.stop="togglePanel"
         >
-          <Icon name="bell" :size="layout === 'sidebar' ? 16 : 18" />
+          <Icon name="bell" :motion-key="notificationMotionKey" :size="layout === 'sidebar' ? 16 : 18" />
           <span
             v-if="badgeLabel"
             :key="badgeLabel"

@@ -967,7 +967,7 @@ onBeforeUnmount(() => {
 
     <!-- starting: full-panel loader so it never looks frozen -->
     <div v-else-if="status === 'starting'" class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
-      <Icon name="spinner" :size="30" class="animate-spin text-accent" />
+      <Icon name="spinner" :size="30" class="text-accent" />
       <Transition name="startfade" mode="out-in">
         <p :key="startStep" class="text-[13px] text-txt2">{{ STARTING_STEPS[startStep].title }}</p>
       </Transition>
@@ -1010,7 +1010,7 @@ onBeforeUnmount(() => {
       </div>
       <div v-if="errorMsg" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ errorMsg }}</div>
       <div v-if="restoring" class="chat-meta flex items-center justify-center gap-2 py-2">
-        <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />{{ t('pages.agentChatTester.loadingHistory') }}
+        <Icon name="spinner" :size="13" class="text-accent-2" />{{ t('pages.agentChatTester.loadingHistory') }}
       </div>
 
       <div
@@ -1083,7 +1083,7 @@ onBeforeUnmount(() => {
             <span v-else v-html="renderMarkdown(turn.text)" />
           </div>
           <div v-else-if="turn.streaming && !turn.thought && !turn.tools.length && !turn.text" class="chat-meta py-2">
-            <Icon name="spinner" :size="13" class="mr-1 inline animate-spin" />{{ t('pages.agentChatTester.generating') }}
+            <Icon name="spinner" :size="13" class="mr-1 inline" />{{ t('pages.agentChatTester.generating') }}
           </div>
           <div v-if="turn.error" class="rounded-md border border-err/30 bg-err/10 px-3 py-2 text-[12px] text-err">{{ turn.error }}</div>
         </div>

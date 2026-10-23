@@ -840,7 +840,7 @@ const fxCount = computed(() => fxChips.value.length)
               :data-testid="`token-analytics-chip-${c.key}`"
             >
               {{ c.label }}
-              <button type="button" :aria-label="t('pages.tokenAnalytics.fxChipRemove', { name: c.label })" :data-testid="`token-analytics-chip-remove-${c.key}`" @click="c.clear()">×</button>
+              <button type="button" :aria-label="t('pages.tokenAnalytics.fxChipRemove', { name: c.label })" :data-testid="`token-analytics-chip-remove-${c.key}`" @click="c.clear()"><Icon name="close" :size="12" /></button>
             </span>
             <AppButton variant="ghost" size="sm" data-testid="token-analytics-chips-clear" @click="clearFilters">{{ t('pages.tokenAnalytics.fxClearAll') }}</AppButton>
           </div>
