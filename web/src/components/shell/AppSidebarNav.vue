@@ -35,7 +35,10 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { useSoloSessions } from '@/lib/solo/useSoloSessions'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { isSectionCollapsed, toggleSection } from '@/lib/shared/sidebarSections'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 
 const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
@@ -61,6 +64,8 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
+const soloStore = useSoloSessions()
+const runningCollapsed = computed(() => isSectionCollapsed('running'))
 
 let timer: number | undefined
 function badgeFor(to: string): number {
@@ -120,6 +125,9 @@ async function loadRunningRuns() {
       dropCarriedRows(controller)
       return
     }
+    // Solo sessions are resident sandboxes, but active ones belong in the
+    // same「正在执行」section as workflow runs.
+    void soloStore.refresh()
     const result = await api.listRuns({
       page: 1,
       pageSize: 50,
@@ -189,9 +197,40 @@ const pendingRunTitles = computed(() => {
   return titles
 })
 
-const runPins = computed(() => pins.value.map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
+const runPins = computed(() => pins.value.filter((p) => !p.itemKey.startsWith('solo:')).map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
+const soloPins = computed(() => pins.value.filter((p) => p.itemKey.startsWith('solo:')))
 const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
 const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, (it) => it.runId, runPins.value))
+/** Active Solo sandboxes share the same running section as workflow runs. */
+const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
+  const aAt = Date.parse(a.lastActiveAt || a.updatedAt || a.createdAt)
+  const bAt = Date.parse(b.lastActiveAt || b.updatedAt || b.createdAt)
+  return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+}))
+const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
+const activeRowsCount = computed(() => pendingRows.value.length + soloRows.value.length)
+
+function soloRowKey(session: SoloSession): string {
+  return `solo:${session.id}`
+}
+
+function soloRowTitle(session: SoloSession): string {
+  return session.title?.trim() || t('pages.solo.untitled')
+}
+
+function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
+  if (session.status === 'starting') return 'spin'
+  return session.busy ? 'pulse' : null
+}
+
+function isSoloRowActive(session: SoloSession): boolean {
+  return route.path === `/solo/${encodeURIComponent(session.id)}`
+}
+
+function onSoloRow(session: SoloSession) {
+  void router.push(`/solo/${encodeURIComponent(session.id)}`)
+  onNavigate()
+}
 
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
@@ -209,7 +248,8 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 const editEpoch = ref(0)
 const suppressPendingClick = ref(false)
-const menu = ref<{ key: string; x: number; y: number } | null>(null)
+type MenuTarget = { kind: 'run' | 'solo'; key: string; x: number; y: number }
+const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
 
 type RowPress = { key: string; x: number; y: number; timer: number }
@@ -217,8 +257,17 @@ let rowPress: RowPress | null = null
 
 const menuItem = computed(() => {
   const key = menu.value?.key
-  if (!key) return null
+  if (!key || menu.value?.kind !== 'run') return null
   return pendingRows.value.find((it) => it.runId === key) ?? null
+})
+const menuSolo = computed(() => {
+  const key = menu.value?.key
+  if (!key || menu.value?.kind !== 'solo') return null
+  return soloStore.active.value.find((it) => soloRowKey(it) === key) ?? null
+})
+const menuPinned = computed(() => {
+  if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
+  return menuItem.value ? isRowPinned(menuItem.value) : false
 })
 
 function setRenameInput(el: unknown) {
@@ -254,7 +303,16 @@ function openMenu(it: InboxItem, x: number, y: number) {
   const width = !isRunOnlyRow(it) && shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menu.value = { key: it.runId, x: left, y: top }
+  menu.value = { kind: 'run', key: it.runId, x: left, y: top }
+}
+
+function openSoloMenu(session: SoloSession, x: number, y: number) {
+  if (editingKey.value) return
+  const width = MENU_WIDTH
+  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
+  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
+  menu.value = { kind: 'solo', key: soloRowKey(session), x: left, y: top }
 }
 
 const menuShareVisible = computed(
@@ -327,6 +385,14 @@ function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
   if (editingKey.value) return
   clearRowPress()
   openMenu(it, event.clientX, event.clientY)
+}
+
+function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (editingKey.value) return
+  clearRowPress()
+  openSoloMenu(session, event.clientX, event.clientY)
 }
 
 function onDocMouseDown(event: MouseEvent) {
@@ -423,7 +489,51 @@ function onRenameBlur(it: InboxItem) {
   }, 0)
 }
 
+async function commitSoloRename(session: SoloSession) {
+  const key = soloRowKey(session)
+  if (saving.value || editingKey.value !== key) return
+  const next = renameDraft.value.trim()
+  if (!next) {
+    toast.error(t('nav.pendingNameEmpty'))
+    refocusRename()
+    return
+  }
+  if ([...next].length > RUN_TITLE_MAX) {
+    toast.error(t('nav.pendingNameTooLong'))
+    refocusRename()
+    return
+  }
+  saving.value = true
+  try {
+    const saved = await api.renameSoloSession(session.id, next)
+    soloStore.upsert(saved)
+    editingKey.value = null
+    renameDraft.value = ''
+  } catch {
+    toast.error(t('nav.pendingRenameFailed'))
+    refocusRename()
+  } finally {
+    saving.value = false
+  }
+}
+
+function onSoloRenameBlur(session: SoloSession) {
+  const key = soloRowKey(session)
+  window.setTimeout(() => {
+    if (saving.value || editingKey.value !== key) return
+    if (document.activeElement === renameInput.value) return
+    void commitSoloRename(session)
+  }, 0)
+}
+
 function onMenuPin() {
+  if (menuSolo.value) {
+    const key = soloRowKey(menuSolo.value)
+    if (soloPins.value.some((p) => p.itemKey === key)) unpinRow(key)
+    else pinRow(key)
+    closeMenu()
+    return
+  }
   const it = menuItem.value
   if (!it) return
   if (isRowPinned(it)) {
@@ -433,6 +543,14 @@ function onMenuPin() {
 }
 
 function onMenuRename() {
+  if (menuSolo.value) {
+    const s = menuSolo.value
+    closeMenu()
+    renameDraft.value = s.title || ''
+    editingKey.value = soloRowKey(s)
+    void nextTick(() => renameInput.value?.focus())
+    return
+  }
   const it = menuItem.value
   if (!it) return
   void beginRename(it)
@@ -454,15 +572,43 @@ function onMenuShare() {
 }
 
 const cancelTarget = ref<InboxItem | null>(null)
+const soloCloseTarget = ref<SoloSession | null>(null)
 const cancellingRun = ref(false)
 const cancelRunError = ref('')
 
 function onMenuCancel() {
+  if (menuSolo.value) {
+    const s = menuSolo.value
+    closeMenu()
+    soloCloseTarget.value = s
+    return
+  }
   const it = menuItem.value
   if (!it || cancellingRun.value) return
   closeMenu()
   cancelRunError.value = ''
   cancelTarget.value = it
+}
+
+function closeSoloConfirm() {
+  if (cancellingRun.value) return
+  soloCloseTarget.value = null
+}
+
+async function confirmCloseSolo() {
+  const target = soloCloseTarget.value
+  if (!target || cancellingRun.value) return
+  cancellingRun.value = true
+  try {
+    const saved = await api.closeSoloSession(target.id)
+    soloStore.upsert(saved)
+    soloCloseTarget.value = null
+    toast.success(t('pages.solo.header.close'))
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : t('nav.pendingRenameFailed'))
+  } finally {
+    cancellingRun.value = false
+  }
 }
 
 function closeCancelConfirm() {
@@ -538,10 +684,20 @@ async function confirmCancelRun() {
 }
 
 watch(pendingRows, (rows) => {
-  if (menu.value && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
+  if (menu.value?.kind === 'run' && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
   if (!editingKey.value) return
+  if (editingKey.value.startsWith('solo:')) return
   if (rows.some((it) => it.runId === editingKey.value)) return
   editEpoch.value++
+  editingKey.value = null
+  renameDraft.value = ''
+  saving.value = false
+})
+
+watch(soloRows, (rows) => {
+  if (menu.value?.kind === 'solo' && !rows.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
+  if (!editingKey.value?.startsWith('solo:')) return
+  if (rows.some((s) => soloRowKey(s) === editingKey.value)) return
   editingKey.value = null
   renameDraft.value = ''
   saving.value = false
@@ -749,12 +905,24 @@ const settingsItems = settingsNavItems
       </RouterLink>
     </div>
 
-    <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
-      <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        <span>{{ t('nav.runningRuns') }}</span>
-        <span class="sidebar-section-count">{{ pendingRows.length }}</span>
+    <div v-if="activeRowsCount" class="mb-3" data-testid="nav-pending-approvals">
+      <div class="sidebar-section-heading grasp-status-host px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3" data-testid="nav-running-heading">
+        <button
+          type="button"
+          class="sidebar-section-label"
+          data-testid="nav-running-toggle"
+          :aria-expanded="!runningCollapsed"
+          :aria-label="t(runningCollapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t('nav.runningRuns') })"
+          @click="toggleSection('running')"
+        >
+          <Icon name="run-live" :size="14" class="sidebar-section-icon" aria-hidden="true" />
+          <span>{{ t('nav.runningRuns') }}</span>
+          <Icon name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': runningCollapsed }" aria-hidden="true" />
+        </button>
+        <span class="sidebar-section-count">{{ activeRowsCount }}</span>
       </div>
-      <template v-for="it in orderedPendingRows" :key="it.runId">
+      <div v-show="!runningCollapsed" class="sidebar-tree" data-testid="nav-running-rows">
+      <div v-for="it in orderedPendingRows" :key="it.runId" class="sidebar-tree-item">
         <div
           v-if="editingKey === it.runId"
           class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
@@ -846,7 +1014,59 @@ const settingsItems = settingsNavItems
             />
           </template>
         </button>
-      </template>
+      </div>
+      <div v-for="session in orderedSoloRows" :key="soloRowKey(session)" class="sidebar-tree-item">
+      <div
+        v-if="editingKey === soloRowKey(session)"
+        class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
+        :class="{ active: isSoloRowActive(session) }"
+        data-testid="nav-pending-row"
+        :data-key="session.id"
+        data-kind="solo"
+        data-editing="true"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <input
+          :ref="setRenameInput"
+          v-model="renameDraft"
+          type="text"
+          class="h-[26px] min-w-0 flex-1 rounded-md border border-accent bg-base px-1.5 text-start text-sm font-normal text-txt outline-none"
+          data-testid="nav-pending-rename-input"
+          :aria-label="t('nav.pendingRenameLabel')"
+          :readonly="saving"
+          @click.stop
+          @keydown.enter.prevent="commitSoloRename(session)"
+          @keydown.esc.prevent.stop="onRenameEscape"
+          @blur="onSoloRenameBlur(session)"
+        />
+        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+      </div>
+      <button
+        v-else
+        v-hover-ink
+        type="button"
+        class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
+        :class="{ active: isSoloRowActive(session) }"
+        data-testid="nav-pending-row"
+        :data-key="session.id"
+        data-kind="solo"
+        :data-status="session.status"
+        :data-motion="soloRowMotion(session) || undefined"
+        :title="soloRowTitle(session)"
+        :aria-current="isSoloRowActive(session) ? 'page' : undefined"
+        @click="onSoloRow(session)"
+        @contextmenu="onSoloContextMenu($event, session)"
+      >
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(session) }}</span>
+        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+      </button>
+      </div>
+      </div>
     </div>
     <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" />
     </div>
@@ -856,7 +1076,7 @@ const settingsItems = settingsNavItems
   </nav>
   <Teleport to="body">
     <div
-      v-if="menu && menuItem"
+      v-if="menu && (menuItem || menuSolo)"
       ref="menuEl"
       class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
       role="menu"
@@ -873,8 +1093,8 @@ const settingsItems = settingsNavItems
         data-testid="nav-pending-menu-pin"
         @click="onMenuPin"
       >
-        <Icon :name="isRowPinned(menuItem) ? 'close' : 'pin'" :size="14" />
-        <span>{{ isRowPinned(menuItem) ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
+        <Icon :name="menuPinned ? 'close' : 'pin'" :size="14" />
+        <span>{{ menuPinned ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
         type="button"
@@ -953,6 +1173,21 @@ const settingsItems = settingsNavItems
       </AppButton>
     </template>
   </AppModal>
+  <AppModal
+    :open="!!soloCloseTarget"
+    :title="t('pages.solo.close.title')"
+    :width="440"
+    @close="closeSoloConfirm"
+  >
+    <div class="space-y-3 text-sm text-txt2">
+      <p>{{ t('pages.solo.close.body') }}</p>
+      <p v-if="soloCloseTarget?.busy" class="text-[12px] text-warn">{{ t('pages.solo.close.busy') }}</p>
+    </div>
+    <template #footer>
+      <AppButton variant="ghost" :disabled="cancellingRun" @click="closeSoloConfirm">{{ t('common.buttons.cancel') }}</AppButton>
+      <AppButton variant="danger" icon="stop" :disabled="cancellingRun" @click="confirmCloseSolo">{{ t('pages.solo.close.confirm') }}</AppButton>
+    </template>
+  </AppModal>
 </template>
 
 <style scoped>
@@ -964,6 +1199,9 @@ const settingsItems = settingsNavItems
   padding: 8px 10px;
   font-size: 13px;
   --hover-ink-color: rgb(var(--c-txt) / .04);
+}
+.sidebar-workspace-nav .sidebar-tree-item > .nav-item {
+  padding-left: 6px;
 }
 .sidebar-workspace-nav .nav-item.active {
   background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065));
@@ -1045,6 +1283,39 @@ const settingsItems = settingsNavItems
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
+}
+.sidebar-section-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  transition: color 160ms ease;
+}
+.sidebar-section-label:hover {
+  color: rgb(var(--c-txt));
+}
+.sidebar-section-icon {
+  flex: none;
+}
+.sidebar-section-chevron {
+  flex: none;
+  margin-left: -1px;
+  opacity: .7;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+.sidebar-section-label:hover .sidebar-section-chevron {
+  opacity: 1;
+}
+.sidebar-section-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-section-chevron {
+    transition: none;
+  }
 }
 .sidebar-section-count {
   display: inline-flex;

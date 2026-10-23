@@ -2,6 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ClarifyChat from '../ClarifyChat.vue'
 import ClarifyMessageThread from '../ClarifyMessageThread.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
+import { currentAnchorId, priorRailItems, revealRailTarget, turnRailItems } from '../clarifyChatAnchors'
 import { api } from '@/lib/api/api'
 import type { LlmTranscriptResponse } from '@/lib/api/apiTypes'
 import { buildLlmTranscript, carryInflight } from '@/lib/run/llmTranscript'
@@ -141,6 +143,20 @@ watch(contentSignature, async () => {
   if (el) el.scrollTop = el.scrollHeight
 })
 
+const railItems = computed(() => {
+  void locale.value
+  const options = { fallbackTitle: t('pages.clarify.myChoice') }
+  const nodeId = thread.value.current?.nodeId || ''
+  return [
+    ...priorRailItems(thread.value.priors, options),
+    ...turnRailItems(thread.value.currentTurns, index => currentAnchorId(nodeId, index), options),
+  ]
+})
+function onMessageNavigate(id: string) {
+  nearBottom.value = false
+  revealRailTarget(scroller.value, id)
+}
+
 async function sendRequest(text: string, images: ClarifyImage[], annotations: ReactAnnotation[]) {
   const current = thread.value.current
   if (!current) return false
@@ -184,8 +200,14 @@ async function onFinish() {
         @finish="onFinish"
       />
     </template>
+    <div v-else class="relative flex min-h-0 flex-1 flex-col">
+    <ChatMessageRail
+      :items="railItems"
+      :scroller="scroller"
+      :scope-key="`${run.id}:transcript`"
+      @navigate="onMessageNavigate"
+    />
     <div
-      v-else
       ref="scroller"
       class="scroll-area min-h-0 flex-1 overflow-y-auto"
       data-testid="clarify-scroller"
@@ -205,6 +227,7 @@ async function onFinish() {
         :show-empty="!loading && !loadError && !thread.priors.length && !thread.currentTurns.length"
         @retry="load"
       />
+    </div>
     </div>
   </div>
 </template>

@@ -67,7 +67,7 @@ import LiveVariantCard from './LiveVariantCard.vue'
 import PendingSendQueuePanel from './PendingSendQueuePanel.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import { lastMessageText } from '@/lib/chat/messagePreview'
-import { createClarifyChatAnchors } from './clarifyChatAnchors'
+import { createClarifyChatAnchors, priorRailItems, revealRailTarget } from './clarifyChatAnchors'
 import { computed, inject, nextTick, onBeforeUnmount, ref, useId, watch } from 'vue'
 import { choiceEchoRows } from '@/lib/inbox/clarifyDemo'
 import {
@@ -438,7 +438,11 @@ function observeQuietBusy(t: ClarifyTurn): boolean {
 const railScopeKey = computed(() => `${props.runId}:${props.nodeId}:${props.iteration}`)
 const resolveMessageAnchors = createClarifyChatAnchors(`clarify-${useId().replace(/:/g, '')}`)
 const messageAnchorState = computed(() => resolveMessageAnchors(railScopeKey.value, displayTurns.value))
-const messageRailItems = computed(() => {
+const messageRailItems = computed(() => [
+  ...priorRailItems(props.priorSegments, { fallbackTitle: translate('pages.clarify.myChoice'), bubbleText: humanBubbleText }),
+  ...currentRailItems.value,
+])
+const currentRailItems = computed(() => {
   const rows = displayTurns.value
   return rows.flatMap((turn, index) => {
     const id = messageAnchorState.value.anchors[index]
@@ -457,8 +461,9 @@ const messageRailItems = computed(() => {
   })
 })
 
-function onMessageNavigate() {
+function onMessageNavigate(id: string) {
   stickToBottom.value = false
+  revealRailTarget(scroller.value, id)
 }
 
 const embedImagePreview = inject(EMBED_IMAGE_PREVIEW_KEY, null)

@@ -1,4 +1,7 @@
 import type { ClarifyTurn } from '@/lib/shared/types'
+import { lastMessageText } from '@/lib/chat/messagePreview'
+import { attachmentDisplayName } from '@/lib/shared/attachments'
+import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 
 type QuestionAnchor = { id: string; signature: string; identity: string }
 
@@ -65,5 +68,65 @@ export function createClarifyChatAnchors(prefix: string) {
       return `${question}-reply-${agentIndex++}`
     })
     return { keys, anchors }
+  }
+}
+
+export type ClarifyRailItem = { id: string; title: string; preview: string }
+export type ClarifyRailOptions = {
+  /** Title for a reply with no text or files (choice / form answers). */
+  fallbackTitle: string
+  /** Bubble text as the host draws it; defaults to the user's prompt for generated Live text. */
+  bubbleText?: (turn: ClarifyTurn) => string
+}
+
+/** Earlier visits are stable history, so their position is the anchor. */
+export function priorAnchorId(seg: Pick<ClarifyPriorSegment, 'nodeId' | 'iteration'>, pi: number): string {
+  return `prior:${seg.nodeId}:${seg.iteration}:${pi}`
+}
+
+/** Read-only open visit (LLM transcript); its rows only grow. */
+export function currentAnchorId(nodeId: string, index: number): string {
+  return `current:${nodeId}:${index}`
+}
+
+function defaultBubbleText(turn: ClarifyTurn): string {
+  const generated = !!turn.live && (turn.live.generated === true || /^Live · /.test(turn.text || ''))
+  return generated ? turn.live?.prompt || '' : turn.text || ''
+}
+
+/** Rail rows for the human turns of one visit: title from the bubble, preview from the last agent text before the next question. */
+export function turnRailItems(turns: readonly ClarifyTurn[], idFor: (index: number) => string, options: ClarifyRailOptions): ClarifyRailItem[] {
+  const bubbleText = options.bubbleText || defaultBubbleText
+  return turns.flatMap((turn, index) => {
+    if (turn.role !== 'human') return []
+    if (!bubbleText(turn) && !turn.text && !turn.images?.length && !turn.annotations?.length) return []
+    let preview = ''
+    for (let i = index + 1; i < turns.length && turns[i]!.role !== 'human'; i++) {
+      const reply = turns[i]!
+      const message = lastMessageText(reply.parts, reply.text)
+      const text = message.trim() ? message : reply.questions?.map(question => question.prompt).join('\n') || ''
+      if (text.trim()) preview = text
+    }
+    const title = bubbleText(turn) || turn.images?.map((image, i) => attachmentDisplayName(image, i)).join(', ') || options.fallbackTitle
+    return [{ id: idFor(index), title, preview }]
+  })
+}
+
+/** Rail rows for earlier visits; folded auto runs without turns have no questions. */
+export function priorRailItems(priorSegments: readonly ClarifyPriorSegment[] | undefined, options: ClarifyRailOptions): ClarifyRailItem[] {
+  return (priorSegments || []).flatMap(seg => {
+    if (seg.kind === 'auto' && !seg.turns.length) return []
+    return turnRailItems(seg.turns, pi => priorAnchorId(seg, pi), options)
+  })
+}
+
+/** Folded history hides its anchors; open the fold before the rail measures the target. */
+export function revealRailTarget(scroller: HTMLElement | null | undefined, id: string): void {
+  if (!scroller) return
+  for (const element of scroller.querySelectorAll<HTMLElement>('[data-chat-message-id]')) {
+    if (element.dataset.chatMessageId !== id) continue
+    const fold = element.closest('details')
+    if (fold && !fold.open) fold.open = true
+    return
   }
 }

@@ -211,7 +211,7 @@ describe('ReviewShell artifact panel session', () => {
       expect(recent.wrapper.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
       expect(openArtifact).not.toHaveBeenCalled()
 
-      await recent.wrapper.get('[data-testid="conversation-panel-close"]').trigger('click')
+      await recent.wrapper.get('[data-testid="conversation-panel-toggle"]').trigger('click')
       expect(readArtifactPanelOpen()).toBe(false)
       expect(recent.wrapper.get('[data-testid="stage-slot"]').isVisible()).toBe(false)
 

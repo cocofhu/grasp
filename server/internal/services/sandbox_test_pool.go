@@ -549,6 +549,9 @@ func (s *SandboxService) Destroy(ctx context.Context, id uint) error {
 	if isAgentSandboxPurpose(row.Purpose) {
 		s.invokeAgentDestroyHook(row.ThreadID, row.Token)
 	} else if row.Purpose == SandboxPurposeSolo {
+		if s.host != nil && row.RunID != "" {
+			s.host.UnregisterRun(row.RunID)
+		}
 		defer s.invokeSoloDestroyHook(row.ID)
 	} else if row.Purpose == "test" {
 		s.unregisterTestScheduler(row.Token)
@@ -807,6 +810,9 @@ func (s *SandboxService) destroyLocalSandbox(ctx context.Context, row *models.Sa
 			s.host.UnregisterRun(row.RunID)
 		}
 	case SandboxPurposeSolo:
+		if s.host != nil && row.RunID != "" {
+			s.host.UnregisterRun(row.RunID)
+		}
 		defer s.invokeSoloDestroyHook(row.ID)
 	default:
 		s.releaseRunMCP(row.RunID, row.ID)

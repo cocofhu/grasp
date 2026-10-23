@@ -314,7 +314,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed-thought p:last-child { margin-bottom: 0; }
 .agent-elapsed-thought:last-child,
 .agent-elapsed-note:last-child { margin-bottom: 4px; }
-.agent-elapsed-note { margin-bottom: 18px; }
+.agent-elapsed-note { margin-bottom: 8px; }
 .agent-elapsed-rule {
   height: 1px;
   margin: 4px 0 8px;

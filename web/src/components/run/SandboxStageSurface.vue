@@ -18,6 +18,8 @@ const props = withDefaults(
   defineProps<{
     kind: 'ide' | 'terminal' | 'log'
     sandbox?: { id: number; hasCodeServer?: boolean } | null
+    /** Sandbox id used by standalone consoles whose logs are not attached to a run node. */
+    sandboxId?: number
     loading?: boolean
     runId?: string
     nodeId?: string
@@ -25,6 +27,7 @@ const props = withDefaults(
   }>(),
   {
     sandbox: null,
+    sandboxId: 0,
     loading: false,
     runId: '',
     nodeId: '',
@@ -68,7 +71,8 @@ let logAbort: AbortController | null = null
 async function fetchLog() {
   const rid = String(props.runId || '').trim()
   const nid = String(props.nodeId || '').trim()
-  if (!rid || !nid) {
+  const sid = Number(props.sandboxId)
+  if ((!rid || !nid) && (!Number.isFinite(sid) || sid <= 0)) {
     log.value = null
     logLoading.value = false
     return
@@ -78,7 +82,9 @@ async function fetchLog() {
   logAbort = new AbortController()
   logLoading.value = true
   try {
-    const next = await api.nodeSandboxLog(rid, nid, { signal: logAbort.signal })
+    const next = rid && nid
+      ? await api.nodeSandboxLog(rid, nid, { signal: logAbort.signal })
+      : await api.sandboxLog(sid, { signal: logAbort.signal })
     if (gen !== logGen) return
     log.value = next
   } catch (e) {
@@ -189,7 +195,7 @@ function initTerminal() {
 }
 
 watch(
-  () => [props.kind, props.active, props.sandbox?.id, props.runId, props.nodeId] as const,
+  () => [props.kind, props.active, props.sandbox?.id, props.sandboxId, props.runId, props.nodeId] as const,
   () => {
     if (props.kind === 'log' && props.active) void fetchLog()
     if (props.kind === 'terminal' && props.active) nextTick(() => initTerminal())

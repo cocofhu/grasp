@@ -21,6 +21,7 @@ import { fmtTurnElapsed, relTime as formatRelTime } from '@/lib/shared/format'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 import { nodeAsk, priorAsk } from './clarifyPrior'
+import { currentAnchorId, priorAnchorId } from './clarifyChatAnchors'
 import AgentTimeline from './AgentTimeline.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
@@ -420,7 +421,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             />
             <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
           </summary>
-          <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+          <div v-if="seg.kind !== 'auto' || seg.turns.length || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
             <LlmSystemRow
               v-for="note in notesBesideTurn(seg.notes, -1, seg.turns.length)"
               :key="note.key"
@@ -479,6 +480,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 class="flex"
                 :class="pt.role === 'human' ? 'justify-end' : ''"
                 :data-turn-role="pt.role"
+                :data-chat-message-id="pt.role === 'human' ? priorAnchorId(seg, pi) : undefined"
               >
                 <div
                   v-if="pt.role === 'human' && priorChoiceEchoes(seg.turns, pi).length"
@@ -694,6 +696,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
           class="clarify-turn flex"
           :class="turn.role === 'human' ? 'justify-end' : ''"
           :data-turn-role="turn.role"
+          :data-chat-message-id="turn.role === 'human' ? currentAnchorId(nodeId, index) : undefined"
         >
           <div class="min-w-0" :class="turn.role === 'human' ? 'max-w-[88%]' : 'w-full'">
             <ChatTurnAttachments
@@ -766,6 +769,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
 <style scoped>
 .clarify-transcript { width: 100%; max-width: 760px; margin-inline: auto; }
 .clarify-turn { margin-top: 28px; }
+/* The folded 环境已就绪 row already sits right above the turn it opens. */
+:deep(.clarify-boot-done) + .clarify-turn { margin-top: 4px; }
 .chat-response-heading { margin-bottom: 10px; font-size: 12px; font-weight: 500; }
 .chat-response-row + .chat-response-row {
   margin-top: 10px;

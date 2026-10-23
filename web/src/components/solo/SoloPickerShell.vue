@@ -188,19 +188,21 @@ defineExpose({ close, show })
   gap: 6px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: linear-gradient(180deg, rgb(var(--c-surface)), rgb(var(--c-elevated) / 0.55));
+  /* Keep inline selectors integrated with the composer toolbar instead of making
+   * each control look like a separate raised card. */
+  background: transparent;
   color: rgb(var(--c-txt));
   padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   text-align: left;
   cursor: pointer;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
 }
 .solo-picker__trigger:hover:not(:disabled),
 .solo-picker--open .solo-picker__trigger {
   border-color: rgb(var(--c-accent) / 0.3);
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.045);
+  background: rgb(var(--c-accent) / 0.045);
 }
 .solo-picker__trigger:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / 0.65);

@@ -184,7 +184,7 @@ const doneMeta = computed(() => {
   </div>
   <!-- Done (inside ClarifyChat): same row, folded, check icon. -->
   <Transition v-else-if="variant === 'inline' && phase === 'done'" name="startfade" appear>
-    <div v-if="doneReady" class="agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
+    <div v-if="doneReady" class="clarify-boot-done agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
       <button
         type="button"
         class="agent-tools-head grasp-status-host"

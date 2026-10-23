@@ -5,6 +5,7 @@ import type { SoloMessage, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
+import { useSoloSessions } from './useSoloSessions'
 
 export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; local?: boolean }
 export type SoloPhase = '' | 'preparing' | 'running'
@@ -41,6 +42,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     return te(k) ? t(k) : ''
   }
   const toolFallback = () => t('pages.agentChatTester.toolFallback')
+  const sessions = useSoloSessions()
 
   const session = shallowRef<SoloSession | null>(null)
   const turns = ref<SoloTurn[]>([])
@@ -72,7 +74,16 @@ export function useSoloChat(sessionId: Ref<string>) {
   function setSession(v: SoloSession) {
     if (v.id !== sessionId.value) return
     session.value = v
+    sessions.upsert(v)
     schedulePoll()
+  }
+
+  function patchSession(patch: Partial<SoloSession>) {
+    const cur = session.value
+    if (!cur) return
+    const next = { ...cur, ...patch }
+    session.value = next
+    sessions.upsert(next)
   }
 
   /** Polls while the sandbox boots so the startup card shows real stages. */
@@ -158,6 +169,7 @@ export function useSoloChat(sessionId: Ref<string>) {
       case 'queue_state':
         queued.value = Array.isArray(frame.items) ? frame.items.map(queueItem) : []
         busy.value = !!frame.busy
+        patchSession({ busy: busy.value, waiting: queued.value.length })
         if (frame.busy && frame.phase) phase.value = frame.phase
         if (!frame.busy && activeId) {
           endActive()
@@ -166,6 +178,7 @@ export function useSoloChat(sessionId: Ref<string>) {
         break
       case 'turn_begin':
         beginTurn(frame)
+        patchSession({ busy: true, waiting: queued.value.length })
         break
       case 'phase':
         phase.value = frame.phase || ''
@@ -173,17 +186,19 @@ export function useSoloChat(sessionId: Ref<string>) {
       case 'turn_done':
         endActive(undefined, !!frame.interrupted)
         busy.value = queued.value.length > 0
+        patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
         break
       case 'error':
         endActive(frame.message || t('pages.solo.chat.turnFailed'))
         busy.value = queued.value.length > 0
+        patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
         break
       case 'status': {
         const cur = session.value
         if (cur) {
-          session.value = { ...cur, status: frame.status, error: frame.error || '', sandboxId: frame.sandboxId || cur.sandboxId }
+          patchSession({ status: frame.status, error: frame.error || '', sandboxId: frame.sandboxId || cur.sandboxId })
         }
         void refreshSession()
         if (frame.status === 'closed' || frame.status === 'error') void refetchMessages()
@@ -275,11 +290,13 @@ export function useSoloChat(sessionId: Ref<string>) {
     actionError.value = ''
     const local: SoloQueueItem = { id: newLocalId(), text: text.trim(), images, local: true }
     queued.value = [...queued.value, local]
+    patchSession({ waiting: queued.value.length, busy: true })
     try {
       await api.sendSoloTurn(id, { text: text.trim(), images })
       return true
     } catch (e: any) {
       queued.value = queued.value.filter((q) => q.id !== local.id)
+      patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 })
       actionError.value = String(e?.message || e)
       return false
     }
@@ -291,6 +308,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'cancel' }))
     else await api.cancelSoloTurn(id).catch(() => undefined)
     queued.value = []
+    patchSession({ waiting: 0, busy: false })
   }
 
   async function removeQueued(turnId: string) {
@@ -302,6 +320,7 @@ export function useSoloChat(sessionId: Ref<string>) {
     } catch {
       queued.value = before
     }
+    patchSession({ waiting: queued.value.length, busy: busy.value || queued.value.length > 0 })
   }
 
   async function run<T>(fn: () => Promise<T>): Promise<T | undefined> {

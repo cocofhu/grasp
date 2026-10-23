@@ -259,7 +259,7 @@ describe('ConversationWorkspace split modes', () => {
     await artifact.trigger('click')
     await flushPromises()
     expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('artifacts')
-    expect(w.get('[data-testid="conversation-artifact-panel"]').text()).toContain('产物')
+    expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('aria-label')).toBe('产物')
     expect(artifact.attributes('aria-pressed')).toBe('true')
     expect(resource.attributes('aria-pressed')).toBe('false')
     await artifact.trigger('click')
@@ -276,7 +276,7 @@ describe('ConversationWorkspace split modes', () => {
     expect(artifact.attributes('aria-pressed')).toBe('false')
   })
 
-  it('uses the English resource tip and a single Resources title', async () => {
+  it('uses the English resource tip and no duplicate drawer heading row', async () => {
     const { wrapper: w } = mountSplit('en')
     const resource = w.get('[data-testid="conversation-resource-toggle"]')
     expect(resource.attributes('title')).toBe('Resource')
@@ -286,8 +286,8 @@ describe('ConversationWorkspace split modes', () => {
     await flushPromises()
     expect(resource.attributes('aria-label')).toBe('Close resources')
     expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('aria-label')).toBe('Resources')
-    const titles = w.get('[data-testid="conversation-artifact-panel"]').findAll('header span').map((n) => n.text())
-    expect(titles.filter((text) => text === 'Resources')).toHaveLength(1)
+    // The toolbar toggles name and close the split drawer, so desktop has no heading row.
+    expect(w.find('[data-testid="conversation-panel-close"]').exists()).toBe(false)
   })
 
   it('covers the conversation with a full-screen drawer on a narrow canvas', async () => {

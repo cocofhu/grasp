@@ -35,6 +35,8 @@ export interface ArtifactPreviewProps {
   hideZoom?: boolean
   hideExport?: boolean
   hideVersionChip?: boolean
+  /** Hosts whose tab already names the artifact skip the name / meta row. */
+  hideFileRow?: boolean
   annotatable?: boolean
   /** When set, load content via public review-share token instead of session API. */
   shareToken?: string
