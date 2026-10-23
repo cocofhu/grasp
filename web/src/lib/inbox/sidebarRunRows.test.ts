@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { keepRowOrder, mergeRunRows, pinRunId, runRowFromRun } from './sidebarRunRows'
+import { autoProcessNodeName, isAutoProcessNode, isAutoProcessRun, keepRowOrder, mergeRunRows, pinRunId, runRowFromRun } from './sidebarRunRows'
 
 const item = (runId: string, nodeId: string, runTitle = runId): InboxItem => ({
   type: 'clarify',
@@ -79,6 +79,31 @@ describe('keepRowOrder', () => {
     expect(keepRowOrder(rows(['y', 'x']), ['x', 'y']).map((r) => r.runId)).toEqual(['x', 'y'])
     expect(keepRowOrder(rows(['n', 'y', 'x']), ['x', 'y']).map((r) => r.runId)).toEqual(['n', 'x', 'y'])
     expect(keepRowOrder(rows(['a', 'b']), []).map((r) => r.runId)).toEqual(['a', 'b'])
+  })
+})
+
+describe('isAutoProcessNode', () => {
+  const node = (over: Record<string, unknown>) =>
+    ({ id: 'n', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running', ...over }) as never
+
+  it('is an automatic agent that is running or stopping', () => {
+    expect(isAutoProcessNode(node({}))).toBe(true)
+    expect(isAutoProcessNode(node({ state: 'stopping' }))).toBe(true)
+    expect(isAutoProcessNode(node({ state: 'waiting_human' }))).toBe(false)
+    expect(isAutoProcessNode(node({ mode: 'manual' }))).toBe(false)
+    expect(isAutoProcessNode(node({ kind: 'takeover', mode: 'manual', state: 'stopping' }))).toBe(false)
+    expect(isAutoProcessNode(node({ kind: 'clarify', mode: 'manual', state: 'running' }))).toBe(false)
+    expect(isAutoProcessNode(node({ kind: 'gate', mode: 'manual', state: 'waiting_human' }))).toBe(false)
+    expect(isAutoProcessNode(null)).toBe(false)
+  })
+
+  it('reads the node name only for an automatic row, and skips a blank name', () => {
+    const asRun = (currentNode?: Record<string, unknown>) => ({ id: 'r', currentNode }) as never
+    expect(isAutoProcessRun(asRun(node({})))).toBe(true)
+    expect(autoProcessNodeName(asRun(node({ name: '实现' })))).toBe('实现')
+    expect(autoProcessNodeName(asRun(node({ name: '  ' })))).toBe('')
+    expect(autoProcessNodeName(asRun(node({ kind: 'takeover', mode: 'manual', state: 'stopping', name: '接管' })))).toBe('')
+    expect(autoProcessNodeName(asRun())).toBe('')
   })
 })
 

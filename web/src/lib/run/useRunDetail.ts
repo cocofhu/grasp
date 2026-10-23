@@ -37,6 +37,8 @@ import { useRunDetailLiveLog } from '@/lib/run/useRunDetailLiveLog'
 import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { armSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
@@ -597,8 +599,10 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   const positive = action === 'pass' || action === 'approve'
   // Click intent: play overlay before resume returns (plan g1.1).
   if (positive) void playConfirmFlowCeremony(gateApprovalRef.value)
+  let resumed = false
   try {
     await api.resumeGate(runId.value, run.value.gate.nodeId, action, form)
+    resumed = true
     toast.success(positive ? t('pages.gateApproval.approveSuccess') : t('pages.gateApproval.rejectSuccess'))
   } catch (e: any) {
     // Surface the backend rejection (e.g. a required form field, or the run
@@ -607,6 +611,10 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
     gateError.value = e?.message || t('pages.runDetail.gateError')
   } finally {
     gateSubmitting.value = false
+  }
+  if (resumed && positive && runId.value && run.value?.gate?.nodeId) {
+    armSidebarHandoff(runId.value, run.value.gate.nodeId)
+    notifyRecentActivity()
   }
   await loadRun(false)
 }
@@ -636,6 +644,7 @@ async function onClarifySend(
   // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
   const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
   if (force) clarifyForceInFlight = true
+  let sent = false
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
@@ -652,6 +661,7 @@ async function onClarifySend(
         ...(clientMessageId ? [clientMessageId] : []),
       )
     }
+    sent = true
   } catch (e: any) {
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
@@ -689,6 +699,10 @@ async function onClarifySend(
   }
   // Enqueue returns before the turn finishes — avoid wiping live bubbles.
   // Force finish still needs a snapshot refresh.
+  if (force && sent && runId.value) {
+    armSidebarHandoff(runId.value, nodeId)
+    notifyRecentActivity()
+  }
   if (force) {
     lastStagedAppPreviewPick.value = null
     await loadRun(false)

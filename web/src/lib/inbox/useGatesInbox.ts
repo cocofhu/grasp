@@ -65,6 +65,7 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
+import { armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome } from '@/lib/inbox/sidebarHandoff'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
@@ -442,6 +443,9 @@ function openFollowWs(runId: string) {
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
+  const plumbing = !!m.nodeId && isPlumbingNode(activeRun.value?.nodes, m.nodeId)
+  if (!plumbing && m.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
+  else if (!plumbing && typeof m.mode === 'string' && m.mode) noteSidebarHandoffOutcome(runId, 'human')
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
   if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
     const label =
@@ -655,6 +659,16 @@ function tailFromChain(key: string, chain: RunChain): FollowTail {
   if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
   return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
 }
+/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. */
+function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
+  if (isRunTerminal(chain.status)) {
+    noteSidebarHandoffOutcome(runId, 'ended')
+    return
+  }
+  const mode = chain.current?.mode
+  if (mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
+  else if (mode) noteSidebarHandoffOutcome(runId, 'human')
+}
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
  * booting (state: starting — the real backend lists a clarify node while its
@@ -666,6 +680,7 @@ async function continueInRun(submitted: InboxItem, submittedKey: string): Promis
     (k) => k.runId === submitted.runId && itemKey(k) !== submittedKey && !isStartingInboxItem(k),
   )
   if (!next) return false
+  noteSidebarHandoffOutcome(submitted.runId, 'human')
   await loadRunChain(submitted.runId)
   openedSegments.value = [...openedSegments.value, `${submitted.runId}:${submitted.nodeId}:${submitted.iteration ?? 1}`]
   if (handoffState.value?.key === submittedKey) handoffState.value = null
@@ -697,6 +712,7 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
     if (chain) {
       followFailures = 0
       setFollowTail(tailFromChain(submittedKey, chain))
+      syncSidebarHandoffFromChain(submitted.runId, chain)
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
       setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
     }
@@ -743,6 +759,8 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
     ? tailFromChain(submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   setFollowTail(tail)
+  if (chain) syncSidebarHandoffFromChain(submitted.runId, chain)
+  else if (tail.kind === 'ended') noteSidebarHandoffOutcome(submitted.runId, 'ended')
   if (tail.kind === 'auto') void fillFollowFromNodeEvents()
   if (tail.kind === 'ended') closeFollowWs()
   else if (followSawNodeEnter) {
@@ -2640,9 +2658,11 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
     activeRun.value = null
     activeRunLoadError.value = false
   }
+  if (positive) armSidebarHandoff(g.runId, g.nodeId)
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
+    if (positive) clearSidebarHandoff(g.runId)
     confirmFlowDeskHold.value = false
     inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
@@ -2826,6 +2846,8 @@ async function onClarifySend(
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
     handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
+    // The click does not know the next mode. Arm now; fly only after node_enter or the snapshot.
+    armSidebarHandoff(it.runId, it.nodeId)
     // Socket first, then the POST: the next node's node_enter can arrive right after it.
     openFollowWs(it.runId)
   }
@@ -2886,6 +2908,7 @@ async function onClarifySend(
       clarifyConfirmError.value = msg
       reviewChatRef.value?.releaseConfirmPending?.()
       if (handoffState.value?.key === submittedKey) handoffState.value = null
+      clearSidebarHandoff(submittedItem.runId)
       restoreListItemLocally(submittedItem, prevList!)
       rollbackProcessingIntent(submittedItem)
       // Reclaim for retry unless a newer neighbor confirm already owns the selection.

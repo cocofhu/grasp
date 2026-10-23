@@ -1,8 +1,26 @@
-import type { ClarifyInboxItem, InboxItem, Run } from '@/lib/shared/types'
+import type { ClarifyInboxItem, InboxItem, Run, RunCurrentNode } from '@/lib/shared/types'
 
 /** Run statuses listed under「正在执行」; everything else is history. */
 export const RUNNING_RUN_STATUSES = 'queued,running,waiting_human'
 export const HISTORY_RUN_STATUSES = 'completed,failed,cancelled'
+
+/**
+ * 「自动过程」: the run is on an automatic agent that is running or stopping.
+ * Takeover, waiting for a person, a queued run, and Solo are not this group.
+ */
+export function isAutoProcessNode(n: RunCurrentNode | null | undefined): boolean {
+  return !!n && n.kind === 'agent' && n.mode === 'auto' && (n.state === 'running' || n.state === 'stopping')
+}
+
+export function isAutoProcessRun(run: Run | null | undefined): boolean {
+  return isAutoProcessNode(run?.currentNode)
+}
+
+/** Current automatic node name, or '' when the run is not in「自动过程」or the name is blank. */
+export function autoProcessNodeName(run: Run | null | undefined): string {
+  if (!isAutoProcessRun(run)) return ''
+  return run?.currentNode?.name?.trim() || ''
+}
 
 const itemKeyOf = (it: InboxItem) => `${it.runId}:${it.nodeId}`
 

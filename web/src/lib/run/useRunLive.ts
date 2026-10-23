@@ -5,6 +5,7 @@ import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { notifyRecentActivity, recentCurrentNode, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
+import { armSidebarHandoff, clearSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
 import { bootKey, markBootLive } from '@/lib/run/bootRecord'
 import {
   activeSegment,
@@ -456,6 +457,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
     const iter = iteration.value
     confirmError.value = null
     handoff.value = { phase: 'pending', at: new Date().toISOString() }
+    armSidebarHandoff(runId.value, node)
     try {
       const prompt = chatKind.value === 'review' ? t('pages.clarify.confirmFlowPrompt') : t('pages.runDetail.clarifyFinishPrompt')
       await api.reactReply(runId.value, node, prompt, [], true, [])
@@ -465,6 +467,7 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
       notifyRecentActivity()
       void load()
     } catch (e) {
+      clearSidebarHandoff(runId.value)
       if (nodeId.value !== node) return
       handoff.value = null
       confirmError.value = e instanceof Error ? e.message : String(e)
