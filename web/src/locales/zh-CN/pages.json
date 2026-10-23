@@ -3263,6 +3263,7 @@
       "workflowTab": "工作流产物",
       "workflowHeading": "工作流",
       "currentMark": "当前",
+      "progressCount": "{done} / {total} 已完成",
       "closeTab": "关闭",
       "newTab": "新页签",
       "novncTab": "noVNC",

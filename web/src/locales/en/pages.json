@@ -3263,6 +3263,7 @@
       "workflowTab": "Workflow artifacts",
       "workflowHeading": "Workflow",
       "currentMark": "Current",
+      "progressCount": "{done} / {total} completed",
       "closeTab": "Close",
       "newTab": "New tab",
       "novncTab": "noVNC",
