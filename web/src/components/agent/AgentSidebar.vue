@@ -142,7 +142,7 @@ onBeforeUnmount(() => {
       <template #actions>
         <button type="button" data-testid="agent-tree-create-agent" :class="buttonClass" :title="t('common.buttons.newAgent')" :aria-label="t('common.buttons.newAgent')" @click="emit('create-agent')"><Icon name="plus" :size="12" /></button>
         <button :id="triggerId" ref="moreTrigger" type="button" data-testid="agent-tree-more" :class="buttonClass" :title="t('pages.agentStudio.tree.moreActions')" :aria-label="t('pages.agentStudio.tree.moreActions')" aria-haspopup="menu" :aria-expanded="moreOpen" :aria-controls="menuId" @click="moreOpen ? closeMore() : openMore()" @keydown="onTriggerKeydown"><Icon name="more" :size="15" /></button>
-        <button type="button" data-testid="agent-tree-collapse" :class="buttonClass" :title="t('pages.agentStudio.agentList.collapse')" :aria-label="t('pages.agentStudio.agentList.collapse')" @click="emit('toggle-collapsed')"><Icon name="chevron-right" :size="14" class="rotate-180" /></button>
+        <button type="button" data-testid="agent-tree-collapse" :class="buttonClass" :title="t('pages.agentStudio.agentList.collapse')" :aria-label="t('pages.agentStudio.agentList.collapse')" @click="emit('toggle-collapsed')"><Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" /></button>
       </template>
     </ResourceList>
     <Teleport to="body">
@@ -150,7 +150,7 @@ onBeforeUnmount(() => {
         <button type="button" role="menuitem" tabindex="-1" data-testid="agent-tree-manage" @click="runMoreAction('manage')"><Icon name="user" :size="15" />{{ t('pages.agentStudio.tree.manageTitle') }}</button>
         <button type="button" role="menuitem" tabindex="-1" data-testid="agent-tree-import" @click="runMoreAction('import')"><Icon name="input" :size="15" />{{ t('pages.agentStudio.exportImport.import') }}</button>
         <button type="button" role="menuitem" tabindex="-1" data-testid="agent-tree-export" @click="runMoreAction('export')"><Icon name="download" :size="15" />{{ t('pages.agentStudio.exportImport.export') }}</button>
-        <button v-if="!hideCreateTeam" type="button" role="menuitem" tabindex="-1" data-testid="agent-tree-create-team" @click="runMoreAction('team')"><Icon name="skills" :size="15" />{{ t('pages.agentStudio.tree.newTeam') }}</button>
+        <button v-if="!hideCreateTeam" type="button" role="menuitem" tabindex="-1" data-testid="agent-tree-create-team" @click="runMoreAction('team')"><Icon name="users" :size="15" />{{ t('pages.agentStudio.tree.newTeam') }}</button>
       </div>
       <div v-if="context" class="fixed inset-0 z-[9998]" @click="context = null" @contextmenu.prevent="context = null" />
       <button v-if="context" type="button" class="fixed z-[9999] rounded border border-line bg-elevated px-3 py-2 text-xs text-txt2 shadow-card" :style="{ left: context.x + 'px', top: context.y + 'px' }" @click="emit('open-manage', context.name); context = null">{{ t('pages.agentStudio.tree.renameViaManage') }}</button>

@@ -1,0 +1,1130 @@
+{
+  "copy": {
+    "body": "<rect class=\"front\" x=\"9\" y=\"9\" width=\"11\" height=\"11\" rx=\"2\"/><path class=\"back\" d=\"M5 15V5a2 2 0 0 1 2-2h10\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "前后两页分离，再贴合复位"
+  },
+  "trash": {
+    "body": "<g class=\"lid\"><path d=\"M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2\"/></g><path class=\"bin\" d=\"M6 7l1 13h10l1-13\"/>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "桶身固定，桶盖和把手一起抬起再合上"
+  },
+  "folder": {
+    "body": "<path d=\"M3 17V7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8\"/><path class=\"front\" d=\"M3 10h18v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z\"/>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "后侧标签固定，前侧面板展开再合上"
+  },
+  "terminal": {
+    "body": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path class=\"prompt\" d=\"M7 9l3 3-3 3\"/><path class=\"cursor\" d=\"M13 15h4\"/>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外框保持固定，提示符前移，光标闪烁两次"
+  },
+  "stage-terminal": {
+    "body": "<rect x=\"3.2\" y=\"4.2\" width=\"17.6\" height=\"15.6\" rx=\"2\"/><path class=\"prompt\" d=\"M7.1 9.3 10.3 12 7.1 14.7\"/><path class=\"cursor\" d=\"M12.2 14.8h4.6\"/>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外框保持固定，提示符前移，光标闪烁两次"
+  },
+  "workflow": {
+    "body": "<circle class=\"node-a\" cx=\"6\" cy=\"6\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-b\" cx=\"6\" cy=\"18\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><circle class=\"node-c\" cx=\"18\" cy=\"12\" r=\"3\" fill=\"currentColor\" fill-opacity=\"0\"/><path pathLength=\"1\" d=\"M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3\" opacity=\".55\"/><path class=\"signal\" pathLength=\"1\" d=\"M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3\" opacity=\"0\" stroke-width=\"2.5\"/>",
+    "duration": 1250,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "起点亮起，信号沿两条连线到达终点"
+  },
+  "check": {
+    "body": "<path class=\"grasp-check-draw\" pathLength=\"1\" d=\"M5 12l5 5 9-11\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "从左侧起笔，经过折点，向右上方完成勾选"
+  },
+  "check-draw": {
+    "body": "<path pathLength=\"1\" class=\"grasp-check-draw\" d=\"M7.6 12.4l3.6 3.6L18.2 7.4\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "去掉起笔圆点，仅保留从左侧经过折点、向右上方画出的连续勾"
+  },
+  "bell": {
+    "body": "<g class=\"bell-body\"><path d=\"M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z\"/></g><path class=\"clapper\" d=\"M10 20a2 2 0 0 0 4 0\"/>",
+    "duration": 1200,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "钟身绕顶部摆动，铃舌延迟跟随并收稳"
+  },
+  "settings": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"3\"/><path class=\"gear\" d=\"M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "中心轴固定，外部齿轮转动并停稳"
+  },
+  "refresh": {
+    "body": "<g class=\"motion-target\"><path d=\"M21 12a9 9 0 1 1-3-6.7L21 8\"/><path d=\"M21 3v5h-5\"/></g>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "刷新箭头完整转动一圈"
+  },
+  "spinner": {
+    "body": "<g class=\"motion-target\"><circle cx=\"12\" cy=\"12\" r=\"9\" opacity=\"0.25\"/><path d=\"M21 12a9 9 0 0 1-9 9\"/></g>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "演示单圈；实际加载期间才持续旋转"
+  },
+  "arc-spinner": {
+    "body": "<g class=\"motion-target\"><g class=\"grasp-arc-spin\"><path d=\"M12 3A9 9 0 1 1 3 12\"/><circle class=\"grasp-arc-node\" cx=\"3\" cy=\"12\" r=\"1.65\" fill=\"currentColor\" stroke=\"none\"/></g></g>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "演示单圈；实际加载期间才持续旋转"
+  },
+  "breath-dot": {
+    "body": "<circle class=\"grasp-heart-ring\" cx=\"12\" cy=\"12\" r=\"3.4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.15\"/><circle class=\"grasp-heart-core\" cx=\"12\" cy=\"12\" r=\"3\" fill=\"currentColor\" stroke=\"none\"/>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "核心轻呼吸，外环扩散一轮后复位"
+  },
+  "bubble-idle": {
+    "body": "<path d=\"M20.5 11.5a7.5 7.5 0 0 1-10.4 6.9L4.2 19.6l.6-5.2A7.5 7.5 0 1 1 20.5 11.5z\"/><circle class=\"grasp-bdot-a\" cx=\"9.2\" cy=\"11.4\" r=\"1.05\" fill=\"currentColor\" stroke=\"none\"/><circle class=\"grasp-bdot-b\" cx=\"12\" cy=\"11.4\" r=\"1.05\" fill=\"currentColor\" stroke=\"none\"/><circle class=\"grasp-bdot-c\" cx=\"14.8\" cy=\"11.4\" r=\"1.05\" fill=\"currentColor\" stroke=\"none\"/>",
+    "duration": 1300,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "对话框固定，三个思考点依次轻提一次"
+  },
+  "user-hold": {
+    "body": "<circle cx=\"10.2\" cy=\"8\" r=\"3.2\"/><path d=\"M3.8 20a6.4 6.4 0 0 1 12.8 0\"/><circle class=\"grasp-user-dot\" cx=\"18.6\" cy=\"11.5\" r=\"1.55\" fill=\"currentColor\" stroke=\"none\"/>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "人物保持静止，待确认提示点呼吸一次"
+  },
+  "arrow-flow": {
+    "body": "<g class=\"grasp-wake\"><circle cx=\"4.6\" cy=\"12\" r=\"1.35\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M6.4 12h11.2\"/><path d=\"M14.2 6.6l6.2 5.4-6.2 5.4\"/></g>",
+    "duration": 1000,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "起点轻亮，箭头向前传递一次"
+  },
+  "run-live": {
+    "body": "<g class=\"grasp-wake\"><circle cx=\"12\" cy=\"12\" r=\"8.2\"/><path d=\"M10.4 8.9l4.6 3.1-4.6 3.1z\"/></g>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "运行环轻亮，播放符号向前唤醒一次"
+  },
+  "history-back": {
+    "body": "<path class=\"return-arrow\" d=\"M4.2 4.2v4.6h4.6\"/><path d=\"M4.3 13.2A8.2 8.2 0 1 0 7.2 6.1L4.2 8.8\"/><circle cx=\"12\" cy=\"12\" r=\"1.45\" fill=\"currentColor\" stroke=\"none\"/><path class=\"clock-hand\" d=\"M12 8.2v3.2l3.2 1.6\"/>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "时针短暂回拨，返回箭头轻牵引后复位"
+  },
+  "play-continue": {
+    "body": "<g class=\"grasp-wake\"><circle cx=\"5.4\" cy=\"12\" r=\"1.4\" fill=\"currentColor\" stroke=\"none\"/><path d=\"M9.2 6.4l10.4 5.6-10.4 5.6z\"/></g>",
+    "duration": 950,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "起点激活，继续符号前移后回位"
+  },
+  "quiet-dot": {
+    "body": "<g class=\"grasp-quiet\"><circle cx=\"12\" cy=\"12\" r=\"5.2\" opacity=\"0.45\"/><circle cx=\"12\" cy=\"12\" r=\"2.1\" fill=\"currentColor\" stroke=\"none\" opacity=\"0.55\"/></g>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "低强度呼吸一次，保持静默状态"
+  },
+  "warn-pulse": {
+    "body": "<g class=\"grasp-wake\"><path d=\"M12 3.2L21.2 19.6H2.8z\"/><path d=\"M12 9.2v5.2\"/><circle cx=\"12\" cy=\"17.4\" r=\"0.85\" fill=\"currentColor\" stroke=\"none\"/></g>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "边框强调一次，感叹号轻压回弹"
+  },
+  "chat-send": {
+    "body": "<g class=\"motion-target\"><path d=\"M12 18V6m-6 6 6-6 6 6\"/></g>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "发送箭头向上送出，再回到待发送位置"
+  },
+  "chat-stop": {
+    "body": "<g class=\"motion-target\"><rect x=\"7\" y=\"7\" width=\"10\" height=\"10\" rx=\"2\"/></g>",
+    "duration": 900,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 1.2,
+    "note": "停止方块收紧一次，再稳定回位"
+  },
+  "stop": {
+    "body": "<g class=\"motion-target\"><rect x=\"6\" y=\"6\" width=\"12\" height=\"12\" rx=\"2\"/></g>",
+    "duration": 900,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 1.2,
+    "note": "停止方块收紧一次，再稳定回位"
+  },
+  "send": {
+    "body": "<g class=\"motion-target\"><path d=\"M22 2L11 13M22 2l-7 20-4-9-9-4z\"/></g>",
+    "duration": 1100,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸飞机沿右上方向送出，再回到起点"
+  },
+  "play": {
+    "body": "<g class=\"motion-target\"><path d=\"M7 5l12 7-12 7z\"/></g>",
+    "duration": 950,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "播放符号轻轻前移，提示可开始运行"
+  },
+  "runs": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path class=\"motion-target\" d=\"M10 9l5 3-5 3z\"/>",
+    "duration": 950,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "播放符号轻轻前移，提示可开始运行"
+  },
+  "chat": {
+    "body": "<g class=\"motion-target\"><path d=\"M21 12a8 8 0 0 1-11.3 7.3L4 20l.7-5.7A8 8 0 1 1 21 12z\"/></g>",
+    "duration": 1000,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "气泡从尾部轻展开一次，提示开启对话"
+  },
+  "brain": {
+    "body": "<path class=\"left\" d=\"M9.5 3A2.5 2.5 0 0 0 7 5.5v.1A3 3 0 0 0 4.6 10a3 3 0 0 0 .4 5.4A3 3 0 0 0 9.5 20a2.5 2.5 0 0 0 2.5-2.5v-12A2.5 2.5 0 0 0 9.5 3z\"/><path class=\"right\" d=\"M14.5 3A2.5 2.5 0 0 1 17 5.5v.1a3 3 0 0 1 2.4 4.4 3 3 0 0 1-.4 5.4 3 3 0 0 1-4.5 4.6 2.5 2.5 0 0 1-2.5-2.5\"/>",
+    "duration": 1200,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "左右脑轮流轻亮，提示思考与技能"
+  },
+  "robot": {
+    "body": "<rect x=\"4\" y=\"8\" width=\"16\" height=\"11\" rx=\"2\"/><path class=\"antenna\" d=\"M12 3v5\"/><path class=\"eyes\" d=\"M8 13h.01M16 13h.01\"/><path class=\"mouth\" d=\"M9 17h6\"/>",
+    "duration": 1150,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "天线接收一次信号，眼睛眨动，表情轻回应"
+  },
+  "user": {
+    "body": "<circle class=\"head\" cx=\"12\" cy=\"8\" r=\"4\"/><path class=\"body\" d=\"M4 21a8 8 0 0 1 16 0\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "头像轻点头一次，回应用户操作"
+  },
+  "stage-ide": {
+    "body": "<rect x=\"3.2\" y=\"3.6\" width=\"17.6\" height=\"16.8\" rx=\"2\"/><path pathLength=\"1\" d=\"M3.2 8h17.6\"/><path pathLength=\"1\" d=\"M8.2 8v12.4\"/><path class=\"code-a\" pathLength=\"1\" d=\"M11 12.2h6\"/><path class=\"code-b\" pathLength=\"1\" d=\"M11 15.4h4\"/>",
+    "duration": 1050,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "编辑器框架固定，两行代码依次输入"
+  },
+  "stage-browser": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"8\"/><path d=\"M4 12h16\"/><ellipse cx=\"12\" cy=\"12\" rx=\"3.3\" ry=\"8\"/>",
+    "duration": 1200,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "地球经线转过一面，外圈和纬线保持稳定"
+  },
+  "stage-log": {
+    "body": "<circle cx=\"6.1\" cy=\"6.6\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6.1\" cy=\"12\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"6.1\" cy=\"17.4\" r=\"1.15\" fill=\"currentColor\" stroke=\"none\"/><path class=\"row-a\" pathLength=\"1\" d=\"M9.3 6.6h8.6\"/><path class=\"row-b\" pathLength=\"1\" d=\"M9.3 12h6.4\"/><path class=\"row-c\" pathLength=\"1\" d=\"M9.3 17.4h8.6\"/>",
+    "duration": 1200,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三行日志从上到下逐条写入"
+  },
+  "stage-resources": {
+    "body": "<rect x=\"3.2\" y=\"3.2\" width=\"7\" height=\"7\" rx=\"1.6\"/><rect x=\"13.8\" y=\"3.2\" width=\"7\" height=\"7\" rx=\"1.6\"/><rect x=\"3.2\" y=\"13.8\" width=\"7\" height=\"7\" rx=\"1.6\"/><rect x=\"13.8\" y=\"13.8\" width=\"7\" height=\"7\" rx=\"1.6\"/>",
+    "duration": 1250,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "四个资源格依次轻亮并复位"
+  },
+  "dashboard": {
+    "body": "<path d=\"M3 3h8v8H3z\"/><path d=\"M13 3h8v5h-8z\"/><path d=\"M13 12h8v9h-8z\"/><path d=\"M3 13h8v8H3z\"/>",
+    "duration": 565,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "四块面板依次轻抬并复位"
+  },
+  "home-start": {
+    "body": "<path d=\"m3.5 10 7.3-6a1.9 1.9 0 0 1 2.4 0l7.3 6\"/><path d=\"M5.5 8.4v10.1A1.5 1.5 0 0 0 7 20h3v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5h3a1.5 1.5 0 0 0 1.5-1.5V8.4\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "屋顶固定，入口轮廓轻亮；门洞尚未拆层"
+  },
+  "new-request": {
+    "body": "<path d=\"M12.5 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6.5\"/><path d=\"m15.5 4.5 4 4M10 10l7.3-7.3a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L14 14l-5 1 1-5Z\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸张固定，铅笔沿笔尖方向轻写一次"
+  },
+  "pending-chat": {
+    "body": "<path d=\"M8 5h8a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4H9l-5 3V9a4 4 0 0 1 4-4Z\"/><path d=\"M8.5 10h7\"/><path d=\"M8.5 13.5h4.5\"/>",
+    "duration": 470,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "气泡固定，两行文字先后回应"
+  },
+  "pending-review": {
+    "body": "<rect x=\"5\" y=\"3.5\" width=\"14\" height=\"17\" rx=\"3\"/><path pathLength=\"1\" d=\"M9 8h6\"/><path pathLength=\"1\" d=\"M9 12h6\"/><path pathLength=\"1\" d=\"M9 16h3\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸张固定，三行内容自上而下描绘"
+  },
+  "pending-approval": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/><path class=\"approval-hand\" d=\"M12 7v5l3 2\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "等待审批，使用中性时钟而非通过勾"
+  },
+  "more-horizontal": {
+    "body": "<circle cx=\"5\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"12\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/><circle cx=\"19\" cy=\"12\" r=\"1\" fill=\"currentColor\" stroke=\"none\"/>",
+    "duration": 490,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三个点依次轻抬，保持横向排列"
+  },
+  "logout": {
+    "body": "<path class=\"logout-door\" d=\"M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4\"/><g class=\"logout-arrow\"><path d=\"M10 12h10\"/><path d=\"m16 8 4 4-4 4\"/></g>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "门框固定，箭头尖与横线对齐，整个箭头向外移出后复位"
+  },
+  "chart": {
+    "body": "<path d=\"M4 19V5\"/><path d=\"M4 19h16\"/><path d=\"M8 17V9\"/><path d=\"M12 17V7\"/><path d=\"M16 17v-5\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "坐标轴固定，三条柱线从底部依次生长"
+  },
+  "board": {
+    "body": "<rect x=\"3\" y=\"4\" width=\"5\" height=\"16\"/><rect x=\"10\" y=\"4\" width=\"5\" height=\"16\"/><rect x=\"17\" y=\"4\" width=\"4\" height=\"16\"/>",
+    "duration": 570,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三列依次轻亮；当前原图没有内部卡片"
+  },
+  "gate": {
+    "body": "<path class=\"gate-shield\" d=\"M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z\"/><path class=\"gate-bars\" d=\"M9 9v6M15 9v6\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "中性盾牌与闸口，表示人工审核入口"
+  },
+  "lock": {
+    "body": "<rect x=\"5\" y=\"11\" width=\"14\" height=\"10\"/><path d=\"M8 11V8a4 4 0 0 1 8 0v3\"/>",
+    "duration": 460,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "锁身固定，锁梁轻压后复位"
+  },
+  "key": {
+    "body": "<g><circle cx=\"8\" cy=\"15\" r=\"4\"/><path d=\"M11.5 12.5 21 3M16 8l3 3M18 5l3 3\"/></g>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "钥匙小幅转动一次后复位"
+  },
+  "server": {
+    "body": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01\"/><path d=\"M7 17.5h.01\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "双层机架固定，两枚指示灯上下响应"
+  },
+  "artifact": {
+    "body": "<path d=\"M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z\"/><path d=\"M14 3v5h5\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "文档轮廓固定，右上折角轻翻后复位"
+  },
+  "skills": {
+    "body": "<path class=\"skill-piece\" d=\"M9 4V3a2 2 0 0 1 4 0v1h5a2 2 0 0 1 2 2v4h-1a2 2 0 0 0 0 4h1v4a2 2 0 0 1-2 2h-4v-1a2 2 0 0 0-4 0v1H6a2 2 0 0 1-2-2v-4H3a2 2 0 0 1 0-4h1V6a2 2 0 0 1 2-2h3Z\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "完整拼图块，轻抬归位以提示能力接入"
+  },
+  "connector": {
+    "body": "<path d=\"M9 7V3M15 7V3\"/><path d=\"M8 7h8v4a4 4 0 0 1-8 0z\"/><path d=\"M12 15v6\"/>",
+    "duration": 460,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "插头外壳固定，双插脚向接入方向伸出"
+  },
+  "trigger": {
+    "body": "<path d=\"M13 2L4 14h6l-1 8 9-12h-6z\"/>",
+    "duration": 470,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "闪电轻亮一次，回到完整轮廓"
+  },
+  "search": {
+    "body": "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"M21 21l-4.3-4.3\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "镜框与镜柄一起向右上扫描后复位"
+  },
+  "filter": {
+    "body": "<path d=\"M4 5h16\"/><path d=\"M7 12h10\"/><path d=\"M10 19h4\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三条筛选线交错轻移后复位"
+  },
+  "plus": {
+    "body": "<path d=\"M12 5v14\"/><path d=\"M5 12h14\"/>",
+    "duration": 475,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "两条加号线从中心先后舒展"
+  },
+  "save": {
+    "body": "<path d=\"M5 3h12l4 4v14H3V5z\"/><path d=\"M8 3v6h8V3\"/><path d=\"M8 21v-7h8v7\"/>",
+    "duration": 570,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "存储轮廓固定，上槽轻压、下块响应"
+  },
+  "more": {
+    "body": "<circle cx=\"12\" cy=\"5\" r=\"1.5\"/><circle cx=\"12\" cy=\"12\" r=\"1.5\"/><circle cx=\"12\" cy=\"19\" r=\"1.5\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三个圆点从上到下依次回应"
+  },
+  "close": {
+    "body": "<path d=\"M6 6l12 12M18 6L6 18\"/>",
+    "duration": 430,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "交叉线轻转一次后复位"
+  },
+  "chat-artifacts": {
+    "body": "<rect x=\"4\" y=\"4\" width=\"16\" height=\"16\" rx=\"3\"/><path d=\"M14 4v16\"/>",
+    "duration": 470,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外框固定，分隔线轻拉展示分栏"
+  },
+  "alert": {
+    "body": "<path d=\"M12 3l9 16H3z\"/><path d=\"M12 9v5\"/><path d=\"M12 17h.01\"/>",
+    "duration": 490,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三角框固定，感叹号竖线和点先后提醒"
+  },
+  "chevron-down": {
+    "body": "<path d=\"M6 9l6 6 6-6\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "chevron-left": {
+    "body": "<path d=\"M15 6l-6 6 6 6\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "chevron-right": {
+    "body": "<path d=\"M9 6l6 6-6 6\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "arrow-left": {
+    "body": "<path d=\"M19 12H5M11 6l-6 6 6 6\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "arrow-right": {
+    "body": "<path d=\"M5 12h14M13 6l6 6-6 6\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "arrow-up": {
+    "body": "<path d=\"M12 19V5M5 12l7-7 7 7\"/>",
+    "duration": 440,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "箭头沿指向轻移一次后复位"
+  },
+  "chevrons-down": {
+    "body": "<path d=\"M6 5l6 6 6-6\"/><path d=\"M6 11l6 6 6-6\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "双箭头从上到下依次推进"
+  },
+  "swap": {
+    "body": "<path d=\"M7 4 3 8l4 4\"/><path d=\"M3 8h13a5 5 0 0 1 5 5\"/><path d=\"m17 20 4-4-4-4\"/><path d=\"M21 16H8a5 5 0 0 1-5-5\"/>",
+    "duration": 560,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "两条箭头分别沿自己的方向交接"
+  },
+  "download": {
+    "body": "<path d=\"M12 3v12M7 10l5 5 5-5\"/><path d=\"M4 21h16\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "承接线固定，下载箭头向下轻落"
+  },
+  "sparkles": {
+    "body": "<path d=\"M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z\"/><path d=\"M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z\"/>",
+    "duration": 570,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "主星与副星错峰闪耀一次"
+  },
+  "branch": {
+    "body": "<circle class=\"branch-start\" cx=\"12\" cy=\"19\" r=\"2\"/><circle class=\"branch-left\" cx=\"5\" cy=\"5\" r=\"2\"/><circle class=\"branch-right\" cx=\"19\" cy=\"5\" r=\"2\"/><path pathLength=\"1\" class=\"branch-routes\" d=\"M12 17v-5a5 5 0 0 0-5-5H5M12 12a5 5 0 0 1 5-5h2\"/>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "流程分支：一个起点分流到两个终点，与 Git 仓库图形区分"
+  },
+  "ci": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path pathLength=\"1\" d=\"M8 12l3 3 5-6\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外圈固定，勾从左边起笔到右上收笔"
+  },
+  "dot": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"4\"/>",
+    "duration": 430,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "圆点轻亮一次后恢复静态"
+  },
+  "edit": {
+    "body": "<g><path d=\"M4 20h4L19 9l-4-4L4 16z\"/><path d=\"M14 6l4 4\"/></g>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "铅笔向笔尖方向轻写一次"
+  },
+  "eye": {
+    "body": "<path d=\"M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z\"/><circle cx=\"12\" cy=\"12\" r=\"3\"/>",
+    "duration": 530,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "眼眶固定，瞳孔向右查看后回中"
+  },
+  "eye-off": {
+    "body": "<path pathLength=\"1\" d=\"M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94\"/><path pathLength=\"1\" d=\"M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19\"/><path pathLength=\"1\" d=\"M14.12 14.12a3 3 0 1 1-4.24-4.24\"/><path pathLength=\"1\" d=\"M1 1l22 22\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "眼眶固定，斜线从左上到右下描绘"
+  },
+  "doc": {
+    "body": "<path pathLength=\"1\" d=\"M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z\"/><path pathLength=\"1\" d=\"M14 3v5h5\"/><path pathLength=\"1\" d=\"M9 13h6\"/><path pathLength=\"1\" d=\"M9 17h6\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "纸张与折角固定，两行文字从左向右依次画出"
+  },
+  "clock": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M12 7v5l3 2\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "钟框固定，表针小幅前探后复位"
+  },
+  "input": {
+    "body": "<path d=\"M4 12h12M11 7l5 5-5 5\"/><path d=\"M20 4v16\"/>",
+    "duration": 480,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "边界固定，箭头轻推向右侧入口"
+  },
+  "output": {
+    "body": "<path d=\"M8 12h12M15 7l5 5-5 5\"/><path d=\"M4 4v16\"/>",
+    "duration": 480,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "边界固定，箭头轻推离左侧出口"
+  },
+  "flask": {
+    "body": "<path d=\"M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3\"/>",
+    "duration": 540,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "瓶体轻摇一次；当前原图没有液面与气泡"
+  },
+  "sun": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "日轮固定，光线轻转后复位"
+  },
+  "moon": {
+    "body": "<path d=\"M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "月牙轻转后回到静态位置"
+  },
+  "expand": {
+    "body": "<path d=\"M9 3H3v6\"/><path d=\"M3 3l7 7\"/><path d=\"M15 21h6v-6\"/><path d=\"M21 21l-7-7\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "两端角向各自对角方向展开后复位"
+  },
+  "flag": {
+    "body": "<path d=\"M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z\"/><path d=\"M4 22v-7\"/>",
+    "duration": 560,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "旗杆固定，旗面小幅摆动一次"
+  },
+  "history": {
+    "body": "<g><path d=\"M3 3v5h5\"/><path d=\"M3.05 13A9 9 0 1 0 6 5.3L3 8\"/></g><path d=\"M12 7v5l4 2\"/>",
+    "duration": 560,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "回溯环与表针轻回摆后复位"
+  },
+  "variable": {
+    "body": "<path d=\"M5 4C2 9 2 15 5 20\"/><path d=\"M19 4c3 5 3 11 0 16\"/><path d=\"M9 9l6 6M15 9l-6 6\"/>",
+    "duration": 480,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "变量符号固定，两侧括号轻展后收回"
+  },
+  "leave": {
+    "body": "<path d=\"M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4\"/><path d=\"M16 17l5-5-5-5\"/><path d=\"M21 12H9\"/>",
+    "duration": 480,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "门框固定，离开箭头向右滑动一次"
+  },
+  "git": {
+    "body": "<circle cx=\"6\" cy=\"6\" r=\"2.5\"/><circle cx=\"6\" cy=\"18\" r=\"2.5\"/><circle cx=\"18\" cy=\"9\" r=\"2.5\"/><path pathLength=\"1\" d=\"M18 11.5a6 6 0 0 1-6 6H9M6 8.5v7\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "提交节点固定，连线沿已有路径描绘一次"
+  },
+  "paperclip": {
+    "body": "<path d=\"M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 6\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "回形针以上端为轴轻挂摆一次"
+  },
+  "monitor": {
+    "body": "<rect x=\"3\" y=\"4\" width=\"18\" height=\"12\" rx=\"2\"/><path d=\"M8 20h8M12 16v4\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "屏幕外框轻亮；原图没有独立屏内扫描线"
+  },
+  "mobile": {
+    "body": "<rect x=\"7\" y=\"3\" width=\"10\" height=\"18\" rx=\"2\"/><path d=\"M11 18h2\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "机身固定，屏幕底部短线轻响应"
+  },
+  "menu": {
+    "body": "<path d=\"M4 7h16\"/><path d=\"M4 12h16\"/><path d=\"M4 17h16\"/>",
+    "duration": 540,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "三条菜单线依次向右轻移并归位"
+  },
+  "panel-left": {
+    "body": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><path d=\"M9 3v18\"/><path d=\"m16 15-3-3 3-3\"/>",
+    "duration": 470,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外框固定，分隔线和箭头向收起方向轻移"
+  },
+  "globe": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><line x1=\"2\" y1=\"12\" x2=\"22\" y2=\"12\"/><path d=\"M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z\"/>",
+    "duration": 560,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外圆与赤道固定，经线轻移模拟浏览"
+  },
+  "crosshair": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"7\"/><path d=\"M12 2v4\"/><path d=\"M12 18v4\"/><path d=\"M2 12h4\"/><path d=\"M18 12h4\"/>",
+    "duration": 500,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "中心圆固定，四向准星轻聚拢后复位"
+  },
+  "tag": {
+    "body": "<g class=\"tag-shape\"><path d=\"M4 4h7l9 9a1.4 1.4 0 0 1 0 2l-5 5a1.4 1.4 0 0 1-2 0l-9-9V4Z\"/><circle cx=\"7.5\" cy=\"7.5\" r=\"1.2\" stroke-width=\"1.4\"/></g>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "标准斜角吊牌，保留穿孔；围绕孔位轻摆一次后回位"
+  },
+  "pin": {
+    "body": "<g transform=\"scale(0.0234375)\"><path fill=\"currentColor\" stroke=\"none\" d=\"M878.3 392.1L631.9 145.7c-6.5-6.5-15-9.7-23.5-9.7s-17 3.2-23.5 9.7L423.8 306.9c-12.2-1.4-24.5-2-36.8-2-73.2 0-146.4 24.1-206.5 72.3a33.23 33.23 0 0 0-2.7 49.4l181.7 181.7-215.4 215.2a15.8 15.8 0 0 0-4.6 9.8l-3.4 37.2c-.9 9.4 6.6 17.4 15.9 17.4.5 0 1 0 1.5-.1l37.2-3.4c3.7-.3 7.2-2 9.8-4.6l215.4-215.4 181.7 181.7c6.5 6.5 15 9.7 23.5 9.7 9.7 0 19.3-4.2 25.9-12.4 56.3-70.3 79.7-158.3 70.2-243.4l161.1-161.1c12.9-12.8 12.9-33.8 0-46.8zM666.2 549.3l-24.5 24.5 3.8 34.4a259.92 259.92 0 0 1-30.4 153.9L262 408.8c12.9-7.1 26.3-13.1 40.3-17.9 27.2-9.4 55.7-14.1 84.7-14.1 9.6 0 19.3.5 28.9 1.6l34.4 3.8 24.5-24.5L608.5 224 800 415.5 666.2 549.3z\"/></g>",
+    "duration": 480,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 0,
+    "note": "图钉沿针尖方向轻落后复位"
+  },
+  "star": {
+    "body": "<path d=\"m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "星形轻转一次，始终保持空心"
+  },
+  "star-filled": {
+    "body": "<path d=\"m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z\"/>",
+    "duration": 460,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 1.2,
+    "note": "收藏星轻亮舒展一次，保持实心状态"
+  },
+  "help": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"M9.5 9a2.5 2.5 0 1 1 3.2 2.4c-.8.3-1.2.8-1.2 1.6V14\"/><circle cx=\"12\" cy=\"17\" r=\"1\"/>",
+    "duration": 520,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "外圈固定，问号轻探、底点延后回应"
+  },
+  "token": {
+    "body": "<path d=\"m12 2 10 6-10 6L2 8Z\"/><path class=\"token-layer-one\" d=\"m3 13 9 5 9-5\"/><path class=\"token-layer-two\" d=\"m3 17 9 5 9-5\"/><path d=\"M10 6h4m-2 0v4\"/>",
+    "duration": 750,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "Token 叠片计量，各层依次轻抬归位"
+  },
+  "calendar": {
+    "body": "<g class=\"motion\">\n          <rect class=\"p0\" x=\"3.4\" y=\"5.2\" width=\"17.2\" height=\"15.2\" rx=\"2.6\" />\n          <path class=\"p1\" d=\"M8.2 3v4.2M15.8 3v4.2M3.4 10.2h17.2\"  pathLength=\"100\"/>\n          <circle class=\"p2\" cx=\"12\" cy=\"15.2\" r=\"2.6\" />\n        </g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.6,
+    "note": "日历外框固定，仅日期圆点轻亮一次。"
+  },
+  "metric-running": {
+    "body": "<g class=\"motion\">\n          <circle class=\"p0\" cx=\"12\" cy=\"12\" r=\"8.2\" />\n          <path class=\"p1\" d=\"M10.3 8.7l5.4 3.3-5.4 3.3z\"  pathLength=\"100\"/>\n        </g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.6,
+    "note": "hover：内侧播放符向右短移，圆环固定。真实执行态才允许持续动效。"
+  },
+  "queue": {
+    "body": "<path d=\"M20 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6\"/><path class=\"queue-rows\" d=\"M7 7h9M7 11h5M7 15h3\"/><circle cx=\"17\" cy=\"16\" r=\"5\"/><path class=\"queue-hand\" d=\"M17 13v3l2 1\"/>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "排队列表与等待时钟，时针前探一次"
+  },
+  "undo": {
+    "body": "<g class=\"motion\"><path class=\"p0\" d=\"M9 14 4 9l5-5\"  pathLength=\"100\"/><path class=\"p1\" d=\"M4 9h10.5a5.5 5.5 0 0 1 0 11H11\"  pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：回溯曲线描过，箭头向左提示一次。禁用时静止。"
+  },
+  "redo": {
+    "body": "<g class=\"motion\"><path class=\"p0\" d=\"m15 14 5-5-5-5\"  pathLength=\"100\"/><path class=\"p1\" d=\"M20 9H9.5a5.5 5.5 0 0 0 0 11H13\"  pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：前进曲线描过，箭头向右提示一次。禁用时静止。"
+  },
+  "zoom-out": {
+    "body": "<g class=\"motion\"><path class=\"p0\" d=\"M5 12h14\"  pathLength=\"100\"/></g>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：减号轻收再复原，缩放数值由实际点击控制。"
+  },
+  "layout": {
+    "body": "<g class=\"motion\"><rect class=\"p0\" x=\"3\" y=\"4\" width=\"6\" height=\"5\" rx=\"1.5\" /><rect class=\"p1\" x=\"15\" y=\"4\" width=\"6\" height=\"5\" rx=\"1.5\" /><rect class=\"p2\" x=\"15\" y=\"15\" width=\"6\" height=\"5\" rx=\"1.5\" /><path class=\"p3\" d=\"M9 6.5h6M12 6.5v11h3\"  pathLength=\"100\"/></g>",
+    "duration": 700,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：三节点各自归位，连线保持稳定，表达整理布局。"
+  },
+  "minimap": {
+    "body": "<rect x=\"2.5\" y=\"3.5\" width=\"19\" height=\"17\" rx=\"2\"/><path d=\"M7 8h6v7h4M7 8v7h4\"/><rect x=\"5\" y=\"6\" width=\"4\" height=\"4\" rx=\".6\" fill=\"currentColor\" stroke=\"none\"/><rect x=\"9\" y=\"13\" width=\"4\" height=\"4\" rx=\".6\" fill=\"currentColor\" stroke=\"none\"/><rect x=\"15\" y=\"13\" width=\"4\" height=\"4\" rx=\".6\" fill=\"currentColor\" stroke=\"none\"/><rect class=\"minimap-viewport\" x=\"9\" y=\"10.5\" width=\"11\" height=\"8.5\" rx=\"1\" stroke-width=\"1.2\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "小流程图与视口框，视口短移后归位"
+  },
+  "priority-bolt": {
+    "body": "<g class=\"motion\">\n        <path class=\"p0\" d=\"m11.7 2.7-6 8.2h4l-1.4 6.4 6-8.2h-4l1.4-6.4Z\" fill=\"currentColor\"  pathLength=\"100\"/>\n      </g>",
+    "duration": 550,
+    "viewBox": "0 0 20 20",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "hover：能量符单次亮起归位。与触发器闪电原图不同，为实心变体。"
+  },
+  "priority-low": {
+    "body": "<g class=\"motion\">\n            <rect class=\"p0\" x=\"3\" y=\"11\" width=\"3\" height=\"5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p1\" x=\"8.5\" y=\"7.5\" width=\"3\" height=\"8.5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"0.2\"/>\n            <rect class=\"p2\" x=\"14\" y=\"4\" width=\"3\" height=\"12\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"0.2\"/>\n          </g>",
+    "duration": 800,
+    "viewBox": "0 0 20 20",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "面板进入或选择改变：三根柱从左到右升起一次，保留当前档位明暗。"
+  },
+  "priority-medium": {
+    "body": "<g class=\"motion\">\n            <rect class=\"p0\" x=\"3\" y=\"11\" width=\"3\" height=\"5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p1\" x=\"8.5\" y=\"7.5\" width=\"3\" height=\"8.5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p2\" x=\"14\" y=\"4\" width=\"3\" height=\"12\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"0.2\"/>\n          </g>",
+    "duration": 800,
+    "viewBox": "0 0 20 20",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "面板进入或选择改变：三根柱从左到右升起一次，保留当前档位明暗。"
+  },
+  "priority-high": {
+    "body": "<g class=\"motion\">\n            <rect class=\"p0\" x=\"3\" y=\"11\" width=\"3\" height=\"5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p1\" x=\"8.5\" y=\"7.5\" width=\"3\" height=\"8.5\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n            <rect class=\"p2\" x=\"14\" y=\"4\" width=\"3\" height=\"12\" rx=\"1.1\" fill=\"currentColor\"  opacity=\"1\"/>\n          </g>",
+    "duration": 800,
+    "viewBox": "0 0 20 20",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "面板进入或选择改变：三根柱从左到右升起一次，保留当前档位明暗。"
+  },
+  "sort-ascending": {
+    "body": "<g class=\"motion\"><path class=\"p0\" fill=\"currentColor\" d=\"M5 2 L9 7 H1 Z\"  pathLength=\"100\"/></g>",
+    "duration": 550,
+    "viewBox": "0 0 10 10",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "排序按钮 hover：轻微上移；实际升序状态持续保持明亮。"
+  },
+  "sort-descending": {
+    "body": "<g class=\"motion\"><path class=\"p0\" fill=\"currentColor\" d=\"M5 8 L1 3 H9 Z\"  pathLength=\"100\"/></g>",
+    "duration": 550,
+    "viewBox": "0 0 10 10",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "排序按钮 hover：轻微下移；实际降序状态持续保持明亮。"
+  },
+  "preview-expand": {
+    "body": "<g class=\"motion\">\n                          <path class=\"p0\" d=\"M6.25 2.75H2.75V6.25\"  pathLength=\"100\"/>\n                          <path class=\"p1\" d=\"M2.75 2.75 6.5 6.5\"  pathLength=\"100\"/>\n                          <path class=\"p2\" d=\"M9.75 13.25h3.5V9.75\"  pathLength=\"100\"/>\n                          <path class=\"p3\" d=\"M13.25 13.25 9.5 9.5\"  pathLength=\"100\"/>\n                        </g>",
+    "duration": 650,
+    "viewBox": "0 0 16 16",
+    "filled": false,
+    "strokeWidth": 1.5,
+    "note": "卡片 hover：左上、右下角分离一次，表示展开预览。"
+  },
+  "grip": {
+    "body": "<g class=\"motion\">\n            <circle class=\"p0\" cx=\"9\" cy=\"6\" r=\"1.6\" /><circle class=\"p1\" cx=\"15\" cy=\"6\" r=\"1.6\" />\n            <circle class=\"p2\" cx=\"9\" cy=\"12\" r=\"1.6\" /><circle class=\"p3\" cx=\"15\" cy=\"12\" r=\"1.6\" />\n            <circle class=\"p4\" cx=\"9\" cy=\"18\" r=\"1.6\" /><circle class=\"p5\" cx=\"15\" cy=\"18\" r=\"1.6\" />\n          </g>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "hover：两列握点微分开再归位，实际拖动中保持稳定。"
+  },
+  "confirmation-check": {
+    "body": "<g class=\"motion\">\n        \n        <path class=\"p0\"\n          d=\"M4.2 12.2 L9.3 17.3 L19.8 6.4\"\n         pathLength=\"100\"/>\n      </g>",
+    "duration": 620,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 2.4,
+    "note": "真实确认成功进入时播放一次：左侧起笔 → 折点 → 右上收笔。预览 hover 可重播。"
+  },
+  "image-off": {
+    "body": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"m21 15-5-5-4 4M5 21l4-4\"/><path class=\"image-slash\" pathLength=\"1\" d=\"M3 3l18 18\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "不可用图片，完整对角遮断线描画一次"
+  },
+  "inbox-boot": {
+    "body": "<g class=\"motion\">\n    <circle class=\"p0\"\n      cx=\"7\"\n      cy=\"7\"\n      r=\"5\"\n      stroke=\"currentColor\"\n      stroke-width=\"1.7\"\n      stroke-linecap=\"round\"\n      stroke-dasharray=\"18 14\"\n    />\n  </g>",
+    "duration": 1000,
+    "viewBox": "0 0 14 14",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "真实沙箱启动期间可持续旋转；此预览只演示一圈。"
+  },
+  "inbox-reply": {
+    "body": "<g class=\"motion\">\n    <circle class=\"p0\" cx=\"7\" cy=\"7\" r=\"2.5\" fill=\"currentColor\" />\n  </g>",
+    "duration": 1200,
+    "viewBox": "0 0 14 14",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "真实正在回复期间可持续呼吸；此预览只演示一轮。"
+  },
+  "qq": {
+    "body": "<g class=\"motion\">\n                    <path class=\"p0\" fill=\"currentColor\" fill-rule=\"nonzero\" d=\"M17.535 12.514l-.696-1.796c0-.021.01-.375.01-.558C16.848 7.088 15.446 4 12 4c-3.446 0-4.848 3.088-4.848 6.16 0 .183.009.537.01.558l-.696 1.796c-.19.515-.38 1.05-.517 1.51-.657 2.189-.444 3.095-.282 3.115.348.043 1.354-1.648 1.354-1.648 0 .98.488 2.258 1.542 3.18-.394.127-.878.32-1.188.557-.28.214-.245.431-.194.52.22.385 3.79.245 4.82.125 1.03.12 4.599.26 4.82-.126.05-.088.085-.305-.194-.519-.311-.237-.795-.43-1.19-.556 1.055-.923 1.542-2.202 1.542-3.181 0 0 1.007 1.691 1.355 1.648.162-.02.378-.928-.283-3.116-.14-.463-.325-.994-.516-1.509z\" pathLength=\"100\"/>\n                </g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": true,
+    "strokeWidth": 0.0,
+    "note": "品牌几何保持原样；仅在所属配置按钮 hover 时给外层背景/边框反馈。"
+  },
+  "info": {
+    "body": "<g class=\"motion\"><circle class=\"p0\" cx=\"12\" cy=\"12\" r=\"10\"/><line class=\"p1\" x1=\"12\" y1=\"16\" x2=\"12\" y2=\"12\"/><line class=\"p2\" x1=\"12\" y1=\"8\" x2=\"12.01\" y2=\"8\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 2.0,
+    "note": "hover：外环固定，信息标点轻亮一次。"
+  },
+  "warning": {
+    "body": "<g class=\"motion\"><path class=\"p0\" d=\"M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z\" pathLength=\"100\"/><line class=\"p1\" x1=\"12\" y1=\"9\" x2=\"12\" y2=\"13\"/><line class=\"p2\" x1=\"12\" y1=\"17\" x2=\"12.01\" y2=\"17\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 2.0,
+    "note": "错误横幅首次出现时强调一次，历史错误保持静止。"
+  },
+  "preview-target": {
+    "body": "<g class=\"motion\"><circle class=\"p0\" cx=\"12\" cy=\"12\" r=\"7.5\"/><circle class=\"p1\" cx=\"12\" cy=\"12\" r=\"2\"/><path class=\"p2\" d=\"M12 2v3M12 19v3M2 12h3M19 12h3\" pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：四向刻度描入、中心定位一次；取点状态保持强调色。"
+  },
+  "layers": {
+    "body": "<g class=\"motion\"><rect class=\"p0\" x=\"4\" y=\"4\" width=\"14\" height=\"14\" rx=\"2\"/><path class=\"p1\" d=\"m7 20 10.5-.1A2.5 2.5 0 0 0 20 17.4V8\" pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：前后两层短暂分离再归位。"
+  },
+  "preview-chat": {
+    "body": "<g class=\"motion\"><path class=\"p0\" d=\"M19.5 4.5h-15A2.5 2.5 0 0 0 2 7v8.5A2.5 2.5 0 0 0 4.5 18H7l3 3 3-3h6.5a2.5 2.5 0 0 0 2.5-2.5V7a2.5 2.5 0 0 0-2.5-2.5Z\" pathLength=\"100\"/><path class=\"p1\" d=\"M7 9h10\" pathLength=\"100\"/><path class=\"p2\" d=\"M7 13h6\" pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：框体固定，两行文字依次画出一次。"
+  },
+  "drawer-collapse": {
+    "body": "<g class=\"motion\"><rect class=\"p0\" x=\"1.5\" y=\"2.5\" width=\"13\" height=\"11\" rx=\"1.5\" stroke=\"currentColor\"/><path class=\"p1\" d=\"M6 2.5v11M9.2 6.2 7.4 8l1.8 1.8\" stroke=\"currentColor\" stroke-linecap=\"round\" stroke-linejoin=\"round\" pathLength=\"100\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 16 16",
+    "filled": false,
+    "strokeWidth": 1.8,
+    "note": "hover：框体固定，收起箭头向左短移一次。"
+  },
+  "review": {
+    "body": "<path d=\"M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8M13 3v5h5V8l-5-5M8 11h3M8 15h2\"/><g class=\"review-lens\"><circle cx=\"16.5\" cy=\"14.5\" r=\"3.5\"/><path d=\"m19 17 3 3\"/></g>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "评审文档与放大镜，审阅镜头轻扫一次"
+  },
+  "form": {
+    "body": "<rect x=\"4\" y=\"3.5\" width=\"16\" height=\"17\" rx=\"2\"/><path d=\"M8 8h8\"/><path class=\"form-fields\" d=\"M8 12h8M8 16h5\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "表单轮廓固定，输入字段轻亮一次"
+  },
+  "users": {
+    "body": "<g class=\"team-front\"><circle cx=\"9\" cy=\"8\" r=\"3\"/><path d=\"M3 20v-1a6 6 0 0 1 12 0v1\"/></g><g class=\"team-back\"><path d=\"M16 5a3 3 0 0 1 0 6M17 14a5 5 0 0 1 4 5v1\"/></g>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "双人团队图形，后方成员轻移归位"
+  },
+  "bell-settings": {
+    "body": "<g class=\"bell-body\"><path d=\"M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z\"/></g><path d=\"M10 20a2 2 0 0 0 4 0\"/><path class=\"bell-adjust\" d=\"M10 8h4M12 6v4\"/>",
+    "duration": 600,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "通知设置，钟身固定，调节标记转动一次"
+  },
+  "integration": {
+    "body": "<path class=\"integration-left\" d=\"M9 4H6a3 3 0 0 0-3 3v2h5v6H3v2a3 3 0 0 0 3 3h3\"/><path class=\"integration-right\" d=\"M15 4h3a3 3 0 0 1 3 3v2h-5v6h5v2a3 3 0 0 1-3 3h-3\"/><path d=\"M10 12h4\"/>",
+    "duration": 650,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "系统集成，两侧连接口靠近后归位"
+  },
+  "image": {
+    "body": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"2\"/><circle class=\"image-sun\" cx=\"8.5\" cy=\"8.5\" r=\"1.5\"/><path d=\"m21 15-5-5L5 21\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "图片边框固定，光点轻亮一次"
+  },
+  "circle": {
+    "body": "<circle cx=\"12\" cy=\"12\" r=\"8.5\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "通用圆形状态"
+  },
+  "skip": {
+    "body": "<path d=\"m5 5 10 7-10 7z\"/><path d=\"M19 5v14\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "跳过当前步骤"
+  },
+  "server-unavailable": {
+    "body": "<rect x=\"3\" y=\"3\" width=\"18\" height=\"7\" rx=\"2\"/><rect x=\"3\" y=\"14\" width=\"18\" height=\"7\" rx=\"2\"/><path d=\"M7 6.5h.01M7 17.5h.01M3 3l18 18\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "沙箱或服务暂不可用"
+  },
+  "workflow-empty": {
+    "body": "<rect x=\"3\" y=\"8\" width=\"6\" height=\"8\" rx=\"2\"/><rect x=\"15\" y=\"8\" width=\"6\" height=\"8\" rx=\"2\"/><path d=\"M9 12h6M12 9v6\"/>",
+    "duration": 550,
+    "viewBox": "0 0 24 24",
+    "filled": false,
+    "strokeWidth": 1.7,
+    "note": "尚未创建工作流"
+  }
+}

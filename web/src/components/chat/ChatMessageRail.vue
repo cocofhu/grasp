@@ -247,7 +247,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
 <template>
   <nav v-if="items.length || hasMore" class="chat-message-rail" :aria-label="t('pages.chatNavigation.ariaLabel')" data-testid="chat-message-rail">
     <button v-if="hasMore" type="button" class="chat-message-rail-earlier" :disabled="loadingEarlier" :aria-label="t(loadingEarlier ? 'pages.chatNavigation.loadingEarlier' : 'pages.chatNavigation.loadEarlier')" :title="t('pages.chatNavigation.loadedHistory')" data-testid="chat-message-rail-earlier" @click="emit('loadEarlier')">
-      <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" :class="loadingEarlier ? 'animate-spin' : ''" />
+      <Icon :key="loadingEarlier ? 'loading' : 'earlier'" :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="13" />
     </button>
     <div ref="track" class="chat-message-rail-track" data-testid="chat-message-rail-track" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave">
       <button v-for="(item, index) in displayItems" :key="item.id" :ref="el => setButton(item.id, el)" type="button" class="chat-message-rail-mark" :class="{ 'is-active': item.id === activeId, 'is-pointed': item.id === pointedId }" :aria-current="item.id === activeId ? 'step' : undefined" :aria-label="t('pages.chatNavigation.jumpTo', { title: item.title })" :aria-controls="open ? cardId : undefined" :tabindex="item.id === (focusId || activeId || items[0]?.id) ? 0 : -1" :data-message-id="item.id" data-testid="chat-message-rail-mark" @mouseenter="hoverId = item.id; onPointerEnter()" @focus="onFocus(item.id)" @blur="onBlur" @keydown="onKeydown($event, index)" @click="navigate(item.id)">
@@ -258,7 +258,7 @@ onBeforeUnmount(() => { if (frame) cancelAnimationFrame(frame); cancelClose(); c
       <Transition name="chat-message-rail-card">
         <div v-if="open && displayItems.length" :id="cardId" ref="card" class="chat-message-rail-card" :style="{ left: `${cardPosition.left}px`, top: `${cardPosition.top}px`, width: `${cardPosition.width}px` }" data-testid="chat-message-rail-card" @mouseenter="onPointerEnter" @mouseleave="onPointerLeave(); hoverId = ''">
           <button v-if="hasMore" type="button" class="chat-message-rail-card-earlier" tabindex="-1" :disabled="loadingEarlier" data-testid="chat-message-rail-card-earlier" @click="emit('loadEarlier')">
-            <Icon :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="12" :class="loadingEarlier ? 'animate-spin' : ''" />
+            <Icon :name="loadingEarlier ? 'spinner' : 'arrow-up'" :size="12" />
             {{ t(loadingEarlier ? 'pages.chatNavigation.loadingEarlier' : 'pages.chatNavigation.loadEarlier') }}
           </button>
           <div class="chat-message-rail-list" role="listbox" :aria-label="t('pages.chatNavigation.ariaLabel')">

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/ui/AppModal.vue'
@@ -161,7 +162,7 @@ async function save() {
                 />
               </td>
               <td v-if="canEdit" class="border-b border-line/60 py-1 text-center">
-                <button type="button" class="text-txt3 hover:text-err" :aria-label="t('pages.tokenAnalytics.pricing.remove')" @click="removeRow(i)">×</button>
+                <button type="button" class="text-txt3 hover:text-err" :aria-label="t('pages.tokenAnalytics.pricing.remove')" @click="removeRow(i)"><Icon name="close" :size="12" /></button>
               </td>
             </tr>
           </tbody>

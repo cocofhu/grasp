@@ -400,7 +400,7 @@ onBeforeUnmount(() => {
       <span class="min-w-0 flex-1 truncate" :class="isPlaceholder ? 'text-txt3' : ''">
         {{ selectedLabel }}
       </span>
-      <Icon
+      <Icon :interactive="false"
         name="chevron-down"
         :size="14"
         class="app-select-chevron shrink-0 text-txt3"

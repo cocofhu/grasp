@@ -241,7 +241,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 <template>
   <div class="solo-pane flex min-h-0 min-w-0 flex-1 flex-col" data-testid="solo-session-pane">
     <div v-if="loading && !session" class="flex flex-1 items-center justify-center text-txt3">
-      <Icon name="spinner" :size="18" class="animate-spin" />
+      <Icon name="spinner" :size="18" />
     </div>
     <div v-else-if="loadError" class="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
       <Icon name="alert" :size="22" class="text-err" />
@@ -270,7 +270,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 
       <template #sidebar>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
-        <Icon name="spinner" :size="12" class="animate-spin" />{{ t('pages.solo.link.reconnecting') }}
+        <Icon name="spinner" :size="12" />{{ t('pages.solo.link.reconnecting') }}
       </div>
 
       <!-- transcript -->
@@ -356,7 +356,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 </div>
               </div>
               <div v-if="turn.streaming && !turn.steps.length" class="chat-meta flex items-center gap-1.5 py-1">
-                <Icon name="spinner" :size="13" class="animate-spin" />
+                <Icon name="spinner" :size="13" />
                 {{ phase === 'preparing' ? t('pages.solo.phase.preparing') : t('pages.solo.chat.generating') }}
               </div>
               <div v-if="turn.status === 'stopped' && !turn.streaming" class="chat-meta">{{ t('pages.solo.chat.stopped') }}</div>

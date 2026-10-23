@@ -1,265 +1,231 @@
 // @vitest-environment happy-dom
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { mount, type VueWrapper } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { iconDefinitions, iconNames } from '@/lib/icons/catalog'
 import Icon from './Icon.vue'
 
-describe('Icon', () => {
-  it('renders svg for known icon name', () => {
-    const wrapper = mount(Icon, { props: { name: 'check', size: 16 } })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    wrapper.unmount()
-  })
+const wrappers: VueWrapper[] = []
+function render(name: string, props: Record<string, unknown> = {}, host?: HTMLElement) {
+  const wrapper = mount(Icon, { props: { name, ...props }, attachTo: host })
+  wrappers.push(wrapper)
+  return wrapper
+}
+function button(parent: HTMLElement = document.body) {
+  const element = document.createElement('button')
+  parent.appendChild(element)
+  return element
+}
+async function enter(host: HTMLElement, target: HTMLElement | SVGElement = host) {
+  target.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+  await nextTick()
+  await nextTick()
+}
+afterEach(() => {
+  for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+  document.body.replaceChildren()
+  vi.useRealTimers()
+  vi.restoreAllMocks()
+})
 
-  it('falls back for unknown icon', () => {
-    const wrapper = mount(Icon, { props: { name: 'unknown-icon-xyz' } })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('renders lock glyph used by 403 states', () => {
-    const wrapper = mount(Icon, { props: { name: 'lock', size: 18 } })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    expect(wrapper.html()).toMatch(/rect|M8 11V8/)
-    wrapper.unmount()
-  })
-
-  it('renders the crossed-out eye used by hide actions', () => {
-    const wrapper = mount(Icon, { props: { name: 'eye-off', size: 14 } })
-    expect(wrapper.findAll('path')).toHaveLength(4)
-    expect(wrapper.html()).toContain('M1 1l22 22')
-    wrapper.unmount()
-  })
-
-  it('renders panel-left glyph used to hide desktop nav (g2.1 / g5.1)', () => {
-    const wrapper = mount(Icon, { props: { name: 'panel-left', size: 18 } })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    expect(wrapper.html()).toMatch(/rx="2"|M9 3v18|m16 15-3-3 3-3/)
-    expect(wrapper.html()).not.toMatch(/M9 4v16/)
-    wrapper.unmount()
-  })
-
-  it('spinner is a dual-tone ring (track circle + 90° arc), not the old bubble-like 270° arc (plan g1.1)', () => {
-    const wrapper = mount(Icon, { props: { name: 'spinner', size: 18 } })
-    const html = wrapper.html()
-    expect(html).toMatch(/<circle[^>]*cx="12"[^>]*cy="12"[^>]*r="9"/)
-    expect(html).toMatch(/M21 12a9 9 0 0 1-9 9/)
-    expect(html).not.toMatch(/M12 3a9 9 0 1 0 9 9/)
-    // Must not look like chat bubble (no tail path).
-    expect(html).not.toMatch(/M21 12a8 8 0 0 1-11\.3 7\.3/)
-    expect(html).not.toMatch(/L4 20/)
-    expect(wrapper.find('svg').classes()).toContain('icon-spinner')
-    wrapper.unmount()
-  })
-
-  it('keeps shared doc, terminal, and globe paths while adding stage glyphs', () => {
-    const doc = mount(Icon, { props: { name: 'doc' } })
-    expect(doc.html()).toContain('M14 3H7')
-    expect(doc.html()).toContain('M14 3v5h5')
-    doc.unmount()
-
-    const terminal = mount(Icon, { props: { name: 'terminal' } })
-    expect(terminal.html()).toContain('M7 9l3 3-3 3M13 15h4')
-    terminal.unmount()
-
-    const globe = mount(Icon, { props: { name: 'globe' } })
-    expect(globe.html()).toContain('r="10"')
-    globe.unmount()
-
-    const ide = mount(Icon, { props: { name: 'stage-ide' } })
-    expect(ide.html()).toContain('M8.2 8v12.4')
-    expect(ide.html()).toContain('M11 12.2h6')
-    expect(ide.html()).toContain('M11 15.4h4')
-    expect(ide.find('svg').attributes('fill')).toBe('none')
-    ide.unmount()
-
-    const stageTerminal = mount(Icon, { props: { name: 'stage-terminal' } })
-    expect(stageTerminal.html()).toContain('M7.1 9.3 10.3 12 7.1 14.7')
-    expect(stageTerminal.html()).toContain('M12.2 14.8h4.6')
-    stageTerminal.unmount()
-
-    const browser = mount(Icon, { props: { name: 'stage-browser' } })
-    expect(browser.html()).toMatch(/<circle[^>]*\sr="8"/)
-    expect(browser.html()).toContain('M4 12h16')
-    browser.unmount()
-
-    const log = mount(Icon, { props: { name: 'stage-log' } })
-    const dots = log.findAll('circle')
-    expect(dots).toHaveLength(3)
-    for (const dot of dots) {
-      expect(dot.attributes('r')).toBe('1.15')
-      expect(dot.attributes('fill')).toBe('currentColor')
-      expect(dot.attributes('stroke')).toBe('none')
+describe('Icon geometry and compatibility', () => {
+  it('renders every registered local SVG without scripts or unresolved names', () => {
+    expect(iconNames.length).toBeGreaterThanOrEqual(103)
+    for (const name of iconNames) {
+      const wrapper = render(name)
+      expect(wrapper.find('svg').attributes('data-icon')).toBe(name)
+      expect(wrapper.find('svg').element.children.length).toBeGreaterThan(0)
+      expect(wrapper.find('script').exists()).toBe(false)
+      expect(wrapper.find('svg').attributes('width')).toBe('18')
+      expect(wrapper.find('svg').attributes('aria-hidden')).toBe('true')
     }
-    expect(log.find('svg').attributes('fill')).toBe('none')
-    expect(log.html()).toContain('M9.3 12h6.4')
-    log.unmount()
   })
 
-  it('spinner root SVG spins around center without inline wobble (plan g1.2)', () => {
-    const wrapper = mount(Icon, { props: { name: 'spinner', size: 18 } })
-    const svg = wrapper.find('svg')
-    expect(svg.classes()).toContain('icon-spinner')
-    expect(svg.attributes('style')).toMatch(/display:\s*block/)
-    expect(svg.attributes('style')).toMatch(/transform-origin:\s*center/)
-    wrapper.unmount()
-  })
-
-  it('updates a mounted chat icon between send, solid stop, artifacts, and spinner', async () => {
-    const wrapper = mount(Icon, { props: { name: 'chat-send', size: 18 }, attrs: { class: 'text-accent-2' } })
-    const svg = wrapper.find('svg')
-    const element = svg.element
-    const sendPath = wrapper.find('path').attributes('d')
-    expect(svg.classes()).toEqual(expect.arrayContaining(['app-icon', 'text-accent-2']))
-    expect(svg.attributes('data-icon')).toBe('chat-send')
-    expect(svg.attributes('fill')).toBe('none')
-    expect(svg.attributes('stroke-width')).toBe('1.7')
-    expect(svg.attributes('stroke-linecap')).toBe('round')
-
-    await wrapper.setProps({ name: 'chat-stop' })
-    expect(wrapper.find('svg').element).toBe(element)
-    expect(svg.attributes('data-icon')).toBe('chat-stop')
+  it('safely falls back and clears solid fill for an unknown dynamic name', async () => {
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const wrapper = render('chat-stop')
+    const svg = wrapper.get('svg')
     expect(svg.attributes('fill')).toBe('currentColor')
-    expect(wrapper.find('path').exists()).toBe(false)
-    expect(wrapper.find('rect').attributes('rx')).toBe('2')
-
-    await wrapper.setProps({ name: 'chat-artifacts' })
-    expect(svg.attributes('data-icon')).toBe('chat-artifacts')
+    await wrapper.setProps({ name: 'unknown-icon-xyz' })
+    expect(wrapper.get('circle').attributes('r')).toBe('4')
     expect(svg.attributes('fill')).toBe('none')
-    expect(svg.attributes('stroke-width')).toBe('1.7')
-    expect(wrapper.find('rect').exists()).toBe(true)
-    expect(wrapper.find('path').exists()).toBe(true)
-    expect(wrapper.find('path').attributes('d')).not.toBe(sendPath)
-
-    await wrapper.setProps({ name: 'spinner' })
-    expect(svg.classes()).toEqual(expect.arrayContaining(['app-icon', 'icon-spinner']))
-    expect(wrapper.find('circle').exists()).toBe(true)
-    expect(svg.attributes('style')).toMatch(/transform-origin:\s*center/)
-
-    await wrapper.setProps({ name: 'chat-send' })
-    expect(svg.classes()).toContain('app-icon')
-    expect(svg.classes()).not.toContain('icon-spinner')
-    expect(svg.attributes('style') || '').not.toMatch(/transform-origin/)
-    expect(wrapper.find('path').attributes('d')).toBe(sendPath)
-    expect(wrapper.find('circle').exists()).toBe(false)
-    wrapper.unmount()
+    expect(svg.attributes('data-icon')).toBe('unknown-icon-xyz')
+    expect(warning).not.toHaveBeenCalled()
   })
 
-  it('updates numeric and CSS sizes without remounting and restores the default', async () => {
-    const wrapper = mount(Icon, { props: { name: 'check' } })
-    const svg = wrapper.find('svg')
+  it('updates names, numeric/CSS sizes and inherited classes without replacing the SVG', async () => {
+    const wrapper = render('chat-send', { size: 18 })
+    const svg = wrapper.get('svg')
     const element = svg.element
-    expect(svg.attributes('width')).toBe('18')
-    expect(svg.attributes('height')).toBe('18')
-
-    await wrapper.setProps({ size: 24 })
+    await wrapper.setProps({ name: 'chat-stop', size: 24 })
     expect(svg.element).toBe(element)
+    expect(svg.attributes('fill')).toBe('currentColor')
     expect(svg.attributes('width')).toBe('24')
-    expect(svg.attributes('height')).toBe('24')
-
-    await wrapper.setProps({ size: '1.25em' })
-    expect(svg.attributes('width')).toBe('1.25em')
+    expect(wrapper.get('rect').attributes('rx')).toBe('2')
+    await wrapper.setProps({ name: 'chat-artifacts', size: '1.25em' })
+    expect(svg.attributes('fill')).toBe('none')
+    expect(svg.attributes('stroke-width')).toBe('1.7')
     expect(svg.attributes('height')).toBe('1.25em')
-
     await wrapper.setProps({ size: undefined })
     expect(svg.attributes('width')).toBe('18')
-    expect(svg.attributes('height')).toBe('18')
-    wrapper.unmount()
   })
 
-  it('renders pin as a filled PushpinOutlined with no stroke (plan g2.1)', () => {
-    const wrapper = mount(Icon, { props: { name: 'pin', size: 12 } })
-    const html = wrapper.html()
-    const svg = wrapper.find('svg')
-    const path = wrapper.find('path')
-    expect(html).not.toContain('M14.4 2.8')
-    expect(html).toContain('M878.3 392.1')
-    expect(html).toContain('scale(0.0234375)')
-    expect(svg.attributes('viewBox')).toBe('0 0 24 24')
-    expect(svg.attributes('width')).toBe('12')
-    expect(svg.attributes('fill')).toBe('currentColor')
-    expect(svg.attributes('stroke')).toBe('none')
-    expect(svg.attributes('stroke-width')).toBeUndefined()
-    expect(path.attributes('fill')).toBe('currentColor')
-    expect(path.attributes('stroke')).toBe('none')
-    wrapper.unmount()
-
-    const filled = mount(Icon, { props: { name: 'star-filled', size: 12 } })
-    expect(filled.find('svg').attributes('stroke')).toBe('currentColor')
-    expect(filled.find('svg').attributes('stroke-width')).toBe('1.2')
-    filled.unmount()
+  it('preserves filled pin scaling and the thinner filled-star stroke', () => {
+    const pin = render('pin', { size: 12 })
+    expect(pin.get('g').attributes('transform')).toBe('scale(0.0234375)')
+    expect(pin.html()).toContain('M878.3 392.1')
+    expect(pin.get('svg').attributes('stroke')).toBe('none')
+    expect(pin.get('svg').attributes('stroke-width')).toBeUndefined()
+    expect(render('star-filled').get('svg').attributes('stroke-width')).toBe('1.2')
   })
 
-  it('replaces a known solid icon with the unknown-name fallback', async () => {
-    const fallback = mount(Icon, { props: { name: 'unknown-icon-xyz' } })
-    const wrapper = mount(Icon, { props: { name: 'chat-stop' } })
-    await wrapper.setProps({ name: 'unknown-icon-xyz' })
-    expect(wrapper.find('svg').element.innerHTML).toBe(fallback.find('svg').element.innerHTML)
-    expect(wrapper.find('svg').attributes('data-icon')).toBe('unknown-icon-xyz')
-    expect(wrapper.find('svg').attributes('fill')).toBe('none')
-    wrapper.unmount()
-    fallback.unmount()
+  it('draws completed checks from the left through the joint without a start dot', () => {
+    const completed = render('check-draw')
+    expect(completed.find('circle').exists()).toBe(false)
+    expect(completed.get('path').attributes('pathLength')).toBe('1')
+    expect(completed.get('path').attributes('d')).toBe('M7.6 12.4l3.6 3.6L18.2 7.4')
+    expect(render('check').get('path').attributes('d')).toBe('M5 12l5 5 9-11')
   })
 
-  it('draws the ten status primitives without replacing check, play, user, or history', () => {
-    const shapes: Record<string, string> = {
-      'arc-spinner': 'M12 3A9 9 0 1 1 3 12',
-      'breath-dot': 'grasp-heart-ring',
-      'check-draw': 'grasp-check-draw',
-      'warn-pulse': 'M12 3.2L21.2 19.6H2.8z',
-      'bubble-idle': 'grasp-bdot-a',
-      'user-hold': 'grasp-user-dot',
-      'arrow-flow': 'M14.2 6.6l6.2 5.4-6.2 5.4',
-      'history-back': 'M4.2 4.2v4.6h4.6',
-      'play-continue': 'M9.2 6.4l10.4 5.6-10.4 5.6z',
-      'quiet-dot': 'grasp-quiet',
-    }
-    for (const [name, mark] of Object.entries(shapes)) {
-      const wrapper = mount(Icon, { props: { name, size: 16 } })
-      const svg = wrapper.find('svg')
-      expect(svg.attributes('data-icon')).toBe(name)
-      expect(svg.classes()).toContain('grasp-status')
-      expect(svg.attributes('data-hover')).toBeTruthy()
-      expect(svg.html()).toContain(mark)
-      expect(svg.attributes('width')).toBe('16')
-      wrapper.unmount()
-    }
+  it('uses a punched tag, aligned logout arrow, complete puzzle, and actual flow minimap', () => {
+    const tag = render('tag')
+    expect(tag.get('circle').attributes('cx')).toBe('7.5')
+    expect(tag.html()).not.toContain('12 22l-8.6')
+    const logout = render('logout')
+    expect(logout.get('.logout-arrow').html()).toContain('M10 12h10')
+    expect(logout.get('.logout-arrow').html()).toContain('m16 8 4 4-4 4')
+    expect(render('skills').get('.skill-piece').attributes('d')).toMatch(/Z$/)
+    expect(render('minimap').find('.minimap-viewport').exists()).toBe(true)
+    expect(render('review').find('.review-lens').exists()).toBe(true)
+    expect(render('queue').find('.queue-hand').exists()).toBe(true)
+    expect(render('image-off').get('.image-slash').attributes('d')).toBe('M3 3l18 18')
+  })
+})
 
-    const legacy: Record<string, string> = {
-      check: 'M5 12l5 5 9-11',
-      play: 'M7 5l12 7-12 7z',
-      user: 'M4 21a8 8 0 0 1 16 0',
-      history: 'M3 3v5h5',
-    }
-    for (const [name, path] of Object.entries(legacy)) {
-      const wrapper = mount(Icon, { props: { name, size: 16 } })
-      const svg = wrapper.find('svg')
-      expect(svg.html()).toContain(path)
-      expect(svg.classes()).not.toContain('grasp-status')
-      expect(svg.attributes('data-hover')).toBeUndefined()
-      wrapper.unmount()
+describe('Icon motion policy', () => {
+  it('keeps noninteractive metadata static and plays once per host entry', async () => {
+    vi.useFakeTimers()
+    const metadata = render('copy')
+    await metadata.trigger('pointerover')
+    expect(metadata.attributes('data-icon-motion')).toBe('idle')
+    const host = button()
+    const icon = render('copy', {}, host)
+    expect(icon.attributes('data-icon-motion')).toBe('idle')
+    await enter(host)
+    expect(icon.attributes('data-icon-motion')).toBe('once')
+    await vi.advanceTimersByTimeAsync(iconDefinitions.copy.duration + 40)
+    expect(icon.attributes('data-icon-motion')).toBe('idle')
+    await enter(host)
+    expect(icon.attributes('data-icon-motion')).toBe('idle')
+    host.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }))
+    await enter(host)
+    expect(icon.attributes('data-icon-motion')).toBe('once')
+  })
+
+  it('lets the nearest nested control own feedback', async () => {
+    const outer = button()
+    const outerIcon = render('copy', {}, outer)
+    const inner = button(outer)
+    const innerIcon = render('trash', {}, inner)
+    await enter(inner, innerIcon.get('svg').element)
+    expect(innerIcon.attributes('data-icon-motion')).toBe('once')
+    expect(outerIcon.attributes('data-icon-motion')).toBe('idle')
+  })
+
+  it('suppresses disabled decoration while allowing a real loader inside a disabled button', async () => {
+    const host = button()
+    host.disabled = true
+    const copy = render('copy', {}, host)
+    await enter(host)
+    expect(copy.attributes('data-icon-motion')).toBe('idle')
+    const spinner = render('spinner', {}, host)
+    await nextTick()
+    expect(spinner.attributes('data-icon-motion')).toBe('busy')
+    expect(spinner.classes()).toContain('icon-spinner')
+    await spinner.setProps({ disabled: true })
+    expect(spinner.attributes('data-icon-motion')).toBe('idle')
+  })
+
+  it('cancels decoration when any ancestor becomes disabled, inert or busy', async () => {
+    const ancestor = document.createElement('fieldset')
+    document.body.appendChild(ancestor)
+    const host = button(ancestor)
+    const icon = render('copy', {}, host)
+    const spinner = render('spinner', {}, host)
+    for (const [attribute, value] of [['aria-disabled', 'true'], ['aria-busy', 'true'], ['inert', ''], ['disabled', '']]) {
+      await enter(host)
+      expect(icon.attributes('data-icon-motion')).toBe('once')
+      ancestor.setAttribute(attribute, value)
+      await vi.waitFor(() => expect(icon.attributes('data-icon-motion')).toBe('idle'))
+      expect(spinner.attributes('data-icon-motion')).toBe('busy')
+      ancestor.removeAttribute(attribute)
+      host.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }))
+      await nextTick()
     }
   })
 
-  it('stops status loops under reduced motion and leaves the check fully drawn', () => {
-    const css = readFileSync(join(process.cwd(), 'src/components/ui/Icon.vue'), 'utf8')
-    const reduce = css.slice(css.indexOf('@media (prefers-reduced-motion: reduce)'))
-    expect(reduce).toMatch(/animation:\s*none !important/)
-    expect(reduce).toMatch(/\.grasp-check-draw\s*\{\s*stroke-dashoffset:\s*0/)
-    expect(reduce).toMatch(/\.grasp-heart-ring\s*\{\s*opacity:\s*0\.28/)
-    expect(reduce).toMatch(/transform:\s*none/)
-    expect(reduce).toMatch(/\.grasp-status\[data-hover="user"\] \.grasp-user-dot[\s\S]*transform:\s*none !important/)
-    expect(css).toMatch(/animation:\s*grasp-arc-spin 0\.85s linear infinite/)
-    expect(css).toMatch(/animation:\s*grasp-heart-ring 2\.1s ease-out infinite/)
-    expect(css).toMatch(/animation:\s*grasp-check-draw 3s ease-out infinite/)
-    expect(css).toMatch(/grasp-static-wake 320ms ease-out 1/)
-    expect(css).toMatch(/grasp-dot-wake 280ms ease-out 1/)
-    expect(css).toMatch(/animation-duration:\s*0\.45s/)
-    expect(css).toMatch(/scale\(1\.1\)/)
-    expect(css).toMatch(/stroke-width:\s*2\.35/)
-    const drawn = mount(Icon, { props: { name: 'check-draw', size: 16 } })
-    expect(drawn.find('.grasp-check-draw').attributes('d')).toBe('M7.6 12.4l3.6 3.6L18.2 7.4')
-    drawn.unmount()
+  it('stops decorative motion during canvas dragging while preserving a real loader', async () => {
+    const node = document.createElement('div')
+    node.className = 'vue-flow__node'
+    document.body.appendChild(node)
+    const host = button(node)
+    const icon = render('copy', {}, host)
+    const spinner = render('spinner', {}, host)
+    await enter(host)
+    expect(icon.attributes('data-icon-motion')).toBe('once')
+    node.classList.add('dragging')
+    await vi.waitFor(() => expect(icon.attributes('data-icon-motion')).toBe('idle'))
+    expect(spinner.attributes('data-icon-motion')).toBe('busy')
+    node.classList.remove('dragging')
+    host.dispatchEvent(new PointerEvent('pointerout', { bubbles: true }))
+    await enter(host)
+    expect(icon.attributes('data-icon-motion')).toBe('once')
+  })
+
+  it('requires explicit busy for status indicators and stops when busy ends', async () => {
+    const arc = render('arc-spinner')
+    const breath = render('breath-dot')
+    expect(arc.attributes('data-icon-motion')).toBe('idle')
+    expect(breath.attributes('data-icon-motion')).toBe('idle')
+    await arc.setProps({ busy: true })
+    expect(arc.attributes('data-icon-motion')).toBe('busy')
+    await arc.setProps({ busy: false })
+    expect(arc.attributes('data-icon-motion')).toBe('idle')
+  })
+
+  it('plays changed event keys once while completed checks ignore event and mount triggers', async () => {
+    const bell = render('bell', { motionKey: 1, interactive: false })
+    expect(bell.attributes('data-icon-motion')).toBe('idle')
+    await bell.setProps({ motionKey: 2 })
+    await nextTick()
+    await nextTick()
+    expect(bell.attributes('data-icon-motion')).toBe('once')
+    const completed = render('check-draw', { motionKey: 1 })
+    await completed.setProps({ motionKey: 2 })
+    await nextTick()
+    expect(completed.attributes('data-icon-motion')).toBe('idle')
+  })
+
+  it('honors focus-visible, reduced motion and interactive=false', async () => {
+    const host = button()
+    const icon = render('copy', {}, host)
+    const matches = host.matches.bind(host)
+    vi.spyOn(host, 'matches').mockImplementation((selector) => selector === ':focus-visible' || matches(selector))
+    host.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(icon.attributes('data-icon-motion')).toBe('once')
+    await icon.setProps({ interactive: false })
+    expect(icon.attributes('data-icon-motion')).toBe('idle')
+    const media = { matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() } as unknown as MediaQueryList
+    vi.spyOn(window, 'matchMedia').mockReturnValue(media)
+    const reduced = render('spinner')
+    expect(reduced.attributes('data-icon-motion')).toBe('idle')
+    const css = readFileSync(join(process.cwd(), 'src/styles/icon-motion.css'), 'utf8')
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+    expect(css).not.toContain('stroke-width: 2.35')
+    expect(css).not.toContain('.grasp-status-host:hover')
   })
 })

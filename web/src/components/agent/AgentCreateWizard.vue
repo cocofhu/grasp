@@ -320,7 +320,7 @@ function setCliModel(id: string) {
                       :aria-label="t('pages.agentStudio.dialogs.delete')"
                       @click="removeGitRepos"
                     >
-                      ×
+                      <Icon name="close" :size="12" />
                     </button>
                   </div>
                 </template>

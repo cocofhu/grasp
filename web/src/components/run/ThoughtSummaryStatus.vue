@@ -83,6 +83,7 @@ const iconName = computed(() => {
     <Icon
       :key="iconName"
       :name="iconName"
+      :busy="state === 'generating'"
       :size="16"
       class="thought-summary-icon"
       aria-hidden="true"

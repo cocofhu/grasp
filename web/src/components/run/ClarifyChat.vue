@@ -1081,7 +1081,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             data-testid="clarify-form-summary"
           >
             <div class="chat-response-heading flex items-center gap-2 text-txt2">
-              <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
+              <Icon name="form" :size="16" /> {{ translate('pages.clarify.myForm') }}
             </div>
             <div class="min-w-0 max-w-full">
               <div
@@ -1429,14 +1429,9 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                       <span
                         v-if="historyOptionPicked(q, i, o.label)"
                         class="clarify-history-preview-picked"
-                      >✓ {{ translate('pages.clarify.demoSelected') }}</span>
+                      ><Icon name="check" :size="11" :interactive="false" class="inline align-middle" /> {{ translate('pages.clarify.demoSelected') }}</span>
                       <span class="clarify-history-preview-go" aria-hidden="true">
-                        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                          <path d="M6.25 2.75H2.75V6.25" />
-                          <path d="M2.75 2.75 6.5 6.5" />
-                          <path d="M9.75 13.25h3.5V9.75" />
-                          <path d="M13.25 13.25 9.5 9.5" />
-                        </svg>
+                        <Icon name="preview-expand" :size="14" />
                       </span>
                     </button>
                   </div>
@@ -1469,7 +1464,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                   class="mb-3 last:mb-0"
                 >
                   <div v-if="form.title" class="mb-2 flex min-w-0 items-center gap-2 text-[13px] font-medium text-txt">
-                    <Icon name="ci" :size="16" class="shrink-0 text-txt2" />
+                    <Icon name="form" :size="16" class="shrink-0 text-txt2" />
                     <span class="min-w-0 break-words [overflow-wrap:anywhere]">{{ form.title }}</span>
                   </div>
                   <div class="space-y-2.5">
@@ -1516,7 +1511,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
               data-testid="clarify-form-readonly"
             >
               <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                <Icon name="ci" :size="16" />
+                <Icon name="form" :size="16" />
                 {{ translate('pages.clarify.formsThisRound', { n: t.forms.length }) }}
                 <span class="ml-auto text-[11px] font-normal text-txt2">
                   {{ translate('pages.clarify.readonly') }}
@@ -1657,7 +1652,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </div>
       <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
-        <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
+        <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
       </div>
       </div>
@@ -1830,7 +1825,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             :disabled="stopping"
             @click="emit('takeover')"
           >
-            <Icon :name="stopping ? 'spinner' : 'chat-stop'" :size="16" :class="stopping ? 'animate-spin motion-reduce:animate-none' : ''" />
+            <Icon :name="stopping ? 'spinner' : 'chat-stop'" :size="16" />
           </button>
         </template>
         <template v-else #toolbar-end>

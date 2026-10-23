@@ -81,9 +81,9 @@ onMounted(() => {
     >
       <Icon
         name="spinner"
+        :busy="!reduceMotion"
         :size="28"
         class="text-accent"
-        :class="reduceMotion ? '' : 'animate-spin'"
         aria-hidden="true"
         data-testid="react-connecting-stage-spinner"
       />

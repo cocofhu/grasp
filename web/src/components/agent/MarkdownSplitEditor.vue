@@ -226,7 +226,7 @@ onBeforeUnmount(() => {
         class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-txt2 hover:bg-elevated"
         @click="fmCollapsed = !fmCollapsed"
       >
-        <Icon
+        <Icon :interactive="false"
           name="chevron-down"
           :size="12"
           class="text-txt3 transition-transform"

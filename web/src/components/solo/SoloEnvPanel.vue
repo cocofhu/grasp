@@ -93,7 +93,7 @@ const facts = computed(() => {
             {{ t(`pages.solo.env.source.${s}`) }} · {{ counts[s] }}
           </button>
         </div>
-        <div v-if="loading" class="py-6 text-center text-txt3"><Icon name="spinner" :size="14" class="inline animate-spin" /></div>
+        <div v-if="loading" class="py-6 text-center text-txt3"><Icon name="spinner" :size="14" class="inline" /></div>
         <p v-else-if="!entries.length" class="py-6 text-center text-[12px] text-txt3">{{ t('pages.solo.env.empty') }}</p>
         <ul v-else class="divide-y divide-line/60 rounded-lg border border-line">
           <li v-for="e in shown" :key="e.key" class="flex items-center gap-2 px-3 py-1.5">

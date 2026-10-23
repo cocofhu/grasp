@@ -103,7 +103,7 @@ describe('ExecutionTimeline', () => {
     const vm = w.vm as any
     expect(vm.items[0].label).toBe('ghost')
     expect(vm.items[0].type).toBe('agent')
-    expect(vm.iconOf('nope')).toBe('agent')
+    expect(vm.iconOf('nope')).toBe('robot')
     expect(vm.iconOf('research')).toBeTruthy()
     w.unmount()
   })

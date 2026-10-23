@@ -55,7 +55,7 @@ function choose(name: string, close: () => void) {
     </template>
     <template #default="{ query, close }">
       <div v-if="loading && !agents.length" class="solo-picker-empty">
-        <Icon name="spinner" :size="14" class="mr-1 inline animate-spin" />
+        <Icon name="spinner" :size="14" class="mr-1 inline" />
       </div>
       <div v-else-if="!agents.length" class="solo-picker-empty">{{ t('pages.solo.agentSelect.noAgents') }}</div>
       <template v-else>

@@ -450,18 +450,13 @@ describe('StatusMetrics', () => {
     w.unmount()
   })
 
-  it('uses A-set stroke icon paths (plan g2.4)', async () => {
+  it('uses the canonical semantic metric glyphs without autonomous loops', async () => {
     const { w } = await mountMetrics()
     await flushPromises()
-    const html = w.html()
-    expect(html).toContain('cx="12" cy="6.6" rx="7.2" ry="3.1"')
-    expect(html).toContain('M4.8 6.6v4.7c0 1.7 3.2 3.1 7.2 3.1s7.2-1.4 7.2-3.1V6.6')
-    expect(html).toContain('M8.2 3v4.2M15.8 3v4.2M3.4 10.2h17.2')
-    expect(html).toContain('M10.3 8.7l5.4 3.3-5.4 3.3z')
-    expect(html).toContain('M4 7.2h16M4 12h11.5M4 16.8h7')
-    expect(html).not.toContain('M13 3L5 14h7l-1 7 8-11h-7l1-7z')
-    expect(html).not.toContain('fill="currentColor"')
-    expect(html).not.toContain('M5 7h14M5 12h14M5 17h10')
+    for (const [id, name] of [['tokens', 'token'], ['today', 'calendar'], ['running', 'runs'], ['queued', 'queue']]) {
+      const icon = w.get(`[data-testid="status-metrics-${id}"] .app-icon`)
+      expect(icon.attributes('data-icon')).toBe(name)
+      expect(icon.attributes('data-icon-motion')).toBe('idle')
+    }
     w.unmount()
-  })
-})
+  })})

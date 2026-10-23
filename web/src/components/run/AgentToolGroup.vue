@@ -134,7 +134,7 @@ function openPreview() {
       data-testid="agent-tool-group-head"
       @click="open = !open"
     >
-      <Icon v-if="overall === 'running'" name="spinner" :size="12" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+      <Icon v-if="overall === 'running'" name="spinner" busy :size="12" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
       <Icon v-else-if="overall === 'failed'" name="alert" :size="12" class="agent-tool-icon agent-tool-failed" aria-hidden="true" />
       <Icon v-else name="check" :size="12" class="agent-tool-icon" aria-hidden="true" />
       <span class="agent-tools-count">{{ t('pages.clarify.toolsUsed', { n: tools.length }, tools.length) }}</span>
@@ -145,7 +145,7 @@ function openPreview() {
         >{{ current.label }}<span v-if="current.summary" class="font-mono"> · {{ current.summary }}</span></span
       >
       <span v-else class="agent-tools-context" data-testid="agent-tool-group-names">{{ names }}</span>
-      <Icon
+      <Icon :interactive="false"
         name="chevron-down"
         :size="12"
         class="agent-tool-chevron"
@@ -165,7 +165,7 @@ function openPreview() {
             :data-testid="r.details ? 'agent-tool-row-toggle' : undefined"
             @click="r.details && toggleRow(r, i)"
           >
-            <Icon v-if="r.state === 'running'" name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+            <Icon v-if="r.state === 'running'" name="spinner" busy :size="16" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
             <Icon v-else-if="r.state === 'failed'" name="alert" :size="16" class="agent-tool-icon agent-tool-failed" aria-hidden="true" />
             <Icon v-else :key="r.icon" :name="r.icon" :size="16" class="agent-tool-icon" aria-hidden="true" data-testid="agent-tool-icon" />
             <span
@@ -190,7 +190,7 @@ function openPreview() {
               :class="{ 'agent-tool-running': r.state === 'running', 'agent-tool-failed': r.state === 'failed' }"
               >{{ label(r.state) }}</span
             >
-            <Icon
+            <Icon :interactive="false"
               v-if="r.details"
               name="chevron-down"
               :size="16"

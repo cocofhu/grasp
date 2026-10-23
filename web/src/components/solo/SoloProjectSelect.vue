@@ -81,7 +81,7 @@ function choose(id: string, close: () => void) {
         <Icon v-if="p.id === modelValue" name="check" :size="14" class="shrink-0 text-accent" />
       </button>
       <div v-if="loading && !projects.length" class="solo-picker-empty">
-        <Icon name="spinner" :size="14" class="inline animate-spin" />
+        <Icon name="spinner" :size="14" class="inline" />
       </div>
       <div v-else-if="projects.length && !projects.some((x) => matches(x, query))" class="solo-picker-empty">
         {{ t('pages.solo.projectSelect.empty') }}

@@ -245,9 +245,7 @@ onBeforeUnmount(() => {
     >
       <Icon name="workflow" :size="14" class="home-workflow-select__glyph" />
       <span class="home-workflow-select__label" :title="selectedName">{{ selectedName }}</span>
-      <svg class="home-workflow-select__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <Icon name="chevron-down" :size="16" :interactive="false" class="home-workflow-select__chev" />
     </button>
 
     <!-- Teleport to body so .home-shell__content overflow-y-auto cannot clip the downward panel (g1.2) -->
@@ -304,9 +302,7 @@ onBeforeUnmount(() => {
                 :title="p.name"
                 v-html="highlightName(p.name, search.trim())"
               />
-              <svg class="home-workflow-select__check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="m4.2 8 2.5 2.5 5.1-5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <Icon name="check" :size="16" :interactive="false" :motion-key="p.id === modelValue ? 1 : 0" class="home-workflow-select__check" />
             </button>
           </template>
           <div
@@ -326,7 +322,7 @@ onBeforeUnmount(() => {
           :class="{ 'home-workflow-select__create--active': createActive }"
           @click.stop="emitCreate"
         >
-          <span class="home-workflow-select__create-plus" aria-hidden="true">+</span>
+          <Icon name="plus" :size="14" class="home-workflow-select__create-plus" />
           <span>{{ t('pages.dashboard.create.addCard') }}</span>
         </button>
       </div>

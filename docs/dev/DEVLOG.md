@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-23（PR #923 同步 main 并修复合并冲突）
+
+- 日期：2026-10-23
+- 范围：`CHANGELOG.md`、`docs/dev/DEVLOG.md`，以及自动合并的 `AgentCreateWizard.vue`、`CreateAgentTeamWizard.vue`、`VendorMark.vue`、`OnboardingWizard.vue`。
+- 做了什么：合并 main 的 DeepSeek Harness 接入提交（`ad058343`），在发布说明和开发日志中保留双方新增记录；复核向导自动合并结果，同时保留编码工具产品标识、配置路径隐藏和单次图标动效。
+- 为什么：两条分支在相同文档位置追加记录，产生文本冲突，需要保留完整功能说明并验证组合后的行为。
+- 如何验证：Web lint、类型检查和生产构建通过；504 个文件、4986 项单测全部通过，Lines 90.70%；完整 critical E2E 205 项全部通过；server 全套 lint/vet/配置文档校验/测试/runtime 子集通过，核心覆盖率 90.2%；sandbox lint/vet、语法与 smoke 通过，核心覆盖率 96.6%，runtime bundle 的 `min_image=2`，打包图标模块与源码字节一致。actionlint、shellcheck、docs 构建与依赖审计通过。
+
+### 2026-10-23（全系统图标与单次交互动效）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/ui/Icon.vue`、`web/src/lib/icons/`、`web/src/lib/composables/useIconMotion.ts`、`web/src/styles/icon-motion.css`、主站调用组件与语义映射、`web/src/liveoverlay/`、`web/scripts/build-live-overlay.mjs`、沙箱 `web/`、三份注入脚本、`web/e2e/icon-motion*`、`web/LIB_DOMAIN_MAP.json`、`CHANGELOG.md`。
+- 做了什么：将原有 103 个公共图标和独立控件收敛到 141 项可信 SVG 注册表；Vue、沙箱聊天、预览选取和 Live overlay 共用几何与部件动效。默认完整静止，最近交互宿主 hover/focus-visible 播放一次，离开后可重播；动态禁用、忙碌、画布拖拽和减少动态效果均有明确处理。只有实际启动、生成与执行状态持续运动，历史、排队和等待人工静止。完成勾移除起笔点并从左向右绘制；修正标签、退出登录、复制、桶盖、文件夹、终端等，重画技能拼图、流程分支、小地图、token/队列、图片失败和中性审批形状，拆开团队/评审/表单/通知策略语义。通知只对新增未读反馈，首次/同值轮询/重挂载不播放；连续增量合并。品牌路径、插画、图表与确认仪式维持专用体系。
+- 为什么：此前功能图标来源分散，部分形状和状态语义错误，等待/完成状态仍循环，完成勾与多个手写 SVG 不能按一致规则重播；统一来源也避免主站与运行时图形漂移。
+- 如何验证：基于最新 main 的独立分支验证：Web lint（0 errors）、vue-tsc、生产构建通过；503 个测试文件、4965 项单测全部通过，Lines 90.69%（门禁 85%）；完整 critical E2E 203 项全部通过，包含 7 项图标动效浏览器回归。逐项验证 141 个注册图标可见、140 个功能图标确有部件动画、QQ 品牌静止，以及单次结束、重入、键盘、动态禁用祖先、嵌套宿主双向切换、画布拖拽、忙碌生命周期与减少动态效果。检查 141 项图形边界，以及 12/16/20/24px、深浅主题的 64 项尺寸样本和 320px 窄屏。server 全套 lint/vet/配置文档校验/测试/指定 runtime 子集通过，核心覆盖率 90.2%；sandbox lint/vet/覆盖率通过，核心 96.6%；注入、Git、bootstrap、mock 模型、preview-inject smoke 与运行时包构建通过。actionlint、shellcheck、docs 构建与依赖审计通过；重建注入脚本不产生额外差异，三份副本一致，运行时包 icons 模块与源码字节一致。
+
 ### 2026-10-24（修复 DSH 镜像与重启 CI 配置）
 
 - 日期：2026-10-24

@@ -290,7 +290,7 @@ watch(
               :aria-expanded="!isRunCollapsed(sec.runId)"
               @click="toggleRun(sec.runId)"
             >
-              <Icon
+              <Icon :interactive="false"
                 name="chevron-down"
                 :size="12"
                 class="ui-fold-chevron shrink-0 text-txt3"
@@ -376,7 +376,7 @@ watch(
             :aria-expanded="feedbackOpen"
             @click="feedbackOpen = !feedbackOpen"
           >
-            <Icon
+            <Icon :interactive="false"
               name="chevron-down"
               :size="12"
               class="ui-fold-chevron shrink-0 text-txt3"

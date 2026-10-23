@@ -1,324 +1,57 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
+import { useIconMotion } from '@/lib/composables/useIconMotion'
+import { resolveIcon, type IconName } from '@/lib/icons/catalog'
+import '@/styles/icon-motion.css'
 
-const props = defineProps<{ name: string; size?: number | string }>()
+const props = withDefaults(defineProps<{
+  name: IconName | (string & {})
+  size?: number | string
+  /** Only real loading states opt in. The spinner name is loading by default. */
+  busy?: boolean
+  disabled?: boolean
+  /** Suppress hover/focus feedback while retaining explicit event feedback. */
+  interactive?: boolean
+  motionKey?: string | number
+}>(), { busy: undefined, interactive: true })
 
-const paths: Record<string, string> = {
-  dashboard: '<path d="M3 3h8v8H3zM13 3h8v5h-8zM13 12h8v9h-8zM3 13h8v8H3z"/>',
-  'home-start': '<path d="m3.5 10 7.3-6a1.9 1.9 0 0 1 2.4 0l7.3 6"/><path d="M5.5 8.4v10.1A1.5 1.5 0 0 0 7 20h3v-5a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v5h3a1.5 1.5 0 0 0 1.5-1.5V8.4"/>',
-  'new-request': '<path d="M12.5 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-6.5"/><path d="m15.5 4.5 4 4M10 10l7.3-7.3a1.4 1.4 0 0 1 2 0l2 2a1.4 1.4 0 0 1 0 2L14 14l-5 1 1-5Z"/>',
-  'pending-chat': '<path d="M8 5h8a4 4 0 0 1 4 4v5a4 4 0 0 1-4 4H9l-5 3V9a4 4 0 0 1 4-4Z"/><path d="M8.5 10h7M8.5 13.5h4.5"/>',
-  'pending-review': '<rect x="5" y="3.5" width="14" height="17" rx="3"/><path d="M9 8h6m-6 4h6m-6 4h3"/>',
-  'pending-approval': '<circle cx="12" cy="12" r="8.5"/><path d="m8.5 12 2.3 2.5 4.7-5"/>',
-  'more-horizontal': '<circle cx="5" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1" fill="currentColor" stroke="none"/>',
-  logout: '<path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4m4-12 4 4-4 4m-5-4h11"/>',
-  chart: '<path d="M4 19V5M4 19h16M8 17V9M12 17V7M16 17v-5"/>',
-  board: '<rect x="3" y="4" width="5" height="16"/><rect x="10" y="4" width="5" height="16"/><rect x="17" y="4" width="4" height="16"/>',
-  workflow: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="12" r="3"/><path d="M9 6h4a3 3 0 0 1 3 3M9 18h4a3 3 0 0 0 3-3"/>',
-  runs: '<circle cx="12" cy="12" r="9"/><path d="M10 9l5 3-5 3z"/>',
-  gate: '<path d="M12 3l8 4v5c0 5-3.5 8-8 9-4.5-1-8-4-8-9V7z"/><path d="M9 12l2 2 4-4"/>',
-  lock: '<rect x="5" y="11" width="14" height="10"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/>',
-  key: '<circle cx="8" cy="15" r="4"/><path d="M11.5 12.5 21 3M16 8l3 3M18 5l3 3"/>',
-  server: '<rect x="3" y="3" width="18" height="7" rx="2"/><rect x="3" y="14" width="18" height="7" rx="2"/><path d="M7 6.5h.01M7 17.5h.01"/>',
-  artifact: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/>',
-  skills: '<path d="M4 7h12v5H4z"/><path d="M16 9h2a2 2 0 0 1 0 4h-2"/><path d="M9 4a2 2 0 1 1 4 0v3H9z"/><path d="M4 12v5a2 2 0 0 0 2 2h8"/>',
-  connector: '<path d="M9 7V3M15 7V3M8 7h8v4a4 4 0 0 1-8 0z"/><path d="M12 15v6"/>',
-  trigger: '<path d="M13 2L4 14h6l-1 8 9-12h-6z"/>',
-  settings: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/>',
-  filter: '<path d="M4 5h16M7 12h10M10 19h4"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  play: '<path d="M7 5l12 7-12 7z"/>',
-  save: '<path d="M5 3h12l4 4v14H3V5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/>',
-  more: '<circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/>',
-  close: '<path d="M6 6l12 12M18 6L6 18"/>',
-  check: '<path d="M5 12l5 5 9-11"/>',
-  'chat-send': '<path d="M12 18V6m-6 6 6-6 6 6"/>',
-  'chat-stop': '<rect x="7" y="7" width="10" height="10" rx="2"/>',
-  'chat-artifacts': '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M14 4v16"/>',
-  alert: '<path d="M12 3l9 16H3z"/><path d="M12 9v5M12 17h.01"/>',
-  'chevron-down': '<path d="M6 9l6 6 6-6"/>',
-  'chevrons-down': '<path d="M6 5l6 6 6-6"/><path d="M6 11l6 6 6-6"/>',
-  'chevron-left': '<path d="M15 6l-6 6 6 6"/>',
-  'chevron-right': '<path d="M9 6l6 6-6 6"/>',
-  'arrow-left': '<path d="M19 12H5M11 6l-6 6 6 6"/>',
-  'arrow-right': '<path d="M5 12h14M13 6l6 6-6 6"/>',
-  // ⇄ exchange: upstream ↔ downstream node handoff.
-  swap: '<path d="M7 4 3 8l4 4"/><path d="M3 8h13a5 5 0 0 1 5 5"/><path d="m17 20 4-4-4-4"/><path d="M21 16H8a5 5 0 0 1-5-5"/>',
-  'arrow-up': '<path d="M12 19V5M5 12l7-7 7 7"/>',
-  refresh: '<path d="M21 12a9 9 0 1 1-3-6.7L21 8"/><path d="M21 3v5h-5"/>',
-  copy: '<rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/>',
-  download: '<path d="M12 3v12M7 10l5 5 5-5"/><path d="M4 21h16"/>',
-  robot: '<rect x="4" y="8" width="16" height="11" rx="2"/><path d="M12 3v5M8 13h.01M16 13h.01M9 17h6"/>',
-  sparkles: '<path d="M12 3l1.6 4.4L18 9l-4.4 1.6L12 15l-1.6-4.4L6 9l4.4-1.6z"/><path d="M19 14l.8 2.2L22 17l-2.2.8L19 20l-.8-2.2L16 17l2.2-.8z"/>',
-  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-  branch: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="8" r="2.5"/><path d="M6 8.5v7M6 12h6a6 6 0 0 0 6-1.5"/>',
-  ci: '<circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/>',
-  chat: '<path d="M21 12a8 8 0 0 1-11.3 7.3L4 20l.7-5.7A8 8 0 1 1 21 12z"/>',
-  terminal: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3-3 3M13 15h4"/>',
-  bell: '<path d="M6 9a6 6 0 0 1 12 0c0 5 2 6 2 6H4s2-1 2-6z"/><path d="M10 20a2 2 0 0 0 4 0"/>',
-  dot: '<circle cx="12" cy="12" r="4"/>',
-  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M14 6l4 4"/>',
-  eye: '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/>',
-  brain: '<path d="M9.5 3A2.5 2.5 0 0 0 7 5.5v.1A3 3 0 0 0 4.6 10a3 3 0 0 0 .4 5.4A3 3 0 0 0 9.5 20a2.5 2.5 0 0 0 2.5-2.5v-12A2.5 2.5 0 0 0 9.5 3z"/><path d="M14.5 3A2.5 2.5 0 0 1 17 5.5v.1a3 3 0 0 1 2.4 4.4 3 3 0 0 1-.4 5.4 3 3 0 0 1-4.5 4.6 2.5 2.5 0 0 1-2.5-2.5"/>',
-  'eye-off': '<path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><path d="M1 1l22 22"/>',
-  doc: '<path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/>',
-  folder: '<path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  input: '<path d="M4 12h12M11 7l5 5-5 5"/><path d="M20 4v16"/>',
-  output: '<path d="M8 12h12M15 7l5 5-5 5"/><path d="M4 4v16"/>',
-  flask: '<path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3"/>',
-  send: '<path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/>',
-  // Filled square used only as the composer stop control.
-  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
-  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>',
-  moon: '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>',
-  expand: '<path d="M9 3H3v6M3 3l7 7M15 21h6v-6M21 21l-7-7"/>',
-  flag: '<path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><path d="M4 22v-7"/>',
-  history: '<path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>',
-  variable: '<path d="M5 4C2 9 2 15 5 20M19 4c3 5 3 11 0 16"/><path d="M9 9l6 6M15 9l-6 6"/>',
-  trash: '<path d="M4 7h16M9 7V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2M6 7l1 13h10l1-13"/>',
-  leave: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/>',
-  git: '<circle cx="6" cy="6" r="2.5"/><circle cx="6" cy="18" r="2.5"/><circle cx="18" cy="9" r="2.5"/><path d="M18 11.5a6 6 0 0 1-6 6H9M6 8.5v7"/>',
-  // Dual-tone loading ring: faint full track + ~90° accent arc (not the old 270° bubble-like arc).
-  spinner: '<circle cx="12" cy="12" r="9" opacity="0.25"/><path d="M21 12a9 9 0 0 1-9 9"/>',
-  paperclip: '<path d="M21 11l-8.5 8.5a5 5 0 0 1-7-7L14 4a3.5 3.5 0 0 1 5 5l-8.5 8.5a2 2 0 0 1-3-3L15 6"/>',
-  monitor: '<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/>',
-  mobile: '<rect x="7" y="3" width="10" height="18" rx="2"/><path d="M11 18h2"/>',
-  menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
-  'panel-left': '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m16 15-3-3 3-3"/>',
-  globe: '<circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>',
-  crosshair: '<circle cx="12" cy="12" r="7"/><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/>',
-  tag: '<path d="M20.6 13.4 12 22l-8.6-8.6a5 5 0 0 1 0-7.1l.7-.7a5 5 0 0 1 7.1 0L12 6l.8-.8a5 5 0 0 1 7.1 0l.7.7a5 5 0 0 1 0 7.1z"/><circle cx="7.5" cy="7.5" r="1.2"/>',
-  // Ant Design PushpinOutlined (1024 viewBox). Scale into the 24 viewport and fill only:
-  // a 1.2 stroke fattens the tip at the sidebar's 12px size.
-  pin: '<g transform="scale(0.0234375)"><path fill="currentColor" stroke="none" d="M878.3 392.1L631.9 145.7c-6.5-6.5-15-9.7-23.5-9.7s-17 3.2-23.5 9.7L423.8 306.9c-12.2-1.4-24.5-2-36.8-2-73.2 0-146.4 24.1-206.5 72.3a33.23 33.23 0 0 0-2.7 49.4l181.7 181.7-215.4 215.2a15.8 15.8 0 0 0-4.6 9.8l-3.4 37.2c-.9 9.4 6.6 17.4 15.9 17.4.5 0 1 0 1.5-.1l37.2-3.4c3.7-.3 7.2-2 9.8-4.6l215.4-215.4 181.7 181.7c6.5 6.5 15 9.7 23.5 9.7 9.7 0 19.3-4.2 25.9-12.4 56.3-70.3 79.7-158.3 70.2-243.4l161.1-161.1c12.9-12.8 12.9-33.8 0-46.8zM666.2 549.3l-24.5 24.5 3.8 34.4a259.92 259.92 0 0 1-30.4 153.9L262 408.8c12.9-7.1 26.3-13.1 40.3-17.9 27.2-9.4 55.7-14.1 84.7-14.1 9.6 0 19.3.5 28.9 1.6l34.4 3.8 24.5-24.5L608.5 224 800 415.5 666.2 549.3z"/></g>',
-  star: '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
-  'star-filled': '<path d="m12 3.6 2.5 5.1 5.6.8-4 3.9.9 5.6L12 16.3 7 19l.9-5.6-4-3.9 5.6-.8z"/>',
-  help: '<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 1 1 3.2 2.4c-.8.3-1.2.8-1.2 1.6V14"/><circle cx="12" cy="17" r="1"/>',
-  // Dedicated glyphs for the four workflow-artifact sandbox cards. Shared doc/terminal/globe stay unchanged.
-  'stage-ide': '<rect x="3.2" y="3.6" width="17.6" height="16.8" rx="2"/><path d="M3.2 8h17.6"/><path d="M8.2 8v12.4"/><path d="M11 12.2h6"/><path d="M11 15.4h4"/>',
-  'stage-terminal': '<rect x="3.2" y="4.2" width="17.6" height="15.6" rx="2"/><path d="M7.1 9.3 10.3 12 7.1 14.7"/><path d="M12.2 14.8h4.6"/>',
-  'stage-browser': '<circle cx="12" cy="12" r="8"/><path d="M4 12h16"/><ellipse cx="12" cy="12" rx="3.3" ry="8"/>',
-  'stage-log': '<circle cx="6.1" cy="6.6" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="12" r="1.15" fill="currentColor" stroke="none"/><circle cx="6.1" cy="17.4" r="1.15" fill="currentColor" stroke="none"/><path d="M9.3 6.6h8.6"/><path d="M9.3 12h6.4"/><path d="M9.3 17.4h8.6"/>',
-  'stage-resources': '<rect x="3.2" y="3.2" width="7" height="7" rx="1.6"/><rect x="13.8" y="3.2" width="7" height="7" rx="1.6"/><rect x="3.2" y="13.8" width="7" height="7" rx="1.6"/><rect x="13.8" y="13.8" width="7" height="7" rx="1.6"/>',
-  // Status primitives. Names sit beside check / play / user / history; those paths stay as they are.
-  'arc-spinner': '<g class="grasp-arc-spin"><path d="M12 3A9 9 0 1 1 3 12"/><circle class="grasp-arc-node" cx="3" cy="12" r="1.65" fill="currentColor" stroke="none"/></g>',
-  'breath-dot': '<circle class="grasp-heart-ring" cx="12" cy="12" r="3.4" fill="none" stroke="currentColor" stroke-width="1.15"/><circle class="grasp-heart-core" cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>',
-  'check-draw': '<circle class="grasp-check-node" cx="6.2" cy="12.2" r="1.55" fill="currentColor" stroke="none"/><path class="grasp-check-draw" d="M7.6 12.4l3.6 3.6L18.2 7.4"/>',
-  'warn-pulse': '<g class="grasp-wake"><path d="M12 3.2L21.2 19.6H2.8z"/><path d="M12 9.2v5.2"/><circle cx="12" cy="17.4" r="0.85" fill="currentColor" stroke="none"/></g>',
-  'bubble-idle': '<path d="M20.5 11.5a7.5 7.5 0 0 1-10.4 6.9L4.2 19.6l.6-5.2A7.5 7.5 0 1 1 20.5 11.5z"/><circle class="grasp-bdot-a" cx="9.2" cy="11.4" r="1.05" fill="currentColor" stroke="none"/><circle class="grasp-bdot-b" cx="12" cy="11.4" r="1.05" fill="currentColor" stroke="none"/><circle class="grasp-bdot-c" cx="14.8" cy="11.4" r="1.05" fill="currentColor" stroke="none"/>',
-  'user-hold': '<circle cx="10.2" cy="8" r="3.2"/><path d="M3.8 20a6.4 6.4 0 0 1 12.8 0"/><circle class="grasp-user-dot" cx="18.6" cy="11.5" r="1.55" fill="currentColor" stroke="none"/>',
-  'arrow-flow': '<g class="grasp-wake"><circle cx="4.6" cy="12" r="1.35" fill="currentColor" stroke="none"/><path d="M6.4 12h11.2"/><path d="M14.2 6.6l6.2 5.4-6.2 5.4"/></g>',
-  'run-live': '<g class="grasp-wake"><circle cx="12" cy="12" r="8.2"/><path d="M10.4 8.9l4.6 3.1-4.6 3.1z"/></g>',
-  'history-back': '<g class="grasp-wake"><path d="M4.2 4.2v4.6h4.6"/><path d="M4.3 13.2A8.2 8.2 0 1 0 7.2 6.1L4.2 8.8"/><circle cx="12" cy="12" r="1.45" fill="currentColor" stroke="none"/><path d="M12 8.2v3.2l3.2 1.6"/></g>',
-  'play-continue': '<g class="grasp-wake"><circle cx="5.4" cy="12" r="1.4" fill="currentColor" stroke="none"/><path d="M9.2 6.4l10.4 5.6-10.4 5.6z"/></g>',
-  'quiet-dot': '<g class="grasp-quiet"><circle cx="12" cy="12" r="5.2" opacity="0.45"/><circle cx="12" cy="12" r="2.1" fill="currentColor" stroke="none" opacity="0.55"/></g>',
-}
-
-/** Icons that render with solid fill (favorited star). */
-const filledNames = new Set(['star-filled', 'stop', 'pin', 'chat-stop'])
-/** Filled icons that must not inherit the solid stroke. Pin's tip blurs at 12px if stroked. */
-const unstrokedNames = new Set(['pin'])
-
+const element = ref<SVGSVGElement | null>(null)
+const definition = computed(() => resolveIcon(props.name))
 const size = computed(() => props.size ?? 18)
-const body = computed(() => paths[props.name] ?? paths.dot)
-const filled = computed(() => filledNames.has(props.name))
-const unstroked = computed(() => unstrokedNames.has(props.name))
+const { state, reset } = useIconMotion(element, {
+  duration: () => definition.value.duration,
+  busy: () => props.busy ?? props.name === 'spinner',
+  disabled: () => props.disabled === true,
+  interactive: () => props.interactive !== false,
+  motionKey: () => props.motionKey,
+  eventMotion: () => props.name !== 'check-draw',
+})
 
-/** Hover family for the ten status primitives. Absent for every other name. */
-const statusHover: Record<string, 'spin' | 'breath' | 'live' | 'static' | 'dot' | 'user'> = {
-  'arc-spinner': 'spin',
-  'breath-dot': 'breath',
-  'check-draw': 'live',
-  'bubble-idle': 'live',
-  'warn-pulse': 'static',
-  'arrow-flow': 'static',
-  'run-live': 'static',
-  'history-back': 'static',
-  'play-continue': 'static',
-  'quiet-dot': 'dot',
-  'user-hold': 'user',
-}
-const hover = computed(() => statusHover[props.name])
+// Switching semantic states must not animate the new shape using an old hover.
+watch(() => props.name, reset)
+
+const statusNames = new Set([
+  'arc-spinner', 'breath-dot', 'check-draw', 'warn-pulse', 'bubble-idle',
+  'user-hold', 'arrow-flow', 'run-live', 'history-back', 'play-continue', 'quiet-dot',
+])
 </script>
 
 <template>
   <svg
+    ref="element"
     class="app-icon"
+    aria-hidden="true"
+    :class="{ 'icon-spinner': props.name === 'spinner', 'grasp-status': statusNames.has(props.name) }"
     :data-icon="props.name"
+    :data-icon-motion="state"
     :width="size"
     :height="size"
-    viewBox="0 0 24 24"
-    :fill="filled ? 'currentColor' : 'none'"
-    :stroke="unstroked ? 'none' : 'currentColor'"
-    :stroke-width="unstroked ? undefined : (filled ? 1.2 : 1.7)"
+    :viewBox="definition.viewBox"
+    :fill="definition.filled ? 'currentColor' : 'none'"
+    :stroke="definition.strokeWidth ? 'currentColor' : 'none'"
+    :stroke-width="definition.strokeWidth || undefined"
     stroke-linecap="round"
     stroke-linejoin="round"
-    :class="{ 'icon-spinner': props.name === 'spinner', 'grasp-status': !!hover }"
-    :data-hover="hover || undefined"
-    :style="props.name === 'spinner' ? { display: 'block', transformOrigin: 'center' } : undefined"
-    v-html="body"
+    v-html="definition.body"
   />
 </template>
-
-<style>
-/* Status primitives. A row opts in with grasp-status-host; the icon is grasp-status. */
-@keyframes grasp-arc-spin { to { transform: rotate(360deg); } }
-@keyframes grasp-heart-ring {
-  0% { r: 3.4; opacity: 0.4; }
-  100% { r: 7.2; opacity: 0; }
-}
-@keyframes grasp-heart-ring-hot {
-  0% { r: 3.4; opacity: 0.7; }
-  70% { r: 10; opacity: 0; }
-  100% { r: 10; opacity: 0; }
-}
-@keyframes grasp-heart-core {
-  0%, 100% { opacity: 0.92; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.03); }
-}
-@keyframes grasp-check-node {
-  0%, 12% { opacity: 0.2; }
-  22%, 100% { opacity: 1; }
-}
-@keyframes grasp-check-draw {
-  0%, 18% { stroke-dashoffset: 26; }
-  55%, 100% { stroke-dashoffset: 0; }
-}
-@keyframes grasp-bubble-a {
-  0%, 100% { opacity: 0.3; }
-  25% { opacity: 0.85; }
-}
-@keyframes grasp-bubble-b {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 0.85; }
-}
-@keyframes grasp-bubble-c {
-  0%, 100% { opacity: 0.3; }
-  75% { opacity: 0.85; }
-}
-@keyframes grasp-user-dot {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
-}
-@keyframes grasp-static-wake {
-  0% { transform: rotate(0deg) scale(1); opacity: 0.75; }
-  40% { transform: rotate(5deg) scale(1.1); opacity: 1; }
-  100% { transform: rotate(0deg) scale(1); opacity: 1; }
-}
-@keyframes grasp-dot-wake {
-  0% { transform: scale(1); opacity: 0.5; }
-  45% { transform: scale(1.12); opacity: 1; }
-  100% { transform: scale(1); opacity: 0.8; }
-}
-@keyframes grasp-arc-node-hot {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.2); }
-}
-
-.grasp-arc-spin {
-  transform-origin: 12px 12px;
-  transform-box: view-box;
-  animation: grasp-arc-spin 0.85s linear infinite;
-}
-.grasp-arc-node {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.grasp-heart-ring { animation: grasp-heart-ring 2.1s ease-out infinite; }
-.grasp-heart-core {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: grasp-heart-core 2.1s ease-in-out infinite;
-}
-.grasp-check-node { animation: grasp-check-node 3s ease-out infinite; }
-.grasp-check-draw {
-  stroke-dasharray: 26;
-  stroke-dashoffset: 26;
-  animation: grasp-check-draw 3s ease-out infinite;
-}
-.grasp-bdot-a { animation: grasp-bubble-a 2s ease-in-out infinite; }
-.grasp-bdot-b { animation: grasp-bubble-b 2s ease-in-out infinite; }
-.grasp-bdot-c { animation: grasp-bubble-c 2s ease-in-out infinite; }
-.grasp-user-dot { animation: grasp-user-dot 2s ease-in-out infinite; }
-.grasp-wake,
-.grasp-quiet {
-  transform-box: fill-box;
-  transform-origin: center;
-}
-
-.grasp-status {
-  transform-origin: center;
-  transition: transform 160ms ease, filter 160ms ease, stroke-width 160ms ease;
-}
-.grasp-status-host:hover .grasp-status {
-  transform: scale(1.1);
-  filter: brightness(1.35);
-  stroke-width: 2.35;
-}
-.grasp-status-host:hover .grasp-status[data-hover="spin"] .grasp-arc-spin { animation-duration: 0.45s; }
-.grasp-status-host:hover .grasp-status[data-hover="spin"] .grasp-arc-node {
-  animation: grasp-arc-node-hot 0.45s ease-in-out infinite;
-}
-.grasp-status-host:hover .grasp-status[data-hover="breath"] .grasp-heart-ring {
-  animation: grasp-heart-ring-hot 1s ease-out infinite;
-}
-.grasp-status-host:hover .grasp-status[data-hover="breath"] .grasp-heart-core { animation-duration: 1s; }
-.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-check-draw,
-.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-check-node { animation-duration: 1.6s; }
-.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-a,
-.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-b,
-.grasp-status-host:hover .grasp-status[data-hover="live"] .grasp-bdot-c { animation-duration: 1.05s; }
-.grasp-status-host:hover .grasp-status[data-hover="static"] .grasp-wake {
-  animation: grasp-static-wake 320ms ease-out 1;
-}
-.grasp-status-host:hover .grasp-status[data-hover="dot"] .grasp-quiet {
-  animation: grasp-dot-wake 280ms ease-out 1;
-}
-.grasp-status-host:hover .grasp-status[data-hover="user"] .grasp-user-dot {
-  animation: none;
-  opacity: 1;
-  transform-box: fill-box;
-  transform-origin: center;
-  transform: scale(1.15);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .grasp-arc-spin,
-  .grasp-heart-ring,
-  .grasp-heart-core,
-  .grasp-check-node,
-  .grasp-check-draw,
-  .grasp-bdot-a,
-  .grasp-bdot-b,
-  .grasp-bdot-c,
-  .grasp-user-dot,
-  .grasp-arc-node,
-  .grasp-wake,
-  .grasp-quiet {
-    animation: none !important;
-  }
-  .grasp-check-draw { stroke-dashoffset: 0; }
-  .grasp-check-node,
-  .grasp-heart-core,
-  .grasp-bdot-a,
-  .grasp-bdot-b,
-  .grasp-bdot-c,
-  .grasp-user-dot { opacity: 1; }
-  .grasp-heart-ring { opacity: 0.28; }
-  .grasp-status-host:hover .grasp-status {
-    transform: none;
-    filter: brightness(1.25);
-    stroke-width: 1.7;
-  }
-  .grasp-status-host:hover .grasp-status[data-hover="user"] .grasp-user-dot,
-  .grasp-status-host:hover .grasp-status .grasp-wake,
-  .grasp-status-host:hover .grasp-status .grasp-quiet,
-  .grasp-status-host:hover .grasp-status .grasp-arc-node,
-  .grasp-status-host:hover .grasp-status .grasp-user-dot {
-    animation: none !important;
-    transform: none !important;
-  }
-}
-</style>

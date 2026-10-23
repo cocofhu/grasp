@@ -25,7 +25,7 @@ const { t } = useI18n()
     class="chat-meta grasp-status-host inline-flex items-center gap-2.5 py-2"
     data-testid="clarify-busy-placeholder"
   >
-    <Icon name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
+    <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
     <span>{{ t('pages.clarify.thinkingBusy') }}</span>
   </div>
   <div
@@ -36,7 +36,7 @@ const { t } = useI18n()
     :data-state="outputting ? 'outputting' : 'thinking'"
     role="status"
   >
-    <Icon v-if="!outputting" name="breath-dot" :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
+    <Icon v-if="!outputting" name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
     <span>{{ outputting ? t('pages.clarify.outputting') : t('pages.clarify.thinkingBusy') }}</span>
   </div>
 </template>

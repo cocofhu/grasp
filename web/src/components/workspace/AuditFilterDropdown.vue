@@ -3,6 +3,7 @@ let closeOpenAuditPanel: (() => void) | null = null
 </script>
 
 <script setup lang="ts">
+import Icon from '@/components/ui/Icon.vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 
@@ -295,9 +296,7 @@ defineExpose({ close })
     >
       <span v-if="labelKey" class="k">{{ labelKey }} · </span>
       <span class="v" :class="{ muted }">{{ displayValue }}</span>
-      <svg class="caret" viewBox="0 0 12 12" fill="none" aria-hidden="true">
-        <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" />
-      </svg>
+      <Icon name="chevron-down" :size="12" :interactive="false" class="caret" />
     </button>
     <Teleport to="body">
       <div
@@ -352,7 +351,7 @@ defineExpose({ close })
                   <span class="t">{{ o.label }}</span>
                   <span v-if="o.sub" class="s">{{ o.sub }}</span>
                 </span>
-                <span class="tick" aria-hidden="true">✓</span>
+                <Icon name="check" :size="13" :interactive="false" :motion-key="o.value === modelValue ? 1 : 0" class="tick" aria-hidden="true" />
               </button>
             </template>
           </template>

@@ -816,7 +816,7 @@ onBeforeUnmount(() => {
               :aria-label="homeMode === 'solo' ? t('pages.solo.home.start') : t('pages.dashboard.send')"
               :title="t('pages.dashboard.sendShortcut')"
             >
-              <Icon v-if="composerBusy && homeMode === 'solo'" name="spinner" :size="15" class="animate-spin" />
+              <Icon v-if="composerBusy && homeMode === 'solo'" name="spinner" :size="15" />
               <Icon v-else name="arrow-up" :size="16" />
             </button>
           </div>

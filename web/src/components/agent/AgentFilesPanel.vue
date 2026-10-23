@@ -188,7 +188,7 @@ defineExpose({
                 :aria-label="t('pages.agentStudio.explorer.collapse')"
                 @click="toggleExplorerCollapsed"
               >
-                <Icon name="chevron-right" :size="14" class="rotate-180" />
+                <Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" />
               </button>
             </template>
             <button
@@ -348,7 +348,7 @@ defineExpose({
               class="inline-flex min-h-11 items-center gap-1 px-2 text-[12px] text-txt2 hover:text-txt"
               @click="tryBackToList"
             >
-              <Icon name="chevron-right" :size="14" class="rotate-180" />
+              <Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" />
               {{ t('pages.agentStudio.mobile.back') }}
             </button>
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-txt">{{ activePath }}</span>

@@ -65,6 +65,7 @@ export function createQueuePanelUpdater(panelEl) {
             return;
         }
         panelEl.hidden = false;
+        panelEl.dataset.busy = String(busy || hasRunning);
         panelEl.open = true;
         if (sumTextEl) {
             const parts = [];
@@ -105,7 +106,7 @@ export function createQueuePanelUpdater(panelEl) {
             const oneLine = runningText.replace(/\s+/g, ' ').trim();
             const short =
                 oneLine.length > MAX_PREVIEW ? `${oneLine.slice(0, MAX_PREVIEW)}…` : oneLine;
-            const prefix = runningImageCount > 0 ? `📷×${runningImageCount} ` : '';
+            const prefix = runningImageCount > 0 ? `${runningImageCount} 张图片 · ` : '';
             const {line, main} = createQueueRow(
                 'cc-queue-row cc-queue-row--running',
                 'cc-queue-ring cc-queue-ring--spin',
@@ -143,7 +144,7 @@ export function createQueuePanelUpdater(panelEl) {
             const oneLine = text.replace(/\s+/g, ' ').trim();
             const short =
                 oneLine.length > MAX_PREVIEW ? `${oneLine.slice(0, MAX_PREVIEW)}…` : oneLine;
-            const imgPrefix = imgCnt > 0 ? `📷×${imgCnt} ` : '';
+            const imgPrefix = imgCnt > 0 ? `${imgCnt} 张图片 · ` : '';
             main.textContent = imgPrefix + (short || (imgCnt > 0 ? '' : '（空）'));
             main.title = text;
             const tag = document.createElement('span');

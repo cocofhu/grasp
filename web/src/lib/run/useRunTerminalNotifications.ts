@@ -123,6 +123,11 @@ const pageNumber = ref(1)
 const pageFilter = ref<NotificationReadFilter>('all')
 const serverAllCount = ref(0)
 const serverUnreadCount = ref(0)
+/** Shared event sequence: initial hydration and identical polling stay quiet. */
+const notificationMotionKey = ref(0)
+let unreadCountHydrated = false
+let lastServerUnreadCount = 0
+let lastNotificationMotionAt = Number.NEGATIVE_INFINITY
 const serverReadCount = ref(0)
 
 const usernameKey = ref('anonymous')
@@ -190,6 +195,9 @@ function ensureUsername(): boolean {
   if (!settled) return false
   if (name !== usernameKey.value) {
     usernameKey.value = name
+    unreadCountHydrated = false
+    lastServerUnreadCount = 0
+    lastNotificationMotionAt = Number.NEGATIVE_INFINITY
     previewPool.value = []
     pageItems.value = []
     serverAllCount.value = 0
@@ -208,6 +216,9 @@ function onAuthIdentityChange() {
   }
   if (name !== usernameKey.value) {
     usernameKey.value = name
+    unreadCountHydrated = false
+    lastServerUnreadCount = 0
+    lastNotificationMotionAt = Number.NEGATIVE_INFINITY
     previewPool.value = []
     pageItems.value = []
     serverAllCount.value = 0
@@ -269,6 +280,16 @@ function applyCounts(data: {
     serverAllCount.value = data.items.length
   }
   if (typeof data.unreadCount === 'number') {
+    if (unreadCountHydrated && data.unreadCount > lastServerUnreadCount) {
+      // Merge an arriving burst into the bell's current, finite swing.
+      const now = Date.now()
+      if (now - lastNotificationMotionAt >= 650) {
+        notificationMotionKey.value += 1
+        lastNotificationMotionAt = now
+      }
+    }
+    unreadCountHydrated = true
+    lastServerUnreadCount = data.unreadCount
     serverUnreadCount.value = data.unreadCount
   }
   if (typeof data.readCount === 'number') {
@@ -302,6 +323,7 @@ function markReadLocal(runId: string) {
   }
   if (wasUnread && serverUnreadCount.value > 0) {
     serverUnreadCount.value -= 1
+    lastServerUnreadCount = serverUnreadCount.value
     serverReadCount.value += 1
   }
 }
@@ -310,6 +332,7 @@ function markAllReadLocal() {
   previewPool.value = previewPool.value.map((n) => (n.unread ? { ...n, unread: false } : n))
   pageItems.value = pageItems.value.map((n) => (n.unread ? { ...n, unread: false } : n))
   serverUnreadCount.value = 0
+  lastServerUnreadCount = 0
   serverReadCount.value = serverAllCount.value
 }
 
@@ -521,6 +544,10 @@ export function __resetRunTerminalNotificationsForTests() {
   serverUnreadCount.value = 0
   serverReadCount.value = 0
   usernameKey.value = 'anonymous'
+  unreadCountHydrated = false
+  lastServerUnreadCount = 0
+  lastNotificationMotionAt = Number.NEGATIVE_INFINITY
+  notificationMotionKey.value = 0
   error.value = null
   lastRefreshSource.value = null
   lastPeekAt.value = 0
@@ -543,6 +570,7 @@ export function useRunTerminalNotifications() {
     listTotal,
     remainingCount,
     unreadCount,
+    notificationMotionKey,
     allCount,
     readCount,
     hasUnreadFailed,

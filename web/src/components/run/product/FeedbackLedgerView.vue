@@ -204,7 +204,7 @@ const countEntries = computed(() =>
             </div>
             <div class="mt-0.5 truncate text-[13px] text-txt2">{{ r.summary }}</div>
           </div>
-          <Icon
+          <Icon :interactive="false"
             name="chevron-down"
             :size="12"
             class="mt-0.5 shrink-0 text-txt3 transition-transform"

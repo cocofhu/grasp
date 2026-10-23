@@ -706,9 +706,12 @@ watch(soloRows, (rows) => {
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
   if (!isRunOnlyRow(it)) return null
   const run = runningById.value.get(it.runId)
-  if (!run) return 'pulse'
+  if (!run) return null
   const mark = recentRunMark(run)
-  if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
+  if (!mark) {
+    const handingOff = carriedRows.value.some((row) => row.runId === it.runId)
+    return run.status === 'running' || handingOff ? 'pulse' : null
+  }
   return null
 }
 
@@ -717,7 +720,10 @@ function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: strin
   if (isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
     const mark = run ? recentRunMark(run) : null
-    return mark && 'icon' in mark ? [mark.icon] : []
+    if (mark && 'icon' in mark) return [mark.icon]
+    if (run?.status === 'queued') return [{ name: 'queue', toneClass: 'text-txt3' }]
+    if (run?.status === 'waiting_human') return [{ name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }]
+    return []
   }
   if (startFailedKeys.value.includes(itemKey(it))) return []
   if (isStartingInboxItem(it)) return [{ name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' }]
@@ -917,7 +923,7 @@ const settingsItems = settingsNavItems
         >
           <Icon name="run-live" :size="14" class="sidebar-section-icon" aria-hidden="true" />
           <span>{{ t('nav.runningRuns') }}</span>
-          <Icon name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': runningCollapsed }" aria-hidden="true" />
+          <Icon :interactive="false" name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': runningCollapsed }" aria-hidden="true" />
         </button>
         <span class="sidebar-section-count">{{ activeRowsCount }}</span>
       </div>
@@ -964,6 +970,7 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
+              :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
@@ -1006,6 +1013,7 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
+              :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"

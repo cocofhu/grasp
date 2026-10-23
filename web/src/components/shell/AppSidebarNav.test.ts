@@ -361,6 +361,24 @@ describe('AppSidebarNav', () => {
     vi.useRealTimers()
   })
 
+  it('keeps queued and waiting rows still while a confirmed running row remains busy', async () => {
+    apiMocks.listRuns.mockResolvedValue({ items: [
+      { id: 'queued', workflowId: 'wf', workflowName: 'w', title: '排队', status: 'queued', startedAt: 'T0' },
+      { id: 'waiting', workflowId: 'wf', workflowName: 'w', title: '等待人工', status: 'waiting_human', startedAt: 'T0' },
+      { id: 'running', workflowId: 'wf', workflowName: 'w', title: '执行中', status: 'running', startedAt: 'T0' },
+    ] })
+    const wrapper = mountNav()
+    await flushPromises()
+    const queued = wrapper.get('[data-key="queued"]')
+    const waiting = wrapper.get('[data-key="waiting"]')
+    expect(queued.attributes('data-motion')).toBeUndefined()
+    expect(waiting.attributes('data-motion')).toBeUndefined()
+    expect(queued.get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('queue')
+    expect(waiting.get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('user-hold')
+    expect(wrapper.get('[data-key="running"]').attributes('data-motion')).toBe('pulse')
+    wrapper.unmount()
+  })
+
   it('keeps the same 7 unfinished runs when the inbox has other runs and history opens', async () => {
     const unfinished = Array.from({ length: 7 }, (_, i) => ({
       id: `run-${i}`,

@@ -364,7 +364,7 @@ async function createStudioChatTest(
         <template v-else>
           <h2 class="m-0 text-[18px] font-semibold text-txt">{{ t('pages.agentStudio.emptyTeamTitle') }}</h2>
           <p class="m-0 max-w-md text-[13px] leading-6 text-txt3">{{ t('pages.agentStudio.emptyTeamDesc') }}</p>
-          <AppButton variant="primary" icon="skills" data-testid="agent-studio-empty-create-team" @click="openCreateTeam">
+          <AppButton variant="primary" icon="users" data-testid="agent-studio-empty-create-team" @click="openCreateTeam">
             {{ t('pages.agentStudio.emptyTeamCta') }}
           </AppButton>
           <button type="button" class="text-[12px] text-accent-2 hover:underline" @click="openCreateAgent()">
@@ -851,7 +851,7 @@ async function createStudioChatTest(
               :aria-label="t('pages.agentStudio.tree.newTeam')"
               @click="openCreateTeam"
             >
-              <Icon name="skills" :size="14" />
+              <Icon name="users" :size="14" />
             </button>
             <AppButton
               size="sm"

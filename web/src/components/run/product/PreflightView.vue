@@ -52,7 +52,7 @@ function fieldLabel(f: PreflightField): string {
         :class="doc.confirmed ? 'bg-ok/15 text-ok' : 'bg-warn/15 text-warn'"
         data-testid="preflight-confirmed"
       >
-        <Icon :name="doc.confirmed ? 'check' : 'gate'" :size="11" />
+        <Icon :name="doc.confirmed ? 'check' : 'user-hold'" :size="11" />
         {{
           doc.confirmed
             ? t('pages.product.preflight.confirmed')
@@ -69,7 +69,7 @@ function fieldLabel(f: PreflightField): string {
 
     <section v-if="doc.fields?.length" class="report-section">
       <h3 class="report-heading mb-1.5 flex items-center gap-1.5 font-semibold text-txt3">
-        <Icon name="ci" :size="12" :style="{ color: accent || 'var(--c-n-ci, #2DD4BF)' }" />
+        <Icon name="form" :size="12" :style="{ color: accent || 'var(--c-n-ci, #2DD4BF)' }" />
         {{ t('pages.product.preflight.fields') }}
       </h3>
       <div class="overflow-x-auto report-table-scroll">
@@ -140,7 +140,7 @@ function fieldLabel(f: PreflightField): string {
       >
         <Icon name="doc" :size="12" />
         {{ t('pages.product.preflight.rawJson') }}
-        <Icon :name="showRaw ? 'chevron-down' : 'chevron-right'" :size="12" :class="showRaw ? 'rotate-180' : ''" />
+        <Icon :interactive="false" :name="showRaw ? 'chevron-down' : 'chevron-right'" :size="12" :class="showRaw ? 'rotate-180' : ''" />
       </button>
       <pre
         v-if="showRaw"

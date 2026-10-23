@@ -354,7 +354,7 @@ defineExpose({ focus: () => trigger.value?.focus() })
           <Icon :name="TAG_ICON[tag]" :size="12" />
         </span>
       </span>
-      <Icon name="chevron-down" :size="14" class="cms-chevron shrink-0 text-txt3" :class="{ 'is-open': open }" />
+      <Icon :interactive="false" name="chevron-down" :size="14" class="cms-chevron shrink-0 text-txt3" :class="{ 'is-open': open }" />
     </button>
 
     <!-- What the CLI will be launched with. Meta hides the echo and keeps 恢复自动. -->
