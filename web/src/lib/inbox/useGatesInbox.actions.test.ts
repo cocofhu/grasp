@@ -56,6 +56,8 @@ const mocks = vi.hoisted(() => ({
   toastSuccess: vi.fn(),
   toastWarn: vi.fn(),
   toastError: vi.fn(),
+  toastShow: vi.fn(),
+  takeoverNode: vi.fn(),
 }))
 
 vi.mock('@/lib/composables/useBreakpoint', () => ({
@@ -72,6 +74,7 @@ vi.mock('@/lib/composables/useToast', () => ({
     success: mocks.toastSuccess,
     warn: mocks.toastWarn,
     error: mocks.toastError,
+    show: mocks.toastShow,
     info: vi.fn(),
   }),
 }))
@@ -138,6 +141,7 @@ vi.mock('@/lib/api/api', async () => {
       reactQueueRemove: mocks.reactQueueRemove,
       reactQueueReorder: mocks.reactQueueReorder,
       nodeEvents: mocks.nodeEvents,
+      takeoverNode: mocks.takeoverNode,
       runArtifacts: mocks.runArtifacts,
       createGateShareLink: mocks.createGateShareLink,
       createReviewShareLink: mocks.createReviewShareLink,
@@ -516,6 +520,7 @@ describe('useGatesInbox actions', () => {
     expect(inbox.activeChainSegments.value.map((s) => [s.label, s.open])).toEqual([['Clarify', true]])
     expect(inbox.activeNodeTask.value).toBe('编写并执行验收用例')
     expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.followObserving.value).toBe(false)
     expect(inbox.clarifyComposerLocked.value).toBe(false)
     app.unmount()
   })
@@ -570,6 +575,8 @@ describe('useGatesInbox actions', () => {
     expect(inbox.active.value?.runId).toBe('run-chat')
     expect(inbox.activeHandoff.value?.phase).toBe('done')
     expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '部署' })
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.followStopping.value).toBe(false)
     inbox.selectItem(inbox.listItems.value[0]!)
     await nextTick()
     expect(inbox.activeFollowTail.value).toBeNull()
@@ -595,7 +602,21 @@ describe('useGatesInbox actions', () => {
     await flushPromises()
     expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
     expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'waiting', label: '验收测试' })
+    expect(inbox.followObserving.value).toBe(false)
     expect(inbox.clarifyComposerLocked.value).toBe(true)
+
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试' })],
+      total: 2,
+    })
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'status' })
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'accept' })
+    expect(inbox.activeFollowTail.value).toBeNull()
+    expect(inbox.followObserving.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(false)
     app.unmount()
   })
 
@@ -712,6 +733,7 @@ describe('useGatesInbox actions', () => {
         await flushPromises()
         expect(inbox.active.value?.runId).toBe('run-chat')
         expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'ended', status })
+        expect(inbox.followObserving.value).toBe(false)
         expect(inbox.activeFollowProcess.value.every((s) => !s.live)).toBe(true)
       } finally {
         app.unmount()
@@ -757,8 +779,113 @@ describe('useGatesInbox actions', () => {
     await flushPromises()
     expect(inbox.active.value?.runId).toBe('run-chat')
     expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'ended', status: 'completed' })
+    expect(inbox.followObserving.value).toBe(false)
     expect(inbox.clarifyComposerDone.value).toBe(false)
     expect(inbox.clarifyComposerLocked.value).toBe(true)
+    app.unmount()
+  })
+
+  async function followAuto(inbox: Awaited<ReturnType<typeof withInbox>>['inbox']) {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'running',
+      currentNode: { id: 'implement', name: '实现', mode: 'auto', state: 'running', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: 'Clarify', kind: 'clarify', status: 'completed', turns: [] }],
+    })
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await nextTick()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', nodeId: 'implement', iteration: 1 })
+  }
+
+  it('stopping a followed auto node calls takeover once and does not navigate', async () => {
+    const { inbox, app, router } = await withInbox()
+    await followAuto(inbox)
+    const before = router.currentRoute.value.fullPath
+    const push = vi.spyOn(router, 'push')
+    const replace = vi.spyOn(router, 'replace')
+    mocks.takeoverNode.mockResolvedValue({
+      runId: 'run-chat', nodeId: 'implement', iteration: 1, mode: 'manual', state: 'stopping', status: 'taken_over',
+    })
+    await inbox.takeoverFollow()
+    await inbox.takeoverFollow()
+    expect(mocks.takeoverNode).toHaveBeenCalledTimes(1)
+    expect(mocks.takeoverNode).toHaveBeenCalledWith('run-chat', 'implement', 1)
+    expect(inbox.followStopping.value).toBe(true)
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(push).not.toHaveBeenCalled()
+    expect(replace).not.toHaveBeenCalled()
+    expect(router.currentRoute.value.fullPath).toBe(before)
+    app.unmount()
+  })
+
+  it('a takeover that is already waiting opens that chat in place', async () => {
+    const { inbox, app, router } = await withInbox()
+    await followAuto(inbox)
+    const before = router.currentRoute.value.fullPath
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'implement', label: '实现' })],
+      total: 2,
+    })
+    mocks.takeoverNode.mockResolvedValue({
+      runId: 'run-chat', nodeId: 'implement', iteration: 1, mode: 'manual', state: 'waiting_human', status: 'already_manual',
+    })
+    await inbox.takeoverFollow()
+    await flushPromises()
+    expect(mocks.takeoverNode).toHaveBeenCalledTimes(1)
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'implement' })
+    expect(inbox.followObserving.value).toBe(false)
+    expect(inbox.followStopping.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(false)
+    expect(inbox.activeFollowTail.value).toBeNull()
+    expect(router.currentRoute.value.fullPath).toBe(before)
+    app.unmount()
+  })
+
+  it('node_takeover waiting_human opens that chat on this page', async () => {
+    const { inbox, app, router } = await withInbox()
+    await followAuto(inbox)
+    mocks.takeoverNode.mockResolvedValue({
+      runId: 'run-chat', nodeId: 'implement', iteration: 1, mode: 'manual', state: 'stopping', status: 'taken_over',
+    })
+    await inbox.takeoverFollow()
+    expect(inbox.followStopping.value).toBe(true)
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'implement', label: '实现' })],
+      total: 2,
+    })
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'node_takeover', nodeId: 'implement', iteration: 1, mode: 'manual', state: 'waiting_human' })
+    await flushPromises()
+    expect(mocks.takeoverNode).toHaveBeenCalledTimes(1)
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'implement' })
+    expect(inbox.followStopping.value).toBe(false)
+    expect(inbox.followObserving.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(false)
+    expect(router.currentRoute.value.fullPath).not.toContain('/runs/')
+    app.unmount()
+  })
+
+  it('a rejected takeover drops the stopping state and can be tried again', async () => {
+    const { inbox, app } = await withInbox()
+    await followAuto(inbox)
+    mocks.takeoverNode.mockRejectedValueOnce(Object.assign(new Error('node_finishing'), { status: 409 }))
+    await inbox.takeoverFollow()
+    await flushPromises()
+    expect(inbox.followStopping.value).toBe(false)
+    expect(inbox.followObserving.value).toBe(true)
+    expect(mocks.toastShow).toHaveBeenCalledWith('节点正在结束，已刷新')
+    mocks.takeoverNode.mockResolvedValueOnce({
+      runId: 'run-chat', nodeId: 'implement', iteration: 1, mode: 'manual', state: 'stopping', status: 'taken_over',
+    })
+    await inbox.takeoverFollow()
+    expect(mocks.takeoverNode).toHaveBeenCalledTimes(2)
+    expect(inbox.followStopping.value).toBe(true)
     app.unmount()
   })
 

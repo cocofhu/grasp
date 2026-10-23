@@ -55,6 +55,7 @@ import {
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
 import { agentPartsFromEvents, sameParts } from '@/lib/run/acpTools'
+import { takeoverConflictRunStatus, takeoverErrorCode, takeoverRaceLost } from '@/lib/run/runLive'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { useToast } from '@/lib/composables/useToast'
@@ -321,6 +322,8 @@ type FollowProcessSegment = {
   endedAt?: string
 }
 const followTail = ref<FollowTail | null>(null)
+/** Stop on the auto-run bar was accepted; placeholder stays「正在停止…」until the chat opens. */
+const followStopping = ref(false)
 const followProcess = ref<FollowProcessSegment[]>([])
 let followTimer: ReturnType<typeof setTimeout> | null = null
 let followItem: InboxItem | null = null
@@ -411,6 +414,7 @@ function openFollowWs(runId: string) {
       name?: string
       kind?: string
       mode?: string
+      state?: 'stopping' | 'waiting_human'
       events?: AcpEvent[]
       busy?: boolean
       status?: string
@@ -421,6 +425,7 @@ function openFollowWs(runId: string) {
       return
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
+    else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
     else if (m.type === 'status') kickFollow()
     else if (m.type === 'acp') onFollowAcp(runId, m)
   }
@@ -563,6 +568,7 @@ function replayEarlyAcp(tail: FollowTail) {
   writeFollowParts(tail.nodeId, tail.iteration ?? hit.iteration ?? 1, tail.label || tail.nodeId, hit.events, tail.kind === 'auto')
 }
 function setFollowTail(next: FollowTail) {
+  if (next.kind !== 'auto') followStopping.value = false
   followTail.value = next
   if (next.kind === 'auto' && next.nodeId) ensureAutoSegment(next)
   else sealFollowProcess()
@@ -639,6 +645,7 @@ function stopFollow() {
   followSawNodeEnter = false
   followEarlyAcp = new Map()
   followSnapGen++
+  followStopping.value = false
   closeFollowWs()
 }
 function isFollowingActive(): boolean {
@@ -648,6 +655,8 @@ const activeFollowTail = computed(() =>
   followTail.value && active.value && followTail.value.key === itemKey(active.value) ? followTail.value : null,
 )
 const activeFollowProcess = computed(() => (activeFollowTail.value ? followProcess.value : []))
+/** Auto node on the followed conversation: the existing observe bar, not the done footer. */
+const followObserving = computed(() => activeFollowTail.value?.kind === 'auto')
 function tailFromChain(key: string, chain: RunChain): FollowTail {
   const at = new Date().toISOString()
   const cur = chain.current
@@ -755,6 +764,69 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   } else scheduleFollow(submitted, submittedKey)
   return true
 }
+/**
+ * Takeover finished (or the node parked itself): open the same-run chat in
+ * place. The row may still be starting — then keep following until it parks.
+ */
+async function settleTakeoverChat(item: InboxItem, key: string) {
+  if (!followTail.value || followTail.value.key !== key || !active.value || itemKey(active.value) !== key) return
+  try {
+    await loadList()
+  } catch {
+    /* soft */
+  }
+  if (!followTail.value || followTail.value.key !== key) return
+  if (await continueInRun(item, key)) return
+  kickFollow()
+}
+/** WS node_takeover while the auto-run bar is up. Same contract as the live page, without leaving this chat. */
+function onFollowTakeover(runId: string, m: { nodeId?: string; state?: 'stopping' | 'waiting_human' }) {
+  const ft = followTail.value
+  const item = followItem
+  if (!ft || ft.runId !== runId || !item || !active.value || itemKey(active.value) !== ft.key) return
+  if (m.nodeId && ft.nodeId && m.nodeId !== ft.nodeId) return
+  notifyRecentActivity()
+  if (m.state === 'waiting_human') {
+    void settleTakeoverChat(item, ft.key)
+    return
+  }
+  if (m.state === 'stopping' && ft.kind === 'auto') followStopping.value = true
+}
+/**
+ * Stop on the followed auto node. One POST /takeover; a second click while
+ * stopping does not send again. Failure uses the live page's notices and
+ * drops「正在停止…」.
+ */
+async function takeoverFollow() {
+  const ft = activeFollowTail.value
+  const item = followItem
+  if (followStopping.value || !ft || ft.kind !== 'auto' || !ft.nodeId || !item) return
+  const key = ft.key
+  followStopping.value = true
+  notifyRecentActivity()
+  try {
+    const res = await api.takeoverNode(ft.runId, ft.nodeId, ft.iteration)
+    if (!followTail.value || followTail.value.key !== key) return
+    if (res.state === 'waiting_human') await settleTakeoverChat(item, key)
+  } catch (e) {
+    if (!followTail.value || followTail.value.key !== key) return
+    followStopping.value = false
+    const code = takeoverErrorCode(e)
+    if (code === 'run_not_running') {
+      const status = takeoverConflictRunStatus(e)
+      toast.error(t('pages.runLive.run_not_running', { status: status ? t(`common.status.${status}`, status) : '-' }))
+      kickFollow()
+      return
+    }
+    if (takeoverRaceLost(code)) {
+      toast.show(t(`pages.runLive.${code}`))
+      kickFollow()
+      return
+    }
+    const msg = code ? t(`pages.runLive.${code}`) : e instanceof Error ? e.message : String(e)
+    toast.error(code ? msg : t('pages.runLive.takeoverFailed', { msg }))
+  }
+}
 /** A confirmed conversation reopened by a reload: its transcript, the 已流转 row, then the run followed in place. */
 async function resumeHandedOff(run: Run, nodeId: string) {
   const conv = run.clarifyByNode![nodeId]!
@@ -773,6 +845,7 @@ async function resumeHandedOff(run: Run, nodeId: string) {
   activeRun.value = run
   activeRunLoadError.value = false
   followItem = item
+  followStopping.value = false
   followTail.value = { key, runId: run.id, kind: 'waiting', at: new Date().toISOString() }
   active.value = item
   handoffState.value = { key, phase: 'done', at: new Date().toISOString(), target: nextNodeLabel(nodeId) }
@@ -3232,6 +3305,9 @@ function itemSecondary(it: InboxItem) {
     activeChainSegments,
     activeFollowTail,
     activeFollowProcess,
+    followObserving,
+    followStopping,
+    takeoverFollow,
     inboxConfirmFlow,
     inboxConfirmFlowPhase: inboxConfirmFlow.phase,
     inboxConfirmFlowReduce: inboxConfirmFlow.reduceMotion,
