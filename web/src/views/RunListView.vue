@@ -644,8 +644,7 @@ onUnmounted(() => {
               <div
                 v-if="showNodeLabel(r)"
                 :key="`${r.id}-${r.currentNodeLabel}`"
-                class="node-label-fade max-w-full truncate text-[11px]"
-                :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                class="node-label-fade max-w-full truncate text-[11px] text-txt3"
                 :title="r.currentNodeLabel!.length > 60 ? r.currentNodeLabel : undefined"
               >{{ truncateText(r.currentNodeLabel!, 60) }}</div>
             </div>
@@ -808,8 +807,7 @@ onUnmounted(() => {
                   <div
                     v-if="showNodeLabel(r)"
                     :key="`${r.id}-${r.currentNodeLabel}`"
-                    class="node-label-fade mt-1 truncate text-[11px]"
-                    :class="r.status === 'waiting_human' ? 'text-warn' : 'text-txt3'"
+                    class="node-label-fade mt-1 truncate text-[11px] text-txt3"
                     :title="r.currentNodeLabel!"
                   >{{ r.currentNodeLabel }}</div>
                 </td>

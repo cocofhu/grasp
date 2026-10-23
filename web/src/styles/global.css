@@ -1037,3 +1037,37 @@ html.theme-color-motion .app-sidebar-card {
     overflow-x: auto;
   }
 }
+
+/*
+ * Pending-attachment remove control.
+ * Resting state is neutral; solid #DC2626 and a white cross appear only on
+ * hover or keyboard focus. Light cross #71717A is the selected swatch, not a
+ * named token. Disabled stays on the resting colors.
+ */
+.pending-attach-remove {
+  border: 1px solid #36363E;
+  background-color: #141417;
+  color: #A1A1AA;
+}
+html.light .pending-attach-remove {
+  border-color: #D4D4D8;
+  background-color: #FFFFFF;
+  color: #71717A;
+}
+.pending-attach-remove:is(:hover, :focus-visible):not(:disabled) {
+  border-color: #DC2626;
+  background-color: #DC2626;
+  color: #FFFFFF;
+}
+/* A global button:hover rule is more specific than the resting class. Keep
+   disabled controls on the neutral colors instead of that hover fill. */
+.pending-attach-remove:disabled:is(:hover, :focus-visible) {
+  border-color: #36363E;
+  background-color: #141417;
+  color: #A1A1AA;
+}
+html.light .pending-attach-remove:disabled:is(:hover, :focus-visible) {
+  border-color: #D4D4D8;
+  background-color: #FFFFFF;
+  color: #71717A;
+}
