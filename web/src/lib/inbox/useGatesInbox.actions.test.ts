@@ -146,6 +146,7 @@ vi.mock('@/lib/api/api', async () => {
   }
 })
 
+import * as recentRuns from '@/lib/run/recentRuns'
 import { TYPING_IDLE_MS, useGatesInbox } from './useGatesInbox'
 import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
@@ -1145,6 +1146,48 @@ describe('useGatesInbox actions', () => {
     shared.remoteItems.value = []
     await nextTick()
     app.unmount()
+  })
+
+  it('queue_state patches the card without replacing the open conversation or draft', async () => {
+    const relay = vi.spyOn(recentRuns, 'notifyRecentActivity')
+    const input = document.createElement('textarea')
+    const { inbox, app } = await withInbox()
+    try {
+      relay.mockClear()
+      const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+      inbox.active.value = clarify
+      await nextTick()
+      const open = inbox.active.value
+      expect(open?.runId).toBe('run-chat')
+      shared.draft.value = '草稿还在'
+      input.value = '草稿还在'
+      document.body.append(input)
+      input.focus()
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))
+      if (!socket) {
+        const urls = MockWebSocket.instances.map((sock) => sock.url).join('|')
+        throw new Error(`no chat socket urls=${urls || 'none'}`)
+      }
+      socket.open()
+      socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', busy: true, waiting: 0 })
+      expect(inbox.active.value).toBe(open)
+      expect(shared.draft.value).toBe('草稿还在')
+      expect(input.value).toBe('草稿还在')
+      expect(document.activeElement).toBe(input)
+      expect(inbox.listItems.value.find((it) => it.nodeId === 'react')?.state).toBe('replying')
+      expect(mocks.patchItemReplying).toHaveBeenCalledWith('run-chat:react', true)
+      expect(relay).toHaveBeenCalled()
+      relay.mockClear()
+      socket.message({ type: 'review', event: 'queue_state', nodeId: 'react', busy: false, waiting: 0 })
+      expect(relay).toHaveBeenCalled()
+      expect(inbox.active.value).toBe(open)
+      expect(inbox.listItems.value.find((it) => it.nodeId === 'react')?.state).toBeUndefined()
+      expect(input.value).toBe('草稿还在')
+    } finally {
+      input.remove()
+      relay.mockRestore()
+      app.unmount()
+    }
   })
 
   it('routes focus and visibility peeks and reacts to query deep links', async () => {

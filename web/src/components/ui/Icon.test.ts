@@ -92,6 +92,80 @@ describe('Icon geometry and compatibility', () => {
     expect(render('check').get('path').attributes('d')).toBe('M5 12l5 5 9-11')
   })
 
+  it('draws equal rounded board columns and a smaller solid workflow', () => {
+    const board = render('board')
+    const columns = board.findAll('rect')
+    expect(columns).toHaveLength(3)
+    expect(columns.map((column) => column.attributes('x'))).toEqual(['3.1', '9.5', '15.9'])
+    expect(columns.map((column) => column.attributes('width'))).toEqual(['5', '5', '5'])
+    expect(columns.map((column) => column.attributes('y'))).toEqual(['3.6', '3.6', '3.6'])
+    expect(columns.map((column) => column.attributes('height'))).toEqual(['16.8', '16.8', '16.8'])
+    expect(columns.map((column) => column.attributes('rx'))).toEqual(['1.6', '1.6', '1.6'])
+    const boardSvg = board.get('svg')
+    expect(boardSvg.attributes('viewBox')).toBe('0 0 24 24')
+    expect(boardSvg.attributes('fill')).toBe('none')
+    expect(boardSvg.attributes('stroke')).toBe('currentColor')
+    expect(boardSvg.attributes('stroke-width')).toBe('1.7')
+    expect(boardSvg.attributes('stroke-linecap')).toBe('round')
+    expect(board.html()).not.toContain('width="4"')
+
+    const flow = render('workflow')
+    expect(flow.get('.node-a').attributes()).toMatchObject({ cx: '6', cy: '6', r: '2.2', 'fill-opacity': '0' })
+    expect(flow.get('.node-b').attributes()).toMatchObject({ cx: '6', cy: '18', r: '2.2', 'fill-opacity': '0' })
+    expect(flow.get('.node-c').attributes()).toMatchObject({ cx: '18', cy: '12', r: '2.2', 'fill-opacity': '0' })
+    for (const node of ['.node-a', '.node-b', '.node-c']) {
+      expect(Number(flow.get(node).attributes('r'))).toBeLessThan(3)
+    }
+    const line = 'M8.2 6C12 6 14 8.2 16.45 10.45M8.2 18C12 18 14 15.8 16.45 13.55'
+    const staticPath = flow.findAll('path').find((path) => !path.classes().includes('signal'))
+    expect(staticPath?.attributes('d')).toBe(line)
+    expect(staticPath?.attributes('opacity')).toBeUndefined()
+    expect(flow.html()).not.toMatch(/opacity=["']\.55["']/)
+    const signal = flow.get('.signal')
+    expect(signal.attributes('d')).toBe(line)
+    expect(signal.attributes('opacity')).toBe('0')
+    expect(signal.attributes('stroke-width')).toBe('2.5')
+    expect(signal.attributes('pathLength')).toBe('1')
+    const flowSvg = flow.get('svg')
+    expect(flowSvg.attributes('viewBox')).toBe('0 0 24 24')
+    expect(flowSvg.attributes('fill')).toBe('none')
+    expect(flowSvg.attributes('stroke')).toBe('currentColor')
+    expect(flowSvg.attributes('stroke-width')).toBe('1.7')
+    expect(iconDefinitions.board.duration).toBe(570)
+    expect(iconDefinitions.workflow.duration).toBe(1250)
+
+    const css = readFileSync(join(process.cwd(), 'src/styles/icon-motion.css'), 'utf8')
+    expect(css).toContain('.app-icon[data-icon="board"][data-icon-motion="once"] rect:nth-of-type(1)')
+    expect(css).toContain('.app-icon[data-icon="board"][data-icon-motion="once"] rect:nth-of-type(2)')
+    expect(css).toContain('.app-icon[data-icon="board"][data-icon-motion="once"] rect:nth-of-type(3)')
+    expect(css).toContain('.app-icon[data-icon="workflow"][data-icon-motion="once"] .node-a')
+    expect(css).toContain('.app-icon[data-icon="workflow"][data-icon-motion="once"] .node-b')
+    expect(css).toContain('.app-icon[data-icon="workflow"][data-icon-motion="once"] .node-c')
+    expect(css).toContain('.app-icon[data-icon="workflow"][data-icon-motion="once"] .signal')
+    expect(css).toContain('@media (prefers-reduced-motion: reduce)')
+  })
+
+  it('keeps generated icon copies on the tightened board and workflow geometry', () => {
+    const repo = join(process.cwd(), '..')
+    const copies = [
+      'web/public/preview-pick.js',
+      'server/internal/handlers/preview-pick.js',
+      'sandbox-gateway/sandbox/internal/previewinject/preview-pick.js',
+      'sandbox-gateway/sandbox/web/static/js/ui/icons.js',
+      'web/public/live-overlay.js',
+      'server/internal/handlers/live-overlay.js',
+      'sandbox-gateway/sandbox/internal/previewinject/live-overlay.js',
+    ]
+    for (const file of copies) {
+      const src = readFileSync(join(repo, file), 'utf8')
+      expect(src, file).toContain(iconDefinitions.board.body)
+      expect(src, file).toContain(iconDefinitions.workflow.body)
+      expect(src, file).not.toContain('cx="6" cy="6" r="3"')
+      expect(src, file).not.toContain('opacity=".55"')
+      expect(src, file).not.toContain('width="4" height="16"')
+    }
+  })
+
   it('uses a punched tag, aligned logout arrow, complete puzzle, and actual flow minimap', () => {
     const tag = render('tag')
     expect(tag.get('circle').attributes('cx')).toBe('7.5')
