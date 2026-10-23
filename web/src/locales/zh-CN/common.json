@@ -193,9 +193,9 @@
       "copiedShort": "已复制",
       "copyFailed": "复制失败",
       "importedFiles": "已从文件夹导入 {count} 个文件到 {dir}",
-      "favoriteAdded": "已收藏「{name}」，已置顶到侧栏",
+      "favoriteAdded": "已收藏「{name}」",
       "favoriteRemoved": "已取消收藏「{name}」",
-      "favoriteFull": "已达 {max} 条上限，请先取消其它快捷",
+      "favoriteFull": "已达 {max} 条上限，请先取消其它收藏",
       "favoriteLaunchFailed": "无法启动该工作流，请稍后重试"
     },
     "action": "动作",

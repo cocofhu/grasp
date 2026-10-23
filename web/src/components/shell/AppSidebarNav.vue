@@ -929,7 +929,7 @@ const settingsItems = settingsNavItems
       </template>
     </div>
 
-    <!-- Workspace primary + quick workflows slide together (plan g2.2) -->
+    <!-- Workspace primary nav. Starred workflows are not listed here. -->
     <div v-else-if="primaryGroup" key="workspace" class="nav-chrome-pane">
     <div class="mb-3" data-testid="nav-workspace-chrome">
       <RouterLink
