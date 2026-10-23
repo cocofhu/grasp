@@ -733,6 +733,40 @@ describe('AppSidebarNav', () => {
     expect(src).toMatch(/chromeHasMounted/)
   })
 
+  it('keeps the new-request active row transparent and other selections gray', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppSidebarNav.vue'), 'utf8')
+    const style = src.slice(src.indexOf('<style scoped>'))
+    const block = (selector: string) => {
+      const found = style.match(new RegExp(`${selector}\\s*\\{[^}]*\\}`, 's'))
+      expect(found, selector).not.toBeNull()
+      return found![0]
+    }
+
+    const createIdle = block('\\.sidebar-workspace-nav \\.nav-create-action')
+    expect(createIdle).toContain('background: transparent')
+    expect(createIdle).toContain('font-weight: 500')
+    expect(createIdle).toContain('--hover-ink-color: rgb(var(--c-txt) / .045)')
+
+    const createActive = block('\\.sidebar-workspace-nav \\.nav-create-action\\.active')
+    expect(createActive).toContain('background: transparent')
+    expect(createActive).toContain('font-weight: 600')
+    expect(createActive).not.toMatch(/rgb\(var\(--c-txt\)\s*\/\s*\.055\)/)
+
+    const itemActive = block('\\.sidebar-workspace-nav \\.nav-item\\.active')
+    expect(itemActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+
+    const settingsActive = block('\\.settings-directory \\.nav-item\\.active')
+    expect(settingsActive).toContain('background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065))')
+
+    const genericAt = style.indexOf('.sidebar-workspace-nav .nav-item.active')
+    const createAt = style.indexOf('.sidebar-workspace-nav .nav-create-action.active')
+    expect(genericAt).toBeGreaterThanOrEqual(0)
+    expect(createAt).toBeGreaterThan(genericAt)
+  })
+
   it('workspace and settings nav-items use v-hover-ink (plan g2.1 / g2.3)', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')

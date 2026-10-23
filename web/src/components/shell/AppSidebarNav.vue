@@ -1267,7 +1267,7 @@ const settingsItems = settingsNavItems
   --hover-ink-color: rgb(var(--c-txt) / .045);
 }
 .sidebar-workspace-nav .nav-create-action.active {
-  background: rgb(var(--c-txt) / .055);
+  background: transparent;
   font-weight: 600;
 }
 .nav-create-action > svg {
