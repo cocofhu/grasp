@@ -115,6 +115,7 @@ type WorkflowSandboxPolicy struct {
 func ValidSandboxMode(mode string) bool {
 	return mode == "" || mode == SandboxModePerNode || mode == SandboxModeShared
 }
+
 type WorkflowGateAutoPolicy struct {
 	Enabled     bool     `json:"enabled"`
 	AgentName   string   `json:"agentName"`

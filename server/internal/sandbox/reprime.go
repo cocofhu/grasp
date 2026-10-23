@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
@@ -215,7 +216,9 @@ func copyTarGzInto(tw *tar.Writer, data []byte, prefix string) error {
 // home contents, SSH and repo credentials). Equal fingerprints mean a running
 // sandbox needs no re-prime. Empty on a config home that cannot be read.
 func SpecFingerprint(spec Spec) string {
-	h := sha256.New()
+	// HMAC keeps this deterministic change detector out of password-hashing
+	// code paths while still making the fingerprint opaque to its inputs.
+	h := hmac.New(sha256.New, []byte("grasp-reprime-spec-fingerprint-v1"))
 	for _, k := range ReprimeEnvKeys(spec) {
 		_, _ = fmt.Fprintf(h, "env\x00%s\x00%s\x00", k, spec.Env[k])
 	}
