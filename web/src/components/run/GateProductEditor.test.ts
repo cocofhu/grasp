@@ -422,4 +422,33 @@ describe('GateProductEditor', () => {
     expect(apiMocks.saveGateArtifact).toHaveBeenCalled()
     wrapper.unmount()
   })
+
+  it('keeps product tabs and edit/preview hover off the selected fill', async () => {
+    const wrapper = mountEditor(true, {
+      products: [
+        { name: 'research.json', kind: 'json' as const },
+        { name: 'plan.json', kind: 'json' as const },
+      ],
+      savedContent: { 'research.json': researchContent, 'plan.json': '{}' },
+      savedMeta: { 'research.json': { etag: 'W/"1"' }, 'plan.json': { etag: 'W/"2"' } },
+    })
+    await flushPromises()
+    const tabs = wrapper.findAll('[role="tab"]')
+    const selected = tabs.find((tab) => tab.classes().includes('text-txt'))
+    const idle = tabs.find((tab) => tab.classes().includes('text-txt2'))
+    expect(selected?.classes()).toEqual(expect.arrayContaining(['border-accent-2', 'text-txt']))
+    expect(selected?.classes()).not.toContain('hover:text-txt')
+    expect(idle?.classes()).toEqual(expect.arrayContaining(['border-transparent', 'text-txt2']))
+    expect(idle?.classes()).not.toContain('hover:text-txt')
+    expect(idle?.classes().join(' ')).not.toContain('bg-overlay')
+
+    const preview = wrapper.get('[data-testid="gate-mode-preview"]')
+    const edit = wrapper.get('[data-testid="gate-mode-edit"]')
+    expect(preview.classes()).toEqual(expect.arrayContaining(['bg-overlay', 'text-txt']))
+    expect(preview.classes()).not.toContain('hover:text-txt')
+    expect(edit.classes()).toContain('text-txt2')
+    expect(edit.classes()).not.toContain('hover:text-txt')
+    expect(edit.classes()).not.toContain('bg-overlay')
+    wrapper.unmount()
+  })
 })

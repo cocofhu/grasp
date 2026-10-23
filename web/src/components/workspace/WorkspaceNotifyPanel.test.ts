@@ -187,4 +187,18 @@ describe('WorkspaceNotifyPanel', () => {
     expect(w.get('[data-testid="notify-master-toggle"]').attributes('aria-checked')).toBe('true')
     w.unmount()
   })
+
+  it('deepens unselected template segments one step without the selected text color', async () => {
+    const w = mountPanel()
+    await flushPromises()
+    const selected = w.get('[data-testid="notify-tpl-seg-waiting"]')
+    const idle = w.get('[data-testid="notify-tpl-seg-failed"]')
+    expect(selected.attributes('aria-selected')).toBe('true')
+    expect(selected.classes()).toContain('text-txt')
+    expect(selected.classes()).not.toContain('hover:text-txt')
+    expect(selected.classes()).not.toContain('hover:text-txt2')
+    expect(idle.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2']))
+    expect(idle.classes()).not.toContain('hover:text-txt')
+    w.unmount()
+  })
 })

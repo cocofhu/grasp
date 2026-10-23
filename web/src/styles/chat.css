@@ -5,8 +5,11 @@
 }
 .chat-thread,
 .chat-composer {
-  --chat-action-fill: color-mix(in srgb, rgb(var(--c-accent)) 88%, #000 12%);
-  --chat-action-hover: color-mix(in srgb, rgb(var(--c-accent)) 80%, #000 20%);
+  /* Hover disk for the inverse stop, send, and confirm actions. Dark default. */
+  --chat-action-inverse-hover: #d4d4d8;
+}
+html.light :is(.chat-thread, .chat-composer) {
+  --chat-action-inverse-hover: #3f3f46;
 }
 .chat-thread {
   --chat-muted: rgb(var(--c-txt2));
@@ -169,11 +172,22 @@
   transition: color var(--dur-ui), background var(--dur-ui), border-color var(--dur-ui), transform var(--dur-press);
 }
 .chat-action-button:hover:not(:disabled) { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
+/* Inverse disk: text-colored fill, surface-colored glyph. Hover follows this rule so the
+   generic button hover above cannot restore a lifted surface and a dark glyph. */
+.chat-action-stop,
 .chat-action-primary,
-.chat-action-confirm { background: var(--chat-action-fill); color: white; }
+.chat-action-confirm {
+  border-color: transparent;
+  background: rgb(var(--c-txt));
+  color: rgb(var(--c-surface));
+}
+.chat-action-stop:hover:not(:disabled),
 .chat-action-primary:hover:not(:disabled),
-.chat-action-confirm:hover:not(:disabled) { background: var(--chat-action-hover); color: white; }
-.chat-action-stop { border-color: rgb(var(--c-line)); background: rgb(var(--c-surface)); color: rgb(var(--c-txt)); }
+.chat-action-confirm:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--chat-action-inverse-hover, #d4d4d8);
+  color: rgb(var(--c-surface));
+}
 .chat-action-confirm,
 .chat-action-secondary {
   min-height: 36px;

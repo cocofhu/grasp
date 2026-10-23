@@ -140,7 +140,7 @@ defineExpose({ pickFiles })
         </div>
         <button
           type="button"
-          class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-err text-white"
+          class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded-full pending-attach-remove"
           :disabled="disabled"
           @click.stop="removeAttachment(ii)"
         >

@@ -34,7 +34,7 @@ describe('native icon runtime', () => {
     expect(runtimeIcon('check-draw')).not.toContain('<circle')
     expect(runtimeIcon('check-draw')).not.toContain('data-icon-motion')
     expect(runtimeIcon('check-draw', 16, { enter: true })).not.toContain('data-icon-motion')
-    expect(runtimeIcon('chat-stop')).toContain('stroke="currentColor"')
+    expect(runtimeIcon('chat-stop')).toContain('stroke="none"')
     expect(runtimeIcon('grip')).toContain('stroke="none"')
     expect(runtimeIcon('arc-spinner', 16, { busy: true })).toContain('data-icon-motion="busy"')
   })
