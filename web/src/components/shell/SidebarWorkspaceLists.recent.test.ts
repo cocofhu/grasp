@@ -30,6 +30,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => (
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: (id: string) => { mocks.entries.value = mocks.entries.value.some((item) => item.workflowId === id) ? mocks.entries.value.filter((item) => item.workflowId !== id) : [{ workflowId: id, favoritedAt: Date.now() }, ...mocks.entries.value] } }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { RECENT_POLL_MS, RECENT_RELAY_DEBOUNCE_MS, notifyRecentActivity } from '@/lib/run/recentRuns'
+import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 const catalog = Array.from({ length: 14 }, (_, index) => ({ id: `wf-${index}`, name: `流程 ${index}`, description: `说明 ${index}`, status: index % 2 ? 'draft' : 'published', version: 2, publishedVersion: 1, updatedAt: `2026-10-${String(20 - index).padStart(2, '0')}` }))
 async function setup(path = '/workflows/wf-3/edit') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
@@ -45,6 +46,7 @@ const r = (id: string, currentNode?: ReturnType<typeof cur>, status = 'running')
 const order = (w: { findAll: (s: string) => { attributes: (n: string) => string | undefined }[] }) => w.findAll('[data-testid="sidebar-recent-run"]').map((x) => x.attributes('data-run-id'))
 beforeEach(() => {
   vi.clearAllMocks()
+  __resetSidebarSectionsForTests()
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
   mocks.workspace.value = mocks.signedInWorkspace
   mocks.entries.value = []
@@ -67,15 +69,16 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
     expect(rows[1].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
     expect(rows[1].find('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-failed')
-    expect(rows[1].find('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('失败')
+    expect(rows[1].get('[data-testid="sidebar-recent-ended"]').get('title').text()).toBe('失败')
     expect(rows[2].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(true)
     expect(rows[2].find('[data-testid="sidebar-recent-ended"]').classes()).toContain('is-cancelled')
     expect(rows[2].find('[data-testid="sidebar-recent-ended"]').attributes('title')).toBe('已取消')
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     for (const row of rows) {
-      const icon = row.get('[data-icon="history"]')
-      expect(icon.attributes('width')).toBe('16')
-      expect(icon.attributes('aria-hidden')).toBe('true')
+      expect(row.find('[data-icon="history"]').exists()).toBe(false)
+      expect(row.element.firstElementChild).toBe(row.get('.workspace-list-title').element)
+      const ended = row.find('[data-testid="sidebar-recent-ended"]')
+      if (ended.exists()) expect(row.element.lastElementChild).toBe(ended.element)
       expect(row.find('[data-icon="chat"]').exists()).toBe(false)
     }
     wrapper.unmount()
@@ -129,7 +132,7 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
     await flushPromises()
     expect(order(wrapper)).toEqual(['a', 'b', 'c'])
     expect(document.activeElement).toBe(first.element)
-    const list = first.element.parentElement as HTMLElement
+    const list = first.element.closest('[data-testid="sidebar-recent-list"]') as HTMLElement
     list.dispatchEvent(new Event('pointerenter'))
     ;(first.element as HTMLElement).blur()
     list.dispatchEvent(new FocusEvent('focusout'))

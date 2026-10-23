@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
@@ -7,8 +7,7 @@ import pages from '@/locales/zh-CN/pages.json'
 import common from '@/locales/zh-CN/common.json'
 import type { Workflow } from '@/lib/shared/types'
 import WorkflowDefaultsPanel from './WorkflowDefaultsPanel.vue'
-const apiMocks = vi.hoisted(() => ({ getSettings: undefined as undefined | (() => Promise<{ items: { key: string; value: number }[] }>) }))
-vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }), get getSettings() { return apiMocks.getSettings } } }))
+vi.mock('@/lib/api/api', () => ({ api: { listChannels: async () => ({ items: [] }) } }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspaceId: { value: 'ws' }, ensureLoaded: async () => ({ id: 'ws' }) }) }))
 function setup(defaults?: Workflow['defaults']) {
   const workflow = reactive({ id: 'w', name: 'Test', description: '', status: 'draft', version: 1, updatedAt: '', nodes: [], edges: [], defaults } as Workflow)
@@ -80,47 +79,5 @@ describe('Workflow defaults', () => {
     expect(workflow.defaults).toEqual({ inheritWorkspace: false, variables: [{ name: '', type: 'string', value: '' }] })
     expect(wrapper.get(`input[aria-label="${pages.pages.workspaceDefaults.variableName}"]`).exists()).toBe(true)
     wrapper.unmount()
-  })
-  describe('sandbox mode', () => {
-    const knob = (value?: number) => { apiMocks.getSettings = async () => ({ items: value === undefined ? [] : [{ key: 'shared_run_sandbox_enabled', value }] }) }
-    afterEach(() => { apiMocks.getSettings = undefined })
-    it.each([undefined, 0])('keeps the panel unchanged when the knob is %s', async (value) => {
-      knob(value)
-      const { wrapper } = setup()
-      await flushPromises()
-      expect(wrapper.find('[data-testid="workflow-sandbox-mode"]').exists()).toBe(false)
-      expect(wrapper.findAll('section')).toHaveLength(3)
-      expect(wrapper.text()).not.toContain(pages.pages.workspaceDefaults.sandboxMode.title)
-      wrapper.unmount()
-    })
-    it('stays hidden when settings cannot be read', async () => {
-      apiMocks.getSettings = async () => { throw new Error('forbidden') }
-      const { wrapper } = setup()
-      await flushPromises()
-      expect(wrapper.find('[data-testid="workflow-sandbox-mode"]').exists()).toBe(false)
-      wrapper.unmount()
-    })
-    it('writes defaults.sandbox.mode and drops it again for per_node', async () => {
-      knob(1)
-      const { workflow, wrapper } = setup()
-      await flushPromises()
-      const section = wrapper.get('[data-testid="workflow-sandbox-mode"]')
-      expect(section.text()).toContain(pages.pages.workspaceDefaults.sandboxMode.hint)
-      const radios = section.findAll('input[type="radio"]')
-      expect((radios[0]!.element as HTMLInputElement).checked).toBe(true)
-      await radios[1]!.setValue(true)
-      expect(workflow.defaults).toEqual({ inheritWorkspace: true, variables: [], sandbox: { mode: 'shared' } })
-      await radios[0]!.setValue(true)
-      expect(workflow.defaults).toEqual({ inheritWorkspace: true, variables: [] })
-      wrapper.unmount()
-    })
-    it('per_node on a workflow without defaults does not create them', async () => {
-      knob(1)
-      const { workflow, wrapper } = setup()
-      await flushPromises()
-      await wrapper.get('[data-testid="workflow-sandbox-mode"]').findAll('input[type="radio"]')[0]!.trigger('change')
-      expect(workflow.defaults).toBeUndefined()
-      wrapper.unmount()
-    })
   })
 })

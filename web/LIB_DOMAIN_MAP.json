@@ -212,6 +212,7 @@
       "routePending.ts",
       "serviceCommit.ts",
       "sidebarHidden.ts",
+      "sidebarSections.ts",
       "startPath.ts",
       "streamMarkdownPreview.ts",
       "theme.ts",
@@ -249,7 +250,7 @@
     "inbox": 41,
     "pm": 7,
     "run": 65,
-    "shared": 39,
+    "shared": 40,
     "solo": 7,
     "workflow": 3,
     "workspace": 5

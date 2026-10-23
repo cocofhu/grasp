@@ -4,6 +4,8 @@
     "workspace": "Workspace navigation",
     "runningRuns": "Running",
     "runHistory": "History",
+    "sectionCollapse": "Collapse {name}",
+    "sectionExpand": "Expand {name}",
     "workspaceLoading": "Loading…",
     "workspaceNoRuns": "No finished runs yet",
     "workspaceLoadFailed": "Unable to load",

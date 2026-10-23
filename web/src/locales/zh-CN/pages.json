@@ -1592,8 +1592,7 @@
         "value": "值",
         "secret": "密钥",
         "plain": "明文",
-        "secretBadge": "密钥",
-        "sharedBadge": "共享沙箱"
+        "secretBadge": "密钥"
       },
       "gateRemoved": "Gate 已移除",
       "clarifyFailed": {
@@ -1890,8 +1889,7 @@
         "test_sandbox_ttl_minutes": "测试沙箱空闲 TTL",
         "max_test_sandboxes": "最大测试沙箱数",
         "sandbox_memory_mb": "沙箱内存上限",
-        "agent_idle_timeout_minutes": "Agent 无动作时限",
-        "shared_run_sandbox_enabled": "共享运行沙箱"
+        "agent_idle_timeout_minutes": "Agent 无动作时限"
       },
       "settings": {
         "max_concurrent_runs": "同时处于 running 状态的 workflow 运行数上限。由 GRASP_MAX_RUNS 环境变量锁定时页面只读。",
@@ -1900,8 +1898,7 @@
         "test_sandbox_ttl_minutes": "测试沙箱在无活动后的空闲销毁时间，避免长期占用资源。",
         "max_test_sandboxes": "活跃测试沙箱数达到此上限时，新建测试沙箱请求将被后端拒绝（最小值 ≥ 1，不设最大值上限）。",
         "sandbox_memory_mb": "每个沙箱的内存上限，dockerd、浏览器与 Agent 的构建/测试共用；超出时整个沙箱会被 OOM 杀掉。Agent 提示词会告知该上限。对新建沙箱生效（最小 1024，不得超过网关 maxMemoryMB）。由 GRASP_SANDBOX_MEMORY_MB 环境变量锁定时页面只读。",
-        "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。",
-        "shared_run_sandbox_enabled": "允许工作流选择让一次运行的所有节点共用一个沙箱（工作流默认值 → 沙箱模式）。关闭时所有工作流仍按节点各用一个沙箱。"
+        "agent_idle_timeout_minutes": "Agent 连续这么久没有任何输出、CPU 或磁盘活动时，沙箱先尝试恢复一次，仍无动静就判定卡住并终止本轮（节点会换新沙箱自动重试一次）。正在跑构建、测试、长时间思考的 Agent 有 CPU/IO 活动，不会被误杀。从下一轮对话起生效（2–120 分钟，默认 20）。由 GRASP_CHAT_IDLE_SEC 环境变量锁定时页面只读。"
       },
       "units": {
         "mib": "MiB",
@@ -2013,8 +2010,7 @@
           "preview": "预览",
           "manual": "手动延长"
         }
-      },
-      "shared": "共享"
+      }
     },
     "sandboxConsole": {
       "back": "返回",
@@ -3260,6 +3256,7 @@
       "workflowHeading": "工作流",
       "currentMark": "当前",
       "closeTab": "关闭",
+      "newTab": "新页签",
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
       "novncCardMeta": "沙箱浏览器 · 可取点标注",
@@ -4198,6 +4195,7 @@
       "resizeSash": "拖拽调整宽度",
       "edit": "编辑",
       "preview": "预览",
+      "split": "分栏",
       "live": "实时",
       "collapsePreview": "折叠预览",
       "expandPreview": "展开预览"
@@ -4383,13 +4381,7 @@
       "inherit": "继承默认凭据",
       "doNotInject": "不注入",
       "unavailable": "不可用",
-      "manageCredentials": "管理凭据",
-      "sandboxMode": {
-        "title": "沙箱模式",
-        "per_node": "每个节点独立沙箱",
-        "shared": "共享沙箱",
-        "hint": "各节点共用一个工作区；切换到不同 Agent 时，容器的环境变量与凭据会重新初始化。"
-      }
+      "manageCredentials": "管理凭据"
     },
     "chatNavigation": {
       "ariaLabel": "对话定位",

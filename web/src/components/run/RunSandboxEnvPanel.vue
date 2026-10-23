@@ -1,22 +1,17 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
-import type { SandboxEnvEntry, SandboxMode } from '@/lib/shared/types'
+import type { SandboxEnvEntry } from '@/lib/shared/types'
 
-const props = defineProps<{ entries: SandboxEnvEntry[]; sandboxMode?: SandboxMode }>()
+const props = defineProps<{ entries: SandboxEnvEntry[] }>()
 const { t } = useI18n()
 const items = computed(() => props.entries || [])
 </script>
 
 <template>
   <div class="flex h-full flex-col" data-testid="run-sandbox-env-panel">
-    <div class="flex items-center gap-2 border-b border-line px-4 py-2.5 text-[12px] text-txt3">
-      <span class="min-w-0 flex-1">{{ t('pages.runDetail.sandboxEnv.hint') }}</span>
-      <span
-        v-if="sandboxMode === 'shared'"
-        class="chip shrink-0 border-accent/40 text-[11px] text-accent"
-        data-testid="run-sandbox-shared-badge"
-      >{{ t('pages.runDetail.sandboxEnv.sharedBadge') }}</span>
+    <div class="border-b border-line px-4 py-2.5 text-[12px] text-txt3">
+      {{ t('pages.runDetail.sandboxEnv.hint') }}
     </div>
     <div
       v-if="!items.length"

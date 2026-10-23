@@ -14,16 +14,6 @@ const props = defineProps<{
 
 const { t } = useI18n()
 
-const DOT: Record<string, string> = {
-  running: 'bg-info',
-  waiting_human: 'bg-warn',
-  completed: 'bg-ok',
-  skipped: 'bg-txt3',
-  failed: 'bg-err',
-  cancelled: 'bg-txt3',
-  pending: 'bg-line',
-}
-
 function latestStatus(nodeId: string): NodeRunStatus {
   const run = props.run
   if (!run) return 'pending'
@@ -60,10 +50,10 @@ const rows = computed(() => {
 
 <template>
   <section v-if="rows.length" class="stage-workflow" data-testid="stage-workflow">
-    <p class="mb-2 px-1 text-[12px] font-medium text-txt3" data-testid="stage-workflow-heading">
+    <p class="stage-workflow-heading mb-2 px-1 text-[12px] font-medium" data-testid="stage-workflow-heading">
       {{ t('pages.reactArtifactStage.workflowHeading') }}
     </p>
-    <ol class="m-0 min-w-0 max-w-full list-none p-0" :aria-label="t('pages.reactArtifactStage.workflowHeading')">
+    <ol class="stage-workflow-list" :aria-label="t('pages.reactArtifactStage.workflowHeading')">
       <li
         v-for="row in rows"
         :key="row.id"
@@ -71,13 +61,6 @@ const rows = computed(() => {
         :class="{ 'is-done': row.status === 'completed' }"
         :aria-current="row.current ? 'step' : undefined"
       >
-        <span
-          class="stage-workflow-dot"
-          :class="DOT[row.status] || DOT.pending"
-          data-testid="stage-workflow-dot"
-          :data-status="row.status"
-          aria-hidden="true"
-        />
         <div
           class="stage-workflow-node"
           :class="{ 'is-current': row.current, 'is-pending': row.status === 'pending' && !row.current }"
@@ -87,24 +70,24 @@ const rows = computed(() => {
           :data-status="row.status"
         >
           <span
-            class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md"
+            class="stage-workflow-mark"
             :style="{ background: row.tint, color: row.color }"
             data-testid="stage-workflow-mark"
           >
             <Icon :name="row.icon" :size="14" />
           </span>
           <div
-            class="min-w-0 flex-1 pt-0.5 text-[13px] font-medium leading-5 text-txt [overflow-wrap:anywhere]"
+            class="stage-workflow-label min-w-0 flex-1 text-[13px] leading-5 [overflow-wrap:anywhere]"
             data-testid="stage-workflow-label"
           >
             {{ row.label }}
             <span
               v-if="row.current"
-              class="ml-1.5 inline-block rounded-full bg-accent-dim px-1.5 align-middle text-[10px] font-semibold leading-4 text-accent-2"
+              class="stage-workflow-current ml-1.5 inline-block rounded-[4px] px-[5px] py-[3px] align-middle text-[10px] font-semibold leading-none"
               data-testid="stage-workflow-current"
             >{{ t('pages.reactArtifactStage.currentMark') }}</span>
           </div>
-          <StatusPill :status="row.status" size="sm" class="mt-0.5 shrink-0" />
+          <StatusPill :status="row.status" size="sm" class="shrink-0" />
         </div>
       </li>
     </ol>
@@ -112,51 +95,76 @@ const rows = computed(() => {
 </template>
 
 <style scoped>
+/* Inherits the artifact stage tokens (--ra-*) so the list matches the resource and artifact cards; fallbacks cover standalone use. */
 .stage-workflow {
+  --wf-surface: var(--ra-surface, rgb(var(--c-surface)));
+  --wf-line: var(--ra-line, rgb(var(--c-line)));
+  --wf-ink: var(--ra-ink, rgb(var(--c-txt)));
+  --wf-muted: var(--ra-muted, rgb(var(--c-txt3)));
+  --wf-accent: var(--ra-accent, rgb(var(--c-accent)));
+  --wf-green: var(--ra-green, rgb(var(--c-ok)));
   max-width: 100%;
   margin-bottom: 16px;
 }
-/* Rail column (20px) + row; the line runs dot to dot behind every step but the last. */
+.stage-workflow-heading { color: var(--wf-muted); }
+.stage-workflow-list {
+  min-width: 0;
+  max-width: 100%;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  border: 1px solid var(--wf-line);
+  border-radius: 8px;
+  background: var(--wf-surface);
+  box-shadow: inset 0 1px 0 var(--ra-specular, transparent), 0 2px 3px var(--ra-shadow, transparent);
+}
+/* The node marks are the timeline: a short connector joins each mark to the next one. */
 .stage-workflow-step {
   position: relative;
   min-width: 0;
-  padding-left: 20px;
 }
-.stage-workflow-step + .stage-workflow-step { margin-top: 2px; }
-.stage-workflow-step:not(:last-child)::before {
+.stage-workflow-step:not(:last-child)::after {
   content: '';
   position: absolute;
-  left: 4px;
-  top: 20px;
-  bottom: -20px;
+  left: 22px;
+  top: 34px;
+  bottom: -6px;
   width: 2px;
   border-radius: 1px;
-  background: rgb(var(--c-line));
+  background: var(--wf-line);
 }
-.stage-workflow-step.is-done:not(:last-child)::before { background: rgb(var(--c-ok) / .35); }
-.stage-workflow-dot {
-  position: absolute;
-  z-index: 1;
-  left: 0;
-  top: 15px;
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  box-shadow: 0 0 0 3px var(--ra-bg, rgb(var(--c-base)));
-}
+.stage-workflow-step.is-done:not(:last-child)::after { background: color-mix(in srgb, var(--wf-green) 45%, transparent); }
 .stage-workflow-node {
   display: flex;
   min-width: 0;
-  align-items: flex-start;
+  align-items: center;
   gap: 10px;
   cursor: default;
   padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: 6px;
+}
+.stage-workflow-mark {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+}
+.stage-workflow-label {
+  font-weight: 500;
+  color: var(--wf-ink);
 }
 .stage-workflow-node.is-current {
-  border-color: rgb(var(--c-accent) / .35);
-  background: rgb(var(--c-accent) / .06);
+  background: color-mix(in srgb, var(--wf-accent) 8%, transparent);
 }
-.stage-workflow-node.is-pending { opacity: .62; }
+/* Same chip as the cards' kind badge. */
+.stage-workflow-current {
+  border: 1px solid color-mix(in srgb, var(--wf-accent) 9%, transparent);
+  color: var(--wf-accent);
+  background: color-mix(in srgb, var(--wf-accent) 9%, var(--wf-surface));
+}
+.stage-workflow-node.is-pending .stage-workflow-label { color: var(--wf-muted); font-weight: 400; }
+.stage-workflow-node.is-pending .stage-workflow-mark { opacity: .55; }
 </style>

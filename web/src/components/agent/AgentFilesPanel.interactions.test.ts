@@ -85,7 +85,9 @@ describe('AgentFilesPanel interactions', () => {
     await flushPromises()
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(w.text()).toContain('README.md')
-    expect(w.find('[data-testid="history"]').exists()).toBe(true)
+    // explorer + editor only: version history lives behind the toolbar button
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
 
     const src = w.findAll('button').find((b) => b.text().includes('src'))!
     await src.trigger('click')
@@ -142,10 +144,11 @@ describe('AgentFilesPanel interactions', () => {
     const expand = w.findAll('button').find((b) => b.attributes('aria-label')?.includes('展开资源'))!
     await expand.trigger('click')
 
-    await w.get('[data-testid="history"] button').trigger('click')
+    await w.get('[data-testid="compact-history-open"]').trigger('click')
     await w.findAll('[data-testid="history"] button')[1].trigger('click')
     expect(w.emitted('restored')).toBeTruthy()
-    expect(localStorage.getItem('agent-studio-history-collapsed')).toBe('false')
+    await w.get('[data-testid="history"] button').trigger('click')
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
 
     ;(w.vm as any).openPathOrCreate('settings.json', '{}')
     await flushPromises()
@@ -342,8 +345,8 @@ describe('AgentFilesPanel interactions', () => {
     width = 1100
     resized!()
     await flushPromises()
-    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(false)
-    expect(w.findAll('[data-testid="history"]')).toHaveLength(1)
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(d.files[0]!.content).toBe('# edited without losing the file')
     w.unmount()

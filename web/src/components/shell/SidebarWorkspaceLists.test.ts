@@ -29,6 +29,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => (
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: mocks.toggleFavorite }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
+import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 
 const recentRun = { id: 'r1', title: '最近一次运行', workflowName: '工作流' }
 function expectNoWorkflowDirectory(wrapper: VueWrapper) {
@@ -51,6 +52,7 @@ async function setup(path = '/dashboard') {
 }
 beforeEach(() => {
   resetConversationDrawers()
+  __resetSidebarSectionsForTests()
   vi.clearAllMocks()
   mocks.workspace.value = mocks.signedInWorkspace
   mocks.entries.value = []
@@ -66,15 +68,20 @@ describe('sidebar workspace lists without a workflow directory', () => {
     const { wrapper } = await setup('/runs/r0')
     expectNoWorkflowDirectory(wrapper)
     expect(wrapper.get('[data-testid="sidebar-recent"]').text()).toContain('历史执行')
+    const heading = wrapper.get('[data-testid="sidebar-recent-heading"]')
+    expect(heading.classes()).toContain('grasp-status-host')
+    const headingIcon = heading.get('[data-icon="history-back"]')
+    expect(headingIcon.classes()).toContain('grasp-status')
+    expect(headingIcon.attributes('width')).toBe('14')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
     expect(rows).toHaveLength(6)
     expect(rows[0].text()).toBe('运行 0')
     expect(rows[0].attributes('href')).toBe('/runs/r0')
     expect(rows[0].classes()).toContain('is-active')
     expect(rows[0].attributes('aria-current')).toBe('page')
-    const historyIcon = rows[0].get('[data-icon="history"]')
-    expect(historyIcon.attributes('width')).toBe('16')
-    expect(historyIcon.attributes('aria-hidden')).toBe('true')
+    expect(rows[0].find('[data-icon="history"]').exists()).toBe(false)
+    expect(rows[0].element.firstElementChild).toBe(rows[0].get('.workspace-list-title').element)
+    expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
     expect(wrapper.find('[data-icon="chat"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
     expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })

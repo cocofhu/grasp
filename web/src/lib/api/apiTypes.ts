@@ -332,8 +332,6 @@ export interface SandboxView {
   workflowId?: string
   workflowName?: string
   nodeId?: string
-  /** Run-shared sandbox (one sandbox for every node of the run). */
-  shared?: boolean
   /** Why a retired run sandbox is still alive; destroyAt is derived from these. */
   leases?: SandboxLease[]
   destroyAt?: string
@@ -627,6 +625,8 @@ export interface SoloSession {
   sandbox?: SoloSandboxInfo
   backend?: BackendId | string
   model?: string
+  artifactRunId?: string
+  capabilities?: AgentCapabilities
 }
 
 export interface SoloSessionList {

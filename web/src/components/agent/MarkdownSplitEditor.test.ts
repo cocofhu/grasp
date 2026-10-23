@@ -24,7 +24,7 @@ const CodeEditorStub = {
 }
 
 const SPLIT_KEY = 'agent-md-split-ratio'
-const PREVIEW_COLLAPSED_KEY = 'agent-md-preview-collapsed'
+const VIEW_MODE_KEY = 'agent-md-view-mode'
 
 const md = `---
 description: demo
@@ -55,7 +55,7 @@ function mountEditor(props: Record<string, unknown> = {}) {
   })
 }
 
-describe('MarkdownSplitEditor preview collapse', () => {
+describe('MarkdownSplitEditor view modes', () => {
   beforeEach(() => {
     localStorage.clear()
     layoutSpy.mockClear()
@@ -65,101 +65,106 @@ describe('MarkdownSplitEditor preview collapse', () => {
     localStorage.clear()
   })
 
-  it('defaults to expanded preview on desktop split', async () => {
+  const has = (w: ReturnType<typeof mountEditor>, id: string) => w.find(`[data-testid="${id}"]`).exists()
+
+  it('defaults to single-column editing without minimap', async () => {
     const wrapper = mountEditor()
     await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-sash"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-collapse"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(false)
-    expect(localStorage.getItem(PREVIEW_COLLAPSED_KEY)).toBeNull()
+    expect(has(wrapper, 'md-preview-panel')).toBe(false)
+    expect(has(wrapper, 'md-preview-sash')).toBe(false)
+    expect(wrapper.get('[data-testid="md-view-edit"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.findComponent({ name: 'CodeEditor' }).props('minimap')).toBe(false)
+    expect(localStorage.getItem(VIEW_MODE_KEY)).toBeNull()
     wrapper.unmount()
   })
 
-  it('collapses preview: hides sash/panel and shows expand rail', async () => {
+  it('switches between split, preview and edit and persists the choice', async () => {
     const wrapper = mountEditor()
     await flushPromises()
-    await wrapper.get('[data-testid="md-preview-collapse"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-panel"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="md-preview-sash"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(true)
-    expect(localStorage.getItem(PREVIEW_COLLAPSED_KEY)).toBe('true')
+    await wrapper.get('[data-testid="md-view-split"]').trigger('click')
+    expect(has(wrapper, 'md-preview-panel')).toBe(true)
+    expect(has(wrapper, 'md-preview-sash')).toBe(true)
+    expect(localStorage.getItem(VIEW_MODE_KEY)).toBe('split')
+    expect(layoutSpy).toHaveBeenCalled()
+
+    await wrapper.get('[data-testid="md-view-preview"]').trigger('click')
+    expect(has(wrapper, 'md-preview-panel')).toBe(true)
+    expect(has(wrapper, 'md-preview-sash')).toBe(false)
+    expect((wrapper.find('[data-testid="code-editor-stub"]').element.parentElement as HTMLElement).style.display).toBe('none')
+    expect(localStorage.getItem(VIEW_MODE_KEY)).toBe('preview')
+
+    await wrapper.get('[data-testid="md-view-edit"]').trigger('click')
+    expect(has(wrapper, 'md-preview-panel')).toBe(false)
+    expect(localStorage.getItem(VIEW_MODE_KEY)).toBe('edit')
     wrapper.unmount()
   })
 
-  it('expands preview from the narrow rail', async () => {
-    localStorage.setItem(PREVIEW_COLLAPSED_KEY, 'true')
-    const wrapper = mountEditor()
+  it('loads the stored mode and falls back to edit when corrupted', async () => {
+    localStorage.setItem(VIEW_MODE_KEY, 'preview')
+    const stored = mountEditor()
     await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(true)
-    await wrapper.get('[data-testid="md-preview-expand-rail"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-sash"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(false)
-    expect(localStorage.getItem(PREVIEW_COLLAPSED_KEY)).toBe('false')
-    wrapper.unmount()
-  })
+    expect(has(stored, 'md-preview-panel')).toBe(true)
+    stored.unmount()
 
-  it('loads collapsed preference from localStorage and falls back when corrupted', async () => {
-    localStorage.setItem(PREVIEW_COLLAPSED_KEY, 'true')
-    const collapsed = mountEditor()
-    await flushPromises()
-    expect(collapsed.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(true)
-    collapsed.unmount()
-
-    localStorage.setItem(PREVIEW_COLLAPSED_KEY, 'not-a-bool')
+    localStorage.setItem(VIEW_MODE_KEY, 'sideways')
     const fallback = mountEditor()
     await flushPromises()
-    // only exact 'true' collapses; anything else → expanded
-    expect(fallback.find('[data-testid="md-preview-panel"]').exists()).toBe(true)
+    expect(has(fallback, 'md-preview-panel')).toBe(false)
     fallback.unmount()
   })
 
-  it('falls back to expanded when localStorage getItem throws', async () => {
-    const spy = vi.spyOn(Storage.prototype, 'getItem').mockImplementation((key: string) => {
-      if (key === PREVIEW_COLLAPSED_KEY) throw new Error('blocked')
-      return null
-    })
+  it('falls back to edit when localStorage throws', async () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
     const wrapper = mountEditor()
     await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-panel"]').exists()).toBe(true)
-    spy.mockRestore()
+    expect(has(wrapper, 'md-preview-panel')).toBe(false)
+    await wrapper.get('[data-testid="md-view-preview"]').trigger('click')
+    expect(has(wrapper, 'md-preview-panel')).toBe(true)
+    get.mockRestore()
+    set.mockRestore()
     wrapper.unmount()
   })
 
-  it('does not reset previewCollapsed when filePath changes', async () => {
+  it('keeps the mode when filePath changes', async () => {
     const wrapper = mountEditor()
     await flushPromises()
-    await wrapper.get('[data-testid="md-preview-collapse"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(true)
+    await wrapper.get('[data-testid="md-view-split"]').trigger('click')
     await wrapper.setProps({ filePath: 'rules/other.md' })
     await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(true)
-    expect(localStorage.getItem(PREVIEW_COLLAPSED_KEY)).toBe('true')
+    expect(has(wrapper, 'md-preview-sash')).toBe(true)
     wrapper.unmount()
   })
 
-  it('restores prior split ratio after expand without rewriting ratio on collapse', async () => {
+  it('hides the in-pane toggle when the host owns the toolbar', async () => {
+    const wrapper = mountEditor({ externalToolbar: true })
+    await flushPromises()
+    expect(has(wrapper, 'md-view-toggle')).toBe(false)
+    ;(wrapper.vm as any).setViewMode('split')
+    await flushPromises()
+    expect(has(wrapper, 'md-preview-panel')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('restores prior split ratio after leaving split without rewriting it', async () => {
     localStorage.setItem(SPLIT_KEY, '0.4')
+    localStorage.setItem(VIEW_MODE_KEY, 'split')
     const wrapper = mountEditor()
     await flushPromises()
 
     const editCol = () => wrapper.findAll('.flex.h-full.min-h-0.min-w-0.flex-col')[0]
     expect(editCol().attributes('style')).toContain('40%')
 
-    await wrapper.get('[data-testid="md-preview-collapse"]').trigger('click')
+    await wrapper.get('[data-testid="md-view-edit"]').trigger('click')
     await flushPromises()
     expect(localStorage.getItem(SPLIT_KEY)).toBe('0.4')
-    const collapsedStyle = editCol().attributes('style') || ''
+    const editStyle = editCol().attributes('style') || ''
     expect(
-      /flex:\s*1\s+1\s+auto/.test(collapsedStyle)
-      || (collapsedStyle.includes('flex-grow: 1') && collapsedStyle.includes('flex-basis: auto')),
+      /flex:\s*1\s+1\s+auto/.test(editStyle)
+      || (editStyle.includes('flex-grow: 1') && editStyle.includes('flex-basis: auto')),
     ).toBe(true)
 
-    await wrapper.get('[data-testid="md-preview-expand-rail"]').trigger('click')
+    await wrapper.get('[data-testid="md-view-split"]').trigger('click')
     await flushPromises()
     expect(editCol().attributes('style')).toContain('40%')
     expect(localStorage.getItem(SPLIT_KEY)).toBe('0.4')
@@ -167,6 +172,7 @@ describe('MarkdownSplitEditor preview collapse', () => {
   })
 
   it('dragging sash to ratio extremes does not auto-collapse', async () => {
+    localStorage.setItem(VIEW_MODE_KEY, 'split')
     const wrapper = mountEditor()
     await flushPromises()
 
@@ -189,7 +195,6 @@ describe('MarkdownSplitEditor preview collapse', () => {
     document.dispatchEvent(new MouseEvent('mouseup'))
     await flushPromises()
     expect(wrapper.find('[data-testid="md-preview-panel"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(false)
     expect(localStorage.getItem(SPLIT_KEY)).toBe('0.28')
 
     await wrapper.get('[data-testid="md-preview-sash"]').trigger('mousedown', { clientX: 280 })
@@ -201,11 +206,10 @@ describe('MarkdownSplitEditor preview collapse', () => {
     wrapper.unmount()
   })
 
-  it('stack variant has no desktop collapse rail or collapse control', async () => {
+  it('stack variant has no desktop view toggle or sash', async () => {
     const wrapper = mountEditor({ variant: 'stack' })
     await flushPromises()
-    expect(wrapper.find('[data-testid="md-preview-collapse"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="md-preview-expand-rail"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="md-view-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="md-preview-sash"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('编辑')
     expect(wrapper.text()).toContain('预览')

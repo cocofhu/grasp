@@ -3,8 +3,10 @@ package services
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -108,14 +110,31 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	}
 
 	repos := SoloRepoSpecs(opts.Project, opts.Branch)
-	token := uuid.NewString()
 	runID := "solo-" + sanitizeID(sessionID) + "-" + randID()
+	token := uuid.NewString()
+	if s.host != nil {
+		token = s.host.RegisterRun(runID)
+		if agent.Capabilities != nil {
+			s.host.SetActiveNode(runID, "solo", agent.Capabilities.Clone())
+		}
+	}
+	platformSpecs := []sandbox.MCPServerSpec{}
+	if base := strings.TrimRight(config.ResolveMCPAdvertise(s.mcpEndpoint), "/"); base != "" {
+		platformSpecs = append(platformSpecs, sandbox.MCPServerSpec{
+			Name:    ArtifactStoreMCP,
+			URL:     base + "/mcp/runs/" + url.PathEscape(runID),
+			Headers: map[string]string{"Authorization": "Bearer " + token},
+		})
+	}
 	name := sandbox.NewContainerName()
 	row := &models.Sandbox{
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}
 	if err := s.db.Create(row).Error; err != nil {
+		if s.host != nil {
+			s.host.UnregisterRun(runID)
+		}
 		return nil, err
 	}
 	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv}
@@ -133,6 +152,6 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	}
 	log.Info().Str("name", name).Str("profile", profile).Str("session", sessionID).
 		Int("repos", len(repos)).Uint("id", id).Msg("solo sandbox creating")
-	go s.startAgentContainer(id, name, profile, sessionID, runID, token, nil, agent, extra)
+	go s.startAgentContainer(id, name, profile, sessionID, runID, token, platformSpecs, agent, extra)
 	return row, nil
 }

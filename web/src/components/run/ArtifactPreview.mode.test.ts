@@ -137,8 +137,19 @@ describe('ArtifactPreview structured mode + capability trim', () => {
     await flushPromises()
     const header = wrapper.get('[data-testid="artifact-preview-identity-bar"]')
     expect(header.text()).toContain('需求澄清')
-    expect(header.text()).toContain('clarified_requirement.json')
-    expect(header.text()).toContain('json')
+    const meta = header.get('[data-testid="artifact-preview-file-meta"]')
+    expect(meta.text()).toBe('clarified_requirement.json')
+    expect(meta.find('.uppercase').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('hides the name row but keeps the toolbar when the host tab already names the artifact', async () => {
+    const wrapper = mountPreview(artA, { hideFileRow: true })
+    await flushPromises()
+    expect(wrapper.find('[data-testid="artifact-preview-file-row"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('clarified_requirement.json')
+    expect(wrapper.find('[data-testid="artifact-preview-toolbar"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="artifact-preview-mode-toggle"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

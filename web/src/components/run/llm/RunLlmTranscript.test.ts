@@ -22,6 +22,7 @@ vi.mock('@/lib/api/api', () => ({
 
 import RunLlmTranscript from './RunLlmTranscript.vue'
 import LiveLogPanel from '../LiveLogPanel.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 
 const transcriptSrc = readFileSync(join(process.cwd(), 'src/components/run/llm/RunLlmTranscript.vue'), 'utf8')
 const chatSrc = readFileSync(join(process.cwd(), 'src/components/run/ClarifyChat.vue'), 'utf8')
@@ -138,6 +139,8 @@ describe('RunLlmTranscript', () => {
     const w = mountView({ run: run({ status: 'running' }) })
     await flushPromises()
     expect(w.get('[data-testid="clarify-human-message"]').text()).toBe('implement it')
+    expect(w.getComponent(ChatMessageRail).props('items')).toEqual([{ id: 'current:a:0', title: 'implement it', preview: '' }])
+    expect(w.find('[data-chat-message-id="current:a:0"]').exists()).toBe(true)
     expect(w.get('[data-testid="clarify-busy-placeholder"]').text()).toContain('思考中…')
     expect(w.text()).not.toContain('等待模型响应')
     expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
@@ -401,6 +404,20 @@ describe('RunLlmTranscript', () => {
     await flushPromises()
     expect(w.get('[data-testid="clarify-approve-empty-hint"]').text()).toContain('先说明本次要做的目标')
     expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
+  })
+
+  it('puts the message rail beside the read-only transcript and opens folded history on navigate', async () => {
+    const w = mountView()
+    await flushPromises()
+    const rail = w.getComponent(ChatMessageRail)
+    expect(rail.props('scopeKey')).toBe('r1:transcript')
+    expect(rail.props('items')).toEqual([{ id: 'prior:a:1:0', title: '先看需求', preview: '**done**' }])
+    expect(w.find('[data-testid="chat-message-rail"]').exists()).toBe(true)
+    const fold = w.get('[data-testid="clarify-prior-segment"]').element as HTMLDetailsElement
+    expect(fold.open).toBe(false)
+    expect(fold.querySelector('[data-chat-message-id="prior:a:1:0"]')).not.toBeNull()
+    rail.vm.$emit('navigate', 'prior:a:1:0')
+    expect(fold.open).toBe(true)
   })
 
   it('does not invent 环境已就绪 without a boot record', async () => {

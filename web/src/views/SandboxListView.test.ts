@@ -321,20 +321,3 @@ describe('SandboxListView page header copy removal (g1/g2)', () => {
     wrapper.unmount()
   })
 })
-
-describe('SandboxListView shared run sandbox label', () => {
-  it('shows the shared label instead of a node id for shared rows only', async () => {
-    apiMocks.listSandboxes.mockResolvedValue([
-      { ...LIST_ROW, id: 8, purpose: 'run', runId: 'run-shared-1', nodeId: 'build', shared: true },
-      { ...LIST_ROW, id: 9, purpose: 'run', runId: 'run-plain-1', nodeId: 'review' },
-    ])
-    const { wrapper } = mountList()
-    await flushPromises()
-    const labels = wrapper.findAll('[data-testid="sandbox-shared-label"]')
-    expect(labels.length).toBeGreaterThan(0)
-    expect(labels.every((label) => label.text() === pages.pages.sandboxes.shared)).toBe(true)
-    expect(wrapper.text()).toContain('review')
-    expect(wrapper.text()).not.toContain('build')
-    wrapper.unmount()
-  })
-})

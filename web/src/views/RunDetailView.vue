@@ -950,7 +950,6 @@ onMounted(() => {
               v-else-if="detailTab === 'sandboxEnv'"
               key="sandboxEnv"
               :entries="run.sandboxEnv || []"
-              :sandbox-mode="run.sandboxMode"
             />
             <ArtifactPanel
               v-else-if="detailTab === 'artifacts'"

@@ -93,7 +93,10 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
 
 const apiMocks = vi.hoisted(() => ({
   updateRunTitle: vi.fn(),
+  renameSoloSession: vi.fn(),
+  closeSoloSession: vi.fn(),
   listRuns: vi.fn(),
+  listSoloSessions: vi.fn(),
   cancelRun: vi.fn(),
 }))
 
@@ -105,8 +108,8 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     updateRunTitle: (...args: unknown[]) => apiMocks.updateRunTitle(...args),
     listRuns: (...args: unknown[]) => apiMocks.listRuns(...args),
+    listSoloSessions: (...args: unknown[]) => apiMocks.listSoloSessions(...args),
     cancelRun: (...args: unknown[]) => apiMocks.cancelRun(...args),
-    listSoloSessions: () => Promise.resolve({ sessions: [], maxSandboxes: 0 }),
   },
 }))
 
@@ -211,7 +214,10 @@ beforeEach(() => {
   resetConversationDrawers()
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
+  apiMocks.renameSoloSession.mockReset()
+  apiMocks.closeSoloSession.mockReset()
   apiMocks.listRuns.mockReset()
+  apiMocks.listSoloSessions.mockReset()
   apiMocks.cancelRun.mockReset()
   apiMocks.cancelRun.mockResolvedValue({ status: 'cancelled' })
   // Inbox rows in these tests stand in for unfinished runs unless a case stubs listRuns itself.
@@ -219,6 +225,7 @@ beforeEach(() => {
     const items = unfinishedRunsFromInbox()
     return Promise.resolve({ items, total: items.length })
   })
+  apiMocks.listSoloSessions.mockResolvedValue({ sessions: [], maxSandboxes: 0 })
   workspaceMocks.ensureLoaded.mockReset()
   workspaceMocks.ensureLoaded.mockResolvedValue({ name: 'ws' })
   const toast = useToast()
@@ -299,6 +306,57 @@ describe('AppSidebarNav', () => {
     expect(rowX().attributes('data-node-id')).toBe('deliver')
     expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
     expect(wrapper.text()).not.toContain('Run #')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('puts active Solo sessions in the shared 正在执行 section', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [
+        {
+          id: 'solo-1',
+          title: 'hello',
+          agentName: '需求澄清',
+          status: 'starting',
+          restarts: 0,
+          busy: false,
+          waiting: 0,
+          createdAt: '2026-10-23T00:00:00Z',
+          updatedAt: '2026-10-23T00:00:00Z',
+        },
+        {
+          id: 'solo-closed',
+          title: '已关闭',
+          agentName: '需求澄清',
+          status: 'closed',
+          restarts: 0,
+          busy: false,
+          waiting: 0,
+          createdAt: '2026-10-23T00:00:00Z',
+          updatedAt: '2026-10-23T00:00:00Z',
+        },
+      ],
+      maxSandboxes: 5,
+    })
+    const wrapper = mountNav()
+    await flushPromises()
+    const section = wrapper.get('[data-testid="nav-pending-approvals"]')
+    expect(section.get('.sidebar-section-count').text()).toBe('1')
+    const heading = section.get('[data-testid="nav-running-heading"]')
+    expect(heading.classes()).toContain('grasp-status-host')
+    expect(heading.find('[name="run-live"], [data-icon="run-live"]').exists()).toBe(true)
+    const row = section.get('[data-kind="solo"]')
+    expect(row.attributes('data-key')).toBe('solo-1')
+    expect(row.get('.nav-row-title').text()).toBe('hello')
+    expect(row.attributes('data-motion')).toBe('spin')
+    expect(row.get('.nav-row-title').element.nextElementSibling).toBe(row.get('[data-testid="inbox-motion-spin"]').element)
+    await row.trigger('click')
+    expect(routerMocks.push).toHaveBeenLastCalledWith('/solo/solo-1')
+    await row.trigger('contextmenu', { clientX: 20, clientY: 20 })
+    expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-share"]')).toBeNull()
+    expect(document.querySelector('[data-testid="nav-pending-menu-rename"]')).toBeTruthy()
+    expect(document.querySelector('[data-testid="nav-pending-menu-cancel"]')).toBeTruthy()
     wrapper.unmount()
     vi.useRealTimers()
   })

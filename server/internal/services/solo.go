@@ -75,6 +75,11 @@ type SoloSessionView struct {
 	Busy    bool             `json:"busy"`
 	Waiting int              `json:"waiting"`
 	Sandbox *SoloSandboxInfo `json:"sandbox,omitempty"`
+	// ArtifactRunID is the run-scoped namespace used by the Agent's artifact
+	// MCP. It is exposed so Solo can render the same artifact drawer as a
+	// workflow conversation.
+	ArtifactRunID string                    `json:"artifactRunId,omitempty"`
+	Capabilities  *models.AgentCapabilities `json:"capabilities,omitempty"`
 	// Backend and Model describe the Agent CLI for display.
 	Backend string `json:"backend,omitempty"`
 	Model   string `json:"model,omitempty"`
@@ -173,6 +178,11 @@ func (s *SoloService) agentMeta(name string) (backend, model string) {
 func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bool) SoloSessionView {
 	v := SoloSessionView{SoloSession: *row}
 	v.Backend, v.Model = s.agentMeta(row.AgentName)
+	if s.agents != nil {
+		if agent, ok := s.agents.Get(row.AgentName); ok && agent.Capabilities != nil {
+			v.Capabilities = agent.Capabilities.Clone()
+		}
+	}
 	if c := s.lookup(row.ID); c != nil {
 		sn := c.sess.Snapshot()
 		v.Busy, v.Waiting = sn.Busy, sn.Waiting
@@ -184,6 +194,7 @@ func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bo
 	if err != nil {
 		return v
 	}
+	v.ArtifactRunID = sb.RunID
 	info := &SoloSandboxInfo{
 		ID: sb.ID, Name: sb.Name, Status: sb.Status, Error: sb.Error,
 		HasCodeServer: sb.CodeServerPort > 0, CreatedAt: sb.CreatedAt.Format(time.RFC3339),

@@ -4,7 +4,27 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable `shared_run_sandbox_enabled` in platform settings and set the workflow's `defaults.sandbox.mode` to `shared`. When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts. The switch lives on the settings page, the mode in the workflow defaults panel; run details show a shared-sandbox badge and the sandbox list labels shared rows.
+- **Agent files editor:** fewer columns. Markdown files open in a single editor with an Edit / Split / Preview switch in the toolbar (no minimap), and version history opens from a toolbar button instead of taking a column on the right.
+
+- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable `shared_run_sandbox_enabled` in platform settings and set the workflow's `defaults.sandbox.mode` to `shared`. When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
+
+- **Loading skeletons:** the shimmer is now a soft neutral sheen with a pause between sweeps instead of a fast purple wave, blocks have rounded corners, and the skeleton fades in after a short delay so quick loads no longer flash it.
+
+- **Conversation navigation:** hovering the message rail now opens a compact outline of every question, highlights the current one, previews the hovered reply and can load earlier messages; touch screens jump straight from the marks.
+
+- **Artifact drawer preview:** artifacts opened in the drawer no longer repeat the name and file-name row above the content; the tab already names them.
+
+- **Artifact preview:** the file header no longer repeats the type (e.g. “JSON”) next to a filename that already shows its extension.
+
+- **Artifact drawer workflow:** the workflow list now matches the resource and artifact cards — node icons form the timeline, the duplicate status dots are gone, and the current step is a soft highlight with the same badge style.
+
+- **Sidebar history:** “历史执行” rows drop the repeated clock icon and use the same text-only rhythm as “正在执行”: titles align with the section heading, a failed run shows a small red ⓘ-style mark at the row end and a cancelled run a grey dot. The “正在执行” and “历史执行” headings now carry a small run / history icon that wakes up on hover, and their rows hang off the heading with a thin tree rail to show the hierarchy.
+
+- **Resource/artifact drawer:** the `+` button now opens a closable “New tab” next to the existing tabs instead of hiding the tab strip, and open tabs stay side by side; the redundant “Resources / Artifacts ×” heading row is gone on desktop (the toolbar toggles open and close the drawer).
+
+- **Solo resources:** Solo now uses the same conversation shell and artifact stage as workflow runs, including shared drawer state, card sizing, previews and a new-tab action; resources include IDE, Terminal, browser and log cards.
+
+- **Execution navigation:** active Solo sandboxes now appear with workflow runs in the shared “正在执行” sidebar, including shared row context actions. Solo conversations use the workflow conversation shell, toolbar, resource/artifact switcher and full-screen layout instead of a separate session list; their sandbox MCP now exposes the selected Agent’s artifact read/write capabilities.
 
 - **Clarify chat:** parent classes, styles, accessibility attributes and native
   events now reach the chat column, resolving the Vue attribute warning in the

@@ -4,6 +4,8 @@
     "workspace": "工作区导航",
     "runningRuns": "正在执行",
     "runHistory": "历史执行",
+    "sectionCollapse": "折叠{name}",
+    "sectionExpand": "展开{name}",
     "workspaceLoading": "正在加载…",
     "workspaceNoRuns": "还没有执行完的工作流",
     "workspaceLoadFailed": "暂时无法加载",

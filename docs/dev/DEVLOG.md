@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-23（Agent 工作目录编辑区减栏：5 栏 → 3 栏）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/agent/AgentFilesPanel.vue`、`MarkdownSplitEditor.vue`、新增 `MarkdownViewToggle.vue`；对应测试；`web/src/locales/*/pages.json`（`markdownEditor.split`）
+- 做了什么：桌面端原本横向 5 栏（智能体列表 | 文件树 | 编辑器+minimap | Markdown 预览 | 版本历史竖条）。现在 Markdown 编辑改成工具栏里的「编辑 / 分栏 / 预览」三态切换，默认单栏编辑，偏好存 `agent-md-view-mode`；去掉 Markdown 的 minimap；版本历史不再占右侧一栏，桌面端统一走工具栏「版本历史」按钮弹窗。旧的 `agent-md-preview-collapsed` 不再读取。
+- 为什么：用户反馈分栏太多，编辑区被挤窄。
+- 如何验证：`web/` 下 `vitest run src/components/agent src/views/AgentStudioView.test.ts src/locales`、`eslint`、`vue-tsc --noEmit` 通过；未在浏览器里实测。
+
 ### 2026-10-23（单沙箱跑完整个工作流：共享运行沙箱，默认关闭）
 
 - 日期：2026-10-23
@@ -35,15 +43,71 @@
   - server：`golangci-lint`、`go vet`、`gen-configdoc -check`、`go test ./...`、`cover-check-server.sh 90`（90.2%）、`TestRunAgent|TestReact` 均通过。
   - 新增单测：`runtime/acp_shared_test.go`（复用、同节点不 reprime、per-node 不变、挂起会话时回退、重试复用容器、reprime 失败换容器、运行结束退役、工作目录不同时回退、重启后接管）；`sandbox/reprime_test.go`；`services/sandbox_shared_test.go`；`engine/sandbox_mode_test.go`。
   - sandbox：`test-reprime.sh`、`test-inject.sh`、`test-runtime-bootstrap.sh`、`shellcheck-error.sh` 通过；运行时包构建产物里包含 `reprime.sh`。
-  - 未做：真实镜像的端到端验证（三节点、两种 Agent）。
+  - 未做：真实镜像的端到端验证（三节点、两种 Agent）；前端开关 UI（另开会话做）。
 
-### 2026-10-23（共享运行沙箱 Web 入口）
+### 2026-10-23（骨架屏 loading 改为中性柔光）
 
 - 日期：2026-10-23
-- 范围：`web/src/components/workflow/WorkflowDefaultsPanel.vue`、`web/src/views/SettingsView.vue`、`web/src/components/run/RunSandboxEnvPanel.vue`、`web/src/views/RunDetailView.vue`、`web/src/views/SandboxListView.vue`、`web/src/lib/shared/types.ts`、`web/src/lib/api/apiTypes.ts`、两份 `pages.json` 及对应测试、CHANGELOG。
-- 做了什么：按服务端契约接入可选共享沙箱。设置页把 `shared_run_sandbox_enabled`（0/1）渲染为开关；开关为 1 时，工作流默认值面板出现「沙箱模式」单选（per_node / shared），选 shared 写入 `defaults.sandbox.mode`，选 per_node 删除该字段；Run 详情的运行环境页在 `run.sandboxMode === 'shared'` 时显示「共享沙箱」徽标；沙箱列表对 `shared: true` 的行用「共享」代替节点 id。
-- 为什么：共享沙箱默认关闭且要求零影响。旋钮缺失、为 0 或读取设置失败时面板保持原样，per_node 不往默认值里写字段，旧工作流的保存内容不变。
-- 如何验证：新增/扩展 WorkflowDefaultsPanel、SettingsView、SandboxListView、RunSandboxEnvPanel 单测；web 下 lint、vue-tsc、`npm test -- --coverage`、`npm run build` 通过。服务端字段由另一会话实现，未做端到端联调。
+- 范围：`web/src/styles/global.css`（`.app-skeleton`、`.app-skeleton__block`）
+- 做了什么：扫光从 accent 紫（0.18）改成正文色 4.5% 的中性柔光，光带收窄到中间 60%；周期 1.2s ease-in-out 改为 2s，前 60% 扫过、后 40% 停顿；色块加 6px 圆角；整个骨架延迟 150ms 淡入，快的加载不再闪一下骨架。减少动效模式下淡入也关掉。
+- 为什么：用户反馈骨架屏"感觉卡"：每个色块紫色光带很重、扫得又快，宽行和窄行各扫各的，像在频闪。
+- 如何验证：`loadingReducedMotion.test.ts`、`AppSkeleton.test.ts` 通过；`npm run lint`、`vue-tsc`。
+
+### 2026-10-23（对话时间轴改为悬停展开目录）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/chat/ChatMessageRail.vue`、`ChatMessageRail.test.ts`、`web/src/components/run/ClarifyChat.navigation.test.ts`、`web/e2e/conversation-workspace.spec.ts`
+- 做了什么：左侧刻度改得更细，配色改成中性灰阶（当前项用正文色，不再用 accent）。原来悬停只弹出单条气泡，现在展开一张目录卡片：列出全部提问，当前项加粗并带指示条，悬停的行和对应刻度联动高亮，底部预览悬停项的回复，有更早消息时可以在卡片里加载。鼠标离开后延迟 120ms 再关，从刻度移到卡片上不会断开。触屏（`hover: none`）下不展开卡片，点刻度直接跳转。props 和 emits 不变。
+- 为什么：用户觉得原来的时间轴质感不够，希望做成 Codex 那样的侧边目录。
+- 如何验证：`ChatMessageRail` 单测 11 条、ClarifyChat 导航单测、`e2e/conversation-workspace.spec.ts` 全部通过；用 Playwright 截了亮色和暗色两张图检查。
+
+### 2026-10-23（舞台内产物预览去掉文件名行）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/ArtifactPreview.vue`、`web/src/lib/run/useArtifactPreview.ts`、`web/src/components/run/ReactArtifactStage.vue`、`ArtifactPreview.mode.test.ts`。
+- 做了什么：`ArtifactPreview` 新增 `hideFileRow`，舞台里打开的产物不再显示「图标 + 产物名 + 文件名」那一行，只保留结构化/原文切换和操作按钮；工具栏成为首行时补 8px 顶部间距。产物库等其他入口不受影响。
+- 为什么：舞台页签已经显示产物名，这一行重复。
+- 如何验证：lint 0 error、`vue-tsc`、`npm test -- --coverage`（4916 项，Lines 90.55%）。
+
+### 2026-10-23（产物抽屉工作流列表对齐舞台卡片样式）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/StageWorkflow.vue`、`web/src/components/run/ReactArtifactStage.test.ts`。
+- 做了什么：去掉与状态胶囊重复的左侧状态点轨道，改用节点图标做时间线并用短连线串联；列表包进一张卡片，改用舞台的 `--ra-*` 令牌（面板、描边、阴影、强调色），「当前」标记改成与卡片类型角标同款；当前行只保留浅强调底色，等待中节点只淡化文字和图标。
+- 为什么：原样式状态点贴边、与状态胶囊重复，当前行描边框打断轨道对齐，且用的是全局令牌，与同屏资源/产物卡片不统一。
+- 如何验证：lint 0 error、`vue-tsc`、run/views 1721 项测试；临时 Playwright 页面截取亮/暗两套主题确认（截完已删）。
+
+### 2026-10-23（侧边栏历史执行去时钟图标，参照 Codex）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/shell/SidebarWorkspaceLists.vue`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/components/ui/Icon.vue`、`web/src/styles/global.css`、`web/src/components/run/ArtifactPreview.vue` 及对应测试。
+- 做了什么：「历史执行」去掉每行相同的 `history` 时钟图标，行改为纯文字（13px、行高 32px、左右 10px，与「正在执行」标题和行对齐）；失败改为行尾 14px 红色圆圈感叹号（`<title>` 失败），取消保留行尾灰点；标题字号与「正在执行」统一为 11.5px。随后两个区块标题前加 14px 图标（「正在执行」新增状态图标 `run-live` 圆圈播放，轮廓与「历史执行」`history-back` 一致；先试的 `play-continue` 用户认为不协调），标题挂 `grasp-status-host`，复用 `Icon.vue` 状态图标的 hover（放大、提亮、一次 wake 动效，尊重 reduced-motion）；「历史执行」可点击，hover 时文字同时提亮。行用 `styles/global.css` 的 `.sidebar-tree-item` 包一层，画从标题图标下来的竖线和每行圆角分支（行自身因 hover-ink 的 `overflow: clip` 不能画在外侧），标题文字与行文字对齐。产物预览文件头在文件名已带扩展名时不再重复显示 `JSON` 等类型。
+- 为什么：时钟图标每行重复、不传达信息；参照 Codex 侧边栏：行首不放图标，状态只在需要时出现在行尾。中途试过行首状态列，用户认为不如 Codex 方案，已撤回。
+- 如何验证：`npx vitest run src/components/shell src/components/run/ArtifactPreview`、`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`；用 e2e mock（`vite.e2e.config.ts`）截浅色/深色侧边栏确认对齐。
+
+### 2026-10-23（分屏抽屉 `+` 新页签与去掉重复标题行）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/ReactArtifactStage.vue`、`web/src/components/chat/ConversationWorkspace.vue` 及对应测试。
+- 做了什么：分屏抽屉里点 `+` 不再整条标签栏消失，而是保留已开标签并新增可关闭的「新页签」显示首页卡片，选卡片后替换该占位；分屏下同一模式的已开标签全部显示，关闭标签切到相邻标签，无剩余才回首页；分屏不再在预览注册时自动挂出应用标签。桌面分屏抽屉去掉「资源 / 产物 ×」标题行（顶栏切换按钮已能命名和关闭），窄屏仍保留「返回对话」。
+- 为什么：原 `+` 只是切回首页，分屏只显示当前标签，于是点 `+` 后看不到任何标签；标题行与顶栏切换按钮重复。
+- 如何验证：`npm run lint`（0 error）、`npx vue-tsc --noEmit`、`npm test -- --coverage`（500 文件 / 4915 测试，Lines 90.55%）。
+
+### 2026-10-23（Solo 资源抽屉对齐工作流启动）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/solo/SoloSessionPane.vue`、`web/src/components/run/ReactArtifactStage.vue`、`web/src/components/run/SandboxStageSurface.vue`。
+- 做了什么：Solo 直接复用工作流的 `ReviewShell → ReactArtifactStage` 组合，统一资源与产物抽屉的状态、卡片网格、行高和预览逻辑；资源卡片包含 IDE、Terminal、浏览器、日志，标签条支持 `+` 返回资源/产物首页，独立 Solo 沙箱日志通过沙箱日志接口加载，产物列表持续刷新，顶栏固定为工作流同款 44px 高度。
+- 为什么：Solo 与工作流启动应提供一致的资源入口和调试面板，避免同一沙箱出现两套交互。
+- 如何验证：相关 ESLint、`npx vue-tsc --noEmit`、ReactArtifactStage/ConversationWorkspace 78 项测试和生产构建通过。
+
+### 2026-10-23（统一 Solo 会话执行入口）
+
+- 日期：2026-10-23
+- 范围：`server/internal/services/{sandbox_solo.go,sandbox_agent.go,sandbox_test_pool.go,solo.go}`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/views/SoloView.vue`、`web/src/components/solo/SoloSessionPane.vue`、`web/src/lib/solo/useSoloChat.ts`、Solo 路由及侧栏回归测试。
+- 做了什么：活动中的 Solo 沙箱现在和工作流启动/运行共用侧栏「正在执行」分组，支持同款右键置顶、重命名和关闭入口。移除 Solo 页内嵌的会话列表和重复筛选入口，聊天路由改为工作流会话同款全屏壳层、顶栏、资源/产物切换和右侧面板；启动 Solo 时注册独立 artifact-store MCP 作用域，继承 Agent 的 `tools/reads/writes` 能力，并在面板中展示 Agent 能力和已写产物。
+- 为什么：Solo 会话与工作流执行被分在两套列表中，启动中的会话无法在统一的执行入口里找到，页面也重复展示活动会话。
+- 如何验证：完整 Web 单测 500 个文件 / 4915 项通过，Lines 90.5%；`npx vue-tsc --noEmit`、相关 ESLint（0 error）、生产构建以及 `AppSidebarNav`、ConversationWorkspace 单测（59 项）通过；当前环境未安装 Go，未执行 Go 编译/测试。
 
 ### 2026-10-22（澄清聊天接收父级属性）
 

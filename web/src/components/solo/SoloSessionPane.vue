@@ -7,9 +7,10 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
-import AcpStatusPill from '@/components/run/AcpStatusPill.vue'
 import AgentTimeline from '@/components/run/AgentTimeline.vue'
-import SoloStatusDot from './SoloStatusDot.vue'
+import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
+import ReviewShell from '@/components/run/ReviewShell.vue'
+import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloEnvPanel from './SoloEnvPanel.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
@@ -17,13 +18,15 @@ import { api } from '@/lib/api/api'
 import { agentHueVar, agentInitial } from '@/components/canvas/composables/agentAvatar'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { chatImageSrc } from '@/lib/shared/compositeText'
+import { lastMessageText } from '@/lib/chat/messagePreview'
 import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
-import { backendLabel, repoShort } from '@/lib/solo/soloPrefs'
+import { repoShort } from '@/lib/solo/soloPrefs'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
+import type { Artifact } from '@/lib/shared/types'
 
 const props = defineProps<{ sessionId: string }>()
 const emit = defineEmits<{ (e: 'back'): void }>()
@@ -48,22 +51,20 @@ const moreOpen = ref(false)
 const limitOpen = ref(false)
 const closing = ref(false)
 const restarting = ref(false)
-const editingTitle = ref(false)
-const titleDraft = ref('')
-const titleInput = ref<HTMLInputElement | null>(null)
+const soloArtifacts = ref<Artifact[]>([])
+let artifactPoll: number | undefined
 
 watch(session, (s) => s && store.upsert(s))
 
 const title = computed(() => session.value?.title || t('pages.solo.untitled'))
 const project = computed(() => session.value?.project ?? null)
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
-const sandboxLive = computed(() => status.value === 'running' && !!sandboxId.value)
-const ideUrl = computed(() => {
-  if (!sandboxLive.value || !session.value?.sandbox?.hasCodeServer) return ''
-  const base = api.sandboxIdeUrl(sandboxId.value)
-  const dir = project.value ? project.value.repoDirName || repoShort(project.value.repoUrl).split('/').pop() : ''
-  return dir ? base.replace(/folder=[^&]*/, `folder=/root/workspace/${encodeURIComponent(dir)}`) : base
+const sandboxResource = computed(() => {
+  const source = session.value?.sandbox
+  const id = Number(source?.id || session.value?.sandboxId || 0)
+  return id > 0 ? { id, hasCodeServer: source?.hasCodeServer } : null
 })
+const sandboxResourceLoading = computed(() => status.value === 'starting' && !sandboxResource.value)
 const branchLabel = computed(() => session.value?.branch || project.value?.defaultBranch || '')
 const showStartup = computed(() => status.value === 'starting' && !!session.value)
 
@@ -84,6 +85,26 @@ function onScroll() {
   if (el) followBottom.value = el.scrollHeight - el.scrollTop - el.clientHeight < 80
 }
 watch(turns, () => scrollDown(), { deep: true })
+
+// --- message rail: one tick per user turn, previewing the last agent reply ----
+const messageRailItems = computed(() => {
+  const rows = turns.value
+  return rows.flatMap((turn, index) => {
+    if (turn.role !== 'user') return []
+    let preview = ''
+    for (let i = index + 1; i < rows.length && rows[i]!.role !== 'user'; i++) {
+      const reply = rows[i]!
+      if (reply.role !== 'agent') continue
+      const text = lastMessageText(reply.steps, reply.text)
+      if (text.trim()) preview = text
+    }
+    const title = turn.text || turn.images?.map((im, ii) => attachmentDisplayName(im, ii)).join(', ') || ''
+    return [{ id: turn.id, title, preview }]
+  })
+})
+function onMessageNavigate() {
+  followBottom.value = false
+}
 watch(
   () => props.sessionId,
   () => {
@@ -91,9 +112,39 @@ watch(
     input.value = ''
     attach.clearAttachments()
     envOpen.value = false
-    editingTitle.value = false
+    soloArtifacts.value = []
     scrollDown(true)
   },
+)
+
+async function loadSoloArtifacts() {
+  const runId = session.value?.artifactRunId
+  if (!runId) {
+    soloArtifacts.value = []
+    return
+  }
+  try {
+    const next = await api.runArtifacts(runId)
+    if (session.value?.artifactRunId === runId) soloArtifacts.value = next
+  } catch {
+    if (session.value?.artifactRunId === runId) soloArtifacts.value = []
+  }
+}
+
+watch(
+  [() => session.value?.artifactRunId, status],
+  ([runId, currentStatus], _, onCleanup) => {
+    if (artifactPoll) window.clearInterval(artifactPoll)
+    artifactPoll = undefined
+    void loadSoloArtifacts()
+    if (!runId || currentStatus === 'closed') return
+    artifactPoll = window.setInterval(() => void loadSoloArtifacts(), 2500)
+    onCleanup(() => {
+      if (artifactPoll) window.clearInterval(artifactPoll)
+      artifactPoll = undefined
+    })
+  },
+  { immediate: true },
 )
 
 // --- composer ---------------------------------------------------------------
@@ -126,20 +177,6 @@ function onKeydown(e: KeyboardEvent) {
   if (composing.value || e.isComposing || e.keyCode === 229) return
   e.preventDefault()
   void send()
-}
-
-// --- header actions -----------------------------------------------------------
-async function editTitle() {
-  titleDraft.value = session.value?.title ?? ''
-  editingTitle.value = true
-  await nextTick()
-  titleInput.value?.select()
-}
-async function commitTitle() {
-  if (!editingTitle.value) return
-  editingTitle.value = false
-  const next = titleDraft.value.trim()
-  if (next && next !== session.value?.title) await chat.rename(next)
 }
 
 async function doClose() {
@@ -191,6 +228,10 @@ function onDocPointer(e: Event) {
 }
 onMounted(() => document.addEventListener('pointerdown', onDocPointer))
 onBeforeUnmount(() => document.removeEventListener('pointerdown', onDocPointer))
+onBeforeUnmount(() => {
+  if (artifactPoll) window.clearInterval(artifactPoll)
+  artifactPoll = undefined
+})
 
 function turnInterrupted(turn: { status?: string; error?: string; streaming: boolean }) {
   return !turn.streaming && (turn.status === 'stopped' || turn.status === 'failed' || !!turn.error)
@@ -208,109 +249,38 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <AppButton size="sm" @click="chat.load()">{{ t('common.buttons.retry') }}</AppButton>
     </div>
 
-    <template v-else-if="session">
-      <!-- header -->
-      <header class="solo-head">
-        <button type="button" class="solo-head__back" :aria-label="t('pages.solo.backToList')" @click="emit('back')">
-          <Icon name="arrow-left" :size="16" />
-        </button>
-        <SoloStatusDot :status="session.status" :busy="busy" />
-        <div class="min-w-0 flex-1">
-          <input
-            v-if="editingTitle"
-            ref="titleInput"
-            v-model="titleDraft"
-            class="solo-head__title-input"
-            maxlength="80"
-            :aria-label="t('pages.solo.header.rename')"
-            @keydown.enter.prevent="commitTitle"
-            @keydown.esc.prevent="editingTitle = false"
-            @blur="commitTitle"
-          />
-          <button v-else type="button" class="solo-head__title" :title="t('pages.solo.header.rename')" data-testid="solo-title" @click="editTitle">
-            <span class="truncate">{{ title }}</span>
-            <Icon name="edit" :size="12" class="solo-head__title-edit" />
-          </button>
-          <div class="solo-head__meta">
-            <span class="solo-head__chip">
-              <span class="solo-head__avatar" :style="avatar(session.agentName)">{{ agentInitial(session.agentName) }}</span>
-              {{ session.agentName }}
-              <span class="text-txt3">· {{ backendLabel(session.backend) }}</span>
-            </span>
-            <span v-if="project" class="solo-head__chip" :title="project.repoUrl">
-              <Icon name="git" :size="12" class="text-accent" />
-              <span class="truncate">{{ project.name }}</span>
-              <template v-if="branchLabel">
-                <Icon name="branch" :size="11" class="text-txt3" />
-                <span class="font-mono text-txt3">{{ branchLabel }}</span>
-              </template>
-            </span>
-            <span v-else class="solo-head__chip text-txt3">
-              <Icon name="folder" :size="12" />{{ t('pages.solo.noProject') }}
-            </span>
-          </div>
-        </div>
-        <div class="solo-head__actions">
-          <AcpStatusPill v-if="status === 'running'" :busy="busy" :connected="link === 'open'" class="hidden md:inline-flex" />
-          <RouterLink
-            v-if="sandboxLive"
-            :to="`/sandboxes/${sandboxId}/console`"
-            class="solo-head__btn"
-            :title="t('pages.solo.header.console')"
-            data-testid="solo-console-link"
-          >
-            <Icon name="terminal" :size="15" /><span class="hidden lg:inline">{{ t('pages.solo.header.console') }}</span>
-          </RouterLink>
-          <a v-if="ideUrl" :href="ideUrl" target="_blank" rel="noopener" class="solo-head__btn" :title="t('pages.solo.header.vscode')">
-            <Icon name="stage-ide" :size="15" /><span class="hidden lg:inline">{{ t('pages.solo.header.vscode') }}</span>
-          </a>
-          <button type="button" class="solo-head__btn" :title="t('pages.solo.header.env')" data-testid="solo-env-toggle" @click="envOpen = true">
-            <Icon name="variable" :size="15" /><span class="hidden lg:inline">{{ t('pages.solo.header.env') }}</span>
-          </button>
-          <button
-            v-if="!closed && status !== 'error'"
-            type="button"
-            class="solo-head__btn solo-head__btn--danger"
-            data-testid="solo-close"
-            @click="confirmClose = true"
-          >
-            <Icon name="stop" :size="14" /><span class="hidden sm:inline">{{ t('pages.solo.header.close') }}</span>
-          </button>
-          <button
-            v-else
-            type="button"
-            class="solo-head__btn solo-head__btn--primary"
-            :disabled="restarting"
-            data-testid="solo-restart"
-            @click="doRestart"
-          >
-            <Icon :name="restarting ? 'spinner' : 'refresh'" :size="14" :class="{ 'animate-spin': restarting }" />
-            <span class="hidden sm:inline">{{ t('pages.solo.header.restart') }}</span>
-          </button>
-          <div class="relative" data-solo-more>
-            <button type="button" class="solo-head__btn" :aria-label="t('pages.solo.header.more')" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen">
-              <Icon name="more" :size="15" />
-            </button>
-            <div v-if="moreOpen" class="solo-menu" role="menu">
-              <button type="button" role="menuitem" class="solo-menu__item" @click="moreOpen = false; editTitle()">
-                <Icon name="edit" :size="14" />{{ t('pages.solo.header.rename') }}
-              </button>
-              <RouterLink v-if="session.projectId" :to="`/settings/projects?edit=${session.projectId}`" role="menuitem" class="solo-menu__item" @click="moreOpen = false">
-                <Icon name="settings" :size="14" />{{ t('pages.solo.header.editProject') }}
-              </RouterLink>
-              <button type="button" role="menuitem" class="solo-menu__item solo-menu__item--danger" data-testid="solo-delete" @click="moreOpen = false; confirmDelete = true">
-                <Icon name="trash" :size="14" />{{ t('pages.solo.header.delete') }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </header>
+    <ReviewShell
+      v-else-if="session"
+      :scope-key="`solo:${props.sessionId}:${session.artifactRunId || 'pending'}`"
+      :run-id="session.artifactRunId || ''"
+      :run-name="title"
+      split-drawer
+      class="solo-workspace min-h-0 min-w-0 flex-1"
+    >
+      <template #stage>
+        <ReactArtifactStage
+          :artifacts="soloArtifacts"
+          :run-id="session.artifactRunId || ''"
+          :sandbox="sandboxResource"
+          :sandbox-loading="sandboxResourceLoading"
+          :sandbox-log-id="sandboxId"
+          class="min-h-0 flex-1"
+        />
+      </template>
 
+      <template #sidebar>
       <div v-if="link === 'reconnecting'" class="solo-banner" role="status">
         <Icon name="spinner" :size="12" class="animate-spin" />{{ t('pages.solo.link.reconnecting') }}
       </div>
 
       <!-- transcript -->
+      <div class="relative flex min-h-0 flex-1 flex-col">
+      <ChatMessageRail
+        :items="messageRailItems"
+        :scroller="scroller"
+        :scope-key="`solo:${props.sessionId}`"
+        @navigate="onMessageNavigate"
+      />
       <div ref="scroller" class="solo-transcript scroll-area min-h-0 flex-1 overflow-y-auto" data-testid="solo-transcript" @scroll.passive="onScroll">
         <div class="solo-column space-y-6">
           <SoloStartupCard v-if="showStartup" :session="session" />
@@ -325,10 +295,10 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </div>
             <div class="mt-3 flex flex-wrap gap-2">
               <AppButton size="sm" variant="primary" icon="refresh" :loading="restarting" @click="doRestart">{{ t('pages.solo.errorCard.retry') }}</AppButton>
-              <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-head__btn">
+              <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
-              <RouterLink v-if="session.projectId" :to="`/settings/projects?edit=${session.projectId}`" class="solo-head__btn">
+              <RouterLink v-if="session.projectId" :to="`/settings/projects?edit=${session.projectId}`" class="solo-error-link">
                 <Icon name="settings" :size="14" />{{ t('pages.solo.errorCard.edit') }}
               </RouterLink>
             </div>
@@ -344,7 +314,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             <div v-if="turn.role === 'system'" class="solo-system">
               <span>{{ turn.text }}</span>
             </div>
-            <div v-else-if="turn.role === 'user'" class="flex justify-end">
+            <div v-else-if="turn.role === 'user'" class="flex justify-end" :data-chat-message-id="turn.id">
               <div class="min-w-0 max-w-[88%] space-y-1.5">
                 <div v-if="turn.images?.length" class="flex flex-wrap justify-end gap-1.5">
                   <template v-for="(im, ii) in turn.images" :key="ii">
@@ -415,6 +385,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
             </button>
           </div>
         </div>
+      </div>
       </div>
 
       <!-- composer / closed bar -->
@@ -542,7 +513,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 
       <SoloLimitModal :open="limitOpen" @close="limitOpen = false" @freed="limitOpen = false; doRestart()" />
       <ChatImagePreviewModal :open="!!imagePreview" :src="imagePreview?.src || ''" :label="imagePreview?.label || ''" @close="closeChatImagePreview" />
-    </template>
+      </template>
+    </ReviewShell>
   </div>
 </template>
 
@@ -550,110 +522,66 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 .solo-pane {
   container: solo-pane / inline-size;
 }
+.solo-workspace {
+  background: rgb(var(--c-surface));
+}
+.solo-workspace :deep(.conversation-toolbar) {
+  height: 44px;
+  min-height: 44px;
+  max-height: 44px;
+}
+.solo-workspace :deep(.is-compact .conversation-mode-toggle) {
+  width: 32px;
+  height: 32px;
+}
+.solo-workspace :deep(.conversation-panel-heading) {
+  display: none;
+}
+.solo-workspace :deep(.is-compact .conversation-panel-heading) {
+  display: flex;
+}
+.solo-workspace .conversation-heading {
+  display: inline-flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  color: rgb(var(--c-txt2));
+  font-size: 12px;
+  font-weight: 500;
+}
+.solo-workspace .conversation-mode-toggle {
+  display: inline-flex;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: rgb(var(--c-txt3));
+  background: transparent;
+  transition: background var(--dur-ui), color var(--dur-ui), border-color var(--dur-ui);
+}
+.solo-workspace .conversation-mode-toggle:hover {
+  color: rgb(var(--c-txt));
+  background: rgb(var(--c-txt) / .04);
+}
+.solo-workspace .conversation-mode-toggle[aria-pressed="true"] {
+  border-color: rgb(var(--c-line));
+  color: rgb(var(--c-txt));
+  background: rgb(var(--c-base));
+}
+.solo-workspace .conversation-mode-toggle:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / .5);
+  outline-offset: 2px;
+}
 .solo-column {
   width: 100%;
   max-width: 780px;
   min-width: 0;
   margin-inline: auto;
-}
-.solo-head {
-  display: flex;
-  min-height: 60px;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 10px;
-  border-bottom: 1px solid rgb(var(--c-line));
-  padding: 8px 16px;
-}
-.solo-head__back {
-  display: none;
-  color: rgb(var(--c-txt2));
-}
-.solo-head__title {
-  display: flex;
-  max-width: 100%;
-  align-items: center;
-  gap: 6px;
-  color: rgb(var(--c-txt));
-  font-size: 14px;
-  font-weight: 600;
-}
-.solo-head__title-edit {
-  flex-shrink: 0;
-  color: rgb(var(--c-txt3));
-  opacity: 0;
-  transition: opacity 0.15s ease;
-}
-.solo-head__title:hover .solo-head__title-edit,
-.solo-head__title:focus-visible .solo-head__title-edit {
-  opacity: 1;
-}
-.solo-head__title-input {
-  width: 100%;
-  max-width: 420px;
-  border-bottom: 1px solid rgb(var(--c-accent));
-  background: transparent;
-  color: rgb(var(--c-txt));
-  font-size: 14px;
-  font-weight: 600;
-  outline: none;
-}
-.solo-head__meta {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 3px;
-}
-.solo-head__chip {
-  display: inline-flex;
-  max-width: 100%;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
-  color: rgb(var(--c-txt2));
-  font-size: 11.5px;
-}
-.solo-head__avatar {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  border-radius: 5px;
-  font-size: 9.5px;
-  font-weight: 700;
-}
-.solo-head__actions {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 6px;
-}
-.solo-head__btn {
-  display: inline-flex;
-  height: 30px;
-  align-items: center;
-  gap: 5px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
-  padding: 0 9px;
-  color: rgb(var(--c-txt2));
-  font-size: 12px;
-  transition: border-color 0.15s ease, color 0.15s ease;
-}
-.solo-head__btn:hover:not(:disabled) {
-  border-color: rgb(var(--c-accent) / 0.35);
-  color: rgb(var(--c-txt));
-}
-.solo-head__btn--danger:hover:not(:disabled) {
-  border-color: rgb(var(--c-err) / 0.45);
-  color: rgb(var(--c-err));
-}
-.solo-head__btn--primary {
-  border-color: rgb(var(--c-accent) / 0.5);
-  background: rgb(var(--c-accent) / 0.1);
-  color: rgb(var(--c-accent-2));
 }
 .solo-menu {
   position: absolute;
@@ -683,6 +611,21 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 }
 .solo-menu__item--danger {
   color: rgb(var(--c-err));
+}
+.solo-error-link {
+  display: inline-flex;
+  min-height: 30px;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  padding: 0 9px;
+  color: rgb(var(--c-txt2));
+  font-size: 12px;
+}
+.solo-error-link:hover {
+  border-color: rgb(var(--c-accent) / .35);
+  color: rgb(var(--c-txt));
 }
 .solo-banner {
   display: flex;
@@ -762,15 +705,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   border-color: rgb(var(--c-accent) / 0.4);
   background: rgb(var(--c-accent) / 0.05);
 }
-@media (max-width: 860px) {
-  .solo-head__back {
-    display: inline-flex;
-  }
-}
 @container solo-pane (max-width: 640px) {
-  .solo-head {
-    padding-inline: 10px;
-  }
   .solo-transcript {
     padding: 18px 12px 24px;
   }

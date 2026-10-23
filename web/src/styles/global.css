@@ -457,12 +457,24 @@ html.light .app-sidebar-card {
   }
 }
 
+/* Sweep across 0–60%, then rest: a calm sheen instead of a constant strobe. */
 @keyframes app-skeleton-shimmer {
   0% {
     transform: translateX(-100%);
   }
+  60%,
   100% {
     transform: translateX(100%);
+  }
+}
+
+/* Delay-in so fast loads never flash a skeleton. */
+@keyframes app-skeleton-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -482,17 +494,29 @@ html.light .app-sidebar-card {
   flex-shrink: 0;
 }
 
+.app-skeleton {
+  animation: app-skeleton-in var(--dur-overlay) ease-out 150ms both;
+}
 .app-skeleton__block {
   background: rgb(var(--c-elevated));
+  border-radius: 6px;
   position: relative;
   overflow: hidden;
 }
+/* Neutral sheen (not accent): reads as "loading", not as a purple wave. */
 .app-skeleton__block::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgb(var(--c-accent) / 0.18), transparent);
-  animation: app-skeleton-shimmer 1.2s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    rgb(var(--c-txt) / 0.045) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  will-change: transform;
+  animation: app-skeleton-shimmer 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 .app-skeleton__title {
   height: 18px;
@@ -554,6 +578,10 @@ html.light .app-sidebar-card {
 
   .app-skeleton__block::after {
     display: none;
+  }
+
+  .app-skeleton {
+    animation: none;
   }
 
   .app-refresh-bar {
@@ -672,6 +700,42 @@ html.light .app-sidebar-card {
   .hover-ink-host > .hover-ink {
     transition: none;
   }
+}
+
+/* ---------- Sidebar section tree (正在执行 / 历史执行) ---------- */
+/*
+ * Each row hangs off its section heading with one rounded ╰ branch. Drawn on a
+ * wrapper because rows clip their own overflow for hover ink.
+ */
+.sidebar-tree-item {
+  --tree-x: 17px;
+  --tree-color: rgb(var(--c-line-strong));
+  position: relative;
+  display: flow-root;
+  padding-left: 28px;
+}
+.sidebar-tree {
+  position: relative;
+}
+.sidebar-tree-item::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: 0;
+  width: 11px;
+  height: 50%;
+  border-left: 1px solid var(--tree-color);
+  border-bottom: 1px solid var(--tree-color);
+  pointer-events: none;
+}
+.sidebar-tree-item:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  bottom: 0;
+  left: var(--tree-x);
+  border-left: 1px solid var(--tree-color);
+  content: '';
+  pointer-events: none;
 }
 
 /* ---------- Shared micro-interaction utilities (g1–g3) ---------- */
