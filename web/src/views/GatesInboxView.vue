@@ -177,6 +177,9 @@ const {
   clarifyComposerLocked,
   activeFollowTail,
   activeFollowProcess,
+  followObserving,
+  followStopping,
+  takeoverFollow,
   inboxClarifyStageKind,
   inboxReviewState,
   reviewActive,
@@ -434,6 +437,8 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               :node-label="active?.type === 'clarify' ? active.label : undefined"
               :follow-tail="activeFollowTail"
               :follow-process="activeFollowProcess"
+              :observe="followObserving"
+              :stopping="followStopping"
               :composer-locked="clarifyComposerLocked"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
@@ -444,6 +449,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               @finish="onClarifyFinish"
               @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
+              @takeover="takeoverFollow"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
               @queue-reorder="onClarifyQueueReorder"
             />
@@ -560,6 +566,8 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :node-label="active?.type === 'clarify' ? active.label : undefined"
                   :follow-tail="activeFollowTail"
                   :follow-process="activeFollowProcess"
+                  :observe="followObserving"
+                  :stopping="followStopping"
                   :composer-locked="clarifyComposerLocked"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"
@@ -570,6 +578,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   @finish="onClarifyFinish"
                   @finish-abort="onClarifyFinishAbort"
                   @cancel="onClarifyCancel"
+                  @takeover="takeoverFollow"
                   @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
                   @queue-reorder="onClarifyQueueReorder"
                 />

@@ -193,9 +193,9 @@
       "copiedShort": "Copied",
       "copyFailed": "Copy failed",
       "importedFiles": "Imported {count} file(s) into {dir}",
-      "favoriteAdded": "Favorited \"{name}\" — pinned to the sidebar",
+      "favoriteAdded": "Favorited \"{name}\"",
       "favoriteRemoved": "Removed \"{name}\" from favorites",
-      "favoriteFull": "Limit of {max} reached — unfavorite another shortcut first",
+      "favoriteFull": "Limit of {max} reached — unfavorite another one first",
       "favoriteLaunchFailed": "Could not launch this workflow; try again"
     },
     "action": "Action",

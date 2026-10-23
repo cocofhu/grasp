@@ -946,9 +946,9 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     w.unmount()
   })
 
-  it('composerLocked locks the single primary action (确认并流转 and 发送) while following', async () => {
+  it('composerLocked locks the single primary action (确认并流转 and 发送) while the next chat is still starting', async () => {
     const at = new Date().toISOString()
-    const w = mountChat({ handoff: { phase: 'done', at }, followTail: { kind: 'auto', label: '实现', at }, composerLocked: true })
+    const w = mountChat({ handoff: { phase: 'done', at }, followTail: { kind: 'waiting', label: '验收测试', at }, composerLocked: true })
     await flushPromises()
     const confirm = w.get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.attributes('disabled')).toBeDefined()
@@ -967,6 +967,114 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     expect(w.get('[data-testid="clarify-send-icon"]').attributes('disabled')).toBeUndefined()
     await w.setProps({ draft: '' })
     expect(w.get('[data-testid="clarify-confirm-flow"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+})
+
+describe('done session following the run keeps the right bottom', () => {
+  const at = '2026-10-22T09:00:00Z'
+
+  it('auto follow with the session already done shows the observe bar, not the done footer', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+      followProcess: [{ nodeId: 'implement', iteration: 1, label: '实现', live: true, startedAt: at, parts: [{ kind: 'thought', text: '先看导出' }] }],
+    })
+    await flushPromises()
+    expect(w.text()).toContain('「实现」正在自动执行')
+    expect(w.text()).toContain('思考中')
+    const input = w.get('[data-testid="clarify-input"]')
+    expect((input.element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(input.attributes('placeholder')).toBe('自动运行中，停止后可接管对话')
+    expect((w.get('[data-testid="clarify-attach-btn"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(true)
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-send-icon"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it('Stop on that bar emits takeover once and then shows 正在停止', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+    })
+    await flushPromises()
+    await w.get('[data-testid="clarify-observe-stop"]').trigger('click')
+    expect(w.emitted('takeover')).toHaveLength(1)
+    await w.setProps({ stopping: true })
+    const stop = w.get('[data-testid="clarify-observe-stop"]')
+    expect((stop.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toBe('正在停止…')
+    await stop.trigger('click')
+    expect(w.emitted('takeover')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('a follow tail that is auto shows the observe bar even before the host passes observe', async () => {
+    const w = mountChat({ done: true, handoff: { phase: 'done', at }, followTail: { kind: 'auto', label: '实现', at } })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toBe('自动运行中，停止后可接管对话')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it('a next chat still starting does not show the done footer, then becomes a normal composer when it is ready', async () => {
+    const w = mountChat({
+      done: true,
+      composerLocked: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'waiting', label: '验收测试', at },
+    })
+    await flushPromises()
+    expect(w.text()).toContain('「验收测试」准备中')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-input"]').attributes('disabled')).toBeDefined()
+    await w.setProps({ done: false, composerLocked: false, handoff: null, followTail: null })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-input"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="clarify-hot-actions"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it.each([
+    ['completed', '运行已完成'],
+    ['failed', '运行失败'],
+    ['cancelled', '运行已取消'],
+  ] as const)('ended follow (%s) keeps the existing end copy and not the auto bar', async (status, copy) => {
+    const w = mountChat({
+      done: true,
+      composerLocked: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'ended', status, at },
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain(copy)
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('a gate waiting note still replaces the composer, including when observe was on', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      doneNote: { text: '「上线审批」人工审批 · 待审批', tone: 'wait' },
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-done-note"]').text()).toBe('「上线审批」人工审批 · 待审批')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
     w.unmount()
   })
 })

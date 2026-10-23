@@ -300,6 +300,7 @@ const {
   acceptConfirmFlow,
   dismissConfirmFlow,
   playConfirmCeremony,
+  followKeepsComposer,
   showDoneChrome,
   confirmFlowPlaying,
   cancelReview,
@@ -497,7 +498,9 @@ watch(composerBlocksConfirm, (blocked) => {
  * follow lock (#850) disable the textarea / 「+」.
  */
 const confirmBusy = computed(() => validating.value || props.handoff?.phase === 'pending')
-const composerInputLocked = computed(() => !!props.observe || !!props.composerLocked)
+/** Existing observe bar: run-live observe, or this chat following an auto node. */
+const observeComposer = computed(() => !!props.observe || props.followTail?.kind === 'auto')
+const composerInputLocked = computed(() => observeComposer.value || !!props.composerLocked)
 
 /**
  * The composer shows exactly one primary action (fix-post-launch/button-states.md):
@@ -1687,7 +1690,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     </div>
     <!-- Success ceremony in flight after done: keep composer mounted-off until hold→done (g2.3). -->
     <div
-      v-else-if="done"
+      v-else-if="done && !followKeepsComposer"
       class="border-t border-line p-3 text-center text-[12px] text-txt3"
       data-testid="clarify-confirm-ceremony"
       aria-live="polite"
@@ -1778,7 +1781,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
       </div>
       <ComposerShell
         wrap-toolbar
-        :show-footer="!hideFinish && reviewMode && !observe"
+        :show-footer="!hideFinish && reviewMode && !observeComposer"
         box-test-id="clarify-input-row"
         toolbar-test-id="clarify-action-row"
       >
@@ -1790,7 +1793,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             class="chat-input composer-hint-wrap min-h-[40px] min-w-0 w-full resize-none border-0 bg-transparent p-0 shadow-none outline-none focus:ring-0"
             :class="overflowScroll ? 'scroll-area max-h-[128px] overflow-y-auto' : 'overflow-y-hidden'"
             rows="1"
-            :placeholder="observe ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
+            :placeholder="observeComposer ? translate(stopping ? 'pages.clarify.observeStoppingPlaceholder' : 'pages.clarify.observeInputPlaceholder') : inputPlaceholder"
             :disabled="composerInputLocked"
             data-testid="clarify-input"
             @input="onTextInput"
@@ -1814,7 +1817,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </button>
           <slot name="composer-controls" :compact="true" />
         </template>
-        <template v-if="observe" #toolbar-end>
+        <template v-if="observeComposer" #toolbar-end>
           <button
             type="button"
             class="chat-action-button chat-action-stop"
@@ -1839,7 +1842,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
             @click="onPrimary"
           />
         </template>
-        <template v-if="reviewMode && !observe" #hint>
+        <template v-if="reviewMode && !observeComposer" #hint>
           <p
             class="m-0 min-w-0 text-[11px] leading-snug text-txt3 [overflow-wrap:anywhere]"
             data-testid="clarify-confirm-hint"
