@@ -486,7 +486,7 @@ describe('GatesInboxView starting approvals', () => {
     // Answered: the row leaves pending. `?run=` and the consumed handoff both
     // still point at it, but that must not resurrect a "starting" ghost.
     mocks.listGates.mockResolvedValue(paged([]))
-    mocks.inboxContext.mockRejectedValue(new Error('no pending inbox item'))
+    mocks.inboxContext.mockResolvedValue({ pending: false })
     mocks.getRun.mockResolvedValue({
       id: 'run-boot',
       status: 'completed',

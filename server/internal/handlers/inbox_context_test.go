@@ -296,14 +296,24 @@ func TestRunInboxContextNotFound(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "ic-none", Status: "waiting_human", StartedAt: time.Now(), Graph: models.Graph{}})
 
-	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=1", nil); w.Code != 404 {
-		t.Fatalf("no pending: %d", w.Code)
+	w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=1", nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pending":false`) {
+		t.Fatalf("no pending should leave: %d %s", w.Code, w.Body.String())
+	}
+	if w := h.do("GET", "/api/runs/missing-run/inbox-context?nodeId=x&iteration=1", nil); w.Code != 404 {
+		t.Fatalf("missing run: %d %s", w.Code, w.Body.String())
 	}
 	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x", nil); w.Code != 400 {
 		t.Fatalf("missing iteration: %d", w.Code)
 	}
 	if w := h.do("GET", "/api/runs/ic-none/inbox-context?iteration=1", nil); w.Code != 400 {
 		t.Fatalf("missing nodeId: %d", w.Code)
+	}
+	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=0", nil); w.Code != 400 {
+		t.Fatalf("iteration 0: %d", w.Code)
+	}
+	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=abc", nil); w.Code != 400 {
+		t.Fatalf("bad iteration: %d", w.Code)
 	}
 }
 
@@ -315,7 +325,8 @@ func TestRunInboxContextIterationMismatch(t *testing.T) {
 	}})
 	h.db.Create(&models.Gate{RunID: "ic-iter", NodeID: "gate", Iteration: 2, Resolved: false, RequestedAt: now})
 
-	if w := h.do("GET", "/api/runs/ic-iter/inbox-context?nodeId=gate&iteration=1", nil); w.Code != 404 {
-		t.Fatalf("iteration mismatch should 404: %d", w.Code)
+	w := h.do("GET", "/api/runs/ic-iter/inbox-context?nodeId=gate&iteration=1", nil)
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pending":false`) {
+		t.Fatalf("iteration mismatch should leave: %d %s", w.Code, w.Body.String())
 	}
 }

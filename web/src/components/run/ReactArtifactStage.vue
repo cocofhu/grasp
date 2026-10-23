@@ -1034,6 +1034,7 @@ watch(
     try {
       const sbx = await api.getRunNodeSandbox(rid, nid)
       if (gen !== sandboxGen) return
+      // null is confirmed absence: leave the stage empty, do not open a desktop.
       sandboxView.value = sbx
     } catch (e) {
       if (gen !== sandboxGen || isAbortError(e)) return

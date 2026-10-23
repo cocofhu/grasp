@@ -34,7 +34,7 @@ func (h *Handlers) RunInboxContext(c *gin.Context) {
 
 	kind, ok := h.Runs.InboxContextKind(runID, nodeID, iteration)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "no pending inbox item"})
+		writeInboxLeftPending(c)
 		return
 	}
 
@@ -46,8 +46,15 @@ func (h *Handlers) RunInboxContext(c *gin.Context) {
 	case services.InboxKindClarifyStarting:
 		h.inboxContextStarting(c, run, nodeID, iteration)
 	default:
-		c.JSON(http.StatusNotFound, gin.H{"error": "no pending inbox item"})
+		writeInboxLeftPending(c)
 	}
+}
+
+// writeInboxLeftPending is the item leaving the inbox: HTTP 200 with
+// pending:false so the browser does not log a failed fetch. The run missing
+// and bad query params stay 404 and 400.
+func writeInboxLeftPending(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"pending": false})
 }
 
 func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, iteration int) {

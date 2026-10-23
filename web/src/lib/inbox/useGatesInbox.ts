@@ -33,7 +33,7 @@ import {
   findInboxItemForHandoff,
   findInboxItemForQuery,
   inboxTripleKey,
-  isInboxLeftPendingError,
+  isInboxLeftPending,
   pickNextActiveAfterRemove,
 } from '@/lib/inbox/inboxActiveSelection'
 import {
@@ -1017,6 +1017,7 @@ async function refreshStartingSandboxPhase() {
   }
   try {
     const sb = await api.getRunNodeSandbox(runId, nodeId)
+    // null is confirmed absence. The starting poll above is already capped.
     startingSandboxPhase.value = sb?.status ? String(sb.status) : null
     observeBootSandbox(bootKey(runId, nodeId, active.value?.iteration), sb)
   } catch {
@@ -1510,7 +1511,7 @@ function selectActiveAfterRemove(prevList: InboxItem[], removedKey: string) {
   if (isMobile.value && !listItems.value.length) mobileView.value = 'list'
 }
 
-/** Quietly converge when inbox-context 404 means the item left pending. */
+/** Quietly converge when inbox-context says the item left pending. */
 function handleLeftInboxContext(it: InboxItem) {
   if (isInboxCancelDeparture(it.runId) && holdsCancelledConversation()) return
   markProcessed(it)
@@ -2381,7 +2382,13 @@ async function softRefreshActiveRun() {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
     // Drop stale responses if active moved while in flight.
     if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
     if (isProcessedTriple(target)) return
+    if (isInboxLeftPending(ctx)) {
+      if (isIncomingContextPending(target)) return
+      handleLeftInboxContext(target)
+      return
+    }
     activeRun.value = adaptInboxContextToRun(ctx, target.runId)
     activeRunLoadError.value = false
     // Soft refresh keeps chat mounted — only merge reactSessions onto run; do not
@@ -2390,7 +2397,6 @@ async function softRefreshActiveRun() {
     if (isAbortError(e) || signal.aborted) return
     if (isIncomingContextPending(target)) return
     if (
-      isInboxLeftPendingError(e) ||
       isProcessedTriple(target) ||
       !listItems.value.some((it) => itemKey(it) === itemKey(target))
     ) {
@@ -2434,7 +2440,17 @@ async function loadActiveRun(hard = true) {
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
     if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
     if (isProcessedTriple(target)) return
+    if (isInboxLeftPending(ctx)) {
+      if (isFollowingActive()) return
+      if (isIncomingContextPending(target)) {
+        if (hard) activeRunLoadError.value = false
+        return
+      }
+      handleLeftInboxContext(target)
+      return
+    }
     activeRun.value = adaptInboxContextToRun(ctx, target.runId)
     activeRunLoadError.value = false
     // Context is in. Clear even when a same-key ghost was pending: the finally
@@ -2451,7 +2467,6 @@ async function loadActiveRun(hard = true) {
       return
     }
     if (
-      isInboxLeftPendingError(e) ||
       isProcessedTriple(target) ||
       !listItems.value.some((it) => itemKey(it) === itemKey(target))
     ) {

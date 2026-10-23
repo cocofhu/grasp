@@ -456,7 +456,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     wrapper.unmount()
   })
 
-  it('left-pending 404 converges without toast and without retry loop', async () => {
+  it('left-pending absence converges without toast and without retry loop', async () => {
     const a = gateItem('a')
     const b = gateItem('b')
     mocks.listGates.mockResolvedValue(paged([a, b]))
@@ -467,7 +467,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
         artifacts: [],
         nodeExecutions: {},
       })
-      .mockRejectedValueOnce(new Error('no pending inbox item'))
+      .mockResolvedValueOnce({ pending: false })
 
     const wrapper = mountInbox()
     await flushPromises()
@@ -1837,7 +1837,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
       images: [{ data: 'abc', mimeType: 'image/png', name: 'shot.png' }],
     })
     mocks.listGates.mockResolvedValue(paged([]))
-    mocks.inboxContext.mockRejectedValue(new Error('no pending inbox item'))
+    mocks.inboxContext.mockResolvedValue({ pending: false })
     const wrapper = mountInbox()
     await flushPromises()
     await nextTick()

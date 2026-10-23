@@ -6,7 +6,7 @@ import {
   inboxItemKey,
   inboxQueryKey,
   inboxTripleKey,
-  isInboxLeftPendingError,
+  isInboxLeftPending,
   pickNextActiveAfterRemove,
 } from './inboxActiveSelection'
 
@@ -81,11 +81,13 @@ describe('inbox keys', () => {
   })
 })
 
-describe('isInboxLeftPendingError', () => {
-  it('matches no pending inbox item message', () => {
-    expect(isInboxLeftPendingError(new Error('no pending inbox item'))).toBe(true)
-    expect(isInboxLeftPendingError(new Error('404 No Pending Inbox Item'))).toBe(true)
-    expect(isInboxLeftPendingError(new Error('network down'))).toBe(false)
-    expect(isInboxLeftPendingError('no pending inbox item')).toBe(true)
+describe('isInboxLeftPending', () => {
+  it('matches the success leave marker and ignores error text', () => {
+    expect(isInboxLeftPending({ pending: false })).toBe(true)
+    expect(isInboxLeftPending({ pending: false, type: 'gate' })).toBe(false)
+    expect(isInboxLeftPending({ type: 'clarify', status: 'waiting_human' })).toBe(false)
+    expect(isInboxLeftPending(null)).toBe(false)
+    expect(isInboxLeftPending(new Error('no pending inbox item'))).toBe(false)
+    expect(isInboxLeftPending('no pending inbox item')).toBe(false)
   })
 })
