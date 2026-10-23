@@ -21,11 +21,12 @@ configured as workspace credentials, not in this platform config table.
 | `GRASP_MAX_RUNS` | `engine.max_concurrent_runs` | integer | `5` | Public | Maximum concurrent runs |
 | `GRASP_PROFILES_ROOT` | `engine.profiles_root` | path | `data/profiles` | Public | Agent profile root |
 | `GRASP_NODE_AUTO_RETRY` | `engine.node_auto_retry_max` | integer | `3` | Public | Node automatic retry limit |
-| `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Sandbox image (recommended; one image ships six CLIs including Codex, which uses a ChatGPT login file rather than an API key; runtime switches by Agent backend) |
+| `GRASP_SANDBOX_IMAGE` | `sandbox.image` | image | `Not set` | Public | Sandbox image (recommended; one image ships seven CLIs including DeepSeek Harness and Codex, which uses a ChatGPT login file rather than an API key; runtime switches by Agent backend) |
 | `GRASP_SANDBOX_IMAGE_CURSOR` | `sandbox.images.cursor` | image | `Not set` | Public | Optional cursor-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_IMAGE_CLAUDE_CODE` | `sandbox.images.claude_code` | image | `Not set` | Public | Optional claude_code-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_IMAGE_CODEBUDDY` | `sandbox.images.codebuddy` | image | `Not set` | Public | Optional codebuddy-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_IMAGE_TRAE` | `sandbox.images.trae` | image | `Not set` | Public | Optional trae-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
+| `GRASP_SANDBOX_IMAGE_DEEPSEEK_HARNESS` | `sandbox.images.deepseek_harness` | image | `Not set` | Public | Optional DeepSeek Harness-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_IMAGE_OPENCODE` | `sandbox.images.opencode` | image | `Not set` | Public | Optional opencode-only image override; empty uses GRASP_SANDBOX_IMAGE / the built-in default |
 | `GRASP_SANDBOX_GATEWAY_URL` | `sandbox.gateway_url` | URL | `http://127.0.0.1:8899` | Public | sandbox-gateway control-plane URL |
 | `GRASP_SANDBOX_GATEWAY_API_KEY` | `sandbox.gateway_api_key` | string | `Not set` | Sensitive | Gateway bearer token |

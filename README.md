@@ -87,7 +87,7 @@ The default login is `admin` / `demo1234` (for local evaluation only; configure 
 ### Running your first workflow
 
 1. Sign in with the demo account. Opening the workspace for the first time launches the setup wizard.
-2. In the wizard (or **Project Credentials**), select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, or `codex`, and save the corresponding API key (`codex` uses your `~/.codex/auth.json` login file instead of an API key; Git credentials are optional). Finishing the wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
+2. In the wizard (or **Project Credentials**), select `cursor`, `claude_code`, `codebuddy`, `trae`, `opencode`, `codex`, or `deepseek_harness`, and save the corresponding API key (`codex` uses your `~/.codex/auth.json` login file instead of an API key; Git credentials are optional). Choose DeepSeek Harness under coding tools to use its native `dsh` runtime; the model-vendor API-key path uses OpenCode. Finishing the wizard creates the default agent team and publishes the default workflow (`Clarify → Implement → Test & review`).
 3. Start a run from the home page with a single prompt, or open the canvas to customize nodes and `success` / `fail` / `rollback` edges.
 4. When a run pauses at a human gate, review the spec, preview page, or code diff from the inbox to approve or reject.
 

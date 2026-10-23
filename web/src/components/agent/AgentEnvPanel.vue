@@ -154,6 +154,7 @@ watch(
     </div>
     <div v-else class="scroll-area flex-1 space-y-2 overflow-y-auto p-4">
       <div
+        v-if="draft.acpBackend !== 'deepseek_harness'"
         class="callout mb-3 border-b border-line/60 pb-3 text-[12px] leading-6 text-txt2"
         data-test="env-custom-config-callout"
       >

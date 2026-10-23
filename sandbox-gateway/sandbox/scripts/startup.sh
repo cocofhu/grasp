@@ -62,13 +62,14 @@ WORKSPACE_DIR=${WORKSPACE_DIR:-/root/workspace}
 CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 
 # 提前解析 agent provider 与配置根：契约注入（默认落到 CONFIG_ROOT）与 backend 都要用。
-# 未设置时回落 cursor。五类 CLI 已预装，运行时 AGENT_PROVIDER 单活。
+# 未设置时回落 cursor。运行时 AGENT_PROVIDER 单活。
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
   cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
   claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
   codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
+  deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
   *)                                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT

@@ -424,17 +424,18 @@ func TestBuiltinCredentialShortNames(t *testing.T) {
 		name   string
 		envKey string
 	}{
-		"cred-builtin-cursor":     {builtinNameCursor, envauth.EnvCursorAPIKey},
-		"cred-builtin-claude":     {builtinNameClaudeCode, envauth.EnvClaudeAPIKey},
-		"cred-builtin-codebuddy":  {builtinNameCodeBuddy, envauth.EnvCodeBuddyAPIKey},
-		"cred-builtin-trae":       {builtinNameTrae, envauth.EnvTraeAPIKey},
-		"cred-builtin-opencode":   {builtinNameOpenCode, envauth.EnvOpenCodeAPIKey},
-		"cred-builtin-codex":      {builtinNameCodex, envauth.EnvCodexAuthFile},
-		"cred-builtin-github":     {builtinNameGitHub, envauth.EnvGitHubToken},
-		"cred-builtin-gitlab":     {builtinNameGitLab, envauth.EnvGitLabToken},
-		"cred-builtin-gitlab-url": {builtinNameGitLabURL, "GITLAB_URL"},
-		"cred-builtin-ssh-key":    {builtinNameSSHKey, envauth.EnvGitSSHPrivateKey},
-		"cred-builtin-ssh-hosts":  {builtinNameSSHHosts, envauth.EnvGitSSHKnownHosts},
+		"cred-builtin-cursor":           {builtinNameCursor, envauth.EnvCursorAPIKey},
+		"cred-builtin-claude":           {builtinNameClaudeCode, envauth.EnvClaudeAPIKey},
+		"cred-builtin-codebuddy":        {builtinNameCodeBuddy, envauth.EnvCodeBuddyAPIKey},
+		"cred-builtin-trae":             {builtinNameTrae, envauth.EnvTraeAPIKey},
+		"cred-builtin-opencode":         {builtinNameOpenCode, envauth.EnvOpenCodeAPIKey},
+		"cred-builtin-codex":            {builtinNameCodex, envauth.EnvCodexAuthFile},
+		"cred-builtin-deepseek_harness": {builtinNameDeepSeekHarness, envauth.EnvDeepSeekAPIKey},
+		"cred-builtin-github":           {builtinNameGitHub, envauth.EnvGitHubToken},
+		"cred-builtin-gitlab":           {builtinNameGitLab, envauth.EnvGitLabToken},
+		"cred-builtin-gitlab-url":       {builtinNameGitLabURL, "GITLAB_URL"},
+		"cred-builtin-ssh-key":          {builtinNameSSHKey, envauth.EnvGitSSHPrivateKey},
+		"cred-builtin-ssh-hosts":        {builtinNameSSHHosts, envauth.EnvGitSSHKnownHosts},
 	}
 	got := map[string]CredentialView{}
 	for _, row := range rows {
@@ -543,5 +544,29 @@ func TestWorkspaceCredentialRequiresMasterKey(t *testing.T) {
 	t.Setenv(crypto.SecretsKeyEnv, "")
 	if _, err := NewCredentialService(db).Create(CredentialInput{Type: "custom", Name: "x", EnvKey: "X", Value: "v"}); !errors.Is(err, crypto.ErrNoSecretsKey) {
 		t.Fatalf("expected missing key, got %v", err)
+	}
+}
+
+func TestDeepSeekHarnessCredentialProviderAndMasking(t *testing.T) {
+	setCredentialKey(t)
+	db := newTestDB(t)
+	s := NewCredentialService(db)
+	created, err := s.Create(CredentialInput{Type: "ai", Provider: "deepseek_harness", Name: "DSH team", Value: "synthetic-dsh-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.EnvKey != envauth.EnvDeepSeekAPIKey || !created.Configured || created.Masked != "••••••••" {
+		t.Fatalf("incorrect DeepSeek credential metadata: %+v", created)
+	}
+	encoded, err := json.Marshal(created)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "synthetic-dsh-key") {
+		t.Fatal("credential response leaked the key")
+	}
+	key, value, ok := s.ResolveSelectedValue(created.ID)
+	if !ok || key != envauth.EnvDeepSeekAPIKey || value != "synthetic-dsh-key" {
+		t.Fatal("DeepSeek credential selection did not resolve")
 	}
 }

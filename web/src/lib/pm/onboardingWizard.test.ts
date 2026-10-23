@@ -76,6 +76,7 @@ describe('onboardingWizard', () => {
       'codebuddy',
       'trae',
       'codex',
+      'deepseek_harness',
     ])
     expect(startPathForBackend('opencode')).toBe('apiKey')
     expect(startPathForBackend('trae')).toBe('cli')

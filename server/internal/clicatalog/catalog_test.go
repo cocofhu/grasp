@@ -7,7 +7,7 @@ import (
 )
 
 func TestEveryBackendHasAUsableList(t *testing.T) {
-	for _, b := range []string{"cursor", "claude_code", "codex", "codebuddy", "trae"} {
+	for _, b := range []string{"cursor", "claude_code", "codex", "codebuddy", "trae", "deepseek_harness"} {
 		list := Models(b)
 		if len(list) == 0 {
 			t.Fatalf("%s: empty list", b)

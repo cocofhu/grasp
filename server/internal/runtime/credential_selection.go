@@ -77,6 +77,8 @@ func CredentialEnvKeyForBackend(backend string) string {
 		return envauth.EnvTraeAPIKey
 	case BackendCodex:
 		return envauth.EnvCodexAuthFile
+	case BackendDeepSeekHarness:
+		return envauth.EnvDeepSeekAPIKey
 	default:
 		return ""
 	}

@@ -913,3 +913,35 @@ func newOnboardingHarness(t *testing.T) *services.OnboardingService {
 	creds := services.NewCredentialService(db)
 	return services.NewOnboardingService(skills, services.NewSharedAgentService(t.TempDir()), wf, creds)
 }
+
+func TestOnboardingBootstrapDeepSeekHarnessUsesIndependentCredential(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	result, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		AcpBackend: services.AcpBackendDeepSeekHarness,
+		APIKey:     "test-deepseek-key",
+		CliModel:   "deepseek-v4-pro",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Published || len(result.AgentIDs) == 0 {
+		t.Fatal("DeepSeek Harness onboarding did not publish the team")
+	}
+	credentials := svc.Credentials.ResolveEnv()
+	if credentials["GRASP_DEEPSEEK_API_KEY"] != "test-deepseek-key" || credentials["GRASP_OPENCODE_API_KEY"] != "" {
+		t.Fatal("DeepSeek key was not stored in its independent credential slot")
+	}
+	shared := svc.SharedAgent.Get()
+	if shared.AcpBackend != services.AcpBackendDeepSeekHarness || shared.Env["ACP_BRIDGE_MODEL"] != "deepseek-v4-pro" {
+		t.Fatalf("incorrect shared backend/model: %+v", shared)
+	}
+	for _, name := range result.AgentIDs {
+		agent, ok := svc.Skills.Get(name)
+		if !ok || agent.AcpBackend != services.AcpBackendDeepSeekHarness || agent.Layout.ConfigRoot != "/root/.dsh" || agent.OpenCodeCredentialID != "" {
+			t.Fatalf("incorrect generated agent %q", name)
+		}
+		if agent.Env["GRASP_DEEPSEEK_API_KEY"] != "" || agent.Env["DEEPSEEK_API_KEY"] != "" {
+			t.Fatalf("agent %q persisted a credential", name)
+		}
+	}
+}

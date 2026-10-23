@@ -15,6 +15,7 @@ import {
 } from '@/lib/shared/regionPolicy'
 import {
   APIKEY_BACKEND,
+  APIKEY_BACKENDS,
   CLI_BACKEND_DEFAULT,
   CLI_BACKENDS,
   START_PATH_OPTIONS,
@@ -25,7 +26,7 @@ import {
 import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 
 export type WizardBackendId = BackendId
-export { ACP_BACKENDS, CLI_BACKENDS, START_PATH_OPTIONS, type StartPath }
+export { ACP_BACKENDS, APIKEY_BACKENDS, CLI_BACKENDS, START_PATH_OPTIONS, type StartPath }
 /** Wizard step ids. Internal `acp` is shown as Agent via i18n; capability/env steps are not in WIZARD_STEPS. */
 export type WizardStepId =
   | 'basics'
@@ -74,6 +75,7 @@ export type WizardDraft = {
   acpBackend: WizardBackendId
   /** Last CLI-path backend, restored when switching back from apiKey. */
   cliBackend: WizardBackendId
+  apiKeyBackend?: WizardBackendId
   authMode: WizardAuthMode
   customConfigContent: string
   /** Non-OpenCode workspace credential. Empty means inherit shared Agent config. */
@@ -137,6 +139,7 @@ export function freshDraft(): WizardDraft {
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
     cliBackend: CLI_BACKEND_DEFAULT,
+    apiKeyBackend: APIKEY_BACKEND,
     authMode: 'apiKey',
     customConfigContent: '',
     aiCredentialId: '',
@@ -170,6 +173,7 @@ export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
   syncStartPathFields(draft, id)
   draft.acpBackend = id
   draft.configRoot = configRootFor(id)
+  if (id === 'deepseek_harness') draft.authMode = 'apiKey'
   if (prev !== id) {
     draft.aiCredentialId = ''
     draft.openCodeCredentialId = ''
@@ -191,7 +195,7 @@ export function selectedModelCredentialId(draft: WizardDraft): string {
 
 /** Switch start path; CLI restores the last CLI backend that was picked. */
 export function applyWizardStartPath(draft: WizardDraft, path: StartPath): void {
-  applyAcpBackend(draft, backendForStartPath(path, draft.cliBackend))
+  applyAcpBackend(draft, backendForStartPath(path, draft.cliBackend, draft.apiKeyBackend))
 }
 
 /** True when switching Backend may remapping path-dependent configs. */

@@ -1,4 +1,4 @@
-export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex'
+export type BackendId = 'cursor' | 'claude_code' | 'codebuddy' | 'trae' | 'opencode' | 'codex' | 'deepseek_harness'
 export type RegionSite = 'domestic' | 'international'
 export type RegionMode = 'strict' | 'preserve-special'
 
@@ -22,6 +22,7 @@ export const ACP_BACKENDS: { id: BackendId; label: string; configRoot: string }[
   { id: 'trae', label: 'Trae', configRoot: '/root/.trae' },
   { id: 'opencode', label: 'OpenCode', configRoot: '/root/.config/opencode' },
   { id: 'codex', label: 'Codex', configRoot: '/root/.codex' },
+  { id: 'deepseek_harness', label: 'DeepSeek Harness', configRoot: '/root/.dsh' },
 ]
 
 const REGION_POLICIES: Partial<Record<BackendId, RegionPolicy>> = {

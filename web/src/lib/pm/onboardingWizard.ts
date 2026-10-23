@@ -12,6 +12,7 @@ import {
   CLI_BACKEND_DEFAULT,
   CLI_BACKENDS,
   type StartPath,
+  backendForStartPath,
   startPathForBackend,
   syncStartPathFields,
 } from '@/lib/shared/startPath'
@@ -213,6 +214,7 @@ export type OnboardingDraft = {
   acpBackend: BackendId
   /** Last CLI-path backend, so switching paths back restores the pick. */
   cliBackend: BackendId
+  apiKeyBackend?: BackendId
   region: string
   apiKey: string
   gitCredentialType: GitCredentialType | ''
@@ -352,6 +354,7 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
     cliBackend: CLI_BACKEND_DEFAULT,
+    apiKeyBackend: APIKEY_BACKEND,
     region: getRegionPolicy(APIKEY_BACKEND)?.defaultRegion || '',
     apiKey: '',
     gitCredentialType: '',
@@ -379,7 +382,7 @@ export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): Onb
 /**
  * Select a backend. Keeps startPath in sync and resets values that belong to the
  * previous backend (region default, and the key, which is vendor-specific).
- * A different backend also clears the coding-tool model: model ids do not transfer,
+ * A different backend also clears shared and per-role model overrides: model ids do not transfer,
  * and selecting the previous tool again stays on auto.
  */
 export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): void {
@@ -389,6 +392,7 @@ export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): v
   draft.region = getRegionPolicy(id)?.defaultRegion || ''
   draft.apiKey = ''
   draft.cliModel = ''
+  for (const member of draft.team) member.model = ''
   if (id === APIKEY_BACKEND && !draft.openCodeProvider) {
     draft.openCodeProvider = DEFAULT_OPENCODE_PROVIDER
   }
@@ -396,9 +400,7 @@ export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): v
 
 /** Switch start path; the CLI path restores the last CLI backend that was picked. */
 export function applyStartPath(draft: OnboardingDraft, path: StartPath): void {
-  const id =
-    path === 'apiKey' ? APIKEY_BACKEND : draft.cliBackend || CLI_BACKEND_DEFAULT
-  applyOnboardingBackend(draft, id)
+  applyOnboardingBackend(draft, backendForStartPath(path, draft.cliBackend, draft.apiKeyBackend))
 }
 
 /** Mirrors the server's RepoNameFromURL so the wizard can preview the clone dir. */

@@ -214,12 +214,10 @@ function setCliModel(id: string) {
                   <WizardAcpStartPathPanel
                     :start-path="draft.startPath"
                     :acp-backend="draft.acpBackend"
-                    :config-root="draft.configRoot"
                     :region-policy="currentRegionPolicy"
                     :current-region="currentRegion"
                     region-as-radios
                     show-region-hints
-                    show-config-root
                     test-id-prefix="agent-wizard"
                     @select-start-path="selectStartPath"
                     @select-backend="selectAcp"

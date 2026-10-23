@@ -274,7 +274,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="workspace-credential-create-provider"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-credential-create-env"]').exists()).toBe(false)
     const cards = wrapper.findAll('[data-testid^="credential-kind-"]')
-    expect(cards.length).toBe(10)
+    expect(cards.length).toBe(11)
     for (const card of cards) {
       expect(card.find('[data-provider-logo]').exists()).toBe(true)
     }
@@ -291,6 +291,27 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
       type: 'git', provider: 'github', name: '工作号', envKey: 'GITHUB_TOKEN', value: 'ghp-secret',
     }))
+    wrapper.unmount()
+  })
+
+  it('creates a DeepSeek Harness key without OpenCode model metadata', async () => {
+    const wrapper = mountPanel()
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-create"]').trigger('click')
+    const kind = wrapper.get('[data-testid="credential-kind-deepseek_harness"]')
+    expect(kind.find('[data-provider-logo="deepseek"]').exists()).toBe(true)
+    await kind.trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-create-next"]').trigger('click')
+    await new Promise((resolve) => setTimeout(resolve, 220))
+    expect(wrapper.find('[data-test="opencode-provider"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('DeepSeek team')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('dsh-example-key')
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith({
+      type: 'ai', provider: 'deepseek_harness', name: 'DeepSeek team',
+      envKey: 'GRASP_DEEPSEEK_API_KEY', value: 'dsh-example-key',
+    })
     wrapper.unmount()
   })
 

@@ -135,3 +135,73 @@ test('English template dropdown shows localized names without Chinese or interna
   expect(text).not.toMatch(/ClarifyAgent|ImplementAgent|TestReviewAgent/)
   await page.screenshot({ path: path.join(OUT, 'en-template-select.png') })
 })
+
+for (const lang of ['zh-CN', 'en']) {
+  test(`DeepSeek Harness uses the coding-tool path and its own saved credential (${lang})`, async ({ page }) => {
+    const nextLabel = lang === 'en' ? /^Next/ : /^下一步/
+    const skipLabel = lang === 'en' ? /^Skip/ : /^跳过/
+    const createLabel = lang === 'en' ? /Create.*Studio/ : /创建并进入 Studio/
+    let created: Record<string, any> | undefined
+    await page.route('**/api/**', async (route) => {
+      const url = new URL(route.request().url())
+      if (!url.pathname.startsWith('/api/')) return route.continue()
+      if (url.pathname === '/api/agents' && route.request().method() === 'POST') {
+        created = route.request().postDataJSON()
+        return route.fulfill({ json: { name: 'deepseek-agent' } })
+      }
+      if (url.pathname === '/api/workspace/credentials') return route.fulfill({ json: { items: [
+        { id: 'dsh-key', name: 'DeepSeek team', type: 'ai', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', configured: true },
+        { id: 'vendor-key', name: 'OpenCode DeepSeek', type: 'ai', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', configured: true },
+      ] } })
+      if (url.pathname === '/api/acp-backends/deepseek_harness/models') return route.fulfill({ json: { models: [
+        { id: 'deepseek-flash', name: 'DeepSeek Flash', vendor: 'deepseek', recommended: true },
+      ] } })
+      if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
+      return route.fulfill({ json: [] })
+    })
+    await page.setViewportSize({ width: 1179, height: 900 })
+    await page.goto(`/agent-create-wizard.html?lang=${lang}`, { waitUntil: 'networkidle' })
+    await page.locator('#wiz-name-input').fill('deepseek-agent')
+    await page.getByRole('button', { name: nextLabel }).click()
+    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveCount(0)
+    await page.getByTestId('agent-wizard-path-cli').click()
+    for (const id of ['cursor', 'claude_code', 'codebuddy', 'trae', 'codex', 'deepseek_harness']) {
+      await expect(page.getByTestId(`agent-wizard-backend-${id}`)).toBeVisible()
+    }
+    await page.getByTestId('agent-wizard-backend-deepseek_harness').click()
+    await page.getByTestId('agent-wizard-path-apiKey').click()
+    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveCount(0)
+    await page.getByTestId('agent-wizard-path-cli').click()
+    await expect(page.getByTestId('agent-wizard-path-cli')).toContainText(lang === 'en' ? 'Use a coding tool' : '用编码工具')
+    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveAttribute('aria-checked', 'true')
+    await expect(page.locator('.step-pane')).not.toContainText(/configRoot|\/root\//)
+    if (lang === 'zh-CN') {
+      await page.screenshot({ path: path.join(OUT, 'dsh-coding-tools.png'), fullPage: true, animations: 'disabled' })
+    }
+    await page.setViewportSize({ width: 760, height: 900 })
+    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toBeVisible()
+    const horizontalOverflow = await page.locator('.step-pane').evaluate((el) => el.scrollWidth - el.clientWidth)
+    expect(horizontalOverflow).toBeLessThanOrEqual(1)
+    if (lang === 'zh-CN') {
+      await page.screenshot({ path: path.join(OUT, 'dsh-coding-tools-narrow.png'), fullPage: true, animations: 'disabled' })
+    }
+    if (lang === 'en') {
+      expect(await page.locator('.step-pane').innerText()).not.toMatch(/[\u3400-\u9fff]/)
+    }
+    await page.getByTestId('cli-model-trigger').click()
+    await page.getByTestId('cli-model-option-deepseek-flash').click()
+    await page.getByRole('button', { name: nextLabel }).click()
+    await expect(page.locator('[data-test="auth-mode-custom-config"]')).toHaveCount(0)
+    await expect(page.getByTestId('credential-alias-option-vendor-key')).toHaveCount(0)
+    await page.getByTestId('credential-alias-option-dsh-key').click()
+    await page.getByRole('button', { name: nextLabel }).click()
+    await page.getByRole('button', { name: skipLabel }).click()
+    await page.getByRole('button', { name: createLabel }).click()
+    await expect(page.getByTestId('created-name')).toHaveText('deepseek-agent')
+    expect(created).toMatchObject({
+      acpBackend: 'deepseek_harness', aiCredentialId: 'dsh-key',
+      layout: { configRoot: '/root/.dsh' }, env: { ACP_BRIDGE_MODEL: 'deepseek-flash' },
+    })
+    expect(created).not.toHaveProperty('openCodeCredentialId')
+  })
+}

@@ -7,6 +7,7 @@ const LAUNCH_HEAD: Record<string, string> = {
   codebuddy: 'codebuddy',
   trae: 'traecli acp serve',
   codex: 'codex exec',
+  deepseek_harness: 'dsh --profile acp',
 }
 
 const VENDOR_LABELS: Record<string, string> = {
@@ -62,6 +63,8 @@ export function contextRatio(k?: number): number {
 
 export function launchCommand(backend: string, modelId: string): string {
   const head = LAUNCH_HEAD[backend] || backend
+  // DeepSeek sets its model through ACP session configuration, not a CLI flag.
+  if (backend === 'deepseek_harness') return head
   return modelId ? `${head} --model ${modelId}` : head
 }
 

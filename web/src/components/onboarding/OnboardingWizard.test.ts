@@ -226,6 +226,35 @@ describe('OnboardingWizard', () => {
     vi.unstubAllGlobals()
   })
 
+  it('bootstraps native DeepSeek Harness from the coding-tool path and remembers the tool choice', async () => {
+    cliCatalogMocks.load.mockResolvedValue([{ id: 'deepseek-flash', name: 'DeepSeek Flash', vendor: 'deepseek' }])
+    const wrapper = await mountWizard()
+    await next(wrapper)
+    expect(wrapper.find('[data-testid="onboarding-backend-deepseek_harness"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="onboarding-path-cli"]').trigger('click')
+    expect(wrapper.findAll('[data-testid^="onboarding-backend-"]')).toHaveLength(6)
+    await wrapper.get('[data-testid="onboarding-backend-deepseek_harness"]').trigger('click')
+    await wrapper.get('[data-testid="onboarding-path-apiKey"]').trigger('click')
+    expect(wrapper.find('[data-testid="onboarding-backend-deepseek_harness"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="onboarding-path-cli"]').trigger('click')
+    expect(wrapper.get('[data-testid="onboarding-backend-deepseek_harness"]').attributes('aria-checked')).toBe('true')
+    await next(wrapper)
+    expect(wrapper.find('[data-test="opencode-provider"]').exists()).toBe(false)
+    expect(wrapper.get('a[href="https://platform.deepseek.com/api_keys"]').exists()).toBe(true)
+    await pickCliModel(wrapper, 'deepseek-flash')
+    await wrapper.get('[data-testid="onboarding-api-key"]').setValue('dsh-test-key')
+    await next(wrapper)
+    await fillIdentity(wrapper)
+    await next(wrapper)
+    await next(wrapper)
+    await next(wrapper)
+    const body = await lastBody()
+    expect(body).toMatchObject({ acpBackend: 'deepseek_harness', apiKey: 'dsh-test-key', cliModel: 'deepseek-flash' })
+    expect(body).not.toHaveProperty('openCodeProvider')
+    expect(body).not.toHaveProperty('openCodeModel')
+    wrapper.unmount()
+  })
+
   it('shows one topic per step: preferences, model, key, Git, team, workflow, done', async () => {
     const wrapper = await mountWizard()
     expect(wrapper.findAll('[data-testid^="onboarding-rail-"]').map((w) => w.attributes('data-testid'))).toEqual([
@@ -569,7 +598,7 @@ describe('OnboardingWizard', () => {
     const wrapper = await mountWizard()
     await next(wrapper)
     await wrapper.find('[data-testid="onboarding-path-cli"]').trigger('click')
-    for (const id of ['cursor', 'claude_code', 'codebuddy', 'trae', 'codex']) {
+    for (const id of ['cursor', 'claude_code', 'codebuddy', 'trae', 'codex', 'deepseek_harness']) {
       await wrapper.find(`[data-testid="onboarding-backend-${id}"]`).trigger('click')
       await next(wrapper)
       expect(wrapper.find('[data-testid="onboarding-cli-model"]').exists()).toBe(true)

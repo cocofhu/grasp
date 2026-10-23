@@ -596,6 +596,8 @@ func primaryAuthEnvKey(backend string) string {
 		return "GRASP_OPENCODE_API_KEY"
 	case AcpBackendCodex:
 		return envauth.EnvCodexAuthFile
+	case AcpBackendDeepSeekHarness:
+		return envauth.EnvDeepSeekAPIKey
 	default:
 		return "GRASP_CURSOR_API_KEY"
 	}

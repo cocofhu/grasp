@@ -50,7 +50,7 @@ describe('AgentEnvPanel secret key hint', () => {
     })
   }
 
-  it.each(['GIT_SSH_PRIVATE_KEY', 'GITHUB_TOKEN', 'GRASP_CURSOR_API_KEY', 'ANTHROPIC_API_KEY'])(
+  it.each(['GIT_SSH_PRIVATE_KEY', 'GITHUB_TOKEN', 'GRASP_CURSOR_API_KEY', 'ANTHROPIC_API_KEY', 'GRASP_DEEPSEEK_API_KEY', 'DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_HARNESS_API_KEY'])(
     'shows an inline hint linking to the workspace credentials tab when %s is typed',
     async (key) => {
       const d = draft({ env: [{ k: '', v: '' }] })
@@ -68,6 +68,27 @@ describe('AgentEnvPanel secret key hint', () => {
       expect(wrapper.find('[data-test="env-secret-hint"]').exists()).toBe(false)
     },
   )
+
+  it.each(['ACP_DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_HARNESS_API_KEY'])(
+    'flags DeepSeek alias %s pasted into the JSON env editor',
+    async (key) => {
+      const wrapper = mountWithLink(draft({ acpBackend: 'deepseek_harness' }))
+      const jsonButton = wrapper.findAll('button').find((button) => button.text() === pages.pages.agentStudio.mcp.rawJson)!
+      await jsonButton.trigger('click')
+      wrapper.getComponent({ name: 'CodeEditor' }).vm.$emit('update:modelValue', JSON.stringify({ [key]: 'pasted-example-key' }))
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('[data-test="env-secret-hint"]').text()).toContain(pages.pages.agentStudio.env.secretCredentialsOnly)
+      expect(wrapper.get('[data-test="env-secret-credentials-link"]').exists()).toBe(true)
+      wrapper.unmount()
+    },
+  )
+
+  it('does not suggest a JSON auth file for DeepSeek Harness', () => {
+    const wrapper = mountWithLink(draft({ acpBackend: 'deepseek_harness', layout: { configRoot: '/root/.dsh', workspaceDir: '/root/workspace' } }))
+    expect(wrapper.find('[data-test="env-custom-config-callout"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="env-open-settings-file"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
 
   it('links to workspace credentials from both shared and Agent editors', async () => {
     const shared = mountWithLink(draft({ env: [{ k: 'GIT_SSH_KNOWN_HOSTS', v: 'x' }] }), 'shared')

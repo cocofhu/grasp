@@ -37,6 +37,7 @@ const ASSETS: Record<string, string> = {
   google: googleLogo,
   xai: xaiLogo,
   deepseek: deepseekLogo,
+  deepseek_harness: deepseekLogo,
   moonshot: moonshotLogo,
   bytedance: bytedanceLogo,
   cursor: cursorLogo,
