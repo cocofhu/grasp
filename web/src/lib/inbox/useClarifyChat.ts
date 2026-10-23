@@ -97,6 +97,11 @@ export type ClarifyChatProps = {
   seedHumanImages?: ClarifyImage[]
   /** Host hand-off row; while pending, that confirm owns the 校验中 state. */
   handoff?: { phase: 'pending' | 'done' } | null
+  /**
+   * Row under the hand-off while this conversation follows the run.
+   * auto / waiting still own the composer; ended keeps the done footer.
+   */
+  followTail?: { kind: 'waiting' | 'auto' | 'ended' | 'error' } | null
 }
 
 export type ClarifyChatEmit = {
@@ -161,9 +166,18 @@ const confirmFlow = useConfirmFlowCeremony()
 /** True after we ran (or parent ran) the success ceremony for the current done cycle. */
 let confirmFlowPlayedForDone = false
 const confirmFlowPlaying = computed(() => !!confirmFlow?.playing.value)
-/** Hold done footer until check draw finishes (g2.3). */
+/**
+ * Hand-off still in progress: the session is already marked done, but the
+ * bottom must stay the auto-run bar (auto) or the preparing composer
+ * (next chat still starting). Ended runs and gates keep the done footer.
+ */
+const followKeepsComposer = computed(() => {
+  const kind = props.followTail?.kind
+  return kind === 'auto' || kind === 'waiting'
+})
+/** Hold done footer until check draw finishes (g2.3), and while a follow still owns the composer. */
 const showDoneChrome = computed(
-  () => !!props.done && !confirmFlowPlaying.value,
+  () => !!props.done && !confirmFlowPlaying.value && !followKeepsComposer.value,
 )
 
 async function playConfirmCeremony(): Promise<void> {
@@ -2383,6 +2397,7 @@ function retryLastFailed() {
     acceptConfirmFlow,
     dismissConfirmFlow,
     playConfirmCeremony,
+    followKeepsComposer,
     showDoneChrome,
     confirmFlowPlaying,
     cancelReview,

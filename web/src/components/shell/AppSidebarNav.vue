@@ -110,13 +110,25 @@ function rowTitle(it: InboxItem): string {
  */
 const carriedRows = ref<InboxItem[]>([])
 let runningRequest: AbortController | null = null
-const { ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+/** An activity notice arrived while a list read was still in flight. */
+let runningFollowUp = false
+let navAlive = true
+const { workspace, ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+const workspaceReady = computed(() => !!workspace.value)
 
 function dropCarriedRows(controller: AbortController) {
   if (runningRequest === controller) carriedRows.value = []
 }
 
-async function loadRunningRuns() {
+async function loadRunningRuns(opts?: { follow?: boolean }) {
+  // Execution pages notify about every 300ms. Aborting the read already on
+  // the wire would drop it before it can paint, so remember one follow-up
+  // and let this request land. A failed read still keeps the last success.
+  if (opts?.follow && runningRequest) {
+    runningFollowUp = true
+    return
+  }
+  runningFollowUp = false
   runningRequest?.abort()
   const controller = new AbortController()
   runningRequest = controller
@@ -147,7 +159,13 @@ async function loadRunningRuns() {
     // land must not stay in the count; the next poll retries.
     dropCarriedRows(controller)
   } finally {
-    if (runningRequest === controller) runningRequest = null
+    if (runningRequest === controller) {
+      runningRequest = null
+      if (runningFollowUp && navAlive) {
+        runningFollowUp = false
+        void loadRunningRuns()
+      }
+    }
   }
 }
 
@@ -767,7 +785,16 @@ function pollRefresh() {
   }
   return peek({ source: 'sidebar-poll' })
 }
-const offRunActivity = onRecentActivity(() => void loadRunningRuns())
+function onDocumentVisibility() {
+  if (!document.hidden) void loadRunningRuns()
+}
+const offRunActivity = onRecentActivity(() => void loadRunningRuns({ follow: true }))
+// History already reloads when the workspace appears. Running rows used to
+// skip that moment, so a refresh that mounted the sidebar before login left
+// the section blank until the next poll.
+watch(workspaceReady, (ready) => {
+  if (ready) void loadRunningRuns()
+})
 onMounted(() => {
   refresh({ source: 'mount' })
   void loadRunningRuns()
@@ -775,14 +802,18 @@ onMounted(() => {
   chromeHasMounted.value = true
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
+  document.addEventListener('visibilitychange', onDocumentVisibility)
 })
 onBeforeUnmount(() => {
+  navAlive = false
+  runningFollowUp = false
   if (timer) clearInterval(timer)
   offRunActivity()
   runningRequest?.abort()
   clearRowPress()
   document.removeEventListener('mousedown', onDocMouseDown)
   document.removeEventListener('keydown', onDocKeydown)
+  document.removeEventListener('visibilitychange', onDocumentVisibility)
 })
 // Refresh promptly when navigating (e.g. right after approving a gate).
 watch(
@@ -898,7 +929,7 @@ const settingsItems = settingsNavItems
       </template>
     </div>
 
-    <!-- Workspace primary + quick workflows slide together (plan g2.2) -->
+    <!-- Workspace primary nav. Starred workflows are not listed here. -->
     <div v-else-if="primaryGroup" key="workspace" class="nav-chrome-pane">
     <div class="mb-3" data-testid="nav-workspace-chrome">
       <RouterLink
