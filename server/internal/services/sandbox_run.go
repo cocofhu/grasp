@@ -43,6 +43,9 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	if info.Token != "" {
 		fields["token"] = info.Token
 	}
+	if info.Shared {
+		fields["shared"] = true
+	}
 	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
 		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
 		log.Warn().Err(err).Str("name", info.Name).Msg("begin run sandbox failed")
@@ -83,6 +86,9 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
+	}
+	if info.Shared {
+		fields["shared"] = true
 	}
 	s.markVisitSandboxReady(info.RunID, info.NodeID, fields["updated_at"].(time.Time))
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
@@ -287,9 +293,8 @@ func (s *SandboxService) archiveLog(ctx context.Context, name string) {
 // updated_at). Returns an error when no record exists or the container is not
 // running.
 func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeID string) (*SandboxView, error) {
-	var row models.Sandbox
-	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
-		Order("updated_at desc").First(&row).Error; err != nil {
+	row, err := runNodeSandboxRow(s.db, runID, nodeID)
+	if err != nil {
 		return nil, fmt.Errorf("not found")
 	}
 	// A sandbox still provisioning (pulling image / creating container) is
@@ -309,11 +314,13 @@ func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeI
 // to the caller and must not be disguised as "no log source".
 func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID string) (content string, live bool, err error) {
 	var row models.Sandbox
-	q := s.db.Where("run_id = ? AND purpose = ?", runID, "run")
+	var e error
 	if nodeID != "" {
-		q = q.Where("node_id = ?", nodeID)
+		row, e = runNodeSandboxRow(s.db, runID, nodeID)
+	} else {
+		e = s.db.Where("run_id = ? AND purpose = ?", runID, "run").Order("updated_at desc").First(&row).Error
 	}
-	if e := q.Order("updated_at desc").First(&row).Error; e == nil {
+	if e == nil {
 		if s.mgr.Status(ctx, row.Name) == "running" {
 			out, lerr := s.mgr.Logs(ctx, row.Name, 5000)
 			if lerr != nil {
@@ -328,6 +335,9 @@ func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID strin
 		rq = rq.Where("node_id = ?", nodeID)
 	}
 	if e := rq.Order("updated_at desc").First(&rec).Error; e != nil {
+		if row.Shared && row.Name != "" && s.db.Where("name = ?", row.Name).First(&rec).Error == nil {
+			return rec.Content, false, nil
+		}
 		return "", false, gorm.ErrRecordNotFound
 	}
 	return rec.Content, false, nil

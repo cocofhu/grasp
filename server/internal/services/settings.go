@@ -24,6 +24,7 @@ const (
 	KeyNodeAutoRetryMax  = "node_auto_retry_max"
 	KeySandboxMemoryMB   = "sandbox_memory_mb"
 	KeyAgentIdleMin      = "agent_idle_timeout_minutes"
+	KeySharedRunSandbox  = "shared_run_sandbox_enabled"
 	KeyBrandProductName  = "brand_product_name"
 	KeyBrandHomeSubtitle = "brand_home_subtitle"
 
@@ -112,6 +113,8 @@ func knobs() []knob {
 			func(c *config.Config) int { return c.Sandbox.MemoryMB }},
 		{KeyAgentIdleMin, "Agent 无动作时限", "分钟", 2, 120, "GRASP_CHAT_IDLE_SEC",
 			func(c *config.Config) int { return (c.Sandbox.ChatIdleTimeoutSeconds + 59) / 60 }},
+		{KeySharedRunSandbox, "运行共享沙箱", "", 0, 1, "",
+			func(c *config.Config) int { return boolInt(c.Sandbox.SharedRunSandboxEnabled) }},
 	}
 }
 
@@ -260,12 +263,20 @@ func (s *SettingsService) apply() {
 		}
 	}
 	sandbox.SetDefaultMemoryMB(m[KeySandboxMemoryMB])
+	sandbox.SetSharedRunEnabled(m[KeySharedRunSandbox] == 1)
 	if idleFromCfg {
 		// The config value is in seconds; keep it exact.
 		sandbox.SetAgentIdleTimeout(config.GetConfig().ChatIdleTimeout())
 	} else {
 		sandbox.SetAgentIdleTimeout(time.Duration(m[KeyAgentIdleMin]) * time.Minute)
 	}
+}
+
+func boolInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (s *SettingsService) dbInt(key string) (int, bool) {

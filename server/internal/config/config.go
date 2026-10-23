@@ -247,6 +247,10 @@ type SandboxConfig struct {
 	// platform creates. It covers dockerd, browsers and the agent's own builds,
 	// so a value too low gets the whole sandbox OOM-killed. 0 = default 8192.
 	MemoryMB int `yaml:"sandbox_memory_mb"`
+	// SharedRunSandboxEnabled lets workflows opt into running every node of a
+	// run in one shared sandbox (defaults.sandbox.mode = shared). Off by
+	// default: every node then gets its own sandbox whatever the workflow says.
+	SharedRunSandboxEnabled bool `yaml:"shared_run_sandbox_enabled"`
 	// WorkDir is the host base directory under which per-sandbox ConfigHome
 	// trees (rules/skills/mcp.json) are staged before gateway bundleUrl / SSH
 	// inject into the sandbox. Empty = OS temp dir.

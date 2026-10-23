@@ -31,6 +31,23 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
 改动它们必须同时给 `IMAGE_LEVEL` 加 1。什么时候需要重建镜像：只有系统软件、Agent CLI、工具链、code-server、sshd 或 `grasp-bootstrap.sh` 变了才需要；
 其余逻辑改动发服务端即可。
 
+### 共享运行沙箱：`reprime.sh`
+
+工作流的沙箱模式设为 `shared`（同时要打开平台设置 `shared_run_sandbox_enabled`，默认关闭）时，一次运行的所有节点共用一个沙箱。
+换到下一个节点时，如果它的 env、配置根或凭据和上一个节点不同，Grasp 会经 SSH 执行 `bash /opt/grasp-runtime/current/scripts/reprime.sh`，
+并从 stdin 传入一个 tar.gz：
+
+- `env`（必需）：下一个节点的 Grasp env，每行一个 `NAME=base64(值)`。
+- `unset`（可选）：上一个节点的 env 名，每行一个。上次 reprime 记在 `/run/grasp-runtime/reprime-keys` 里的名字也会一并清掉。
+- `config/`（可选）：下一个节点的配置根内容，解压到新的 `CONFIG_ROOT`。
+- `ssh/`（可选）：和 `SANDBOX_INJECT` 里 SSH staging 包的布局相同（`id_rsa`、`known_hosts`、`repos/…`）。
+
+脚本先清掉上一个节点留下的配置根、`~/.git-credentials`、Grasp 写入的 SSH 私钥和仓库凭据、gh/glab 登录，以及 git 的 credential 配置和用户信息。
+然后整体重写 `/run/grasp-runtime/env`，用 `startup.sh` 里的同名函数重新配置凭据（函数在运行时从 `startup.sh` 中抽取，不另存一份），
+克隆还没有的仓库（已有的仓库不动），最后执行 `services.sh restart backend`，并按 `PREVIEW_DIRECT` 重启或停掉 preview-inject。
+退出码：0 成功 · 1 失败 · 2 用法错误或包格式不对。只用到镜像里已有的工具，不需要提高 `IMAGE_LEVEL`。
+code-server、dockerd 等早已在运行的进程拿不到新的 env；终端里新开的 shell 会读取新的 env 文件。
+
 ## 目录结构
 
 ```

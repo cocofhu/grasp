@@ -4,11 +4,14 @@ import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import { api } from '@/lib/api/api'
 import type { Agent, ChannelConfig } from '@/lib/api/api'
-import type { WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
+import type { SandboxMode, WorkspaceVariable, Workflow, WorkflowDefaults } from '@/lib/shared/types'
 const props = defineProps<{ workflow: Workflow; agents: Agent[] }>()
 const { t } = useI18n()
 const channels = ref<ChannelConfig[]>([])
 const error = ref('')
+// Platform knob shared_run_sandbox_enabled; missing/0/unreadable keeps the section hidden.
+const sharedSandboxEnabled = ref(false)
+const sandboxModes: SandboxMode[] = ['per_node', 'shared']
 const events = ['waiting_human', 'failed', 'completed']
 const packs = ['pm-progress', 'pm-workflow-read', 'pm-workflow-write', 'pm-agent-fs', 'pm-prd-manager']
 const defaults = computed(() => props.workflow.defaults)
@@ -50,11 +53,20 @@ function overrideGate(value: boolean) {
   if (value) config.gateAuto = { enabled: false, agentName: '', variable: '', prompt: '', enabledMcps: [] }
   else delete config.gateAuto
 }
+function setSandboxMode(mode: SandboxMode) {
+  if (mode === 'shared') ensureDefaults().sandbox = { mode }
+  // per_node is the server default; dropping the field keeps old payloads unchanged.
+  else if (props.workflow.defaults) delete props.workflow.defaults.sandbox
+}
+async function loadSharedSandboxKnob() {
+  try { sharedSandboxEnabled.value = (await api.getSettings()).items?.some((item) => item.key === 'shared_run_sandbox_enabled' && item.value === 1) ?? false }
+  catch { sharedSandboxEnabled.value = false }
+}
 async function loadChannels() {
   try { channels.value = (await api.listChannels()).items || [] }
   catch (cause: any) { error.value = String(cause?.message || cause) }
 }
-onMounted(() => { void loadChannels() })
+onMounted(() => { void loadChannels(); void loadSharedSandboxKnob() })
 </script>
 <template>
   <div class="space-y-6 text-sm" data-testid="workflow-defaults-panel">
@@ -76,6 +88,13 @@ onMounted(() => { void loadChannels() })
         <div class="mt-2 flex flex-wrap gap-4 text-xs text-txt2"><label><input v-model="variable.ask" type="checkbox" /> {{ t('pages.workspaceDefaults.ask') }}</label><label><input v-model="variable.required" type="checkbox" /> {{ t('pages.workspaceDefaults.required') }}</label><label><input v-model="variable.editable" type="checkbox" /> {{ t('pages.workspaceDefaults.editable') }}</label><label><input :checked="variable.secret" type="checkbox" @change="setVariableSecret(variable, ($event.target as HTMLInputElement).checked)" /> {{ t('pages.workspaceDefaults.secret') }}</label></div>
       </div>
       <AppButton class="mt-3" variant="outline" size="sm" @click="addVariable">{{ t('pages.workspaceDefaults.addVariable') }}</AppButton>
+    </section>
+    <section v-if="sharedSandboxEnabled" class="border-t border-line pt-4" data-testid="workflow-sandbox-mode">
+      <h3 class="font-semibold text-txt">{{ t('pages.workspaceDefaults.sandboxMode.title') }}</h3>
+      <div class="mt-2 flex flex-wrap gap-4 text-xs text-txt2" role="radiogroup" :aria-label="t('pages.workspaceDefaults.sandboxMode.title')">
+        <label v-for="mode in sandboxModes" :key="mode" class="flex items-center gap-2"><input type="radio" name="workflow-sandbox-mode" :value="mode" :checked="(defaults?.sandbox?.mode || 'per_node') === mode" @change="setSandboxMode(mode)" />{{ t(`pages.workspaceDefaults.sandboxMode.${mode}`) }}</label>
+      </div>
+      <p class="mt-2 text-xs leading-5 text-txt3">{{ t('pages.workspaceDefaults.sandboxMode.hint') }}</p>
     </section>
     <section class="border-t border-line pt-4">
       <label class="flex items-center gap-2 font-semibold text-txt"><input type="checkbox" :checked="!!defaults?.notifyPolicy" @change="overrideNotify(($event.target as HTMLInputElement).checked)" />{{ t('pages.workspaceDefaults.notifyOverride') }}</label>

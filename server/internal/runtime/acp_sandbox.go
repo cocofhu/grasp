@@ -298,6 +298,9 @@ func (c *acpProvider) deregisterRunSandbox(name string) {
 // or capability — e.g. tests), it falls back to an immediate destroy so nothing
 // is leaked.
 func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) {
+	if c.releaseSharedSandbox(sb, acp) {
+		return
+	}
 	if acp != nil {
 		acp.Close()
 	}
@@ -325,6 +328,11 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, fallback []models.AcpEvent) []models.AcpEvent {
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
+	// A shared sandbox outlives the fault: the retry opens a fresh session in
+	// it, and replaces the container only if it is no longer reachable.
+	if c.releaseSharedSandbox(sb, acp) {
+		return events
+	}
 	if acp != nil {
 		acp.Close()
 	}
@@ -339,10 +347,22 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 }
 
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	if req.SandboxMode == models.SandboxModeShared && c.shared != nil {
+		if sb, acp, home, handled, err := c.openSharedSandbox(ctx, req); handled {
+			return sb, acp, home, err
+		}
+	}
+	sb, acp, home, _, err := c.openNodeSandbox(ctx, req)
+	return sb, acp, home, err
+}
+
+// openNodeSandbox creates a fresh sandbox for the node and connects its agent
+// session. It also returns the spec the sandbox was created from.
+func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, sandbox.Spec, error) {
 	spec, err := c.spec(req)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	home := spec.ConfigHome
 
@@ -354,14 +374,14 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
@@ -373,10 +393,10 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		acp.Close()
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
 	}
 	c.registerRunSandbox(req, sb, home)
-	return sb, acp, home, nil
+	return sb, acp, home, spec, nil
 }
 
 // sandboxAttacher is implemented by managers that can rebuild a handle for a
@@ -420,6 +440,7 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	}
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).
 		Msg("reattached node sandbox after restart")
+	c.adoptSharedSandbox(req, sb)
 	return sb, acp, nil
 }
 

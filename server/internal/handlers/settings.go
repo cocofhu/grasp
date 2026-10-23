@@ -17,6 +17,7 @@ type updateSettingsBody struct {
 	NodeAutoRetryMax  *int    `json:"node_auto_retry_max"`
 	SandboxMemoryMB   *int    `json:"sandbox_memory_mb"`
 	AgentIdleMin      *int    `json:"agent_idle_timeout_minutes"`
+	SharedRunSandbox  *int    `json:"shared_run_sandbox_enabled"`
 	BrandProductName  *string `json:"brand_product_name"`
 	BrandHomeSubtitle *string `json:"brand_home_subtitle"`
 }
@@ -48,6 +49,7 @@ func (h *Handlers) UpdateSettings(c *gin.Context) {
 		services.KeyNodeAutoRetryMax:  body.NodeAutoRetryMax,
 		services.KeySandboxMemoryMB:   body.SandboxMemoryMB,
 		services.KeyAgentIdleMin:      body.AgentIdleMin,
+		services.KeySharedRunSandbox:  body.SharedRunSandbox,
 	} {
 		if value != nil {
 			patch[key] = *value

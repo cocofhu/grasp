@@ -12,6 +12,7 @@ import (
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
+	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
@@ -186,6 +187,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		Tags:         append([]string{}, tags...),
 		Priority:     priority,
 		SandboxEnv:   sandboxEnv,
+		SandboxMode:  runSandboxMode(def),
 		Trace:        []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
@@ -559,4 +561,15 @@ func (e *Engine) persistNodeReviewFlag(runID, nodeID string, want bool) {
 	n.Caps.Review = want
 	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).Select("graph").
 		Updates(&models.Run{Graph: run.Graph}), runID, "refresh review flag")
+}
+
+// runSandboxMode snapshots the workflow's sandbox mode onto a new run. Shared
+// mode needs both the workflow opt-in and the platform switch; anything else
+// leaves the run on the default per-node sandboxes ("").
+func runSandboxMode(def models.WorkflowDef) string {
+	if def.Defaults == nil || def.Defaults.Sandbox == nil ||
+		def.Defaults.Sandbox.Mode != models.SandboxModeShared || !sandbox.SharedRunEnabled() {
+		return ""
+	}
+	return models.SandboxModeShared
 }
