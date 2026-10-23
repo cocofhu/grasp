@@ -184,11 +184,11 @@
     "note": "发送箭头向上送出，再回到待发送位置"
   },
   "chat-stop": {
-    "body": "<g class=\"motion-target\"><rect x=\"7\" y=\"7\" width=\"10\" height=\"10\" rx=\"2\"/></g>",
+    "body": "<g class=\"motion-target\"><rect x=\"3.75\" y=\"3.75\" width=\"16.5\" height=\"16.5\" rx=\"3\"/></g>",
     "duration": 900,
     "viewBox": "0 0 24 24",
     "filled": true,
-    "strokeWidth": 1.2,
+    "strokeWidth": 0,
     "note": "停止方块收紧一次，再稳定回位"
   },
   "stop": {
