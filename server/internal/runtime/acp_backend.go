@@ -16,12 +16,13 @@ import (
 type AcpBackend string
 
 const (
-	BackendCursor     AcpBackend = "cursor"
-	BackendClaudeCode AcpBackend = "claude_code"
-	BackendCodeBuddy  AcpBackend = "codebuddy"
-	BackendTrae       AcpBackend = "trae"
-	BackendOpenCode   AcpBackend = "opencode"
-	BackendCodex      AcpBackend = "codex"
+	BackendCursor          AcpBackend = "cursor"
+	BackendClaudeCode      AcpBackend = "claude_code"
+	BackendCodeBuddy       AcpBackend = "codebuddy"
+	BackendTrae            AcpBackend = "trae"
+	BackendOpenCode        AcpBackend = "opencode"
+	BackendCodex           AcpBackend = "codex"
+	BackendDeepSeekHarness AcpBackend = "deepseek_harness"
 )
 
 // Region / site env keys written by Agent Studio or set manually.
@@ -76,6 +77,8 @@ func DefaultConfigRoot(b AcpBackend) string {
 		return "/root/.config/opencode"
 	case BackendCodex:
 		return "/root/.codex"
+	case BackendDeepSeekHarness:
+		return "/root/.dsh"
 	default:
 		return "/root/.cursor"
 	}
@@ -86,7 +89,7 @@ func DefaultConfigRoot(b AcpBackend) string {
 // backend must be reported.
 func NormalizeBackend(raw string) AcpBackend {
 	switch b := AcpBackend(strings.TrimSpace(raw)); b {
-	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex:
+	case BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness:
 		return b
 	default:
 		return ""
@@ -130,6 +133,8 @@ func authSpecFor(b AcpBackend) authSpec {
 		return authSpec{credKey: envauth.EnvTraeAPIKey, cliKey: EnvTraeCLIToken}
 	case BackendOpenCode:
 		return authSpec{credKey: EnvGraspOpenCodeAPIKey, cliKey: EnvOpenCodeAPIKey}
+	case BackendDeepSeekHarness:
+		return authSpec{credKey: envauth.EnvDeepSeekAPIKey, cliKey: "DEEPSEEK_API_KEY"}
 	case BackendCodex:
 		// Slot identity only. The login file is not copied onto a CLI env var.
 		return authSpec{credKey: envauth.EnvCodexAuthFile, cliKey: ""}
@@ -166,6 +171,11 @@ func OpenCodeConfigFileExists(workDirSrc string) bool {
 // AuthConfigFileExists reports whether a backend-specific auth config file is
 // present (settings.json for all backends, plus opencode.json for OpenCode).
 func AuthConfigFileExists(workDirSrc string, backend AcpBackend) bool {
+	// DeepSeek Harness authenticates with the selected API key. It does not
+	// consume settings.json, so that unrelated file cannot satisfy its gate.
+	if NormalizeBackend(string(backend)) == BackendDeepSeekHarness {
+		return false
+	}
 	if SettingsFileExists(workDirSrc) {
 		return true
 	}
@@ -318,6 +328,9 @@ func mergeAuthEnv(backend AcpBackend, env map[string]string, requireAuth bool) (
 	val := strings.TrimSpace(out[spec.credKey])
 	if val == "" {
 		if requireAuth {
+			if backend == BackendDeepSeekHarness {
+				return out, fmt.Errorf("鉴权未配置:请在工作区凭据中配置 %s", spec.credKey)
+			}
 			cfgHint := "settings.json"
 			if backend == BackendOpenCode {
 				cfgHint = "opencode.json 或 settings.json"
@@ -427,6 +440,8 @@ func AgentRuntimeLabel(b AcpBackend) string {
 		return "opencode-json"
 	case BackendCodex:
 		return "codex-cli"
+	case BackendDeepSeekHarness:
+		return "dsh-acp"
 	default:
 		return "cursor-agent"
 	}

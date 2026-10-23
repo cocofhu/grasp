@@ -12,6 +12,7 @@ var testAuthCredentials = map[string]string{
 	envauth.EnvCodeBuddyAPIKey: "fake",
 	envauth.EnvTraeAPIKey:      "fake",
 	envauth.EnvOpenCodeAPIKey:  "fake",
+	envauth.EnvDeepSeekAPIKey:  "fake",
 }
 
 // withTestCredentials supplies testAuthCredentials as workspace credentials

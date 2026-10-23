@@ -4,6 +4,10 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Coding tool picker:** product icons now appear before tool names in Agent, team and first-time setup. The picker hides internal configuration paths.
+
+- **DeepSeek Harness backend:** choose DeepSeek Harness alongside the other coding tools, select Flash or Pro, and run agents with their instructions, skills and MCP tools through native dsh ACP. Authenticate with a dedicated DeepSeek API key. Requires the updated sandbox image with dsh installed.
+
 - **Settings navigation:** clicking the selected settings icon again returns to the previous workspace page, preserving its filters and URL fragment; a direct settings visit returns to Home.
 
 - **Sidebar consistency:** settings and workspace pages now use the same inset, rounded sidebar frame, keeping the left navigation icons and account avatar in the same positions when switching pages.

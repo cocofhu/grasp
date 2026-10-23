@@ -58,6 +58,7 @@ export type TeamWizardDraft = {
   startPath: StartPath
   acpBackend: WizardBackendId
   cliBackend: WizardBackendId
+  apiKeyBackend?: WizardBackendId
   authMode: WizardAuthMode
   customConfigContent: string
   gitCredentialType?: GitCredentialType
@@ -92,6 +93,7 @@ export function freshTeamDraft(): TeamWizardDraft {
     startPath: 'apiKey',
     acpBackend: APIKEY_BACKEND,
     cliBackend: CLI_BACKEND_DEFAULT,
+    apiKeyBackend: APIKEY_BACKEND,
     authMode: 'apiKey',
     customConfigContent: '',
     gitCredentialType: undefined,
@@ -126,6 +128,7 @@ function teamDraftAsWizardDraft(d: TeamWizardDraft): WizardDraft {
   base.startPath = d.startPath
   base.acpBackend = d.acpBackend
   base.cliBackend = d.cliBackend
+  base.apiKeyBackend = d.apiKeyBackend
   base.configRoot = d.configRoot
   base.authMode = d.authMode
   base.customConfigContent = d.customConfigContent
@@ -144,7 +147,9 @@ export function applyTeamAcpBackend(d: TeamWizardDraft, id: WizardBackendId) {
   applyAcpBackend(w, id)
   d.startPath = w.startPath
   d.cliBackend = w.cliBackend
+  d.apiKeyBackend = w.apiKeyBackend
   d.acpBackend = w.acpBackend
+  d.authMode = w.authMode
   d.configRoot = w.configRoot
   d.env = w.env
 }
@@ -154,7 +159,9 @@ export function applyTeamStartPath(d: TeamWizardDraft, path: StartPath) {
   applyWizardStartPath(w, path)
   d.startPath = w.startPath
   d.cliBackend = w.cliBackend
+  d.apiKeyBackend = w.apiKeyBackend
   d.acpBackend = w.acpBackend
+  d.authMode = w.authMode
   d.configRoot = w.configRoot
   d.env = w.env
 }

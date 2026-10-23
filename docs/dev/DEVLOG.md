@@ -20,6 +20,54 @@
 
 ## 记录
 
+### 2026-10-24（修复 DSH 镜像与重启 CI 配置）
+
+- 日期：2026-10-24
+- 范围：`.github/workflows/{ci-sandbox,publish-sandbox,e2e-restart}.yml`、`server/e2e/restart_reattach_test.go` 的手动命令说明。
+- 做了什么：CI/发布镜像的显式 `AGENT_PROVIDERS` 列表补入 `deepseek_harness`。重启续接 CI 构建当前提交的沙箱镜像，将同一镜像传给 gateway 与 server，并在运行真实模型测试前检查镜像级别及 OpenCode/DSH 可执行文件；同步手动测试命令。
+- 为什么：旧的显式安装列表覆盖 Dockerfile 新默认值，造成构建镜像缺少 dsh；重启测试使用发布镜像 2.2.0（级别 1），无法安装本次要求 `min_image=2` 的运行时，容器在模型调用前退出。
+- 如何验证：actionlint、shellcheck、diff 检查、runtime bootstrap 回归与 tagged E2E 编译/无 Key 跳过通过。实际运行时包在级别 1 时按约定退出 4、级别 2 安装成功；Compose 验证 gateway/server 均使用当前构建镜像。完整镜像和真实重启测试由推送后的 CI 再验证，未修改超时或放宽门禁。
+
+### 2026-10-24（DSH PR 独立验证）
+
+- 日期：2026-10-24
+- 范围：DSH 的 server、sandbox、web 变更及接入文档。
+- 做了什么：基于最新 main 整理原生 DeepSeek Harness 接入与工具选择区调整，单独验证凭据隔离、模型协商、角色规则、MCP、产品图标和无路径展示；保留其他独立改动原状。
+- 为什么：确保 PR 的改动范围和测试证据对应，便于独立审阅和发布。
+- 如何验证：server 全量测试、vet、golangci v2.12、配置文档校验、指定 runtime 回归通过，核心覆盖率 90.2%；sandbox 全量测试、vet、lint、ACP/provider race、脚本 smoke 通过，核心覆盖率 96.6%。runtime 连续构建两次字节一致，包 hash 与此前 18 项真实 Key 验证一致，`min_image=2`。Web lint、类型和构建通过；全量 503 个文件、4976 项单测通过，Lines 90.67%；首次冷运行的一项聊天时序失败经 62 项定向复测及完整重跑通过；198 项 critical E2E 首轮全部通过，零重试。actionlint、shellcheck、docs 构建和依赖审计通过；未构建/发布完整镜像，保留 PR `sandbox-images` CI 验证。
+
+### 2026-10-24（编码工具选择区隐藏配置路径）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/agent/{WizardAcpStartPathPanel,AgentCreateWizard,CreateAgentTeamWizard}.vue`、`web/e2e/agent-create-wizard.spec.ts`、`CHANGELOG.md`。
+- 做了什么：工具卡片仅展示产品图标与名称，移除名称下方的配置目录、列表末尾 `configRoot` 提示和通用 API 路径附带的目录；清理共享组件的无用属性与调用。后端选择和保存仍使用原有配置目录。
+- 为什么：启动方式选择只需识别产品，内部配置路径占用界面且无助于选择。
+- 如何验证：新建 Agent/团队组件 13 项测试、向导浏览器 9 项、中英文无路径展示及保存 payload 的 `layout.configRoot` 断言通过；lint、类型检查、生产构建、actionlint、shellcheck、docs 构建与依赖审计通过，保留六种工具无路径截图。
+
+### 2026-10-24（编码工具名称前展示产品图标）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/agent/WizardAcpStartPathPanel.vue`、`web/src/components/onboarding/OnboardingWizard.vue`、`CHANGELOG.md`。
+- 做了什么：复用 `VendorMark`，在 Cursor、Claude Code、CodeBuddy、Trae、Codex、DeepSeek Harness 名称前展示对应产品图标；新建 Agent、团队共用的选择面板及首次配置向导同步显示，图标跟随深浅主题并作为装饰隐藏重复读屏标签。首次配置向导在窄屏使用两列，给图标、名称和选中标记留足空间。
+- 为什么：让编码工具列表更容易识别，与现有模型和凭据图标保持一致。
+- 如何验证：Web lint、TypeScript、生产构建通过；向导浏览器 9 项通过，最终窄屏断点调整后 onboarding 5 项重跑通过。Chromium 深浅主题与 1179px/760px 下 36 项检查确认六个真实 SVG 图标已加载、位于名称前且卡片无溢出裁切；保留选择区截图。全量带覆盖率单测命令为 4967 项通过、9 项既有主题断言失败。actionlint、shellcheck、docs 构建与依赖审计通过。
+
+### 2026-10-24（DSH 归入编码工具入口）
+
+- 日期：2026-10-24
+- 范围：`web/src/lib/shared/startPath.ts`、Agent/团队/首次配置向导、相关文案与回归测试、README、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：将 DeepSeek Harness 纳入编码工具列表，右侧接入方式命名为「用编码工具」；模型厂商 API Key 路径保留 OpenCode。DSH 继续使用独立凭据、模型、`/root/.dsh` 配置根和原生 `dsh --profile acp`，切换接入方式后恢复 DSH 选择。
+- 为什么：接入方式应对应选择的编码工具实现，DSH 的 API Key 认证不应改变其编码工具归属。
+- 如何验证：Web lint、TypeScript 与生产构建通过；Agent 创建与 onboarding 浏览器 9 项通过，最终顶部文案更新后 DSH 中英文 2 项再次通过，1179px/760px 截图确认六种工具完整显示、DSH 选中、配置根正确且无横向溢出。全量带覆盖率单测命令为 4967 项通过、9 项既有主题断言失败，DSH 分类、切换记忆、独立凭据及模型 payload 回归通过。actionlint、shellcheck、docs 构建与依赖审计通过。原生 dsh 执行链路此前已使用真实 Key 完成 18 项集成验证。
+
+### 2026-10-23（DeepSeek Harness backend）
+
+- 日期：2026-10-23
+- 范围：`server/internal/{runtime,services,sandbox,envauth,clicatalog,config}`、`sandbox-gateway/sandbox/internal/{provider,agents,acp}`、沙箱安装/启动脚本与 `IMAGE_LEVEL`、`web/` 的 backend/凭据/创建向导及相关测试、README、`CHANGELOG.md`。
+- 做了什么：新增 `deepseek_harness`，通过原生 `dsh --profile acp` 执行；独立工作区 API Key 槽映射到 `DEEPSEEK_API_KEY`，原生键和两种 ACP 别名均纳入密钥过滤，支持 Flash/Pro 和 ACP 分组模型选项。API Key 路径保留默认 OpenCode，并允许选择/记住 DeepSeek Harness；切换后端时清除共享和逐角色模型覆盖。生成配置将角色 AGENTS 与显式 alwaysApply 规则合并，保留完整 skills 和澄清节点完成规则裁剪；stdio MCP 命令解析为绝对路径。启动 patch 不含密钥，关闭 dsh 托管凭据来源以确保所选凭据生效。镜像固定 dsh `0.2.1-rc.2`，能力版本升至 2，startup/reprime 统一配置根为 `.dsh`。
+- 为什么：提供独立 Harness 的工具与会话循环，复用 Grasp 现有工作流和 MCP，同时保持凭据选择、规则、模型路由与能力声明准确。dsh ACP 只提供上下文占用，继续声明不支持计费 token；bridge 重启后的自动持久化恢复不在本次范围。
+- 如何验证：server 全量 Go 测试、vet、golangci v2.12、配置文档生成校验及指定 runtime 子集通过，核心覆盖率 90.2%；sandbox 全量 Go 测试、vet、lint、针对 ACP/provider 的 race 检查及核心覆盖率 96.6% 通过。actionlint、shellcheck、Shell/Node 语法、注入/Git/运行时 bootstrap/preview-inject smoke、mock 模型测试、固定版本安装与失败退出检查通过；Git smoke 设置 `GIT_CONFIG_NOSYSTEM=1` 隔离宿主机凭据 helper。运行时包连续构建两次字节一致，MANIFEST 为 `min_image=2`。Web lint/类型/构建通过，全量 4955 项通过、9 项既有主题测试失败，Lines 90.66%；完整 critical E2E 首轮 194 项通过，修正新增英文布局溢出后重跑 3 项全部通过，共覆盖 197 项；最终向导浏览器 5 项、模型切换 66 项及密钥过滤 24 项针对性测试通过，server 密钥别名保存/运行/配置过滤回归与 lint 通过。docs 构建及依赖审计通过。使用临时进程环境中的真实 API Key，对生产 server 凭据映射与配置生成、实际 sandbox WebSocket/provider、dsh 和真实平台 artifact-store MCP 完成 18 项检查：真实回复、多轮记忆、角色/规则/skill、文件、产物写入、node_complete、取消与后续对话、重连续接、Pro 模型协商全部通过；未将密钥写入仓库或日志。未构建/发布完整沙箱镜像，部署仍须按 server → 新镜像顺序进行。
+
 ### 2026-10-23（UI 切换与侧栏 PR 验证）
 
 - 日期：2026-10-23

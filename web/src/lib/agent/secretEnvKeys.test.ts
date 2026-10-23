@@ -20,6 +20,15 @@ describe('secretEnvKeys', () => {
     }
   })
 
+  it.each(['ACP_DEEPSEEK_API_KEY', 'ACP_DEEPSEEK_HARNESS_API_KEY'])(
+    'strips DeepSeek alias %s from env records and editor rows',
+    (key) => {
+      expect(isSecretEnvKey(` ${key} `)).toBe(true)
+      expect(stripSecretKeysFromRecord({ [key]: 'must-not-save', FEATURE_FLAG: '1' })).toEqual({ FEATURE_FLAG: '1' })
+      expect(stripSecretKeysFromKV([{ k: key, v: 'must-not-save' }, { k: 'FEATURE_FLAG', v: '1' }])).toEqual([{ k: 'FEATURE_FLAG', v: '1' }])
+    },
+  )
+
   it('strips only secret keys', () => {
     expect(
       stripSecretKeysFromRecord({

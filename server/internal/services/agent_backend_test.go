@@ -9,16 +9,17 @@ import (
 
 func TestNormalizeAcpBackend(t *testing.T) {
 	cases := map[string]string{
-		"cursor":      AcpBackendCursor,
-		"claude_code": AcpBackendClaudeCode,
-		"codebuddy":   AcpBackendCodeBuddy,
-		"trae":        AcpBackendTrae,
-		"opencode":    AcpBackendOpenCode,
-		"codex":       AcpBackendCodex,
-		"":            "",
-		"  trae  ":    AcpBackendTrae,
-		"CURSOR":      "", // case-sensitive
-		"bogus":       "",
+		"cursor":           AcpBackendCursor,
+		"claude_code":      AcpBackendClaudeCode,
+		"codebuddy":        AcpBackendCodeBuddy,
+		"trae":             AcpBackendTrae,
+		"opencode":         AcpBackendOpenCode,
+		"codex":            AcpBackendCodex,
+		"deepseek_harness": AcpBackendDeepSeekHarness,
+		"":                 "",
+		"  trae  ":         AcpBackendTrae,
+		"CURSOR":           "", // case-sensitive
+		"bogus":            "",
 	}
 	for in, want := range cases {
 		if got := NormalizeAcpBackend(in); got != want {
@@ -29,13 +30,14 @@ func TestNormalizeAcpBackend(t *testing.T) {
 
 func TestDefaultConfigRootForBackend(t *testing.T) {
 	cases := map[string]string{
-		AcpBackendCursor:     "/root/.cursor",
-		AcpBackendClaudeCode: "/root/.claude",
-		AcpBackendCodeBuddy:  "/root/.codebuddy",
-		AcpBackendTrae:       "/root/.trae",
-		AcpBackendOpenCode:   "/root/.config/opencode",
-		AcpBackendCodex:      "/root/.codex",
-		"unknown":            "/root/.cursor",
+		AcpBackendCursor:          "/root/.cursor",
+		AcpBackendClaudeCode:      "/root/.claude",
+		AcpBackendCodeBuddy:       "/root/.codebuddy",
+		AcpBackendTrae:            "/root/.trae",
+		AcpBackendOpenCode:        "/root/.config/opencode",
+		AcpBackendCodex:           "/root/.codex",
+		AcpBackendDeepSeekHarness: "/root/.dsh",
+		"unknown":                 "/root/.cursor",
 	}
 	for backend, want := range cases {
 		if got := DefaultConfigRootForBackend(backend); got != want {
@@ -63,6 +65,7 @@ func TestSaveGetBackendConfigRoot(t *testing.T) {
 		{"trae-agent", AcpBackendTrae, "/root/.trae", AcpBackendTrae},
 		{"opencode-agent", AcpBackendOpenCode, "/root/.config/opencode", AcpBackendOpenCode},
 		{"codex-agent", AcpBackendCodex, "/root/.codex", AcpBackendCodex},
+		{"dsh-agent", AcpBackendDeepSeekHarness, "/root/.dsh", AcpBackendDeepSeekHarness},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

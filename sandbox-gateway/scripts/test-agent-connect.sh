@@ -6,7 +6,7 @@
 # 用法：scripts/test-agent-connect.sh <image> [providers]
 #   RUNTIME_BUNDLE：运行时包（默认 .devdata/sandbox-runtime/sandbox-runtime.tgz，
 #   scripts/build-sandbox-runtime.sh 构建）；镜像本身不带逻辑，由本脚本像 Grasp 一样下发。
-#   providers 默认 cursor,claude_code,codebuddy,opencode,trae（镜像预装的五个）
+#   providers 默认 cursor,claude_code,codebuddy,opencode,trae,deepseek_harness
 #   opencode 始终跑一轮 mock 对话，不需要厂商密钥：本脚本在宿主机拉起
 #   mock-chat-model.mjs（夹具 ci-e2e，回复含 GRASP_AGENT_E2E_OK），容器通过
 #   host.docker.internal 访问。配置与平台一致：GRASP_OPENCODE_PROVIDER=custom、
@@ -16,11 +16,12 @@
 #   未设置则只跳过这条真实对话，不跳过 opencode 的 mock 对话。
 #   trae 的 ACP 服务启动前必须登录：只有设置 TRAECLI_PERSONAL_ACCESS_TOKEN 时才做握手，
 #   否则只校验 `traecli acp serve --help`（仍能发现漏装）。
+#   deepseek_harness 始终校验 dsh 版本与 ACP 握手；设置 DEEPSEEK_API_KEY 后额外验证真实对话。
 #   READY_TIMEOUT（默认 240s）/ CONNECT_TIMEOUT（默认 120s）/ CHAT_TIMEOUT（默认 240s）
 set -euo pipefail
 
 image="${1:?usage: test-agent-connect.sh <image> [providers]}"
-providers="${2:-cursor,claude_code,codebuddy,opencode,trae}"
+providers="${2:-cursor,claude_code,codebuddy,opencode,trae,deepseek_harness}"
 ready_timeout="${READY_TIMEOUT:-240}"
 connect_timeout="${CONNECT_TIMEOUT:-120}"
 chat_timeout="${CHAT_TIMEOUT:-240}"
@@ -147,6 +148,9 @@ check_provider() {
   if [ "$provider" = trae ] && [ -n "${TRAECLI_PERSONAL_ACCESS_TOKEN:-}" ]; then
     env+=(-e TRAECLI_PERSONAL_ACCESS_TOKEN)
   fi
+  if [ "$provider" = deepseek_harness ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+    env+=(-e DEEPSEEK_API_KEY)
+  fi
   docker run -d --privileged --name "$name" "${RUNTIME_DOCKER_ARGS[@]}" "${env[@]}" \
     -p 127.0.0.1::8765 -p 127.0.0.1::8744 "$image" >/dev/null
 
@@ -182,6 +186,7 @@ check_provider() {
     claude_code) probe="claude --version" ;;
     codebuddy) probe="codebuddy --version" ;;
     opencode) probe="opencode --version" ;;
+    deepseek_harness) probe="dsh --version" ;;
     trae) probe="traecli acp serve --help" ;;
     *) probe="" ;;
   esac
@@ -202,6 +207,10 @@ check_provider() {
   fi
 
   if [ "$provider" = cursor ] && [ -n "${CURSOR_API_KEY:-}" ]; then
+    node "$ws_check" "ws://127.0.0.1:$api/ws" chat "$chat_timeout" \
+      || die "provider=$provider: 真实对话失败"
+  fi
+  if [ "$provider" = deepseek_harness ] && [ -n "${DEEPSEEK_API_KEY:-}" ]; then
     node "$ws_check" "ws://127.0.0.1:$api/ws" chat "$chat_timeout" \
       || die "provider=$provider: 真实对话失败"
   fi

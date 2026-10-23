@@ -36,7 +36,7 @@ func TestNewProviderRegistryBuildsAllBackends(t *testing.T) {
 	if reg.Name() != "registry" {
 		t.Fatalf("Name = %q, want registry", reg.Name())
 	}
-	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex} {
+	for _, b := range []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness} {
 		p, ok := reg.providers[b]
 		if !ok || p == nil {
 			t.Fatalf("missing provider for backend %q", b)
@@ -61,6 +61,7 @@ func TestProviderRegistryRouting(t *testing.T) {
 	writeProfileInto(t, root, "cb", `{"acpBackend":"codebuddy"}`)
 	writeProfileInto(t, root, "tr", `{"acpBackend":"trae"}`)
 	writeProfileInto(t, root, "cx", `{"acpBackend":"codex"}`)
+	writeProfileInto(t, root, "dsh", `{"acpBackend":"deepseek_harness"}`)
 	writeProfileInto(t, root, "weird", `{"acpBackend":"nope"}`)
 	writeProfileInto(t, root, "nobackend", `{"env":{"X":"y"}}`)
 	writeProfileInto(t, root, "broken", `{not-json`)
@@ -77,6 +78,7 @@ func TestProviderRegistryRouting(t *testing.T) {
 		{"cb", BackendCodeBuddy},
 		{"tr", BackendTrae},
 		{"cx", BackendCodex},
+		{"dsh", BackendDeepSeekHarness},
 		{"sub/cc", BackendClaudeCode}, // filepath.Base strips traversal → cc
 	}
 	for _, tc := range cases {

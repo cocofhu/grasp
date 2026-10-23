@@ -465,7 +465,10 @@ func TestWorkspaceWorkDirSrc(t *testing.T) {
 		t.Fatalf("workDir = %q, want %q", wd, workDir)
 	}
 
-	home := p.buildConfigHome(req, nil)
+	home, err := p.buildConfigHome(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer removeHome(home)
 	if home == "" {
 		t.Fatal("buildConfigHome returned empty home")

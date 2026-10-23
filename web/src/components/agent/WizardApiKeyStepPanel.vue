@@ -85,7 +85,7 @@ function setMode(mode: WizardAuthMode) {
     </div>
 
     <div
-      v-if="pickCredential || !codexLogin"
+      v-if="acpBackend !== 'deepseek_harness' && (pickCredential || !codexLogin)"
       class="mb-4 grid grid-cols-1 gap-2 sm:grid-cols-2"
       role="group"
       :aria-label="t('pages.agentStudio.wizard.apiKey.modeGroup')"

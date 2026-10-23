@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
+import VendorMark from '@/components/agent/VendorMark.vue'
 import {
   CLI_BACKENDS,
   START_PATH_OPTIONS,
@@ -12,13 +13,11 @@ import type { RegionPolicy } from '@/lib/shared/regionPolicy'
 defineProps<{
   startPath: StartPath
   acpBackend: WizardBackendId
-  configRoot: string
   regionPolicy: RegionPolicy | null | undefined
   currentRegion: string
   /** When true, region buttons expose role=radio + aria (create wizard). */
   regionAsRadios?: boolean
   showRegionHints?: boolean
-  showConfigRoot?: boolean
   testIdPrefix?: string
 }>()
 
@@ -68,7 +67,6 @@ const { t } = useI18n()
     </div>
     <p class="mt-3 text-[12px] text-txt3">
       {{ t('pages.onboarding.acp.apiKeyVendorsHint') }}
-      <code class="ml-1 font-mono text-[11px] text-accent-2">{{ configRoot }}</code>
     </p>
   </div>
 
@@ -80,11 +78,13 @@ const { t } = useI18n()
     <div class="mb-2 text-[12px] font-medium text-txt2">
       {{ t('pages.onboarding.acp.cliLabel') }}
     </div>
-    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5">
+    <div class="grid grid-cols-2 gap-2.5 sm:grid-cols-3" role="radiogroup" :aria-label="t('pages.onboarding.acp.cliLabel')">
       <button
         v-for="b in CLI_BACKENDS"
         :key="b.id"
         type="button"
+        role="radio"
+        :aria-checked="acpBackend === b.id"
         class="rounded-lg border px-3 py-3.5 text-center transition"
         :class="
           acpBackend === b.id
@@ -94,8 +94,10 @@ const { t } = useI18n()
         :data-testid="`${testIdPrefix || 'wizard'}-backend-${b.id}`"
         @click="emit('selectBackend', b.id)"
       >
-        <strong class="block text-[13px] font-semibold text-txt">{{ b.label }}</strong>
-        <span class="mt-1 block font-mono text-[10px] text-txt3">{{ b.configRoot }}</span>
+        <span class="inline-flex max-w-full items-center justify-center gap-2">
+          <VendorMark :vendor="b.id" backend :size="24" aria-hidden="true" />
+          <strong class="text-[13px] font-semibold text-txt">{{ b.label }}</strong>
+        </span>
       </button>
     </div>
   </div>
@@ -137,8 +139,4 @@ const { t } = useI18n()
       </button>
     </div>
   </div>
-
-  <p v-if="showConfigRoot" class="mt-3 font-mono text-[11px] text-txt3">
-    configRoot → <span class="text-accent-2">{{ configRoot }}</span>
-  </p>
 </template>

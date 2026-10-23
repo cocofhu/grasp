@@ -6,6 +6,23 @@ STARTUP="$ROOT/sandbox/scripts/startup.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"; kill ${HPID:-} 2>/dev/null || true' EXIT
 
+# Initial startup and shared-sandbox reprime must inject into the same dsh home.
+for source_script in "$STARTUP" "$ROOT/sandbox/scripts/reprime.sh"; do
+  sed -n '/^AGENT_PROVIDER=/,/^export AGENT_PROVIDER CONFIG_ROOT$/p' "$source_script" >"$TMP/provider-root.sh"
+  mapped="$(AGENT_PROVIDER=deepseek_harness HOME_DIR=/root bash -c '
+    unset CONFIG_ROOT
+    source "$1"
+    printf "%s" "$CONFIG_ROOT"
+  ' _ "$TMP/provider-root.sh")"
+  [ "$mapped" = /root/.dsh ] || { echo "FAIL: dsh config root in $source_script: $mapped" >&2; exit 1; }
+  mapped="$(AGENT_PROVIDER=deepseek_harness HOME_DIR=/root CONFIG_ROOT="$TMP/custom-dsh" bash -c '
+    source "$1"
+    printf "%s" "$CONFIG_ROOT"
+  ' _ "$TMP/provider-root.sh")"
+  [ "$mapped" = "$TMP/custom-dsh" ] || { echo "FAIL: dsh config root override in $source_script" >&2; exit 1; }
+done
+echo "OK: DeepSeek Harness startup/reprime config roots"
+
 # Lines covering inject_one() through the SANDBOX_INJECT for-loop (inclusive).
 sed -n '/^inject_one() {/,/^fi$/p' "$STARTUP" | awk '
   BEGIN {keep=1}

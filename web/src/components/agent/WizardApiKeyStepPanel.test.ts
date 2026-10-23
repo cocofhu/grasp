@@ -41,6 +41,20 @@ function mountPanel(overrides: Record<string, unknown> = {}) {
 }
 
 describe('WizardApiKeyStepPanel custom config editor', () => {
+  it('uses DeepSeek saved credentials without offering a plaintext config mode', () => {
+    const wrapper = mountPanel({
+      acpBackend: 'deepseek_harness', configRoot: '/root/.dsh', authMode: 'apiKey',
+      authGuide: authGuideFor('deepseek_harness'), pickCredential: true,
+      credentialItems: [{ id: 'dsh-credential', name: 'DeepSeek team', type: 'ai', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', configured: true }],
+      selectedCredentialId: 'dsh-credential',
+    })
+    expect(wrapper.get('[data-kind="deepseek_harness"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="credential-alias-option-dsh-credential"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="auth-mode-custom-config"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="api-key-input"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('gives CodeEditor host an explicit height so Monaco can layout', () => {
     const wrapper = mountPanel()
     const host = wrapper.get('[data-test="custom-config-editor-host"]')

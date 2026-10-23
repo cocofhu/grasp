@@ -10,6 +10,7 @@ const (
 	EnvCodeBuddyAPIKey = "GRASP_CODEBUDDY_API_KEY"
 	EnvTraeAPIKey      = "GRASP_TRAE_API_KEY"
 	EnvOpenCodeAPIKey  = "GRASP_OPENCODE_API_KEY"
+	EnvDeepSeekAPIKey  = "GRASP_DEEPSEEK_API_KEY"
 	// EnvCodexAuthFile is the workspace-credential slot for a ChatGPT login file
 	// (~/.codex/auth.json). It is a secret identity key only: the file body is
 	// written to the sandbox as auth.json and must not be injected as an env var.
@@ -20,20 +21,21 @@ const (
 	EnvGitSSHKnownHosts = "GIT_SSH_KNOWN_HOSTS"
 )
 
-// cliAuthEnvKeys are the env names the in-container ACP CLIs read. They are
-// filled from the matching credential key at sandbox start.
+// cliAuthEnvKeys are the native auth names and aliases accepted by the
+// in-container ACP providers. They may only come from workspace credentials.
 var cliAuthEnvKeys = []string{
 	"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY",
-	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY",
+	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "DEEPSEEK_API_KEY",
+	"ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
 }
 
 // credentialEnvKeys are the secret preset keys of workspace credentials.
 var credentialEnvKeys = []string{
-	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey, EnvCodexAuthFile,
+	EnvCursorAPIKey, EnvClaudeAPIKey, EnvCodeBuddyAPIKey, EnvTraeAPIKey, EnvOpenCodeAPIKey, EnvCodexAuthFile, EnvDeepSeekAPIKey,
 	EnvGitHubToken, EnvGitLabToken, EnvGitSSHPrivateKey, EnvGitSSHKnownHosts,
 }
 
-// IsPlatformAuthEnvKey reports official ACP CLI auth keys.
+// IsPlatformAuthEnvKey reports ACP provider auth keys and accepted aliases.
 func IsPlatformAuthEnvKey(k string) bool {
 	for _, key := range cliAuthEnvKeys {
 		if k == key {

@@ -29,6 +29,7 @@ describe('freshDraft defaults (g1.2)', () => {
       'codebuddy',
       'trae',
       'codex',
+      'deepseek_harness',
     ])
   })
 

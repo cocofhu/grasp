@@ -581,7 +581,10 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 
 	sandbox.ApplyPasswords(env, req.Token)
-	home := c.buildConfigHome(req, env)
+	home, err := c.buildConfigHome(req, env)
+	if err != nil {
+		return sandbox.Spec{}, fmt.Errorf("build backend config home: %w", err)
+	}
 	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
 		return sandbox.Spec{}, err
 	}

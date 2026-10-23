@@ -404,7 +404,7 @@
         "themeLight": "浅色"
       },
       "acp": {
-        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本工作区，所有 Agent 共用。",
+        "meta": "先选接入方式：通用模型 API，或编码工具。密钥保存在本工作区，所有 Agent 共用。",
         "region": "站点",
         "paths": {
           "apiKey": {
@@ -412,8 +412,8 @@
             "desc": "已有 OpenAI、Anthropic、DeepSeek 等厂商的 API Key。可以自选模型，也能接入自建的兼容服务。"
           },
           "cli": {
-            "title": "用编码工具账号",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae 或 Codex 的账号。Codex 粘贴 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
+            "title": "用编码工具",
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex 或 DeepSeek Harness（DSH）。DSH 使用 DeepSeek API Key，Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
           }
         },
         "cliLabel": "选择编码工具",
@@ -582,7 +582,7 @@
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
         "prefs": "语言、主题与预览能力",
-        "model": "API Key 或编码工具账号",
+        "model": "API Key 或编码工具",
         "key": "填写模型与密钥",
         "git": "提交署名、仓库与凭据",
         "team": "确认要创建的 Agent",
@@ -1216,7 +1216,8 @@
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH 私钥",
-          "ssh_hosts": "SSH 已知主机"
+          "ssh_hosts": "SSH 已知主机",
+          "deepseek_harness": "DeepSeek Harness"
         },
         "summary": {
           "total": "凭据槽位",
@@ -2664,7 +2665,7 @@
           "templateHintPack": "将套用 {name}。"
         },
         "acp": {
-          "meta": "先选启动方式：用模型厂商的 API Key，或用编码 CLI 的厂商账号。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
+          "meta": "先选启动方式：用模型厂商的 API Key，或用编码工具。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
           "remapTitle": "确认更换 Backend？",
           "remapBody": "已配置的 MCP / Skills / Commands / Rules 可能依赖当前路径。更换 Backend 将按新的 configRoot 重映射；取消则保持原 Backend。"
         },
@@ -2690,7 +2691,8 @@
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
             "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
-            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。"
+            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。",
+            "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。"
           },
           "paths": {
             "cursor": {
@@ -2723,6 +2725,11 @@
               "step2": "复制 ~/.codex/auth.json 的全部内容",
               "step3": "如果登录只在系统钥匙串里，先改成文件存储并重新登录，再复制该文件",
               "step4": "把文件内容粘贴到下方"
+            },
+            "deepseek": {
+              "step1": "打开 DeepSeek 开放平台并登录账号。",
+              "step2": "在 API Keys 页面创建一个 API Key。",
+              "step3": "复制密钥并填入下方，或保存为工作区凭据。"
             }
           },
           "links": {
@@ -2737,7 +2744,8 @@
             "codebuddyStaging": "Staging 申请 Key",
             "traeTokenDocs": "Trae CLI 登录令牌文档",
             "opencodeProviders": "支持的模型厂商",
-            "codexAuth": "Codex 登录说明"
+            "codexAuth": "Codex 登录说明",
+            "deepseekKeys": "DeepSeek API Keys"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",

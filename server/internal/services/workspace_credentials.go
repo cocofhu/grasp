@@ -134,6 +134,8 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvOpenCodeAPIKey
 		case "codex":
 			return envauth.EnvCodexAuthFile
+		case "deepseek_harness":
+			return envauth.EnvDeepSeekAPIKey
 		}
 	case "git":
 		switch p {
@@ -191,17 +193,18 @@ func safeCredentialMetadata(metadata map[string]any) map[string]any {
 // Short product names for the built-in credential slots. GitLab URL stays
 // qualified so it does not collide with the GitLab token slot.
 const (
-	builtinNameCursor     = "Cursor"
-	builtinNameClaudeCode = "Claude Code"
-	builtinNameCodeBuddy  = "CodeBuddy"
-	builtinNameTrae       = "Trae"
-	builtinNameOpenCode   = "OpenCode"
-	builtinNameCodex      = "Codex"
-	builtinNameGitHub     = "GitHub"
-	builtinNameGitLab     = "GitLab"
-	builtinNameGitLabURL  = "GitLab URL"
-	builtinNameSSHKey     = "SSH Key"
-	builtinNameSSHHosts   = "SSH Hosts"
+	builtinNameCursor          = "Cursor"
+	builtinNameClaudeCode      = "Claude Code"
+	builtinNameCodeBuddy       = "CodeBuddy"
+	builtinNameTrae            = "Trae"
+	builtinNameOpenCode        = "OpenCode"
+	builtinNameCodex           = "Codex"
+	builtinNameDeepSeekHarness = "DeepSeek Harness"
+	builtinNameGitHub          = "GitHub"
+	builtinNameGitLab          = "GitLab"
+	builtinNameGitLabURL       = "GitLab URL"
+	builtinNameSSHKey          = "SSH Key"
+	builtinNameSSHHosts        = "SSH Hosts"
 )
 
 func builtinCredentialID(slot string) string { return "cred-builtin-" + slot }
@@ -213,6 +216,7 @@ func builtinCredentialRows() []models.Credential {
 		{ID: builtinCredentialID("codebuddy"), Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
 		{ID: builtinCredentialID("trae"), Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
 		{ID: builtinCredentialID("opencode"), Type: "ai", Provider: "opencode", Name: builtinNameOpenCode, EnvKey: envauth.EnvOpenCodeAPIKey},
+		{ID: builtinCredentialID("deepseek_harness"), Type: "ai", Provider: "deepseek_harness", Name: builtinNameDeepSeekHarness, EnvKey: envauth.EnvDeepSeekAPIKey},
 		{ID: builtinCredentialID("codex"), Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
 		{ID: builtinCredentialID("github"), Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
 		{ID: builtinCredentialID("gitlab"), Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
@@ -715,6 +719,8 @@ func aiCredentialName(backend string) string {
 		return builtinNameOpenCode
 	case AcpBackendCodex:
 		return builtinNameCodex
+	case AcpBackendDeepSeekHarness:
+		return builtinNameDeepSeekHarness
 	default:
 		backend = strings.TrimSpace(backend)
 		if backend == "" {
