@@ -11,6 +11,7 @@ import Pagination from '@/components/ui/Pagination.vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowFilter } from '@/lib/composables/useWorkflowFilter'
@@ -110,6 +111,16 @@ const statusFilterOpen = ref(false)
 const workflowFilterOpen = ref(false)
 const tagFilterOpen = ref(false)
 const { selectedTags } = useTagFilter()
+
+// Keep the count attached to its filters while the next list request is pending.
+const countsByFilter = ref<Record<string, number>>({})
+function countFilterKey(status: string, wf: string, tag: string) {
+  return JSON.stringify([status.split(',').filter(Boolean).sort(), wf, tag.split(',').filter(Boolean).sort()])
+}
+const selectedCount = computed(() => countsByFilter.value[countFilterKey(
+  selectedStatuses.value.join(','), selectedWf.value || '', selectedTags.value.join(','),
+)])
+const segmentCountText = computed(() => selectedCount.value ?? '…')
 
 /** Whole-list fade key when filters/page/sort change (g3.2; no per-row stagger). */
 const listFadeKey = computed(() =>
@@ -354,6 +365,8 @@ function listParams() {
 async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   const localSeq = ++requestSeq
   const isFirstLoad = !hasInitialLoaded
+  const params = listParams()
+  const countKey = countFilterKey(params.status || '', params.wf || '', params.tag || '')
 
   if (isFirstLoad) {
     initialLoading.value = true
@@ -363,8 +376,9 @@ async function load({ showLoading = false }: { showLoading?: boolean } = {}) {
   }
 
   try {
-    const data = await api.listRuns(listParams())
+    const data = await api.listRuns(params)
     if (localSeq === requestSeq) {
+      countsByFilter.value[countKey] = data.total
       if (!runsListUnchanged(data.items, data.total)) {
         runs.value = data.items
         total.value = data.total
@@ -494,13 +508,19 @@ onUnmounted(() => {
     </div>
 
     <div v-if="!isMobile" class="run-toolbar" data-testid="run-list-toolbar">
-      <div class="flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+      <SlidingTabs :value="selectedStatuses.join(',')" class="flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+        <template #indicator>
+          <span
+            class="chip absolute right-3 top-1/2 h-5 min-w-[2em] -translate-y-1/2 justify-center py-0 font-normal leading-none tabular-nums"
+            data-testid="moving-run-count"
+          >{{ segmentCountText }}</span>
+        </template>
         <button
           v-for="seg in STATUS_SEGMENTS"
           :key="seg.id"
           type="button"
           class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
-          :class="segActive(seg) ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"
@@ -509,11 +529,11 @@ onUnmounted(() => {
           <!-- Same result count main's StatusFilter trigger shows, on the active segment. -->
           <span
             v-if="segActive(seg)"
-            class="chip h-5 shrink-0 py-0 font-normal leading-none"
+            class="chip h-5 min-w-[2em] shrink-0 justify-center py-0 font-normal leading-none tabular-nums opacity-0"
             data-testid="seg-count"
-          >{{ total }}</span>
+          >{{ segmentCountText }}</span>
         </button>
-      </div>
+      </SlidingTabs>
       <div class="flex items-center gap-2">
         <WorkflowFilter v-model="selectedWf" v-model:open="workflowFilterOpen" :count="total" />
         <TagFilter v-model="selectedTags" v-model:open="tagFilterOpen" />

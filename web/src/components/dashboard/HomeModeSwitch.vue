@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import type { HomeMode } from '@/lib/solo/soloPrefs'
 
 defineProps<{ modelValue: HomeMode }>()
@@ -11,10 +12,11 @@ const MODES: { id: HomeMode; icon: string; key: string }[] = [
   { id: 'workflow', icon: 'workflow', key: 'pages.solo.home.modeWorkflow' },
   { id: 'solo', icon: 'terminal', key: 'pages.solo.home.modeSolo' },
 ]
+
 </script>
 
 <template>
-  <div class="home-mode" role="tablist" :aria-label="t('pages.solo.home.modeLabel')" data-testid="home-mode-switch">
+  <SlidingTabs :value="modelValue" indicator-class="home-mode__indicator rounded-full" class="home-mode" role="tablist" :aria-label="t('pages.solo.home.modeLabel')" data-testid="home-mode-switch">
     <button
       v-for="m in MODES"
       :key="m.id"
@@ -29,11 +31,13 @@ const MODES: { id: HomeMode; icon: string; key: string }[] = [
       <Icon :name="m.icon" :size="13" />
       <span>{{ t(m.key) }}</span>
     </button>
-  </div>
+  </SlidingTabs>
 </template>
 
 <style scoped>
 .home-mode {
+  position: relative;
+  isolation: isolate;
   display: inline-flex;
   gap: 2px;
   border: 1px solid rgb(var(--c-line));
@@ -42,7 +46,12 @@ const MODES: { id: HomeMode; icon: string; key: string }[] = [
   padding: 3px;
   backdrop-filter: blur(6px);
 }
+.home-mode :deep(.home-mode__indicator) {
+  background: rgb(var(--c-accent) / 0.12);
+}
 .home-mode__opt {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   height: 26px;
   align-items: center;
@@ -52,17 +61,23 @@ const MODES: { id: HomeMode; icon: string; key: string }[] = [
   color: rgb(var(--c-txt3));
   font-size: 12px;
   font-weight: 500;
-  transition: background 0.16s ease, color 0.16s ease;
+  background: transparent;
+  transition: color 0.2s ease;
 }
 .home-mode__opt:hover {
   color: rgb(var(--c-txt));
 }
 .home-mode__opt--on {
-  background: rgb(var(--c-accent) / 0.12);
   color: rgb(var(--c-accent-2));
 }
 .home-mode__opt:focus-visible {
   outline: 2px solid rgb(var(--c-accent) / 0.6);
   outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-mode__opt {
+    transition: none;
+  }
 }
 </style>

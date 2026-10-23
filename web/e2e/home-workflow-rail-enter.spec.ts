@@ -47,6 +47,48 @@ async function mockWorkspace(page: Page) {
 }
 
 test.describe('首页工作流整轨进场', () => {
+  test('窄屏切换工作流与 Solo：顶部在过渡期间保持原位', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 700 })
+    await page.addInitScript(() => localStorage.setItem('grasp.home.mode', 'workflow'))
+    await mockWorkspace(page)
+    await page.route(/\/api\/(workflows|agents|projects|solo\/sessions)(\?.*)?$/, async (route) => {
+      await route.fulfill({
+        json: route.request().url().includes('/solo/sessions') ? { sessions: [], total: 0 } : [],
+      })
+    })
+    await page.goto('/dashboard-home-chat.html')
+    // Match the real shell's bounded height; the harness wrapper is otherwise auto-sized.
+    await page.addStyleTag({ content: '#app > div { height: 100%; }' })
+    await expect(page.getByTestId('home-new-workflow')).toBeVisible()
+    const brand = page.getByTestId('home-brand-block')
+    const before = await brand.evaluate((element) => {
+      const root = element.closest('.home-shell__content')!
+      return {
+        top: element.getBoundingClientRect().top,
+        inset: element.getBoundingClientRect().top - root.getBoundingClientRect().top,
+      }
+    })
+    // Exercise the compressed inset, where the mobile 68px basis must not override the lock.
+    expect(before.inset).toBeLessThan(68)
+    for (const mode of ['solo', 'workflow']) {
+      const button = page.getByTestId(`home-mode-${mode}`)
+      const positions = await button.evaluate((element) => new Promise<number[]>((resolve) => {
+        const brand = document.querySelector('[data-testid="home-brand-block"]')!
+        const values: number[] = []
+        const start = performance.now()
+        ;(element as HTMLButtonElement).click()
+        function sample() {
+          values.push(brand.getBoundingClientRect().top)
+          if (performance.now() - start < 600) requestAnimationFrame(sample)
+          else resolve(values)
+        }
+        requestAnimationFrame(sample)
+      }))
+      await expect(button).toHaveAttribute('aria-selected', 'true')
+      expect(Math.max(...positions.map((top) => Math.abs(top - before.top)))).toBeLessThan(0.5)
+    }
+  })
+
   test('延迟加载：等待空白无加载文案，成功后立刻 ready 且含加卡', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await mockWorkspace(page)
@@ -94,7 +136,7 @@ test.describe('首页工作流整轨进场', () => {
     await page.screenshot({ path: path.join(shotDir, '03-enter-settled.png'), fullPage: true })
   })
 
-  test('空列表：空态与加卡同组立刻进场', async ({ page }) => {
+  test('空列表：仅新建卡立刻进场', async ({ page }) => {
     await page.setViewportSize({ width: 1280, height: 800 })
     await mockWorkspace(page)
     await page.route('**/api/workflows**', async (route) => {
@@ -113,7 +155,8 @@ test.describe('首页工作流整轨进场', () => {
     const enter = page.getByTestId('home-workflow-enter')
     await expect(enter).toBeVisible({ timeout: 10_000 })
     await expect(enter).toHaveClass(/home-workflow-enter--ready/)
-    await expect(page.getByTestId('home-workflows-empty')).toBeVisible()
+    await expect(page.getByTestId('home-workflows-empty')).toHaveCount(0)
+    await expect(page.getByTestId('home-go-workflows')).toHaveCount(0)
     await expect(page.getByTestId('home-new-workflow')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '04-empty-rail.png'), fullPage: true })
   })

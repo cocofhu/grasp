@@ -349,21 +349,20 @@ onBeforeUnmount(() => {
   gap: 6px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: linear-gradient(180deg, rgb(var(--c-surface)), rgb(var(--c-elevated) / 0.55));
+  background: transparent;
   color: rgb(var(--c-txt));
   padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.025);
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
 .home-workflow-select__trigger:hover:not(:disabled),
 .home-workflow-select--open .home-workflow-select__trigger {
   border-color: rgb(var(--c-accent) / 0.3);
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.045);
+  background: rgb(var(--c-accent) / 0.045);
 }
 
 .home-workflow-select__trigger:focus-visible {

@@ -87,7 +87,7 @@ beforeEach(() => {
 describe('RunListView status segments', () => {
   it('renders the five segments with 全部 active by default', async () => {
     const { wrapper } = await setup()
-    const segs = wrapper.findAll('[data-testid^="run-seg-"]')
+    const segs = wrapper.findAll('button[data-testid^="run-seg-"]')
     expect(segs.map((s) => s.get('[data-testid="seg-label"]').text())).toEqual([zh.segAll, zh.segActive, zh.segWaiting, zh.segDone, zh.segFailed])
     expect(wrapper.get('[data-testid="run-seg-all"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.get('[data-testid="run-seg-active"]').attributes('aria-pressed')).toBe('false')
@@ -99,15 +99,59 @@ describe('RunListView status segments', () => {
     const counts = wrapper.findAll('[data-testid="seg-count"]')
     expect(counts).toHaveLength(1)
     expect(wrapper.get('[data-testid="run-seg-all"] [data-testid="seg-count"]').text()).toBe('3')
+    expect(wrapper.findAll('[data-testid="moving-run-count"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="moving-run-count"]').text()).toBe('3')
     expect(wrapper.findComponent({ name: 'WorkflowFilter' }).props('count')).toBe(3)
 
     mocks.listRuns.mockResolvedValue({ items: [RUNNING], total: 1 })
     await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-testid="run-seg-active"] [data-testid="seg-count"]').text()).toBe('1')
+    expect(wrapper.get('[data-testid="moving-run-count"]').text()).toBe('1')
     expect(wrapper.find('[data-testid="run-seg-all"] [data-testid="seg-count"]').exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'WorkflowFilter' }).props('count')).toBe(1)
     wrapper.unmount()
+  })
+
+  it('keeps each filter count while slow requests load, including identical responses and cached returns', async () => {
+    const initial = { items: [RUNNING], total: 1 }
+    mocks.listRuns.mockResolvedValue(initial)
+    const { wrapper } = await setup()
+    const count = () => wrapper.get('[data-testid="moving-run-count"]').text()
+    expect(count()).toBe('1')
+
+    const pending: Array<(value: { items: Run[]; total: number }) => void> = []
+    mocks.listRuns.mockImplementation(() => new Promise((resolve) => pending.push(resolve)))
+    try {
+      await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
+      await flushPromises()
+      expect(count()).toBe('…')
+      expect(wrapper.get('[data-testid="run-seg-active"] [data-testid="seg-count"]').text()).toBe('…')
+      expect(mocks.listRuns).toHaveBeenCalledTimes(2)
+
+      // Both filters can have the same rows and total: the new filter still needs its own count.
+      pending[0]!(initial)
+      await flushPromises()
+      expect(count()).toBe('1')
+
+      await wrapper.get('[data-testid="run-seg-failed"]').trigger('click')
+      await flushPromises()
+      expect(count()).toBe('…')
+      expect(mocks.listRuns).toHaveBeenCalledTimes(3)
+      pending[1]!({ items: [], total: 0 })
+      await flushPromises()
+      expect(count()).toBe('0')
+
+      await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
+      await flushPromises()
+      expect(count()).toBe('1')
+      expect(mocks.listRuns).toHaveBeenCalledTimes(4)
+      pending[2]!(initial)
+      await flushPromises()
+      expect(count()).toBe('1')
+    } finally {
+      wrapper.unmount()
+    }
   })
 
   it('maps each segment onto the existing ?status= filter and reloads the list', async () => {
@@ -133,7 +177,7 @@ describe('RunListView status segments', () => {
     expect(waiting.wrapper.get('[data-testid="run-seg-waiting"]').attributes('aria-pressed')).toBe('true')
     waiting.wrapper.unmount()
     const custom = await setup('/runs?status=running,completed')
-    expect(custom.wrapper.findAll('[data-testid^="run-seg-"][aria-pressed="true"]')).toHaveLength(0)
+    expect(custom.wrapper.findAll('button[data-testid^="run-seg-"][aria-pressed="true"]')).toHaveLength(0)
     custom.wrapper.unmount()
   })
 

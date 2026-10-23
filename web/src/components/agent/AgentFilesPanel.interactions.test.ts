@@ -301,21 +301,29 @@ describe('AgentFilesPanel interactions', () => {
   })
 
   it('keeps the active file editable in narrow desktop content and opens history separately', async () => {
-    let resized: (() => void) | undefined
-    const disconnect = vi.fn()
+    const observers: {
+      callback: () => void
+      targets: Set<Element>
+      disconnect: ReturnType<typeof vi.fn>
+    }[] = []
     vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resized = callback }
-      observe() {}
-      disconnect = disconnect
+      targets = new Set<Element>()
+      disconnect = vi.fn()
+      constructor(public callback: () => void) { observers.push(this) }
+      observe(target: Element) { this.targets.add(target) }
+      unobserve(target: Element) { this.targets.delete(target) }
     })
     const d = draft()
     const w = mountPanel({ draft: d })
+    // Nested controls also observe their own layout; resize the file panel only.
+    const panelObserver = observers.find((observer) => observer.targets.has(w.element))!
+    expect(panelObserver).toBeDefined()
     let width = 420
     Object.defineProperty(w.element, 'getBoundingClientRect', { value: () => ({ width }) })
     ;(w.vm as any).selectDefaultFile()
     await flushPromises()
 
-    resized!()
+    panelObserver.callback()
     await flushPromises()
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(w.find('[data-test="file-row-more"]').exists()).toBe(false)
@@ -338,19 +346,19 @@ describe('AgentFilesPanel interactions', () => {
 
     // Hidden tabs briefly report zero width; retain the last usable layout.
     width = 0
-    resized!()
+    panelObserver.callback()
     await flushPromises()
     expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
 
     width = 1100
-    resized!()
+    panelObserver.callback()
     await flushPromises()
     expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
     expect(w.find('[data-testid="history"]').exists()).toBe(false)
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(d.files[0]!.content).toBe('# edited without losing the file')
     w.unmount()
-    expect(disconnect).toHaveBeenCalledOnce()
+    expect(panelObserver.disconnect).toHaveBeenCalledOnce()
   })
 
   it('closes compact history when switching Agents and keeps history out of the mobile file flow', async () => {

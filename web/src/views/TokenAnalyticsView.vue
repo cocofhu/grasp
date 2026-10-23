@@ -20,6 +20,7 @@ import { useToast } from '@/lib/composables/useToast'
 import { useAuth } from '@/lib/composables/useAuth'
 import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import Icon from '@/components/ui/Icon.vue'
 import TokenChartCard from '@/components/token-analytics/TokenChartCard.vue'
 import TokenDrillDownModal from '@/components/token-analytics/TokenDrillDownModal.vue'
@@ -694,7 +695,8 @@ const fxCount = computed(() => fxChips.value.length)
         <section class="usage-toolbar" :aria-label="t('pages.tokenAnalytics.analysisRange')" data-testid="token-analytics-controls">
           <div class="usage-toolbar-row">
             <div class="usage-toolbar-group" data-testid="token-analytics-period">
-              <div
+              <SlidingTabs
+                :value="filters.window"
                 class="usage-seg flex gap-1 rounded-lg bg-elevated p-1"
                 role="group"
                 :aria-label="t('pages.board.tokenStats.windowAria')"
@@ -705,7 +707,7 @@ const fxCount = computed(() => fxChips.value.length)
                   :key="w"
                   type="button"
                   class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
-                  :class="filters.window === w ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+                  :class="filters.window === w ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-window-${w}`"
                   :aria-pressed="filters.window === w"
                   @click="selectWindow(w)"
@@ -715,14 +717,14 @@ const fxCount = computed(() => fxChips.value.length)
                 <button
                   type="button"
                   class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
-                  :class="filters.window === 'custom' ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+                  :class="filters.window === 'custom' ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
                   data-testid="token-analytics-window-custom"
                   :aria-pressed="filters.window === 'custom'"
                   @click="selectCustomWindow"
                 >
                   {{ t('pages.tokenAnalytics.windowCustom') }}
                 </button>
-              </div>
+              </SlidingTabs>
               <div v-if="filters.window === 'custom'" class="flex items-center gap-1.5">
                 <input
                   type="date"
@@ -744,18 +746,18 @@ const fxCount = computed(() => fxChips.value.length)
                   @change="setRange('to', ($event.target as HTMLInputElement).value)"
                 />
               </div>
-              <div class="usage-seg flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.tokenAnalytics.sourceLabel')">
+              <SlidingTabs :value="filters.source" class="usage-seg flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.tokenAnalytics.sourceLabel')">
                 <button
                   v-for="s in SOURCES"
                   :key="s"
                   type="button"
                   class="whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] leading-5 transition"
-                  :class="filters.source === s ? 'bg-surface font-semibold text-txt shadow-sm' : 'text-txt3 hover:text-txt'"
+                  :class="filters.source === s ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
                   :data-testid="`token-analytics-source-${s}`"
                   :aria-pressed="filters.source === s"
                   @click="setFilter('source', s)"
                 >{{ sourceName(s) }}</button>
-              </div>
+              </SlidingTabs>
             </div>
             <div class="usage-toolbar-group">
               <div class="relative" @click.stop>

@@ -25,12 +25,12 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-shell__content[^>]*overflow-y-auto/)
   })
 
-  it('centers composer, workflow cards, and empty states', () => {
+  it('centers composer, workflow cards, and unpublished guidance without empty-state navigation', () => {
     expect(src).toMatch(/data-testid="home-composer"/)
     expect(src).toMatch(/data-testid="home-workflow-cards"/)
     expect(src).toMatch(/data-testid="home-composer-input"/)
     expect(src).toMatch(/data-testid="home-workflows-empty"/)
-    expect(src).toMatch(/data-testid="home-go-workflows"/)
+    expect(src).not.toMatch(/data-testid="home-go-workflows"/)
     expect(src).toMatch(/data-testid="home-new-workflow"/)
     expect(src).toMatch(/HomeCreateBaselineModal/)
     expect(src).toMatch(/@created="onBaselineCreated"/)
@@ -198,6 +198,15 @@ describe('DashboardView home chat layout', () => {
     expect(src).not.toMatch(
       /@media \(max-width: 520px\)[\s\S]*\.home-shell__content[\s\S]*justify-content:\s*center/,
     )
+  })
+
+  it('anchors and animates the workflow/Solo mode switch', () => {
+    expect(src).toMatch(/home-shell__content--mode-locked/)
+    expect(src).toMatch(/lockHomeModeTopInset/)
+    expect(src).toMatch(/<Transition name="home-mode-controls" mode="out-in">/)
+    expect(src).toMatch(/<Transition name="home-mode-tail" mode="out-in">/)
+    expect(src).toMatch(/\.home-mode-controls-enter-active[\s\S]*transition:/)
+    expect(src).toMatch(/\.home-mode-tail-enter-active[\s\S]*transition:/)
   })
 
   // plan g1.2 — keep overflow-hidden on composer; priority panel teleports instead

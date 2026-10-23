@@ -309,7 +309,7 @@ describe('SandboxConsoleView IDE/ACP lazy mount', () => {
     expect(acp.find('iframe[title="ACP bridge"]').exists()).toBe(true)
     const agentBtn = acp.findAll('button').find((b) => b.text().includes('Agent'))
     expect(agentBtn).toBeTruthy()
-    expect(agentBtn!.classes().join(' ')).toContain('bg-accent-dim')
+    expect(agentBtn!.attributes('data-active')).toBe('true')
     acp.unmount()
 
     const unknown = await mountConsole('acp-native')

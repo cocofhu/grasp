@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { useI18n } from 'vue-i18n'
 import type { RunViewMode } from '@/lib/run/useRunDetail'
 
-const props = defineProps<{
+defineProps<{
   viewMode: RunViewMode
   isMobile: boolean
 }>()
@@ -14,54 +14,16 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const viewModeTrack = ref<HTMLElement | null>(null)
-const viewModeIndicator = ref<Record<string, string>>({
-  opacity: '0',
-  transform: 'translateX(0)',
-  width: '0px',
-})
-
-function updateViewModeIndicator() {
-  const root = viewModeTrack.value
-  if (!root) return
-  const active = root.querySelector<HTMLElement>('[data-view-mode-active="true"]')
-  if (!active) {
-    viewModeIndicator.value = { opacity: '0', transform: 'translateX(0)', width: '0px' }
-    return
-  }
-  viewModeIndicator.value = {
-    opacity: '1',
-    transform: `translateX(${active.offsetLeft}px)`,
-    width: `${active.offsetWidth}px`,
-  }
-}
-
-watch(
-  () => props.viewMode,
-  () => {
-    void nextTick(updateViewModeIndicator)
-  },
-)
-onMounted(() => {
-  void nextTick(updateViewModeIndicator)
-  window.addEventListener('resize', updateViewModeIndicator)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', updateViewModeIndicator)
-})
 </script>
 
 <template>
-  <div
-    ref="viewModeTrack"
+  <SlidingTabs
+    :value="viewMode"
+    active-selector='[data-view-mode-active="true"]'
+    indicator-class="rounded-md bg-accent-dim"
+    indicator-testid="run-view-mode-indicator"
     class="relative inline-flex rounded-lg border border-line bg-surface/90 p-0.5 text-[12px] backdrop-blur"
   >
-    <span
-      class="seg-indicator pointer-events-none absolute inset-y-0.5 left-0 rounded-md bg-accent-dim"
-      data-testid="run-view-mode-indicator"
-      :style="viewModeIndicator"
-      aria-hidden="true"
-    />
     <button
       v-if="!isMobile"
       data-testid="view-mode-canvas"
@@ -99,14 +61,5 @@ onBeforeUnmount(() => {
     >
       {{ t('pages.runDetail.llm') }}
     </button>
-  </div>
+  </SlidingTabs>
 </template>
-
-<style scoped>
-.seg-indicator {
-  transition:
-    transform var(--dur-ui) var(--ease-out-expo),
-    width var(--dur-ui) var(--ease-out-expo),
-    opacity var(--dur-ui) ease;
-}
-</style>
