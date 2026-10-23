@@ -241,6 +241,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		IncludeArtifactStore: hasArtifactStoreSpec(specs),
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 		OpenCodeConfig:       ocDoc,
@@ -471,11 +472,21 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	// Rebuild + SSH-sync ConfigHome so remote pods missing mcp.json/rules
 	// (hostPath ignored by K8s gateway) heal on reconnect.
 	if s.mgr != nil {
+		deepSeekHarness := runtime.NormalizeBackend(agent.AcpBackend) == runtime.BackendDeepSeekHarness
+		sharedWorkDir := ""
+		if deepSeekHarness && s.shared != nil {
+			sharedWorkDir = s.shared.WorkDir()
+		}
 		if home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
+			BaseWorkDirSrc:       sharedWorkDir,
 			WorkDirSrc:           s.skills.WorkDir(row.Profile),
+			DeepSeekHarness:      deepSeekHarness,
 			IncludeArtifactStore: hasArtifactStoreSpec(specs),
 			MCP:                  specs,
 		}); err != nil {
+			if deepSeekHarness {
+				return nil, nil, fmt.Errorf("reconnect: rebuild DeepSeek Harness config home: %w", err)
+			}
 			log.Warn().Err(err).Uint("sandbox", id).Msg("reconnect: rebuild config home failed")
 		} else {
 			s.mgr.EnsureConfigHome(ctx, sb, home, sb.ConfigRoot)

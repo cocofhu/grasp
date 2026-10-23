@@ -348,3 +348,29 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 		t.Fatalf("error=%q", cur.Error)
 	}
 }
+
+func TestTeamDeepSeekHarnessRejectsUnsupportedCustomAuth(t *testing.T) {
+	db := newTestDB(t)
+	if _, err := NewWorkspaceService(db).CreateFixture("DSH team", "", nil); err != nil {
+		t.Fatal(err)
+	}
+	agents := NewAgentService(t.TempDir())
+	team := NewTeamService(NewWorkspaceService(db), agents, NewPmService(db, agents), nil)
+	_, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
+		Prefix: "DSH", Background: "team background", AcpBackend: AcpBackendDeepSeekHarness,
+		CustomConfig: `{"env":{"DEEPSEEK_API_KEY":"unsupported"}}`,
+	})
+	if !errors.Is(err, ErrTeamValidation) || !strings.Contains(err.Error(), "customConfig") {
+		t.Fatalf("team bootstrap accepted unsupported DeepSeek auth config: %v", err)
+	}
+	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
+		TemplateID: TeamEngineerTemplates[0].ID, Name: "DSH engineer", AcpBackend: AcpBackendDeepSeekHarness,
+		CustomConfig: `{}`,
+	})
+	if !errors.Is(err, ErrTeamValidation) {
+		t.Fatalf("template API accepted unsupported DeepSeek auth config: %v", err)
+	}
+	if len(agents.List()) != 0 {
+		t.Fatal("invalid configuration created an agent")
+	}
+}

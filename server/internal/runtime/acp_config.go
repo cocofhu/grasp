@@ -31,7 +31,7 @@ func (c *acpProvider) agentLayout(profile string, cfg agentFile) agentLayout {
 }
 
 // buildConfigHome materializes the per-node config home (rules/skills + mcp.json).
-func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string {
+func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (string, error) {
 	profile := models.AgentProfile(req.Config)
 	specs := c.resolvedMCPSpecs(req)
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
@@ -42,6 +42,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		OmitOutcomeRule:      req.Caps.Clarify(),
 		MCP:                  specs,
 		OpenCode:             c.backend == BackendOpenCode,
+		DeepSeekHarness:      c.backend == BackendDeepSeekHarness,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             CodeBuddySettingsForEnv(c.backend, env),
 		OpenCodeConfig: OpenCodeConfigForEnvWithCatalog(
@@ -49,10 +50,13 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) string
 		),
 	})
 	if err != nil {
+		if c.backend == BackendDeepSeekHarness {
+			return "", err
+		}
 		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
-		return ""
+		return "", nil
 	}
-	return home
+	return home, nil
 }
 
 // EnvEnabled recognizes the boolean spellings accepted by sandbox startup.

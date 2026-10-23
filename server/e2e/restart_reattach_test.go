@@ -3,8 +3,13 @@
 // Package e2e holds end-to-end tests that drive a real Grasp stack (gateway +
 // control plane + sandbox containers) through Docker Compose and a real model.
 //
+// Build both images from the same checkout so the sandbox IMAGE_LEVEL satisfies
+// the runtime bundle shipped in the control plane image.
+//
+//	docker build -t universal-sandbox:e2e-restart sandbox-gateway/sandbox
 //	docker build -f server/Dockerfile -t grasp:e2e .
-//	DEEPSEEK_API_KEY=... go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
+//	cd server
+//	DEEPSEEK_API_KEY=... SANDBOX_IMAGE=universal-sandbox:e2e-restart GRASP_SANDBOX_IMAGE=universal-sandbox:e2e-restart go test -tags e2ereal ./e2e -run TestRestartReattach -v -timeout 30m
 package e2e
 
 import (

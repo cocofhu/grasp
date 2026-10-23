@@ -38,7 +38,7 @@ type ProviderRegistry struct {
 
 // NewProviderRegistry builds one provider per product backend and wires a shared event sink.
 func NewProviderRegistry(host *mcp.Host, opts Options) *ProviderRegistry {
-	backends := []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex}
+	backends := []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness}
 	m := map[AcpBackend]ExecProvider{}
 	for _, b := range backends {
 		m[b] = newBaseACPProvider(host, opts, b)

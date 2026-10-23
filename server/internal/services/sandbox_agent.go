@@ -419,6 +419,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		IncludeArtifactStore: false,
 		MCP:                  specs,
 		OpenCode:             backend == runtime.BackendOpenCode,
+		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
 		OpenCodeConfig:       ocDoc,

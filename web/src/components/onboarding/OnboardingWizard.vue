@@ -9,6 +9,7 @@ import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { authGuideFor } from '@/lib/agent/backendAuthGuide'
 import { ACP_BACKENDS, getRegionPolicy, type BackendId } from '@/lib/shared/regionPolicy'
 import CliModelSelect from '@/components/agent/CliModelSelect.vue'
+import VendorMark from '@/components/agent/VendorMark.vue'
 import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
 import OnboardingTeamCard from './OnboardingTeamCard.vue'
 import OnboardingWorkflowPreview from './OnboardingWorkflowPreview.vue'
@@ -702,7 +703,7 @@ function editWorkflow() {
                         {{ t('pages.onboarding.acp.cliLabel') }}
                       </div>
                       <div
-                        class="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-5"
+                        class="grid grid-cols-2 gap-2.5 lg:grid-cols-3"
                         role="radiogroup"
                         :aria-label="t('pages.onboarding.acp.cliLabel')"
                       >
@@ -716,7 +717,10 @@ function editWorkflow() {
                           :data-testid="`onboarding-backend-${b.id}`"
                           @click="selectBackend(b.id)"
                         >
-                          <strong class="block min-w-0 flex-1 truncate text-[13px] text-txt">{{ b.label }}</strong>
+                          <span class="flex min-w-0 flex-1 items-center gap-2">
+                            <VendorMark :vendor="b.id" backend :size="24" aria-hidden="true" />
+                            <strong class="min-w-0 text-[13px] text-txt">{{ b.label }}</strong>
+                          </span>
                           <span class="onb-check"><Icon name="check" :size="11" /></span>
                         </button>
                       </div>

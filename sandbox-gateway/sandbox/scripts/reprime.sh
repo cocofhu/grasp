@@ -103,6 +103,7 @@ case "$AGENT_PROVIDER" in
   claude_code|claude_code_acp) CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.claude} ;;
   codebuddy|codebuddy_acp)     CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.codebuddy} ;;
   opencode)                    CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.config/opencode} ;;
+  deepseek_harness)             CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.dsh} ;;
   *)                           CONFIG_ROOT=${CONFIG_ROOT:-$HOME_DIR/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT

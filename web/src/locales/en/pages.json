@@ -404,7 +404,7 @@
         "themeLight": "Light"
       },
       "acp": {
-        "meta": "Pick how to connect: a model vendor API key, or a coding tool account. The key is stored in this workspace and shared by all Agents.",
+        "meta": "Choose a general model API or a coding tool. Keys are stored in this workspace and shared by all Agents.",
         "region": "Region",
         "paths": {
           "apiKey": {
@@ -412,8 +412,8 @@
             "desc": "You already have a key from OpenAI, Anthropic, DeepSeek or another vendor. Pick any model, or connect your own compatible service."
           },
           "cli": {
-            "title": "Use a coding tool account",
-            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. You can specify a model, or leave the choice to the tool."
+            "title": "Use a coding tool",
+            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, or DeepSeek Harness (DSH). DSH takes a DeepSeek API key, Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -1216,7 +1216,8 @@
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH private key",
-          "ssh_hosts": "SSH known hosts"
+          "ssh_hosts": "SSH known hosts",
+          "deepseek_harness": "DeepSeek Harness"
         },
         "summary": {
           "total": "Credential slots",
@@ -2664,7 +2665,7 @@
           "templateHintPack": "Will apply {name}."
         },
         "acp": {
-          "meta": "Choose how to start: a model-vendor API key, or a coding-CLI vendor account. CodeBuddy and Trae also require a China or International site; International is the default.",
+          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy and Trae also require a China or International site; International is the default.",
           "remapTitle": "Switch Backend?",
           "remapBody": "MCP / Skills / Commands / Rules may depend on the current paths. Switching remaps to the new configRoot; cancel keeps the current Backend."
         },
@@ -2690,7 +2691,8 @@
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
             "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
-            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer."
+            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer.",
+            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately."
           },
           "paths": {
             "cursor": {
@@ -2723,6 +2725,11 @@
               "step2": "Copy the entire contents of ~/.codex/auth.json",
               "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
               "step4": "Paste the file contents below"
+            },
+            "deepseek": {
+              "step1": "Sign in to the DeepSeek platform.",
+              "step2": "Create an API key on the API Keys page.",
+              "step3": "Copy the key below, or save it as a workspace credential."
             }
           },
           "links": {
@@ -2737,7 +2744,8 @@
             "codebuddyStaging": "Apply key (Staging)",
             "traeTokenDocs": "Trae CLI login-token docs",
             "opencodeProviders": "Supported vendors",
-            "codexAuth": "Codex login docs"
+            "codexAuth": "Codex login docs",
+            "deepseekKeys": "DeepSeek API Keys"
           },
           "customConfig": {
             "cardTitle": "Backend config file",

@@ -2,26 +2,32 @@ import { ACP_BACKENDS, type BackendId } from '@/lib/shared/regionPolicy'
 
 /**
  * Two ways to start an Agent: bring a model-vendor API key (BYOK, served by
- * OpenCode), or sign in with a coding-CLI vendor account (Cursor / Claude Code /
- * CodeBuddy / Trae). Shared by onboarding, create-Agent, and team wizards.
+ * OpenCode), or use a coding tool (Cursor / Claude Code / CodeBuddy / Trae /
+ * Codex / DeepSeek Harness). Shared by onboarding, create-Agent, and team wizards.
  */
 export type StartPath = 'apiKey' | 'cli'
 
-/** BYOK path is served by a single backend; keep the mapping in one place. */
+/** Default API-key harness; existing setups continue to use OpenCode. */
 export const APIKEY_BACKEND: BackendId = 'opencode'
 
 export const CLI_BACKEND_DEFAULT: BackendId = 'cursor'
 
-/** CLI-account backends, in ACP_BACKENDS order (BYOK backend excluded). */
-export const CLI_BACKENDS = ACP_BACKENDS.filter((b) => b.id !== APIKEY_BACKEND)
+export const APIKEY_BACKENDS = ACP_BACKENDS.filter((b) => b.id === APIKEY_BACKEND)
+
+/** Native coding tools, including tools authenticated with their own API key. */
+export const CLI_BACKENDS = ACP_BACKENDS.filter((b) => !APIKEY_BACKENDS.some((item) => item.id === b.id))
 
 export function startPathForBackend(backend: BackendId): StartPath {
-  return backend === APIKEY_BACKEND ? 'apiKey' : 'cli'
+  return APIKEY_BACKENDS.some((b) => b.id === backend) ? 'apiKey' : 'cli'
 }
 
 /** Resolve the Backend that a path switch should land on. */
-export function backendForStartPath(path: StartPath, cliBackend: BackendId): BackendId {
-  return path === 'apiKey' ? APIKEY_BACKEND : cliBackend || CLI_BACKEND_DEFAULT
+export function backendForStartPath(path: StartPath, cliBackend: BackendId, apiKeyBackend: BackendId = APIKEY_BACKEND): BackendId {
+  const backends = path === 'apiKey' ? APIKEY_BACKENDS : CLI_BACKENDS
+  const remembered = path === 'apiKey' ? apiKeyBackend : cliBackend
+  return backends.some((b) => b.id === remembered)
+    ? remembered
+    : path === 'apiKey' ? APIKEY_BACKEND : CLI_BACKEND_DEFAULT
 }
 
 /** Path-card i18n; shared so create/team wizards match onboarding copy. */
@@ -47,6 +53,7 @@ export type StartPathDraft = {
   startPath: StartPath
   acpBackend: BackendId
   cliBackend: BackendId
+  apiKeyBackend?: BackendId
 }
 
 /**
@@ -56,5 +63,8 @@ export type StartPathDraft = {
 export function syncStartPathFields(draft: StartPathDraft, id: BackendId): void {
   const path = startPathForBackend(id)
   draft.startPath = path
+  draft.apiKeyBackend = backendForStartPath('apiKey', draft.cliBackend, draft.apiKeyBackend)
+  draft.cliBackend = backendForStartPath('cli', draft.cliBackend)
   if (path === 'cli') draft.cliBackend = id
+  else draft.apiKeyBackend = id
 }

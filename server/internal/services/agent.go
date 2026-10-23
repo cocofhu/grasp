@@ -106,12 +106,13 @@ func (l AgentLayout) withDefaults() AgentLayout {
 
 // AcpBackend values bind a agent_profile to a sandbox ACP bridge.
 const (
-	AcpBackendCursor     = "cursor"
-	AcpBackendClaudeCode = "claude_code"
-	AcpBackendCodeBuddy  = "codebuddy"
-	AcpBackendTrae       = "trae"
-	AcpBackendOpenCode   = "opencode"
-	AcpBackendCodex      = "codex"
+	AcpBackendCursor          = "cursor"
+	AcpBackendClaudeCode      = "claude_code"
+	AcpBackendCodeBuddy       = "codebuddy"
+	AcpBackendTrae            = "trae"
+	AcpBackendOpenCode        = "opencode"
+	AcpBackendCodex           = "codex"
+	AcpBackendDeepSeekHarness = "deepseek_harness"
 )
 
 // ErrInvalidAcpBackend is returned when a required acpBackend is empty or unknown.
@@ -120,7 +121,7 @@ var ErrInvalidAcpBackend = errors.New("invalid acpBackend")
 // NormalizeAcpBackend returns the trimmed backend when it is known, else "".
 func NormalizeAcpBackend(raw string) string {
 	switch strings.TrimSpace(raw) {
-	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex:
+	case AcpBackendCursor, AcpBackendClaudeCode, AcpBackendCodeBuddy, AcpBackendTrae, AcpBackendOpenCode, AcpBackendCodex, AcpBackendDeepSeekHarness:
 		return strings.TrimSpace(raw)
 	default:
 		return ""
@@ -171,6 +172,8 @@ func DefaultConfigRootForBackend(backend string) string {
 		return "/root/.config/opencode"
 	case AcpBackendCodex:
 		return "/root/.codex"
+	case AcpBackendDeepSeekHarness:
+		return "/root/.dsh"
 	default:
 		return DefaultConfigRoot
 	}
@@ -181,7 +184,7 @@ func DefaultConfigRootForBackend(backend string) string {
 type Agent struct {
 	Name               string             `json:"name"`
 	CredentialBindings map[string]*string `json:"credentialBindings,omitempty"`
-	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex).
+	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex | deepseek_harness).
 	// Required on save.
 	AcpBackend string `json:"acpBackend"`
 	// GitCredentialType is the Agent-level credential contract selected in Studio.

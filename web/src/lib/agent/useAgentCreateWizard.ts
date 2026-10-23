@@ -229,7 +229,7 @@ function selectAcp(id: WizardBackendId) {
 
 function selectStartPath(path: StartPath) {
   if (path === draft.value.startPath) return
-  const nextId = backendForStartPath(path, draft.value.cliBackend)
+  const nextId = backendForStartPath(path, draft.value.cliBackend, draft.value.apiKeyBackend)
   if (nextId !== draft.value.acpBackend && hasPathDeps(draft.value)) {
     pendingAcp.value = nextId
     showAcpConfirm.value = true

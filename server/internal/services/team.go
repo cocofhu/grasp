@@ -226,6 +226,9 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 	if err != nil {
 		return normalizedTeamReq{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
 	}
+	if err := validateTeamBackendConfig(backend, req.CustomConfig); err != nil {
+		return normalizedTeamReq{}, err
+	}
 	mcp := req.MCP
 	if len(mcp) == 0 {
 		mcp = DefaultPlatformMCP()
@@ -255,6 +258,14 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 		MCP:           mcp,
 		Env:           env,
 	}, nil
+}
+
+// validateTeamBackendConfig rejects auth files the selected CLI cannot read.
+func validateTeamBackendConfig(backend, customConfig string) error {
+	if backend == AcpBackendDeepSeekHarness && strings.TrimSpace(customConfig) != "" {
+		return fmt.Errorf("%w: DeepSeek Harness requires a workspace API key; customConfig is unsupported", ErrTeamValidation)
+	}
+	return nil
 }
 
 // writeWorkspaceAuth stores the bootstrap API key as a workspace credential and
@@ -592,6 +603,9 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		if backend, err = ParseAcpBackend(args.AcpBackend); err != nil {
 			return Agent{}, fmt.Errorf("%w: %v", ErrTeamValidation, err)
 		}
+	}
+	if err := validateTeamBackendConfig(backend, args.CustomConfig); err != nil {
+		return Agent{}, err
 	}
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)

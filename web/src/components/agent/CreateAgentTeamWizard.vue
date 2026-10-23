@@ -468,7 +468,6 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <WizardAcpStartPathPanel
                     :start-path="draft.startPath"
                     :acp-backend="draft.acpBackend"
-                    :config-root="draft.configRoot"
                     :region-policy="regionPolicy"
                     :current-region="currentRegion"
                     test-id-prefix="team-wizard"

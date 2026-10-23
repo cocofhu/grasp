@@ -334,6 +334,10 @@ var catalog = map[string][]Model{
 		{ID: "deepseek-v3.1", Name: "DeepSeek V3.1", Vendor: "deepseek", Tags: reasoningOnly, Context: 128},
 		{ID: "hunyuan-turbos", Name: "Hunyuan TurboS", Vendor: "tencent", Tags: fastOnly, Context: 128},
 	},
+	"deepseek_harness": {
+		{ID: "deepseek-flash", Name: "DeepSeek Flash", Vendor: "deepseek", Recommended: true},
+		{ID: "deepseek-v4-pro", Name: "DeepSeek V4 Pro", Vendor: "deepseek"},
+	},
 	"trae": {
 		{ID: "claude-sonnet-4", Name: "Claude Sonnet 4", Vendor: "anthropic", Tags: visionReasoning, Context: 200, Recommended: true},
 		{ID: "gpt-5", Name: "GPT-5", Vendor: "openai", Tags: visionReasoning, Context: 400, Recommended: true},

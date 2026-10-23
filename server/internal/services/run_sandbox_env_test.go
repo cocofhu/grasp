@@ -56,6 +56,16 @@ func TestValidateRunSandboxEnvRejects(t *testing.T) {
 			want: "CURSOR_API_KEY",
 		},
 		{
+			name: "DeepSeek alias",
+			in:   []models.EnvEntry{{Key: "ACP_DEEPSEEK_API_KEY", Value: "synthetic-key"}},
+			want: "ACP_DEEPSEEK_API_KEY",
+		},
+		{
+			name: "DeepSeek Harness alias",
+			in:   []models.EnvEntry{{Key: "ACP_DEEPSEEK_HARNESS_API_KEY", Value: "synthetic-key"}},
+			want: "ACP_DEEPSEEK_HARNESS_API_KEY",
+		},
+		{
 			name: "password",
 			in:   []models.EnvEntry{{Key: "ACP_BRIDGE_PASSWORD", Value: "p"}},
 			want: "ACP_BRIDGE_PASSWORD",
