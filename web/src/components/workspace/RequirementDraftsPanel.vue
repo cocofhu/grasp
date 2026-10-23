@@ -1324,10 +1324,10 @@ defineExpose({
 .rd-parent-field { grid-column: 1 / -1; }
 .rd-view-tabs { display: flex; gap: 24px; border-bottom: 1px solid rgb(var(--c-line) / .6); }
 .rd-view-tabs button { padding: 0 0 12px; border-bottom: 2px solid transparent; color: rgb(var(--c-txt3)); font-size: 14px; font-weight: 500; }
-.rd-view-tabs button:hover { color: rgb(var(--c-txt)); }
+.rd-view-tabs button:hover:not(.on) { color: rgb(var(--c-txt2)); }
 .rd-view-tabs button.on { border-color: rgb(var(--c-accent)); color: rgb(var(--c-txt)); }
 .rd-status-filter button, .rd-scale button { padding: 6px 10px; border-radius: 6px; color: rgb(var(--c-txt3)); font-size: 12px; white-space: nowrap; }
-.rd-status-filter button:hover, .rd-scale button:hover { color: rgb(var(--c-txt)); }
+.rd-status-filter button:hover:not(.on), .rd-scale button:hover:not(.on) { color: rgb(var(--c-txt2)); }
 .rd-status-filter button.on, .rd-scale button.on { color: rgb(var(--c-txt)); font-weight: 600; }
 .draft-detail { overflow-y: auto; }
 @container requirement-workbench (max-width: 719px) {

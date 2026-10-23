@@ -520,7 +520,7 @@ onUnmounted(() => {
           :key="seg.id"
           type="button"
           class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
-          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'"
+          :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt2'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"

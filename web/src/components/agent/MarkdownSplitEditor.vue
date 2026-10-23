@@ -300,7 +300,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'edit' ? 'text-txt' : 'text-txt3'"
+        :class="stackMode === 'edit' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'edit'"
         @click="stackMode = 'edit'"
@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'preview' ? 'text-txt' : 'text-txt3'"
+        :class="stackMode === 'preview' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'preview'"
         @click="stackMode = 'preview'"

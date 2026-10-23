@@ -94,6 +94,23 @@ describe('RunListView status segments', () => {
     wrapper.unmount()
   })
 
+  it('deepens unselected segments one step and keeps the pill and count on the selection', async () => {
+    const { wrapper } = await setup()
+    const selected = wrapper.get('[data-testid="run-seg-all"]')
+    const idle = wrapper.get('[data-testid="run-seg-waiting"]')
+    expect(selected.classes()).toEqual(expect.arrayContaining(['font-semibold', 'text-txt']))
+    expect(selected.classes()).not.toContain('hover:text-txt')
+    expect(selected.classes()).not.toContain('hover:text-txt2')
+    expect(selected.get('[data-testid="seg-count"]').exists()).toBe(true)
+    expect(idle.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2']))
+    expect(idle.classes()).not.toContain('hover:text-txt')
+    expect(idle.find('[data-testid="seg-count"]').exists()).toBe(false)
+    expect(wrapper.findAll('.sliding-tabs__indicator')).toHaveLength(1)
+    expect(wrapper.findAll('[data-testid="moving-run-count"]')).toHaveLength(1)
+    expect(wrapper.get('.sliding-tabs__indicator').classes()).toEqual(expect.arrayContaining(['bg-surface', 'shadow-sm']))
+    wrapper.unmount()
+  })
+
   it('shows the result count on the active segment and the workflow filter, like main', async () => {
     const { wrapper } = await setup()
     const counts = wrapper.findAll('[data-testid="seg-count"]')
