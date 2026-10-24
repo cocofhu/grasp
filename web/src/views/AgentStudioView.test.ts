@@ -35,6 +35,10 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
+      listCredentials: async () => ({ items: [] }),
+      listModelConfigurations: async () => ({ items: [] }),
+      listModelConnections: async () => ({ items: [] }),
+      listToolCapabilities: async () => ({ items: [] }),
       listAgents: mocks.listAgents,
       saveAgent: mocks.saveAgent,
       renameAgent: mocks.renameAgent,
@@ -1728,18 +1732,18 @@ describe('AgentStudio env credential help', () => {
     await flushPromises()
   }
 
-  it('moves long copy into one help modal and jumps inject / git / acp', async () => {
+  it('keeps generic env help without offering raw model authorization', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountStudioWithHelp()
     await flushPromises()
     await openEnvTab(wrapper)
 
     expect(wrapper.get('[data-test="env-help-inject"]').text()).toBe('帮助')
-    expect(wrapper.get('[data-test="env-help-acp"]').text()).toBe('帮助')
-    expect(wrapper.get('[data-test="git-help"]').text()).toBe('Git 配置帮助')
+    expect(wrapper.find('[data-test="env-help-acp"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="git-help"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="git-guide"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="git-apply-recommended"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('GRASP_CODEBUDDY_API_KEY')
+    expect(wrapper.text()).not.toContain('GRASP_CODEBUDDY_API_KEY')
     expect(wrapper.text()).not.toContain('环境变量会注入该 Agent 的沙箱容器')
     expect(wrapper.text()).not.toContain('请在下方添加对应 Key')
     expect(wrapper.text()).not.toContain('保存后写入 agent.json')
@@ -1752,17 +1756,6 @@ describe('AgentStudio env credential help', () => {
     expect(wrapper.get('[data-help-chip="inject"]').classes().join(' ')).toContain('border-accent')
     expect(wrapper.get('[data-test="env-help-modal"]').text()).toContain('环境变量会注入该 Agent 的沙箱容器')
 
-    await wrapper.get('[data-test="git-help"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.findAll('[data-test="env-help-modal"]')).toHaveLength(1)
-    expect(wrapper.get('[data-help-chip="git"]').classes().join(' ')).toContain('border-accent')
-    expect(wrapper.get('[data-test="env-help-modal"]').text()).toContain('不会验证变量引用的实际值')
-
-    await wrapper.get('[data-test="env-help-acp"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.findAll('[data-test="env-help-modal"]')).toHaveLength(1)
-    expect(wrapper.get('[data-help-chip="acp"]').classes().join(' ')).toContain('border-accent')
-    expect(wrapper.get('[data-test="env-help-modal"]').text()).toContain('CodeBuddy ACP 鉴权')
     wrapper.unmount()
   })
 
@@ -1793,7 +1786,7 @@ describe('AgentStudio env credential help', () => {
     wrapper.unmount()
   })
 
-  it('opens Git credential help when run-tags rejects (404 noise)', async () => {
+  it('opens generic env help when run-tags rejects (404 noise)', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     mocks.listRunTags.mockRejectedValue(new Error('not found'))
     const wrapper = await mountStudioWithHelp()
@@ -1801,12 +1794,12 @@ describe('AgentStudio env credential help', () => {
     await openEnvTab(wrapper)
 
     void mocks.listRunTags().catch(() => {})
-    await wrapper.get('[data-test="git-help"]').trigger('click')
+    await wrapper.get('[data-test="env-help-inject"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-test="env-help-modal"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="env-help-modal"]').text()).toContain('环境变量与凭据')
-    expect(wrapper.get('[data-help-chip="git"]').classes().join(' ')).toContain('border-accent')
+    expect(wrapper.get('[data-help-chip="inject"]').classes().join(' ')).toContain('border-accent')
     wrapper.unmount()
   })
 })

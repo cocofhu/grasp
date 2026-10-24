@@ -8,8 +8,8 @@ import (
 )
 
 func TestNormalizeGitBindingsExplicitSelection(t *testing.T) {
-	if got, err := NormalizeGitBindings(nil); got != nil || err != nil {
-		t.Fatalf("legacy = %+v, %v", got, err)
+	if got, err := NormalizeGitBindings(nil); got == nil || got.Items == nil || len(got.Items) != 0 || err != nil {
+		t.Fatalf("omitted selection = %+v, %v", got, err)
 	}
 	empty, err := NormalizeGitBindings(&GitBindings{})
 	if err != nil || empty == nil || empty.Items == nil || len(empty.Items) != 0 {

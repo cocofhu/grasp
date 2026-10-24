@@ -196,7 +196,6 @@ func (h *Handlers) RevokeCredential(c *gin.Context) {
 		writeCredentialErr(c, err)
 		return
 	}
-	h.forgetCredentialSelection(credentialID)
 	h.recordAudit(services.AuditRecord{Actor: h.auditActorFromContext(c), Action: models.AuditActionWorkspaceConfig, ResourceType: "credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "revoke credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "revoked"})
 }
@@ -215,7 +214,6 @@ func (h *Handlers) ClearCredential(c *gin.Context) {
 		writeCredentialErr(c, err)
 		return
 	}
-	h.forgetCredentialSelection(credentialID)
 	h.recordAudit(services.AuditRecord{Actor: h.auditActorFromContext(c), Action: models.AuditActionWorkspaceConfig, ResourceType: "credential", ResourceID: credentialID, Outcome: models.AuditOutcomeOK, Summary: "clear credential"})
 	c.JSON(http.StatusOK, gin.H{"status": "cleared"})
 }
@@ -232,15 +230,6 @@ func writeSecretsKeyErr(c *gin.Context, err error) {
 	c.JSON(http.StatusPreconditionFailed, gin.H{"error": err.Error(), "code": SecretsKeyMissingCode})
 }
 
-func (h *Handlers) forgetCredentialSelection(credentialID string) {
-	if h.Agents != nil {
-		h.Agents.ClearOpenCodeCredentialSelection(credentialID)
-	}
-	if h.SharedAgent != nil {
-		h.SharedAgent.ClearCredentialSelection(credentialID)
-	}
-}
-
 func writeCredentialErr(c *gin.Context, err error) {
 	switch {
 	case errors.Is(err, services.ErrCredentialAliasTaken):
@@ -250,7 +239,7 @@ func writeCredentialErr(c *gin.Context, err error) {
 			alias = taken.Alias
 		}
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error(), "code": "alias_taken", "alias": alias})
-	case errors.Is(err, services.ErrCredentialPurpose), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, services.ErrCredentialModel), errors.Is(err, services.ErrCredentialBaseURL), errors.Is(err, runtime.ErrCodexLoginFileEmpty), errors.Is(err, runtime.ErrCodexLoginFileAPIKey):
+	case errors.Is(err, services.ErrCredentialPurpose), errors.Is(err, services.ErrCredentialType), errors.Is(err, services.ErrCredentialName), errors.Is(err, services.ErrCredentialTarget), errors.Is(err, services.ErrCredentialEnvKey), errors.Is(err, runtime.ErrCodexLoginFileEmpty), errors.Is(err, runtime.ErrCodexLoginFileAPIKey):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, services.ErrCredentialNotFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})

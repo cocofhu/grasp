@@ -4,21 +4,32 @@ import { routeApi } from './helpers/apiRoute'
 
 const codexAlias = 'Codex-Workspace-Team-Shared-Login-Credential-With-A-Long-Alias'
 const credentialItems = [
-  { id: 'cursor-api', type: 'ai', name: 'Cursor team', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'cursor-…1234' },
-  { id: 'claude-api', type: 'ai', name: 'Claude Code', provider: 'claude_code', envKey: 'GRASP_CLAUDE_API_KEY', configured: false },
-  { id: 'codebuddy-api', type: 'ai', name: 'CodeBuddy', provider: 'codebuddy', envKey: 'GRASP_CODEBUDDY_API_KEY', configured: false },
-  { id: 'trae-api', type: 'ai', name: 'Trae', provider: 'trae', envKey: 'GRASP_TRAE_API_KEY', configured: false },
-  { id: 'codex-login', type: 'ai', name: codexAlias, provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: false },
-  { id: 'deepseek-api', purpose: 'model_api', issuer: 'deepseek', type: 'ai', name: 'DeepSeek API', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', configured: false },
-  { id: 'model-api', type: 'ai', name: 'DeepSeek model', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', configured: true, masked: 'model-…5678', metadata: { provider: 'deepseek', model: 'deepseek/deepseek-chat' } },
-  { id: 'github-token', type: 'git', name: 'GitHub team', provider: 'github', envKey: 'GITHUB_TOKEN', configured: false },
-  { id: 'ssh-key', type: 'ssh', name: 'Repository deploy key', provider: 'ssh', envKey: 'GIT_SSH_PRIVATE_KEY', configured: false },
-  { id: 'vault-token', type: 'custom', name: 'Vault managed token', provider: 'custom', source: 'vault', configured: true, masked: 'vault-…9012' },
+  { id: 'cursor-api', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', issuer: 'cursor', enabled: true, type: 'ai', name: 'Cursor team', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'cursor-…1234' },
+  { id: 'claude-api', purpose: 'tool_auth', toolId: 'claude_code', secretKind: 'api_key', issuer: 'claude_code', enabled: true, type: 'ai', name: 'Claude Code', provider: 'claude_code', envKey: 'GRASP_CLAUDE_API_KEY', configured: false },
+  { id: 'codebuddy-api', purpose: 'tool_auth', toolId: 'codebuddy', secretKind: 'api_key', issuer: 'codebuddy', enabled: true, type: 'ai', name: 'CodeBuddy', provider: 'codebuddy', envKey: 'GRASP_CODEBUDDY_API_KEY', configured: false },
+  { id: 'trae-api', purpose: 'tool_auth', toolId: 'trae', secretKind: 'token', issuer: 'trae', enabled: true, type: 'ai', name: 'Trae', provider: 'trae', envKey: 'GRASP_TRAE_API_KEY', configured: false },
+  { id: 'codex-login', purpose: 'tool_auth', toolId: 'codex', secretKind: 'login_file', issuer: 'codex', enabled: true, type: 'ai', name: codexAlias, provider: 'codex', envKey: 'GRASP_CODEX_AUTH_JSON', configured: false },
+  { id: 'deepseek-api', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', type: 'ai', name: 'DeepSeek API', provider: 'deepseek', configured: false, enabled: true },
+  { id: 'model-api', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', type: 'ai', name: 'DeepSeek model', provider: 'deepseek', configured: true, enabled: true, masked: 'model-…5678' },
+  { id: 'github-token', purpose: 'git', issuer: 'github', secretKind: 'token', enabled: true, type: 'git', name: 'GitHub team', provider: 'github', envKey: 'GITHUB_TOKEN', configured: false },
+  { id: 'ssh-key', purpose: 'ssh', issuer: 'ssh', secretKind: 'ssh_private_key', enabled: true, type: 'ssh', name: 'Repository deploy key', provider: 'ssh', envKey: 'GIT_SSH_PRIVATE_KEY', configured: false },
+  { id: 'vault-token', purpose: 'custom', issuer: 'custom', secretKind: 'token', enabled: true, type: 'custom', name: 'Vault managed token', provider: 'custom', source: 'vault', configured: true, masked: 'vault-…9012' },
 ]
+
+const modelConnection = {
+  id: 'deepseek-service', name: 'DeepSeek service', providerId: 'deepseek',
+  protocol: 'openai-chat-completions', baseUrl: 'https://api.deepseek.com/v1', credentialId: 'model-api',
+  auth: { scheme: 'bearer' }, models: [{ id: 'deepseek-chat', source: 'manual' }], state: 'active', revision: 1,
+}
+
+async function mockModelConnections(page: Page) {
+  await routeApi(page, '**/api/workspace/model-connections', async (route) => route.fulfill({ json: { items: [modelConnection] } }))
+}
 
 async function openCredentialList(page: Page) {
   await installWorkspaceApiDefaults(page)
   await routeApi(page, '**/api/workspace/credentials', async (route) => route.fulfill({ json: { items: credentialItems } }))
+  await mockModelConnections(page)
   await page.goto('/workspace-config.html?view=/settings/credentials')
   await expect(page.getByTestId('workspace-credential-section-coding')).toBeVisible()
 }
@@ -45,7 +56,7 @@ async function expectNoHorizontalOverflow(page: Page) {
 
 test('credential editing uses workspace settings, sends an explicit value and keeps secrets masked', async ({ page }) => {
   await installWorkspaceApiDefaults(page)
-  const item = { id: 'cursor-api', type: 'ai', kind: 'ai', name: 'Cursor API key', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'test-…1234' }
+  const item = { id: 'cursor-api', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', issuer: 'cursor', enabled: true, type: 'ai', name: 'Cursor API key', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'test-…1234' }
   const puts: unknown[] = []
   await routeApi(page, '**/api/workspace/credentials', async (route) => route.fulfill({ json: { items: [item] } }))
   await routeApi(page, '**/api/workspace/credentials/cursor-api', async (route) => {
@@ -60,7 +71,7 @@ test('credential editing uses workspace settings, sends an explicit value and ke
   await expect(input).toHaveValue('')
   await input.fill('test-replacement-5678')
   await page.getByTestId('workspace-credential-save-cursor-api').click()
-  await expect.poll(() => puts).toEqual([expect.objectContaining({ value: 'test-replacement-5678', envKey: 'GRASP_CURSOR_API_KEY' })])
+  await expect.poll(() => puts).toEqual([expect.objectContaining({ purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', value: 'test-replacement-5678', envKey: 'GRASP_CURSOR_API_KEY' })])
   await expect(page.getByTestId('workspace-credential-masked')).toHaveText('test-…5678')
   await expect(input).toHaveCount(0)
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('test-replacement-5678')
@@ -111,6 +122,7 @@ test('credential lists group coding, model, repository and SSH credentials into 
     await expect(section.getByRole('heading').first()).not.toHaveText('')
   }
   await expect(coding.getByTestId('workspace-credential-row')).toHaveCount(5)
+  await expect(models.getByTestId('workspace-credential-row')).toHaveCount(2)
   await expect(models.getByTestId('workspace-credential-row').filter({ hasText: 'DeepSeek model' })).toBeVisible()
   await expect(models).toContainText('model-…5678')
   await expect(git).toContainText('GitHub team')
@@ -220,6 +232,7 @@ for (const width of [320, 390]) {
 test('a model API key can be replaced on a narrow screen while its value stays masked', async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 })
   await installWorkspaceApiDefaults(page)
+  await mockModelConnections(page)
   let masked = 'model-…5678'
   const puts: unknown[] = []
   await routeApi(page, '**/api/workspace/credentials', async (route) => route.fulfill({
@@ -243,7 +256,9 @@ test('a model API key can be replaced on a narrow screen while its value stays m
   await expectWithinViewport(save, page)
   await expectNoHorizontalOverflow(page)
   await save.click()
-  await expect.poll(() => puts).toEqual([expect.objectContaining({ value: 'model-replacement-secret-9999' })])
+  await expect.poll(() => puts).toEqual([expect.objectContaining({ purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', value: 'model-replacement-secret-9999' })])
+  expect(puts[0]).not.toHaveProperty('metadata')
+  expect(puts[0]).not.toHaveProperty('envKey')
   await expect(models).toContainText('model-…9999')
   await expect(input).toHaveCount(0)
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('model-replacement-secret-9999')

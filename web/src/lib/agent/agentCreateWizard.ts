@@ -1,11 +1,7 @@
 import type { Agent, AgentCapabilities, AgentFile, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
 import { cloneGitBindings } from './gitBindings'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
-import { AGENT_SETTINGS_REL_PATH, BACKEND_AUTH_HINTS } from '@/lib/agent/backendAuthGuide'
 import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
-import { switchOpenCodeEnv } from '@/lib/agent/openCodeProvider'
-import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import {
   ACP_BACKENDS,
   isManagedRegionKey,
@@ -14,25 +10,13 @@ import {
   switchBackendRegions,
   type BackendId,
 } from '@/lib/shared/regionPolicy'
-import {
-  APIKEY_BACKEND,
-  APIKEY_BACKENDS,
-  CLI_BACKEND_DEFAULT,
-  CLI_BACKENDS,
-  START_PATH_OPTIONS,
-  backendForStartPath,
-  syncStartPathFields,
-  type StartPath,
-} from '@/lib/shared/startPath'
-import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 
 export type WizardBackendId = BackendId
-export { ACP_BACKENDS, APIKEY_BACKENDS, CLI_BACKENDS, START_PATH_OPTIONS, type StartPath }
+export { ACP_BACKENDS }
 /** Wizard step ids. Internal `acp` is shown as Agent via i18n; capability/env steps are not in WIZARD_STEPS. */
 export type WizardStepId =
   | 'basics'
   | 'acp'
-  | 'apiKey'
   | 'git'
   | 'env'
   | 'mcp'
@@ -58,10 +42,6 @@ export type WizardCommand = { name: string; content: string }
 
 export type WizardSkipped = Partial<Record<WizardStepId, boolean>>
 
-export type WizardAuthMode = 'apiKey' | 'customConfig'
-
-export const AGENT_SETTINGS_PATH = AGENT_SETTINGS_REL_PATH
-
 export type WizardDraft = {
   gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
@@ -73,23 +53,7 @@ export type WizardDraft = {
    * Empty / "blank" = generic agent (default rule). Selection never rewrites name (plan g1.4).
    */
   templateId: string
-  /** apiKey (OpenCode BYOK) or cli (coding-CLI vendor). */
-  startPath: StartPath
   acpBackend: WizardBackendId
-  /** Last CLI-path backend, restored when switching back from apiKey. */
-  cliBackend: WizardBackendId
-  apiKeyBackend?: WizardBackendId
-  authMode: WizardAuthMode
-  customConfigContent: string
-  /** Non-OpenCode workspace credential. Empty means inherit shared Agent config. */
-  aiCredentialId?: string
-  /** OpenCode model-vendor credential. Empty means inherit shared Agent config. */
-  openCodeCredentialId?: string
-  gitCredentialType?: GitCredentialType
-  /** GitHub, GitLab, or SSH key credential for the selected Git type. */
-  gitCredentialId?: string
-  /** Known-hosts credential. Only sent when Git type is SSH and the user picked one. */
-  sshHostsCredentialId?: string
   configRoot: string
   env: WizardKV[]
   mcp: WizardMCP[]
@@ -109,7 +73,7 @@ export type WizardStepDef = {
 /** Basics → coding tool and model (acp) → Git → review. */
 export const WIZARD_STEPS: WizardStepDef[] = [
   { id: 'basics', labelKey: 'pages.agentStudio.wizard.steps.basics', skip: false },
-  { id: 'acp', labelKey: 'pages.agentStudio.wizard.steps.acp', skip: true },
+  { id: 'acp', labelKey: 'pages.agentStudio.wizard.steps.acp', skip: false },
   { id: 'git', labelKey: 'pages.agentStudio.wizard.steps.git', skip: true },
   { id: 'review', labelKey: 'pages.agentStudio.wizard.steps.review', skip: false },
 ]
@@ -139,19 +103,9 @@ export function freshDraft(): WizardDraft {
     name: '',
     description: '',
     templateId: 'blank',
-    startPath: 'apiKey',
-    acpBackend: APIKEY_BACKEND,
-    cliBackend: CLI_BACKEND_DEFAULT,
-    apiKeyBackend: APIKEY_BACKEND,
-    authMode: 'apiKey',
-    modelBinding: { kind: 'inherit' },
-    customConfigContent: '',
-    aiCredentialId: '',
-    openCodeCredentialId: '',
-    gitCredentialType: undefined,
-    gitCredentialId: '',
-    sshHostsCredentialId: '',
-    configRoot: configRootFor(APIKEY_BACKEND),
+    acpBackend: 'cursor',
+    modelBinding: { kind: 'configuration', configurationId: '' },
+    configRoot: configRootFor('cursor'),
     env: [],
     mcp: [],
     rulesEdited: false,
@@ -173,34 +127,10 @@ export function configRootFor(backend: WizardBackendId): string {
 }
 
 export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
-  const prev = draft.acpBackend
-  syncStartPathFields(draft, id)
+  if (draft.acpBackend !== id) draft.modelBinding = { kind: 'configuration', configurationId: '' }
   draft.acpBackend = id
   draft.configRoot = configRootFor(id)
-  if (id === 'deepseek_harness') draft.authMode = 'apiKey'
-  if (prev !== id) {
-    draft.modelBinding = { kind: 'inherit' }
-    draft.aiCredentialId = ''
-    draft.openCodeCredentialId = ''
-  }
-  draft.env = recToKV(
-    switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.env), id), id), prev, id).env,
-  )
-}
-
-function trimmedId(value?: string): string {
-  return value?.trim() || ''
-}
-
-/** Credential id for the current Backend. The other field is ignored so a stale pick is not sent. */
-export function selectedModelCredentialId(draft: WizardDraft): string {
-  if (draft.authMode === 'customConfig') return ''
-  return trimmedId(draft.acpBackend === 'opencode' ? draft.openCodeCredentialId : draft.aiCredentialId)
-}
-
-/** Switch start path; CLI restores the last CLI backend that was picked. */
-export function applyWizardStartPath(draft: WizardDraft, path: StartPath): void {
-  applyAcpBackend(draft, backendForStartPath(path, draft.cliBackend, draft.apiKeyBackend))
+  draft.env = recToKV(switchBackendRegions(kvToRec(draft.env), id))
 }
 
 /** True when switching Backend may remapping path-dependent configs. */
@@ -267,42 +197,9 @@ function draftMcpToApi(m: WizardMCP): MCPServer {
   }
 }
 
-export function parseCustomConfigJson(
-  raw: string,
-): { ok: true; normalized: string } | { ok: false } {
-  const trimmed = raw.trim()
-  if (!trimmed) return { ok: true, normalized: '' }
-  try {
-    JSON.parse(trimmed)
-    return { ok: true, normalized: trimmed }
-  } catch {
-    return { ok: false }
-  }
-}
-
-export function hasCustomConfigWritten(draft: WizardDraft): boolean {
-  if (draft.authMode !== 'customConfig') return false
-  const parsed = parseCustomConfigJson(draft.customConfigContent)
-  return parsed.ok && parsed.normalized !== ''
-}
-
-export function stripAuthKeysFromEnv(env: WizardKV[], backend: WizardBackendId): WizardKV[] {
-  const key = BACKEND_AUTH_HINTS[backend].key
-  return env.filter((e) => e.k.trim() !== key)
-}
-
 function collectFiles(draft: WizardDraft): AgentFile[] {
   const files: AgentFile[] = []
-  // Role template: backend copies embed workspace; only attach custom auth config if any.
-  if (hasRoleTemplate(draft)) {
-    if (draft.authMode === 'customConfig') {
-      const parsed = parseCustomConfigJson(draft.customConfigContent)
-      if (parsed.ok && parsed.normalized) {
-        files.push({ path: agentConfigRelPath(draft.acpBackend), content: parsed.normalized })
-      }
-    }
-    return files
-  }
+  if (hasRoleTemplate(draft)) return files
   const name = draft.name.trim() || 'agent'
   const ruleContent =
     draft.rulesEdited && draft.rulesContent.trim()
@@ -326,12 +223,6 @@ function collectFiles(draft: WizardDraft): AgentFile[] {
       content: c.content || defaultCommandTemplate(slug),
     })
   }
-  if (draft.authMode === 'customConfig') {
-    const parsed = parseCustomConfigJson(draft.customConfigContent)
-    if (parsed.ok && parsed.normalized) {
-      files.push({ path: agentConfigRelPath(draft.acpBackend), content: parsed.normalized })
-    }
-  }
   return files
 }
 
@@ -344,35 +235,17 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   const name = normalizeAgentName(draft.name)
   const envDraft: WizardDraft = {
     ...draft,
-    env: stripSecretKeysFromKV(
-      draft.authMode === 'customConfig'
-        ? stripAuthKeysFromEnv(draft.env, draft.acpBackend)
-        : draft.env,
-    ),
+    env: stripSecretKeysFromKV(draft.env),
   }
   const env = stripSecretKeysFromRecord(normalizeWizardRegions(envDraft))
-  if (draft.modelBinding) {
-    for (const key of ['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION']) delete env[key]
-  }
+  for (const key of ['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION']) delete env[key]
   const useTemplate = hasRoleTemplate(draft)
   const files = collectFiles(draft)
-  const modelCredentialId = selectedModelCredentialId(draft)
-  const gitCredentialId = draft.gitCredentialType ? trimmedId(draft.gitCredentialId) : ''
-  const sshHostsCredentialId =
-    draft.gitCredentialType === 'ssh' ? trimmedId(draft.sshHostsCredentialId) : ''
   return {
     name,
-    ...(draft.gitBindings ? { gitBindings: cloneGitBindings(draft.gitBindings), repoIds: [] } : {}),
-    acpBackend: draft.acpBackend || APIKEY_BACKEND,
-    ...(draft.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(draft.modelBinding)) as ModelBinding } : {}),
-    ...(!draft.modelBinding && modelCredentialId
-      ? draft.acpBackend === 'opencode'
-        ? { openCodeCredentialId: modelCredentialId }
-        : { aiCredentialId: modelCredentialId }
-      : {}),
-    ...(!draft.gitBindings && draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
-    ...(!draft.gitBindings && gitCredentialId ? { gitCredentialId } : {}),
-    ...(!draft.gitBindings && sshHostsCredentialId ? { sshHostsCredentialId } : {}),
+    gitBindings: cloneGitBindings(draft.gitBindings || { items: [] }),
+    acpBackend: draft.acpBackend,
+    modelBinding: { kind: 'configuration', configurationId: draft.modelBinding?.configurationId || '' },
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
     files,
     mcp: draft.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
@@ -414,8 +287,6 @@ export type ReviewSummaryItem = {
 /** Aliases resolved by the wizard. Ids are the fallback when a name is unknown. */
 export type WizardReviewNames = {
   model?: string
-  git?: string
-  sshHosts?: string
   gitItems?: Record<string, string>
   preferredLabel?: string
 }
@@ -425,22 +296,9 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
   const normalizedEnv = normalizeRegions(kvToRec(draft.env), draft.acpBackend, 'strict').env
   const region = regionSummary(normalizedEnv, draft.acpBackend, 'strict')
   const name = draft.name.trim() || '—'
-  const modelCredentialId = selectedModelCredentialId(draft)
-  const authViaCredential = !!modelCredentialId
-  const authViaConfig = hasCustomConfigWritten(draft)
-  const authViaBinding = !!draft.modelBinding && (draft.modelBinding.kind === 'inherit' || (draft.modelBinding.kind === 'configuration' ? !!draft.modelBinding.configurationId : draft.modelBinding.kind === 'platform' ? !!draft.modelBinding.credentialId : !!(draft.modelBinding.connectionId && draft.modelBinding.modelId)))
-  const authConfigured = authViaBinding || authViaCredential || authViaConfig
-  const apiKeySkipped = !!draft.skipped.apiKey || !authConfigured
-  const gitParts: string[] = []
-  if (draft.gitBindings) {
-    for (const item of draft.gitBindings.items) gitParts.push(`${names.gitItems?.[item.credentialId] || item.credentialId}${item.credentialId === draft.gitBindings.preferredCredentialId ? ` (${names.preferredLabel || 'Preferred'})` : ''}`)
-  }
-  if (!draft.gitBindings && trimmedId(draft.gitCredentialId)) gitParts.push(names.git || trimmedId(draft.gitCredentialId))
-  if (!draft.gitBindings && draft.gitCredentialType === 'ssh' && trimmedId(draft.sshHostsCredentialId)) {
-    gitParts.push(names.sshHosts || trimmedId(draft.sshHostsCredentialId))
-  }
-  if (!draft.gitBindings && draft.env.some((entry) => entry.k.trim() === 'GIT_REPOS')) gitParts.push('GIT_REPOS')
-  if (!draft.gitBindings && !gitParts.length && draft.gitCredentialType) gitParts.push(draft.gitCredentialType)
+  const authConfigured = !!draft.modelBinding?.configurationId
+  const apiKeySkipped = !authConfigured
+  const gitParts = (draft.gitBindings?.items || []).map((item) => `${names.gitItems?.[item.credentialId] || item.credentialId}${item.credentialId === draft.gitBindings?.preferredCredentialId ? ` (${names.preferredLabel || 'Preferred'})` : ''}`)
 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
@@ -469,21 +327,9 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
       : []),
     {
       key: 'apiKey',
-      kind: draft.modelBinding?.kind === 'inherit' ? 'def' : authConfigured ? 'ok' : 'empty',
-      labelKey: draft.modelBinding
-        ? `pages.agentStudio.wizard.review.modelSource_${draft.modelBinding.kind}`
-        : authViaConfig
-        ? 'pages.agentStudio.wizard.review.customConfigWritten'
-        : authViaCredential
-          ? 'pages.agentStudio.wizard.review.apiKeyConfigured'
-          : 'pages.agentStudio.wizard.review.apiKeySkipped',
-      detail: draft.modelBinding?.kind === 'configuration'
-        ? names.model || draft.modelBinding.configurationId
-        : draft.modelBinding?.kind === 'connection'
-        ? `${draft.modelBinding.connectionId} · ${draft.modelBinding.modelId}`
-        : draft.modelBinding?.kind === 'platform'
-          ? names.model || draft.modelBinding.credentialId
-          : authViaCredential ? names.model || modelCredentialId : undefined,
+      kind: authConfigured ? 'ok' : 'empty',
+      labelKey: 'pages.agentStudio.wizard.review.modelSource_configuration',
+      detail: names.model || draft.modelBinding?.configurationId,
     },
     {
       key: 'git',

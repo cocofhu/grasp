@@ -11,8 +11,6 @@ import CredentialProviderLogo from '@/components/workspace/CredentialProviderLog
 
 const props = withDefaults(defineProps<{
   modelValue?: AgentGitBindings
-  legacy?: AgentGitBindings
-  inherited?: AgentGitBindings
   items?: CredentialItem[]
   disabled?: boolean
 }>(), { disabled: false })
@@ -22,7 +20,7 @@ const copy = (key: string) => t(`pages.agentStudio.gitCredentials.${key}`)
 const credentials = ref<CredentialItem[]>([])
 const loading = ref(false)
 const error = ref('')
-const bindings = computed(() => props.modelValue || props.legacy || props.inherited || { items: [] })
+const bindings = computed(() => props.modelValue || { items: [] })
 const selectedIds = computed(() => new Set(bindings.value.items.map((item) => item.credentialId)))
 const available = computed(() => credentials.value.filter((item) => usableGitCredential(item) && !selectedIds.value.has(item.id)))
 const options = computed(() => available.value.map((item) => ({ value: item.id, label: item.name, hint: providerName(item) })))
@@ -86,7 +84,6 @@ onMounted(() => { if (props.items === undefined) void load() })
       <button type="button" class="shrink-0 text-[11px] text-txt3 hover:text-accent-2" data-testid="git-credential-help" data-test="git-help-link" @click="emit('help')">{{ copy('help') }}</button>
     </div>
     <p class="m-0 text-xs leading-5 text-txt3">{{ copy('hint') }}</p>
-    <p v-if="!modelValue && (legacy || inherited)" class="m-0 text-[11px] text-txt3" data-testid="git-credential-legacy">{{ legacy ? copy('legacy') : copy('inherited') }}</p>
     <p v-if="error" role="alert" class="text-xs text-err">{{ error }} <button type="button" class="underline" @click="load">{{ copy('retry') }}</button></p>
     <AppSelect model-value="" :options="options" :placeholder="loading ? copy('loading') : copy('add')" :aria-label="copy('add')" :empty-text="copy('noneAvailable')" :disabled="disabled || loading" searchable data-testid="git-credential-add" @update:model-value="add">
       <template #leading><Icon name="plus" :size="15" class="text-txt3" /></template>

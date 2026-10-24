@@ -5,25 +5,16 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 type sharedAgentBody struct {
-	GitBindings          *models.GitBindings  `json:"gitBindings"`
-	AcpBackend           string               `json:"acpBackend"`
-	GitCredentialType    string               `json:"gitCredentialType"`
-	AiCredentialID       string               `json:"aiCredentialId"`
-	OpenCodeCredentialID string               `json:"openCodeCredentialId"`
-	Files                []services.AgentFile `json:"files"`
-	MCP                  []services.MCPServer `json:"mcp"`
-	Env                  map[string]string    `json:"env"`
-	Layout               services.AgentLayout `json:"layout"`
-	// RepoIDs nil keeps the saved selection so older clients do not clear it.
-	RepoIDs *[]string `json:"repoIds"`
+	Files  []services.AgentFile `json:"files"`
+	MCP    []services.MCPServer `json:"mcp"`
+	Env    map[string]string    `json:"env"`
+	Layout services.AgentLayout `json:"layout"`
 }
 
 func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
@@ -39,23 +30,11 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 	if mcp == nil {
 		mcp = []services.MCPServer{}
 	}
-	repoIDs := cfg.RepoIDs
-	if repoIDs == nil {
-		repoIDs = []string{}
-	}
 	dto := gin.H{
-		"acpBackend":           cfg.AcpBackend,
-		"repoIds":              repoIDs,
-		"gitCredentialType":    cfg.GitCredentialType,
-		"aiCredentialId":       cfg.AiCredentialID,
-		"openCodeCredentialId": cfg.OpenCodeCredentialID,
-		"files":                files,
-		"mcp":                  mcp,
-		"env":                  env,
-		"layout":               cfg.Layout,
-	}
-	if cfg.GitBindings != nil {
-		dto["gitBindings"] = cfg.GitBindings
+		"files":  files,
+		"mcp":    mcp,
+		"env":    env,
+		"layout": cfg.Layout,
 	}
 	return dto
 }
@@ -81,23 +60,10 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
-		GitBindings:          b.GitBindings,
-		AcpBackend:           b.AcpBackend,
-		GitCredentialType:    b.GitCredentialType,
-		AiCredentialID:       strings.TrimSpace(b.AiCredentialID),
-		OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
-		Files:                b.Files,
-		MCP:                  b.MCP,
-		Env:                  b.Env,
-		Layout:               b.Layout,
-	}
-	if b.GitBindings == nil {
-		cfg.GitBindings = h.SharedAgent.Get().GitBindings
-	}
-	if b.RepoIDs != nil {
-		cfg.RepoIDs = *b.RepoIDs
-	} else {
-		cfg.RepoIDs = h.SharedAgent.Get().RepoIDs
+		Files:  b.Files,
+		MCP:    b.MCP,
+		Env:    b.Env,
+		Layout: b.Layout,
 	}
 	if cfg.Env == nil {
 		cfg.Env = map[string]string{}
@@ -141,7 +107,7 @@ func (h *Handlers) CreateSharedAgentTest(c *gin.Context) {
 		return
 	}
 	shared := h.SharedAgent.Get()
-	effective := services.ExtendOverlayWithKind(shared, agent, h.sharedCredentialKind())
+	effective := services.ExtendOverlay(shared, agent)
 	repos := resolveTestRepos(b.Repos, b.RepoURL)
 	row, err := h.Sbx.OpenWithEffective(c.Request.Context(), agentName, repos, effective, h.SharedAgent.WorkDir())
 	if err != nil {
@@ -149,14 +115,4 @@ func (h *Handlers) CreateSharedAgentTest(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, row)
-}
-
-func (h *Handlers) sharedCredentialKind() runtime.CredentialKindFunc {
-	if h == nil || h.Credentials == nil {
-		return nil
-	}
-	return func(id string) (string, bool) {
-		key, _, ok := h.Credentials.ResolveSelectedValue(id)
-		return key, ok
-	}
 }

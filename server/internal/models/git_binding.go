@@ -10,8 +10,8 @@ import (
 	"unicode"
 )
 
-// GitBindings is an explicit set of Git authorizations. A nil pointer retains
-// legacy credential selection; a non-nil empty set grants no Git authorization.
+// GitBindings is the complete set of Git authorizations for an Agent.
+// An omitted or empty set grants no Git authorization.
 type GitBindings struct {
 	Items                 []GitCredentialBinding `json:"items"`
 	PreferredCredentialID string                 `json:"preferredCredentialId,omitempty"`
@@ -31,7 +31,7 @@ var ErrGitBindings = errors.New("invalid Git bindings")
 // or replacing missing credential references with another account.
 func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
 	if in == nil {
-		return nil, nil
+		return &GitBindings{Items: []GitCredentialBinding{}}, nil
 	}
 	out := &GitBindings{Items: make([]GitCredentialBinding, 0, len(in.Items)), PreferredCredentialID: strings.TrimSpace(in.PreferredCredentialID)}
 	seen := make(map[string]bool, len(in.Items))

@@ -1,18 +1,14 @@
 package services
 
 import (
-	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
-	"github.com/cocofhu/grasp/internal/envauth"
-	"github.com/cocofhu/grasp/internal/runtime"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 )
 
 func TestExtendOverlay_AgentWinsSameKeys(t *testing.T) {
 	shared := SharedAgentConfig{
-		AcpBackend: AcpBackendClaudeCode,
 		Env: map[string]string{
 			"SHARED": "from-shared",
 			"BOTH":   "shared-val",
@@ -84,45 +80,13 @@ func TestExtendOverlay_AgentEnvWins(t *testing.T) {
 	}
 }
 
-func TestExtendOverlay_SharedModelOnlyForSameCLI(t *testing.T) {
-	shared := SharedAgentConfig{
-		AcpBackend: "codex",
-		Env:        map[string]string{"ACP_BRIDGE_MODEL": "gpt-6.1-sol", "ACP_BRIDGE_REASONING_EFFORT": "high", "KEEP": "1"},
-	}
-
-	same := ExtendOverlay(shared, Agent{Name: "a"})
-	if same.AcpBackend != "codex" || same.Env["ACP_BRIDGE_MODEL"] != "gpt-6.1-sol" || same.Env["ACP_BRIDGE_REASONING_EFFORT"] != "high" {
-		t.Fatalf("same CLI should inherit the model: %#v", same)
-	}
-
-	other := ExtendOverlay(shared, Agent{Name: "b", AcpBackend: "cursor"})
-	if _, ok := other.Env["ACP_BRIDGE_MODEL"]; ok {
-		t.Fatalf("a Codex model must not reach Cursor: %#v", other.Env)
-	}
-	if _, ok := other.Env["ACP_BRIDGE_REASONING_EFFORT"]; ok {
-		t.Fatalf("effort must not reach Cursor: %#v", other.Env)
-	}
-	if other.Env["KEEP"] != "1" {
-		t.Fatalf("other shared env should still apply: %#v", other.Env)
-	}
-	if shared.Env["ACP_BRIDGE_MODEL"] != "gpt-6.1-sol" {
-		t.Fatal("the shared config must not be mutated")
-	}
-
-	own := ExtendOverlay(shared, Agent{Name: "c", AcpBackend: "cursor", Env: map[string]string{"ACP_BRIDGE_MODEL": "composer-2.5"}})
-	if own.Env["ACP_BRIDGE_MODEL"] != "composer-2.5" {
-		t.Fatalf("agent pick wins: %#v", own.Env)
-	}
-}
-
 func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	svc := NewSharedAgentService(root)
 	cfg := SharedAgentConfig{
-		AcpBackend: AcpBackendCursor,
-		Env:        map[string]string{"K1": "v1"},
-		Files:      []AgentFile{{Path: "AGENTS.md", Content: "hello"}},
-		MCP:        []MCPServer{{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}"}},
+		Env:   map[string]string{"K1": "v1"},
+		Files: []AgentFile{{Path: "AGENTS.md", Content: "hello"}},
+		MCP:   []MCPServer{{Name: "artifact-store", URL: "${GRASP_ARTIFACT_URL}"}},
 	}
 	if err := svc.Save(cfg); err != nil {
 		t.Fatal(err)
@@ -144,129 +108,18 @@ func TestSharedAgentService_SaveGetRoundTrip(t *testing.T) {
 	}
 }
 
-func TestSharedAgentCredentialIDsRoundTripAndClear(t *testing.T) {
-	svc := NewSharedAgentService(t.TempDir())
-	cfg := SharedAgentConfig{
-		AcpBackend:           AcpBackendCursor,
-		AiCredentialID:       "cred-cursor",
-		OpenCodeCredentialID: "cred-oc",
-		Env:                  map[string]string{"GITLAB_URL": "https://gl"},
+func TestExtendOverlayNeverInheritsModelOrAuthorizations(t *testing.T) {
+	shared := SharedAgentConfig{Env: map[string]string{"ACP_BRIDGE_MODEL": "shared", "OPENAI_BASE_URL": "https://shared.example", "KEEP": "shared"}}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily"}
+	agent := Agent{Name: "configured", AcpBackend: "codex", ModelBinding: binding}
+	got := ExtendOverlay(shared, agent)
+	if got.ModelBinding != binding || got.AcpBackend != "codex" || got.GitBindings != nil {
+		t.Fatal("shared baseline changed Agent model or Git selection")
 	}
-	if err := svc.Save(cfg); err != nil {
-		t.Fatal(err)
+	if got.Env["ACP_BRIDGE_MODEL"] != "" || got.Env["OPENAI_BASE_URL"] != "" || got.Env["KEEP"] != "shared" {
+		t.Fatalf("unexpected shared environment keys")
 	}
-	got := svc.Get()
-	if got.AiCredentialID != "cred-cursor" || got.OpenCodeCredentialID != "cred-oc" {
-		t.Fatalf("ids = %q %q", got.AiCredentialID, got.OpenCodeCredentialID)
-	}
-	raw, err := os.ReadFile(filepath.Join(svc.Root(), "agent.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(raw), "sk-") || strings.Contains(string(raw), "secret") {
-		t.Fatalf("shared config stored a secret: %s", raw)
-	}
-
-	svc.ClearCredentialSelection("cred-cursor")
-	got = svc.Get()
-	if got.AiCredentialID != "" {
-		t.Fatalf("ai id still set: %q", got.AiCredentialID)
-	}
-	if got.OpenCodeCredentialID != "cred-oc" {
-		t.Fatalf("other slot changed: %q", got.OpenCodeCredentialID)
-	}
-	svc.ClearCredentialSelection("cred-oc")
-	got = svc.Get()
-	if got.OpenCodeCredentialID != "cred-oc" {
-		t.Fatalf("opencode reference was replaced after clear: %q", got.OpenCodeCredentialID)
-	}
-	if got.Env["GITLAB_URL"] != "https://gl" {
-		t.Fatalf("clear rewrote env: %#v", got.Env)
-	}
-}
-
-func TestExtendOverlayCredentialPriority(t *testing.T) {
-	kind := func(id string) (string, bool) {
-		switch id {
-		case "shared-cursor":
-			return envauth.EnvCursorAPIKey, true
-		case "shared-claude":
-			return envauth.EnvClaudeAPIKey, true
-		case "shared-oc":
-			return envauth.EnvOpenCodeAPIKey, true
-		case "agent-cursor":
-			return envauth.EnvCursorAPIKey, true
-		default:
-			return "", false
-		}
-	}
-	agentWins := ExtendOverlayWithKind(SharedAgentConfig{
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "shared-cursor",
-	}, Agent{
-		Name:           "demo",
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "agent-cursor",
-	}, kind)
-	if agentWins.AiCredentialID != "agent-cursor" {
-		t.Fatalf("agent id lost: %q", agentWins.AiCredentialID)
-	}
-	dangling := ExtendOverlayWithKind(SharedAgentConfig{
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "shared-cursor",
-	}, Agent{
-		Name:           "demo",
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "cred-proj-default-cursor",
-	}, kind)
-	if dangling.AiCredentialID != "shared-cursor" {
-		t.Fatalf("dangling agent id = %q", dangling.AiCredentialID)
-	}
-
-	sharedUsed := ExtendOverlayWithKind(SharedAgentConfig{
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "shared-cursor",
-	}, Agent{Name: "demo"}, kind)
-	if sharedUsed.AiCredentialID != "shared-cursor" {
-		t.Fatalf("shared fallback = %q", sharedUsed.AiCredentialID)
-	}
-	if sharedUsed.AcpBackend != AcpBackendCursor {
-		t.Fatalf("backend = %q", sharedUsed.AcpBackend)
-	}
-
-	mismatch := ExtendOverlayWithKind(SharedAgentConfig{
-		AcpBackend:     AcpBackendClaudeCode,
-		AiCredentialID: "shared-cursor",
-	}, Agent{Name: "demo"}, kind)
-	if mismatch.AiCredentialID != "" {
-		t.Fatalf("mismatched shared id leaked: %q", mismatch.AiCredentialID)
-	}
-
-	bothEmpty := ExtendOverlayWithKind(SharedAgentConfig{AcpBackend: AcpBackendCursor}, Agent{Name: "demo", AcpBackend: AcpBackendCursor}, kind)
-	if bothEmpty.AiCredentialID != "" || bothEmpty.OpenCodeCredentialID != "" {
-		t.Fatalf("empty slots = %q %q", bothEmpty.AiCredentialID, bothEmpty.OpenCodeCredentialID)
-	}
-
-	oc := ExtendOverlayWithKind(SharedAgentConfig{
-		AcpBackend:           AcpBackendOpenCode,
-		AiCredentialID:       "shared-cursor",
-		OpenCodeCredentialID: "shared-oc",
-	}, Agent{Name: "demo"}, kind)
-	if oc.OpenCodeCredentialID != "shared-oc" || oc.AiCredentialID != "" {
-		t.Fatalf("opencode slots ai=%q oc=%q", oc.AiCredentialID, oc.OpenCodeCredentialID)
-	}
-
-	kept := ExtendOverlay(SharedAgentConfig{AiCredentialID: "shared-cursor"}, Agent{
-		Name:           "demo",
-		AcpBackend:     AcpBackendCursor,
-		AiCredentialID: "agent-cursor",
-	})
-	if kept.AiCredentialID != "agent-cursor" {
-		t.Fatalf("overlay dropped agent id: %q", kept.AiCredentialID)
-	}
-
-	ai, ocID := runtime.MergeCodingCredentialIDs(sharedUsed.AcpBackend, "", "", "shared-cursor", "", kind)
-	if ai != sharedUsed.AiCredentialID || ocID != sharedUsed.OpenCodeCredentialID {
-		t.Fatalf("chat merge %q %q != runtime %q %q", sharedUsed.AiCredentialID, sharedUsed.OpenCodeCredentialID, ai, ocID)
+	if shared.Env["ACP_BRIDGE_MODEL"] != "shared" {
+		t.Fatal("shared config mutated")
 	}
 }

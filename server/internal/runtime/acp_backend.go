@@ -135,7 +135,7 @@ func authSpecFor(b AcpBackend) authSpec {
 	case BackendTrae:
 		return authSpec{credKey: envauth.EnvTraeAPIKey, cliKey: EnvTraeCLIToken}
 	case BackendOpenCode:
-		return authSpec{credKey: EnvGraspOpenCodeAPIKey, cliKey: EnvOpenCodeAPIKey}
+		return authSpec{}
 	case BackendDeepSeekHarness:
 		return authSpec{credKey: envauth.EnvDeepSeekAPIKey, cliKey: "DEEPSEEK_API_KEY"}
 	case BackendCodex:
@@ -360,8 +360,6 @@ func mergeRegionEnv(backend AcpBackend, env map[string]string) {
 		mergeCodeBuddyRegion(env)
 	case BackendTrae:
 		mergeTraeRegion(env)
-	case BackendOpenCode:
-		mergeOpenCodeVendorEnv(env)
 	}
 }
 

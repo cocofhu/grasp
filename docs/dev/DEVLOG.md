@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-24（PR #940 统一新配置模型与 CI 修复）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：server 模型/凭据、Agent、初始化与团队服务及运行入口；sandbox 模型连接路径校验与 go.mod；Web 凭据/模型/Agent/初始化向导和测试；中英概念与快速开始、设计说明及 CHANGELOG。
+- 做了什么：按用户最终确认统一为 Agent → 具名模型配置（CLI + 凭据 + 上游模型）以及显式多个 Git 授权。删除旧 Agent 单槽字段、工作区模型默认、直接来源/继承、读取映射与自动迁移；创建、编辑、初始化/团队向导和运行入口使用同一结构。草稿可未配置，运行必须配置；缺少基线角色时提示完成配置。CodeBuddy 配置读取用 os.OpenRoot 限制 FSRoot 内访问；yaml.v3 改为直接依赖；happy-dom 升至 21.0.4 并适配测试模拟差异。 浏览器图标短动效验收在首帧暂停后观察，避免遍历所有图标时被 RPC 与机器耗时影响。
+- 为什么：用户明确不要求强行兼容旧结构；隐式派生可能把旧模型变成默认值。CI 另外发现路径边界、依赖分类漂移与测试库安全公告，需在本 PR 收尾。
+- 如何验证：server 六项门禁全过，core coverage 90.3%；sandbox 语法/注入/Git/bootstrap/预览 smoke、Go lint/vet/全测与 core coverage 96.6% 通过；Web 最终全量 511 文件/5085 单测、Lines 90.98%、lint（0 errors，12 既有 warnings）、types、audit、build 通过。向导复核发现的 Git 跳过与模型失效回退另加 10 项回归，定向 62 项通过；完整关键浏览器套件最终 220/220 全过（4.1 分钟）。docs build/audit、actionlint/shellcheck、Go tidy/gofmt、runtime bundle 与控制面构建通过；远端检查以 PR 最新提交为准。
+
 ### 2026-10-24（凭据与模型改造提交前 review）
 
 - 日期：2026-10-24（Asia/Hong_Kong）

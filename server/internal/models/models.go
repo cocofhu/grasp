@@ -1031,7 +1031,6 @@ func AllModels() []any {
 		&Credential{},
 		&ModelConnection{},
 		&ModelConfiguration{},
-		&ModelRoutingMigration{},
 		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},

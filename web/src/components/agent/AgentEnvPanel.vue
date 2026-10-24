@@ -8,7 +8,6 @@ import CodeEditor from '@/components/ui/CodeEditor.vue'
 import EnvCredentialHelpModal, {
   type EnvCredentialHelpSection,
 } from '@/components/agent/EnvCredentialHelpModal.vue'
-import { BACKEND_AUTH_HINTS, settingsFileAbsPath } from '@/lib/agent/backendAuthGuide'
 import { isSecretEnvKey } from '@/lib/agent/secretEnvKeys'
 import {
   getRegionPolicy,
@@ -20,7 +19,7 @@ import {
   recToKV,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
-import { isManagedCliEnvKey, managedCliEnvKeys } from '@/lib/agent/cliModelEnv'
+import { MODEL_RUNTIME_ENV_KEYS } from '@/lib/agent/modelRouting'
 
 const props = defineProps<{
   draft: AgentStudioDraft
@@ -31,7 +30,6 @@ const emit = defineEmits<{ toast: [msg: string]; 'open-settings-file': []; 'edit
 
 const { t } = useI18n()
 
-const envContext = computed(() => props.context ?? 'agent')
 
 const envRaw = ref(false)
 const envRawText = ref('')
@@ -39,20 +37,9 @@ const rawError = ref('')
 const envHelpOpen = ref(false)
 const envHelpSection = ref<EnvCredentialHelpSection>('inject')
 
-const currentAuthHint = computed(() => BACKEND_AUTH_HINTS[props.draft.acpBackend || 'cursor'])
-const settingsPath = computed(() =>
-  settingsFileAbsPath(props.draft.layout?.configRoot || '', props.draft.acpBackend || 'cursor'),
-)
 const currentRegionPolicy = computed(() => getRegionPolicy(props.draft.acpBackend))
-/** Model keys the Runtime card owns; shown locked here so there is one place to edit them. */
-const managedModelRows = computed(() => {
-  const env = kvToRec(props.draft.env)
-  return managedCliEnvKeys(props.draft.acpBackend)
-    .filter((k) => k in env)
-    .map((k) => ({ k, v: env[k] || '' }))
-})
 function isLockedKey(key: string): boolean {
-  return isManagedRegionKey(key) || isManagedCliEnvKey(props.draft.acpBackend, key)
+  return isManagedRegionKey(key) || MODEL_RUNTIME_ENV_KEYS.has(key.trim())
 }
 
 function openEnvHelp(section: EnvCredentialHelpSection) {
@@ -76,7 +63,7 @@ function updateEnvKey(i: number, value: string) {
     emit('toast', t('pages.agentStudio.region.managedConflict'))
     return
   }
-  if (isManagedCliEnvKey(props.draft.acpBackend, value)) {
+  if (MODEL_RUNTIME_ENV_KEYS.has(value.trim())) {
     props.draft.env[i].k = ''
     emit('toast', t('pages.agentStudio.cliModel.managedBy'))
     return
@@ -96,6 +83,7 @@ function onEnvRaw(text: string) {
     const obj = JSON.parse(text)
     if (typeof obj !== 'object' || Array.isArray(obj)) throw new Error(t('pages.agentStudio.dialogs.jsonObject'))
     const incoming = obj as Record<string, string>
+    if (Object.keys(incoming).some(key => MODEL_RUNTIME_ENV_KEYS.has(key))) throw new Error(t('pages.agentStudio.cliModel.managedBy'))
     const policy = getRegionPolicy(props.draft.acpBackend)
     if (policy) incoming[policy.regionEnvKey] = storedRegion()
     props.draft.env = recToKV(
@@ -142,42 +130,6 @@ watch(
       <div class="min-h-0 flex-1"><CodeEditor :model-value="envRawText" language="json" @update:model-value="onEnvRaw" /></div>
     </div>
     <div v-else class="scroll-area flex-1 space-y-2 overflow-y-auto p-4">
-      <div
-        v-if="draft.acpBackend !== 'deepseek_harness'"
-        class="callout mb-3 border-b border-line/60 pb-3 text-[12px] leading-6 text-txt2"
-        data-test="env-custom-config-callout"
-      >
-        {{ t('pages.agentStudio.env.customConfigCallout', { path: settingsPath }) }}
-        <button
-          type="button"
-          class="ml-1 bg-transparent p-0 text-accent-2 underline underline-offset-[3px] hover:text-[#c4b5fd]"
-          data-test="env-open-settings-file"
-          @click="emit('open-settings-file')"
-        >
-          {{ t('pages.agentStudio.env.openSettingsFile') }}
-        </button>
-      </div>
-      <div class="mb-3 flex items-center justify-between gap-3 border-b border-line/60 pb-3 text-xs text-txt3"><span>{{ t('pages.agentStudio.gitCredentials.title') }}</span><AppButton size="sm" variant="ghost" icon="help" data-test="git-help" @click="openEnvHelp('git')">{{ t('pages.agentStudio.gitCredentials.help') }}</AppButton></div>
-      <div class="mb-3 border-b border-line/60 py-4 text-[12px] leading-6 text-txt3">
-        <div class="mb-1 flex items-center justify-between gap-2">
-          <div class="font-medium text-txt2">{{ t('pages.agentStudio.env.backendAuthTitle') }}</div>
-          <AppButton
-            type="button"
-            size="sm"
-            variant="outline"
-            icon="help"
-            data-test="env-help-acp"
-            @click="openEnvHelp('acp')"
-          >
-            {{ t('pages.agentStudio.envHelp.link') }}
-          </AppButton>
-        </div>
-        <p class="mb-1 text-txt2" data-test="env-auth-credentials-only">
-          {{ t('pages.agentStudio.env.backendAuthCredentialsBody') }}
-          <RouterLink v-if="credentialsRoute" :to="credentialsRoute" class="ml-1 text-accent-2 underline underline-offset-[3px]">{{ t('pages.agentStudio.env.goCredentials') }}</RouterLink>
-        </p>
-        <p class="font-mono text-accent-2">{{ currentAuthHint.key }}</p>
-      </div>
       <template v-for="(e, i) in draft.env" :key="i">
         <div v-if="!isLockedKey(e.k)" class="flex items-center gap-1.5">
           <input :value="e.k" placeholder="KEY" class="w-1/3 min-w-0 rounded border border-line bg-surface px-2 py-1.5 font-mono text-[12px] text-txt outline-none focus:border-accent" @input="updateEnvKey(i, ($event.target as HTMLInputElement).value)" />
@@ -194,25 +146,6 @@ watch(
         <div class="flex items-center gap-1.5">
           <input :value="currentRegionPolicy.regionEnvKey" readonly :aria-label="t('pages.agentStudio.region.managedKey')" class="w-1/3 min-w-0 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
           <input :value="storedRegion()" readonly :aria-label="t('pages.agentStudio.region.managedValue')" class="min-w-0 flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
-        </div>
-      </div>
-      <div v-if="managedModelRows.length" class="border-t border-line/60 py-4" data-test="env-managed-model">
-        <div class="mb-2 flex items-center gap-1.5 text-[11px] text-txt3">
-          <Icon name="lock" :size="12" />
-          <span class="flex-1">{{ t('pages.agentStudio.cliModel.managedBy') }}</span>
-          <button
-            type="button"
-            class="inline-flex items-center gap-0.5 font-medium text-accent-2 hover:underline"
-            data-test="env-managed-model-edit"
-            @click="emit('edit-model')"
-          >
-            {{ t('pages.agentStudio.cliModel.goEdit') }}
-            <Icon name="chevron-right" :size="12" />
-          </button>
-        </div>
-        <div v-for="row in managedModelRows" :key="row.k" class="mt-1.5 flex items-center gap-1.5 first:mt-0">
-          <input :value="row.k" readonly class="w-1/3 min-w-0 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
-          <input :value="row.v" readonly class="min-w-0 flex-1 rounded border border-line bg-elevated px-2 py-1.5 font-mono text-[12px] text-txt3" />
         </div>
       </div>
       <AppButton size="sm" variant="outline" icon="plus" @click="draft.env.push({ k: '', v: '' })">{{ t('pages.agentStudio.env.add') }}</AppButton>

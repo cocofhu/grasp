@@ -1,30 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { cloneGitBindings, legacyGitBindings, setDraftGitBindings, validGitScope } from './gitBindings'
+import { cloneGitBindings, setDraftGitBindings, validGitScope } from './gitBindings'
 import { fromDraft, toDraft } from './agentStudioDraft'
 import { assembleCreatePayload, buildReviewSummary, freshDraft } from './agentCreateWizard'
 
 describe('multiple Git credential payloads', () => {
-  it('preserves old Agent Git data until a deliberate edit and then removes old authorization slots', () => {
-    const original = { name: 'legacy', acpBackend: 'cursor', gitCredentialType: 'ssh' as const, gitCredentialId: 'old-key', sshHostsCredentialId: 'old-hosts', credentialBindings: { GITHUB_TOKEN: 'old-github', GIT_SSH_PRIVATE_KEY: 'old-key', OPENAI_API_KEY: 'ai-key' }, env: { GITLAB_TOKEN: 'legacy-secret', GIT_REPOS: 'app|https://github.com/org/app.git', FEATURE_FLAG: 'on' } }
-    const draft = toDraft(original)
-    const before = fromDraft(draft)
-    expect(before).not.toHaveProperty('gitBindings')
-    expect(before.gitCredentialId).toBe('old-key')
-    expect(before.credentialBindings).toEqual(original.credentialBindings)
-    expect(legacyGitBindings(draft)).toEqual({ items: [{ credentialId: 'old-key', sshHostsCredentialId: 'old-hosts' }, { credentialId: 'old-github' }], preferredCredentialId: 'old-key' })
-    const selection = { items: [{ credentialId: 'team-gh', scope: 'github.com' }, { credentialId: 'team-gl' }], preferredCredentialId: 'team-gl' }
-    setDraftGitBindings(draft, selection)
-    selection.items[0].scope = 'mutated.example'
-    const after = fromDraft(draft)
-    expect(after.gitBindings).toEqual({ items: [{ credentialId: 'team-gh', scope: 'github.com' }, { credentialId: 'team-gl' }], preferredCredentialId: 'team-gl' })
-    expect(after).not.toHaveProperty('gitCredentialId')
-    expect(after).not.toHaveProperty('gitCredentialType')
-    expect(after).not.toHaveProperty('sshHostsCredentialId')
-    expect(after.credentialBindings).toEqual({ OPENAI_API_KEY: 'ai-key' })
-    expect(after.env).toEqual({ GIT_REPOS: 'app|https://github.com/org/app.git', FEATURE_FLAG: 'on' })
-    expect(original.gitCredentialId).toBe('old-key')
-  })
-  it('deep-clones new saved bindings and preserves explicit none rather than inheriting legacy keys', () => {
+  it('deep-clones saved bindings and preserves an explicit empty selection', () => {
     const bindings = { items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'key' }
     const draft = toDraft({ name: 'configured', acpBackend: 'opencode', gitBindings: bindings })
     draft.gitBindings!.items[0].scope = 'another-host'
@@ -36,27 +16,14 @@ describe('multiple Git credential payloads', () => {
     expect(fromDraft(draft).gitBindings).toEqual({ items: [] })
     expect(cloneGitBindings({ items: [] })).toEqual({ items: [] })
   })
-  it('uses the legacy selected kind to resolve a generic binding without accidentally choosing another provider', () => {
-    expect(legacyGitBindings({ gitCredentialType: 'github_https', credentialBindings: { GITHUB_TOKEN: 'gh', GITLAB_TOKEN: 'gl' } })).toEqual({ items: [{ credentialId: 'gh' }, { credentialId: 'gl' }], preferredCredentialId: 'gh' })
-    expect(legacyGitBindings({ gitCredentialType: 'gitlab_https', credentialBindings: { GITLAB_TOKEN: 'gl' } })?.preferredCredentialId).toBe('gl')
-    expect(legacyGitBindings({ gitCredentialType: 'ssh', credentialBindings: { GIT_SSH_PRIVATE_KEY: 'ssh', GIT_SSH_KNOWN_HOSTS: 'hosts' } })?.items[0]).toEqual({ credentialId: 'ssh', sshHostsCredentialId: 'hosts' })
-    expect(legacyGitBindings({ credentialBindings: { GITHUB_TOKEN: 'gh', GITLAB_TOKEN: 'gl' } })).toEqual({ items: [{ credentialId: 'gh' }, { credentialId: 'gl' }], preferredCredentialId: 'gh' })
-    expect(legacyGitBindings({ credentialBindings: { GITHUB_TOKEN: null } })).toEqual({ items: [] })
-    expect(legacyGitBindings({ sshHostsCredentialId: 'hosts-only' })).toEqual({ items: [] })
-    expect(legacyGitBindings({ credentialBindings: { OPENAI_API_KEY: 'ai' } })).toBeUndefined()
-  })
   it('creates with an explicit list, reviews aliases and preference, and never serializes secret material', () => {
     const draft = freshDraft()
     draft.name = 'multi-git'
     expect(assembleCreatePayload(draft).gitBindings).toEqual({ items: [] })
-    expect(assembleCreatePayload(draft).repoIds).toEqual([])
-    draft.gitCredentialType = 'github_https'
-    draft.gitCredentialId = 'old-credential'
     draft.env = [{ k: 'GITHUB_TOKEN', v: 'old-secret' }, { k: 'GIT_SSH_PRIVATE_KEY', v: 'key-content' }]
     draft.gitBindings = { items: [{ credentialId: 'gh-1' }, { credentialId: 'gh-2' }], preferredCredentialId: 'gh-2' }
     const payload = assembleCreatePayload(draft)
     expect(payload.gitBindings).toEqual(draft.gitBindings)
-    expect(payload.repoIds).toEqual([])
     expect(payload).not.toHaveProperty('gitCredentialId')
     expect(payload.env).toEqual({})
     expect(JSON.stringify(payload)).not.toMatch(/old-secret|key-content/)

@@ -66,7 +66,7 @@ watch(() => draft.value.acpBackend, resetModelSelection)
 function setModelBinding(value: ModelBinding) {
   if (value.kind !== 'configuration') return
   draft.value.modelBinding = value
-  draft.value.aiCredentialId = ''; draft.value.openCodeCredentialId = ''; markConfigured('apiKey')
+  markConfigured('acp')
 }
 function proceed() {
   if ((currentStep.value.id === 'acp' || currentStep.value.id === 'review') && !canUseSelectedModel.value) return
@@ -211,7 +211,7 @@ function proceed() {
                     </section>
                     <section class="min-w-0">
                       <h4 class="mb-3 mt-0 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.wizard.steps.apiKey') }}</h4>
-                      <ModelBindingEditor compact configurations-only :allow-inherit="false" :backend="draft.acpBackend" :model-value="draft.modelBinding" @update:model-value="setModelBinding" @validity="modelSelectionValid = $event" />
+                      <ModelBindingEditor compact :backend="draft.acpBackend" :model-value="draft.modelBinding" @update:model-value="setModelBinding" @validity="modelSelectionValid = $event" />
                     </section>
                   </div>
                 </template>

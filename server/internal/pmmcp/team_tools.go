@@ -32,13 +32,17 @@ func (h *Host) callTeamTools(sess *Session, skill *services.AgentService, name s
 		if !ok {
 			return map[string]any{"error": "leader agent not found"}, true
 		}
+		if leader.ModelBinding == nil || leader.ModelBinding.Kind != "configuration" {
+			return map[string]any{"error": "leader has no model configuration"}, true
+		}
+		modelConfigurationID := leader.ModelBinding.ConfigurationID
 		created, err := team.CreateAgentFromTemplate(services.CreateFromTemplateArgs{
-			TemplateID:  templateID,
-			Name:        agentName,
-			AcpBackend:  leader.AcpBackend,
-			GitCredType: leader.GitCredentialType,
-			MCP:         leader.MCP,
-			Env:         leader.Env,
+			TemplateID:           templateID,
+			Name:                 agentName,
+			ModelConfigurationID: modelConfigurationID,
+			GitBindings:          leader.GitBindings,
+			MCP:                  leader.MCP,
+			Env:                  leader.Env,
 		})
 		if err != nil {
 			return map[string]any{"error": err.Error()}, true

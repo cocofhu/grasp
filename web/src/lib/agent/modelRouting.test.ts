@@ -25,10 +25,11 @@ describe('independent model routing', () => {
     expect(connectionCapabilities(capabilities, 'claude_code', { ...connection, protocol: 'openai-responses' })).toEqual([])
     expect(connectionCapabilities(capabilities, 'claude_code', { ...connection, auth: { scheme: 'custom-header', headerName: 'X-Key' } })).toEqual([])
   })
-  it('resolves inheritance for the current backend and validates a complete binding', () => {
-    const binding = { kind: 'connection' as const, connectionId: connection.id, modelId: 'vendor/model-v1' }
-    expect(bindingProblem({ kind: 'inherit' }, 'claude_code', [connection], [key], capabilities)).toBe('missingDefault')
-    expect(bindingProblem({ kind: 'inherit' }, 'claude_code', [connection], [key], capabilities, binding)).toBe('')
+  it('requires a saved configuration and validates its concrete source', () => {
+    const configuration = { id: 'cfg', name: 'Team', backend: 'claude_code', state: 'active' as const, revision: 1, binding: { kind: 'connection' as const, connectionId: connection.id, modelId: 'vendor/model-v1' } }
+    expect(bindingProblem(undefined, 'claude_code', [connection], [key], capabilities)).toBe('missingConfiguration')
+    expect(bindingProblem({ kind: 'configuration', configurationId: 'cfg' }, 'claude_code', [connection], [key], capabilities, [configuration])).toBe('')
+    expect(bindingProblem({ kind: 'configuration', configurationId: 'cfg' }, 'cursor', [connection], [key], capabilities, [configuration])).toBe('configurationBackendMismatch')
     expect(bindingProblem({ kind: 'platform', credentialId: platform.id }, 'cursor', [], [platform], [])).toBe('')
     expect(bindingProblem({ kind: 'platform', credentialId: platform.id }, 'trae', [], [platform], [])).toBe('missingCredential')
   })
@@ -40,9 +41,9 @@ describe('independent model routing', () => {
     expect(bindingProblem({ ...binding, toolSettings: { modelRoles: { subagent: 'another/model' } } }, 'claude_code', [connection], [key], capabilities)).toBe('missingModel')
   })
   it('serializes a new binding without legacy selections or derived runtime model env', () => {
-    const draft = toDraft({ name: 'dev', acpBackend: 'claude_code', aiCredentialId: 'legacy', env: { ACP_BRIDGE_MODEL: 'old/model', FEATURE: 'yes' }, modelBinding: { kind: 'connection', connectionId: connection.id, modelId: 'vendor/model-v1' } })
+    const draft = toDraft({ name: 'dev', acpBackend: 'claude_code', env: { ACP_BRIDGE_MODEL: 'old/model', FEATURE: 'yes' }, modelBinding: { kind: 'configuration', configurationId: 'cfg' } })
     const payload = fromDraftRaw(draft)
-    expect(payload.modelBinding).toEqual({ kind: 'connection', connectionId: connection.id, modelId: 'vendor/model-v1' })
+    expect(payload.modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg' })
     expect(payload).not.toHaveProperty('aiCredentialId')
     expect(payload).not.toHaveProperty('openCodeCredentialId')
     expect(payload.env).toEqual({ FEATURE: 'yes' })

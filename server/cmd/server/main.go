@@ -195,40 +195,13 @@ func main() {
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
 	modelConnectionSvc := services.NewModelConnectionService(db)
 	modelConfigurationSvc := services.NewModelConfigurationService(db)
-	if err := modelConnectionSvc.MigrateLegacyConnections(); err != nil {
-		log.Fatal().Err(err).Msg("model connection migration failed")
-	}
 	resolveModelBinding := func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
-		concrete, err := sharedAgentSvc.ConcreteModelBinding(backend, binding)
-		if err != nil {
+		if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
 			return modelrouting.Resolved{}, err
 		}
-		if concrete == nil {
-			return modelrouting.Resolved{}, fmt.Errorf("model binding is required")
-		}
-		return modelConnectionSvc.Resolve(backend, *concrete)
+		return modelConnectionSvc.Resolve(backend, *binding)
 	}
-	legacyModelBinding := func(backend, aiID, openCodeID string, env map[string]string) *modelrouting.Binding {
-		binding, err := modelConnectionSvc.LegacyBinding(backend, aiID, openCodeID, env)
-		if err == nil {
-			return binding
-		}
-		// Preserve an explicit but unresolved choice so execution fails closed.
-		id := aiID
-		if backend == "opencode" {
-			id = openCodeID
-		}
-		if strings.TrimSpace(id) == "" {
-			return nil
-		}
-		if backend == "opencode" || backend == "deepseek_harness" {
-			return &modelrouting.Binding{Kind: "connection", ConnectionID: "conn-legacy-" + id, ModelID: env[runtime.EnvACPBridgeModel]}
-		}
-		return &modelrouting.Binding{Kind: "platform", CredentialID: id, ModelID: env[runtime.EnvACPBridgeModel]}
-	}
-	// One snapshot of OpenCode's provider catalog, shared by the pickers and by
-	// every path that generates opencode.json, so both agree on which vendor ids
-	// OpenCode can resolve without an adapter of our own.
+	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	provider := runtime.NewProvider(host, runtime.Options{
 		SandboxImage:         cfg.Sandbox.Image,
@@ -256,29 +229,18 @@ func main() {
 				})
 			}
 			return runtime.SharedAgentView{
-				GitBindings:          cfg.GitBindings,
-				AcpBackend:           cfg.AcpBackend,
-				AiCredentialID:       cfg.AiCredentialID,
-				OpenCodeCredentialID: cfg.OpenCodeCredentialID,
-				RepoIDs:              cfg.RepoIDs,
-				MCP:                  mcp,
-				Env:                  cfg.Env,
+				MCP: mcp,
+				Env: cfg.Env,
 				Layout: runtime.SharedLayoutView{
 					ConfigRoot: cfg.Layout.ConfigRoot, WorkspaceDir: cfg.Layout.WorkspaceDir,
 				},
 				WorkDir: sharedAgentSvc.WorkDir(),
 			}
 		},
-		Credentials:          credentialSvc.ResolveEnv,
 		CredentialKeys:       credentialSvc.CredentialEnvKeys,
 		CredentialReferences: credentialSvc.ResolveReferences,
-		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
 		ModelBinding:         resolveModelBinding,
-		LegacyModelBinding:   legacyModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
-		RepoCredentials: func(ids []string) []sandbox.RepoCredential {
-			return services.ResolveRepoCredentials(db, ids, credentialSvc.ResolveSelectedValue)
-		},
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -287,9 +249,7 @@ func main() {
 			return run.SandboxEnv
 		},
 		PublicAdvertise:         cfg.Server.PublicAdvertise,
-		OpenCodeCatalog:         openCodeCatalog,
 		WriteBackCodexLoginFile: credentialSvc.WriteBackCodexLoginCredential,
-		InjectedCredentialID:    credentialSvc.InjectedCredentialID,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
@@ -372,7 +332,7 @@ func main() {
 	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
 		_, err := resolveModelBinding(backend, binding)
 		return err
-	}, legacyModelBinding)
+	})
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
@@ -396,14 +356,11 @@ func main() {
 		Max:                  cfg.Sandbox.MaxTestSandboxes,
 		MaxSolo:              cfg.Sandbox.MaxSoloSandboxes,
 		SharedAgent:          sharedAgentSvc,
-		Credentials:          credentialSvc.ResolveEnv,
 		CredentialReferences: credentialSvc.ResolveReferences,
-		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
 		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
-		OpenCodeCatalog:      openCodeCatalog,
 	})
-	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential, credentialSvc.InjectedCredentialID)
+	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -564,6 +521,7 @@ func main() {
 		ExternalMcp:         externalMcpSvc,
 		McpKeys:             mcpKeySvc,
 		Credentials:         credentialSvc,
+		OpenCodeCatalog:     openCodeCatalog,
 		ModelConnections:    modelConnectionSvc,
 		ModelConfigurations: modelConfigurationSvc,
 		GateShare:           gateShareSvc,
@@ -578,7 +536,6 @@ func main() {
 		Blobs:               blobStore,
 		Onboarding:          services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
 		Team:                services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
-		OpenCodeCatalog:     openCodeCatalog,
 	}
 	var maintenancePrepared atomic.Bool
 	var maintenanceMu sync.Mutex
@@ -608,7 +565,6 @@ func main() {
 		}
 		return state, nil
 	}
-	h.Team.SharedAgent = sharedAgentSvc
 	h.Team.Credentials = credentialSvc
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)

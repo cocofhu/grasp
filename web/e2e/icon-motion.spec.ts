@@ -14,6 +14,15 @@ test('all registered icons are complete at rest and have real single-play hover 
   const icons = buttons.locator('svg.app-icon')
   await expect(icons).toHaveCount(await buttons.count())
   expect(await icons.evaluateAll(elements => elements.every(element => element.getAnimations({ subtree: true }).length === 0))).toBe(true)
+  // Observe the first frame, rather than racing short animations against
+  // the round trips needed to inspect every icon in the grid.
+  await page.getByTestId('all-icons').evaluate(grid => {
+    grid.addEventListener('pointerover', event => {
+      const target = event.target instanceof Element ? event.target : null
+      const icon = target?.closest('button')?.querySelector('svg.app-icon')
+      if (icon) requestAnimationFrame(() => icon.getAnimations({ subtree: true }).forEach(animation => animation.pause()))
+    })
+  })
   const missing: string[] = []
   for (const button of await buttons.all()) {
     await button.hover()

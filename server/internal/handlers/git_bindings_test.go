@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestGitBindingsAgentAndSharedHTTPContract(t *testing.T) {
+func TestGitBindingsAgentHTTPContract(t *testing.T) {
 	h := newHarness(t)
 	selection := map[string]any{"items": []any{map[string]any{"credentialId": "gh", "scope": "https://Git.Example.com/"}}, "preferredCredentialId": "gh"}
 	w := h.do("POST", "/api/agents", map[string]any{"name": "git-http", "acpBackend": "cursor", "gitBindings": selection})
@@ -16,50 +16,55 @@ func TestGitBindingsAgentAndSharedHTTPContract(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["gitBindings"].(map[string]any)["preferredCredentialId"] != "gh" || len(got["repoIds"].([]any)) != 0 {
-		t.Fatalf("create selection/repo default = %+v", got)
+	if got["gitBindings"].(map[string]any)["preferredCredentialId"] != "gh" {
+		t.Fatal("preferred authorization was lost")
 	}
-	w = h.do("PUT", "/api/agents/git-http", map[string]any{"acpBackend": "cursor", "gitBindings": selection, "repoIds": []string{"explicit-repo"}})
+	if _, exists := got["repoIds"]; exists {
+		t.Fatal("Agent response exposed an obsolete repository authorization source")
+	}
+	w = h.do("PUT", "/api/agents/git-http", map[string]any{"acpBackend": "cursor", "gitBindings": selection})
 	if w.Code != 200 {
 		t.Fatalf("update = %d %s", w.Code, w.Body.String())
 	}
-	if agent, _ := h.h.Agents.Get("git-http"); agent.RepoIDs == nil || len(*agent.RepoIDs) != 1 {
-		t.Fatal("update erased explicit repository grant")
+	agent, _ := h.h.Agents.Get("git-http")
+	if agent.GitBindings == nil || agent.GitBindings.Items[0].Scope != "https://git.example.com" {
+		t.Fatal("Agent selection was not normalized and saved")
 	}
-	w = h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"acpBackend": "cursor", "gitBindings": selection})
+	w = h.do("POST", "/api/agents", map[string]any{"name": "bad-git-http", "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": "gh"}}}})
+	if w.Code != 400 || h.h.Agents.Exists("bad-git-http") {
+		t.Fatalf("invalid preferred selection saved: %d %s", w.Code, w.Body.String())
+	}
+	w = h.do("PUT", "/api/agents/git-http", map[string]any{"acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{}}})
 	if w.Code != 200 {
-		t.Fatalf("shared put = %d %s", w.Code, w.Body.String())
+		t.Fatalf("clear = %d %s", w.Code, w.Body.String())
 	}
-	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
-		t.Fatal(err)
+	agent, _ = h.h.Agents.Get("git-http")
+	if agent.GitBindings == nil || len(agent.GitBindings.Items) != 0 {
+		t.Fatal("explicit empty selection did not clear Agent Git authorizations")
 	}
-	if got["gitBindings"].(map[string]any)["items"].([]any)[0].(map[string]any)["scope"] != "https://git.example.com" {
-		t.Fatal("shared HTTP body ignored binding")
-	}
-	w = h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"acpBackend": "cursor", "env": map[string]string{"FEATURE": "keep"}})
-	if w.Code != 200 || h.h.SharedAgent.Get().GitBindings == nil {
-		t.Fatalf("old client cleared new shared selection: %d %s", w.Code, w.Body.String())
+}
+
+func TestSharedConfigurationHasNoModelOrGitSource(t *testing.T) {
+	h := newHarness(t)
+	w := h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"env": map[string]string{"FEATURE": "keep", "ACP_BRIDGE_MODEL": "ignored"}})
+	if w.Code != 200 {
+		t.Fatalf("put = %d %s", w.Code, w.Body.String())
 	}
 	w = h.do("GET", "/api/workspace/shared-agent-config", nil)
 	if w.Code != 200 {
 		t.Fatalf("get = %d", w.Code)
 	}
+	var got map[string]any
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["gitBindings"].(map[string]any)["preferredCredentialId"] != "gh" {
-		t.Fatal("GET omitted persisted shared selection")
+	for _, key := range []string{"gitBindings", "repoIds", "acpBackend", "aiCredentialId", "openCodeCredentialId"} {
+		if _, exists := got[key]; exists {
+			t.Fatalf("shared config still exposed %s", key)
+		}
 	}
-	w = h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": "gh"}}}})
-	if w.Code != 400 {
-		t.Fatalf("bad preferred should be 400: %d %s", w.Code, w.Body.String())
-	}
-	w = h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"gitBindings": map[string]any{"items": []any{}}})
-	if w.Code != 200 || h.h.SharedAgent.Get().GitBindings == nil || len(h.h.SharedAgent.Get().GitBindings.Items) != 0 {
-		t.Fatal("explicit shared empty did not replace selection")
-	}
-	w = h.do("POST", "/api/agents", map[string]any{"name": "bad-git-http", "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": "gh"}}}})
-	if w.Code != 400 || h.h.Agents.Exists("bad-git-http") {
-		t.Fatalf("bad selection saved: %d %s", w.Code, w.Body.String())
+	env := got["env"].(map[string]any)
+	if env["FEATURE"] != "keep" || env["ACP_BRIDGE_MODEL"] != nil {
+		t.Fatal("shared config did not restrict environment to non-model settings")
 	}
 }

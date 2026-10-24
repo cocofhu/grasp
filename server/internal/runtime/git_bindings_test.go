@@ -12,6 +12,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
@@ -39,7 +40,7 @@ func selectedGitTestValue(id string) (string, string, bool) {
 	return row[0], row[1], ok
 }
 
-func TestGitBindingsResolveAllAndClearLegacy(t *testing.T) {
+func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
 	selection := gitSelection("gh", "gh2", "gl", "ssh")
 	selection.PreferredCredentialID = "gh2"
 	selection.Items[3].SshHostsCredentialID = "hosts"
@@ -59,11 +60,11 @@ func TestGitBindingsResolveAllAndClearLegacy(t *testing.T) {
 	if env["FEATURE"] != "keep" || env["GIT_REPOS"] == "" || creds["GRASP_CURSOR_API_KEY"] != "keep-model" {
 		t.Fatal("non-Git values changed")
 	}
-	legacy := map[string]string{"GITHUB_TOKEN": "legacy"}
-	if rows, err := ApplyGitBindings(legacy, nil, nil, nil); err != nil || rows != nil || legacy["GITHUB_TOKEN"] != "legacy" {
-		t.Fatalf("legacy changed: %+v, %v", rows, err)
+	global := map[string]string{"GITHUB_TOKEN": "global", "SSH_AUTH_SOCK": "/tmp/agent.sock"}
+	if rows, err := ApplyGitBindings(global, nil, nil, nil); err != nil || rows == nil || len(rows) != 0 || len(global) != 0 {
+		t.Fatalf("omitted selection retained global authentication: %+v, %v", rows, err)
 	}
-	if rows, err := ApplyGitBindings(legacy, nil, gitSelection(), nil); err != nil || rows == nil || len(rows) != 0 || len(legacy) != 0 {
+	if rows, err := ApplyGitBindings(global, nil, gitSelection(), nil); err != nil || rows == nil || len(rows) != 0 || len(global) != 0 {
 		t.Fatalf("explicit none = %+v, %v", rows, err)
 	}
 	for _, id := range []string{"gone", "model", "empty", "newline", "nul"} {
@@ -136,30 +137,9 @@ func TestGitBindingsScopeRouting(t *testing.T) {
 	}
 }
 
-func TestGitBindingsOverlayKeepsLegacyAgentAndExplicitEmpty(t *testing.T) {
-	shared := SharedAgentView{GitBindings: gitSelection("gh")}
-	if got := overlayAgentFile(shared, agentFile{}, nil); got.GitBindings != shared.GitBindings {
-		t.Fatal("missing Agent selection did not inherit")
-	}
-	for _, agent := range []agentFile{{GitCredentialID: "old"}, {SshHostsCredentialID: "hosts"}, {CredentialBindings: map[string]*string{"GITHUB_TOKEN": nil}}} {
-		if got := overlayAgentFile(shared, agent, nil); got.GitBindings != nil {
-			t.Fatal("workspace binding replaced explicit legacy/disabled selection")
-		}
-	}
-	none := gitSelection()
-	if got := overlayAgentFile(shared, agentFile{GitBindings: none}, nil); got.GitBindings != none {
-		t.Fatal("explicit none inherited")
-	}
-	if HasLegacyGitSelection("", "", map[string]*string{"FEATURE": nil}) {
-		t.Fatal("non-Git binding blocked inheritance")
-	}
-}
-
 func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 	root := writeAgent(t, "dev", `{"acpBackend":"cursor","gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com/team/repo"},{"credentialId":"gh"}],"preferredCredentialId":"gh"},"credentialBindings":{"GITLAB_TOKEN":"gl"},"env":{"GITLAB_URL":"https://unselected"}}`)
-	p := newACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, SelectedCredential: selectedGitTestValue, Credentials: func() map[string]string {
-		return map[string]string{"GRASP_CURSOR_API_KEY": "fake", "GITLAB_TOKEN": "workspace-unselected"}
-	}}).(*acpProvider)
+	p := newACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, SelectedCredential: selectedGitTestValue, ModelBinding: testModelBinding}).(*acpProvider)
 	req := NodeReq{RunID: "git-run", NodeID: "n", Token: "token", Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"repo","url":"https://gitlab.com/team/repo.git"}]`, "GITLAB_URL": "https://other"}}
 	spec, err := p.spec(req)
 	if err != nil {
@@ -196,19 +176,6 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 			t.Fatalf("unsafe/wrong MR script: %s", script)
 		}
 	}
-	p.opts.RepoCredentials = func([]string) []sandbox.RepoCredential {
-		return []sandbox.RepoCredential{{URL: "https://gitlab.com/team/repo.git", Kind: "gitlab_https", Secret: "repo-secret"}}
-	}
-	agent := p.agentConfig("dev")
-	ids := []string{"repo"}
-	agent.RepoIDs = &ids
-	raw, _ := json.Marshal(agent)
-	if err := os.WriteFile(filepath.Join(root, "dev", "agent.json"), raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if p.gitToken(req) != "repo-secret" {
-		t.Fatal("explicit repository grant did not win")
-	}
 	p.opts.SelectedCredential = func(string) (string, string, bool) { return "", "", false }
 	if _, err := p.spec(req); err == nil {
 		t.Fatal("invalid selected authorization did not block workflow sandbox")
@@ -228,7 +195,7 @@ func TestGitBindingsSharedWorkflowReprimesAllSelectedAndClearsPreviousAgent(t *t
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)
 		}
-		raw, err := json.Marshal(agentFile{AcpBackend: "cursor", GitBindings: bindings})
+		raw, err := json.Marshal(agentFile{AcpBackend: "cursor", GitBindings: bindings, ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "test-model"}})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -2,7 +2,7 @@ import type { AgentGitBindings, CredentialItem } from '@/lib/api/api'
 import { kindOfItem } from '@/lib/workspace/credentialKinds'
 import { credentialUsable } from './modelRouting'
 
-export const LEGACY_GIT_AUTH_KEYS = new Set(['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS', 'GITHUB_URL', 'GITLAB_URL', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GLAB_TOKEN', 'GITLAB_ACCESS_TOKEN'])
+export const GIT_AUTH_ENV_KEYS = new Set(['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS', 'GITHUB_URL', 'GITLAB_URL', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GLAB_TOKEN', 'GITLAB_ACCESS_TOKEN'])
 
 export function cloneGitBindings(value: AgentGitBindings): AgentGitBindings {
   return { items: value.items.map((item) => ({ ...item })), ...(value.preferredCredentialId ? { preferredCredentialId: value.preferredCredentialId } : {}) }
@@ -17,32 +17,9 @@ export function usableGitCredential(item?: CredentialItem): boolean {
   return !!item && !!gitCredentialKind(item) && credentialUsable(item)
 }
 
-type LegacyGit = {
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  gitCredentialType?: string
-  credentialBindings?: Record<string, string | null>
-}
-
-/** Display a legacy selection without migrating it until the user changes Git. */
-export function legacyGitBindings(value: LegacyGit): AgentGitBindings | undefined {
-  const selectedKey = value.gitCredentialType === 'ssh' ? 'GIT_SSH_PRIVATE_KEY' : value.gitCredentialType === 'gitlab_https' ? 'GITLAB_TOKEN' : value.gitCredentialType === 'github_https' ? 'GITHUB_TOKEN' : ''
-  const generic = value.credentialBindings || {}
-  const preferred = value.gitCredentialId || (selectedKey ? generic[selectedKey] : '')
-  const ids = [...new Set([preferred, generic.GITHUB_TOKEN, generic.GITLAB_TOKEN, generic.GIT_SSH_PRIVATE_KEY].filter((id): id is string => typeof id === 'string' && !!id))]
-  if (!ids.length) return value.sshHostsCredentialId || Object.keys(generic).some((key) => LEGACY_GIT_AUTH_KEYS.has(key)) ? { items: [] } : undefined
-  const hosts = value.sshHostsCredentialId || generic.GIT_SSH_KNOWN_HOSTS
-  return { items: ids.map((credentialId) => ({ credentialId, ...(((credentialId === value.gitCredentialId && value.gitCredentialType === 'ssh') || credentialId === generic.GIT_SSH_PRIVATE_KEY) && hosts ? { sshHostsCredentialId: hosts } : {}) })), preferredCredentialId: preferred || ids[0] }
-}
-
-/** A deliberate edit moves authorization to the new list and removes the legacy single slots. */
-export function setDraftGitBindings<T extends LegacyGit & { gitBindings?: AgentGitBindings; env: { k: string; v: string }[] }>(draft: T, value: AgentGitBindings): void {
+/** Save the explicit selection; credentials are never inferred from other layers. */
+export function setDraftGitBindings<T extends { gitBindings?: AgentGitBindings }>(draft: T, value: AgentGitBindings): void {
   draft.gitBindings = cloneGitBindings(value)
-  draft.gitCredentialType = undefined
-  draft.gitCredentialId = ''
-  draft.sshHostsCredentialId = ''
-  if (draft.credentialBindings) draft.credentialBindings = Object.fromEntries(Object.entries(draft.credentialBindings).filter(([key]) => !LEGACY_GIT_AUTH_KEYS.has(key)))
-  draft.env = draft.env.filter((entry) => !LEGACY_GIT_AUTH_KEYS.has(entry.k.trim()))
 }
 
 function validScopeHost(raw: string): boolean {

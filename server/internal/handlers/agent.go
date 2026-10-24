@@ -26,33 +26,24 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
-	GitBindings          *models.GitBindings       `json:"gitBindings"`
-	ModelBinding         *modelrouting.Binding     `json:"modelBinding"`
-	Name                 string                    `json:"name"`
-	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
-	TemplateID           string                    `json:"templateId"`
-	AcpBackend           string                    `json:"acpBackend"`
-	GitCredentialType    string                    `json:"gitCredentialType"`
-	OpenCodeCredentialID string                    `json:"openCodeCredentialId"`
-	AiCredentialID       string                    `json:"aiCredentialId"`
-	GitCredentialID      string                    `json:"gitCredentialId"`
-	SshHostsCredentialID string                    `json:"sshHostsCredentialId"`
-	RepoIDs              *[]string                 `json:"repoIds"`
-	Files                []services.AgentFile      `json:"files"`
-	MCP                  []services.MCPServer      `json:"mcp"`
-	Env                  map[string]string         `json:"env"`
-	Layout               services.AgentLayout      `json:"layout"`
-	Capabilities         *models.AgentCapabilities `json:"capabilities"`
-	Reason               string                    `json:"reason,omitempty"`
+	GitBindings        *models.GitBindings       `json:"gitBindings"`
+	ModelBinding       *modelrouting.Binding     `json:"modelBinding"`
+	Name               string                    `json:"name"`
+	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
+	TemplateID         string                    `json:"templateId"`
+	AcpBackend         string                    `json:"acpBackend"`
+	Files              []services.AgentFile      `json:"files"`
+	MCP                []services.MCPServer      `json:"mcp"`
+	Env                map[string]string         `json:"env"`
+	Layout             services.AgentLayout      `json:"layout"`
+	Capabilities       *models.AgentCapabilities `json:"capabilities"`
+	Reason             string                    `json:"reason,omitempty"`
 }
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
 		GitBindings: b.GitBindings,
 		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
-		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
-		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
-		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID), RepoIDs: b.RepoIDs,
 		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
@@ -84,13 +75,6 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		return
 	}
 	agent := b.toAgent(name)
-	// New explicit Git authorizations do not silently acquire the workspace's
-	// independent repository grants. Existing Agent updates retain inheritance.
-	if agent.GitBindings != nil && agent.RepoIDs == nil {
-		none := []string{}
-		agent.RepoIDs = &none
-	}
-
 	templateID := strings.TrimSpace(b.TemplateID)
 	if templateID != "" {
 		if err := services.ApplyCreateTemplate(templateID, &agent); err != nil {

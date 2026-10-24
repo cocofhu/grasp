@@ -9,17 +9,17 @@ import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
 const mocks = vi.hoisted(() => ({ listCredentials: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const items: CredentialItem[] = [
-  { id: 'gh-1', name: '团队 GitHub', type: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
-  { id: 'gh-2', name: '个人 GitHub', type: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
-  { id: 'gl-1', name: '公司 GitLab', type: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', configured: true },
-  { id: 'ssh-1', name: '部署私钥', type: 'ssh', provider: 'ssh', envKey: 'GIT_SSH_PRIVATE_KEY', configured: true },
-  { id: 'hosts-1', name: '可信主机', type: 'ssh', provider: 'ssh', envKey: 'GIT_SSH_KNOWN_HOSTS', configured: true },
-  { id: 'disabled', name: '已停用', type: 'git', provider: 'github', configured: true, enabled: false },
-  { id: 'cleared', name: '已清空', type: 'git', provider: 'gitlab', configured: false },
+  { id: 'gh-1', name: '团队 GitHub', type: 'git', purpose: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
+  { id: 'gh-2', name: '个人 GitHub', type: 'git', purpose: 'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true },
+  { id: 'gl-1', name: '公司 GitLab', type: 'git', purpose: 'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', configured: true },
+  { id: 'ssh-1', name: '部署私钥', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_private_key', envKey: 'GIT_SSH_PRIVATE_KEY', configured: true },
+  { id: 'hosts-1', name: '可信主机', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_known_hosts', envKey: 'GIT_SSH_KNOWN_HOSTS', configured: true },
+  { id: 'disabled', name: '已停用', type: 'git', purpose: 'git', provider: 'github', configured: true, enabled: false },
+  { id: 'cleared', name: '已清空', type: 'git', purpose: 'git', provider: 'gitlab', configured: false },
   { id: 'ai', name: '模型授权', type: 'ai', provider: 'cursor', configured: true },
 ]
 const mounted: ReturnType<typeof mount>[] = []
-function setup(props: { modelValue?: AgentGitBindings; legacy?: AgentGitBindings; items?: CredentialItem[]; disabled?: boolean; inherited?: AgentGitBindings } = { modelValue: { items: [] } }) {
+function setup(props: { modelValue?: AgentGitBindings; items?: CredentialItem[]; disabled?: boolean; } = { modelValue: { items: [] } }) {
   const wrapper = mount(AgentGitCredentialPicker, { props: { items, ...props, 'onUpdate:modelValue': (value) => { void wrapper.setProps({ modelValue: value }) } }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...pages, ...common } } })], stubs: { Teleport: true, RouterLink: { template: '<a><slot/></a>' } } } })
   mounted.push(wrapper)
   return wrapper
@@ -89,18 +89,11 @@ describe('Agent Git credentials', () => {
     expect(value(wrapper)).toEqual(initial)
     expect(wrapper.emitted('validity')?.at(-1)).toEqual([false])
   })
-  it('does not migrate legacy or inherited authorization on mount and makes empty selection override defaults', async () => {
-    const legacy: AgentGitBindings = { items: [{ credentialId: 'gh-1' }], preferredCredentialId: 'gh-1' }
-    const wrapper = setup({ legacy })
-    expect(wrapper.text()).toContain('当前使用原有授权')
+  it('starts empty when no bindings are supplied and does not emit a selection on mount', () => {
+    const wrapper = setup({})
+    expect(wrapper.find('[data-testid="git-credential-row-gh-1"]').exists()).toBe(false)
     expect(wrapper.emitted('update:modelValue')).toBeUndefined()
-    await choose(wrapper, 'git-credential-add', 'gl-1')
-    expect(value(wrapper).items).toHaveLength(2)
-    expect(legacy.items).toHaveLength(1)
-    const inherited = setup({ inherited: legacy })
-    expect(inherited.text()).toContain('使用工作区默认授权')
-    await inherited.get('[data-testid="git-remove-gh-1"]').trigger('click')
-    expect(value(inherited)).toEqual({ items: [] })
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
   })
   it('reports a missing preferred member and unavailable hosts without repairing them silently', async () => {
     const wrapper = setup({ modelValue: { items: [{ credentialId: 'ssh-1', sshHostsCredentialId: 'lost-hosts' }], preferredCredentialId: 'absent' } })

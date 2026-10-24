@@ -63,8 +63,12 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	if !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
-	// Merge SharedAgent so team bootstrap / Open paths inject shared SSH meta.
+	// Shared workspace files and ordinary defaults remain independent of authorization.
 	agent = s.effectiveAgent(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	if err != nil {
+		return nil, err
+	}
 	// Reuse an existing test sandbox bound to the same agent when one is still
 	// alive, instead of spinning up a fresh container every time. The chat path
 	// (ensureConnected) transparently re-attaches if the live ACP connection was
@@ -72,12 +76,8 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	//
 	// Skip reuse when any repos are configured: the caller wants those clones
 	// in a fresh workspace, so always create a new sandbox for them.
-	if len(repos) == 0 && agent.ModelBinding == nil && agent.GitBindings == nil {
+	if len(repos) == 0 {
 		if row := s.findReusable(ctx, profile); row != nil {
-			modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
-			if err != nil {
-				return nil, err
-			}
 			s.mu.Lock()
 			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, row, s.live[row.ID])
 			s.mu.Unlock()
@@ -103,6 +103,7 @@ func (s *SandboxService) Open(ctx context.Context, profile string, repos []sandb
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
@@ -122,6 +123,10 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	if _, ok := s.skills.Get(profile); !ok {
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(effective)
+	if err != nil {
+		return nil, err
+	}
 	if maxN := s.MaxTestSandboxes(); s.activeCount() >= maxN {
 		return nil, fmt.Errorf("已达到测试沙箱上限(%d),请先清理空闲沙箱", maxN)
 	}
@@ -131,6 +136,7 @@ func (s *SandboxService) OpenWithEffective(ctx context.Context, profile string, 
 	name := sandbox.NewContainerName()
 
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: "test", Status: "creating",
 		RepoURL: firstTestRepoURL(repos), RunID: runID, Token: token,
 	}
@@ -205,47 +211,23 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 			env[k] = v
 		}
 	}
-	// Workspace credentials are the highest-priority source; apply after the
-	// Agent/template vars above so test sandboxes match workflow precedence.
-	var creds map[string]string
-	if s.credentials != nil {
-		creds = s.credentials()
-		overlayCredentialEnv(env, creds)
-	}
+	creds := map[string]string{}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
 		fail(err)
 		return
 	}
-	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
-		Backend:              string(backend),
-		GitCredentialType:    agent.GitCredentialType,
-		AiCredentialID:       agent.AiCredentialID,
-		GitCredentialID:      agent.GitCredentialID,
-		SshHostsCredentialID: agent.SshHostsCredentialID,
-	}, s.selectedCredential)
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
 	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.selectedCredential)
 	if err != nil {
 		fail(err)
 		return
 	}
-	legacyModelFingerprint := ""
-	if backend == runtime.BackendOpenCode && agent.ModelBinding == nil {
-		legacyModelFingerprint, err = runtime.ApplyLegacyOpenCodeCredential(env, agent.OpenCodeCredentialID, s.openCodeCredential)
-		if err != nil {
-			fail(err)
-			return
-		}
-	}
 	if err := runtime.ApplyModelBinding(env, string(backend), agent.ModelBinding, s.modelBinding); err != nil {
 		fail(err)
 		return
 	}
 	modelFingerprint := modelBindingFingerprint(agent, env)
-	if legacyModelFingerprint != "" {
-		modelFingerprint = legacyModelFingerprint
-	}
 	workDir := s.skills.WorkDir(profile)
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
 	// Align auth gate with BuildConfigHome: shared extend then Agent overlay.
@@ -255,14 +237,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		return
 	}
 	env = merged
-	ocDoc := runtime.OpenCodeConfigForEnvWithCatalog(
-		context.Background(), backend, env, s.openCodeCatalog,
-	)
-	if err := runtime.RequireOpenCodePlaceholderKey(ocDoc, env); err != nil {
-		fail(err)
-		return
-	}
-
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       sharedWorkDir,
 		WorkDirSrc:           s.skills.WorkDir(profile),
@@ -272,7 +246,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
-		OpenCodeConfig:       ocDoc,
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))
@@ -303,7 +276,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	env["GIT_REPOS"] = sandbox.EncodeRepos(repos)
 
 	spec := sandbox.Spec{
-		GitBindingsConfigured: agent.GitBindings != nil,
+		GitBindingsConfigured: true,
 		GitCredentials:        gitCredentials,
 		Name:                  name,
 		Image:                 resolveSandboxImage(string(backend)),
@@ -312,8 +285,6 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		ConfigRoot:            configRoot,
 		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
-	ApplySSHCredentialsToSpec(&spec, creds)
-	spec.RepoCredentials = s.repoCredentials(agent)
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -344,7 +315,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	// later control-plane calls (Status/Attach/Destroy) address the real id.
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 		"model_binding_fingerprint": modelFingerprint,
-		"git_bindings_fingerprint":  gitBindingsFingerprint(agent, gitCredentials),
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "",
 		"destroy_at": &destroyAt, "updated_at": time.Now(),
@@ -363,9 +334,9 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
 		modelBindingFingerprint: modelFingerprint,
-		gitBindingsFingerprint:  gitBindingsFingerprint(agent, gitCredentials),
+		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
 		codexAuthInjected:       codexLogin,
-		codexAuthCredentialID:   runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, runtime.ModelCredentialIDForWriteBack(env, agent.AiCredentialID), agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
 		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()

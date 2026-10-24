@@ -5,69 +5,14 @@ import { describe, expect, it } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import AgentEnvPanel from './AgentEnvPanel.vue'
-import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
-
-function draft(partial: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
-  return {
-    name: 'a',
-    env: [],
-    mcp: [],
-    files: [],
-    capabilities: null,
-    gitCredentialType: undefined,
-    acpBackend: 'codex',
-    layout: { configRoot: '/tmp/agent', workspaceDir: '/tmp/workspace' },
-    ...partial,
-  }
-}
-
-function mountPanel(d: AgentStudioDraft, context: 'agent' | 'shared' = 'agent') {
-  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
-  return mount(AgentEnvPanel, {
-    props: { draft: d, context },
-    global: { plugins: [i18n], stubs: { CodeEditor: true, EnvCredentialHelpModal: true, AgentGitGuide: true, RouterLink: true } },
-  })
-}
-
-const pinned = [
-  { k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' },
-  { k: 'ACP_BRIDGE_REASONING_EFFORT', v: 'high' },
-  { k: 'FOO', v: '1' },
-]
-
-describe('AgentEnvPanel managed model keys', () => {
-  it('locks the model keys and links to the Runtime card', async () => {
-    const w = mountPanel(draft({ env: pinned.map((e) => ({ ...e })) }))
-    const block = w.get('[data-test="env-managed-model"]')
-    expect(block.text()).toContain('元信息里的模型')
-    expect(block.findAll('input').map((i) => (i.element as HTMLInputElement).value)).toEqual([
-      'ACP_BRIDGE_MODEL',
-      'gpt-5',
-      'ACP_BRIDGE_REASONING_EFFORT',
-      'high',
-    ])
-    expect(w.findAll('input[placeholder="KEY"]').map((i) => (i.element as HTMLInputElement).value)).toEqual(['FOO'])
-    await w.get('[data-test="env-managed-model-edit"]').trigger('click')
-    expect(w.emitted('edit-model')).toHaveLength(1)
-  })
-
-  it('refuses the managed key typed into a free row', async () => {
-    const d = draft({ acpBackend: 'cursor', env: [{ k: '', v: '' }] })
-    const w = mountPanel(d)
-    await w.get('input[placeholder="KEY"]').setValue('ACP_BRIDGE_MODEL')
-    expect(d.env[0]!.k).toBe('')
-    expect(w.emitted('toast')?.[0]?.[0]).toContain('元信息里的模型')
-  })
-
-  it('locks the keys in the workspace shared config too, which has its own Runtime card', async () => {
-    const shared = mountPanel(draft({ env: pinned.map((e) => ({ ...e })) }), 'shared')
-    expect(shared.find('[data-test="env-managed-model"]').exists()).toBe(true)
-    await shared.get('[data-test="env-managed-model-edit"]').trigger('click')
-    expect(shared.emitted('edit-model')).toHaveLength(1)
-  })
-
-  it('leaves the keys editable for OpenCode, which has no Runtime card', () => {
-    const oc = mountPanel(draft({ acpBackend: 'opencode', env: pinned.map((e) => ({ ...e })) }))
-    expect(oc.find('[data-test="env-managed-model"]').exists()).toBe(false)
-  })
+import { toDraft } from '@/lib/agent/agentStudioDraft'
+describe('model selection owns runtime model environment', () => {
+ it.each(['cursor', 'opencode', 'codex'])('rejects model variables in generic env for %s', async backend => {
+  const draft = toDraft({ name: 'dev', acpBackend: backend, env: { FEATURE: 'on', ACP_BRIDGE_MODEL: 'derived' } })
+  const w = mount(AgentEnvPanel, { props: { draft }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { RouterLink: true, EnvCredentialHelpModal: true, CodeEditor: true } } })
+  expect(w.findAll('input[placeholder="KEY"]').map(input => (input.element as HTMLInputElement).value)).toEqual(['FEATURE'])
+  await w.get('input[placeholder="KEY"]').setValue('ACP_BRIDGE_MODEL')
+  expect(draft.env[0].k).toBe(''); expect(w.emitted('toast')).toBeTruthy()
+  expect(w.find('[data-test="env-managed-model"]').exists()).toBe(false); w.unmount()
+ })
 })

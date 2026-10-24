@@ -27,9 +27,6 @@ func NewModelConnectionService(db *gorm.DB) *ModelConnectionService {
 }
 
 func (s *ModelConnectionService) List() ([]modelrouting.Connection, error) {
-	if err := s.MigrateLegacyConnections(); err != nil {
-		return nil, err
-	}
 	var rows []models.ModelConnection
 	if err := s.db.Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil, err
@@ -54,7 +51,6 @@ func (s *ModelConnectionService) Get(id string) (modelrouting.Connection, error)
 
 func (s *ModelConnectionService) Create(connection modelrouting.Connection) (modelrouting.Connection, error) {
 	connection.ID = "conn-" + uuid.NewString()[:12]
-	connection.LegacyCredentialID = nil
 	connection.Revision = 1
 	connection.CreatedAt, connection.UpdatedAt = time.Now(), time.Now()
 	if err := s.validateConnection(&connection); err != nil {
@@ -72,7 +68,7 @@ func (s *ModelConnectionService) Update(id string, connection modelrouting.Conne
 	if err != nil {
 		return modelrouting.Connection{}, err
 	}
-	connection.ID, connection.CreatedAt, connection.LegacyCredentialID = current.ID, current.CreatedAt, current.LegacyCredentialID
+	connection.ID, connection.CreatedAt = current.ID, current.CreatedAt
 	connection.Revision, connection.UpdatedAt = current.Revision+1, time.Now()
 	if err := s.validateConnection(&connection); err != nil {
 		return modelrouting.Connection{}, err
@@ -174,8 +170,8 @@ func (s *ModelConnectionService) modelCredential(id string) (models.Credential, 
 	return credential, nil
 }
 
-// Resolve accepts a concrete binding. The caller resolves inheritance for the
-// current backend first; no key, model or connection fallback occurs here.
+// Resolve expands a named configuration or validates its concrete internal source.
+// No key, model or connection fallback occurs here.
 func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Binding) (modelrouting.Resolved, error) {
 	resolved := modelrouting.Resolved{Backend: backend, Binding: binding}
 	if binding.Kind == "configuration" {

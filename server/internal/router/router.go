@@ -105,8 +105,6 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.PUT("/workspace/model-configurations/:configurationId", modelConfigurations.Update)
 		api.DELETE("/workspace/model-configurations/:configurationId", modelConfigurations.Delete)
 		api.GET("/workspace/tool-capabilities", modelConnections.Capabilities)
-		api.GET("/workspace/model-defaults", h.GetModelDefaults)
-		api.PUT("/workspace/model-defaults", h.PutModelDefaults)
 		api.GET("/workspace/agents/export", h.ExportWorkspaceAgents)
 		api.POST("/workspace/agents/import", h.ImportWorkspaceAgents)
 		api.GET("/workspace/shared-agent-config", h.GetSharedAgent)

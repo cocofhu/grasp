@@ -27,19 +27,6 @@ func validCredentialEnvKey(k string) bool {
 	return credentialEnvKeyPattern.MatchString(k) && !envauth.IsPlatformReservedEnvKey(k)
 }
 
-// overlayCredentialEnv applies resolved workspace credentials onto env.
-// Platform-reserved keys are skipped so a credential can never replace run
-// coordinates or platform MCP tokens.
-func overlayCredentialEnv(env, creds map[string]string) {
-	for k, v := range creds {
-		k = strings.TrimSpace(k)
-		if k == "" || envauth.IsPlatformReservedEnvKey(k) {
-			continue
-		}
-		env[k] = v
-	}
-}
-
 // CredentialInput is the write shape used by the credential API.
 // Value is optional on update: an omitted/blank value keeps the current secret
 // unless Clear is true. The service never returns Value.
@@ -93,8 +80,6 @@ var (
 	ErrCredentialName       = errors.New("credential name is required")
 	ErrCredentialTarget     = errors.New("custom credential target is required")
 	ErrCredentialEnvKey     = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
-	ErrCredentialModel      = errors.New("model is required")
-	ErrCredentialBaseURL    = errors.New("base url is required for a custom provider")
 	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
 	ErrCredentialPurpose    = errors.New("invalid credential purpose, tool or secret kind")
 )
@@ -140,12 +125,8 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvCodeBuddyAPIKey
 		case "trae":
 			return envauth.EnvTraeAPIKey
-		case "opencode":
-			return envauth.EnvOpenCodeAPIKey
 		case "codex":
 			return envauth.EnvCodexAuthFile
-		case "deepseek_harness":
-			return envauth.EnvDeepSeekAPIKey
 		}
 	case "git":
 		switch p {
@@ -155,6 +136,9 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 			return envauth.EnvGitLabToken
 		}
 	case "ssh":
+		if in.SecretKind == "ssh_known_hosts" {
+			return envauth.EnvGitSSHKnownHosts
+		}
 		return envauth.EnvGitSSHPrivateKey
 	}
 	return ""
@@ -176,34 +160,9 @@ func credentialView(row models.Credential) CredentialView {
 			}
 			return "••••••••"
 		}(), Source: "workspace", Configured: strings.TrimSpace(row.ValueEnc) != "",
-		Enabled: row.Enabled, RevokedAt: row.RevokedAt, Metadata: safeCredentialMetadata(row.Metadata),
+		Enabled: row.Enabled, RevokedAt: row.RevokedAt,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 	}
-}
-
-// safeCredentialMetadata keeps the API response limited to documented,
-// non-sensitive OpenCode routing fields. Secret material belongs in ValueEnc;
-// arbitrary metadata must not become a second plaintext escape hatch.
-func safeCredentialMetadata(metadata map[string]any) map[string]any {
-	if len(metadata) == 0 {
-		return nil
-	}
-	out := make(map[string]any)
-	for _, key := range []string{"provider", "baseUrl", "model"} {
-		if value, ok := metadata[key].(string); ok && strings.TrimSpace(value) != "" {
-			out[key] = value
-		}
-	}
-	// Vision is a routing capability for OpenCode's manually declared models,
-	// rather than secret material. Preserve the boolean so the runtime can opt
-	// image input in for gateways that are absent from models.dev.
-	if value, ok := metadata["vision"].(bool); ok {
-		out["vision"] = value
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // Short product names for the built-in credential slots. GitLab URL stays
@@ -218,7 +177,6 @@ const (
 	builtinNameDeepSeekHarness = "DeepSeek Harness"
 	builtinNameGitHub          = "GitHub"
 	builtinNameGitLab          = "GitLab"
-	builtinNameGitLabURL       = "GitLab URL"
 	builtinNameSSHKey          = "SSH Key"
 	builtinNameSSHHosts        = "SSH Hosts"
 )
@@ -227,18 +185,15 @@ func builtinCredentialID(slot string) string { return "cred-builtin-" + slot }
 
 func builtinCredentialRows() []models.Credential {
 	return []models.Credential{
-		{ID: builtinCredentialID("cursor"), Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey},
-		{ID: builtinCredentialID("claude"), Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey},
-		{ID: builtinCredentialID("codebuddy"), Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
-		{ID: builtinCredentialID("trae"), Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
-		{ID: builtinCredentialID("opencode"), Type: "ai", Provider: "opencode", Name: builtinNameOpenCode, EnvKey: envauth.EnvOpenCodeAPIKey},
-		{ID: builtinCredentialID("deepseek_harness"), Type: "ai", Provider: "deepseek_harness", Name: builtinNameDeepSeekHarness, EnvKey: envauth.EnvDeepSeekAPIKey},
-		{ID: builtinCredentialID("codex"), Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
-		{ID: builtinCredentialID("github"), Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
-		{ID: builtinCredentialID("gitlab"), Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
-		{ID: builtinCredentialID("gitlab-url"), Type: "git", Provider: "gitlab", Name: builtinNameGitLabURL, EnvKey: "GITLAB_URL"},
-		{ID: builtinCredentialID("ssh-key"), Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey},
-		{ID: builtinCredentialID("ssh-hosts"), Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts},
+		{ID: builtinCredentialID("cursor"), Purpose: "tool_auth", Issuer: "cursor", ToolID: "cursor", SecretKind: "api_key", Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey},
+		{ID: builtinCredentialID("claude"), Purpose: "tool_auth", Issuer: "claude_code", ToolID: "claude_code", SecretKind: "api_key", Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey},
+		{ID: builtinCredentialID("codebuddy"), Purpose: "tool_auth", Issuer: "codebuddy", ToolID: "codebuddy", SecretKind: "api_key", Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
+		{ID: builtinCredentialID("trae"), Purpose: "tool_auth", Issuer: "trae", ToolID: "trae", SecretKind: "token", Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
+		{ID: builtinCredentialID("codex"), Purpose: "tool_auth", Issuer: "codex", ToolID: "codex", SecretKind: "login_file", Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
+		{ID: builtinCredentialID("github"), Purpose: "git", Issuer: "github", SecretKind: "token", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
+		{ID: builtinCredentialID("gitlab"), Purpose: "git", Issuer: "gitlab", SecretKind: "token", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
+		{ID: builtinCredentialID("ssh-key"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_private_key", Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey},
+		{ID: builtinCredentialID("ssh-hosts"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_known_hosts", Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts},
 	}
 }
 
@@ -301,6 +256,13 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	if !validCredentialEnvKey(in.EnvKey) {
 		return CredentialView{}, ErrCredentialEnvKey
 	}
+	if in.Purpose == "custom" || in.Purpose == "mcp" {
+		if envauth.IsSecretEnvKey(in.EnvKey) || runtime.IsGitAuthorizationEnvKey(in.EnvKey) {
+			return CredentialView{}, ErrCredentialEnvKey
+		}
+	} else if in.Purpose != "model_api" && in.EnvKey != defaultCredentialEnvKey(in) {
+		return CredentialView{}, ErrCredentialEnvKey
+	}
 	if in.Type == "custom" && strings.TrimSpace(in.EnvKey) == "" && strings.TrimSpace(in.Target) == "" && strings.TrimSpace(in.TargetID) == "" {
 		return CredentialView{}, ErrCredentialTarget
 	}
@@ -313,9 +275,6 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	}
 	if ok {
 		return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
-	}
-	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, in.Purpose != "model_api"); err != nil {
-		return CredentialView{}, err
 	}
 	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
 		return CredentialView{}, err
@@ -332,7 +291,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
 		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, SecretRevision: 1,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
-		EnvKey: in.EnvKey, ValueEnc: enc, Metadata: safeCredentialMetadata(in.Metadata),
+		EnvKey: in.EnvKey, ValueEnc: enc,
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
 	if err := s.db.Create(&row).Error; err != nil {
 		return CredentialView{}, err
@@ -348,6 +307,9 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 			return CredentialView{}, ErrCredentialNotFound
 		}
 		return CredentialView{}, err
+	}
+	if row.Purpose == "" {
+		return CredentialView{}, ErrCredentialPurpose
 	}
 	if in.Purpose != "" || row.Purpose != "" {
 		purpose, issuer, tool, kind := credentialDomain(row)
@@ -402,6 +364,13 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	if !validCredentialEnvKey(row.EnvKey) {
 		return CredentialView{}, ErrCredentialEnvKey
 	}
+	if row.Purpose == "custom" || row.Purpose == "mcp" {
+		if envauth.IsSecretEnvKey(row.EnvKey) || runtime.IsGitAuthorizationEnvKey(row.EnvKey) {
+			return CredentialView{}, ErrCredentialEnvKey
+		}
+	} else if row.Purpose != "model_api" && row.EnvKey != defaultCredentialEnvKey(CredentialInput{Type: row.Type, Provider: row.Provider, SecretKind: row.SecretKind}) {
+		return CredentialView{}, ErrCredentialEnvKey
+	}
 	if nameChanged {
 		taken, ok, err := s.credentialAliasTaken(row.EnvKey, row.Name, row.ID)
 		if err != nil {
@@ -410,16 +379,6 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 		if ok {
 			return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
 		}
-	}
-	if in.Metadata != nil {
-		provider := row.Provider
-		if strings.TrimSpace(in.Provider) != "" {
-			provider = strings.TrimSpace(in.Provider)
-		}
-		if err := validateOpenCodeMetadata(provider, in.Metadata, row.Purpose != "model_api"); err != nil {
-			return CredentialView{}, err
-		}
-		row.Metadata = safeCredentialMetadata(in.Metadata)
 	}
 	if in.Enabled != nil {
 		row.Enabled = *in.Enabled
@@ -504,23 +463,11 @@ func (s *CredentialService) Clear(id string) error {
 		}
 		return err
 	}
-	var connectionRefs int64
-	if s.db.Migrator().HasTable(&models.ModelConnection{}) {
-		if err := s.db.Model(&models.ModelConnection{}).Where("credential_id = ?", row.ID).Count(&connectionRefs).Error; err != nil {
-			return err
-		}
-	}
-	if isOpenCodeModelCredentialRow(row) && row.ID != builtinCredentialID("opencode") && connectionRefs == 0 {
-		return s.db.Delete(&models.Credential{}, "id = ?", row.ID).Error
-	}
 	row.ValueEnc = ""
 	row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	row.RevokedAt = nil
 	row.Enabled = true
 	row.UpdatedAt = time.Now()
-	if isOpenCodeModelCredentialRow(row) {
-		row.Metadata = map[string]any{}
-	}
 	return s.db.Save(&row).Error
 }
 
@@ -536,121 +483,35 @@ func (s *CredentialService) Get(id string) (CredentialView, error) {
 	return credentialView(row), nil
 }
 
-// ResolveEnv decrypts active runtime credentials. Service-only credentials are
-// deliberately excluded so channel/API authentication can never leak into a
-// sandbox environment.
+// ResolveEnv exposes only generic MCP and custom environment credentials.
+// Model and Git authorizations are resolved exclusively by explicit bindings.
 func (s *CredentialService) ResolveEnv() map[string]string {
 	var rows []models.Credential
-	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Order("updated_at desc").Find(&rows).Error != nil {
+	if s.db.Where("enabled = ? AND revoked_at IS NULL", true).Find(&rows).Error != nil {
 		return nil
 	}
 	out := map[string]string{}
-	// A kind injects automatically only while a single row still holds a
-	// secret. Empty built-in slots do not count: they exist before anyone adds
-	// a second credential. An extra row whose secret was cleared does count,
-	// so the remaining built-in secret is not restored until the Agent picks
-	// one again. Two rows that both still have secrets are also withheld.
-	type envKind struct {
-		valuedID     string
-		valued       int
-		clearedExtra bool
-	}
-	kinds := map[string]*envKind{}
+	counts := map[string]int{}
 	for _, row := range rows {
-		if !credentialEnvRow(row) {
-			continue
+		if credentialEnvRow(row) && strings.TrimSpace(row.ValueEnc) != "" {
+			counts[strings.TrimSpace(row.EnvKey)]++
 		}
-		key := strings.TrimSpace(row.EnvKey)
-		kind := kinds[key]
-		if kind == nil {
-			kind = &envKind{}
-			kinds[key] = kind
-		}
-		if strings.TrimSpace(row.ValueEnc) == "" {
-			if row.BuiltinSlot == "" {
-				kind.clearedExtra = true
-			}
-			continue
-		}
-		kind.valued++
-		kind.valuedID = row.ID
 	}
-	suppressed := map[string]struct{}{}
 	for _, row := range rows {
-		switch strings.ToLower(strings.TrimSpace(row.Type)) {
-		case "ai", "git", "ssh", "mcp", "custom":
-		default:
-			continue
-		}
-		// Model-vendor keys share one env name. Merging them here would inject
-		// a key the Agent did not choose. ResolveOpenCodeCredential applies
-		// only the selected row.
-		if isOpenCodeModelCredentialRow(row) {
-			continue
-		}
 		key := strings.TrimSpace(row.EnvKey)
-		if key == "" || envauth.IsPlatformReservedEnvKey(key) {
+		if !credentialEnvRow(row) || counts[key] != 1 || strings.TrimSpace(row.ValueEnc) == "" {
 			continue
 		}
-		kind := kinds[key]
-		if kind == nil || kind.valued != 1 || kind.clearedExtra || kind.valuedID != row.ID {
+		value, err := crypto.Decrypt(row.ValueEnc)
+		if err != nil {
+			log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable workspace credential")
 			continue
 		}
-		if _, skip := suppressed[key]; skip {
-			continue
-		}
-		v := ""
-		if strings.TrimSpace(row.ValueEnc) != "" {
-			dec, err := crypto.Decrypt(row.ValueEnc)
-			if err != nil {
-				log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable workspace credential")
-			}
-			v = dec
-		}
-		if v == "" {
-			if strings.EqualFold(row.Provider, "opencode") {
-				addOpenCodeMetadata(out, row.Metadata)
-			}
-			continue
-		}
-		if _, exists := out[key]; exists {
-			delete(out, key)
-			suppressed[key] = struct{}{}
-			continue
-		}
-		out[key] = v
-		if strings.EqualFold(row.Provider, "opencode") {
-			addOpenCodeMetadata(out, row.Metadata)
+		if value != "" {
+			out[key] = value
 		}
 	}
 	return out
-}
-
-// InjectedCredentialID identifies an unambiguous inherited secret without ever
-// exposing it. Explicit Agent selections are resolved before this fallback.
-func (s *CredentialService) InjectedCredentialID(envKey, value string) string {
-	if value == "" || s.ResolveEnv()[envKey] != value {
-		return ""
-	}
-	var rows []models.Credential
-	if s.db.Where("env_key = ? AND enabled = ? AND revoked_at IS NULL", envKey, true).Find(&rows).Error != nil {
-		return ""
-	}
-	id := ""
-	for _, row := range rows {
-		if row.ValueEnc == "" {
-			continue
-		}
-		plain, err := crypto.Decrypt(row.ValueEnc)
-		if err != nil || plain != value {
-			continue
-		}
-		if id != "" {
-			return ""
-		}
-		id = row.ID
-	}
-	return id
 }
 
 // WriteBackCodexLoginCredential refreshes precisely the injected credential.
@@ -714,19 +575,14 @@ func (s *CredentialService) credentialAliasTaken(envKey, name, exceptID string) 
 }
 
 func credentialEnvRow(row models.Credential) bool {
-	if row.Purpose == "model_api" {
+	if row.Purpose != "mcp" && row.Purpose != "custom" {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(row.Type)) {
-	case "ai", "git", "ssh", "mcp", "custom":
-	default:
-		return false
-	}
-	if isOpenCodeModelCredentialRow(row) {
+	if row.Type != "mcp" && row.Type != "custom" {
 		return false
 	}
 	key := strings.TrimSpace(row.EnvKey)
-	return key != "" && !envauth.IsPlatformReservedEnvKey(key)
+	return key != "" && !envauth.IsSecretEnvKey(key) && !runtime.IsGitAuthorizationEnvKey(key) && !envauth.IsPlatformReservedEnvKey(key)
 }
 
 // ResolveSelectedValue returns one credential's env key and plaintext.
@@ -739,7 +595,7 @@ func (s *CredentialService) ResolveSelectedValue(credentialID string) (string, s
 	}
 	var row models.Credential
 	err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, true).First(&row).Error
-	if err != nil || strings.TrimSpace(row.ValueEnc) == "" {
+	if err != nil || row.Purpose == "" || strings.TrimSpace(row.ValueEnc) == "" {
 		return "", "", false
 	}
 	dec, err := crypto.Decrypt(row.ValueEnc)
@@ -789,27 +645,6 @@ func aiCredentialName(backend string) string {
 	}
 }
 
-func addOpenCodeMetadata(out map[string]string, metadata map[string]any) {
-	for metaKey, envKey := range map[string]string{
-		"provider": runtime.EnvOpenCodeProvider,
-		"baseUrl":  runtime.EnvOpenCodeBaseURL,
-		// The ACP bridge receives its selected model through ACP_BRIDGE_MODEL;
-		// GRASP_OPENCODE_MODEL was never consumed by the runtime.
-		"model": runtime.EnvACPBridgeModel,
-	} {
-		if raw, ok := metadata[metaKey].(string); ok && strings.TrimSpace(raw) != "" {
-			out[envKey] = raw
-		}
-	}
-	if vision, ok := metadata["vision"].(bool); ok {
-		if vision {
-			out[runtime.EnvOpenCodeModelVision] = "1"
-		} else {
-			delete(out, runtime.EnvOpenCodeModelVision)
-		}
-	}
-}
-
 // CredentialEnvKeys returns the environment keys bound by active workspace
 // credentials that carry a value. Callers use this set
 // to prevent a per-run environment snapshot from shadowing a workspace
@@ -826,12 +661,10 @@ func (s *CredentialService) CredentialEnvKeys() map[string]struct{} {
 		if strings.TrimSpace(row.ValueEnc) == "" {
 			continue
 		}
-		if key := strings.TrimSpace(row.EnvKey); key != "" {
-			switch strings.ToLower(strings.TrimSpace(row.Type)) {
-			case "ai", "git", "ssh", "mcp", "custom":
-				out[key] = struct{}{}
-			}
+		if credentialEnvRow(row) {
+			out[strings.TrimSpace(row.EnvKey)] = struct{}{}
 		}
+
 	}
 	return out
 }
@@ -853,73 +686,6 @@ func (s *CredentialService) ResolveReferences() map[string]string {
 		if err == nil && v != "" {
 			out["credential:"+row.ID] = v
 		}
-	}
-	return out
-}
-
-func isOpenCodeModelCredentialRow(row models.Credential) bool {
-	return strings.EqualFold(strings.TrimSpace(row.Type), "ai") && strings.EqualFold(strings.TrimSpace(row.Provider), "opencode")
-}
-
-// validateOpenCodeMetadata checks a model-vendor write. Non-opencode providers
-// skip the check. required is true when the caller is storing routing metadata;
-// a replace that only rotates the secret leaves metadata nil and skips this.
-func validateOpenCodeMetadata(provider string, metadata map[string]any, required bool) error {
-	if !strings.EqualFold(strings.TrimSpace(provider), "opencode") || !required {
-		return nil
-	}
-	if metadata == nil {
-		return ErrCredentialModel
-	}
-	model, _ := metadata["model"].(string)
-	if strings.TrimSpace(model) == "" {
-		return ErrCredentialModel
-	}
-	vendor, _ := metadata["provider"].(string)
-	base, _ := metadata["baseUrl"].(string)
-	if base == "" {
-		if raw, ok := metadata["baseURL"].(string); ok {
-			base = raw
-		}
-	}
-	if strings.EqualFold(strings.TrimSpace(vendor), "custom") && strings.TrimSpace(base) == "" {
-		return ErrCredentialBaseURL
-	}
-	return nil
-}
-
-// ResolveOpenCodeCredential returns env for the one credential id an Agent
-// selected. An empty, unknown, cleared, or non-model-vendor id returns nil
-// and never falls back to another key of the same kind.
-func (s *CredentialService) ResolveOpenCodeCredential(credentialID string) map[string]string {
-	credentialID = strings.TrimSpace(credentialID)
-	if credentialID == "" || s == nil || s.db == nil {
-		return nil
-	}
-	var row models.Credential
-	err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, true).First(&row).Error
-	if err != nil || !isOpenCodeModelCredentialRow(row) || strings.TrimSpace(row.ValueEnc) == "" {
-		return nil
-	}
-	dec, err := crypto.Decrypt(row.ValueEnc)
-	if err != nil || strings.TrimSpace(dec) == "" {
-		log.Warn().Err(err).Str("credential", row.ID).Msg("skip undecryptable opencode credential")
-		return nil
-	}
-	out := map[string]string{runtime.EnvGraspOpenCodeAPIKey: dec}
-	if len(safeCredentialMetadata(row.Metadata)) == 0 {
-		return out
-	}
-	provider, _ := row.Metadata["provider"].(string)
-	base, _ := row.Metadata["baseUrl"].(string)
-	model, _ := row.Metadata["model"].(string)
-	out[runtime.EnvOpenCodeProvider] = strings.TrimSpace(provider)
-	out[runtime.EnvOpenCodeBaseURL] = strings.TrimSpace(base)
-	out[runtime.EnvACPBridgeModel] = strings.TrimSpace(model)
-	if vision, ok := row.Metadata["vision"].(bool); ok && vision {
-		out[runtime.EnvOpenCodeModelVision] = "1"
-	} else {
-		out[runtime.EnvOpenCodeModelVision] = ""
 	}
 	return out
 }

@@ -8,50 +8,29 @@ import CreateAgentTeamWizard from './CreateAgentTeamWizard.vue'
 
 const mocks = vi.hoisted(() => ({
   bootstrapAgentTeam: vi.fn(),
-  getSharedAgentConfig: vi.fn(),
+  listModelConfigurations: vi.fn(),
+  listCredentials: vi.fn(),
+  listModelConnections: vi.fn(),
+  listToolCapabilities: vi.fn(),
 }))
-
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      bootstrapAgentTeam: mocks.bootstrapAgentTeam,
-      getSharedAgentConfig: mocks.getSharedAgentConfig,
-    },
-  }
+  return { ...actual, api: { ...actual.api, ...mocks } }
 })
-
-/** Stubs that keep the child contract observable instead of swallowing it. */
-const ApiKeyStub = {
-  name: 'WizardApiKeyStepPanel',
-  props: [
-    'acpBackend',
-    'configRoot',
-    'authMode',
-    'apiKeyInput',
-    'customConfigContent',
-    'customConfigError',
-    'authGuide',
-  ],
-  emits: ['update:authMode', 'update:apiKeyInput', 'update:customConfigContent'],
-  template: '<div class="api-key-stub" />',
+const ModelPicker = {
+  name: 'ModelBindingEditor',
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'validity'],
+  template: '<div class="model-picker-stub" />',
 }
-
-const GitGuideStub = {
-  name: 'AgentGitGuide',
-  props: ['env', 'upsertEnv', 'credentialType'],
-  emits: ['update:credentialType'],
-  template: '<div class="git-guide-stub" />',
+const GitPicker = {
+  name: 'AgentGitCredentialPicker',
+  props: ['modelValue'],
+  emits: ['update:modelValue', 'validity'],
+  template: '<div class="git-picker-stub" />',
 }
-
 function mountWizard(props: Record<string, unknown> = {}) {
-  const i18n = createI18n({
-    legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': { ...common, ...pages } },
-  })
+  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(CreateAgentTeamWizard, {
     props: { open: true, existingNames: [], ...props },
     global: {
@@ -60,465 +39,316 @@ function mountWizard(props: Record<string, unknown> = {}) {
         teleport: true,
         Icon: true,
         AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
-        AgentGitGuide: GitGuideStub,
-        WizardApiKeyStepPanel: ApiKeyStub,
+        ModelBindingEditor: ModelPicker,
+        AgentGitCredentialPicker: GitPicker,
+        WorkspaceCredentialsPanel: true,
       },
     },
   })
 }
-
-/** The step pane re-creates its children on every render; always re-find before emitting. */
-function emitPanel(w: ReturnType<typeof mountWizard>, event: string, payload: unknown) {
-  w.findComponent(ApiKeyStub).vm.$emit(event, payload)
-}
-
-/** Fill the required basics so step 0 validation passes. */
-function fillBasics(vm: any, name = '登月') {
-  vm.draft.teamName = name
+function fillBasics(vm: any) {
+  vm.draft.teamName = '登月'
   vm.onTeamNameInput()
   vm.draft.background = '把火箭送上天'
 }
-
-/** OpenCode API Key step requires a model before Next (g1.3 default). */
-function ensureOpenCodeModel(vm: any) {
-  if (vm.draft.acpBackend !== 'opencode') return
-  const has = vm.draft.env.some((e: any) => e.k === 'ACP_BRIDGE_MODEL' && String(e.v || '').trim())
-  if (!has) vm.draft.env.push({ k: 'ACP_BRIDGE_MODEL', v: 'openai/gpt-4.1' })
-}
-
-function goNextThrough(vm: any, count: number) {
+async function advance(w: ReturnType<typeof mountWizard>, count: number) {
+  const vm = w.vm as any
   for (let i = 0; i < count; i++) {
-    if (vm.currentStep.id === 'apiKey') ensureOpenCodeModel(vm)
+    if (vm.currentStep.id === 'model') {
+      w.findComponent(ModelPicker).vm.$emit('update:modelValue', {
+        kind: 'configuration',
+        configurationId: 'model-team',
+      })
+      w.findComponent(ModelPicker).vm.$emit('validity', true)
+    }
     vm.goNext()
+    await flushPromises()
   }
 }
-
-describe('CreateAgentTeamWizard flow', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    mocks.getSharedAgentConfig.mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} })
-    mocks.bootstrapAgentTeam.mockResolvedValue({ sessionId: 's1' })
+beforeEach(() => {
+  vi.clearAllMocks()
+  mocks.listModelConfigurations.mockResolvedValue({
+    items: [
+      {
+        id: 'model-team',
+        name: 'Team model',
+        backend: 'opencode',
+        binding: { kind: 'connection', connectionId: 'connection', modelId: 'coding' },
+        state: 'active',
+        revision: 1,
+      },
+    ],
   })
-
-  it('derives names from the team name and blocks Next until basics are valid', async () => {
+  mocks.listCredentials.mockResolvedValue({
+    items: [{ id: 'model-key', purpose: 'model_api', configured: true }],
+  })
+  mocks.listModelConnections.mockResolvedValue({
+    items: [
+      {
+        id: 'connection',
+        state: 'active',
+        credentialId: 'model-key',
+        protocol: 'openai-chat-completions',
+        auth: { scheme: 'bearer' },
+        models: [{ id: 'coding' }],
+      },
+    ],
+  })
+  mocks.listToolCapabilities.mockResolvedValue({
+    items: [
+      { toolId: 'opencode', adapterState: 'existing', modes: ['connection'], protocols: ['openai-chat-completions'] },
+    ],
+  })
+  mocks.bootstrapAgentTeam.mockResolvedValue({ sessionId: 's1' })
+})
+describe('CreateAgentTeamWizard flow', () => {
+  it('requires team basics and preserves edited derived names', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
-
-    // Empty team name fails validation and keeps the wizard on step 0.
     vm.goNext()
-    await flushPromises()
     expect(vm.draft.step).toBe(0)
     expect(vm.fieldError).toBeTruthy()
-
     fillBasics(vm)
-    await flushPromises()
-    expect(vm.draft.prefix).toBe('登月')
     expect(vm.draft.pmName).toBe('登月项目经理')
-    expect(vm.previewLine).toContain('登月')
-    expect(vm.previewLine).toContain('登月项目经理')
-
-    // A touched prefix wins over the team name for derived values.
     vm.draft.prefixTouched = true
     vm.draft.prefix = 'Luna'
     vm.onTeamNameInput()
     expect(vm.draft.pmName).toBe('Luna项目经理')
-
     vm.goNext()
     await flushPromises()
-    expect(vm.draft.step).toBe(1)
+    expect(vm.currentStep.id).toBe('model')
     expect(vm.fieldError).toBe('')
-
     w.unmount()
   })
-
-  it('rejects a PM name that collides with an existing agent', async () => {
+  it('rejects an existing PM name', async () => {
     const w = mountWizard({ existingNames: ['登月项目经理'] })
     await flushPromises()
     const vm = w.vm as any
-
     fillBasics(vm)
     vm.goNext()
-    await flushPromises()
     expect(vm.draft.step).toBe(0)
     expect(vm.fieldError).toContain('已存在')
-
-    vm.draft.pmTouched = true
-    vm.draft.pmName = '登月PM'
-    vm.goNext()
-    await flushPromises()
-    expect(vm.draft.step).toBe(1)
-
     w.unmount()
   })
-
-  it('switches the ACP backend and its region env key', async () => {
+  it('requires a valid model configuration and has no inline key or backend source', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
-
     fillBasics(vm)
+    await advance(w, 1)
+    vm.goNext()
+    expect(vm.currentStep.id).toBe('model')
+    w.findComponent(ModelPicker).vm.$emit('update:modelValue', { kind: 'configuration', configurationId: 'model-team' })
+    w.findComponent(ModelPicker).vm.$emit('validity', false)
+    vm.goNext()
+    expect(vm.currentStep.id).toBe('model')
+    w.findComponent(ModelPicker).vm.$emit('validity', true)
     vm.goNext()
     await flushPromises()
-    expect(vm.currentStep.id).toBe('acp')
-
-    // Re-selecting the active backend is a no-op.
-    const before = vm.draft.configRoot
-    vm.selectAcp(vm.draft.acpBackend)
-    expect(vm.draft.configRoot).toBe(before)
-    expect(vm.draft.acpBackend).toBe('opencode')
-    expect(vm.draft.startPath).toBe('apiKey')
-
-    vm.selectStartPath('cli')
+    expect(vm.currentStep.id).toBe('git')
+    for (const field of ['apiKeyInput', 'acpBackend', 'gitCredentialType']) expect(vm.draft).not.toHaveProperty(field)
+    w.unmount()
+  })
+  it('selects multiple Git credentials and clears them when skipped', async () => {
+    const w = mountWizard()
     await flushPromises()
-    expect(vm.draft.startPath).toBe('cli')
-    expect(vm.draft.acpBackend).toBe('cursor')
-
-    vm.selectAcp('claude_code')
-    await flushPromises()
-    expect(vm.draft.acpBackend).toBe('claude_code')
-    expect(vm.draft.configRoot).not.toBe(before)
-
-    // Backends with a region policy expose selectable regions.
-    const withRegion = ['claude_code', 'codebuddy', 'trae', 'cursor'].find((id) => {
-      vm.selectAcp(id)
-      return !!vm.regionPolicy
-    })
-    if (withRegion) {
-      const option = vm.regionPolicy.options[0]
-      vm.selectRegion(option.id)
-      await flushPromises()
-      expect(vm.currentRegion).toBe(option.id)
+    const vm = w.vm as any
+    fillBasics(vm)
+    await advance(w, 2)
+    const selected = {
+      items: [{ credentialId: 'gh' }, { credentialId: 'gl', scope: 'git.example' }],
+      preferredCredentialId: 'gl',
     }
-
-    w.unmount()
-  })
-
-  it('keeps the api key in sync with the env rows and clears it on skip', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
+    w.findComponent(GitPicker).vm.$emit('update:modelValue', selected)
+    w.findComponent(GitPicker).vm.$emit('validity', false)
     vm.goNext()
-    vm.goNext()
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('apiKey')
-
-    const key = vm.primaryAuthKey
-    expect(key).toBeTruthy()
-
-    emitPanel(w, 'update:apiKeyInput', 'sk-live')
-    await flushPromises()
-    expect(vm.draft.env.find((e: any) => e.k === key)?.v).toBe('sk-live')
-
-    // Writing the same key again updates in place rather than appending.
-    emitPanel(w, 'update:apiKeyInput', 'sk-live-2')
-    await flushPromises()
-    expect(vm.draft.env.filter((e: any) => e.k === key)).toHaveLength(1)
-
-    // Blanking the input removes the row entirely.
-    emitPanel(w, 'update:apiKeyInput', '   ')
-    await flushPromises()
-    expect(vm.draft.env.some((e: any) => e.k === key)).toBe(false)
-
-    emitPanel(w, 'update:apiKeyInput', 'sk-live')
-    await flushPromises()
+    expect(vm.currentStep.id).toBe('git')
+    vm.draft.gitUrl = 'https://git.example/team/repo.git'
+    expect(vm.draft.gitBindings).toEqual(selected)
     vm.goSkip()
     await flushPromises()
-    expect(vm.draft.skipped.apiKey).toBe(true)
-    expect(vm.draft.env.some((e: any) => e.k === key)).toBe(false)
-    expect(vm.apiKeyInput).toBe('')
-
-    w.unmount()
-  })
-
-  it('validates custom config JSON before leaving the api key step', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
-    vm.goNext()
-    vm.goNext()
-    await flushPromises()
-
-    emitPanel(w, 'update:apiKeyInput', 'sk-live')
-    await flushPromises()
-
-    // Switching to custom config strips the auth keys and seeds a placeholder.
-    emitPanel(w, 'update:authMode', 'customConfig')
-    await flushPromises()
-    expect(vm.draft.authMode).toBe('customConfig')
-    expect(vm.apiKeyInput).toBe('')
-    expect(vm.draft.customConfigContent).toBeTruthy()
-
-    // Re-emitting the current mode is a no-op.
-    const seeded = vm.draft.customConfigContent
-    emitPanel(w, 'update:authMode', 'customConfig')
-    expect(vm.draft.customConfigContent).toBe(seeded)
-
-    emitPanel(w, 'update:customConfigContent', '{ not json')
-    await flushPromises()
-    expect(vm.customConfigError).toBe(false)
-
-    vm.goNext()
-    await flushPromises()
-    expect(vm.customConfigError).toBe(true)
-    expect(vm.currentStep.id).toBe('apiKey')
-
-    emitPanel(w, 'update:customConfigContent', '{"model":"x"}')
-    await flushPromises()
-    vm.goNext()
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('git')
-
-    // Going back restores the api-key input from env; toggling back keeps the draft.
-    vm.goPrev()
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('apiKey')
-    emitPanel(w, 'update:authMode', 'apiKey')
-    await flushPromises()
-    expect(vm.draft.authMode).toBe('apiKey')
-    expect(vm.draft.customConfigContent).toBe('')
-
-    emitPanel(w, 'update:authMode', 'customConfig')
-    await flushPromises()
-    expect(vm.draft.customConfigContent).toBe('{"model":"x"}')
-
-    w.unmount()
-  })
-
-  it('collects git url and credential type from the guide', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
-    vm.goNext()
-    vm.goNext()
-    ensureOpenCodeModel(vm)
-    vm.goNext()
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('git')
-
-    vm.draft.gitUrl = 'https://github.com/org/repo.git'
-    const guide = w.findComponent(GitGuideStub)
-    guide.props('upsertEnv')('GIT_USERNAME', 'bot')
-    guide.props('upsertEnv')('GIT_USERNAME', 'bot2')
-    guide.vm.$emit('update:credentialType', 'token')
-    await flushPromises()
-
-    expect(vm.draft.gitCredentialType).toBe('token')
-    expect(vm.draft.env.filter((e: any) => e.k === 'GIT_USERNAME')).toHaveLength(1)
-    expect(vm.draft.env.find((e: any) => e.k === 'GIT_USERNAME')?.v).toBe('bot2')
-
-    w.unmount()
-  })
-
-  it('edits the MCP list with presets, transports and removal', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
-    goNextThrough(vm, 4)
-    await flushPromises()
     expect(vm.currentStep.id).toBe('mcp')
-    expect(vm.hasArtifact).toBe(true)
-
-    // artifact-store is already present, so restoring is a no-op.
-    const count = vm.draft.mcp.length
+    expect(vm.draft.gitBindings).toEqual({ items: [] })
+    expect(vm.draft.gitUrl).toBe('')
+    await advance(w, 2)
+    vm.goNext()
+    await flushPromises()
+    expect(mocks.bootstrapAgentTeam.mock.calls[0][0].gitBindings).toEqual({ items: [] })
+    expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty('gitUrl')
+    w.unmount()
+  })
+  it.each(['configuration', 'credential', 'connection'])(
+    'returns to model selection when the selected %s becomes unavailable in the resource manager',
+    async (resource) => {
+      const w = mountWizard()
+      await flushPromises()
+      const vm = w.vm as any
+      fillBasics(vm)
+      await advance(w, 2)
+      if (resource === 'configuration') mocks.listModelConfigurations.mockResolvedValue({ items: [] })
+      if (resource === 'credential')
+        mocks.listCredentials.mockResolvedValue({
+          items: [{ id: 'model-key', purpose: 'model_api', configured: true, revokedAt: '2026-10-24T00:00:00Z' }],
+        })
+      if (resource === 'connection') mocks.listModelConnections.mockResolvedValue({ items: [] })
+      vm.resourceManagerOpen = true
+      const refreshing = vm.refreshResources()
+      expect(vm.modelValid).toBe(false)
+      await refreshing
+      await flushPromises()
+      expect(vm.currentStep.id).toBe('model')
+      expect(vm.draft.modelConfigurationId).toBe('model-team')
+      expect(vm.modelValid).toBe(false)
+      await vm.submit()
+      expect(mocks.bootstrapAgentTeam).not.toHaveBeenCalled()
+      w.unmount()
+    },
+  )
+  it('preserves the Git step and selected model after a healthy resource refresh', async () => {
+    const w = mountWizard()
+    await flushPromises()
+    const vm = w.vm as any
+    fillBasics(vm)
+    await advance(w, 2)
+    expect(mocks.listCredentials).not.toHaveBeenCalled()
+    const gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
+    vm.draft.gitBindings = gitBindings
+    vm.resourceManagerOpen = true
+    await vm.refreshResources()
+    await flushPromises()
+    expect(vm.currentStep.id).toBe('git')
+    expect(vm.modelValid).toBe(true)
+    expect(vm.draft.modelConfigurationId).toBe('model-team')
+    expect(vm.draft.gitBindings).toEqual(gitBindings)
+    expect(mocks.listCredentials).toHaveBeenCalledTimes(1)
+    expect(mocks.listModelConnections).toHaveBeenCalledTimes(1)
+    expect(mocks.listToolCapabilities).toHaveBeenCalledTimes(1)
+    await advance(w, 3)
+    await vm.submit()
+    expect(mocks.bootstrapAgentTeam.mock.calls[0][0].modelConfigurationId).toBe('model-team')
+    w.unmount()
+  })
+  it('blocks a previously valid model when resource refresh fails', async () => {
+    const w = mountWizard()
+    await flushPromises()
+    const vm = w.vm as any
+    fillBasics(vm)
+    await advance(w, 2)
+    mocks.listCredentials.mockRejectedValueOnce(new Error('offline'))
+    vm.resourceManagerOpen = true
+    await vm.refreshResources()
+    expect(vm.currentStep.id).toBe('model')
+    expect(vm.modelValid).toBe(false)
+    await vm.submit()
+    expect(mocks.bootstrapAgentTeam).not.toHaveBeenCalled()
+    w.unmount()
+  })
+  it('edits MCP presets and searches transport choices without discarding connection values', async () => {
+    const w = mountWizard()
+    await flushPromises()
+    const vm = w.vm as any
+    fillBasics(vm)
+    await advance(w, 3)
+    expect(vm.currentStep.id).toBe('mcp')
+    const original = vm.draft.mcp.length
     vm.restoreArtifact()
-    expect(vm.draft.mcp).toHaveLength(count)
-
+    expect(vm.draft.mcp).toHaveLength(original)
     vm.removeMcp(0)
     expect(vm.hasArtifact).toBe(false)
     vm.restoreArtifact()
     expect(vm.hasArtifact).toBe(true)
-
     vm.addNamedMcp('memory-store')
     vm.addNamedMcp('memory-store')
-    expect(vm.draft.mcp.filter((m: any) => m.name === 'memory-store')).toHaveLength(1)
-
-    vm.addMcp()
-    await flushPromises()
-    expect(vm.draft.mcp.at(-1).name).toBe('')
-    expect(vm.mcpNames).toContain('memory-store')
-
-    // Unnamed rows are dropped from the payload.
-    const rendered = w.html()
-    expect(rendered).toContain('MCP #1')
-
-    w.unmount()
-  })
-
-  it('searches MCP transport choices without discarding the existing connection draft', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-    fillBasics(vm)
-    goNextThrough(vm, 4)
+    expect(vm.draft.mcp.filter((row: any) => row.name === 'memory-store')).toHaveLength(1)
     vm.addMcp()
     const index = vm.draft.mcp.length - 1
     const service = vm.draft.mcp[index]
-    Object.assign(service, { name: 'custom', url: 'https://mcp.example.test', headers: [{ k: 'X-Test', v: 'value' }], command: 'npx', args: 'example' })
+    Object.assign(service, {
+      name: 'custom',
+      url: 'https://mcp.example',
+      command: 'npx',
+      args: 'example',
+      headers: [{ k: 'X-Test', v: 'value' }],
+    })
     await flushPromises()
-    const picker = w.get(`[data-testid="team-mcp-transport-${index}"]`)
-    await picker.get('[data-test="app-select-trigger"]').trigger('click')
+    await w.get(`[data-testid="team-mcp-transport-${index}"] [data-test="app-select-trigger"]`).trigger('click')
     await w.get('[data-test="app-select-search"]').setValue('stdio')
     expect(w.find('[data-test="app-select-option-url"]').exists()).toBe(false)
     await w.get('[data-test="app-select-option-command"]').trigger('click')
-    await flushPromises()
     expect(service.transport).toBe('command')
-    expect(service.url).toBe('https://mcp.example.test')
+    expect(service.url).toBe('https://mcp.example')
     expect(service.headers).toEqual([{ k: 'X-Test', v: 'value' }])
-    await w.get(`[data-testid="team-mcp-transport-${index}"]`).get('[data-test="app-select-trigger"]').trigger('click')
-    await flushPromises()
-    await w.get('[data-test="app-select-option-url"]').trigger('click')
-    expect(service.transport).toBe('url')
-    expect(service.command).toBe('npx')
-    expect(service.args).toBe('example')
     w.unmount()
   })
-
-  it('summarises env rows on the review step', async () => {
+  it('submits only selected configuration and Git references with workspace settings', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
-
     fillBasics(vm)
-    goNextThrough(vm, 5)
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('env')
-    expect(vm.envSummary).toContain('GIT_REPOS')
-
-    vm.draft.env = []
-    await flushPromises()
-    expect(vm.envSummary).toBe('无')
-
-    vm.draft.mcp = []
-    expect(vm.mcpNames).toBe('无')
-
-    w.unmount()
-  })
-
-  it('submits the assembled payload and emits started', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
-    vm.goNext()
-    vm.goNext()
-    await flushPromises()
-    emitPanel(w, 'update:apiKeyInput', 'sk-live')
-    await flushPromises()
-    goNextThrough(vm, 4)
-    await flushPromises()
+    await advance(w, 2)
+    w.findComponent(GitPicker).vm.$emit('update:modelValue', {
+      items: [{ credentialId: 'git-team' }],
+      preferredCredentialId: 'git-team',
+    })
+    await advance(w, 3)
     expect(vm.currentStep.id).toBe('review')
-    expect(w.html()).toContain('登月项目经理')
-
-    vm.bgExpanded = false
-    await flushPromises()
-    expect(w.html()).not.toContain('把火箭送上天')
-
+    expect(w.text()).toContain('Team model')
     vm.goNext()
     await flushPromises()
-
     expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
-    const payload = mocks.bootstrapAgentTeam.mock.calls[0][0]
-    expect(payload).not.toHaveProperty('teamName')
-    expect(payload.pmName).toBe('登月项目经理')
-    expect(payload.apiKey).toBe('sk-live')
-    expect(w.emitted('started')).toBeTruthy()
-    expect(w.emitted('close')).toBeTruthy()
-    expect(vm.submitting).toBe(false)
-
+    expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).toMatchObject({
+      pmName: '登月项目经理',
+      modelConfigurationId: 'model-team',
+      gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' },
+      env: { GIT_REPOS: '${vars.repos}' },
+    })
+    for (const field of ['teamName', 'apiKey', 'acpBackend', 'gitCredentialType'])
+      expect(mocks.bootstrapAgentTeam.mock.calls[0][0]).not.toHaveProperty(field)
+    expect(w.emitted('started')?.[0]).toEqual([{ sessionId: 's1' }])
+    expect(w.emitted('close')).toHaveLength(1)
     w.unmount()
   })
-
-  it('surfaces a bootstrap failure and keeps the wizard open', async () => {
+  it('surfaces server errors and revalidates basics before submitting', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
-    mocks.bootstrapAgentTeam.mockRejectedValueOnce(new Error('quota exhausted'))
-
     fillBasics(vm)
-    goNextThrough(vm, 6)
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('review')
-
+    await advance(w, 5)
+    mocks.bootstrapAgentTeam.mockRejectedValueOnce(new Error('quota exhausted'))
     vm.goNext()
     await flushPromises()
     expect(vm.submitError).toBe('quota exhausted')
-    expect(vm.submitting).toBe(false)
     expect(w.emitted('started')).toBeFalsy()
-    expect(w.html()).toContain('quota exhausted')
-
-    w.unmount()
-  })
-
-  it('jumps back to step 0 when review-time validation fails', async () => {
-    const w = mountWizard()
-    await flushPromises()
-    const vm = w.vm as any
-
-    fillBasics(vm)
-    goNextThrough(vm, 6)
-    await flushPromises()
-    expect(vm.currentStep.id).toBe('review')
-
-    vm.draft.background = '  '
+    vm.draft.background = ''
     await vm.submit()
-    await flushPromises()
     expect(vm.draft.step).toBe(0)
-    expect(vm.fieldError).toBeTruthy()
-    expect(mocks.bootstrapAgentTeam).not.toHaveBeenCalled()
-
+    expect(mocks.bootstrapAgentTeam).toHaveBeenCalledTimes(1)
     w.unmount()
   })
-
-  it('freezes navigation while submitting and resets the draft on reopen', async () => {
+  it('freezes navigation while submitting and resets on reopen', async () => {
     const w = mountWizard()
     await flushPromises()
     const vm = w.vm as any
-
     fillBasics(vm)
-    vm.goNext()
-    await flushPromises()
-    expect(vm.draft.step).toBe(1)
-
+    await advance(w, 1)
     vm.submitting = true
     vm.goNext()
     vm.goPrev()
     vm.goSkip()
     vm.close()
-    await flushPromises()
     expect(vm.draft.step).toBe(1)
     expect(w.emitted('close')).toBeFalsy()
-
     vm.submitting = false
-    vm.goPrev()
-    await flushPromises()
-    expect(vm.draft.step).toBe(0)
-    // Step 0 has no skip affordance.
-    vm.goSkip()
-    expect(vm.draft.step).toBe(0)
-
-    vm.close()
-    expect(w.emitted('close')).toHaveLength(1)
-
     await w.setProps({ open: false })
     await w.setProps({ open: true })
     await flushPromises()
-    expect(vm.draft.teamName).toBe('')
     expect(vm.draft.step).toBe(0)
-
+    expect(vm.draft.modelConfigurationId).toBe('')
+    expect(vm.draft.teamName).toBe('')
     w.unmount()
   })
-
-  it('renders nothing while closed', async () => {
+  it('renders nothing when closed', async () => {
     const w = mountWizard({ open: false })
     await flushPromises()
     expect(w.find('.wiz-root').exists()).toBe(false)

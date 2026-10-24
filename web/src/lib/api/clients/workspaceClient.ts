@@ -19,7 +19,6 @@ import type {
   ModelConnection,
   ModelConnectionBody,
   ToolCapability,
-  WorkspaceModelDefaults,
   ModelConfiguration,
   ModelConfigurationBody,
 } from '../apiTypes'
@@ -35,8 +34,6 @@ export const workspaceClient = {
   updateModelConnection: (id: string, body: Partial<ModelConnectionBody>) => req<ModelConnection>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
   deleteModelConnection: (id: string) => req<{ status: string }>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   listToolCapabilities: () => req<{ items: ToolCapability[] }>('/workspace/tool-capabilities'),
-  getModelDefaults: () => req<WorkspaceModelDefaults>('/workspace/model-defaults'),
-  putModelDefaults: (body: WorkspaceModelDefaults) => req<WorkspaceModelDefaults>('/workspace/model-defaults', { method: 'PUT', body: JSON.stringify(body) }),
   updateWorkspace: (body: Partial<Workspace>) =>
     req<Workspace>('/workspace', { method: 'PATCH', body: JSON.stringify(body) }),
   getWorkspace: (opts?: { signal?: AbortSignal }) =>

@@ -447,6 +447,16 @@ describe('ClarifyChat option preview window', () => {
   })
 
   it('closes from the header and Escape without clearing the choice or adding a page mask', async () => {
+    function appendFrameWithSource(container: HTMLElement) {
+      const frame = document.createElement('iframe')
+      const source = new Window()
+      hosts.push(source)
+      // Happy DOM 21 disables iframe loading by default, leaving contentWindow
+      // null. Supply distinct Window identities without enabling network loads.
+      Object.defineProperty(frame, 'contentWindow', { configurable: true, get: () => source })
+      container.appendChild(frame)
+      return frame
+    }
     const wrapper = mountChat([agent([fourUp])])
     await flushPromises()
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
@@ -495,8 +505,7 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
-    const frame = document.createElement('iframe')
-    dialog()!.appendChild(frame)
+    const frame = appendFrameWithSource(dialog()!)
     window.dispatchEvent(
       new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: frame.contentWindow }),
     )
@@ -505,10 +514,8 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
-    const owned = document.createElement('iframe')
-    dialog()!.appendChild(owned)
-    const stranger = document.createElement('iframe')
-    document.body.appendChild(stranger)
+    const owned = appendFrameWithSource(dialog()!)
+    const stranger = appendFrameWithSource(document.body)
     window.dispatchEvent(
       new MessageEvent('message', { data: { type: CLARIFY_DEMO_ESCAPE }, source: stranger.contentWindow }),
     )

@@ -11,6 +11,7 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 	setCredentialKey(t)
 	service := NewCredentialService(newTestDB(t))
 	for _, input := range []CredentialInput{
+		{Type: "ai", Provider: "cursor", Name: "Missing purpose", Value: "s"},
 		{Purpose: "unknown", Name: "Bad", Value: "s"},
 		{Purpose: "model_api", ToolID: "opencode", Name: "Bad", Value: "s"},
 		{Purpose: "model_api", EnvKey: "GLOBAL_KEY", Name: "Bad", Value: "s"},
@@ -60,8 +61,8 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 		{Type: "ai", Provider: "opencode", Metadata: map[string]any{"provider": "openrouter"}},
 	} {
 		purpose, _, _, kind := credentialDomain(row)
-		if purpose == "" || kind == "" {
-			t.Fatalf("legacy domain not inferred: %+v", row)
+		if purpose != "" || kind != "" {
+			t.Fatalf("domain was inferred from unstored attributes: %+v", row)
 		}
 	}
 	if nextSecretRevision(0) != 2 {
@@ -94,9 +95,6 @@ func TestCustomIssuerNamesDoNotSelectLegacyCredentialBehavior(t *testing.T) {
 		}
 	}
 	connections := NewModelConnectionService(db)
-	if err := connections.MigrateLegacyConnections(); err != nil {
-		t.Fatal(err)
-	}
 	rows, err := connections.List()
 	if err != nil || len(rows) != 0 {
 		t.Fatalf("custom issuer names created legacy tool connections: %d %v", len(rows), err)

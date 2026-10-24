@@ -1,7 +1,8 @@
 import type { Agent, AgentCapabilities, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
-import { cloneGitBindings, LEGACY_GIT_AUTH_KEYS } from './gitBindings'
+import { MODEL_RUNTIME_ENV_KEYS } from './modelRouting'
+import { isSecretEnvKey } from './secretEnvKeys'
+import { cloneGitBindings, GIT_AUTH_ENV_KEYS } from './gitBindings'
 import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
   ACP_BACKENDS,
   normalizeRegions,
@@ -25,13 +26,6 @@ export type AgentStudioDraft = {
   name: string
   credentialBindings?: Record<string, string | null>
   acpBackend: BackendId
-  openCodeCredentialId?: string
-  aiCredentialId?: string
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  gitCredentialType?: GitCredentialType
-  /** undefined inherits the workspace default; [] injects no repository credentials. */
-  repoIds?: string[]
   files: DraftFile[]
   mcp: DraftMCP[]
   env: KV[]
@@ -124,15 +118,9 @@ export function toDraft(a: Agent): AgentStudioDraft {
   return {
     ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
-    ...(a.gitBindings ? { gitBindings: cloneGitBindings(a.gitBindings) } : {}),
+    gitBindings: cloneGitBindings(a.gitBindings || { items: [] }),
     ...(a.credentialBindings ? { credentialBindings: { ...a.credentialBindings } } : {}),
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
-    openCodeCredentialId: a.openCodeCredentialId || '',
-    aiCredentialId: a.aiCredentialId || '',
-    gitCredentialId: a.gitCredentialId || '',
-    sshHostsCredentialId: a.sshHostsCredentialId || '',
-    gitCredentialType: a.gitCredentialType,
-    ...(a.repoIds ? { repoIds: [...a.repoIds] } : {}),
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
     mcp: (a.mcp || []).map(apiMcpToDraft),
     env: recToKV(a.env),
@@ -145,22 +133,15 @@ export function toDraft(a: Agent): AgentStudioDraft {
 }
 
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
-  const legacyKeys = new Set(['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION'])
   return {
     ...(d.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
     name: d.name,
-    ...(d.gitBindings ? { gitBindings: cloneGitBindings(d.gitBindings) } : {}),
-    ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !d.gitBindings || !LEGACY_GIT_AUTH_KEYS.has(key))) } : {}),
+    gitBindings: cloneGitBindings(d.gitBindings || { items: [] }),
+    ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !GIT_AUTH_ENV_KEYS.has(key) && !isSecretEnvKey(key))) } : {}),
     acpBackend: d.acpBackend || 'cursor',
-    ...(!d.modelBinding && d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),
-    ...(!d.modelBinding && d.aiCredentialId?.trim() ? { aiCredentialId: d.aiCredentialId.trim() } : {}),
-    ...(!d.gitBindings && d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
-    ...(!d.gitBindings && d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
-    ...(!d.gitBindings && d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
-    ...(d.repoIds ? { repoIds: [...d.repoIds] } : {}),
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
-    env: Object.fromEntries(Object.entries(kvToRec(d.env)).filter(([key]) => (!d.modelBinding || !legacyKeys.has(key)) && (!d.gitBindings || !LEGACY_GIT_AUTH_KEYS.has(key)))),
+    env: Object.fromEntries(Object.entries(kvToRec(d.env)).filter(([key]) => !MODEL_RUNTIME_ENV_KEYS.has(key) && !GIT_AUTH_ENV_KEYS.has(key))),
     layout: {
       configRoot: d.layout.configRoot.trim() || DEFAULT_CONFIG_ROOT,
       workspaceDir: d.layout.workspaceDir.trim() || DEFAULT_WORKSPACE_DIR,

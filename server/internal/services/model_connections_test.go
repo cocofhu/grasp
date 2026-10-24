@@ -215,31 +215,6 @@ func TestModelConnectionInputValidation(t *testing.T) {
 	}
 }
 
-func TestLegacyDSHBindingUsesNativeModelService(t *testing.T) {
-	setCredentialKey(t)
-	db := newTestDB(t)
-	credentials, service := NewCredentialService(db), NewModelConnectionService(db)
-	key, err := credentials.Create(CredentialInput{Type: "ai", Provider: "deepseek_harness", Name: "Legacy DeepSeek", Value: "deepseek-key"})
-	if err != nil || key.Purpose != "model_api" {
-		t.Fatalf("DSH key incorrectly treated as platform account: %+v %v", key, err)
-	}
-	for _, model := range []string{"", "auto", "deepseek-official/deepseek-v4-pro", `["deepseek-official","deepseek-v4-pro"]`} {
-		binding, err := service.LegacyBinding("deepseek_harness", key.ID, "", map[string]string{"ACP_BRIDGE_MODEL": model})
-		if err != nil || binding.ToolSettings.RouteProfile != "deepseek-native" {
-			t.Fatalf("native binding: %+v %v", binding, err)
-		}
-		if _, err := service.Resolve("deepseek_harness", *binding); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if binding, err := service.LegacyBinding("cursor", "", "", nil); binding != nil || err != nil {
-		t.Fatal("empty selection guessed a credential")
-	}
-	if binding, err := service.LegacyBinding("cursor", "account", "", map[string]string{"ACP_BRIDGE_MODEL": "gpt"}); err != nil || binding.CredentialID != "account" || binding.ModelID != "gpt" {
-		t.Fatal("legacy platform mapping failed")
-	}
-}
-
 func TestUnusedBuiltinCredentialDoesNotCreateModelConnection(t *testing.T) {
 	service := NewCredentialService(newTestDB(t))
 	if _, err := service.List(); err != nil {
@@ -248,63 +223,5 @@ func TestUnusedBuiltinCredentialDoesNotCreateModelConnection(t *testing.T) {
 	connections, err := NewModelConnectionService(service.db).List()
 	if err != nil || len(connections) != 0 {
 		t.Fatalf("empty slots became connections: %+v %v", connections, err)
-	}
-}
-
-func TestLegacyOpenCodeKeepsItsNativeProviderWithoutInferredConnection(t *testing.T) {
-	for _, provider := range []string{"google", "azure", "xai", "alibaba", "openai", "anthropic", "opencode", "custom"} {
-		t.Run(provider, func(t *testing.T) {
-			setCredentialKey(t)
-			db := newTestDB(t)
-			credentials, service := NewCredentialService(db), NewModelConnectionService(db)
-			metadata := map[string]any{"provider": provider, "model": provider + "/vendor/raw-model", "vision": true}
-			if provider == "custom" {
-				metadata["baseUrl"] = "https://gateway.example/prefix/v1"
-			}
-			key, err := credentials.Create(CredentialInput{Type: "ai", Provider: "opencode", Name: "Original native provider", Value: "original-selected-key", Metadata: metadata})
-			if err != nil {
-				t.Fatal(err)
-			}
-			for range 2 {
-				if err := service.MigrateLegacyConnections(); err != nil {
-					t.Fatal(err)
-				}
-				binding, err := service.LegacyBinding("opencode", "", key.ID, nil)
-				if err != nil || binding != nil {
-					t.Fatalf("native OpenCode selection was changed: %+v %v", binding, err)
-				}
-			}
-			items, err := service.List()
-			if err != nil || len(items) != 0 {
-				t.Fatalf("provider protocol/endpoint was guessed: %+v %v", items, err)
-			}
-			original, err := credentials.Get(key.ID)
-			if err != nil || original.Metadata["model"] != metadata["model"] || !original.Configured {
-				t.Fatal("legacy metadata or key was changed")
-			}
-			agents := NewAgentService(t.TempDir())
-			agents.SetModelBindingResolver(func(string, *modelrouting.Binding) error {
-				t.Fatal("native provider required a new binding")
-				return nil
-			}, func(backend, ai, oc string, env map[string]string) *modelrouting.Binding {
-				binding, _ := service.LegacyBinding(backend, ai, oc, env)
-				return binding
-			})
-			if err := agents.Save(Agent{Name: "native", AcpBackend: "opencode", OpenCodeCredentialID: key.ID}); err != nil {
-				t.Fatal(err)
-			}
-			got, _ := agents.Get("native")
-			if got.ModelBinding != nil || got.OpenCodeCredentialID != key.ID {
-				t.Fatal("legacy Agent selection was lost")
-			}
-			if err := credentials.Revoke(key.ID); err != nil {
-				t.Fatal(err)
-			}
-			agents.ClearOpenCodeCredentialSelection(key.ID)
-			got, _ = agents.Get("native")
-			if got.OpenCodeCredentialID != key.ID || credentials.ResolveOpenCodeCredential(got.OpenCodeCredentialID) != nil {
-				t.Fatal("revocation replaced the explicit native credential")
-			}
-		})
 	}
 }

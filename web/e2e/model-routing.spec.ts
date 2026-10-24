@@ -32,7 +32,6 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
     await route.fulfill({ json: { items: [...credentials, { id: 'cred-builtin-cursor', name: 'Cursor', provider: 'cursor', type: 'ai', configured: false, secretRevision: 1 }] } })
   })
   await routeApi(page, '**/api/workspace/tool-capabilities', async (route) => route.fulfill({ json: { items: caps } }))
-  await routeApi(page, '**/api/workspace/model-defaults', async (route) => route.fulfill({ json: { bindingsByBackend: {} } }))
   await routeApi(page, '**/api/workspace/model-connections', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON()

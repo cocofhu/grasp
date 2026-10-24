@@ -172,7 +172,7 @@ export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagen
 export type ConcreteModelBinding =
   | { kind: 'platform'; credentialId: string; modelId?: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
   | { kind: 'connection'; connectionId: string; modelId: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
-export type ModelBinding = { kind: 'inherit' } | { kind: 'configuration'; configurationId: string } | ConcreteModelBinding
+export type ModelBinding = { kind: 'configuration'; configurationId: string }
 export interface ModelConfiguration {
   id: string
   name: string
@@ -212,7 +212,6 @@ export interface ToolCapability {
   verification?: string
   evidence?: { url: string; scope?: string; checkedAt?: string; kind?: string }[]
 }
-export interface WorkspaceModelDefaults { bindingsByBackend: Record<string, Exclude<ModelBinding, { kind: 'inherit' }>> }
 
 export interface AgentGitBinding {
   credentialId: string
@@ -228,7 +227,7 @@ export interface AgentGitBindings {
 }
 
 export interface Agent {
-  /** Missing preserves legacy Git authorization; an empty list explicitly disables it. */
+  /** Only explicitly selected credentials are staged; missing means an empty list. */
   gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
@@ -237,17 +236,6 @@ export interface Agent {
   /** Optional embedded role pack id (e.g. test / preflight); omit for blank. */
   templateId?: string
   acpBackend: BackendId
-  /** Workspace credential selected for OpenCode. The secret is not stored here. */
-  openCodeCredentialId?: string
-  /** Workspace credential selected for a non-OpenCode coding backend. */
-  aiCredentialId?: string
-  /** GitHub, GitLab, or SSH private-key credential selected for the Git method. */
-  gitCredentialId?: string
-  /** Known-hosts credential selected when Git uses SSH. */
-  sshHostsCredentialId?: string
-  gitCredentialType?: 'github_https' | 'gitlab_https' | 'ssh'
-  /** Repositories whose own Git credentials are injected. Missing inherits the workspace default; [] injects none. */
-  repoIds?: string[]
   files?: AgentFile[]
   mcp?: MCPServer[]
   env?: Record<string, string>
@@ -258,16 +246,6 @@ export interface Agent {
 
 /** Workspace-level shared Agent baseline (extend layer; Agent overlays on top). */
 export interface SharedAgentConfig {
-  gitBindings?: AgentGitBindings
-  modelBinding?: ModelBinding
-  acpBackend: BackendId
-  gitCredentialType?: string
-  /** Workspace credential id for a non-OpenCode generic authorization. Empty means unset. */
-  aiCredentialId?: string
-  /** Workspace credential id for the OpenCode generic authorization. Empty means unset. */
-  openCodeCredentialId?: string
-  /** Repositories whose own Git credentials every Agent inherits unless it overrides. */
-  repoIds?: string[]
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -276,7 +254,7 @@ export interface SharedAgentConfig {
 
 /** Workspace-owned credential metadata. Secret values are never returned by GET. */
 export interface CredentialItem {
-  purpose?: 'tool_auth' | 'model_api' | 'git' | 'ssh'
+  purpose?: 'tool_auth' | 'model_api' | 'git' | 'ssh' | 'mcp' | 'custom'
   issuer?: string
   toolId?: string
   secretKind?: 'api_key' | 'token' | 'login_file' | 'ssh_private_key' | 'ssh_known_hosts'
@@ -373,12 +351,9 @@ export interface TeamBootstrapRequest {
   prefix: string
   pmName: string
   background: string
-  acpBackend: BackendId
-  apiKey?: string
-  customConfig?: string
-  region?: string
+  modelConfigurationId: string
+  gitBindings?: AgentGitBindings
   gitUrl?: string
-  gitCredentialType?: string
   mcp?: MCPServer[]
   env?: Record<string, string>
 }

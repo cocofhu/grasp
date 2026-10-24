@@ -10,6 +10,7 @@ import (
 )
 
 const (
+	EnvACPBridgeModel    = "ACP_BRIDGE_MODEL"
 	EnvModelConnection   = "GRASP_MODEL_CONNECTION"
 	EnvModelAPIKey       = "GRASP_MODEL_API_KEY"
 	EnvModelCredentialID = "GRASP_MODEL_CREDENTIAL_ID"
@@ -23,8 +24,8 @@ type ModelBindingResolver func(string, *modelrouting.Binding) (modelrouting.Reso
 // Git/SSH credentials remain independent. A missing or revoked reference fails
 // before a sandbox is created instead of falling back to a workspace secret.
 func ApplyModelBinding(env map[string]string, backend string, binding *modelrouting.Binding, resolve ModelBindingResolver) error {
-	if binding == nil {
-		return nil
+	if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+		return err
 	}
 	if resolve == nil {
 		return fmt.Errorf("model binding resolver unavailable")
@@ -83,7 +84,7 @@ func ClearModelRoutingEnv(env map[string]string) {
 		"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY",
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
-		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvACPBridgeModel, EnvOpenCodeProvider, EnvOpenCodeBaseURL, EnvOpenCodeModelVision,
+		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvACPBridgeModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR",
@@ -116,10 +117,7 @@ func InstallBoundCodexLoginFile(backend AcpBackend, home, body string, env map[s
 }
 
 // ModelCredentialIDForWriteBack keeps refreshed login material attached to the
-// exact resolved credential, including an inherited platform binding.
-func ModelCredentialIDForWriteBack(env map[string]string, legacyID string) string {
-	if id := strings.TrimSpace(env[EnvModelCredentialID]); id != "" {
-		return id
-	}
-	return legacyID
+// exact resolved credential, from the selected model configuration.
+func ModelCredentialIDForWriteBack(env map[string]string) string {
+	return strings.TrimSpace(env[EnvModelCredentialID])
 }

@@ -477,7 +477,6 @@ func removeHome(home string) {
 
 func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 
-	repos := resolveRepos(req)
 	env := map[string]string{}
 
 	// Secrets come only from workspace credentials: platform sandbox.env and
@@ -496,19 +495,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
 		env[k] = substVars(v, vars)
 	}
-	// Workspace credentials are the only secret source. They are never copied
-	// into persisted Agent config.
-	// Platform-reserved keys from mcpVars are re-applied below and still win.
-	var creds map[string]string
-	if c.opts.Credentials != nil {
-		creds = c.opts.Credentials()
-		for k, v := range creds {
-			k = strings.TrimSpace(k)
-			if k != "" {
-				env[k] = v
-			}
-		}
-	}
+	creds := map[string]string{}
 	protectedCredentialKeys := map[string]struct{}{}
 	if c.opts.CredentialKeys != nil {
 		protectedCredentialKeys = c.opts.CredentialKeys()
@@ -528,24 +515,10 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
-	// The selected model-vendor credential wins over merged workspace credentials and
-	// over the run snapshot. An empty selection injects nothing.
-	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
-		Backend:              string(c.backend),
-		GitCredentialType:    agentCfg.GitCredentialType,
-		AiCredentialID:       agentCfg.AiCredentialID,
-		GitCredentialID:      agentCfg.GitCredentialID,
-		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
-	}, c.opts.SelectedCredential)
 	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
 	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.SelectedCredential)
 	if err != nil {
 		return sandbox.Spec{}, err
-	}
-	if c.backend == BackendOpenCode && agentCfg.ModelBinding == nil {
-		if _, err := ApplyLegacyOpenCodeCredential(env, agentCfg.OpenCodeCredentialID, c.opts.OpenCodeCredential); err != nil {
-			return sandbox.Spec{}, err
-		}
 	}
 	if err := ApplyModelBinding(env, string(c.backend), agentCfg.ModelBinding, c.opts.ModelBinding); err != nil {
 		return sandbox.Spec{}, err
@@ -559,33 +532,18 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	env = merged
 	env["AGENT_PROVIDER"] = string(c.backend)
-	if err := RequireOpenCodePlaceholderKey(OpenCodeConfigForEnvWithCatalog(context.Background(), c.backend, env, c.opts.OpenCodeCatalog), env); err != nil {
-		return sandbox.Spec{}, err
-	}
 	applyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
 		if strings.HasPrefix(k, "vars.") || v == "" {
 			continue
 		}
-		if agentCfg.GitBindings != nil && IsGitAuthorizationEnvKey(k) {
+		if IsGitAuthorizationEnvKey(k) {
 			continue
 		}
 		env[k] = v
 	}
 
-	if agentCfg.GitBindings == nil && len(repos) > 0 && env["GITLAB_URL"] == "" {
-		url := repos[0].URL
-		host := gitRepoHost(url)
-		ghe := gitRepoHost(env["GITHUB_URL"])
-		// Do not treat a GitHub / GHE clone URL as GITLAB_URL (would inject
-		// oauth2:GITLAB_TOKEN@github.com when both tokens are configured).
-		if host != "" && host != "github.com" && (ghe == "" || host != ghe) {
-			if base := gitBaseURL(url); base != "" {
-				env["GITLAB_URL"] = base
-			}
-		}
-	}
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
 	if c.backend == BackendCodex {
@@ -601,24 +559,19 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		return sandbox.Spec{}, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, ModelCredentialIDForWriteBack(env, agentCfg.AiCredentialID), agentCfg.CredentialBindings, c.opts.SelectedCredential, c.opts.InjectedCredentialID))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), ModelCredentialIDForWriteBack(env))
 	}
 	if c.backend == BackendCodex && env[EnvModelConnection] != "" {
 		codexConnectionRuns.Store(c.backendKey(codexLoginKey(req)), true)
 	}
 	spec := sandbox.Spec{
-		GitBindingsConfigured: agentCfg.GitBindings != nil,
+		GitBindingsConfigured: true,
 		GitCredentials:        gitCredentials,
 		Image:                 resolveProviderImage(c.opts, c.backend),
 		Env:                   env,
 		ConfigHome:            home,
 		ConfigRoot:            layout.ConfigRoot,
 		WorkspaceDir:          layout.WorkspaceDir,
-	}
-	// SSH comes only from workspace credentials.
-	sandbox.ApplySSHCredentials(&spec, creds["GIT_SSH_PRIVATE_KEY"], creds["GIT_SSH_KNOWN_HOSTS"])
-	if c.opts.RepoCredentials != nil && agentCfg.RepoIDs != nil {
-		spec.RepoCredentials = c.opts.RepoCredentials(*agentCfg.RepoIDs)
 	}
 	return spec, nil
 }

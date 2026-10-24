@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
@@ -31,34 +32,23 @@ func modelBindingFingerprint(agent Agent, env map[string]string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func gitBindingsFingerprint(agent Agent, credentials []sandbox.GitCredential) string {
-	if agent.GitBindings == nil {
-		return ""
-	}
+func gitBindingsFingerprint(credentials []sandbox.GitCredential) string {
 	return sandbox.SpecFingerprint(sandbox.Spec{GitBindingsConfigured: true, GitCredentials: credentials})
 }
 
 func (s *SandboxService) currentBindingFingerprints(agent Agent) (model, git string, err error) {
+	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.ModelBinding.ConfigurationID) == "" {
+		return "", "", fmt.Errorf("请先为 Agent 选择模型配置")
+	}
 	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.selectedCredential)
 	if err != nil {
 		return "", "", err
 	}
 	env := map[string]string{}
-	legacyModel := ""
-	if agent.AcpBackend == "opencode" && agent.ModelBinding == nil {
-		legacyModel, err = runtime.ApplyLegacyOpenCodeCredential(env, agent.OpenCodeCredentialID, s.openCodeCredential)
-		if err != nil {
-			return "", "", err
-		}
-	}
 	if err := runtime.ApplyModelBinding(env, agent.AcpBackend, agent.ModelBinding, s.modelBinding); err != nil {
 		return "", "", err
 	}
-	model = modelBindingFingerprint(agent, env)
-	if legacyModel != "" {
-		model = legacyModel
-	}
-	return model, gitBindingsFingerprint(agent, credentials), nil
+	return modelBindingFingerprint(agent, env), gitBindingsFingerprint(credentials), nil
 }
 
 func checkAppliedBindings(model, git string, row *models.Sandbox, live *liveSandbox) error {

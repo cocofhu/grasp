@@ -4,14 +4,15 @@ import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import type { CredentialItem } from '@/lib/api/api'
 import type { AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
-import { LEGACY_GIT_AUTH_KEYS } from '@/lib/agent/gitBindings'
+import { GIT_AUTH_ENV_KEYS } from '@/lib/agent/gitBindings'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import { isSecretEnvKey } from '@/lib/agent/secretEnvKeys'
 const props = defineProps<{ draft: AgentStudioDraft }>()
 const { t } = useI18n()
 const credentials = ref<CredentialItem[]>([])
 const error = ref('')
-const keys = computed(() => [...new Set([...Object.keys(props.draft.credentialBindings || {}), ...credentials.value.map((credential) => credential.envKey || '').filter(Boolean)])].filter((key) => !LEGACY_GIT_AUTH_KEYS.has(key)).sort())
+const keys = computed(() => [...new Set([...Object.keys(props.draft.credentialBindings || {}), ...credentials.value.map((credential) => credential.envKey || '').filter(Boolean)])].filter((key) => !GIT_AUTH_ENV_KEYS.has(key) && !isSecretEnvKey(key)).sort())
 function selection(key: string): string {
   const bindings = props.draft.credentialBindings || {}
   return Object.prototype.hasOwnProperty.call(bindings, key) ? bindings[key] === null ? '__disabled' : bindings[key] || '__inherit' : '__inherit'

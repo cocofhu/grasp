@@ -65,21 +65,19 @@ type Model struct {
 }
 
 type Connection struct {
-	ID           string  `gorm:"primaryKey" json:"id"`
-	Name         string  `json:"name"`
-	ProviderID   string  `json:"providerId"`
-	Protocol     string  `json:"protocol"`
-	BaseURL      string  `json:"baseUrl"`
-	CredentialID string  `gorm:"index" json:"credentialId"`
-	Auth         Auth    `gorm:"serializer:json" json:"auth"`
-	Service      Service `gorm:"serializer:json" json:"service,omitempty"`
-	Models       []Model `gorm:"serializer:json" json:"models"`
-	State        string  `json:"state"`
-	Revision     uint64  `json:"revision"`
-	// LegacyCredentialID is an idempotency marker, not another secret reference.
-	LegacyCredentialID *string   `gorm:"uniqueIndex" json:"legacyCredentialId,omitempty"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	ID           string    `gorm:"primaryKey" json:"id"`
+	Name         string    `json:"name"`
+	ProviderID   string    `json:"providerId"`
+	Protocol     string    `json:"protocol"`
+	BaseURL      string    `json:"baseUrl"`
+	CredentialID string    `gorm:"index" json:"credentialId"`
+	Auth         Auth      `gorm:"serializer:json" json:"auth"`
+	Service      Service   `gorm:"serializer:json" json:"service,omitempty"`
+	Models       []Model   `gorm:"serializer:json" json:"models"`
+	State        string    `json:"state"`
+	Revision     uint64    `json:"revision"`
+	CreatedAt    time.Time `json:"createdAt"`
+	UpdatedAt    time.Time `json:"updatedAt"`
 }
 
 // Resolved exists only while assembling a run. JSON never contains its secret.

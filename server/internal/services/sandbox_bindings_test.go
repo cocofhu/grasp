@@ -149,65 +149,31 @@ func TestTestSandboxDoesNotReusePreviouslyBoundCredentials(t *testing.T) {
 	}
 }
 
-func TestLegacyOpenCodeSandboxesKeepNativeSelectionAndRevalidate(t *testing.T) {
-	for _, purpose := range []string{"test", SandboxPurposeAgent} {
+func TestSandboxCreationRequiresSelectedModelConfiguration(t *testing.T) {
+	for _, purpose := range []string{"test", SandboxPurposeAgent, SandboxPurposeSolo} {
 		t.Run(purpose, func(t *testing.T) {
-			setCredentialKey(t)
 			db := newTestDB(t)
-			credentials := NewCredentialService(db)
-			key, err := credentials.Create(CredentialInput{Type: "ai", Provider: "opencode", Name: "Native Google", Value: "original-key", Metadata: map[string]any{"provider": "google", "model": "google/gemini-original"}})
-			if err != nil {
+			ds := &dockerState{}
+			s := newSandboxService(t, db, ds)
+			if err := s.skills.Save(Agent{Name: "agentA", AcpBackend: "cursor"}); err != nil {
 				t.Fatal(err)
 			}
-			acp, port := fakeACPServer(t)
-			defer acp.Close()
-			s := newSandboxService(t, db, &dockerState{acpPort: port})
-			s.openCodeCredential = credentials.ResolveOpenCodeCredential
-			s.selectedCredential = credentials.ResolveSelectedValue
-			agent := Agent{Name: "agentA", AcpBackend: "opencode", OpenCodeCredentialID: key.ID}
-			if err := s.skills.Save(agent); err != nil {
-				t.Fatal(err)
+			var err error
+			switch purpose {
+			case "test":
+				_, err = s.Open(context.Background(), "agentA", nil)
+			case SandboxPurposeAgent:
+				_, _, err = s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: "agentA", ThreadID: "missing-model"})
+			case SandboxPurposeSolo:
+				_, err = s.OpenSoloSandbox(context.Background(), SoloSandboxOpts{Profile: "agentA", SessionID: "missing-model"})
 			}
-			agent, _ = s.skills.Get(agent.Name)
-			row := &models.Sandbox{Name: "legacy-native", Profile: agent.Name, Purpose: purpose, ThreadID: "legacy-thread", Status: "creating", Token: "password"}
-			if err := db.Create(row).Error; err != nil {
-				t.Fatal(err)
+			if err == nil || !strings.Contains(err.Error(), "模型配置") {
+				t.Fatalf("an unconfigured Agent started: %v", err)
 			}
-			if purpose == "test" {
-				s.startContainer(row.ID, row.Name, agent.Name, "legacy-run", row.Token, nil, agent, "")
-			} else {
-				s.startAgentContainer(row.ID, row.Name, agent.Name, row.ThreadID, "legacy-run", row.Token, nil, agent, agentContainerExtra{})
-			}
-			defer func() { _ = s.Destroy(context.Background(), row.ID) }()
-			if err := db.First(row, row.ID).Error; err != nil || row.Status != "running" {
-				t.Fatalf("native sandbox failed: %v %s", err, row.Error)
-			}
-			if row.ModelBindingFingerprint == "" {
-				t.Fatal("legacy selection was not fingerprinted")
-			}
-			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "continue original SDK", nil, 0, nil); err != nil {
-				t.Fatal(err)
-			}
-			if purpose == "test" {
-				if got, err := s.Open(context.Background(), agent.Name, nil); err != nil || got.ID != row.ID {
-					t.Fatalf("unchanged legacy sandbox was not reused: %v", err)
-				}
-			} else {
-				if got, reused, err := s.OpenAgentSandbox(context.Background(), AgentSandboxOpenOpts{Profile: agent.Name, ThreadID: row.ThreadID, Reuse: true}); err != nil || !reused || got.ID != row.ID {
-					t.Fatalf("unchanged legacy sandbox was not reused: %v", err)
-				}
-			}
-			if _, err := credentials.Update(key.ID, CredentialInput{Value: "rotated-key"}); err != nil {
-				t.Fatal(err)
-			}
-			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "must not use old key", nil, 0, nil); err == nil {
-				t.Fatal("legacy key rotation reused old authorization")
-			}
-			if err := credentials.Revoke(key.ID); err != nil {
-				t.Fatal(err)
-			}
-			if _, _, err := s.ChatWithTimeout(context.Background(), row.ID, "revoked", nil, 0, nil); err == nil {
-				t.Fatal("legacy revocation fell back")
+			var count int64
+			db.Model(&models.Sandbox{}).Count(&count)
+			if count != 0 || len(ds.fg.LastCreateEnv()) != 0 {
+				t.Fatal("missing model configuration reached sandbox creation")
 			}
 		})
 	}

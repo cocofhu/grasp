@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
-import { legacyGitBindings, setDraftGitBindings } from '@/lib/agent/gitBindings'
-import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
@@ -15,23 +12,11 @@ import {
   draftPayloadJson,
   fromDraft,
   hydrateStudioDraft,
-  kvToRec,
-  recToKV,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
 import {
-  getRegionPolicy,
   isManagedRegionKey,
-  normalizeRegions,
-  setRegion,
-  switchBackendRegions,
-  type BackendId,
 } from '@/lib/shared/regionPolicy'
-import { switchOpenCodeEnv } from '@/lib/agent/openCodeProvider'
-import WorkspaceModelDefaults from './WorkspaceModelDefaults.vue'
-import CodingToolPicker from '@/components/agent/CodingToolPicker.vue'
-import RepoAccessPicker from '@/components/agent/RepoAccessPicker.vue'
-import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
@@ -42,7 +27,6 @@ const { isMobile } = useBreakpoint()
 
 type SubTab = 'files' | 'mcp' | 'env' | 'meta'
 
-const gitHelpOpen = ref(false)
 const loading = ref(true)
 const loadError = ref('')
 const saving = ref(false)
@@ -51,7 +35,6 @@ const originalJson = ref('')
 const subTab = ref<SubTab>('files')
 const justSaved = ref(false)
 const filesPanelRef = ref<InstanceType<typeof AgentFilesPanel> | null>(null)
-let configRootTouched = false
 
 const dirty = computed(() => {
   if (!draft.value) return false
@@ -72,39 +55,10 @@ const subTabs = computed(() => {
   ]
 })
 
-const currentRegionPolicy = computed(() =>
-  draft.value ? getRegionPolicy(draft.value.acpBackend) : null,
-)
-
-const displayRegion = computed(() => {
-  if (!draft.value) return ''
-  const normalized = normalizeRegions(
-    kvToRec(draft.value.env),
-    draft.value.acpBackend,
-    'preserve-special',
-  )
-  return normalized.special ? '' : normalized.region
-})
-
-const specialRegion = computed(() => {
-  if (!draft.value) return ''
-  const normalized = normalizeRegions(
-    kvToRec(draft.value.env),
-    draft.value.acpBackend,
-    'preserve-special',
-  )
-  return normalized.special ? normalized.region : ''
-})
-
 function sharedToDraft(cfg: SharedAgentConfig): AgentStudioDraft {
   return hydrateStudioDraft({
     name: '__workspace_shared__',
-    acpBackend: cfg.acpBackend,
-    aiCredentialId: cfg.aiCredentialId || '',
-    openCodeCredentialId: cfg.openCodeCredentialId || '',
-    gitCredentialType: cfg.gitCredentialType as AgentStudioDraft['gitCredentialType'],
-    ...(cfg.gitBindings ? { gitBindings: cfg.gitBindings } : {}),
-    repoIds: cfg.repoIds || [],
+    acpBackend: 'cursor',
     files: cfg.files || [],
     mcp: cfg.mcp || [],
     env: cfg.env || {},
@@ -116,7 +70,6 @@ function applyLoaded(cfg: SharedAgentConfig) {
   const d = sharedToDraft(cfg)
   draft.value = d
   originalJson.value = draftPayloadJson(d)
-  configRootTouched = false
 }
 
 async function load() {
@@ -139,12 +92,6 @@ async function save(): Promise<boolean> {
   try {
     const payload = fromDraft(draft.value)
     const saved = await api.putSharedAgentConfig({
-      acpBackend: payload.acpBackend,
-      gitCredentialType: payload.gitCredentialType || '',
-      ...(payload.gitBindings ? { gitBindings: payload.gitBindings } : {}),
-      aiCredentialId: draft.value.aiCredentialId || '',
-      openCodeCredentialId: draft.value.openCodeCredentialId || '',
-      repoIds: draft.value.repoIds || [],
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -165,32 +112,6 @@ async function save(): Promise<boolean> {
 function discard() {
   if (!draft.value) return
   void load()
-}
-
-function selectAcpBackend(id: BackendId) {
-  if (!draft.value) return
-  const prev = draft.value.acpBackend
-  draft.value.acpBackend = id
-  if (!configRootTouched) {
-    draft.value.layout.configRoot = defaultConfigRootFor(id)
-  }
-  if (prev !== id) {
-    draft.value.aiCredentialId = ''
-    draft.value.env = recToKV(
-      switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id), prev, id).env,
-    )
-  }
-}
-
-function selectRegion(id: string) {
-  if (!draft.value) return
-  draft.value.env = recToKV(setRegion(kvToRec(draft.value.env), draft.value.acpBackend, id))
-}
-
-async function focusCliModel() {
-  subTab.value = 'meta'
-  await nextTick()
-  document.querySelector('[data-testid=workspace-model-defaults]')?.scrollIntoView({ block: 'nearest' })
 }
 
 function openSettingsInFiles() {
@@ -306,7 +227,6 @@ defineExpose({ dirty, save })
         context="shared"
         @toast="toast.success($event)"
         @open-settings-file="openSettingsInFiles"
-        @edit-model="focusCliModel"
       />
 
       <div
@@ -315,26 +235,6 @@ defineExpose({ dirty, save })
         data-testid="shared-agent-meta"
       >
         <div class="max-w-3xl space-y-4">
-          <section>
-            <h3 class="mb-3 mt-0 text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.toolPicker.title') }}</h3>
-            <CodingToolPicker
-              :model-value="draft.acpBackend"
-              :region-policy="currentRegionPolicy"
-              :current-region="displayRegion"
-              :special-region="specialRegion"
-              :disabled="saving"
-              @update:model-value="selectAcpBackend"
-              @select-region="selectRegion"
-            />
-          </section>
-
-          <WorkspaceModelDefaults />
-
-          <AgentGitCredentialPicker :model-value="draft.gitBindings" :legacy="legacyGitBindings(draft)" :disabled="saving" @update:model-value="setDraftGitBindings(draft, $event)" @help="gitHelpOpen = true" />
-          <EnvCredentialHelpModal :open="gitHelpOpen" section="git" :backend="draft.acpBackend" @close="gitHelpOpen = false" />
-
-          <RepoAccessPicker :model-value="draft.repoIds" shared @update:model-value="draft.repoIds = $event || []" />
-
           <label class="block">
             <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
             <input
@@ -343,7 +243,6 @@ defineExpose({ dirty, save })
               spellcheck="false"
               data-testid="meta-config-root"
               class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-              @input="configRootTouched = true"
             />
           </label>
           <label class="block">

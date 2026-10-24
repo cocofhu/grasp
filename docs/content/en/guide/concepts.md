@@ -87,7 +87,7 @@ Agents are not black-box prompts on a laptop. They execute in Docker containers 
 
 Supported coding tools are **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, **OpenCode**, **Codex**, and **DeepSeek Harness**. Choose the tool independently from its model source. Store secrets in Settings → Credentials; model connections store a protocol, base URL, credential reference and original model IDs. One key can serve multiple connections.
 
-Agents reference named model configurations. Advanced settings retain direct tool-platform or compatible-connection bindings and the complete workspace default for the Agent’s own tool. Inheritance never changes the tool. Missing defaults, disabled connections and cleared keys fail explicitly without selecting another secret.
+Agents reference only named model configurations: a coding tool, a credential and an upstream model. Creation, editing, onboarding and execution use that same reference. Missing configurations, disabled connections and cleared keys fail explicitly without selecting another secret.
 
 | Coding tool | Model sources and connection protocols |
 | --- | --- |
@@ -99,7 +99,9 @@ Agents reference named model configurations. Advanced settings retain direct too
 
 First configure a preset or custom service’s API base and key in Credentials, or save only the key. In Models, save a named configuration combining a coding tool, an existing credential and the selected model. Agents bind that configuration to reuse the combination. Platform authorization continues to use the tool’s own key. The configuration’s tool is fixed after creation. Disabling or deleting a configuration, or clearing its key, fails explicitly without switching to another authorization. Enter original provider model IDs manually, including any `/` characters. Claude Code and CodeBuddy support separate auxiliary model roles. DSH’s DeepSeek native route requires the official service. “Not verified” means no live model execution has been recorded; adapter and mock tests do not establish provider compatibility.
 
-Existing OpenCode Agents retain their original provider catalog, model and selected credential instead of being converted to a generic protocol connection. Invalid authorization fails explicitly. Close and reopen long-lived sandboxes after changing their model or authorization; sandboxes created before the upgrade may also require reopening when their applied bindings cannot be verified. Saved Agents and keys are retained.
+This configuration change adopts the new structure throughout. Old direct Agent authorizations, model environment settings and workspace defaults are no longer model sources and are not automatically migrated. Select a saved model configuration before running those Agents. Close and reopen long-lived sandboxes after changing their model or authorization.
+
+Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires an explicit model selection. Git uses an explicit list of saved authorizations, with a preferred identity and optional site/repository scopes. An omitted list grants no Git access. Shared workflow sandboxes replace authorizations when nodes change.
 
 ## Artifact contract and MCP
 

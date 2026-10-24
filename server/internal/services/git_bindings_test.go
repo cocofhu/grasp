@@ -15,7 +15,6 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
-	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -41,20 +40,19 @@ func serviceGitValue(id string) (string, string, bool) {
 	}
 }
 
-func TestAgentGitBindingsRoundtripZIPAndClearedReferences(t *testing.T) {
+func TestAgentGitBindingsRoundtripZIP(t *testing.T) {
 	s := NewAgentService(t.TempDir())
 	selection := serviceGitSelection("gh", "gl")
 	selection.Items[1].Scope = " https://GIT.Example.com/ "
-	legacy := "old"
-	a := Agent{Name: "git-agent", AcpBackend: "cursor", GitBindings: selection, GitCredentialType: "github_https", GitCredentialID: "old", SshHostsCredentialID: "old-hosts", CredentialBindings: map[string]*string{"GITHUB_TOKEN": &legacy, "OTHER": &legacy}, Env: map[string]string{"GITHUB_URL": "https://old", "GIT_REPOS": "repo|https://git.example/repo"}}
+	a := Agent{Name: "git-agent", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}
 	if err := s.Save(a); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := s.Get(a.Name)
-	if got.GitBindings == nil || got.GitBindings.Items[1].Scope != "https://git.example.com" || got.GitCredentialID != "" || got.GitCredentialType != "" || got.SshHostsCredentialID != "" || got.CredentialBindings["GITHUB_TOKEN"] != nil || got.CredentialBindings["OTHER"] == nil || got.Env["GITHUB_URL"] != "" || got.Env["GIT_REPOS"] == "" {
-		t.Fatalf("selection did not replace legacy slots: %+v", got)
+	if got.GitBindings == nil || got.GitBindings.Items[1].Scope != "https://git.example.com" {
+		t.Fatalf("selection = %+v", got.GitBindings)
 	}
-	if a.GitCredentialID != "old" || a.CredentialBindings["GITHUB_TOKEN"] == nil || a.Env["GITHUB_URL"] == "" {
+	if a.GitBindings.Items[1].Scope != " https://GIT.Example.com/ " {
 		t.Fatal("Save mutated caller")
 	}
 	raw, err := s.ExportZIP(a.Name)
@@ -62,63 +60,38 @@ func TestAgentGitBindingsRoundtripZIPAndClearedReferences(t *testing.T) {
 		t.Fatal(err)
 	}
 	copy, err := NewAgentService(t.TempDir()).ImportZIP(raw, "git-copy", ImportZIPCreate)
-	if err != nil || !reflect.DeepEqual(copy.GitBindings, got.GitBindings) || copy.RepoIDs != nil {
+	if err != nil || !reflect.DeepEqual(copy.GitBindings, got.GitBindings) {
 		t.Fatalf("ZIP selection = %+v, %v", copy.GitBindings, err)
 	}
-	s.ClearOpenCodeCredentialSelection("gh")
-	after, _ := s.Get(a.Name)
-	if !reflect.DeepEqual(after.GitBindings, got.GitBindings) {
-		t.Fatal("clearing a secret silently replaced or removed its explicit reference")
-	}
-	if err := s.Save(Agent{Name: "legacy", AcpBackend: "cursor", GitCredentialID: "old", GitCredentialType: "github_https"}); err != nil {
-		t.Fatal(err)
-	}
-	if legacy, _ := s.Get("legacy"); legacy.GitBindings != nil || legacy.GitCredentialID != "old" {
-		t.Fatal("legacy selection migrated implicitly")
-	}
-	if err := s.Save(Agent{Name: "none", AcpBackend: "cursor", GitBindings: serviceGitSelection()}); err != nil {
-		t.Fatal(err)
-	}
-	if none, _ := s.Get("none"); none.GitBindings == nil || len(none.GitBindings.Items) != 0 {
-		t.Fatal("explicit empty lost")
+	for _, name := range []string{"omitted", "empty"} {
+		agent := Agent{Name: name, AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding()}
+		if name == "empty" {
+			agent.GitBindings = serviceGitSelection()
+		}
+		if err := s.Save(agent); err != nil {
+			t.Fatal(err)
+		}
+		none, _ := s.Get(name)
+		if none.GitBindings == nil || len(none.GitBindings.Items) != 0 {
+			t.Fatal("omitted and empty Git authorizations must both grant none")
+		}
 	}
 	if err := s.Save(Agent{Name: "bad", AcpBackend: "cursor", GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}}}); !errors.Is(err, ErrInvalidAgent) || s.Exists("bad") {
 		t.Fatalf("invalid selection saved: %v", err)
 	}
 }
 
-func TestSharedGitBindingsPreserveExplicitLegacyAndRepositoryGrants(t *testing.T) {
-	s := NewSharedAgentService(t.TempDir())
-	selection := serviceGitSelection("gh")
-	if err := s.Save(SharedAgentConfig{AcpBackend: "cursor", GitBindings: selection, RepoIDs: []string{"independent-repo"}, Env: map[string]string{"GITLAB_URL": "https://old", "FEATURE": "keep"}}); err != nil {
-		t.Fatal(err)
+func TestSharedWorkspaceDoesNotGrantGitAuthorization(t *testing.T) {
+	shared := SharedAgentConfig{Env: map[string]string{"FEATURE": "keep"}}
+	own := serviceGitSelection("gh")
+	if got := ExtendOverlay(shared, Agent{Name: "own", GitBindings: own}); got.GitBindings != own {
+		t.Fatal("workspace defaults replaced the Agent selection")
 	}
-	shared := s.Get()
-	if !reflect.DeepEqual(shared.GitBindings, selection) || shared.Env["GITLAB_URL"] != "" || shared.Env["FEATURE"] != "keep" {
-		t.Fatalf("shared = %+v", shared)
+	if got := ExtendOverlay(shared, Agent{Name: "none"}); got.GitBindings != nil && len(got.GitBindings.Items) != 0 {
+		t.Fatal("workspace defaults granted Git authorization")
 	}
-	s.ClearCredentialSelection("gh")
-	if !reflect.DeepEqual(s.Get().GitBindings, selection) {
-		t.Fatal("clear substituted an explicit shared reference")
-	}
-	if inherited := ExtendOverlay(shared, Agent{Name: "inherit"}); inherited.GitBindings != shared.GitBindings || inherited.RepoIDs == nil || len(*inherited.RepoIDs) != 1 {
-		t.Fatal("workspace model/Git/repo overlay lost")
-	}
-	for _, legacy := range []Agent{{GitCredentialID: "old"}, {SshHostsCredentialID: "old-hosts"}, {CredentialBindings: map[string]*string{"GITHUB_TOKEN": nil}}} {
-		if merged := ExtendOverlay(shared, legacy); merged.GitBindings != nil {
-			t.Fatal("shared list replaced explicit legacy Agent authorization")
-		}
-	}
-	none := serviceGitSelection()
-	ownRepos := []string{}
-	if own := ExtendOverlay(shared, Agent{GitBindings: none, RepoIDs: &ownRepos}); own.GitBindings != none || len(*own.RepoIDs) != 0 {
-		t.Fatal("explicit none did not override inherited grants")
-	}
-	if err := s.Save(SharedAgentConfig{GitBindings: &models.GitBindings{PreferredCredentialID: "missing"}}); !errors.Is(err, ErrInvalidAgent) {
-		t.Fatalf("invalid shared selection accepted: %v", err)
-	}
-	if withoutLegacyGitBindings(nil) != nil || withoutLegacyGitEnv(nil) != nil {
-		t.Fatal("nil map compatibility lost")
+	if withoutGitAuthorizationBindings(nil) != nil || withoutGitAuthorizationEnv(nil) != nil {
+		t.Fatal("nil input changed")
 	}
 }
 
@@ -128,7 +101,7 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 	s := newSandboxService(t, db, ds)
 	s.selectedCredential = serviceGitValue
 	selection := serviceGitSelection("gh")
-	if err := s.skills.Save(Agent{Name: "agentA", AcpBackend: "cursor", GitBindings: selection}); err != nil {
+	if err := s.skills.Save(Agent{Name: "agentA", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}); err != nil {
 		t.Fatal(err)
 	}
 	row := models.Sandbox{Name: "git-existing", Profile: "agentA", Purpose: SandboxPurposeAgent, ThreadID: "git-thread", Status: "running"}
@@ -140,11 +113,12 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "重新打开") {
 		t.Fatalf("unknown/unapplied binding reused: %v", err)
 	}
-	credentials, err := runtime.ResolveGitBindings(selection, serviceGitValue)
+	agent, _ := s.skills.Get("agentA")
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	s.live[row.ID] = &liveSandbox{gitBindingsFingerprint: sandbox.SpecFingerprint(sandbox.Spec{GitBindingsConfigured: true, GitCredentials: credentials})}
+	s.live[row.ID] = &liveSandbox{modelBindingFingerprint: modelFingerprint, gitBindingsFingerprint: gitFingerprint}
 	if got, reused, err := s.OpenAgentSandbox(context.Background(), opts); err != nil || !reused || got.ID != row.ID {
 		t.Fatalf("identical applied binding not reused: %+v %v %v", got, reused, err)
 	}
@@ -157,7 +131,7 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 		t.Fatal("revoked authorization fell back to existing container")
 	}
 	s.selectedCredential = serviceGitValue
-	if err := s.skills.Save(Agent{Name: "other", AcpBackend: "cursor", GitBindings: selection}); err != nil {
+	if err := s.skills.Save(Agent{Name: "other", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}); err != nil {
 		t.Fatal(err)
 	}
 	opts.Profile = "other"
@@ -180,7 +154,7 @@ func TestGitBindingsInteractiveAndTestStartsStageAllSelectedSecrets(t *testing.T
 			defer config.StoreConfig(previous)
 			store := sandbox.NewBundleStore()
 			s.mgr = sandbox.NewManager(ds.fg.Client(), sandbox.ManagerOptions{InjectStore: store, InjectAdvertise: "http://control.example", WorkspaceDir: "/root/workspace"})
-			agent := Agent{Name: "agentA", AcpBackend: "cursor", GitBindings: serviceGitSelection("gh", "gl")}
+			agent := Agent{Name: "agentA", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: serviceGitSelection("gh", "gl")}
 			row := models.Sandbox{Name: "git-stage", Profile: agent.Name, Purpose: "test", Status: "creating", Token: "test-password"}
 			if err := db.Create(&row).Error; err != nil {
 				t.Fatal(err)
@@ -247,7 +221,7 @@ func TestGitBindingsSelectedFailureBlocksBothServiceStarts(t *testing.T) {
 			ds := &dockerState{}
 			s := newSandboxService(t, db, ds)
 			s.selectedCredential = serviceGitValue
-			agent := Agent{Name: "agentA", AcpBackend: "cursor", GitBindings: serviceGitSelection("gone")}
+			agent := Agent{Name: "agentA", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: serviceGitSelection("gone")}
 			row := models.Sandbox{Name: "git-invalid", Status: "creating"}
 			if err := db.Create(&row).Error; err != nil {
 				t.Fatal(err)

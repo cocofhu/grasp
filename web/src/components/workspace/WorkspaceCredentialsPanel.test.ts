@@ -21,8 +21,6 @@ const mocks = vi.hoisted(() => ({
   capabilities: vi.fn(),
   createConnection: vi.fn(),
   updateConnection: vi.fn(),
-  defaults: vi.fn(),
-  putDefaults: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
 }))
@@ -40,8 +38,6 @@ vi.mock('@/lib/api/api', () => ({
     listToolCapabilities: mocks.capabilities,
     createModelConnection: mocks.createConnection,
     updateModelConnection: mocks.updateConnection,
-    getModelDefaults: mocks.defaults,
-    putModelDefaults: mocks.putDefaults,
   },
 }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
@@ -49,15 +45,15 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 const config = {
   items: [
     {
-      id: 'cursor-api', type: 'ai', kind: 'ai', name: 'Cursor API key', provider: 'cursor',
+      id: 'cursor-api', type: 'ai', kind: 'ai', name: 'Cursor API key', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor',
       envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'sk-…1234', updatedAt: '2026-01-02T03:04:00Z',
     },
     {
-      id: 'github', type: 'git', kind: 'git', name: 'GitHub token', provider: 'github',
+      id: 'github', type: 'git', kind: 'git', name: 'GitHub token', purpose: 'git', provider: 'github',
       envKey: 'GITHUB_TOKEN', configured: false,
     },
     {
-      id: 'ssh', type: 'ssh', kind: 'ssh', name: 'SSH private key', provider: 'ssh',
+      id: 'ssh', type: 'ssh', purpose: 'ssh', secretKind: 'ssh_private_key', kind: 'ssh', name: 'SSH private key', provider: 'ssh',
       configured: false,
     },
   ],
@@ -138,8 +134,6 @@ describe('WorkspaceCredentialsPanel', () => {
     mocks.capabilities.mockResolvedValue({ items: [] })
     mocks.createConnection.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'connection-created', ...body, revision: 1 }))
     mocks.updateConnection.mockImplementation(async (id: string, body: Record<string, unknown>) => ({ id, ...body, revision: 4 }))
-    mocks.defaults.mockResolvedValue({ bindingsByBackend: {} })
-    mocks.putDefaults.mockImplementation(async (body: Record<string, unknown>) => body)
   })
 
   it('offers credential and model actions from the same header menu on both tabs', async () => {
@@ -219,8 +213,6 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="credentials-tab-connections"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="credentials-tab-defaults"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-model-defaults"]').exists()).toBe(false)
-    expect(mocks.defaults).not.toHaveBeenCalled()
-    expect(mocks.putDefaults).not.toHaveBeenCalled()
     expect(wrapper.get('[data-testid="model-connections-manager"]').isVisible()).toBe(true)
 
     await wrapper.get('[data-testid="credentials-tab-models"]').trigger('click')
@@ -461,7 +453,7 @@ describe('WorkspaceCredentialsPanel', () => {
     await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'git', provider: 'github', name: '工作号', envKey: 'GITHUB_TOKEN', value: 'ghp-secret',
+      type: 'git', purpose: 'git', provider: 'github', name: '工作号', envKey: 'GITHUB_TOKEN', value: 'ghp-secret',
     }))
     expect(wrapper.find('[data-testid="workspace-credential-create-form"]').exists()).toBe(false)
     wrapper.unmount()
@@ -830,11 +822,11 @@ describe('WorkspaceCredentialsPanel', () => {
     const wrapper = mountPanel({
       items: [
         {
-          id: 'cursor-api', type: 'ai', name: 'Cursor', provider: 'cursor',
+          id: 'cursor-api', type: 'ai', name: 'Cursor', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor',
           envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'sk-…1234',
         },
         {
-          id: 'cursor-work', type: 'ai', name: '工作号', provider: 'cursor',
+          id: 'cursor-work', type: 'ai', name: '工作号', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor',
           envKey: 'GRASP_CURSOR_API_KEY', configured: true,
         },
       ],
@@ -866,13 +858,13 @@ describe('WorkspaceCredentialsPanel', () => {
     await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
     await flushPromises()
     expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
-      type: 'ai', provider: 'cursor', name: '值班号', envKey: 'GRASP_CURSOR_API_KEY', value: 'sk-new',
+      type: 'ai', purpose: 'tool_auth', toolId: 'cursor', provider: 'cursor', name: '值班号', envKey: 'GRASP_CURSOR_API_KEY', value: 'sk-new',
     }))
     wrapper.unmount()
   })
 
-  it('lists legacy model-service keys as ordinary credential rows and allows replacement or clearing', async () => {
-    const opencode = { id: 'opencode', type: 'ai', name: 'DeepSeek', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', configured: true, masked: 'sk-…9999', metadata: { provider: 'deepseek', model: 'deepseek/deepseek-flash', vision: false } }
+  it('lists model-service keys as ordinary credential rows and allows replacement or clearing', async () => {
+    const opencode = { id: 'opencode', type: 'ai', name: 'DeepSeek', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', provider: 'custom', envKey: 'GRASP_MODEL_API_KEY', configured: true, masked: 'sk-…9999', metadata: { provider: 'deepseek', model: 'deepseek/deepseek-flash', vision: false } }
     const wrapper = mountPanel({ items: [...config.items, opencode] })
     await flushPromises()
     const row = rowByAlias(wrapper, 'DeepSeek')

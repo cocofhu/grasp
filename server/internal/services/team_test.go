@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 
@@ -32,18 +33,15 @@ func TestTeamBootstrap_CreatesRoster(t *testing.T) {
 	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
 	team := NewTeamService(workspace, skills, pm, nil)
-	setCredentialKey(t)
-	team.SharedAgent = NewSharedAgentService(filepath.Join(root, "shared"))
-	team.Credentials = NewCredentialService(db)
+	initTeamModel(t, team, db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix:     "Demo",
-		PMName:     "Demo项目经理",
-		Background: "demo background for workflow team",
-		AcpBackend: "cursor",
-		APIKey:     "sk-test",
-		MCP:        DefaultPlatformMCP(),
-		Env:        map[string]string{"GIT_REPOS": "${vars.repos}"},
+		Prefix:               "Demo",
+		PMName:               "Demo项目经理",
+		Background:           "demo background for workflow team",
+		ModelConfigurationID: "model-team",
+		MCP:                  DefaultPlatformMCP(),
+		Env:                  map[string]string{"GIT_REPOS": "${vars.repos}"},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -168,20 +166,21 @@ func TestCreateAgentFromTemplate_Conflict(t *testing.T) {
 	workspace := NewWorkspaceService(db)
 	pm := NewPmService(db, skills)
 	team := NewTeamService(workspace, skills, pm, nil)
+	initTeamModel(t, team, db)
 
 	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
-		TemplateID: "implement",
-		Name:       "X实现工程师",
-		AcpBackend: "cursor",
-		MCP:        DefaultPlatformMCP(),
+		TemplateID:           "implement",
+		Name:                 "X实现工程师",
+		ModelConfigurationID: "model-team",
+		MCP:                  DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
-		TemplateID: "implement",
-		Name:       "X实现工程师",
-		AcpBackend: "cursor",
+		TemplateID:           "implement",
+		Name:                 "X实现工程师",
+		ModelConfigurationID: "model-team",
 	})
 	if !errors.Is(err, ErrTeamAgentConflict) {
 		t.Fatalf("want conflict, got %v", err)
@@ -243,13 +242,14 @@ func TestFinishBootstrap_WaitsForPullingBeforeReady(t *testing.T) {
 		},
 	}
 	team := NewTeamService(workspace, skills, pm, fake)
+	initTeamModel(t, team, db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix:     "Pu",
-		PMName:     "Pu项目经理",
-		Background: "pull loading coverage for g3.3",
-		AcpBackend: "cursor",
-		MCP:        DefaultPlatformMCP(),
+		Prefix:               "Pu",
+		PMName:               "Pu项目经理",
+		Background:           "pull loading coverage for g3.3",
+		ModelConfigurationID: "model-team",
+		MCP:                  DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -318,13 +318,14 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 		},
 	}
 	team := NewTeamService(workspace, skills, pm, fake)
+	initTeamModel(t, team, db)
 
 	sess, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix:     "Er",
-		PMName:     "Er项目经理",
-		Background: "pull failure should fail bootstrap",
-		AcpBackend: "cursor",
-		MCP:        DefaultPlatformMCP(),
+		Prefix:               "Er",
+		PMName:               "Er项目经理",
+		Background:           "pull failure should fail bootstrap",
+		ModelConfigurationID: "model-team",
+		MCP:                  DefaultPlatformMCP(),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -349,28 +350,36 @@ func TestFinishBootstrap_SandboxErrorFailsSession(t *testing.T) {
 	}
 }
 
-func TestTeamDeepSeekHarnessRejectsUnsupportedCustomAuth(t *testing.T) {
+func initTeamModel(t *testing.T, team *TeamService, db *gorm.DB) {
+	t.Helper()
+	setCredentialKey(t)
+	team.Credentials = NewCredentialService(db)
+	credential, err := team.Credentials.Create(CredentialInput{Purpose: "tool_auth", ToolID: "cursor", Name: "Team key", Value: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := models.ModelConfiguration(modelrouting.Configuration{ID: "model-team", Name: "Team model", Backend: "cursor", State: "active", Revision: 1, Binding: modelrouting.Binding{Kind: "platform", CredentialID: credential.ID, ModelID: "composer-2.5"}})
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	team.Skills.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
+		_, err := NewModelConnectionService(db).Resolve(backend, *binding)
+		return err
+	})
+}
+func TestTeamRequiresSavedModel(t *testing.T) {
 	db := newTestDB(t)
-	if _, err := NewWorkspaceService(db).CreateFixture("DSH team", "", nil); err != nil {
+	if _, err := NewWorkspaceService(db).CreateFixture("Team", "", nil); err != nil {
 		t.Fatal(err)
 	}
 	agents := NewAgentService(t.TempDir())
 	team := NewTeamService(NewWorkspaceService(db), agents, NewPmService(db, agents), nil)
-	_, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{
-		Prefix: "DSH", Background: "team background", AcpBackend: AcpBackendDeepSeekHarness,
-		CustomConfig: `{"env":{"DEEPSEEK_API_KEY":"unsupported"}}`,
-	})
-	if !errors.Is(err, ErrTeamValidation) || !strings.Contains(err.Error(), "customConfig") {
-		t.Fatalf("team bootstrap accepted unsupported DeepSeek auth config: %v", err)
-	}
-	_, err = team.CreateAgentFromTemplate(CreateFromTemplateArgs{
-		TemplateID: TeamEngineerTemplates[0].ID, Name: "DSH engineer", AcpBackend: AcpBackendDeepSeekHarness,
-		CustomConfig: `{}`,
-	})
+	team.Credentials = NewCredentialService(db)
+	_, err := team.Bootstrap(context.Background(), TeamBootstrapRequest{Prefix: "Demo", Background: "Team background"})
 	if !errors.Is(err, ErrTeamValidation) {
-		t.Fatalf("template API accepted unsupported DeepSeek auth config: %v", err)
+		t.Fatalf("want model selection error, got %v", err)
 	}
 	if len(agents.List()) != 0 {
-		t.Fatal("invalid configuration created an agent")
+		t.Fatal("missing configuration created agents")
 	}
 }

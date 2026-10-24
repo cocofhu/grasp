@@ -14,7 +14,7 @@ import (
 // missing/revoked selection is an error; another account is never substituted.
 func ResolveGitBindings(bindings *models.GitBindings, resolve SelectedCredentialFunc) ([]sandbox.GitCredential, error) {
 	selection, err := models.NormalizeGitBindings(bindings)
-	if err != nil || selection == nil {
+	if err != nil {
 		return nil, err
 	}
 	out := make([]sandbox.GitCredential, 0, len(selection.Items))
@@ -60,39 +60,23 @@ func gitKindForEnvKey(key string) string {
 	}
 }
 
-// IsGitAuthorizationEnvKey identifies legacy global Git authentication. New
-// bindings replace these slots rather than augmenting inherited credentials.
+// IsGitAuthorizationEnvKey identifies global Git authentication, which is
+// always excluded from Agent environments in favor of the selected file catalog.
 func IsGitAuthorizationEnvKey(key string) bool {
 	switch strings.TrimSpace(key) {
 	case envauth.EnvGitHubToken, envauth.EnvGitLabToken, envauth.EnvGitSSHPrivateKey, envauth.EnvGitSSHKnownHosts,
-		"GITHUB_URL", "GITLAB_URL", "GH_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GLAB_TOKEN", "GITLAB_ACCESS_TOKEN":
+		"GITHUB_URL", "GITLAB_URL", "GH_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "GLAB_TOKEN", "GITLAB_ACCESS_TOKEN",
+		"GIT_SSH_COMMAND", "GIT_SSH", "SSH_AUTH_SOCK":
 		return true
 	default:
 		return false
 	}
 }
 
-// HasLegacyGitSelection keeps an Agent's existing explicit choice (including
-// a generic nil/disabled binding) ahead of a newer workspace-wide default.
-func HasLegacyGitSelection(credentialID, hostsID string, bindings map[string]*string) bool {
-	if strings.TrimSpace(credentialID) != "" || strings.TrimSpace(hostsID) != "" {
-		return true
-	}
-	for key := range bindings {
-		if IsGitAuthorizationEnvKey(key) {
-			return true
-		}
-	}
-	return false
-}
-
-// ApplyGitBindings runs after generic credential bindings. Explicit selections
-// clear all global Git authentication, even when empty or invalid. Secrets are
+// ApplyGitBindings runs after generic credential bindings and clears all
+// global Git authentication, even when the selection is omitted or invalid. Secrets are
 // returned only for the sandbox's file catalog, never as environment values.
 func ApplyGitBindings(env, creds map[string]string, bindings *models.GitBindings, resolve SelectedCredentialFunc) ([]sandbox.GitCredential, error) {
-	if bindings == nil {
-		return nil, nil
-	}
 	for _, values := range []map[string]string{env, creds} {
 		for key := range values {
 			if IsGitAuthorizationEnvKey(key) {

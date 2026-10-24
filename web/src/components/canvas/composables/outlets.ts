@@ -11,7 +11,6 @@ export interface CanvasAgent {
   name: string
   capabilities?: AgentCapabilities | null
   acpBackend?: string
-  openCodeCredentialId?: string
   env?: Record<string, string>
 }
 

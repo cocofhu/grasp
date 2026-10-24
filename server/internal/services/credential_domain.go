@@ -7,63 +7,27 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
+// Credential domains are stored explicitly. Reading a credential never infers
+// a model provider or coding tool from its name, metadata or environment key.
 func credentialDomain(row models.Credential) (purpose, issuer, tool, kind string) {
-	purpose, issuer, tool, kind = row.Purpose, row.Issuer, row.ToolID, row.SecretKind
-	if purpose == "" {
-		switch row.Type {
-		case "ai":
-			purpose = "tool_auth"
-			if row.Provider == "opencode" || row.Provider == "deepseek_harness" {
-				purpose = "model_api"
-			}
-		case "git", "ssh":
-			purpose = row.Type
-		}
-	}
-	if issuer == "" {
-		issuer = row.Provider
-		if row.Provider == "opencode" {
-			if provider, ok := row.Metadata["provider"].(string); ok {
-				issuer = provider
-			}
-		}
-		if row.Provider == "deepseek_harness" {
-			issuer = "deepseek"
-		}
-	}
-	if tool == "" && purpose == "tool_auth" {
-		tool = row.Provider
-		if tool == "claude" || tool == "anthropic" {
-			tool = "claude_code"
-		}
-	}
-	if kind == "" {
-		kind = "api_key"
-		if tool == "codex" {
-			kind = "login_file"
-		}
-		if tool == "trae" || purpose == "git" {
-			kind = "token"
-		}
-		if purpose == "ssh" {
-			kind = "ssh_private_key"
-			if strings.Contains(strings.ToLower(row.EnvKey+row.Name), "host") {
-				kind = "ssh_known_hosts"
-			}
-		}
-	}
-	return
+	return row.Purpose, row.Issuer, row.ToolID, row.SecretKind
 }
 
-// Legacy writes keep their exact env bindings. Explicit domain writes have no
-// tool-specific env binding for model keys, so keys cannot be globally injected.
 func normalizeCredentialDomainInput(in *CredentialInput) error {
 	in.Purpose = strings.ToLower(strings.TrimSpace(in.Purpose))
+	in.Type = strings.ToLower(strings.TrimSpace(in.Type))
 	in.Issuer = strings.TrimSpace(in.Issuer)
 	in.ToolID = strings.TrimSpace(in.ToolID)
 	in.SecretKind = strings.TrimSpace(in.SecretKind)
 	if in.Purpose == "" {
-		return nil
+		switch in.Type {
+		case "ai":
+			return ErrCredentialPurpose
+		case "git", "ssh", "mcp", "custom":
+			in.Purpose = in.Type
+		default:
+			return nil
+		}
 	}
 	switch in.Purpose {
 	case "model_api":
@@ -73,6 +37,12 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 		in.Type = "ai"
 		if in.Provider == "" {
 			in.Provider = in.Issuer
+		}
+		if in.SecretKind == "" {
+			in.SecretKind = "api_key"
+		}
+		if in.SecretKind != "api_key" && in.SecretKind != "token" {
+			return ErrCredentialPurpose
 		}
 	case "tool_auth":
 		if in.ToolID == "" {
@@ -95,20 +65,14 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 		if in.Issuer == "" {
 			in.Issuer = in.ToolID
 		}
-	case "git", "ssh":
-		in.Type = in.Purpose
-	default:
-		return ErrCredentialPurpose
-	}
-	if in.SecretKind == "" {
-		_, _, _, in.SecretKind = credentialDomain(models.Credential{Type: in.Type, Purpose: in.Purpose, Provider: in.Provider, ToolID: in.ToolID, EnvKey: in.EnvKey})
-	}
-	switch in.Purpose {
-	case "model_api":
-		if in.SecretKind != "api_key" && in.SecretKind != "token" {
-			return ErrCredentialPurpose
+		if in.SecretKind == "" {
+			in.SecretKind = "api_key"
+			if in.ToolID == "codex" {
+				in.SecretKind = "login_file"
+			} else if in.ToolID == "trae" {
+				in.SecretKind = "token"
+			}
 		}
-	case "tool_auth":
 		if in.ToolID == "codex" && in.SecretKind != "login_file" {
 			return ErrCredentialPurpose
 		}
@@ -116,13 +80,34 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 			return ErrCredentialPurpose
 		}
 	case "git":
+		in.Type = "git"
+		if in.SecretKind == "" {
+			in.SecretKind = "token"
+		}
 		if in.SecretKind != "token" && in.SecretKind != "api_key" {
 			return ErrCredentialPurpose
 		}
 	case "ssh":
+		in.Type = "ssh"
+		if in.SecretKind == "" {
+			in.SecretKind = "ssh_private_key"
+			if in.EnvKey == "GIT_SSH_KNOWN_HOSTS" {
+				in.SecretKind = "ssh_known_hosts"
+			}
+		}
 		if in.SecretKind != "ssh_private_key" && in.SecretKind != "ssh_known_hosts" {
 			return ErrCredentialPurpose
 		}
+	case "mcp", "custom":
+		in.Type = in.Purpose
+		if in.SecretKind == "" {
+			in.SecretKind = "token"
+		}
+	default:
+		return ErrCredentialPurpose
+	}
+	if in.Issuer == "" {
+		in.Issuer = in.Provider
 	}
 	return nil
 }

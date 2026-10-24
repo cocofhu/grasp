@@ -50,9 +50,8 @@ func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 
 // SetCodexLoginWriteBack registers the workspace-credential update used when a
 // Codex sandbox's auth.json changes. The callback must not log the file body.
-func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error, identify func(envKey, value string) string) {
+func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error) {
 	s.codexLoginWriteBack = fn
-	s.injectedCredentialID = identify
 }
 
 func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
@@ -381,26 +380,12 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		env[k] = v
 	}
 	track.mark(env, EnvSourceProject)
-	// Workspace credentials are the highest-priority source. Apply them after
-	// template/Agent vars so interactive, PM and cron sandboxes match workflow
-	// resolver precedence.
-	var creds map[string]string
-	if s.credentials != nil {
-		creds = s.credentials()
-		overlayCredentialEnv(env, creds)
-	}
+	creds := map[string]string{}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
 		fail(err)
 		return
 	}
-	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
-		Backend:              string(backend),
-		GitCredentialType:    agent.GitCredentialType,
-		AiCredentialID:       agent.AiCredentialID,
-		GitCredentialID:      agent.GitCredentialID,
-		SshHostsCredentialID: agent.SshHostsCredentialID,
-	}, s.selectedCredential)
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
 	if len(extra.Bindings) > 0 {
 		runtime.ApplyCredentialBindings(env, creds, extra.Bindings, s.selectedCredential)
@@ -411,22 +396,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		return
 	}
 	track.mark(env, EnvSourceCredential)
-	legacyModelFingerprint := ""
-	if backend == runtime.BackendOpenCode && agent.ModelBinding == nil {
-		legacyModelFingerprint, err = runtime.ApplyLegacyOpenCodeCredential(env, agent.OpenCodeCredentialID, s.openCodeCredential)
-		if err != nil {
-			fail(err)
-			return
-		}
-	}
 	if err := runtime.ApplyModelBinding(env, string(backend), agent.ModelBinding, s.modelBinding); err != nil {
 		fail(err)
 		return
 	}
 	modelFingerprint := modelBindingFingerprint(agent, env)
-	if legacyModelFingerprint != "" {
-		modelFingerprint = legacyModelFingerprint
-	}
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil {
@@ -440,14 +414,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 	env = merged
 	track.mark(env, EnvSourceCredential)
-	ocDoc := runtime.OpenCodeConfigForEnvWithCatalog(
-		context.Background(), backend, env, s.openCodeCatalog,
-	)
-	if err := runtime.RequireOpenCodePlaceholderKey(ocDoc, env); err != nil {
-		fail(err)
-		return
-	}
-
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       sharedWorkDir,
 		WorkDirSrc:           s.skills.WorkDir(profile),
@@ -457,7 +423,6 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
-		OpenCodeConfig:       ocDoc,
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))
@@ -488,7 +453,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 
 	spec := sandbox.Spec{
-		GitBindingsConfigured: agent.GitBindings != nil,
+		GitBindingsConfigured: true,
 		GitCredentials:        gitCredentials,
 		Name:                  name,
 		Image:                 resolveSandboxImage(string(backend)),
@@ -497,8 +462,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		ConfigRoot:            configRoot,
 		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
-	ApplySSHCredentialsToSpec(&spec, creds)
-	spec.RepoCredentials = mergeRepoCredentials(s.repoCredentials(agent), extra.RepoCredentials)
+	spec.RepoCredentials = extra.RepoCredentials
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -527,7 +491,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
 		"model_binding_fingerprint": modelFingerprint,
-		"git_bindings_fingerprint":  gitBindingsFingerprint(agent, gitCredentials),
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
 		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "",
 		"destroy_at": destroyAt, "updated_at": time.Now(),
@@ -552,9 +516,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
 		modelBindingFingerprint: modelFingerprint,
-		gitBindingsFingerprint:  gitBindingsFingerprint(agent, gitCredentials),
+		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
 		codexAuthInjected:       codexLogin,
-		codexAuthCredentialID:   runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, runtime.ModelCredentialIDForWriteBack(env, agent.AiCredentialID), agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
+		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
 		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()

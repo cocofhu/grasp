@@ -26,10 +26,10 @@ describe('agentsClient request coverage', () => {
     await agentsClient.listAgents()
     await agentsClient.getAgent('agent / one')
     await agentsClient.bootstrapOnboarding({
-      acpBackend: 'cursor',
-      apiKey: 'secret',
+      modelConfigurationId: 'model-team',
+      gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' },
     })
-    const teamBody = { prefix: 'Pay', pmName: 'PM', background: 'payments', acpBackend: 'cursor' } as const
+    const teamBody = { prefix: 'Pay', pmName: 'PM', background: 'payments', modelConfigurationId: 'model-team' } as const
     await agentsClient.bootstrapAgentTeam(teamBody)
     await agentsClient.getAgentTeamBootstrap('team / 1')
     await agentsClient.retryAgentTeamBootstrap('team / 1')
@@ -59,7 +59,7 @@ describe('agentsClient request coverage', () => {
     }))
     expect(fetchMock).toHaveBeenCalledWith('/api/workspace/bootstrap-onboarding', expect.objectContaining({
       method: 'POST',
-      body: JSON.stringify({ acpBackend: 'cursor', apiKey: 'secret' }),
+      body: JSON.stringify({ modelConfigurationId: 'model-team', gitBindings: { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' } }),
     }))
     expect(fetchMock).toHaveBeenCalledWith('/api/agent-teams/bootstrap', expect.objectContaining({
       method: 'POST',

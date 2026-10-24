@@ -14,13 +14,13 @@ import (
 
 func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.T) {
 	env := map[string]string{"ANTHROPIC_API_KEY": "old", "OPENAI_BASE_URL": "old", "GITHUB_TOKEN": "git", "MCP_URL": "mcp", "CODEBUDDY_BIG_SLOW_MODEL": "old-model", "CLAUDE_CODE_USE_VERTEX": "1"}
-	binding := &modelrouting.Binding{Kind: "connection", ConnectionID: "connection-a", ModelID: "vendor/raw/model"}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily"}
 	resolve := func(backend string, got *modelrouting.Binding) (modelrouting.Resolved, error) {
 		if backend != "codex" || got != binding {
 			t.Fatal("incorrect binding resolution")
 		}
-		return modelrouting.Resolved{Binding: *got, CredentialID: "key-a", Secret: "private-key-value", Connection: &modelrouting.Connection{
-			ID: got.ConnectionID, Protocol: modelrouting.ProtocolResponses, BaseURL: "https://models.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: got.ModelID}},
+		return modelrouting.Resolved{Binding: modelrouting.Binding{Kind: "connection", ConnectionID: "connection-a", ModelID: "vendor/raw/model"}, CredentialID: "key-a", Secret: "private-key-value", Connection: &modelrouting.Connection{
+			ID: "connection-a", Protocol: modelrouting.ProtocolResponses, BaseURL: "https://models.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: "vendor/raw/model"}},
 		}}, nil
 	}
 	if err := ApplyModelBinding(env, "codex", binding, resolve); err != nil {
@@ -38,13 +38,13 @@ func TestApplyModelBindingKeepsSecretSeparateAndClearsPreviousSource(t *testing.
 	if _, err := PrepareBoundAuth(BackendCodex, env, ""); err != nil {
 		t.Fatalf("connection mode required a platform login: %v", err)
 	}
-	if id := ModelCredentialIDForWriteBack(env, "old-key"); id != "key-a" {
+	if id := ModelCredentialIDForWriteBack(env); id != "key-a" {
 		t.Fatalf("credential owner = %s", id)
 	}
 }
 
 func TestApplyModelBindingFailureDoesNotFallback(t *testing.T) {
-	binding := &modelrouting.Binding{Kind: "connection", ConnectionID: "revoked"}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "revoked"}
 	env := map[string]string{"OPENAI_API_KEY": "unrelated"}
 	if err := ApplyModelBinding(env, "codex", binding, nil); err == nil {
 		t.Fatal("missing resolver accepted")
@@ -59,19 +59,19 @@ func TestApplyModelBindingFailureDoesNotFallback(t *testing.T) {
 	}
 }
 
-func TestApplyModelBindingPlatformAndLegacyModes(t *testing.T) {
+func TestApplyModelBindingPlatformConfiguration(t *testing.T) {
 	env := map[string]string{EnvModelAPIKey: "old", EnvModelConnection: "old", "CURSOR_API_KEY": "other"}
-	binding := &modelrouting.Binding{Kind: "platform", CredentialID: "cursor-key", ModelID: "auto"}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "cursor-daily"}
 	if err := ApplyModelBinding(env, "cursor", binding, func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
-		return modelrouting.Resolved{Binding: *binding, CredentialID: binding.CredentialID, Secret: "cursor-secret"}, nil
+		return modelrouting.Resolved{Binding: modelrouting.Binding{Kind: "platform", CredentialID: "cursor-key", ModelID: "auto"}, CredentialID: "cursor-key", Secret: "cursor-secret"}, nil
 	}); err != nil {
 		t.Fatal(err)
 	}
 	if env[CredentialEnvKeyForBackend("cursor")] != "cursor-secret" || env[EnvModelAPIKey] != "" || env["CURSOR_API_KEY"] != "" {
 		t.Fatal("previous source survived platform selection")
 	}
-	if err := ApplyModelBinding(env, "cursor", nil, nil); err != nil {
-		t.Fatal(err)
+	if err := ApplyModelBinding(env, "cursor", nil, nil); err == nil {
+		t.Fatal("unconfigured Agent accepted")
 	}
 	if _, err := PrepareBoundAuth(BackendCodex, map[string]string{}, ""); !errors.Is(err, ErrCodexLoginFileMissing) {
 		t.Fatalf("platform login gate was lost: %v", err)
@@ -98,16 +98,15 @@ func TestCodexConnectionAuthErrorDoesNotRequestPlatformLogin(t *testing.T) {
 }
 
 func TestSpecResolvesBindingAfterAllUserEnvironmentSources(t *testing.T) {
-	root := writeAgent(t, "bound", `{"acpBackend":"codex","modelBinding":{"kind":"connection","connectionId":"selected","modelId":"vendor/raw/model"},"env":{"GRASP_MODEL_CONNECTION":"forged-agent"}}`)
+	root := writeAgent(t, "bound", `{"acpBackend":"codex","modelBinding":{"kind":"configuration","configurationId":"selected"},"env":{"GRASP_MODEL_CONNECTION":"forged-agent"}}`)
 	p := newBaseACPProvider(mcp.NewHost(newMemStore()), Options{
 		ProfilesRoot: root,
 		Env:          map[string]string{EnvModelConnection: "forged-platform"},
-		Credentials:  func() map[string]string { return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin} },
 		RunSandboxEnvForRun: func(string) []models.EnvEntry {
 			return []models.EnvEntry{{Key: EnvModelConnection, Value: "forged-run"}, {Key: EnvModelAPIKey, Value: "forged-run-key"}}
 		},
 		ModelBinding: func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
-			return modelrouting.Resolved{Binding: *binding, CredentialID: "selected-key", Secret: "selected-secret", Connection: &modelrouting.Connection{ID: binding.ConnectionID, Protocol: modelrouting.ProtocolResponses, BaseURL: "https://selected.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: binding.ModelID}}}}, nil
+			return modelrouting.Resolved{Binding: modelrouting.Binding{Kind: "connection", ConnectionID: "selected", ModelID: "vendor/raw/model"}, CredentialID: "selected-key", Secret: "selected-secret", Connection: &modelrouting.Connection{ID: "selected", Protocol: modelrouting.ProtocolResponses, BaseURL: "https://selected.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: "vendor/raw/model"}}}}, nil
 		},
 	}, BackendCodex).(*acpProvider)
 	if got := p.agentConfig("bound"); got.ModelBinding == nil {
@@ -133,22 +132,23 @@ func TestSpecResolvesBindingAfterAllUserEnvironmentSources(t *testing.T) {
 	}
 }
 
-func TestSpecLegacySelectionDoesNotBypassDeletedConnection(t *testing.T) {
-	root := writeAgent(t, "legacy", `{"acpBackend":"opencode","openCodeCredentialId":"old-key","env":{"ACP_BRIDGE_MODEL":"vendor/raw"}}`)
-	mapped := false
-	p := newBaseACPProvider(mcp.NewHost(newMemStore()), Options{
-		ProfilesRoot: root,
-		LegacyModelBinding: func(backend, _, id string, env map[string]string) *modelrouting.Binding {
-			mapped = backend == "opencode" && id == "old-key" && env[EnvACPBridgeModel] == "vendor/raw"
-			return &modelrouting.Binding{Kind: "connection", ConnectionID: "conn-legacy-old-key", ModelID: "raw"}
-		},
-		ModelBinding: func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
-			return modelrouting.Resolved{}, errors.New("model connection not found")
-		},
-	}, BackendOpenCode).(*acpProvider)
-	_, err := p.spec(NodeReq{RunID: "legacy-deleted", NodeID: "n", Config: map[string]any{"agent_profile": "legacy"}})
-	if !mapped || err == nil || !strings.Contains(err.Error(), "connection not found") {
-		t.Fatalf("legacy selection bypassed connection validation: mapped=%v err=%v", mapped, err)
+func TestSpecRequiresExplicitNamedConfiguration(t *testing.T) {
+	for _, raw := range []string{
+		`{"acpBackend":"opencode","modelBinding":null}`,
+		`{"acpBackend":"cursor","modelBinding":{"kind":"platform","credentialId":"direct"}}`,
+		`{"acpBackend":"opencode","modelBinding":{"kind":"connection","connectionId":"direct","modelId":"m"}}`,
+		`{"acpBackend":"cursor","modelBinding":{"kind":"inherit"}}`,
+	} {
+		root := writeAgent(t, "unconfigured", raw)
+		called := false
+		p := newBaseACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, ModelBinding: func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+			called = true
+			return modelrouting.Resolved{}, nil
+		}}, BackendOpenCode).(*acpProvider)
+		_, err := p.spec(NodeReq{Config: map[string]any{"agent_profile": "unconfigured"}})
+		if err == nil || !strings.Contains(err.Error(), "model configuration") || called {
+			t.Fatalf("invalid Agent binding reached resolver: called=%v err=%v", called, err)
+		}
 	}
 }
 

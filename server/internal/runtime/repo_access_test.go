@@ -45,16 +45,3 @@ func TestRepoCredentialsFor(t *testing.T) {
 		}
 	}
 }
-
-func TestOverlayAgentFileRepoIDs(t *testing.T) {
-	shared := SharedAgentView{RepoIDs: []string{"a", "b"}}
-	inherit := overlayAgentFile(shared, agentFile{}, nil)
-	if inherit.RepoIDs == nil || len(*inherit.RepoIDs) != 2 {
-		t.Fatalf("inherit = %v", inherit.RepoIDs)
-	}
-	none := []string{}
-	override := overlayAgentFile(shared, agentFile{RepoIDs: &none}, nil)
-	if override.RepoIDs == nil || len(*override.RepoIDs) != 0 {
-		t.Fatalf("explicit empty list must not inherit: %v", override.RepoIDs)
-	}
-}

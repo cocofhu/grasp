@@ -2,7 +2,7 @@ package services
 
 import "github.com/cocofhu/grasp/internal/runtime"
 
-func withoutLegacyGitBindings(bindings map[string]*string) map[string]*string {
+func withoutGitAuthorizationBindings(bindings map[string]*string) map[string]*string {
 	if bindings == nil {
 		return nil
 	}
@@ -15,7 +15,7 @@ func withoutLegacyGitBindings(bindings map[string]*string) map[string]*string {
 	return out
 }
 
-func withoutLegacyGitEnv(env map[string]string) map[string]string {
+func withoutGitAuthorizationEnv(env map[string]string) map[string]string {
 	if env == nil {
 		return nil
 	}

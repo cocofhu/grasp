@@ -34,6 +34,11 @@ func (p Prepared) ValidateOptions(tool provider.Name, opts provider.OpenOptions)
 	if tool != provider.CodeBuddy && tool != provider.CodeBuddyACP {
 		return nil
 	}
+	workspace, dir, err := codeBuddyWorkspace(opts)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = workspace.Close() }()
 	// models.json has its own project-over-user merge contract, separate from
 	// --setting-sources. Refuse conflicting project definitions without editing
 	// the checkout or allowing a project key/URL to shadow a managed connection.
@@ -41,9 +46,9 @@ func (p Prepared) ValidateOptions(tool provider.Name, opts provider.OpenOptions)
 	for _, m := range p.Connection.Models {
 		models[m.ID] = true
 	}
-	for dir := opts.Cwd; dir != ""; dir = filepath.Dir(dir) {
+	for ; ; dir = filepath.Dir(dir) {
 		path := filepath.Join(dir, ".codebuddy", "models.json")
-		data, err := os.ReadFile(path)
+		data, err := workspace.ReadFile(path)
 		if err != nil && !errors.Is(err, os.ErrNotExist) {
 			return errors.New("model connection: cannot inspect project CodeBuddy model overrides")
 		}
@@ -62,9 +67,42 @@ func (p Prepared) ValidateOptions(tool provider.Name, opts provider.OpenOptions)
 				}
 			}
 		}
-		if filepath.Dir(dir) == dir {
+		if dir == "." {
 			break
 		}
 	}
 	return nil
+}
+
+// Keep inspection inside the same filesystem boundary as the session. Root
+// operations also reject symlinks that escape it, including during a rename.
+func codeBuddyWorkspace(opts provider.OpenOptions) (*os.Root, string, error) {
+	invalid := errors.New("model connection: CodeBuddy working directory must be inside its filesystem root")
+	cwd, err := filepath.Abs(opts.Cwd)
+	if err != nil {
+		return nil, "", invalid
+	}
+	root := opts.FSRoot
+	if root == "" {
+		root = cwd
+	}
+	root, err = filepath.Abs(root)
+	if err != nil {
+		return nil, "", invalid
+	}
+	dir, err := filepath.Rel(root, cwd)
+	if err != nil || !filepath.IsLocal(dir) {
+		return nil, "", invalid
+	}
+	workspace, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, "", invalid
+	}
+	working, err := workspace.OpenRoot(dir)
+	if err != nil {
+		_ = workspace.Close()
+		return nil, "", invalid
+	}
+	_ = working.Close()
+	return workspace, dir, nil
 }
