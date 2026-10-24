@@ -44,6 +44,10 @@ func overlayCredentialEnv(env, creds map[string]string) {
 // Value is optional on update: an omitted/blank value keeps the current secret
 // unless Clear is true. The service never returns Value.
 type CredentialInput struct {
+	Purpose    string         `json:"purpose"`
+	Issuer     string         `json:"issuer"`
+	ToolID     string         `json:"toolId"`
+	SecretKind string         `json:"secretKind"`
 	Type       string         `json:"type"`
 	Provider   string         `json:"provider"`
 	Name       string         `json:"name"`
@@ -60,22 +64,27 @@ type CredentialInput struct {
 // CredentialView is safe for API/UI use. Masked is derived from the
 // encrypted value and never contains any plaintext.
 type CredentialView struct {
-	ID         string         `json:"id"`
-	Type       string         `json:"type"`
-	Provider   string         `json:"provider,omitempty"`
-	Name       string         `json:"name"`
-	Target     string         `json:"target,omitempty"`
-	TargetType string         `json:"targetType,omitempty"`
-	TargetID   string         `json:"targetId,omitempty"`
-	EnvKey     string         `json:"envKey,omitempty"`
-	Masked     string         `json:"masked,omitempty"`
-	Source     string         `json:"source,omitempty"`
-	Configured bool           `json:"configured"`
-	Enabled    bool           `json:"enabled"`
-	RevokedAt  *time.Time     `json:"revokedAt,omitempty"`
-	Metadata   map[string]any `json:"metadata,omitempty"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	UpdatedAt  time.Time      `json:"updatedAt"`
+	Purpose        string         `json:"purpose,omitempty"`
+	Issuer         string         `json:"issuer,omitempty"`
+	ToolID         string         `json:"toolId,omitempty"`
+	SecretKind     string         `json:"secretKind,omitempty"`
+	SecretRevision uint64         `json:"secretRevision"`
+	ID             string         `json:"id"`
+	Type           string         `json:"type"`
+	Provider       string         `json:"provider,omitempty"`
+	Name           string         `json:"name"`
+	Target         string         `json:"target,omitempty"`
+	TargetType     string         `json:"targetType,omitempty"`
+	TargetID       string         `json:"targetId,omitempty"`
+	EnvKey         string         `json:"envKey,omitempty"`
+	Masked         string         `json:"masked,omitempty"`
+	Source         string         `json:"source,omitempty"`
+	Configured     bool           `json:"configured"`
+	Enabled        bool           `json:"enabled"`
+	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
+	Metadata       map[string]any `json:"metadata,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 var (
@@ -87,6 +96,7 @@ var (
 	ErrCredentialModel      = errors.New("model is required")
 	ErrCredentialBaseURL    = errors.New("base url is required for a custom provider")
 	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
+	ErrCredentialPurpose    = errors.New("invalid credential purpose, tool or secret kind")
 )
 
 // CredentialAliasTakenError is returned when a new alias matches another
@@ -151,7 +161,13 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 }
 
 func credentialView(row models.Credential) CredentialView {
+	purpose, issuer, tool, kind := credentialDomain(row)
+	revision := row.SecretRevision
+	if revision == 0 && row.ValueEnc != "" {
+		revision = 1
+	}
 	return CredentialView{
+		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, SecretRevision: revision,
 		ID: row.ID, Type: row.Type, Provider: row.Provider,
 		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
 		Masked: func() string {
@@ -266,6 +282,9 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 // Create stores a new encrypted credential. Plaintext is accepted only on
 // write and is never returned by this service.
 func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
+	if err := normalizeCredentialDomainInput(&in); err != nil {
+		return CredentialView{}, err
+	}
 	in.Type = strings.ToLower(strings.TrimSpace(in.Type))
 	in.Provider = strings.TrimSpace(in.Provider)
 	in.Name = strings.TrimSpace(in.Name)
@@ -276,7 +295,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	if in.Name == "" {
 		return CredentialView{}, ErrCredentialName
 	}
-	if in.EnvKey == "" {
+	if in.EnvKey == "" && in.Purpose != "model_api" {
 		in.EnvKey = defaultCredentialEnvKey(in)
 	}
 	if !validCredentialEnvKey(in.EnvKey) {
@@ -295,7 +314,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	if ok {
 		return CredentialView{}, &CredentialAliasTakenError{Alias: taken}
 	}
-	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, true); err != nil {
+	if err := validateOpenCodeMetadata(in.Provider, in.Metadata, in.Purpose != "model_api"); err != nil {
 		return CredentialView{}, err
 	}
 	if err := rejectCodexLoginValue(in.Provider, in.EnvKey, in.Value); err != nil {
@@ -311,6 +330,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	}
 	now := time.Now()
 	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
+		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, SecretRevision: 1,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
 		EnvKey: in.EnvKey, ValueEnc: enc, Metadata: safeCredentialMetadata(in.Metadata),
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
@@ -328,6 +348,33 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 			return CredentialView{}, ErrCredentialNotFound
 		}
 		return CredentialView{}, err
+	}
+	if in.Purpose != "" || row.Purpose != "" {
+		purpose, issuer, tool, kind := credentialDomain(row)
+		if in.Purpose != "" && in.Purpose != purpose {
+			return CredentialView{}, ErrCredentialPurpose
+		}
+		if in.Purpose == "" {
+			in.Purpose = purpose
+		}
+		if in.Issuer == "" {
+			in.Issuer = issuer
+		}
+		if in.ToolID == "" {
+			in.ToolID = tool
+		}
+		if in.SecretKind == "" {
+			in.SecretKind = kind
+		}
+		// A metadata-only edit or key rotation keeps the provider identity. The
+		// issuer may be a free-form display name, not a legacy tool provider.
+		if in.Provider == "" {
+			in.Provider = row.Provider
+		}
+		if err := normalizeCredentialDomainInput(&in); err != nil {
+			return CredentialView{}, err
+		}
+		row.Purpose, row.Issuer, row.ToolID, row.SecretKind = in.Purpose, in.Issuer, in.ToolID, in.SecretKind
 	}
 	if v := strings.TrimSpace(in.Type); v != "" {
 		v = strings.ToLower(v)
@@ -369,7 +416,7 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 		if strings.TrimSpace(in.Provider) != "" {
 			provider = strings.TrimSpace(in.Provider)
 		}
-		if err := validateOpenCodeMetadata(provider, in.Metadata, true); err != nil {
+		if err := validateOpenCodeMetadata(provider, in.Metadata, row.Purpose != "model_api"); err != nil {
 			return CredentialView{}, err
 		}
 		row.Metadata = safeCredentialMetadata(in.Metadata)
@@ -391,12 +438,14 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	}
 	if in.Clear {
 		row.ValueEnc = ""
+		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	} else if strings.TrimSpace(in.Value) != "" {
 		enc, err := crypto.Encrypt(in.Value)
 		if err != nil {
 			return CredentialView{}, fmt.Errorf("encrypt credential: %w", err)
 		}
 		row.ValueEnc = enc
+		row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	}
 	row.UpdatedAt = time.Now()
 	if err := s.db.Save(&row).Error; err != nil {
@@ -432,7 +481,7 @@ func (s *CredentialService) SetByEnvKey(in CredentialInput) (CredentialView, err
 func (s *CredentialService) Revoke(id string) error {
 	now := time.Now()
 	res := s.db.Model(&models.Credential{}).Where("id = ?", id).
-		Updates(map[string]any{"revoked_at": now, "enabled": false, "updated_at": now})
+		Updates(map[string]any{"revoked_at": now, "enabled": false, "updated_at": now, "secret_revision": gorm.Expr("CASE WHEN secret_revision < 1 THEN 2 ELSE secret_revision + 1 END")})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -455,10 +504,17 @@ func (s *CredentialService) Clear(id string) error {
 		}
 		return err
 	}
-	if isOpenCodeModelCredentialRow(row) && row.ID != builtinCredentialID("opencode") {
+	var connectionRefs int64
+	if s.db.Migrator().HasTable(&models.ModelConnection{}) {
+		if err := s.db.Model(&models.ModelConnection{}).Where("credential_id = ?", row.ID).Count(&connectionRefs).Error; err != nil {
+			return err
+		}
+	}
+	if isOpenCodeModelCredentialRow(row) && row.ID != builtinCredentialID("opencode") && connectionRefs == 0 {
 		return s.db.Delete(&models.Credential{}, "id = ?", row.ID).Error
 	}
 	row.ValueEnc = ""
+	row.SecretRevision = nextSecretRevision(row.SecretRevision)
 	row.RevokedAt = nil
 	row.Enabled = true
 	row.UpdatedAt = time.Now()
@@ -618,7 +674,7 @@ func (s *CredentialService) WriteBackCodexLoginCredential(credentialID, content 
 	if err != nil {
 		return err
 	}
-	result := s.db.Model(&models.Credential{}).Where("id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now()})
+	result := s.db.Model(&models.Credential{}).Where("id = ? AND value_enc = ? AND enabled = ? AND revoked_at IS NULL", row.ID, row.ValueEnc, true).Updates(map[string]any{"value_enc": enc, "updated_at": time.Now(), "secret_revision": nextSecretRevision(row.SecretRevision)})
 	if result.Error != nil {
 		return result.Error
 	}
@@ -658,6 +714,9 @@ func (s *CredentialService) credentialAliasTaken(envKey, name, exceptID string) 
 }
 
 func credentialEnvRow(row models.Credential) bool {
+	if row.Purpose == "model_api" {
+		return false
+	}
 	switch strings.ToLower(strings.TrimSpace(row.Type)) {
 	case "ai", "git", "ssh", "mcp", "custom":
 	default:

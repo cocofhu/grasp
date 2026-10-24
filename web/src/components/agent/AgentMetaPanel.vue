@@ -1,318 +1,92 @@
+<script lang="ts">
+type ToolRuntimeDraft = Pick<import('@/lib/agent/agentStudioDraft').AgentStudioDraft, 'modelBinding' | 'aiCredentialId' | 'openCodeCredentialId'> & { env: Record<string, string> }
+// Studio unmounts this panel when changing tabs; keep unsaved tool choices with
+// the draft, and let them be collected when that draft is discarded/reloaded.
+const previousToolDrafts = new WeakMap<object, Map<string, ToolRuntimeDraft>>()
+</script>
+
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import {
-  ACP_BACKENDS,
-  getRegionPolicy,
-  normalizeRegions,
-  setRegion,
-  switchBackendRegions,
-  type BackendId,
-} from '@/lib/shared/regionPolicy'
-import {
-  DEFAULT_WORKSPACE_DIR,
-  defaultConfigRootFor,
-  kvToRec,
-  recToKV,
-  type AgentStudioDraft,
-} from '@/lib/agent/agentStudioDraft'
-import {
-  OPENCODE_BASE_URL_ENV,
-  OPENCODE_MODEL_ENV,
-  OPENCODE_MODEL_VISION_ENV,
-  OPENCODE_PROVIDER_ENV,
-  switchOpenCodeEnv,
-} from '@/lib/agent/openCodeProvider'
-import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
-import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
-import CredentialAliasPicker from '@/components/agent/CredentialAliasPicker.vue'
-import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
-import { gitKind } from '@/lib/workspace/credentialKinds'
-import { api } from '@/lib/api/api'
-import { readCliEffort, readCliModel, switchCliModelEnv, writeCliEffort, writeCliModel } from '@/lib/agent/cliModelEnv'
-import AppSwitch from '@/components/ui/AppSwitch.vue'
-import { useToast } from '@/lib/composables/useToast'
-import AgentCredentialBindings from '@/components/agent/AgentCredentialBindings.vue'
-import RepoAccessPicker from '@/components/agent/RepoAccessPicker.vue'
-
-const props = defineProps<{
-  draft: AgentStudioDraft
-  agentName: string
-  /** Bumped by the env tab's "Edit" link: scroll to the model card and pulse it. */
-  focusModelTick?: number
-}>()
-
+import { getRegionPolicy, isManagedRegionKey, normalizeRegions, setRegion, switchBackendRegions, type BackendId } from '@/lib/shared/regionPolicy'
+import { DEFAULT_WORKSPACE_DIR, defaultConfigRootFor, kvToRec, recToKV, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
+import { api, type ModelBinding, type AgentGitBindings } from '@/lib/api/api'
+import CodingToolPicker from './CodingToolPicker.vue'
+import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
+import EnvCredentialHelpModal from './EnvCredentialHelpModal.vue'
+import ModelBindingEditor from './ModelBindingEditor.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AgentCredentialBindings from './AgentCredentialBindings.vue'
+import RepoAccessPicker from './RepoAccessPicker.vue'
+import { legacyGitBindings, setDraftGitBindings } from '@/lib/agent/gitBindings'
+import { useRoutingCopy } from '@/lib/agent/modelRouting'
+const props = defineProps<{ draft: AgentStudioDraft; agentName: string; focusModelTick?: number }>()
 const { t } = useI18n()
-const toast = useToast()
-
+const c = useRoutingCopy()
 let configRootTouched = false
-/** Session-only. Turning the switch off keeps the pickers open until a choice is saved or the Agent changes. */
-const customizing = ref(false)
-
-
-watch(
-  () => props.agentName,
-  () => {
-    configRootTouched = false
-    customizing.value = false
-  },
-)
-
-function selectAcpBackend(id: BackendId) {
-  const prev = props.draft.acpBackend
-  if (prev === id) return
-  const before = {
-    acpBackend: prev,
-    configRoot: props.draft.layout.configRoot,
-    aiCredentialId: props.draft.aiCredentialId,
-    env: props.draft.env.map((e) => ({ ...e })),
-  }
-  props.draft.acpBackend = id
-  if (!configRootTouched) {
-    props.draft.layout.configRoot = defaultConfigRootFor(id)
-  }
-  props.draft.aiCredentialId = ''
-  const switched = switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(props.draft.env), id), id), prev, id)
-  const env = switched.env
-  if (id === 'opencode') {
-    delete env[OPENCODE_PROVIDER_ENV]
-    delete env[OPENCODE_BASE_URL_ENV]
-    delete env[OPENCODE_MODEL_VISION_ENV]
-  }
-  props.draft.env = recToKV(env)
-  if (switched.cleared && prev !== 'opencode') {
-    const label = ACP_BACKENDS.find((b) => b.id === id)?.label || id
-    toast.show(t('pages.agentStudio.cliModel.switched', { cli: label }), 'default', {
-      action: {
-        label: t('pages.agentStudio.cliModel.undo'),
-        run: () => {
-          props.draft.acpBackend = before.acpBackend
-          props.draft.layout.configRoot = before.configRoot
-          props.draft.aiCredentialId = before.aiCredentialId
-          props.draft.env = before.env
-        },
-      },
-    })
-  }
-}
-
-const showCliRuntime = computed(() => !!props.draft.acpBackend && props.draft.acpBackend !== 'opencode')
-
-/** The workspace's shared model and credential apply only while the Agent runs the same CLI. */
-const sharedBaseline = ref<{ acpBackend: string; model: string } | null>(null)
 const sharedRepoIds = ref<string[]>([])
-onMounted(async () => {
-  try {
-    const cfg = await api.getSharedAgentConfig()
-    sharedBaseline.value = {
-      acpBackend: cfg.acpBackend || '',
-      model: readCliModel(cfg.env || {}),
-    }
-    sharedRepoIds.value = cfg.repoIds || []
-  } catch {
-    /* The status is optional; the card works without it. */
-  }
-})
-const sameSharedCli = computed(() => {
-  const s = sharedBaseline.value
-  return !!s && s.acpBackend === props.draft.acpBackend
-})
-const inheritedModel = computed(() => (sameSharedCli.value ? sharedBaseline.value?.model || '' : ''))
-const sharedBackend = computed(() => ACP_BACKENDS.find((b) => b.id === sharedBaseline.value?.acpBackend) || null)
-
-function hasOwnRuntime(): boolean {
-  const env = kvToRec(props.draft.env)
-  return !!(readCliModel(env) || readCliEffort(env))
+const sharedGitBindings = ref<AgentGitBindings>()
+const gitHelpOpen = ref(false)
+const pendingBackend = ref<BackendId | null>(null)
+const modelEnvKeys = new Set(['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION'])
+watch(() => props.agentName, () => { configRootTouched = false; pendingBackend.value = null })
+onMounted(async () => { try { const shared = await api.getSharedAgentConfig(); sharedRepoIds.value = shared.repoIds || []; sharedGitBindings.value = shared.gitBindings } catch { /* Repository defaults are optional. */ } })
+function selectAcpBackend(id: BackendId) { if (id !== props.draft.acpBackend) pendingBackend.value = id }
+function confirmBackend() {
+  const id = pendingBackend.value
+  if (!id) return
+  let previousBindings = previousToolDrafts.get(props.draft)
+  if (!previousBindings) { previousBindings = new Map(); previousToolDrafts.set(props.draft, previousBindings) }
+  const currentEnv = kvToRec(props.draft.env)
+  previousBindings.set(props.draft.acpBackend, {
+    modelBinding: props.draft.modelBinding ? JSON.parse(JSON.stringify(props.draft.modelBinding)) : undefined,
+    aiCredentialId: props.draft.aiCredentialId,
+    openCodeCredentialId: props.draft.openCodeCredentialId,
+    env: Object.fromEntries(Object.entries(currentEnv).filter(([key]) => modelEnvKeys.has(key) || isManagedRegionKey(key))),
+  })
+  const previous = previousBindings.get(id)
+  props.draft.acpBackend = id
+  if (!configRootTouched) props.draft.layout.configRoot = defaultConfigRootFor(id)
+  // An absent binding is a meaningful legacy configuration, not inheritance.
+  props.draft.modelBinding = previous ? previous.modelBinding : { kind: 'inherit' }
+  props.draft.aiCredentialId = previous?.aiCredentialId || ''
+  props.draft.openCodeCredentialId = previous?.openCodeCredentialId || ''
+  const env = switchBackendRegions(currentEnv, id)
+  for (const key of modelEnvKeys) delete env[key]
+  props.draft.env = recToKV({ ...env, ...previous?.env })
+  pendingBackend.value = null
 }
-
-/** A stored credential or a pinned model leaves the workspace default. */
-function hasOwnCredential(): boolean {
-  return !!(props.draft.aiCredentialId?.trim() || props.draft.openCodeCredentialId?.trim())
-}
-
-const inheriting = computed(
-  () =>
-    !!sharedBackend.value &&
-    !customizing.value &&
-    props.draft.acpBackend === sharedBackend.value.id &&
-    !hasOwnRuntime() &&
-    !hasOwnCredential(),
-)
-
-function clearRuntimeOverrides() {
-  props.draft.aiCredentialId = ''
-  props.draft.openCodeCredentialId = ''
-  const env = writeCliEffort(writeCliModel(kvToRec(props.draft.env), ''), '')
-  delete env[OPENCODE_PROVIDER_ENV]
-  delete env[OPENCODE_BASE_URL_ENV]
-  delete env[OPENCODE_MODEL_VISION_ENV]
-  props.draft.env = recToKV(env)
-}
-
-function setInherit(on: boolean) {
-  if (!on) {
-    customizing.value = true
-    return
-  }
-  customizing.value = false
-  const backend = sharedBackend.value
-  if (backend && props.draft.acpBackend !== backend.id) props.draft.acpBackend = backend.id
-  clearRuntimeOverrides()
-}
-
-function onSelectCredential(id: string) {
-  if (props.draft.openCodeCredentialId === id) return
-  props.draft.openCodeCredentialId = id
-  const env = kvToRec(props.draft.env)
-  delete env[OPENCODE_PROVIDER_ENV]
-  delete env[OPENCODE_BASE_URL_ENV]
-  delete env[OPENCODE_MODEL_VISION_ENV]
-  delete env[OPENCODE_MODEL_ENV]
-  delete env.GRASP_OPENCODE_API_KEY
-  delete env.OPENCODE_API_KEY
-  props.draft.env = recToKV(env)
-}
-
+function setBinding(binding: ModelBinding) { props.draft.modelBinding = binding; props.draft.aiCredentialId = ''; props.draft.openCodeCredentialId = '' }
 const currentRegionPolicy = computed(() => getRegionPolicy(props.draft.acpBackend))
-const showMetaRegionBlock = computed(() => !!currentRegionPolicy.value)
-const metaRegionOptions = computed(() => currentRegionPolicy.value?.options || [])
-
-const displayRegion = computed(() => {
-  const normalized = normalizeRegions(kvToRec(props.draft.env), props.draft.acpBackend, 'preserve-special')
-  return normalized.special ? '' : normalized.region
-})
-
-const specialRegion = computed(() => {
-  const normalized = normalizeRegions(kvToRec(props.draft.env), props.draft.acpBackend, 'preserve-special')
-  return normalized.special ? normalized.region : ''
-})
-
-function selectRegion(id: string) {
-  props.draft.env = recToKV(setRegion(kvToRec(props.draft.env), props.draft.acpBackend, id))
-}
-
-const showOpenCode = computed(() => props.draft.acpBackend === 'opencode')
-const gitAliasKind = computed(() => (props.draft.gitCredentialType ? gitKind(props.draft.gitCredentialType) : undefined))
-const showSshHosts = computed(() => props.draft.gitCredentialType === 'ssh')
-
-watch(
-  () => props.draft.gitCredentialType,
-  (next, prev) => {
-    if (prev && next !== prev) {
-      props.draft.gitCredentialId = ''
-      props.draft.sshHostsCredentialId = ''
-    }
-  },
-)
-
+const displayRegion = computed(() => { const normalized = normalizeRegions(kvToRec(props.draft.env), props.draft.acpBackend, 'preserve-special'); return normalized.special ? '' : normalized.region })
+const specialRegion = computed(() => { const normalized = normalizeRegions(kvToRec(props.draft.env), props.draft.acpBackend, 'preserve-special'); return normalized.special ? normalized.region : '' })
+function selectRegion(id: string) { props.draft.env = recToKV(setRegion(kvToRec(props.draft.env), props.draft.acpBackend, id)) }
 </script>
 
 <template>
   <div class="scroll-area min-h-0 flex-1 overflow-auto p-4">
     <div class="max-w-3xl space-y-4">
-      <div v-if="sharedBackend" class="rounded-xl border border-line bg-base px-3.5 py-3" data-test="agent-inherit-default">
-        <div class="flex items-center justify-between gap-4">
-          <div class="min-w-0 text-[13px] font-medium text-txt">{{ t('pages.agentStudio.cliModel.inheritDefault') }}</div>
-          <AppSwitch
-            :model-value="inheriting"
-            data-test="agent-inherit-default-switch"
-            :aria-label="t('pages.agentStudio.cliModel.inheritDefault')"
-            @update:model-value="setInherit"
-          />
-        </div>
-        <div v-if="inheriting" class="mt-3 flex items-center gap-2.5 border-t border-line/70 pt-3" data-test="agent-inherit-backend">
-          <CredentialProviderLogo :provider="sharedBackend.id" match="provider" selected />
-          <div class="min-w-0">
-            <div class="text-[12px] font-semibold text-txt">{{ sharedBackend.label }}</div>
-            <div class="text-[11px] text-txt3">{{ t('pages.agentStudio.cliModel.inheritDefaultFrom') }}</div>
-          </div>
-        </div>
-      </div>
-      <div v-if="!inheriting">
-        <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.acpBackend') }}</div>
-        <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-          <button
-            v-for="b in ACP_BACKENDS"
-            :key="b.id"
-            type="button"
-            class="flex flex-col items-center gap-2 rounded-lg border px-2 py-3 text-center transition"
-            :class="
-              draft.acpBackend === b.id
-                ? 'border-accent bg-accent-dim text-txt'
-                : 'border-line bg-base text-txt2 hover:border-line-strong'
-            "
-            :data-testid="`acp-backend-${b.id}`"
-            :aria-pressed="draft.acpBackend === b.id"
-            @click="selectAcpBackend(b.id)"
-          >
-            <CredentialProviderLogo :provider="b.id" match="provider" :selected="draft.acpBackend === b.id" />
-            <div class="text-[12px] font-semibold">{{ b.label }}</div>
-          </button>
-        </div>
-      </div>
-      <div v-if="!inheriting && showMetaRegionBlock" class="border-t border-dashed border-line pt-4">
-        <div class="text-[12px] font-medium text-txt2">
-          {{ t('pages.agentStudio.meta.regionTitle') }}
-          <span class="rounded-md ml-1.5 inline-block border border-accent/30 bg-accent-dim px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider text-accent-2">{{ t('pages.agentStudio.meta.regionNewBadge') }}</span>
-        </div>
-        <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.regionDesc') }}</p>
-        <p v-if="specialRegion" class="mb-2 rounded-lg border border-warn/35 bg-warn/10 px-2.5 py-2 font-mono text-[11px] text-warn">
-          {{ t('pages.agentStudio.region.special', { value: specialRegion }) }}
-        </p>
-        <div class="flex max-w-lg flex-wrap gap-2" role="radiogroup" :aria-label="t('pages.agentStudio.region.title')">
-          <button
-            v-for="r in metaRegionOptions"
-            :key="r.id"
-            type="button"
-            class="min-h-11 rounded-md px-3 py-2 text-left transition"
-            :class="displayRegion === r.id ? 'bg-elevated font-medium text-txt' : 'text-txt2 hover:bg-elevated/50'"
-            role="radio"
-            :aria-checked="displayRegion === r.id"
-            :aria-label="`${t(r.labelKey)} (${r.id})`"
-            @click="selectRegion(r.id)"
-          >
-            <div class="text-[12px] font-semibold">{{ t(r.labelKey) }}</div>
-            <div class="mt-0.5 font-mono text-[10px] text-txt3">{{ r.id }}</div>
-            <div class="mt-1.5 text-[10px] leading-snug" :class="displayRegion === r.id ? 'text-accent-2' : 'text-txt3'">{{ t(r.hintKey) }}</div>
-          </button>
-        </div>
-      </div>
-      <CliRuntimeCard
-        v-if="!inheriting && showCliRuntime"
-        :key="agentName"
-        :draft="draft"
-        :inherited-model="inheritedModel"
-        :focus-tick="focusModelTick"
-      />
-      <div v-if="!inheriting && showOpenCode" class="border-t border-dashed border-line pt-4">
-        <OpenCodeCredentialPicker
-          mode="select"
-          hide-hint
-          :selected-id="draft.openCodeCredentialId"
-          @update:selected-id="onSelectCredential"
+      <section>
+        <h3 class="mb-3 mt-0 text-[13px] font-semibold text-txt">{{ t('pages.agentStudio.toolPicker.title') }}</h3>
+        <CodingToolPicker
+          :model-value="draft.acpBackend"
+          :region-policy="currentRegionPolicy"
+          :current-region="displayRegion"
+          :special-region="specialRegion"
+          @update:model-value="selectAcpBackend"
+          @select-region="selectRegion"
         />
-      </div>
-      <div v-if="gitAliasKind" class="border-t border-dashed border-line pt-4">
-        <CredentialAliasPicker
-          :kind="gitAliasKind.id"
-          :selected-id="draft.gitCredentialId"
-          @update:selected-id="draft.gitCredentialId = $event"
-        />
-      </div>
-      <div v-if="showSshHosts" class="border-t border-dashed border-line pt-4">
-        <CredentialAliasPicker
-          kind="ssh_hosts"
-          :selected-id="draft.sshHostsCredentialId"
-          @update:selected-id="draft.sshHostsCredentialId = $event"
-        />
-      </div>
+      </section>
+      <ModelBindingEditor :key="agentName" :backend="draft.acpBackend" :model-value="draft.modelBinding" @update:model-value="setBinding" />
+      <div class="border-t border-line pt-4"><AgentGitCredentialPicker :model-value="draft.gitBindings" :legacy="legacyGitBindings(draft)" :inherited="sharedGitBindings" @update:model-value="setDraftGitBindings(draft, $event)" @help="gitHelpOpen = true" /></div>
       <RepoAccessPicker
         :key="agentName"
         :model-value="draft.repoIds"
         :inherited="sharedRepoIds"
         @update:model-value="draft.repoIds = $event"
       />
-      <label v-if="!inheriting" class="block">
+      <label  class="block">
         <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
         <input
           v-model="draft.layout.configRoot"
@@ -323,7 +97,7 @@ watch(
           @input="configRootTouched = true"
         />
       </label>
-      <label v-if="!inheriting" class="block">
+      <label  class="block">
         <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.workspaceDir') }}</span>
         <input
           v-model="draft.layout.workspaceDir"
@@ -335,12 +109,15 @@ watch(
       </label>
     </div>
 
-    <AgentCredentialBindings v-if="!inheriting" :draft="draft" />
+    <EnvCredentialHelpModal :open="gitHelpOpen" section="git" :backend="draft.acpBackend" @close="gitHelpOpen = false" />
 
-    <p v-if="!inheriting" class="mt-3 max-w-3xl text-[11px] leading-5 text-txt3">
+    <AgentCredentialBindings  :draft="draft" />
+
+    <p  class="mt-3 max-w-3xl text-[11px] leading-5 text-txt3">
       {{ t('pages.agentStudio.meta.capabilitiesNote') }}
     </p>
 
+    <AppModal :open="!!pendingBackend" :title="t('pages.agentStudio.meta.acpBackend')" :close-on-esc="true" @close="pendingBackend = null"><p class="text-sm leading-6 text-txt2">{{ c.toolChanged }}</p><template #footer><AppButton variant="ghost" @click="pendingBackend = null">{{ c.cancel }}</AppButton><AppButton variant="primary" data-testid="confirm-model-backend-switch" @click="confirmBackend">{{ c.next }}</AppButton></template></AppModal>
   </div>
 </template>
 

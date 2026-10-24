@@ -13,16 +13,22 @@ import {
   AGENT_SETTINGS_PATH,
   parseCustomConfigJson,
   CLI_BACKENDS,
+  WIZARD_STEPS,
 } from './agentCreateWizard'
 import { AGENT_OPENCODE_CONFIG_REL_PATH } from './backendAuthGuide'
 
 describe('freshDraft defaults (g1.2)', () => {
+  it('uses one combined coding-tool and model step between basics and Git', () => {
+    expect(WIZARD_STEPS.map((step) => step.id)).toEqual(['basics', 'acp', 'git', 'review'])
+    expect(WIZARD_STEPS.find((step) => step.id === 'acp')?.skip).toBe(true)
+  })
   it('defaults to API Key path with OpenCode', () => {
     const d = freshDraft()
     expect(d.startPath).toBe('apiKey')
     expect(d.acpBackend).toBe('opencode')
     expect(d.cliBackend).toBe('cursor')
     expect(d.configRoot).toBe('/root/.config/opencode')
+    expect(d.modelBinding).toEqual({ kind: 'inherit' })
     expect(CLI_BACKENDS.map((b) => b.id)).toEqual([
       'cursor',
       'claude_code',
@@ -142,6 +148,7 @@ describe('assembleCreatePayload', () => {
   it('includes the confirmed Git credential type in the create payload', () => {
     const d = freshDraft()
     d.name = 'x'
+    delete d.gitBindings
     d.gitCredentialType = 'ssh'
     expect(assembleCreatePayload(d).gitCredentialType).toBe('ssh')
     expect(assembleCreatePayload(d)).not.toHaveProperty('gitCredentialId')
@@ -150,10 +157,12 @@ describe('assembleCreatePayload', () => {
 
   it('writes the selected credential ids and omits them when unset', () => {
     const cursor = freshDraft()
+    delete cursor.modelBinding
     cursor.name = 'cursor-agent'
     cursor.acpBackend = 'cursor'
     cursor.aiCredentialId = 'cred-cursor'
     cursor.openCodeCredentialId = 'cred-should-not-send'
+    delete cursor.gitBindings
     cursor.gitCredentialType = 'github_https'
     cursor.gitCredentialId = 'cred-gh'
     cursor.sshHostsCredentialId = 'cred-hosts'
@@ -173,6 +182,7 @@ describe('assembleCreatePayload', () => {
     expect(cursorPayload.env).toEqual({ GIT_REPOS: '${vars.repos}' })
 
     const opencode = freshDraft()
+    delete opencode.modelBinding
     opencode.name = 'oc-agent'
     opencode.openCodeCredentialId = 'cred-oc'
     opencode.aiCredentialId = 'cred-cursor'
@@ -193,6 +203,7 @@ describe('assembleCreatePayload', () => {
   it('sends the SSH known-hosts id only for SSH', () => {
     const d = freshDraft()
     d.name = 'ssh-agent'
+    delete d.gitBindings
     d.gitCredentialType = 'ssh'
     d.gitCredentialId = 'key-1'
     d.sshHostsCredentialId = 'hosts-1'
@@ -253,8 +264,9 @@ describe('hasPathDeps / buildReviewSummary', () => {
     expect(hasPathDeps(d)).toBe(true)
   })
 
-  it('builds 5-step review chips without ENV/capability steps and reminds when Key skipped', () => {
+  it('builds review chips without ENV/capability steps and reminds when authorization was skipped', () => {
     const d = freshDraft()
+    delete d.modelBinding
     d.name = 'n'
     d.skipped.apiKey = true
     const items = buildReviewSummary(d)
@@ -276,6 +288,7 @@ describe('hasPathDeps / buildReviewSummary', () => {
 
   it('marks API Key configured from the selected credential alias, not a pasted secret', () => {
     const pasted = freshDraft()
+    delete pasted.modelBinding
     pasted.name = 'n'
     pasted.acpBackend = 'cursor'
     pasted.startPath = 'cli'
@@ -283,6 +296,7 @@ describe('hasPathDeps / buildReviewSummary', () => {
     expect(buildReviewSummary(pasted).find((i) => i.key === 'apiKey')?.kind).toBe('empty')
 
     const picked = freshDraft()
+    delete picked.modelBinding
     picked.name = 'n'
     picked.acpBackend = 'cursor'
     picked.aiCredentialId = 'cred-cursor'
@@ -297,6 +311,7 @@ describe('hasPathDeps / buildReviewSummary', () => {
   it('shows Git as configured when a credential or GIT_REPOS is present', () => {
     const repos = freshDraft()
     repos.name = 'n'
+    delete repos.gitBindings
     repos.gitCredentialType = 'github_https'
     repos.env = [{ k: 'GIT_REPOS', v: '${vars.repos}' }]
     const reposGit = buildReviewSummary(repos).find((i) => i.key === 'git')
@@ -305,6 +320,7 @@ describe('hasPathDeps / buildReviewSummary', () => {
 
     const cred = freshDraft()
     cred.name = 'n'
+    delete cred.gitBindings
     cred.gitCredentialType = 'ssh'
     cred.gitCredentialId = 'key-1'
     cred.sshHostsCredentialId = 'hosts-1'
@@ -316,6 +332,7 @@ describe('hasPathDeps / buildReviewSummary', () => {
 
   it('writes settings.json and omits auth env in custom config mode', () => {
     const d = freshDraft()
+    delete d.modelBinding
     d.name = 'cfg-agent'
     d.acpBackend = 'claude_code'
     d.authMode = 'customConfig'
@@ -332,8 +349,10 @@ describe('hasPathDeps / buildReviewSummary', () => {
 
   it('writes opencode.json in OpenCode custom config mode', () => {
     const d = freshDraft()
+    delete d.modelBinding
     d.name = 'oc-agent'
     applyAcpBackend(d, 'opencode')
+    delete d.modelBinding
     d.authMode = 'customConfig'
     d.customConfigContent = JSON.stringify({ model: 'openai/gpt-4.1' })
     d.env.push({ k: 'GRASP_OPENCODE_API_KEY', v: 'should-strip' })
@@ -367,5 +386,24 @@ describe('hasPathDeps / buildReviewSummary', () => {
       labelKey: 'pages.agentStudio.region.international',
       detail: 'intl',
     })
+  })
+})
+
+
+describe('named model configuration bindings', () => {
+  it('keeps configuration references and reviews their resolved names without legacy authorization', () => {
+    const draft = freshDraft()
+    draft.name = 'named-model-agent'
+    draft.modelBinding = { kind: 'configuration', configurationId: 'cfg-a' }
+    draft.aiCredentialId = 'old-tool-key'
+    draft.openCodeCredentialId = 'old-model-key'
+    draft.env = [{ k: 'ACP_BRIDGE_MODEL', v: 'old-model' }]
+    const payload = assembleCreatePayload(draft)
+    expect(payload.modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg-a' })
+    expect(payload).not.toHaveProperty('aiCredentialId')
+    expect(payload).not.toHaveProperty('openCodeCredentialId')
+    expect(payload.env).not.toHaveProperty('ACP_BRIDGE_MODEL')
+    const item = buildReviewSummary(draft, { model: '开发模型 · OpenCode · org/raw-model' }).find((entry) => entry.key === 'apiKey')
+    expect(item).toEqual({ key: 'apiKey', kind: 'ok', labelKey: 'pages.agentStudio.wizard.review.modelSource_configuration', detail: '开发模型 · OpenCode · org/raw-model' })
   })
 })

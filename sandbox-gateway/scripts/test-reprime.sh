@@ -13,6 +13,11 @@ die() { echo "FAIL: $*" >&2; exit 1; }
 
 H="$TMP/home"
 RUN="$TMP/run"
+# Never authenticate with developer-machine credentials during a smoke test.
+unset GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITLAB_TOKEN GLAB_TOKEN GITLAB_ACCESS_TOKEN
+unset GITHUB_URL GITLAB_URL GIT_SSH_PRIVATE_KEY GIT_SSH_KNOWN_HOSTS GIT_SSH_COMMAND GIT_SSH SSH_AUTH_SOCK
+unset GIT_CONFIG GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$H/.gitconfig"
 mkdir -p "$H/.cursor/rules" "$H/.ssh" "$RUN" "$H/workspace"
 echo old-rule >"$H/.cursor/rules/old.md"
 echo old-key >"$H/.ssh/id_rsa"
@@ -95,6 +100,69 @@ HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
 )
 [ ! -e "$H/.claude" ] || die "second wipe missed CONFIG_ROOT"
 echo "OK: recorded keys dropped"
+
+# A shared workflow node may select several accounts at once. Every selected
+# secret is staged privately; routing remains deterministic and the next node
+# can explicitly clear the complete selection.
+rm -rf "$TMP/bundle"
+mkdir -p "$TMP/bundle/ssh/git" "$TMP/bundle/ssh/repos" "$H/.config/gh" "$H/.config/glab-cli"
+printf 'legacy-cli\n' >"$H/.config/gh/hosts.yml"
+printf 'legacy-cli\n' >"$H/.config/glab-cli/config.yml"
+cat >"$TMP/bundle/ssh/git/manifest.json" <<'EOF'
+[
+ {"index":0,"id":"gh-default","kind":"github_https","scope":"","preferred":true},
+ {"index":1,"id":"gh-repo","kind":"github_https","scope":"https://github.com/team/private.git","preferred":false},
+ {"index":2,"id":"gl-host","kind":"gitlab_https","scope":"git.example","preferred":false},
+ {"index":3,"id":"ssh-host","kind":"ssh","scope":"git.example","preferred":false}
+]
+EOF
+printf 'catalog-host-token\n' >"$TMP/bundle/ssh/git/0.secret"
+printf 'catalog-repo-token\n' >"$TMP/bundle/ssh/git/1.secret"
+printf 'catalog-gl-token\n' >"$TMP/bundle/ssh/git/2.secret"
+printf 'catalog-ssh-key\n' >"$TMP/bundle/ssh/git/3.secret"
+printf 'git.example ssh-ed25519 FAKE\n' >"$TMP/bundle/ssh/git/3.known_hosts"
+printf '0\tgithub_https\thttps://github.com/team/private.git\n' >"$TMP/bundle/ssh/repos/manifest"
+printf 'explicit-repo-token\n' >"$TMP/bundle/ssh/repos/0.secret"
+{
+  echo "AGENT_PROVIDER=$(b64 cursor)"
+  echo "GITHUB_TOKEN=$(b64 must-not-survive-catalog)"
+} >"$TMP/bundle/env"
+tar -C "$TMP/bundle" -czf "$TMP/multi.tgz" .
+HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
+  GRASP_REPRIME_SERVICES="$TMP/services.sh" \
+  bash "$REPRIME" <"$TMP/multi.tgz" >"$TMP/multi.log" 2>&1 || { cat "$TMP/multi.log"; die "multi-account reprime failed"; }
+CATALOG="$H/.grasp/git-credentials"
+[ "$(stat -c %a "$CATALOG")" = 700 ] || die "catalog directory not private"
+for index in 0 1 2 3; do
+  [ "$(stat -c %a "$CATALOG/$index.secret")" = 600 ] || die "selected secret not private"
+done
+password="$(printf 'url=https://github.com/team/private.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
+[ "$password" = explicit-repo-token ] || die "explicit repository grant did not override selected catalog"
+password="$(printf 'url=https://github.com/team/public.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill | sed -n 's/^password=//p')"
+[ "$password" = catalog-host-token ] || die "default host credential missing"
+! grep -q 'catalog-.*-token\|must-not-survive-catalog' "$RUN/env" || die "Git secrets persisted in runtime env"
+! grep -q legacy-cli "$H/.config/gh/hosts.yml" || die "previous GH CLI identity survived"
+! grep -q legacy-cli "$H/.config/glab-cli/config.yml" || die "previous GitLab CLI identity survived"
+echo "OK: multiple selected credentials route privately without token env"
+
+rm -rf "$TMP/bundle"
+mkdir -p "$TMP/bundle/ssh/git"
+printf '[]\n' >"$TMP/bundle/ssh/git/manifest.json"
+echo "AGENT_PROVIDER=$(b64 cursor)" >"$TMP/bundle/env"
+tar -C "$TMP/bundle" -czf "$TMP/empty.tgz" .
+HOME="$H" GRASP_REPRIME_HOME="$H" GRASP_RUNTIME_RUN_DIR="$RUN" \
+  GRASP_REPRIME_SERVICES="$TMP/services.sh" \
+  bash "$REPRIME" <"$TMP/empty.tgz" >"$TMP/empty.log" 2>&1 || { cat "$TMP/empty.log"; die "explicit empty reprime failed"; }
+[ -f "$CATALOG/manifest.json" ] || die "explicit empty catalog marker missing"
+[ "$(cat "$CATALOG/manifest.json")" = '[]' ] || die "old catalog selection survived"
+[ ! -e "$CATALOG/0.secret" ] && [ ! -e "$CATALOG/3.secret" ] || die "old selected token/key survived"
+[ ! -e "$CATALOG/3.known_hosts" ] || die "old selected host trust survived"
+[ ! -e "$H/.config/gh/hosts.yml" ] && [ ! -e "$H/.config/glab-cli/config.yml" ] || die "old CLI identities survived empty selection"
+if printf 'url=https://github.com/team/private.git\n\n' | HOME="$H" GIT_TERMINAL_PROMPT=0 git credential fill >"$TMP/empty-fill" 2>/dev/null; then
+  die "empty selection reused previous Git credentials"
+fi
+! grep -q 'catalog-.*-token' "$TMP/empty-fill" || die "empty selection leaked previous token"
+echo "OK: explicit empty selection removes previous workflow node permissions"
 
 # Bad bundles are refused before anything changes.
 cp "$RUN/env" "$TMP/env.before"

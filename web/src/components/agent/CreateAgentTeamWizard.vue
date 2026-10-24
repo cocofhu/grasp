@@ -3,6 +3,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
 import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
 import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
@@ -536,13 +537,15 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                         class="rounded-md border border-line bg-base px-2 py-1.5 text-[12px] text-txt outline-none focus:border-accent"
                         :placeholder="t('pages.agentStudio.teamWizard.mcp.namePh')"
                       />
-                      <select
-                        v-model="m.transport"
-                        class="rounded-md border border-line bg-base px-2 py-1.5 text-[12px] text-txt"
-                      >
-                        <option value="url">HTTP (url)</option>
-                        <option value="command">stdio</option>
-                      </select>
+                      <AppSelect
+                        :model-value="m.transport"
+                        :options="[{ value: 'url', label: 'HTTP (url)' }, { value: 'command', label: 'stdio' }]"
+                        :aria-label="`MCP ${m.name || i + 1}`"
+                        :data-testid="`team-mcp-transport-${i}`"
+                        searchable
+                        size="sm"
+                        @update:model-value="value => { if (value === 'url' || value === 'command') m.transport = value }"
+                      />
                     </div>
                     <template v-if="m.transport === 'url'">
                       <input

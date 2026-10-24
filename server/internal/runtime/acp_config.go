@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
@@ -50,7 +51,7 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 		),
 	})
 	if err != nil {
-		if c.backend == BackendDeepSeekHarness {
+		if c.backend == BackendDeepSeekHarness || env[EnvModelConnection] != "" {
 			return "", err
 		}
 		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
@@ -106,17 +107,19 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	CredentialBindings   map[string]*string `json:"credentialBindings,omitempty"`
-	AcpBackend           string             `json:"acpBackend"`
-	OpenCodeCredentialID string             `json:"openCodeCredentialId,omitempty"`
-	AiCredentialID       string             `json:"aiCredentialId,omitempty"`
-	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
-	RepoIDs              *[]string          `json:"repoIds,omitempty"`
-	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
-	MCP                  []agentMCP         `json:"mcp"`
-	Env                  map[string]string  `json:"env"`
-	Layout               agentLayout        `json:"layout"`
+	GitBindings          *models.GitBindings   `json:"gitBindings,omitempty"`
+	ModelBinding         *modelrouting.Binding `json:"modelBinding,omitempty"`
+	CredentialBindings   map[string]*string    `json:"credentialBindings,omitempty"`
+	AcpBackend           string                `json:"acpBackend"`
+	OpenCodeCredentialID string                `json:"openCodeCredentialId,omitempty"`
+	AiCredentialID       string                `json:"aiCredentialId,omitempty"`
+	GitCredentialID      string                `json:"gitCredentialId,omitempty"`
+	SshHostsCredentialID string                `json:"sshHostsCredentialId,omitempty"`
+	RepoIDs              *[]string             `json:"repoIds,omitempty"`
+	GitCredentialType    string                `json:"gitCredentialType,omitempty"`
+	MCP                  []agentMCP            `json:"mcp"`
+	Env                  map[string]string     `json:"env"`
+	Layout               agentLayout           `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).
@@ -156,9 +159,20 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	agent := c.agentConfig(models.AgentProfile(req.Config))
 	shared, ok := c.sharedView(req)
 	if !ok {
-		return agent
+		return c.mapLegacyModelBinding(agent)
 	}
-	return overlayAgentFile(shared, agent, c.credentialKind())
+	return c.mapLegacyModelBinding(overlayAgentFile(shared, agent, c.credentialKind()))
+}
+
+func (c *acpProvider) mapLegacyModelBinding(agent agentFile) agentFile {
+	if agent.ModelBinding == nil && c.opts.LegacyModelBinding != nil {
+		backend := agent.AcpBackend
+		if backend == "" {
+			backend = string(c.backend)
+		}
+		agent.ModelBinding = c.opts.LegacyModelBinding(backend, agent.AiCredentialID, agent.OpenCodeCredentialID, agent.Env)
+	}
+	return agent
 }
 
 func (c *acpProvider) credentialKind() CredentialKindFunc {
@@ -219,6 +233,9 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 		ids := append([]string(nil), shared.RepoIDs...)
 		out.RepoIDs = &ids
 	}
+	if agent.GitBindings == nil && !HasLegacyGitSelection(agent.GitCredentialID, agent.SshHostsCredentialID, agent.CredentialBindings) {
+		out.GitBindings = shared.GitBindings
+	}
 	return out
 }
 
@@ -233,6 +250,10 @@ const reservedArtifactStore = "artifact-store"
 // gitToken resolves GITLAB_TOKEN from workspace credentials. It gates optional
 // MR creation; empty means "no credentials, skip MR".
 func (c *acpProvider) gitToken(req NodeReq) string {
+	if c.effectiveAgent(req).GitBindings != nil {
+		credential, _ := c.selectedGitLabCredential(req)
+		return credential.Secret
+	}
 	return c.workspaceCredential(envauth.EnvGitLabToken)
 }
 
@@ -241,6 +262,13 @@ func (c *acpProvider) gitToken(req NodeReq) string {
 // GITLAB_TOKEN is configured and the repo is not GitHub (avoids a misconfigured
 // token on GitHub).
 func (c *acpProvider) gitLabURL(req NodeReq) string {
+	if c.effectiveAgent(req).GitBindings != nil {
+		credential, ok := c.selectedGitLabCredential(req)
+		if ok {
+			return GitCredentialBaseURL(credential)
+		}
+		return ""
+	}
 	if v := c.workspaceCredential("GITLAB_URL"); v != "" {
 		return v
 	}
@@ -253,6 +281,25 @@ func (c *acpProvider) gitLabURL(req NodeReq) string {
 		return gitBaseURL(repo)
 	}
 	return ""
+}
+
+func (c *acpProvider) selectedGitLabCredential(req NodeReq) (sandbox.GitCredential, bool) {
+	agent := c.effectiveAgent(req)
+	credentials, err := ResolveGitBindings(agent.GitBindings, c.opts.SelectedCredential)
+	if err != nil {
+		return sandbox.GitCredential{}, false
+	}
+	repoURL := c.nodeRepoURL(req)
+	if c.opts.RepoCredentials != nil && agent.RepoIDs != nil {
+		repo := parseGitScope(repoURL)
+		for _, item := range c.opts.RepoCredentials(*agent.RepoIDs) {
+			scope := parseGitScope(item.URL)
+			if item.Kind == sandbox.RepoCredentialGitLabHTTPS && scope.host == repo.host && scope.path == repo.path && scope.path != "" && scope.scheme == repo.scheme {
+				return sandbox.GitCredential{Kind: item.Kind, Scope: item.URL, Secret: item.Secret}, true
+			}
+		}
+	}
+	return gitCredentialForRepo(credentials, repoURL, sandbox.RepoCredentialGitLabHTTPS, true)
 }
 
 func (c *acpProvider) workspaceCredential(key string) string {

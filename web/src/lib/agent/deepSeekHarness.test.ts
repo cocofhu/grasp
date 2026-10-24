@@ -126,6 +126,7 @@ describe('DeepSeek Harness setup', () => {
       { k: 'ACP_DEEPSEEK_HARNESS_API_KEY', v: 'must-not-save' },
     ]
     applyAcpBackend(draft, 'deepseek_harness')
+    delete draft.modelBinding
     const payload = assembleCreatePayload(draft)
     expect(payload).toMatchObject({ acpBackend: 'deepseek_harness', aiCredentialId: 'dsh-team-key', env: { ACP_BRIDGE_MODEL: 'deepseek-v4-pro' }, layout: { configRoot: '/root/.dsh' } })
     expect(payload).not.toHaveProperty('openCodeCredentialId')

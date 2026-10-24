@@ -34,7 +34,7 @@ var (
 	// ErrCodexLoginFileEmpty rejects a blank paste so the slot stays unconfigured.
 	ErrCodexLoginFileEmpty = errors.New("Codex 登录文件不能为空")
 	// ErrCodexLoginFileAPIKey rejects an API key or an API-key-mode login file.
-	ErrCodexLoginFileAPIKey = errors.New("Codex 使用 ChatGPT 登录文件，不接受 API Key。用 API Key 接 OpenAI 请改用 OpenCode")
+	ErrCodexLoginFileAPIKey = errors.New("Codex 平台授权使用 ChatGPT 登录文件，不接受 API Key；使用 API Key 请选择 Responses 模型连接")
 	// ErrCodexLoginFileMissing is returned before the CLI starts when the workspace
 	// has no Codex login file.
 	ErrCodexLoginFileMissing = errors.New("缺少 Codex 登录文件：请在工作区凭据中粘贴 ChatGPT 登录文件（本机 ~/.codex/auth.json）")
@@ -70,7 +70,12 @@ func asCodexLoginErr(err error) error {
 // failed because the CLI login was refused, keeping the CLI error body when it
 // says more than the re-paste message. Other turns return nil. Only the turn's
 // failure body is checked, never narration or tool output.
-func (c *acpProvider) codexTurnLoginErr(res *sandbox.ChatResult) error {
+func (c *acpProvider) codexTurnLoginErr(res *sandbox.ChatResult, req ...NodeReq) error {
+	if len(req) > 0 {
+		if _, connection := codexConnectionRuns.Load(c.backendKey(codexLoginKey(req[0]))); connection {
+			return nil
+		}
+	}
 	if c.backend != BackendCodex {
 		return nil
 	}
@@ -308,6 +313,7 @@ type codexLoginState struct {
 // run|node, so write-back compares against that attempt rather than a newer
 // credential saved by a concurrent run.
 var codexLogins sync.Map
+var codexConnectionRuns sync.Map
 
 func codexLoginKey(req NodeReq) string {
 	return req.RunID + "|" + req.NodeID

@@ -6,6 +6,8 @@ import { flushPromises } from '@vue/test-utils'
 const mocks = vi.hoisted(() => ({
   createAgent: vi.fn(),
   listAgentTeamTemplates: vi.fn(async () => ({ items: [] })),
+  listCredentials: vi.fn(),
+  listModelConfigurations: vi.fn(),
 }))
 
 vi.mock('vue-i18n', () => ({
@@ -16,10 +18,15 @@ vi.mock('@/lib/api/api', () => ({
   api: {
     createAgent: mocks.createAgent,
     listAgentTeamTemplates: () => mocks.listAgentTeamTemplates(),
+    listCredentials: mocks.listCredentials,
+    listModelConfigurations: mocks.listModelConfigurations,
   },
 }))
 
 import { useAgentCreateWizard, type AgentCreateWizardProps } from './useAgentCreateWizard'
+import { WIZARD_STEPS, type WizardStepId } from './agentCreateWizard'
+
+function stepIndex(id: WizardStepId) { return WIZARD_STEPS.findIndex((step) => step.id === id) }
 
 function mountWizard(over: Partial<AgentCreateWizardProps> = {}) {
   let wizard!: ReturnType<typeof useAgentCreateWizard>
@@ -44,6 +51,8 @@ describe('useAgentCreateWizard coverage', () => {
   beforeEach(() => {
     mocks.createAgent.mockReset()
     mocks.createAgent.mockResolvedValue({ name: 'created-agent' })
+    mocks.listCredentials.mockResolvedValue({ items: [] })
+    mocks.listModelConfigurations.mockResolvedValue({ items: [] })
   })
 
   afterEach(() => vi.restoreAllMocks())
@@ -84,7 +93,7 @@ describe('useAgentCreateWizard coverage', () => {
     wizard.goNext()
     expect(wizard.nameError.value).toBe('')
     expect(wizard.currentStep.value.id).toBe('acp')
-    expect(wizard.progressPct.value).toBe(40)
+    expect(wizard.progressPct.value).toBe(((stepIndex('acp') + 1) / WIZARD_STEPS.length) * 100)
     expect(wizard.headSub.value).toContain('optional')
     app.unmount()
   })
@@ -95,22 +104,36 @@ describe('useAgentCreateWizard coverage', () => {
     wizard.goPrev()
     wizard.goSkip()
     expect(wizard.draft.value.step).toBe(0)
+    wizard.selectAcp('codebuddy')
+    wizard.selectRegion('internal')
     wizard.goNext()
+    wizard.onApiKeyInput('secret')
+    wizard.draft.value.aiCredentialId = 'old-tool-key'
+    wizard.draft.value.openCodeCredentialId = 'old-model-key'
+    wizard.draft.value.modelBinding = { kind: 'configuration', configurationId: 'old-configuration' }
+    wizard.draft.value.authMode = 'customConfig'
+    wizard.draft.value.customConfigContent = '{"old":"custom-secret"}'
     wizard.goSkip()
     expect(wizard.draft.value.skipped.acp).toBe(true)
-    expect(wizard.currentStep.value.id).toBe('apiKey')
-    wizard.onApiKeyInput('secret')
-    wizard.goSkip()
-    expect(wizard.draft.value.env).toEqual([])
     expect(wizard.draft.value.skipped.apiKey).toBe(true)
+    expect(wizard.currentStep.value.id).toBe('git')
+    expect(wizard.draft.value.env).toEqual([{ k: 'GRASP_CODEBUDDY_REGION', v: 'internal' }])
+    expect(wizard.draft.value.acpBackend).toBe('codebuddy')
+    expect(wizard.draft.value.modelBinding).toEqual({ kind: 'inherit' })
+    expect(wizard.draft.value.aiCredentialId).toBe('')
+    expect(wizard.draft.value.openCodeCredentialId).toBe('')
+    expect(wizard.draft.value.customConfigContent).toBe('')
+    expect(wizard.draft.value.authMode).toBe('apiKey')
     wizard.goPrev()
-    expect(wizard.currentStep.value.id).toBe('apiKey')
+    expect(wizard.currentStep.value.id).toBe('acp')
+    expect(wizard.apiKeyInput.value).toBe('')
+    expect(wizard.currentRegion.value).toBe('internal')
     wizard.creating.value = true
     wizard.goPrev()
     wizard.goSkip()
     wizard.goNext()
     wizard.close()
-    expect(wizard.currentStep.value.id).toBe('apiKey')
+    expect(wizard.currentStep.value.id).toBe('acp')
     expect(emit).not.toHaveBeenCalled()
     wizard.creating.value = false
     wizard.close()
@@ -141,13 +164,65 @@ describe('useAgentCreateWizard coverage', () => {
     app.unmount()
   })
 
+  it('clears cached custom authorization when the combined step is skipped', () => {
+    const { wizard, app } = mountWizard()
+    wizard.selectAcp('cursor')
+    wizard.setAuthMode('customConfig')
+    wizard.onCustomConfigInput('{"env":{"CURSOR_API_KEY":"old-custom-secret"}}')
+    wizard.setAuthMode('apiKey')
+    wizard.onApiKeyInput('pasted-secret')
+    wizard.draft.value.step = stepIndex('acp')
+    wizard.goSkip()
+    wizard.goPrev()
+    wizard.setAuthMode('customConfig')
+    expect(wizard.draft.value.customConfigContent).not.toContain('old-custom-secret')
+    expect(wizard.apiKeyInput.value).toBe('')
+    expect(wizard.draft.value.modelBinding).toEqual({ kind: 'inherit' })
+    app.unmount()
+  })
+
+  it('preserves the combined model choice on Back and creates the reviewed configuration reference', async () => {
+    mocks.listModelConfigurations.mockResolvedValue({ items: [{ id: 'cfg-open-code', name: 'Shared development model', backend: 'opencode', binding: { kind: 'connection', connectionId: 'service', modelId: 'vendor/raw-model' }, state: 'active', revision: 1 }] })
+    const { wizard, app } = mountWizard()
+    await flushPromises()
+    wizard.draft.value.name = 'combined-agent'
+    wizard.goNext()
+    expect(wizard.currentStep.value.id).toBe('acp')
+    wizard.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg-open-code' }
+    wizard.draft.value.aiCredentialId = 'legacy-tool-key'
+    wizard.draft.value.openCodeCredentialId = 'legacy-model-key'
+    wizard.draft.value.env.push({ k: 'ACP_BRIDGE_MODEL', v: 'legacy-model' }, { k: 'GRASP_OPENCODE_API_KEY', v: 'legacy-secret' })
+    wizard.goNext()
+    expect(wizard.currentStep.value.id).toBe('git')
+    wizard.goPrev()
+    expect(wizard.currentStep.value.id).toBe('acp')
+    expect(wizard.apiKeyInput.value).toBe('legacy-secret')
+    expect(wizard.draft.value.modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg-open-code' })
+    wizard.goNext()
+    wizard.goSkip()
+    expect(wizard.currentStep.value.id).toBe('review')
+    expect(wizard.progressPct.value).toBe(100)
+    expect(wizard.reviewItems.value.find((item) => item.key === 'apiKey')).toMatchObject({ kind: 'ok', detail: 'Shared development model · OpenCode · vendor/raw-model' })
+    wizard.goNext()
+    await flushPromises()
+    const payload = mocks.createAgent.mock.calls[0]![0]
+    expect(payload).toMatchObject({ name: 'combined-agent', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'cfg-open-code' } })
+    expect(payload).not.toHaveProperty('aiCredentialId')
+    expect(payload).not.toHaveProperty('openCodeCredentialId')
+    expect(payload.env).not.toHaveProperty('ACP_BRIDGE_MODEL')
+    expect(payload.env).not.toHaveProperty('GRASP_OPENCODE_API_KEY')
+    app.unmount()
+  })
+
   it('manages region, environment, auth key, and custom config modes', async () => {
     const { wizard, app } = mountWizard()
+	delete wizard.draft.value.modelBinding
     wizard.upsertEnv('CUSTOM', 'one')
     wizard.upsertEnv('CUSTOM', 'two')
     expect(wizard.draft.value.env).toContainEqual({ k: 'CUSTOM', v: 'two' })
     wizard.selectAcp('codebuddy')
     wizard.selectRegion('internal')
+    delete wizard.draft.value.modelBinding
     expect(wizard.currentRegion.value).toBe('internal')
 
     wizard.onApiKeyInput(' key-value ')
@@ -167,14 +242,14 @@ describe('useAgentCreateWizard coverage', () => {
     expect(wizard.draft.value.customConfigContent).toContain('CURSOR_API_KEY')
     wizard.onCustomConfigInput('{bad')
     expect(wizard.authConfigured.value).toBe(false)
-    wizard.draft.value.step = 2
+    wizard.draft.value.step = stepIndex('acp')
     wizard.goNext()
     expect(wizard.customConfigError.value).toBe(true)
-    expect(wizard.draft.value.step).toBe(2)
+    expect(wizard.draft.value.step).toBe(stepIndex('acp'))
     wizard.onCustomConfigInput('{"env":{"CURSOR_API_KEY":"x"}}')
     wizard.goNext()
     expect(wizard.customConfigError.value).toBe(false)
-    expect(wizard.draft.value.step).toBe(3)
+    expect(wizard.draft.value.step).toBe(stepIndex('git'))
     wizard.setAuthMode('apiKey')
     expect(wizard.draft.value.customConfigContent).toBe('')
     wizard.setAuthMode('apiKey')
@@ -200,13 +275,17 @@ describe('useAgentCreateWizard coverage', () => {
     expect(wizard.chipClass('empty')).toContain('border-line')
     expect(wizard.headSub.value).toContain('basics')
     wizard.upsertEnv('GIT_REPOS', '${vars.repos}')
-    wizard.draft.value.step = 3
+    wizard.onGitBindings({ items: [{ credentialId: 'gh-1', scope: 'github.com' }, { credentialId: 'key-1', sshHostsCredentialId: 'hosts-1' }], preferredCredentialId: 'key-1' })
+    wizard.draft.value.env.push({ k: 'GITHUB_TOKEN', v: 'legacy-secret' })
+    wizard.draft.value.step = stepIndex('git')
     wizard.goSkip()
+    expect(wizard.draft.value.gitBindings).toEqual({ items: [] })
+    expect(wizard.draft.value.env.some((entry) => entry.k === 'GITHUB_TOKEN')).toBe(false)
     expect(wizard.draft.value.gitCredentialType).toBeUndefined()
     expect(wizard.draft.value.gitCredentialId).toBe('')
     expect(wizard.draft.value.sshHostsCredentialId).toBe('')
     expect(wizard.draft.value.env.some((entry) => entry.k === 'GIT_REPOS')).toBe(false)
-    wizard.draft.value.step = 4
+    wizard.draft.value.step = stepIndex('review')
     expect(wizard.headSub.value).toContain('review')
     expect(wizard.reviewItems.value.length).toBeGreaterThan(0)
     app.unmount()
@@ -215,7 +294,7 @@ describe('useAgentCreateWizard coverage', () => {
   it('submits from review and emits the created agent', async () => {
     const { wizard, emit, app } = mountWizard()
     wizard.draft.value.name = 'valid'
-    wizard.draft.value.step = 4
+    wizard.draft.value.step = stepIndex('review')
     wizard.goNext()
     expect(wizard.creating.value).toBe(true)
     await flushPromises()
@@ -228,16 +307,16 @@ describe('useAgentCreateWizard coverage', () => {
 
   it('returns invalid review submissions to basics and surfaces create failures', async () => {
     const { wizard, app } = mountWizard({ existingNames: ['taken'] })
-    wizard.draft.value.step = 4
+    wizard.draft.value.step = stepIndex('review')
     wizard.draft.value.name = ''
     await wizard.submitCreate()
     expect(wizard.draft.value.step).toBe(0)
     expect(wizard.nameError.value).toContain('nameRequired')
-    wizard.draft.value.step = 4
+    wizard.draft.value.step = stepIndex('review')
     wizard.draft.value.name = 'bad name'
     await wizard.submitCreate()
     expect(wizard.nameError.value).toContain('nameInvalid')
-    wizard.draft.value.step = 4
+    wizard.draft.value.step = stepIndex('review')
     wizard.draft.value.name = 'taken'
     await wizard.submitCreate()
     expect(wizard.nameError.value).toContain('nameExists')

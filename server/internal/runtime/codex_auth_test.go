@@ -36,8 +36,8 @@ func TestValidateCodexLoginFile(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err=%v want %v", err, tc.wantErr)
 			}
-			if tc.open && (err == nil || !strings.Contains(err.Error(), "OpenCode")) {
-				t.Fatalf("API key error should mention OpenCode: %v", err)
+			if tc.open && (err == nil || !strings.Contains(err.Error(), "Responses 模型连接")) {
+				t.Fatalf("API key error should point to a Responses model connection: %v", err)
 			}
 		})
 	}

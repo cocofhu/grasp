@@ -16,9 +16,27 @@ import type {
   CredentialsResponse,
   SharedAgentConfig,
   SandboxView,
+  ModelConnection,
+  ModelConnectionBody,
+  ToolCapability,
+  WorkspaceModelDefaults,
+  ModelConfiguration,
+  ModelConfigurationBody,
 } from '../apiTypes'
 
 export const workspaceClient = {
+  listModelConfigurations: () => req<{ items: ModelConfiguration[] }>('/workspace/model-configurations'),
+  getModelConfiguration: (id: string) => req<ModelConfiguration>(`/workspace/model-configurations/${encodeURIComponent(id)}`),
+  createModelConfiguration: (body: ModelConfigurationBody) => req<ModelConfiguration>('/workspace/model-configurations', { method: 'POST', body: JSON.stringify(body) }),
+  updateModelConfiguration: (id: string, body: Partial<ModelConfigurationBody>) => req<ModelConfiguration>(`/workspace/model-configurations/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteModelConfiguration: (id: string) => req<{ status: string }>(`/workspace/model-configurations/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listModelConnections: () => req<{ items: ModelConnection[] }>('/workspace/model-connections'),
+  createModelConnection: (body: ModelConnectionBody) => req<ModelConnection>('/workspace/model-connections', { method: 'POST', body: JSON.stringify(body) }),
+  updateModelConnection: (id: string, body: Partial<ModelConnectionBody>) => req<ModelConnection>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteModelConnection: (id: string) => req<{ status: string }>(`/workspace/model-connections/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  listToolCapabilities: () => req<{ items: ToolCapability[] }>('/workspace/tool-capabilities'),
+  getModelDefaults: () => req<WorkspaceModelDefaults>('/workspace/model-defaults'),
+  putModelDefaults: (body: WorkspaceModelDefaults) => req<WorkspaceModelDefaults>('/workspace/model-defaults', { method: 'PUT', body: JSON.stringify(body) }),
   updateWorkspace: (body: Partial<Workspace>) =>
     req<Workspace>('/workspace', { method: 'PATCH', body: JSON.stringify(body) }),
   getWorkspace: (opts?: { signal?: AbortSignal }) =>

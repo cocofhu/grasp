@@ -8,7 +8,8 @@ import Icon from '@/components/ui/Icon.vue'
 import type { CliCatalogModel } from '@/lib/api/apiTypes'
 import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { readCliModel } from '@/lib/agent/cliModelEnv'
-import type { CredentialItem } from '@/lib/api/api'
+import { api, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConnection } from '@/lib/api/api'
+import { credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { isModelVendorCredential } from '@/lib/workspace/credentialKinds'
 import type { CanvasAgent } from '../composables/outlets'
 import ModelCredentialSelect from './ModelCredentialSelect.vue'
@@ -30,6 +31,65 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+const c = useRoutingCopy()
+const summaryBinding = ref<ConcreteModelBinding | null>(null)
+const summaryConfiguration = ref<ModelConfiguration | null>(null)
+const summaryConnection = ref<ModelConnection | null>(null)
+const summaryLoading = ref(false)
+const summaryError = ref('')
+watch(
+  () => [props.agent?.modelBinding, props.agent?.acpBackend] as const,
+  async ([binding, toolId], _previous, onCleanup) => {
+    let stale = false
+    onCleanup(() => { stale = true })
+    summaryBinding.value = null
+    summaryConfiguration.value = null
+    summaryConnection.value = null
+    summaryError.value = ''
+    if (!binding) { summaryLoading.value = false; return }
+    summaryLoading.value = true
+    try {
+      let resolved = binding.kind === 'inherit' ? (await api.getModelDefaults()).bindingsByBackend?.[toolId || ''] : binding
+      if (stale) return
+      if (!resolved) { summaryError.value = c.value.missingDefault; return }
+      if (resolved.kind === 'configuration') {
+        const configurationId = resolved.configurationId
+        const response = await api.listModelConfigurations()
+        if (stale) return
+        const configuration = response.items.find((row) => row.id === configurationId)
+        if (!configuration || configuration.state !== 'active') { summaryError.value = c.value.missingConfiguration; return }
+        if (configuration.backend !== toolId) { summaryError.value = c.value.configurationBackendMismatch; return }
+        summaryConfiguration.value = configuration
+        resolved = configuration.binding
+      }
+      if (resolved.kind === 'connection') {
+        const response = await api.listModelConnections()
+        if (stale) return
+        const connection = response.items.find((row) => row.id === resolved.connectionId)
+        if (!connection || connection.state !== 'active') { summaryError.value = c.value.missingConnection; return }
+        if (!connection.models.some((model) => model.id === resolved.modelId)) { summaryError.value = c.value.missingModel; return }
+        summaryConnection.value = connection
+      }
+      summaryBinding.value = resolved
+    } catch (e) {
+      if (!stale) summaryError.value = String((e as Error).message || e)
+    } finally { if (!stale) summaryLoading.value = false }
+  },
+  { immediate: true, deep: true },
+)
+const summaryCredential = computed(() => {
+  const binding = summaryBinding.value
+  const id = binding?.kind === 'platform' ? binding.credentialId : summaryConnection.value?.credentialId
+  return (props.credentials || []).find((item) => item.id === id)
+})
+const summaryProblem = computed(() => {
+  if (summaryError.value) return summaryError.value
+  if (!summaryBinding.value || props.credentials === null) return ''
+  if (!summaryCredential.value || !credentialUsable(summaryCredential.value)) return c.value.missingCredential
+  if (summaryBinding.value.kind === 'platform' && !isToolCredential(summaryCredential.value, String(props.agent?.acpBackend || ''))) return c.value.missingCredential
+  if (summaryBinding.value.kind === 'connection' && !isModelCredential(summaryCredential.value)) return c.value.missingCredential
+  return ''
+})
 
 const backend = computed(() => String(props.agent?.acpBackend || ''))
 const usesModelKey = computed(() => backend.value === 'opencode')
@@ -46,7 +106,7 @@ watch(
   backend,
   async (b) => {
     cliCatalog.value = []
-    if (!b || b === 'opencode') return
+    if (!b || b === 'opencode' || props.agent?.modelBinding) return
     const list = await loadCliModels(b)
     if (backend.value === b) cliCatalog.value = list
   },
@@ -73,8 +133,23 @@ function clearAll() {
 </script>
 
 <template>
-  <div class="relative" data-testid="model-picker" :data-state="!agent ? 'no-agent' : usesModelKey ? 'select' : 'own-auth'">
+  <div class="relative" data-testid="model-picker" :data-state="!agent ? 'no-agent' : agent.modelBinding ? 'binding' : usesModelKey ? 'select' : 'own-auth'">
     <p v-if="!agent" class="text-[12px] text-txt3" data-testid="model-picker-no-agent">{{ t('canvas.inspector.model.needAgent') }}</p>
+
+    <section v-else-if="agent.modelBinding" class="rounded-lg border border-line bg-base/50 p-3" data-testid="model-picker-binding-summary">
+      <div class="flex items-center justify-between gap-3"><p class="m-0 text-[12px] font-semibold text-txt">{{ backendLabel }} · {{ summaryConfiguration ? c.configuration : c.source }}</p><RouterLink :to="studioMetaLink" class="shrink-0 text-[11px] text-accent-2" data-testid="model-picker-binding-edit">{{ c.edit }}</RouterLink></div>
+      <p v-if="summaryLoading || credentials === null" class="mb-0 mt-2 text-xs text-txt3">{{ c.loading }}</p>
+      <p v-else-if="summaryProblem" role="status" class="mb-0 mt-2 text-xs leading-5 text-warn" data-testid="model-picker-binding-error">{{ summaryProblem }}</p>
+      <div v-else-if="summaryBinding" class="mt-2 space-y-1.5 text-xs text-txt2">
+        <p v-if="agent.modelBinding.kind === 'inherit'" class="m-0 text-[11px] text-txt3">{{ c.inherit }}</p>
+        <p v-if="summaryConfiguration" class="m-0 break-words font-medium" data-testid="model-picker-binding-configuration">{{ summaryConfiguration.name }}</p>
+        <p class="m-0 break-words" data-testid="model-picker-binding-source">{{ summaryBinding.kind === 'platform' ? c.platform : summaryConnection?.name }} · {{ summaryCredential?.name }}</p>
+        <p class="m-0 break-all font-mono" data-testid="model-picker-binding-model">{{ summaryBinding.modelId || c.autoModel }}</p>
+        <p v-if="summaryConnection" class="m-0 break-all text-[11px] text-txt3">{{ summaryConnection.protocol }} · {{ summaryConnection.baseUrl }}</p>
+        <p v-for="(model, role) in summaryBinding.toolSettings?.modelRoles || {}" :key="role" class="m-0 break-all text-[11px] text-txt3">{{ c[`role_${role}` as keyof typeof c] || role }} · {{ model }}</p>
+      </div>
+      <div v-if="credentialId || modelId" class="mt-3 flex items-center justify-between gap-2 border-t border-line pt-2 text-[11px] text-warn"><span>{{ c.nodeBindingNotice }}</span><button type="button" class="shrink-0 text-accent-2" data-testid="model-picker-clear-ignored" @click="clearAll">{{ t('canvas.inspector.model.clear') }}</button></div>
+    </section>
 
     <template v-else-if="!usesModelKey">
       <div class="flex items-start gap-2.5 rounded-lg border border-line bg-base/50 px-3 py-2.5" data-testid="model-picker-own-auth">

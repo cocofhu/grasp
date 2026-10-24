@@ -5,7 +5,6 @@ import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
-import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
 import EnvCredentialHelpModal, {
   type EnvCredentialHelpSection,
 } from '@/components/agent/EnvCredentialHelpModal.vue'
@@ -64,16 +63,6 @@ function openEnvHelp(section: EnvCredentialHelpSection) {
 /** Secrets are owned by workspace credentials; env rows with these keys are rejected on save. */
 const credentialsRoute = computed(() => ({ path: '/settings/credentials' }))
 const rawHasSecretEnvKey = computed(() => props.draft.env.some((e) => isSecretEnvKey(e.k)))
-
-function upsertEnv(key: string, value: string) {
-  if (isSecretEnvKey(key)) {
-    emit('toast', t('pages.agentStudio.env.secretCredentialsOnly'))
-    return
-  }
-  const row = props.draft.env.find((e) => e.k === key)
-  if (row) row.v = value
-  else props.draft.env.push({ k: key, v: value })
-}
 
 function storedRegion(): string {
   const policy = getRegionPolicy(props.draft.acpBackend)
@@ -168,13 +157,7 @@ watch(
           {{ t('pages.agentStudio.env.openSettingsFile') }}
         </button>
       </div>
-      <AgentGitGuide
-        :env="draft.env"
-        :upsert-env="upsertEnv"
-        :credential-type="draft.gitCredentialType"
-        @update:credential-type="draft.gitCredentialType = $event"
-        @help="openEnvHelp('git')"
-      />
+      <div class="mb-3 flex items-center justify-between gap-3 border-b border-line/60 pb-3 text-xs text-txt3"><span>{{ t('pages.agentStudio.gitCredentials.title') }}</span><AppButton size="sm" variant="ghost" icon="help" data-test="git-help" @click="openEnvHelp('git')">{{ t('pages.agentStudio.gitCredentials.help') }}</AppButton></div>
       <div class="mb-3 border-b border-line/60 py-4 text-[12px] leading-6 text-txt3">
         <div class="mb-1 flex items-center justify-between gap-2">
           <div class="font-medium text-txt2">{{ t('pages.agentStudio.env.backendAuthTitle') }}</div>

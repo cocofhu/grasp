@@ -1,13 +1,13 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 
 const mocks = vi.hoisted(() => ({
   getConfig: vi.fn(), listAgents: vi.fn(), putConfig: vi.fn(), createTest: vi.fn(),
-  getCredentials: vi.fn(),
+  getCredentials: vi.fn(), getModelDefaults: vi.fn(), putModelDefaults: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listToolCapabilities: vi.fn(),
   success: vi.fn(), error: vi.fn(),
 }))
 vi.mock('@/lib/api/api', async () => {
@@ -15,9 +15,10 @@ vi.mock('@/lib/api/api', async () => {
   return { ...actual, api: { ...actual.api,
     getSharedAgentConfig: mocks.getConfig, listAgents: mocks.listAgents,
     putSharedAgentConfig: mocks.putConfig, createSharedAgentTest: mocks.createTest,
-    listCredentials: mocks.getCredentials,
+    listCredentials: mocks.getCredentials, getModelDefaults: mocks.getModelDefaults, putModelDefaults: mocks.putModelDefaults, listModelConfigurations: mocks.listModelConfigurations, listModelConnections: mocks.listModelConnections, listToolCapabilities: mocks.listToolCapabilities,
   } }
 })
+vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: async () => [{ id: 'gpt-5', name: 'GPT-5', vendor: 'openai' }], cliCatalogFailed: () => false }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 import WorkspaceSharedAgentPanel from './WorkspaceSharedAgentPanel.vue'
 
@@ -30,18 +31,33 @@ function mountPanel() {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   return mount(WorkspaceSharedAgentPanel, {
     global: { plugins: [i18n], stubs: {
-      Icon: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' },
+      Icon: true, RouterLink: true, RepoAccessPicker: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' },
       AgentFilesPanel: FilesStub, AgentMcpPanel: { template: '<div data-testid="mcp"/>' },
       AgentEnvPanel: { emits: ['open-settings-file'], template: '<button data-testid="env-settings" @click="$emit(\'open-settings-file\')"/>' },
     } },
   })
 }
+async function selectOption(field: DOMWrapper<Element>, value: string) {
+  await field.get('[data-test="app-select-trigger"]').trigger('click')
+  await flushPromises()
+  const option = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+    .find((item) => item.dataset.test === `app-select-option-${value}`)
+  expect(option).toBeTruthy()
+  option!.click()
+  await flushPromises()
+}
+function selectedText(field: DOMWrapper<Element>) { return field.get('[data-test="app-select-trigger"]').text() }
 
 describe('WorkspaceSharedAgentPanel interactions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     mocks.getConfig.mockResolvedValue(cfg)
-    mocks.getCredentials.mockResolvedValue({ items: [] })
+    mocks.getCredentials.mockResolvedValue({ items: [{ id: 'cursor-key', name: 'Cursor account', purpose: 'tool_auth', toolId: 'cursor', configured: true }] })
+    mocks.getModelDefaults.mockResolvedValue({ bindingsByBackend: {} })
+    mocks.putModelDefaults.mockImplementation(async (body: unknown) => body)
+    mocks.listModelConfigurations.mockResolvedValue({ items: [] })
+    mocks.listModelConnections.mockResolvedValue({ items: [] })
+    mocks.listToolCapabilities.mockResolvedValue({ items: [{ toolId: 'cursor', modes: ['platform'], protocols: [], adapterState: 'existing' }, { toolId: 'claude_code', modes: ['platform', 'connection'], protocols: ['anthropic-messages'], adapterState: 'existing' }, { toolId: 'opencode', modes: ['connection'], protocols: ['openai-chat-completions'], adapterState: 'existing' }] })
     mocks.listAgents.mockResolvedValue([{ name: 'a1' }, { name: 'other' }])
     mocks.putConfig.mockImplementation(async (body: any) => ({ ...cfg, ...body }))
     mocks.createTest.mockResolvedValue({ id: 'sandbox' })
@@ -54,15 +70,19 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
     expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
-    vm.selectAcpBackend('claude_code')
+    await w.get('[data-testid="acp-backend-codebuddy"]').trigger('click')
     await flushPromises()
-    expect(vm.draft.acpBackend).toBe('claude_code')
-    if (vm.metaRegionOptions.length) vm.selectRegion(vm.metaRegionOptions[0].id)
-    vm.draft.layout.workspaceDir = '/srv/work'
+    expect(w.get('[data-testid="acp-backend-codebuddy"]').attributes('aria-checked')).toBe('true')
+    expect(w.get('[data-testid="acp-region-public"]').attributes('aria-checked')).toBe('true')
+    await w.get('[data-testid="acp-region-internal"]').trigger('click')
+    expect(w.get('[data-testid="acp-region-internal"]').attributes('aria-checked')).toBe('true')
+    await w.get('[data-testid="meta-workspace-dir"]').setValue('/srv/work')
     expect(vm.dirty).toBe(true)
     expect(await vm.save()).toBe(true)
     expect(mocks.putConfig).toHaveBeenCalledWith(expect.objectContaining({
       layout: expect.objectContaining({ workspaceDir: '/srv/work' }),
+      acpBackend: 'codebuddy',
+      env: expect.objectContaining({ GRASP_CODEBUDDY_REGION: 'internal' }),
       files: [],
     }))
     expect(mocks.success).toHaveBeenCalled()
@@ -70,37 +90,52 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     w.unmount()
   })
 
-  it('keeps an empty workspace model on auto without a follow choice', async () => {
+  it('edits shared Git authorization as multiple credential references and reloads the saved preference', async () => {
+    mocks.getCredentials.mockResolvedValue({ items: [{ id: 'shared-gh', name: 'GitHub access', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true }, { id: 'shared-gl', name: 'GitLab access', provider: 'gitlab', envKey: 'GITLAB_TOKEN', configured: true }] })
     const w = mountPanel()
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
+    expect((w.vm as any).dirty).toBe(false)
+    await selectOption(w.get('[data-testid="git-credential-add"]'), 'shared-gh')
+    await selectOption(w.get('[data-testid="git-credential-add"]'), 'shared-gl')
+    await w.get('[data-testid="git-preferred-shared-gl"]').trigger('click')
+    expect(await (w.vm as any).save()).toBe(true)
+    expect(mocks.putConfig).toHaveBeenCalledWith(expect.objectContaining({ gitBindings: { items: [{ credentialId: 'shared-gh' }, { credentialId: 'shared-gl' }], preferredCredentialId: 'shared-gl' } }))
+    expect((w.vm as any).dirty).toBe(false)
+    expect(w.get('[data-testid="git-preferred-shared-gl"]').attributes('aria-pressed')).toBe('true')
+    await w.get('[data-testid="git-remove-shared-gl"]').trigger('click')
+    await w.get('[data-testid="git-remove-shared-gh"]').trigger('click')
+    expect(await (w.vm as any).save()).toBe(true)
+    expect(mocks.putConfig.mock.calls.at(-1)![0].gitBindings).toEqual({ items: [] })
     w.unmount()
   })
 
-  it('sets the workspace default model, clears it on a backend switch and saves it', async () => {
-    mocks.getConfig.mockResolvedValue({ ...cfg, env: { ACP_BRIDGE_MODEL: 'composer-2.5' } })
+  it('requires an explicit source before a current-tool default can be saved', async () => {
     const w = mountPanel()
     await flushPromises()
-    const vm = w.vm as any
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(true)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('composer-2.5')
+    expect(w.get('[data-testid="workspace-model-default-save"]').attributes('disabled')).toBeDefined()
+    expect(w.find('[data-testid="model-binding-inherit"]').exists()).toBe(false)
+    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(false)
+    w.unmount()
+  })
 
-    vm.selectAcpBackend('codex')
+  it('saves a whole default binding separately while preserving other tool defaults', async () => {
+    const other = { kind: 'platform', credentialId: 'claude-key', modelId: 'claude-model' }
+    mocks.getModelDefaults.mockResolvedValue({ bindingsByBackend: { claude_code: other } })
+    const w = mountPanel()
     await flushPromises()
-    expect(vm.draft.env.some((e: { k: string }) => e.k === 'ACP_BRIDGE_MODEL')).toBe(false)
-    vm.draft.env.push({ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' })
-    expect(await vm.save()).toBe(true)
-    expect(mocks.putConfig).toHaveBeenCalledWith(expect.objectContaining({
-      acpBackend: 'codex',
-      env: expect.objectContaining({ ACP_BRIDGE_MODEL: 'gpt-6.1-sol' }),
-    }))
+    await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-testid="model-binding-platform"]').trigger('click')
+    await selectOption(w.get('[data-testid="model-binding-credential"]'), 'cursor-key')
+    await w.get('[data-testid="workspace-model-default-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.putModelDefaults).toHaveBeenCalledWith({ bindingsByBackend: { claude_code: other, cursor: { kind: 'platform', credentialId: 'cursor-key', modelId: undefined } } })
+    expect(mocks.putConfig).not.toHaveBeenCalled()
+    expect(JSON.stringify(mocks.putModelDefaults.mock.calls)).not.toContain('secret-value')
     w.unmount()
   })
 
@@ -141,7 +176,7 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
   })
 
   it('renders every remaining subpanel plus special-region state, without an SSH block', async () => {
-    mocks.getConfig.mockResolvedValueOnce({ ...cfg, env: { CURSOR_REGION: 'legacy-special' } })
+    mocks.getConfig.mockResolvedValueOnce({ ...cfg, acpBackend: 'codebuddy', env: { GRASP_CODEBUDDY_REGION: 'legacy-special' } })
     const w = mountPanel(); await flushPromises()
     const vm = w.vm as any
     for (const tab of ['mcp', 'env', 'meta']) {
@@ -151,147 +186,78 @@ describe('WorkspaceSharedAgentPanel interactions', () => {
     vm.subTab = 'meta'; await w.vm.$nextTick()
     await flushPromises()
     expect(w.find('[data-test="shared-ssh-private-key"]').exists()).toBe(false)
-    expect(w.get('[data-testid="credential-alias-empty"]').text()).toContain('还没有已保存的 Cursor 授权')
+    expect(w.find('[data-testid="model-binding-editor"]').exists()).toBe(true)
+    expect(w.get('[data-testid="coding-tool-site"] [role="status"]').text()).toContain('legacy-special')
+    expect(w.get('[data-testid="acp-region-public"]').attributes('aria-checked')).toBe('false')
+    expect(w.get('[data-testid="acp-region-internal"]').attributes('aria-checked')).toBe('false')
     vm.draft.layout.configRoot = ''
     await w.vm.$nextTick()
     expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
     w.unmount()
   })
 
-  it('selects, clears, and saves a generic credential id without a secret', async () => {
-    mocks.getCredentials.mockResolvedValue({
-      items: [
-        {
-          id: 'cred-work',
-          name: '工作号',
-          type: 'ai',
-          provider: 'cursor',
-          envKey: 'GRASP_CURSOR_API_KEY',
-          configured: true,
-          masked: 'sk-work',
-        },
-      ],
-    })
+  it('clears a selected platform key without substituting another key', async () => {
     const w = mountPanel()
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).toContain('工作区默认授权')
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('单个 Agent 已选择时用自己的')
-    expect(w.get('[data-testid="shared-generic-credential"]').text()).not.toContain('通用授权')
-    expect(w.text()).not.toContain('这一类还没有已保存的授权')
-    await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
-    expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
-    expect(await (w.vm as any).save()).toBe(true)
-    const body = mocks.putConfig.mock.calls.at(-1)?.[0]
-    expect(body.aiCredentialId).toBe('cred-work')
-    expect(body.openCodeCredentialId).toBe('')
-    expect(JSON.stringify(body)).not.toContain('sk-work')
-
-    await w.get('[data-testid="credential-alias-clear"]').trigger('click')
-    expect((w.vm as any).draft.aiCredentialId).toBe('')
-    ;(w.vm as any).draft.openCodeCredentialId = 'cred-oc'
-    ;(w.vm as any).selectAcpBackend('claude_code')
-    await flushPromises()
-    expect((w.vm as any).draft.aiCredentialId).toBe('')
-    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
-    expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
+    await w.get('[data-testid="model-binding-platform"]').trigger('click')
+    await selectOption(w.get('[data-testid="model-binding-credential"]'), 'cursor-key')
+    expect(w.get('[data-testid="workspace-model-default-save"]').attributes('disabled')).toBeUndefined()
+    await selectOption(w.get('[data-testid="model-binding-credential"]'), '')
+    expect(w.get('[data-testid="workspace-model-default-save"]').attributes('disabled')).toBeDefined()
+    expect(w.get('[data-testid="model-binding-problem"]').text()).toContain('未配置')
+    expect(mocks.putModelDefaults).not.toHaveBeenCalled()
     w.unmount()
   })
 
-  it('restores the saved credential and drops it when the backend changes', async () => {
-    mocks.getConfig.mockResolvedValue({ ...cfg, aiCredentialId: 'cred-work' })
-    mocks.getCredentials.mockResolvedValue({
-      items: [
-        {
-          id: 'cred-work',
-          name: '工作号',
-          type: 'ai',
-          provider: 'cursor',
-          envKey: 'GRASP_CURSOR_API_KEY',
-          configured: true,
-        },
-        {
-          id: 'cred-claude',
-          name: '克劳德',
-          type: 'ai',
-          provider: 'claude_code',
-          envKey: 'GRASP_CLAUDE_API_KEY',
-          configured: true,
-        },
-      ],
-    })
+  it('keeps separate complete defaults when switching the tool being configured', async () => {
+    mocks.getModelDefaults.mockResolvedValue({ bindingsByBackend: { cursor: { kind: 'platform', credentialId: 'cursor-key' }, claude_code: { kind: 'platform', credentialId: 'claude-key' } } })
+    mocks.getCredentials.mockResolvedValue({ items: [{ id: 'cursor-key', name: 'Cursor account', purpose: 'tool_auth', toolId: 'cursor', configured: true }, { id: 'claude-key', name: 'Claude account', purpose: 'tool_auth', toolId: 'claude_code', configured: true }] })
     const w = mountPanel()
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.get('[data-testid="credential-alias-option-cred-work"]').attributes('aria-pressed')).toBe('true')
-    ;(w.vm as any).draft.aiCredentialId = ''
-    ;(w.vm as any).discard()
-    await flushPromises()
-    expect((w.vm as any).draft.aiCredentialId).toBe('cred-work')
-    ;(w.vm as any).selectAcpBackend('claude_code')
-    await flushPromises()
-    expect((w.vm as any).draft.aiCredentialId).toBe('')
-    expect(w.find('[data-testid="credential-alias-option-cred-work"]').exists()).toBe(false)
-    expect(w.find('[data-testid="credential-alias-option-cred-claude"]').exists()).toBe(true)
+    const defaults = w.get('[data-testid="workspace-model-defaults"]')
+    expect(selectedText(defaults.get('[data-testid="model-binding-credential"]'))).toBe('Cursor account')
+    await selectOption(defaults.get('[data-testid="workspace-model-default-backend"]'), 'claude_code')
+    expect(selectedText(defaults.get('[data-testid="model-binding-credential"]'))).toBe('Claude account')
+    await selectOption(defaults.get('[data-testid="workspace-model-default-backend"]'), 'cursor')
+    expect(selectedText(defaults.get('[data-testid="model-binding-credential"]'))).toBe('Cursor account')
+    expect(mocks.putModelDefaults).not.toHaveBeenCalled()
     w.unmount()
   })
 
-  it('keeps the OpenCode credential after switching to Cursor and saving', async () => {
-    mocks.getConfig.mockResolvedValue({
-      ...cfg,
-      acpBackend: 'opencode',
-      openCodeCredentialId: 'cred-oc',
-    })
-    mocks.getCredentials.mockResolvedValue({
-      items: [
-        {
-          id: 'cred-oc',
-          name: '厂商',
-          type: 'ai',
-          provider: 'opencode',
-          configured: true,
-          metadata: { provider: 'openai', model: 'openai/gpt-4o' },
-        },
-        {
-          id: 'cred-work',
-          name: '工作号',
-          type: 'ai',
-          provider: 'cursor',
-          envKey: 'GRASP_CURSOR_API_KEY',
-          configured: true,
-        },
-      ],
-    })
+  it('keeps an OpenCode connection independent from shared tool selection and legacy key fields', async () => {
+    mocks.getConfig.mockResolvedValue({ ...cfg, acpBackend: 'opencode', openCodeCredentialId: 'legacy-model-key' })
+    mocks.getModelDefaults.mockResolvedValue({ bindingsByBackend: { opencode: { kind: 'connection', connectionId: 'conn-oc', modelId: 'vendor/model' } } })
+    mocks.listModelConnections.mockResolvedValue({ items: [{ id: 'conn-oc', name: 'Provider connection', providerId: 'custom', protocol: 'openai-chat-completions', baseUrl: 'https://model.example/v1', credentialId: 'model-key', auth: { scheme: 'bearer' }, models: [{ id: 'vendor/model' }], state: 'active' }] })
+    mocks.getCredentials.mockResolvedValue({ items: [{ id: 'model-key', purpose: 'model_api', name: 'Key', configured: true }] })
     const w = mountPanel()
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
-    ;(w.vm as any).selectAcpBackend('cursor')
+    const defaults = w.get('[data-testid="workspace-model-defaults"]')
+    await selectOption(defaults.get('[data-testid="workspace-model-default-backend"]'), 'opencode')
+    expect(selectedText(defaults.get('[data-testid="model-binding-model"]'))).toBe('vendor/model')
+    await w.get('[data-testid="acp-backend-cursor"]').trigger('click')
     await flushPromises()
-    expect((w.vm as any).draft.openCodeCredentialId).toBe('cred-oc')
-    expect((w.vm as any).draft.aiCredentialId).toBe('')
-    await w.get('[data-testid="credential-alias-option-cred-work"]').trigger('click')
-    expect(await (w.vm as any).save()).toBe(true)
-    const body = mocks.putConfig.mock.calls.at(-1)?.[0]
-    expect(body.aiCredentialId).toBe('cred-work')
-    expect(body.openCodeCredentialId).toBe('cred-oc')
-    expect(JSON.stringify(body)).not.toContain('sk-')
+    expect((w.vm as any).draft.openCodeCredentialId).toBe('legacy-model-key')
+    expect(selectedText(defaults.get('[data-testid="model-binding-model"]'))).toBe('vendor/model')
+    expect(mocks.putModelDefaults).not.toHaveBeenCalled()
     w.unmount()
   })
 
-  it('uses the OpenCode picker without a create button and shows the empty state', async () => {
-    mocks.getConfig.mockResolvedValue({ ...cfg, acpBackend: 'opencode' })
-    mocks.getCredentials.mockResolvedValue({ items: [] })
+  it('shows connection sources for OpenCode without requiring an OpenCode-specific key picker', async () => {
     const w = mountPanel()
     await flushPromises()
     await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
     await flushPromises()
-    expect(w.find('[data-testid="credential-opencode"]').exists()).toBe(true)
-    expect(w.find('[data-testid="opencode-credential-add"]').exists()).toBe(false)
-    expect(w.text()).toContain('还没有模型厂商 API Key')
+    await selectOption(w.get('[data-testid="workspace-model-default-backend"]'), 'opencode')
+    expect(w.get('[data-testid="model-binding-platform"]').attributes('disabled')).toBeDefined()
+    await w.get('[data-testid="model-binding-connection"]').trigger('click')
+    expect(w.find('[data-testid="model-binding-connection-select"]').exists()).toBe(true)
+    expect(w.find('[data-testid="credential-opencode"]').exists()).toBe(false)
     w.unmount()
   })
 })

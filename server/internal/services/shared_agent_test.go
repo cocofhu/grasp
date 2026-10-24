@@ -177,8 +177,8 @@ func TestSharedAgentCredentialIDsRoundTripAndClear(t *testing.T) {
 	}
 	svc.ClearCredentialSelection("cred-oc")
 	got = svc.Get()
-	if got.OpenCodeCredentialID != "" {
-		t.Fatalf("opencode id still set: %q", got.OpenCodeCredentialID)
+	if got.OpenCodeCredentialID != "cred-oc" {
+		t.Fatalf("opencode reference was replaced after clear: %q", got.OpenCodeCredentialID)
 	}
 	if got.Env["GITLAB_URL"] != "https://gl" {
 		t.Fatalf("clear rewrote env: %#v", got.Env)

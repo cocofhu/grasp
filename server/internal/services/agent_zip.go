@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -18,6 +19,8 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
+	GitBindings          *models.GitBindings       `json:"gitBindings,omitempty"`
+	ModelBinding         *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	Name                 string                    `json:"name"`
 	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
@@ -61,7 +64,9 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	}
 	layout := a.Layout.withDefaults()
 	export := agentExportJSON{
+		GitBindings:          a.GitBindings,
 		Name:                 name,
+		ModelBinding:         a.ModelBinding,
 		CredentialBindings:   a.CredentialBindings,
 		GitCredentialType:    a.GitCredentialType,
 		OpenCodeCredentialID: a.OpenCodeCredentialID,
@@ -261,8 +266,10 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 		Name:                 targetName,
 		CredentialBindings:   export.CredentialBindings,
 		AcpBackend:           export.AcpBackend,
+		GitBindings:          export.GitBindings,
 		GitCredentialType:    export.GitCredentialType,
 		OpenCodeCredentialID: export.OpenCodeCredentialID,
+		ModelBinding:         export.ModelBinding,
 		AiCredentialID:       export.AiCredentialID,
 		GitCredentialID:      export.GitCredentialID,
 		SshHostsCredentialID: export.SshHostsCredentialID,

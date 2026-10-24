@@ -191,7 +191,7 @@ func (c *acpProvider) runAgentOnce(ctx context.Context, req NodeReq, abortSnap u
 		return NodeResult{Events: events, Usage: usage, UsageByModel: usageByModel}, fmt.Errorf("agent chat: %w", err)
 	}
 	absorbChat(&usage, &usageByModel, &turnEvents, chatRes)
-	if lerr := c.codexTurnLoginErr(chatRes); lerr != nil {
+	if lerr := c.codexTurnLoginErr(chatRes, req); lerr != nil {
 		events := c.snapshotEvents(ctx, sb, turnEvents)
 		return NodeResult{OutputMd: chatRes.Narration, Events: events, Usage: usage, UsageByModel: usageByModel}, lerr
 	}
@@ -461,24 +461,33 @@ func (c *acpProvider) detectPush(ctx context.Context, sb *sandbox.Sandbox, req N
 
 	createMR, _ := req.Config["create_mr"].(bool)
 	if info.Pushed && createMR && c.gitToken(req) != "" && isGitLabRepo(repo, c.gitLabURL(req)) {
-		if url := c.findOrCreateMR(ctx, sb, dir, branch); url != "" {
+		selectedRepo := ""
+		if c.effectiveAgent(req).GitBindings != nil {
+			selectedRepo = repo
+		}
+		if url := c.findOrCreateMR(ctx, sb, dir, branch, selectedRepo); url != "" {
 			info.MrURL = url
 		}
 	}
 	return info
 }
 
-func (c *acpProvider) findOrCreateMR(ctx context.Context, sb *sandbox.Sandbox, dir, branch string) string {
+func (c *acpProvider) findOrCreateMR(ctx context.Context, sb *sandbox.Sandbox, dir, branch string, selectedRepo ...string) string {
 	cd := "cd " + shellArg(dir) + " && "
+	cli, repoFlag := "glab ", ""
+	if len(selectedRepo) > 0 && selectedRepo[0] != "" {
+		cli = "python3 /root/.grasp/git-credentials/helper.py exec-cli glab " + shellArg(selectedRepo[0]) + " -- "
+		repoFlag = " --repo " + shellArg(selectedRepo[0])
+	}
 	view, err := sb.ExecScript(ctx, 25*time.Second, "bash",
-		cd+"glab mr list --source-branch "+shellArg(branch)+" -F json 2>/dev/null || true")
+		cd+cli+"mr list --source-branch "+shellArg(branch)+" -F json"+repoFlag+" 2>/dev/null || true")
 	if err == nil {
 		if url := firstMRURL(view); url != "" {
 			return url
 		}
 	}
 	create, _ := sb.ExecScript(ctx, 40*time.Second, "bash",
-		cd+"glab mr create --fill --yes --source-branch "+shellArg(branch)+" 2>&1 || true")
+		cd+cli+"mr create --fill --yes --source-branch "+shellArg(branch)+repoFlag+" 2>&1 || true")
 	for _, line := range strings.Split(create, "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "http://") || strings.HasPrefix(line, "https://") {

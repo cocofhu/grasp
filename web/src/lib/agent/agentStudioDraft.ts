@@ -1,4 +1,5 @@
-import type { Agent, AgentCapabilities, MCPServer } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import { cloneGitBindings, LEGACY_GIT_AUTH_KEYS } from './gitBindings'
 import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
@@ -19,6 +20,8 @@ export type DraftMCP = {
 }
 export type DraftFile = { path: string; content: string }
 export type AgentStudioDraft = {
+  gitBindings?: AgentGitBindings
+  modelBinding?: ModelBinding
   name: string
   credentialBindings?: Record<string, string | null>
   acpBackend: BackendId
@@ -119,7 +122,9 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
+    ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
+    ...(a.gitBindings ? { gitBindings: cloneGitBindings(a.gitBindings) } : {}),
     ...(a.credentialBindings ? { credentialBindings: { ...a.credentialBindings } } : {}),
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
     openCodeCredentialId: a.openCodeCredentialId || '',
@@ -140,19 +145,22 @@ export function toDraft(a: Agent): AgentStudioDraft {
 }
 
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
+  const legacyKeys = new Set(['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION'])
   return {
+    ...(d.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
     name: d.name,
-    ...(d.credentialBindings !== undefined ? { credentialBindings: { ...d.credentialBindings } } : {}),
+    ...(d.gitBindings ? { gitBindings: cloneGitBindings(d.gitBindings) } : {}),
+    ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !d.gitBindings || !LEGACY_GIT_AUTH_KEYS.has(key))) } : {}),
     acpBackend: d.acpBackend || 'cursor',
-    ...(d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),
-    ...(d.aiCredentialId?.trim() ? { aiCredentialId: d.aiCredentialId.trim() } : {}),
-    ...(d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
-    ...(d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
-    ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
+    ...(!d.modelBinding && d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),
+    ...(!d.modelBinding && d.aiCredentialId?.trim() ? { aiCredentialId: d.aiCredentialId.trim() } : {}),
+    ...(!d.gitBindings && d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
+    ...(!d.gitBindings && d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
+    ...(!d.gitBindings && d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
     ...(d.repoIds ? { repoIds: [...d.repoIds] } : {}),
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
-    env: kvToRec(d.env),
+    env: Object.fromEntries(Object.entries(kvToRec(d.env)).filter(([key]) => (!d.modelBinding || !legacyKeys.has(key)) && (!d.gitBindings || !LEGACY_GIT_AUTH_KEYS.has(key)))),
     layout: {
       configRoot: d.layout.configRoot.trim() || DEFAULT_CONFIG_ROOT,
       workspaceDir: d.layout.workspaceDir.trim() || DEFAULT_WORKSPACE_DIR,

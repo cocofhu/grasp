@@ -519,7 +519,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if c.opts.RunSandboxEnvForRun != nil && req.RunID != "" {
 		for _, e := range c.opts.RunSandboxEnvForRun(req.RunID) {
 			k := strings.TrimSpace(e.Key)
-			if k == "" {
+			if k == "" || envauth.IsSecretEnvKey(k) {
 				continue
 			}
 			if _, protected := protectedCredentialKeys[k]; protected {
@@ -530,9 +530,6 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 	// The selected model-vendor credential wins over merged workspace credentials and
 	// over the run snapshot. An empty selection injects nothing.
-	if c.backend == BackendOpenCode && c.opts.OpenCodeCredential != nil {
-		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredential(agentCfg.OpenCodeCredentialID))
-	}
 	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
 		Backend:              string(c.backend),
 		GitCredentialType:    agentCfg.GitCredentialType,
@@ -541,10 +538,22 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
 	}, c.opts.SelectedCredential)
 	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
+	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.SelectedCredential)
+	if err != nil {
+		return sandbox.Spec{}, err
+	}
+	if c.backend == BackendOpenCode && agentCfg.ModelBinding == nil {
+		if _, err := ApplyLegacyOpenCodeCredential(env, agentCfg.OpenCodeCredentialID, c.opts.OpenCodeCredential); err != nil {
+			return sandbox.Spec{}, err
+		}
+	}
+	if err := ApplyModelBinding(env, string(c.backend), agentCfg.ModelBinding, c.opts.ModelBinding); err != nil {
+		return sandbox.Spec{}, err
+	}
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (workspace-shared workspace).
-	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
+	merged, err := PrepareBoundAuth(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
 		return sandbox.Spec{}, err
 	}
@@ -559,10 +568,13 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		if strings.HasPrefix(k, "vars.") || v == "" {
 			continue
 		}
+		if agentCfg.GitBindings != nil && IsGitAuthorizationEnvKey(k) {
+			continue
+		}
 		env[k] = v
 	}
 
-	if len(repos) > 0 && env["GITLAB_URL"] == "" {
+	if agentCfg.GitBindings == nil && len(repos) > 0 && env["GITLAB_URL"] == "" {
 		url := repos[0].URL
 		host := gitRepoHost(url)
 		ghe := gitRepoHost(env["GITHUB_URL"])
@@ -585,18 +597,23 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if err != nil {
 		return sandbox.Spec{}, fmt.Errorf("build backend config home: %w", err)
 	}
-	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
+	if err := InstallBoundCodexLoginFile(c.backend, home, codexLogin, env); err != nil {
 		return sandbox.Spec{}, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredential, c.opts.InjectedCredentialID))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, ModelCredentialIDForWriteBack(env, agentCfg.AiCredentialID), agentCfg.CredentialBindings, c.opts.SelectedCredential, c.opts.InjectedCredentialID))
+	}
+	if c.backend == BackendCodex && env[EnvModelConnection] != "" {
+		codexConnectionRuns.Store(c.backendKey(codexLoginKey(req)), true)
 	}
 	spec := sandbox.Spec{
-		Image:        resolveProviderImage(c.opts, c.backend),
-		Env:          env,
-		ConfigHome:   home,
-		ConfigRoot:   layout.ConfigRoot,
-		WorkspaceDir: layout.WorkspaceDir,
+		GitBindingsConfigured: agentCfg.GitBindings != nil,
+		GitCredentials:        gitCredentials,
+		Image:                 resolveProviderImage(c.opts, c.backend),
+		Env:                   env,
+		ConfigHome:            home,
+		ConfigRoot:            layout.ConfigRoot,
+		WorkspaceDir:          layout.WorkspaceDir,
 	}
 	// SSH comes only from workspace credentials.
 	sandbox.ApplySSHCredentials(&spec, creds["GIT_SSH_PRIVATE_KEY"], creds["GIT_SSH_KNOWN_HOSTS"])
@@ -630,6 +647,10 @@ func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 // file leaves the previous credential in place. The file body is not logged.
 func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr error, events []models.AcpEvent) error {
 	if c.backend != BackendCodex {
+		c.forgetCodexLogin(codexLoginKey(req))
+		return runErr
+	}
+	if _, connection := codexConnectionRuns.LoadAndDelete(c.backendKey(codexLoginKey(req))); connection {
 		c.forgetCodexLogin(codexLoginKey(req))
 		return runErr
 	}

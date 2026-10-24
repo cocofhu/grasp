@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/rs/zerolog/log"
 )
@@ -17,27 +18,29 @@ import (
 // at startup (workflow Run + chat test). Shape mirrors Agent without a Name.
 // Empty config is valid.
 type SharedAgentConfig struct {
-	AcpBackend           string            `json:"acpBackend,omitempty"`
-	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
-	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
-	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
-	RepoIDs              []string          `json:"repoIds"`
-	Files                []AgentFile       `json:"files"`
-	MCP                  []MCPServer       `json:"mcp"`
-	Env                  map[string]string `json:"env"`
-	Layout               AgentLayout       `json:"layout"`
+	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
+	AcpBackend           string              `json:"acpBackend,omitempty"`
+	GitCredentialType    string              `json:"gitCredentialType,omitempty"`
+	AiCredentialID       string              `json:"aiCredentialId,omitempty"`
+	OpenCodeCredentialID string              `json:"openCodeCredentialId,omitempty"`
+	RepoIDs              []string            `json:"repoIds"`
+	Files                []AgentFile         `json:"files"`
+	MCP                  []MCPServer         `json:"mcp"`
+	Env                  map[string]string   `json:"env"`
+	Layout               AgentLayout         `json:"layout"`
 }
 
 // sharedAgentDisk mirrors agent.json under data/shared-agent/.
 type sharedAgentDisk struct {
-	AcpBackend           string            `json:"acpBackend,omitempty"`
-	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
-	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
-	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
-	RepoIDs              []string          `json:"repoIds,omitempty"`
-	MCP                  []MCPServer       `json:"mcp,omitempty"`
-	Env                  map[string]string `json:"env,omitempty"`
-	Layout               *AgentLayout      `json:"layout,omitempty"`
+	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
+	AcpBackend           string              `json:"acpBackend,omitempty"`
+	GitCredentialType    string              `json:"gitCredentialType,omitempty"`
+	AiCredentialID       string              `json:"aiCredentialId,omitempty"`
+	OpenCodeCredentialID string              `json:"openCodeCredentialId,omitempty"`
+	RepoIDs              []string            `json:"repoIds,omitempty"`
+	MCP                  []MCPServer         `json:"mcp,omitempty"`
+	Env                  map[string]string   `json:"env,omitempty"`
+	Layout               *AgentLayout        `json:"layout,omitempty"`
 }
 
 // SharedAgentService persists the shared Agent baseline on disk:
@@ -99,6 +102,7 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 		mcps = []MCPServer{}
 	}
 	return SharedAgentConfig{
+		GitBindings:          cfg.GitBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
@@ -115,6 +119,15 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	var err error
+	cfg.GitBindings, err = models.NormalizeGitBindings(cfg.GitBindings)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrInvalidAgent, err)
+	}
+	if cfg.GitBindings != nil {
+		cfg.GitCredentialType = ""
+		cfg.Env = withoutLegacyGitEnv(cfg.Env)
+	}
 	if err := RejectSecretEnvKeys(cfg.Env); err != nil {
 		return err
 	}
@@ -134,6 +147,7 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 		}
 	}
 	disk := sharedAgentDisk{
+		GitBindings:          cfg.GitBindings,
 		AcpBackend:           backend,
 		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
 		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
@@ -193,6 +207,7 @@ func (c SharedAgentConfig) AsAgent() Agent {
 	}
 	repoIDs := NormalizeRepoIDs(c.RepoIDs)
 	return Agent{
+		GitBindings:          c.GitBindings,
 		Name:                 "",
 		AcpBackend:           c.AcpBackend,
 		GitCredentialType:    c.GitCredentialType,
@@ -219,7 +234,9 @@ func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime.CredentialKindFunc) Agent {
 	base := shared.AsAgent()
 	out := Agent{
+		GitBindings:          base.GitBindings,
 		Name:                 agent.Name,
+		ModelBinding:         agent.ModelBinding,
 		CredentialBindings:   agent.CredentialBindings,
 		GitCredentialID:      agent.GitCredentialID,
 		SshHostsCredentialID: agent.SshHostsCredentialID,
@@ -233,6 +250,11 @@ func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime
 	}
 	if agent.RepoIDs != nil {
 		out.RepoIDs = normalizeRepoIDsPtr(agent.RepoIDs)
+	}
+	if agent.GitBindings != nil {
+		out.GitBindings = agent.GitBindings
+	} else if runtime.HasLegacyGitSelection(agent.GitCredentialID, agent.SshHostsCredentialID, agent.CredentialBindings) {
+		out.GitBindings = nil
 	}
 	if out.AcpBackend != "" {
 		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)
@@ -278,10 +300,8 @@ func (s *SharedAgentService) ClearCredentialSelection(credentialID string) {
 		disk.AiCredentialID = ""
 		cleared = true
 	}
-	if strings.TrimSpace(disk.OpenCodeCredentialID) == credentialID {
-		disk.OpenCodeCredentialID = ""
-		cleared = true
-	}
+	// A selected OpenCode credential remains a dangling reference after clear
+	// or revoke; execution must report it instead of silently inheriting.
 	if !cleared {
 		return
 	}

@@ -245,7 +245,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     :aria-busy="listPanelBusy ? 'true' : 'false'"
   >
     <!-- Mobile detail header -->
-    <div v-if="isMobile && mobileView === 'detail'" class="mb-3 flex shrink-0 items-center gap-2">
+    <div v-if="isMobile && mobileView === 'detail' && !showClarifyReviewShell" class="mb-3 flex shrink-0 items-center gap-2" data-testid="inbox-mobile-detail-header">
       <button
         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
         :aria-label="t('shell.aria.backToList')"
@@ -346,7 +346,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     <!-- Mobile detail view -->
     <div v-else-if="isMobile && (mobileView === 'detail' || holdingCancelledConversation) && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
       data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
-      <div v-if="active && isShareableInboxItem(active)" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
+      <div v-if="active && isShareableInboxItem(active) && !showClarifyReviewShell" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
           type="button"
           class="inline-flex min-h-11 items-center text-xs text-accent-2 hover:underline"
@@ -385,6 +385,29 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
           split-drawer
           remember-artifact-panel
         >
+          <template #leading>
+            <button
+              type="button"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
+              :aria-label="t('shell.aria.backToList')"
+              data-testid="inbox-mobile-chat-back"
+              @click="backToList"
+            >
+              <Icon name="arrow-left" :size="18" />
+            </button>
+          </template>
+          <template v-if="isShareableInboxItem(active)" #actions>
+            <button
+              type="button"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+              data-testid="gate-share-copy-btn-detail"
+              :aria-label="t('pages.gatesInbox.share.copyLinkAria')"
+              :title="t('pages.gatesInbox.share.copyLink')"
+              @click="openSharePanel(active)"
+            >
+              <Icon name="copy" :size="16" aria-hidden="true" />
+            </button>
+          </template>
           <template #stage>
             <ReactConnectingState
               v-if="activeStarting"

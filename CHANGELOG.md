@@ -4,6 +4,24 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Configuration compatibility:** unsaved tool switches retain each tool's model and credential choices, including legacy OpenCode provider settings. Custom provider names survive edits and key rotation. Long-lived sandboxes validate applied model and Git bindings before reuse or another chat turn; changed authorization requires reopening the sandbox. Messages adapters preserve gateway prefixes and avoid duplicate API-version paths. CodeBuddy model connections currently support Chat Completions only.
+
+- **Conversation header alignment:** Solo sessions now use the same workspace frame as workflow conversations, aligning header spacing and resource/artifact controls. Mobile approval chats place their back and share buttons in the shared header, removing the repeated title and separate share row.
+
+- **Multiple Git credentials per Agent:** Agents can select several saved GitHub, GitLab and SSH credentials, mark a preferred identity and optionally scope accounts to a site or repository. Selected credentials are staged in the sandbox; workflow nodes apply their Agent's bindings and shared sandboxes replace credentials when nodes change. Missing or revoked selections stop execution without trying another account.
+
+- **Explicit Agent model selection:** creating an Agent now requires choosing a saved model configuration beside its coding tool. Changing tools clears the selection; empty or unavailable configurations block progression and creation. Existing Agent editing and workspace defaults retain their compatibility behavior. Both Credentials and Models tabs now share one add menu for credentials and models.
+
+- **Agent configuration controls:** the create wizard combines coding tools and models on one page, followed by Git and review. Coding tools use a compact logo list with an integrated service-region selector across create, edit and default settings. Model, credential, connection, auxiliary-model and MCP dropdowns use the shared searchable picker, with explicit unavailable-reference states and keyboard navigation.
+
+- **Model setup wizard:** coding tools use logo cards, and one searchable credential picker automatically selects the matching authorization or service. OpenCode CLI and DeepSeek Harness shortcuts create reusable model API credentials. Creating a missing credential returns to the current model draft; back navigation preserves selections. Advanced connection settings are collapsed, and dialogs support keyboard focus and narrow screens.
+
+- **Credentials and models UI:** simplified rows show a logo, name and short subtitle, with icon actions and model enable switches. Service details stay in the editor. Provider selection now supports search, logos and 15 presets, alongside custom services.
+
+- **Reusable model configurations:** create credentials first, then save a named combination of coding tool, credential and selected model in the Models tab. Agents bind these configurations by reference. Model API keys remain independent of service endpoints and model directories; existing direct and workspace-default bindings remain compatible. Added protocol adapters for Claude Code, CodeBuddy Chat Completions, OpenCode, Codex Responses and DeepSeek Harness; Cursor and Trae retain platform authorization. Missing or revoked references fail explicitly without falling back to another key.
+
+- **Workspace credentials:** credentials now appear in compact lists grouped by coding tools, model API keys, repositories and SSH. Status, masked values and actions stay together; adding a credential uses a three-step wizard with a visible step indicator. Configure provider presets or custom API bases and keys here, then combine a coding tool, credential and model in the separate Models tab.
+
 - **Icon motion and shapes:** functional icons across the app, sandbox chat and preview tools now share single-play hover and keyboard feedback, with reduced-motion support. Labels, logout, workflow, copy, delete and terminal glyphs are corrected; completed checks draw left to right without a dot. Only active loading states keep moving.
 
 - **Coding tool picker:** product icons now appear before tool names in Agent, team and first-time setup. The picker hides internal configuration paths.

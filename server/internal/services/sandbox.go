@@ -7,6 +7,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -41,6 +42,7 @@ type SandboxService struct {
 	credentials          func() map[string]string
 	credentialReferences func() map[string]string
 	openCodeCredential   func(credentialID string) map[string]string
+	modelBinding         func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	selectedCredential   runtime.SelectedCredentialFunc
 	chatTimeout          time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
@@ -90,13 +92,15 @@ type TestSchedulerHooks struct {
 
 // liveSandbox is the in-memory connection state for a running sandbox.
 type liveSandbox struct {
-	sb                    *sandbox.Sandbox
-	acp                   *sandbox.ACPClient
-	home                  string
-	busy                  bool
-	codexAuthCredentialID string
-	codexAuthInjected     string
-	codexAuthPath         string
+	modelBindingFingerprint string
+	gitBindingsFingerprint  string
+	sb                      *sandbox.Sandbox
+	acp                     *sandbox.ACPClient
+	home                    string
+	busy                    bool
+	codexAuthCredentialID   string
+	codexAuthInjected       string
+	codexAuthPath           string
 	// codexAuthRejected is set from the latest turn's CLI error, not from
 	// narration. A login refusal keeps the previously saved file.
 	codexAuthRejected bool
@@ -109,6 +113,7 @@ func resolveSandboxImage(backend string) string {
 
 // SandboxOptions configures the service.
 type SandboxOptions struct {
+	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	ProfilesRoot string
 	MCPEndpoint  string
 	// Env is the vendor-neutral sandbox env (e.g. CURSOR_API_KEY for the
@@ -184,6 +189,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		credentials:          opts.Credentials,
 		credentialReferences: opts.CredentialReferences,
 		openCodeCredential:   opts.OpenCodeCredential,
+		modelBinding:         opts.ModelBinding,
 		selectedCredential:   opts.SelectedCredential,
 		chatTimeout:          opts.ChatTimeout,
 		openCodeCatalog:      opts.OpenCodeCatalog,

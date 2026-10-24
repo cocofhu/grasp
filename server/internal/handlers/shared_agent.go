@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/services"
 
@@ -12,6 +13,7 @@ import (
 )
 
 type sharedAgentBody struct {
+	GitBindings          *models.GitBindings  `json:"gitBindings"`
 	AcpBackend           string               `json:"acpBackend"`
 	GitCredentialType    string               `json:"gitCredentialType"`
 	AiCredentialID       string               `json:"aiCredentialId"`
@@ -41,7 +43,7 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 	if repoIDs == nil {
 		repoIDs = []string{}
 	}
-	return gin.H{
+	dto := gin.H{
 		"acpBackend":           cfg.AcpBackend,
 		"repoIds":              repoIDs,
 		"gitCredentialType":    cfg.GitCredentialType,
@@ -52,6 +54,10 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		"env":                  env,
 		"layout":               cfg.Layout,
 	}
+	if cfg.GitBindings != nil {
+		dto["gitBindings"] = cfg.GitBindings
+	}
+	return dto
 }
 
 // GetSharedAgent returns the shared Agent baseline (empty OK).
@@ -75,6 +81,7 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
+		GitBindings:          b.GitBindings,
 		AcpBackend:           b.AcpBackend,
 		GitCredentialType:    b.GitCredentialType,
 		AiCredentialID:       strings.TrimSpace(b.AiCredentialID),
@@ -83,6 +90,9 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		MCP:                  b.MCP,
 		Env:                  b.Env,
 		Layout:               b.Layout,
+	}
+	if b.GitBindings == nil {
+		cfg.GitBindings = h.SharedAgent.Get().GitBindings
 	}
 	if b.RepoIDs != nil {
 		cfg.RepoIDs = *b.RepoIDs
@@ -95,7 +105,7 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 	if err := h.SharedAgent.Save(cfg); err != nil {
 		_ = c.Error(err)
 		status := http.StatusInternalServerError
-		if errors.Is(err, services.ErrSecretEnvKey) || errors.Is(err, services.ErrInvalidAcpBackend) {
+		if errors.Is(err, services.ErrSecretEnvKey) || errors.Is(err, services.ErrInvalidAcpBackend) || errors.Is(err, services.ErrInvalidAgent) {
 			status = http.StatusBadRequest
 		}
 		c.JSON(status, gin.H{"error": err.Error()})

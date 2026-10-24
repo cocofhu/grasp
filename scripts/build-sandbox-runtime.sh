@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 OUT="${1:-$ROOT/.devdata/sandbox-runtime}"
 SRC="${SANDBOX_SRC:-$ROOT/sandbox-gateway/sandbox}"
 ARCH="${GOARCH:-amd64}"
-SCRIPTS=(startup.sh preview-inject.sh vnc-preview.sh services.sh claude-env.sh reprime.sh)
+SCRIPTS=(startup.sh preview-inject.sh vnc-preview.sh services.sh claude-env.sh reprime.sh git-credentials.py)
 
 STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT

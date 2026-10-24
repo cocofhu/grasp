@@ -44,6 +44,9 @@ const (
 // Non-CodeBuddy backends always return nil so stray REGION env cannot pollute
 // cursor/claude/trae config homes.
 func CodeBuddySettingsForEnv(backend AcpBackend, env map[string]string) map[string]any {
+	if env[EnvModelConnection] != "" {
+		return nil
+	}
 	if NormalizeBackend(string(backend)) != BackendCodeBuddy {
 		return nil
 	}

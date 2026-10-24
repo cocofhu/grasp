@@ -1,4 +1,5 @@
-import type { Agent, AgentCapabilities, AgentFile, MCPServer } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, AgentFile, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import { cloneGitBindings } from './gitBindings'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { validateAgentName, normalizeAgentName } from '@/lib/agent/agentIO'
 import { AGENT_SETTINGS_REL_PATH, BACKEND_AUTH_HINTS } from '@/lib/agent/backendAuthGuide'
@@ -62,6 +63,8 @@ export type WizardAuthMode = 'apiKey' | 'customConfig'
 export const AGENT_SETTINGS_PATH = AGENT_SETTINGS_REL_PATH
 
 export type WizardDraft = {
+  gitBindings?: AgentGitBindings
+  modelBinding?: ModelBinding
   step: number
   name: string
   description: string
@@ -103,11 +106,10 @@ export type WizardStepDef = {
   skip: boolean
 }
 
-/** Demo v4 IA: basics → Agent(acp) → API Key → Git → review. */
+/** Basics → coding tool and model (acp) → Git → review. */
 export const WIZARD_STEPS: WizardStepDef[] = [
   { id: 'basics', labelKey: 'pages.agentStudio.wizard.steps.basics', skip: false },
   { id: 'acp', labelKey: 'pages.agentStudio.wizard.steps.acp', skip: true },
-  { id: 'apiKey', labelKey: 'pages.agentStudio.wizard.steps.apiKey', skip: true },
   { id: 'git', labelKey: 'pages.agentStudio.wizard.steps.git', skip: true },
   { id: 'review', labelKey: 'pages.agentStudio.wizard.steps.review', skip: false },
 ]
@@ -132,6 +134,7 @@ export function blankAgentCapabilities(): AgentCapabilities {
 
 export function freshDraft(): WizardDraft {
   return {
+    gitBindings: { items: [] },
     step: 0,
     name: '',
     description: '',
@@ -141,6 +144,7 @@ export function freshDraft(): WizardDraft {
     cliBackend: CLI_BACKEND_DEFAULT,
     apiKeyBackend: APIKEY_BACKEND,
     authMode: 'apiKey',
+    modelBinding: { kind: 'inherit' },
     customConfigContent: '',
     aiCredentialId: '',
     openCodeCredentialId: '',
@@ -175,6 +179,7 @@ export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
   draft.configRoot = configRootFor(id)
   if (id === 'deepseek_harness') draft.authMode = 'apiKey'
   if (prev !== id) {
+    draft.modelBinding = { kind: 'inherit' }
     draft.aiCredentialId = ''
     draft.openCodeCredentialId = ''
   }
@@ -346,6 +351,9 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
     ),
   }
   const env = stripSecretKeysFromRecord(normalizeWizardRegions(envDraft))
+  if (draft.modelBinding) {
+    for (const key of ['ACP_BRIDGE_MODEL', 'ACP_BRIDGE_REASONING_EFFORT', 'GRASP_OPENCODE_PROVIDER', 'GRASP_OPENCODE_BASE_URL', 'GRASP_OPENCODE_MODEL_VISION']) delete env[key]
+  }
   const useTemplate = hasRoleTemplate(draft)
   const files = collectFiles(draft)
   const modelCredentialId = selectedModelCredentialId(draft)
@@ -354,15 +362,17 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
     draft.gitCredentialType === 'ssh' ? trimmedId(draft.sshHostsCredentialId) : ''
   return {
     name,
+    ...(draft.gitBindings ? { gitBindings: cloneGitBindings(draft.gitBindings), repoIds: [] } : {}),
     acpBackend: draft.acpBackend || APIKEY_BACKEND,
-    ...(modelCredentialId
+    ...(draft.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(draft.modelBinding)) as ModelBinding } : {}),
+    ...(!draft.modelBinding && modelCredentialId
       ? draft.acpBackend === 'opencode'
         ? { openCodeCredentialId: modelCredentialId }
         : { aiCredentialId: modelCredentialId }
       : {}),
-    ...(draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
-    ...(gitCredentialId ? { gitCredentialId } : {}),
-    ...(sshHostsCredentialId ? { sshHostsCredentialId } : {}),
+    ...(!draft.gitBindings && draft.gitCredentialType ? { gitCredentialType: draft.gitCredentialType } : {}),
+    ...(!draft.gitBindings && gitCredentialId ? { gitCredentialId } : {}),
+    ...(!draft.gitBindings && sshHostsCredentialId ? { sshHostsCredentialId } : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
     files,
     mcp: draft.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
@@ -406,9 +416,11 @@ export type WizardReviewNames = {
   model?: string
   git?: string
   sshHosts?: string
+  gitItems?: Record<string, string>
+  preferredLabel?: string
 }
 
-/** Build confirmation-page summary chips aligned to the 5-step wizard IA. */
+/** Build confirmation-page summary chips aligned to the 4-step wizard. */
 export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames = {}): ReviewSummaryItem[] {
   const normalizedEnv = normalizeRegions(kvToRec(draft.env), draft.acpBackend, 'strict').env
   const region = regionSummary(normalizedEnv, draft.acpBackend, 'strict')
@@ -416,15 +428,19 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
   const modelCredentialId = selectedModelCredentialId(draft)
   const authViaCredential = !!modelCredentialId
   const authViaConfig = hasCustomConfigWritten(draft)
-  const authConfigured = authViaCredential || authViaConfig
+  const authViaBinding = !!draft.modelBinding && (draft.modelBinding.kind === 'inherit' || (draft.modelBinding.kind === 'configuration' ? !!draft.modelBinding.configurationId : draft.modelBinding.kind === 'platform' ? !!draft.modelBinding.credentialId : !!(draft.modelBinding.connectionId && draft.modelBinding.modelId)))
+  const authConfigured = authViaBinding || authViaCredential || authViaConfig
   const apiKeySkipped = !!draft.skipped.apiKey || !authConfigured
   const gitParts: string[] = []
-  if (trimmedId(draft.gitCredentialId)) gitParts.push(names.git || trimmedId(draft.gitCredentialId))
-  if (draft.gitCredentialType === 'ssh' && trimmedId(draft.sshHostsCredentialId)) {
+  if (draft.gitBindings) {
+    for (const item of draft.gitBindings.items) gitParts.push(`${names.gitItems?.[item.credentialId] || item.credentialId}${item.credentialId === draft.gitBindings.preferredCredentialId ? ` (${names.preferredLabel || 'Preferred'})` : ''}`)
+  }
+  if (!draft.gitBindings && trimmedId(draft.gitCredentialId)) gitParts.push(names.git || trimmedId(draft.gitCredentialId))
+  if (!draft.gitBindings && draft.gitCredentialType === 'ssh' && trimmedId(draft.sshHostsCredentialId)) {
     gitParts.push(names.sshHosts || trimmedId(draft.sshHostsCredentialId))
   }
-  if (draft.env.some((entry) => entry.k.trim() === 'GIT_REPOS')) gitParts.push('GIT_REPOS')
-  if (!gitParts.length && draft.gitCredentialType) gitParts.push(draft.gitCredentialType)
+  if (!draft.gitBindings && draft.env.some((entry) => entry.k.trim() === 'GIT_REPOS')) gitParts.push('GIT_REPOS')
+  if (!draft.gitBindings && !gitParts.length && draft.gitCredentialType) gitParts.push(draft.gitCredentialType)
 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [
@@ -453,13 +469,21 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
       : []),
     {
       key: 'apiKey',
-      kind: authConfigured ? 'ok' : 'empty',
-      labelKey: authViaConfig
+      kind: draft.modelBinding?.kind === 'inherit' ? 'def' : authConfigured ? 'ok' : 'empty',
+      labelKey: draft.modelBinding
+        ? `pages.agentStudio.wizard.review.modelSource_${draft.modelBinding.kind}`
+        : authViaConfig
         ? 'pages.agentStudio.wizard.review.customConfigWritten'
         : authViaCredential
           ? 'pages.agentStudio.wizard.review.apiKeyConfigured'
           : 'pages.agentStudio.wizard.review.apiKeySkipped',
-      detail: authViaCredential ? names.model || modelCredentialId : undefined,
+      detail: draft.modelBinding?.kind === 'configuration'
+        ? names.model || draft.modelBinding.configurationId
+        : draft.modelBinding?.kind === 'connection'
+        ? `${draft.modelBinding.connectionId} · ${draft.modelBinding.modelId}`
+        : draft.modelBinding?.kind === 'platform'
+          ? names.model || draft.modelBinding.credentialId
+          : authViaCredential ? names.model || modelCredentialId : undefined,
     },
     {
       key: 'git',

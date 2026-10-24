@@ -36,6 +36,11 @@ test('run-tags 404 时点 git-help-link 仍打开环境变量与凭据', async (
       })
       return
     }
+    if (url.pathname === '/api/workspace/credentials') return route.fulfill({ json: { items: [{ id: 'cursor-key', name: 'Cursor team', purpose: 'tool_auth', toolId: 'cursor', configured: true }] } })
+    if (url.pathname === '/api/workspace/model-configurations') return route.fulfill({ json: { items: [{ id: 'cursor-profile', name: 'Cursor 日常模型', backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-key', modelId: 'composer-1' }, state: 'active', revision: 1 }] } })
+    if (url.pathname === '/api/workspace/model-connections') return route.fulfill({ json: { items: [] } })
+    if (url.pathname === '/api/workspace/tool-capabilities') return route.fulfill({ json: { items: [{ toolId: 'cursor', modes: ['platform'], protocols: [], adapterState: 'existing' }] } })
+    if (url.pathname === '/api/workspace/model-defaults') return route.fulfill({ json: { bindingsByBackend: {} } })
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   })
 
@@ -44,9 +49,10 @@ test('run-tags 404 时点 git-help-link 仍打开环境变量与凭据', async (
 
   await page.locator('#wiz-name-input').fill('e2e-help-404')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /Cursor/ }).click()
+  await page.getByTestId('agent-wizard-backend-cursor').click()
+  await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
+  await page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])').locator('[data-test="app-select-option-cursor-profile"]').click()
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByRole('button', { name: /^跳过/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('Git')
   await expect(page.locator('[data-test="git-help-link"]')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, '01-git-step.png'), fullPage: true })

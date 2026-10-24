@@ -111,8 +111,8 @@ func TestMergeCodingCredentialIDsPriority(t *testing.T) {
 		t.Fatalf("dangling agent id with no shared fallback = %q", ai)
 	}
 	_, oc = MergeCodingCredentialIDs("opencode", "", "gone", "", "shared-oc", kind)
-	if oc != "shared-oc" {
-		t.Fatalf("dangling opencode id did not inherit shared: %q", oc)
+	if oc != "gone" {
+		t.Fatalf("dangling opencode id fell back to shared: %q", oc)
 	}
 	ai, oc = MergeCodingCredentialIDs("opencode", "agent-ai", "", "shared-cursor", "shared-oc", kind)
 	if oc != "shared-oc" || ai != "agent-ai" {

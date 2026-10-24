@@ -3,7 +3,7 @@
  */
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
-import { api, type Agent, type CredentialItem } from '@/lib/api/api'
+import { api, type Agent, type CredentialItem, type ModelConfiguration } from '@/lib/api/api'
 import {
   ACP_BACKENDS,
   CLI_BACKENDS,
@@ -31,6 +31,8 @@ import type { AgentTemplateOption } from '@/components/agent/AgentTemplateSelect
 import type { AgentTemplate } from '@/lib/api/apiTypes'
 import { backendForStartPath } from '@/lib/shared/startPath'
 import { authGuideFor, defaultSettingsPlaceholder } from '@/lib/agent/backendAuthGuide'
+import { setDraftGitBindings } from './gitBindings'
+import type { AgentGitBindings } from '@/lib/api/api'
 import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
 import { applyOpenCodeFields, type OpenCodeProviderId } from '@/lib/agent/openCodeProvider'
@@ -64,6 +66,7 @@ const openCodeModelError = ref(false)
 const customConfigDraft = ref('')
 const templateRows = ref<AgentTemplate[]>([])
 const credentialItems = ref<CredentialItem[]>([])
+const modelConfigurations = ref<ModelConfiguration[]>([])
 const templateOptions = computed<AgentTemplateOption[]>(() => buildTemplateOptions(templateRows.value, t, te))
 
 const showDescField = computed(() => !hasRoleTemplate(draft.value))
@@ -99,7 +102,13 @@ async function loadCredentials() {
   }
 }
 
+async function loadModelConfigurations() {
+  try { modelConfigurations.value = (await api.listModelConfigurations())?.items || [] }
+  catch { modelConfigurations.value = [] }
+}
+
 onMounted(() => {
+  void loadModelConfigurations()
   void loadTemplates()
   void loadCredentials()
 })
@@ -120,12 +129,21 @@ function credentialAlias(id?: string): string {
   return credentialItems.value.find((item) => item.id === trimmed)?.name || trimmed
 }
 
+function configurationSummary(id: string): string {
+  const configuration = modelConfigurations.value.find((item) => item.id === id)
+  if (!configuration) return id
+  const tool = ACP_BACKENDS.find((item) => item.id === configuration.backend)?.label || configuration.backend
+  return [configuration.name, tool, configuration.binding.modelId || t('pages.agentStudio.wizard.review.defaultModel')].filter(Boolean).join(' · ')
+}
+
 const reviewItems = computed(() =>
   buildReviewSummary(draft.value, {
-    model: credentialAlias(
-      draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId,
-    ),
+    model: draft.value.modelBinding?.kind === 'configuration'
+      ? configurationSummary(draft.value.modelBinding.configurationId)
+      : credentialAlias(draft.value.modelBinding?.kind === 'platform' ? draft.value.modelBinding.credentialId : draft.value.acpBackend === 'opencode' ? draft.value.openCodeCredentialId : draft.value.aiCredentialId),
     git: credentialAlias(draft.value.gitCredentialId),
+    gitItems: Object.fromEntries((draft.value.gitBindings?.items || []).map((row) => [row.credentialId, credentialAlias(row.credentialId)])),
+    preferredLabel: t('pages.agentStudio.gitCredentials.preferred'),
     sshHosts: credentialAlias(draft.value.sshHostsCredentialId),
   }),
 )
@@ -137,6 +155,10 @@ const currentRegion = computed(() => {
 })
 const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentRegion.value))
 const authConfigured = computed(() => {
+  if (draft.value.modelBinding) {
+    const binding = draft.value.modelBinding
+    return binding.kind === 'inherit' || (binding.kind === 'configuration' ? !!binding.configurationId : binding.kind === 'platform' ? !!binding.credentialId : !!(binding.connectionId && binding.modelId))
+  }
   if (draft.value.authMode === 'customConfig') {
     const parsed = parseCustomConfigJson(draft.value.customConfigContent)
     return parsed.ok && parsed.normalized !== ''
@@ -174,6 +196,7 @@ watch(
       stepAnimKey.value++
       void loadTemplates()
       void loadCredentials()
+      void loadModelConfigurations()
       nextTick(() => {
         document.getElementById('wiz-name-input')?.focus()
       })
@@ -347,6 +370,11 @@ function onApiKeyInput(value: string) {
   }
 }
 
+function onGitBindings(value: AgentGitBindings) {
+  setDraftGitBindings(draft.value, value)
+  markConfigured('git')
+}
+
 function onGitCredentialType(value: GitCredentialType) {
   if (draft.value.gitCredentialType !== value) {
     draft.value.gitCredentialId = ''
@@ -374,14 +402,18 @@ function goPrev() {
   if (draft.value.step === 0 || creating.value) return
   draft.value.step--
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
+  if (currentStep.value.id === 'acp') syncApiKeyInput()
 }
 
 function goSkip() {
   const step = currentStep.value
   if (!step.skip || creating.value) return
   draft.value.skipped[step.id] = true
-  if (step.id === 'apiKey') {
+  if (step.id === 'acp') {
+    // Keep the legacy flag for review/helper consumers while the visible
+    // tool and model controls share this single optional step.
+    draft.value.skipped.apiKey = true
+    draft.value.modelBinding = { kind: 'inherit' }
     clearAuthKeys()
     clearModelCredentials()
     draft.value.customConfigContent = ''
@@ -390,6 +422,7 @@ function goSkip() {
     draft.value.authMode = 'apiKey'
   }
   if (step.id === 'git') {
+    setDraftGitBindings(draft.value, { items: [] })
     draft.value.gitCredentialType = undefined
     draft.value.gitCredentialId = ''
     draft.value.sshHostsCredentialId = ''
@@ -397,7 +430,7 @@ function goSkip() {
   }
   draft.value.step++
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
+  if (currentStep.value.id === 'acp') syncApiKeyInput()
 }
 
 function validateApiKeyStep(): boolean {
@@ -430,15 +463,16 @@ function goNext() {
   if (step.id === 'basics') {
     if (!applyBasicsError(validateBasics(draft.value, props.existingNames))) return
   }
-  if (step.id === 'apiKey' && !validateApiKeyStep()) return
+  if (step.id === 'acp' && !validateApiKeyStep()) return
   if (step.id === 'review') {
     void submitCreate()
     return
   }
   markConfigured(step.id)
+  if (step.id === 'acp') markConfigured('apiKey')
   draft.value.step++
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
+  if (currentStep.value.id === 'acp') syncApiKeyInput()
 }
 
 async function submitCreate() {
@@ -514,6 +548,7 @@ function chipClass(kind: string) {
   onOpenCodeBaseURL,
   onOpenCodeModel,
   onOpenCodeVision,
+  onGitBindings,
   onGitCredentialType,
   onGitCredentialId,
   onSshHostsCredentialId,

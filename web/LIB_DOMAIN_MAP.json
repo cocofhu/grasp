@@ -11,7 +11,9 @@
       "cliCatalog.ts",
       "cliModelEnv.ts",
       "cliModelView.ts",
+      "gitBindings.ts",
       "gitCredentialType.ts",
+      "modelRouting.ts",
       "openCodeCatalog.ts",
       "openCodeProvider.ts",
       "sandboxPurposeLabel.ts",
@@ -248,7 +250,7 @@
     ]
   },
   "totals": {
-    "agent": 19,
+    "agent": 21,
     "api": 4,
     "artifacts": 1,
     "chat": 5,

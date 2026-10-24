@@ -353,6 +353,35 @@ describe('CreateAgentTeamWizard flow', () => {
     w.unmount()
   })
 
+  it('searches MCP transport choices without discarding the existing connection draft', async () => {
+    const w = mountWizard()
+    await flushPromises()
+    const vm = w.vm as any
+    fillBasics(vm)
+    goNextThrough(vm, 4)
+    vm.addMcp()
+    const index = vm.draft.mcp.length - 1
+    const service = vm.draft.mcp[index]
+    Object.assign(service, { name: 'custom', url: 'https://mcp.example.test', headers: [{ k: 'X-Test', v: 'value' }], command: 'npx', args: 'example' })
+    await flushPromises()
+    const picker = w.get(`[data-testid="team-mcp-transport-${index}"]`)
+    await picker.get('[data-test="app-select-trigger"]').trigger('click')
+    await w.get('[data-test="app-select-search"]').setValue('stdio')
+    expect(w.find('[data-test="app-select-option-url"]').exists()).toBe(false)
+    await w.get('[data-test="app-select-option-command"]').trigger('click')
+    await flushPromises()
+    expect(service.transport).toBe('command')
+    expect(service.url).toBe('https://mcp.example.test')
+    expect(service.headers).toEqual([{ k: 'X-Test', v: 'value' }])
+    await w.get(`[data-testid="team-mcp-transport-${index}"]`).get('[data-test="app-select-trigger"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-test="app-select-option-url"]').trigger('click')
+    expect(service.transport).toBe('url')
+    expect(service.command).toBe('npx')
+    expect(service.args).toBe('example')
+    w.unmount()
+  })
+
   it('summarises env rows on the review step', async () => {
     const w = mountWizard()
     await flushPromises()

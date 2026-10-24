@@ -118,6 +118,9 @@ func OpenCodeConfigForEnvWithCatalog(
 	env map[string]string,
 	catalog OpenCodeCatalog,
 ) map[string]any {
+	if env[EnvModelConnection] != "" {
+		return nil
+	}
 	if NormalizeBackend(string(backend)) != BackendOpenCode {
 		return nil
 	}

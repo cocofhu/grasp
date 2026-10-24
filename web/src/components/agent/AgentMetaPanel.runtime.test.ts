@@ -1,386 +1,248 @@
 // @vitest-environment happy-dom
 import { createI18n } from 'vue-i18n'
-import { flushPromises, mount } from '@vue/test-utils'
+import { flushPromises, mount, type DOMWrapper } from '@vue/test-utils'
 import { reactive } from 'vue'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-import { useToast } from '@/lib/composables/useToast'
+import { fromDraft, fromDraftRaw, type AgentStudioDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 
-const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), getSharedAgentConfig: vi.fn() }))
-
+const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), getSharedAgentConfig: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listToolCapabilities: vi.fn(), getModelDefaults: vi.fn() }))
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
-  return {
-    ...actual,
-    api: {
-      ...actual.api,
-      listCredentials: mocks.listCredentials,
-      getSharedAgentConfig: mocks.getSharedAgentConfig,
-    },
-  }
+  return { ...actual, api: { ...actual.api, ...mocks } }
 })
-vi.mock('@/lib/agent/cliCatalog', () => ({
-  loadCliModels: (b: string) =>
-    Promise.resolve(
-      b === 'codex'
-        ? [
-            {
-              id: 'gpt-6.1-sol',
-              name: 'GPT-6.1 Sol',
-              vendor: 'openai',
-              tags: ['reasoning'],
-              efforts: ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'],
-            },
-            {
-              id: 'gpt-6-luna',
-              name: 'GPT-6 Luna',
-              vendor: 'openai',
-              tags: ['reasoning'],
-              efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
-            },
-            { id: 'plain', name: 'Plain', vendor: 'openai', tags: ['vision'] },
-          ]
-        : [
-            { id: 'gpt-5', name: 'GPT-5', vendor: 'openai', tags: ['reasoning'] },
-            { id: 'grok-4.7-medium', name: 'Grok 4.7', vendor: 'xai' },
-          ],
-    ),
-  cliCatalogFailed: () => false,
-}))
+vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: async () => [{ id: 'gpt-5', name: 'GPT-5', vendor: 'openai' }], cliCatalogFailed: () => false }))
 
+const cursorKey = { id: 'cursor-account', name: 'Cursor team', purpose: 'tool_auth', toolId: 'cursor', configured: true, masked: '••••' }
+const connection = { id: 'claude-service', name: 'Team service', providerId: 'custom', protocol: 'anthropic-messages', baseUrl: 'https://model.example', credentialId: 'model-key', auth: { scheme: 'x-api-key' }, models: [{ id: 'vendor/main', source: 'manual' }, { id: 'vendor/fast', source: 'manual' }], state: 'active', revision: 1 }
 function draftFor(overrides: Record<string, unknown> = {}) {
-  return reactive({
-    name: 'a',
-    acpBackend: 'cursor',
-    aiCredentialId: '',
-    openCodeCredentialId: '',
-    gitCredentialId: '',
-    sshHostsCredentialId: '',
-    gitCredentialType: undefined,
-    files: [],
-    mcp: [],
-    env: [] as { k: string; v: string }[],
-    layout: { configRoot: '/root/.cursor', workspaceDir: '/workspace' },
-    capabilities: null,
-    ...overrides,
-  })
+  return reactive({ name: 'a', acpBackend: 'cursor', modelBinding: { kind: 'inherit' }, aiCredentialId: '', openCodeCredentialId: '', gitCredentialId: '', sshHostsCredentialId: '', gitCredentialType: undefined, files: [], mcp: [], env: [] as { k: string; v: string }[], layout: { configRoot: '/root/.cursor', workspaceDir: '/workspace' }, capabilities: null, ...overrides })
 }
-
 const mounted: { unmount: () => void }[] = []
-
 function mountPanel(draft: ReturnType<typeof draftFor>) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
-  const w = mount(AgentMetaPanel, {
-    props: { draft, agentName: 'a' },
-    global: {
-      plugins: [i18n],
-      stubs: { Icon: true, AppModal: true, AppButton: { template: '<button v-bind="$attrs"><slot/></button>' } },
-    },
-    attachTo: document.body,
-  })
-  mounted.push(w)
-  return w
+  const wrapper = mount(AgentMetaPanel, { props: { draft, agentName: 'a' }, global: { plugins: [i18n], stubs: { Icon: true, RouterLink: true, RepoAccessPicker: true, AgentCredentialBindings: true, AppModal: { props: ['open'], template: '<div v-if="open" data-testid="backend-confirm"><slot/><slot name="footer"/></div>' } } }, attachTo: document.body })
+  mounted.push(wrapper)
+  return wrapper
 }
-
-function envOf(draft: ReturnType<typeof draftFor>) {
-  return Object.fromEntries(draft.env.map((e) => [e.k, e.v]))
+async function selectOption(field: DOMWrapper<Element>, value: string) {
+  await field.get('[data-test="app-select-trigger"]').trigger('click')
+  await flushPromises()
+  const option = Array.from(document.body.querySelectorAll<HTMLButtonElement>('[role="option"]'))
+    .find((item) => item.dataset.test === `app-select-option-${value}`)
+  expect(option).toBeTruthy()
+  option!.click()
+  await flushPromises()
 }
-
+async function chooseDirect(wrapper: ReturnType<typeof mountPanel>, mode: 'platform' | 'connection') {
+  const advanced = wrapper.get('[data-testid="model-binding-advanced"]')
+  if (advanced.element.tagName === 'DETAILS' && !(advanced.element as HTMLDetailsElement).open) await advanced.get('summary').trigger('click')
+  await wrapper.get(`[data-testid="model-binding-${mode}"]`).trigger('click')
+  await flushPromises()
+}
 beforeEach(() => {
-  mocks.listCredentials.mockResolvedValue({ items: [] })
+  vi.clearAllMocks()
+  mocks.listCredentials.mockResolvedValue({ items: [cursorKey, { id: 'model-key', name: 'Provider key', purpose: 'model_api', configured: true }] })
   mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
+  mocks.listModelConfigurations.mockResolvedValue({ items: [] })
+  mocks.listModelConnections.mockResolvedValue({ items: [connection] })
+  mocks.getModelDefaults.mockResolvedValue({ bindingsByBackend: { cursor: { kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' } } })
+  mocks.listToolCapabilities.mockResolvedValue({ items: [
+    { toolId: 'cursor', modes: ['platform'], protocols: [], adapterState: 'existing' },
+    { toolId: 'claude_code', modes: ['platform', 'connection'], protocols: ['anthropic-messages'], adapterState: 'existing', roleNames: ['main', 'fast', 'subagent', 'opus', 'sonnet', 'haiku'] },
+    { toolId: 'opencode', modes: ['connection'], protocols: ['anthropic-messages'], adapterState: 'existing' },
+  ] })
 })
-afterEach(() => {
-  mounted.splice(0).forEach((w) => w.unmount())
-  document.body.innerHTML = ''
-  const toast = useToast()
-  toast.toasts.value = []
-})
+afterEach(() => { mounted.splice(0).forEach((w) => w.unmount()); document.body.innerHTML = '' })
 
-describe('AgentMetaPanel runtime card', () => {
-  async function useOwn(w: ReturnType<typeof mountPanel>) {
-    const sw = w.get('[data-test="agent-inherit-default-switch"]')
-    if (sw.attributes('aria-checked') === 'true') await sw.trigger('click')
-    await flushPromises()
-  }
-
-  it('writes the picked model to ACP_BRIDGE_MODEL and removes it for auto', async () => {
+describe('AgentMetaPanel independent model bindings', () => {
+  it('inherits the complete current-tool default while keeping tool selection visible', async () => {
     const draft = draftFor()
-    const w = mountPanel(draft)
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(false)
-    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(false)
-    await useOwn(w)
-    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(true)
-    expect(w.find('[data-test="agent-cli-effort"]').exists()).toBe(false)
-    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
+    expect(wrapper.get('[data-testid="acp-backend-cursor"]').attributes('aria-checked')).toBe('true')
+    expect(wrapper.get('[data-testid="model-binding-inherited"]').text()).toContain('gpt-5')
+    expect(wrapper.find('[data-testid="model-binding-credential"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="model-binding-connection"]').attributes('disabled')).toBeDefined()
+    expect(draft.modelBinding).toEqual({ kind: 'inherit' })
+    expect(draft.env).toEqual([])
+  })
+
+  it('saves platform credential and model together without writing legacy model env', async () => {
+    const draft = draftFor()
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    await chooseDirect(wrapper, 'platform')
+    await selectOption(wrapper.get('[data-testid="model-binding-credential"]'), cursorKey.id)
+    await wrapper.get('[data-testid="cli-model-trigger"]').trigger('click')
     await flushPromises()
     ;(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]') as HTMLElement).click()
     await flushPromises()
-    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
-    await w.get('[data-testid="cli-model-reset"]').trigger('click')
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
+    expect(draft.modelBinding).toEqual({ kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' })
+    expect(draft.env).toEqual([])
+    await wrapper.get('[data-testid="cli-model-reset"]').trigger('click')
+    expect(draft.modelBinding).toEqual({ kind: 'platform', credentialId: cursorKey.id, modelId: '' })
   })
 
-  it('inherits the workspace default until the switch is turned off', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'codex',
-      env: { ACP_BRIDGE_MODEL: 'gpt-6-luna' },
-    })
-    const draft = draftFor({ acpBackend: 'codex' })
-    const w = mountPanel(draft)
+  it('does not inherit a different tool or copy its credential', async () => {
+    const draft = draftFor({ acpBackend: 'claude_code' })
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-    expect(w.text()).not.toContain('不用在这里填写')
-    expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
-    expect(w.find('[data-testid="credential-alias-picker"]').exists()).toBe(false)
-
-    await useOwn(w)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    expect(w.find('[data-test="agent-cli-model-mode"]').exists()).toBe(false)
-
-    draft.env = [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }]
-    await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('GPT-6.1 Sol')
-
-    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
-    await flushPromises()
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
-  })
-
-  it('hides the form while inheriting, even when the workspace model is unlisted', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
-    })
-    const w = mountPanel(draftFor())
-    await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-    expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
-    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
-    expect(w.get('[data-test="agent-inherit-backend"]').text()).toContain('Cursor')
-    expect(w.text()).not.toContain('Grok 4.7')
-    expect(w.text()).not.toContain('cursor-agent')
-  })
-
-  it('writes a model only after a pick, and inheriting again clears it', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
-    })
-    const draft = draftFor()
-    const w = mountPanel(draft)
-    await flushPromises()
-    await useOwn(w)
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
-    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
-    await flushPromises()
-    expect(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]')).not.toBeNull()
-    ;(document.body.querySelector('[data-testid="cli-model-option-gpt-5"]') as HTMLElement).click()
-    await flushPromises()
-    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-
-    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
-    await flushPromises()
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    expect(draft.aiCredentialId).toBe('')
-    expect(w.find('[data-testid="cli-model-select"]').exists()).toBe(false)
-  })
-
-  it('keeps a pinned model even when it matches the workspace model', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'gpt-5' },
-    })
-    const draft = draftFor({ env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }] })
-    const w = mountPanel(draft)
-    await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('GPT-5')
-  })
-
-  it('keeps the pinned model when the workspace model is a different id', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
-    })
-    const draft = draftFor({ env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }] })
-    const w = mountPanel(draft)
-    await flushPromises()
-    const trigger = w.get('[data-testid="cli-model-trigger"]').text()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-    expect(trigger).toContain('GPT-5')
-    expect(trigger).not.toContain('grok-4.7-xhigh')
-    expect(w.find('[data-test="agent-cli-model-inherited"]').exists()).toBe(false)
-  })
-
-  it('stays inherited when the same CLI has no shared model', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
-    const w = mountPanel(draftFor())
-    await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(false)
-    expect(w.find('[data-testid="cli-model-command"]').exists()).toBe(false)
-    expect(w.text()).not.toContain('不指定 --model，使用 CLI 默认')
-    await useOwn(w)
-    expect(w.get('[data-testid="cli-model-trigger"]').text()).toContain('自动')
-  })
-
-  it('returns to inherit after leaving the form without a pick', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
-    })
-    const draft = draftFor()
-    const w = mountPanel(draft)
-    await flushPromises()
-    await useOwn(w)
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-    mounted.pop()
-    w.unmount()
-    const again = mountPanel(draft)
-    await flushPromises()
-    expect(again.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('true')
-    expect('ACP_BRIDGE_MODEL' in envOf(draft)).toBe(false)
-  })
-
-  it('keeps the engine picker while a different engine is chosen', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({
-      acpBackend: 'cursor',
-      env: { ACP_BRIDGE_MODEL: 'grok-4.7-xhigh' },
-    })
-    const draft = draftFor()
-    const w = mountPanel(draft)
-    await flushPromises()
-    await useOwn(w)
-    await w.findAll('button').find((b) => b.text().includes('Codex'))!.trigger('click')
-    await flushPromises()
-    expect(draft.acpBackend).toBe('codex')
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-    expect(w.get('[data-testid="acp-backend-codex"]').attributes('aria-pressed')).toBe('true')
-    expect(w.find('[data-testid="cli-model-trigger"]').exists()).toBe(true)
-  })
-
-  it('drops a different engine and its overrides when inheriting', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', env: {} })
-    const draft = draftFor({
-      acpBackend: 'claude_code',
-      aiCredentialId: 'own',
-      env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }, { k: 'FOO', v: '1' }, { k: 'GRASP_CODEBUDDY_REGION', v: 'intl' }],
-      layout: { configRoot: '/root/.claude', workspaceDir: '/workspace' },
-    })
-    const w = mountPanel(draft)
-    await flushPromises()
-    expect(w.get('[data-test="agent-inherit-default-switch"]').attributes('aria-checked')).toBe('false')
-    expect(w.find('[data-testid="acp-backend-claude_code"]').exists()).toBe(true)
-    await w.get('[data-test="agent-inherit-default-switch"]').trigger('click')
-    await flushPromises()
-    expect(draft.acpBackend).toBe('cursor')
-    expect(draft.aiCredentialId).toBe('')
-    expect(envOf(draft)).toEqual({ FOO: '1', GRASP_CODEBUDDY_REGION: 'intl' })
-    expect(draft.layout.configRoot).toBe('/root/.claude')
-    expect(w.find('[data-testid="acp-backend-cursor"]').exists()).toBe(false)
-    expect(w.find('[data-testid="meta-config-root"]').exists()).toBe(false)
-    expect(w.find('[data-testid="meta-workspace-dir"]').exists()).toBe(false)
-    expect(w.find('[data-testid="derived-paths-table"]').exists()).toBe(false)
-    expect(w.find('[data-testid="agent-credential-bindings"]').exists()).toBe(false)
-    expect(w.get('[data-test="agent-inherit-backend"]').text()).toContain('Cursor')
-  })
-
-  it('is not shown for OpenCode, which keeps its model on the credential', async () => {
-    const w = mountPanel(draftFor({ acpBackend: 'opencode' }))
-    await flushPromises()
-    expect(w.find('[data-test="agent-cli-runtime"]').exists()).toBe(false)
-  })
-
-  it('clears the pin on a backend switch and offers undo', async () => {
-    const draft = draftFor({ env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-5' }, { k: 'FOO', v: '1' }] })
-    const w = mountPanel(draft)
-    await flushPromises()
-    const claude = w.findAll('button').find((b) => b.text().includes('Claude Code'))!
-    await claude.trigger('click')
+    expect(wrapper.get('[data-testid="model-binding-inherited"]').text()).toContain('当前工具没有工作区默认')
+    expect(wrapper.get('[data-testid="model-binding-problem"]').text()).toContain('当前工具没有可继承')
     expect(draft.acpBackend).toBe('claude_code')
-    expect(envOf(draft)).toEqual({ FOO: '1' })
-    const toast = useToast()
-    const item = toast.toasts.value.at(-1)!
-    expect(item.message).toContain('Claude Code')
-    toast.runAction(item.id)
+    expect(draft.modelBinding).toEqual({ kind: 'inherit' })
+  })
+
+  it('preserves an unavailable model reference until a replacement is explicitly selected', async () => {
+    mocks.listModelConfigurations.mockResolvedValue({ items: [{ id: 'cfg-repair', name: '可用模型', backend: 'cursor', state: 'active', revision: 1, binding: { kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' } }] })
+    const draft = draftFor({ modelBinding: { kind: 'configuration', configurationId: 'cfg-removed' } })
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    expect(draft.modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg-removed' })
+    expect(wrapper.get('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]').text()).toContain('cfg-removed')
+    expect(wrapper.get('[data-testid="model-binding-problem"]').text()).toContain('不存在或已停用')
+    await selectOption(wrapper.get('[data-testid="model-binding-configuration-select"]'), 'cfg-repair')
+    expect(draft.modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg-repair' })
+    expect(wrapper.find('[data-testid="model-binding-problem"]').exists()).toBe(false)
+    expect(draft.env).toEqual([])
+  })
+
+  it('keeps an explicit matching default pinned until inheritance is selected', async () => {
+    const draft = draftFor({ modelBinding: { kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' } })
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="model-binding-platform"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-testid="model-binding-inherit"]').trigger('click')
+    expect(draft.modelBinding).toEqual({ kind: 'inherit' })
     expect(draft.acpBackend).toBe('cursor')
-    expect(envOf(draft).ACP_BRIDGE_MODEL).toBe('gpt-5')
   })
 
-  it('stays quiet on a switch when no model was pinned', async () => {
+  it('binds an independent connection and preserves raw model IDs and role choices', async () => {
+    const draft = draftFor({ acpBackend: 'claude_code' })
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    await chooseDirect(wrapper, 'connection')
+    await selectOption(wrapper.get('[data-testid="model-binding-connection-select"]'), connection.id)
+    await selectOption(wrapper.get('[data-testid="model-binding-model"]'), 'vendor/main')
+    await selectOption(wrapper.get('[data-testid="model-binding-role-haiku"]'), 'vendor/fast')
+    expect(draft.modelBinding).toEqual({ kind: 'connection', connectionId: connection.id, modelId: 'vendor/main', toolSettings: { modelRoles: { haiku: 'vendor/fast' } } })
+    expect(draft.env).toEqual([])
+    expect(draft.aiCredentialId).toBe('')
+    expect(draft.openCodeCredentialId).toBe('')
+  })
+
+  it('requires confirmation to switch tools and restores a previous full binding on return', async () => {
+    const original = { kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' }
+    const draft = draftFor({ modelBinding: original })
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    await wrapper.get('[data-testid="acp-backend-claude_code"]').trigger('click')
+    expect(draft.acpBackend).toBe('cursor')
+    expect(draft.modelBinding).toEqual(original)
+    await wrapper.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.acpBackend).toBe('claude_code')
+    expect(draft.modelBinding).toEqual({ kind: 'inherit' })
+    await wrapper.get('[data-testid="acp-backend-cursor"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.modelBinding).toEqual(original)
+  })
+
+  it.each([
+    { backend: 'codex', aiCredentialId: 'legacy-codex', openCodeCredentialId: '', configRoot: '/root/.codex', modelEnv: { ACP_BRIDGE_MODEL: 'legacy-model', ACP_BRIDGE_REASONING_EFFORT: 'high' } },
+    { backend: 'opencode', aiCredentialId: '', openCodeCredentialId: 'legacy-opencode', configRoot: '/root/.config/opencode', modelEnv: { ACP_BRIDGE_MODEL: 'custom/vendor/model', GRASP_OPENCODE_PROVIDER: 'custom', GRASP_OPENCODE_BASE_URL: 'https://model.example/v1', GRASP_OPENCODE_MODEL_VISION: '1' } },
+    { backend: 'codebuddy', aiCredentialId: 'legacy-codebuddy', openCodeCredentialId: '', configRoot: '/root/.codebuddy', modelEnv: { ACP_BRIDGE_MODEL: 'legacy-model', GRASP_CODEBUDDY_REGION: 'special-team-region' } },
+  ])('restores a legacy $backend credential and model after switching away and back', async ({ backend, aiCredentialId, openCodeCredentialId, configRoot, modelEnv }) => {
+    const draft = draftFor({ acpBackend: backend, modelBinding: undefined, aiCredentialId, openCodeCredentialId, layout: { configRoot, workspaceDir: '/workspace' }, env: Object.entries(modelEnv).map(([k, v]) => ({ k, v })) })
+    const original = fromDraftRaw(draft as AgentStudioDraft)
+    const originalSave = fromDraft(draft as AgentStudioDraft)
+    const wrapper = mountPanel(draft)
+    await flushPromises()
+    await wrapper.get('[data-testid="acp-backend-claude_code"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.aiCredentialId).toBe('')
+    expect(draft.openCodeCredentialId).toBe('')
+    expect(draft.env.some((entry) => entry.k === 'ACP_BRIDGE_MODEL')).toBe(false)
+    // Edits to unrelated environment variables belong to the Agent, not a tool.
+    draft.env.push({ k: 'PROJECT_MODE', v: 'updated' })
+    await wrapper.get(`[data-testid="acp-backend-${backend}"]`).trigger('click')
+    await wrapper.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.modelBinding).toBeUndefined()
+    expect(fromDraftRaw(draft as AgentStudioDraft)).toEqual({ ...original, env: { ...original.env, PROJECT_MODE: 'updated' } })
+    expect(fromDraft(draft as AgentStudioDraft)).toEqual({ ...originalSave, env: { ...originalSave.env, PROJECT_MODE: 'updated' } })
+  })
+
+  it('keeps unsaved tool choices across Studio tab remounts and isolates different drafts', async () => {
+    const original = { kind: 'platform', credentialId: cursorKey.id, modelId: 'gpt-5' }
+    const draft = draftFor({ modelBinding: original })
+    const first = mountPanel(draft)
+    await flushPromises()
+    await first.get('[data-testid="acp-backend-claude_code"]').trigger('click')
+    await first.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    first.unmount()
+    const remounted = mountPanel(draft)
+    await flushPromises()
+    await remounted.get('[data-testid="acp-backend-cursor"]').trigger('click')
+    await remounted.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.modelBinding).toEqual(original)
+    remounted.unmount()
+    const otherDraft = draftFor({ acpBackend: 'claude_code' })
+    const other = mountPanel(otherDraft)
+    await flushPromises()
+    await other.get('[data-testid="acp-backend-cursor"]').trigger('click')
+    await other.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(otherDraft.modelBinding).toEqual({ kind: 'inherit' })
+  })
+
+  it('cancels switching without changing the tool, binding or layout', async () => {
     const draft = draftFor()
-    const w = mountPanel(draft)
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    await useOwn(w)
-    await w.findAll('button').find((b) => b.text().includes('Claude Code'))!.trigger('click')
-    expect(useToast().toasts.value).toHaveLength(0)
+    await wrapper.get('[data-testid="acp-backend-opencode"]').trigger('click')
+    const cancel = wrapper.get('[data-testid="backend-confirm"]').findAll('button').find((button) => button.text() === '取消')!
+    await cancel.trigger('click')
+    expect(draft.acpBackend).toBe('cursor')
+    expect(draft.layout.configRoot).toBe('/root/.cursor')
+    expect(wrapper.find('[data-testid="backend-confirm"]').exists()).toBe(false)
   })
 
-  async function pickModel(w: ReturnType<typeof mountPanel>, id: string) {
-    await w.get('[data-testid="cli-model-trigger"]').trigger('click')
+  it('preserves an explicitly edited config root across tool changes', async () => {
+    const draft = draftFor()
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    ;(document.body.querySelector(`[data-testid="cli-model-option-${id}"]`) as HTMLElement).click()
-    await flushPromises()
-  }
-
-  function effortOptions(w: ReturnType<typeof mountPanel>) {
-    return w.findAll('[data-test^="agent-cli-effort-"]').map((b) => b.attributes('data-test')!.replace('agent-cli-effort-', ''))
-  }
-
-  it('offers the levels the picked Codex model accepts', async () => {
-    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
-    const w = mountPanel(draft)
-    await flushPromises()
-    expect(effortOptions(w)).toEqual(['auto', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])
-    await w.get('[data-test="agent-cli-effort-ultra"]').trigger('click')
-    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('ultra')
-    await w.get('[data-test="agent-cli-effort-auto"]').trigger('click')
-    expect('ACP_BRIDGE_REASONING_EFFORT' in envOf(draft)).toBe(false)
+    await wrapper.get('[data-testid="meta-config-root"]').setValue('/custom/config')
+    await wrapper.get('[data-testid="acp-backend-claude_code"]').trigger('click')
+    await wrapper.get('[data-testid="confirm-model-backend-switch"]').trigger('click')
+    expect(draft.layout.configRoot).toBe('/custom/config')
   })
 
-  it('offers the common levels for auto', async () => {
-    const w = mountPanel(draftFor({ acpBackend: 'codex' }))
+  it('keeps legacy values unchanged until a new source is chosen', async () => {
+    const draft = draftFor({ modelBinding: undefined, aiCredentialId: 'legacy', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'old-model' }] })
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    await useOwn(w)
-    expect(effortOptions(w)).toEqual(['auto', 'low', 'medium', 'high'])
+    expect(wrapper.text()).toContain('历史配置')
+    expect(draft.aiCredentialId).toBe('legacy')
+    expect(draft.env).toEqual([{ k: 'ACP_BRIDGE_MODEL', v: 'old-model' }])
+    await chooseDirect(wrapper, 'platform')
+    expect(draft.aiCredentialId).toBe('')
+    expect(draft.modelBinding).toEqual({ kind: 'platform', credentialId: '' })
   })
 
-  it('drops an effort the newly picked model does not accept and keeps one it does', async () => {
-    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
-    const w = mountPanel(draft)
+  it.each(['google', 'azure', 'xai'])('keeps a legacy OpenCode %s catalog selection when saving unrelated Agent edits', async (provider) => {
+    const env = { ACP_BRIDGE_MODEL: `${provider}/native-model`, GRASP_OPENCODE_PROVIDER: provider, PROJECT_MODE: 'existing' }
+    const draft = draftFor({ acpBackend: 'opencode', modelBinding: undefined, openCodeCredentialId: `legacy-${provider}`, env: Object.entries(env).map(([k, v]) => ({ k, v })), layout: { configRoot: '/root/.config/opencode', workspaceDir: '/workspace' } })
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: `legacy-${provider}`, type: 'ai', provider: 'opencode', configured: true, metadata: { provider, model: env.ACP_BRIDGE_MODEL } }] })
+    const wrapper = mountPanel(draft)
     await flushPromises()
-    await w.get('[data-test="agent-cli-effort-ultra"]').trigger('click')
-    await pickModel(w, 'gpt-6-luna')
-    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'gpt-6-luna' })
-    expect(effortOptions(w)).not.toContain('ultra')
-
-    await w.get('[data-test="agent-cli-effort-xhigh"]').trigger('click')
-    await pickModel(w, 'gpt-6.1-sol')
-    expect(envOf(draft).ACP_BRIDGE_REASONING_EFFORT).toBe('xhigh')
-  })
-
-  it('greys effort out for a model that has no reasoning levels', async () => {
-    const draft = draftFor({ acpBackend: 'codex', env: [{ k: 'ACP_BRIDGE_MODEL', v: 'gpt-6.1-sol' }] })
-    const w = mountPanel(draft)
-    await flushPromises()
-    await w.get('[data-test="agent-cli-effort-high"]').trigger('click')
-    await pickModel(w, 'plain')
-    expect(envOf(draft)).toEqual({ ACP_BRIDGE_MODEL: 'plain' })
-    expect(w.get('[data-test="agent-cli-effort-high"]').attributes('disabled')).toBeDefined()
-    expect(w.get('[data-test="agent-cli-effort"]').text()).toContain('不支持')
+    expect(wrapper.text()).toContain('历史配置：保持兼容')
+    expect(wrapper.getComponent({ name: 'ModelBindingEditor' }).emitted('update:modelValue')).toBeUndefined()
+    await wrapper.get('[data-testid="meta-workspace-dir"]').setValue('/workspace/changed')
+    const saved = fromDraft(draft as AgentStudioDraft)
+    expect(saved).not.toHaveProperty('modelBinding')
+    expect(saved.openCodeCredentialId).toBe(`legacy-${provider}`)
+    expect(saved.env).toEqual(env)
+    expect(saved.layout?.workspaceDir).toBe('/workspace/changed')
   })
 })

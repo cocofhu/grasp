@@ -40,6 +40,12 @@ type CredentialKindFunc func(credentialID string) (envKey string, ok bool)
 // from shared. A nil kindOf does not copy a shared id.
 func MergeCodingCredentialIDs(backend, agentAI, agentOC, sharedAI, sharedOC string, kindOf CredentialKindFunc) (aiID, ocID string) {
 	if AcpBackend(strings.TrimSpace(backend)) == BackendOpenCode {
+		if strings.TrimSpace(agentOC) != "" {
+			return strings.TrimSpace(agentAI), strings.TrimSpace(agentOC)
+		}
+		if kindOf != nil && strings.TrimSpace(sharedOC) != "" {
+			return strings.TrimSpace(agentAI), strings.TrimSpace(sharedOC)
+		}
 		return strings.TrimSpace(agentAI), pickCredentialSlot(agentOC, sharedOC, envauth.EnvOpenCodeAPIKey, kindOf)
 	}
 	return pickCredentialSlot(agentAI, sharedAI, CredentialEnvKeyForBackend(backend), kindOf), strings.TrimSpace(agentOC)

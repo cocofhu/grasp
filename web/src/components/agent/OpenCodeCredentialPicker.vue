@@ -28,10 +28,13 @@ const props = withDefaults(defineProps<{
   allowClear?: boolean
   /** Meta panels omit the hint paragraph under the picker title. */
   hideHint?: boolean
+  /** Grouped management panels provide their own title and add control. */
+  hideHeader?: boolean
 }>(), {
   allowAdd: true,
   allowClear: false,
   hideHint: false,
+  hideHeader: false,
 })
 
 const emit = defineEmits<{
@@ -247,7 +250,7 @@ onMounted(async () => {
 
 <template>
   <div data-testid="credential-opencode" :data-mode="mode">
-    <div class="flex items-start justify-between gap-3">
+    <div v-if="!hideHeader" class="flex items-start justify-between gap-3">
       <div class="min-w-0">
         <div class="text-[12px] font-medium text-txt2">{{ heading }}</div>
         <p v-if="!hideHint" class="mb-0 mt-1 text-[11px] leading-5 text-txt3">{{ description }}</p>
@@ -343,35 +346,52 @@ onMounted(async () => {
 
     <div
       v-if="!rows.length"
-      class="mt-3 py-3 text-[12px] text-txt3"
+      class="py-3 text-[12px] text-txt3"
+      :class="{ 'mt-3': !hideHeader, 'credential-manage-empty': mode === 'manage' }"
       data-testid="opencode-credential-empty"
     >
       {{ t('pages.agentStudio.openCode.credentialEmpty') }}
     </div>
-    <div v-else class="mt-3 divide-y divide-line/60">
-      <div v-for="item in rows" :key="item.id" :data-testid="`opencode-credential-row-${item.id}`">
+    <div
+      v-else
+      :class="mode === 'manage' ? ['credential-manage-list', { 'mt-3': !hideHeader }] : 'mt-3 divide-y divide-line/60'"
+    >
+      <div
+        v-for="item in rows"
+        :key="item.id"
+        :class="{ 'credential-manage-row': mode === 'manage' }"
+        :data-testid="`opencode-credential-row-${item.id}`"
+      >
         <component
           :is="mode === 'select' ? 'button' : 'div'"
           :type="mode === 'select' ? 'button' : undefined"
-          class="w-full border-l-2 px-3 py-3 text-left transition"
-          :class="mode === 'select' && selectedId === item.id ? 'border-accent bg-accent-dim text-txt' : 'border-transparent text-txt2'"
+          class="w-full text-left transition"
+          :class="mode === 'manage' ? 'credential-manage-overview' : ['border-l-2 px-3 py-3', selectedId === item.id ? 'border-accent bg-accent-dim text-txt' : 'border-transparent text-txt2']"
           :aria-pressed="mode === 'select' ? selectedId === item.id : undefined"
           @click="choose(item.id)"
         >
-          <div class="flex items-start gap-3">
+          <div class="flex items-start gap-3" :class="{ 'credential-manage-content': mode === 'manage' }">
             <CredentialProviderLogo
               :provider="vendorOf(item) || 'opencode'"
               match="provider"
               :selected="mode === 'select' && selectedId === item.id"
               :configured="true"
             />
-            <div class="min-w-0 flex-1">
+            <div class="min-w-0 flex-1" :class="{ 'credential-manage-identity': mode === 'manage' }">
               <div class="flex flex-wrap items-center justify-between gap-2">
-                <span class="truncate text-[12px] font-semibold text-txt">{{ item.name }}</span>
-                <code class="shrink-0 font-mono text-[11px] text-txt3">{{ item.masked || '••••••••' }}</code>
+                <span
+                  class="text-[12px] font-semibold text-txt"
+                  :class="mode === 'manage' ? 'credential-manage-name' : 'truncate'"
+                  :title="item.name"
+                >{{ item.name }}</span>
+                <code v-if="mode === 'select'" class="shrink-0 font-mono text-[11px] text-txt3">{{ item.masked || '••••••••' }}</code>
               </div>
-              <div class="mt-1 flex flex-wrap items-center justify-between gap-2">
-                <span v-if="vendorOf(item) || modelOf(item)" class="text-[11px] text-txt3">
+              <div class="mt-1 flex flex-wrap items-center justify-between gap-2" :class="{ 'credential-manage-model-line': mode === 'manage' }">
+                <span
+                  v-if="vendorOf(item) || modelOf(item)"
+                  class="text-[11px] text-txt3"
+                  :class="{ 'credential-manage-model': mode === 'manage' }"
+                >
                   {{ t('pages.agentStudio.openCode.credentialVendorModel', { vendor: vendorOf(item), model: modelOf(item) }) }}
                 </span>
                 <span
@@ -382,14 +402,16 @@ onMounted(async () => {
                   {{ t('pages.agentStudio.openCode.credentialCurrent') }}
                 </span>
               </div>
+              <code v-if="mode === 'manage'" class="credential-manage-mask">{{ item.masked || '••••••••' }}</code>
             </div>
-            <div v-if="mode === 'manage'" class="flex shrink-0 gap-1.5" @click.stop>
-              <AppButton size="sm" variant="ghost" :data-testid="`opencode-credential-replace-${item.id}`" @click="openReplace(item.id)">
+            <div v-if="mode === 'manage'" class="credential-manage-actions" @click.stop>
+              <AppButton size="sm" variant="outline" :data-testid="`opencode-credential-replace-${item.id}`" @click="openReplace(item.id)">
                 {{ t('pages.agentStudio.openCode.credentialReplace') }}
               </AppButton>
               <AppButton
                 size="sm"
-                variant="danger"
+                variant="ghost"
+                class="credential-manage-clear"
                 :loading="clearingId === item.id"
                 :data-testid="`opencode-credential-clear-${item.id}`"
                 @click="clearRow(item.id)"
@@ -401,7 +423,7 @@ onMounted(async () => {
         </component>
         <form
           v-if="mode === 'manage' && replacingId === item.id"
-          class="mt-2 border-t border-line/60 py-3"
+          class="credential-manage-replace"
           :data-testid="`opencode-credential-replace-form-${item.id}`"
           @submit.prevent="saveReplace(item.id)"
         >
@@ -414,7 +436,7 @@ onMounted(async () => {
             data-testid="opencode-credential-replace-key"
             autocomplete="new-password"
           />
-          <div class="mt-2 flex justify-end gap-2">
+          <div class="mt-2 flex flex-wrap justify-end gap-2">
             <AppButton size="sm" variant="ghost" type="button" data-testid="opencode-credential-replace-cancel" @click="cancelReplace">
               {{ t('common.buttons.cancel') }}
             </AppButton>
@@ -427,3 +449,111 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.credential-manage-list {
+  display: grid;
+  min-width: 0;
+  border: 1px solid rgb(var(--c-line) / 0.7);
+  border-radius: 10px;
+  background: rgb(var(--c-surface));
+  overflow: hidden;
+  container-type: inline-size;
+}
+
+.credential-manage-row {
+  min-width: 0;
+}
+
+.credential-manage-row + .credential-manage-row {
+  border-top: 1px solid rgb(var(--c-line) / 0.7);
+}
+
+.credential-manage-overview {
+  padding: 12px 16px;
+}
+
+.credential-manage-content {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.credential-manage-identity {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr) minmax(0, 0.65fr);
+  align-items: center;
+  gap: 16px;
+}
+
+.credential-manage-model-line {
+  margin-top: 0;
+}
+
+.credential-manage-name,
+.credential-manage-model {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.credential-manage-mask {
+  display: block;
+  min-width: 0;
+  color: rgb(var(--c-txt2));
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.credential-manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.credential-manage-clear {
+  color: rgb(var(--c-err));
+}
+
+.credential-manage-replace {
+  padding: 14px;
+  border-top: 1px solid rgb(var(--c-line) / 0.7);
+  background: rgb(var(--c-surface));
+}
+
+.credential-manage-empty {
+  padding: 20px 16px;
+  border: 1px dashed rgb(var(--c-line));
+  border-radius: 12px;
+  text-align: center;
+}
+
+@container (max-width: 760px) {
+  .credential-manage-identity {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr);
+    gap: 4px 12px;
+  }
+
+  .credential-manage-identity > :first-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@container (max-width: 420px) {
+  .credential-manage-content {
+    align-items: flex-start;
+  }
+
+  .credential-manage-identity {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+
+  .credential-manage-actions {
+    flex-basis: 100%;
+    justify-content: flex-start;
+    margin-left: 44px;
+  }
+}
+</style>

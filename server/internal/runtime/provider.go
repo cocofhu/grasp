@@ -12,12 +12,15 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	ModelBinding       func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
+	LegacyModelBinding func(string, string, string, map[string]string) *modelrouting.Binding
 	// SandboxImage, when non-empty, forces one image for every acpBackend.
 	SandboxImage string
 	// SandboxImages maps acpBackend → image; used when SandboxImage is empty.
@@ -109,6 +112,7 @@ type Options struct {
 // SharedAgentView is the runtime-facing slice of the shared Agent config
 // needed for extend→overlay (avoids importing services into every call site).
 type SharedAgentView struct {
+	GitBindings          *models.GitBindings
 	AcpBackend           string
 	AiCredentialID       string
 	OpenCodeCredentialID string

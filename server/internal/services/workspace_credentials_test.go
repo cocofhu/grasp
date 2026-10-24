@@ -300,8 +300,8 @@ func TestOpenCodeSelectionInjectsOnlyTheChosenKey(t *testing.T) {
 	agents.ClearOpenCodeCredentialSelection(second.ID)
 	one, _ := agents.Get("one")
 	two, _ := agents.Get("two")
-	if one.OpenCodeCredentialID != "" {
-		t.Fatalf("selected agent still points at cleared credential: %q", one.OpenCodeCredentialID)
+	if one.OpenCodeCredentialID != second.ID {
+		t.Fatalf("cleared credential reference was replaced: %q", one.OpenCodeCredentialID)
 	}
 	if two.OpenCodeCredentialID != "cred-other" {
 		t.Fatalf("other selection changed: %q", two.OpenCodeCredentialID)

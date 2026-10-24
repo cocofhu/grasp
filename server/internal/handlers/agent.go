@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,8 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
+	GitBindings          *models.GitBindings       `json:"gitBindings"`
+	ModelBinding         *modelrouting.Binding     `json:"modelBinding"`
 	Name                 string                    `json:"name"`
 	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
 	TemplateID           string                    `json:"templateId"`
@@ -45,7 +48,8 @@ type agentBody struct {
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		Name: name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
+		GitBindings: b.GitBindings,
+		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
 		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
 		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID), RepoIDs: b.RepoIDs,
@@ -80,6 +84,12 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		return
 	}
 	agent := b.toAgent(name)
+	// New explicit Git authorizations do not silently acquire the workspace's
+	// independent repository grants. Existing Agent updates retain inheritance.
+	if agent.GitBindings != nil && agent.RepoIDs == nil {
+		none := []string{}
+		agent.RepoIDs = &none
+	}
 
 	templateID := strings.TrimSpace(b.TemplateID)
 	if templateID != "" {

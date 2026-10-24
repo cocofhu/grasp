@@ -155,7 +155,7 @@ describe('AgentStudio region UI', () => {
 
     expect(wrapper.text()).toContain('现有特殊配置：ioa')
     expect(wrapper.find('[role="radiogroup"]').exists()).toBe(true)
-    const siteRadios = wrapper.findAll('button[role="radio"]')
+    const siteRadios = wrapper.get('[data-testid="coding-tool-site"]').findAll('button[role="radio"]')
     expect(siteRadios).toHaveLength(2)
     expect(siteRadios.every((item) => item.attributes('aria-checked') === 'false')).toBe(true)
   })
@@ -1697,12 +1697,6 @@ describe('AgentStudio env credential help', () => {
       '<h2>{{ title }}</h2><div data-test="env-help-scroll"><slot /></div><slot name="footer" />' +
       '</div>',
   })
-  const GitGuideHelpStub = defineComponent({
-    emits: ['help', 'update:credentialType'],
-    template:
-      '<div data-test="git-guide"><button type="button" data-test="git-help-emit" @click="$emit(\'help\', \'git\')">帮助</button></div>',
-  })
-
   async function mountStudioWithHelp() {
     const i18n = createI18n({
       legacy: false,
@@ -1721,7 +1715,6 @@ describe('AgentStudio env credential help', () => {
           MarkdownSplitEditor: true,
           ExplorerContextMenu: true,
           AgentChatTester: true,
-          AgentGitGuide: GitGuideHelpStub,
           AgentCreateWizard: true,
           AgentSidebar: true,
           AgentDataPanel: true,
@@ -1743,6 +1736,9 @@ describe('AgentStudio env credential help', () => {
 
     expect(wrapper.get('[data-test="env-help-inject"]').text()).toBe('帮助')
     expect(wrapper.get('[data-test="env-help-acp"]').text()).toBe('帮助')
+    expect(wrapper.get('[data-test="git-help"]').text()).toBe('Git 配置帮助')
+    expect(wrapper.find('[data-test="git-guide"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="git-apply-recommended"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('GRASP_CODEBUDDY_API_KEY')
     expect(wrapper.text()).not.toContain('环境变量会注入该 Agent 的沙箱容器')
     expect(wrapper.text()).not.toContain('请在下方添加对应 Key')
@@ -1756,7 +1752,7 @@ describe('AgentStudio env credential help', () => {
     expect(wrapper.get('[data-help-chip="inject"]').classes().join(' ')).toContain('border-accent')
     expect(wrapper.get('[data-test="env-help-modal"]').text()).toContain('环境变量会注入该 Agent 的沙箱容器')
 
-    await wrapper.get('[data-test="git-help-emit"]').trigger('click')
+    await wrapper.get('[data-test="git-help"]').trigger('click')
     await flushPromises()
     expect(wrapper.findAll('[data-test="env-help-modal"]')).toHaveLength(1)
     expect(wrapper.get('[data-help-chip="git"]').classes().join(' ')).toContain('border-accent')
@@ -1805,7 +1801,7 @@ describe('AgentStudio env credential help', () => {
     await openEnvTab(wrapper)
 
     void mocks.listRunTags().catch(() => {})
-    await wrapper.get('[data-test="git-help-emit"]').trigger('click')
+    await wrapper.get('[data-test="git-help"]').trigger('click')
     await flushPromises()
 
     expect(wrapper.find('[data-test="env-help-modal"]').exists()).toBe(true)
