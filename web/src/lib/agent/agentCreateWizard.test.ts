@@ -47,6 +47,14 @@ describe('Agent creation data contract', () => {
  it('defaults missing Git bindings to an explicit empty list', () => {
   const d = freshDraft(); delete d.gitBindings; expect(assembleCreatePayload(d).gitBindings).toEqual({ items: [] })
  })
+ it('inherits the default model without submitting an invalid empty local reference', () => {
+  const d = freshDraft(); d.name = 'inherited'; d.inheritModel = true
+  expect(assembleCreatePayload(d)).toMatchObject({ inheritModel: true, acpBackend: 'cursor' })
+  expect(assembleCreatePayload(d)).not.toHaveProperty('modelBinding')
+  d.modelBinding = { kind: 'configuration', configurationId: 'local-model' }
+  expect(assembleCreatePayload(d).modelBinding).toEqual(d.modelBinding)
+  expect(d.modelBinding.configurationId).toBe('local-model')
+ })
  it('maps both MCP transports and ignores unnamed records', () => {
   const d = freshDraft(); d.mcp = [{ name: 'stdio', transport: 'command', url: '', headers: [], command: 'npx', args: '-y\npkg', env: [{ k: 'CUSTOM', v: 'yes' }] }, { name: 'http', transport: 'url', url: 'https://mcp.example', headers: [{ k: 'X-Tag', v: 'team' }], command: '', args: '', env: [] }]
   expect(assembleCreatePayload(d).mcp).toEqual([{ name: 'stdio', command: 'npx', args: ['-y', 'pkg'], env: { CUSTOM: 'yes' } }, { name: 'http', url: 'https://mcp.example', headers: { 'X-Tag': 'team' } }])

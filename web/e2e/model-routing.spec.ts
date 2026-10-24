@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Page, type TestInfo } from '@playwright/test'
+import { mkdir } from 'node:fs/promises'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
 import { routeApi } from './helpers/apiRoute'
 
@@ -14,13 +15,25 @@ const connection = (id: string, protocol: string, modelId: string) => ({ id, nam
 
 async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]) {
   await installWorkspaceApiDefaults(page)
-  const credentials = [key]
+  const credentials: Record<string, unknown>[] = [key]
   const rows = [...initial]
   const keyWrites: Record<string, unknown>[] = []
   const connectionWrites: Record<string, unknown>[] = []
   const agentWrites: Record<string, unknown>[] = []
   const configurations: ConfigurationRow[] = []
   const configurationWrites: Record<string, unknown>[] = []
+  const agents: Record<string, unknown>[] = []
+  const shared: Record<string, unknown> = { files: [], mcp: [], env: {}, layout: {} }
+  const sharedWrites: Record<string, unknown>[] = []
+  await routeApi(page, '**/api/workspace/shared-agent-config', async (route) => {
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON()
+      sharedWrites.push(body)
+      for (const key of Object.keys(shared)) delete shared[key]
+      Object.assign(shared, body)
+    }
+    await route.fulfill({ json: shared })
+  })
   await routeApi(page, '**/api/workspace/credentials', async (route) => {
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON()
@@ -75,11 +88,23 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
     if (route.request().method() === 'POST') {
       const body = route.request().postDataJSON()
       agentWrites.push(body)
+      agents.push(body)
       return route.fulfill({ json: body })
     }
-    await route.fulfill({ json: [] })
+    await route.fulfill({ json: agents })
   })
-  return { rows, keyWrites, connectionWrites, agentWrites, configurations, configurationWrites }
+  await routeApi(page, '**/api/agents/*', async (route) => {
+    const name = decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1) || '')
+    const index = agents.findIndex((agent) => agent.name === name)
+    if (index < 0) return route.fallback()
+    if (route.request().method() === 'PUT') {
+      const body = route.request().postDataJSON()
+      agents[index] = body
+      agentWrites.push(body)
+    }
+    await route.fulfill({ json: agents[index] })
+  })
+  return { rows, keyWrites, connectionWrites, agentWrites, configurations, configurationWrites, agents, credentials, shared, sharedWrites }
 }
 
 async function openCredentials(page: Page) {
@@ -110,6 +135,20 @@ async function addModelConfiguration(page: Page) {
   await page.getByTestId('workspace-credential-create').click()
   await page.getByTestId('workspace-add-model').click()
   await expect(page.getByTestId('model-configuration-form')).toBeVisible()
+}
+
+async function captureRuntimeBindings(page: Page, name: string, testInfo: TestInfo) {
+  await mkdir(testInfo.outputDir, { recursive: true })
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 960 })
+    if (width === 390 && name === 'agent-inherit-model-git') {
+      await expect(page.getByTestId('studio-mobile-back-files')).toBeVisible()
+    } else {
+      await expect(page.getByTestId('model-binding-configuration-select')).toBeVisible()
+    }
+    await page.screenshot({ path: testInfo.outputPath(`${name}-${width}.png`), fullPage: true, animations: 'disabled' })
+  }
+  await page.setViewportSize({ width: 1440, height: 960 })
 }
 
 test('CodeBuddy offers Chat connections and filters unsupported Responses and Messages services', async ({ page }) => {
@@ -205,7 +244,7 @@ test('Agent binds a saved tool-credential-model configuration by ID', async ({ p
   await page.goto('/agent-create-wizard.html')
   await page.locator('#wiz-name-input').fill('bound-agent')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByTestId('agent-wizard-backend-codex').click()
+  await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await chooseBoundConfiguration(page, 'configured-model')
   await page.getByRole('button', { name: /^下一步/ }).click()
   await page.getByRole('button', { name: /^跳过/ }).click()
@@ -214,6 +253,64 @@ test('Agent binds a saved tool-credential-model configuration by ID', async ({ p
   expect(state.agentWrites[0]).toMatchObject({ acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'configured-model' } })
   expect(state.agentWrites[0]).not.toHaveProperty('value')
   expect((state.agentWrites[0]?.env || {}) as object).not.toHaveProperty('ACP_BRIDGE_MODEL')
+})
+
+test('Agent defaults save a model and multiple Git authorizations, and a new Agent inherits them after reload', async ({ page }, testInfo) => {
+  const state = await setup(page, [connection('responses-service', 'openai-responses', 'vendor/raw/responses')])
+  state.configurations.push({ id: 'team-codex', name: 'Team Codex default', backend: 'codex', binding: { kind: 'connection', connectionId: 'responses-service', modelId: 'vendor/raw/responses' }, state: 'active', revision: 1 })
+  state.credentials.push(
+    { id: 'gitlab-team', name: 'GitLab team', purpose: 'git', type: 'git', provider: 'gitlab', host: 'https://git.example.test', configured: true, enabled: true },
+    { id: 'github-team', name: 'GitHub team', purpose: 'git', type: 'git', provider: 'github', host: 'https://github.com', configured: true, enabled: true },
+  )
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?view=defaults')}`)
+  await page.getByTestId('shared-agent-subtab-meta').click()
+  await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
+  await chooseBoundConfiguration(page, 'team-codex')
+  await expect(page.getByTestId('meta-config-root')).toHaveValue('/root/.codex')
+  for (const id of ['gitlab-team', 'github-team']) {
+    await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
+    await page.locator(`[data-test="app-select-option-${id}"]`).click()
+  }
+  await page.getByTestId('git-preferred-github-team').click()
+  await page.getByTestId('shared-agent-save').click()
+  await expect.poll(() => state.sharedWrites.length).toBe(1)
+  expect(state.sharedWrites[0]).toMatchObject({
+    acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'team-codex' },
+    gitBindings: { items: [{ credentialId: 'gitlab-team' }, { credentialId: 'github-team' }], preferredCredentialId: 'github-team' },
+  })
+  await page.reload()
+  await page.getByTestId('shared-agent-subtab-meta').click()
+  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
+  await expect(page.getByTestId('git-preferred-github-team')).toHaveAttribute('aria-pressed', 'true')
+  await captureRuntimeBindings(page, 'agent-default-model-git', testInfo)
+
+  await page.goto('/agent-create-wizard.html')
+  await page.locator('#wiz-name-input').fill('inherits-team-defaults')
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await page.getByTestId('agent-inherit-model').click()
+  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
+  await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toBeDisabled()
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await page.getByTestId('agent-inherit-git').click()
+  await expect(page.getByTestId('git-credential-row-gitlab-team')).toBeVisible()
+  await expect(page.getByTestId('git-credential-row-github-team')).toBeVisible()
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await expect(page.locator('.step-pane')).toContainText('Team Codex default')
+  await expect(page.locator('.step-pane')).toContainText('GitHub team')
+  await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
+  await expect(page.getByTestId('created-name')).toHaveText('inherits-team-defaults')
+  expect(state.agentWrites).toHaveLength(1)
+  expect(state.agentWrites[0]).toMatchObject({ inheritModel: true, inheritGit: true, gitBindings: { items: [] } })
+  expect(state.agentWrites[0]).not.toHaveProperty('modelBinding')
+  expect(JSON.stringify(state.agentWrites[0])).not.toContain('vendor/raw/responses')
+  expect(JSON.stringify(state.agentWrites[0])).not.toContain('gitlab-team')
+
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?agent=inherits-team-defaults&studioTab=meta')}`)
+  await expect(page.getByTestId('agent-inherit-model')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('agent-inherit-git')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
+  await expect(page.getByTestId('git-preferred-github-team')).toHaveAttribute('aria-pressed', 'true')
+  await captureRuntimeBindings(page, 'agent-inherit-model-git', testInfo)
 })
 
 test('OpenCode shortcut saves its provider credential, creates a model and binds an Agent to it', async ({ page }) => {
@@ -251,7 +348,7 @@ test('OpenCode shortcut saves its provider credential, creates a model and binds
   await page.goto('/agent-create-wizard.html')
   await page.locator('#wiz-name-input').fill('opencode-bound-agent')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByTestId('agent-wizard-backend-opencode').click()
+  await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await chooseBoundConfiguration(page, 'configured-model')
   await page.getByRole('button', { name: /^下一步/ }).click()
   await page.getByRole('button', { name: /^跳过/ }).click()

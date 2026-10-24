@@ -10,6 +10,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/cocofhu/grasp/internal/sandbox/sandboxtest"
 
@@ -93,11 +94,11 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 	sbx := NewSandboxService(db, mgr, skills, mcp.NewHost(NewArtifactService(db)), SandboxOptions{
 		ProfilesRoot: root, MCPEndpoint: "http://mcp.local", TTL: time.Minute, Max: 2, MaxSolo: maxSolo,
 		ModelBinding: sandboxTestModelResolver,
-		SelectedCredential: func(id string) (string, string, bool) {
+		GitCredential: func(id string) (runtime.GitCredentialValue, bool) {
 			if id == "cred-proj" {
-				return "GITHUB_TOKEN", "ghp-project", true
+				return runtime.GitCredentialValue{EnvKey: "GITHUB_TOKEN", Secret: "ghp-project", Host: "https://github.com"}, true
 			}
-			return "", "", false
+			return runtime.GitCredentialValue{}, false
 		},
 	})
 	return NewSoloService(db, sbx, skills, NewProjectService(db)), sbx, fg, db

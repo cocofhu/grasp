@@ -97,6 +97,7 @@ function railLabels(): string[] {
 }
 
 async function openSelect(testId: string) {
+  await flushPromises()
   const trigger = document.body.querySelector<HTMLButtonElement>(`[data-testid="${testId}"] [data-test="app-select-trigger"]`)
   expect(trigger).toBeTruthy()
   trigger!.click()
@@ -122,15 +123,10 @@ async function chooseModel(id = 'cfg-cursor') {
   expect(buttonByText('下一步').disabled).toBe(false)
 }
 
-async function clickTestId(testId: string) {
-  const button = document.body.querySelector<HTMLButtonElement>(`[data-testid="${testId}"]`)
-  expect(button).toBeTruthy()
-  button!.click()
-  await flushPromises()
-}
 
 beforeEach(() => {
   createAgent.mockClear()
+  getSharedAgentConfig.mockResolvedValue({ env: {}, files: [], mcp: [], layout: {} })
   listCredentials.mockResolvedValue({ items: structuredClone(defaultCredentials) })
   listModelConfigurations.mockResolvedValue({ items: structuredClone(defaultConfigurations) })
   listModelConnections.mockResolvedValue({ items: structuredClone(defaultConnections) })
@@ -161,7 +157,7 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     expect(document.body.querySelector('#wiz-name-input')).toBeNull()
     expect(document.body.querySelector('[data-testid="agent-tool-model-step"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-testid="coding-tool-picker"]')).toBeTruthy()
+    expect(document.body.querySelector('[data-testid="coding-tool-picker"]')).toBeNull()
     expect(document.body.querySelector('[data-testid="model-binding-editor"]')).toBeTruthy()
     wrapper.unmount()
   })
@@ -173,16 +169,10 @@ describe('AgentCreateWizard 4-step IA', () => {
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
 
-    buttonByText('CodeBuddy').click()
-    await wrapper.vm.$nextTick()
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-codebuddy"]')?.getAttribute('aria-checked')).toBe('true')
-    expect(document.body.textContent).toContain('国际站')
-    expect(document.body.textContent).toContain('Agent')
-    expect(document.body.textContent).not.toMatch(/配置步骤[\s\S]*\bACP\b/)
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-opencode"]')).toBeTruthy()
-    ;(document.body.querySelector('[data-testid="agent-wizard-region-internal"]') as HTMLButtonElement).click()
-    await flushPromises()
-    expect(document.body.querySelector('[data-testid="agent-wizard-region-internal"]')?.getAttribute('aria-checked')).toBe('true')
+    await chooseModel('cfg-codebuddy')
+    expect(document.body.querySelector('[data-testid="coding-tool-picker"]')).toBeNull()
+    await chooseSelect('agent-model-region', 'internal')
+    expect(document.body.querySelector('[data-testid="agent-model-region"] [data-test="app-select-trigger"]')?.textContent).toContain('国内站')
     await chooseModel('cfg-codebuddy')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
@@ -200,7 +190,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('Cursor').click()
     await flushPromises()
     expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')).toBeTruthy()
     expect(document.body.textContent).not.toContain('如何获取')
@@ -225,8 +214,7 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-opencode"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-cursor"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(document.body.querySelector('[data-testid="coding-tool-picker"]')).toBeNull()
     expect(document.body.textContent).not.toContain('CURSOR_API_KEY')
     await chooseModel()
     buttonByText('下一步').click()
@@ -351,10 +339,8 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     buttonByText('Next').click()
     await wrapper.vm.$nextTick()
-    buttonByText('Trae').click()
-    await wrapper.vm.$nextTick()
-
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-trae"]')?.getAttribute('aria-checked')).toBe('true')
+    await chooseSelect('model-binding-configuration-select', 'cfg-trae')
+    expect(document.body.querySelector('[data-testid="coding-tool-picker"]')).toBeNull()
     expect(document.body.textContent).toContain('International')
     wrapper.unmount()
   })
@@ -487,8 +473,6 @@ describe('AgentCreateWizard 4-step IA', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    buttonByText('Cursor').click()
-    await flushPromises()
 
     await chooseModel('cfg-creds')
     expect(document.body.querySelector('[data-testid="model-binding-advanced"]')).toBeNull()
@@ -578,8 +562,6 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
-    ;(document.body.querySelector('[data-testid="agent-wizard-backend-cursor"]') as HTMLButtonElement).click()
-    await flushPromises()
     expect(document.body.querySelector('[data-testid="model-binding-configuration"]')).toBeNull()
     await chooseSelect('model-binding-configuration-select', 'cfg-prod')
     buttonByText('下一步').click()
@@ -587,7 +569,7 @@ describe('AgentCreateWizard reusable model configurations', () => {
     expect(document.body.querySelector('[data-testid="git-credential-help"]')).toBeTruthy()
     buttonByText('上一步').click()
     await flushPromises()
-    expect(document.body.querySelector('[data-testid="agent-wizard-backend-cursor"]')?.getAttribute('aria-checked')).toBe('true')
+    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')?.textContent).toContain('日常开发')
     expect(document.body.querySelector('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')?.textContent).toContain('日常开发')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
@@ -602,7 +584,7 @@ describe('AgentCreateWizard reusable model configurations', () => {
     wrapper.unmount()
   })
 
-  it('filters models immediately on the same page and clears a previous tool source when switching tools', async () => {
+  it('selects among saved models and derives the coding tool from the selected configuration', async () => {
     listCredentials.mockResolvedValue({ items: [
       { id: 'cursor-key', name: 'Cursor授权', purpose: 'tool_auth', toolId: 'cursor', configured: true },
       { id: 'claude-key', name: 'Claude授权', purpose: 'tool_auth', toolId: 'claude_code', configured: true },
@@ -618,21 +600,15 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await flushPromises()
-    await clickTestId('agent-wizard-backend-cursor')
     await openSelect('model-binding-configuration-select')
     expect(document.body.querySelector('[data-test="app-select-option-cfg-cursor"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-test="app-select-option-cfg-claude"]')).toBeNull()
+    expect(document.body.querySelector('[data-test="app-select-option-cfg-claude"]')).toBeTruthy()
     expect(document.body.querySelector('[data-test="app-select-option-cfg-disabled"]')).toBeNull()
     await chooseOpenOption('cfg-cursor')
 
-    await clickTestId('agent-wizard-backend-claude_code')
-    expect(document.body.querySelector('[data-testid="model-binding-inherit"]')).toBeNull()
-    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')?.textContent).toContain('选择模型配置')
-    expect(buttonByText('下一步').disabled).toBe(true)
     await openSelect('model-binding-configuration-select')
-    expect(document.body.querySelector('[data-test="app-select-option-__inherit"]')).toBeNull()
     expect(document.body.querySelector('[data-test="app-select-option-cfg-claude"]')).toBeTruthy()
-    expect(document.body.querySelector('[data-test="app-select-option-cfg-cursor"]')).toBeNull()
+    expect(document.body.querySelector('[data-test="app-select-option-cfg-cursor"]')).toBeTruthy()
     await chooseOpenOption('cfg-claude')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
@@ -652,7 +628,6 @@ describe('AgentCreateWizard reusable model configurations', () => {
     await wrapper.vm.$nextTick()
     buttonByText('下一步').click()
     await flushPromises()
-    await clickTestId('agent-wizard-backend-cursor')
     await chooseModel('cfg-cursor')
     buttonByText('下一步').click()
     await wrapper.vm.$nextTick()
@@ -670,4 +645,74 @@ describe('AgentCreateWizard reusable model configurations', () => {
     expect(createAgent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
+})
+
+
+describe('Agent creation default inheritance', () => {
+  async function openInheritedWizard(name: string) {
+    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'cfg-codebuddy' }, gitBindings: { items: [{ credentialId: 'default-gh' }], preferredCredentialId: 'default-gh' }, files: [], mcp: [], env: {}, layout: {} })
+    listCredentials.mockResolvedValue({ items: [...defaultCredentials, { id: 'default-gh', name: 'Default GitHub', type: 'git', purpose: 'git', provider: 'github', host: 'https://github.com', configured: true }] })
+    const wrapper = mountWizard(); await flushPromises(); fillName(name)
+    buttonByText('下一步').click(); await flushPromises()
+    return wrapper
+  }
+  it('creates with independently inherited model and Git defaults without posting an empty model ID', async () => {
+    const wrapper = await openInheritedWizard('inherited-agent')
+    const inheritModel = document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!
+    inheritModel.click(); await flushPromises()
+    expect(inheritModel.getAttribute('aria-checked')).toBe('true')
+    const model = document.body.querySelector<HTMLButtonElement>('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]')!
+    expect(model.textContent).toContain('codebuddy日常模型'); expect(model.disabled).toBe(true)
+    buttonByText('下一步').click(); await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-git"]')!.click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="git-credential-row-default-gh"]')).toBeTruthy()
+    expect(document.body.querySelector<HTMLButtonElement>('[data-testid="git-remove-default-gh"]')!.disabled).toBe(true)
+    buttonByText('下一步').click(); await flushPromises()
+    expect(document.body.textContent).toContain('codebuddy日常模型')
+    expect(document.body.textContent).toContain('Default GitHub')
+    buttonByText('创建并进入 Studio').click(); await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
+    const payload = createAgent.mock.calls.at(-1)![0] as Record<string, unknown>
+    expect(payload).toMatchObject({ inheritModel: true, inheritGit: true })
+    expect(payload).not.toHaveProperty('modelBinding')
+    wrapper.unmount()
+  })
+  it('retains a local model when toggling inheritance and makes Git skip explicitly disable inheritance', async () => {
+    const wrapper = await openInheritedWizard('skip-inherited-git')
+    await chooseModel('cfg-cursor')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')?.textContent).toContain('codebuddy日常模型')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')?.textContent).toContain('cursor日常模型')
+    buttonByText('下一步').click(); await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-git"]')!.click(); await flushPromises()
+    buttonByText('跳过').click(); await flushPromises()
+    buttonByText('创建并进入 Studio').click(); await vi.waitFor(() => expect(createAgent).toHaveBeenCalled())
+    expect(createAgent.mock.calls.at(-1)![0]).toMatchObject({ inheritModel: false, inheritGit: false, modelBinding: { kind: 'configuration', configurationId: 'cfg-cursor' }, gitBindings: { items: [] } })
+    wrapper.unmount()
+  })
+  it('blocks inheritance when defaults have no named model and allows selecting a local model instead', async () => {
+    const wrapper = mountWizard(); await flushPromises(); fillName('missing-default')
+    buttonByText('下一步').click(); await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
+    expect(buttonByText('下一步').disabled).toBe(true)
+    expect(document.body.textContent).toContain('请先在 Agent 默认配置中选择模型')
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
+    await chooseModel('cfg-cursor'); expect(buttonByText('下一步').disabled).toBe(false)
+    wrapper.unmount()
+  })
+  it('recovers inherited-model navigation when the defaults retry succeeds', async () => {
+    getSharedAgentConfig.mockRejectedValue(new Error('defaults unavailable'))
+    const wrapper = mountWizard(); await flushPromises(); fillName('retry-defaults')
+    buttonByText('下一步').click(); await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-testid="agent-inherit-model"]')!.click(); await flushPromises()
+    expect(buttonByText('下一步').disabled).toBe(true)
+    getSharedAgentConfig.mockResolvedValue({ acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cfg-cursor' }, files: [], mcp: [], env: {}, layout: {} })
+    buttonByText('重试').click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="model-binding-configuration-select"]')?.textContent).toContain('cursor日常模型')
+    expect(buttonByText('下一步').disabled).toBe(false)
+    buttonByText('下一步').click(); await flushPromises()
+    expect(document.body.querySelector('[data-testid="agent-inherit-git"]')).toBeTruthy()
+    wrapper.unmount()
+  })
+
 })

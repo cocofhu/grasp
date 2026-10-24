@@ -5,16 +5,21 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
+	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 
 	"github.com/gin-gonic/gin"
 )
 
 type sharedAgentBody struct {
-	Files  []services.AgentFile `json:"files"`
-	MCP    []services.MCPServer `json:"mcp"`
-	Env    map[string]string    `json:"env"`
-	Layout services.AgentLayout `json:"layout"`
+	AcpBackend   string                `json:"acpBackend"`
+	ModelBinding *modelrouting.Binding `json:"modelBinding"`
+	GitBindings  *models.GitBindings   `json:"gitBindings"`
+	Files        []services.AgentFile  `json:"files"`
+	MCP          []services.MCPServer  `json:"mcp"`
+	Env          map[string]string     `json:"env"`
+	Layout       services.AgentLayout  `json:"layout"`
 }
 
 func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
@@ -31,6 +36,7 @@ func sharedAgentDTO(cfg services.SharedAgentConfig) gin.H {
 		mcp = []services.MCPServer{}
 	}
 	dto := gin.H{
+		"acpBackend": cfg.AcpBackend, "modelBinding": cfg.ModelBinding, "gitBindings": cfg.GitBindings,
 		"files":  files,
 		"mcp":    mcp,
 		"env":    env,
@@ -60,6 +66,7 @@ func (h *Handlers) PutSharedAgent(c *gin.Context) {
 		return
 	}
 	cfg := services.SharedAgentConfig{
+		AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding, GitBindings: b.GitBindings,
 		Files:  b.Files,
 		MCP:    b.MCP,
 		Env:    b.Env,

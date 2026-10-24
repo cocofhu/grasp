@@ -73,9 +73,10 @@ type Options struct {
 	// CredentialReferences resolves ${credential:<id>} placeholders in MCP
 	// headers/command/env without exposing values as global environment keys.
 	CredentialReferences func() map[string]string
-	// SelectedCredential resolves one coding-backend or Git credential the
-	// Agent picked. A missing id returns ok=false and must not fall back.
+	// SelectedCredential resolves explicitly selected extra environment credentials.
 	SelectedCredential SelectedCredentialFunc
+	// GitCredential also resolves the credential host for repository authorization.
+	GitCredential GitCredentialFunc
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
@@ -97,10 +98,13 @@ type Options struct {
 // SharedAgentView is the runtime-facing slice of the shared Agent config
 // needed for extend→overlay (avoids importing services into every call site).
 type SharedAgentView struct {
-	MCP     []SharedMCPView
-	Env     map[string]string
-	Layout  SharedLayoutView
-	WorkDir string // host path to shared workspace/, empty if none
+	AcpBackend   string
+	ModelBinding *modelrouting.Binding
+	GitBindings  *models.GitBindings
+	MCP          []SharedMCPView
+	Env          map[string]string
+	Layout       SharedLayoutView
+	WorkDir      string // host path to shared workspace/, empty if none
 }
 
 // SharedMCPView mirrors one MCP entry from shared agent.json.

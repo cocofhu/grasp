@@ -90,7 +90,9 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://mcp.local",
-		SelectedCredential: func(string) (string, string, bool) { return "GITLAB_TOKEN", "tok", true },
+		GitCredential: func(string) (GitCredentialValue, bool) {
+			return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "tok", Host: "https://gitlab.com"}, true
+		},
 	}).(*acpProvider)
 	req := NodeReq{RunID: "r1", Token: "t1", NodeID: "n1", Config: map[string]any{"agent_profile": "a"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
 

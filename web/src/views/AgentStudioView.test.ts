@@ -35,6 +35,7 @@ vi.mock('@/lib/api/api', async () => {
     ...actual,
     api: {
       ...actual.api,
+      getSharedAgentConfig: async () => ({ files: [], mcp: [], env: {}, layout: {} }),
       listCredentials: async () => ({ items: [] }),
       listModelConfigurations: async () => ({ items: [] }),
       listModelConnections: async () => ({ items: [] }),
@@ -158,10 +159,9 @@ describe('AgentStudio region UI', () => {
     await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
 
     expect(wrapper.text()).toContain('现有特殊配置：ioa')
-    expect(wrapper.find('[role="radiogroup"]').exists()).toBe(true)
-    const siteRadios = wrapper.get('[data-testid="coding-tool-site"]').findAll('button[role="radio"]')
-    expect(siteRadios).toHaveLength(2)
-    expect(siteRadios.every((item) => item.attributes('aria-checked') === 'false')).toBe(true)
+    const trigger = wrapper.get('[data-testid="agent-model-region"] [data-test="app-select-trigger"]')
+    expect(trigger.text()).not.toContain('国内站')
+    expect(trigger.text()).not.toContain('国际站')
   })
 
   it('preserves special CodeBuddy region when saving without site interaction', async () => {
@@ -191,7 +191,10 @@ describe('AgentStudio region UI', () => {
     await flushPromises()
     await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
 
-    await wrapper.findAll('button').find((item) => item.text().trim().startsWith('国内站'))!.trigger('click')
+    await wrapper.get('[data-testid="agent-model-region"] [data-test="app-select-trigger"]').trigger('click')
+    await flushPromises()
+    document.body.querySelector<HTMLButtonElement>('[data-test="app-select-option-internal"]')!.click()
+    await flushPromises()
     await wrapper.findAll('button').find((item) => item.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(mocks.saveAgent).toHaveBeenCalledWith(

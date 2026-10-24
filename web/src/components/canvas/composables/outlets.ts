@@ -7,6 +7,7 @@ export type { AgentCapabilities }
 
 /** The subset of an Agent the canvas needs. */
 export interface CanvasAgent {
+  inheritModel?: boolean
   modelBinding?: import('@/lib/api/apiTypes').ModelBinding
   name: string
   capabilities?: AgentCapabilities | null

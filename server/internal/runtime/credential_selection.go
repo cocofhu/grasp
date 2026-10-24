@@ -10,6 +10,17 @@ import (
 // ok is false when the id is unknown, cleared, or has no secret.
 type SelectedCredentialFunc func(credentialID string) (envKey, value string, ok bool)
 
+// GitCredentialValue resolves the selected secret and its allowed host from the
+// same stored row. The host is an authority boundary, not an Agent override.
+type GitCredentialValue struct {
+	EnvKey string `json:"envKey"`
+	Secret string `json:"-"`
+	Host   string `json:"host,omitempty"`
+}
+
+// GitCredentialFunc returns one selected Git/SSH credential with its metadata.
+type GitCredentialFunc func(credentialID string) (GitCredentialValue, bool)
+
 // CredentialEnvKeyForBackend is the workspace-credential env key for a coding
 // backend. OpenCode is selected through its own resolver and returns empty.
 func CredentialEnvKeyForBackend(backend string) string {

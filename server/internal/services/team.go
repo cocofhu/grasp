@@ -226,7 +226,7 @@ func (s *TeamService) normalizeRequest(req TeamBootstrapRequest) (normalizedTeam
 	if err != nil {
 		return normalizedTeamReq{}, err
 	}
-	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveSelectedValue); err != nil {
+	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
 		return normalizedTeamReq{}, err
 	}
 	mcp := req.MCP
@@ -545,7 +545,7 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 	if err != nil {
 		return Agent{}, err
 	}
-	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveSelectedValue); err != nil {
+	if _, err := runtime.ResolveGitBindings(bindings, s.Credentials.ResolveGitValue); err != nil {
 		return Agent{}, err
 	}
 	tmpl.GitBindings = bindings

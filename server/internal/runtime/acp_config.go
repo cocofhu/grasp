@@ -103,6 +103,8 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
+	InheritModel       bool                  `json:"inheritModel"`
+	InheritGit         bool                  `json:"inheritGit"`
 	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
@@ -149,6 +151,22 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	agent := c.agentConfig(models.AgentProfile(req.Config))
 	shared, ok := c.sharedView(req)
 	if !ok {
+		if agent.InheritModel || agent.InheritGit {
+			if c.opts.SharedAgent != nil {
+				shared = c.opts.SharedAgent()
+			}
+			if agent.InheritModel {
+				if agent.Layout.ConfigRoot == "" || agent.Layout.ConfigRoot == ResolveConfigRoot(NormalizeBackend(agent.AcpBackend), "") {
+					agent.Layout.ConfigRoot = ResolveConfigRoot(NormalizeBackend(shared.AcpBackend), "")
+				}
+				agent.ModelBinding, agent.AcpBackend = shared.ModelBinding, shared.AcpBackend
+				agent.Env = envauth.OverlayEnv(nil, agent.Env)
+				ApplyInheritedModelEnv(agent.Env, shared.Env)
+			}
+			if agent.InheritGit {
+				agent.GitBindings = shared.GitBindings
+			}
+		}
 		return agent
 	}
 	return overlayAgentFile(shared, agent)
@@ -156,8 +174,17 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 
 func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	out := agent
+	if agent.InheritModel {
+		out.ModelBinding, out.AcpBackend = shared.ModelBinding, shared.AcpBackend
+	}
+	if agent.InheritGit {
+		out.GitBindings = shared.GitBindings
+	}
 	// Env: shared base, Agent overlay.
 	out.Env = envauth.OverlayEnv(ModelIndependentEnv(shared.Env), agent.Env)
+	if agent.InheritModel {
+		ApplyInheritedModelEnv(out.Env, shared.Env)
+	}
 	// MCP by name
 	byName := map[string]agentMCP{}
 	order := make([]string, 0, len(shared.MCP)+len(agent.MCP))
@@ -189,6 +216,9 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" && strings.TrimSpace(shared.Layout.WorkspaceDir) != "" {
 		out.Layout.WorkspaceDir = shared.Layout.WorkspaceDir
 	}
+	if agent.InheritModel && (agent.Layout.ConfigRoot == "" || agent.Layout.ConfigRoot == ResolveConfigRoot(NormalizeBackend(agent.AcpBackend), "")) {
+		out.Layout.ConfigRoot = ResolveConfigRoot(NormalizeBackend(out.AcpBackend), "")
+	}
 	return out
 }
 
@@ -216,7 +246,7 @@ func (c *acpProvider) gitLabURL(req NodeReq) string {
 
 func (c *acpProvider) selectedGitLabCredential(req NodeReq) (sandbox.GitCredential, bool) {
 	agent := c.effectiveAgent(req)
-	credentials, err := ResolveGitBindings(agent.GitBindings, c.opts.SelectedCredential)
+	credentials, err := ResolveGitBindings(agent.GitBindings, c.opts.GitCredential)
 	if err != nil {
 		return sandbox.GitCredential{}, false
 	}

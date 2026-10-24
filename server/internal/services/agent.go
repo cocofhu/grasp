@@ -32,10 +32,13 @@ import (
 // mcp.json on top, and injects the env vars. Files the agent authors are loaded
 // natively by the in-container ACP agent.
 type AgentService struct {
-	root                 string
-	mu                   sync.Mutex
-	Vcs                  *WorkspaceVcsService
-	validateModelBinding func(string, *modelrouting.Binding) error
+	root                      string
+	mu                        sync.Mutex
+	Vcs                       *WorkspaceVcsService
+	validateModelBinding      func(string, *modelrouting.Binding) error
+	resolveModelConfiguration func(*modelrouting.Binding) (string, error)
+	validateGitBindings       func(*models.GitBindings) error
+	shared                    *SharedAgentService
 }
 
 // NewAgentService builds the service. It ships no preset agents (users create
@@ -164,6 +167,8 @@ func DefaultConfigRootForBackend(backend string) string {
 // Agent is a reusable, user-defined Agent identity: a working directory (file
 // tree) plus the MCP servers and environment variables it runs with.
 type Agent struct {
+	InheritModel       bool                  `json:"inheritModel"`
+	InheritGit         bool                  `json:"inheritGit"`
 	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
 	Name               string                `json:"name"`
@@ -188,6 +193,8 @@ type Agent struct {
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
+	InheritModel       bool                      `json:"inheritModel,omitempty"`
+	InheritGit         bool                      `json:"inheritGit,omitempty"`
 	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
@@ -250,6 +257,7 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		env = map[string]string{}
 	}
 	return Agent{
+		InheritModel: cfg.InheritModel, InheritGit: cfg.InheritGit,
 		Name:               name,
 		GitBindings:        cfg.GitBindings,
 		CredentialBindings: cfg.CredentialBindings,
@@ -429,30 +437,54 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 			return agentWrite{}, fmt.Errorf("%w: invalid credential binding key %q", ErrInvalidAgent, key)
 		}
 	}
-	backend, err := ParseAcpBackend(a.AcpBackend)
-	if err != nil {
-		return agentWrite{}, err
-	}
 	if a.ModelBinding != nil {
 		if err := modelrouting.ValidateConfigurationReference(a.ModelBinding); err != nil {
 			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
 		}
-		if s.validateModelBinding != nil {
-			if err := s.validateModelBinding(backend, a.ModelBinding); err != nil {
-				return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
-			}
-		}
 		a.Env = withoutModelRoutingEnv(a.Env)
+	}
+	if !a.InheritModel && a.ModelBinding != nil && s.resolveModelConfiguration != nil {
+		previousBackend := a.AcpBackend
+		a.AcpBackend, err = s.resolveModelConfiguration(a.ModelBinding)
+		if err != nil {
+			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
+		if a.AcpBackend != previousBackend && a.Layout.ConfigRoot == DefaultConfigRootForBackend(previousBackend) {
+			a.Layout.ConfigRoot = DefaultConfigRootForBackend(a.AcpBackend)
+		}
+	}
+	effective := s.Effective(a)
+	if a.InheritModel && effective.ModelBinding == nil {
+		return agentWrite{}, fmt.Errorf("%w: workspace default model is not configured", ErrInvalidAgent)
+	}
+	backend, err := ParseAcpBackend(effective.AcpBackend)
+	if err != nil {
+		return agentWrite{}, err
+	}
+	if effective.ModelBinding != nil && s.validateModelBinding != nil {
+		if err := s.validateModelBinding(backend, effective.ModelBinding); err != nil {
+			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
+	}
+	if s.validateGitBindings != nil {
+		if err := s.validateGitBindings(effective.GitBindings); err != nil {
+			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
+	}
+	storedBackend := backend
+	if a.InheritModel {
+		storedBackend = NormalizeAcpBackend(a.AcpBackend)
 	}
 	layout := a.Layout.withDefaults()
 	if strings.TrimSpace(a.Layout.ConfigRoot) == "" {
-		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
+		layout.ConfigRoot = DefaultConfigRootForBackend(storedBackend)
 	}
 	cfg := agentConfig{
+		InheritModel: a.InheritModel, InheritGit: a.InheritGit,
 		GitBindings:        a.GitBindings,
 		CredentialBindings: a.CredentialBindings,
 		ModelBinding:       a.ModelBinding,
-		AcpBackend:         backend,
+		AcpBackend:         storedBackend,
 		MCP:                a.MCP,
 		Env:                a.Env,
 		Layout:             &layout,

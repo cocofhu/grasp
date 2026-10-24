@@ -21,6 +21,8 @@ export type DraftMCP = {
 }
 export type DraftFile = { path: string; content: string }
 export type AgentStudioDraft = {
+  inheritModel?: boolean
+  inheritGit?: boolean
   gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   name: string
@@ -116,6 +118,8 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
+    ...(a.inheritModel ? { inheritModel: true } : {}),
+    ...(a.inheritGit ? { inheritGit: true } : {}),
     ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
     gitBindings: cloneGitBindings(a.gitBindings || { items: [] }),
@@ -134,7 +138,9 @@ export function toDraft(a: Agent): AgentStudioDraft {
 
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
   return {
-    ...(d.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
+    ...(d.inheritModel !== undefined ? { inheritModel: d.inheritModel } : {}),
+    ...(d.inheritGit !== undefined ? { inheritGit: d.inheritGit } : {}),
+    ...(d.modelBinding && (!d.inheritModel || d.modelBinding.configurationId?.trim()) ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
     name: d.name,
     gitBindings: cloneGitBindings(d.gitBindings || { items: [] }),
     ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !GIT_AUTH_ENV_KEYS.has(key) && !isSecretEnvKey(key))) } : {}),

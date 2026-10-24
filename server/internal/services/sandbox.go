@@ -41,6 +41,7 @@ type SandboxService struct {
 	credentialReferences func() map[string]string
 	modelBinding         func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	selectedCredential   runtime.SelectedCredentialFunc
+	gitCredential        runtime.GitCredentialFunc
 	chatTimeout          time.Duration
 	// ttl / runTTL / max are runtime-tunable via the settings page, so they are
 	// held atomically (read from many sites, some already under s.mu) rather
@@ -128,9 +129,11 @@ type SandboxOptions struct {
 	// CredentialReferences resolves ${credential:<id>} values for MCP
 	// templates without placing those values in the process environment.
 	CredentialReferences func() map[string]string
-	// SelectedCredential resolves an explicitly selected Git or MCP credential.
+	// SelectedCredential resolves an explicitly selected extra environment credential.
 	// A missing id returns ok=false and must not fall back to another row.
 	SelectedCredential runtime.SelectedCredentialFunc
+	// GitCredential resolves the secret and host of a selected Git authorization.
+	GitCredential runtime.GitCredentialFunc
 }
 
 // SandboxView is the API shape: the persisted record plus live-derived flags.
@@ -175,6 +178,7 @@ func NewSandboxService(db *gorm.DB, mgr *sandbox.Manager, skills *AgentService, 
 		credentialReferences: opts.CredentialReferences,
 		modelBinding:         opts.ModelBinding,
 		selectedCredential:   opts.SelectedCredential,
+		gitCredential:        opts.GitCredential,
 		chatTimeout:          opts.ChatTimeout,
 		live:                 map[uint]*liveSandbox{},
 		runActive:            map[string]bool{},
@@ -205,7 +209,7 @@ func (s *SandboxService) SetSharedAgent(shared *SharedAgentService) {
 // effectiveAgent merges shared workspace defaults without granting authorization.
 func (s *SandboxService) effectiveAgent(agent Agent) Agent {
 	if s == nil || s.shared == nil {
-		return agent
+		return ExtendOverlay(SharedAgentConfig{}, agent)
 	}
 	return ExtendOverlay(s.shared.Get(), agent)
 }

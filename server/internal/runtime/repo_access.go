@@ -14,9 +14,9 @@ type RepoCredentialsFunc func(repoIDs []string) []sandbox.RepoCredential
 
 // RepoCredentialsFor turns registered repositories into per-repository Git
 // credentials. A repository with no access method of its own, a URL that does
-// not fit the method, or a selected credential that is missing or of another
-// kind is skipped and keeps using the host-wide credential.
-func RepoCredentialsFor(projects []models.Project, resolve SelectedCredentialFunc) []sandbox.RepoCredential {
+// not fit the method, or a selected credential that is missing, of another kind
+// or bound to another host is skipped without forwarding its secret.
+func RepoCredentialsFor(projects []models.Project, resolve GitCredentialFunc) []sandbox.RepoCredential {
 	if resolve == nil {
 		return nil
 	}
@@ -27,29 +27,24 @@ func RepoCredentialsFor(projects []models.Project, resolve SelectedCredentialFun
 		if !repoURLFitsKind(url, kind) {
 			continue
 		}
-		secret, ok := resolveKind(resolve, p.GitCredentialID, CredentialEnvKeyForGit(kind))
-		if !ok {
+		value, ok := resolve(p.GitCredentialID)
+		if !ok || value.EnvKey != CredentialEnvKeyForGit(kind) || strings.TrimSpace(value.Secret) == "" {
 			continue
 		}
-		rc := sandbox.RepoCredential{URL: url, Kind: kind, Secret: secret}
+		if kind != sandbox.RepoCredentialSSH {
+			if _, err := gitScopeForHost(value.Host, url); err != nil {
+				continue
+			}
+		}
+		rc := sandbox.RepoCredential{URL: url, Kind: kind, Secret: value.Secret}
 		if kind == sandbox.RepoCredentialSSH {
-			rc.KnownHosts, _ = resolveKind(resolve, p.SshHostsCredentialID, envauth.EnvGitSSHKnownHosts)
+			if hosts, ok := resolve(p.SshHostsCredentialID); ok && hosts.EnvKey == envauth.EnvGitSSHKnownHosts {
+				rc.KnownHosts = hosts.Secret
+			}
 		}
 		out = append(out, rc)
 	}
 	return out
-}
-
-func resolveKind(resolve SelectedCredentialFunc, id, expected string) (string, bool) {
-	id = strings.TrimSpace(id)
-	if id == "" || expected == "" {
-		return "", false
-	}
-	key, value, ok := resolve(id)
-	if !ok || strings.TrimSpace(key) != expected || strings.TrimSpace(value) == "" {
-		return "", false
-	}
-	return value, true
 }
 
 func repoURLFitsKind(url, kind string) bool {

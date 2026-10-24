@@ -40,7 +40,7 @@ func (s *SandboxService) currentBindingFingerprints(agent Agent) (model, git str
 	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.ModelBinding.ConfigurationID) == "" {
 		return "", "", fmt.Errorf("请先为 Agent 选择模型配置")
 	}
-	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.selectedCredential)
+	credentials, err := runtime.ResolveGitBindings(agent.GitBindings, s.gitCredential)
 	if err != nil {
 		return "", "", err
 	}

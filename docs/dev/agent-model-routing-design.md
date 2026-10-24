@@ -35,7 +35,11 @@ Agent 向导使用“基础信息 → 工具与模型 → Git → 确认创建�
 
 ## 多个 Git 授权
 
-`gitBindings.items` 保存 credentialId、可选 scope、SSH known-hosts 凭据引用；preferredCredentialId 必须属于非空集合。缺省和空列表均表示没有 Git 授权。
+`gitBindings.items` 保存 credentialId、可选 scope、SSH known-hosts 凭据引用；preferredCredentialId 必须属于非空集合。未开启 Git 继承时，缺省和空列表均表示没有 Git 授权。
+
+GitHub / GitLab 凭据保存 `host`，默认分别为 `https://github.com` / `https://gitlab.com`，也可填写自建站点及端口。Host 与 Token 在同一凭据中管理，不使用独立的 GitLab URL 凭据。Agent scope 只能细化同一 Host 内的仓库，不能把凭据用于另一站点或改变协议。
+
+Agent 默认配置可以保存当前的 `modelBinding.configurationId` 和 `gitBindings`。每个 Agent 通过 `inheritModel`、`inheritGit` 分别明确选择是否继承；缺省为关闭，关闭时使用本地选择，开启时动态使用默认项且不复制密钥。默认模型的 CLI 由模型配置确定。缺失或失效的默认引用报错，不回退到本地或另一账号；默认项变化也参与沙箱指纹校验及共享节点切换。
 
 所选授权全部放入沙箱受限文件，禁止用全局 Token 环境代替用户选择。按协议、主机和仓库路径选择一个身份，仓库范围优先于主机范围；同范围优先首选，否则按选择顺序。认证失败不尝试其他账号。所选凭据失效时明确报错。
 

@@ -12,7 +12,7 @@ import (
 
 // ResolveGitBindings resolves every explicitly selected authorization. A
 // missing/revoked selection is an error; another account is never substituted.
-func ResolveGitBindings(bindings *models.GitBindings, resolve SelectedCredentialFunc) ([]sandbox.GitCredential, error) {
+func ResolveGitBindings(bindings *models.GitBindings, resolve GitCredentialFunc) ([]sandbox.GitCredential, error) {
 	selection, err := models.NormalizeGitBindings(bindings)
 	if err != nil {
 		return nil, err
@@ -22,7 +22,8 @@ func ResolveGitBindings(bindings *models.GitBindings, resolve SelectedCredential
 		if resolve == nil {
 			return nil, fmt.Errorf("Git authorization %q cannot be resolved", item.CredentialID)
 		}
-		key, secret, ok := resolve(item.CredentialID)
+		value, ok := resolve(item.CredentialID)
+		key, secret := value.EnvKey, value.Secret
 		kind := gitKindForEnvKey(key)
 		if !ok || strings.TrimSpace(secret) == "" || kind == "" {
 			return nil, fmt.Errorf("Git authorization %q is missing, cleared, revoked, or has the wrong kind", item.CredentialID)
@@ -34,17 +35,46 @@ func ResolveGitBindings(bindings *models.GitBindings, resolve SelectedCredential
 		if scope.scheme != "" && (kind == sandbox.RepoCredentialSSH) != (scope.scheme == "ssh") {
 			return nil, fmt.Errorf("Git authorization %q has an incompatible scope protocol", item.CredentialID)
 		}
-		credential := sandbox.GitCredential{ID: item.CredentialID, Kind: kind, Scope: item.Scope, Secret: secret, Preferred: item.CredentialID == selection.PreferredCredentialID}
+		effectiveScope := item.Scope
+		if kind != sandbox.RepoCredentialSSH {
+			effectiveScope, err = gitScopeForHost(value.Host, item.Scope)
+			if err != nil {
+				return nil, fmt.Errorf("Git authorization %q scope must use the credential host", item.CredentialID)
+			}
+		}
+		credential := sandbox.GitCredential{ID: item.CredentialID, Kind: kind, Scope: effectiveScope, Secret: secret, Preferred: item.CredentialID == selection.PreferredCredentialID}
 		if item.SshHostsCredentialID != "" {
-			key, hosts, ok := resolve(item.SshHostsCredentialID)
-			if kind != sandbox.RepoCredentialSSH || !ok || key != envauth.EnvGitSSHKnownHosts || strings.TrimSpace(hosts) == "" {
+			hosts, ok := resolve(item.SshHostsCredentialID)
+			if kind != sandbox.RepoCredentialSSH || !ok || hosts.EnvKey != envauth.EnvGitSSHKnownHosts || strings.TrimSpace(hosts.Secret) == "" {
 				return nil, fmt.Errorf("Git known-hosts authorization %q is unavailable or has the wrong kind", item.SshHostsCredentialID)
 			}
-			credential.KnownHosts = hosts
+			credential.KnownHosts = hosts.Secret
 		}
 		out = append(out, credential)
 	}
 	return out, nil
+}
+
+func gitScopeForHost(host, scope string) (string, error) {
+	if strings.TrimSpace(host) == "" {
+		return "", models.ErrGitCredentialHost
+	}
+	origin, err := models.NormalizeGitCredentialHost("", host)
+	if err != nil {
+		return "", err
+	}
+	authority := parseGitScope(origin)
+	narrow := parseGitScope(scope)
+	if scope == "" {
+		return origin, nil
+	}
+	if narrow.host != authority.host || narrow.scheme != "" && narrow.scheme != authority.scheme {
+		return "", models.ErrGitCredentialHost
+	}
+	if narrow.path == "" {
+		return origin, nil
+	}
+	return origin + "/" + narrow.path, nil
 }
 
 func gitKindForEnvKey(key string) string {
@@ -76,7 +106,7 @@ func IsGitAuthorizationEnvKey(key string) bool {
 // ApplyGitBindings runs after generic credential bindings and clears all
 // global Git authentication, even when the selection is omitted or invalid. Secrets are
 // returned only for the sandbox's file catalog, never as environment values.
-func ApplyGitBindings(env, creds map[string]string, bindings *models.GitBindings, resolve SelectedCredentialFunc) ([]sandbox.GitCredential, error) {
+func ApplyGitBindings(env, creds map[string]string, bindings *models.GitBindings, resolve GitCredentialFunc) ([]sandbox.GitCredential, error) {
 	for _, values := range []map[string]string{env, creds} {
 		for key := range values {
 			if IsGitAuthorizationEnvKey(key) {

@@ -29,7 +29,7 @@ func gitSelection(ids ...string) *models.GitBindings {
 	return &models.GitBindings{Items: items, PreferredCredentialID: preferred}
 }
 
-func selectedGitTestValue(id string) (string, string, bool) {
+func selectedGitTestValue(id string) (GitCredentialValue, bool) {
 	values := map[string][2]string{
 		"gh": {envauth.EnvGitHubToken, "gh-secret"}, "gh2": {envauth.EnvGitHubToken, "gh2-secret"},
 		"gl": {envauth.EnvGitLabToken, "gl-secret"}, "ssh": {envauth.EnvGitSSHPrivateKey, "SSH\nPRIVATE KEY"},
@@ -37,7 +37,13 @@ func selectedGitTestValue(id string) (string, string, bool) {
 		"empty": {envauth.EnvGitHubToken, " "}, "newline": {envauth.EnvGitHubToken, "token\nother"}, "nul": {envauth.EnvGitLabToken, "token\x00other"},
 	}
 	row, ok := values[id]
-	return row[0], row[1], ok
+	host := ""
+	if row[0] == envauth.EnvGitHubToken {
+		host = "https://github.com"
+	} else if row[0] == envauth.EnvGitLabToken {
+		host = "https://gitlab.com"
+	}
+	return GitCredentialValue{EnvKey: row[0], Secret: row[1], Host: host}, ok
 }
 
 func TestGitBindingsResolveAllAndClearGlobalAuthentication(t *testing.T) {
@@ -139,7 +145,7 @@ func TestGitBindingsScopeRouting(t *testing.T) {
 
 func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 	root := writeAgent(t, "dev", `{"acpBackend":"cursor","gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com/team/repo"},{"credentialId":"gh"}],"preferredCredentialId":"gh"},"credentialBindings":{"GITLAB_TOKEN":"gl"},"env":{"GITLAB_URL":"https://unselected"}}`)
-	p := newACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, SelectedCredential: selectedGitTestValue, ModelBinding: testModelBinding}).(*acpProvider)
+	p := newACPProvider(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, GitCredential: selectedGitTestValue, ModelBinding: testModelBinding}).(*acpProvider)
 	req := NodeReq{RunID: "git-run", NodeID: "n", Token: "token", Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"repo","url":"https://gitlab.com/team/repo.git"}]`, "GITLAB_URL": "https://other"}}
 	spec, err := p.spec(req)
 	if err != nil {
@@ -176,7 +182,7 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 			t.Fatalf("unsafe/wrong MR script: %s", script)
 		}
 	}
-	p.opts.SelectedCredential = func(string) (string, string, bool) { return "", "", false }
+	p.opts.GitCredential = func(string) (GitCredentialValue, bool) { return GitCredentialValue{}, false }
 	if _, err := p.spec(req); err == nil {
 		t.Fatal("invalid selected authorization did not block workflow sandbox")
 	}
@@ -187,7 +193,7 @@ func TestGitBindingsWorkflowSpecAndMRUseSelectedCatalog(t *testing.T) {
 
 func TestGitBindingsSharedWorkflowReprimesAllSelectedAndClearsPreviousAgent(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	h.p.opts.SelectedCredential = selectedGitTestValue
+	h.p.opts.GitCredential = selectedGitTestValue
 	root := h.p.opts.ProfilesRoot
 	write := func(name string, bindings *models.GitBindings) {
 		t.Helper()

@@ -5,6 +5,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 func TestResolveRepoCredentialsKeepsSelectionOrder(t *testing.T) {
@@ -17,8 +18,8 @@ func TestResolveRepoCredentialsKeepsSelectionOrder(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	resolve := func(id string) (string, string, bool) {
-		return envauth.EnvGitHubToken, "tok-" + id, true
+	resolve := func(id string) (runtime.GitCredentialValue, bool) {
+		return runtime.GitCredentialValue{EnvKey: envauth.EnvGitHubToken, Secret: "tok-" + id, Host: "https://github.com"}, true
 	}
 	got := ResolveRepoCredentials(db, []string{"p2", "deleted", "p1"}, resolve)
 	if len(got) != 2 || got[0].Secret != "tok-gh2" || got[1].Secret != "tok-gh1" {

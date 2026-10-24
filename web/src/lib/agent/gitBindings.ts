@@ -1,5 +1,5 @@
 import type { AgentGitBindings, CredentialItem } from '@/lib/api/api'
-import { kindOfItem } from '@/lib/workspace/credentialKinds'
+import { defaultGitCredentialHost, normalizeGitCredentialHost, kindOfItem } from '@/lib/workspace/credentialKinds'
 import { credentialUsable } from './modelRouting'
 
 export const GIT_AUTH_ENV_KEYS = new Set(['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS', 'GITHUB_URL', 'GITLAB_URL', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GLAB_TOKEN', 'GITLAB_ACCESS_TOKEN'])
@@ -15,6 +15,20 @@ export function gitCredentialKind(item?: CredentialItem) {
 
 export function usableGitCredential(item?: CredentialItem): boolean {
   return !!item && !!gitCredentialKind(item) && credentialUsable(item)
+}
+
+/** Optional Agent scope can narrow a Git credential, never change its origin. */
+export function validCredentialGitScope(scope: string, credential?: CredentialItem): boolean {
+  const kind = gitCredentialKind(credential)?.id
+  if (!validGitScope(scope, kind)) return false
+  if (!scope.trim() || kind === 'ssh_key') return true
+  const host = normalizeGitCredentialHost(credential?.host || defaultGitCredentialHost(credential?.provider || ''))
+  if (!host) return false
+  try {
+    const expected = new URL(host)
+    const scoped = new URL(scope.includes('://') ? scope : `${expected.protocol}//${scope}`)
+    return scoped.origin === expected.origin
+  } catch { return false }
 }
 
 /** Save the explicit selection; credentials are never inferred from other layers. */

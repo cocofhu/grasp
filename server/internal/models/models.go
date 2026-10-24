@@ -41,6 +41,7 @@ type Credential struct {
 	Issuer         string         `json:"issuer,omitempty"`
 	ToolID         string         `json:"toolId,omitempty"`
 	SecretKind     string         `json:"secretKind,omitempty"`
+	Host           string         `json:"host,omitempty"`
 	SecretRevision uint64         `json:"secretRevision"`
 	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
 	Provider       string         `json:"provider,omitempty"`

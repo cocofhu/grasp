@@ -5,24 +5,24 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import WorkspaceSharedAgentPanel from './WorkspaceSharedAgentPanel.vue'
-const mocks = vi.hoisted(() => ({ getSharedAgentConfig: vi.fn(), putSharedAgentConfig: vi.fn(), success: vi.fn(), error: vi.fn() }))
+const mocks = vi.hoisted(() => ({ getSharedAgentConfig: vi.fn(), putSharedAgentConfig: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listCredentials: vi.fn(), listToolCapabilities: vi.fn(), success: vi.fn(), error: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => mocks }))
 const cfg = { files: [], mcp: [], env: { FEATURE: 'on' }, layout: { configRoot: '/config', workspaceDir: '/workspace' } }
 function setup() { return mount(WorkspaceSharedAgentPanel, { global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { AgentFilesPanel: { template: '<div data-testid="files" />' }, AgentEnvPanel: { template: '<div data-testid="env" />' }, AgentMcpPanel: { template: '<div data-testid="mcp" />' } } } }) }
-beforeEach(() => { vi.clearAllMocks(); mocks.getSharedAgentConfig.mockResolvedValue(cfg); mocks.putSharedAgentConfig.mockImplementation(async body => body) })
-describe('generic shared Agent settings', () => {
- it('edits layout and saves only files, MCP, env and layout', async () => {
+beforeEach(() => { vi.clearAllMocks(); mocks.getSharedAgentConfig.mockResolvedValue(cfg); mocks.putSharedAgentConfig.mockImplementation(async body => body); for (const method of ['listModelConfigurations', 'listModelConnections', 'listCredentials', 'listToolCapabilities'] as const) mocks[method].mockResolvedValue({ items: [] }) })
+describe('shared Agent defaults', () => {
+ it('edits layout while keeping model and Git defaults empty until explicitly configured', async () => {
   const w = setup(); await flushPromises(); await w.get('[data-testid="shared-agent-subtab-meta"]').trigger('click')
-  expect(w.find('[data-testid="model-binding-editor"]').exists()).toBe(false)
-  expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(false)
+  expect(w.find('[data-testid="model-binding-editor"]').exists()).toBe(true)
+  expect(w.find('[data-testid="agent-git-credential-picker"]').exists()).toBe(true)
   expect(w.find('[data-testid="coding-tool-picker"]').exists()).toBe(false)
   await w.get('[data-testid="meta-workspace-dir"]').setValue('/srv/work')
   expect((w.vm as any).dirty).toBe(true); expect(await (w.vm as any).save()).toBe(true)
   expect(mocks.putSharedAgentConfig).toHaveBeenCalledWith({ ...cfg, layout: { ...cfg.layout, workspaceDir: '/srv/work' } })
   expect((w.vm as any).dirty).toBe(false); expect(mocks.success).toHaveBeenCalled(); w.unmount()
  })
- it('supports files, MCP and env tabs without a model or Git source editor', async () => {
+ it('supports files, MCP and env alongside runtime defaults', async () => {
   const w = setup(); await flushPromises(); expect(w.find('[data-testid="files"]').exists()).toBe(true)
   await w.get('[data-testid="shared-agent-subtab-mcp"]').trigger('click'); expect(w.find('[data-testid="mcp"]').exists()).toBe(true)
   await w.get('[data-testid="shared-agent-subtab-env"]').trigger('click'); expect(w.find('[data-testid="env"]').exists()).toBe(true); w.unmount()

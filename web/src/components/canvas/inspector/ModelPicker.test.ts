@@ -3,7 +3,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import ModelPicker from './ModelPicker.vue'
-const mocks = vi.hoisted(() => ({ listModelConfigurations: vi.fn(), listModelConnections: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), getSharedAgentConfig: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const key = { id: 'key', name: 'Team key', purpose: 'model_api', configured: true }
 const service = { id: 'service', name: 'API', credentialId: 'key', state: 'active', protocol: 'openai-chat-completions', baseUrl: 'https://model.example', models: [{ id: 'vendor/main' }] }
@@ -11,7 +11,7 @@ const config = { id: 'cfg', name: 'Team model', backend: 'opencode', state: 'act
 function setup(agent: any = { name: 'dev', acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'cfg' } }, credentials: any = [key]) {
  return mount(ModelPicker, { props: { agent, credentials }, global: { plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })], stubs: { RouterLink: true } } })
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.listModelConfigurations.mockResolvedValue({ items: [config] }); mocks.listModelConnections.mockResolvedValue({ items: [service] }) })
+beforeEach(() => { vi.clearAllMocks(); mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'opencode', modelBinding: { kind: 'configuration', configurationId: 'cfg' } }); mocks.listModelConfigurations.mockResolvedValue({ items: [config] }); mocks.listModelConnections.mockResolvedValue({ items: [service] }) })
 describe('workflow model summary', () => {
  it('follows the Agent named model read-only, including its raw model ID and edit destination', async () => {
   const w = setup(); await flushPromises()
@@ -47,4 +47,23 @@ describe('workflow model summary', () => {
   expect(w.get('[data-testid="model-picker-binding-model"]').text()).toContain('Tool default')
   expect(mocks.listModelConnections).not.toHaveBeenCalled(); w.unmount()
  })
+ it('shows an inherited model using shared defaults even when the Agent has no local reference', async () => {
+  const w = setup({ name: 'inherited', acpBackend: 'cursor', inheritModel: true }); await flushPromises()
+  expect(mocks.getSharedAgentConfig).toHaveBeenCalledTimes(1)
+  expect(w.get('[data-testid="model-picker-binding-configuration"]').text()).toBe('Team model')
+  expect(w.get('[data-testid="model-picker-binding-model"]').text()).toBe('vendor/main')
+  expect(w.find('[data-testid="model-picker-binding-error"]').exists()).toBe(false)
+  await w.setProps({ agent: { name: 'inherited', acpBackend: 'cursor', inheritModel: false } }); await flushPromises()
+  expect(w.get('[data-testid="model-picker-binding-error"]').text()).toContain('missing or disabled'); w.unmount()
+ })
+ it('never substitutes a local model when inherited defaults are missing or unavailable', async () => {
+  mocks.getSharedAgentConfig.mockResolvedValueOnce({})
+  const w = setup({ name: 'inherited', acpBackend: 'opencode', inheritModel: true, modelBinding: { kind: 'configuration', configurationId: 'cfg' } }); await flushPromises()
+  expect(w.get('[data-testid="model-picker-binding-error"]').text()).toContain('missing or disabled')
+  expect(w.find('[data-testid="model-picker-binding-configuration"]').exists()).toBe(false); w.unmount()
+  mocks.getSharedAgentConfig.mockRejectedValueOnce(new Error('defaults offline'))
+  const failed = setup({ name: 'inherited', acpBackend: 'cursor', inheritModel: true }); await flushPromises()
+  expect(failed.get('[data-testid="model-picker-binding-error"]').text()).toContain('defaults offline'); failed.unmount()
+ })
+
 })

@@ -4,7 +4,9 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
-- **Unified model bindings (breaking configuration change):** Agent creation, editing, onboarding, team creation and execution now use only a saved model configuration: coding tool + credential + upstream model. Removed legacy Agent credential slots, direct bindings, workspace model defaults and automatic migrations. Existing Agents must select a model configuration before execution. Missing or inactive references fail explicitly; changing a shared model configuration affects all referencing Agents.
+- **Credential hosts and Agent defaults:** GitHub and GitLab credentials now store their own Host, defaulting to the official service, instead of a separate GitLab URL credential. Coding-tool and Git credentials appear in their own sections. Agent defaults can select a named model and several Git authorizations; each Agent can independently inherit either selection. Selecting a model determines the coding CLI without a duplicate tool picker.
+
+- **Unified model bindings (breaking configuration change):** Agent creation, editing, onboarding, team creation and execution now use only a saved model configuration: coding tool + credential + upstream model. Removed legacy Agent credential slots, direct bindings and automatic migrations. Existing Agents must select a model configuration or explicitly inherit the configured default before execution. Missing or inactive references fail explicitly; changing a shared model configuration affects all referencing Agents.
 
 - **Sandbox binding validation:** long-lived sandboxes validate applied model and Git bindings before reuse or another chat turn; changed authorization requires reopening. Messages adapters preserve gateway prefixes and avoid duplicate API-version paths. CodeBuddy model connections support Chat Completions only.
 

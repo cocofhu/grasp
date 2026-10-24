@@ -19,6 +19,8 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
+	InheritModel       bool                      `json:"inheritModel,omitempty"`
+	InheritGit         bool                      `json:"inheritGit,omitempty"`
 	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
@@ -58,6 +60,7 @@ func (s *AgentService) writeAgentToZip(zw *zip.Writer, name, prefix string) erro
 	}
 	layout := a.Layout.withDefaults()
 	export := agentExportJSON{
+		InheritModel: a.InheritModel, InheritGit: a.InheritGit,
 		GitBindings:        a.GitBindings,
 		Name:               name,
 		ModelBinding:       a.ModelBinding,
@@ -251,6 +254,7 @@ func (s *AgentService) applyAgentExport(export agentExportJSON, files []AgentFil
 	}
 
 	agent := Agent{
+		InheritModel: export.InheritModel, InheritGit: export.InheritGit,
 		Name:               targetName,
 		CredentialBindings: export.CredentialBindings,
 		AcpBackend:         export.AcpBackend,

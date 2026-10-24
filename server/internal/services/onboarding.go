@@ -140,6 +140,9 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 func (s *OnboardingService) requireBaselineAgents() error {
 	for _, role := range TeamEngineerTemplates {
 		agent, ok := s.Skills.Get(role.RoleLabelZH)
+		if ok && s.SharedAgent != nil {
+			agent = ExtendOverlay(s.SharedAgent.Get(), agent)
+		}
 		if !ok || agent.ModelBinding == nil {
 			return fmt.Errorf("Agent %s is not configured; complete onboarding first", role.RoleLabelZH)
 		}
@@ -228,7 +231,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
-	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveSelectedValue); err != nil {
+	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveGitValue); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 	loc := onboardingLocaleFor(req.Language)
