@@ -3,6 +3,7 @@
     "dashboard": "New request",
     "workspace": "Workspace navigation",
     "runningRuns": "Running",
+    "autoProcess": "Automatic",
     "runHistory": "History",
     "sectionCollapse": "Collapse {name}",
     "sectionExpand": "Expand {name}",

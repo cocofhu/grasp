@@ -153,6 +153,8 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 
 import enNav from '@/locales/en/nav.json'
 import { endInboxCancelDeparture, inboxCancelDepartureRunId } from '@/lib/inbox/inboxCancelDeparture'
+import { __resetSidebarHandoffForTests, armSidebarHandoff, SIDEBAR_FLIGHT_MS } from '@/lib/inbox/sidebarHandoff'
+import { __resetSidebarSectionsForTests, toggleSection } from '@/lib/shared/sidebarSections'
 import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
 import { useToast } from '@/lib/composables/useToast'
@@ -221,6 +223,8 @@ beforeEach(() => {
   routeState.meta = {}
   knownInboxProcessingLock.value = false
   localStorage.clear()
+  __resetSidebarSectionsForTests()
+  __resetSidebarHandoffForTests()
   resetConversationDrawers()
   useAuth().clearUser()
   apiMocks.updateRunTitle.mockReset()
@@ -302,20 +306,32 @@ describe('AppSidebarNav', () => {
       total: 2,
     })
     await flushPromises()
-    expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(wrapper.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))).toEqual(['run-y'])
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))).toEqual(['run-x'])
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-auto-process"]').text()).toContain('自动过程')
     expect(rowX().attributes('data-motion')).toBeUndefined()
+    expect(rowX().attributes('data-flight')).toBeUndefined()
     expect(rowX().get('icon-stub').attributes('name')).toBe('breath-dot')
     expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
+    expect(rowX().get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
     await rowX().trigger('click')
     expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-x/live', query: { node: 'impl' } })
 
-    // Next node waits for the user: the pending item takes the row back, same key and title.
-    gateMocks.displayedItems.value = [
-      { type: 'clarify', runId: 'run-x', nodeId: 'deliver', label: '交付', kind: 'clarify', workflowName: 'w', runTitle: '把登录做清楚' },
-      ...gateMocks.displayedItems.value,
-    ]
+    // Next node waits for the user: the row flies back to 正在执行.
+    apiMocks.listRuns.mockResolvedValue({
+      items: [
+        runRow({ id: 'deliver', name: '交付', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' }, 'waiting_human'),
+        { id: 'run-y', workflowId: 'wf', workflowName: 'w', title: '另一个', status: 'waiting_human', startedAt: 'T0' },
+      ],
+      total: 2,
+    })
+    routeState.path = '/board'
     await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
     expect(keys()).toEqual(['run-x', 'run-y'])
+    expect(rowX().attributes('data-section')).toBe('running')
     expect(rowX().attributes('data-node-id')).toBe('deliver')
     expect(rowX().get('.nav-row-title').text()).toBe('把登录做清楚')
     expect(wrapper.text()).not.toContain('Run #')
@@ -2427,6 +2443,420 @@ describe('pending rows leave the artifact panel switch alone', () => {
     writeArtifactPanelOpen(false)
     await rows[1].trigger('click')
     expect(readArtifactPanelOpen()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+})
+
+describe('自动过程 grouping and flight', () => {
+  const auto = (id: string, name: string, state: 'running' | 'stopping' = 'running') => ({
+    id, name, iteration: 1, kind: 'agent', mode: 'auto', state,
+  })
+  const run = (id: string, title: string, status: string, currentNode?: Record<string, unknown>) => ({
+    id, workflowId: 'wf', workflowName: 'w', title, status, startedAt: 'T0', ...(currentNode ? { currentNode } : {}),
+  })
+  const clarify = (runId: string, nodeId: string, runTitle: string) => ({
+    type: 'clarify' as const, runId, nodeId, label: nodeId, kind: 'clarify', workflowName: 'w', runTitle,
+  })
+
+  async function show(items: unknown[]) {
+    apiMocks.listRuns.mockResolvedValue({ items, total: items.length })
+    const wrapper = mountNav(true)
+    await flushPromises()
+    return wrapper
+  }
+
+  it('splits waiting, queued and Solo from automatic runs, and hides an empty group', async () => {
+    apiMocks.listSoloSessions.mockResolvedValue({
+      sessions: [{ id: 'solo-1', title: '单独', agentName: '需求澄清', status: 'running', restarts: 0, busy: false, waiting: 0, createdAt: 'T', updatedAt: 'T' }],
+      maxSandboxes: 1,
+    })
+    const wrapper = await show([
+      run('wait', '等人', 'waiting_human', { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' }),
+      run('queue', '排队', 'queued'),
+      run('boot', '启动', 'running', { id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'running' }),
+      run('take', '接管', 'running', { id: 'impl', name: '实现', iteration: 1, kind: 'takeover', mode: 'manual', state: 'stopping' }),
+      run('go', '自动', 'running', auto('impl', '实现')),
+      run('stop', '停止中', 'running', auto('test', '测试', 'stopping')),
+      run('blank', '无节点名', 'running', auto('x', '   ')),
+    ])
+    const running = wrapper.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    const automatic = wrapper.get('[data-testid="nav-auto-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    expect(running).toEqual(['wait', 'queue', 'boot', 'take', 'solo-1'])
+    expect(automatic).toEqual(['go', 'stop', 'blank'])
+    expect(new Set([...running, ...automatic]).size).toBe(running.length + automatic.length)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('5')
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('3')
+    expect(wrapper.get('[data-key="go"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(wrapper.get('[data-key="stop"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
+    expect(wrapper.get('[data-key="blank"]').find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(wrapper.get('[data-key="go"]').attributes('data-flight')).toBeUndefined()
+    const headings = wrapper.findAll('[data-testid="nav-running-heading"], [data-testid="nav-auto-heading"]').map((el) => el.attributes('data-testid'))
+    expect(headings).toEqual(['nav-running-heading', 'nav-auto-heading'])
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('flies in only after this handoff is confirmed automatic', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+
+    armSidebarHandoff('run-x', 'clarify')
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'running', auto('impl', '实现'))],
+      total: 1,
+    })
+    gateMocks.displayedItems.value = []
+    await flushPromises()
+    const row = wrapper.get('[data-key="run-x"]')
+    expect(row.attributes('data-section')).toBe('auto')
+    expect(row.attributes('data-flight')).toBe('in')
+    expect(row.attributes('data-flight-landing')).toBe('row')
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('does not fly in when the next node is a person or the run ends', async () => {
+    gateMocks.displayedItems.value = [clarify('run-h', 'clarify', '人工'), clarify('run-e', 'clarify', '结束')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-h', 'clarify')
+    armSidebarHandoff('run-e', 'clarify')
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-h', '人工', 'waiting_human', { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' })],
+      total: 1,
+    })
+    gateMocks.displayedItems.value = []
+    await flushPromises()
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-key="run-h"]').attributes('data-section')).toBe('running')
+    expect(wrapper.get('[data-key="run-h"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.find('[data-key="run-e"]').exists()).toBe(false)
+    expect(document.querySelector('[data-flight="in"]')).toBeNull()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('places a run that is already automatic on first paint, and flies back when it waits again', async () => {
+    const wrapper = await show([run('run-x', '登录', 'running', auto('impl', '实现'))])
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'waiting_human', { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' })],
+      total: 1,
+    })
+    routeState.path = '/board'
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('back')
+    expect(wrapper.get('[data-key="run-x"]').get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('user-hold')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('renames the node when one automatic step follows another', async () => {
+    const wrapper = await show([run('run-x', '登录', 'running', auto('impl', '实现'))])
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'running', auto('test', '测试'))],
+      total: 1,
+    })
+    routeState.path = '/runs'
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('drops the move when reduced motion is on', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('reduce'),
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      addListener() {},
+      removeListener() {},
+      dispatchEvent() { return false },
+      onchange: null,
+    })) as typeof window.matchMedia
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify')
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'running', auto('impl', '实现'))],
+      total: 1,
+    })
+    gateMocks.displayedItems.value = []
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBeUndefined()
+    expect(SIDEBAR_FLIGHT_MS).toBeLessThanOrEqual(600)
+    window.matchMedia = original
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('flies toward the heading and updates the count when the target group is folded', async () => {
+    toggleSection('auto')
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '另一个')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify')
+    apiMocks.listRuns.mockResolvedValue({
+      items: [
+        run('run-x', '登录', 'running', auto('impl', '实现')),
+        run('run-y', '另一个', 'waiting_human'),
+      ],
+      total: 2,
+    })
+    gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-flight-landing')).toBe('heading')
+    expect(wrapper.get('[data-testid="nav-auto-heading"]').attributes('data-flight-target')).toBe('true')
+    expect(wrapper.get('[data-testid="nav-auto-rows"]').isVisible()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  function layoutBox(left: number, top: number, width: number, height: number): DOMRect {
+    return {
+      x: left,
+      y: top,
+      left,
+      top,
+      width,
+      height,
+      right: left + width,
+      bottom: top + height,
+      toJSON() { return this },
+    } as DOMRect
+  }
+
+  /** happy-dom reports empty boxes, so give rows a layout and step animation frames by hand. */
+  function stubFlightGeometry() {
+    const original = Element.prototype.getBoundingClientRect
+    const spy = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function () {
+      const el = this as HTMLElement
+      const testId = el.dataset?.testid
+      if (testId === 'nav-flight-ghost') {
+        const top = Number.parseFloat(el.style.top) || 0
+        const left = Number.parseFloat(el.style.left) || 0
+        const width = Number.parseFloat(el.style.width) || 0
+        const height = Number.parseFloat(el.style.height) || 0
+        const match = /translate3d\(\s*([-\d.]+)px,\s*([-\d.]+)px/.exec(el.style.transform || '')
+        const dx = match ? Number(match[1]) : 0
+        const dy = match ? Number(match[2]) : 0
+        return layoutBox(left + dx, top + dy, width, height)
+      }
+      if (testId === 'nav-pending-row' && el.dataset.kind !== 'solo') {
+        if (el.dataset.section === 'auto') return layoutBox(40, 344, 220, 32)
+        if (el.dataset.section === 'running') return layoutBox(40, 174, 220, 32)
+      }
+      if (testId === 'nav-auto-heading') return layoutBox(12, 312, 220, 28)
+      if (testId === 'nav-running-heading') return layoutBox(12, 140, 220, 28)
+      return original.call(this)
+    })
+    const frames: Array<{ id: number; cb: FrameRequestCallback; cancelled: boolean }> = []
+    let seq = 1
+    const prevRaf = window.requestAnimationFrame.bind(window)
+    const prevCancel = window.cancelAnimationFrame.bind(window)
+    const request = (cb: FrameRequestCallback) => {
+      const id = seq++
+      frames.push({ id, cb, cancelled: false })
+      return id
+    }
+    const cancel = (id: number) => {
+      const frame = frames.find((item) => item.id === id)
+      if (frame) frame.cancelled = true
+    }
+    window.requestAnimationFrame = request as typeof window.requestAnimationFrame
+    window.cancelAnimationFrame = cancel as typeof window.cancelAnimationFrame
+    return {
+      pump() {
+        const batch = frames.splice(0).filter((frame) => !frame.cancelled)
+        for (const frame of batch) frame.cb(0)
+      },
+      restore() {
+        spy.mockRestore()
+        window.requestAnimationFrame = prevRaf
+        window.cancelAnimationFrame = prevCancel
+      },
+    }
+  }
+
+  async function ghostAfterMove() {
+    await flushPromises()
+    await nextTick()
+    const ghost = document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+    expect(ghost).toBeTruthy()
+    return ghost!
+  }
+
+  it('moves the ghost from the painted origin to the destination', async () => {
+    const geometry = stubFlightGeometry()
+    try {
+      gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '排队')]
+      const wrapper = mountNav(true)
+      await flushPromises()
+      armSidebarHandoff('run-x', 'clarify')
+      apiMocks.listRuns.mockResolvedValue({
+        items: [
+          run('run-x', '登录', 'running', auto('impl', '实现')),
+          run('run-y', '排队', 'waiting_human'),
+        ],
+        total: 2,
+      })
+      gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+      const ghost = await ghostAfterMove()
+      const origin = ghost.getBoundingClientRect()
+      expect(origin.y).toBe(174)
+      expect(ghost.style.transform).toBe('translate3d(0px, 0px, 0px)')
+      expect(ghost.style.transition).toBe('none')
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      const landed = ghost.getBoundingClientRect()
+      expect(landed.y).toBe(344)
+      expect(landed.y).not.toBe(origin.y)
+      expect(ghost.style.transition).toContain(`${SIDEBAR_FLIGHT_MS}ms`)
+      expect(SIDEBAR_FLIGHT_MS).toBeLessThanOrEqual(600)
+      expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('in')
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves the ghost back onto the running row', async () => {
+    const wrapper = await show([run('run-x', '登录', 'running', auto('impl', '实现'))])
+    const geometry = stubFlightGeometry()
+    try {
+      apiMocks.listRuns.mockResolvedValue({
+        items: [run('run-x', '登录', 'waiting_human', { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' })],
+        total: 1,
+      })
+      routeState.path = '/board'
+      const ghost = await ghostAfterMove()
+      expect(ghost.getBoundingClientRect().y).toBe(344)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(344)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      expect(ghost.style.transition).toContain(`${SIDEBAR_FLIGHT_MS}ms`)
+      expect(wrapper.get('[data-key="run-x"]').attributes('data-flight')).toBe('back')
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('moves the ghost onto the folded heading', async () => {
+    const geometry = stubFlightGeometry()
+    try {
+      toggleSection('auto')
+      gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '另一个')]
+      const wrapper = mountNav(true)
+      await flushPromises()
+      armSidebarHandoff('run-x', 'clarify')
+      apiMocks.listRuns.mockResolvedValue({
+        items: [
+          run('run-x', '登录', 'running', auto('impl', '实现')),
+          run('run-y', '另一个', 'waiting_human'),
+        ],
+        total: 2,
+      })
+      gateMocks.displayedItems.value = gateMocks.displayedItems.value.filter((it) => it.runId !== 'run-x')
+      const ghost = await ghostAfterMove()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      expect(ghost.getBoundingClientRect().y).toBe(174)
+      geometry.pump()
+      const landed = ghost.getBoundingClientRect()
+      expect(landed.x).toBe(12)
+      expect(landed.y).toBe(312)
+      expect(ghost.getAttribute('data-landing')).toBe('heading')
+      expect(wrapper.get('[data-testid="nav-auto-process"] .sidebar-section-count').text()).toBe('1')
+      expect(wrapper.get('[data-testid="nav-auto-rows"]').isVisible()).toBe(false)
+      wrapper.unmount()
+    } finally {
+      geometry.restore()
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps pin, rename, cancel and share on an automatic row', async () => {
+    useAuth().setUser({ username: 'alice', expiresAt: '2099-01-01T00:00:00Z' })
+    gateMocks.displayedItems.value = [{
+      type: 'gate', nodeType: 'human_gate', runId: 'run-a', nodeId: 'g', title: '人工门禁', workflowName: 'w', runTitle: '自动甲',
+    }]
+    const wrapper = await show([
+      run('run-a', '自动甲', 'running', auto('impl', '实现')),
+      run('run-b', '自动乙', 'running', auto('test', '测试')),
+      run('run-c', '等人', 'waiting_human'),
+    ])
+    const autoKeys = () => wrapper.get('[data-testid="nav-auto-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))
+    expect(autoKeys()).toEqual(['run-a', 'run-b'])
+    expect(wrapper.get('[data-testid="nav-running-rows"]').findAll('[data-testid="nav-pending-row"]').map((r) => r.attributes('data-key'))).toEqual(['run-c'])
+
+    const open = (key: string) => {
+      wrapper.get(`[data-key="${key}"]`).element.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 40 }),
+      )
+    }
+    open('run-a')
+    await nextTick()
+    expect([...document.querySelectorAll('[data-testid="nav-pending-menu"] [role="menuitem"]')].map((el) => el.getAttribute('data-testid'))).toEqual([
+      'nav-pending-menu-pin',
+      'nav-pending-menu-rename',
+      'nav-pending-menu-share',
+      'nav-pending-menu-cancel',
+    ])
+    ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/gates', query: { run: 'run-a', node: 'g', share: '1' } })
+
+    open('run-b')
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-pin"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(autoKeys()).toEqual(['run-b', 'run-a'])
+    expect(wrapper.get('[data-key="run-b"]').find('[data-testid="nav-pending-pin"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="nav-running-rows"]').text()).toContain('等人')
+
+    open('run-b')
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-rename"]') as HTMLButtonElement).click()
+    await nextTick()
+    apiMocks.updateRunTitle.mockResolvedValueOnce({ id: 'run-b', title: '新名字' })
+    const input = wrapper.get('[data-testid="nav-pending-rename-input"]')
+    await input.setValue('新名字')
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(apiMocks.updateRunTitle).toHaveBeenCalledWith('run-b', '新名字')
+
+    open('run-a')
+    await nextTick()
+    ;(document.querySelector('[data-testid="nav-pending-menu-cancel"]') as HTMLButtonElement).click()
+    await nextTick()
+    expect(document.querySelector('[data-testid="nav-pending-cancel-confirm"]')).toBeTruthy()
+    ;(document.querySelector('[data-testid="nav-pending-cancel-dismiss"]') as HTMLButtonElement).click()
     wrapper.unmount()
     vi.useRealTimers()
   })
