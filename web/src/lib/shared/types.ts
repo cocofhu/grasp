@@ -60,6 +60,7 @@ export interface PublishedWorkflowSnapshot {
 export interface WorkflowDefaults {
   inheritWorkspace: boolean
   variables: WorkspaceVariable[]
+  sandbox?: { mode: 'per_node' | 'shared' }
   notifyPolicy?: WorkspaceNotifyPolicy
   gateAuto?: { enabled: boolean; agentName: string; variable: string; prompt: string; enabledMcps: string[] }
 }

@@ -213,7 +213,7 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="credentials-tab-connections"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="credentials-tab-defaults"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-model-defaults"]').exists()).toBe(false)
-    expect(wrapper.get('[data-testid="model-connections-manager"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-testid="model-connections-manager"]').exists()).toBe(false)
 
     await wrapper.get('[data-testid="credentials-tab-models"]').trigger('click')
     await flushPromises()
@@ -222,28 +222,24 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.find('[data-testid="workspace-credential-row"]').exists()).toBe(false)
     await models.get('[data-testid="model-configuration-manage-credentials"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-testid="credentials-tab-credentials"]').attributes('aria-selected')).toBe('true')
-    expect(wrapper.get('[data-testid="model-connections-manager"]').isVisible()).toBe(true)
+    await finishStepTransition()
+    expect(wrapper.find('[data-testid="workspace-credential-create-alias"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="model-connections-manager"]').exists()).toBe(false)
     expect(mocks.create).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  it('edits the API service referenced by a key without changing its model catalog or creating another key', async () => {
+  it('edits the API address within its fixed account without changing available models or adding another key', async () => {
     mocks.connections.mockResolvedValue({ items: [modelService] })
     const wrapper = mountPanel({ items: [...config.items, serviceKey] })
     await flushPromises()
     await wrapper.get(`[data-testid="workspace-credential-edit-${serviceKey.id}"]`).trigger('click')
-    const service = wrapper.get('[data-testid="model-credential-service-service"]')
-    expect(service.text()).toContain(modelService.baseUrl)
     await wrapper.get('[data-testid="model-credential-edit-service-service"]').trigger('click')
-    expect(wrapper.get('[data-testid="model-connection-form"]').attributes('data-step')).toBe('1')
-    expect(wrapper.get('[data-testid="model-connection-name"]').element).toHaveProperty('value', modelService.name)
-    await wrapper.get('[data-testid="model-connection-next"]').trigger('click')
-    expect(wrapper.getComponent('[data-testid="model-connection-credential"]').props('modelValue')).toBe(serviceKey.id)
+    await flushPromises()
+    expect(wrapper.get('[data-testid="api-account-identity"]').text()).toBe(serviceKey.name)
+    expect(wrapper.find('[data-testid="model-connection-credential"]').exists()).toBe(false)
     await wrapper.get('[data-testid="model-connection-base-url"]').setValue('https://new-models.example.test/v1')
-    await wrapper.get('[data-testid="model-connection-next"]').trigger('click')
-    expect(wrapper.find('[data-testid="model-connection-models"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="model-connection-save"]').trigger('click')
+    await wrapper.get('[data-testid="model-connection-form"]').trigger('submit')
     await flushPromises()
     expect(mocks.updateConnection).toHaveBeenCalledWith(modelService.id, expect.objectContaining({ baseUrl: 'https://new-models.example.test/v1', credentialId: serviceKey.id, models: modelService.models }))
     expect(mocks.create).not.toHaveBeenCalled()
@@ -293,11 +289,29 @@ describe('WorkspaceCredentialsPanel', () => {
     expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').text()).toContain('Cursor API key')
     expect(wrapper.get('[data-testid="workspace-credential-section-git"]').text()).toContain('GitHub token')
     expect(wrapper.get('[data-testid="workspace-credential-section-ssh"]').text()).toContain('SSH 私钥')
-    expect(wrapper.find('[data-testid="workspace-credential-section-models"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="workspace-credential-section-other"]').exists()).toBe(false)
     const credentials = wrapper.get('[data-testid="workspace-credential-group-cursor"]')
     expect(credentials.findAll('[data-testid="workspace-credential-row"]')).toHaveLength(1)
     expect(credentials.get('[data-testid="workspace-credential-alias"]').text()).toContain('Cursor')
+    wrapper.unmount()
+  })
+
+  it('separates Agent CLI and API accounts while keeping their provider logos and types', async () => {
+    const wrapper = mountPanel({ items: [...config.items, serviceKey] })
+    await flushPromises()
+    const accounts = wrapper.get('[data-testid="workspace-credential-section-api"]')
+    const tools = wrapper.get('[data-testid="workspace-credential-section-coding"]')
+    expect(tools.get('h3').text()).toBe('Agent CLI')
+    expect(tools.get('.credentials-section-count').text()).toBe('1')
+    expect(tools.get('[data-testid="workspace-credential-alias"]').text()).toBe('Cursor API key')
+    expect(accounts.get('h3').text()).toBe('API 账号')
+    expect(accounts.get('.credentials-section-count').text()).toBe('1')
+    expect(accounts.get('[data-testid="workspace-credential-alias"]').text()).toBe('Shared model key')
+    expect(rowByAlias(wrapper, 'Cursor API key').get('[data-provider-logo="cursor"]').exists()).toBe(true)
+    expect(rowByAlias(wrapper, 'Shared model key').get('[data-provider-logo="deepseek"]').exists()).toBe(true)
+    expect(rowByAlias(wrapper, 'Shared model key').get('[data-testid="workspace-credential-kind"]').text()).toBe('DeepSeek')
+    expect(wrapper.findAll('.credentials-section').map(section => section.get('h3').text())).toEqual(['Agent CLI', 'API 账号', '代码仓库', 'SSH 访问'])
+    expect(wrapper.find('[data-testid="model-credential-add"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -782,39 +796,21 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('returns a newly saved key to an existing connection draft without creating a second connection', async () => {
-    const wrapper = mountPanel()
+  it('reads the latest API account address before configuring Base when the initial service list failed', async () => {
+    mocks.connections.mockRejectedValueOnce(new Error('initial list unavailable'))
+    const wrapper = mountPanel({ items: [...config.items, serviceKey] })
     await flushPromises()
-    await wrapper.get('[data-testid="model-connection-add"]').trigger('click')
-    wrapper.getComponent('[data-testid="model-connection-provider"]').vm.$emit('update:modelValue', 'anthropic')
+    await wrapper.get(`[data-testid="workspace-credential-edit-${serviceKey.id}"]`).trigger('click')
+    mocks.connections.mockResolvedValue({ items: [modelService] })
+    await wrapper.get(`[data-testid="model-credential-configure-service-${serviceKey.id}"]`).trigger('click')
     await flushPromises()
-    await wrapper.get('[data-testid="model-connection-name"]').setValue('Existing draft service')
-    await wrapper.get('[data-testid="model-connection-next"]').trigger('click')
-    await wrapper.get('[data-testid="model-connection-base-url"]').setValue('https://models.example.test/messages')
-    const addKey = wrapper.get('[data-testid="model-connections-manager"]').findAll('button').find((button) => button.text() === '新增模型密钥')
-    expect(addKey).toBeDefined()
-    await addKey!.trigger('click')
+    expect(wrapper.get('[data-testid="model-connection-base-url"]').element).toHaveProperty('value', modelService.baseUrl)
+    await wrapper.get('[data-testid="model-connection-base-url"]').setValue('https://updated.example.test/v1')
+    await wrapper.get('[data-testid="model-connection-form"]').trigger('submit')
     await flushPromises()
-    await finishStepTransition()
-    expect(wrapper.find('[data-testid="model-credential-create-connection"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="model-credential-connection-base-url"]').exists()).toBe(false)
-    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('New draft key')
-    wrapper.getComponent('[data-testid="model-credential-issuer"]').vm.$emit('update:modelValue', 'anthropic')
-    await flushPromises()
-    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('sk-for-existing-draft')
-    await reviewCredential(wrapper)
-    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click')
-    await flushPromises()
-    expect(mocks.create).toHaveBeenCalledTimes(1)
+    expect(mocks.updateConnection).toHaveBeenCalledWith(modelService.id, expect.objectContaining({ credentialId: serviceKey.id, models: modelService.models }))
+    expect(mocks.create).not.toHaveBeenCalled()
     expect(mocks.createConnection).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="model-connection-form"]').attributes('data-step')).toBe('2')
-    expect(wrapper.get('[data-testid="model-connection-base-url"]').element).toHaveProperty('value', 'https://models.example.test/messages')
-    expect(wrapper.getComponent('[data-testid="model-connection-credential"]').props('modelValue')).toBe('cred-created')
-    await wrapper.get('[data-testid="model-connection-next"]').trigger('click')
-    await wrapper.get('[data-testid="model-connection-save"]').trigger('click')
-    await flushPromises()
-    expect(mocks.createConnection).toHaveBeenCalledTimes(1)
-    expect(mocks.createConnection).toHaveBeenCalledWith(expect.objectContaining({ name: 'Existing draft service', providerId: 'anthropic', baseUrl: 'https://models.example.test/messages', credentialId: 'cred-created' }))
     wrapper.unmount()
   })
 
@@ -868,7 +864,7 @@ describe('WorkspaceCredentialsPanel', () => {
     const wrapper = mountPanel({ items: [...config.items, opencode] })
     await flushPromises()
     const row = rowByAlias(wrapper, 'DeepSeek')
-    expect(wrapper.get('[data-testid="workspace-credential-section-models"]').text()).toContain('DeepSeek')
+    expect(wrapper.get('[data-testid="workspace-credential-section-api"]').text()).toContain('DeepSeek')
     expect(row.get('[data-testid="workspace-credential-masked"]').text()).toContain('sk-…9999')
     expect(wrapper.find('[data-test="opencode-provider-fields"]').exists()).toBe(false)
     await wrapper.get('[data-testid="workspace-credential-edit-opencode"]').trigger('click')
@@ -883,24 +879,37 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
-  it('groups existing provider credentials for display, hides URL settings and keeps old rows read-only', async () => {
-    const oldRows: CredentialItem[] = [
-      { id: 'old-cursor', type: 'ai', provider: 'cursor', name: 'Existing Cursor', configured: true, masked: '••••' },
-      { id: 'old-github', type: 'git', provider: 'github', name: 'Existing GitHub', configured: true },
-      { id: 'old-gitlab', type: 'git', provider: 'gitlab', name: 'Existing GitLab', configured: true },
-      { id: 'old-url', type: 'git', provider: 'gitlab', envKey: 'GITLAB_URL', name: 'GitLab URL', configured: true },
+  it('shows only current workspace credentials when an empty Cursor slot exists beside CursorDefault', async () => {
+    const rows: CredentialItem[] = [
+      { id: 'Cursor', type: 'ai', provider: 'cursor', name: 'Cursor', source: 'workspace', configured: false },
+      { id: 'arbitrary-empty-id', type: 'git', provider: 'gitlab', name: 'Old empty GitLab', configured: false, secretRevision: 3 },
+      { id: 'old-format-key', type: 'ai', provider: 'cursor', name: 'Unclassified key', configured: true, masked: '••••' },
+      { id: 'cursor-default', type: 'ai', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', provider: 'cursor', name: 'CursorDefault', configured: true, masked: 'cursor-…1234' },
     ]
-    const wrapper = mountPanel({ items: oldRows }); await flushPromises()
-    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').text()).toContain('Existing Cursor')
-    expect(wrapper.get('[data-testid="workspace-credential-group-github"]').text()).toContain('Existing GitHub')
-    expect(wrapper.get('[data-testid="workspace-credential-group-gitlab"]').text()).toContain('Existing GitLab')
-    expect(wrapper.find('[data-testid="workspace-credential-section-other"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('GitLab URL')
-    expect(wrapper.find('[data-testid="workspace-credential-edit-old-gitlab"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('请重新添加此凭据后编辑')
-    await wrapper.get('[data-testid="workspace-credential-clear-old-gitlab"]').trigger('click'); await flushPromises()
-    expect(mocks.del).toHaveBeenCalledWith('old-gitlab')
-    expect(mocks.put).not.toHaveBeenCalled(); wrapper.unmount()
+    const wrapper = mountPanel({ items: rows }); await flushPromises()
+    expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map(row => row.text())).toEqual(['CursorDefault'])
+    const coding = wrapper.get('[data-testid="workspace-credential-section-coding"]')
+    expect(coding.get('.credentials-section-count').text()).toBe('1')
+    expect(wrapper.get('[data-testid="workspace-credential-group-cursor"]').findAll('[data-testid="workspace-credential-row"]')).toHaveLength(1)
+    expect(wrapper.get('[data-testid="workspace-credential-masked"]').text()).toBe('cursor-…1234')
+    expect(mocks.put).not.toHaveBeenCalled(); expect(mocks.del).not.toHaveBeenCalled(); expect(mocks.create).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('keeps current cleared credentials and read-only adapter entries visible', async () => {
+    const rows: CredentialItem[] = [
+      { id: 'cred-builtin-current-cleared', type: 'ai', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', provider: 'cursor', name: 'Current cleared Cursor', configured: false, state: 'cleared' },
+      { id: 'current-empty', type: 'git', purpose: 'git', provider: 'gitlab', name: 'Current GitLab', configured: false },
+      { id: 'cred-builtin-adapter-slot', type: 'custom', source: 'vault', name: 'Vault entry', configured: false },
+    ]
+    const wrapper = mountPanel({ items: rows }); await flushPromises()
+    expect(wrapper.findAll('[data-testid="workspace-credential-row"]')).toHaveLength(3)
+    expect(wrapper.find('[data-testid="workspace-credential-fill-cred-builtin-current-cleared"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="workspace-credential-fill-current-empty"]').exists()).toBe(true)
+    const adapter = rowByAlias(wrapper, 'Vault entry')
+    expect(adapter.text()).toContain('vault')
+    expect(adapter.find('[data-testid="workspace-credential-fill-cred-builtin-adapter-slot"]').exists()).toBe(false)
+    expect(mocks.del).not.toHaveBeenCalled(); wrapper.unmount()
   })
 
   it.each(['gitlab', 'github'] as const)('creates %s with a default Host and accepts a self-hosted origin in review', async provider => {

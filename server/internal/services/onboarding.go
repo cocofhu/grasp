@@ -337,6 +337,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 		}
 		backend := selected.Backend
 		tmpl.AcpBackend = backend
+		tmpl.InheritModel, tmpl.InheritGit = false, false
 		tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: selected.ID}
 		tmpl.GitBindings = gitBindings
 		tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)

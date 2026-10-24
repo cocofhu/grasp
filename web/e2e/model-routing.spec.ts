@@ -42,7 +42,7 @@ async function setup(page: Page, initial = [] as ReturnType<typeof connection>[]
       credentials.push(created)
       return route.fulfill({ status: 201, json: created })
     }
-    await route.fulfill({ json: { items: [...credentials, { id: 'cred-builtin-cursor', name: 'Cursor', provider: 'cursor', type: 'ai', configured: false, secretRevision: 1 }] } })
+    await route.fulfill({ json: { items: credentials } })
   })
   await routeApi(page, '**/api/workspace/tool-capabilities', async (route) => route.fulfill({ json: { items: caps } }))
   await routeApi(page, '**/api/workspace/model-connections', async (route) => {
@@ -125,6 +125,8 @@ async function enterModel(page: Page, value: string) {
 }
 
 async function chooseBoundConfiguration(page: Page, value: string) {
+  const inherit = page.getByTestId('agent-inherit-model')
+  if (await inherit.count() && await inherit.getAttribute('aria-checked') === 'true') await inherit.click()
   await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   await panel.locator('[data-test="app-select-search"]').fill('Team')
@@ -143,6 +145,8 @@ async function captureRuntimeBindings(page: Page, name: string, testInfo: TestIn
     await page.setViewportSize({ width, height: 960 })
     if (width === 390 && name === 'agent-inherit-model-git') {
       await expect(page.getByTestId('studio-mobile-back-files')).toBeVisible()
+    } else if (name === 'agent-inherit-model-git') {
+      await expect(page.getByTestId('model-binding-inherited-summary')).toBeVisible()
     } else {
       await expect(page.getByTestId('model-binding-configuration-select')).toBeVisible()
     }
@@ -150,6 +154,41 @@ async function captureRuntimeBindings(page: Page, name: string, testInfo: TestIn
   }
   await page.setViewportSize({ width: 1440, height: 960 })
 }
+
+test('API accounts edit Base on one page without a separate connections list or another credential selection', async ({ page }, testInfo) => {
+  const initial = connection('account-api', 'openai-chat-completions', 'vendor/original/model')
+  const state = await setup(page, [initial])
+  state.credentials[0] = { ...key, issuer: 'deepseek', provider: 'deepseek' }
+  state.credentials.push({ id: 'cli-key', name: 'CursorDefault', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', type: 'ai', configured: true, enabled: true })
+  await openCredentials(page)
+  await expect(page.getByTestId('workspace-credential-section-coding').getByRole('heading', { name: 'Agent CLI', level: 3 })).toBeVisible()
+  await expect(page.getByTestId('workspace-credential-section-api').getByRole('heading', { name: 'API 账号', level: 3 })).toBeVisible()
+  await expect(page.getByTestId('model-connections-manager')).toHaveCount(0)
+  await expect(page.getByTestId('model-connection-add')).toHaveCount(0)
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 960 })
+    await page.screenshot({ path: testInfo.outputPath(`credential-categories-${width}.png`), fullPage: true, animations: 'disabled' })
+  }
+  await page.getByTestId('workspace-credential-edit-key-model').click()
+  await page.getByTestId('model-credential-edit-service-account-api').click()
+  await expect(page.getByTestId('api-account-identity')).toContainText(key.name)
+  await expect(page.getByTestId('api-account-identity').locator('[data-provider-logo="deepseek"]')).toBeVisible()
+  for (const field of ['model-connection-credential', 'model-connection-provider', 'model-connection-name', 'model-connection-next']) await expect(page.getByTestId(field)).toHaveCount(0)
+  await expect(page.getByTestId('model-connection-base-url')).toHaveValue(initial.baseUrl)
+  await page.getByTestId('model-connection-base-url').fill('https://updated.example.test/v1')
+  await page.screenshot({ path: testInfo.outputPath('api-account-address-390.png'), fullPage: true, animations: 'disabled' })
+  await page.getByTestId('model-connection-save').click()
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  expect(state.keyWrites).toHaveLength(0)
+  expect(state.rows).toHaveLength(1)
+  expect(state.connectionWrites).toHaveLength(1)
+  expect(state.connectionWrites[0]).toMatchObject({ credentialId: key.id, name: initial.name, providerId: initial.providerId, models: initial.models, state: initial.state, baseUrl: 'https://updated.example.test/v1' })
+  expect(state.connectionWrites[0]).not.toHaveProperty('value')
+  await page.reload()
+  await page.getByTestId('workspace-credential-edit-key-model').click()
+  await page.getByTestId('model-credential-edit-service-account-api').click()
+  await expect(page.getByTestId('model-connection-base-url')).toHaveValue('https://updated.example.test/v1')
+})
 
 test('CodeBuddy offers Chat connections and filters unsupported Responses and Messages services', async ({ page }) => {
   const state = await setup(page, [connection('chat-service', 'openai-chat-completions', 'vendor/chat'), connection('responses-service', 'openai-responses', 'vendor/responses'), { ...connection('messages-service', 'anthropic-messages', 'vendor/messages'), auth: { scheme: 'x-api-key' } }])
@@ -200,6 +239,9 @@ test('create credentials, then save a reusable tool-credential-model configurati
   expect(state.connectionWrites[0]).toMatchObject({ baseUrl: 'https://gateway.example/v1', credentialId: 'new-key', models: [] })
   expect(state.connectionWrites[0]).not.toHaveProperty('value')
   await page.getByRole('tab', { name: '模型', exact: true }).click()
+  await expect(page.getByTestId('model-configurations-manager')).toBeVisible()
+  await expect(page.getByText('模型目录', { exact: true })).toHaveCount(0)
+  await expect(page.getByTestId('model-catalog-panel')).toHaveCount(0)
   await addModelConfiguration(page)
   await page.getByTestId('model-configuration-name').fill('Team Codex model')
   await page.getByTestId('model-configuration-backend-codex').click()
@@ -266,7 +308,9 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await page.getByTestId('shared-agent-subtab-meta').click()
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await chooseBoundConfiguration(page, 'team-codex')
-  await expect(page.getByTestId('meta-config-root')).toHaveValue('/root/.codex')
+  await expect(page.getByTestId('meta-config-root')).toHaveCount(0)
+  await expect(page.getByTestId('meta-workspace-dir')).toHaveCount(0)
+  await expect(page.getByTestId('agent-runtime-bindings').locator('a[href="/settings/credentials"]')).toHaveCount(0)
   for (const id of ['gitlab-team', 'github-team']) {
     await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
     await page.locator(`[data-test="app-select-option-${id}"]`).click()
@@ -276,6 +320,7 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await expect.poll(() => state.sharedWrites.length).toBe(1)
   expect(state.sharedWrites[0]).toMatchObject({
     acpBackend: 'codex', modelBinding: { kind: 'configuration', configurationId: 'team-codex' },
+    layout: expect.objectContaining({ configRoot: '/root/.codex' }),
     gitBindings: { items: [{ credentialId: 'gitlab-team' }, { credentialId: 'github-team' }], preferredCredentialId: 'github-team' },
   })
   await page.reload()
@@ -287,13 +332,15 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   await page.goto('/agent-create-wizard.html')
   await page.locator('#wiz-name-input').fill('inherits-team-defaults')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByTestId('agent-inherit-model').click()
-  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
-  await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toBeDisabled()
+  await expect(page.getByTestId('agent-inherit-model')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('model-binding-inherited-summary')).toContainText('Team Codex default')
+  await expect(page.getByTestId('model-binding-configuration-select')).toHaveCount(0)
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await page.getByTestId('agent-inherit-git').click()
+  await expect(page.getByTestId('agent-inherit-git')).toHaveAttribute('aria-checked', 'true')
   await expect(page.getByTestId('git-credential-row-gitlab-team')).toBeVisible()
   await expect(page.getByTestId('git-credential-row-github-team')).toBeVisible()
+  await expect(page.getByTestId('git-credential-add')).toHaveCount(0)
+  await expect(page.getByTestId('git-options-github-team')).toHaveCount(0)
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.step-pane')).toContainText('Team Codex default')
   await expect(page.locator('.step-pane')).toContainText('GitHub team')
@@ -306,10 +353,42 @@ test('Agent defaults save a model and multiple Git authorizations, and a new Age
   expect(JSON.stringify(state.agentWrites[0])).not.toContain('gitlab-team')
 
   await page.goto(`/workspace-config.html?view=${encodeURIComponent('/agents?agent=inherits-team-defaults&studioTab=meta')}`)
-  await expect(page.getByTestId('agent-inherit-model')).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByTestId('agent-inherit-git')).toHaveAttribute('aria-checked', 'true')
-  await expect(page.getByTestId('model-binding-configuration-select')).toContainText('Team Codex default')
-  await expect(page.getByTestId('git-preferred-github-team')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('agent-inherit-default-switch')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('agent-inherit-default')).toHaveCount(1)
+  const inheritedCard = page.getByTestId('agent-inherit-default').getByTestId('model-binding-inherited-summary')
+  await expect(inheritedCard).toContainText('Codex')
+  await expect(inheritedCard).toContainText('工作区默认')
+  await expect(inheritedCard).not.toContainText('Team Codex default')
+  await expect(inheritedCard.locator('[title="Team Codex default"]')).toHaveCount(1)
+  for (const id of ['agent-inherit-model', 'agent-inherit-git', 'model-binding-configuration-select', 'meta-config-root', 'meta-workspace-dir', 'git-credential-row-github-team', 'git-credential-row-gitlab-team', 'git-inherited-preferred-github-team', 'git-credential-add']) await expect(page.getByTestId(id)).toHaveCount(0)
+  await expect(page.getByTestId('agent-git-credential-picker')).toBeHidden()
+  await page.setViewportSize({ width: 1440, height: 960 })
+  const card = page.getByTestId('agent-inherit-default')
+  const cardSize = () => card.evaluate(element => {
+    const { width, height } = element.getBoundingClientRect()
+    return { width, height }
+  })
+  const inheritedSize = await cardSize()
+  expect(inheritedSize.height).toBe(120)
+  await expect(inheritedCard.locator('[data-provider-logo="codex"]')).toBeVisible()
+  await mkdir(testInfo.outputDir, { recursive: true })
+  await page.screenshot({ path: testInfo.outputPath('agent-inherit-card-on-desktop.png'), fullPage: true, animations: 'disabled' })
+  await page.getByTestId('agent-inherit-default-switch').click()
+  await expect(page.getByTestId('agent-inherit-default-switch')).toHaveAttribute('aria-checked', 'false')
+  await expect(card.getByTestId('agent-inherit-custom-summary')).toContainText('自定义配置')
+  await expect(card.getByTestId('agent-inherit-custom-summary')).toContainText('仅用于当前 Agent')
+  await expect(inheritedCard).toHaveCount(0)
+  await expect(page.getByTestId('model-binding-configuration-select')).toBeVisible()
+  for (const id of ['meta-config-root', 'meta-workspace-dir', 'agent-credential-bindings']) await expect(page.getByTestId(id)).toHaveCount(0)
+  await expect(page.getByTestId('agent-runtime-bindings').locator('a[href="/settings/credentials"]')).toHaveCount(0)
+  await expect.poll(cardSize).toEqual(inheritedSize)
+  await page.screenshot({ path: testInfo.outputPath('agent-inherit-card-off-desktop.png'), fullPage: true, animations: 'disabled' })
+  await page.getByTestId('agent-inherit-default-switch').click()
+  await expect(page.getByTestId('agent-inherit-default-switch')).toHaveAttribute('aria-checked', 'true')
+  await expect(card.getByTestId('agent-inherit-custom-summary')).toHaveCount(0)
+  await expect(inheritedCard.locator('[data-provider-logo="codex"]')).toBeVisible()
+  await expect(inheritedCard).toContainText('工作区默认')
+  await expect.poll(cardSize).toEqual(inheritedSize)
   await captureRuntimeBindings(page, 'agent-inherit-model-git', testInfo)
 })
 

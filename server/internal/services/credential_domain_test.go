@@ -30,7 +30,7 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 	}
 	for _, input := range []CredentialInput{
 		{Purpose: "model_api", Issuer: "custom", SecretKind: "token", Name: "Custom key", Value: "s"},
-		{Purpose: "tool_auth", Provider: "trae", Name: "Trae", Value: "s"},
+		{Purpose: "tool_auth", ToolID: "trae", Name: "Trae", Value: "s"},
 		{Purpose: "git", Provider: "github", Name: "Repository", Value: "s"},
 		{Purpose: "ssh", Name: "Private", Value: "s"},
 		{Purpose: "ssh", SecretKind: "ssh_known_hosts", Name: "Hosts", Value: "s"},
@@ -65,8 +65,8 @@ func TestCredentialPurposesAndRevisionLifecycle(t *testing.T) {
 			t.Fatalf("domain was inferred from unstored attributes: %+v", row)
 		}
 	}
-	if nextSecretRevision(0) != 2 {
-		t.Fatal("legacy revision should advance past original secret")
+	if nextSecretRevision(1) != 2 {
+		t.Fatal("rotation should advance the current secret revision")
 	}
 }
 

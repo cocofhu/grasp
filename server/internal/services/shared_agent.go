@@ -196,7 +196,7 @@ func (s *SharedAgentService) WorkDir() string {
 	return ""
 }
 
-// ExtendOverlay merges ordinary defaults, and model/Git only after an explicit opt-in.
+// ExtendOverlay merges ordinary defaults and the selected model/Git inheritance.
 func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
 	out := agent
 	if agent.InheritModel {

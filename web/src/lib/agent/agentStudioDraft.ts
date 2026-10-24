@@ -118,8 +118,8 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
-    ...(a.inheritModel ? { inheritModel: true } : {}),
-    ...(a.inheritGit ? { inheritGit: true } : {}),
+    inheritModel: a.inheritModel ?? true,
+    inheritGit: a.inheritGit ?? true,
     ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
     gitBindings: cloneGitBindings(a.gitBindings || { items: [] }),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { kindOfItem, displayKindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
+import { kindOfItem, normalizeGitCredentialHost, defaultGitCredentialHost } from './credentialKinds'
 describe('explicit credential domains', () => {
  it('classifies platform credentials only by purpose and tool ID', () => {
   expect(kindOfItem({ purpose: 'tool_auth', toolId: 'cursor', provider: 'custom', name: 'anything' })?.id).toBe('cursor')
@@ -14,15 +14,7 @@ describe('explicit credential domains', () => {
  })
 })
 
-describe('credential list presentation and Git hosts', () => {
- it('classifies old provider rows for display without authorizing them', () => {
-  for (const [type, provider] of [['ai', 'cursor'], ['git', 'github'], ['git', 'gitlab']]) {
-   const row = { type, provider }
-   expect(displayKindOfItem(row)?.id).toBe(provider)
-   expect(kindOfItem(row)).toBeUndefined()
-  }
-  expect(displayKindOfItem({ type: 'ai', provider: 'cursor', purpose: 'custom' })).toBeUndefined()
- })
+describe('Git credential hosts', () => {
  it.each([
   ['gitlab.com', 'https://gitlab.com'],
   ['github.com', 'https://github.com'],

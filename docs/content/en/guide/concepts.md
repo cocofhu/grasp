@@ -83,11 +83,13 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
+Open Workflow defaults in the workflow editor, enable Shared sandbox, and save. It is off by default, so each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
+
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported coding tools are **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, **OpenCode**, **Codex**, and **DeepSeek Harness**. Choose the tool independently from its model source. Store secrets in Settings → Credentials; model connections store a protocol, base URL, credential reference and original model IDs. One key can serve multiple connections.
+Supported coding tools are **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, **OpenCode**, **Codex**, and **DeepSeek Harness**. Settings → Credentials separates Agent CLI platform authorizations from model service API accounts, both with provider logos. Configure the provider, API base and key on the API account.
 
-Agents reference only named model configurations: a coding tool, a credential and an upstream model. Creation, editing, onboarding and execution use that same reference. Missing configurations, disabled connections and cleared keys fail explicitly without selecting another secret.
+Agents reference only named model configurations: a coding tool, a credential and an upstream model. Creation, editing, onboarding and execution use that same reference. Unavailable model configurations or accounts fail explicitly without selecting another secret.
 
 | Coding tool | Model sources and connection protocols |
 | --- | --- |
@@ -97,11 +99,11 @@ Agents reference only named model configurations: a coding tool, a credential an
 | OpenCode, DeepSeek Harness | Chat Completions, Responses or Anthropic Messages; DSH targets 0.2.1-rc.2 |
 | Codex | ChatGPT login file or a Responses connection |
 
-First configure a preset or custom service’s API base and key in Credentials, or save only the key. In Models, save a named configuration combining a coding tool, an existing credential and the selected model. Agents bind that configuration to reuse the combination. Platform authorization continues to use the tool’s own key. The configuration’s tool is fixed after creation. Disabling or deleting a configuration, or clearing its key, fails explicitly without switching to another authorization. Enter original provider model IDs manually, including any `/` characters. Claude Code and CodeBuddy support separate auxiliary model roles. DSH’s DeepSeek native route requires the official service. “Not verified” means no live model execution has been recorded; adapter and mock tests do not establish provider compatibility.
+First configure a preset or custom service’s API base and key in Credentials, or save only the key. In Models, save a named configuration combining a coding tool, an existing credential and the selected model. Agents bind that configuration to reuse the combination. Platform authorization continues to use the tool’s own key. The configuration’s tool is fixed after creation. Disabling or deleting a configuration, or clearing its key, fails explicitly without switching to another authorization. When adding a model, select an existing model or enter its original provider ID, including any `/` characters. There is no separate model catalog or connections list. Claude Code and CodeBuddy support separate auxiliary model roles. DSH’s DeepSeek native route requires the official service. “Not verified” means no live model execution has been recorded; adapter and mock tests do not establish provider compatibility.
 
-This configuration change adopts the new structure throughout. Old direct Agent authorizations, model environment settings and workspace defaults are no longer model sources and are not automatically migrated. Select a saved model configuration before running those Agents. Close and reopen long-lived sandboxes after changing their model or authorization.
+The workspace lists and uses only credentials explicitly created with the current data structure. It does not generate empty credential slots. Close and reopen long-lived sandboxes after changing their model or authorization.
 
-Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires an explicit model selection. Git uses an explicit list of saved authorizations, with a preferred identity and optional site/repository scopes. An omitted list grants no Git access. Shared workflow sandboxes replace authorizations when nodes change.
+Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and Git settings and shows one compact inheritance card. Disabling it restores local selections. Git supports multiple saved authorizations with a preferred identity and optional site/repository scopes. An omitted list grants no Git access unless inheritance is enabled. Shared workflow sandboxes replace authorizations when nodes change.
 
 ## Artifact contract and MCP
 

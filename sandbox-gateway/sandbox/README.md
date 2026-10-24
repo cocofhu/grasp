@@ -33,7 +33,7 @@ Grasp 的逻辑——`startup.sh` 等脚本、`backend`、`preview-inject` 和 `
 
 ### 共享运行沙箱：`reprime.sh`
 
-工作流的沙箱模式设为 `shared`（同时要打开平台设置 `shared_run_sandbox_enabled`，默认关闭）时，一次运行的所有节点共用一个沙箱。
+在工作流编辑页的「工作流默认配置」中打开「共享沙箱」（`defaults.sandbox.mode = shared`，默认关闭），保存后新启动的运行复用同一个沙箱；无需额外的平台开关。
 换到下一个节点时，如果它的 env、配置根或凭据和上一个节点不同，Grasp 会经 SSH 执行 `bash /opt/grasp-runtime/current/scripts/reprime.sh`，
 并从 stdin 传入一个 tar.gz：
 

@@ -64,13 +64,13 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if shared.Get().AcpBackend != "opencode" {
 		t.Fatal("default CLI was not derived from its model")
 	}
-	local := Agent{Name: "local", AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}, GitBindings: selection(localGit.ID), Env: map[string]string{runtime.EnvCodeBuddyRegion: "internal"}}
+	local := Agent{InheritModel: false, InheritGit: false, Name: "local", AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: localModel.ID}, GitBindings: selection(localGit.ID), Env: map[string]string{runtime.EnvCodeBuddyRegion: "internal"}}
 	if err := agents.Save(local); err != nil {
 		t.Fatal(err)
 	}
 	local, _ = agents.Get(local.Name)
 	if local.AcpBackend != "codebuddy" || agents.Effective(local).ModelBinding.ConfigurationID != localModel.ID || agents.Effective(local).GitBindings.PreferredCredentialID != localGit.ID {
-		t.Fatal("missing flags granted default permissions or CLI was not derived")
+		t.Fatal("explicit false did not preserve local selections or CLI was not derived")
 	}
 	local.InheritModel, local.InheritGit = true, true
 	if err := agents.Save(local); err != nil {

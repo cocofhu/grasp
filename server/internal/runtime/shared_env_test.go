@@ -14,7 +14,7 @@ func TestSpecMergesSharedEnvExtendThenAgentOverlay(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","CURSOR_API_KEY":"agent-cursor"}}`
+	agentJSON := `{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","CURSOR_API_KEY":"agent-cursor"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -94,7 +94,7 @@ func TestSpecSetsAgentProviderForEveryBackend(t *testing.T) {
 			if err := os.MkdirAll(dir, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
+			if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
 				t.Fatal(err)
 			}
 			c := &acpProvider{
@@ -127,7 +127,7 @@ func TestSpecSharedEnvSecretIsNotAuthSource(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"AGENT_ONLY":"a1"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"AGENT_ONLY":"a1"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
@@ -158,7 +158,7 @@ func TestSpecSkipsSharedEnvWithoutLookup(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
@@ -189,7 +189,7 @@ func TestSpecMergesRunSandboxEnvAfterAgent(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","EMPTY_TARGET":"agent-val"}}`
+	agentJSON := `{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"SHARED":"from-agent","AGENT_ONLY":"a1","EMPTY_TARGET":"agent-val"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -263,7 +263,7 @@ func TestSpecRunSandboxEnvDoesNotOverrideReservedAfterInject(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{
@@ -303,7 +303,7 @@ func TestSpecAgentEnvSecretIsNotAuthSource(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"env":{"GRASP_CURSOR_API_KEY":"agent-key"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{opts: Options{ProfilesRoot: root}, backend: BackendCursor}
@@ -318,7 +318,7 @@ func TestResolvedMCPSpecsSubstitutesSharedEnv(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent"}}`
+	agentJSON := `{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}},{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GRASP_ARTIFACT_TOKEN":"evil-agent"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +373,7 @@ func TestResolvedMCPSpecsAgentEnvOverlaysShared(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}}],"env":{"LOG_CENTER_TOKEN":"from-agent"}}`
+	agentJSON := `{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"server-log","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${LOG_CENTER_TOKEN}"}}],"env":{"LOG_CENTER_TOKEN":"from-agent"}}`
 	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -402,7 +402,7 @@ func TestResolvedMCPSpecsWorkspaceCredentialReference(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"private","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${credential:cred-1}"}}]}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"},"mcp":[{"name":"private","url":"https://logs.example/mcp","headers":{"Authorization":"Bearer ${credential:cred-1}"}}]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{opts: Options{
@@ -448,7 +448,7 @@ func TestSpecSkipsRunEnvWithoutLookup(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(`{"inheritModel":false,"inheritGit":false,"modelBinding":{"kind":"configuration","configurationId":"test-model"}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	c := &acpProvider{

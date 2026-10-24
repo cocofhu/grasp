@@ -164,7 +164,7 @@ func (s *ModelConnectionService) modelCredential(id string) (models.Credential, 
 		return credential, err
 	}
 	purpose, _, _, _ := credentialDomain(credential)
-	if purpose != "model_api" {
+	if !currentCredential(credential) || purpose != "model_api" {
 		return credential, fmt.Errorf("model connection requires a model_api credential")
 	}
 	return credential, nil
@@ -210,7 +210,7 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 		}
 		if err == nil {
 			purpose, _, tool, _ := credentialDomain(credential)
-			if purpose != "tool_auth" || tool != backend {
+			if !currentCredential(credential) || purpose != "tool_auth" || tool != backend {
 				err = fmt.Errorf("platform credential does not match coding tool")
 			}
 		}
@@ -244,9 +244,6 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 		return resolved, fmt.Errorf("%w: Codex requires a login file", ErrModelBindingInvalid)
 	}
 	resolved.CredentialID, resolved.SecretRevision, resolved.Secret = credential.ID, credential.SecretRevision, secret
-	if resolved.SecretRevision == 0 {
-		resolved.SecretRevision = 1
-	}
 	return resolved, nil
 }
 

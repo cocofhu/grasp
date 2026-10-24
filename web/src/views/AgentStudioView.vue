@@ -478,11 +478,16 @@ async function createStudioChatTest(
               <Icon name="menu" :size="14" />
               <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
             </button>
-            <span v-if="dirty" class="chip shrink-0 border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
-            <span
-              v-else-if="justSaved"
-              class="chip shrink-0 border-ok/30 bg-ok/10 text-ok"
-            >{{ t('pages.agentStudio.saved') }}</span>
+            <span class="studio-status-slot">
+              <Transition name="studio-feedback">
+                <span v-if="dirty" key="dirty" class="chip border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
+                <span
+                  v-else-if="justSaved"
+                  key="saved"
+                  class="chip border-ok/30 bg-ok/10 text-ok"
+                >{{ t('pages.agentStudio.saved') }}</span>
+              </Transition>
+            </span>
           </div>
           <div data-test="studio-name-row-bottom" class="flex items-center gap-2">
             <AppButton
@@ -495,16 +500,22 @@ async function createStudioChatTest(
             >
               {{ t('pages.agentStudio.exportImport.export') }}
             </AppButton>
-            <AppButton
-              v-if="dirty"
-              data-test="studio-save"
-              variant="primary"
-              class="min-h-11"
-              :disabled="saving"
-              @click="() => save()"
-            >
-              {{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}
-            </AppButton>
+            <Transition name="studio-feedback">
+              <AppButton
+                v-if="dirty"
+                data-test="studio-save"
+                variant="primary"
+                class="studio-save-button min-h-11"
+                :disabled="saving"
+                @click="() => save()"
+              >
+                <span class="studio-save-label">
+                  <Transition name="studio-feedback">
+                    <span :key="saving ? 'saving' : 'save'">{{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}</span>
+                  </Transition>
+                </span>
+              </AppButton>
+            </Transition>
           </div>
         </div>
         <div
@@ -514,11 +525,16 @@ async function createStudioChatTest(
         >
           <Icon name="robot" :size="15" class="shrink-0 text-accent-2" />
           <span class="min-w-0 truncate text-[13px] font-medium text-txt" :title="activeName">{{ activeName }}</span>
-          <span v-if="dirty" class="chip shrink-0 border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
-          <span
-            v-else-if="justSaved"
-            class="chip shrink-0 border-ok/30 bg-ok/10 text-ok"
-          >{{ t('pages.agentStudio.saved') }}</span>
+          <span class="studio-status-slot">
+            <Transition name="studio-feedback">
+              <span v-if="dirty" key="dirty" class="chip border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
+              <span
+                v-else-if="justSaved"
+                key="saved"
+                class="chip border-ok/30 bg-ok/10 text-ok"
+              >{{ t('pages.agentStudio.saved') }}</span>
+            </Transition>
+          </span>
           <div class="ml-auto flex shrink-0 items-center gap-2">
             <AppButton
               data-test="studio-export"
@@ -534,10 +550,15 @@ async function createStudioChatTest(
               data-test="studio-save"
               size="sm"
               variant="primary"
+              class="studio-save-button"
               :disabled="!dirty || saving"
               @click="() => save()"
             >
-              {{ saving ? t('common.buttons.saving') : dirty ? t('common.buttons.save') : t('pages.agentStudio.saved') }}
+              <span class="studio-save-label">
+                <Transition name="studio-feedback">
+                  <span :key="saving ? 'saving' : dirty ? 'save' : 'saved'">{{ saving ? t('common.buttons.saving') : dirty ? t('common.buttons.save') : t('pages.agentStudio.saved') }}</span>
+                </Transition>
+              </span>
             </AppButton>
           </div>
         </div>
@@ -1115,13 +1136,15 @@ async function createStudioChatTest(
 
 
     <Teleport to="body">
-      <div
-        v-if="toastMsg"
-        data-test="studio-toast"
-        class="rounded-lg fixed bottom-5 right-5 z-[10000] border border-line bg-elevated px-3.5 py-2 text-[12px] text-txt2 shadow-card"
-      >
-        {{ toastMsg }}
-      </div>
+      <Transition name="studio-toast">
+        <div
+          v-if="toastMsg"
+          data-test="studio-toast"
+          class="rounded-lg fixed bottom-5 right-5 z-[10000] border border-line bg-elevated px-3.5 py-2 text-[12px] text-txt2 shadow-card"
+        >
+          {{ toastMsg }}
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -1129,6 +1152,67 @@ async function createStudioChatTest(
 <style scoped>
 .agent-studio-document {
   container: agent-studio / inline-size;
+}
+
+.studio-status-slot,
+.studio-save-label {
+  display: inline-grid;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.studio-status-slot {
+  min-inline-size: 4.75em;
+}
+
+.studio-status-slot > .chip,
+.studio-save-label > span {
+  grid-area: 1 / 1;
+}
+
+.studio-status-slot > .chip {
+  justify-self: start;
+}
+
+.studio-save-button {
+  min-inline-size: 6.5em;
+  transition: opacity 200ms ease, background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+.studio-feedback-enter-active,
+.studio-feedback-leave-active,
+.studio-toast-enter-active,
+.studio-toast-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.studio-feedback-enter-from,
+.studio-feedback-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.studio-toast-enter-from,
+.studio-toast-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-save-button,
+  .studio-feedback-enter-active,
+  .studio-feedback-leave-active,
+  .studio-toast-enter-active,
+  .studio-toast-leave-active {
+    transition: none;
+  }
+
+  .studio-feedback-enter-from,
+  .studio-feedback-leave-to,
+  .studio-toast-enter-from,
+  .studio-toast-leave-to {
+    transform: none;
+  }
 }
 
 /* Account for the Settings directory as well as the browser width. */

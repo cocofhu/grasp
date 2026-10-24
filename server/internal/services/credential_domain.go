@@ -3,8 +3,10 @@ package services
 import (
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 // Credential domains are stored explicitly. Reading a credential never infers
@@ -13,21 +15,37 @@ func credentialDomain(row models.Credential) (purpose, issuer, tool, kind string
 	return row.Purpose, row.Issuer, row.ToolID, row.SecretKind
 }
 
+// currentCredential accepts only metadata written using the explicit domain
+// contract. Reading never upgrades an old row or invents a missing field.
+func currentCredential(row models.Credential) bool {
+	if row.BuiltinSlot != "" || row.SecretRevision < 1 || row.Name == "" || strings.TrimSpace(row.Name) != row.Name {
+		return false
+	}
+	in := CredentialInput{Purpose: row.Purpose, Type: row.Type, Issuer: row.Issuer, Provider: row.Provider, ToolID: row.ToolID, SecretKind: row.SecretKind, Host: row.Host, EnvKey: row.EnvKey, Metadata: row.Metadata}
+	if normalizeCredentialDomainInput(&in) != nil || in.Purpose != row.Purpose || in.Type != row.Type || in.ToolID != row.ToolID || in.SecretKind != row.SecretKind || in.Issuer != row.Issuer || in.Provider != row.Provider || in.Host != row.Host {
+		return false
+	}
+	if !validCredentialEnvKey(row.EnvKey) {
+		return false
+	}
+	if row.Purpose == "mcp" || row.Purpose == "custom" {
+		if envauth.IsSecretEnvKey(row.EnvKey) || runtime.IsGitAuthorizationEnvKey(row.EnvKey) {
+			return false
+		}
+		return row.Purpose != "custom" || row.EnvKey != "" || row.Target != ""
+	}
+	return row.Purpose == "model_api" && row.EnvKey == "" || row.Purpose != "model_api" && row.EnvKey == defaultCredentialEnvKey(in)
+}
+
 func normalizeCredentialDomainInput(in *CredentialInput) error {
 	in.Purpose = strings.ToLower(strings.TrimSpace(in.Purpose))
 	in.Type = strings.ToLower(strings.TrimSpace(in.Type))
+	in.Provider = strings.TrimSpace(in.Provider)
 	in.Issuer = strings.TrimSpace(in.Issuer)
 	in.ToolID = strings.TrimSpace(in.ToolID)
 	in.SecretKind = strings.TrimSpace(in.SecretKind)
 	if in.Purpose == "" {
-		switch in.Type {
-		case "ai":
-			return ErrCredentialPurpose
-		case "git", "ssh", "mcp", "custom":
-			in.Purpose = in.Type
-		default:
-			return nil
-		}
+		return ErrCredentialPurpose
 	}
 	switch in.Purpose {
 	case "model_api":
@@ -45,9 +63,6 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 			return ErrCredentialPurpose
 		}
 	case "tool_auth":
-		if in.ToolID == "" {
-			in.ToolID = in.Provider
-		}
 		capability, ok := modelrouting.CapabilityFor(in.ToolID)
 		if !ok {
 			return ErrCredentialPurpose
@@ -91,9 +106,6 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 		in.Type = "ssh"
 		if in.SecretKind == "" {
 			in.SecretKind = "ssh_private_key"
-			if in.EnvKey == "GIT_SSH_KNOWN_HOSTS" {
-				in.SecretKind = "ssh_known_hosts"
-			}
 		}
 		if in.SecretKind != "ssh_private_key" && in.SecretKind != "ssh_known_hosts" {
 			return ErrCredentialPurpose
@@ -122,8 +134,5 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 }
 
 func nextSecretRevision(current uint64) uint64 {
-	if current < 1 {
-		return 2
-	}
 	return current + 1
 }

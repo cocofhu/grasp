@@ -215,7 +215,7 @@ func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
 	seedOnboardingModel(t, hn)
-	credential, err := hn.h.Onboarding.Credentials.Create(services.CredentialInput{Type: "git", Provider: "github", Name: "GitHub", EnvKey: "GITHUB_TOKEN", Value: "test-github-key"})
+	credential, err := hn.h.Onboarding.Credentials.Create(services.CredentialInput{Purpose: "git", Type: "git", Provider: "github", Name: "GitHub", EnvKey: "GITHUB_TOKEN", Value: "test-github-key"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ func (s *AgentService) SetGitBindingResolver(validate func(*models.GitBindings) 
 	s.validateGitBindings = validate
 }
 
-// SetSharedAgent supplies defaults for explicitly opted-in model/Git inheritance.
+// SetSharedAgent supplies the workspace model/Git inheritance defaults.
 func (s *AgentService) SetSharedAgent(shared *SharedAgentService) { s.shared = shared }
 
 func (s *AgentService) Effective(agent Agent) Agent {

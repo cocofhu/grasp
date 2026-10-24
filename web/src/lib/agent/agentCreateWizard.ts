@@ -100,6 +100,8 @@ export function blankAgentCapabilities(): AgentCapabilities {
 
 export function freshDraft(): WizardDraft {
   return {
+    inheritModel: true,
+    inheritGit: true,
     gitBindings: { items: [] },
     step: 0,
     name: '',
@@ -129,6 +131,7 @@ export function configRootFor(backend: WizardBackendId): string {
 }
 
 export function applyAcpBackend(draft: WizardDraft, id: WizardBackendId): void {
+  draft.inheritModel = false
   if (draft.acpBackend !== id) draft.modelBinding = { kind: 'configuration', configurationId: '' }
   draft.acpBackend = id
   draft.configRoot = configRootFor(id)

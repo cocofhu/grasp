@@ -20,6 +20,13 @@ beforeEach(() => {
 })
 afterEach(() => { mounted.splice(0).forEach(w => w.unmount()); document.body.innerHTML = '' })
 describe('Agent wizard with explicit saved model', () => {
+ it('inherits by default and turns off only model inheritance after an explicit local model choice', async () => {
+  const { w } = setup(); await flushPromises()
+  expect(w.draft.value).toMatchObject({ inheritModel: true, inheritGit: true })
+  w.draft.value.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
+  expect(w.draft.value).toMatchObject({ inheritModel: false, inheritGit: true })
+  expect(w.effectiveModel.value?.configurationId).toBe('cfg')
+ })
  it('resets on opening and focuses the name', async () => {
   const input = document.createElement('input'); input.id = 'wiz-name-input'; document.body.append(input)
   const { w, props } = setup(false); w.draft.value.name = 'old'; w.createError.value = 'old'; props.open = true
@@ -47,6 +54,7 @@ describe('Agent wizard with explicit saved model', () => {
   const { w } = setup(); await flushPromises()
   const git = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }], preferredCredentialId: 'gh' }
   w.onGitBindings(git); git.items[0].credentialId = 'changed'
+  expect(w.draft.value.inheritGit).toBe(false)
   expect(w.draft.value.gitBindings?.items[0].credentialId).toBe('gh')
   expect(w.reviewItems.value.find(row => row.key === 'git')?.detail).toContain('GitHub team')
   w.draft.value.step = 2; w.goSkip(); expect(w.currentStep.value.id).toBe('review'); expect(w.draft.value.gitBindings).toEqual({ items: [] })

@@ -540,6 +540,7 @@ func (s *TeamService) CreateAgentFromTemplate(args CreateFromTemplateArgs) (Agen
 		return Agent{}, err
 	}
 	backend := configuration.Backend
+	tmpl.InheritModel, tmpl.InheritGit = false, false
 	tmpl.ModelBinding = &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}
 	bindings, err := models.NormalizeGitBindings(args.GitBindings)
 	if err != nil {
@@ -589,6 +590,7 @@ func (s *TeamService) buildPMAgent(req normalizedTeamReq) (Agent, error) {
 	}
 	tmpl.Name = req.PMName
 	backend := req.AcpBackend
+	tmpl.InheritModel, tmpl.InheritGit = false, false
 	tmpl.AcpBackend = backend
 	tmpl.Layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	if strings.TrimSpace(tmpl.Layout.WorkspaceDir) == "" {

@@ -113,6 +113,7 @@ func loadTeamAgentTemplate(embedName string) (Agent, error) {
 		layout = *cfg.Layout
 	}
 	return Agent{
+		InheritModel: cfg.InheritModel, InheritGit: cfg.InheritGit,
 		Name:         embedName,
 		AcpBackend:   NormalizeAcpBackend(cfg.AcpBackend),
 		Files:        files,
