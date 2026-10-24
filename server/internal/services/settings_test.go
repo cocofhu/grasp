@@ -47,7 +47,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	svc := NewSettingsService(db, conc, sbx)
 
 	items := svc.Effective()
-	if len(items) != 9 {
+	if len(items) != 8 {
 		t.Fatalf("items: %d", len(items))
 	}
 	updated, err := svc.Update(map[string]int{
@@ -62,7 +62,7 @@ func TestSettingsServiceEffectiveAndUpdate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(updated) != 9 {
+	if len(updated) != 8 {
 		t.Fatalf("updated: %d", len(updated))
 	}
 	if conc.max != 7 || conc.ar != 3 || sbx.maxTest != 4 {

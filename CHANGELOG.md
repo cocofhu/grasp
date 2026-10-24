@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Workflow shared sandbox switch:** enable Shared sandbox in the workflow editor’s default settings and save. New runs use that selection directly; the separate platform-wide enable flag has been removed. Workflow settings now use consistent groups and switches, with searchable variable-type and Agent selectors.
+
 - **Simpler account and inheritance settings:** Credentials separates coding-tool authorizations under Agent CLI from model service API accounts, both with provider logos. Removed the separate connections list, add-connection entry and model catalog. New Agents inherit by default; Agent metadata collapses inherited settings into one card; switching inheritance off restores local choices. The card keeps its size, and save feedback transitions smoothly. Removed automatic credential slots and old-format inference; only explicitly created current credentials are listed and used.
 
 - **Credential hosts and Agent defaults:** GitHub and GitLab credentials now store their own Host, defaulting to the official service, instead of a separate GitLab URL credential. Coding-tool and Git credentials appear in their own sections. Agent defaults can select a named model and several Git authorizations; each Agent can independently inherit either selection. Selecting a model determines the coding CLI without a duplicate tool picker.
@@ -54,7 +56,7 @@ All notable public-release changes are documented here.
 
 - **Agent files editor:** fewer columns. Markdown files open in a single editor with an Edit / Split / Preview switch in the toolbar (no minimap), and version history opens from a toolbar button instead of taking a column on the right.
 
-- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable `shared_run_sandbox_enabled` in platform settings and set the workflow's `defaults.sandbox.mode` to `shared`. When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
+- **Shared run sandbox (opt-in, off by default):** a workflow can run every node of a run in one sandbox, so the workspace, installed dependencies and uncommitted work carry over between nodes. Enable Shared sandbox in the workflow editor’s default settings (`defaults.sandbox.mode = shared`). When the next node uses a different agent or different credentials, the sandbox's env and credentials are re-initialized before that node starts.
 
 - **Loading skeletons:** the shimmer is now a soft neutral sheen with a pause between sweeps instead of a fast purple wave, blocks have rounded corners, and the skeleton fades in after a short delay so quick loads no longer flash it.
 

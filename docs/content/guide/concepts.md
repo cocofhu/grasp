@@ -85,6 +85,8 @@ Agent 授予了 `set_preview` 时，noVNC 工具栏会多一个「新标签页�
 
 ## 真实 Docker 沙箱
 
+在工作流编辑页顶部打开「工作流默认配置」，开启「共享沙箱」并保存。默认关闭，每个节点使用独立沙箱；开启后，同一次运行的节点复用沙箱工作区、已安装依赖和未提交修改，不同运行仍各自隔离。设置只对新启动的运行生效，无需平台总开关。切换节点时按该 Agent 的配置更新模型和 Git 授权；沙箱仍被其他会话占用或无法复用时，该节点使用独立沙箱。
+
 Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway) 在 Docker 容器中执行，经 ACP 通信。
 
 支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**、**Codex** 和 **DeepSeek Harness**。Agent 的编码工具与模型来源分别配置，密钥只在「设置 → 凭据」保存。

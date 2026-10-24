@@ -238,6 +238,75 @@ test('edge condition edit saves manually and survives reload; node drag snaps to
   await expect(page.getByTestId('edge-when-input')).toHaveValue('需求已确认')
 })
 
+test('shared sandbox is a single workflow switch and persists both states', async ({ page }) => {
+  const store = freshStore()
+  const variables = [{ name: 'branch', type: 'string', value: 'main' }]
+  store.wf.defaults = { inheritWorkspace: false, variables }
+  await openEditor(page, store)
+  await startFromTemplate(page)
+  await page.getByTestId('editor-defaults').click()
+  const dialog = page.getByRole('dialog')
+  const toggle = dialog.getByRole('switch', { name: '共享沙箱', exact: true })
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => store.wf.defaults).toEqual({
+    inheritWorkspace: false, variables, sandbox: { mode: 'shared' },
+  })
+  await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/shared-sandbox-on.png` })
+
+  await page.reload()
+  await page.getByTestId('editor-defaults').click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'true')
+  await toggle.focus()
+  await page.keyboard.press('Space')
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+  await dialog.getByRole('button', { name: '保存', exact: true }).click()
+  await expect.poll(() => store.wf.defaults).toEqual({
+    inheritWorkspace: false, variables, sandbox: { mode: 'per_node' },
+  })
+  await page.reload()
+  await page.getByTestId('editor-defaults').click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+})
+
+for (const [width, theme] of [[1440, 'light'], [1024, 'dark']] as const) {
+  test(`workflow settings use consistent controls and searchable choices at ${width}px ${theme}`, async ({ page }) => {
+    const store = freshStore()
+    await openEditor(page, store, theme)
+    await startFromTemplate(page)
+    await page.getByTestId('editor-defaults').click()
+    await page.setViewportSize({ width, height: 900 })
+    const dialog = page.getByRole('dialog')
+    await expect(dialog).toBeVisible()
+    await expect(dialog.locator('select, input[type="checkbox"]')).toHaveCount(0)
+    await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-${width}-${theme}.png` })
+
+    await dialog.getByRole('button', { name: '添加变量', exact: true }).click()
+    await dialog.getByRole('textbox', { name: '变量名', exact: true }).fill('COUNT')
+    await dialog.getByRole('button', { name: '变量类型', exact: true }).click()
+    await page.getByRole('combobox', { name: '搜索…', exact: true }).fill('数字')
+    await page.getByRole('option', { name: '数字', exact: true }).click()
+    await dialog.getByRole('spinbutton', { name: '默认值', exact: true }).fill('12')
+
+    const gate = page.getByTestId('workflow-gate-settings')
+    await gate.getByRole('switch').first().click()
+    await gate.getByRole('button', { name: '执行 Agent', exact: true }).click()
+    await page.getByRole('combobox', { name: '搜索…', exact: true }).fill('测试')
+    await page.getByRole('option', { name: '测试评审', exact: true }).click()
+    await expect(dialog.locator('select, input[type="checkbox"]')).toHaveCount(0)
+    await expect(gate.getByRole('button', { name: '执行 Agent', exact: true })).toContainText('测试评审')
+    expect(await dialog.evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(true)
+    await dialog.screenshot({ animations: 'disabled', path: `${SHOT}/workflow-settings-expanded-${width}-${theme}.png` })
+    await dialog.getByRole('button', { name: '保存', exact: true }).click()
+    await expect.poll(() => store.wf.defaults).toMatchObject({
+      variables: [{ name: 'COUNT', type: 'number', value: 12 }],
+      gateAuto: { agentName: '测试评审', enabled: false },
+    })
+  })
+}
+
 test('run canvas shows running and failed node states', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   await page.goto('/workflow-canvas.html?view=run&scenario=running')

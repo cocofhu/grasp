@@ -105,8 +105,7 @@ type WorkflowDefaults struct {
 }
 
 // Run sandbox modes. Per-node is the default: every node visit gets its own
-// sandbox. Shared runs every node of a run in one sandbox; it only takes
-// effect while the platform switch (settings shared_run_sandbox_enabled) is on.
+// sandbox. Shared lets compatible node visits reuse one sandbox within a run.
 const (
 	SandboxModePerNode = "per_node"
 	SandboxModeShared  = "shared"
