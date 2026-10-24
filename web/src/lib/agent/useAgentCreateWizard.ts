@@ -18,6 +18,9 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
   const templateRows = ref<AgentTemplate[]>([]); const credentialItems = ref<CredentialItem[]>([]); const modelConfigurations = ref<ModelConfiguration[]>([])
   const sharedConfig = ref<SharedAgentConfig>()
   const effectiveModel = computed(() => draft.value.inheritModel ? sharedConfig.value?.modelBinding : draft.value.modelBinding)
+  watch(() => draft.value.modelBinding?.configurationId, (id, previous) => {
+    if (id?.trim() && id !== previous) draft.value.inheritModel = false
+  }, { flush: 'sync' })
   const templateOptions = computed(() => buildTemplateOptions(templateRows.value, t, te))
   const selectedTemplate = computed(() => templateOptions.value.find((row) => row.id === draft.value.templateId) || null)
   const showDescField = computed(() => !hasRoleTemplate(draft.value))
@@ -56,7 +59,7 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
   }
   function confirmAcpSwitch() { if (pendingAcp.value) applyAcpBackend(draft.value, pendingAcp.value); pendingAcp.value = null; showAcpConfirm.value = false; markConfigured('acp') }
   function cancelAcpSwitch() { pendingAcp.value = null; showAcpConfirm.value = false }
-  function onGitBindings(value: AgentGitBindings) { setDraftGitBindings(draft.value, value); markConfigured('git') }
+  function onGitBindings(value: AgentGitBindings) { draft.value.inheritGit = false; setDraftGitBindings(draft.value, value); markConfigured('git') }
   function goPrev() { if (draft.value.step && !creating.value) { draft.value.step--; stepAnimKey.value++ } }
   function goSkip() { if (currentStep.value.id !== 'git' || creating.value) return; draft.value.skipped.git = true; draft.value.inheritGit = false; setDraftGitBindings(draft.value, { items: [] }); draft.value.step++; stepAnimKey.value++ }
   function validateName() {

@@ -1200,8 +1200,8 @@
         "description": "Manage access to coding tools, model providers and repositories. Secret values stay masked.",
         "noValue": "No credential added",
         "sections": {
-          "coding": "Coding tools",
-          "models": "Model API keys",
+          "coding": "Agent CLI",
+          "api": "API accounts",
           "git": "Repositories",
           "ssh": "SSH access",
           "other": "Other credentials"
@@ -1216,7 +1216,6 @@
         "createTitle": "Add workspace credential",
         "alias": "Alias",
         "aliasPlaceholder": "e.g. Shared team key",
-        "recreateCredential": "Add this credential again to edit it.",
         "invalidHost": "Enter a host or HTTP(S) origin without a path.",
         "aliasRequired": "Enter an alias",
         "aliasTaken": "This kind already has an alias “{alias}”. Use a different name.",

@@ -14,7 +14,7 @@ const binding = { kind: 'configuration' as const, configurationId: 'local-model'
 const model = { id: 'local-model', name: 'Local Cursor', backend: 'cursor', state: 'active', binding: { kind: 'platform', credentialId: 'key' } }
 const defaults = { files: [], mcp: [], env: {}, layout: {}, modelBinding: binding, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' } }
 function setup(overrides = {}, inheritance = true) {
-  const draft = reactive(toDraft({ name: 'a', acpBackend: 'cursor', modelBinding: binding, ...overrides }))
+  const draft = reactive(toDraft({ name: 'a', inheritModel: false, inheritGit: false, acpBackend: 'cursor', modelBinding: binding, ...overrides }))
   const wrapper = mount(AgentRuntimeBindings, { props: { draft, inheritance }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { RouterLink: { template: '<a><slot /></a>' }, Teleport: true } } })
   return { wrapper, draft }
 }
@@ -27,7 +27,7 @@ beforeEach(() => {
   mocks.listToolCapabilities.mockResolvedValue({ items: [] })
 })
 describe('explicit default binding choices', () => {
-  it('does not inherit model or Git credentials until the user opts in', async () => {
+  it('respects explicitly disabled model and Git inheritance', async () => {
     const { wrapper, draft } = setup(); await flushPromises()
     expect(wrapper.get('[data-testid="agent-inherit-model"]').attributes('aria-checked')).toBe('false')
     expect(wrapper.get('[data-testid="agent-inherit-git"]').attributes('aria-checked')).toBe('false')
@@ -35,13 +35,31 @@ describe('explicit default binding choices', () => {
     expect(draft.gitBindings?.items).toEqual([])
     expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([true]); wrapper.unmount()
   })
+  it('uses defaults without selection controls and restores local bindings when inheritance is off', async () => {
+    const localGit = { items: [{ credentialId: 'other-git' }], preferredCredentialId: 'other-git' }
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: 'key', purpose: 'tool_auth', toolId: 'cursor', configured: true }, { id: 'git', name: 'Team GitLab', purpose: 'git', provider: 'gitlab', configured: true }, { id: 'other-git', name: 'Local GitHub', purpose: 'git', provider: 'github', configured: true }] })
+    const { wrapper, draft } = setup({ inheritModel: true, inheritGit: true, gitBindings: localGit }); await flushPromises()
+    expect(wrapper.get('[data-testid="model-binding-inherited-summary"]').text()).toContain('Local Cursor')
+    for (const id of ['model-binding-configuration-select', 'git-credential-add', 'git-preferred-git', 'git-remove-git', 'git-options-git']) expect(wrapper.find(`[data-testid="${id}"]`).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="git-inherited-preferred-git"]').text()).toBe('首选')
+    expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([true])
+    expect(wrapper.emitted('gitValidity')?.at(-1)).toEqual([true])
+    expect(draft.modelBinding).toEqual(binding)
+    expect(draft.gitBindings).toEqual(localGit)
+    await wrapper.get('[data-testid="agent-inherit-model"]').trigger('click')
+    await wrapper.get('[data-testid="agent-inherit-git"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-binding-configuration-select"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="git-credential-add"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="git-credential-row-other-git"]').text()).toContain('Local GitHub')
+    expect(fromDraft(draft)).toMatchObject({ inheritModel: false, inheritGit: false, modelBinding: binding, gitBindings: localGit }); wrapper.unmount()
+  })
   it('blocks a missing default model instead of using the available local selection', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, modelBinding: undefined })
     const { wrapper, draft } = setup({ inheritModel: true }); await flushPromises()
     expect(wrapper.text()).toContain('请先在 Agent 默认配置中选择模型')
     expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([false])
     expect(draft.modelBinding).toEqual(binding)
-    expect(wrapper.get('[data-testid="model-binding-configuration-select"] button').attributes('disabled')).toBeDefined(); wrapper.unmount()
+    expect(wrapper.find('[data-testid="model-binding-configuration-select"]').exists()).toBe(false); wrapper.unmount()
   })
   it('blocks failed default Git loading and retries without replacing local references', async () => {
     mocks.getSharedAgentConfig.mockRejectedValueOnce(new Error('offline'))
@@ -52,6 +70,15 @@ describe('explicit default binding choices', () => {
     expect(wrapper.emitted('gitValidity')?.at(-1)).toEqual([true])
     expect(wrapper.get('[data-testid="git-credential-row-git"]').text()).toContain('Team GitLab')
     expect(draft.gitBindings?.items).toEqual([]); wrapper.unmount()
+  })
+  it('explains invalid inherited scopes after a Git account changes host without exposing selection controls', async () => {
+    mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, gitBindings: { items: [{ credentialId: 'git', scope: 'git.old.test' }], preferredCredentialId: 'git' } })
+    mocks.listCredentials.mockResolvedValue({ items: [{ id: 'git', name: 'Team GitLab', purpose: 'git', provider: 'gitlab', host: 'https://git.new.test', configured: true }] })
+    const { wrapper } = setup({ inheritGit: true }); await flushPromises()
+    expect(wrapper.emitted('gitValidity')?.at(-1)).toEqual([false])
+    expect(wrapper.get('[data-testid="git-credential-row-git"] [role="alert"]').text()).toContain('与凭据的 Host、协议一致')
+    expect(wrapper.find('[data-testid="git-credential-add"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="git-options-git"]').exists()).toBe(false); wrapper.unmount()
   })
   it('reports a revoked inherited model and never falls back to the local model', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, modelBinding: { kind: 'configuration', configurationId: 'deleted' } })

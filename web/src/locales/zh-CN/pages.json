@@ -1200,8 +1200,8 @@
         "description": "集中管理编码工具、模型服务和代码仓库的授权，密钥仅显示掩码。",
         "noValue": "尚未添加凭据",
         "sections": {
-          "coding": "编码工具",
-          "models": "模型 API Key",
+          "coding": "Agent CLI",
+          "api": "API 账号",
           "git": "代码仓库",
           "ssh": "SSH 访问",
           "other": "其他凭据"
@@ -1216,7 +1216,6 @@
         "createTitle": "新增工作区凭据",
         "alias": "别名",
         "aliasPlaceholder": "例如：团队共享",
-        "recreateCredential": "请重新添加此凭据后编辑。",
         "invalidHost": "请填写主机或 HTTP(S) 地址，不含路径。",
         "aliasRequired": "请填写别名",
         "aliasTaken": "这一类里已经有别名「{alias}」，请使用其他名称。",

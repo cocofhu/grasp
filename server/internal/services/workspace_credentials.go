@@ -148,16 +148,8 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 
 func credentialView(row models.Credential) CredentialView {
 	purpose, issuer, tool, kind := credentialDomain(row)
-	host := row.Host
-	if purpose == "git" {
-		host, _ = models.NormalizeGitCredentialHost(row.Provider, host)
-	}
-	revision := row.SecretRevision
-	if revision == 0 && row.ValueEnc != "" {
-		revision = 1
-	}
 	return CredentialView{
-		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, Host: host, SecretRevision: revision,
+		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, Host: row.Host, SecretRevision: row.SecretRevision,
 		ID: row.ID, Type: row.Type, Provider: row.Provider,
 		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
 		Masked: func() string {
@@ -171,70 +163,14 @@ func credentialView(row models.Credential) CredentialView {
 	}
 }
 
-// Short product names for the built-in credential slots. GitLab URL stays
-// qualified so it does not collide with the GitLab token slot.
-const (
-	builtinNameCursor          = "Cursor"
-	builtinNameClaudeCode      = "Claude Code"
-	builtinNameCodeBuddy       = "CodeBuddy"
-	builtinNameTrae            = "Trae"
-	builtinNameOpenCode        = "OpenCode"
-	builtinNameCodex           = "Codex"
-	builtinNameDeepSeekHarness = "DeepSeek Harness"
-	builtinNameGitHub          = "GitHub"
-	builtinNameGitLab          = "GitLab"
-	builtinNameSSHKey          = "SSH Key"
-	builtinNameSSHHosts        = "SSH Hosts"
-)
-
-func builtinCredentialID(slot string) string { return "cred-builtin-" + slot }
-
-func builtinCredentialRows() []models.Credential {
-	return []models.Credential{
-		{ID: builtinCredentialID("cursor"), Purpose: "tool_auth", Issuer: "cursor", ToolID: "cursor", SecretKind: "api_key", Type: "ai", Provider: "cursor", Name: builtinNameCursor, EnvKey: envauth.EnvCursorAPIKey},
-		{ID: builtinCredentialID("claude"), Purpose: "tool_auth", Issuer: "claude_code", ToolID: "claude_code", SecretKind: "api_key", Type: "ai", Provider: "claude_code", Name: builtinNameClaudeCode, EnvKey: envauth.EnvClaudeAPIKey},
-		{ID: builtinCredentialID("codebuddy"), Purpose: "tool_auth", Issuer: "codebuddy", ToolID: "codebuddy", SecretKind: "api_key", Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
-		{ID: builtinCredentialID("trae"), Purpose: "tool_auth", Issuer: "trae", ToolID: "trae", SecretKind: "token", Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
-		{ID: builtinCredentialID("codex"), Purpose: "tool_auth", Issuer: "codex", ToolID: "codex", SecretKind: "login_file", Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
-		{ID: builtinCredentialID("github"), Purpose: "git", Issuer: "github", SecretKind: "token", Host: "https://github.com", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
-		{ID: builtinCredentialID("gitlab"), Purpose: "git", Issuer: "gitlab", SecretKind: "token", Host: "https://gitlab.com", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
-		{ID: builtinCredentialID("ssh-key"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_private_key", Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey},
-		{ID: builtinCredentialID("ssh-hosts"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_known_hosts", Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts},
-	}
-}
-
-// ensureDefaultRows creates empty, stable slots for the built-in credentials
-// shown by the workspace UI. Empty rows do not affect runtime resolution.
-func (s *CredentialService) ensureDefaultRows() error {
-	for _, row := range builtinCredentialRows() {
-		var n int64
-		if err := s.db.Model(&models.Credential{}).Where("id = ?", row.ID).Count(&n).Error; err != nil {
-			return err
-		}
-		if n > 0 {
-			continue
-		}
-		now := time.Now()
-		row.Enabled, row.CreatedAt, row.UpdatedAt = true, now, now
-		row.BuiltinSlot = row.EnvKey
-		if err := s.db.Create(&row).Error; err != nil && !strings.Contains(strings.ToLower(err.Error()), "unique") {
-			return err
-		}
-	}
-	return nil
-}
-
 func (s *CredentialService) List() ([]CredentialView, error) {
-	if err := s.ensureDefaultRows(); err != nil {
-		return nil, err
-	}
 	var rows []models.Credential
 	if err := s.db.Order("created_at desc").Find(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]CredentialView, 0, len(rows))
 	for _, row := range rows {
-		if strings.TrimSpace(row.EnvKey) == "GITLAB_URL" {
+		if !currentCredential(row) {
 			continue
 		}
 		v := credentialView(row)
@@ -317,8 +253,8 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 		}
 		return CredentialView{}, err
 	}
-	if row.Purpose == "" {
-		return CredentialView{}, ErrCredentialPurpose
+	if !currentCredential(row) {
+		return CredentialView{}, ErrCredentialNotFound
 	}
 	if in.Purpose != "" || row.Purpose != "" {
 		purpose, issuer, tool, kind := credentialDomain(row)
@@ -425,34 +361,13 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 	return credentialView(row), nil
 }
 
-// SetByEnvKey creates or rotates the credential slot identified by envKey.
-// It is used by onboarding so newly submitted secrets land in the workspace
-// credential store instead of being written to shared Agent env.
-func (s *CredentialService) SetByEnvKey(in CredentialInput) (CredentialView, error) {
-	key := strings.TrimSpace(in.EnvKey)
-	if key == "" {
-		return CredentialView{}, errors.New("credential env key is required")
-	}
-	// Materialize built-in slots before lookup so onboarding and API writes
-	// update the stable UI row instead of creating a duplicate binding.
-	if err := s.ensureDefaultRows(); err != nil {
-		return CredentialView{}, err
-	}
-	var row models.Credential
-	err := s.db.Where("env_key = ?", key).Order("created_at asc").First(&row).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return s.Create(in)
-	}
-	if err != nil {
-		return CredentialView{}, err
-	}
-	return s.Update(row.ID, in)
-}
-
 func (s *CredentialService) Revoke(id string) error {
+	if _, err := s.Get(id); err != nil {
+		return err
+	}
 	now := time.Now()
 	res := s.db.Model(&models.Credential{}).Where("id = ?", id).
-		Updates(map[string]any{"revoked_at": now, "enabled": false, "updated_at": now, "secret_revision": gorm.Expr("CASE WHEN secret_revision < 1 THEN 2 ELSE secret_revision + 1 END")})
+		Updates(map[string]any{"revoked_at": now, "enabled": false, "updated_at": now, "secret_revision": gorm.Expr("secret_revision + 1")})
 	if res.Error != nil {
 		return res.Error
 	}
@@ -462,10 +377,8 @@ func (s *CredentialService) Revoke(id string) error {
 	return nil
 }
 
-// Clear removes a credential from use. Built-in slots keep their row so the
-// workspace page still has a place to configure them. An extra model-vendor key
-// is deleted so the row disappears. Callers that track an Agent selection
-// should forget that id after a successful clear.
+// Clear removes the secret from an explicitly created credential. Its current
+// metadata remains editable; no replacement row or default slot is created.
 func (s *CredentialService) Clear(id string) error {
 	id = strings.TrimSpace(id)
 	var row models.Credential
@@ -474,6 +387,9 @@ func (s *CredentialService) Clear(id string) error {
 			return ErrCredentialNotFound
 		}
 		return err
+	}
+	if !currentCredential(row) {
+		return ErrCredentialNotFound
 	}
 	row.ValueEnc = ""
 	row.SecretRevision = nextSecretRevision(row.SecretRevision)
@@ -491,6 +407,9 @@ func (s *CredentialService) Get(id string) (CredentialView, error) {
 			return CredentialView{}, ErrCredentialNotFound
 		}
 		return CredentialView{}, err
+	}
+	if !currentCredential(row) {
+		return CredentialView{}, ErrCredentialNotFound
 	}
 	return credentialView(row), nil
 }
@@ -536,6 +455,9 @@ func (s *CredentialService) WriteBackCodexLoginCredential(credentialID, content 
 	if err := s.db.Where("id = ? AND env_key = ? AND enabled = ? AND revoked_at IS NULL AND value_enc <> ''", credentialID, envauth.EnvCodexAuthFile, true).First(&row).Error; err != nil {
 		return err
 	}
+	if !currentCredential(row) || row.Purpose != "tool_auth" || row.ToolID != "codex" {
+		return ErrCredentialNotFound
+	}
 	previous, err := crypto.Decrypt(row.ValueEnc)
 	if err != nil {
 		return err
@@ -576,7 +498,7 @@ func (s *CredentialService) credentialAliasTaken(envKey, name, exceptID string) 
 		return "", false, err
 	}
 	for _, row := range rows {
-		if row.ID == exceptID {
+		if row.ID == exceptID || !currentCredential(row) {
 			continue
 		}
 		if credentialAliasKey(row.Name) == want {
@@ -587,7 +509,7 @@ func (s *CredentialService) credentialAliasTaken(envKey, name, exceptID string) 
 }
 
 func credentialEnvRow(row models.Credential) bool {
-	if row.Purpose != "mcp" && row.Purpose != "custom" {
+	if !currentCredential(row) || row.Purpose != "mcp" && row.Purpose != "custom" {
 		return false
 	}
 	if row.Type != "mcp" && row.Type != "custom" {
@@ -607,7 +529,7 @@ func (s *CredentialService) ResolveSelectedValue(credentialID string) (string, s
 	}
 	var row models.Credential
 	err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", credentialID, true).First(&row).Error
-	if err != nil || row.Purpose == "" || strings.TrimSpace(row.ValueEnc) == "" {
+	if err != nil || !currentCredential(row) || strings.TrimSpace(row.ValueEnc) == "" {
 		return "", "", false
 	}
 	dec, err := crypto.Decrypt(row.ValueEnc)
@@ -626,7 +548,7 @@ func (s *CredentialService) ResolveGitValue(id string) (runtime.GitCredentialVal
 		return value, false
 	}
 	var row models.Credential
-	if err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", strings.TrimSpace(id), true).First(&row).Error; err != nil || row.ValueEnc == "" || row.Purpose != "git" && row.Purpose != "ssh" {
+	if err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", strings.TrimSpace(id), true).First(&row).Error; err != nil || !currentCredential(row) || row.ValueEnc == "" || row.Purpose != "git" && row.Purpose != "ssh" {
 		return value, false
 	}
 	if row.Purpose == "git" {
@@ -658,36 +580,10 @@ func rejectCodexLoginValue(provider, envKey, value string) error {
 	return runtime.ValidateCodexLoginFile(value)
 }
 
-func aiCredentialName(backend string) string {
-	switch NormalizeAcpBackend(backend) {
-	case AcpBackendCursor:
-		return builtinNameCursor
-	case AcpBackendClaudeCode:
-		return builtinNameClaudeCode
-	case AcpBackendCodeBuddy:
-		return builtinNameCodeBuddy
-	case AcpBackendTrae:
-		return builtinNameTrae
-	case AcpBackendOpenCode:
-		return builtinNameOpenCode
-	case AcpBackendCodex:
-		return builtinNameCodex
-	case AcpBackendDeepSeekHarness:
-		return builtinNameDeepSeekHarness
-	default:
-		backend = strings.TrimSpace(backend)
-		if backend == "" {
-			return "API Key"
-		}
-		return backend + " API Key"
-	}
-}
-
 // CredentialEnvKeys returns the environment keys bound by active workspace
 // credentials that carry a value. Callers use this set
 // to prevent a per-run environment snapshot from shadowing a workspace
-// credential binding. Empty built-in slots (materialized just by opening the
-// UI) are excluded so they do not silently block Run env values.
+// credential binding. Cleared credentials do not block Run env values.
 // The values themselves are intentionally not resolved here.
 func (s *CredentialService) CredentialEnvKeys() map[string]struct{} {
 	var rows []models.Credential
@@ -715,6 +611,9 @@ func (s *CredentialService) ResolveReferences() map[string]string {
 	}
 	out := map[string]string{}
 	for _, row := range rows {
+		if !currentCredential(row) {
+			continue
+		}
 		switch row.Type {
 		case "ai", "git", "ssh", "mcp", "custom":
 		default:

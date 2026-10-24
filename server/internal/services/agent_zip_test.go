@@ -120,7 +120,7 @@ func TestImportZIPOverwriteClearsOldFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	meta := []byte(`{"name":"target","acpBackend":"cursor","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z","mcp":[]}`)
+	meta := []byte(`{"name":"target","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z","mcp":[]}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"rules/new.md": []byte("new")})
 
 	if _, err := s.ImportZIP(raw, "target", ImportZIPOverwrite); err != nil {
@@ -170,7 +170,7 @@ func TestImportZIPAcpBackendCreateAndOverwrite(t *testing.T) {
 
 func TestImportZIPMissingAcpBackendRejected(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	meta := []byte(`{"name":"nobackend","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
+	meta := []byte(`{"name":"nobackend","inheritModel":false,"inheritGit":false,"schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"rules/a.md": []byte("a")})
 	if _, err := s.ImportZIP(raw, "nobackend", ImportZIPCreate); !errors.Is(err, ErrInvalidAcpBackend) {
 		t.Fatalf("err=%v want ErrInvalidAcpBackend", err)

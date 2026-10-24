@@ -10,7 +10,6 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
 import CliModelSelect from '@/components/agent/CliModelSelect.vue'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
-import ModelCatalogPanel from './ModelCatalogPanel.vue'
 import ModelRecordActions from './ModelRecordActions.vue'
 
 withDefaults(defineProps<{ hideCreateButton?: boolean }>(), { hideCreateButton: false })
@@ -36,7 +35,6 @@ watch(step, async () => {
 const saving = ref(false)
 const editingId = ref('')
 const awaitingCredential = ref(false)
-const catalogLoaded = ref(false)
 const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '' })
 const toolCaps = computed(() => capabilities.value.filter((item) => item.toolId === form.backend && item.adapterState === 'existing'))
 const platformAvailable = computed(() => toolCaps.value.some((item) => item.modes.includes('platform')))
@@ -69,12 +67,10 @@ const nativeRoute = computed(() => {
 })
 const sourceValid = computed(() => form.kind === 'platform' ? platformAvailable.value && platformKeys.value.some((item) => item.id === form.credentialId) : connectionAvailable.value && !!selectedService.value)
 const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()))
-const manualModels = computed(() => form.kind === 'connection' ? [...new Set([form.modelId.trim(), ...Object.values(form.roles).map((id) => id?.trim() || '')])].filter((id) => id && !selectedService.value?.models.some((item) => item.id === id)) : [])
 const valid = computed(() => !!form.name.trim() && !!form.backend && modelValid.value)
 function toolLabel(id: string) { return ACP_BACKENDS.find((tool) => tool.id === id)?.label || id }
 function credentialProvider(value: string) { return credentialOptions.value.find((option) => option.value === value)?.provider || '' }
 function problem(row: ModelConfiguration) { return bindingProblem(row.binding, row.backend, connections.value, credentials.value, capabilities.value) }
-function openCatalog(event: Event) { if ((event.currentTarget as HTMLDetailsElement).open) catalogLoaded.value = true }
 function roleLabel(role: keyof ModelRoles) { return c.value[`role_${role}`] }
 async function load() {
   loading.value = true
@@ -213,7 +209,6 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
         </div>
       </article>
     </div>
-    <details class="configuration-advanced" @toggle="openCatalog"><summary class="cursor-pointer text-xs text-txt3 hover:text-txt2">{{ c.advancedCatalog }}</summary><ModelCatalogPanel v-if="catalogLoaded" class="mt-4" @add-service="emit('manageCredentials')" @changed="load(); emit('changed')" /></details>
     <AppModal :open="open" :title="editingId ? c.editConfiguration : c.addConfiguration" :width="660" :close-on-esc="!saving" trap-focus :close-label="c.close" @close="!saving && (open = false)">
       <ol class="configuration-steps">
         <li v-for="(label, index) in wizardSteps" :key="index" :aria-current="step === index + 1 ? 'step' : undefined" :class="{ 'configuration-step--current': step === index + 1, 'configuration-step--done': step > index + 1 }">
@@ -269,7 +264,6 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
             <datalist id="configuration-model-catalog"><option v-for="model in selectedService?.models || []" :key="model.id" :value="model.id">{{ model.name || model.id }}</option></datalist>
             <details v-if="roleNames.length" class="rounded-lg border border-line p-3"><summary class="cursor-pointer text-xs text-txt2">{{ c.auxiliary }}</summary><div class="mt-3 grid gap-3 sm:grid-cols-2"><label v-for="role in roleNames" :key="role" class="block"><span class="label">{{ roleLabel(role) }}</span><input v-model="form.roles[role]" class="input w-full font-mono" list="configuration-model-catalog" :placeholder="c.followMain" :data-testid="`model-configuration-role-${role}`" /></label></div></details>
             <label v-if="nativeRoute" class="block"><span class="label">{{ c.routeProfile }}</span><AppSelect v-model="form.routeProfile" :options="[{ value: '', label: c.standardRoute }, { value: 'deepseek-native', label: 'DeepSeek native' }]" :aria-label="c.routeProfile" searchable data-testid="model-configuration-route-profile" /></label>
-            <p v-if="manualModels.length" class="break-all text-xs leading-5 text-txt3">{{ c.appendManualModel }} {{ manualModels.join(', ') }}</p>
           </template>
         </template>
         <p v-if="error" role="alert" class="break-words text-xs text-err" data-testid="model-configuration-error">{{ error }}</p>
@@ -333,9 +327,6 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
 }
 .configuration-actions {
   flex-shrink: 0;
-}
-.configuration-advanced {
-  margin-top: 24px;
 }
 .configuration-steps {
   display: grid;

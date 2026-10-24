@@ -114,9 +114,21 @@ type agentFile struct {
 	Layout             agentLayout           `json:"layout"`
 }
 
-// agentConfig reads the Agent's agent.json (best effort; empty on miss).
+// Missing switches inherit workspace defaults; an explicit false keeps the
+// Agent's local choice, even when a local binding is also stored.
+func (f *agentFile) UnmarshalJSON(data []byte) error {
+	type plain agentFile
+	next := plain{InheritModel: true, InheritGit: true}
+	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	*f = agentFile(next)
+	return nil
+}
+
+// agentConfig reads the Agent's agent.json (best effort; defaults on miss).
 func (c *acpProvider) agentConfig(profile string) agentFile {
-	var f agentFile
+	f := agentFile{InheritModel: true, InheritGit: true}
 	if profile == "" || c.opts.ProfilesRoot == "" {
 		return f
 	}

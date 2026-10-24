@@ -9,8 +9,6 @@ import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
-  DEFAULT_WORKSPACE_DIR,
-  defaultConfigRootFor,
   draftPayloadJson,
   fromDraft,
   hydrateStudioDraft,
@@ -242,27 +240,7 @@ defineExpose({ dirty, save })
         data-testid="shared-agent-meta"
       >
         <div class="max-w-3xl space-y-4">
-          <AgentRuntimeBindings :draft="draft" @help="gitHelpOpen = true" />
-          <label class="block">
-            <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
-            <input
-              v-model="draft.layout.configRoot"
-              :placeholder="defaultConfigRootFor(draft.acpBackend)"
-              spellcheck="false"
-              data-testid="meta-config-root"
-              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-            />
-          </label>
-          <label class="block">
-            <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.workspaceDir') }}</span>
-            <input
-              v-model="draft.layout.workspaceDir"
-              :placeholder="DEFAULT_WORKSPACE_DIR"
-              spellcheck="false"
-              data-testid="meta-workspace-dir"
-              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-            />
-          </label>
+          <AgentRuntimeBindings :draft="draft" hide-manage-link @help="gitHelpOpen = true" />
         </div>
       </div>
       <EnvCredentialHelpModal :open="gitHelpOpen" section="git" :backend="draft.acpBackend" @close="gitHelpOpen = false" />

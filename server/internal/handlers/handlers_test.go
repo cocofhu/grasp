@@ -745,20 +745,20 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("create bad: %d", w.Code)
 	}
 	// Create no name.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": ""}); w.Code != 400 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": ""}); w.Code != 400 {
 		t.Fatalf("create no name: %d", w.Code)
 	}
 	// Create ok.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 201 {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
 	// Conflict.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 409 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 409 {
 		t.Fatalf("conflict: %d", w.Code)
 	}
 	// optional templateId copies a built-in Agent's workspace and capabilities
 	if w := h.do("POST", "/api/agents", map[string]any{
-		"name": "qa-test", "templateId": "test_review", "acpBackend": "cursor",
+		"name": "qa-test", "templateId": "test_review", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 	}); w.Code != 201 {
 		t.Fatalf("create test_review template: %d %s", w.Code, w.Body)
 	}
@@ -775,13 +775,13 @@ func TestAgentEndpoints(t *testing.T) {
 			t.Fatal("qa-test should inherit template capabilities")
 		}
 	}
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 		"name": "bad-tpl", "templateId": "nope",
 	}); w.Code != 400 {
 		t.Fatalf("unknown templateId: %d", w.Code)
 	}
 	// Blank regression: no templateId still works
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "blank-ok"}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "blank-ok"}); w.Code != 201 {
 		t.Fatalf("blank create: %d %s", w.Code, w.Body)
 	}
 	// Templates list exposes the four built-in Agents
@@ -809,7 +809,7 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("get missing: %d", w.Code)
 	}
 	// Save (PUT).
-	if w := h.do("PUT", "/api/agents/a1", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 200 {
+	if w := h.do("PUT", "/api/agents/a1", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 200 {
 		t.Fatalf("save: %d", w.Code)
 	}
 	if w := h.do("PUT", "/api/agents/a1", "bad"); w.Code != 400 {

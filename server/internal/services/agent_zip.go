@@ -19,8 +19,8 @@ const AgentExportSchemaVersion = 1
 
 // agentExportJSON is the root agent.json inside an export ZIP.
 type agentExportJSON struct {
-	InheritModel       bool                      `json:"inheritModel,omitempty"`
-	InheritGit         bool                      `json:"inheritGit,omitempty"`
+	InheritModel       bool                      `json:"inheritModel"`
+	InheritGit         bool                      `json:"inheritGit"`
 	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`

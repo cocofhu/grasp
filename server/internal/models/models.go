@@ -49,7 +49,7 @@ type Credential struct {
 	Target         string         `json:"target,omitempty"`
 	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
 	ValueEnc       string         `json:"-"`
-	BuiltinSlot    string         `json:"builtinSlot,omitempty"`
+	BuiltinSlot    string         `json:"-"`
 	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
 	Enabled        bool           `json:"enabled"`
 	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`

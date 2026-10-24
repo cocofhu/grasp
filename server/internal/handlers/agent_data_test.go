@@ -49,7 +49,7 @@ func grantAdmin(t *testing.T) {
 func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 	hn := newHarness(t)
 	for _, key := range envauth.SecretEnvKeys() {
-		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor",
+		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 			"name": "ssh-env",
 			"env":  map[string]string{key: "x"},
 		})
@@ -57,11 +57,11 @@ func TestAgentSaveRejectsSecretEnvKeys(t *testing.T) {
 			t.Fatalf("create with %s want 400 got %d %s", key, w.Code, w.Body.String())
 		}
 	}
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "ssh-env"})
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "ssh-env"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
-	w = hn.do(http.MethodPut, "/api/agents/ssh-env", map[string]any{"acpBackend": "cursor",
+	w = hn.do(http.MethodPut, "/api/agents/ssh-env", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 		"name": "ssh-env",
 		"env":  map[string]string{"GIT_SSH_PRIVATE_KEY": "x"},
 	})
@@ -74,7 +74,7 @@ func TestDeleteAgentPurgesScopedData(t *testing.T) {
 	hn := newHarness(t)
 	pm := attachPm(t, hn)
 
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "to-delete"})
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "to-delete"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -96,7 +96,7 @@ func TestAgentDataAPI(t *testing.T) {
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "data-agent"})
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "data-agent"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -137,7 +137,7 @@ func TestAgentCronJobsListAllowedForNonAdmin(t *testing.T) {
 	attachPm(t, hn)
 	grantAdmin(t)
 
-	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "cron-acl-agent"})
+	w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "cron-acl-agent"})
 	if w.Code != http.StatusCreated {
 		t.Fatalf("create agent: %d %s", w.Code, w.Body.String())
 	}
