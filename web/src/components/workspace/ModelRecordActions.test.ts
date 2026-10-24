@@ -127,6 +127,31 @@ describe('ModelRecordActions', () => {
     expect(wrapper.emitted('toggle')).toEqual([[]])
   })
 
+  it('can show only the more menu so an API account keeps its own fill and clear controls', async () => {
+    const wrapper = mount(ModelRecordActions, {
+      attachTo: document.body,
+      props: { name: '1', prefix: 'api-account', recordId: 'empty-api', showEdit: false, showToggle: false },
+      global: {
+        plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
+        stubs: { Icon: true },
+      },
+    })
+    wrappers.push(wrapper)
+    expect(wrapper.find('[data-testid="api-account-edit-empty-api"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="api-account-toggle-empty-api"]').exists()).toBe(false)
+    const trigger = wrapper.get('[data-testid="api-account-more-empty-api"]')
+    expect(trigger.attributes('aria-label')).toContain('1')
+    vi.spyOn(trigger.element, 'getBoundingClientRect').mockReturnValue(new DOMRect(180, 20, 28, 28))
+    await trigger.trigger('keydown', { key: 'ArrowDown' })
+    await flushPromises()
+    const remove = document.querySelector<HTMLButtonElement>('[data-testid="api-account-delete-empty-api"]')!
+    expect(remove.getAttribute('aria-label')).toBe('Delete · 1')
+    expect(document.activeElement).toBe(remove)
+    await pressKey('Escape')
+    expect(document.querySelector('[role="menu"]')).toBeNull()
+    expect(document.activeElement).toBe(trigger.element)
+  })
+
   it('keeps one record menu open and dismisses it when the list moves or the record unmounts', async () => {
     const first = setup()
     const second = setup(true, 'second')
