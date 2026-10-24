@@ -84,7 +84,7 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 	root := t.TempDir()
 	skills := NewAgentService(root)
 	if err := skills.Save(Agent{
-		Name: "agentA", AcpBackend: AcpBackendCursor,
+		Name: "agentA", AcpBackend: AcpBackendCursor, ModelBinding: sandboxTestModelBinding(),
 		Files: []AgentFile{{Path: "rules/a.md", Content: "# a"}},
 		Env:   map[string]string{"AGENT_FLAG": "1"},
 	}); err != nil {
@@ -92,9 +92,7 @@ func newSoloFixture(t *testing.T, acpPort, maxSolo int) (*SoloService, *SandboxS
 	}
 	sbx := NewSandboxService(db, mgr, skills, mcp.NewHost(NewArtifactService(db)), SandboxOptions{
 		ProfilesRoot: root, MCPEndpoint: "http://mcp.local", TTL: time.Minute, Max: 2, MaxSolo: maxSolo,
-		Credentials: func() map[string]string {
-			return map[string]string{"GRASP_CURSOR_API_KEY": "cursor-key", "GITHUB_TOKEN": "ghp-workspace"}
-		},
+		ModelBinding: sandboxTestModelResolver,
 		SelectedCredential: func(id string) (string, string, bool) {
 			if id == "cred-proj" {
 				return "GITHUB_TOKEN", "ghp-project", true
@@ -186,7 +184,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if env["GIT_REPOS"] != "app|https://github.com/acme/app.git|main" {
 		t.Fatalf("GIT_REPOS = %q", env["GIT_REPOS"])
 	}
-	if env["APP_ENV"] != "dev" || env["AGENT_FLAG"] != "1" || env["GITHUB_TOKEN"] != "ghp-workspace" {
+	if env["APP_ENV"] != "dev" || env["AGENT_FLAG"] != "1" || env["GITHUB_TOKEN"] != "" {
 		t.Fatalf("env layering: APP_ENV=%q AGENT_FLAG=%q GITHUB_TOKEN=%q", env["APP_ENV"], env["AGENT_FLAG"], env["GITHUB_TOKEN"])
 	}
 	entries, err := solo.Env(id, "alice")
@@ -197,7 +195,7 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	for _, e := range entries {
 		src[e.Key] = e.Source
 	}
-	if src["APP_ENV"] != EnvSourceProject || src["AGENT_FLAG"] != EnvSourceAgent || src["GITHUB_TOKEN"] != EnvSourceCredential || src["GIT_REPOS"] != EnvSourceSystem {
+	if src["APP_ENV"] != EnvSourceProject || src["AGENT_FLAG"] != EnvSourceAgent || src["GITHUB_TOKEN"] != "" || src["GIT_REPOS"] != EnvSourceSystem {
 		t.Fatalf("env sources: %+v", src)
 	}
 

@@ -33,9 +33,19 @@ function mountCard(templateId: 'clarify' | 'test_review', locale: 'zh-CN' | 'en'
             }
           : { interaction: 'auto', review: true, writes: [{ schema: 'test_result', required: true }] },
       modelPlaceholder: 'm',
+      modelConfigurations: [
+        {
+          id: 'model-review',
+          name: 'Review model',
+          backend: 'codex',
+          binding: { kind: 'connection', connectionId: 'connection', modelId: 'review' },
+          state: 'active',
+          revision: 1,
+        },
+      ],
       index: templateId === 'clarify' ? 0 : 2,
     },
-    global: { plugins: [i18n] },
+    global: { plugins: [i18n], stubs: { teleport: true } },
   })
 }
 
@@ -61,10 +71,11 @@ describe('OnboardingTeamCard', () => {
     const w = mountCard('test_review', 'zh-CN')
     await w.find('[data-testid="onboarding-team-toggle-test_review"]').setValue(false)
     await w.find('[data-testid="onboarding-team-name-test_review"]').setValue('评审')
-    await w.find('[data-testid="onboarding-team-model-test_review"]').setValue('gpt-5')
+    await w.get('[data-testid="onboarding-team-model-test_review"] [data-test="app-select-trigger"]').trigger('click')
+    await w.get('[data-test="app-select-option-model-review"]').trigger('click')
     expect(w.emitted('toggle')?.[0]).toEqual([false])
     expect(w.emitted('update:name')?.[0]).toEqual(['评审'])
-    expect(w.emitted('update:model')?.[0]).toEqual(['gpt-5'])
+    expect(w.emitted('update:model')?.[0]).toEqual(['model-review'])
   })
 })
 
@@ -75,7 +86,7 @@ describe('OnboardingWorkflowPreview', () => {
     applyDefaultTeamNames(team, [...ONBOARDING_AGENT_NAMES])
     const w = mount(OnboardingWorkflowPreview, {
       props: { preview: buildOnboardingWorkflowPreview(team) },
-      global: { plugins: [i18n] },
+      global: { plugins: [i18n], stubs: { teleport: true } },
     })
     expect(w.find('[data-testid="onboarding-preview-node-input"]').text()).toContain('开始')
     expect(w.find('[data-testid="onboarding-preview-node-output"]').text()).toContain('结束')

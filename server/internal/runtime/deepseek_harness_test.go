@@ -6,37 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/envauth"
 )
-
-func TestDeepSeekHarnessCredentialSelectionFailsClosed(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "settings.json"), []byte(`{"env":{"DEEPSEEK_API_KEY":"unselected"}}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	resolve := func(id string) (string, string, bool) {
-		if id == "chosen" {
-			return envauth.EnvDeepSeekAPIKey, "selected", true
-		}
-		return envauth.EnvOpenCodeAPIKey, "wrong-backend", true
-	}
-	for _, id := range []string{"chosen", "missing-or-wrong-kind"} {
-		env := map[string]string{envauth.EnvDeepSeekAPIKey: "other-slot"}
-		ApplyAgentCredentialChoice(env, nil, AgentCredentialChoice{Backend: "deepseek_harness", AiCredentialID: id}, resolve)
-		out, err := PrepareAuthEnv(BackendDeepSeekHarness, env, dir)
-		if id == "chosen" {
-			if err != nil || out["DEEPSEEK_API_KEY"] != "selected" {
-				t.Fatalf("chosen key not mapped: err=%v", err)
-			}
-		} else if err == nil || !strings.Contains(err.Error(), envauth.EnvDeepSeekAPIKey) {
-			t.Fatalf("wrong credential must fail despite settings.json: %v", err)
-		}
-	}
-	if got := ResolveConfigRoot(BackendDeepSeekHarness, ""); got != "/root/.dsh" {
-		t.Fatalf("default config root = %q", got)
-	}
-}
 
 func TestRunAgent_DeepSeekHarness(t *testing.T) {
 	p, _, store, _, _, req := setupProviderBackend(t, BackendDeepSeekHarness, func(int) chatFunc {
@@ -49,7 +19,7 @@ func TestRunAgent_DeepSeekHarness(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer removeHome(spec.ConfigHome)
-	if spec.Env["AGENT_PROVIDER"] != "deepseek_harness" || spec.Env["DEEPSEEK_API_KEY"] != "fake" || spec.ConfigRoot != "/root/.dsh" {
+	if spec.Env["AGENT_PROVIDER"] != "deepseek_harness" || spec.Env[EnvModelAPIKey] != "fake" || spec.ConfigRoot != "/root/.dsh" {
 		t.Fatal("incorrect DeepSeek Harness sandbox routing or auth")
 	}
 	instructions, err := os.ReadFile(filepath.Join(spec.ConfigHome, "AGENTS.md"))
@@ -95,7 +65,7 @@ func TestDeepSeekHarnessAliasesCannotComeFromAgentSharedOrPlatformEnv(t *testing
 			SharedAgent: func() SharedAgentView {
 				return SharedAgentView{Env: map[string]string{"ACP_DEEPSEEK_API_KEY": "shared-key", "ACP_DEEPSEEK_HARNESS_API_KEY": "shared-key"}}
 			},
-			Credentials: testCredentials,
+			ModelBinding: testModelBinding,
 		},
 	}
 	req := NodeReq{RunID: "run-dsh-secret-alias", Config: map[string]any{"agent_profile": "dsh-agent"}}
@@ -109,7 +79,7 @@ func TestDeepSeekHarnessAliasesCannotComeFromAgentSharedOrPlatformEnv(t *testing
 			t.Errorf("%s reached the sandbox outside workspace credentials", alias)
 		}
 	}
-	if spec.Env["DEEPSEEK_API_KEY"] != "fake" {
+	if spec.Env[EnvModelAPIKey] != "fake" {
 		t.Fatal("selected workspace credential did not remain authoritative")
 	}
 }

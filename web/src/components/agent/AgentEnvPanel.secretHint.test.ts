@@ -14,7 +14,6 @@ function draft(partial: Partial<AgentStudioDraft> = {}): AgentStudioDraft {
     mcp: [],
     files: [],
     capabilities: null,
-    gitCredentialType: undefined,
     acpBackend: 'cursor',
     layout: { configRoot: '/tmp/agent', workspaceDir: '/tmp/workspace' },
     ...partial,

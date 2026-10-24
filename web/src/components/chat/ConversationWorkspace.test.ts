@@ -1,4 +1,5 @@
 // @vitest-environment happy-dom
+import { h } from 'vue'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -44,6 +45,38 @@ describe('ConversationWorkspace', () => {
     expect(w.get('textarea').element).toBe(chat)
     expect(w.get('input').element).toBe(preview)
     expect((chat as HTMLTextAreaElement).value).toBe('保留我的草稿')
+  })
+
+  it('places optional navigation before the clipped title and keeps narrow resource controls functional', async () => {
+    const navigate = vi.fn()
+    const longName = '需要在窄屏上省略但仍保留完整提示的运行标题'.repeat(6)
+    wrapper = mount(ConversationWorkspace, {
+      attachTo: document.body,
+      props: { scopeKey: 'mobile-navigation', runName: longName, splitModes: true },
+      slots: {
+        leading: () => h('button', { type: 'button', 'aria-label': '返回列表', 'data-test': 'conversation-back', onClick: navigate }, '返回'),
+        default: '<textarea aria-label="消息">保留草稿</textarea>',
+        panel: '<div>预览</div>',
+      },
+      global: { plugins: [i18n()] },
+    })
+    const w = wrapper
+    resizeObserver([{ contentRect: { width: 390 } } as ResizeObserverEntry], {} as ResizeObserver)
+    await flushPromises()
+    expect(w.classes()).toContain('is-compact')
+    const toolbar = w.get('.conversation-toolbar')
+    expect(toolbar.element.firstElementChild).toBe(w.get('[data-test="conversation-back"]').element)
+    expect(w.get('[data-testid="conversation-title"]').classes()).toContain('truncate')
+    expect(w.get('[data-testid="conversation-title"]').attributes('title')).toBe(longName)
+    await w.get('[data-testid="conversation-resource-toggle"]').trigger('click')
+    expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('resources')
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('data-drawer-mode')).toBe('artifacts')
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('保留草稿')
+    await w.get('[data-test="conversation-back"]').trigger('click')
+    expect(navigate).toHaveBeenCalledOnce()
   })
 
   it('notifies mounted previews once when the artifact drawer opens', async () => {

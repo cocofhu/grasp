@@ -11,7 +11,9 @@
       "cliCatalog.ts",
       "cliModelEnv.ts",
       "cliModelView.ts",
+      "gitBindings.ts",
       "gitCredentialType.ts",
+      "modelRouting.ts",
       "openCodeCatalog.ts",
       "openCodeProvider.ts",
       "sandboxPurposeLabel.ts",
@@ -219,7 +221,6 @@
       "serviceCommit.ts",
       "sidebarHidden.ts",
       "sidebarSections.ts",
-      "startPath.ts",
       "streamMarkdownPreview.ts",
       "theme.ts",
       "types.ts",
@@ -248,7 +249,7 @@
     ]
   },
   "totals": {
-    "agent": 19,
+    "agent": 21,
     "api": 4,
     "artifacts": 1,
     "chat": 5,
@@ -257,7 +258,7 @@
     "inbox": 42,
     "pm": 7,
     "run": 65,
-    "shared": 40,
+    "shared": 39,
     "solo": 7,
     "workflow": 3,
     "workspace": 5

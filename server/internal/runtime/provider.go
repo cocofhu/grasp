@@ -12,12 +12,14 @@ import (
 
 	"github.com/cocofhu/grasp/internal/blob"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
 // Options configures the execution providers (mainly the sandbox backend).
 type Options struct {
+	ModelBinding func(string, *modelrouting.Binding) (modelrouting.Resolved, error)
 	// SandboxImage, when non-empty, forces one image for every acpBackend.
 	SandboxImage string
 	// SandboxImages maps acpBackend → image; used when SandboxImage is empty.
@@ -65,24 +67,15 @@ type Options struct {
 	// as the extend layer before overlaying the Agent. Applied to workflow
 	// nodes only — Agent Studio interactive tests must not get it.
 	SharedAgent func() SharedAgentView
-	// Credentials resolves workspace credential environment values, the only
-	// source of secret keys in the sandbox env.
-	Credentials func() map[string]string
 	// CredentialKeys returns registered credential bindings, including empty
 	// slots. Run-scoped env entries cannot shadow these keys.
 	CredentialKeys func() map[string]struct{}
 	// CredentialReferences resolves ${credential:<id>} placeholders in MCP
 	// headers/command/env without exposing values as global environment keys.
 	CredentialReferences func() map[string]string
-	// OpenCodeCredential resolves the single model-vendor credential selected
-	// by an Agent. A missing id returns nil and must not fall back.
-	OpenCodeCredential func(credentialID string) map[string]string
 	// SelectedCredential resolves one coding-backend or Git credential the
 	// Agent picked. A missing id returns ok=false and must not fall back.
 	SelectedCredential SelectedCredentialFunc
-	// RepoCredentials resolves the Agent's selected repositories into
-	// per-repository Git credentials. Nil injects none.
-	RepoCredentials RepoCredentialsFunc
 	// RunSandboxEnvForRun, when set, returns the immutable StartRun sandbox env
 	// snapshot for this Run (plaintext). Applied in acpProvider.spec after Agent
 	// env and before mergeAuthEnv / mcpVars / passwords / CONFIG_ROOT so run-level
@@ -95,28 +88,19 @@ type Options struct {
 	RunSandboxEnvForRun func(runID string) []models.EnvEntry
 	// PublicAdvertise is the browser-facing base URL (preview proxy / pick.js).
 	PublicAdvertise string
-	// OpenCodeCatalog tells whether OpenCode resolves a provider id natively, so
-	// a gateway absent from its catalog can be declared with an adapter instead
-	// of failing at run time. Nil keeps the conservative `custom`-only behavior.
-	OpenCodeCatalog OpenCodeCatalog
 	// WriteBackCodexLoginFile replaces the workspace Codex login file when a
 	// run's auth.json changed. Nil skips write-back (tests). The callback must
 	// not log the file body.
 	WriteBackCodexLoginFile func(credentialID, content string) error
-	InjectedCredentialID    func(envKey, value string) string
 }
 
 // SharedAgentView is the runtime-facing slice of the shared Agent config
 // needed for extend→overlay (avoids importing services into every call site).
 type SharedAgentView struct {
-	AcpBackend           string
-	AiCredentialID       string
-	OpenCodeCredentialID string
-	RepoIDs              []string
-	MCP                  []SharedMCPView
-	Env                  map[string]string
-	Layout               SharedLayoutView
-	WorkDir              string // host path to shared workspace/, empty if none
+	MCP     []SharedMCPView
+	Env     map[string]string
+	Layout  SharedLayoutView
+	WorkDir string // host path to shared workspace/, empty if none
 }
 
 // SharedMCPView mirrors one MCP entry from shared agent.json.

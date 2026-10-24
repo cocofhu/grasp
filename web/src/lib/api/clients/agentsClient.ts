@@ -4,10 +4,10 @@ import type {
   ChatMessage,
   MemoryItem,
 } from '../../shared/types'
-import type { BackendId } from '../../shared/regionPolicy'
 import { BASE, req } from '../httpCore'
 import type {
   Agent,
+  AgentGitBindings,
   AgentTemplate,
   CliModelsResponse,
   OpenCodeModelsResponse,
@@ -41,28 +41,17 @@ export const agentsClient = {
   getAgent: (name: string) => req<Agent>(`/agents/${encodeURIComponent(name)}`),
   bootstrapOnboarding: (
     body: {
-      acpBackend: BackendId
-      apiKey: string
+      modelConfigurationId: string
+      gitBindings?: AgentGitBindings
       language?: string
       region?: string
-      gitCredentialType?: string
-      githubToken?: string
-      gitlabToken?: string
-      gitlabUrl?: string
-      sshPrivateKey?: string
-      sshKnownHosts?: string
       repoUrl?: string
       repoBranch?: string
       gitUserName?: string
       gitUserEmail?: string
       vncPreview?: boolean
       browserMcp?: boolean
-      openCodeProvider?: string
-      openCodeBaseURL?: string
-      openCodeModel?: string
-      openCodeModelVision?: boolean
-      cliModel?: string
-      agents?: { templateId: string; name?: string; model?: string }[]
+      agents?: { templateId: string; name?: string; modelConfigurationId?: string }[]
     },
   ) =>
     req<{

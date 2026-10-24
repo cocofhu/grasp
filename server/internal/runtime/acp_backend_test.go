@@ -88,7 +88,6 @@ func TestMergeAuthEnv_CredentialKeyOnly(t *testing.T) {
 		{BackendClaudeCode, envauth.EnvClaudeAPIKey, "ANTHROPIC_API_KEY"},
 		{BackendCodeBuddy, envauth.EnvCodeBuddyAPIKey, "CODEBUDDY_API_KEY"},
 		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
-		{BackendOpenCode, envauth.EnvOpenCodeAPIKey, "OPENCODE_API_KEY"},
 		{BackendDeepSeekHarness, envauth.EnvDeepSeekAPIKey, "DEEPSEEK_API_KEY"},
 	}
 	for _, tc := range cases {

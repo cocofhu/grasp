@@ -393,7 +393,7 @@ func newTestProvider(t *testing.T, host *mcp.Host, opts Options, mgr sandboxMana
 const testAgentProfile = "test-agent"
 
 func ensureTestProfiles(t *testing.T, opts Options) Options {
-	opts = withTestCredentials(opts)
+	opts = withTestModelBinding(opts)
 	if opts.ProfilesRoot != "" {
 		return opts
 	}

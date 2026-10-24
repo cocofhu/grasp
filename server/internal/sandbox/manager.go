@@ -146,6 +146,10 @@ type Spec struct {
 	// RepoCredentials are per-repository Git secrets layered over the host-wide
 	// credential. They ride in the SSH staging bundle, never in env.
 	RepoCredentials []RepoCredential
+	// GitBindingsConfigured distinguishes legacy host credentials from an
+	// explicitly selected (possibly empty) catalog of Git credentials.
+	GitBindingsConfigured bool
+	GitCredentials        []GitCredential
 }
 
 // Repo credential kinds understood by startup.sh.
@@ -163,6 +167,19 @@ type RepoCredential struct {
 	Kind       string
 	Secret     string
 	KnownHosts string
+}
+
+// GitCredential is an explicitly selected credential, delivered as root-only
+// files. Scope is a host or repository URL; empty uses the provider's default
+// host (HTTPS) or the default SSH identity. Input order breaks equal matches.
+type GitCredential struct {
+	ID         string
+	Name       string
+	Kind       string
+	Scope      string
+	Secret     string
+	KnownHosts string
+	Preferred  bool
 }
 
 // SSHInjectStagingDir is the in-sandbox destination for the SSH file inject
@@ -377,6 +394,9 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 
 	env := map[string]string{}
 	for k, v := range spec.Env {
+		if spec.GitBindingsConfigured && gitCredentialEnv[k] {
+			continue
+		}
 		env[k] = v
 	}
 	bridgePassword := strings.TrimSpace(env[BridgePasswordEnv])
@@ -432,7 +452,7 @@ func (m *Manager) Create(ctx context.Context, spec Spec) (*Sandbox, error) {
 	// the runtime bundle into GRASP_RUNTIME_URL. SSH staging must land before
 	// git clone; startup.sh runs inject first. All share one auth token.
 	var bundleIDs []string
-	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, runtimeData); inj.ok() {
+	if inj := m.buildMultiInject(spec.ConfigHome, configRoot, spec.SSHPrivateKey, spec.SSHKnownHosts, spec.RepoCredentials, spec.GitBindingsConfigured, spec.GitCredentials, runtimeData); inj.ok() {
 		if len(inj.parts) > 0 {
 			env["SANDBOX_INJECT"] = strings.Join(inj.parts, ",")
 			log.Info().Str("sandbox_inject", env["SANDBOX_INJECT"]).
@@ -564,7 +584,7 @@ func (p injectPlan) ok() bool { return len(p.parts) > 0 || p.runtimeURL != "" }
 // buildMultiInject registers the optional SSH staging, ConfigHome and runtime
 // bundles under one bearer token. The zero plan means nothing to inject (or no
 // inject store / reachable base URL).
-func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, repoCreds []RepoCredential, runtime []byte) injectPlan {
+func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts string, repoCreds []RepoCredential, gitConfigured bool, gitCredentials []GitCredential, runtime []byte) injectPlan {
 	if m.bundles == nil {
 		return injectPlan{}
 	}
@@ -585,7 +605,7 @@ func (m *Manager) buildMultiInject(configHome, configRoot, sshKey, sshHosts stri
 		plan.ids = append(plan.ids, id)
 		return base + "/sandbox-inject/" + id + ".tgz"
 	}
-	if sshData, err := PackSSHInjectBundle(sshKey, sshHosts, repoCreds); err != nil {
+	if sshData, err := packGitInjectBundle(sshKey, sshHosts, repoCreds, gitConfigured, gitCredentials); err != nil {
 		log.Warn().Err(err).Msg("pack ssh inject bundle failed")
 	} else if sshData != nil {
 		u := put(sshData)

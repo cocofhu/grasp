@@ -1,6 +1,8 @@
-import type { Agent, AgentCapabilities, MCPServer } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import { MODEL_RUNTIME_ENV_KEYS } from './modelRouting'
+import { isSecretEnvKey } from './secretEnvKeys'
+import { cloneGitBindings, GIT_AUTH_ENV_KEYS } from './gitBindings'
 import { normalizeCapabilities } from '@/lib/workflow/agentCapabilities'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
   ACP_BACKENDS,
   normalizeRegions,
@@ -19,16 +21,11 @@ export type DraftMCP = {
 }
 export type DraftFile = { path: string; content: string }
 export type AgentStudioDraft = {
+  gitBindings?: AgentGitBindings
+  modelBinding?: ModelBinding
   name: string
   credentialBindings?: Record<string, string | null>
   acpBackend: BackendId
-  openCodeCredentialId?: string
-  aiCredentialId?: string
-  gitCredentialId?: string
-  sshHostsCredentialId?: string
-  gitCredentialType?: GitCredentialType
-  /** undefined inherits the workspace default; [] injects no repository credentials. */
-  repoIds?: string[]
   files: DraftFile[]
   mcp: DraftMCP[]
   env: KV[]
@@ -119,15 +116,11 @@ function cloneCapabilities(c: AgentCapabilities): AgentCapabilities {
 
 export function toDraft(a: Agent): AgentStudioDraft {
   return {
+    ...(a.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(a.modelBinding)) as ModelBinding } : {}),
     name: a.name,
+    gitBindings: cloneGitBindings(a.gitBindings || { items: [] }),
     ...(a.credentialBindings ? { credentialBindings: { ...a.credentialBindings } } : {}),
     acpBackend: (a.acpBackend as BackendId) || 'cursor',
-    openCodeCredentialId: a.openCodeCredentialId || '',
-    aiCredentialId: a.aiCredentialId || '',
-    gitCredentialId: a.gitCredentialId || '',
-    sshHostsCredentialId: a.sshHostsCredentialId || '',
-    gitCredentialType: a.gitCredentialType,
-    ...(a.repoIds ? { repoIds: [...a.repoIds] } : {}),
     files: (a.files || []).map((f) => ({ path: f.path, content: f.content })),
     mcp: (a.mcp || []).map(apiMcpToDraft),
     env: recToKV(a.env),
@@ -141,18 +134,14 @@ export function toDraft(a: Agent): AgentStudioDraft {
 
 export function fromDraftRaw(d: AgentStudioDraft): Agent {
   return {
+    ...(d.modelBinding ? { modelBinding: JSON.parse(JSON.stringify(d.modelBinding)) as ModelBinding } : {}),
     name: d.name,
-    ...(d.credentialBindings !== undefined ? { credentialBindings: { ...d.credentialBindings } } : {}),
+    gitBindings: cloneGitBindings(d.gitBindings || { items: [] }),
+    ...(d.credentialBindings !== undefined ? { credentialBindings: Object.fromEntries(Object.entries(d.credentialBindings).filter(([key]) => !GIT_AUTH_ENV_KEYS.has(key) && !isSecretEnvKey(key))) } : {}),
     acpBackend: d.acpBackend || 'cursor',
-    ...(d.openCodeCredentialId?.trim() ? { openCodeCredentialId: d.openCodeCredentialId.trim() } : {}),
-    ...(d.aiCredentialId?.trim() ? { aiCredentialId: d.aiCredentialId.trim() } : {}),
-    ...(d.gitCredentialId?.trim() ? { gitCredentialId: d.gitCredentialId.trim() } : {}),
-    ...(d.sshHostsCredentialId?.trim() ? { sshHostsCredentialId: d.sshHostsCredentialId.trim() } : {}),
-    ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
-    ...(d.repoIds ? { repoIds: [...d.repoIds] } : {}),
     files: d.files.filter((f) => f.path.trim()).map((f) => ({ path: f.path.trim(), content: f.content })),
     mcp: d.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),
-    env: kvToRec(d.env),
+    env: Object.fromEntries(Object.entries(kvToRec(d.env)).filter(([key]) => !MODEL_RUNTIME_ENV_KEYS.has(key) && !GIT_AUTH_ENV_KEYS.has(key))),
     layout: {
       configRoot: d.layout.configRoot.trim() || DEFAULT_CONFIG_ROOT,
       workspaceDir: d.layout.workspaceDir.trim() || DEFAULT_WORKSPACE_DIR,

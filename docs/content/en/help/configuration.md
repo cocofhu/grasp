@@ -20,7 +20,9 @@ That document is generated/checked by `go run ./cmd/gen-configdoc`; CI runs `-ch
 ./start.sh dev -d      # source + HMR
 ```
 
-Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in Settings → Credentials; putting them in the shared Agent config, Agent meta, or platform `sandbox.env` is rejected. Non-secret options such as sites and models may still go in Agent meta env (values may reference `${vars.<name>}`).
+Image tags / digests, gateway, and sandbox-related variables are in `.env.example`. Agent API keys, GitHub / GitLab tokens, SSH keys, and similar credentials can only be saved in Settings → Credentials; putting them in the shared Agent config, Agent meta, or platform `sandbox.env` is rejected. Save a preset or custom API base and key in Credentials, then combine a coding tool, credential and selected model in the Models tab. Agents reference that named model configuration through `modelBinding.configurationId`. Model routing fields come from the selected configuration; Agent env cannot override them. Other non-secret options may go in Agent meta env (values may reference `${vars.<name>}`).
+
+An Agent can bind multiple saved GitHub, GitLab or SSH credentials and mark one as preferred. All selected credentials are placed in the sandbox and matched by site or repository; optional scope settings distinguish accounts on the same platform. Credential selection is separate from the repositories to clone. Workflow nodes use their selected Agent's bindings, and shared sandboxes clear the previous node's credentials before applying the next set. An empty list injects none of these default Git credentials. Separately configured repository permissions remain independent; new Agents do not automatically inherit shared repository grants. Unavailable references stop execution without switching accounts.
 
 ## Database and attachment lifecycle
 

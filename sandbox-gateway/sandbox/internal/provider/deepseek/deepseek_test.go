@@ -15,6 +15,7 @@ import (
 	"backend/internal/acp"
 	"backend/internal/backend/common"
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 )
 
 func TestMetadataAndAuthIsolation(t *testing.T) {
@@ -163,6 +164,44 @@ func TestOpenNegotiatesModelAndPreservesTransport(t *testing.T) {
 	}
 }
 
+func TestOpenConnectionNegotiatesExactRouteAndRawModel(t *testing.T) {
+	for _, protocol := range []string{modelconnection.Chat, modelconnection.Responses, modelconnection.Messages} {
+		t.Run(protocol, func(t *testing.T) {
+			trace := setupDSH(t, "connection")
+			scheme := "bearer"
+			if protocol == modelconnection.Messages {
+				scheme = "x-api-key"
+			}
+			c := modelconnection.Connection{ConnectionID: "same-vendor-team-a", ProviderID: "gateway", Protocol: protocol,
+				BaseURL: "https://gateway.example/v1", Auth: modelconnection.Auth{Scheme: scheme},
+				Models: []modelconnection.Model{{ID: "initial/model"}, {ID: "vendor/model/with/slashes"}}, SelectedModelID: "vendor/model/with/slashes"}
+			data, err := json.Marshal(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv(modelconnection.EnvConfig, string(data))
+			t.Setenv(modelconnection.EnvAPIKey, "selected-connection-key")
+			sess := openDSH(t, "stale-platform-model", nil, nil)
+			if sess.Info().ModelID != c.SelectedModelID {
+				t.Fatalf("route/model identity changed: %+v", sess.Info())
+			}
+			if result, err := sess.Prompt(context.Background(), "hello", nil); err != nil || result.StopReason != "end_turn" {
+				t.Fatalf("connection prompt failed: %+v %v", result, err)
+			}
+			data, err = os.ReadFile(trace)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), c.RouteID()) || !strings.Contains(string(data), `session/set_config_option`) || !strings.Contains(string(data), `"legacyKeyCleared":true`) {
+				t.Fatalf("route not negotiated or legacy auth survived: %s", data)
+			}
+			if strings.Contains(string(data), "selected-connection-key") {
+				t.Fatal("DSH configuration or protocol trace leaked the selected secret")
+			}
+		})
+	}
+}
+
 func TestOpenDefaultAndFailures(t *testing.T) {
 	for _, tc := range []struct{ mode, model, failure string }{
 		{"", "", ""}, {"", "auto", ""},
@@ -257,9 +296,24 @@ func TestDSHProcess(t *testing.T) {
 		}
 	}
 	patch, _ := os.ReadFile(patchPath)
-	_ = json.NewEncoder(trace).Encode(map[string]any{"argv": os.Args, "patchPath": patchPath, "patch": string(patch), "dshHome": os.Getenv("DSH_HOME")})
+	_ = json.NewEncoder(trace).Encode(map[string]any{"argv": os.Args, "patchPath": patchPath, "patch": string(patch), "dshHome": os.Getenv("DSH_HOME"), "legacyKeyCleared": os.Getenv("DEEPSEEK_API_KEY") == ""})
 	model := defaultModel
+	var connection modelconnection.Connection
+	connectionMode := os.Getenv("DSH_TEST_MODE") == "connection"
+	if connectionMode {
+		_ = json.Unmarshal([]byte(os.Getenv(modelconnection.EnvConfig)), &connection)
+		model = connection.Models[0].ID
+	}
 	options := func() []any {
+		if connectionMode {
+			choices := make([]any, 0, len(connection.Models))
+			for _, m := range connection.Models {
+				value, _ := json.Marshal([]string{connection.RouteID(), m.ID})
+				choices = append(choices, map[string]any{"value": string(value), "name": m.ID})
+			}
+			current, _ := json.Marshal([]string{connection.RouteID(), model})
+			return []any{map[string]any{"id": "model", "currentValue": string(current), "options": []any{map[string]any{"group": connection.RouteID(), "options": choices}}}}
+		}
 		current := `["deepseek-official","deepseek-flash"]`
 		if model == "deepseek-v4-pro" {
 			current = `[ "deepseek-official", "deepseek-v4-pro" ]`
@@ -310,10 +364,17 @@ func TestDSHProcess(t *testing.T) {
 				Value string `json:"value"`
 			}
 			_ = json.Unmarshal(req.Params, &params)
-			if params.Value != `[ "deepseek-official", "deepseek-v4-pro" ]` {
+			if connectionMode {
+				want, _ := json.Marshal([]string{connection.RouteID(), connection.SelectedModelID})
+				if params.Value != string(want) {
+					os.Exit(4)
+				}
+				model = connection.SelectedModelID
+			} else if params.Value != `[ "deepseek-official", "deepseek-v4-pro" ]` {
 				os.Exit(4)
+			} else {
+				model = "deepseek-v4-pro"
 			}
-			model = "deepseek-v4-pro"
 			respond(req.ID, map[string]any{"configOptions": options()})
 		case "session/prompt":
 			var params struct {

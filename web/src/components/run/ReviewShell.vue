@@ -130,6 +130,7 @@ defineExpose({
           <slot name="stage" />
         </section>
       </template>
+      <template v-if="$slots.leading" #leading><slot name="leading" /></template>
       <template v-if="$slots.actions" #actions><slot name="actions" /></template>
     </ConversationWorkspace>
     <ConfirmFlowOverlay

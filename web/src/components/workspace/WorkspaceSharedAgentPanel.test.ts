@@ -47,6 +47,8 @@ function mountPanel() {
       plugins: [i18n],
       stubs: {
         Icon: true,
+        WorkspaceModelDefaults: true,
+        RepoAccessPicker: true,
         AgentFilesPanel: true,
         AgentMcpPanel: true,
         AgentEnvPanel: true,

@@ -11,8 +11,8 @@ import (
 )
 
 // BootstrapOnboarding handles POST /api/workspace/bootstrap-onboarding.
-// Writes shared auth, the chosen built-in template Agents, 默认工作流.
-// It never starts a Run. Missing apiKey or an invalid team → 400 with no partial
+// Binds saved models and Git authorizations, the chosen built-in template Agents, 默认工作流.
+// It never starts a Run. Missing modelConfigurationId or an invalid team → 400 with no partial
 // resources created.
 func (h *Handlers) BootstrapOnboarding(c *gin.Context) {
 	if h.Onboarding == nil {
@@ -27,7 +27,7 @@ func (h *Handlers) BootstrapOnboarding(c *gin.Context) {
 	result, err := h.Onboarding.Bootstrap(req)
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrOnboardingAPIKeyRequired),
+		case errors.Is(err, services.ErrOnboardingModelRequired),
 			errors.Is(err, services.ErrInvalidAgentName),
 			errors.Is(err, services.ErrInvalidAcpBackend),
 			errors.Is(err, services.ErrOnboardingInvalidTeam):

@@ -4,34 +4,24 @@ import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import { api } from '@/lib/api/api'
+import { api, type ModelBinding, type ModelConfiguration } from '@/lib/api/api'
+import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
+import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
+import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
 import type { AgentTemplate } from '@/lib/api/apiTypes'
-import { authGuideFor } from '@/lib/agent/backendAuthGuide'
-import { ACP_BACKENDS, getRegionPolicy, type BackendId } from '@/lib/shared/regionPolicy'
-import CliModelSelect from '@/components/agent/CliModelSelect.vue'
-import VendorMark from '@/components/agent/VendorMark.vue'
-import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
+import { getRegionPolicy } from '@/lib/shared/regionPolicy'
 import OnboardingTeamCard from './OnboardingTeamCard.vue'
 import OnboardingWorkflowPreview from './OnboardingWorkflowPreview.vue'
-import {
-  OPENCODE_FALLBACK_PROVIDERS,
-  openCodeCustomBaseRequired,
-  openCodeModelRequired,
-  type OpenCodeProviderId,
-} from '@/lib/agent/openCodeProvider'
 import { setLocale } from '@/lib/shared/locale'
 import { setTheme, type ThemeName } from '@/lib/shared/theme'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import { useToast } from '@/lib/composables/useToast'
 import { useWorkflowRunLaunch } from '@/lib/run/useWorkflowRunLaunch'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
 import {
-  ONBOARDING_CLI_BACKENDS,
-  ONBOARDING_GIT_TYPES,
   ONBOARDING_STEPS,
   applyDefaultTeamNames,
-  applyOnboardingBackend,
-  applyStartPath,
   assembleBootstrapBody,
   buildOnboardingWorkflowPreview,
   deriveOnboardingAgentNames,
@@ -46,12 +36,10 @@ import {
   type OnboardingBootstrapResult,
   type OnboardingDraft,
   type OnboardingMode,
-  type OnboardingStartPath,
   type OnboardingStepId,
   type OnboardingTeamMember,
   type OnboardingTemplateId,
 } from '@/lib/pm/onboardingWizard'
-import { START_PATH_OPTIONS } from '@/lib/shared/startPath'
 
 export type OnboardingCompletedResult = OnboardingBootstrapResult
 
@@ -81,8 +69,12 @@ const createError = ref('')
 const phase = ref<'wizard' | 'success'>('wizard')
 const result = ref<OnboardingBootstrapResult | null>(null)
 const stepAnimKey = ref(0)
-const keyError = ref(false)
-const modelError = ref(false)
+const modelValid = ref(false)
+const gitValid = ref(true)
+const resourceManagerOpen = ref(false)
+const resourcesVersion = ref(0)
+const models = ref<ModelConfiguration[]>([])
+const c = useRoutingCopy()
 const templates = ref<AgentTemplate[]>([])
 const templatesState = ref<'loading' | 'ready' | 'error'>('loading')
 const showTeamErrors = ref(false)
@@ -100,29 +92,33 @@ const themeOptions: { id: ThemeName; labelKey: string }[] = [
   { id: 'light', labelKey: 'pages.onboarding.language.themeLight' },
   { id: 'dark', labelKey: 'pages.onboarding.language.themeDark' },
 ]
-const startPathOptions = START_PATH_OPTIONS
-const regionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
-const authGuide = computed(() => authGuideFor(draft.value.acpBackend, draft.value.region))
-const backendLabel = computed(() => ACP_BACKENDS.find((b) => b.id === draft.value.acpBackend)?.label || '')
-const credTitle = computed(() => (draft.value.acpBackend === 'opencode' ? t('pages.onboarding.apiKey.vendorTitle') : backendLabel.value))
-const backendSummary = computed(() => {
-  if (draft.value.acpBackend === 'opencode') {
-    const vendor = OPENCODE_FALLBACK_PROVIDERS.find((p) => p.id === draft.value.openCodeProvider)
-    const model = draft.value.openCodeModel.replace(`${draft.value.openCodeProvider}/`, '')
-    return [vendor ? t(vendor.labelKey) : draft.value.openCodeProvider, model].filter(Boolean).join(' · ')
+const selectedModel = computed(() => models.value.find((row) => row.id === draft.value.modelConfigurationId))
+const regionPolicy = computed(() => selectedModel.value ? getRegionPolicy(selectedModel.value.backend as import('@/lib/shared/regionPolicy').BackendId) : undefined)
+const backendSummary = computed(() => selectedModel.value?.name || draft.value.modelConfigurationId)
+const gitCredLabel = computed(() => `${draft.value.gitBindings.items.length} ${t('pages.agentStudio.gitCredentials.title')}`)
+const modelBinding = computed<ModelBinding>({ get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId }), set: (value) => { draft.value.modelConfigurationId = value.configurationId; draft.value.region = regionPolicy.value?.defaultRegion || '' } })
+async function refreshResources() {
+  const returningFromManager = resourceManagerOpen.value
+  const configurationId = draft.value.modelConfigurationId
+  resourceManagerOpen.value = false
+  resourcesVersion.value++
+  if (returningFromManager) modelValid.value = false
+  try {
+    models.value = (await api.listModelConfigurations()).items || []
+    if (returningFromManager && configurationId) {
+      const [keys, services, caps] = await Promise.all([api.listCredentials(), api.listModelConnections(), api.listToolCapabilities()])
+      if (draft.value.modelConfigurationId !== configurationId) return
+      const configuration = models.value.find(model => model.id === configurationId)
+      modelValid.value = !bindingProblem({ kind: 'configuration', configurationId }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
+      if (!modelValid.value) { draft.value.step = 1; stepAnimKey.value++ }
+    }
+  } catch {
+    models.value = []
+    if (returningFromManager) { modelValid.value = false; draft.value.step = 1; stepAnimKey.value++ }
   }
-  const region = regionPolicy.value?.options.find((o) => o.id === draft.value.region)
-  const base = region ? `${backendLabel.value} · ${t(region.labelKey)}` : backendLabel.value
-  const model = draft.value.cliModel.trim()
-  return model ? `${base} · ${model}` : base
-})
-const gitCredLabel = computed(() => {
-  const type = ONBOARDING_GIT_TYPES.find((g) => g.id === draft.value.gitCredentialType)
-  return type ? t(type.labelKey) : ''
-})
+}
 const summaryItems = computed(() => [
   { id: 'backend', label: t('pages.onboarding.steps.model'), value: backendSummary.value, ok: true },
-  { id: 'key', label: 'API Key', value: t('pages.onboarding.workflow.keyOn'), ok: true },
   { id: 'repo', label: t('pages.onboarding.repo.chip'), value: repoOk.value ? repoDirName.value : t('pages.onboarding.workflow.repoSkip'), ok: repoOk.value },
   { id: 'git-user', label: t('pages.onboarding.gitUser.chip'), value: draft.value.gitUserName, ok: true },
   { id: 'git-cred', label: t('pages.onboarding.workflow.gitCred'), value: gitOk.value ? gitCredLabel.value : t('pages.onboarding.workflow.gitSkip'), ok: gitOk.value },
@@ -144,15 +140,7 @@ const nameIssues = computed(() => teamNameIssues(draft.value.team))
 const workflowPreview = computed(() => buildOnboardingWorkflowPreview(draft.value.team))
 const reviewIncluded = computed(() => workflowPreview.value.nodes.some((n) => n.id === 'test_review'))
 const enabledTeam = computed(() => draft.value.team.filter((m) => m.enabled))
-const inheritedModel = computed(() => {
-  if (draft.value.acpBackend === 'opencode') return draft.value.openCodeModel.trim()
-  return draft.value.cliModel.trim()
-})
-const modelPlaceholder = computed(() =>
-  inheritedModel.value
-    ? t('pages.onboarding.team.modelInherit', { model: inheritedModel.value })
-    : t('pages.onboarding.team.modelPlaceholder'),
-)
+const modelPlaceholder = computed(() => selectedModel.value?.name || c.value.selectConfiguration)
 const successAgentNames = computed(() => {
   if (result.value?.agentIds?.length) return result.value.agentIds
   return enabledTeam.value.map((m) => m.name).filter(Boolean)
@@ -174,13 +162,14 @@ watch(
     createError.value = ''
     phase.value = 'wizard'
     result.value = null
-    keyError.value = false
-    modelError.value = false
+    modelValid.value = false
+    gitValid.value = true
     showTeamErrors.value = false
     leaving.value = false
     applyDefaultTeamNames(draft.value.team, defaultAgentNames.value)
     stepAnimKey.value++
     void loadTemplates()
+    void refreshResources()
   },
   { immediate: true },
 )
@@ -207,27 +196,6 @@ function closeWizard() {
   emit('close')
 }
 
-function selectBackend(id: BackendId) {
-  applyOnboardingBackend(draft.value, id)
-  keyError.value = false
-  modelError.value = false
-}
-
-function selectOpenCodeModel(value: string) {
-  draft.value.openCodeModel = value
-  modelError.value = false
-}
-
-function selectCliModel(value: string) {
-  draft.value.cliModel = value
-}
-
-function selectStartPath(path: OnboardingStartPath) {
-  applyStartPath(draft.value, path)
-  keyError.value = false
-  modelError.value = false
-}
-
 function selectLanguage(language: AppLocale) {
   if (draft.value.language === language) return
   draft.value.language = language
@@ -243,10 +211,6 @@ function selectTheme(name: ThemeName) {
 
 function selectRegion(id: string) {
   draft.value.region = id
-}
-
-function selectGitType(id: GitCredentialType) {
-  draft.value.gitCredentialType = draft.value.gitCredentialType === id ? '' : id
 }
 
 function toggleGitSkipped() {
@@ -274,26 +238,14 @@ function renameMember(m: OnboardingTeamMember, value: string) {
 
 function validatePrefs(): boolean { return true }
 
-function validateKey(): boolean {
-  if (!draft.value.apiKey.trim()) {
-    keyError.value = true
-    toast.error(t('pages.onboarding.toastNeedKey'))
-    return false
-  }
-  if (draft.value.acpBackend === 'opencode' && openCodeModelRequired(draft.value.openCodeModel)) {
-    modelError.value = true
-    toast.error(t('pages.agentStudio.openCode.modelRequired'))
-    return false
-  }
-  if (draft.value.acpBackend === 'opencode' && openCodeCustomBaseRequired(draft.value.openCodeProvider, draft.value.openCodeBaseURL)) {
-    toast.error(t('pages.agentStudio.openCode.baseRequired'))
-    return false
-  }
-  return true
+function validateModel(): boolean {
+  if (modelValid.value && draft.value.modelConfigurationId) return true
+  toast.error(c.value.selectConfiguration)
+  return false
 }
 
 function validateGit(): boolean {
-  if (gitIdentityConfigured(draft.value)) return true
+  if (gitIdentityConfigured(draft.value) && (draft.value.gitSkipped || gitValid.value)) return true
   toast.error(t('pages.onboarding.toastNeedGitUser'))
   return false
 }
@@ -326,15 +278,13 @@ function goNext() {
   if (creating.value) return
   const id = currentStep.value.id
   if (id === 'prefs' && !validatePrefs()) return
-  if (id === 'key' && !validateKey()) return
+  if (id === 'model' && !validateModel()) return
   if (id === 'git' && !validateGit()) return
   if (id === 'team' && !validateTeam()) return
   if (id === 'workflow') {
     void submitBootstrap()
     return
   }
-  keyError.value = false
-  modelError.value = false
   draft.value.step = Math.min(draft.value.step + 1, wizardStepCount - 1)
   stepAnimKey.value++
 }
@@ -350,7 +300,7 @@ async function runBootstrap(body: ReturnType<typeof assembleBootstrapBody>) {
 async function submitBootstrap() {
   const checks: [OnboardingStepId, () => boolean][] = [
     ['prefs', validatePrefs],
-    ['key', validateKey],
+    ['model', validateModel],
     ['git', validateGit],
     ['team', validateTeam],
   ]
@@ -667,178 +617,11 @@ function editWorkflow() {
                 </template>
 
                 <template v-else-if="currentStep.id === 'model'">
-                  <p class="onb-lede">{{ t('pages.onboarding.acp.meta') }}</p>
-                  <section class="mt-7" data-testid="onboarding-section-backend">
-                    <div class="grid gap-3 sm:grid-cols-2" role="radiogroup" :aria-label="t('pages.onboarding.steps.model')">
-                      <button
-                        v-for="option in startPathOptions"
-                        :key="option.id"
-                        type="button"
-                        role="radio"
-                        class="onb-tile"
-                        :aria-checked="draft.startPath === option.id"
-                        :data-testid="`onboarding-path-${option.id}`"
-                        @click="selectStartPath(option.id)"
-                      >
-                        <span class="onb-tile-icon"><Icon :name="option.id === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
-                        <span class="min-w-0 flex-1">
-                          <strong class="block text-[13.5px] text-txt">{{ t(option.titleKey) }}</strong>
-                          <span class="mt-1 block text-[12px] leading-5 text-txt3">{{ t(option.descKey) }}</span>
-                        </span>
-                        <span class="onb-check"><Icon name="check" :size="11" /></span>
-                      </button>
-                    </div>
-
-                    <div v-if="draft.startPath === 'apiKey'" class="mt-4" data-testid="onboarding-path-apikey-detail">
-                      <div class="onb-label">
-                        {{ t('pages.onboarding.acp.apiKeyVendorsLabel') }}
-                      </div>
-                      <div class="flex flex-wrap gap-1.5">
-                        <span v-for="p in OPENCODE_FALLBACK_PROVIDERS" :key="p.id" class="onb-chip">{{ t(p.labelKey) }}</span>
-                      </div>
-                      <p class="onb-hint">{{ t('pages.onboarding.acp.apiKeyVendorsHint') }}</p>
-                    </div>
-                    <div v-else class="mt-4">
-                      <div class="onb-label">
-                        {{ t('pages.onboarding.acp.cliLabel') }}
-                      </div>
-                      <div
-                        class="grid grid-cols-2 gap-2.5 lg:grid-cols-3"
-                        role="radiogroup"
-                        :aria-label="t('pages.onboarding.acp.cliLabel')"
-                      >
-                        <button
-                          v-for="b in ONBOARDING_CLI_BACKENDS"
-                          :key="b.id"
-                          type="button"
-                          role="radio"
-                          class="onb-tile is-compact"
-                          :aria-checked="draft.acpBackend === b.id"
-                          :data-testid="`onboarding-backend-${b.id}`"
-                          @click="selectBackend(b.id)"
-                        >
-                          <span class="flex min-w-0 flex-1 items-center gap-2">
-                            <VendorMark :vendor="b.id" backend :size="24" aria-hidden="true" />
-                            <strong class="min-w-0 text-[13px] text-txt">{{ b.label }}</strong>
-                          </span>
-                          <span class="onb-check"><Icon name="check" :size="11" /></span>
-                        </button>
-                      </div>
-                    </div>
-                    <div v-if="regionPolicy" class="mt-4">
-                      <div class="onb-label">
-                        {{ t('pages.onboarding.acp.region') }}
-                      </div>
-                      <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')">
-                        <button
-                          v-for="option in regionPolicy.options"
-                          :key="option.id"
-                          type="button"
-                          role="radio"
-                          class="onb-seg-item"
-                          :aria-checked="draft.region === option.id"
-                          @click="selectRegion(option.id)"
-                        >
-                          {{ t(option.labelKey) }}
-                        </button>
-                      </div>
-                    </div>
+                  <section class="onb-card mt-6" data-testid="onboarding-section-model">
+                    <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" @validity="modelValid = $event" />
+                    <AppButton size="sm" variant="ghost" icon="plus" class="mt-3" data-testid="onboarding-manage-models" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
+                    <div v-if="regionPolicy" class="onb-seg mt-4" role="radiogroup" :aria-label="t('pages.onboarding.acp.region')"><button v-for="option in regionPolicy.options" :key="option.id" type="button" role="radio" class="onb-seg-item" :aria-checked="draft.region === option.id" @click="selectRegion(option.id)">{{ t(option.labelKey) }}</button></div>
                   </section>
-                </template>
-
-                <template v-else-if="currentStep.id === 'key'">
-                  <p v-if="draft.acpBackend === 'codex'" class="onb-lede">
-                    {{ t('pages.onboarding.apiKey.codexMeta') }}
-                  </p>
-                  <section class="onb-cred mt-6" data-testid="onboarding-section-key">
-                    <header class="onb-cred-head">
-                      <span class="onb-tile-icon"><Icon :name="draft.startPath === 'apiKey' ? 'lock' : 'terminal'" :size="16" /></span>
-                      <div class="min-w-0 flex-1">
-                        <div class="text-[14px] font-semibold text-txt">{{ credTitle }}</div>
-                        <div class="mt-0.5 text-[12px] text-txt3">{{ t('pages.onboarding.apiKey.hint') }}</div>
-                      </div>
-                      <a
-                        v-for="link in authGuide.links"
-                        :key="link.url"
-                        :href="link.url"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="onb-link"
-                        >{{ t(link.labelKey) }}<Icon name="arrow-up" :size="11" class="rotate-45"
-                      /></a>
-                      <span class="h-4 w-px bg-line" aria-hidden="true" />
-                      <button type="button" class="onb-text-btn" data-testid="onboarding-key-change" @click="goToStep('model')">
-                        {{ t('pages.onboarding.apiKey.change') }}
-                      </button>
-                    </header>
-                    <div class="onb-cred-body">
-                      <div v-if="draft.acpBackend !== 'opencode'" class="mb-4" data-testid="onboarding-cli-model">
-                        <div class="onb-label">{{ t('pages.agentStudio.cliModel.label') }}</div>
-                        <CliModelSelect
-                          :key="draft.acpBackend"
-                          :model-value="draft.cliModel"
-                          :backend="draft.acpBackend"
-                          variant="compact"
-                          hide-auto-sub
-                          @update:model-value="selectCliModel"
-                        />
-                      </div>
-                      <OpenCodeProviderFields
-                        v-if="draft.acpBackend === 'opencode'"
-                        class="mb-4"
-                        columns
-                        hide-catalog-hints
-                        :provider="(draft.openCodeProvider || 'openai') as OpenCodeProviderId"
-                        :base-url="draft.openCodeBaseURL"
-                        :model="draft.openCodeModel"
-                        :vision="draft.openCodeModelVision"
-                        :require-base="openCodeCustomBaseRequired(draft.openCodeProvider, draft.openCodeBaseURL)"
-                        :require-model="modelError"
-                        @update:provider="draft.openCodeProvider = $event"
-                        @update:base-url="draft.openCodeBaseURL = $event"
-                        @update:model="selectOpenCodeModel"
-                        @update:vision="draft.openCodeModelVision = $event"
-                      />
-                      <label class="block">
-                        <span class="onb-label">{{ draft.acpBackend === 'codex' ? t('pages.onboarding.apiKey.codexLabel') : 'API Key' }} <span class="text-err">*</span></span>
-                        <textarea
-                          v-if="draft.acpBackend === 'codex'"
-                          id="onb-api-key"
-                          v-model="draft.apiKey"
-                          rows="8"
-                          autocomplete="off"
-                          class="onb-input is-lg min-h-[160px] resize-y font-mono"
-                          :class="{ 'is-invalid': keyError }"
-                          :placeholder="t('pages.onboarding.apiKey.codexPlaceholder')"
-                          data-testid="onboarding-api-key"
-                          @input="keyError = false"
-                        />
-                        <input
-                          v-else
-                          id="onb-api-key"
-                          v-model="draft.apiKey"
-                          type="password"
-                          autocomplete="off"
-                          class="onb-input is-lg font-mono"
-                          :class="{ 'is-invalid': keyError }"
-                          :placeholder="t('pages.onboarding.apiKey.placeholder')"
-                          data-testid="onboarding-api-key"
-                          @input="keyError = false"
-                        />
-                        <p v-if="keyError" class="onb-error">{{ t(draft.acpBackend === 'codex' ? 'pages.onboarding.apiKey.codexRequired' : 'pages.onboarding.apiKey.required') }}</p>
-                      </label>
-                    </div>
-                  </section>
-
-                  <div v-if="draft.acpBackend !== 'opencode' && authGuide.pathStepKeys.length" class="onb-howto">
-                    <div class="text-[12px] font-medium text-txt2">{{ t('pages.onboarding.apiKey.howTo') }}</div>
-                    <ol class="onb-howto-steps">
-                      <li v-for="(k, i) in authGuide.pathStepKeys" :key="i">
-                        <span class="onb-steps-num">{{ i + 1 }}</span>
-                        <span>{{ t(k) }}</span>
-                      </li>
-                    </ol>
-                  </div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
@@ -910,73 +693,7 @@ function editWorkflow() {
                       <p v-if="repoDirName" class="onb-hint" data-testid="onboarding-repo-hint">
                         {{ t('pages.onboarding.repo.cloneTo', { dir: repoDirName }) }}
                       </p>
-                      <div class="onb-label mt-4">
-                        {{ t('pages.onboarding.repo.credSection') }}
-                      </div>
-                      <div class="onb-seg" role="radiogroup" :aria-label="t('pages.onboarding.repo.credSection')">
-                        <button
-                          v-for="g in ONBOARDING_GIT_TYPES"
-                          :key="g.id"
-                          type="button"
-                          role="radio"
-                          class="onb-seg-item"
-                          :aria-checked="draft.gitCredentialType === g.id"
-                          :data-testid="`onboarding-git-type-${g.id}`"
-                          @click="selectGitType(g.id)"
-                        >
-                          {{ t(g.labelKey) }}
-                        </button>
-                      </div>
-                      <label v-if="draft.gitCredentialType === 'github_https'" class="mt-3 block">
-                        <span class="onb-label">{{ t('pages.onboarding.repo.githubToken') }}</span>
-                        <input
-                          v-model="draft.githubToken"
-                          type="password"
-                          autocomplete="off"
-                          class="onb-input font-mono"
-                          data-testid="onboarding-github-token"
-                        />
-                      </label>
-                      <div v-else-if="draft.gitCredentialType === 'gitlab_https'" class="mt-3 grid gap-3 sm:grid-cols-2">
-                        <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.repo.gitlabToken') }}</span>
-                          <input
-                            v-model="draft.gitlabToken"
-                            type="password"
-                            autocomplete="off"
-                            class="onb-input font-mono"
-                            data-testid="onboarding-gitlab-token"
-                          />
-                        </label>
-                        <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.repo.gitlabUrl') }}</span>
-                          <input
-                            v-model="draft.gitlabUrl"
-                            type="text"
-                            placeholder="https://gitlab.example.com"
-                            class="onb-input font-mono"
-                            data-testid="onboarding-gitlab-url"
-                          />
-                        </label>
-                      </div>
-                      <div v-else-if="draft.gitCredentialType === 'ssh'" class="mt-3 grid gap-3">
-                        <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.repo.sshKey') }}</span>
-                          <textarea
-                            v-model="draft.sshPrivateKey"
-                            rows="4"
-                            class="onb-input is-area font-mono"
-                            data-testid="onboarding-ssh-key"
-                          />
-                        </label>
-                        <label class="block">
-                          <span class="onb-label">{{ t('pages.onboarding.repo.knownHosts') }}</span>
-                          <textarea v-model="draft.sshKnownHosts" rows="2" class="onb-input is-area font-mono" />
-                        </label>
-                        <p class="onb-hint" data-testid="onboarding-ssh-credentials-hint">
-                          {{ t('pages.onboarding.repo.sshSavedToCredentials') }}
-                        </p>
-                      </div>
+                      <div class="mt-4"><AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" @validity="gitValid = $event" /><AppButton size="sm" variant="ghost" class="mt-3" data-testid="onboarding-manage-git" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton></div>
                     </template>
                   </section>
                 </template>
@@ -1009,10 +726,11 @@ function editWorkflow() {
                       :summary="templateFor(m.templateId)?.summary"
                       :name-placeholder="t('pages.onboarding.team.namePlaceholder')"
                       :model-placeholder="modelPlaceholder"
+                      :model-configurations="models"
                       :issue="memberIssue(m.templateId)"
                       @toggle="toggleMember(m.templateId, $event)"
                       @update:name="renameMember(m, $event)"
-                      @update:model="m.model = $event"
+                      @update:model="m.modelConfigurationId = $event"
                     />
                   </template>
                 </div>
@@ -1081,6 +799,7 @@ function editWorkflow() {
         </div>
       </div>
     </div>
+    <AppModal :open="resourceManagerOpen" :title="c.configureKeys" :width="1000" trap-focus close-on-esc @close="refreshResources"><div class="flex h-[70vh] min-h-0"><WorkspaceCredentialsPanel /></div></AppModal>
   </Teleport>
 </template>
 

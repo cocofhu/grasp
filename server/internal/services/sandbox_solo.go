@@ -105,6 +105,10 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, fmt.Errorf("agent %q not found", profile)
 	}
 	agent = s.effectiveAgent(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	if err != nil {
+		return nil, err
+	}
 	if maxN := s.MaxSoloSandboxes(); s.activeSoloSandboxCount() >= maxN {
 		return nil, ErrSoloSandboxLimit{Max: maxN}
 	}
@@ -128,6 +132,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	}
 	name := sandbox.NewContainerName()
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: SandboxPurposeSolo, Status: "creating",
 		RunID: runID, Token: token, ThreadID: sessionID, RepoURL: firstTestRepoURL(repos),
 	}

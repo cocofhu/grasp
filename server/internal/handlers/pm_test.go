@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/config"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/pmmcp"
 	"github.com/cocofhu/grasp/internal/services"
@@ -674,7 +675,7 @@ func setupPmEnabledHarness(t *testing.T) *harness {
 	hn.h.PmProgress = services.NewPmProgress(pm, hn.h.Runs, hn.h.Arts)
 	hn.h.PMMCP = pmmcp.NewHost(pm, hn.h.PmProgress, nil, hn.h.Runs, hn.h.Arts, nil)
 
-	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent"}); err != nil {
+	if err := hn.h.Agents.Save(services.Agent{AcpBackend: services.AcpBackendCursor, Name: "pm-agent", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "handler-model"}}); err != nil {
 		t.Fatal(err)
 	}
 	w := hn.do(http.MethodPut, "/api/workspace/pm-leader", map[string]any{

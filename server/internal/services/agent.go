@@ -13,6 +13,7 @@ import (
 	"sync"
 
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/nodereg"
 
@@ -31,9 +32,10 @@ import (
 // mcp.json on top, and injects the env vars. Files the agent authors are loaded
 // natively by the in-container ACP agent.
 type AgentService struct {
-	root string
-	mu   sync.Mutex
-	Vcs  *WorkspaceVcsService
+	root                 string
+	mu                   sync.Mutex
+	Vcs                  *WorkspaceVcsService
+	validateModelBinding func(string, *modelrouting.Binding) error
 }
 
 // NewAgentService builds the service. It ships no preset agents (users create
@@ -139,26 +141,6 @@ func ParseAcpBackend(raw string) (string, error) {
 	return "", fmt.Errorf("%w: unknown acpBackend %q", ErrInvalidAcpBackend, strings.TrimSpace(raw))
 }
 
-// Allowed Agent-level git credential contracts (Studio UI metadata).
-const (
-	GitCredentialGitHubHTTPS = "github_https"
-	GitCredentialGitLabHTTPS = "gitlab_https"
-	GitCredentialSSH         = "ssh"
-)
-
-// normalizeGitCredentialType keeps only known values; unknown input is cleared
-// so dirty agent.json / ZIP imports cannot leak misleading credential checks.
-func normalizeGitCredentialType(raw string) string {
-	v := strings.TrimSpace(raw)
-	switch v {
-	case "", GitCredentialGitHubHTTPS, GitCredentialGitLabHTTPS, GitCredentialSSH:
-		return v
-	default:
-		log.Warn().Str("gitCredentialType", v).Msg("clearing invalid agent gitCredentialType")
-		return ""
-	}
-}
-
 // DefaultConfigRootForBackend returns the protocol default config root.
 func DefaultConfigRootForBackend(backend string) string {
 	switch NormalizeAcpBackend(backend) {
@@ -182,30 +164,13 @@ func DefaultConfigRootForBackend(backend string) string {
 // Agent is a reusable, user-defined Agent identity: a working directory (file
 // tree) plus the MCP servers and environment variables it runs with.
 type Agent struct {
-	Name               string             `json:"name"`
-	CredentialBindings map[string]*string `json:"credentialBindings,omitempty"`
+	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
+	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
+	Name               string                `json:"name"`
+	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
 	// AcpBackend selects the ACP bridge (cursor | claude_code | codebuddy | trae | opencode | codex | deepseek_harness).
 	// Required on save.
 	AcpBackend string `json:"acpBackend"`
-	// GitCredentialType is the Agent-level credential contract selected in Studio.
-	// Runtime writes GitHub/GitLab/SSH by "configured → write"; this field is UI hint only.
-	GitCredentialType string `json:"gitCredentialType,omitempty"`
-	// OpenCodeCredentialID is the workspace credential this Agent uses for OpenCode.
-	// The secret stays in the workspace credential store; this is only the selection.
-	OpenCodeCredentialID string `json:"openCodeCredentialId,omitempty"`
-	// AiCredentialID is the workspace credential this Agent uses for a non-OpenCode
-	// coding backend. Empty keeps the legacy single slot. A set id injects only
-	// that row and does not fall back when it is missing.
-	AiCredentialID string `json:"aiCredentialId,omitempty"`
-	// GitCredentialID is the GitHub, GitLab, or SSH private-key credential
-	// selected for GitCredentialType.
-	GitCredentialID string `json:"gitCredentialId,omitempty"`
-	// SshHostsCredentialID is the known-hosts credential used when Git is SSH.
-	SshHostsCredentialID string `json:"sshHostsCredentialId,omitempty"`
-	// RepoIDs lists the registered repositories whose own Git credentials are
-	// injected per repository. Nil inherits the workspace default; an empty
-	// list injects none.
-	RepoIDs *[]string `json:"repoIds,omitempty"`
 	// Files is the agent's working directory, copied into ConfigRoot at run.
 	Files []AgentFile `json:"files"`
 	// MCP lists the MCP servers wired into the sandbox for this agent.
@@ -223,18 +188,14 @@ type Agent struct {
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
-	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
-	AcpBackend           string                    `json:"acpBackend,omitempty"`
-	GitCredentialType    string                    `json:"gitCredentialType,omitempty"`
-	OpenCodeCredentialID string                    `json:"openCodeCredentialId,omitempty"`
-	AiCredentialID       string                    `json:"aiCredentialId,omitempty"`
-	GitCredentialID      string                    `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string                    `json:"sshHostsCredentialId,omitempty"`
-	RepoIDs              *[]string                 `json:"repoIds,omitempty"`
-	MCP                  []MCPServer               `json:"mcp,omitempty"`
-	Env                  map[string]string         `json:"env,omitempty"`
-	Layout               *AgentLayout              `json:"layout,omitempty"`
-	Capabilities         *models.AgentCapabilities `json:"capabilities,omitempty"`
+	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
+	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
+	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
+	AcpBackend         string                    `json:"acpBackend,omitempty"`
+	MCP                []MCPServer               `json:"mcp,omitempty"`
+	Env                map[string]string         `json:"env,omitempty"`
+	Layout             *AgentLayout              `json:"layout,omitempty"`
+	Capabilities       *models.AgentCapabilities `json:"capabilities,omitempty"`
 }
 
 // DefaultPlatformMCP returns the platform's built-in MCP server (the run-scoped
@@ -289,20 +250,16 @@ func (s *AgentService) Get(name string) (Agent, bool) {
 		env = map[string]string{}
 	}
 	return Agent{
-		Name:                 name,
-		CredentialBindings:   cfg.CredentialBindings,
-		AcpBackend:           backend,
-		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
-		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
-		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
-		GitCredentialID:      strings.TrimSpace(cfg.GitCredentialID),
-		SshHostsCredentialID: strings.TrimSpace(cfg.SshHostsCredentialID),
-		RepoIDs:              normalizeRepoIDsPtr(cfg.RepoIDs),
-		Files:                s.readFiles(name),
-		MCP:                  cfg.MCP,
-		Env:                  env,
-		Layout:               layout,
-		Capabilities:         cfg.Capabilities,
+		Name:               name,
+		GitBindings:        cfg.GitBindings,
+		CredentialBindings: cfg.CredentialBindings,
+		ModelBinding:       cfg.ModelBinding,
+		AcpBackend:         backend,
+		Files:              s.readFiles(name),
+		MCP:                cfg.MCP,
+		Env:                env,
+		Layout:             layout,
+		Capabilities:       cfg.Capabilities,
 	}, true
 }
 
@@ -455,35 +412,51 @@ func (s *AgentService) prepareSave(a Agent) (agentWrite, error) {
 			return agentWrite{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
 		}
 	}
+	if err := RejectSecretEnvKeys(a.Env); err != nil {
+		return agentWrite{}, err
+	}
+	var err error
+	a.GitBindings, err = models.NormalizeGitBindings(a.GitBindings)
+	if err != nil {
+		return agentWrite{}, fmt.Errorf("%w: %w", ErrInvalidAgent, err)
+	}
+	if a.GitBindings != nil {
+		a.CredentialBindings = withoutGitAuthorizationBindings(a.CredentialBindings)
+		a.Env = withoutGitAuthorizationEnv(a.Env)
+	}
 	for key := range a.CredentialBindings {
 		if strings.TrimSpace(key) == "" || strings.TrimSpace(key) != key || envauth.IsPlatformReservedEnvKey(key) {
 			return agentWrite{}, fmt.Errorf("%w: invalid credential binding key %q", ErrInvalidAgent, key)
 		}
 	}
-	if err := RejectSecretEnvKeys(a.Env); err != nil {
-		return agentWrite{}, err
-	}
 	backend, err := ParseAcpBackend(a.AcpBackend)
 	if err != nil {
 		return agentWrite{}, err
+	}
+	if a.ModelBinding != nil {
+		if err := modelrouting.ValidateConfigurationReference(a.ModelBinding); err != nil {
+			return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+		}
+		if s.validateModelBinding != nil {
+			if err := s.validateModelBinding(backend, a.ModelBinding); err != nil {
+				return agentWrite{}, fmt.Errorf("%w: %v", ErrInvalidAgent, err)
+			}
+		}
+		a.Env = withoutModelRoutingEnv(a.Env)
 	}
 	layout := a.Layout.withDefaults()
 	if strings.TrimSpace(a.Layout.ConfigRoot) == "" {
 		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
 	}
 	cfg := agentConfig{
-		CredentialBindings:   a.CredentialBindings,
-		AcpBackend:           backend,
-		GitCredentialType:    normalizeGitCredentialType(a.GitCredentialType),
-		OpenCodeCredentialID: strings.TrimSpace(a.OpenCodeCredentialID),
-		AiCredentialID:       strings.TrimSpace(a.AiCredentialID),
-		GitCredentialID:      strings.TrimSpace(a.GitCredentialID),
-		SshHostsCredentialID: strings.TrimSpace(a.SshHostsCredentialID),
-		RepoIDs:              normalizeRepoIDsPtr(a.RepoIDs),
-		MCP:                  a.MCP,
-		Env:                  a.Env,
-		Layout:               &layout,
-		Capabilities:         a.Capabilities,
+		GitBindings:        a.GitBindings,
+		CredentialBindings: a.CredentialBindings,
+		ModelBinding:       a.ModelBinding,
+		AcpBackend:         backend,
+		MCP:                a.MCP,
+		Env:                a.Env,
+		Layout:             &layout,
+		Capabilities:       a.Capabilities,
 	}
 	b, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
@@ -579,41 +552,6 @@ func (s *AgentService) Rename(old, newName string) error {
 		}
 	}
 	return nil
-}
-
-// ClearOpenCodeCredentialSelection forgets the choice on every Agent that
-// pointed at credentialID. A cleared credential must not keep running as if it
-// were still selected.
-func (s *AgentService) ClearOpenCodeCredentialSelection(credentialID string) {
-	credentialID = strings.TrimSpace(credentialID)
-	if credentialID == "" {
-		return
-	}
-	for _, a := range s.List() {
-		cleared := false
-		if strings.TrimSpace(a.OpenCodeCredentialID) == credentialID {
-			a.OpenCodeCredentialID = ""
-			cleared = true
-		}
-		if strings.TrimSpace(a.AiCredentialID) == credentialID {
-			a.AiCredentialID = ""
-			cleared = true
-		}
-		if strings.TrimSpace(a.GitCredentialID) == credentialID {
-			a.GitCredentialID = ""
-			cleared = true
-		}
-		if strings.TrimSpace(a.SshHostsCredentialID) == credentialID {
-			a.SshHostsCredentialID = ""
-			cleared = true
-		}
-		if !cleared {
-			continue
-		}
-		if err := s.Save(a); err != nil {
-			log.Warn().Err(err).Str("agent", a.Name).Str("credential", credentialID).Msg("clear credential selection")
-		}
-	}
 }
 
 // Exists reports whether an agent directory is present.

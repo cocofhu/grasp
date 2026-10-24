@@ -30,30 +30,11 @@ func TestCredentialBindingsDoNotFallBackAndPreserveUnboundDefaults(t *testing.T)
 	}
 }
 
-func TestCredentialWriteBackIdentityFollowsSelectionWithoutFallback(t *testing.T) {
-	resolve := func(id string) (string, string, bool) {
-		return "CODEX_LOGIN", "injected", id == "selected"
+func TestModelWriteBackIdentityRequiresResolvedConfiguration(t *testing.T) {
+	if ModelCredentialIDForWriteBack(nil) != "" {
+		t.Fatal("unresolved model acquired credential identity")
 	}
-	inherited := func(_, _ string) string { return "default" }
-	selected, stale := "selected", "revoked"
-	for _, tc := range []struct {
-		name     string
-		choice   string
-		bindings map[string]*string
-		want     string
-	}{
-		{"inherited", "", nil, "default"},
-		{"chosen", "selected", nil, "selected"},
-		{"revoked", "revoked", nil, ""},
-		{"bound", "", map[string]*string{"CODEX_LOGIN": &selected}, "selected"},
-		{"disabled", "selected", map[string]*string{"CODEX_LOGIN": nil}, ""},
-		{"revoked binding", "selected", map[string]*string{"CODEX_LOGIN": &stale}, ""},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			got := CredentialIDForWriteBack("CODEX_LOGIN", "injected", tc.choice, tc.bindings, resolve, inherited)
-			if got != tc.want {
-				t.Fatalf("identity=%q want %q", got, tc.want)
-			}
-		})
+	if ModelCredentialIDForWriteBack(map[string]string{EnvModelCredentialID: "selected"}) != "selected" {
+		t.Fatal("resolved model identity lost")
 	}
 }

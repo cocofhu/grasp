@@ -10,34 +10,23 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/runtime"
-	"github.com/rs/zerolog/log"
 )
 
 // SharedAgentConfig is the workspace Agent baseline used as the extend layer
 // at startup (workflow Run + chat test). Shape mirrors Agent without a Name.
 // Empty config is valid.
 type SharedAgentConfig struct {
-	AcpBackend           string            `json:"acpBackend,omitempty"`
-	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
-	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
-	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
-	RepoIDs              []string          `json:"repoIds"`
-	Files                []AgentFile       `json:"files"`
-	MCP                  []MCPServer       `json:"mcp"`
-	Env                  map[string]string `json:"env"`
-	Layout               AgentLayout       `json:"layout"`
+	Files  []AgentFile       `json:"files"`
+	MCP    []MCPServer       `json:"mcp"`
+	Env    map[string]string `json:"env"`
+	Layout AgentLayout       `json:"layout"`
 }
 
 // sharedAgentDisk mirrors agent.json under data/shared-agent/.
 type sharedAgentDisk struct {
-	AcpBackend           string            `json:"acpBackend,omitempty"`
-	GitCredentialType    string            `json:"gitCredentialType,omitempty"`
-	AiCredentialID       string            `json:"aiCredentialId,omitempty"`
-	OpenCodeCredentialID string            `json:"openCodeCredentialId,omitempty"`
-	RepoIDs              []string          `json:"repoIds,omitempty"`
-	MCP                  []MCPServer       `json:"mcp,omitempty"`
-	Env                  map[string]string `json:"env,omitempty"`
-	Layout               *AgentLayout      `json:"layout,omitempty"`
+	MCP    []MCPServer       `json:"mcp,omitempty"`
+	Env    map[string]string `json:"env,omitempty"`
+	Layout *AgentLayout      `json:"layout,omitempty"`
 }
 
 // SharedAgentService persists the shared Agent baseline on disk:
@@ -78,15 +67,8 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 	if cfg.Layout != nil {
 		layout = *cfg.Layout
 	}
-	backend := strings.TrimSpace(cfg.AcpBackend)
-	if backend != "" {
-		backend = NormalizeAcpBackend(backend)
-	}
-	if strings.TrimSpace(layout.ConfigRoot) == "" {
-		layout.ConfigRoot = DefaultConfigRootForBackend(backend)
-	}
 	layout = layout.withDefaults()
-	env := cfg.Env
+	env := runtime.ModelIndependentEnv(cfg.Env)
 	if env == nil {
 		env = map[string]string{}
 	}
@@ -99,15 +81,10 @@ func (s *SharedAgentService) Get() SharedAgentConfig {
 		mcps = []MCPServer{}
 	}
 	return SharedAgentConfig{
-		AcpBackend:           backend,
-		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
-		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
-		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
-		RepoIDs:              NormalizeRepoIDs(cfg.RepoIDs),
-		Files:                files,
-		MCP:                  mcps,
-		Env:                  env,
-		Layout:               layout,
+		Files:  files,
+		MCP:    mcps,
+		Env:    env,
+		Layout: layout,
 	}
 }
 
@@ -118,30 +95,16 @@ func (s *SharedAgentService) Save(cfg SharedAgentConfig) error {
 	if err := RejectSecretEnvKeys(cfg.Env); err != nil {
 		return err
 	}
+	cfg.Env = runtime.ModelIndependentEnv(cfg.Env)
 	dir := s.root
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
 	layout := cfg.Layout.withDefaults()
-	backend := strings.TrimSpace(cfg.AcpBackend)
-	if backend != "" {
-		var err error
-		if backend, err = ParseAcpBackend(backend); err != nil {
-			return err
-		}
-		if strings.TrimSpace(cfg.Layout.ConfigRoot) == "" {
-			layout.ConfigRoot = DefaultConfigRootForBackend(backend)
-		}
-	}
 	disk := sharedAgentDisk{
-		AcpBackend:           backend,
-		GitCredentialType:    normalizeGitCredentialType(cfg.GitCredentialType),
-		AiCredentialID:       strings.TrimSpace(cfg.AiCredentialID),
-		OpenCodeCredentialID: strings.TrimSpace(cfg.OpenCodeCredentialID),
-		RepoIDs:              NormalizeRepoIDs(cfg.RepoIDs),
-		MCP:                  cfg.MCP,
-		Env:                  cfg.Env,
-		Layout:               &layout,
+		MCP:    cfg.MCP,
+		Env:    cfg.Env,
+		Layout: &layout,
 	}
 	b, err := json.MarshalIndent(disk, "", "  ")
 	if err != nil {
@@ -185,113 +148,18 @@ func (s *SharedAgentService) WorkDir() string {
 	return ""
 }
 
-// AsAgent views the shared config as an Agent-shaped value for merge helpers.
-func (c SharedAgentConfig) AsAgent() Agent {
-	env := c.Env
-	if env == nil {
-		env = map[string]string{}
-	}
-	repoIDs := NormalizeRepoIDs(c.RepoIDs)
-	return Agent{
-		Name:                 "",
-		AcpBackend:           c.AcpBackend,
-		GitCredentialType:    c.GitCredentialType,
-		AiCredentialID:       c.AiCredentialID,
-		OpenCodeCredentialID: c.OpenCodeCredentialID,
-		RepoIDs:              &repoIDs,
-		Files:                c.Files,
-		MCP:                  c.MCP,
-		Env:                  env,
-		Layout:               c.Layout,
-	}
-}
-
-// ExtendOverlay merges shared (base) then agent (overlay); Agent wins per key.
-// Credential ids are kept from the Agent. Shared ids are not applied here
-// because this path cannot check credential kinds; use ExtendOverlayWithKind.
+// ExtendOverlay merges shared files, MCP, environment and layout. Model and
+// Git authorizations belong only to the individual Agent.
 func ExtendOverlay(shared SharedAgentConfig, agent Agent) Agent {
-	return ExtendOverlayWithKind(shared, agent, nil)
-}
-
-// ExtendOverlayWithKind is ExtendOverlay plus the shared-credential fallback.
-// kindOf reports a credential id's env key. A nil kindOf keeps the Agent's
-// own ids and does not copy a shared id.
-func ExtendOverlayWithKind(shared SharedAgentConfig, agent Agent, kindOf runtime.CredentialKindFunc) Agent {
-	base := shared.AsAgent()
-	out := Agent{
-		Name:                 agent.Name,
-		CredentialBindings:   agent.CredentialBindings,
-		GitCredentialID:      agent.GitCredentialID,
-		SshHostsCredentialID: agent.SshHostsCredentialID,
-		RepoIDs:              base.RepoIDs,
-		Capabilities:         agent.Capabilities,
-		AcpBackend:           pickNonEmpty(agent.AcpBackend, base.AcpBackend),
-		GitCredentialType:    pickNonEmpty(agent.GitCredentialType, base.GitCredentialType),
-		Files:                mergeFiles(base.Files, agent.Files),
-		MCP:                  mergeMCP(base.MCP, agent.MCP),
-		Layout:               mergeLayout(base.Layout, agent.Layout),
-	}
-	if agent.RepoIDs != nil {
-		out.RepoIDs = normalizeRepoIDsPtr(agent.RepoIDs)
-	}
-	if out.AcpBackend != "" {
-		out.AcpBackend = NormalizeAcpBackend(out.AcpBackend)
-	}
-	out.Env = envauth.OverlayEnv(runtime.SharedEnvForBackend(base.Env, base.AcpBackend, out.AcpBackend), agent.Env)
-	out.Layout = out.Layout.withDefaults()
+	out := agent
+	out.Files = mergeFiles(shared.Files, agent.Files)
+	out.MCP = mergeMCP(shared.MCP, agent.MCP)
+	out.Layout = mergeLayout(shared.Layout, agent.Layout).withDefaults()
+	out.Env = envauth.OverlayEnv(runtime.ModelIndependentEnv(shared.Env), agent.Env)
 	if out.Env == nil {
 		out.Env = map[string]string{}
 	}
-	out.AiCredentialID, out.OpenCodeCredentialID = runtime.MergeCodingCredentialIDs(
-		out.AcpBackend,
-		agent.AiCredentialID, agent.OpenCodeCredentialID,
-		shared.AiCredentialID, shared.OpenCodeCredentialID,
-		kindOf,
-	)
 	return out
-}
-
-// ClearCredentialSelection forgets a shared generic-credential pointer that
-// still names credentialID. Clearing or revoking the credential must not leave
-// a stale id that injection would treat as an explicit choice.
-func (s *SharedAgentService) ClearCredentialSelection(credentialID string) {
-	if s == nil {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	credentialID = strings.TrimSpace(credentialID)
-	if credentialID == "" {
-		return
-	}
-	path := filepath.Join(s.root, "agent.json")
-	b, err := os.ReadFile(path)
-	if err != nil {
-		return
-	}
-	var disk sharedAgentDisk
-	if err := json.Unmarshal(b, &disk); err != nil {
-		return
-	}
-	cleared := false
-	if strings.TrimSpace(disk.AiCredentialID) == credentialID {
-		disk.AiCredentialID = ""
-		cleared = true
-	}
-	if strings.TrimSpace(disk.OpenCodeCredentialID) == credentialID {
-		disk.OpenCodeCredentialID = ""
-		cleared = true
-	}
-	if !cleared {
-		return
-	}
-	out, err := json.MarshalIndent(&disk, "", "  ")
-	if err != nil {
-		return
-	}
-	if err := os.WriteFile(path, out, 0o644); err != nil {
-		log.Warn().Err(err).Str("credential", credentialID).Msg("clear shared credential selection")
-	}
 }
 
 func pickNonEmpty(primary, fallback string) string {
