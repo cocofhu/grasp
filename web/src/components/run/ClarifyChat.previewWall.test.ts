@@ -495,6 +495,10 @@ describe('ClarifyChat option preview window', () => {
     expect(selectedOptionLabels(wrapper)).toEqual(['方案 A'])
 
     await open()
+    // happy-dom 21 leaves contentWindow null until page loading is on, so every
+    // empty frame would compare equal. about:blank does not fetch a remote page.
+    const happy = (window as unknown as { happyDOM?: { settings: { enableIframePageLoading: boolean } } }).happyDOM
+    if (happy) happy.settings.enableIframePageLoading = true
     const frame = document.createElement('iframe')
     dialog()!.appendChild(frame)
     window.dispatchEvent(
