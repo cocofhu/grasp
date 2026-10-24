@@ -302,17 +302,23 @@ test.describe('工作区进度看板', () => {
       clientHeight: el.clientHeight,
       overflowY: getComputedStyle(el).overflowY,
       maxHeight: getComputedStyle(el).maxHeight,
+      overscroll: getComputedStyle(el).overscrollBehavior,
     }))
     expect(overflow.overflowY).toBe('auto')
     expect(overflow.scrollHeight).toBeGreaterThan(overflow.clientHeight)
-    expect(overflow.maxHeight).toMatch(/px|vh/)
+    expect(overflow.maxHeight).toBe('none')
+    expect(overflow.overscroll).toBe('contain')
+    await expect(page.getByTestId('board-subtitle')).toContainText('跟进正在执行的工作')
+    await expect(page.getByRole('heading', { level: 2, name: '运行看板' })).toHaveCount(0)
 
     const runningBody = page.getByTestId('run-board-column').nth(0).getByTestId('run-board-column-body')
     await completedBody.evaluate((el) => {
       el.scrollTop = 120
+      el.dispatchEvent(new Event('scroll'))
     })
     await runningBody.evaluate((el) => {
       el.scrollTop = 40
+      el.dispatchEvent(new Event('scroll'))
     })
     const tops = await page.evaluate(() => {
       const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
@@ -320,6 +326,32 @@ test.describe('工作区进度看板', () => {
     })
     expect(tops[0]).toBe(40)
     expect(tops[2]).toBe(120)
+
+    await page.getByTestId('board-search-input').fill('看板')
+    await page.getByTestId('board-segment-completed').click()
+    await page.getByTestId('board-segment-all').click()
+    const topsAfter = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
+      return bodies.map((el) => (el as HTMLElement).scrollTop)
+    })
+    expect(topsAfter[0]).toBe(40)
+    expect(topsAfter[2]).toBe(120)
+
+    await page.getByTestId('board-search-input').fill('看板已完成-1')
+    await expect(page.getByTestId('run-board-column').nth(0).getByText('没有匹配的任务')).toBeVisible()
+    const topsWhileEmpty = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
+      return bodies.map((el) => (el as HTMLElement).scrollTop)
+    })
+    expect(topsWhileEmpty[2]).toBe(120)
+
+    await page.getByTestId('board-search-input').fill('')
+    const topsRestored = await page.evaluate(() => {
+      const bodies = Array.from(document.querySelectorAll('[data-testid="run-board-column-body"]'))
+      return bodies.map((el) => (el as HTMLElement).scrollTop)
+    })
+    expect(topsRestored[0]).toBe(40)
+    expect(topsRestored[2]).toBe(120)
 
     const viewMore = page.getByTestId('board-view-more-completed')
     await expect(viewMore).toBeVisible()

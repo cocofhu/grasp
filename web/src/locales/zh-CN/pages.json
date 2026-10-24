@@ -263,6 +263,9 @@
       "toolbarHint": "点击列标题查看全部运行",
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
+      "overviewRecords": "共 {n} 条执行记录",
+      "searchLabel": "搜索当前任务",
+      "searchPlaceholder": "搜索当前任务",
       "actionsLabel": "看板操作",
       "refresh": "刷新",
       "allRuns": "全部运行",
@@ -316,6 +319,13 @@
       "filters": {
         "label": "同时显示"
       },
+      "segments": {
+        "label": "筛选任务状态",
+        "all": "全部",
+        "running": "运行中",
+        "waitingHuman": "等待人工",
+        "completed": "已完成"
+      },
       "columns": {
         "active": "进行中",
         "running": "运行中",
@@ -335,7 +345,8 @@
         "running": "没有运行中的需求",
         "waitingHuman": "没有等待人工的需求",
         "completed": "暂无已完成需求",
-        "extra": "该状态下暂无运行"
+        "extra": "该状态下暂无运行",
+        "noMatch": "没有匹配的任务"
       },
       "truncated": {
         "showingFirst100": "仅显示前 100 条，可前往运行列表查看全部"

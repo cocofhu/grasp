@@ -52,11 +52,17 @@ describe('mobile scroll contract — list A (plan g1 / g3.1)', () => {
     expect(settings).not.toMatch(/data-testid="settings-integrations-open"/)
   })
 
-  it('BoardView: fill root + body overflow-y-auto for standalone and embedded (g1.3)', () => {
+  it('BoardView keeps page scroll for narrow stacks and column scroll without a 420px cap', () => {
     const src = read('BoardView.vue')
     expect(src).toMatch(/data-testid="board-view"[^>]*flex h-full min-h-0/)
     expect(src).toMatch(/min-h-0 flex-1 overflow-y-auto/)
     expect(src).toMatch(/v-if="!embedded"/)
+    expect(src).toMatch(/max-width:\s*799px/)
+    expect(src).not.toMatch(/52vh|420px/)
+    const column = readFileSync(join(dir, '../components/board/RunBoardColumn.vue'), 'utf8')
+    expect(column).toMatch(/scroll-area/)
+    expect(column).toMatch(/overscroll-behavior:\s*contain/)
+    expect(column).not.toMatch(/52vh|420px/)
   })
 
   it('DashboardView: always h-full + content overflow-y-auto (g1.4)', () => {
