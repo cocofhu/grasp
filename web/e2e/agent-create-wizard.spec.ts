@@ -4,7 +4,15 @@ import fs from 'node:fs'
 
 const OUT = path.join('/tmp', 'wizard-e2e-shots')
 
+async function customizeInheritance(page: Page, section: 'model' | 'git') {
+  const toggle = page.getByTestId(`agent-inherit-${section}`)
+  if (await toggle.getAttribute('aria-checked') === 'true') await toggle.click()
+  await expect(toggle).toHaveAttribute('aria-checked', 'false')
+}
+
 async function selectBindingValue(page: Page, testId: string, value: string) {
+  if (testId === 'model-binding-configuration-select') await customizeInheritance(page, 'model')
+  if (testId === 'git-credential-add') await customizeInheritance(page, 'git')
   await page.getByTestId(testId).locator('[data-test="app-select-trigger"]').click()
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   await panel.locator('[data-test="app-select-search"]').fill(value)
@@ -71,6 +79,7 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
   await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await expect(page.getByTestId('model-binding-editor')).toBeVisible()
+  await customizeInheritance(page, 'model')
   await expectSavedModelPickerOnly(page)
   await expect(page.getByRole('button', { name: /^下一步/ })).toBeDisabled()
   await selectBindingValue(page, 'model-binding-configuration-select', 'cursor-profile')
@@ -83,6 +92,7 @@ test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
 
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('Git')
+  await customizeInheritance(page, 'git')
   const gitBody = await page.locator('.step-pane').innerText()
   expect(gitBody).not.toContain('未逐仓解析')
   expect(gitBody).not.toContain('无法在此页面逐仓解析')
@@ -203,7 +213,8 @@ for (const lang of ['zh-CN', 'en']) {
     const horizontalOverflow = await page.locator('.step-pane').evaluate((el) => el.scrollWidth - el.clientWidth)
     expect(horizontalOverflow).toBeLessThanOrEqual(1)
     if (lang === 'en') expect(await page.locator('.step-pane').innerText()).not.toMatch(/[\u3400-\u9fff]/)
-    await expectSavedModelPickerOnly(page)
+    await customizeInheritance(page, 'model')
+  await expectSavedModelPickerOnly(page)
     await expect(page.getByRole('button', { name: nextLabel })).toBeDisabled()
     await selectBindingValue(page, 'model-binding-configuration-select', 'deepseek-profile')
     await page.getByRole('button', { name: nextLabel }).click()
@@ -240,6 +251,7 @@ test('model-derived coding tools, sites and searchable models work at 320px', as
   await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await expect(page.getByTestId('coding-tool-picker')).toHaveCount(0)
+  await customizeInheritance(page, 'model')
   await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
   const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
   const search = panel.locator('[data-test="app-select-search"]')
@@ -250,6 +262,7 @@ test('model-derived coding tools, sites and searchable models work at 320px', as
   expect(box!.x + box!.width).toBeLessThanOrEqual(320)
   await search.press('Enter')
   await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toContainText('团队生产模型')
+  await customizeInheritance(page, 'model')
   await expectSavedModelPickerOnly(page)
   const site = page.getByTestId('agent-model-region').locator('[data-test="app-select-trigger"]')
   await expect(site).toContainText('国际站')

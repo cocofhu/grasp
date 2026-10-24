@@ -26,7 +26,7 @@ function setup() {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
       stubs: {
-        Teleport: true, Icon: true, ModelCatalogPanel: true,
+        Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
           props: { modelValue: String, backend: String }, emits: ['update:modelValue'],
           template: '<select data-testid="platform-model" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option></select>',
@@ -83,6 +83,16 @@ beforeEach(() => {
 })
 
 describe('ModelConfigurationManager', () => {
+  it('offers the named-model workflow without a separate model catalog', async () => {
+    const wrapper = setup()
+    await flushPromises()
+    expect(wrapper.find('[data-testid="model-catalog-panel"]').exists()).toBe(false)
+    expect(wrapper.find('.configuration-advanced').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Model catalog')
+    await wrapper.get('[data-testid="model-configuration-add"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-form"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
   it('guides users to credentials and keeps Cursor limited to platform authorization', async () => {
     mocks.credentials.mockResolvedValue({ items: [modelKey] })
     mocks.capabilities.mockResolvedValue({ items: [{ ...capabilities[0]!, modes: ['platform', 'connection'], protocols: ['openai-chat-completions'] }] })

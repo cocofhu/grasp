@@ -1,12 +1,73 @@
 package runtime
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 )
+
+func TestRuntimeAgentInheritanceDefaultsPreserveExplicitFalse(t *testing.T) {
+	for _, tc := range []struct {
+		name, input string
+		model, git  bool
+	}{
+		{"empty", `{}`, true, true},
+		{"explicit defaults", `{"inheritModel":true,"inheritGit":true}`, true, true},
+		{"stored bindings do not imply local", `{"acpBackend":"cursor","modelBinding":{"kind":"configuration","configurationId":"local"},"gitBindings":{"items":[{"credentialId":"local-git"}]}}`, true, true},
+		{"local model", `{"inheritModel":false}`, false, true},
+		{"local Git", `{"inheritGit":false}`, true, false},
+		{"all local", `{"inheritModel":false,"inheritGit":false}`, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var agent agentFile
+			if err := json.Unmarshal([]byte(tc.input), &agent); err != nil {
+				t.Fatal(err)
+			}
+			if agent.InheritModel != tc.model || agent.InheritGit != tc.git {
+				t.Fatalf("inheritance = model:%v Git:%v, want model:%v Git:%v", agent.InheritModel, agent.InheritGit, tc.model, tc.git)
+			}
+			encoded, err := json.Marshal(agent)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var roundTrip agentFile
+			if err := json.Unmarshal(encoded, &roundTrip); err != nil {
+				t.Fatal(err)
+			}
+			if roundTrip.InheritModel != tc.model || roundTrip.InheritGit != tc.git {
+				t.Fatal("JSON round trip changed an explicit inheritance choice")
+			}
+		})
+	}
+	var agent agentFile
+	if err := json.Unmarshal([]byte(`{"inheritModel":"false"}`), &agent); err == nil {
+		t.Fatal("invalid inheritance flag was accepted")
+	}
+}
+
+func TestRuntimeMissingInheritanceUsesCurrentDefaults(t *testing.T) {
+	root := t.TempDir()
+	writeProfileInto(t, root, "default", `{"acpBackend":"cursor","modelBinding":{"kind":"configuration","configurationId":"local"},"gitBindings":{"items":[{"credentialId":"local-git"}]}}`)
+	shared := SharedAgentView{AcpBackend: "opencode", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "first"}, GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "default-git"}}}}
+	c := &acpProvider{opts: Options{ProfilesRoot: root, SharedAgent: func() SharedAgentView { return shared }}}
+	for _, workflow := range []string{"", "workflow"} {
+		req := reqFor("default")
+		req.WorkflowID = workflow
+		got := c.effectiveAgent(req)
+		if got.AcpBackend != shared.AcpBackend || got.ModelBinding != shared.ModelBinding || got.GitBindings != shared.GitBindings {
+			t.Fatalf("workflow %q did not inherit current defaults: %+v", workflow, got)
+		}
+	}
+	shared.ModelBinding = nil
+	shared.GitBindings = nil
+	got := c.effectiveAgent(reqFor("default"))
+	if got.ModelBinding != nil || got.GitBindings != nil {
+		t.Fatal("removed defaults fell back to stored local bindings")
+	}
+}
 
 func TestRuntimeModelAndGitInheritanceIsExplicitAndIndependent(t *testing.T) {
 	localModel := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "local"}
@@ -44,8 +105,8 @@ func TestRuntimeModelAndGitInheritanceIsExplicitAndIndependent(t *testing.T) {
 
 func TestRegistryInheritedModelUsesCurrentDefaultCLI(t *testing.T) {
 	root := t.TempDir()
-	writeProfileInto(t, root, "inherits", `{"inheritModel":true,"acpBackend":"cursor","modelBinding":{"kind":"configuration","configurationId":"local"}}`)
-	writeProfileInto(t, root, "local", `{"acpBackend":"cursor"}`)
+	writeProfileInto(t, root, "inherits", `{"acpBackend":"cursor","modelBinding":{"kind":"configuration","configurationId":"local"}}`)
+	writeProfileInto(t, root, "local", `{"inheritModel":false,"inheritGit":false,"acpBackend":"cursor"}`)
 	shared := SharedAgentView{AcpBackend: "opencode", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "default"}}
 	registry := NewProviderRegistry(mcp.NewHost(newMemStore()), Options{ProfilesRoot: root, SharedAgent: func() SharedAgentView { return shared }})
 	if got, err := registry.backendFor(reqFor("inherits")); err != nil || got != BackendOpenCode {
@@ -78,7 +139,7 @@ func TestInheritedModelSiteDoesNotUseLocalSiteAliases(t *testing.T) {
 
 func TestRunAgentInheritedDefaultsReprimeSharedSandbox(t *testing.T) {
 	h := newSharedHarness(t, nil)
-	writeProfileInto(t, h.p.opts.ProfilesRoot, testAgentProfile, `{"acpBackend":"cursor","inheritModel":true,"inheritGit":true}`)
+	writeProfileInto(t, h.p.opts.ProfilesRoot, testAgentProfile, `{"acpBackend":"cursor"}`)
 	shared := SharedAgentView{AcpBackend: "cursor", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "first"}, GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}, PreferredCredentialID: "gh"}}
 	h.p.opts.SharedAgent = func() SharedAgentView { return shared }
 	h.p.opts.GitCredential = selectedGitTestValue

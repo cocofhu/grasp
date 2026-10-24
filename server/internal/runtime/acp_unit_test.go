@@ -370,8 +370,8 @@ func TestLiveNodeEventsPageSnapshotFirst(t *testing.T) {
 	}
 }
 
-// profilesRoot writes a minimal agent.json so agentConfig/resolvedMCPSpecs/etc.
-// have something to read.
+// writeAgent writes a local runtime fixture so agentConfig/resolvedMCPSpecs/etc.
+// have something to read. Inheritance tests write their switches explicitly.
 func writeAgent(t *testing.T, profile, agentJSON string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -385,6 +385,11 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 	}
 	if _, exists := cfg["modelBinding"]; !exists {
 		cfg["modelBinding"] = map[string]string{"kind": "configuration", "configurationId": "test-model"}
+	}
+	for _, key := range []string{"inheritModel", "inheritGit"} {
+		if _, exists := cfg[key]; !exists {
+			cfg[key] = false
+		}
 	}
 	encoded, err := json.Marshal(cfg)
 	if err != nil {

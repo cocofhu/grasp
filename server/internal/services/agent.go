@@ -193,8 +193,8 @@ type Agent struct {
 // agentConfig is the on-disk shape of agent.json (working-dir files live under
 // the workspace/ subfolder).
 type agentConfig struct {
-	InheritModel       bool                      `json:"inheritModel,omitempty"`
-	InheritGit         bool                      `json:"inheritGit,omitempty"`
+	InheritModel       bool                      `json:"inheritModel"`
+	InheritGit         bool                      `json:"inheritGit"`
 	GitBindings        *models.GitBindings       `json:"gitBindings,omitempty"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding,omitempty"`
 	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
@@ -353,7 +353,7 @@ func underRoot(root, rel string) (string, error) {
 }
 
 func (s *AgentService) readConfig(name string) agentConfig {
-	var cfg agentConfig
+	cfg := agentConfig{InheritModel: true, InheritGit: true}
 	b, err := os.ReadFile(filepath.Join(s.root, sanitize(name), "agent.json"))
 	if err != nil {
 		return cfg

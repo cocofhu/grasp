@@ -44,6 +44,14 @@ describe('capabilities draft round-trip', () => {
 })
 
 describe('credential binding round-trip', () => {
+  it('defaults both inheritance choices to true and preserves explicit false choices', () => {
+    const defaults = toDraft(baseAgent)
+    expect(defaults).toMatchObject({ inheritModel: true, inheritGit: true })
+    expect(fromDraft(defaults)).toMatchObject({ inheritModel: true, inheritGit: true })
+    const local = toDraft({ ...baseAgent, inheritModel: false, inheritGit: false })
+    expect(local).toMatchObject({ inheritModel: false, inheritGit: false })
+    expect(fromDraft(local)).toMatchObject({ inheritModel: false, inheritGit: false })
+  })
   it('omits an empty dormant model reference while inheriting and preserves a selected local model', () => {
     const draft = toDraft({ ...baseAgent, inheritModel: true, modelBinding: { kind: 'configuration', configurationId: '' } })
     expect(fromDraftRaw(draft)).not.toHaveProperty('modelBinding')

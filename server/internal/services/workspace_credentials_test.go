@@ -31,7 +31,7 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewCredentialService(db)
-	created, err := s.Create(CredentialInput{Type: "mcp", Name: "MCP", EnvKey: "MCP_TOKEN", Value: "secret-value"})
+	created, err := s.Create(CredentialInput{Purpose: "mcp", Type: "mcp", Name: "MCP", EnvKey: "MCP_TOKEN", Value: "secret-value"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +46,8 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 		t.Fatalf("plaintext/empty ciphertext: %q", raw.ValueEnc)
 	}
 	rows, err := s.List()
-	if err != nil || len(rows) < 9 {
-		t.Fatalf("list defaults: n=%d err=%v", len(rows), err)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("list: n=%d err=%v", len(rows), err)
 	}
 	resolved := s.ResolveEnv()
 	if resolved["MCP_TOKEN"] != "secret-value" {
@@ -77,7 +77,7 @@ func TestWorkspaceCredentialsCRUDAndResolution(t *testing.T) {
 	}
 }
 
-func TestWorkspaceCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
+func TestWorkspaceCredentialEmptyStoreDoesNotCreateSlots(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
 	_, err := NewWorkspaceService(db).CreateFixture("Empty slots", "", nil)
@@ -85,8 +85,8 @@ func TestWorkspaceCredentialResolveEnvSkipsEmptySlotsQuietly(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewCredentialService(db)
-	if rows, err := s.List(); err != nil || len(rows) == 0 {
-		t.Fatalf("list defaults: n=%d err=%v", len(rows), err)
+	if rows, err := s.List(); err != nil || rows == nil || len(rows) != 0 {
+		t.Fatalf("list: n=%d err=%v", len(rows), err)
 	}
 	logged := captureLog(t)
 
@@ -107,22 +107,22 @@ func TestWorkspaceCredentialRejectsReservedAndInvalidKeys(t *testing.T) {
 	}
 	s := NewCredentialService(db)
 	for _, in := range []CredentialInput{
-		{Type: "custom", Name: "artifact", EnvKey: "GRASP_ARTIFACT_TOKEN", Value: "v"},
-		{Type: "custom", Name: "pm", EnvKey: "GRASP_PM_TOKEN", Value: "v"},
-		{Type: "custom", Name: "root", EnvKey: "CONFIG_ROOT", Value: "v"},
-		{Type: "custom", Name: "bad", EnvKey: "vars.repo_url", Value: "v"},
-		{Type: "custom", Name: "bad-chars", EnvKey: "A-B", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "artifact", EnvKey: "GRASP_ARTIFACT_TOKEN", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "pm", EnvKey: "GRASP_PM_TOKEN", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "root", EnvKey: "CONFIG_ROOT", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "bad", EnvKey: "vars.repo_url", Value: "v"},
+		{Purpose: "custom", Type: "custom", Name: "bad-chars", EnvKey: "A-B", Value: "v"},
 	} {
 		if _, err := s.Create(in); !errors.Is(err, ErrCredentialEnvKey) {
 			t.Fatalf("%s: want ErrCredentialEnvKey, got %v", in.Name, err)
 		}
 	}
 	for _, typ := range []string{"channel", "external_mcp", "workflow"} {
-		if _, err := s.Create(CredentialInput{Type: typ, Name: typ, EnvKey: "X", Value: "v"}); !errors.Is(err, ErrCredentialType) {
+		if _, err := s.Create(CredentialInput{Purpose: typ, Type: typ, Name: typ, EnvKey: "X", Value: "v"}); !errors.Is(err, ErrCredentialPurpose) {
 			t.Fatalf("%s: adapter type must not be creatable, got %v", typ, err)
 		}
 	}
-	created, err := s.Create(CredentialInput{Type: "custom", Name: "ok", EnvKey: "MY_TOKEN", Value: "v"})
+	created, err := s.Create(CredentialInput{Purpose: "custom", Type: "custom", Name: "ok", EnvKey: "MY_TOKEN", Value: "v"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,13 +145,13 @@ func TestWorkspaceCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 	if keys := s.CredentialEnvKeys(); len(keys) != 0 {
 		t.Fatalf("empty default slots must not block Run env: %v", keys)
 	}
-	if _, err := s.SetByEnvKey(CredentialInput{Type: "git", Provider: "github", Name: "GitHub", EnvKey: "GITHUB_TOKEN", Value: "ghp"}); err != nil {
+	if _, err := s.Create(CredentialInput{Purpose: "git", Type: "git", Provider: "github", Name: "GitHub", EnvKey: "GITHUB_TOKEN", Value: "ghp"}); err != nil {
 		t.Fatal(err)
 	}
 	if keys := s.CredentialEnvKeys(); len(keys) != 0 {
 		t.Fatalf("Git key became a global environment binding: %v", keys)
 	}
-	if _, err := s.Create(CredentialInput{Type: "mcp", Name: "MCP", EnvKey: "MCP_TOKEN", Value: "service-token"}); err != nil {
+	if _, err := s.Create(CredentialInput{Purpose: "mcp", Type: "mcp", Name: "MCP", EnvKey: "MCP_TOKEN", Value: "service-token"}); err != nil {
 		t.Fatal(err)
 	}
 	keys := s.CredentialEnvKeys()
@@ -161,7 +161,7 @@ func TestWorkspaceCredentialEnvKeysIgnoreEmptySlots(t *testing.T) {
 
 }
 
-func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
+func TestCodexLoginFileCredentialMaskRejectAndWriteBack(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
 	_, err := NewWorkspaceService(db).CreateFixture("Codex login", "", nil)
@@ -169,26 +169,12 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewCredentialService(db)
-	rows, err := s.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	var slot CredentialView
-	found := false
-	for _, row := range rows {
-		if row.EnvKey == envauth.EnvCodexAuthFile {
-			slot = row
-			found = true
-		}
-	}
-	if !found || slot.Configured || slot.Provider != "codex" || slot.Name != "Codex" {
-		t.Fatalf("codex slot=%+v found=%v", slot, found)
-	}
 	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"at","refresh_token":"rt"}}`
-	saved, err := s.Update(slot.ID, CredentialInput{Value: login})
+	slot, err := s.Create(CredentialInput{Purpose: "tool_auth", ToolID: "codex", Name: "Codex personal", Value: login})
 	if err != nil {
 		t.Fatal(err)
 	}
+	saved := slot
 	rawView, err := json.Marshal(saved)
 	if err != nil {
 		t.Fatal(err)
@@ -255,55 +241,6 @@ func TestCodexLoginFileSlotMaskRejectAndWriteBack(t *testing.T) {
 	}
 }
 
-func TestBuiltinCredentialShortNames(t *testing.T) {
-	setCredentialKey(t)
-	db := newTestDB(t)
-	if _, err := NewWorkspaceService(db).CreateFixture("Short names", "", nil); err != nil {
-		t.Fatal(err)
-	}
-	s := NewCredentialService(db)
-	if aiCredentialName(AcpBackendCursor) != builtinNameCursor ||
-		aiCredentialName(AcpBackendClaudeCode) != builtinNameClaudeCode ||
-		aiCredentialName(AcpBackendCodex) != builtinNameCodex ||
-		aiCredentialName("cursor") != "Cursor" {
-		t.Fatalf("generated names cursor=%q claude=%q codex=%q", aiCredentialName("cursor"), aiCredentialName(AcpBackendClaudeCode), aiCredentialName(AcpBackendCodex))
-	}
-
-	rows, err := s.List()
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := map[string]struct {
-		name   string
-		envKey string
-	}{
-		"cred-builtin-cursor":    {builtinNameCursor, envauth.EnvCursorAPIKey},
-		"cred-builtin-claude":    {builtinNameClaudeCode, envauth.EnvClaudeAPIKey},
-		"cred-builtin-codebuddy": {builtinNameCodeBuddy, envauth.EnvCodeBuddyAPIKey},
-		"cred-builtin-trae":      {builtinNameTrae, envauth.EnvTraeAPIKey},
-		"cred-builtin-codex":     {builtinNameCodex, envauth.EnvCodexAuthFile},
-		"cred-builtin-github":    {builtinNameGitHub, envauth.EnvGitHubToken},
-		"cred-builtin-gitlab":    {builtinNameGitLab, envauth.EnvGitLabToken},
-		"cred-builtin-ssh-key":   {builtinNameSSHKey, envauth.EnvGitSSHPrivateKey},
-		"cred-builtin-ssh-hosts": {builtinNameSSHHosts, envauth.EnvGitSSHKnownHosts},
-	}
-	got := map[string]CredentialView{}
-	for _, row := range rows {
-		if _, ok := want[row.ID]; ok {
-			got[row.ID] = row
-		}
-	}
-	if len(got) != len(want) {
-		t.Fatalf("builtin slots=%d want=%d", len(got), len(want))
-	}
-	for id, spec := range want {
-		row := got[id]
-		if row.Name != spec.name || row.EnvKey != spec.envKey {
-			t.Fatalf("%s name=%q env=%q want name=%q env=%q", id, row.Name, row.EnvKey, spec.name, spec.envKey)
-		}
-	}
-}
-
 func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	setCredentialKey(t)
 	db := newTestDB(t)
@@ -312,11 +249,7 @@ func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := NewCredentialService(db)
-	if _, err := s.List(); err != nil {
-		t.Fatal(err)
-	}
-	cursorID := "cred-builtin-cursor"
-	if _, err := s.Update(cursorID, CredentialInput{Value: "builtin-key"}); err != nil {
+	if _, err := s.Create(CredentialInput{Purpose: "tool_auth", ToolID: "cursor", Name: "Cursor", Value: "first-key"}); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.Create(CredentialInput{Purpose: "tool_auth", ToolID: "cursor", Type: "ai", Provider: "cursor", Name: "cursor", EnvKey: envauth.EnvCursorAPIKey, Value: "dup"})
@@ -328,7 +261,7 @@ func TestCredentialAliasIsUniqueWithinKind(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.Create(CredentialInput{Type: "git", Provider: "github", Name: "工作号", EnvKey: envauth.EnvGitHubToken, Value: "gh"}); err != nil {
+	if _, err := s.Create(CredentialInput{Purpose: "git", Type: "git", Provider: "github", Name: "工作号", EnvKey: envauth.EnvGitHubToken, Value: "gh"}); err != nil {
 		t.Fatalf("same alias on another kind: %v", err)
 	}
 	if _, ok := s.ResolveEnv()[envauth.EnvCursorAPIKey]; ok {
@@ -371,7 +304,7 @@ func TestWorkspaceCredentialRequiresMasterKey(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv(crypto.SecretsKeyEnv, "")
-	if _, err := NewCredentialService(db).Create(CredentialInput{Type: "custom", Name: "x", EnvKey: "X", Value: "v"}); !errors.Is(err, crypto.ErrNoSecretsKey) {
+	if _, err := NewCredentialService(db).Create(CredentialInput{Purpose: "custom", Type: "custom", Name: "x", EnvKey: "X", Value: "v"}); !errors.Is(err, crypto.ErrNoSecretsKey) {
 		t.Fatalf("expected missing key, got %v", err)
 	}
 }

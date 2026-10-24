@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -40,6 +41,16 @@ type agentBody struct {
 	Layout             services.AgentLayout      `json:"layout"`
 	Capabilities       *models.AgentCapabilities `json:"capabilities"`
 	Reason             string                    `json:"reason,omitempty"`
+}
+
+func (b *agentBody) UnmarshalJSON(data []byte) error {
+	type plain agentBody
+	next := plain{InheritModel: true, InheritGit: true}
+	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	*b = agentBody(next)
+	return nil
 }
 
 func (b agentBody) toAgent(name string) services.Agent {

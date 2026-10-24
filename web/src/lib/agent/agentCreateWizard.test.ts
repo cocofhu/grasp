@@ -3,7 +3,7 @@ import { assembleCreatePayload, applyAcpBackend, buildDefaultRule, buildReviewSu
 describe('Agent creation data contract', () => {
  it('requires one combined tool and named-model step before optional Git', () => {
   expect(WIZARD_STEPS.map(step => [step.id, step.skip])).toEqual([['basics', false], ['acp', false], ['git', true], ['review', false]])
-  expect(freshDraft()).toMatchObject({ acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: '' }, gitBindings: { items: [] } })
+  expect(freshDraft()).toMatchObject({ inheritModel: true, inheritGit: true, acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: '' }, gitBindings: { items: [] } })
  })
  it.each(ACP_BACKENDS)('changes to $id with a matching layout and an empty explicit model selection', backend => {
   const d = freshDraft(); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
@@ -13,7 +13,7 @@ describe('Agent creation data contract', () => {
  })
  it('does not clear a selection on reselection and detects path-dependent edits', () => {
   const d = freshDraft(); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
-  applyAcpBackend(d, 'cursor'); expect(d.modelBinding?.configurationId).toBe('cfg')
+  applyAcpBackend(d, 'cursor'); expect(d.modelBinding?.configurationId).toBe('cfg'); expect(d.inheritModel).toBe(false)
   expect(hasPathDeps(d)).toBe(false); d.rulesEdited = true; expect(hasPathDeps(d)).toBe(true)
  })
  it('validates names and compares normalized duplicates', () => {

@@ -97,10 +97,7 @@ func (r *ProviderRegistry) backendFor(req NodeReq) (AcpBackend, error) {
 	if err != nil {
 		return "", fmt.Errorf("读取 Agent %q 配置失败: %w", profile, err)
 	}
-	var cfg struct {
-		AcpBackend   string `json:"acpBackend"`
-		InheritModel bool   `json:"inheritModel"`
-	}
+	var cfg agentFile
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return "", fmt.Errorf("解析 Agent %q 配置失败: %w", profile, err)
 	}

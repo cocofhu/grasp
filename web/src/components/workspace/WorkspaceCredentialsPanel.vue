@@ -5,7 +5,7 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
-import ModelConnectionManager from './ModelConnectionManager.vue'
+import ModelConnectionEditor from './ModelConnectionEditor.vue'
 import ModelProviderSelect from './ModelProviderSelect.vue'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
@@ -18,7 +18,7 @@ import {
   aliasKey,
   conflictingAlias,
   kindById,
-  displayKindOfItem,
+  kindOfItem,
   defaultGitCredentialHost,
   normalizeGitCredentialHost,
   type CredentialKindId,
@@ -82,11 +82,10 @@ async function addFromMenu(kind: 'credential' | 'model') {
 }
 const activeTab = ref<'credentials' | 'models'>('credentials')
 const serviceConnections = ref<ModelConnection[]>([])
-const connectionManager = ref<InstanceType<typeof ModelConnectionManager> | null>(null)
+const connectionManager = ref<InstanceType<typeof ModelConnectionEditor> | null>(null)
 const modelConfigurationManager = ref<InstanceType<typeof ModelConfigurationManager> | null>(null)
 const createTool = ref<'' | 'opencode' | 'deepseek_harness'>('')
 const createConnectionAfter = ref(false)
-const returnToConnection = ref(false)
 const modelCredentialBackend = ref('')
 const createIssuer = ref('deepseek')
 const customProviderLabel = ref('')
@@ -101,7 +100,7 @@ function setConnectionAuth(value: string) { if (value === 'bearer' || value === 
 const effectiveIssuer = computed(() => createIssuer.value === 'custom' ? customProviderLabel.value.trim() : createIssuer.value)
 const providerLabel = computed(() => createIssuer.value === 'custom' ? effectiveIssuer.value : modelProviderPreset(createIssuer.value)?.label || createIssuer.value)
 const connectionName = computed(() => connectionForm.name.trim() || `${providerLabel.value} · ${createAlias.value.trim()}`)
-const inlineConnection = computed(() => createKind.value === 'model_api' && createConnectionAfter.value && !returnToConnection.value)
+const inlineConnection = computed(() => createKind.value === 'model_api' && createConnectionAfter.value)
 const connectionReady = computed(() => {
   if (!inlineConnection.value) return true
   try { const url = new URL(connectionForm.baseUrl); if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false } catch { return false }
@@ -165,7 +164,7 @@ function kindLabel(id: CredentialKindId) { return id === 'opencode' ? 'OpenCode 
 const secretReady = computed(() => Boolean(createKind.value && (savedCredential.value || createSecret.value.trim()) && (createKind.value !== 'model_api' || (createIssuer.value === 'custom' ? !!effectiveIssuer.value : /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(effectiveIssuer.value)))))
 
 const orderedItems = computed(() =>
-  items.value.filter((item) => !['GITLAB_URL', 'GITHUB_URL'].includes(item.envKey || '')).filter((item) => item.configured || (item.secretRevision || 0) > 1 || !item.id.startsWith('cred-builtin-')).sort((a, b) => {
+  items.value.filter((item) => !isWorkspaceOwned(item) || !!item.purpose).sort((a, b) => {
     // Put the model API key first so the primary setup path is visible without
     // making users scan past Git/SSH slots.
     const aModel = isOpenCodeModelCredential(a) ? 0 : 1
@@ -182,7 +181,7 @@ const credentialGroups = computed(() => {
   const other: CredentialItem[] = []
   for (const item of orderedItems.value) {
     if (isModelCredential(item)) { buckets.set('model_api', [...(buckets.get('model_api') || []), item]); continue }
-    const kind = displayKindOfItem(item)
+    const kind = kindOfItem(item)
     if (!kind) {
       other.push(item)
       continue
@@ -197,19 +196,19 @@ const credentialGroups = computed(() => {
   return groups
 })
 
-type CredentialSectionId = 'coding' | 'models' | 'git' | 'ssh' | 'other'
+type CredentialSectionId = 'coding' | 'api' | 'git' | 'ssh' | 'other'
 
 const credentialSections = computed(() => {
   const sections: { id: CredentialSectionId; groups: typeof credentialGroups.value; icon: string }[] = [
     { id: 'coding', groups: [], icon: 'terminal' },
-    { id: 'models', groups: [], icon: 'sparkles' },
+    { id: 'api', groups: [], icon: 'key' },
     { id: 'git', groups: [], icon: 'git' },
     { id: 'ssh', groups: [], icon: 'key' },
     { id: 'other', groups: [], icon: 'lock' },
   ]
   for (const group of credentialGroups.value) {
     const kind = kindById(group.id)
-    const sectionId = group.id === 'model_api' || group.id === 'opencode' ? 'models' : kind?.type === 'ai' ? 'coding' : kind?.type || 'other'
+    const sectionId = group.id === 'model_api' ? 'api' : kind?.type === 'ai' ? 'coding' : kind?.type || 'other'
     sections.find((section) => section.id === sectionId)?.groups.push(group)
   }
   return sections.filter((section) => section.groups.length)
@@ -222,14 +221,11 @@ function itemLabel(item: CredentialItem): string {
 function isOpenCodeModelCredential(item: CredentialItem): boolean { return isModelCredential(item) }
 
 function isCodexLogin(item: CredentialItem): boolean {
-  const provider = (item.provider || '').toLowerCase()
-  const key = (item.envKey || '').toUpperCase()
-  return item.secretKind === 'login_file' || item.toolId === 'codex' || provider === 'codex' || key === 'GRASP_CODEX_AUTH_JSON'
+  return item.purpose === 'tool_auth' && item.toolId === 'codex' && item.secretKind === 'login_file'
 }
 
 function isMultiline(item: CredentialItem): boolean {
-  const key = `${item.type || ''} ${item.provider || ''} ${item.envKey || ''}`.toLowerCase()
-  return isCodexLogin(item) || item.secretKind === 'ssh_private_key' || item.secretKind === 'ssh_known_hosts' || key.includes('ssh') || key.includes('private') || key.includes('known_hosts')
+  return ['login_file', 'ssh_private_key', 'ssh_known_hosts'].includes(item.secretKind || '')
 }
 
 function configuredText(item: CredentialItem): string {
@@ -237,8 +233,8 @@ function configuredText(item: CredentialItem): string {
 }
 
 function typeLabel(item: CredentialItem): string {
-  if (isModelCredential(item)) return (item.provider === 'custom' ? item.issuer : '') || (typeof item.metadata?.issuerLabel === 'string' ? item.metadata.issuerLabel : '') || modelProviderPreset(item.issuer || '')?.label || item.issuer || item.provider || routingCopy.value.modelKeys
-  const kind = displayKindOfItem(item)
+  if (isModelCredential(item)) return (item.provider === 'custom' ? item.issuer : '') || modelProviderPreset(item.issuer || '')?.label || item.issuer || item.provider || routingCopy.value.modelKeys
+  const kind = kindOfItem(item)
   if (kind) return t(`pages.workspace.credentials.kinds.${kind.id}`)
   const key = (item.type || 'custom') as keyof typeof credentialTypeKeys
   return t(credentialTypeKeys[key] || credentialTypeKeys.custom)
@@ -248,7 +244,7 @@ function isWorkspaceOwned(item: CredentialItem): boolean {
   return !item.source || item.source === 'workspace'
 }
 function isWorkspaceEditable(item: CredentialItem): boolean {
-  return isWorkspaceOwned(item) && !!item.purpose
+  return isWorkspaceOwned(item)
 }
 function hasGitHost(item: CredentialItem): boolean {
   return item.purpose === 'git' && !!defaultGitCredentialHost(item.provider || '')
@@ -335,7 +331,6 @@ function observePane() {
 }
 
 function openCreate() {
-  returnToConnection.value = false
   modelCredentialBackend.value = ''
   releaseStepLock()
   createStep.value = 1
@@ -377,7 +372,7 @@ function selectKind(id: CredentialKindId | 'model_api') {
   if (createKind.value !== kind || createTool.value !== tool) { clearSecrets(); createHost.value = defaultGitCredentialHost(kind) }
   createTool.value = tool
   createKind.value = kind
-  createConnectionAfter.value = kind === 'model_api' && !returnToConnection.value
+  createConnectionAfter.value = kind === 'model_api'
 }
 
 function selectIssuer(value: string) {
@@ -488,16 +483,11 @@ async function create() {
       activeTab.value = 'models'
       await nextTick()
       await modelConfigurationManager.value?.openForTool(tool, connection.id)
-    } else if (returnToConnection.value || connection) {
+    } else if (connection) {
       activeTab.value = 'credentials'
-      await nextTick()
-      if (returnToConnection.value && savedCredential.value) connectionManager.value?.useCredential(savedCredential.value.id)
-      else await connectionManager.value?.refresh()
     }
   } catch (e) {
     toast.error(`${t('pages.workspace.credentials.saved')} · ${String((e as Error).message || e)}`)
-  } finally {
-    returnToConnection.value = false
   }
 }
 
@@ -560,8 +550,9 @@ async function clear(item: CredentialItem) {
 
 async function loadServiceConnections() { try { serviceConnections.value = (await api.listModelConnections()).items || [] } catch { serviceConnections.value = [] } }
 function servicesFor(item: CredentialItem) { return serviceConnections.value.filter((service) => service.credentialId === item.id) }
-async function editService(id: string) { activeTab.value = 'credentials'; await nextTick(); await connectionManager.value?.editConnection(id) }
-async function addService() { activeTab.value = 'credentials'; await nextTick(); connectionManager.value?.openForCredential('') }
+async function editService(accountId: string, serviceId: string) { await connectionManager.value?.openForCredential(accountId, serviceId) }
+function addService() { openCreate(); selectKind('model_api'); goNext() }
+async function configureService(id: string) { await connectionManager.value?.openForCredential(id) }
 function manageModelCredentials(backend?: string) {
   if (!backend) { void addService(); return }
   openCreate()
@@ -574,7 +565,6 @@ function manageModelCredentials(backend?: string) {
   }
 }
 
-function beginModelCredential() { openCreate(); returnToConnection.value = true; selectKind('model_api'); goNext() }
 
 function retry() {
   void load()
@@ -663,18 +653,11 @@ watch(showCreate, (open) => {
             <div class="credentials-section-heading">
               <div class="flex min-w-0 items-center gap-2.5">
                 <Icon :name="section.icon" :size="16" class="shrink-0 text-txt3" aria-hidden="true" />
-                <h3 :id="`credential-section-${section.id}`" class="m-0 text-[14px] font-semibold text-txt">{{ section.id === 'models' ? routingCopy.modelKeys : section.id === 'coding' ? routingCopy.toolAuth : t(`pages.workspace.credentials.sections.${section.id}`) }}</h3>
+                <h3 :id="`credential-section-${section.id}`" class="m-0 text-[14px] font-semibold text-txt">{{ t(`pages.workspace.credentials.sections.${section.id}`) }}</h3>
                 <span class="credentials-section-count">{{ section.groups.reduce((count, group) => count + group.items.length, 0) }}</span>
               </div>
-              <AppButton
-                v-if="section.id === 'models'"
-                size="sm"
-                icon="plus"
-                data-testid="model-credential-add"
-                @click="openCreate(); selectKind('model_api'); goNext()"
-              >{{ t('pages.agentStudio.openCode.credentialAdd') }}</AppButton>
             </div>
-            <div class="credentials-list" :class="{ 'credentials-list--models': section.id === 'models' }">
+            <div class="credentials-list">
               <div
                 v-for="group in section.groups"
                 :key="group.id"
@@ -686,20 +669,20 @@ watch(showCreate, (open) => {
                     class="credential-row"
                     :class="{ 'credential-row--editing': editing[item.id] }"
                     data-testid="workspace-credential-row"
-                    :data-credential-kind="displayKindOfItem(item)?.id || 'other'"
+                    :data-credential-kind="kindOfItem(item)?.id || 'other'"
                   >
                     <div class="credential-row-headline" data-testid="workspace-credential-headline">
                       <div class="credential-identity flex min-w-0 items-center gap-3">
                         <CredentialProviderLogo
-                          :provider="isModelCredential(item) ? item.issuer || item.metadata?.provider as string || item.provider : displayKindOfItem(item)?.logoProvider || item.provider"
-                          :icon="displayKindOfItem(item)?.icon"
+                          :provider="isModelCredential(item) ? item.issuer || item.provider : kindOfItem(item)?.logoProvider || item.provider"
+                          :icon="kindOfItem(item)?.icon"
                           match="provider"
                           :configured="item.configured"
                         />
                         <div class="min-w-0 flex-1">
                           <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
                           <p v-if="itemLabel(item) !== typeLabel(item)" class="m-0 mt-0.5 text-[11px] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
-                          <p v-if="displayKindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
+                          <p v-if="kindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
                         </div>
                       </div>
                       <div class="credential-row-value">
@@ -712,7 +695,7 @@ watch(showCreate, (open) => {
                         <p v-if="item.updatedAt && editing[item.id]" class="credential-updated mb-0 mt-1 text-[10px] leading-4 text-txt3">
                           {{ t('pages.workspace.credentials.updatedAt', { time: fmtTime(item.updatedAt) }) }}
                         </p>
-                        <div v-if="isModelCredential(item) && editing[item.id]" class="mt-1"><div v-for="service in servicesFor(item)" :key="service.id" class="min-w-0" :data-testid="`model-credential-service-${service.id}`"><button type="button" class="credential-service-link" :title="`${routingCopy.editService} · ${service.name}`" :data-testid="`model-credential-edit-service-${service.id}`" @click="editService(service.id)"><span class="truncate">{{ service.baseUrl || service.name }}</span><Icon name="edit" :size="11" class="shrink-0" /></button></div></div>
+                        <div v-if="isModelCredential(item) && editing[item.id]" class="mt-1"><button v-if="!servicesFor(item).length" type="button" class="credential-service-link" :data-testid="`model-credential-configure-service-${item.id}`" @click="configureService(item.id)">{{ routingCopy.configureConnectionNow }}</button><div v-for="service in servicesFor(item)" :key="service.id" class="min-w-0" :data-testid="`model-credential-service-${service.id}`"><button type="button" class="credential-service-link" :title="`${routingCopy.editService} · ${service.name}`" :data-testid="`model-credential-edit-service-${service.id}`" @click="editService(item.id, service.id)"><span class="truncate">{{ service.baseUrl || service.name }}</span><Icon name="edit" :size="11" class="shrink-0" /></button></div></div>
                       </div>
                       <div class="credential-row-controls" data-testid="workspace-credential-actions">
                         <span
@@ -758,7 +741,7 @@ watch(showCreate, (open) => {
                       </div>
                     </div>
                     <p v-if="!isWorkspaceEditable(item)" class="mb-0 mt-3 text-[11px] leading-5 text-txt3">
-                      {{ isWorkspaceOwned(item) ? t('pages.workspace.credentials.recreateCredential') : t('pages.workspace.credentials.managedByAdapter', { source: item.source }) }}
+                      {{ t('pages.workspace.credentials.managedByAdapter', { source: item.source }) }}
                     </p>
                     <div
                       v-else-if="editing[item.id]"
@@ -807,7 +790,7 @@ watch(showCreate, (open) => {
             </div>
           </section>
         </template>
-        <ModelConnectionManager ref="connectionManager" :credentials="items" @add-credential="beginModelCredential" @changed="loadServiceConnections" />
+        <ModelConnectionEditor ref="connectionManager" :credentials="items" @changed="loadServiceConnections" @error="toast.error($event)" />
         </div>
         <ModelConfigurationManager v-if="activeTab === 'models'" ref="modelConfigurationManager" hide-create-button @manage-credentials="manageModelCredentials" @changed="loadServiceConnections" />
       </div>
@@ -921,7 +904,7 @@ watch(showCreate, (open) => {
                 :placeholder="t('pages.workspace.credentials.valuePlaceholder')"
               />
             </label>
-            <template v-if="createKind === 'model_api' && !returnToConnection">
+            <template v-if="createKind === 'model_api'">
               <label v-if="!createTool && !modelCredentialBackend" class="flex items-center gap-2 text-xs font-medium text-txt2"><input v-model="createConnectionAfter" type="checkbox" data-testid="model-credential-create-connection" />{{ routingCopy.configureConnectionNow }}</label>
               <div v-if="createConnectionAfter" class="space-y-3">
                 <label class="block"><span class="label">API Base URL</span><input v-model="connectionForm.baseUrl" type="url" class="input w-full font-mono" data-testid="model-credential-connection-base-url" placeholder="https://…" /></label>
@@ -1035,11 +1018,6 @@ watch(showCreate, (open) => {
 .credentials-list {
   border-top: 1px solid rgb(var(--c-line) / .7);
   border-bottom: 1px solid rgb(var(--c-line) / .7);
-}
-.credentials-list--models {
-  overflow: visible;
-  border-block: 1px solid rgb(var(--c-line) / .7);
-  background: none;
 }
 .credentials-provider-group {
   display: contents;

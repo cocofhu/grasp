@@ -66,21 +66,6 @@ export function kindOfItem(item: KindItem): CredentialKind | undefined {
   return undefined
 }
 
-/** List presentation only. Never use this fallback to authorize a run. */
-export function displayKindOfItem(item: KindItem): CredentialKind | undefined {
-  const declared = kindOfItem(item)
-  if (declared || item.purpose) return declared
-  const provider = item.provider?.trim().toLowerCase()
-  const type = item.type?.toLowerCase()
-  if (type === 'ai') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.provider === provider)
-  if (type === 'git') return CREDENTIAL_KINDS.find(kind => kind.type === 'git' && kind.provider === provider)
-  if (type === 'ssh' && provider === 'ssh') {
-    if (item.envKey === 'GIT_SSH_KNOWN_HOSTS') return kindById('ssh_hosts')
-    if (item.envKey === 'GIT_SSH_PRIVATE_KEY') return kindById('ssh_key')
-  }
-  return undefined
-}
-
 export function defaultGitCredentialHost(provider: string): string {
   return provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : ''
 }

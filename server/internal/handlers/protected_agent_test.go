@@ -13,7 +13,7 @@ func TestProtectedOnboardingAgentRejectsDeleteAndRename(t *testing.T) {
 	pm := attachPm(t, hn)
 	names := append(append([]string{}, services.OnboardingAgentNames...), services.OnboardingAgentNamesEN...)
 	for _, name := range names {
-		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": name})
+		w := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": name})
 		if w.Code != http.StatusCreated {
 			t.Fatalf("create %s: %d %s", name, w.Code, w.Body.String())
 		}
@@ -45,7 +45,7 @@ func TestProtectedOnboardingAgentRejectsDeleteAndRename(t *testing.T) {
 		t.Fatalf("workspace data was purged: %+v", mem)
 	}
 
-	created := hn.do(http.MethodPost, "/api/agents", map[string]any{"acpBackend": "cursor", "name": "scratch"})
+	created := hn.do(http.MethodPost, "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "scratch"})
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create scratch: %d %s", created.Code, created.Body.String())
 	}

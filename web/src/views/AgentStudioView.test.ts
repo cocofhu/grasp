@@ -75,6 +75,8 @@ const CodeEditorStub = defineComponent({
 function agent(region?: string): Agent {
   return {
     name: 'legacy',
+    inheritModel: false,
+    inheritGit: false,
     acpBackend: 'codebuddy',
     files: [],
     mcp: [],
@@ -135,6 +137,13 @@ async function mountStudio(query: Record<string, string> = {}) {
   )
 }
 
+async function editCustomEnvironment(wrapper: Awaited<ReturnType<typeof mountStudio>>, value: string) {
+  await wrapper.findAll('button').find(button => button.text().startsWith('环境变量'))!.trigger('click')
+  await wrapper.findAll('button').find(button => button.text() === '原始 JSON')!.trigger('click')
+  await wrapper.get('[data-test="code-editor"]').setValue(JSON.stringify({ STUDIO_FEATURE: value }))
+  await wrapper.findAll('button').find(button => button.text() === '元信息')!.trigger('click')
+}
+
 beforeEach(() => {
   removeStudioToasts()
   vi.clearAllMocks()
@@ -170,17 +179,14 @@ describe('AgentStudio region UI', () => {
     await flushPromises()
     await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
 
-    const workspaceInput = wrapper.findAll('input').find((item) => {
-      return (item.element as HTMLInputElement).value === '/root/workspace'
-    })!
-    await workspaceInput.setValue('/root/workspace-edited')
+    await editCustomEnvironment(wrapper, 'preserve-region')
     await wrapper.findAll('button').find((item) => item.text() === '保存')!.trigger('click')
     await flushPromises()
 
     expect(mocks.saveAgent).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: { GRASP_CODEBUDDY_REGION: 'ioa' },
-        layout: expect.objectContaining({ workspaceDir: '/root/workspace-edited' }),
+        env: { GRASP_CODEBUDDY_REGION: 'ioa', STUDIO_FEATURE: 'preserve-region' },
+        layout: expect.objectContaining({ workspaceDir: '/root/workspace' }),
       }),
     )
   })
@@ -209,17 +215,14 @@ describe('AgentStudio region UI', () => {
 
     expect(wrapper.text()).not.toContain('未保存')
     await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
-    const workspaceInput = wrapper.findAll('input').find((item) => {
-      return (item.element as HTMLInputElement).value === '/root/workspace'
-    })!
-    await workspaceInput.setValue('/root/workspace-hydrated')
+    await editCustomEnvironment(wrapper, 'hydrated-region')
     expect(wrapper.text()).toContain('未保存')
     await wrapper.findAll('button').find((item) => item.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(mocks.saveAgent).toHaveBeenCalledWith(
       expect.objectContaining({
-        env: { GRASP_CODEBUDDY_REGION: 'public' },
-        layout: expect.objectContaining({ workspaceDir: '/root/workspace-hydrated' }),
+        env: { GRASP_CODEBUDDY_REGION: 'public', STUDIO_FEATURE: 'hydrated-region' },
+        layout: expect.objectContaining({ workspaceDir: '/root/workspace' }),
       }),
     )
   })
@@ -2322,8 +2325,7 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     mocks.listAgents.mockResolvedValue(agents())
     const { wrapper, router } = await mountAt('/agents?agent=alpha')
     await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
-    const ws = wrapper.findAll('input').find((i) => (i.element as HTMLInputElement).value === '/root/workspace')!
-    await ws.setValue('/root/workspace-edited')
+    await editCustomEnvironment(wrapper, 'dirty-feature')
     await pick(wrapper, DEFAULTS)
     await pick(wrapper, 'beta')
     expect(modal(wrapper).text()).toContain('「alpha」')
@@ -2336,13 +2338,13 @@ describe('AgentStudio Agent 默认配置 — empty workspace, unsaved defaults, 
     await pick(wrapper, 'alpha')
     expect(modal(wrapper).exists()).toBe(false)
     expect(router.currentRoute.value.query).toEqual({ agent: 'alpha', studioTab: 'meta' })
-    expect(wrapper.findAll('input').some((i) => (i.element as HTMLInputElement).value === '/root/workspace-edited')).toBe(true)
+    await wrapper.findAll('button').find(button => button.text().startsWith('环境变量'))!.trigger('click')
+    expect(wrapper.get('input[placeholder="value"]').element).toHaveProperty('value', 'dirty-feature')
   })
 
   const dirtyAlphaMeta = async (wrapper: W) => {
     await wrapper.findAll('button').find((b) => b.text() === '元信息')!.trigger('click')
-    const ws = wrapper.findAll('input').find((i) => (i.element as HTMLInputElement).value === '/root/workspace')!
-    await ws.setValue('/root/workspace-edited')
+    await editCustomEnvironment(wrapper, 'dirty-feature')
   }
 
   // Both the defaults and the Agent unsaved: the second prompt must survive closing the first.

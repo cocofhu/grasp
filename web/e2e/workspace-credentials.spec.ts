@@ -108,30 +108,37 @@ test('one header add menu opens either wizard on both tabs and stays inside a na
   await expect(page.getByTestId('credentials-tab-models')).toHaveAttribute('aria-selected', 'true')
 })
 
-test('credential lists group coding, model, repository and SSH credentials into full-width desktop rows', async ({ page }) => {
+test('credential lists separate Agent CLI and API accounts with provider icons and Git and SSH groups', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1000 })
   await openCredentialList(page)
 
   const coding = page.getByTestId('workspace-credential-section-coding')
-  const models = page.getByTestId('workspace-credential-section-models')
+  const accounts = page.getByTestId('workspace-credential-section-api')
   const git = page.getByTestId('workspace-credential-section-git')
   const ssh = page.getByTestId('workspace-credential-section-ssh')
   const other = page.getByTestId('workspace-credential-section-other')
-  for (const section of [coding, models, git, ssh, other]) {
+  for (const section of [coding, accounts, git, ssh, other]) {
     await expect(section).toHaveJSProperty('tagName', 'SECTION')
     await expect(section.getByRole('heading').first()).not.toHaveText('')
   }
+  await expect(accounts.getByRole('heading', { level: 3 })).toHaveText('API 账号')
+  await expect(coding.getByRole('heading', { level: 3 })).toHaveText('Agent CLI')
   await expect(coding.getByTestId('workspace-credential-row')).toHaveCount(5)
-  await expect(models.getByTestId('workspace-credential-row')).toHaveCount(2)
-  await expect(models.getByTestId('workspace-credential-row').filter({ hasText: 'DeepSeek model' })).toBeVisible()
-  await expect(models).toContainText('model-…5678')
+  await expect(coding.locator('.credentials-section-count')).toHaveText('5')
+  await expect(accounts.getByTestId('workspace-credential-row')).toHaveCount(2)
+  await expect(accounts.locator('.credentials-section-count')).toHaveText('2')
+  await expect(accounts.getByTestId('workspace-credential-row').filter({ hasText: 'DeepSeek model' })).toBeVisible()
+  await expect(accounts).toContainText('model-…5678')
+  await expect(page.getByTestId('model-connections-manager')).toHaveCount(0)
+  await expect(page.getByTestId('model-connection-add')).toHaveCount(0)
+  await expect(page.getByTestId('connection-model-catalog')).toHaveCount(0)
   await expect(git).toContainText('GitHub team')
   await expect(ssh).toContainText('Repository deploy key')
   await expect(other).toContainText('Vault managed token')
   await expect(other.getByTestId('workspace-credential-edit-vault-token')).toHaveCount(0)
   await expect(other.getByTestId('workspace-credential-clear-vault-token')).toHaveCount(0)
 
-  const rows = coding.getByTestId('workspace-credential-row')
+  const rows = coding.getByTestId('workspace-credential-row').or(accounts.getByTestId('workspace-credential-row'))
   const rowBoxes = await Promise.all((await rows.all()).map((row) => row.boundingBox()))
   expect(rowBoxes.every(Boolean)).toBe(true)
   for (let index = 1; index < rowBoxes.length; index++) {
@@ -140,13 +147,15 @@ test('credential lists group coding, model, repository and SSH credentials into 
     expect(rowBoxes[index]!.y).toBeGreaterThanOrEqual(rowBoxes[index - 1]!.y + rowBoxes[index - 1]!.height)
   }
   for (const row of await rows.all()) {
+    await expect(row.locator('[data-provider-logo]')).toHaveCount(1)
+    await expect(row.locator('[data-logo-source="bundled-brand-asset"]')).toHaveCount(1)
     for (const testId of ['workspace-credential-alias', 'workspace-credential-status', 'workspace-credential-actions']) {
       await expect(row.getByTestId(testId)).toBeVisible()
       await expectWithinViewport(row.getByTestId(testId), page)
     }
   }
   await expect(page.getByTestId('workspace-credential-create')).toBeEnabled()
-  await expect(coding.getByTestId('workspace-credential-masked')).toHaveText('cursor-…1234')
+  await expect(coding.getByTestId('workspace-credential-row').filter({ hasText: 'Cursor team' }).getByTestId('workspace-credential-masked')).toHaveText('cursor-…1234')
   await expect(coding.getByTestId('workspace-credential-edit-cursor-api')).toBeEnabled()
   await expect(coding.getByTestId('workspace-credential-clear-cursor-api')).toBeEnabled()
   await coding.getByTestId('workspace-credential-fill-codebuddy-api').click()
@@ -244,7 +253,7 @@ test('a model API key can be replaced on a narrow screen while its value stays m
     await route.fulfill({ json: { ...credentialItems.find((item) => item.id === 'model-api'), masked } })
   })
   await page.goto('/workspace-config.html?view=/settings/credentials')
-  const models = page.getByTestId('workspace-credential-section-models')
+  const models = page.getByTestId('workspace-credential-section-api')
   await models.getByTestId('workspace-credential-edit-model-api').click()
   const input = models.getByTestId('workspace-credential-input-model-api')
   await expect(input).toHaveAttribute('type', 'password')
@@ -264,33 +273,27 @@ test('a model API key can be replaced on a narrow screen while its value stays m
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('model-replacement-secret-9999')
 })
 
-test('existing provider rows stay in their groups and GitLab URL is not a separate credential', async ({ page }) => {
+test('an empty Cursor slot does not duplicate the current CursorDefault credential', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await installWorkspaceApiDefaults(page)
   const rows = [
-    { id: 'old-cursor', type: 'ai', provider: 'cursor', name: 'Existing Cursor', configured: true, masked: '••••' },
-    { id: 'old-github', type: 'git', provider: 'github', name: 'Existing GitHub', configured: true, masked: '••••' },
-    { id: 'old-gitlab', type: 'git', provider: 'gitlab', name: 'Existing GitLab', configured: true, masked: '••••' },
-    { id: 'old-gitlab-url', type: 'git', provider: 'gitlab', envKey: 'GITLAB_URL', name: 'GitLab URL', configured: true },
+    { id: 'Cursor', type: 'ai', provider: 'cursor', name: 'Cursor', source: 'workspace', configured: false },
+    { id: 'opaque-old-empty', type: 'git', provider: 'gitlab', name: 'Old empty GitLab', configured: false },
+    { id: 'old-url', type: 'git', provider: 'gitlab', envKey: 'GITLAB_URL', name: 'GitLab URL', configured: true },
+    { id: 'cursor-default', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', type: 'ai', provider: 'cursor', name: 'CursorDefault', configured: true, masked: 'cursor-…1234' },
   ]
-  const deleted: string[] = []
+  const writes: string[] = []
+  page.on('request', request => { if (request.url().includes('/api/workspace/credentials') && request.method() !== 'GET') writes.push(request.method()) })
   await routeApi(page, '**/api/workspace/credentials', async route => route.fulfill({ json: { items: rows } }))
-  await routeApi(page, '**/api/workspace/credentials/old-gitlab', async route => {
-    expect(route.request().method()).toBe('DELETE')
-    deleted.push('old-gitlab')
-    await route.fulfill({ json: { status: 'ok' } })
-  })
   await page.goto('/workspace-config.html?view=/settings/credentials')
-  await expect(page.getByTestId('workspace-credential-section-coding')).toContainText('Existing Cursor')
-  await expect(page.getByTestId('workspace-credential-group-github')).toContainText('Existing GitHub')
-  await expect(page.getByTestId('workspace-credential-group-gitlab')).toContainText('Existing GitLab')
+  const coding = page.getByTestId('workspace-credential-section-coding')
+  await expect(page.getByTestId('workspace-credential-alias')).toHaveText(['CursorDefault'])
+  await expect(page.getByTestId('workspace-credential-row')).toHaveCount(1)
+  await expect(coding.locator('.credentials-section-count')).toHaveText('1')
+  await expect(page.getByTestId('workspace-credential-masked')).toHaveText('cursor-…1234')
   await expect(page.getByTestId('workspace-credential-section-other')).toHaveCount(0)
-  await expect(page.getByTestId('workspace-credential-row')).toHaveCount(3)
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('GitLab URL')
-  await expect(page.getByTestId('workspace-credential-edit-old-gitlab')).toHaveCount(0)
-  await expect(page.getByTestId('workspace-credential-group-gitlab')).toContainText('请重新添加此凭据后编辑')
-  await page.getByTestId('workspace-credential-clear-old-gitlab').click()
-  await expect.poll(() => deleted).toEqual(['old-gitlab'])
+  expect(writes).toEqual([])
   await expectNoHorizontalOverflow(page)
 })
 
