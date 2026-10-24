@@ -28,15 +28,6 @@ func NormalizeRepoIDs(ids []string) []string {
 	return out
 }
 
-// normalizeRepoIDsPtr keeps nil (inherit) distinct from an explicit list.
-func normalizeRepoIDsPtr(ids *[]string) *[]string {
-	if ids == nil {
-		return nil
-	}
-	out := NormalizeRepoIDs(*ids)
-	return &out
-}
-
 // ResolveRepoCredentials loads the selected repositories in selection order
 // and resolves their own Git credentials. Deleted repositories are skipped.
 func ResolveRepoCredentials(db *gorm.DB, ids []string, resolve runtime.SelectedCredentialFunc) []sandbox.RepoCredential {
@@ -59,39 +50,4 @@ func ResolveRepoCredentials(db *gorm.DB, ids []string, resolve runtime.SelectedC
 		}
 	}
 	return runtime.RepoCredentialsFor(ordered, resolve)
-}
-
-// repoCredentials resolves an effective Agent's repository selection.
-func (s *SandboxService) repoCredentials(agent Agent) []sandbox.RepoCredential {
-	if s == nil || agent.RepoIDs == nil {
-		return nil
-	}
-	return ResolveRepoCredentials(s.db, *agent.RepoIDs, s.selectedCredential)
-}
-
-// mergeRepoCredentials appends extra entries, replacing any earlier one with
-// the same repository URL (bound Solo repo wins over the Agent list).
-func mergeRepoCredentials(base, extra []sandbox.RepoCredential) []sandbox.RepoCredential {
-	if len(extra) == 0 {
-		return base
-	}
-	key := func(url string) string {
-		return strings.TrimSuffix(strings.TrimRight(strings.TrimSpace(url), "/"), ".git")
-	}
-	byURL := map[string]int{}
-	out := make([]sandbox.RepoCredential, 0, len(base)+len(extra))
-	for _, r := range base {
-		byURL[key(r.URL)] = len(out)
-		out = append(out, r)
-	}
-	for _, r := range extra {
-		k := key(r.URL)
-		if i, ok := byURL[k]; ok {
-			out[i] = r
-			continue
-		}
-		byURL[k] = len(out)
-		out = append(out, r)
-	}
-	return out
 }

@@ -1195,21 +1195,33 @@
         "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
       },
       "credentials": {
+        "stepKind": "Choose type",
+        "stepDetails": "Add details",
+        "description": "Manage access to coding tools, model providers and repositories. Secret values stay masked.",
+        "noValue": "No credential added",
+        "sections": {
+          "coding": "Coding tools",
+          "models": "Model API keys",
+          "git": "Repositories",
+          "ssh": "SSH access",
+          "other": "Other credentials"
+        },
         "eyebrow": "SECURITY CREDENTIALS",
         "title": "Workspace credentials",
         "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
         "empty": "This workspace has no managed credentials yet.",
+        "add": "Add",
+        "addModel": "Add model",
         "create": "Add credential",
         "createTitle": "Add workspace credential",
         "alias": "Alias",
-        "aliasPlaceholder": "Work account",
+        "aliasPlaceholder": "e.g. Shared team key",
         "aliasRequired": "Enter an alias",
-        "aliasTaken": "This kind already has an alias “{alias}”. Use another one, for example a work account.",
+        "aliasTaken": "This kind already has an alias “{alias}”. Use a different name.",
         "next": "Next",
         "back": "Back",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "stepKindHint": "Choose a kind first. The next step asks for an alias and the secret.",
         "secretApiKey": "API Key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
@@ -2078,6 +2090,10 @@
       }
     },
     "agentStudio": {
+      "toolPicker": {
+        "title": "Coding tool",
+        "site": "Service region"
+      },
       "title": "Agent Studio",
       "errorPrefix": "Error:",
       "empty": "No agents yet. Use \"Create Agent team\" for a full roster, or \"New Agent\" for a single one.",
@@ -2420,7 +2436,7 @@
         "credentialCurrent": "In use",
         "credentialEmpty": "No model provider API key yet",
         "credentialName": "Alias",
-        "credentialNamePlaceholder": "Work account",
+        "credentialNamePlaceholder": "e.g. Shared team key",
         "credentialNameRequired": "Enter an alias",
         "credentialKey": "API Key",
         "credentialKeyRequired": "Enter an API key",
@@ -2656,8 +2672,8 @@
         },
         "steps": {
           "basics": "Basics",
-          "acp": "Agent",
-          "apiKey": "API Key",
+          "acp": "Tool & model",
+          "apiKey": "Model",
           "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
@@ -2818,7 +2834,12 @@
           "rulesDefault": "Rules · default will be written",
           "rulesCustom": "Rules · customized",
           "skills": "Skills",
-          "commands": "Commands"
+          "commands": "Commands",
+          "modelSource_inherit": "Inherit this tool’s workspace model source",
+          "modelSource_platform": "Tool platform authorization",
+          "defaultModel": "Tool default",
+          "modelSource_configuration": "Model configuration",
+          "modelSource_connection": "Model connection"
         }
       },
       "data": {
@@ -2993,6 +3014,32 @@
           "gitlab_https": "GitLab HTTPS",
           "ssh": "SSH"
         }
+      },
+      "gitCredentials": {
+        "title": "Git access",
+        "hint": "Add saved credentials and choose a preferred one.",
+        "add": "Add Git credential",
+        "empty": "No Git credentials added",
+        "noneAvailable": "No more Git credentials available",
+        "preferred": "Preferred",
+        "setPreferred": "Set preferred",
+        "remove": "Remove",
+        "options": "Configure scope",
+        "scope": "Site or repository",
+        "scopePlaceholder": "e.g. git.example.com or a repository URL",
+        "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
+        "scopeInvalid": "Enter a site or a complete HTTP or SSH repository URL.",
+        "hosts": "SSH host verification",
+        "hostsNone": "No saved host verification",
+        "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
+        "preferredMissing": "Choose an available preferred credential.",
+        "inherited": "Using workspace defaults",
+        "legacy": "Using existing authorization",
+        "manage": "Manage credentials",
+        "help": "Git setup help",
+        "loading": "Loading credentials…",
+        "retry": "Retry",
+        "allStaged": "All selected credentials are available in the sandbox."
       }
     },
     "runLaunch": {

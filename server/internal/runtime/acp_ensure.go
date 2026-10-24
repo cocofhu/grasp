@@ -76,7 +76,7 @@ func (c *acpProvider) ensureOutcome(ctx context.Context, req NodeReq, acp *sandb
 			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		if lerr := c.codexTurnLoginErr(res); lerr != nil {
+		if lerr := c.codexTurnLoginErr(res, req); lerr != nil {
 			return clarifyPending{}, lerr
 		}
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
@@ -123,7 +123,7 @@ func (c *acpProvider) ensureStructured(ctx context.Context, req NodeReq, acp *sa
 			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		if lerr := c.codexTurnLoginErr(res); lerr != nil {
+		if lerr := c.codexTurnLoginErr(res, req); lerr != nil {
 			return clarifyPending{}, lerr
 		}
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
@@ -239,7 +239,7 @@ func (c *acpProvider) ensureRootCauseConsistency(ctx context.Context, req NodeRe
 			return clarifyPending{}, fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		if lerr := c.codexTurnLoginErr(res); lerr != nil {
+		if lerr := c.codexTurnLoginErr(res, req); lerr != nil {
 			return clarifyPending{}, lerr
 		}
 		pending := takeClarifyPending(c.host, req.RunID, req.NodeID)
@@ -302,7 +302,7 @@ func (c *acpProvider) ensurePlanComplete(ctx context.Context, req NodeReq, acp *
 			return fmt.Errorf("agent chat: %w", err)
 		}
 		absorbChat(usage, byModel, events, res)
-		if lerr := c.codexTurnLoginErr(res); lerr != nil {
+		if lerr := c.codexTurnLoginErr(res, req); lerr != nil {
 			return lerr
 		}
 	}

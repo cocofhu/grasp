@@ -14,12 +14,10 @@ const MOCK_WORKSPACE = {
 }
 
 const MOCK_SHARED_AGENT = {
-  acpBackend: 'cursor',
-  gitCredentialType: '',
   files: [],
   mcp: [],
   env: {
-    CURSOR_API_KEY: '****',
+    APP_NAME: '****',
     API_URL: 'https://example.com',
   },
   layout: { configRoot: '/root/.cursor', workspaceDir: '/root/workspace' },
@@ -102,12 +100,12 @@ async function gotoSharedAgentEnv(page: import('@playwright/test').Page) {
 }
 
 test.describe('工作区共享 Agent env', () => {
-  test('共享 env 可见 CURSOR_API_KEY 与 API_URL；无旧沙箱页签', async ({ page }) => {
+  test('共享 env 可见 APP_NAME 与 API_URL；无旧沙箱页签', async ({ page }) => {
     await gotoSharedAgentEnv(page)
 
     await expect(page.getByRole('button', { name: '沙箱环境变量' })).toHaveCount(0)
     await expect(page.getByTestId('workspace-shared-agent-panel')).toBeVisible()
-    await expect(page.getByPlaceholder('KEY').first()).toHaveValue('CURSOR_API_KEY')
+    await expect(page.getByPlaceholder('KEY').first()).toHaveValue('APP_NAME')
     await expect(page.getByPlaceholder('KEY').nth(1)).toHaveValue('API_URL')
     await expect(page.getByRole('button', { name: '合并规则' })).toHaveCount(0)
   })

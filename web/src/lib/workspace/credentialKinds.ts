@@ -43,25 +43,9 @@ type KindItem = {
   provider?: string
   envKey?: string
   type?: string
-}
-
-type ModelVendorItem = KindItem & {
-  source?: string
-  configured?: boolean
-  enabled?: boolean
-  revokedAt?: string
-}
-
-/** A saved, usable workspace model-vendor API key (the OpenCode kind). */
-export function isModelVendorCredential(item: ModelVendorItem): boolean {
-  return (
-    (item.type || '').toLowerCase() === 'ai' &&
-    (item.provider || '').toLowerCase() === 'opencode' &&
-    (!item.source || item.source === 'workspace') &&
-    !!item.configured &&
-    item.enabled !== false &&
-    !item.revokedAt
-  )
+  purpose?: string
+  toolId?: string
+  secretKind?: string
 }
 
 export function aliasKey(name: string): string {
@@ -73,16 +57,13 @@ export function kindById(id: string): CredentialKind | undefined {
 }
 
 export function kindOfItem(item: KindItem): CredentialKind | undefined {
-  const env = (item.envKey || '').trim()
-  if (env) return CREDENTIAL_KINDS.find((kind) => kind.envKey === env)
-  const provider = (item.provider || '').trim().toLowerCase()
-  const blob = `${item.name || ''} ${item.type || ''}`.toLowerCase()
-  if (provider === 'ssh' || (item.type || '').toLowerCase() === 'ssh') {
-    if (blob.includes('known') || blob.includes('host')) return kindById('ssh_hosts')
-    return kindById('ssh_key')
+  if (item.purpose === 'tool_auth') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.id === item.toolId && !['opencode', 'deepseek_harness'].includes(kind.id))
+  if (item.purpose === 'git') return CREDENTIAL_KINDS.find(kind => kind.type === 'git' && kind.provider === item.provider)
+  if (item.purpose === 'ssh') {
+    if (item.secretKind === 'ssh_private_key') return kindById('ssh_key')
+    if (item.secretKind === 'ssh_known_hosts') return kindById('ssh_hosts')
   }
-  if (provider === 'claude' || provider === 'anthropic') return kindById('claude_code')
-  return CREDENTIAL_KINDS.find((kind) => kind.provider === provider)
+  return undefined
 }
 
 /** Existing display alias when this kind already uses the name, otherwise empty. */

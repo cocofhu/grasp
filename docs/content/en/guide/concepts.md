@@ -85,7 +85,23 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; backend keys are saved only in Settings → Credentials; non-secret options such as sites may go in Agent meta env (OpenCode also takes vendor, optional API Base, and model).
+Supported coding tools are **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, **OpenCode**, **Codex**, and **DeepSeek Harness**. Choose the tool independently from its model source. Store secrets in Settings → Credentials; model connections store a protocol, base URL, credential reference and original model IDs. One key can serve multiple connections.
+
+Agents reference only named model configurations: a coding tool, a credential and an upstream model. Creation, editing, onboarding and execution use that same reference. Missing configurations, disabled connections and cleared keys fail explicitly without selecting another secret.
+
+| Coding tool | Model sources and connection protocols |
+| --- | --- |
+| Cursor, Trae | Tool platform authorization; direct third-party connections are unavailable |
+| Claude Code | Platform authorization or Anthropic Messages (CLI ≥ 2.1.257 for connections) |
+| CodeBuddy | Platform authorization or Chat Completions connections |
+| OpenCode, DeepSeek Harness | Chat Completions, Responses or Anthropic Messages; DSH targets 0.2.1-rc.2 |
+| Codex | ChatGPT login file or a Responses connection |
+
+First configure a preset or custom service’s API base and key in Credentials, or save only the key. In Models, save a named configuration combining a coding tool, an existing credential and the selected model. Agents bind that configuration to reuse the combination. Platform authorization continues to use the tool’s own key. The configuration’s tool is fixed after creation. Disabling or deleting a configuration, or clearing its key, fails explicitly without switching to another authorization. Enter original provider model IDs manually, including any `/` characters. Claude Code and CodeBuddy support separate auxiliary model roles. DSH’s DeepSeek native route requires the official service. “Not verified” means no live model execution has been recorded; adapter and mock tests do not establish provider compatibility.
+
+This configuration change adopts the new structure throughout. Old direct Agent authorizations, model environment settings and workspace defaults are no longer model sources and are not automatically migrated. Select a saved model configuration before running those Agents. Close and reopen long-lived sandboxes after changing their model or authorization.
+
+Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires an explicit model selection. Git uses an explicit list of saved authorizations, with a preferred identity and optional site/repository scopes. An omitted list grants no Git access. Shared workflow sandboxes replace authorizations when nodes change.
 
 ## Artifact contract and MCP
 

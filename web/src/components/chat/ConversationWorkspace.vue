@@ -224,6 +224,7 @@ onBeforeUnmount(() => { observer?.disconnect(); stopArtifactEdit() })
   <div ref="root" class="conversation-workspace chat-thread" :class="{ 'is-compact': compact, 'is-resizing': dragging }" data-testid="conversation-workspace" :data-panel-open="open && panelEnabled ? 'true' : 'false'">
     <header v-if="showToolbar" class="conversation-toolbar">
       <slot name="toolbar">
+        <slot name="leading" />
         <span class="conversation-heading">
           <Icon name="chat" :size="15" class="shrink-0" aria-hidden="true" />
           <span v-if="runNamePending" class="conversation-title-skeleton" data-testid="conversation-title-skeleton" aria-hidden="true"><span /></span>

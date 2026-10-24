@@ -1,29 +1,10 @@
-import type { BackendId } from '@/lib/shared/regionPolicy'
-import { getRegionPolicy } from '@/lib/shared/regionPolicy'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
+import type { AgentGitBindings } from '@/lib/api/apiTypes'
+import { cloneGitBindings } from '@/lib/agent/gitBindings'
 import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import type { ThemeName } from '@/lib/shared/theme'
 import { locale } from '@/lib/shared/locale'
 import { theme } from '@/lib/shared/theme'
-import { DEFAULT_OPENCODE_PROVIDER } from '@/lib/agent/openCodeProvider'
 import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
-import {
-  APIKEY_BACKEND,
-  CLI_BACKEND_DEFAULT,
-  CLI_BACKENDS,
-  type StartPath,
-  backendForStartPath,
-  startPathForBackend,
-  syncStartPathFields,
-} from '@/lib/shared/startPath'
-
-export {
-  APIKEY_BACKEND as ONBOARDING_APIKEY_BACKEND,
-  CLI_BACKEND_DEFAULT as ONBOARDING_CLI_BACKEND_DEFAULT,
-  CLI_BACKENDS as ONBOARDING_CLI_BACKENDS,
-  startPathForBackend,
-  type StartPath as OnboardingStartPath,
-}
 
 /** The default workflow's name in every UI language (mirrors server onboardingLocales). */
 export const ONBOARDING_WORKFLOW_NAMES: readonly string[] = ['默认工作流', 'Default Workflow']
@@ -96,7 +77,7 @@ export function onboardingRoleNames(lang: AppLocale): string[] {
 
 export type OnboardingMode = 'firstInstall' | 'retry'
 
-export type OnboardingStepId = 'prefs' | 'model' | 'key' | 'git' | 'team' | 'workflow' | 'done'
+export type OnboardingStepId = 'prefs' | 'model' | 'git' | 'team' | 'workflow' | 'done'
 
 export type OnboardingStep = {
   id: OnboardingStepId
@@ -107,7 +88,6 @@ export type OnboardingStep = {
 export const ONBOARDING_STEPS: OnboardingStep[] = [
   { id: 'prefs', labelKey: 'pages.onboarding.steps.prefs' },
   { id: 'model', labelKey: 'pages.onboarding.steps.model' },
-  { id: 'key', labelKey: 'pages.onboarding.steps.key' },
   { id: 'git', labelKey: 'pages.onboarding.steps.git' },
   { id: 'team', labelKey: 'pages.onboarding.steps.team' },
   { id: 'workflow', labelKey: 'pages.onboarding.steps.workflow' },
@@ -121,8 +101,8 @@ export type OnboardingTeamMember = {
   name: string
   /** True once the user typed a name, so default refreshes leave it alone. */
   nameEdited: boolean
-  /** ACP_BRIDGE_MODEL for this Agent; '' inherits the workspace default. */
-  model: string
+  /** Optional explicit configuration for this role instead of the chosen team model. */
+  modelConfigurationId: string
 }
 
 export function freshOnboardingTeam(): OnboardingTeamMember[] {
@@ -131,7 +111,7 @@ export function freshOnboardingTeam(): OnboardingTeamMember[] {
     enabled: true,
     name: '',
     nameEdited: false,
-    model: '',
+    modelConfigurationId: '',
   }))
 }
 
@@ -230,76 +210,34 @@ export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): On
   return { nodes, edges }
 }
 
-export const ONBOARDING_GIT_TYPES: { id: GitCredentialType; labelKey: string }[] = [
-  { id: 'github_https', labelKey: 'pages.agentStudio.git.types.github_https' },
-  { id: 'gitlab_https', labelKey: 'pages.agentStudio.git.types.gitlab_https' },
-  { id: 'ssh', labelKey: 'pages.agentStudio.git.types.ssh' },
-]
-
 export type OnboardingDraft = {
   step: number
   language: AppLocale
   theme: ThemeName
-  startPath: StartPath
-  acpBackend: BackendId
-  /** Last CLI-path backend, so switching paths back restores the pick. */
-  cliBackend: BackendId
-  apiKeyBackend?: BackendId
+  modelConfigurationId: string
+  gitBindings: AgentGitBindings
   region: string
-  apiKey: string
-  gitCredentialType: GitCredentialType | ''
-  githubToken: string
-  gitlabToken: string
-  gitlabUrl: string
-  sshPrivateKey: string
-  sshKnownHosts: string
   repoUrl: string
   repoBranch: string
-  /** Repo + credentials skipped on the connect page (identity is still required). */
   gitSkipped: boolean
   gitUserName: string
   gitUserEmail: string
   vncPreview: boolean
   browserMcp: boolean
-  openCodeProvider: string
-  openCodeBaseURL: string
-  openCodeModel: string
-  openCodeModelVision: boolean
-  /** Coding-tool model (`ACP_BRIDGE_MODEL`). Empty means auto: do not pin one. */
-  cliModel: string
   team: OnboardingTeamMember[]
 }
-
-export type OnboardingAgentChoice = {
-  templateId: OnboardingTemplateId
-  name?: string
-  model?: string
-}
-
+export type OnboardingAgentChoice = { templateId: OnboardingTemplateId; name?: string; modelConfigurationId?: string }
 export type OnboardingBootstrapBody = {
-  acpBackend: BackendId
-  apiKey: string
-  /** Names the default workflow and its start/end nodes in this language. */
+  modelConfigurationId: string
+  gitBindings: AgentGitBindings
   language: AppLocale
   region?: string
-  gitCredentialType?: GitCredentialType
-  githubToken?: string
-  gitlabToken?: string
-  gitlabUrl?: string
-  sshPrivateKey?: string
-  sshKnownHosts?: string
   repoUrl?: string
   repoBranch?: string
   gitUserName?: string
   gitUserEmail?: string
   vncPreview?: boolean
   browserMcp?: boolean
-  openCodeProvider?: string
-  openCodeBaseURL?: string
-  openCodeModel?: string
-  openCodeModelVision?: boolean
-  /** Coding-tool model. Omitted when auto. Never used to carry an OpenCode model. */
-  cliModel?: string
   agents?: OnboardingAgentChoice[]
 }
 
@@ -377,60 +315,7 @@ export function shouldAutoOpenOnboarding(workflows: { name?: string }[], agents:
  *   (not browser/OS). firstInstall/retry keep detectSystemLocale().
  */
 export function freshOnboardingDraft(opts?: { inheritAppLocale?: boolean }): OnboardingDraft {
-  return {
-    step: 0,
-    language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(),
-    theme: theme.value,
-    startPath: 'apiKey',
-    acpBackend: APIKEY_BACKEND,
-    cliBackend: CLI_BACKEND_DEFAULT,
-    apiKeyBackend: APIKEY_BACKEND,
-    region: getRegionPolicy(APIKEY_BACKEND)?.defaultRegion || '',
-    apiKey: '',
-    gitCredentialType: '',
-    githubToken: '',
-    gitlabToken: '',
-    gitlabUrl: '',
-    sshPrivateKey: '',
-    sshKnownHosts: '',
-    repoUrl: '',
-    repoBranch: '',
-    gitSkipped: false,
-    gitUserName: '',
-    gitUserEmail: '',
-    vncPreview: true,
-    browserMcp: true,
-    openCodeProvider: DEFAULT_OPENCODE_PROVIDER,
-    openCodeBaseURL: '',
-    openCodeModel: '',
-    openCodeModelVision: false,
-    cliModel: '',
-    team: freshOnboardingTeam(),
-  }
-}
-
-/**
- * Select a backend. Keeps startPath in sync and resets values that belong to the
- * previous backend (region default, and the key, which is vendor-specific).
- * A different backend also clears shared and per-role model overrides: model ids do not transfer,
- * and selecting the previous tool again stays on auto.
- */
-export function applyOnboardingBackend(draft: OnboardingDraft, id: BackendId): void {
-  syncStartPathFields(draft, id)
-  if (draft.acpBackend === id) return
-  draft.acpBackend = id
-  draft.region = getRegionPolicy(id)?.defaultRegion || ''
-  draft.apiKey = ''
-  draft.cliModel = ''
-  for (const member of draft.team) member.model = ''
-  if (id === APIKEY_BACKEND && !draft.openCodeProvider) {
-    draft.openCodeProvider = DEFAULT_OPENCODE_PROVIDER
-  }
-}
-
-/** Switch start path; the CLI path restores the last CLI backend that was picked. */
-export function applyStartPath(draft: OnboardingDraft, path: StartPath): void {
-  applyOnboardingBackend(draft, backendForStartPath(path, draft.cliBackend, draft.apiKeyBackend))
+  return { step: 0, language: opts?.inheritAppLocale ? locale.value : detectSystemLocale(), theme: theme.value, modelConfigurationId: '', gitBindings: { items: [] }, region: '', repoUrl: '', repoBranch: '', gitSkipped: false, gitUserName: '', gitUserEmail: '', vncPreview: true, browserMcp: true, team: freshOnboardingTeam() }
 }
 
 /** Mirrors the server's RepoNameFromURL so the wizard can preview the clone dir. */
@@ -456,54 +341,20 @@ export function detectSystemLocale(): AppLocale {
 }
 
 export function gitConfigured(draft: OnboardingDraft): boolean {
-  if (draft.gitSkipped || !draft.gitCredentialType) return false
-  if (draft.gitCredentialType === 'github_https') return Boolean(draft.githubToken.trim())
-  if (draft.gitCredentialType === 'gitlab_https') return Boolean(draft.gitlabToken.trim())
-  if (draft.gitCredentialType === 'ssh') return Boolean(draft.sshPrivateKey.trim())
-  return false
+  return !draft.gitSkipped && draft.gitBindings.items.length > 0
 }
 
 export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstrapBody {
-  const body: OnboardingBootstrapBody = {
-    acpBackend: draft.acpBackend,
-    apiKey: draft.apiKey.trim(),
-    language: draft.language,
-  }
-  const policy = getRegionPolicy(draft.acpBackend)
-  if (policy && draft.region.trim()) {
-    body.region = draft.region.trim()
-  }
-  if (!draft.gitSkipped) {
-    if (draft.gitCredentialType) {
-      body.gitCredentialType = draft.gitCredentialType
-    }
-    if (draft.githubToken.trim()) body.githubToken = draft.githubToken.trim()
-    if (draft.gitlabToken.trim()) body.gitlabToken = draft.gitlabToken.trim()
-    if (draft.gitlabUrl.trim()) body.gitlabUrl = draft.gitlabUrl.trim()
-    if (draft.sshPrivateKey.trim()) body.sshPrivateKey = draft.sshPrivateKey.trim()
-    if (draft.sshKnownHosts.trim()) body.sshKnownHosts = draft.sshKnownHosts.trim()
-    if (draft.repoUrl.trim()) {
-      body.repoUrl = draft.repoUrl.trim()
-      if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim()
-    }
-  }
+  const body: OnboardingBootstrapBody = { modelConfigurationId: draft.modelConfigurationId, gitBindings: cloneGitBindings(draft.gitSkipped ? { items: [] } : draft.gitBindings), language: draft.language, vncPreview: draft.vncPreview, browserMcp: draft.browserMcp }
+  if (draft.region.trim()) body.region = draft.region.trim()
+  if (!draft.gitSkipped && draft.repoUrl.trim()) { body.repoUrl = draft.repoUrl.trim(); if (draft.repoBranch.trim()) body.repoBranch = draft.repoBranch.trim() }
   if (draft.gitUserName.trim()) body.gitUserName = draft.gitUserName.trim()
   if (draft.gitUserEmail.trim()) body.gitUserEmail = draft.gitUserEmail.trim()
-  body.vncPreview = draft.vncPreview
-  body.browserMcp = draft.browserMcp
-  if (draft.acpBackend === 'opencode') {
-    body.openCodeProvider = draft.openCodeProvider || 'openai'
-    if (draft.openCodeBaseURL.trim()) body.openCodeBaseURL = draft.openCodeBaseURL.trim()
-    if (draft.openCodeModel.trim()) body.openCodeModel = draft.openCodeModel.trim()
-    body.openCodeModelVision = draft.openCodeModelVision
-  } else if (draft.cliModel.trim()) {
-    body.cliModel = draft.cliModel.trim()
-  }
   const names = onboardingRoleNames(draft.language)
   body.agents = ONBOARDING_TEMPLATES.map((template, index) => {
     const member = draft.team.find((item) => item.templateId === template.id)
     const choice: OnboardingAgentChoice = { templateId: template.id, name: names[index] }
-    if (member?.model.trim()) choice.model = member.model.trim()
+    if (member?.modelConfigurationId) choice.modelConfigurationId = member.modelConfigurationId
     return choice
   })
   return body

@@ -77,7 +77,7 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	agentJSON := `{"mcp":[
+	agentJSON := `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"},"mcp":[
 		{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}},
 		{"name":"cmd","command":"run","args":["a"],"env":{"K":"v"}},
 		{"name":"","url":"x"},
@@ -90,11 +90,9 @@ func TestMcpServersFromAgentConfig(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://mcp.local",
-		Credentials: func() map[string]string {
-			return map[string]string{"GITLAB_TOKEN": "tok"}
-		},
+		SelectedCredential: func(string) (string, string, bool) { return "GITLAB_TOKEN", "tok", true },
 	}).(*acpProvider)
-	req := NodeReq{RunID: "r1", Token: "t1", NodeID: "n1", Config: map[string]any{"agent_profile": "a"}}
+	req := NodeReq{RunID: "r1", Token: "t1", NodeID: "n1", Config: map[string]any{"agent_profile": "a"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
 
 	specs := p.resolvedMCPSpecs(req)
 	if len(specs) != 2 {

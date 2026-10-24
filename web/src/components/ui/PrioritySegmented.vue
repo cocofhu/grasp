@@ -33,13 +33,12 @@ function btnClass(value: RunPriority) {
   if (!active) return 'text-txt2 hover:text-txt'
   if (value === 'high') return 'text-err'
   if (value === 'low') return 'text-txt3'
-  return 'text-accent-2'
+  return 'text-txt'
 }
 
 function indicatorTone() {
   if (props.modelValue === 'high') return 'bg-err/15'
-  if (props.modelValue === 'low') return 'bg-elevated'
-  return 'bg-accent-dim'
+  return 'bg-elevated'
 }
 
 </script>

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -25,30 +26,24 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
-	Name                 string                    `json:"name"`
-	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
-	TemplateID           string                    `json:"templateId"`
-	AcpBackend           string                    `json:"acpBackend"`
-	GitCredentialType    string                    `json:"gitCredentialType"`
-	OpenCodeCredentialID string                    `json:"openCodeCredentialId"`
-	AiCredentialID       string                    `json:"aiCredentialId"`
-	GitCredentialID      string                    `json:"gitCredentialId"`
-	SshHostsCredentialID string                    `json:"sshHostsCredentialId"`
-	RepoIDs              *[]string                 `json:"repoIds"`
-	Files                []services.AgentFile      `json:"files"`
-	MCP                  []services.MCPServer      `json:"mcp"`
-	Env                  map[string]string         `json:"env"`
-	Layout               services.AgentLayout      `json:"layout"`
-	Capabilities         *models.AgentCapabilities `json:"capabilities"`
-	Reason               string                    `json:"reason,omitempty"`
+	GitBindings        *models.GitBindings       `json:"gitBindings"`
+	ModelBinding       *modelrouting.Binding     `json:"modelBinding"`
+	Name               string                    `json:"name"`
+	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
+	TemplateID         string                    `json:"templateId"`
+	AcpBackend         string                    `json:"acpBackend"`
+	Files              []services.AgentFile      `json:"files"`
+	MCP                []services.MCPServer      `json:"mcp"`
+	Env                map[string]string         `json:"env"`
+	Layout             services.AgentLayout      `json:"layout"`
+	Capabilities       *models.AgentCapabilities `json:"capabilities"`
+	Reason             string                    `json:"reason,omitempty"`
 }
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		Name: name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
-		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
-		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
-		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID), RepoIDs: b.RepoIDs,
+		GitBindings: b.GitBindings,
+		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
@@ -80,7 +75,6 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		return
 	}
 	agent := b.toAgent(name)
-
 	templateID := strings.TrimSpace(b.TemplateID)
 	if templateID != "" {
 		if err := services.ApplyCreateTemplate(templateID, &agent); err != nil {

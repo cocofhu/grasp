@@ -72,21 +72,6 @@ const studioLink = computed(() => ({
   query: agentName.value ? { agent: agentName.value, studioTab: 'capabilities' } : {},
 }))
 
-const modelCredentialId = computed({
-  get: () => String(cfg.value.model_credential_id ?? '').trim(),
-  set: (id: string) => {
-    if (id) cfg.value.model_credential_id = id
-    else delete cfg.value.model_credential_id
-  },
-})
-const modelId = computed({
-  get: () => String(cfg.value.model_id ?? '').trim(),
-  set: (id: string) => {
-    if (id) cfg.value.model_id = id
-    else delete cfg.value.model_id
-  },
-})
-
 function setAgent(name: string) {
   cfg.value.agent_profile = name
   if (props.node.caps) delete props.node.caps
@@ -271,8 +256,6 @@ const hue = computed(() => {
         <section class="insp-card" data-testid="inspector-model">
           <h3 class="insp-title">{{ t('canvas.inspector.sections.model') }}</h3>
           <ModelPicker
-            v-model:credential-id="modelCredentialId"
-            v-model:model-id="modelId"
             :agent="agent"
             :credentials="credentials ?? null"
           />

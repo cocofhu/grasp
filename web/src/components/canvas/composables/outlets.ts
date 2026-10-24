@@ -7,10 +7,10 @@ export type { AgentCapabilities }
 
 /** The subset of an Agent the canvas needs. */
 export interface CanvasAgent {
+  modelBinding?: import('@/lib/api/apiTypes').ModelBinding
   name: string
   capabilities?: AgentCapabilities | null
   acpBackend?: string
-  openCodeCredentialId?: string
   env?: Record<string, string>
 }
 

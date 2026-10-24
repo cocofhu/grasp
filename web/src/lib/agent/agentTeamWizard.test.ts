@@ -10,17 +10,9 @@ import {
 } from '@/lib/agent/agentTeamWizard'
 
 describe('agentTeamWizard', () => {
-  it('has 7 wizard steps', () => {
-    expect(TEAM_WIZARD_STEPS).toHaveLength(7)
-    expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual([
-      'team',
-      'acp',
-      'apiKey',
-      'git',
-      'mcp',
-      'env',
-      'review',
-    ])
+  it('requires model selection before optional Git and workspace settings', () => {
+    expect(TEAM_WIZARD_STEPS).toHaveLength(6)
+    expect(TEAM_WIZARD_STEPS.map((s) => s.id)).toEqual(['team', 'model', 'git', 'mcp', 'env', 'review'])
   })
 
   it('prefills artifact-store and GIT_REPOS', () => {
@@ -30,21 +22,19 @@ describe('agentTeamWizard', () => {
     expect(TEAM_ENGINEER_COUNT).toBe(4)
   })
 
-  it('defaults to OpenCode API Key path (g1.3)', () => {
+  it('starts without a model and submits only explicit references', () => {
     const d = freshTeamDraft()
-    expect(d.startPath).toBe('apiKey')
-    expect(d.acpBackend).toBe('opencode')
-    expect(d.cliBackend).toBe('cursor')
-    expect(d.configRoot).toBe('/root/.config/opencode')
-  })
-
-  it('assembles bootstrap with opencode when Agent step skipped', () => {
-    const d = freshTeamDraft()
-    d.teamName = 'Demo'
-    syncDerivedNames(d)
-    d.background = 'build a workflow team'
+    expect(d.modelConfigurationId).toBe('')
+    expect(d.gitBindings).toEqual({ items: [] })
+    d.modelConfigurationId = 'model-team'
+    d.gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
     const payload = assembleTeamBootstrapPayload(d)
-    expect(payload.acpBackend).toBe('opencode')
+    expect(payload.modelConfigurationId).toBe('model-team')
+    expect(payload.gitBindings).toEqual(d.gitBindings)
+    for (const field of ['apiKey', 'acpBackend', 'openCodeProvider', 'gitCredentialType'])
+      expect(payload).not.toHaveProperty(field)
+    d.gitBindings.items = []
+    expect(payload.gitBindings.items).toEqual([{ credentialId: 'git-team' }])
   })
 
   it('syncs derived names from team name / prefix', () => {

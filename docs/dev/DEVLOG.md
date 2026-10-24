@@ -20,6 +20,102 @@
 
 ## 记录
 
+### 2026-10-25（PR #940 重启端到端测试使用当前模型合同）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：`server/e2e/restart_reattach_test.go`、对应初始化接口契约回归。
+- 做了什么：重启 E2E 通过当前 API 依次创建模型服务凭据、连接及 OpenCode 具名模型配置，再将模型配置 ID 交给初始化向导；读回 Agent 验证 CLI 与模型引用。新增不依赖 Docker 或外部模型的真实 API 契约回归，密钥仅出现在创建凭据请求中。
+- 为什么：PR #940 移除旧初始化字段后，独立的真实模型重启 E2E 仍发送旧字段，两个 CI 任务均在创建运行前以 400 退出。修复测试准备流程，继续验证真实的运行保留、排队和重启接回语义，不恢复旧字段兼容。
+- 如何验证：服务端 lint、vet、配置文档检查、全量测试及 RunAgent/React 专项通过；核心覆盖率 90.3%。新增契约回归含 race 及 tagged vet 通过；actionlint、shellcheck、docs 构建和审计通过。真实模型与 Docker 重启接回继续由现有 `restart-reattach` CI 验证。
+
+### 2026-10-24（PR #940 统一新配置模型与 CI 修复）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：server 模型/凭据、Agent、初始化与团队服务及运行入口；sandbox 模型连接路径校验与 go.mod；Web 凭据/模型/Agent/初始化向导和测试；中英概念与快速开始、设计说明及 CHANGELOG。
+- 做了什么：按用户最终确认统一为 Agent → 具名模型配置（CLI + 凭据 + 上游模型）以及显式多个 Git 授权。删除旧 Agent 单槽字段、工作区模型默认、直接来源/继承、读取映射与自动迁移；创建、编辑、初始化/团队向导和运行入口使用同一结构。草稿可未配置，运行必须配置；缺少基线角色时提示完成配置。CodeBuddy 配置读取用 os.OpenRoot 限制 FSRoot 内访问；yaml.v3 改为直接依赖；happy-dom 升至 21.0.4 并适配测试模拟差异。 浏览器图标短动效验收在首帧暂停后观察，避免遍历所有图标时被 RPC 与机器耗时影响。
+- 为什么：用户明确不要求强行兼容旧结构；隐式派生可能把旧模型变成默认值。CI 另外发现路径边界、依赖分类漂移与测试库安全公告，需在本 PR 收尾。
+- 如何验证：server 六项门禁全过，core coverage 90.3%；sandbox 语法/注入/Git/bootstrap/预览 smoke、Go lint/vet/全测与 core coverage 96.6% 通过；Web 最终全量 511 文件/5085 单测、Lines 90.98%、lint（0 errors，12 既有 warnings）、types、audit、build 通过。向导复核发现的 Git 跳过与模型失效回退另加 10 项回归，定向 62 项通过；完整关键浏览器套件最终 220/220 全过（4.1 分钟）。docs build/audit、actionlint/shellcheck、Go tidy/gofmt、runtime bundle 与控制面构建通过；远端检查以 PR 最新提交为准。
+
+### 2026-10-24（凭据与模型改造提交前 review）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：模型与凭据服务、Agent/共享配置与长驻沙箱生命周期、模型 CLI 适配器、Git helper、Web 配置向导与相关测试、公开概念说明及 `CHANGELOG.md`。
+- 做了什么：修复切工具及切页签后旧授权/模型草稿丢失，所有新增表单下拉统一为可搜索 AppSelect；自定义服务商名称写入 issuer，保留 provider 机器身份，轮换密钥不再串入旧工具验证/迁移。长驻沙箱在复用和每次聊天前重新校验当前模型/Git 授权，将不可逆指纹持久化但不暴露到 API，兼容正常重连及服务重启；失效模型配置仍可在不改内容时停用。Git SSH 兼容 Git 传入的未加方括号 IPv6 地址。Messages 原生适配器只规范化末尾 API 版本，保留网关前缀及保存原值。固定官方 CodeBuddy CLI 实测仅走 Chat Completions，故关闭未实现的 Responses/Messages 连接能力。旧 OpenCode 保留原生供应商 SDK 和显式选择，不强转通用连接，不在原授权失效后换用其他 Key。
+- 为什么：review 发现旧数据切换、长驻会话复用、供应商名称与机器标识混用、协议模拟与真实 CLI 行为不一致等回归；新增结构必须保住存量配置和明确授权边界。
+- 如何验证：已同步 main 4b38890a 并完成三路 review 及关键修复交叉复核。Web 全量 519 文件、5,247 单测通过，Lines 90.85%；完整 critical E2E 220 项通过（4.7 分钟、零重试），类型检查、lint（0 errors、12 个已有 warnings）及生产构建通过。Server lint/vet、配置文档检查、全测、runtime 专项及核心覆盖率 90.3% 通过；sandbox 全语法/smoke、Python 19 项、Git/reprime、preview-inject、Go 全测/lint/vet 与核心覆盖率 96.6% 通过。固定官方 CodeBuddy 2.162.0 以干净配置对本地 mock 的请求验证协议边界，Anthropic SDK 0.129.0 验证实际路径拼接，无付费模型调用。actionlint、shellcheck、docs 构建与官方源审计通过，运行时包及 server 二进制构建成功，本地前端/控制面/网关健康检查均为 200。旧 OpenCode 8 类供应商、原 Key 失效不回落、长驻会话轮换/撤销/正常重连/服务重启，以及自定义名称创建/轮换不触发旧迁移均有回归。升级前旧沙箱可能需要关闭后重开，公开文档与 PR 明确列出此边界；未发布到线上。
+
+### 2026-10-24（Solo 顶部栏与工作流会话对齐）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/router/index.ts`、`web/src/components/chat/ConversationWorkspace.vue`、`web/src/components/run/ReviewShell.vue`、`web/src/views/GatesInboxView.vue` 及相关测试、`CHANGELOG.md`。
+- 做了什么：移除 Solo 入口与会话路由的独立全屏标记，使用与工作流启动后会话相同的 AppShell 内容布局。三处继续复用 ReviewShell 与 ConversationWorkspace，统一顶部栏外部间距、宽度及资源/产物按钮对齐。审批中心的移动聊天分支将原返回与分享入口放进共同顶部栏，去掉重复标题及独立分享行；普通审批与启动失败页面保留原有返回区域，返回列表仍恢复原滚动位置。
+- 为什么：在线登录核对发现两页内部都是 44px 顶部栏，但 Solo 从 y=0 开始、工作流从 y=12 开始，左右也相差 24px；差异来自路由跳过统一外层间距，而不是顶部栏本身。
+- 如何验证：Web 全量 515 个文件、5,148 项单测通过，Lines 90.76%；类型检查、生产构建及 lint（0 errors、12 个已有 warnings）通过。完整 critical E2E 219 项通过，最后合并移动分享入口后再跑分享、移动审批、会话面板与澄清产物专项 33 项，全过；回归覆盖唯一标题、分享目标、面板操作及返回列表恢复滚动。使用线上只读数据在本地新版核对深浅主题及 1895/1024/390/320px：Solo 与工作流审批会话顶部栏位置、宽高完全一致，长标题省略，按钮不溢出，零页面异常及零业务写请求。actionlint、shellcheck、docs 构建及官方源依赖审计通过；线上只读查看，未发布或修改线上会话。
+
+### 2026-10-24（Agent 多 Git 授权与工作流沙箱隔离）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：Agent API、持久化和 ZIP、共享配置与工作流/交互/测试运行入口、沙箱授权 staging/reprime、运行时脚本与打包、Web Git 选择组件及创建/编辑/共享草稿、相关测试、配置帮助与内部设计文档。
+- 做了什么：Agent 以 `modelBinding` 引用模型，以 `gitBindings.items` 引用多个 Git 授权，通过 `preferredCredentialId` 指定首选；界面复用可搜索选择器与 Logo，支持移除、可选站点或仓库范围和 SSH 已知主机。所选秘密通过受限文件完整注入沙箱，按仓库、站点和首选匹配，不在失败时轮换账号。工作流节点应用各自 Agent 的绑定，共享沙箱切换授权时清理上一节点的文件与身份，MR 按同一仓库选择账号。显式空列表禁用默认 Git 注入，独立逐仓库授权保持兼容，新建 Agent 默认 `repoIds: []`；缺省保留旧绑定，Agent 显式旧授权优先于共享默认，失效引用保留并阻止执行。交互会话授权变更后拒绝复用旧沙箱，要求重新打开。
+- 为什么：单个 Git 连接方式和授权槽位不能表达一个 Agent 需要多个 Git 账号，直接合并环境变量会覆盖同平台账号；工作流复用沙箱还需防止不同节点串用授权。
+- 如何验证：Web 515 个文件、5,145 项单测通过，Lines 90.76%；完整 critical E2E 219 项通过（4.7 分钟、零重试），类型、lint（0 errors、12 个已有 warnings）和生产构建通过。Server 的 lint v2.12.0、vet、配置文档检查、全量测试与 runtime 专项通过，core coverage 90.3%；覆盖 API/ZIP/shared nil 与 empty、旧客户端保存、legacy 优先级、交互与测试沙箱全量 staging、失效阻止复用、MR 无秘密脚本、同一工作流沙箱 Agent A → B → 空授权的重新初始化。沙箱 Python 19 项及真实 Git credential、SSH 私钥与 gh/glab 离线验证通过；默认端口、协议/路径匹配、损坏首选不回退、具体仓库优先、MR 子进程临时配置清理与多授权 → 空授权均有回归。沙箱模块 lint/vet、smokes 与覆盖率 96.6% 通过；新增 server sandbox 打包/指纹测试核对完整授权集合、私有权限、显式空标记、旧环境清除及所有授权变更触发重建。actionlint、shellcheck、docs 构建/官方源审计通过。真实预览在深浅主题及 1440/390/320px 下使用只读授权元数据样例核对四授权、首选、scope、SSH 已知主机、确认页与返回保留，无写入用户数据、无原生下拉或溢出。运行时包包含新 helper，前端、控制面和网关保持运行。
+
+### 2026-10-24（新建 Agent 显式选择模型与统一新增菜单）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/agent/{AgentCreateWizard,ModelBindingEditor}.vue` 及单测、`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager}.vue` 及单测、`web/src/components/ui/AppSelect.vue`、中英文页面文案、`web/e2e/{agent-create-wizard,model-routing,git-help-run-tags-404}.spec.ts`、`docs/dev/agent-model-routing-design.md` 与 `CHANGELOG.md`。
+- 做了什么：新建 Agent 的“工具与模型”同页只允许显式选择已保存的命名模型配置，移除继承默认、直接来源、高级字段、绑定摘要和凭据管理链接；初始不代选模型，切换工具清空选择，返回保留草稿。该步不再提供跳过，配置为空或引用失效时禁用下一步与创建，并在提交入口再次检查；Git 仍可跳过。已有 Agent 编辑、工作区默认、团队模板与运行时的旧绑定兼容保持原有边界。凭据页两个页签共用右上角新增菜单，“新增凭据”和“添加模型”分别打开对应向导；模型页隐藏重复的新增按钮。内部设计文档区分当前创建流程与原始设计、兼容编辑行为。
+- 为什么：用户只需要在创建 Agent 时选择工具及已保存的模型，原来的默认继承、直接配置与底部说明增加理解成本；凭据与模型的新增入口分散在不同页签，也不易发现。
+- 如何验证：Web 全量 513 个文件、5,100 项单测通过，Lines 90.72%；完整 critical E2E 219 项通过（4.3 分钟、零重试），Git 帮助专项另行通过。类型检查、生产构建、lint（0 errors、12 个已有 warnings）、actionlint、shellcheck、docs 构建及官方源依赖审计通过。覆盖必选配置、空值和失效引用阻止前进、切工具清空、返回保留、站点保存、命名引用提交，以及两个页签共享新增入口。真实页面核对 1440/390/320px 和深浅主题：7 个工具 Logo、模型搜索和键盘选择正常，空模型禁用下一步，无继承、高级或管理入口；新增菜单的 12 种主题、尺寸和页签组合均可打开两个向导并取消，菜单无越界和重复模型按钮，未写入用户数据。前端、控制面与网关健康检查通过。
+
+### 2026-10-24（Agent 工具与模型同页配置、搜索控件统一）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/agent/{CodingToolPicker,AgentCreateWizard,AgentMetaPanel,ModelBindingEditor,AgentCredentialBindings,AgentMcpPanel,CreateAgentTeamWizard}.vue`、`web/src/components/workspace/{WorkspaceSharedAgentPanel,WorkspaceModelDefaults}.vue`、`web/src/lib/agent/{agentCreateWizard,useAgentCreateWizard}.ts` 及单测、相关组件单测、`web/src/views/AgentStudioView.test.ts`、`web/e2e/{agent-create-wizard,model-routing,git-help-run-tags-404}.spec.ts`、中英文页面文案与 `CHANGELOG.md`。
+- 做了什么：新建 Agent 收为“基础信息 → 工具与模型 → Git → 确认创建”四步，在同页先选择工具再选择模型配置，桌面并列、窄屏上下排列，右侧始终显示模型搜索框，可直接选择具名配置或工作区默认；跳过该页继承默认模型并清理旧授权输入，返回保留已选配置。创建、编辑及默认 Agent 共用紧凑的工具 Logo 列表，站点选择合并进列表底部；工具步骤使用明确的“编码工具”标题，去掉与现有模型配置流程不符的启动说明。窄屏收起步骤侧栏，内容和页脚可收缩换行。模型配置、平台凭据、连接、主模型、辅助模型、路由、凭据注入、默认工具及两处 MCP 传输选择均复用可搜索 AppSelect；已有模板与仓库选择控件继续复用。工具、厂商在选中值和选项中展示 Logo，装饰图像不重复读屏名称。失效引用保持明确的名称/ID 与错误状态，同值选择保留已有模型和输入；原凭据引用、站点环境键、工具切换确认/取消、特殊 CodeBuddy 站点及保存数据格式继续保持。
+- 为什么：原来的工具大卡片、长说明和分离的高亮站点按钮缺少层次，创建与编辑样式分散；模型绑定中的原生系统下拉与仓库搜索控件不一致，不便定位已有模型。
+- 如何验证：针对工具键盘选择、站点与特殊值、工具切换确认和草稿恢复、失效引用修复、MCP 输入保留的定向单测通过；四步合并页、模型路由及 Git 帮助专项浏览器 13 项通过。实际前端检查 7 个工具 Logo、搜索/高亮/Enter 选择、站点切换与无原生下拉，复核 1440/390/320px 和深浅主题截图，无溢出，未保存 Agent 或模型。Web 全量 513 个文件、5,091 项单测通过，Lines 90.71%；完整 critical E2E 218 项全部通过（4.5 分钟、零重试）；类型检查、lint（0 errors、12 个已有 warnings）、生产构建、actionlint、shellcheck、docs 构建及官方源依赖审计通过。
+
+### 2026-10-24（凭据、模型与连接向导完整交互复核）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager,ModelConnectionManager}.vue` 及单测、`web/src/components/ui/AppModal.vue` 及单测、`web/src/lib/agent/modelRouting.ts`、`web/e2e/model-routing.spec.ts`、`docs/dev/agent-model-routing-design.md`、`CHANGELOG.md`。
+- 做了什么：模型向导改为工具 Logo 卡片、单一带 Logo 的凭据选择和可搜索/手填的模型选择，自动根据真实记录解析平台授权或兼容连接，去掉来源种类的重复选择。恢复 OpenCode CLI、DeepSeek Harness 凭据入口，保存厂商 API Key 与连接后继续对应模型配置。模型内补建凭据保持同一页签与草稿，平台工具打开正确授权入口；保存后选中刚建的兼容记录，取消返回原草稿。返回或重选同一凭据保留模型/角色，实际更换来源才清空；重选同一厂商保留已改 Base、协议和鉴权。连接编辑及启停读取最新模型目录，避免用已缓存的目录覆盖新条目。高级字段收进折叠区，所有凭据选择带 Logo 和搜索，步骤条保持一致。弹窗补充局部焦点循环、步骤聚焦、关闭后焦点恢复，以及离场动画的 aria-hidden/inert，关闭按钮使用独立的本地化语义。
+- 为什么：原生下拉没有品牌标识，模型来源与凭据两次选择难以理解；空态引导会丢失草稿并给 Cursor/Trae 打开不适用的 API 连接；同值选择和陈旧目录还存在误改输入的风险。切换弹窗时旧层留在可访问树中，会干扰键盘与读屏操作。
+- 如何验证：模型与凭据 40 项、连接 17 项、弹窗 14 项针对性单测通过；实际前端与控制面完成 OpenCode 厂商凭据 → 模型配置 → Agent 引用持久化，全程仅用预览占位 Key，未调用付费模型。人工复核桌面与 320/390px、深浅主题截图，并检查 Logo、原始模型 ID、搜索、键盘选择、返回/取消草稿和 Tab/Escape/焦点恢复。Web 511 个文件、5,069 项单测全部通过，Lines 90.67%；完整 critical E2E 最终 217 项全部通过（4.9 分钟、零重试），包括新增的 7 项模型配置用例；类型、lint（0 errors、12 个已有 warnings）、生产构建、actionlint、shellcheck、docs 构建与官方源依赖审计通过。
+
+### 2026-10-24（凭据与模型列表精简、厂商 Logo 选择器）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConnectionManager,ModelConfigurationManager,ModelRecordActions,ModelProviderSelect,CredentialProviderLogo}.vue`、`web/src/components/ui/AppSelect.vue`、`web/src/lib/agent/modelRouting.ts`、厂商 SVG 与来源说明、相关单测及 `web/e2e/model-routing.spec.ts`。
+- 做了什么：按 Open WebUI 参考将模型和服务列表收为图标、名称与单行副标题，去掉大外框、协议/地址/修订/重复状态与解释段落，编辑中保留完整配置；右侧使用编辑图标、更多删除菜单和启停开关，菜单支持键盘、外部关闭与窄屏定位。凭据页移除统计卡和装饰说明，时间与服务入口收进编辑。厂商选择复用 AppSelect 的搜索、键盘与浮层行为，新增图标插槽；预设从 5 家扩到 15 家，可自定义，默认地址均附官方文档依据，不混用 Coding Plan 地址与通用 API。Logo 使用本地品牌素材并记录固定版本、来源和许可证，支持深浅主题。
+- 为什么：列表中大量实现细节和操作按钮妨碍浏览，原生下拉缺少常见厂商及品牌识别。
+- 如何验证：Web 511 个文件、5,044 项单测通过，Lines 90.65%；完整 critical E2E 213 项通过，相关 89 项组件与厂商选择专项回归通过，类型、lint（0 errors、12 个已有 warnings）与生产构建通过。真实前端核对 15 家预设加自定义、全部 Logo 加载、搜索与预设 Base 联动、深浅主题、320/390px 无横向溢出、浮层不裁切和 Escape 逐层关闭。actionlint、shellcheck、docs 构建与官方源依赖审计通过；文档构建产物保存在仓库外。仅使用占位凭据查看交互，未调用真实模型服务。
+
+### 2026-10-23（凭据、可复用模型配置与 Agent 绑定）
+
+- 日期：2026-10-23（UTC）
+- 范围：`server/cmd/server/main.go`、`server/internal/{modelrouting,models,services,handlers,router,runtime,envauth}`、`sandbox-gateway/sandbox/internal/{provider,agents,service}`、`web/src/components/{workspace,agent,canvas}`、`web/src/lib`、`web/e2e`、`README.md`、配置说明与中英文使用文档。
+- 做了什么：凭据页改为实际记录列表和「凭据 / 模型」两个标签。第一步用向导创建凭据，可选择服务商或自定义 API Base、协议与 Key；第二步把「编码工具 + 凭据 + 所选模型」保存为具名 `ModelConfiguration`，Agent 再通过 `configurationId` 绑定。配置的编码工具保存后固定，支持编辑模型、停用和删除；原始模型 ID 可含 `/`，手动输入会补入服务目录。旧直接绑定、按工具默认与平台授权保持兼容，保存与执行重新检查凭据和配置引用；失效时明确失败，不回退其他 Key。Claude Code、CodeBuddy、OpenCode、Codex Responses 和 DSH 接入对应协议，Cursor/Trae 保留平台授权。旧凭据幂等映射独立服务，目录重排不切换模型、删除服务不复活、空目录不 panic；旧待补全服务可修复后保存。Agent 创建、Studio 与工作流摘要读取同一配置，切换来源清除旧模型路由并保护运行时注入变量。按反馈移除种类选择提示行，中英文别名示例改为团队共享。
+- 为什么：用户要求先保存凭据，再组合编码工具、凭据和模型，形成可复用的一条模型配置。分离秘密、服务地址、工具和 Agent 引用后，同一服务可供多个工具或模型使用，平台授权不会和第三方模型 Key 混用；紧凑列表也减少原有空槽位与重复分区占据的空间。
+- 如何验证：Web 全量 509 个文件、5,034 项单测通过，Lines 90.65%（门禁 85%），类型、生产构建与 lint（0 errors、12 个已有 warnings）通过；完整 critical E2E 213 项通过，兼容性收尾后补跑凭据、模型配置和 Agent 向导 13 项全部通过，覆盖创建、编辑/停用和配置引用。Server 全量测试、lint/vet/配置文档检查、核心覆盖率 90.2% 与指定 runtime 回归通过；sandbox lint/vet/全测、相关 race、核心覆盖率 96.6% 和全部语法/注入/Git/bootstrap/preview/mock smoke 通过。协议验证使用本地 HTTP 模型服务与 CLI 子进程 fixture，含 9 个适配组合、DSH ACP 路由握手、角色固定、原始 ID 含 `/`、秘密分离与失效引用关闭；未调用真实厂商模型服务。真实前端与控制面完整验证「自定义 Base/Key → Codex 模型配置 → Agent 的 configurationId」，并核对掩码、深浅主题和 320/390px 布局。actionlint、shellcheck、文档构建与官方源依赖审计通过；本地跨模块构建产生的文档 public 副本移至临时产物目录后通过品牌门禁，未修改门禁。最新 server 与 runtime bundle 已在独立预览数据库/网关运行，不改沙箱镜像或安装合约。
+
+### 2026-10-24（编码工具、模型连接与凭据解耦设计）
+
+- 日期：2026-10-24
+- 范围：`docs/dev/agent-model-routing-design.md`、会话内交互设计原型。
+- 做了什么：核对 Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex 和固定版本 DeepSeek Harness 的官方资料，形成凭据、模型连接与 Agent 模型绑定的数据结构草案及列表/添加向导流程；把文档支持、Grasp 适配状态和实际验证结果分别记录，区分平台多模型与自带第三方服务。
+- 为什么：原有模型凭据特判 OpenCode，DSH 路由限制为 DeepSeek 官方，混淆编码工具、模型厂商和秘密，无法准确表达同一工具使用不同服务或同一 Key 复用多个模型。
+- 如何验证：对照现有凭据/Agent/运行时字段与官方文档，核实固定 dsh 0.2.1-rc.2 的三协议能力；交互原型脚本、模型来源切换、协议过滤、显式绑定、新增凭据/连接向导和窄屏布局通过浏览器检查。本轮仅文档与设计，不新增运行时功能；文档构建、官方源依赖审计、JSON 示例与差异检查通过。
+
+### 2026-10-24（工作区凭据列表与添加向导）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/workspace/WorkspaceCredentialsPanel.vue` 及单测、`web/src/components/agent/OpenCodeCredentialPicker.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/e2e/workspace-credentials.spec.ts`、`CHANGELOG.md`。
+- 做了什么：凭据页改为限宽的紧凑列表，按编码工具、模型 API Key、代码仓库、SSH 与其他来源分区，合并重复种类标题；名称、掩码、更新时间、状态与操作按列对齐，窄屏按行流式排布。模型密钥管理使用同样的列表样式，Agent 内的选择模式保持原样。所有添加入口保留两步向导，补充步骤进度与已选类型提示；编辑输入增加关联标签，密钥保存/清除及来源只读契约保持一致。
+- 为什么：原页面单个凭据占用大量空白，名称和操作相隔整屏，逐类重复标题不便扫读；用户要求以列表展示，并用向导添加凭据。
+- 如何验证：Web lint（0 errors、12 个已有 warnings）、类型检查、生产构建与全量单测通过，Lines 90.70%（门禁 85%）；凭据专项浏览器 6 项通过，覆盖桌面纵向列表、320/390px 长别名及登录文件编辑、模型密钥替换遮码、向导前进/返回与取消后清空。人工复核浅/深主题及窄屏截图。完整 critical E2E 首轮 210 项通过，零重试；actionlint、shellcheck、docs 构建与官方源依赖审计均通过。
+
 ### 2026-10-23（PR #923 同步 main 并修复合并冲突）
 
 - 日期：2026-10-23

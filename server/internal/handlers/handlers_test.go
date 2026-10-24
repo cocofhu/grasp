@@ -22,6 +22,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -72,8 +73,11 @@ func newHarness(t *testing.T) *harness {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sbx := services.NewSandboxService(db, mgr, skills, host, services.SandboxOptions{
 		Max: 2, TTL: time.Minute,
-		Credentials: func() map[string]string {
-			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}
+		ModelBinding: func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
+			if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+				return modelrouting.Resolved{}, err
+			}
+			return modelrouting.Resolved{Backend: backend, Binding: modelrouting.Binding{Kind: "platform", CredentialID: "handler-model-key", ModelID: "auto"}, CredentialID: "handler-model-key", Secret: "test-key"}, nil
 		},
 	})
 	eng := engine.New(db, fakeProvider{}, host, arts, 5)
