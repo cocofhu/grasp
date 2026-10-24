@@ -6,8 +6,8 @@ import (
 	"github.com/cocofhu/grasp/internal/models"
 )
 
-// OnboardingAgentNames are the canonical onboarding Agent names: the built-in
-// template labels, which the default workflow's agent_profile refs use.
+// OnboardingAgentNames are the Chinese canonical onboarding Agent names: the
+// built-in template labels, which the default workflow's agent_profile refs use.
 var OnboardingAgentNames = func() []string {
 	out := make([]string, 0, len(TeamEngineerTemplates))
 	for _, r := range TeamEngineerTemplates {
@@ -15,6 +15,75 @@ var OnboardingAgentNames = func() []string {
 	}
 	return out
 }()
+
+// OnboardingAgentNamesEN are the English canonical names, in the same role order.
+var OnboardingAgentNamesEN = []string{"Clarify", "Implement", "TestReview", "Deliver"}
+
+func init() {
+	if len(OnboardingAgentNames) != len(TeamEngineerTemplates) || len(OnboardingAgentNamesEN) != len(TeamEngineerTemplates) {
+		panic("onboarding canonical names drifted from TeamEngineerTemplates")
+	}
+}
+
+// IsProtectedOnboardingAgentName reports whether name is a Chinese or English
+// canonical onboarding Agent. Identity is the name; there is no lock field.
+func IsProtectedOnboardingAgentName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return false
+	}
+	for _, n := range OnboardingAgentNames {
+		if n == name {
+			return true
+		}
+	}
+	for _, n := range OnboardingAgentNamesEN {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// canonicalOnboardingNames returns the four names for a wizard language.
+// Anything but English is Chinese.
+func canonicalOnboardingNames(lang string) []string {
+	if strings.HasPrefix(strings.ToLower(strings.TrimSpace(lang)), "en") {
+		return OnboardingAgentNamesEN
+	}
+	return OnboardingAgentNames
+}
+
+// BaselineOnboardingSet reports which canonical quartet can be bound.
+// Chinese wins when both sets exist. Empty means neither set is complete.
+func BaselineOnboardingSet(names []string) string {
+	have := map[string]struct{}{}
+	for _, n := range names {
+		n = strings.TrimSpace(n)
+		if n != "" {
+			have[n] = struct{}{}
+		}
+	}
+	if onboardingSetComplete(have, OnboardingAgentNames) {
+		return "zh"
+	}
+	if onboardingSetComplete(have, OnboardingAgentNamesEN) {
+		return "en"
+	}
+	return ""
+}
+
+func onboardingSetComplete(have map[string]struct{}, set []string) bool {
+	if len(set) == 0 {
+		return false
+	}
+	for _, n := range set {
+		if _, ok := have[n]; !ok {
+			return false
+		}
+	}
+	return true
+}
 
 // onboardingLocale is the wizard-language copy of what onboarding names.
 type onboardingLocale struct {

@@ -580,6 +580,24 @@ describe('AgentStudio rename entry migration', () => {
     )
   }
 
+  it('disables rename and delete for canonical agents and leaves custom agents editable', async () => {
+    mocks.listAgents.mockResolvedValue([
+      { ...agent('public'), name: '需求澄清' },
+      { ...agent('public'), name: '自建' },
+    ])
+    const wrapper = await mountRenameStudio()
+    await flushPromises()
+    await wrapper.get('[data-test="manage"]').trigger('click')
+    const locked = wrapper.get('[data-manage-agent="需求澄清"]')
+    expect(locked.get('[data-testid="manage-agent-locked"]').text()).toContain('不能删除或重命名')
+    expect(locked.get('[data-testid="manage-rename"]').attributes('disabled')).toBeDefined()
+    expect(locked.get('[data-testid="manage-delete"]').attributes('disabled')).toBeDefined()
+    const custom = wrapper.get('[data-manage-agent="自建"]')
+    expect(custom.find('[data-testid="manage-agent-locked"]').exists()).toBe(false)
+    expect(custom.get('[data-testid="manage-rename"]').attributes('disabled')).toBeUndefined()
+    expect(custom.get('[data-testid="manage-delete"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('agent row rename opens Agent management focused on that agent', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountRenameStudio()

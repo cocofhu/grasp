@@ -24,8 +24,11 @@ import {
   gitConfigured,
   hasDefaultWorkflow,
   isOnboardingSuppressed,
+  isProtectedOnboardingAgentName,
   isRequiredTemplate,
+  missingOnboardingNames,
   needsOnboarding,
+  onboardingAgentsReady,
   setTeamMemberEnabled,
   teamNameIssues,
   teamValid,
@@ -271,34 +274,37 @@ describe('onboardingWizard', () => {
     expect(body.gitUserName).toBe('Ada')
   })
 
-  it('sends the chosen team with names and per-agent models', () => {
+  it('sends every canonical name and a per-agent model', () => {
     const d = freshOnboardingDraft()
+    d.language = 'zh-CN'
     d.apiKey = 'k'
     applyDefaultTeamNames(d.team, deriveOnboardingAgentNames('zh-CN'))
     expect(d.team.map((m) => m.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
     d.team[1]!.model = ' gpt-5 '
+    d.team[1]!.name = '编码'
     setTeamMemberEnabled(d.team, 'test_review', false)
     expect(assembleBootstrapBody(d).agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
       { templateId: 'implement', name: '实现', model: 'gpt-5' },
+      { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
   })
 
-  it('keeps required templates checked and leaves edited names alone on refresh', () => {
+  it('keeps every template required and resets names to the canonical defaults', () => {
     const team = freshOnboardingTeam()
-    setTeamMemberEnabled(team, 'clarify', false)
-    setTeamMemberEnabled(team, 'implement', false)
+    setTeamMemberEnabled(team, 'test_review', false)
+    setTeamMemberEnabled(team, 'deliver', false)
     expect(team.every((m) => m.enabled)).toBe(true)
-    expect(isRequiredTemplate('test_review')).toBe(false)
-    expect(isRequiredTemplate('deliver')).toBe(false)
-    expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement'])
+    expect(isRequiredTemplate('test_review')).toBe(true)
+    expect(isRequiredTemplate('deliver')).toBe(true)
+    expect(ONBOARDING_REQUIRED_TEMPLATE_IDS).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
 
-    applyDefaultTeamNames(team, ['A需求澄清', 'A实现', 'A测试评审', 'A交付'])
+    applyDefaultTeamNames(team, ['需求澄清', '实现', '测试评审', '交付'])
     team[0]!.name = '澄清官'
     team[0]!.nameEdited = true
-    applyDefaultTeamNames(team, ['B需求澄清', 'B实现', 'B测试评审', 'B交付'])
-    expect(team.map((m) => m.name)).toEqual(['澄清官', 'B实现', 'B测试评审', 'B交付'])
+    applyDefaultTeamNames(team, ['Clarify', 'Implement', 'TestReview', 'Deliver'])
+    expect(team.map((m) => m.name)).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
   })
 
   it('validates team names: required, invalid, duplicate; unchecked members are ignored', () => {
@@ -313,17 +319,28 @@ describe('onboardingWizard', () => {
     expect(issues.clarify).toBe('invalid')
     expect(issues.implement).toBe('duplicate')
     expect(issues.test_review).toBe('duplicate')
-    setTeamMemberEnabled(team, 'test_review', false)
+    team[2]!.enabled = false
     expect(teamNameIssues(team).implement).toBe('')
   })
 
-  it('previews the default workflow with the fail loop, and without it when test_review is off', () => {
+  it('treats either complete quartet as ready and lists the current language gaps', () => {
+    expect(isProtectedOnboardingAgentName('需求澄清')).toBe(true)
+    expect(isProtectedOnboardingAgentName(' Clarify ')).toBe(true)
+    expect(isProtectedOnboardingAgentName('自建')).toBe(false)
+    expect(onboardingAgentsReady(['需求澄清', '实现'])).toBe(false)
+    expect(onboardingAgentsReady(['需求澄清', '实现', '测试评审', '交付', 'extra'])).toBe(true)
+    expect(onboardingAgentsReady(['Clarify', 'Implement', 'TestReview', 'Deliver'])).toBe(true)
+    expect(missingOnboardingNames(['需求澄清', '实现'], 'zh-CN')).toEqual(['测试评审', '交付'])
+    expect(missingOnboardingNames(['需求澄清'], 'en')).toEqual(['Clarify', 'Implement', 'TestReview', 'Deliver'])
+  })
+
+  it('previews the default workflow with every role and the fail loop', () => {
     const team = freshOnboardingTeam()
     applyDefaultTeamNames(team, [...ONBOARDING_AGENT_NAMES])
-    team[1]!.name = '编码'
+    setTeamMemberEnabled(team, 'test_review', false)
     const full = buildOnboardingWorkflowPreview(team)
     expect(full.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'test_review', 'deliver', 'output'])
-    expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('编码')
+    expect(full.nodes.find((n) => n.id === 'implement')?.name).toBe('实现')
     expect(full.edges).toEqual([
       { from: 'input', to: 'clarify' },
       { from: 'clarify', to: 'implement' },
@@ -332,18 +349,6 @@ describe('onboardingWizard', () => {
       { from: 'deliver', to: 'output' },
       { from: 'test_review', to: 'implement', handle: 'fail' },
     ])
-
-    setTeamMemberEnabled(team, 'test_review', false)
-    const noReview = buildOnboardingWorkflowPreview(team)
-    expect(noReview.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'deliver', 'output'])
-    expect(noReview.edges).toContainEqual({ from: 'implement', to: 'deliver' })
-    expect(noReview.edges.some((e) => e.handle)).toBe(false)
-
-    setTeamMemberEnabled(team, 'deliver', false)
-    const trimmed = buildOnboardingWorkflowPreview(team)
-    expect(trimmed.nodes.map((n) => n.id)).toEqual(['input', 'clarify', 'implement', 'output'])
-    expect(trimmed.edges.at(-1)).toEqual({ from: 'implement', to: 'output' })
-    expect(trimmed.edges.some((e) => e.handle)).toBe(false)
   })
 
   it('derives the clone dir the same way the server does', () => {

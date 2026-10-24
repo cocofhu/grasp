@@ -19,6 +19,7 @@ import {
   type AgentStudioDraft as Draft,
 } from '@/lib/agent/agentStudioDraft'
 import { capabilityIssueKey, validateCapabilities } from '@/lib/workflow/agentCapabilities'
+import { isProtectedOnboardingAgentName } from '@/lib/pm/onboardingWizard'
 
 export type StudioTab = 'files' | 'mcp' | 'env' | 'capabilities' | 'meta' | 'data' | 'test'
 const STUDIO_TABS: StudioTab[] = ['files', 'mcp', 'env', 'capabilities', 'meta', 'data', 'test']
@@ -335,7 +336,16 @@ function clearManageSearch() {
   manageSearch.value = ''
 }
 
-const treeNodes = computed(() => agents.value.map((agent) => ({ id: agent.name, label: agent.name, icon: 'robot' })))
+const treeNodes = computed(() => agents.value.map((agent) => {
+  const locked = isProtectedOnboardingAgentName(agent.name)
+  return {
+    id: agent.name,
+    label: agent.name,
+    icon: 'robot',
+    locked,
+    lockTitle: locked ? t('pages.agentStudio.tree.lockedHint') : undefined,
+  }
+}))
 const activeTreeKey = activeName
 function onTreeSelect(key: string) { chooseAgent(key) }
 function onSheetTreeSelect(key: string) { chooseAgentFromSheet(key) }
@@ -812,6 +822,7 @@ function closeAgentManage() {
 }
 
 function openRenameAgent(name: string) {
+  if (isProtectedOnboardingAgentName(name)) return
   promptValue.value = name
   promptError.value = ''
   promptOkMsg.value = ''
@@ -850,6 +861,7 @@ function openRenameAgent(name: string) {
 }
 
 function confirmDeleteAgent(name: string) {
+  if (isProtectedOnboardingAgentName(name)) return
   confirmCfg.value = {
     title: t('pages.agentStudio.dialogs.deleteAgentTitle'),
     message: t('pages.agentStudio.dialogs.deleteAgentMessage', { name }),

@@ -489,7 +489,7 @@
         "sshSavedToCredentials": "SSH 私钥与可信主机将保存到工作区凭据。"
       },
       "team": {
-        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流，可改名并指定模型。",
+        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流。名称已锁定，可为每个 Agent 指定模型。",
         "loading": "正在读取模板能力…",
         "loadError": "模板能力读取失败，仍可按默认配置创建。",
         "retry": "重试",
@@ -506,7 +506,7 @@
         "modelLabel": "模型",
         "modelPlaceholder": "留空沿用工作区默认",
         "modelInherit": "留空沿用 {model}",
-        "foot": "需求澄清和实现是工作流的骨架，不能取消；名称默认带工作区名前缀，生成后仍可在 Agent 页修改。",
+        "foot": "这四个都会创建，名称已锁定，生成后不能在 Agent 页删除或重命名。",
         "toastFixNames": "请先修正 Agent 名称",
         "nameIssues": {
           "required": "请填写名称",
@@ -631,7 +631,10 @@
         "namePlaceholder": "例如 需求对齐工作流",
         "create": "创建",
         "creating": "正在创建…",
-        "created": "已创建工作流「{name}」"
+        "created": "已创建工作流「{name}」",
+        "agentsRequiredTitle": "还不能新建工作流",
+        "agentsRequired": "新建工作流需要这四个 Agent。当前还缺少：{missing}。请先完成开箱指引。",
+        "goOnboarding": "去完成指引"
       },
       "tabRequirementDrafts": "需求草稿",
       "requirementDrafts": {
@@ -2120,6 +2123,7 @@
         "manageNoMatchDesc": "请尝试其他名称关键词。",
         "manageClearSearch": "清空搜索",
         "renameViaManage": "重命名（前往管理）",
+        "lockedHint": "工作流需要此 Agent，不能删除或重命名。",
         "noSelection": "未选中 Agent。从左侧树选择，或打开 Agent 管理。",
         "metaRenameHint": "名称请在 Agent 管理中重命名。此处不可编辑身份名称。"
       },

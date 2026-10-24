@@ -138,6 +138,22 @@ describe('Agent list sidebar', () => {
     expect(document.querySelector('[role="menu"]')).toBeNull()
     expect(trigger.attributes('aria-expanded')).toBe('false')
   })
+  it('shows a lock and hides rename for a canonical Agent', async () => {
+    const wrapper = mountSidebar({
+      nodes: [
+        { id: '需求澄清', label: '需求澄清', icon: 'robot', locked: true, lockTitle: '工作流需要此 Agent，不能删除或重命名。' },
+        { id: '自建', label: '自建', icon: 'robot' },
+      ],
+    })
+    expect(wrapper.get('[data-resource-key="需求澄清"]').find('[data-testid="resource-lock"]').exists()).toBe(true)
+    expect(wrapper.get('[data-resource-key="自建"]').find('[data-testid="resource-lock"]').exists()).toBe(false)
+    await wrapper.get('[data-resource-key="需求澄清"]').trigger('contextmenu')
+    expect(Array.from(document.body.querySelectorAll('button')).some((button) => button.textContent?.includes(pages.pages.agentStudio.tree.renameViaManage))).toBe(false)
+    await wrapper.get('[data-resource-key="自建"]').trigger('contextmenu')
+    const rename = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes(pages.pages.agentStudio.tree.renameViaManage))
+    expect(rename).toBeTruthy()
+    wrapper.unmount()
+  })
   it('opens management for the chosen Agent from its context menu', async () => {
     const wrapper = mountSidebar()
     await wrapper.get('[data-resource-key="beta"]').trigger('contextmenu')

@@ -367,10 +367,11 @@ describe('OnboardingWizard', () => {
       'pages.onboarding.team.review',
     )
 
-    const toggle = (id: string) => wrapper.find(`[data-testid="onboarding-team-toggle-${id}"]`)
-    expect(toggle('clarify').exists()).toBe(false)
-    expect(toggle('implement').exists()).toBe(false)
-    expect((toggle('test_review').element as HTMLInputElement).checked).toBe(true)
+    for (const id of ['clarify', 'implement', 'test_review', 'deliver']) {
+      const input = wrapper.get(`[data-testid="onboarding-team-name-${id}"]`)
+      expect(input.attributes('readonly')).toBeDefined()
+      expect(wrapper.find(`[data-testid="onboarding-team-toggle-${id}"]`).exists()).toBe(false)
+    }
   })
 
   it('defaults the team to English names when English is chosen, and sends them', async () => {
@@ -398,26 +399,25 @@ describe('OnboardingWizard', () => {
     ])
   })
 
-  it('renames, picks a model, and unchecking test_review trims the preview and the request', async () => {
+  it('keeps canonical names read-only, sends a model, and keeps every role', async () => {
     const wrapper = await mountWizard()
     await walkToTeam(wrapper)
 
-    await wrapper.find('[data-testid="onboarding-team-name-implement"]').setValue('编码')
+    const name = wrapper.get('[data-testid="onboarding-team-name-implement"]')
+    expect(name.attributes('readonly')).toBeDefined()
     await wrapper.find('[data-testid="onboarding-team-model-implement"]').setValue('gpt-5')
-    await wrapper.find('[data-testid="onboarding-team-toggle-test_review"]').setValue(false)
-    expect(wrapper.find('[data-testid="onboarding-team-name-test_review"]').exists()).toBe(false)
     await next(wrapper)
 
     expect(activeStep(wrapper)).toBe('onboarding-rail-workflow')
-    expect(wrapper.find('[data-testid="onboarding-preview-node-test_review"]').exists()).toBe(false)
-    expect(wrapper.find('[data-testid="onboarding-preview-node-implement"]').text()).toContain('编码')
-    expect(wrapper.find('[data-testid="onboarding-preview-edge-implement-deliver"]').exists()).toBe(true)
-    expect(wrapper.find('[data-testid="onboarding-workflow-note"]').text()).toBe('pages.onboarding.workflow.noReview')
+    expect(wrapper.find('[data-testid="onboarding-preview-node-test_review"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="onboarding-preview-node-implement"]').text()).toContain('实现')
+    expect(wrapper.find('[data-testid="onboarding-workflow-note"]').text()).toBe('pages.onboarding.workflow.failLoop')
 
     await next(wrapper)
     expect((await lastBody())?.agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
-      { templateId: 'implement', name: '编码', model: 'gpt-5' },
+      { templateId: 'implement', name: '实现', model: 'gpt-5' },
+      { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
   })
@@ -439,25 +439,15 @@ describe('OnboardingWizard', () => {
     expect(wrapper.find('[data-testid="onboarding-workflow-note"]').text()).toBe('pages.onboarding.workflow.failLoop')
   })
 
-  it('duplicate or blank team names block the team step', async () => {
-    const { api } = await import('@/lib/api/api')
+  it('does not let a name edit leave the canonical team', async () => {
     const wrapper = await mountWizard()
     await walkToTeam(wrapper)
-    await wrapper.find('[data-testid="onboarding-team-name-test_review"]').setValue('')
+    const name = wrapper.get('[data-testid="onboarding-team-name-test_review"]')
+    expect(name.attributes('readonly')).toBeDefined()
+    expect((name.element as HTMLInputElement).value).toBe('测试评审')
+    await next(wrapper)
+    expect(activeStep(wrapper)).toBe('onboarding-rail-workflow')
     expect(wrapper.find('[data-testid="onboarding-team-name-error-test_review"]').exists()).toBe(false)
-    await next(wrapper)
-    expect(wrapper.find('[data-testid="onboarding-team-name-error-test_review"]').text()).toBe(
-      'pages.onboarding.team.nameIssues.required',
-    )
-    expect(activeStep(wrapper)).toBe('onboarding-rail-team')
-
-    await wrapper.find('[data-testid="onboarding-team-name-test_review"]').setValue('实现')
-    expect(wrapper.find('[data-testid="onboarding-team-name-error-test_review"]').text()).toBe(
-      'pages.onboarding.team.nameIssues.duplicate',
-    )
-    await next(wrapper)
-    expect(activeStep(wrapper)).toBe('onboarding-rail-team')
-    expect(api.bootstrapOnboarding).not.toHaveBeenCalled()
   })
 
   it('falls back to the default team when templates fail to load', async () => {

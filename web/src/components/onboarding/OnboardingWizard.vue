@@ -40,7 +40,6 @@ import {
   gitIdentityConfigured,
   repoConfigured,
   repoNameFromUrl,
-  setTeamMemberEnabled,
   teamNameIssues,
   teamValid,
   type OnboardingBootstrapResult,
@@ -48,7 +47,6 @@ import {
   type OnboardingMode,
   type OnboardingStartPath,
   type OnboardingStepId,
-  type OnboardingTeamMember,
   type OnboardingTemplateId,
 } from '@/lib/pm/onboardingWizard'
 import { START_PATH_OPTIONS } from '@/lib/shared/startPath'
@@ -261,15 +259,6 @@ function toggleVncPreview() {
 function toggleBrowserMcp() {
   draft.value.browserMcp = !draft.value.browserMcp
   if (draft.value.browserMcp) draft.value.vncPreview = true
-}
-
-function toggleMember(id: OnboardingTemplateId, enabled: boolean) {
-  setTeamMemberEnabled(draft.value.team, id, enabled)
-}
-
-function renameMember(m: OnboardingTeamMember, value: string) {
-  m.name = value
-  m.nameEdited = true
 }
 
 function validatePrefs(): boolean { return true }
@@ -1010,8 +999,6 @@ function editWorkflow() {
                       :name-placeholder="t('pages.onboarding.team.namePlaceholder')"
                       :model-placeholder="modelPlaceholder"
                       :issue="memberIssue(m.templateId)"
-                      @toggle="toggleMember(m.templateId, $event)"
-                      @update:name="renameMember(m, $event)"
                       @update:model="m.model = $event"
                     />
                   </template>

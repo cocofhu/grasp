@@ -115,6 +115,7 @@ function runMoreAction(action: 'manage' | 'import' | 'export' | 'team') {
 function onContext(event: MouseEvent, name: string) {
   event.preventDefault()
   void closeMore()
+  if (props.nodes.some((node) => node.id === name && node.locked)) return
   context.value = { name, x: event.clientX, y: event.clientY }
 }
 

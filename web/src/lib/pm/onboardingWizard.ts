@@ -39,10 +39,15 @@ export const ONBOARDING_TEMPLATES: readonly { id: OnboardingTemplateId; label: s
 ]
 
 /**
- * The default workflow cannot run without clarify → implement; test_review and
- * deliver may be unchecked (their neighbours are wired together). Mirrors the server.
+ * All four roles are required. Names are the canonical ones for the wizard
+ * language and cannot be changed. Mirrors the server.
  */
-export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = ['clarify', 'implement']
+export const ONBOARDING_REQUIRED_TEMPLATE_IDS: readonly OnboardingTemplateId[] = [
+  'clarify',
+  'implement',
+  'test_review',
+  'deliver',
+]
 
 const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
   clarify: 'Clarify',
@@ -55,8 +60,34 @@ const ONBOARDING_ROLE_NAMES_EN: Record<OnboardingTemplateId, string> = {
 const LONGEST_ONBOARDING_ROLE_SUFFIX = 10
 const MAX_AGENT_NAME_RUNES = 64
 
-/** Canonical default Agent names (the server's template labels); used for conflict checks. */
+/** Canonical Chinese Agent names (the server's template labels). */
 export const ONBOARDING_AGENT_NAMES: readonly string[] = ONBOARDING_TEMPLATES.map((t) => t.label)
+
+/** Canonical English Agent names, in the same role order. */
+export const ONBOARDING_AGENT_NAMES_EN: readonly string[] = ONBOARDING_TEMPLATES.map((t) => ONBOARDING_ROLE_NAMES_EN[t.id])
+
+/** True when the name is a Chinese or English canonical onboarding Agent. */
+export function isProtectedOnboardingAgentName(name: string): boolean {
+  const trimmed = name.trim()
+  return ONBOARDING_AGENT_NAMES.includes(trimmed) || ONBOARDING_AGENT_NAMES_EN.includes(trimmed)
+}
+
+function onboardingSetComplete(names: Iterable<string>, set: readonly string[]): boolean {
+  const have = new Set(Array.from(names, (name) => name.trim()).filter(Boolean))
+  return set.every((name) => have.has(name))
+}
+
+/** A workflow can be created when either canonical quartet is complete. */
+export function onboardingAgentsReady(names: Iterable<string>): boolean {
+  return onboardingSetComplete(names, ONBOARDING_AGENT_NAMES) || onboardingSetComplete(names, ONBOARDING_AGENT_NAMES_EN)
+}
+
+/** Canonical names missing from the current UI language's quartet. */
+export function missingOnboardingNames(names: Iterable<string>, lang: AppLocale): string[] {
+  const have = new Set(Array.from(names, (name) => name.trim()))
+  const set = lang === 'en' ? ONBOARDING_AGENT_NAMES_EN : ONBOARDING_AGENT_NAMES
+  return set.filter((name) => !have.has(name))
+}
 
 /** Default role names shown and saved for the given UI language. */
 export function onboardingRoleNames(lang: AppLocale): string[] {
@@ -108,18 +139,19 @@ export function isRequiredTemplate(id: OnboardingTemplateId): boolean {
   return ONBOARDING_REQUIRED_TEMPLATE_IDS.includes(id)
 }
 
-/** Required templates stay checked. */
+/** Every onboarding role stays selected. The enabled flag cannot turn one off. */
 export function setTeamMemberEnabled(team: OnboardingTeamMember[], id: OnboardingTemplateId, enabled: boolean): void {
+  void enabled
   const m = team.find((x) => x.templateId === id)
   if (!m) return
-  m.enabled = isRequiredTemplate(id) ? true : enabled
+  m.enabled = true
 }
 
-/** Fill names the user has not edited with the derived defaults (same order as ONBOARDING_TEMPLATES). */
+/** Names always follow the canonical defaults for the current language. */
 export function applyDefaultTeamNames(team: OnboardingTeamMember[], defaults: readonly string[]): void {
   ONBOARDING_TEMPLATES.forEach((t, i) => {
     const m = team.find((x) => x.templateId === t.id)
-    if (m && !m.nameEdited) m.name = defaults[i] || ''
+    if (m) m.name = defaults[i] || ''
   })
 }
 
@@ -170,14 +202,12 @@ export type OnboardingWorkflowPreview = {
 }
 
 /**
- * The default workflow bootstrap will publish for this team:
+ * The default workflow bootstrap will publish:
  * input → 需求澄清 → 实现 → 测试评审 -pass→ 交付 → output, 测试评审 -fail→ 实现.
- * Unchecked test_review / deliver nodes are skipped (same pruning as the server).
+ * All four roles are always included.
  */
 export function buildOnboardingWorkflowPreview(team: OnboardingTeamMember[]): OnboardingWorkflowPreview {
-  const agents = ONBOARDING_TEMPLATES.filter(
-    (t) => isRequiredTemplate(t.id) || team.find((m) => m.templateId === t.id)?.enabled,
-  )
+  const agents = [...ONBOARDING_TEMPLATES]
   const nodes: OnboardingPreviewNode[] = [
     { id: 'input', kind: 'input' },
     ...agents.map((t) => ({
@@ -469,14 +499,12 @@ export function assembleBootstrapBody(draft: OnboardingDraft): OnboardingBootstr
   } else if (draft.cliModel.trim()) {
     body.cliModel = draft.cliModel.trim()
   }
-  body.agents = draft.team
-    .filter((m) => m.enabled || isRequiredTemplate(m.templateId))
-    .map((m) => {
-      const choice: OnboardingAgentChoice = { templateId: m.templateId }
-      const name = normalizeAgentName(m.name)
-      if (name) choice.name = name
-      if (m.model.trim()) choice.model = m.model.trim()
-      return choice
-    })
+  const names = onboardingRoleNames(draft.language)
+  body.agents = ONBOARDING_TEMPLATES.map((template, index) => {
+    const member = draft.team.find((item) => item.templateId === template.id)
+    const choice: OnboardingAgentChoice = { templateId: template.id, name: names[index] }
+    if (member?.model.trim()) choice.model = member.model.trim()
+    return choice
+  })
   return body
 }

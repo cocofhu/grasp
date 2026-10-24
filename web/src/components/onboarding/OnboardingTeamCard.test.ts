@@ -57,13 +57,15 @@ describe('OnboardingTeamCard', () => {
     expect(en.text()).toContain('Stage 3')
   })
 
-  it('emits toggle, name and model edits', async () => {
+  it('keeps the name read-only, shows required, and still emits model edits', async () => {
     const w = mountCard('test_review', 'zh-CN')
-    await w.find('[data-testid="onboarding-team-toggle-test_review"]').setValue(false)
-    await w.find('[data-testid="onboarding-team-name-test_review"]').setValue('评审')
+    expect(w.find('[data-testid="onboarding-team-toggle-test_review"]').exists()).toBe(false)
+    expect(w.text()).toContain('必选')
+    const name = w.get('[data-testid="onboarding-team-name-test_review"]')
+    expect(name.attributes('readonly')).toBeDefined()
+    await name.setValue('评审')
+    expect(w.emitted('update:name')).toBeUndefined()
     await w.find('[data-testid="onboarding-team-model-test_review"]').setValue('gpt-5')
-    expect(w.emitted('toggle')?.[0]).toEqual([false])
-    expect(w.emitted('update:name')?.[0]).toEqual(['评审'])
     expect(w.emitted('update:model')?.[0]).toEqual(['gpt-5'])
   })
 })

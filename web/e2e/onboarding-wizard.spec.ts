@@ -232,8 +232,9 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expect(page.getByTestId('onboarding-team-preview-clarify')).toHaveText('可启动应用预览')
   await expect(page.getByTestId('onboarding-team-card-test_review')).toContainText('测试结果')
   await expect(page.getByTestId('onboarding-team-toggle-clarify')).toHaveCount(0)
-  await expect(page.getByTestId('onboarding-team-toggle-test_review')).toBeChecked()
+  await expect(page.getByTestId('onboarding-team-toggle-test_review')).toHaveCount(0)
   await expect(page.getByTestId('onboarding-team-name-implement')).toHaveValue('实现')
+  await expect(page.getByTestId('onboarding-team-name-implement')).toHaveAttribute('readonly', '')
   await page.getByTestId('onboarding-team-model-implement').fill('deepseek/deepseek-v4-pro')
   await page.screenshot({ path: path.join(OUT, '05-team.png') })
   await expectNoScroll(page)
@@ -273,21 +274,24 @@ test('首次安装分步引导：偏好 → 模型 → 密钥 → Git → 团队
   await expect(page.getByTestId('onboarding-wizard')).toHaveCount(0)
 })
 
-test('unchecking 测试评审 trims the preview and the bootstrap request', async ({ page }) => {
+test('team names stay locked and every role is created', async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await page.goto('/onboarding-wizard.html', { waitUntil: 'networkidle' })
   await walkToTeam(page, 'crsr_trim', { skipGit: true })
 
-  await page.getByTestId('onboarding-team-toggle-test_review').uncheck()
+  await expect(page.getByTestId('onboarding-team-toggle-deliver')).toHaveCount(0)
+  await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveAttribute('readonly', '')
+  await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveValue('测试评审')
   await page.screenshot({ path: path.join(OUT, 'trim-team.png') })
   await page.getByTestId('onboarding-next').click()
-  await expect(page.getByTestId('onboarding-preview-node-test_review')).toHaveCount(0)
-  await expect(page.getByTestId('onboarding-workflow-note')).toContainText('实现完成后直接进入下一步')
+  await expect(page.getByTestId('onboarding-preview-node-test_review')).toBeVisible()
+  await expect(page.getByTestId('onboarding-workflow-note')).toContainText('测试评审未通过时退回实现修复')
   await page.screenshot({ path: path.join(OUT, 'trim-workflow.png') })
   await page.getByTestId('onboarding-next').click()
 
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
-  expect(state.bootstrapBody?.agents?.map((a) => a.templateId)).toEqual(['clarify', 'implement', 'deliver'])
+  expect(state.bootstrapBody?.agents?.map((a) => a.templateId)).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
+  expect(state.bootstrapBody?.agents?.map((a) => a.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
   expect(state.bootstrapBody?.repoUrl).toBeUndefined()
 })
 
