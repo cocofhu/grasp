@@ -136,7 +136,9 @@ for (const lang of ['zh-CN', 'en']) {
  test(`onboarding selects a saved model and Git references (${lang})`, async ({ page }) => {
   const state = await mockOnboardingApi(page)
   await walkToTeam(page, lang, true)
-  await page.getByTestId('onboarding-team-name-implement').fill(lang === 'en' ? 'BuildApp' : '编码')
+  const implementName = page.getByTestId('onboarding-team-name-implement')
+  await expect(implementName).toHaveAttribute('readonly', '')
+  await expect(implementName).toHaveValue(lang === 'en' ? 'Implement' : '实现')
   await next(page)
   await step(page, 'workflow')
   for (const id of ['clarify', 'implement', 'test_review', 'deliver']) await expect(page.getByTestId(`onboarding-preview-node-${id}`)).toBeVisible()
@@ -146,7 +148,7 @@ for (const lang of ['zh-CN', 'en']) {
   expect(state.body).toMatchObject({ modelConfigurationId: model.id, gitBindings: { items: [{ credentialId: gitKey.id }], preferredCredentialId: gitKey.id }, language: lang })
   expect(state.body).not.toHaveProperty('apiKey')
   expect(state.body).not.toHaveProperty('acpBackend')
-  expect(state.body?.agents?.find((row) => row.templateId === 'implement')?.name).toBe(lang === 'en' ? 'BuildApp' : '编码')
+  expect(state.body?.agents?.find((row) => row.templateId === 'implement')?.name).toBe(lang === 'en' ? 'Implement' : '实现')
   await page.getByTestId('onboarding-edit-workflow').click()
   await expect(page.getByTestId('workflow-editor-landing')).toBeVisible()
  })
@@ -166,15 +168,18 @@ test('model selection is required and initial setup can manage credentials and m
  await expect(page.getByTestId('workspace-add-model')).toBeVisible()
 })
 
-test('optional roles are removed from preview and bootstrap', async ({ page }) => {
+test('team names stay locked and every role is created', async ({ page }) => {
  const state = await mockOnboardingApi(page)
  await walkToTeam(page)
- await page.getByTestId('onboarding-team-toggle-test_review').uncheck()
+ await expect(page.getByTestId('onboarding-team-toggle-test_review')).toHaveCount(0)
+ await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveAttribute('readonly', '')
+ await expect(page.getByTestId('onboarding-team-name-test_review')).toHaveValue('测试评审')
  await next(page)
- await expect(page.getByTestId('onboarding-preview-node-test_review')).toHaveCount(0)
+ await expect(page.getByTestId('onboarding-preview-node-test_review')).toBeVisible()
  await next(page)
  await expect(page.getByTestId('onboarding-success')).toBeVisible()
- expect(state.body?.agents?.map((row) => row.templateId)).toEqual(['clarify', 'implement', 'deliver'])
+ expect(state.body?.agents?.map((row) => row.templateId)).toEqual(['clarify', 'implement', 'test_review', 'deliver'])
+ expect(state.body?.agents?.map((row) => row.name)).toEqual(['需求澄清', '实现', '测试评审', '交付'])
  expect(state.body?.gitBindings).toEqual({ items: [] })
 })
 

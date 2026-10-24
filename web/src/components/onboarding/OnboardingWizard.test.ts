@@ -337,33 +337,35 @@ describe('OnboardingWizard', () => {
     expect(body.gitUserName).toBe('Ada Lovelace')
     w.unmount()
   })
-  it('saves per-role configuration choices and prunes unchecked review from the workflow', async () => {
+  it('keeps canonical names read-only and sends every role with its model', async () => {
     const w = await mountWizard()
     await toTeam(w)
-    await w.get('[data-testid="onboarding-team-name-implement"]').setValue('实现官')
+    const name = w.get('[data-testid="onboarding-team-name-implement"]')
+    expect(name.attributes('readonly')).toBeDefined()
+    expect((name.element as HTMLInputElement).value).toBe('实现')
+    expect(w.find('[data-testid="onboarding-team-toggle-test_review"]').exists()).toBe(false)
     await w.get('[data-testid="onboarding-team-model-implement"] [data-test="app-select-trigger"]').trigger('click')
     await w.get('[data-test="app-select-option-model-review"]').trigger('click')
-    await w.get('[data-testid="onboarding-team-toggle-test_review"]').setValue(false)
     await next(w)
-    expect(w.find('[data-testid="onboarding-preview-node-test_review"]').exists()).toBe(false)
+    expect(w.find('[data-testid="onboarding-preview-node-test_review"]').exists()).toBe(true)
     await next(w)
     expect(mocks.bootstrapOnboarding.mock.calls[0][0].agents).toEqual([
       { templateId: 'clarify', name: '需求澄清' },
-      { templateId: 'implement', name: '实现官', modelConfigurationId: 'model-review' },
+      { templateId: 'implement', name: '实现', modelConfigurationId: 'model-review' },
+      { templateId: 'test_review', name: '测试评审' },
       { templateId: 'deliver', name: '交付' },
     ])
     w.unmount()
   })
-  it('rejects duplicate or empty role names before workflow creation', async () => {
+  it('does not let a name edit leave the canonical team', async () => {
     const w = await mountWizard()
     await toTeam(w)
-    await w.get('[data-testid="onboarding-team-name-implement"]').setValue('需求澄清')
+    const name = w.get('[data-testid="onboarding-team-name-test_review"]')
+    expect(name.attributes('readonly')).toBeDefined()
+    expect((name.element as HTMLInputElement).value).toBe('测试评审')
     await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-team')
-    await w.get('[data-testid="onboarding-team-name-implement"]').setValue('')
-    await next(w)
-    expect(activeStep(w)).toBe('onboarding-rail-team')
-    expect(mocks.bootstrapOnboarding).not.toHaveBeenCalled()
+    expect(activeStep(w)).toBe('onboarding-rail-workflow')
+    expect(w.find('[data-testid="onboarding-team-name-error-test_review"]').exists()).toBe(false)
     w.unmount()
   })
   it('keeps the default team usable when template descriptions fail to load', async () => {

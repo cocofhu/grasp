@@ -331,36 +331,51 @@ func assertDefaultWorkflowGraph(t *testing.T, g models.Graph) {
 	}
 }
 
-func TestOnboardingBootstrapRenamesAndSetsModel(t *testing.T) {
+func TestOnboardingBootstrapRejectsCustomNames(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+		ModelConfigurationID: "model-onboarding",
+		Agents: []services.OnboardingAgentChoice{
+			{TemplateID: "clarify", Name: " 产品澄清 "},
+			{TemplateID: "implement", Name: "编码", ModelConfigurationID: "model-onboarding-alt"},
+			{TemplateID: "test_review", Name: "测试评审"},
+			{TemplateID: "deliver", Name: "交付"},
+		},
+	})
+	if !errors.Is(err, services.ErrOnboardingInvalidTeam) {
+		t.Fatalf("want ErrOnboardingInvalidTeam, got %v", err)
+	}
+	if n := len(svc.Skills.List()); n != 0 {
+		t.Fatalf("custom names must not create agents, got %d", n)
+	}
+	if n := len(svc.WF.List()); n != 0 {
+		t.Fatalf("custom names must not create a workflow, got %d", n)
+	}
+}
+
+func TestOnboardingBootstrapSetsModelOnCanonicalName(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
 		Agents: []services.OnboardingAgentChoice{
-			{TemplateID: "test_review", Name: "实现"},
-			{TemplateID: "clarify", Name: " 产品澄清 "},
-			{TemplateID: "implement", Name: "编码", ModelConfigurationID: "model-onboarding-alt"},
+			{TemplateID: "clarify", Name: "需求澄清"},
+			{TemplateID: "implement", Name: "实现", ModelConfigurationID: "model-onboarding-alt"},
+			{TemplateID: "test_review"},
+			{TemplateID: "deliver", Name: "交付"},
 		},
 	})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if got := strings.Join(res.AgentIDs, ","); got != "产品澄清,编码,实现" {
-		t.Fatalf("agents in workflow order = %s", got)
+	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现,测试评审,交付" {
+		t.Fatalf("agents = %s", got)
 	}
-	impl, ok := svc.Skills.Get("编码")
+	impl, ok := svc.Skills.Get("实现")
 	if !ok || impl.ModelBinding == nil || impl.ModelBinding.ConfigurationID != "model-onboarding-alt" {
 		t.Fatalf("implement model binding = %#v", impl.ModelBinding)
 	}
-	if clarify, _ := svc.Skills.Get("产品澄清"); clarify.ModelBinding == nil || clarify.ModelBinding.ConfigurationID != "model-onboarding" {
+	if clarify, _ := svc.Skills.Get("需求澄清"); clarify.ModelBinding == nil || clarify.ModelBinding.ConfigurationID != "model-onboarding" {
 		t.Fatalf("clarify must reference selected configuration: %#v", clarify.ModelBinding)
-	}
-	wf, _ := svc.WF.Get(res.WorkflowID)
-	profiles := map[string]string{}
-	for _, n := range wf.Graph.Nodes {
-		profiles[n.ID] = models.AgentProfile(n.Config)
-	}
-	if profiles["clarify"] != "产品澄清" || profiles["implement"] != "编码" || profiles["test_review"] != "实现" {
-		t.Fatalf("profiles = %v", profiles)
 	}
 }
 
@@ -373,6 +388,7 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 			{TemplateID: "clarify", Name: "Clarify"},
 			{TemplateID: "implement", Name: "Implement"},
 			{TemplateID: "test_review", Name: "TestReview"},
+			{TemplateID: "deliver", Name: "Deliver"},
 		},
 	})
 	if err != nil {
@@ -384,7 +400,7 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 	}
 	want := map[string]string{
 		"input": "Start", "output": "End",
-		"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview",
+		"clarify": "Clarify", "implement": "Implement", "test_review": "TestReview", "deliver": "Deliver",
 	}
 	for _, n := range wf.Graph.Nodes {
 		name, ok := want[n.ID]
@@ -406,87 +422,48 @@ func TestOnboardingBootstrapEnglishNamesLabelTheWorkflow(t *testing.T) {
 	}
 }
 
-func TestOnboardingBootstrapWithoutTestReview(t *testing.T) {
+func TestOnboardingBootstrapRejectsMissingRole(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
 		Agents: []services.OnboardingAgentChoice{
 			{TemplateID: "clarify"},
 			{TemplateID: "implement"},
 		},
 	})
-	if err != nil {
-		t.Fatalf("bootstrap: %v", err)
+	if !errors.Is(err, services.ErrOnboardingInvalidTeam) {
+		t.Fatalf("want ErrOnboardingInvalidTeam, got %v", err)
 	}
-	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现" {
-		t.Fatalf("agents = %s", got)
+	if n := len(svc.Skills.List()); n != 0 {
+		t.Fatalf("missing role must not create agents, got %d", n)
 	}
-	if _, ok := svc.Skills.Get("测试评审"); ok {
-		t.Fatal("unchecked template must not be saved")
-	}
-	wf, _ := svc.WF.Get(res.WorkflowID)
-	g := wf.Graph
-	if err := g.Validate(); err != nil {
-		t.Fatalf("graph invalid: %v", err)
-	}
-	for _, n := range g.Nodes {
-		if n.ID == "test_review" {
-			t.Fatal("test_review node must be dropped")
-		}
-		if n.Type == "output" {
-			for _, r := range n.Config["results"].([]any) {
-				if strings.Contains(r.(string), "test_review") {
-					t.Fatalf("output still reads test_review: %v", r)
-				}
-			}
-		}
-	}
-	var direct bool
-	for _, e := range g.Edges {
-		if e.Source == "test_review" || e.Target == "test_review" {
-			t.Fatalf("dangling edge %+v", e)
-		}
-		if e.Source == "implement" && e.Target == "output" && e.SourceHandle == "" {
-			direct = true
-		}
-	}
-	if !direct || len(g.Edges) != 3 {
-		t.Fatalf("want input→clarify→implement→output, got %+v", g.Edges)
+	if n := len(svc.WF.List()); n != 0 {
+		t.Fatalf("missing role must not create a workflow, got %d", n)
 	}
 }
 
-func TestOnboardingBootstrapDeliverWithoutTestReview(t *testing.T) {
+func TestOnboardingBootstrapKeepsExistingAndFillsMissing(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
-		ModelConfigurationID: "model-onboarding",
-		Agents: []services.OnboardingAgentChoice{
-			{TemplateID: "clarify"},
-			{TemplateID: "implement"},
-			{TemplateID: "deliver"},
-		},
-	})
+	kept := services.Agent{Name: "需求澄清", AcpBackend: services.AcpBackendCursor, Env: map[string]string{"MARKER": "keep"}}
+	if err := svc.Skills.Save(kept); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	res, err := svc.Bootstrap(services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding"})
 	if err != nil {
 		t.Fatalf("bootstrap: %v", err)
 	}
-	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现,交付" {
+	if got := strings.Join(res.AgentIDs, ","); got != "需求澄清,实现,测试评审,交付" {
 		t.Fatalf("agents = %s", got)
 	}
-	wf, _ := svc.WF.Get(res.WorkflowID)
-	g := wf.Graph
-	if err := g.Validate(); err != nil {
-		t.Fatalf("graph invalid: %v", err)
+	got, ok := svc.Skills.Get("需求澄清")
+	if !ok || got.Env["MARKER"] != "keep" {
+		t.Fatalf("existing agent overwritten: %+v", got.Env)
 	}
-	var implDeliver, deliverOut bool
-	for _, e := range g.Edges {
-		if e.Source == "implement" && e.Target == "deliver" && e.SourceHandle == "" {
-			implDeliver = true
-		}
-		if e.Source == "deliver" && e.Target == "output" {
-			deliverOut = true
-		}
+	if _, ok := svc.Skills.Get("交付"); !ok {
+		t.Fatal("missing canonical name was not created")
 	}
-	if !implDeliver || !deliverOut || len(g.Edges) != 4 {
-		t.Fatalf("want input→clarify→implement→deliver→output, got %+v", g.Edges)
+	if n := len(svc.Skills.List()); n != 4 {
+		t.Fatalf("agents = %d, want 4", n)
 	}
 }
 
@@ -512,10 +489,18 @@ func TestOnboardingBootstrapRejectsInvalidTeam(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{
 		ModelConfigurationID: "model-onboarding",
-		Agents:               []services.OnboardingAgentChoice{{TemplateID: "clarify", Name: "a/b"}, {TemplateID: "implement"}},
+		Agents: []services.OnboardingAgentChoice{
+			{TemplateID: "clarify", Name: "a/b"},
+			{TemplateID: "implement", Name: "实现"},
+			{TemplateID: "test_review", Name: "测试评审"},
+			{TemplateID: "deliver", Name: "交付"},
+		},
 	})
 	if !errors.Is(err, services.ErrInvalidAgentName) {
 		t.Fatalf("want ErrInvalidAgentName, got %v", err)
+	}
+	if n := len(svc.Skills.List()); n != 0 {
+		t.Fatalf("invalid name must not create agents, got %d", n)
 	}
 }
 
@@ -574,6 +559,69 @@ func baselineAgentProfiles(t *testing.T, wf models.WorkflowDef) map[string]strin
 	return out
 }
 
+func TestCreateFromBaselineRejectsIncompleteSet(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	saveNamedAgents(t, svc, []string{"需求澄清", "实现"})
+	before := len(svc.Skills.List())
+	_, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		Name:  "db-workbench",
+		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if !errors.Is(err, services.ErrOnboardingAgentsIncomplete) {
+		t.Fatalf("want ErrOnboardingAgentsIncomplete, got %v", err)
+	}
+	if n := len(svc.Skills.List()); n != before {
+		t.Fatalf("agents changed %d -> %d", before, n)
+	}
+	if n := len(svc.WF.List()); n != 0 {
+		t.Fatalf("workflow created despite missing agents: %d", n)
+	}
+}
+
+func TestCreateFromBaselineBindsEnglishSet(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	saveNamedAgents(t, svc, services.OnboardingAgentNamesEN)
+	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		Name:  "english-baseline",
+		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFromBaseline: %v", err)
+	}
+	profiles := baselineAgentProfiles(t, wf)
+	for i, role := range services.TeamEngineerTemplates {
+		want := services.OnboardingAgentNamesEN[i]
+		if profiles[role.ID] != want {
+			t.Fatalf("node %s bound to %q, want %q", role.ID, profiles[role.ID], want)
+		}
+		if _, ok := svc.Skills.Get(role.RoleLabelZH); ok {
+			t.Fatalf("baseline created Chinese agent %s", role.RoleLabelZH)
+		}
+	}
+	if n := len(svc.Skills.List()); n != len(services.OnboardingAgentNamesEN) {
+		t.Fatalf("agents = %d, want %d", n, len(services.OnboardingAgentNamesEN))
+	}
+}
+
+func TestCreateFromBaselinePrefersChineseWhenBothSetsExist(t *testing.T) {
+	svc := newOnboardingHarness(t)
+	saveNamedAgents(t, svc, append(append([]string{}, services.OnboardingAgentNames...), services.OnboardingAgentNamesEN...))
+	before := len(svc.Skills.List())
+	wf, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{
+		Name:  "both-sets",
+		Repos: []services.BaselineRepo{{URL: "https://github.com/acme/app.git"}},
+	})
+	if err != nil {
+		t.Fatalf("CreateFromBaseline: %v", err)
+	}
+	if got := baselineAgentProfiles(t, wf)["clarify"]; got != "需求澄清" {
+		t.Fatalf("clarify bound to %q", got)
+	}
+	if n := len(svc.Skills.List()); n != before {
+		t.Fatalf("agents changed %d -> %d", before, n)
+	}
+}
+
 func TestCreateFromBaselineReusesExistingAgents(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	if _, err := svc.Bootstrap(services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding"}); err != nil {
@@ -597,6 +645,19 @@ func TestCreateFromBaselineReusesExistingAgents(t *testing.T) {
 	after, _ := svc.Skills.Get("实现")
 	if after.Env["MARKER"] != "keep" {
 		t.Fatalf("existing agent overwritten: %+v", after.Env)
+	}
+}
+
+func saveNamedAgents(t *testing.T, svc *services.OnboardingService, names []string) {
+	t.Helper()
+	for _, name := range names {
+		if err := svc.Skills.Save(services.Agent{
+			Name:         name,
+			AcpBackend:   services.AcpBackendCursor,
+			ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: "model-onboarding"},
+		}); err != nil {
+			t.Fatalf("save %s: %v", name, err)
+		}
 	}
 }
 
@@ -644,16 +705,28 @@ func newOnboardingHarness(t *testing.T) *services.OnboardingService {
 func TestBaselineRequiresConfiguredAgents(t *testing.T) {
 	svc := newOnboardingHarness(t)
 	_, err := svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Missing roles", Repos: []services.BaselineRepo{{URL: "https://github.com/example/app.git"}}})
-	if err == nil || !strings.Contains(err.Error(), "complete onboarding") {
-		t.Fatalf("want actionable missing configuration error, got %v", err)
+	if !errors.Is(err, services.ErrOnboardingAgentsIncomplete) {
+		t.Fatalf("want ErrOnboardingAgentsIncomplete, got %v", err)
 	}
 	if len(svc.Skills.List()) != 0 || len(svc.WF.List()) != 0 {
 		t.Fatal("baseline must not manufacture agents/default routes")
 	}
+	for _, name := range services.OnboardingAgentNames {
+		if err := svc.Skills.Save(services.Agent{Name: name, AcpBackend: services.AcpBackendCursor}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = svc.CreateFromBaseline(services.CreateBaselineWorkflowRequest{Name: "Unconfigured roles", Repos: []services.BaselineRepo{{URL: "https://github.com/example/app.git"}}})
+	if err == nil || !strings.Contains(err.Error(), "complete onboarding") {
+		t.Fatalf("want actionable missing configuration error, got %v", err)
+	}
+	if len(svc.WF.List()) != 0 {
+		t.Fatal("baseline must not create a workflow for unconfigured agents")
+	}
 }
 func TestOnboardingRejectsInvalidModelOverrideBeforeSaving(t *testing.T) {
 	svc := newOnboardingHarness(t)
-	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding", Agents: []services.OnboardingAgentChoice{{TemplateID: "clarify"}, {TemplateID: "implement", ModelConfigurationID: "missing"}}})
+	_, err := svc.Bootstrap(services.OnboardingBootstrapRequest{ModelConfigurationID: "model-onboarding", Agents: []services.OnboardingAgentChoice{{TemplateID: "clarify"}, {TemplateID: "implement", ModelConfigurationID: "missing"}, {TemplateID: "test_review"}, {TemplateID: "deliver"}}})
 	if err == nil {
 		t.Fatal("missing model override accepted")
 	}

@@ -514,9 +514,15 @@ func (s *AgentService) Delete(name string) error {
 }
 
 func (s *AgentService) deleteUnlocked(name string) error {
+	if IsProtectedOnboardingAgentName(name) {
+		return ErrProtectedOnboardingAgent
+	}
 	n := sanitize(name)
 	if n == "" {
 		return fmt.Errorf("invalid agent name")
+	}
+	if IsProtectedOnboardingAgentName(n) {
+		return ErrProtectedOnboardingAgent
 	}
 	if s.Vcs != nil {
 		_ = s.Vcs.DeleteAgent(n)
@@ -530,7 +536,13 @@ func (s *AgentService) deleteUnlocked(name string) error {
 func (s *AgentService) Rename(old, newName string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if IsProtectedOnboardingAgentName(old) || IsProtectedOnboardingAgentName(newName) {
+		return ErrProtectedOnboardingAgent
+	}
 	o, n := sanitize(old), sanitize(newName)
+	if IsProtectedOnboardingAgentName(o) || IsProtectedOnboardingAgentName(n) {
+		return ErrProtectedOnboardingAgent
+	}
 	if o == "" || n == "" {
 		return fmt.Errorf("invalid agent name")
 	}

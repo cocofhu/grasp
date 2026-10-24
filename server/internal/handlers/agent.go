@@ -125,6 +125,10 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 
 func (h *Handlers) DeleteAgent(c *gin.Context) {
 	name := c.Param("name")
+	if services.IsProtectedOnboardingAgentName(name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
+		return
+	}
 	if h.Pm != nil {
 		if err := h.Pm.PurgeAgentEverywhere(name); err != nil {
 			_ = c.Error(err)
@@ -157,9 +161,17 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if services.IsProtectedOnboardingAgentName(old) || services.IsProtectedOnboardingAgentName(b.Name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
+		return
+	}
 	name, err := services.NormalizeAndValidateAgentName(b.Name)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if services.IsProtectedOnboardingAgentName(name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
 		return
 	}
 	if !h.Agents.Exists(old) {
