@@ -1,43 +1,14 @@
-import type { MCPServer } from '@/lib/api/api'
-import {
-  ACP_BACKENDS,
-  CLI_BACKENDS,
-  START_PATH_OPTIONS,
-  applyAcpBackend,
-  applyWizardStartPath,
-  configRootFor,
-  kvToRec,
-  normalizeWizardRegions,
-  recToKV,
-  type WizardBackendId,
-  type WizardDraft,
-  type WizardKV,
-  type WizardMCP,
-  type WizardAuthMode,
-  type StartPath,
-  freshDraft,
-  parseCustomConfigJson,
-  stripAuthKeysFromEnv,
-} from '@/lib/agent/agentCreateWizard'
+import type { AgentGitBindings, MCPServer } from '@/lib/api/api'
 import { normalizeAgentName, validateAgentName } from '@/lib/agent/agentIO'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
-import { authGuideFor, hasAuthKeyConfigured } from '@/lib/agent/backendAuthGuide'
-import { stripSecretKeysFromKV, stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
-import { getRegionPolicy } from '@/lib/shared/regionPolicy'
-import { APIKEY_BACKEND, CLI_BACKEND_DEFAULT } from '@/lib/shared/startPath'
+import { cloneGitBindings } from '@/lib/agent/gitBindings'
+import { kvToRec, type WizardKV, type WizardMCP } from '@/lib/agent/agentCreateWizard'
+import { stripSecretKeysFromRecord } from '@/lib/agent/secretEnvKeys'
 
-export type TeamWizardStepId = 'team' | 'acp' | 'apiKey' | 'git' | 'mcp' | 'env' | 'review'
-
-export type TeamWizardStepDef = {
-  id: TeamWizardStepId
-  labelKey: string
-  skip: boolean
-}
-
+export type TeamWizardStepId = 'team' | 'model' | 'git' | 'mcp' | 'env' | 'review'
+export type TeamWizardStepDef = { id: TeamWizardStepId; labelKey: string; skip: boolean }
 export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
   { id: 'team', labelKey: 'pages.agentStudio.teamWizard.steps.team', skip: false },
-  { id: 'acp', labelKey: 'pages.agentStudio.teamWizard.steps.acp', skip: true },
-  { id: 'apiKey', labelKey: 'pages.agentStudio.teamWizard.steps.apiKey', skip: true },
+  { id: 'model', labelKey: 'pages.agentStudio.wizard.steps.apiKey', skip: false },
   { id: 'git', labelKey: 'pages.agentStudio.teamWizard.steps.git', skip: true },
   { id: 'mcp', labelKey: 'pages.agentStudio.teamWizard.steps.mcp', skip: true },
   { id: 'env', labelKey: 'pages.agentStudio.teamWizard.steps.env', skip: true },
@@ -48,25 +19,10 @@ export const TEAM_WIZARD_STEPS: TeamWizardStepDef[] = [
 export const TEAM_ENGINEER_COUNT = 4
 
 export type TeamWizardDraft = {
-  step: number
-  teamName: string
-  prefix: string
-  pmName: string
-  background: string
-  prefixTouched: boolean
-  pmTouched: boolean
-  startPath: StartPath
-  acpBackend: WizardBackendId
-  cliBackend: WizardBackendId
-  apiKeyBackend?: WizardBackendId
-  authMode: WizardAuthMode
-  customConfigContent: string
-  gitCredentialType?: GitCredentialType
-  gitUrl: string
-  configRoot: string
-  env: WizardKV[]
-  mcp: WizardMCP[]
-  skipped: Partial<Record<TeamWizardStepId, boolean>>
+  step: number; teamName: string; prefix: string; pmName: string; background: string
+  prefixTouched: boolean; pmTouched: boolean
+  modelConfigurationId: string; gitBindings: AgentGitBindings; gitUrl: string
+  env: WizardKV[]; mcp: WizardMCP[]; skipped: Partial<Record<TeamWizardStepId, boolean>>
 }
 
 export function artifactStorePreset(): WizardMCP {
@@ -82,27 +38,7 @@ export function artifactStorePreset(): WizardMCP {
 }
 
 export function freshTeamDraft(): TeamWizardDraft {
-  return {
-    step: 0,
-    teamName: '',
-    prefix: '',
-    pmName: '',
-    background: '',
-    prefixTouched: false,
-    pmTouched: false,
-    startPath: 'apiKey',
-    acpBackend: APIKEY_BACKEND,
-    cliBackend: CLI_BACKEND_DEFAULT,
-    apiKeyBackend: APIKEY_BACKEND,
-    authMode: 'apiKey',
-    customConfigContent: '',
-    gitCredentialType: undefined,
-    gitUrl: '',
-    configRoot: configRootFor(APIKEY_BACKEND),
-    env: [{ k: 'GIT_REPOS', v: '${vars.repos}' }],
-    mcp: [artifactStorePreset()],
-    skipped: {},
-  }
+  return { step: 0, teamName: '', prefix: '', pmName: '', background: '', prefixTouched: false, pmTouched: false, modelConfigurationId: '', gitBindings: { items: [] }, gitUrl: '', env: [{ k: 'GIT_REPOS', v: '${vars.repos}' }], mcp: [artifactStorePreset()], skipped: {} }
 }
 
 export function syncDerivedNames(d: TeamWizardDraft) {
@@ -121,49 +57,6 @@ export function validateTeamBasics(d: TeamWizardDraft, existingNames: string[]):
   const normalized = normalizeAgentName(d.pmName)
   if (existingNames.some((n) => normalizeAgentName(n) === normalized)) return 'pmExists'
   return ''
-}
-
-function teamDraftAsWizardDraft(d: TeamWizardDraft): WizardDraft {
-  const base = freshDraft()
-  base.startPath = d.startPath
-  base.acpBackend = d.acpBackend
-  base.cliBackend = d.cliBackend
-  base.apiKeyBackend = d.apiKeyBackend
-  base.configRoot = d.configRoot
-  base.authMode = d.authMode
-  base.customConfigContent = d.customConfigContent
-  base.env = d.env.map((e) => ({ ...e }))
-  base.gitCredentialType = d.gitCredentialType
-  base.mcp = d.mcp.map((m) => ({
-    ...m,
-    headers: m.headers.map((h) => ({ ...h })),
-    env: m.env.map((e) => ({ ...e })),
-  }))
-  return base
-}
-
-export function applyTeamAcpBackend(d: TeamWizardDraft, id: WizardBackendId) {
-  const w = teamDraftAsWizardDraft(d)
-  applyAcpBackend(w, id)
-  d.startPath = w.startPath
-  d.cliBackend = w.cliBackend
-  d.apiKeyBackend = w.apiKeyBackend
-  d.acpBackend = w.acpBackend
-  d.authMode = w.authMode
-  d.configRoot = w.configRoot
-  d.env = w.env
-}
-
-export function applyTeamStartPath(d: TeamWizardDraft, path: StartPath) {
-  const w = teamDraftAsWizardDraft(d)
-  applyWizardStartPath(w, path)
-  d.startPath = w.startPath
-  d.cliBackend = w.cliBackend
-  d.apiKeyBackend = w.apiKeyBackend
-  d.acpBackend = w.acpBackend
-  d.authMode = w.authMode
-  d.configRoot = w.configRoot
-  d.env = w.env
 }
 
 function mcpToApi(m: WizardMCP): MCPServer {
@@ -186,65 +79,10 @@ function mcpToApi(m: WizardMCP): MCPServer {
 }
 
 export type TeamBootstrapPayload = {
-  prefix: string
-  pmName: string
-  background: string
-  acpBackend: WizardBackendId
-  apiKey?: string
-  customConfig?: string
-  region?: string
-  gitUrl?: string
-  gitCredentialType?: string
-  mcp: MCPServer[]
-  env: Record<string, string>
+  prefix: string; pmName: string; background: string; modelConfigurationId: string; gitBindings: AgentGitBindings
+  gitUrl?: string; mcp: MCPServer[]; env: Record<string, string>
 }
-
-export function assembleTeamBootstrapPayload(d: TeamWizardDraft): TeamBootstrapPayload {
-  const w = teamDraftAsWizardDraft(d)
-  const policy = getRegionPolicy(d.acpBackend)
-  const region = policy
-    ? w.env.find((e) => e.k.trim() === policy.regionEnvKey)?.v?.trim() || undefined
-    : undefined
-  const guide = authGuideFor(d.acpBackend, region || '')
-  const primaryKey = guide.keys[0]?.key || ''
-  const customParsed = parseCustomConfigJson(d.customConfigContent)
-  const customConfig =
-    d.authMode === 'customConfig' && customParsed.ok && customParsed.normalized
-      ? customParsed.normalized
-      : undefined
-  // Capture API Key for the workspace shared layer before stripping Token keys from agent env.
-  const rawEnv = kvToRec(w.env)
-  const apiKey =
-    !customConfig && primaryKey ? rawEnv[primaryKey]?.trim() || undefined : undefined
-
-  if (w.authMode === 'customConfig') {
-    w.env = stripAuthKeysFromEnv(w.env, w.acpBackend)
-  }
-  w.env = stripSecretKeysFromKV(w.env)
-  const env = stripSecretKeysFromRecord(normalizeWizardRegions(w))
-  d.env = w.env
-  return {
-    prefix: d.prefix.trim(),
-    pmName: normalizeAgentName(d.pmName),
-    background: d.background.trim(),
-    acpBackend: d.acpBackend || APIKEY_BACKEND,
-    ...(apiKey ? { apiKey } : {}),
-    ...(customConfig ? { customConfig } : {}),
-    ...(region ? { region } : {}),
-    ...(d.gitUrl.trim() ? { gitUrl: d.gitUrl.trim() } : {}),
-    ...(d.gitCredentialType ? { gitCredentialType: d.gitCredentialType } : {}),
-    mcp: d.mcp.filter((m) => m.name.trim()).map(mcpToApi),
-    env,
-  }
+export function assembleTeamBootstrapPayload(draft: TeamWizardDraft): TeamBootstrapPayload {
+  return { prefix: draft.prefix.trim(), pmName: normalizeAgentName(draft.pmName), background: draft.background.trim(), modelConfigurationId: draft.modelConfigurationId, gitBindings: cloneGitBindings(draft.gitBindings), ...(draft.gitUrl.trim() ? { gitUrl: draft.gitUrl.trim() } : {}), mcp: draft.mcp.filter((row) => row.name.trim()).map(mcpToApi), env: stripSecretKeysFromRecord(kvToRec(draft.env)) }
 }
-
-export function teamHasAuth(d: TeamWizardDraft): boolean {
-  if (d.authMode === 'customConfig') {
-    const parsed = parseCustomConfigJson(d.customConfigContent)
-    return parsed.ok && parsed.normalized !== ''
-  }
-  return hasAuthKeyConfigured(d.env, d.acpBackend)
-}
-
-export { ACP_BACKENDS, CLI_BACKENDS, START_PATH_OPTIONS, recToKV, kvToRec }
-export type { WizardBackendId, StartPath }
+export function teamHasAuth(draft: TeamWizardDraft): boolean { return !!draft.modelConfigurationId }

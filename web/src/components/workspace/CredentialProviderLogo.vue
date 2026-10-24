@@ -13,6 +13,16 @@ import openaiLogo from '@/assets/provider-logos/openai.svg'
 import deepseekLogo from '@/assets/provider-logos/deepseek.svg'
 import openrouterLogo from '@/assets/provider-logos/openrouter.svg'
 import xaiLogo from '@/assets/provider-logos/xai.svg'
+import moonshotLogo from '@/assets/provider-logos/moonshot.svg'
+import qwenLogo from '@/assets/provider-logos/qwen.svg'
+import doubaoLogo from '@/assets/provider-logos/doubao.svg'
+import siliconflowLogo from '@/assets/provider-logos/siliconflow.svg'
+import minimaxLogo from '@/assets/provider-logos/minimax.svg'
+import zhipuLogo from '@/assets/provider-logos/zhipu.svg'
+import zaiLogo from '@/assets/provider-logos/zai.svg'
+import geminiLogo from '@/assets/provider-logos/gemini.svg'
+import hunyuanLogo from '@/assets/provider-logos/hunyuan.svg'
+import qianfanLogo from '@/assets/provider-logos/qianfan.svg'
 import { theme } from '@/lib/shared/theme'
 
 const props = withDefaults(
@@ -44,6 +54,16 @@ type LogoKey =
   | 'deepseek'
   | 'openrouter'
   | 'xai'
+  | 'moonshot'
+  | 'qwen'
+  | 'doubao'
+  | 'siliconflow'
+  | 'minimax'
+  | 'zhipu'
+  | 'zai'
+  | 'gemini'
+  | 'hunyuan'
+  | 'qianfan'
   | 'neutral'
 
 const logoLabels: Record<LogoKey, string> = {
@@ -59,6 +79,16 @@ const logoLabels: Record<LogoKey, string> = {
   deepseek: 'DeepSeek',
   openrouter: 'OpenRouter',
   xai: 'xAI',
+  moonshot: 'Moonshot / Kimi',
+  qwen: 'Qwen',
+  doubao: 'Doubao',
+  siliconflow: 'SiliconFlow',
+  minimax: 'MiniMax',
+  zhipu: 'Zhipu',
+  zai: 'Z.ai',
+  gemini: 'Google Gemini',
+  hunyuan: 'Tencent Hunyuan',
+  qianfan: 'Baidu Qianfan',
   neutral: 'Credential provider',
 }
 
@@ -75,11 +105,20 @@ const logoAssets: Partial<Record<LogoKey, string>> = {
   deepseek: deepseekLogo,
   openrouter: openrouterLogo,
   xai: xaiLogo,
+  moonshot: moonshotLogo,
+  qwen: qwenLogo,
+  doubao: doubaoLogo,
+  siliconflow: siliconflowLogo,
+  minimax: minimaxLogo,
+  zhipu: zhipuLogo,
+  zai: zaiLogo,
+  gemini: geminiLogo,
+  hunyuan: hunyuanLogo,
+  qianfan: qianfanLogo,
 }
 
-// The bundled provider assets are monochrome black marks (the Simple Icons
-// paths and the official Codex/OpenAI marks). In the dark theme they are
-// inverted for contrast while retaining the exact brand geometry.
+// Invert only monochrome marks for contrast. Preserve the original fills and
+// gradients of color provider assets in either theme.
 const monochromeLogos = new Set<LogoKey>([
   'claude',
   'codebuddy',
@@ -93,6 +132,8 @@ const monochromeLogos = new Set<LogoKey>([
   'deepseek',
   'openrouter',
   'xai',
+  'moonshot',
+  'zai',
 ])
 
 function normalize(value: string): string {
@@ -113,6 +154,16 @@ const logoKey = computed<LogoKey>(() => {
   if (values.some((value) => value === 'deepseek' || value.includes('deepseek'))) return 'deepseek'
   if (values.some((value) => value === 'openrouter' || value.includes('openrouter'))) return 'openrouter'
   if (values.some((value) => value === 'xai' || value.includes('xai'))) return 'xai'
+  if (values.some((value) => value.includes('moonshot') || value.includes('kimi'))) return 'moonshot'
+  if (values.some((value) => value.includes('qwen') || value.includes('dashscope') || value === 'alibaba')) return 'qwen'
+  if (values.some((value) => value.includes('doubao') || value.includes('volcengine') || value === 'bytedance')) return 'doubao'
+  if (values.some((value) => value.includes('siliconflow') || value.includes('siliconcloud'))) return 'siliconflow'
+  if (values.some((value) => value.includes('minimax'))) return 'minimax'
+  if (values.some((value) => value === 'zai')) return 'zai'
+  if (values.some((value) => value.includes('zhipu') || value.includes('bigmodel') || value === 'glm')) return 'zhipu'
+  if (values.some((value) => value.includes('gemini') || value === 'google' || value === 'googleaistudio')) return 'gemini'
+  if (values.some((value) => value.includes('hunyuan') || value === 'tencent')) return 'hunyuan'
+  if (values.some((value) => value.includes('qianfan') || value.includes('baidu') || value === 'wenxin')) return 'qianfan'
   return 'neutral'
 })
 
@@ -126,7 +177,10 @@ const imageClasses = computed(() => ({
 <template>
   <span
     class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
-    :class="selected ? 'border-accent bg-surface' : 'border-line bg-surface'"
+    :class="[
+      selected ? 'border-accent bg-surface' : 'border-line bg-surface',
+      { 'provider-logo--color-surface': !icon && asset && !monochromeLogos.has(logoKey) && theme === 'dark' },
+    ]"
     :data-provider-logo="icon === 'key' ? 'ssh-key' : icon === 'host' ? 'ssh-host' : logoKey"
     role="img"
     :aria-label="icon === 'key' ? 'SSH private key' : icon === 'host' ? 'SSH known hosts' : `${label} logo`"
@@ -149,6 +203,10 @@ const imageClasses = computed(() => ({
 </template>
 
 <style scoped>
+.provider-logo--color-surface {
+  background-color: #fff;
+}
+
 .provider-logo-image--invert {
   filter: invert(1);
 }

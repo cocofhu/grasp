@@ -5,8 +5,6 @@ import (
 	"errors"
 	"strings"
 	"testing"
-
-	"github.com/cocofhu/grasp/internal/envauth"
 )
 
 const codex401 = "failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses"
@@ -37,9 +35,7 @@ func TestRunAgentCodexLoginRejectedFailsFast(t *testing.T) {
 func codexSetup(t *testing.T, turn func(int) turnAction) (*acpProvider, *fakeManager, NodeReq) {
 	t.Helper()
 	p, _, _, mgr, _, req := setupProviderBackend(t, BackendCodex, func(int) chatFunc { return turn })
-	p.opts.Credentials = func() map[string]string {
-		return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
-	}
+	p.opts.ModelBinding = testModelBinding
 	return p, mgr, req
 }
 

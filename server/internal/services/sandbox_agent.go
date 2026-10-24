@@ -50,9 +50,8 @@ func (s *SandboxService) SetTestSchedulerHooks(h TestSchedulerHooks) {
 
 // SetCodexLoginWriteBack registers the workspace-credential update used when a
 // Codex sandbox's auth.json changes. The callback must not log the file body.
-func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error, identify func(envKey, value string) string) {
+func (s *SandboxService) SetCodexLoginWriteBack(fn func(credentialID, content string) error) {
 	s.codexLoginWriteBack = fn
-	s.injectedCredentialID = identify
 }
 
 func codexLiveAuthPath(backend runtime.AcpBackend, configRoot string) string {
@@ -152,12 +151,25 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	// Merge SharedAgent Token env / meta (Agent → Shared 选源).
 	agent = s.effectiveAgent(agent)
+	modelFingerprint, gitFingerprint, err := s.currentBindingFingerprints(agent)
+	if err != nil {
+		return nil, false, err
+	}
 
 	if opts.Reuse {
 		var existing models.Sandbox
 		if err := s.db.Where("purpose = ? AND thread_id = ? AND status IN ?",
 			SandboxPurposeAgent, threadID, []string{"running", "creating", "pulling"}).
 			Order("created_at desc").First(&existing).Error; err == nil {
+			if existing.Profile != profile {
+				return nil, false, fmt.Errorf("此会话的沙箱属于其他 Agent，请重新打开沙箱")
+			}
+			s.mu.Lock()
+			bindingErr := checkAppliedBindings(modelFingerprint, gitFingerprint, &existing, s.live[existing.ID])
+			s.mu.Unlock()
+			if bindingErr != nil {
+				return nil, false, bindingErr
+			}
 			if existing.Status == "running" && s.mgr.Status(ctx, existing.Name) == "running" {
 				at := time.Now().Add(s.TTL())
 				s.db.Model(&models.Sandbox{}).Where("id = ?", existing.ID).
@@ -191,12 +203,16 @@ func (s *SandboxService) OpenAgentSandbox(ctx context.Context, opts AgentSandbox
 	}
 	name := sandbox.NewContainerName()
 	row := &models.Sandbox{
+		ModelBindingFingerprint: modelFingerprint, GitBindingsFingerprint: gitFingerprint,
 		Name: name, Profile: profile, Purpose: SandboxPurposeAgent, Status: "creating",
 		RunID: runID, Token: opts.SharedToken, ThreadID: threadID,
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, false, err
 	}
+	s.mu.Lock()
+	s.live[row.ID] = &liveSandbox{modelBindingFingerprint: modelFingerprint, gitBindingsFingerprint: gitFingerprint}
+	s.mu.Unlock()
 	log.Info().Str("name", name).Str("profile", profile).Str("thread", threadID).
 		Bool("reuse", opts.Reuse).Uint("id", row.ID).Msg("agent sandbox creating")
 	go s.startAgentContainer(row.ID, name, profile, threadID, runID, opts.SharedToken, opts.PlatformSpecs, agent, agentContainerExtra{})
@@ -364,55 +380,40 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		env[k] = v
 	}
 	track.mark(env, EnvSourceProject)
-	// Workspace credentials are the highest-priority source. Apply them after
-	// template/Agent vars so interactive, PM and cron sandboxes match workflow
-	// resolver precedence.
-	var creds map[string]string
-	if s.credentials != nil {
-		creds = s.credentials()
-		overlayCredentialEnv(env, creds)
-	}
+	creds := map[string]string{}
 	backend, err := runtime.ParseBackend(agent.AcpBackend)
 	if err != nil {
 		fail(err)
 		return
 	}
-	if backend == runtime.BackendOpenCode && s.openCodeCredential != nil {
-		runtime.ApplyOpenCodeSelection(env, s.openCodeCredential(agent.OpenCodeCredentialID))
-	}
-	runtime.ApplyAgentCredentialChoice(env, creds, runtime.AgentCredentialChoice{
-		Backend:              string(backend),
-		GitCredentialType:    agent.GitCredentialType,
-		AiCredentialID:       agent.AiCredentialID,
-		GitCredentialID:      agent.GitCredentialID,
-		SshHostsCredentialID: agent.SshHostsCredentialID,
-	}, s.selectedCredential)
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
 	if len(extra.Bindings) > 0 {
 		runtime.ApplyCredentialBindings(env, creds, extra.Bindings, s.selectedCredential)
 	}
+	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.selectedCredential)
+	if err != nil {
+		fail(err)
+		return
+	}
 	track.mark(env, EnvSourceCredential)
+	if err := runtime.ApplyModelBinding(env, string(backend), agent.ModelBinding, s.modelBinding); err != nil {
+		fail(err)
+		return
+	}
+	modelFingerprint := modelBindingFingerprint(agent, env)
 	workDir := s.skills.WorkDir(profile)
 	sharedWorkDir := ""
 	if s.shared != nil {
 		sharedWorkDir = s.shared.WorkDir()
 	}
 	codexLogin := runtime.CodexLoginFileFromEnv(backend, env)
-	merged, err := runtime.PrepareAuthEnv(backend, env, workDir, sharedWorkDir)
+	merged, err := runtime.PrepareBoundAuth(backend, env, workDir, sharedWorkDir)
 	if err != nil {
 		fail(err)
 		return
 	}
 	env = merged
 	track.mark(env, EnvSourceCredential)
-	ocDoc := runtime.OpenCodeConfigForEnvWithCatalog(
-		context.Background(), backend, env, s.openCodeCatalog,
-	)
-	if err := runtime.RequireOpenCodePlaceholderKey(ocDoc, env); err != nil {
-		fail(err)
-		return
-	}
-
 	home, err := sandbox.BuildConfigHome(sandbox.ConfigHomeSpec{
 		BaseWorkDirSrc:       sharedWorkDir,
 		WorkDirSrc:           s.skills.WorkDir(profile),
@@ -422,13 +423,12 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		DeepSeekHarness:      backend == runtime.BackendDeepSeekHarness,
 		BrowserMCP:           runtime.EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             runtime.CodeBuddySettingsForEnv(backend, env),
-		OpenCodeConfig:       ocDoc,
 	})
 	if err != nil {
 		fail(fmt.Errorf("build cursor home: %w", err))
 		return
 	}
-	if err := runtime.InstallCodexLoginFile(backend, home, codexLogin); err != nil {
+	if err := runtime.InstallBoundCodexLoginFile(backend, home, codexLogin, env); err != nil {
 		_ = os.RemoveAll(home)
 		fail(err)
 		return
@@ -453,15 +453,16 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	}
 
 	spec := sandbox.Spec{
-		Name:         name,
-		Image:        resolveSandboxImage(string(backend)),
-		Env:          env,
-		ConfigHome:   home,
-		ConfigRoot:   configRoot,
-		WorkspaceDir: agent.Layout.WorkspaceDir,
+		GitBindingsConfigured: true,
+		GitCredentials:        gitCredentials,
+		Name:                  name,
+		Image:                 resolveSandboxImage(string(backend)),
+		Env:                   env,
+		ConfigHome:            home,
+		ConfigRoot:            configRoot,
+		WorkspaceDir:          agent.Layout.WorkspaceDir,
 	}
-	ApplySSHCredentialsToSpec(&spec, creds)
-	spec.RepoCredentials = mergeRepoCredentials(s.repoCredentials(agent), extra.RepoCredentials)
+	spec.RepoCredentials = extra.RepoCredentials
 	sb, err := s.mgr.Create(ctx, spec)
 	if err != nil {
 		_ = os.RemoveAll(home)
@@ -489,7 +490,9 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 		destroyAt = &at
 	}
 	res := s.db.Model(&models.Sandbox{}).Where("id = ?", id).Updates(map[string]any{
-		"status": "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
+		"model_binding_fingerprint": modelFingerprint,
+		"git_bindings_fingerprint":  gitBindingsFingerprint(gitCredentials),
+		"status":                    "running", "name": sb.Name, "host": sb.Host, "acp_port": sb.Port,
 		"code_server_port": sb.CodeServerPort, "error": "",
 		"destroy_at": destroyAt, "updated_at": time.Now(),
 	})
@@ -512,9 +515,11 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	s.mu.Lock()
 	s.live[id] = &liveSandbox{
 		sb: sb, acp: acp, home: home,
-		codexAuthInjected:     codexLogin,
-		codexAuthCredentialID: runtime.CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agent.AiCredentialID, agent.CredentialBindings, s.selectedCredential, s.injectedCredentialID),
-		codexAuthPath:         codexLiveAuthPath(backend, configRoot),
+		modelBindingFingerprint: modelFingerprint,
+		gitBindingsFingerprint:  gitBindingsFingerprint(gitCredentials),
+		codexAuthInjected:       codexLogin,
+		codexAuthCredentialID:   runtime.ModelCredentialIDForWriteBack(env),
+		codexAuthPath:           codexLiveAuthPath(backend, configRoot),
 	}
 	s.mu.Unlock()
 	log.Info().Str("name", sb.Name).Str("profile", profile).Str("thread", threadID).

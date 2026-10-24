@@ -2,7 +2,9 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
-import type { AgentCapabilities } from '@/lib/api/apiTypes'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import type { AgentCapabilities, ModelConfiguration } from '@/lib/api/apiTypes'
 import { summarizeCapabilities } from '@/lib/workflow/agentCapabilities'
 import { isRequiredTemplate, type OnboardingTeamMember, type TeamNameIssue } from '@/lib/pm/onboardingWizard'
 
@@ -13,6 +15,7 @@ const props = defineProps<{
   summary?: string
   namePlaceholder?: string
   modelPlaceholder: string
+  modelConfigurations: ModelConfiguration[]
   issue?: TeamNameIssue
   /** Position in the workflow, 0-based. */
   index: number
@@ -109,16 +112,7 @@ function schemaLabel(schema: string, fallback: string) {
       </p>
       <label class="team-field">
         <span class="team-field-label">{{ t('pages.onboarding.team.modelLabel') }}</span>
-        <input
-          :value="member.model"
-          type="text"
-          autocomplete="off"
-          class="font-mono"
-          :placeholder="modelPlaceholder"
-          :title="modelPlaceholder"
-          :data-testid="`onboarding-team-model-${member.templateId}`"
-          @input="emit('update:model', ($event.target as HTMLInputElement).value)"
-        />
+        <AppSelect :model-value="member.modelConfigurationId" :options="[{ value: '', label: modelPlaceholder }, ...modelConfigurations.filter((row) => row.state === 'active').map((row) => ({ value: row.id, label: row.name }))]" :aria-label="t('pages.onboarding.team.modelLabel')" searchable :data-testid="`onboarding-team-model-${member.templateId}`" @update:model-value="emit('update:model', $event)"><template #leading><CredentialProviderLogo v-if="member.modelConfigurationId" :provider="modelConfigurations.find((row) => row.id === member.modelConfigurationId)?.backend" match="provider" /></template><template #option-leading="{ option }"><CredentialProviderLogo v-if="option.value" :provider="modelConfigurations.find((row) => row.id === option.value)?.backend" match="provider" /></template></AppSelect>
       </label>
     </div>
     <p v-else class="team-off">{{ t('pages.onboarding.team.offNote') }}</p>

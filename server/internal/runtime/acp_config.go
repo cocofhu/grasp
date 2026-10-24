@@ -1,7 +1,6 @@
 package runtime
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/sandbox"
 	"github.com/rs/zerolog/log"
@@ -45,12 +45,9 @@ func (c *acpProvider) buildConfigHome(req NodeReq, env map[string]string) (strin
 		DeepSeekHarness:      c.backend == BackendDeepSeekHarness,
 		BrowserMCP:           EnvEnabled(env["BROWSER_MCP"]),
 		Settings:             CodeBuddySettingsForEnv(c.backend, env),
-		OpenCodeConfig: OpenCodeConfigForEnvWithCatalog(
-			context.Background(), c.backend, env, c.opts.OpenCodeCatalog,
-		),
 	})
 	if err != nil {
-		if c.backend == BackendDeepSeekHarness {
+		if c.backend == BackendDeepSeekHarness || env[EnvModelConnection] != "" {
 			return "", err
 		}
 		log.Warn().Err(err).Str("node", req.NodeID).Msg("build cursor home failed; running without /root/.cursor mount")
@@ -106,17 +103,13 @@ type agentLayout struct {
 
 // agentFile mirrors <ProfilesRoot>/<profile>/agent.json (mcp + env + layout).
 type agentFile struct {
-	CredentialBindings   map[string]*string `json:"credentialBindings,omitempty"`
-	AcpBackend           string             `json:"acpBackend"`
-	OpenCodeCredentialID string             `json:"openCodeCredentialId,omitempty"`
-	AiCredentialID       string             `json:"aiCredentialId,omitempty"`
-	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
-	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
-	RepoIDs              *[]string          `json:"repoIds,omitempty"`
-	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
-	MCP                  []agentMCP         `json:"mcp"`
-	Env                  map[string]string  `json:"env"`
-	Layout               agentLayout        `json:"layout"`
+	GitBindings        *models.GitBindings   `json:"gitBindings,omitempty"`
+	ModelBinding       *modelrouting.Binding `json:"modelBinding,omitempty"`
+	CredentialBindings map[string]*string    `json:"credentialBindings,omitempty"`
+	AcpBackend         string                `json:"acpBackend"`
+	MCP                []agentMCP            `json:"mcp"`
+	Env                map[string]string     `json:"env"`
+	Layout             agentLayout           `json:"layout"`
 }
 
 // agentConfig reads the Agent's agent.json (best effort; empty on miss).
@@ -158,26 +151,13 @@ func (c *acpProvider) effectiveAgent(req NodeReq) agentFile {
 	if !ok {
 		return agent
 	}
-	return overlayAgentFile(shared, agent, c.credentialKind())
+	return overlayAgentFile(shared, agent)
 }
 
-func (c *acpProvider) credentialKind() CredentialKindFunc {
-	if c == nil || c.opts.SelectedCredential == nil {
-		return nil
-	}
-	return func(id string) (string, bool) {
-		key, _, ok := c.opts.SelectedCredential(id)
-		return key, ok
-	}
-}
-
-func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf CredentialKindFunc) agentFile {
+func overlayAgentFile(shared SharedAgentView, agent agentFile) agentFile {
 	out := agent
-	if strings.TrimSpace(agent.AcpBackend) == "" && strings.TrimSpace(shared.AcpBackend) != "" {
-		out.AcpBackend = shared.AcpBackend
-	}
 	// Env: shared base, Agent overlay.
-	out.Env = envauth.OverlayEnv(SharedEnvForBackend(shared.Env, shared.AcpBackend, out.AcpBackend), agent.Env)
+	out.Env = envauth.OverlayEnv(ModelIndependentEnv(shared.Env), agent.Env)
 	// MCP by name
 	byName := map[string]agentMCP{}
 	order := make([]string, 0, len(shared.MCP)+len(agent.MCP))
@@ -209,16 +189,6 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 	if strings.TrimSpace(agent.Layout.WorkspaceDir) == "" && strings.TrimSpace(shared.Layout.WorkspaceDir) != "" {
 		out.Layout.WorkspaceDir = shared.Layout.WorkspaceDir
 	}
-	out.AiCredentialID, out.OpenCodeCredentialID = MergeCodingCredentialIDs(
-		out.AcpBackend,
-		agent.AiCredentialID, agent.OpenCodeCredentialID,
-		shared.AiCredentialID, shared.OpenCodeCredentialID,
-		kindOf,
-	)
-	if agent.RepoIDs == nil {
-		ids := append([]string(nil), shared.RepoIDs...)
-		out.RepoIDs = &ids
-	}
 	return out
 }
 
@@ -230,36 +200,28 @@ func overlayAgentFile(shared SharedAgentView, agent agentFile, kindOf Credential
 // The name is used only to gate the convention doc rule and as the UI default.
 const reservedArtifactStore = "artifact-store"
 
-// gitToken resolves GITLAB_TOKEN from workspace credentials. It gates optional
-// MR creation; empty means "no credentials, skip MR".
+// gitToken uses only the Agent's explicitly selected Git authorizations.
 func (c *acpProvider) gitToken(req NodeReq) string {
-	return c.workspaceCredential(envauth.EnvGitLabToken)
+	credential, _ := c.selectedGitLabCredential(req)
+	return credential.Secret
 }
 
-// gitLabURL resolves GITLAB_URL for GitLab detection and MR gating. The
-// workspace credential wins; otherwise derive from the node's repo URL only when
-// GITLAB_TOKEN is configured and the repo is not GitHub (avoids a misconfigured
-// token on GitHub).
 func (c *acpProvider) gitLabURL(req NodeReq) string {
-	if v := c.workspaceCredential("GITLAB_URL"); v != "" {
-		return v
-	}
-	repo := c.nodeRepoURL(req)
-	host := gitRepoHost(repo)
-	if host == "github.com" {
+	credential, ok := c.selectedGitLabCredential(req)
+	if !ok {
 		return ""
 	}
-	if c.gitToken(req) != "" {
-		return gitBaseURL(repo)
-	}
-	return ""
+	return GitCredentialBaseURL(credential)
 }
 
-func (c *acpProvider) workspaceCredential(key string) string {
-	if c.opts.Credentials == nil {
-		return ""
+func (c *acpProvider) selectedGitLabCredential(req NodeReq) (sandbox.GitCredential, bool) {
+	agent := c.effectiveAgent(req)
+	credentials, err := ResolveGitBindings(agent.GitBindings, c.opts.SelectedCredential)
+	if err != nil {
+		return sandbox.GitCredential{}, false
 	}
-	return strings.TrimSpace(c.opts.Credentials()[key])
+	repoURL := c.nodeRepoURL(req)
+	return gitCredentialForRepo(credentials, repoURL, sandbox.RepoCredentialGitLabHTTPS, true)
 }
 
 // mcpVars are the run-scoped template variables substituted into the Agent's

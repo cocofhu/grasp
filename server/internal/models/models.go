@@ -36,19 +36,24 @@ type WorkspaceVariable struct {
 // Hash-based credentials (external MCP/workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
 type Credential struct {
-	ID          string         `gorm:"primaryKey" json:"id"`
-	Type        string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
-	Provider    string         `json:"provider,omitempty"`
-	Name        string         `json:"name"`
-	Target      string         `json:"target,omitempty"`
-	EnvKey      string         `gorm:"index" json:"envKey,omitempty"`
-	ValueEnc    string         `json:"-"`
-	BuiltinSlot string         `json:"builtinSlot,omitempty"`
-	Metadata    map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
-	Enabled     bool           `json:"enabled"`
-	RevokedAt   *time.Time     `json:"revokedAt,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	ID             string         `gorm:"primaryKey" json:"id"`
+	Purpose        string         `gorm:"index" json:"purpose,omitempty"`
+	Issuer         string         `json:"issuer,omitempty"`
+	ToolID         string         `json:"toolId,omitempty"`
+	SecretKind     string         `json:"secretKind,omitempty"`
+	SecretRevision uint64         `json:"secretRevision"`
+	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Provider       string         `json:"provider,omitempty"`
+	Name           string         `json:"name"`
+	Target         string         `json:"target,omitempty"`
+	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
+	ValueEnc       string         `json:"-"`
+	BuiltinSlot    string         `json:"builtinSlot,omitempty"`
+	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
+	Enabled        bool           `json:"enabled"`
+	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 // Workspace is a workspace that owns workflows and holds workflow variable
@@ -859,15 +864,19 @@ type PromptImage struct {
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
-	Profile        string `json:"profile"`                          // bound Agent name
-	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
-	Status         string `json:"status"`                           // pulling|creating|running|stopped|error
-	Host           string `json:"-"`
-	ACPPort        int    `json:"-"`
-	CodeServerPort int    `json:"-"`
-	RepoURL        string `json:"repoUrl,omitempty"`
+	// Binding fingerprints retain only hashes, so reconnect can validate the
+	// exact applied authorization even after a control-plane restart.
+	ModelBindingFingerprint string `json:"-"`
+	GitBindingsFingerprint  string `json:"-"`
+	ID                      uint   `gorm:"primaryKey" json:"id"`
+	Name                    string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
+	Profile                 string `json:"profile"`                          // bound Agent name
+	Purpose                 string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
+	Status                  string `json:"status"`                           // pulling|creating|running|stopped|error
+	Host                    string `json:"-"`
+	ACPPort                 int    `json:"-"`
+	CodeServerPort          int    `json:"-"`
+	RepoURL                 string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
@@ -1020,6 +1029,8 @@ func AllModels() []any {
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
 		&AuditEvent{},
 		&Credential{},
+		&ModelConnection{},
+		&ModelConfiguration{},
 		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},

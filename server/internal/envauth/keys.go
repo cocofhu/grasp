@@ -24,7 +24,8 @@ const (
 // cliAuthEnvKeys are the native auth names and aliases accepted by the
 // in-container ACP providers. They may only come from workspace credentials.
 var cliAuthEnvKeys = []string{
-	"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "CODEBUDDY_API_KEY",
+	"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY",
+	"OPENAI_API_KEY", "CODEX_API_KEY", "GRASP_MODEL_API_KEY", "GRASP_MODEL_CONNECTION", "GRASP_MODEL_CREDENTIAL_ID",
 	"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "DEEPSEEK_API_KEY",
 	"ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
 }

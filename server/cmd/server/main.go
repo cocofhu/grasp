@@ -36,6 +36,7 @@ import (
 	"github.com/cocofhu/grasp/internal/logging"
 	"github.com/cocofhu/grasp/internal/mcp"
 	"github.com/cocofhu/grasp/internal/memorymcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/opencodecatalog"
 	"github.com/cocofhu/grasp/internal/pagebridge"
@@ -192,9 +193,15 @@ func main() {
 	mcpKeySvc := services.NewWorkspaceMcpApiKeyService(db)
 	credentialSvc := services.NewCredentialService(db)
 	sharedAgentSvc := services.NewSharedAgentService(services.DefaultSharedAgentRoot(cfg.Engine.ProfilesRoot))
-	// One snapshot of OpenCode's provider catalog, shared by the pickers and by
-	// every path that generates opencode.json, so both agree on which vendor ids
-	// OpenCode can resolve without an adapter of our own.
+	modelConnectionSvc := services.NewModelConnectionService(db)
+	modelConfigurationSvc := services.NewModelConfigurationService(db)
+	resolveModelBinding := func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
+		if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+			return modelrouting.Resolved{}, err
+		}
+		return modelConnectionSvc.Resolve(backend, *binding)
+	}
+	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	provider := runtime.NewProvider(host, runtime.Options{
 		SandboxImage:         cfg.Sandbox.Image,
@@ -222,26 +229,18 @@ func main() {
 				})
 			}
 			return runtime.SharedAgentView{
-				AcpBackend:           cfg.AcpBackend,
-				AiCredentialID:       cfg.AiCredentialID,
-				OpenCodeCredentialID: cfg.OpenCodeCredentialID,
-				RepoIDs:              cfg.RepoIDs,
-				MCP:                  mcp,
-				Env:                  cfg.Env,
+				MCP: mcp,
+				Env: cfg.Env,
 				Layout: runtime.SharedLayoutView{
 					ConfigRoot: cfg.Layout.ConfigRoot, WorkspaceDir: cfg.Layout.WorkspaceDir,
 				},
 				WorkDir: sharedAgentSvc.WorkDir(),
 			}
 		},
-		Credentials:          credentialSvc.ResolveEnv,
 		CredentialKeys:       credentialSvc.CredentialEnvKeys,
 		CredentialReferences: credentialSvc.ResolveReferences,
-		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
+		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
-		RepoCredentials: func(ids []string) []sandbox.RepoCredential {
-			return services.ResolveRepoCredentials(db, ids, credentialSvc.ResolveSelectedValue)
-		},
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -250,9 +249,7 @@ func main() {
 			return run.SandboxEnv
 		},
 		PublicAdvertise:         cfg.Server.PublicAdvertise,
-		OpenCodeCatalog:         openCodeCatalog,
 		WriteBackCodexLoginFile: credentialSvc.WriteBackCodexLoginCredential,
-		InjectedCredentialID:    credentialSvc.InjectedCredentialID,
 	})
 	eng := engine.New(db, provider, host, artifactSvc, cfg.Engine.MaxConcurrentRuns)
 	eng.SetBlobStore(blobStore)
@@ -332,6 +329,10 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
+	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
+		_, err := resolveModelBinding(backend, binding)
+		return err
+	})
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
@@ -355,13 +356,11 @@ func main() {
 		Max:                  cfg.Sandbox.MaxTestSandboxes,
 		MaxSolo:              cfg.Sandbox.MaxSoloSandboxes,
 		SharedAgent:          sharedAgentSvc,
-		Credentials:          credentialSvc.ResolveEnv,
 		CredentialReferences: credentialSvc.ResolveReferences,
-		OpenCodeCredential:   credentialSvc.ResolveOpenCodeCredential,
+		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
-		OpenCodeCatalog:      openCodeCatalog,
 	})
-	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential, credentialSvc.InjectedCredentialID)
+	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential)
 	// Let the exec provider record per-run node sandboxes in the same store so
 	// they show up in the sandbox UI alongside interactive test sandboxes.
 	if rr, ok := provider.(runtime.SandboxRegistrar); ok {
@@ -488,53 +487,55 @@ func main() {
 	soloSvc := services.NewSoloService(db, sbxSvc, agentSvc, services.NewProjectService(db))
 
 	h := &handlers.Handlers{
-		WF:                wfSvc,
-		Workspace:         workspaceSvc,
-		Runs:              runSvc,
-		Arts:              artifactSvc,
-		APIKeys:           services.NewAPIKeyService(db),
-		Agents:            agentSvc,
-		SharedAgent:       sharedAgentSvc,
-		Dash:              services.NewDashboardService(db, workspaceSvc),
-		Sbx:               sbxSvc,
-		SbxChats:          services.NewSandboxChats(sbxSvc),
-		Preview:           previewSvc,
-		Issues:            issueSvc,
-		RequirementDrafts: requirementDraftSvc,
-		Notifications:     notificationSvc,
-		Eng:               eng,
-		MCP:               host,
-		Pm:                pmSvc,
-		PmProgress:        pmProgress,
-		PmTurns:           pmTurns,
-		Solo:              soloSvc,
-		PMMCP:             pmMCP,
-		MemoryMCP:         memoryMCP,
-		ContextMCP:        contextMCP,
-		SchedulerMCP:      schedulerMCP,
-		Settings:          settingsSvc,
-		Shutdown:          coord,
-		Auth:              authSvc,
-		Channels:          channelSvc,
-		RunNotify:         runNotifySvc,
-		Browser:           browserSvc,
-		Audit:             auditSvc,
-		ExternalMcp:       externalMcpSvc,
-		McpKeys:           mcpKeySvc,
-		Credentials:       credentialSvc,
-		GateShare:         gateShareSvc,
-		GateShareNonces:   gateshare.NewNonceStore(db),
-		GateShareTickets:  gateShareTickets,
-		Embed:             embedStore,
-		PageBridge:        pageHub,
-		GateShareSessions: gateShareSessions,
-		GateShareLimiter:  gateshare.NewIPLimiter(),
-		PublicAdvertise:   cfg.Server.PublicAdvertise,
-		InjectBundles:     injectStore,
-		Blobs:             blobStore,
-		Onboarding:        services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
-		Team:              services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
-		OpenCodeCatalog:   openCodeCatalog,
+		WF:                  wfSvc,
+		Workspace:           workspaceSvc,
+		Runs:                runSvc,
+		Arts:                artifactSvc,
+		APIKeys:             services.NewAPIKeyService(db),
+		Agents:              agentSvc,
+		SharedAgent:         sharedAgentSvc,
+		Dash:                services.NewDashboardService(db, workspaceSvc),
+		Sbx:                 sbxSvc,
+		SbxChats:            services.NewSandboxChats(sbxSvc),
+		Preview:             previewSvc,
+		Issues:              issueSvc,
+		RequirementDrafts:   requirementDraftSvc,
+		Notifications:       notificationSvc,
+		Eng:                 eng,
+		MCP:                 host,
+		Pm:                  pmSvc,
+		PmProgress:          pmProgress,
+		PmTurns:             pmTurns,
+		Solo:                soloSvc,
+		PMMCP:               pmMCP,
+		MemoryMCP:           memoryMCP,
+		ContextMCP:          contextMCP,
+		SchedulerMCP:        schedulerMCP,
+		Settings:            settingsSvc,
+		Shutdown:            coord,
+		Auth:                authSvc,
+		Channels:            channelSvc,
+		RunNotify:           runNotifySvc,
+		Browser:             browserSvc,
+		Audit:               auditSvc,
+		ExternalMcp:         externalMcpSvc,
+		McpKeys:             mcpKeySvc,
+		Credentials:         credentialSvc,
+		OpenCodeCatalog:     openCodeCatalog,
+		ModelConnections:    modelConnectionSvc,
+		ModelConfigurations: modelConfigurationSvc,
+		GateShare:           gateShareSvc,
+		GateShareNonces:     gateshare.NewNonceStore(db),
+		GateShareTickets:    gateShareTickets,
+		Embed:               embedStore,
+		PageBridge:          pageHub,
+		GateShareSessions:   gateShareSessions,
+		GateShareLimiter:    gateshare.NewIPLimiter(),
+		PublicAdvertise:     cfg.Server.PublicAdvertise,
+		InjectBundles:       injectStore,
+		Blobs:               blobStore,
+		Onboarding:          services.NewOnboardingService(agentSvc, sharedAgentSvc, wfSvc, credentialSvc),
+		Team:                services.NewTeamService(workspaceSvc, agentSvc, pmSvc, sbxSvc),
 	}
 	var maintenancePrepared atomic.Bool
 	var maintenanceMu sync.Mutex
@@ -564,7 +565,6 @@ func main() {
 		}
 		return state, nil
 	}
-	h.Team.SharedAgent = sharedAgentSvc
 	h.Team.Credentials = credentialSvc
 	if h.Team != nil && h.PMMCP != nil {
 		h.PMMCP.SetTeam(h.Team)

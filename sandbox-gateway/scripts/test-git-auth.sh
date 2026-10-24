@@ -15,6 +15,8 @@ sed -n "${START},${END}p" "$STARTUP" >"$TMP/git-auth.sh"
 export HOME="$TMP/home"
 mkdir -p "$HOME/bin" "$HOME"
 export GIT_CONFIG_GLOBAL="$TMP/gitconfig"
+export GIT_CONFIG_NOSYSTEM=1
+unset GIT_CONFIG GIT_CONFIG_SYSTEM GIT_CONFIG_COUNT
 touch "$GIT_CONFIG_GLOBAL"
 # Prefer mocks over any host-installed gh/glab.
 export PATH="$HOME/bin:$PATH"
@@ -343,3 +345,8 @@ fi
 echo "OK: per-repo credentials route by repository path and SSH alias"
 
 echo "OK: git auth unit smoke passed"
+
+# Keep file-only catalog and shared-workflow isolation covered by the existing
+# CI Git-auth entry point. Remove this script's CLI mocks for offline CLI reads.
+PATH="${PATH#"$HOME/bin:"}" python3 "$ROOT/scripts/test_git_credentials.py"
+bash "$ROOT/scripts/test-reprime.sh"

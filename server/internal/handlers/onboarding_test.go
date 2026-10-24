@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/cocofhu/grasp/internal/crypto"
-	"github.com/cocofhu/grasp/internal/handlers"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 )
@@ -26,19 +26,18 @@ func setSecretsKey(t *testing.T) {
 func TestBootstrapOnboardingAPI(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
+	seedOnboardingModel(t, hn)
 
 	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "",
+		"modelConfigurationId": "",
 	})
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("no key: %d %s", w.Code, w.Body.String())
 	}
 
 	w = hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "crsr_test",
-		"agents":     []map[string]any{{"templateId": "implement"}},
+		"modelConfigurationId": "model-onboarding",
+		"agents":               []map[string]any{{"templateId": "implement"}},
 	})
 	if w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "clarify") {
 		t.Fatalf("team without clarify: %d %s", w.Code, w.Body.String())
@@ -51,8 +50,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	other := jsonField(w.Body.String(), "id")
 	_ = other
 	w = hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "crsr_other",
+		"modelConfigurationId": "model-onboarding",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("non-default bootstrap: %d %s", w.Code, w.Body.String())
@@ -71,8 +69,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	}
 
 	w = hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "crsr_test",
+		"modelConfigurationId": "model-onboarding",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
@@ -86,8 +83,7 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 	}
 
 	w = hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "crsr_test2",
+		"modelConfigurationId": "model-onboarding",
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("second: %d %s", w.Code, w.Body.String())
@@ -110,10 +106,10 @@ func TestBootstrapOnboardingAPI(t *testing.T) {
 func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	setSecretsKey(t)
 	hn := newHarness(t)
+	seedOnboardingModel(t, hn)
 
 	if w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend": "cursor",
-		"apiKey":     "crsr_test",
+		"modelConfigurationId": "model-onboarding",
 	}); w.Code != http.StatusOK {
 		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
 	}
@@ -215,53 +211,48 @@ func TestCreateWorkflowFromBaselineAPI(t *testing.T) {
 	}
 }
 
-func TestBootstrapOnboardingWithoutSecretsKeyReturnsCode(t *testing.T) {
+func TestBootstrapUsesGitCredentialReferences(t *testing.T) {
+	setSecretsKey(t)
 	hn := newHarness(t)
-	t.Setenv(crypto.SecretsKeyEnv, "")
-	creds := services.NewCredentialService(hn.db)
-	hn.h.Credentials = creds
-	hn.h.Onboarding.Credentials = creds
-	for path, body := range map[string]map[string]any{
-		"/api/workspace/bootstrap-onboarding": {"acpBackend": "cursor", "apiKey": "crsr_test"},
-		"/api/workspace/credentials":          {"type": "custom", "name": "x", "envKey": "X_TOKEN", "value": "v"},
-	} {
-		w := hn.do("POST", path, body)
-		if w.Code != http.StatusPreconditionFailed {
-			t.Fatalf("%s: status = %d %s, want 412", path, w.Code, w.Body.String())
+	seedOnboardingModel(t, hn)
+	credential, err := hn.h.Onboarding.Credentials.Create(services.CredentialInput{Type: "git", Provider: "github", Name: "GitHub", EnvKey: "GITHUB_TOKEN", Value: "test-github-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
+		"modelConfigurationId": "model-onboarding",
+		"gitBindings":          models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: credential.ID}}, PreferredCredentialID: credential.ID},
+	})
+	if w.Code != http.StatusOK {
+		t.Fatalf("bootstrap: %d %s", w.Code, w.Body)
+	}
+	var result services.OnboardingBootstrapResult
+	if err := json.Unmarshal(w.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range result.AgentIDs {
+		agent, _ := hn.h.Agents.Get(name)
+		if agent.GitBindings == nil || len(agent.GitBindings.Items) != 1 || agent.GitBindings.PreferredCredentialID != credential.ID {
+			t.Fatalf("Agent %s lost Git reference", name)
 		}
-		if code := jsonField(w.Body.String(), "code"); code != handlers.SecretsKeyMissingCode {
-			t.Fatalf("%s: code = %q, want %q", path, code, handlers.SecretsKeyMissingCode)
+		if agent.Env["GITHUB_TOKEN"] != "" {
+			t.Fatal("Agent persisted Git secret")
 		}
 	}
 }
 
-func TestBootstrapOnboardingWritesSSHToWorkspaceCredentials(t *testing.T) {
-	setSecretsKey(t)
-	hn := newHarness(t)
-	_ = models.WorkspaceID
-
-	w := hn.do("POST", "/api/workspace/bootstrap-onboarding", map[string]any{
-		"acpBackend":    "cursor",
-		"apiKey":        "crsr_test",
-		"sshPrivateKey": "-----BEGIN OPENSSH PRIVATE KEY-----\nk\n-----END OPENSSH PRIVATE KEY-----",
-		"sshKnownHosts": "git.example.com ssh-ed25519 AAAA",
+func seedOnboardingModel(t *testing.T, hn *harness) {
+	t.Helper()
+	credential, err := hn.h.Onboarding.Credentials.Create(services.CredentialInput{Purpose: "tool_auth", ToolID: "cursor", Name: "Cursor onboarding", Value: "test-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := models.ModelConfiguration(modelrouting.Configuration{ID: "model-onboarding", Name: "Cursor model", Backend: "cursor", State: "active", Revision: 1, Binding: modelrouting.Binding{Kind: "platform", CredentialID: credential.ID, ModelID: "composer-2.5"}})
+	if err := hn.db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	hn.h.Agents.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
+		_, err := services.NewModelConnectionService(hn.db).Resolve(backend, *binding)
+		return err
 	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("bootstrap: %d %s", w.Code, w.Body.String())
-	}
-	env := hn.h.Onboarding.Credentials.ResolveEnv()
-	if !strings.Contains(env[services.EnvGitSSHPrivateKey], "OPENSSH") || env[services.EnvGitSSHKnownHosts] != "git.example.com ssh-ed25519 AAAA" {
-		t.Fatalf("workspace credentials = %v", env)
-	}
-	var res services.OnboardingBootstrapResult
-	_ = json.Unmarshal(w.Body.Bytes(), &res)
-	for _, name := range res.AgentIDs {
-		ag, ok := hn.h.Agents.Get(name)
-		if !ok {
-			t.Fatalf("missing agent %s", name)
-		}
-		if _, ok := ag.Env[services.EnvGitSSHPrivateKey]; ok {
-			t.Fatalf("agent %s env carries SSH key", name)
-		}
-	}
 }

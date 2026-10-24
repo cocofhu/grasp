@@ -1,14 +1,32 @@
-import { test, expect } from '@playwright/test'
+import { test, expect, type Page } from '@playwright/test'
 import path from 'node:path'
 import fs from 'node:fs'
 
 const OUT = path.join('/tmp', 'wizard-e2e-shots')
 
+async function selectBindingValue(page: Page, testId: string, value: string) {
+  await page.getByTestId(testId).locator('[data-test="app-select-trigger"]').click()
+  const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
+  await panel.locator('[data-test="app-select-search"]').fill(value)
+  await panel.locator(`[data-test="app-select-option-${value}"]`).click()
+}
+
+async function expectSavedModelPickerOnly(page: Page) {
+  const editor = page.getByTestId('model-binding-editor')
+  await expect(editor.locator('[data-test="app-select-trigger"]')).toHaveCount(1)
+  await expect(editor.getByTestId('model-binding-advanced')).toHaveCount(0)
+  await expect(editor.getByTestId('model-binding-inherited')).toHaveCount(0)
+  await expect(editor.getByTestId('model-binding-configuration-summary')).toHaveCount(0)
+  await expect(editor.getByTestId('model-binding-problem')).toHaveCount(0)
+  await expect(editor.locator('a')).toHaveCount(0)
+}
+
 test.beforeAll(() => {
   fs.mkdirSync(OUT, { recursive: true })
 })
 
-test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
+test('新建 Agent 四步向导浏览器验收', async ({ page }) => {
+  let created: Record<string, unknown> | undefined
   await page.route('**/api/**', async (route) => {
     // Skip Vite module URLs like /@fs/.../src/lib/api/api.ts (pathname is not /api/...)
     if (!new URL(route.request().url()).pathname.startsWith('/api/')) {
@@ -17,6 +35,7 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
     }
     const url = new URL(route.request().url())
     if (url.pathname === '/api/agents' && route.request().method() === 'POST') {
+      created = route.request().postDataJSON()
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -24,6 +43,10 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
       })
       return
     }
+    if (url.pathname === '/api/workspace/credentials') return route.fulfill({ json: { items: [{ id: 'cursor-key', name: 'Cursor team', purpose: 'tool_auth', toolId: 'cursor', configured: true }, { id: 'gitlab-access', name: 'GitLab team', purpose:'git', provider: 'gitlab', envKey: 'GITLAB_TOKEN', configured: true }, { id: 'github-access', name: 'GitHub shared', purpose:'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true }] } })
+    if (url.pathname === '/api/workspace/model-connections') return route.fulfill({ json: { items: [] } })
+    if (url.pathname === '/api/workspace/model-configurations') return route.fulfill({ json: { items: [{ id: 'cursor-profile', name: 'Cursor 日常模型', backend: 'cursor', binding: { kind: 'platform', credentialId: 'cursor-key', modelId: 'composer-1' }, state: 'active', revision: 1 }] } })
+    if (url.pathname === '/api/workspace/tool-capabilities') return route.fulfill({ json: { items: [{ toolId: 'cursor', modes: ['platform'], protocols: [], adapterState: 'existing' }] } })
     if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
     await route.fulfill({ status: 200, contentType: 'application/json', body: '[]' })
   })
@@ -32,7 +55,7 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
   await expect(page.getByTestId('agent-create-wizard-root')).toBeVisible()
 
   const rail = page.locator('.rail-item .lbl strong')
-  await expect(rail).toHaveText(['基础信息', 'Agent', 'API Key', 'Git', '确认创建'])
+  await expect(rail).toHaveText(['基础信息', '工具与模型', 'Git', '确认创建'])
   const railText = await rail.allTextContents()
   expect(railText.join(' ')).not.toContain('ACP')
   expect(railText.join(' ')).not.toContain('ENV')
@@ -42,28 +65,30 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
 
   await page.locator('#wiz-name-input').fill('e2e-wizard-agent')
   await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.locator('.sec-head h3')).toHaveText('Agent')
+  await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
   await page.screenshot({ path: path.join(OUT, '02-agent.png'), fullPage: true })
 
-  await page.getByTestId('agent-wizard-path-cli').click()
   await page.getByTestId('agent-wizard-backend-cursor').click()
-  await page.getByRole('button', { name: /^下一步/ }).click()
-  await expect(page.locator('.sec-head h3')).toHaveText('API Key')
-  await expect(page.getByText('请到工作区凭据保存')).toBeVisible()
+  await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
+  await expect(page.getByTestId('model-binding-editor')).toBeVisible()
+  await expectSavedModelPickerOnly(page)
+  await expect(page.getByRole('button', { name: /^下一步/ })).toBeDisabled()
+  await selectBindingValue(page, 'model-binding-configuration-select', 'cursor-profile')
+  await expect(page.getByRole('button', { name: /^下一步/ })).toBeEnabled()
   await expect(page.getByText('如何获取', { exact: true })).toHaveCount(0)
   await expect(page.getByText('GRASP_CURSOR_API_KEY')).toHaveCount(0)
   await expect(page.locator('a[href*="cursor.com/dashboard"]')).toHaveCount(0)
   await expect(page.locator('[data-test="api-key-input"]')).toHaveCount(0)
   await page.screenshot({ path: path.join(OUT, '03-api-key.png'), fullPage: true })
 
-  await page.getByRole('button', { name: /^跳过/ }).click()
+  await page.getByRole('button', { name: /^下一步/ }).click()
   await expect(page.locator('.sec-head h3')).toHaveText('Git')
   const gitBody = await page.locator('.step-pane').innerText()
   expect(gitBody).not.toContain('未逐仓解析')
   expect(gitBody).not.toContain('无法在此页面逐仓解析')
   expect(gitBody).not.toContain('不会验证变量引用的实际值')
   expect(gitBody).not.toContain('远端 clone / push 权限')
-  await expect(page.getByText(/GitHub|GitLab|SSH/).first()).toBeVisible()
+  await expect(page.getByTestId('git-credential-add')).toBeVisible()
   await expect(page.locator('[data-test="git-help-link"]')).toBeVisible()
   await page.screenshot({ path: path.join(OUT, '04-git.png'), fullPage: true })
 
@@ -78,25 +103,25 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
   await expect(page.locator('.wiz-rail')).toBeVisible()
   await expect(page.locator('.sec-head h3')).toHaveText('Git')
 
-  // g1.1: pick GitLab on the flat first screen — no「调整类型」modal.
   await expect(page.getByRole('button', { name: /调整类型/ })).toHaveCount(0)
-  await page.locator('[data-test="git-choice-gitlab_https"]').click()
-  await expect(page.locator('[data-test="git-choice-gitlab_https"]')).toHaveAttribute('aria-pressed', 'true')
-  await page.locator('[data-test="git-apply-recommended"]').click()
-  await expect(page.locator('[data-test="wizard-git-repos"] input').nth(0)).toHaveValue('GIT_REPOS')
-  await expect(page.locator('[data-test="wizard-git-repos"] input').nth(1)).toHaveValue('${vars.repos}')
-  await expect(page.locator('[data-test="git-apply-recommended"]')).toContainText('已添加推荐变量')
-  const gitAfter = await page.locator('.step-pane').innerText()
-  expect(gitAfter).not.toContain('未逐仓解析')
-  expect(gitAfter).not.toContain('无法在此页面逐仓解析')
-  expect(gitAfter).not.toContain('调整类型')
-  expect(gitAfter).toContain('GitLab')
-  await page.screenshot({ path: path.join(OUT, '06-git-typed.png'), fullPage: true })
+  await expect(page.locator('[data-test="git-apply-recommended"]')).toHaveCount(0)
+  await selectBindingValue(page, 'git-credential-add', 'gitlab-access')
+  await selectBindingValue(page, 'git-credential-add', 'github-access')
+  await expect(page.getByTestId('git-preferred-gitlab-access')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('git-preferred-github-access').click()
+  await expect(page.getByTestId('git-preferred-github-access')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByTestId('git-options-gitlab-access').locator('summary').click()
+  await page.getByTestId('git-scope-gitlab-access').fill('git.example.test')
+  await page.getByRole('button', { name: /^上一步/ }).click()
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await expect(page.getByTestId('git-scope-gitlab-access')).toHaveValue('git.example.test')
+  await expect(page.getByTestId('git-preferred-github-access')).toHaveAttribute('aria-pressed', 'true')
+  await page.screenshot({ path: path.join(OUT, '06-git-multiple.png'), fullPage: true })
 
   await page.getByRole('button', { name: /^下一步|^跳过/ }).last().click()
   await expect(page.locator('.sec-head h3')).toHaveText('确认创建')
-  await expect(page.getByText('鉴权提醒', { exact: true })).toBeVisible()
-  await expect(page.getByRole('status')).toContainText('Studio Env')
+  await expect(page.getByText('鉴权提醒', { exact: true })).toHaveCount(0)
+  await expect(page.locator('.step-pane')).toContainText('Cursor 日常模型')
   const reviewText = await page.locator('.step-pane').innerText()
   expect(reviewText).not.toMatch(/(^|\s)ENV(\s|$)/)
   expect(reviewText).not.toMatch(/(^|\s)ACP(\s|$)/)
@@ -104,6 +129,10 @@ test('新建 Agent 五步向导浏览器验收', async ({ page }) => {
 
   await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
   await expect(page.getByTestId('created-name')).toHaveText('e2e-wizard-agent', { timeout: 10_000 })
+  expect(created).toMatchObject({ acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cursor-profile' } })
+  for (const key of ['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS']) expect(created?.env || {}).not.toHaveProperty(key)
+  expect(created).not.toHaveProperty('repoIds')
+  expect(created?.gitBindings).toEqual({ items: [{ credentialId: 'gitlab-access', scope: 'git.example.test' }, { credentialId: 'github-access' }], preferredCredentialId: 'github-access' })
   await expect(page.locator('.wiz-rail')).toHaveCount(0)
 })
 
@@ -137,11 +166,11 @@ test('English template dropdown shows localized names without Chinese or interna
 })
 
 for (const lang of ['zh-CN', 'en']) {
-  test(`DeepSeek Harness uses the coding-tool path and its own saved credential (${lang})`, async ({ page }) => {
+  test(`DeepSeek Harness selects a saved model configuration (${lang})`, async ({ page }) => {
     const nextLabel = lang === 'en' ? /^Next/ : /^下一步/
     const skipLabel = lang === 'en' ? /^Skip/ : /^跳过/
     const createLabel = lang === 'en' ? /Create.*Studio/ : /创建并进入 Studio/
-    let created: Record<string, any> | undefined
+    let created: Record<string, unknown> | undefined
     await page.route('**/api/**', async (route) => {
       const url = new URL(route.request().url())
       if (!url.pathname.startsWith('/api/')) return route.continue()
@@ -150,12 +179,15 @@ for (const lang of ['zh-CN', 'en']) {
         return route.fulfill({ json: { name: 'deepseek-agent' } })
       }
       if (url.pathname === '/api/workspace/credentials') return route.fulfill({ json: { items: [
-        { id: 'dsh-key', name: 'DeepSeek team', type: 'ai', provider: 'deepseek_harness', envKey: 'GRASP_DEEPSEEK_API_KEY', configured: true },
-        { id: 'vendor-key', name: 'OpenCode DeepSeek', type: 'ai', provider: 'opencode', envKey: 'GRASP_OPENCODE_API_KEY', configured: true },
+        { id: 'dsh-key', name: 'DeepSeek team', purpose: 'model_api', issuer: 'deepseek', configured: true },
       ] } })
-      if (url.pathname === '/api/acp-backends/deepseek_harness/models') return route.fulfill({ json: { models: [
-        { id: 'deepseek-flash', name: 'DeepSeek Flash', vendor: 'deepseek', recommended: true },
+      if (url.pathname === '/api/workspace/model-connections') return route.fulfill({ json: { items: [
+        { id: 'deepseek-connection', name: 'DeepSeek service', providerId: 'deepseek', protocol: 'anthropic-messages', baseUrl: 'https://api.deepseek.com/anthropic', credentialId: 'dsh-key', auth: { scheme: 'x-api-key' }, models: [{ id: 'deepseek-flash', source: 'manual' }], state: 'active', revision: 1 },
       ] } })
+      if (url.pathname === '/api/workspace/tool-capabilities') return route.fulfill({ json: { items: [
+        { toolId: 'deepseek_harness', modes: ['connection'], protocols: ['anthropic-messages'], routeProfiles: ['deepseek-native'], adapterState: 'existing' },
+      ] } })
+      if (url.pathname === '/api/workspace/model-configurations') return route.fulfill({ json: { items: [{ id: 'deepseek-profile', name: 'DeepSeek native', backend: 'deepseek_harness', binding: { kind: 'connection', connectionId: 'deepseek-connection', modelId: 'deepseek-flash', toolSettings: { routeProfile: 'deepseek-native' } }, state: 'active', revision: 1 }] } })
       if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
       return route.fulfill({ json: [] })
     })
@@ -163,45 +195,107 @@ for (const lang of ['zh-CN', 'en']) {
     await page.goto(`/agent-create-wizard.html?lang=${lang}`, { waitUntil: 'networkidle' })
     await page.locator('#wiz-name-input').fill('deepseek-agent')
     await page.getByRole('button', { name: nextLabel }).click()
-    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveCount(0)
-    await page.getByTestId('agent-wizard-path-cli').click()
+    await expect(page.locator('.sec-head h3')).toHaveText(lang === 'en' ? 'Tool & model' : '工具与模型')
+    await expect(page.locator('.rail-item .lbl strong')).toHaveText(lang === 'en' ? ['Basics', 'Tool & model', 'Git', 'Confirm'] : ['基础信息', '工具与模型', 'Git', '确认创建'])
     for (const id of ['cursor', 'claude_code', 'codebuddy', 'trae', 'codex', 'deepseek_harness']) {
       await expect(page.getByTestId(`agent-wizard-backend-${id}`)).toBeVisible()
     }
     await page.getByTestId('agent-wizard-backend-deepseek_harness').click()
-    await page.getByTestId('agent-wizard-path-apiKey').click()
-    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveCount(0)
-    await page.getByTestId('agent-wizard-path-cli').click()
-    await expect(page.getByTestId('agent-wizard-path-cli')).toContainText(lang === 'en' ? 'Use a coding tool' : '用编码工具')
     await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toHaveAttribute('aria-checked', 'true')
     await expect(page.locator('.step-pane')).not.toContainText(/configRoot|\/root\//)
-    if (lang === 'zh-CN') {
-      await page.screenshot({ path: path.join(OUT, 'dsh-coding-tools.png'), fullPage: true, animations: 'disabled' })
-    }
     await page.setViewportSize({ width: 760, height: 900 })
-    await expect(page.getByTestId('agent-wizard-backend-deepseek_harness')).toBeVisible()
     const horizontalOverflow = await page.locator('.step-pane').evaluate((el) => el.scrollWidth - el.clientWidth)
     expect(horizontalOverflow).toBeLessThanOrEqual(1)
-    if (lang === 'zh-CN') {
-      await page.screenshot({ path: path.join(OUT, 'dsh-coding-tools-narrow.png'), fullPage: true, animations: 'disabled' })
-    }
-    if (lang === 'en') {
-      expect(await page.locator('.step-pane').innerText()).not.toMatch(/[\u3400-\u9fff]/)
-    }
-    await page.getByTestId('cli-model-trigger').click()
-    await page.getByTestId('cli-model-option-deepseek-flash').click()
-    await page.getByRole('button', { name: nextLabel }).click()
-    await expect(page.locator('[data-test="auth-mode-custom-config"]')).toHaveCount(0)
-    await expect(page.getByTestId('credential-alias-option-vendor-key')).toHaveCount(0)
-    await page.getByTestId('credential-alias-option-dsh-key').click()
+    if (lang === 'en') expect(await page.locator('.step-pane').innerText()).not.toMatch(/[\u3400-\u9fff]/)
+    await expectSavedModelPickerOnly(page)
+    await expect(page.getByRole('button', { name: nextLabel })).toBeDisabled()
+    await selectBindingValue(page, 'model-binding-configuration-select', 'deepseek-profile')
     await page.getByRole('button', { name: nextLabel }).click()
     await page.getByRole('button', { name: skipLabel }).click()
     await page.getByRole('button', { name: createLabel }).click()
     await expect(page.getByTestId('created-name')).toHaveText('deepseek-agent')
-    expect(created).toMatchObject({
-      acpBackend: 'deepseek_harness', aiCredentialId: 'dsh-key',
-      layout: { configRoot: '/root/.dsh' }, env: { ACP_BRIDGE_MODEL: 'deepseek-flash' },
-    })
+    expect(created).toMatchObject({ acpBackend: 'deepseek_harness', layout: { configRoot: '/root/.dsh' }, modelBinding: { kind: 'configuration', configurationId: 'deepseek-profile' } })
+    expect(created?.modelBinding).not.toHaveProperty('toolSettings')
+    expect(created).not.toHaveProperty('aiCredentialId')
     expect(created).not.toHaveProperty('openCodeCredentialId')
+    expect(created?.env || {}).not.toHaveProperty('ACP_BRIDGE_MODEL')
   })
 }
+
+test('coding tools, sites and searchable saved models work with keyboard input at 320px', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 844 })
+  let created: Record<string, unknown> | undefined
+  await page.route('**/api/**', async (route) => {
+    const url = new URL(route.request().url())
+    if (!url.pathname.startsWith('/api/')) return route.continue()
+    if (url.pathname === '/api/agents' && route.request().method() === 'POST') {
+      created = route.request().postDataJSON()
+      return route.fulfill({ json: { name: 'compact-tools-agent' } })
+    }
+    if (url.pathname === '/api/workspace/credentials') return route.fulfill({ json: { items: [{ id: 'team-key', name: '团队账号', purpose: 'tool_auth', toolId: 'codebuddy', configured: true }, { id: 'git-key', name: '团队 GitHub', purpose:'git', provider: 'github', envKey: 'GITHUB_TOKEN', configured: true }] } })
+    if (url.pathname === '/api/workspace/model-configurations') return route.fulfill({ json: { items: [{ id: 'production-profile', name: '团队生产模型', backend: 'codebuddy', binding: { kind: 'platform', credentialId: 'team-key', modelId: 'vendor/main' }, state: 'active', revision: 1 }] } })
+    if (url.pathname === '/api/workspace/tool-capabilities') return route.fulfill({ json: { items: [{ toolId: 'codebuddy', modes: ['platform'], protocols: [], adapterState: 'existing' }] } })
+    if (url.pathname === '/api/workspace/model-connections') return route.fulfill({ json: { items: [] } })
+    if (url.pathname === '/api/workspace') return route.fulfill({ json: { name: 'Workspace' } })
+    return route.fulfill({ json: [] })
+  })
+  await page.goto('/agent-create-wizard.html')
+  await page.locator('#wiz-name-input').fill('compact-tools-agent')
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
+  const buddy = page.getByTestId('agent-wizard-backend-codebuddy')
+  await buddy.click()
+  await expect(buddy).toHaveRole('radio')
+  await buddy.press('ArrowRight')
+  await expect(page.getByTestId('agent-wizard-backend-trae')).toHaveAttribute('aria-checked', 'true')
+  await page.getByTestId('agent-wizard-backend-trae').press('ArrowLeft')
+  await expect(buddy).toHaveAttribute('aria-checked', 'true')
+  const international = page.getByTestId('agent-wizard-region-public')
+  await expect(international).toHaveAttribute('aria-checked', 'true')
+  await international.press('ArrowLeft')
+  await expect(page.getByTestId('agent-wizard-region-internal')).toHaveAttribute('aria-checked', 'true')
+  expect(await page.locator('[data-testid="coding-tool-picker"]').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
+  const panel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
+  const search = panel.locator('[data-test="app-select-search"]')
+  await search.fill('生产')
+  const box = await panel.boundingBox()
+  expect(box).not.toBeNull()
+  expect(box!.x).toBeGreaterThanOrEqual(0)
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320)
+  await search.press('Enter')
+  await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toContainText('团队生产模型')
+  await expectSavedModelPickerOnly(page)
+  await page.getByTestId('agent-wizard-backend-trae').click()
+  await expect(page.getByRole('button', { name: /^下一步/ })).toBeDisabled()
+  await page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]').click()
+  const emptyPanel = page.locator('[data-test="app-select-panel"]:not([aria-hidden="true"])')
+  await expect(emptyPanel.locator('[data-test="app-select-empty"]')).toHaveText('当前工具还没有可用的模型配置。')
+  await expect(emptyPanel.getByRole('option')).toHaveCount(0)
+  await emptyPanel.locator('[data-test="app-select-search"]').press('Escape')
+  await page.getByTestId('agent-wizard-backend-codebuddy').click()
+  await expect(page.getByRole('button', { name: /^下一步/ })).toBeDisabled()
+  await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).not.toContainText('团队生产模型')
+  await page.getByTestId('agent-wizard-region-internal').click()
+  await selectBindingValue(page, 'model-binding-configuration-select', 'production-profile')
+  expect(await page.locator('.step-pane').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await expect(page.locator('.sec-head h3')).toHaveText('Git')
+  await page.getByRole('button', { name: /^上一步/ }).click()
+  await expect(page.locator('.sec-head h3')).toHaveText('工具与模型')
+  await expect(buddy).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('agent-wizard-region-internal')).toHaveAttribute('aria-checked', 'true')
+  await expect(page.getByTestId('model-binding-configuration-select').locator('[data-test="app-select-trigger"]')).toContainText('团队生产模型')
+  await page.getByRole('button', { name: /^下一步/ }).click()
+  await selectBindingValue(page, 'git-credential-add', 'git-key')
+  await expect(page.getByTestId('git-preferred-git-key')).toHaveAttribute('aria-pressed', 'true')
+  expect(await page.getByTestId('agent-git-credential-picker').evaluate((element) => element.scrollWidth <= element.clientWidth + 1)).toBe(true)
+  await page.getByRole('button', { name: /^跳过/ }).click()
+  await page.getByRole('button', { name: /创建并进入 Studio/ }).click()
+  await expect(page.getByTestId('created-name')).toHaveText('compact-tools-agent')
+  expect(created).toMatchObject({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'production-profile' }, env: { GRASP_CODEBUDDY_REGION: 'internal' } })
+  expect(created?.gitBindings).toEqual({ items: [] })
+  expect(created).not.toHaveProperty('repoIds')
+  expect(created?.env || {}).not.toHaveProperty('GITHUB_TOKEN')
+  expect(created?.env || {}).not.toHaveProperty('GRASP_TRAE_REGION')
+})

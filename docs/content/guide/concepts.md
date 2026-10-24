@@ -87,7 +87,23 @@ Agent 授予了 `set_preview` 时，noVNC 工具栏会多一个「新标签页�
 
 Agent 不是在笔记本上跑的黑盒 prompt。它们通过仓库内嵌的 [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway) 在 Docker 容器中执行，经 ACP 通信。
 
-支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**。按 Agent 配置 `acpBackend`；密钥只在「设置 → 凭据」 中保存；站点等非敏感选项可写在 Agent meta env（OpenCode 还可指定厂商、API Base 与 model）。
+支持 **Cursor**、**Claude Code**、**CodeBuddy**、**Trae**、**OpenCode**、**Codex** 和 **DeepSeek Harness**。Agent 的编码工具与模型来源分别配置，密钥只在「设置 → 凭据」保存。
+
+模型服务密钥只保存秘密；「模型连接」独立保存协议、服务地址、密钥引用和原始模型 ID，同一条密钥可供多个连接引用。Agent 只引用具名模型配置（编码工具 + 凭据 + 上游模型）。创建、编辑、初始化向导和执行使用同一引用；没有模型配置、连接停用或密钥清除后会报错，不会自动换用其他密钥。
+
+| 编码工具 | 模型来源与连接协议 |
+| --- | --- |
+| Cursor、Trae | 工具平台授权；不开放通用第三方模型直连 |
+| Claude Code | 工具平台授权；Anthropic Messages 连接（连接模式要求 CLI ≥ 2.1.257） |
+| CodeBuddy | 工具平台授权；Chat Completions 连接 |
+| OpenCode、DeepSeek Harness | Chat Completions、Responses、Anthropic Messages；DSH 固定适配 0.2.1-rc.2 |
+| Codex | ChatGPT 登录文件；Responses 连接 |
+
+先在「凭据」标签配置常见服务商或自定义服务的 API Base 和 Key，也可仅保存密钥；再到「模型」标签保存一条有名称的模型配置，组合编码工具、已有凭据和所选模型。Agent 绑定这条模型配置即可复用组合，平台授权仍使用工具自己的 Key。模型配置的工具创建后固定；停用、删除配置或清除引用密钥后，Agent 会明确失败，不会自动切换其他授权。模型目录目前手动填写供应商原始 ID，允许包含 `/`。Claude Code、CodeBuddy 可分别设置主模型和辅助任务模型；DSH 的 DeepSeek 原生路由仅适用于官方服务。页面中的“未验证”表示没有对应真实模型服务的执行结果，适配和模拟测试通过不等于供应商实测。
+
+本次配置结构调整以新模型为准：旧 Agent 的直接授权、环境变量模型和工作区默认不再作为模型来源，也不自动迁移；需要重新选择模型配置。长驻沙箱在模型或授权变更后需要关闭并重新打开。
+
+模型配置是共享引用：修改其凭据、模型或角色设置，会影响所有引用它的 Agent。配置的 CLI 创建后固定，更换 CLI 需要新建模型配置并重新绑定。Agent 草稿可以暂未配置，运行前必须明确选择模型。Git 使用显式授权列表，可选择多个并设置首选及站点/仓库范围；未选择时不注入 Git 授权，工作流共用沙箱会在切换节点时替换授权。
 
 ## 产物契约与 MCP
 

@@ -3,15 +3,16 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import AgentGitGuide from '@/components/agent/AgentGitGuide.vue'
-import WizardApiKeyStepPanel from '@/components/agent/WizardApiKeyStepPanel.vue'
-import WizardAcpStartPathPanel from '@/components/agent/WizardAcpStartPathPanel.vue'
-import { api, type TeamBootstrapSession } from '@/lib/api/api'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
+import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
+import WorkspaceCredentialsPanel from '@/components/workspace/WorkspaceCredentialsPanel.vue'
+import AppModal from '@/components/ui/AppModal.vue'
+import { bindingProblem, useRoutingCopy } from '@/lib/agent/modelRouting'
+import { api, type ModelBinding, type ModelConfiguration, type TeamBootstrapSession } from '@/lib/api/api'
 import {
   TEAM_ENGINEER_COUNT,
   TEAM_WIZARD_STEPS,
-  applyTeamAcpBackend,
-  applyTeamStartPath,
   assembleTeamBootstrapPayload,
   artifactStorePreset,
   freshTeamDraft,
@@ -19,25 +20,7 @@ import {
   teamHasAuth,
   validateTeamBasics,
   type TeamWizardDraft,
-  type WizardBackendId,
-  type StartPath,
 } from '@/lib/agent/agentTeamWizard'
-import { authGuideFor, defaultSettingsPlaceholder } from '@/lib/agent/backendAuthGuide'
-import type { GitCredentialType } from '@/lib/agent/gitCredentialType'
-import { getRegionPolicy, setRegion } from '@/lib/shared/regionPolicy'
-import {
-  kvToRec,
-  parseCustomConfigJson,
-  stripAuthKeysFromEnv,
-  type WizardAuthMode,
-} from '@/lib/agent/agentCreateWizard'
-import {
-  applyOpenCodeFields,
-  openCodeCustomBaseRequired,
-  openCodeFieldsFromEnv,
-  openCodeModelRequired,
-  type OpenCodeProviderId,
-} from '@/lib/agent/openCodeProvider'
 
 const props = defineProps<{
   open: boolean
@@ -54,24 +37,42 @@ const draft = ref<TeamWizardDraft>(freshTeamDraft())
 const fieldError = ref('')
 const submitError = ref('')
 const submitting = ref(false)
-const apiKeyInput = ref('')
-const customConfigError = ref(false)
-const openCodeBaseError = ref(false)
-const openCodeModelError = ref(false)
-const customConfigDraft = ref('')
+const modelValid = ref(false)
+const gitValid = ref(true)
+const resourceManagerOpen = ref(false)
+const resourcesVersion = ref(0)
+const models = ref<ModelConfiguration[]>([])
+const c = useRoutingCopy()
+const modelBinding = computed<ModelBinding>({
+  get: () => ({ kind: 'configuration' as const, configurationId: draft.value.modelConfigurationId }),
+  set: (value: ModelBinding) => { draft.value.modelConfigurationId = value.configurationId },
+})
+const selectedModel = computed(() => models.value.find(model => model.id === draft.value.modelConfigurationId))
+async function refreshResources() {
+  const returningFromManager = resourceManagerOpen.value
+  const configurationId = draft.value.modelConfigurationId
+  resourceManagerOpen.value = false
+  resourcesVersion.value++
+  if (returningFromManager) modelValid.value = false
+  try {
+    models.value = (await api.listModelConfigurations()).items || []
+    if (returningFromManager && configurationId) {
+      const [keys, services, caps] = await Promise.all([api.listCredentials(), api.listModelConnections(), api.listToolCapabilities()])
+      if (draft.value.modelConfigurationId !== configurationId) return
+      const configuration = models.value.find(model => model.id === configurationId)
+      modelValid.value = !bindingProblem({ kind: 'configuration', configurationId }, configuration?.backend || '', services.items || [], keys.items || [], caps.items || [], models.value)
+      if (!modelValid.value) { draft.value.step = 1; stepAnimKey.value++ }
+    }
+  } catch {
+    models.value = []
+    if (returningFromManager) { modelValid.value = false; draft.value.step = 1; stepAnimKey.value++ }
+  }
+}
 const stepAnimKey = ref(0)
 const bgExpanded = ref(true)
 
 const currentStep = computed(() => TEAM_WIZARD_STEPS[draft.value.step])
 const progressPct = computed(() => ((draft.value.step + 1) / TEAM_WIZARD_STEPS.length) * 100)
-const regionPolicy = computed(() => getRegionPolicy(draft.value.acpBackend))
-const currentRegion = computed(() => {
-  const policy = regionPolicy.value
-  if (!policy) return ''
-  return draft.value.env.find((e) => e.k.trim() === policy.regionEnvKey)?.v || ''
-})
-const authGuide = computed(() => authGuideFor(draft.value.acpBackend, currentRegion.value))
-const primaryAuthKey = computed(() => authGuide.value.keys[0]?.key || '')
 const previewLine = computed(() =>
   t('pages.agentStudio.teamWizard.previewLine', {
     team: draft.value.teamName.trim() || '—',
@@ -88,12 +89,13 @@ watch(
     fieldError.value = ''
     submitError.value = ''
     submitting.value = false
-    apiKeyInput.value = ''
-    customConfigError.value = false
-    customConfigDraft.value = ''
+    modelValid.value = false
+    gitValid.value = true
+    void refreshResources()
     stepAnimKey.value++
     nextTick(() => document.getElementById('team-wiz-name')?.focus())
   },
+  { immediate: true },
 )
 
 function close() {
@@ -101,150 +103,23 @@ function close() {
   emit('close')
 }
 
-function upsertEnv(key: string, value: string) {
-  const row = draft.value.env.find((e) => e.k === key)
-  if (row) row.v = value
-  else draft.value.env.push({ k: key, v: value })
-}
-
 function onTeamNameInput() {
   syncDerivedNames(draft.value)
-}
-
-function selectAcp(id: WizardBackendId) {
-  if (id === draft.value.acpBackend) return
-  applyTeamAcpBackend(draft.value, id)
-  syncApiKeyInput()
-}
-
-function selectStartPath(path: StartPath) {
-  if (path === draft.value.startPath) return
-  applyTeamStartPath(draft.value, path)
-  syncApiKeyInput()
-}
-
-function selectRegion(region: string) {
-  const env = Object.fromEntries(
-    draft.value.env.filter((i) => i.k.trim()).map((i) => [i.k.trim(), i.v]),
-  )
-  draft.value.env = Object.entries(setRegion(env, draft.value.acpBackend, region)).map(([k, v]) => ({
-    k,
-    v,
-  }))
-}
-
-function syncApiKeyInput() {
-  const key = primaryAuthKey.value
-  apiKeyInput.value = draft.value.env.find((e) => e.k === key)?.v ?? ''
-}
-
-function clearAuthKeys() {
-  draft.value.env = stripAuthKeysFromEnv(draft.value.env, draft.value.acpBackend)
-  apiKeyInput.value = ''
-}
-
-function setAuthMode(mode: WizardAuthMode) {
-  if (mode === draft.value.authMode) return
-  customConfigError.value = false
-  if (mode === 'apiKey') {
-    customConfigDraft.value = draft.value.customConfigContent
-    draft.value.customConfigContent = ''
-    draft.value.authMode = mode
-    syncApiKeyInput()
-    return
-  }
-  clearAuthKeys()
-  draft.value.authMode = mode
-  draft.value.customConfigContent =
-    customConfigDraft.value || defaultSettingsPlaceholder(draft.value.acpBackend)
-}
-
-function onCustomConfigInput(value: string) {
-  draft.value.customConfigContent = value
-  customConfigError.value = false
-}
-
-function patchOpenCode(fields: Parameters<typeof applyOpenCodeFields>[1]) {
-  draft.value.env = Object.entries(applyOpenCodeFields(kvToRec(draft.value.env), fields)).map(
-    ([k, v]) => ({ k, v }),
-  )
-  openCodeBaseError.value = false
-  openCodeModelError.value = false
-}
-
-function onOpenCodeProvider(value: OpenCodeProviderId) {
-  patchOpenCode({ provider: value })
-}
-
-function onOpenCodeBaseURL(value: string) {
-  patchOpenCode({ baseURL: value })
-}
-
-function onOpenCodeModel(value: string) {
-  patchOpenCode({ model: value })
-}
-
-function onOpenCodeVision(value: boolean) {
-  patchOpenCode({ vision: value })
-}
-
-function onApiKeyInput(value: string) {
-  apiKeyInput.value = value
-  const key = primaryAuthKey.value
-  if (!key) return
-  if (value.trim()) upsertEnv(key, value)
-  else {
-    const idx = draft.value.env.findIndex((e) => e.k === key)
-    if (idx >= 0) draft.value.env.splice(idx, 1)
-  }
-}
-
-function onGitCredentialType(value: GitCredentialType) {
-  draft.value.gitCredentialType = value
 }
 
 function goPrev() {
   if (draft.value.step === 0 || submitting.value) return
   draft.value.step--
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
 }
 
 function goSkip() {
   const step = currentStep.value
   if (!step.skip || submitting.value) return
   draft.value.skipped[step.id] = true
-  if (step.id === 'apiKey') {
-    clearAuthKeys()
-    draft.value.customConfigContent = ''
-    customConfigDraft.value = ''
-    customConfigError.value = false
-  }
+  if (step.id === 'git') { draft.value.gitBindings = { items: [] }; draft.value.gitUrl = '' }
   draft.value.step++
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
-}
-
-function validateApiKeyStep(): boolean {
-  if (draft.value.acpBackend === 'opencode' && draft.value.authMode === 'apiKey') {
-    const fields = openCodeFieldsFromEnv(kvToRec(draft.value.env))
-    if (openCodeModelRequired(fields.model)) {
-      openCodeModelError.value = true
-      return false
-    }
-    if (openCodeCustomBaseRequired(fields.provider, fields.baseURL)) {
-      openCodeBaseError.value = true
-      return false
-    }
-  }
-  if (draft.value.authMode !== 'customConfig') return true
-  const parsed = parseCustomConfigJson(draft.value.customConfigContent)
-  if (!parsed.ok) {
-    customConfigError.value = true
-    return false
-  }
-  customConfigError.value = false
-  return true
 }
 
 function goNext() {
@@ -257,7 +132,8 @@ function goNext() {
     }
     fieldError.value = ''
   }
-  if (currentStep.value.id === 'apiKey' && !validateApiKeyStep()) return
+  if (currentStep.value.id === 'model' && (!draft.value.modelConfigurationId || !modelValid.value)) return
+  if (currentStep.value.id === 'git' && !gitValid.value) return
   if (currentStep.value.id === 'review') {
     void submit()
     return
@@ -265,7 +141,6 @@ function goNext() {
   delete draft.value.skipped[currentStep.value.id]
   draft.value.step++
   stepAnimKey.value++
-  if (currentStep.value.id === 'apiKey') syncApiKeyInput()
 }
 
 async function submit() {
@@ -276,6 +151,7 @@ async function submit() {
     stepAnimKey.value++
     return
   }
+  if (!draft.value.modelConfigurationId || !modelValid.value) { draft.value.step = 1; return }
   submitting.value = true
   submitError.value = ''
   try {
@@ -463,40 +339,9 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <p v-if="fieldError" class="mt-3 text-[12px] text-err">{{ fieldError }}</p>
                 </template>
 
-                <template v-else-if="currentStep.id === 'acp'">
-                  <p class="sec-meta">{{ t('pages.agentStudio.teamWizard.acp.meta') }}</p>
-                  <WizardAcpStartPathPanel
-                    :start-path="draft.startPath"
-                    :acp-backend="draft.acpBackend"
-                    :region-policy="regionPolicy"
-                    :current-region="currentRegion"
-                    test-id-prefix="team-wizard"
-                    @select-start-path="selectStartPath"
-                    @select-backend="selectAcp"
-                    @select-region="selectRegion"
-                  />
-                </template>
-
-                <template v-else-if="currentStep.id === 'apiKey'">
-                  <WizardApiKeyStepPanel
-                    :acp-backend="draft.acpBackend"
-                    :config-root="draft.configRoot"
-                    :auth-mode="draft.authMode"
-                    :api-key-input="apiKeyInput"
-                    :custom-config-content="draft.customConfigContent"
-                    :custom-config-error="customConfigError"
-                    :auth-guide="authGuide"
-                    :env="kvToRec(draft.env)"
-                    :open-code-base-error="openCodeBaseError"
-                    :open-code-model-error="openCodeModelError"
-                    @update:auth-mode="setAuthMode"
-                    @update:api-key-input="onApiKeyInput"
-                    @update:custom-config-content="onCustomConfigInput"
-                    @update:open-code-provider="onOpenCodeProvider"
-                    @update:open-code-base-url="onOpenCodeBaseURL"
-                    @update:open-code-model="onOpenCodeModel"
-                    @update:open-code-vision="onOpenCodeVision"
-                  />
+                <template v-else-if="currentStep.id === 'model'">
+                  <ModelBindingEditor :key="resourcesVersion" v-model="modelBinding" @validity="modelValid = $event" />
+                  <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
@@ -509,12 +354,8 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                       placeholder="https://github.com/org/repo.git"
                     />
                   </label>
-                  <AgentGitGuide
-                    :env="draft.env"
-                    :upsert-env="(k, v) => upsertEnv(k, v)"
-                    :credential-type="draft.gitCredentialType"
-                    @update:credential-type="onGitCredentialType"
-                  />
+                  <AgentGitCredentialPicker :key="resourcesVersion" v-model="draft.gitBindings" @validity="gitValid = $event" />
+                  <AppButton class="mt-3" size="sm" variant="ghost" icon="plus" @click="resourceManagerOpen = true">{{ c.configureKeys }}</AppButton>
                 </template>
 
                 <template v-else-if="currentStep.id === 'mcp'">
@@ -536,13 +377,15 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                         class="rounded-md border border-line bg-base px-2 py-1.5 text-[12px] text-txt outline-none focus:border-accent"
                         :placeholder="t('pages.agentStudio.teamWizard.mcp.namePh')"
                       />
-                      <select
-                        v-model="m.transport"
-                        class="rounded-md border border-line bg-base px-2 py-1.5 text-[12px] text-txt"
-                      >
-                        <option value="url">HTTP (url)</option>
-                        <option value="command">stdio</option>
-                      </select>
+                      <AppSelect
+                        :model-value="m.transport"
+                        :options="[{ value: 'url', label: 'HTTP (url)' }, { value: 'command', label: 'stdio' }]"
+                        :aria-label="`MCP ${m.name || i + 1}`"
+                        :data-testid="`team-mcp-transport-${i}`"
+                        searchable
+                        size="sm"
+                        @update:model-value="value => { if (value === 'url' || value === 'command') m.transport = value }"
+                      />
                     </div>
                     <template v-if="m.transport === 'url'">
                       <input
@@ -597,9 +440,8 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
                   <div class="rounded-lg border border-line bg-elevated px-4 py-3 text-[13px] leading-7 text-txt2">
                     <div>{{ t('pages.agentStudio.teamWizard.review.team') }}：<strong class="text-txt">{{ draft.teamName }}</strong></div>
                     <div>PM：<strong class="text-txt">{{ draft.pmName }}</strong></div>
-                    <div>ACP：<strong class="text-txt">{{ draft.acpBackend }}</strong></div>
-                    <div>API Key：<strong class="text-txt">{{ teamHasAuth(draft) ? (draft.authMode === 'customConfig' ? t('pages.agentStudio.wizard.review.customConfigWritten') : t('pages.agentStudio.teamWizard.review.set')) : t('pages.agentStudio.teamWizard.review.skip') }}</strong></div>
-                    <div>Git：<strong class="text-txt">{{ draft.gitUrl || t('pages.agentStudio.teamWizard.review.none') }}</strong></div>
+                    <div>{{ c.model }}：<strong class="text-txt">{{ selectedModel?.name || draft.modelConfigurationId }}</strong></div>
+                    <div>Git：<strong class="text-txt">{{ draft.gitBindings.items.length }} · {{ draft.gitUrl || t('pages.agentStudio.teamWizard.review.none') }}</strong></div>
                     <div>MCP：<strong class="text-txt">{{ mcpNames }}</strong></div>
                     <div>Env：<strong class="text-txt">{{ envSummary }}</strong></div>
                     <div class="mt-2">
@@ -655,6 +497,9 @@ const hasArtifact = computed(() => draft.value.mcp.some((m) => m.name.trim() ===
         </div>
       </div>
     </div>
+    <AppModal :open="resourceManagerOpen" :title="c.configureKeys" :width="1000" trap-focus close-on-esc @close="refreshResources">
+      <div class="flex h-[70vh] min-h-0"><WorkspaceCredentialsPanel /></div>
+    </AppModal>
   </Teleport>
 </template>
 
