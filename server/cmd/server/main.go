@@ -201,6 +201,21 @@ func main() {
 		}
 		return modelConnectionSvc.Resolve(backend, *binding)
 	}
+	resolveModelConfiguration := func(binding *modelrouting.Binding) (string, error) {
+		if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+			return "", err
+		}
+		configuration, err := modelConfigurationSvc.Get(binding.ConfigurationID)
+		if err != nil {
+			return "", err
+		}
+		_, err = resolveModelBinding(configuration.Backend, binding)
+		return configuration.Backend, err
+	}
+	sharedAgentSvc.SetBindingResolvers(resolveModelConfiguration, func(bindings *models.GitBindings) error {
+		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
+		return err
+	})
 	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
 	provider := runtime.NewProvider(host, runtime.Options{
@@ -229,6 +244,7 @@ func main() {
 				})
 			}
 			return runtime.SharedAgentView{
+				AcpBackend: cfg.AcpBackend, ModelBinding: cfg.ModelBinding, GitBindings: cfg.GitBindings,
 				MCP: mcp,
 				Env: cfg.Env,
 				Layout: runtime.SharedLayoutView{
@@ -241,6 +257,7 @@ func main() {
 		CredentialReferences: credentialSvc.ResolveReferences,
 		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
+		GitCredential:        credentialSvc.ResolveGitValue,
 		RunSandboxEnvForRun: func(runID string) []models.EnvEntry {
 			var run models.Run
 			if err := db.Select("sandbox_env").First(&run, "id = ?", runID).Error; err != nil {
@@ -329,6 +346,12 @@ func main() {
 	sandbox.HomeBaseDir = cfg.Sandbox.WorkDir
 
 	agentSvc := services.NewAgentService(cfg.Engine.ProfilesRoot)
+	agentSvc.SetSharedAgent(sharedAgentSvc)
+	agentSvc.SetModelConfigurationResolver(resolveModelConfiguration)
+	agentSvc.SetGitBindingResolver(func(bindings *models.GitBindings) error {
+		_, err := runtime.ResolveGitBindings(bindings, credentialSvc.ResolveGitValue)
+		return err
+	})
 	agentSvc.SetModelBindingResolver(func(backend string, binding *modelrouting.Binding) error {
 		_, err := resolveModelBinding(backend, binding)
 		return err
@@ -359,6 +382,7 @@ func main() {
 		CredentialReferences: credentialSvc.ResolveReferences,
 		ModelBinding:         resolveModelBinding,
 		SelectedCredential:   credentialSvc.ResolveSelectedValue,
+		GitCredential:        credentialSvc.ResolveGitValue,
 	})
 	sbxSvc.SetCodexLoginWriteBack(credentialSvc.WriteBackCodexLoginCredential)
 	// Let the exec provider record per-run node sandboxes in the same store so

@@ -26,6 +26,8 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
+	InheritModel       bool                      `json:"inheritModel"`
+	InheritGit         bool                      `json:"inheritGit"`
 	GitBindings        *models.GitBindings       `json:"gitBindings"`
 	ModelBinding       *modelrouting.Binding     `json:"modelBinding"`
 	Name               string                    `json:"name"`
@@ -42,6 +44,7 @@ type agentBody struct {
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
+		InheritModel: b.InheritModel, InheritGit: b.InheritGit,
 		GitBindings: b.GitBindings,
 		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
@@ -104,10 +107,6 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 	name := c.Param("name")
 	agent := b.toAgent(name)
 	if err := services.RejectSecretEnvKeys(agent.Env); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	if _, err := services.ParseAcpBackend(agent.AcpBackend); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}

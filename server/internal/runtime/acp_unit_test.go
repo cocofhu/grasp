@@ -401,7 +401,9 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
-		SelectedCredential: func(string) (string, string, bool) { return "GITLAB_TOKEN", "cred-tok", true },
+		GitCredential: func(string) (GitCredentialValue, bool) {
+			return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "cred-tok", Host: "https://gitlab.com"}, true
+		},
 	}).(*acpProvider)
 	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
 		Config: map[string]any{"agent_profile": "dev"}, Vars: map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`}}
@@ -562,7 +564,9 @@ func TestEnsurePushedAndDetectPush(t *testing.T) {
 
 	host := mcp.NewHost(newMemStore())
 	root := writeAgent(t, "git-agent", `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"}}`)
-	p := newACPProvider(host, Options{ProfilesRoot: root, SelectedCredential: func(string) (string, string, bool) { return "GITLAB_TOKEN", "gl-token", true }}).(*acpProvider)
+	p := newACPProvider(host, Options{ProfilesRoot: root, GitCredential: func(string) (GitCredentialValue, bool) {
+		return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "gl-token", Host: "https://gitlab.com"}, true
+	}}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 
 	req := NodeReq{

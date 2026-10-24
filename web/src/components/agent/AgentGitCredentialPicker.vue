@@ -2,9 +2,9 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { api, type AgentGitBinding, type AgentGitBindings, type CredentialItem } from '@/lib/api/api'
-import { cloneGitBindings, gitCredentialKind, usableGitCredential, validGitScope } from '@/lib/agent/gitBindings'
+import { cloneGitBindings, gitCredentialKind, usableGitCredential, validCredentialGitScope } from '@/lib/agent/gitBindings'
 import { credentialUsable } from '@/lib/agent/modelRouting'
-import { kindOfItem } from '@/lib/workspace/credentialKinds'
+import { defaultGitCredentialHost, kindOfItem } from '@/lib/workspace/credentialKinds'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
@@ -26,9 +26,13 @@ const available = computed(() => credentials.value.filter((item) => usableGitCre
 const options = computed(() => available.value.map((item) => ({ value: item.id, label: item.name, hint: providerName(item) })))
 function credential(id: string) { return credentials.value.find((item) => item.id === id) }
 function kind(id: string) { const item = credential(id); return item ? kindOfItem(item) : undefined }
-function providerName(item?: CredentialItem) { const id = item ? gitCredentialKind(item)?.id : undefined; return id === 'github' ? 'GitHub' : id === 'gitlab' ? 'GitLab' : id === 'ssh_key' ? 'SSH' : '' }
+function providerName(item?: CredentialItem) {
+  const id = item ? gitCredentialKind(item)?.id : undefined
+  if (id === 'github' || id === 'gitlab') return (item?.host || defaultGitCredentialHost(id)).replace(/^https:\/\//, '').replace(/\/$/, '')
+  return id === 'ssh_key' ? 'SSH' : ''
+}
 function title(id: string) { return credential(id)?.name || id }
-function scopeValid(item: AgentGitBinding) { return validGitScope(item.scope || '', gitCredentialKind(credential(item.credentialId))?.id) }
+function scopeValid(item: AgentGitBinding) { return validCredentialGitScope(item.scope || '', credential(item.credentialId)) }
 function isSsh(item: AgentGitBinding) { return kind(item.credentialId)?.id === 'ssh_key' }
 function hostsUsable(id: string) { const item = credential(id); return !!item && kindOfItem(item)?.id === 'ssh_hosts' && credentialUsable(item) }
 function unavailable(item: AgentGitBinding) { return !usableGitCredential(credential(item.credentialId)) || (!!item.sshHostsCredentialId && (!isSsh(item) || !hostsUsable(item.sshHostsCredentialId))) }
@@ -80,7 +84,8 @@ onMounted(() => { if (props.items === undefined) void load() })
 <template>
   <section class="min-w-0 space-y-3" data-testid="agent-git-credential-picker">
     <div class="flex items-center justify-between gap-3">
-      <h3 class="m-0 text-[13px] font-semibold text-txt">{{ copy('title') }}</h3>
+      <h3 class="m-0 min-w-0 flex-1 text-[13px] font-semibold text-txt">{{ copy('title') }}</h3>
+      <slot name="heading-actions" />
       <button type="button" class="shrink-0 text-[11px] text-txt3 hover:text-accent-2" data-testid="git-credential-help" data-test="git-help-link" @click="emit('help')">{{ copy('help') }}</button>
     </div>
     <p class="m-0 text-xs leading-5 text-txt3">{{ copy('hint') }}</p>

@@ -35,6 +35,7 @@ type CredentialInput struct {
 	Issuer     string         `json:"issuer"`
 	ToolID     string         `json:"toolId"`
 	SecretKind string         `json:"secretKind"`
+	Host       string         `json:"host"`
 	Type       string         `json:"type"`
 	Provider   string         `json:"provider"`
 	Name       string         `json:"name"`
@@ -55,6 +56,7 @@ type CredentialView struct {
 	Issuer         string         `json:"issuer,omitempty"`
 	ToolID         string         `json:"toolId,omitempty"`
 	SecretKind     string         `json:"secretKind,omitempty"`
+	Host           string         `json:"host,omitempty"`
 	SecretRevision uint64         `json:"secretRevision"`
 	ID             string         `json:"id"`
 	Type           string         `json:"type"`
@@ -146,12 +148,16 @@ func defaultCredentialEnvKey(in CredentialInput) string {
 
 func credentialView(row models.Credential) CredentialView {
 	purpose, issuer, tool, kind := credentialDomain(row)
+	host := row.Host
+	if purpose == "git" {
+		host, _ = models.NormalizeGitCredentialHost(row.Provider, host)
+	}
 	revision := row.SecretRevision
 	if revision == 0 && row.ValueEnc != "" {
 		revision = 1
 	}
 	return CredentialView{
-		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, SecretRevision: revision,
+		Purpose: purpose, Issuer: issuer, ToolID: tool, SecretKind: kind, Host: host, SecretRevision: revision,
 		ID: row.ID, Type: row.Type, Provider: row.Provider,
 		Name: row.Name, Target: row.Target, TargetID: row.Target, EnvKey: row.EnvKey,
 		Masked: func() string {
@@ -190,8 +196,8 @@ func builtinCredentialRows() []models.Credential {
 		{ID: builtinCredentialID("codebuddy"), Purpose: "tool_auth", Issuer: "codebuddy", ToolID: "codebuddy", SecretKind: "api_key", Type: "ai", Provider: "codebuddy", Name: builtinNameCodeBuddy, EnvKey: envauth.EnvCodeBuddyAPIKey},
 		{ID: builtinCredentialID("trae"), Purpose: "tool_auth", Issuer: "trae", ToolID: "trae", SecretKind: "token", Type: "ai", Provider: "trae", Name: builtinNameTrae, EnvKey: envauth.EnvTraeAPIKey},
 		{ID: builtinCredentialID("codex"), Purpose: "tool_auth", Issuer: "codex", ToolID: "codex", SecretKind: "login_file", Type: "ai", Provider: "codex", Name: builtinNameCodex, EnvKey: envauth.EnvCodexAuthFile},
-		{ID: builtinCredentialID("github"), Purpose: "git", Issuer: "github", SecretKind: "token", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
-		{ID: builtinCredentialID("gitlab"), Purpose: "git", Issuer: "gitlab", SecretKind: "token", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
+		{ID: builtinCredentialID("github"), Purpose: "git", Issuer: "github", SecretKind: "token", Host: "https://github.com", Type: "git", Provider: "github", Name: builtinNameGitHub, EnvKey: envauth.EnvGitHubToken},
+		{ID: builtinCredentialID("gitlab"), Purpose: "git", Issuer: "gitlab", SecretKind: "token", Host: "https://gitlab.com", Type: "git", Provider: "gitlab", Name: builtinNameGitLab, EnvKey: envauth.EnvGitLabToken},
 		{ID: builtinCredentialID("ssh-key"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_private_key", Type: "ssh", Provider: "ssh", Name: builtinNameSSHKey, EnvKey: envauth.EnvGitSSHPrivateKey},
 		{ID: builtinCredentialID("ssh-hosts"), Purpose: "ssh", Issuer: "ssh", SecretKind: "ssh_known_hosts", Type: "ssh", Provider: "ssh", Name: builtinNameSSHHosts, EnvKey: envauth.EnvGitSSHKnownHosts},
 	}
@@ -228,6 +234,9 @@ func (s *CredentialService) List() ([]CredentialView, error) {
 	}
 	out := make([]CredentialView, 0, len(rows))
 	for _, row := range rows {
+		if strings.TrimSpace(row.EnvKey) == "GITLAB_URL" {
+			continue
+		}
 		v := credentialView(row)
 		out = append(out, v)
 	}
@@ -289,7 +298,7 @@ func (s *CredentialService) Create(in CredentialInput) (CredentialView, error) {
 	}
 	now := time.Now()
 	row := models.Credential{ID: "cred-" + uuid.NewString()[:12],
-		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, SecretRevision: 1,
+		Purpose: in.Purpose, Issuer: in.Issuer, ToolID: in.ToolID, SecretKind: in.SecretKind, Host: in.Host, SecretRevision: 1,
 		Type: in.Type, Provider: in.Provider, Name: in.Name, Target: target,
 		EnvKey: in.EnvKey, ValueEnc: enc,
 		Enabled: in.Enabled == nil || *in.Enabled, CreatedAt: now, UpdatedAt: now}
@@ -333,10 +342,13 @@ func (s *CredentialService) Update(id string, in CredentialInput) (CredentialVie
 		if in.Provider == "" {
 			in.Provider = row.Provider
 		}
+		if in.Host == "" {
+			in.Host = row.Host
+		}
 		if err := normalizeCredentialDomainInput(&in); err != nil {
 			return CredentialView{}, err
 		}
-		row.Purpose, row.Issuer, row.ToolID, row.SecretKind = in.Purpose, in.Issuer, in.ToolID, in.SecretKind
+		row.Purpose, row.Issuer, row.ToolID, row.SecretKind, row.Host = in.Purpose, in.Issuer, in.ToolID, in.SecretKind, in.Host
 	}
 	if v := strings.TrimSpace(in.Type); v != "" {
 		v = strings.ToLower(v)
@@ -604,6 +616,32 @@ func (s *CredentialService) ResolveSelectedValue(credentialID string) (string, s
 		return "", "", false
 	}
 	return strings.TrimSpace(row.EnvKey), dec, true
+}
+
+// ResolveGitValue reads the secret and host together. A host is never inferred
+// from the Agent's scope or the repository that happened to request the token.
+func (s *CredentialService) ResolveGitValue(id string) (runtime.GitCredentialValue, bool) {
+	var value runtime.GitCredentialValue
+	if s == nil || s.db == nil || strings.TrimSpace(id) == "" {
+		return value, false
+	}
+	var row models.Credential
+	if err := s.db.Where("id = ? AND enabled = ? AND revoked_at IS NULL", strings.TrimSpace(id), true).First(&row).Error; err != nil || row.ValueEnc == "" || row.Purpose != "git" && row.Purpose != "ssh" {
+		return value, false
+	}
+	if row.Purpose == "git" {
+		var err error
+		value.Host, err = models.NormalizeGitCredentialHost(row.Provider, row.Host)
+		if err != nil {
+			return runtime.GitCredentialValue{}, false
+		}
+	}
+	secret, err := crypto.Decrypt(row.ValueEnc)
+	if err != nil || strings.TrimSpace(secret) == "" {
+		return runtime.GitCredentialValue{}, false
+	}
+	value.EnvKey, value.Secret = row.EnvKey, secret
+	return value, true
 }
 
 func isCodexCredential(provider, envKey string) bool {

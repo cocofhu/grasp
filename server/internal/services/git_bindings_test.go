@@ -15,6 +15,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/config"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
 )
 
@@ -29,14 +30,14 @@ func serviceGitSelection(ids ...string) *models.GitBindings {
 	return selection
 }
 
-func serviceGitValue(id string) (string, string, bool) {
+func serviceGitValue(id string) (runtime.GitCredentialValue, bool) {
 	switch id {
 	case "gh":
-		return "GITHUB_TOKEN", "selected-gh-token", true
+		return runtime.GitCredentialValue{EnvKey: "GITHUB_TOKEN", Secret: "selected-gh-token", Host: "https://github.com"}, true
 	case "gl":
-		return "GITLAB_TOKEN", "selected-gl-token", true
+		return runtime.GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "selected-gl-token", Host: "https://gitlab.com"}, true
 	default:
-		return "", "", false
+		return runtime.GitCredentialValue{}, false
 	}
 }
 
@@ -99,7 +100,7 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 	db := newTestDB(t)
 	ds := &dockerState{}
 	s := newSandboxService(t, db, ds)
-	s.selectedCredential = serviceGitValue
+	s.gitCredential = serviceGitValue
 	selection := serviceGitSelection("gh")
 	if err := s.skills.Save(Agent{Name: "agentA", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}); err != nil {
 		t.Fatal(err)
@@ -122,15 +123,17 @@ func TestGitBindingsInteractiveReuseRejectsUnappliedOrInvalidSelection(t *testin
 	if got, reused, err := s.OpenAgentSandbox(context.Background(), opts); err != nil || !reused || got.ID != row.ID {
 		t.Fatalf("identical applied binding not reused: %+v %v %v", got, reused, err)
 	}
-	s.selectedCredential = func(string) (string, string, bool) { return "GITHUB_TOKEN", "rotated", true }
+	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) {
+		return runtime.GitCredentialValue{EnvKey: "GITHUB_TOKEN", Secret: "rotated", Host: "https://github.com"}, true
+	}
 	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil {
 		t.Fatal("rotated secret reused without sync")
 	}
-	s.selectedCredential = func(string) (string, string, bool) { return "", "", false }
+	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
 	if _, _, err := s.OpenAgentSandbox(context.Background(), opts); err == nil {
 		t.Fatal("revoked authorization fell back to existing container")
 	}
-	s.selectedCredential = serviceGitValue
+	s.gitCredential = serviceGitValue
 	if err := s.skills.Save(Agent{Name: "other", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: selection}); err != nil {
 		t.Fatal(err)
 	}
@@ -148,7 +151,7 @@ func TestGitBindingsInteractiveAndTestStartsStageAllSelectedSecrets(t *testing.T
 			defer acp.Close()
 			ds := &dockerState{acpPort: port}
 			s := newSandboxService(t, db, ds)
-			s.selectedCredential = serviceGitValue
+			s.gitCredential = serviceGitValue
 			previous := config.GetConfig()
 			config.StoreConfig(&config.Config{Server: config.ServerConfig{MCPAdvertise: "http://control.example"}})
 			defer config.StoreConfig(previous)
@@ -220,7 +223,7 @@ func TestGitBindingsSelectedFailureBlocksBothServiceStarts(t *testing.T) {
 			db := newTestDB(t)
 			ds := &dockerState{}
 			s := newSandboxService(t, db, ds)
-			s.selectedCredential = serviceGitValue
+			s.gitCredential = serviceGitValue
 			agent := Agent{Name: "agentA", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: serviceGitSelection("gone")}
 			row := models.Sandbox{Name: "git-invalid", Status: "creating"}
 			if err := db.Create(&row).Error; err != nil {

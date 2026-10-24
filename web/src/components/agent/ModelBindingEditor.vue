@@ -6,8 +6,8 @@ import AppButton from '@/components/ui/AppButton.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 
-const props = withDefaults(defineProps<{ backend?: string; modelValue?: ModelBinding; compact?: boolean }>(), { compact: false, backend: '' })
-const emit = defineEmits<{ 'update:modelValue': [value: ModelBinding]; validity: [valid: boolean] }>()
+const props = withDefaults(defineProps<{ backend?: string; modelValue?: ModelBinding; compact?: boolean; disabled?: boolean }>(), { compact: false, backend: '', disabled: false })
+const emit = defineEmits<{ 'update:modelValue': [value: ModelBinding]; selectConfiguration: [value: ModelConfiguration]; validity: [valid: boolean] }>()
 const c = useRoutingCopy()
 const configurations = ref<ModelConfiguration[]>([])
 const credentials = ref<CredentialItem[]>([])
@@ -31,7 +31,11 @@ async function load() {
   finally { loading.value = false }
 }
 function select(id: string) {
-  if (id !== configurationId.value && available.value.some((row) => row.id === id)) emit('update:modelValue', { kind: 'configuration', configurationId: id })
+  const row = available.value.find((row) => row.id === id)
+  if (!props.disabled && row && id !== configurationId.value) {
+    emit('update:modelValue', { kind: 'configuration', configurationId: id })
+    emit('selectConfiguration', row)
+  }
 }
 function backendOf(id: string) { return configurations.value.find((row) => row.id === id)?.backend || props.backend }
 onMounted(load)
@@ -42,7 +46,7 @@ onMounted(load)
     <p v-if="loading" class="text-xs text-txt3">{{ c.loading }}</p>
     <p v-else-if="error" role="alert" class="text-xs text-err">{{ error }} <AppButton size="sm" @click="load">{{ c.retry }}</AppButton></p>
     <template v-else>
-      <AppSelect :model-value="configurationId" :options="options" :aria-label="c.configuration" :placeholder="configurationId && problem ? `${selected?.name || configurationId} · ${c.configurationUnavailable}` : available.length ? c.selectConfiguration : c.noConfigurations" :empty-text="c.noConfigurations" :invalid="!!configurationId && !!problem" searchable data-testid="model-binding-configuration-select" @update:model-value="select">
+      <AppSelect :model-value="configurationId" :options="options" :aria-label="c.configuration" :placeholder="configurationId && problem ? `${selected?.name || configurationId} · ${c.configurationUnavailable}` : available.length ? c.selectConfiguration : c.noConfigurations" :empty-text="c.noConfigurations" :invalid="!!configurationId && !!problem" :disabled="disabled" searchable data-testid="model-binding-configuration-select" @update:model-value="select">
         <template #leading><CredentialProviderLogo :provider="selected?.backend || backend" match="provider" aria-hidden="true" /></template>
         <template #option-leading="{ option }"><CredentialProviderLogo :provider="backendOf(option.value)" match="provider" aria-hidden="true" /></template>
       </AppSelect>

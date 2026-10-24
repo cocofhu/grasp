@@ -172,6 +172,9 @@ func (s *SoloService) agentMeta(name string) (backend, model string) {
 	if !ok {
 		return "", ""
 	}
+	if s.sbx != nil {
+		a = s.sbx.effectiveAgent(a)
+	}
 	return a.AcpBackend, strings.TrimSpace(a.Env["ACP_BRIDGE_MODEL"])
 }
 
@@ -268,7 +271,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if !ok {
 		return nil, soloErr(http.StatusBadRequest, "agent_not_found", "Agent %q 不存在", agentName)
 	}
-	if strings.TrimSpace(agent.AcpBackend) == "" {
+	if strings.TrimSpace(s.sbx.effectiveAgent(agent).AcpBackend) == "" {
 		return nil, soloErr(http.StatusBadRequest, "agent_no_backend", "Agent %q 未配置 CLI 类型", agentName)
 	}
 	branch := strings.TrimSpace(in.Branch)

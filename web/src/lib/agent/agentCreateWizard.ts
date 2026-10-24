@@ -43,6 +43,8 @@ export type WizardCommand = { name: string; content: string }
 export type WizardSkipped = Partial<Record<WizardStepId, boolean>>
 
 export type WizardDraft = {
+  inheritModel?: boolean
+  inheritGit?: boolean
   gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   step: number
@@ -243,9 +245,13 @@ export function assembleCreatePayload(draft: WizardDraft): Agent & { templateId?
   const files = collectFiles(draft)
   return {
     name,
+    ...(draft.inheritModel !== undefined ? { inheritModel: draft.inheritModel } : {}),
+    ...(draft.inheritGit !== undefined ? { inheritGit: draft.inheritGit } : {}),
     gitBindings: cloneGitBindings(draft.gitBindings || { items: [] }),
     acpBackend: draft.acpBackend,
-    modelBinding: { kind: 'configuration', configurationId: draft.modelBinding?.configurationId || '' },
+    ...(!draft.inheritModel || draft.modelBinding?.configurationId?.trim()
+      ? { modelBinding: { kind: 'configuration' as const, configurationId: draft.modelBinding?.configurationId || '' } }
+      : {}),
     ...(useTemplate ? { templateId: draft.templateId.trim() } : {}),
     files,
     mcp: draft.mcp.filter((m) => m.name.trim()).map(draftMcpToApi),

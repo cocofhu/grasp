@@ -263,3 +263,82 @@ test('a model API key can be replaced on a narrow screen while its value stays m
   await expect(input).toHaveCount(0)
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('model-replacement-secret-9999')
 })
+
+test('existing provider rows stay in their groups and GitLab URL is not a separate credential', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await installWorkspaceApiDefaults(page)
+  const rows = [
+    { id: 'old-cursor', type: 'ai', provider: 'cursor', name: 'Existing Cursor', configured: true, masked: '••••' },
+    { id: 'old-github', type: 'git', provider: 'github', name: 'Existing GitHub', configured: true, masked: '••••' },
+    { id: 'old-gitlab', type: 'git', provider: 'gitlab', name: 'Existing GitLab', configured: true, masked: '••••' },
+    { id: 'old-gitlab-url', type: 'git', provider: 'gitlab', envKey: 'GITLAB_URL', name: 'GitLab URL', configured: true },
+  ]
+  const deleted: string[] = []
+  await routeApi(page, '**/api/workspace/credentials', async route => route.fulfill({ json: { items: rows } }))
+  await routeApi(page, '**/api/workspace/credentials/old-gitlab', async route => {
+    expect(route.request().method()).toBe('DELETE')
+    deleted.push('old-gitlab')
+    await route.fulfill({ json: { status: 'ok' } })
+  })
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await expect(page.getByTestId('workspace-credential-section-coding')).toContainText('Existing Cursor')
+  await expect(page.getByTestId('workspace-credential-group-github')).toContainText('Existing GitHub')
+  await expect(page.getByTestId('workspace-credential-group-gitlab')).toContainText('Existing GitLab')
+  await expect(page.getByTestId('workspace-credential-section-other')).toHaveCount(0)
+  await expect(page.getByTestId('workspace-credential-row')).toHaveCount(3)
+  await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('GitLab URL')
+  await expect(page.getByTestId('workspace-credential-edit-old-gitlab')).toHaveCount(0)
+  await expect(page.getByTestId('workspace-credential-group-gitlab')).toContainText('请重新添加此凭据后编辑')
+  await page.getByTestId('workspace-credential-clear-old-gitlab').click()
+  await expect.poll(() => deleted).toEqual(['old-gitlab'])
+  await expectNoHorizontalOverflow(page)
+})
+
+test('GitLab Host is configured with its token and can be changed without entering that token again', async ({ page }) => {
+  await installWorkspaceApiDefaults(page)
+  const rows: Record<string, unknown>[] = []
+  const creates: Record<string, unknown>[] = []
+  const updates: Record<string, unknown>[] = []
+  await routeApi(page, '**/api/workspace/credentials', async route => {
+    if (route.request().method() === 'POST') {
+      const body = route.request().postDataJSON()
+      creates.push(body)
+      const { value: _value, ...metadata } = body
+      const row = { ...metadata, id: 'gitlab-team', host: new URL(body.host).origin, configured: true, masked: 'gl-…1234' }
+      rows.push(row)
+      await route.fulfill({ json: row })
+    } else await route.fulfill({ json: { items: rows } })
+  })
+  await routeApi(page, '**/api/workspace/credentials/gitlab-team', async route => {
+    const body = route.request().postDataJSON()
+    updates.push(body)
+    rows[0] = { ...rows[0], host: new URL(body.host).origin }
+    await route.fulfill({ json: rows[0] })
+  })
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  await openAddCredential(page)
+  await page.getByTestId('credential-kind-gitlab').click()
+  await page.getByTestId('workspace-credential-create-next').click()
+  await expect(page.getByTestId('workspace-credential-create-host')).toHaveValue('gitlab.com')
+  await page.getByTestId('workspace-credential-create-alias').fill('GitLab team')
+  await page.getByTestId('workspace-credential-create-value').fill('private-example-token')
+  await page.getByTestId('workspace-credential-create-host').fill('https://user:secret@git.example.test/repository')
+  await expect(page.getByTestId('workspace-credential-review-next')).toBeDisabled()
+  await page.getByTestId('workspace-credential-create-host').fill('http://git.example.test:8080')
+  await page.getByTestId('workspace-credential-review-next').click()
+  await expect(page.getByTestId('workspace-credential-review-host')).toHaveText('http://git.example.test:8080')
+  await page.getByTestId('workspace-credential-create-submit').click()
+  await expect.poll(() => creates).toEqual([expect.objectContaining({ purpose: 'git', provider: 'gitlab', host: 'http://git.example.test:8080' })])
+  await expect(page.getByTestId('workspace-credential-host-label-gitlab-team')).toHaveText('http://git.example.test:8080')
+  await page.getByTestId('workspace-credential-edit-gitlab-team').click()
+  await expect(page.getByTestId('workspace-credential-input-gitlab-team')).toHaveValue('')
+  await expect(page.getByTestId('workspace-credential-save-gitlab-team')).toBeDisabled()
+  await page.getByTestId('workspace-credential-host-gitlab-team').fill('https://git.company.test:8443')
+  await page.getByTestId('workspace-credential-save-gitlab-team').click()
+  await expect.poll(() => updates.length).toBe(1)
+  expect(updates[0]).toMatchObject({ host: 'https://git.company.test:8443' })
+  expect(updates[0]).not.toHaveProperty('value')
+  await expect(page.getByTestId('workspace-credential-host-label-gitlab-team')).toHaveText('git.company.test:8443')
+  await expect(page.getByTestId('workspace-credential-masked')).toHaveText('gl-…1234')
+  await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('private-example-token')
+})

@@ -204,6 +204,9 @@ func (s *OnboardingService) requireBaselineAgents(set string) error {
 	}
 	for _, name := range names {
 		agent, ok := s.Skills.Get(name)
+		if ok && s.SharedAgent != nil {
+			agent = ExtendOverlay(s.SharedAgent.Get(), agent)
+		}
 		if !ok || agent.ModelBinding == nil {
 			return fmt.Errorf("Agent %s is not configured; complete onboarding first", name)
 		}
@@ -292,7 +295,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
-	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveSelectedValue); err != nil {
+	if _, err := runtime.ResolveGitBindings(gitBindings, s.Credentials.ResolveGitValue); err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
 	loc := onboardingLocaleFor(req.Language)

@@ -390,7 +390,7 @@ func (s *SandboxService) startAgentContainer(id uint, name, profile, threadID, r
 	if len(extra.Bindings) > 0 {
 		runtime.ApplyCredentialBindings(env, creds, extra.Bindings, s.selectedCredential)
 	}
-	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.selectedCredential)
+	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
 	if err != nil {
 		fail(err)
 		return

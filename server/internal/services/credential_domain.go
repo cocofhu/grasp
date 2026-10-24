@@ -109,6 +109,15 @@ func normalizeCredentialDomainInput(in *CredentialInput) error {
 	if in.Issuer == "" {
 		in.Issuer = in.Provider
 	}
+	if in.Purpose == "git" {
+		var err error
+		in.Host, err = models.NormalizeGitCredentialHost(in.Provider, in.Host)
+		if err != nil {
+			return err
+		}
+	} else if strings.TrimSpace(in.Host) != "" {
+		return models.ErrGitCredentialHost
+	}
 	return nil
 }
 

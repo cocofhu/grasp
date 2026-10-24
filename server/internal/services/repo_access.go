@@ -30,7 +30,7 @@ func NormalizeRepoIDs(ids []string) []string {
 
 // ResolveRepoCredentials loads the selected repositories in selection order
 // and resolves their own Git credentials. Deleted repositories are skipped.
-func ResolveRepoCredentials(db *gorm.DB, ids []string, resolve runtime.SelectedCredentialFunc) []sandbox.RepoCredential {
+func ResolveRepoCredentials(db *gorm.DB, ids []string, resolve runtime.GitCredentialFunc) []sandbox.RepoCredential {
 	ids = NormalizeRepoIDs(ids)
 	if db == nil || len(ids) == 0 || resolve == nil {
 		return nil

@@ -227,7 +227,9 @@ export interface AgentGitBindings {
 }
 
 export interface Agent {
-  /** Only explicitly selected credentials are staged; missing means an empty list. */
+  inheritModel?: boolean
+  inheritGit?: boolean
+  /** Local Git selection; missing grants none unless inheritGit is enabled. */
   gitBindings?: AgentGitBindings
   modelBinding?: ModelBinding
   /** Missing inherits, null disables injection, and a credential ID binds explicitly. */
@@ -246,6 +248,9 @@ export interface Agent {
 
 /** Workspace-level shared Agent baseline (extend layer; Agent overlays on top). */
 export interface SharedAgentConfig {
+  acpBackend?: BackendId
+  modelBinding?: ModelBinding
+  gitBindings?: AgentGitBindings
   files: AgentFile[]
   mcp: MCPServer[]
   env: Record<string, string>
@@ -269,6 +274,8 @@ export interface CredentialItem {
   targetType?: string
   targetId?: string
   provider?: string
+  /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
+  host?: string
   envKey?: string
   configured: boolean
   /** Masked display value (for example, a key prefix); never the plaintext secret. */
@@ -296,6 +303,8 @@ export interface CredentialPutBody {
   targetType?: string
   targetId?: string
   provider?: string
+  /** Git hosting origin; HTTPS is assumed when no scheme is supplied. */
+  host?: string
   envKey?: string
   /** Empty values keep an existing secret; clear/delete removes it. */
   value?: string

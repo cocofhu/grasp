@@ -9,9 +9,10 @@ import { fromDraft, toDraft } from '@/lib/agent/agentStudioDraft'
 import AgentMetaPanel from './AgentMetaPanel.vue'
 import ModelBindingEditor from './ModelBindingEditor.vue'
 import AgentGitCredentialPicker from './AgentGitCredentialPicker.vue'
-const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listToolCapabilities: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listCredentials: vi.fn(), listModelConfigurations: vi.fn(), listModelConnections: vi.fn(), listToolCapabilities: vi.fn(), getSharedAgentConfig: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const key = { id: 'cursor-account', name: 'Cursor team', purpose: 'tool_auth', toolId: 'cursor', configured: true }
+const buddy = { id: 'buddy', name: 'Team Buddy', backend: 'codebuddy', state: 'active', binding: { kind: 'platform', credentialId: 'buddy-key', modelId: 'auto' } }
 const configuration = { id: 'cfg', name: 'Team Cursor', backend: 'cursor', state: 'active', binding: { kind: 'platform', credentialId: key.id, modelId: 'gpt-5' } }
 function setup(overrides = {}) {
  const draft = reactive(toDraft({ name: 'a', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [] }, ...overrides }))
@@ -19,31 +20,49 @@ function setup(overrides = {}) {
  return { w, draft }
 }
 beforeEach(() => {
- mocks.listCredentials.mockResolvedValue({ items: [key] }); mocks.listModelConfigurations.mockResolvedValue({ items: [configuration] })
+ mocks.listCredentials.mockResolvedValue({ items: [key, { id: 'buddy-key', name: 'Buddy account', purpose: 'tool_auth', toolId: 'codebuddy', configured: true }, { id: 'gh', name: 'GitHub team', purpose: 'git', type: 'git', provider: 'github', configured: true }] }); mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, buddy] })
+ mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'buddy' }, gitBindings: { items: [{ credentialId: 'gh' }], preferredCredentialId: 'gh' }, files: [], mcp: [], env: {}, layout: {} })
  mocks.listModelConnections.mockResolvedValue({ items: [] }); mocks.listToolCapabilities.mockResolvedValue({ items: [] })
 })
 describe('Agent saved configuration editing', () => {
- it('shows tool and named model on one page and keeps only the saved reference', async () => {
+ it('selects a named model without a duplicate coding-tool list', async () => {
   const { w, draft } = setup(); await flushPromises()
-  expect(w.get('[data-testid="acp-backend-cursor"]').attributes('aria-checked')).toBe('true')
+  expect(w.find('[data-testid="coding-tool-picker"]').exists()).toBe(false)
   expect(w.get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Cursor')
   expect(w.find('select').exists()).toBe(false)
   expect(fromDraft(draft).modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg' }); w.unmount()
  })
- it('clears the configuration when changing tools and requires a new explicit selection', async () => {
+ it('derives the CLI and default config path from the selected model', async () => {
   const { w, draft } = setup(); await flushPromises()
-  await w.get('[data-testid="acp-backend-opencode"]').trigger('click')
-  expect(draft.acpBackend).toBe('opencode'); expect(draft.modelBinding).toEqual({ kind: 'configuration', configurationId: '' })
-  expect(draft.layout.configRoot).toBe('/root/.config/opencode')
-  await w.get('[data-testid="acp-backend-cursor"]').trigger('click')
-  expect(draft.modelBinding?.configurationId).toBe(''); w.unmount()
+  await w.get('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]').trigger('click')
+  await w.get('[data-test="app-select-option-buddy"]').trigger('click')
+  expect(draft.acpBackend).toBe('codebuddy')
+  expect(draft.modelBinding).toEqual({ kind: 'configuration', configurationId: 'buddy' })
+  expect(draft.layout.configRoot).toBe('/root/.codebuddy'); w.unmount()
  })
- it('preserves an edited config path and unrelated env while changing tools', async () => {
+ it('preserves an edited config path and unrelated env when selecting another model', async () => {
   const { w, draft } = setup({ env: { FEATURE: 'on' } }); await flushPromises()
   await w.get('[data-testid="meta-config-root"]').setValue('/custom/config')
-  await w.get('[data-testid="acp-backend-codebuddy"]').trigger('click')
+  await w.get('[data-testid="model-binding-configuration-select"] [data-test="app-select-trigger"]').trigger('click')
+  await w.get('[data-test="app-select-option-buddy"]').trigger('click')
   expect(draft.layout.configRoot).toBe('/custom/config')
   expect(fromDraft(draft).env).toEqual({ FEATURE: 'on', GRASP_CODEBUDDY_REGION: 'public' }); w.unmount()
+ })
+ it('independently inherits defaults and restores local selections when switches turn off', async () => {
+  const { w, draft } = setup(); await flushPromises()
+  await w.get('[data-testid="agent-inherit-model"]').trigger('click')
+  expect(w.get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Buddy')
+  expect(w.get('[data-testid="model-binding-configuration-select"] button').attributes('disabled')).toBeDefined()
+  expect(draft.modelBinding?.configurationId).toBe('cfg')
+  await w.get('[data-testid="agent-inherit-git"]').trigger('click'); await flushPromises()
+  expect(w.get('[data-testid="git-credential-row-gh"]').text()).toContain('GitHub team')
+  expect(draft.gitBindings?.items).toEqual([])
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: true, inheritGit: true })
+  await w.get('[data-testid="agent-inherit-model"]').trigger('click')
+  await w.get('[data-testid="agent-inherit-git"]').trigger('click')
+  expect(w.get('[data-testid="model-binding-configuration-select"]').text()).toContain('Team Cursor')
+  expect(w.find('[data-testid="git-credential-row-gh"]').exists()).toBe(false)
+  expect(fromDraft(draft)).toMatchObject({ inheritModel: false, inheritGit: false }); w.unmount()
  })
  it('writes named model and multiple Git references independently', async () => {
   const { w, draft } = setup(); await flushPromises()

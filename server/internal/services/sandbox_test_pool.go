@@ -218,7 +218,7 @@ func (s *SandboxService) startContainer(id uint, name, profile, runID, token str
 		return
 	}
 	runtime.ApplyCredentialBindings(env, creds, agent.CredentialBindings, s.selectedCredential)
-	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.selectedCredential)
+	gitCredentials, err := runtime.ApplyGitBindings(env, creds, agent.GitBindings, s.gitCredential)
 	if err != nil {
 		fail(err)
 		return
@@ -450,6 +450,7 @@ func (s *SandboxService) ensureConnected(ctx context.Context, id uint) (*liveSan
 	if err := checkAppliedBindings(modelFingerprint, gitFingerprint, &row, ls); err != nil {
 		return nil, nil, err
 	}
+	agent = effective
 	if ls != nil && ls.acp != nil && ls.acp.IsConnected() {
 		return ls, &row, nil
 	}

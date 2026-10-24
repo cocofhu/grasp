@@ -883,6 +883,64 @@ describe('WorkspaceCredentialsPanel', () => {
     wrapper.unmount()
   })
 
+  it('groups existing provider credentials for display, hides URL settings and keeps old rows read-only', async () => {
+    const oldRows: CredentialItem[] = [
+      { id: 'old-cursor', type: 'ai', provider: 'cursor', name: 'Existing Cursor', configured: true, masked: '••••' },
+      { id: 'old-github', type: 'git', provider: 'github', name: 'Existing GitHub', configured: true },
+      { id: 'old-gitlab', type: 'git', provider: 'gitlab', name: 'Existing GitLab', configured: true },
+      { id: 'old-url', type: 'git', provider: 'gitlab', envKey: 'GITLAB_URL', name: 'GitLab URL', configured: true },
+    ]
+    const wrapper = mountPanel({ items: oldRows }); await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-credential-section-coding"]').text()).toContain('Existing Cursor')
+    expect(wrapper.get('[data-testid="workspace-credential-group-github"]').text()).toContain('Existing GitHub')
+    expect(wrapper.get('[data-testid="workspace-credential-group-gitlab"]').text()).toContain('Existing GitLab')
+    expect(wrapper.find('[data-testid="workspace-credential-section-other"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('GitLab URL')
+    expect(wrapper.find('[data-testid="workspace-credential-edit-old-gitlab"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('请重新添加此凭据后编辑')
+    await wrapper.get('[data-testid="workspace-credential-clear-old-gitlab"]').trigger('click'); await flushPromises()
+    expect(mocks.del).toHaveBeenCalledWith('old-gitlab')
+    expect(mocks.put).not.toHaveBeenCalled(); wrapper.unmount()
+  })
+
+  it.each(['gitlab', 'github'] as const)('creates %s with a default Host and accepts a self-hosted origin in review', async provider => {
+    const wrapper = mountPanel({ items: [] }); await flushPromises(); await openCredentialWizard(wrapper)
+    await wrapper.get(`[data-testid="credential-kind-${provider}"]`).trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-create-next"]').trigger('click'); await finishStepTransition()
+    const host = wrapper.get('[data-testid="workspace-credential-create-host"]')
+    expect((host.element as HTMLInputElement).value).toBe(`${provider}.com`)
+    await wrapper.get('[data-testid="workspace-credential-create-alias"]').setValue('Private host')
+    await wrapper.get('[data-testid="workspace-credential-create-value"]').setValue('new-token')
+    await host.setValue('https://user:secret@git.example.test/repo')
+    expect(wrapper.get('[data-testid="workspace-credential-review-next"]').attributes('disabled')).toBeDefined()
+    await host.setValue('http://git.example.test:8080')
+    await reviewCredential(wrapper)
+    expect(wrapper.get('[data-testid="workspace-credential-review-host"]').text()).toBe('http://git.example.test:8080')
+    await wrapper.get('[data-testid="workspace-credential-create-submit"]').trigger('click'); await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({ purpose: 'git', provider, host: 'http://git.example.test:8080', value: 'new-token' }))
+    wrapper.unmount()
+  })
+
+  it('updates only Host without submitting or revealing an existing token, and cancels unsaved changes', async () => {
+    const item: CredentialItem = { id: 'gitlab-host', type: 'git', provider: 'gitlab', purpose: 'git', secretKind: 'token', host: 'https://gitlab.com', name: 'GitLab team', configured: true, masked: 'gl-…1234' }
+    const wrapper = mountPanel({ items: [item] }); await flushPromises()
+    expect(wrapper.get('[data-testid="workspace-credential-host-label-gitlab-host"]').text()).toBe('gitlab.com')
+    await wrapper.get('[data-testid="workspace-credential-edit-gitlab-host"]').trigger('click')
+    expect(wrapper.get('[data-testid="workspace-credential-save-gitlab-host"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="workspace-credential-host-gitlab-host"]').setValue('https://ignored.example.test')
+    await wrapper.get('[data-testid="workspace-credential-cancel-gitlab-host"]').trigger('click')
+    await wrapper.get('[data-testid="workspace-credential-edit-gitlab-host"]').trigger('click')
+    expect((wrapper.get('[data-testid="workspace-credential-host-gitlab-host"]').element as HTMLInputElement).value).toBe('gitlab.com')
+    await wrapper.get('[data-testid="workspace-credential-host-gitlab-host"]').setValue('http://git.example.test:8080')
+    mocks.put.mockResolvedValueOnce({ ...item, host: 'http://git.example.test:8080' })
+    await wrapper.get('[data-testid="workspace-credential-save-gitlab-host"]').trigger('click'); await flushPromises()
+    expect(mocks.put).toHaveBeenCalledWith(item.id, expect.objectContaining({ host: 'http://git.example.test:8080' }))
+    expect(mocks.put.mock.calls.at(-1)?.[1]).not.toHaveProperty('value')
+    expect(wrapper.get('[data-testid="workspace-credential-host-label-gitlab-host"]').text()).toBe('http://git.example.test:8080')
+    expect(wrapper.get('[data-testid="workspace-credential-masked"]').text()).toBe('gl-…1234')
+    wrapper.unmount()
+  })
+
   it('shows a retry surface when loading fails', async () => {
     mocks.get.mockRejectedValueOnce(new Error('credentials unavailable'))
     const wrapper = mountPanel()

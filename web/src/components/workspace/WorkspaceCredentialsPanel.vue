@@ -18,7 +18,9 @@ import {
   aliasKey,
   conflictingAlias,
   kindById,
-  kindOfItem,
+  displayKindOfItem,
+  defaultGitCredentialHost,
+  normalizeGitCredentialHost,
   type CredentialKindId,
 } from '@/lib/workspace/credentialKinds'
 
@@ -121,6 +123,8 @@ const createStep = ref<1 | 2 | 3>(1)
 const createKind = ref<CredentialKindId | 'model_api' | ''>('')
 const createAlias = ref('')
 const createSecret = ref('')
+const createHost = ref('')
+const hostDrafts = reactive<Record<string, string>>({})
 const revealSecret = ref(false)
 const aliasError = ref('')
 const createAttempted = ref(false)
@@ -147,6 +151,8 @@ const credentialTypeKeys = {
   custom: 'pages.workspace.credentials.typeCustom',
 } as const
 const selectedKind = computed(() => (createKind.value ? kindById(createKind.value) : undefined))
+const createHasHost = computed(() => selectedKind.value?.type === 'git')
+const createHostValid = computed(() => !createHasHost.value || !!normalizeGitCredentialHost(createHost.value))
 const selectedDisplayKind = computed(() => createTool.value ? kindById(createTool.value) : selectedKind.value)
 watch(createStep, async () => {
   await nextTick()
@@ -159,7 +165,7 @@ function kindLabel(id: CredentialKindId) { return id === 'opencode' ? 'OpenCode 
 const secretReady = computed(() => Boolean(createKind.value && (savedCredential.value || createSecret.value.trim()) && (createKind.value !== 'model_api' || (createIssuer.value === 'custom' ? !!effectiveIssuer.value : /^[a-zA-Z0-9][a-zA-Z0-9._-]*$/.test(effectiveIssuer.value)))))
 
 const orderedItems = computed(() =>
-  items.value.filter((item) => item.configured || (item.secretRevision || 0) > 1 || !item.id.startsWith('cred-builtin-')).sort((a, b) => {
+  items.value.filter((item) => !['GITLAB_URL', 'GITHUB_URL'].includes(item.envKey || '')).filter((item) => item.configured || (item.secretRevision || 0) > 1 || !item.id.startsWith('cred-builtin-')).sort((a, b) => {
     // Put the model API key first so the primary setup path is visible without
     // making users scan past Git/SSH slots.
     const aModel = isOpenCodeModelCredential(a) ? 0 : 1
@@ -176,7 +182,7 @@ const credentialGroups = computed(() => {
   const other: CredentialItem[] = []
   for (const item of orderedItems.value) {
     if (isModelCredential(item)) { buckets.set('model_api', [...(buckets.get('model_api') || []), item]); continue }
-    const kind = kindOfItem(item)
+    const kind = displayKindOfItem(item)
     if (!kind) {
       other.push(item)
       continue
@@ -232,20 +238,36 @@ function configuredText(item: CredentialItem): string {
 
 function typeLabel(item: CredentialItem): string {
   if (isModelCredential(item)) return (item.provider === 'custom' ? item.issuer : '') || (typeof item.metadata?.issuerLabel === 'string' ? item.metadata.issuerLabel : '') || modelProviderPreset(item.issuer || '')?.label || item.issuer || item.provider || routingCopy.value.modelKeys
-  const kind = kindOfItem(item)
+  const kind = displayKindOfItem(item)
   if (kind) return t(`pages.workspace.credentials.kinds.${kind.id}`)
   const key = (item.type || 'custom') as keyof typeof credentialTypeKeys
   return t(credentialTypeKeys[key] || credentialTypeKeys.custom)
 }
 
-function isWorkspaceEditable(item: CredentialItem): boolean {
+function isWorkspaceOwned(item: CredentialItem): boolean {
   return !item.source || item.source === 'workspace'
+}
+function isWorkspaceEditable(item: CredentialItem): boolean {
+  return isWorkspaceOwned(item) && !!item.purpose
+}
+function hasGitHost(item: CredentialItem): boolean {
+  return item.purpose === 'git' && !!defaultGitCredentialHost(item.provider || '')
+}
+function displayHost(item: CredentialItem): string {
+  return (item.host || defaultGitCredentialHost(item.provider || '')).replace(/^https:\/\//, '').replace(/\/$/, '')
+}
+function hostChanged(item: CredentialItem): boolean {
+  return hasGitHost(item) && normalizeGitCredentialHost(hostDrafts[item.id] || '') !== normalizeGitCredentialHost(item.host || defaultGitCredentialHost(item.provider || ''))
+}
+function canSave(item: CredentialItem): boolean {
+  return isWorkspaceEditable(item) && (!hasGitHost(item) || !!normalizeGitCredentialHost(hostDrafts[item.id] || '')) && (!!drafts[item.id]?.trim() || hostChanged(item))
 }
 
 function updateItems(next: CredentialItem) {
   const i = items.value.findIndex((item) => item.id === next.id)
   if (i < 0) items.value = [...items.value, next]
   else items.value = items.value.map((item, index) => (index === i ? next : item))
+  hostDrafts[next.id] = displayHost(next)
   drafts[next.id] = ''
   editing[next.id] = false
 }
@@ -254,12 +276,14 @@ function setItems(next: CredentialItem[]) {
   items.value = next
   for (const key of Object.keys(drafts)) delete drafts[key]
   for (const key of Object.keys(editing)) delete editing[key]
+  for (const key of Object.keys(hostDrafts)) delete hostDrafts[key]
   for (const item of next) drafts[item.id] = ''
 }
 
 function startEdit(item: CredentialItem) {
   if (!isWorkspaceEditable(item)) return
   drafts[item.id] = ''
+  hostDrafts[item.id] = displayHost(item)
   editing[item.id] = true
 }
 
@@ -325,6 +349,7 @@ function openCreate() {
   Object.assign(connectionForm, { name: '', protocol: 'openai-chat-completions', baseUrl: 'https://api.deepseek.com/v1', scheme: 'bearer' })
   createKind.value = ''
   createAlias.value = ''
+  createHost.value = ''
   aliasError.value = ''
   createAttempted.value = false
   stepMotion.value = 'forward'
@@ -349,7 +374,7 @@ function selectKind(id: CredentialKindId | 'model_api') {
   if (stepLock.value || creating.value || createStep.value !== 1) return
   const tool = id === 'opencode' || id === 'deepseek_harness' ? id : ''
   const kind = tool ? 'model_api' : id
-  if (createKind.value !== kind || createTool.value !== tool) clearSecrets()
+  if (createKind.value !== kind || createTool.value !== tool) { clearSecrets(); createHost.value = defaultGitCredentialHost(kind) }
   createTool.value = tool
   createKind.value = kind
   createConnectionAfter.value = kind === 'model_api' && !returnToConnection.value
@@ -372,7 +397,7 @@ function goNext() {
     const kind = selectedKind.value
     const taken = savedCredential.value ? '' : kind ? conflictingAlias(items.value, kind, alias) : items.value.find((item) => isModelCredential(item) && aliasKey(item.name) === aliasKey(alias))?.name
     if (taken) { aliasError.value = t('pages.workspace.credentials.aliasTaken', { alias: taken }); return }
-    if (!secretReady.value || !connectionReady.value) return
+    if (!secretReady.value || !connectionReady.value || !createHostValid.value) return
   }
   stepMotion.value = 'forward'
   createAttempted.value = false
@@ -413,7 +438,7 @@ async function create() {
     return
   }
   createAttempted.value = true
-  if (!secretReady.value || !connectionReady.value) return
+  if (!secretReady.value || !connectionReady.value || !createHostValid.value) return
   aliasError.value = ''
   creating.value = true
   createError.value = ''
@@ -422,6 +447,7 @@ async function create() {
       purpose: 'model_api', issuer: effectiveIssuer.value, secretKind: 'api_key', name: alias, value: createSecret.value,
       ...(createIssuer.value === 'custom' ? { provider: 'custom' } : {}),
     } : {
+      ...(createHasHost.value ? { host: createHost.value.trim() } : {}),
       type: kind!.type, provider: kind!.provider, name: alias, envKey: kind!.envKey, value: createSecret.value,
       purpose: kind!.type === 'ai' ? 'tool_auth' : kind!.type,
       ...(kind!.type === 'ai' ? { toolId: kind!.id } : {}),
@@ -492,7 +518,7 @@ async function load() {
 
 async function save(item: CredentialItem) {
   const value = drafts[item.id] || ''
-  if (!value.trim() || saving[item.id]) return
+  if (!canSave(item) || saving[item.id]) return
   saving[item.id] = true
   try {
     const saved = await api.putCredential(item.id, {
@@ -504,7 +530,8 @@ async function save(item: CredentialItem) {
       targetId: item.targetId,
       provider: item.provider,
       envKey: item.envKey,
-      value,
+      ...(value.trim() ? { value } : {}),
+      ...(hasGitHost(item) ? { host: hostDrafts[item.id].trim() } : {}),
       metadata: item.metadata,
       enabled: item.enabled,
     })
@@ -659,19 +686,20 @@ watch(showCreate, (open) => {
                     class="credential-row"
                     :class="{ 'credential-row--editing': editing[item.id] }"
                     data-testid="workspace-credential-row"
-                    :data-credential-kind="kindOfItem(item)?.id || 'other'"
+                    :data-credential-kind="displayKindOfItem(item)?.id || 'other'"
                   >
                     <div class="credential-row-headline" data-testid="workspace-credential-headline">
                       <div class="credential-identity flex min-w-0 items-center gap-3">
                         <CredentialProviderLogo
-                          :provider="isModelCredential(item) ? item.issuer || item.metadata?.provider as string || item.provider : kindOfItem(item)?.logoProvider || item.provider"
-                          :icon="kindOfItem(item)?.icon"
+                          :provider="isModelCredential(item) ? item.issuer || item.metadata?.provider as string || item.provider : displayKindOfItem(item)?.logoProvider || item.provider"
+                          :icon="displayKindOfItem(item)?.icon"
                           match="provider"
                           :configured="item.configured"
                         />
                         <div class="min-w-0 flex-1">
                           <h4 class="m-0 text-[13px] font-semibold leading-5 text-txt" :title="itemLabel(item)" data-testid="workspace-credential-alias">{{ itemLabel(item) }}</h4>
                           <p v-if="itemLabel(item) !== typeLabel(item)" class="m-0 mt-0.5 text-[11px] text-txt3" data-testid="workspace-credential-kind">{{ typeLabel(item) }}</p>
+                          <p v-if="displayKindOfItem(item)?.type === 'git'" class="m-0 mt-0.5 truncate font-mono text-[11px] text-txt3" :data-testid="`workspace-credential-host-label-${item.id}`">{{ displayHost(item) }}</p>
                         </div>
                       </div>
                       <div class="credential-row-value">
@@ -715,7 +743,7 @@ watch(showCreate, (open) => {
                             >{{ t('pages.workspace.credentials.fillIn') }}</AppButton>
                           </template>
                           <AppButton
-                            v-if="isWorkspaceEditable(item) && item.configured"
+                            v-if="isWorkspaceOwned(item) && item.configured"
                             size="sm"
                             variant="ghost"
                             class="credential-clear"
@@ -730,13 +758,18 @@ watch(showCreate, (open) => {
                       </div>
                     </div>
                     <p v-if="!isWorkspaceEditable(item)" class="mb-0 mt-3 text-[11px] leading-5 text-txt3">
-                      {{ t('pages.workspace.credentials.managedByAdapter', { source: item.source }) }}
+                      {{ isWorkspaceOwned(item) ? t('pages.workspace.credentials.recreateCredential') : t('pages.workspace.credentials.managedByAdapter', { source: item.source }) }}
                     </p>
                     <div
                       v-else-if="editing[item.id]"
                       class="credential-editor mt-3 flex min-w-0 flex-col gap-3 border-t border-line/70 pt-3"
                       :data-testid="`workspace-credential-editor-${item.id}`"
                     >
+                      <label v-if="hasGitHost(item)" class="block">
+                        <span class="label">Host</span>
+                        <input v-model="hostDrafts[item.id]" class="input w-full font-mono" :data-testid="`workspace-credential-host-${item.id}`" :aria-invalid="!normalizeGitCredentialHost(hostDrafts[item.id] || '')" spellcheck="false" :placeholder="defaultGitCredentialHost(item.provider || '')" />
+                        <p v-if="!normalizeGitCredentialHost(hostDrafts[item.id] || '')" class="mb-0 mt-1 text-xs text-err">{{ t('pages.workspace.credentials.invalidHost') }}</p>
+                      </label>
                       <label class="sr-only" :for="`credential-value-${item.id}`">{{ t('pages.workspace.credentials.value') }} · {{ itemLabel(item) }}</label>
                       <textarea
                         v-if="isMultiline(item)"
@@ -763,7 +796,7 @@ watch(showCreate, (open) => {
                         <AppButton size="sm" variant="ghost" :disabled="!!saving[item.id]" :data-testid="`workspace-credential-cancel-${item.id}`" @click="cancelEdit(item)">
                           {{ t('common.buttons.cancel') }}
                         </AppButton>
-                        <AppButton size="sm" variant="primary" :disabled="!drafts[item.id]?.trim() || !!saving[item.id]" :loading="!!saving[item.id]" :data-testid="`workspace-credential-save-${item.id}`" @click="save(item)">
+                        <AppButton size="sm" variant="primary" :disabled="!canSave(item) || !!saving[item.id]" :loading="!!saving[item.id]" :data-testid="`workspace-credential-save-${item.id}`" @click="save(item)">
                           {{ t('pages.workspace.credentials.save') }}
                         </AppButton>
                       </div>
@@ -850,6 +883,11 @@ watch(showCreate, (open) => {
               />
               <p v-if="aliasError" class="mb-0 mt-1 text-[12px] text-err" data-testid="workspace-credential-alias-error">{{ aliasError }}</p>
             </label>
+            <label v-if="createHasHost" class="block">
+              <span class="label">Host</span>
+              <input v-model="createHost" class="input w-full font-mono" data-testid="workspace-credential-create-host" :aria-invalid="!createHostValid" :placeholder="defaultGitCredentialHost(createKind)" autocomplete="url" spellcheck="false" />
+              <p v-if="!createHostValid" class="mb-0 mt-1 text-xs text-err">{{ t('pages.workspace.credentials.invalidHost') }}</p>
+            </label>
             <template v-if="createKind === 'model_api'">
               <label class="block"><span class="label">{{ routingCopy.provider }}</span><ModelProviderSelect :model-value="createIssuer" :disabled="!!savedCredential" data-testid="model-credential-issuer" @update:model-value="selectIssuer" /></label>
               <label v-if="createIssuer === 'custom'" class="block"><span class="label">{{ routingCopy.providerLabel }}</span><input v-model="customProviderLabel" :disabled="!!savedCredential" class="input w-full" data-testid="model-credential-provider-label" /></label>
@@ -896,7 +934,7 @@ watch(showCreate, (open) => {
               <p v-else class="m-0 text-xs leading-5 text-txt3">{{ routingCopy.keyOnlyHint }}</p>
             </template>
           </div>
-          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><dt class="text-txt3">{{ routingCopy.secret }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
+          <div v-else key="review" ref="stepPane" class="credential-step-pane space-y-4"><dl class="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-3 rounded-xl border border-line p-4 text-xs"><dt class="text-txt3">{{ routingCopy.credentials }}</dt><dd class="m-0 text-txt">{{ createKind === 'model_api' ? routingCopy.modelKeys : selectedKind ? t(`pages.workspace.credentials.kinds.${selectedKind.id}`) : '' }}</dd><dt class="text-txt3">{{ routingCopy.name }}</dt><dd class="m-0 break-words text-txt">{{ createAlias }}</dd><template v-if="createKind === 'model_api'"><dt class="text-txt3">{{ routingCopy.issuer }}</dt><dd class="m-0 break-words text-txt">{{ providerLabel }} · {{ effectiveIssuer }}</dd><template v-if="inlineConnection"><dt class="text-txt3">{{ routingCopy.connectionName }}</dt><dd class="m-0 break-words text-txt">{{ connectionName }}</dd><dt class="text-txt3">API Base URL</dt><dd class="m-0 break-all font-mono text-txt">{{ connectionForm.baseUrl }}</dd><dt class="text-txt3">{{ routingCopy.protocol }}</dt><dd class="m-0 break-all text-txt">{{ connectionForm.protocol }} · {{ connectionForm.scheme }}</dd></template></template><template v-if="createHasHost"><dt class="text-txt3">Host</dt><dd class="m-0 break-all font-mono text-txt" data-testid="workspace-credential-review-host">{{ createHost }}</dd></template><dt class="text-txt3">{{ routingCopy.secret }}</dt><dd class="m-0 font-mono text-txt">••••••••</dd></dl></div>
         </Transition>
         <p v-if="createError" role="alert" class="mb-0 mt-4 text-xs leading-5 text-err" :data-testid="savedCredential ? 'model-credential-partial-error' : 'credential-create-error'"><template v-if="savedCredential">{{ routingCopy.keySavedConnectionFailed }}<br /></template>{{ createError }}</p>
       </div>
@@ -920,11 +958,11 @@ watch(showCreate, (open) => {
         >
           {{ t('pages.workspace.credentials.back') }}
         </AppButton>
-        <AppButton v-if="createStep === 2" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
+        <AppButton v-if="createStep === 2" variant="primary" :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid" data-testid="workspace-credential-review-next" @click="goNext">{{ routingCopy.next }}</AppButton>
         <AppButton
           v-if="createStep === 3"
           variant="primary"
-          :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady"
+          :disabled="creating || stepLock || !createAlias.trim() || !secretReady || !connectionReady || !createHostValid"
           :loading="creating"
           data-testid="workspace-credential-create-submit"
           @click="create"

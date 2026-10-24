@@ -516,7 +516,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 		}
 	}
 	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
-	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.SelectedCredential)
+	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.GitCredential)
 	if err != nil {
 		return sandbox.Spec{}, err
 	}

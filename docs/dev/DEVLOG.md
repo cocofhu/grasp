@@ -20,6 +20,22 @@
 
 ## 记录
 
+### 2026-10-25（PR #943 合并初始化四角色保护）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：`server/internal/services/onboarding.go`、默认继承回归与最新 `main` 的初始化四角色保护改动。
+- 做了什么：合并 `main` 的中英文规范角色集合、角色锁定和基线工作流创建前置校验；基线校验先解析 Agent 显式继承的默认模型，Git 初始化继续使用带 Host 的凭据解析器。
+- 为什么：PR #942 改写了基线角色校验，与本 PR 的默认模型继承命中同一函数；同时保留完整角色集合要求与有效模型校验，避免继承配置的角色被误判未配置。
+- 如何验证：合并后 server lint/vet、配置文档检查、全量测试、RunAgent/React 专项及核心覆盖率 90.4% 通过；中英规范四角色与默认继承的 race 回归、重启初始化真实 HTTP 契约含 race/tagged vet 通过。Web 全量 512 文件、5,152 单测通过，Lines 91.02%；lint（0 errors，12 个既有 warnings）、types、生产构建及 223 项完整关键浏览器测试通过。actionlint/shellcheck、docs build/audit 和 diff 检查通过，无未解决冲突。
+
+### 2026-10-25（凭据 Host 与 Agent 默认模型/Git 继承）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：工作区凭据 API/列表/向导、Git 授权解析与沙箱调用链、Agent 默认配置和编辑/创建、相关回归、配置帮助与 Git 技能说明。
+- 做了什么：GitHub/GitLab 凭据保存 Host（默认官方），移除独立 GitLab URL 列表项；凭据按编码工具和 Git 分类。默认配置可选择具名模型及多个 Git 授权，Agent 以独立开关明确继承模型或 Git；模型配置确定 CLI，元信息不再重复选择编码工具。
+- 为什么：自建站点应与授权一起保存；Agent scope 只能细化同一站点，避免跨站转发。可复用的默认配置需要显式继承规则，与单独配置、空授权和失效处理保持一致。
+- 如何验证：server lint/vet、配置文档、全量测试、RunAgent/React 专项及核心覆盖率 90.4% 通过；Host/API/继承/长会话/冷重连/共享沙箱回归含 race 通过。Web 全量 512 文件、5,143 单测通过，Lines 91.02%，lint（0 errors，12 个既有 warnings）、types、build、audit 通过；完整关键浏览器 223 项全过（4.3 分钟），含默认模型与多 Git 保存、首选、继承创建及刷新回读。重启初始化契约含 race/tagged vet、actionlint/shellcheck、docs build/audit 通过。桌面及 390px 页面已核对，本地前端与更新后的控制面健康检查均为 200；无线上数据写入，无沙箱镜像或引导契约变更。
+
 ### 2026-10-25（PR #940 重启端到端测试使用当前模型合同）
 
 - 日期：2026-10-25（Asia/Hong_Kong）

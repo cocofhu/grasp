@@ -8,6 +8,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
+	"github.com/cocofhu/grasp/internal/runtime"
 )
 
 func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxService, *models.Sandbox, *ModelConnectionService, *ModelConfigurationService, CredentialView, modelrouting.Connection, modelrouting.Configuration) {
@@ -22,7 +23,7 @@ func boundSandboxFixture(t *testing.T, purpose string, git bool) (*SandboxServic
 	}
 	agent := Agent{Name: "agentA", AcpBackend: "opencode", ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}}
 	if git {
-		s.selectedCredential = serviceGitValue
+		s.gitCredential = serviceGitValue
 		agent.GitBindings = serviceGitSelection("gh", "gl")
 	}
 	if err := s.skills.Save(agent); err != nil {
@@ -120,7 +121,7 @@ func TestLiveBindingFingerprintsSurviveReconnectAndRestart(t *testing.T) {
 			t.Fatalf("unchanged thread was not reused: %v", err)
 		}
 	}
-	s.selectedCredential = func(string) (string, string, bool) { return "", "", false }
+	s.gitCredential = func(string) (runtime.GitCredentialValue, bool) { return runtime.GitCredentialValue{}, false }
 	if _, _, err := s.ChatWithTimeout(ctx, row.ID, "revoked Git must block", nil, 0, nil); err == nil {
 		t.Fatal("chat ignored revoked Git authorization")
 	}

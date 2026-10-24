@@ -44,6 +44,14 @@ describe('capabilities draft round-trip', () => {
 })
 
 describe('credential binding round-trip', () => {
+  it('omits an empty dormant model reference while inheriting and preserves a selected local model', () => {
+    const draft = toDraft({ ...baseAgent, inheritModel: true, modelBinding: { kind: 'configuration', configurationId: '' } })
+    expect(fromDraftRaw(draft)).not.toHaveProperty('modelBinding')
+    expect(fromDraft(draft)).not.toHaveProperty('modelBinding')
+    draft.modelBinding = { kind: 'configuration', configurationId: 'local-model' }
+    expect(fromDraft(draft).modelBinding).toEqual(draft.modelBinding)
+    expect(draft.modelBinding.configurationId).toBe('local-model')
+  })
   it('serializes only custom environment credential bindings alongside named model and Git selections', () => {
     const draft = toDraft({ ...baseAgent, modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' }, credentialBindings: { OPENAI_API_KEY: 'model-key', GITHUB_TOKEN: 'git', SENTRY_TOKEN: 'custom' } })
     expect(fromDraft(draft).credentialBindings).toEqual({ SENTRY_TOKEN: 'custom' })

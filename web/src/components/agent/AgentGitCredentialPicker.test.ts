@@ -16,6 +16,7 @@ const items: CredentialItem[] = [
   { id: 'hosts-1', name: '可信主机', type: 'ssh', provider: 'ssh', purpose: 'ssh', secretKind: 'ssh_known_hosts', envKey: 'GIT_SSH_KNOWN_HOSTS', configured: true },
   { id: 'disabled', name: '已停用', type: 'git', purpose: 'git', provider: 'github', configured: true, enabled: false },
   { id: 'cleared', name: '已清空', type: 'git', purpose: 'git', provider: 'gitlab', configured: false },
+  { id: 'old-gitlab', name: 'Old GitLab', type: 'git', provider: 'gitlab', configured: true },
   { id: 'ai', name: '模型授权', type: 'ai', provider: 'cursor', configured: true },
 ]
 const mounted: ReturnType<typeof mount>[] = []
@@ -38,7 +39,7 @@ describe('Agent Git credentials', () => {
   it('searches saved Git authorization with logos and excludes hosts, model, disabled and cleared credentials', async () => {
     const wrapper = setup()
     await wrapper.get('[data-testid="git-credential-add"] [data-test="app-select-trigger"]').trigger('click')
-    for (const id of ['hosts-1', 'ai', 'disabled', 'cleared']) expect(wrapper.find(`[data-test="app-select-option-${id}"]`).exists()).toBe(false)
+    for (const id of ['hosts-1', 'ai', 'disabled', 'cleared', 'old-gitlab']) expect(wrapper.find(`[data-test="app-select-option-${id}"]`).exists()).toBe(false)
     expect(wrapper.get('[data-test="app-select-option-gh-1"]').find('[data-provider-logo="github"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="app-select-option-gl-1"]').find('[data-provider-logo="gitlab"]').exists()).toBe(true)
     expect(wrapper.get('[data-test="app-select-option-ssh-1"]').find('[data-provider-logo="ssh-key"]').exists()).toBe(true)
@@ -49,6 +50,17 @@ describe('Agent Git credentials', () => {
     expect(wrapper.get('[data-testid="git-credential-row-gl-1"]').find('[data-provider-logo="gitlab"]').exists()).toBe(true)
     expect(wrapper.find('select').exists()).toBe(false)
     expect(wrapper.text()).not.toMatch(/GIT_REPOS|GITHUB_TOKEN|GITLAB_TOKEN|secret|推荐变量/)
+  })
+  it('searches a self-hosted credential by Host and only allows a scope on that origin', async () => {
+    const wrapper = setup({ items: [{ id: 'self-hosted', type: 'git', purpose: 'git', provider: 'gitlab', host: 'http://git.company.test:8080', name: 'Team GitLab', configured: true }], modelValue: { items: [] } })
+    await choose(wrapper, 'git-credential-add', 'self-hosted', 'company.test')
+    expect(wrapper.get('[data-testid="git-credential-row-self-hosted"]').text()).toContain('http://git.company.test:8080')
+    await wrapper.get('[data-testid="git-scope-self-hosted"]').setValue('git.company.test:8080')
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
+    await wrapper.get('[data-testid="git-scope-self-hosted"]').setValue('https://git.company.test:8080/team/repo')
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([false])
+    await wrapper.get('[data-testid="git-scope-self-hosted"]').setValue('http://git.company.test:8080/team/repo')
+    expect(wrapper.emitted('validity')?.at(-1)).toEqual([true])
   })
   it('keeps multiple credentials from the same provider, changes preference and makes deliberate removal explicit', async () => {
     const wrapper = setup()

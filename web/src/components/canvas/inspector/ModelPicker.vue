@@ -19,23 +19,34 @@ const summaryConfiguration = ref<ModelConfiguration | null>(null)
 const summaryConnection = ref<ModelConnection | null>(null)
 const summaryLoading = ref(false)
 const summaryError = ref('')
+const inheritedBackend = ref('')
 watch(
-  () => [props.agent?.modelBinding, props.agent?.acpBackend] as const,
-  async ([binding, toolId], _previous, onCleanup) => {
+  () => [props.agent?.modelBinding, props.agent?.acpBackend, props.agent?.inheritModel] as const,
+  async ([localBinding, localToolId, inheritModel], _previous, onCleanup) => {
     let stale = false
     onCleanup(() => { stale = true })
     summaryBinding.value = null
     summaryConfiguration.value = null
     summaryConnection.value = null
     summaryError.value = ''
-    if (!binding?.configurationId) { summaryLoading.value = false; summaryError.value = c.value.missingConfiguration; return }
+    inheritedBackend.value = ''
     summaryLoading.value = true
     try {
+      let binding = localBinding
+      let toolId = localToolId
+      if (inheritModel) {
+        const defaults = await api.getSharedAgentConfig()
+        if (stale) return
+        binding = defaults.modelBinding
+        toolId = defaults.acpBackend
+        inheritedBackend.value = toolId || ''
+      }
+      if (!binding?.configurationId) { summaryError.value = c.value.missingConfiguration; return }
       const response = await api.listModelConfigurations()
       if (stale) return
       const configuration = response.items.find((row) => row.id === binding.configurationId)
       if (!configuration || configuration.state !== 'active') { summaryError.value = c.value.missingConfiguration; return }
-      if (configuration.backend !== toolId) { summaryError.value = c.value.configurationBackendMismatch; return }
+      if (configuration.backend !== toolId && !(inheritModel && !toolId)) { summaryError.value = c.value.configurationBackendMismatch; return }
       summaryConfiguration.value = configuration
       const resolved = configuration.binding
       if (resolved.kind === 'connection') {
@@ -62,12 +73,12 @@ const summaryProblem = computed(() => {
   if (summaryError.value) return summaryError.value
   if (!summaryBinding.value || props.credentials === null) return ''
   if (!summaryCredential.value || !credentialUsable(summaryCredential.value)) return c.value.missingCredential
-  if (summaryBinding.value.kind === 'platform' && !isToolCredential(summaryCredential.value, String(props.agent?.acpBackend || ''))) return c.value.missingCredential
+  if (summaryBinding.value.kind === 'platform' && !isToolCredential(summaryCredential.value, backend.value)) return c.value.missingCredential
   if (summaryBinding.value.kind === 'connection' && !isModelCredential(summaryCredential.value)) return c.value.missingCredential
   return ''
 })
 
-const backend = computed(() => String(props.agent?.acpBackend || ''))
+const backend = computed(() => props.agent?.inheritModel ? summaryConfiguration.value?.backend || inheritedBackend.value : String(props.agent?.acpBackend || ''))
 const studioMetaLink = computed(() => ({
   path: '/agents',
   query: props.agent?.name ? { agent: props.agent.name, studioTab: 'meta' } : {},

@@ -2,11 +2,8 @@
 import { computed, ref, watch } from 'vue'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
-import AgentGitCredentialPicker from '@/components/agent/AgentGitCredentialPicker.vue'
+import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
-import ModelBindingEditor from '@/components/agent/ModelBindingEditor.vue'
-import CodingToolPicker from '@/components/agent/CodingToolPicker.vue'
-import type { ModelBinding } from '@/lib/api/api'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
 
@@ -19,6 +16,8 @@ const emit = defineEmits<AgentCreateWizardEmit>()
 const {
   t,
   draft,
+  sharedConfig,
+  effectiveModel,
   nameError,
   creating,
   createError,
@@ -30,8 +29,6 @@ const {
   currentStep,
   progressPct,
   reviewItems,
-  currentRegionPolicy,
-  currentRegion,
   showAuthReminder,
   headSub,
   templateOptions,
@@ -40,12 +37,8 @@ const {
   selectedTemplate,
   onTemplateSelect,
   close,
-  selectRegion,
-  markConfigured,
-  selectAcp,
   confirmAcpSwitch,
   cancelAcpSwitch,
-  onGitBindings,
   goPrev,
   goSkip,
   goNext,
@@ -55,19 +48,13 @@ const {
 
 const gitSelectionValid = ref(true)
 const modelSelectionValid = ref(false)
-const canUseSelectedModel = computed(() => modelSelectionValid.value && draft.value.modelBinding?.kind === 'configuration' && !!draft.value.modelBinding.configurationId)
+const canUseSelectedModel = computed(() => modelSelectionValid.value && effectiveModel.value?.kind === 'configuration' && !!effectiveModel.value.configurationId)
 function resetModelSelection() {
   modelSelectionValid.value = false
   draft.value.modelBinding = { kind: 'configuration', configurationId: '' }
 }
 watch(() => draft.value.gitBindings?.items.length, (count) => { if (!count) gitSelectionValid.value = true }, { immediate: true })
 watch(draft, resetModelSelection, { immediate: true })
-watch(() => draft.value.acpBackend, resetModelSelection)
-function setModelBinding(value: ModelBinding) {
-  if (value.kind !== 'configuration') return
-  draft.value.modelBinding = value
-  markConfigured('acp')
-}
 function proceed() {
   if ((currentStep.value.id === 'acp' || currentStep.value.id === 'review') && !canUseSelectedModel.value) return
   if ((currentStep.value.id === 'git' || currentStep.value.id === 'review') && !gitSelectionValid.value) return
@@ -197,27 +184,12 @@ function proceed() {
 
                 <template v-else-if="currentStep.id === 'acp'">
                   <div class="tool-model-layout" data-testid="agent-tool-model-step">
-                    <section class="min-w-0">
-                      <h4 class="mb-3 mt-0 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.toolPicker.title') }}</h4>
-                      <CodingToolPicker
-                        :model-value="draft.acpBackend"
-                        :region-policy="currentRegionPolicy"
-                        :current-region="currentRegion"
-                        :disabled="creating"
-                        test-id-prefix="agent-wizard"
-                        @update:model-value="selectAcp"
-                        @select-region="selectRegion"
-                      />
-                    </section>
-                    <section class="min-w-0">
-                      <h4 class="mb-3 mt-0 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.wizard.steps.apiKey') }}</h4>
-                      <ModelBindingEditor compact :backend="draft.acpBackend" :model-value="draft.modelBinding" @update:model-value="setModelBinding" @validity="modelSelectionValid = $event" />
-                    </section>
+                    <AgentRuntimeBindings :draft="draft" section="model" inheritance :defaults="sharedConfig" :disabled="creating" @defaults-loaded="sharedConfig = $event" @model-validity="modelSelectionValid = $event" />
                   </div>
                 </template>
 
                 <template v-else-if="currentStep.id === 'git'">
-                  <AgentGitCredentialPicker :model-value="draft.gitBindings" :items="credentialItems" :disabled="creating" @update:model-value="onGitBindings" @validity="gitSelectionValid = $event" @help="envHelpOpen = true" />
+                  <AgentRuntimeBindings :draft="draft" section="git" inheritance :defaults="sharedConfig" :items="credentialItems" :disabled="creating" @defaults-loaded="sharedConfig = $event" @git-validity="gitSelectionValid = $event" @help="envHelpOpen = true" />
                 </template>
 
                 <template v-else-if="currentStep.id === 'review'">
@@ -317,13 +289,6 @@ function proceed() {
   grid-template-columns: minmax(0, 1fr);
   gap: 20px;
 }
-@media (min-width: 900px) {
-  .tool-model-layout {
-    grid-template-columns: minmax(245px, .85fr) minmax(0, 1.15fr);
-    align-items: start;
-  }
-}
-
 .wiz-head {
   background: linear-gradient(90deg, rgba(123, 97, 255, 0.12) 0%, transparent 42%), rgb(var(--c-surface));
 }

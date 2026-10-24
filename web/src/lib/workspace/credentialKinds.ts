@@ -66,6 +66,37 @@ export function kindOfItem(item: KindItem): CredentialKind | undefined {
   return undefined
 }
 
+/** List presentation only. Never use this fallback to authorize a run. */
+export function displayKindOfItem(item: KindItem): CredentialKind | undefined {
+  const declared = kindOfItem(item)
+  if (declared || item.purpose) return declared
+  const provider = item.provider?.trim().toLowerCase()
+  const type = item.type?.toLowerCase()
+  if (type === 'ai') return CREDENTIAL_KINDS.find(kind => kind.type === 'ai' && kind.provider === provider)
+  if (type === 'git') return CREDENTIAL_KINDS.find(kind => kind.type === 'git' && kind.provider === provider)
+  if (type === 'ssh' && provider === 'ssh') {
+    if (item.envKey === 'GIT_SSH_KNOWN_HOSTS') return kindById('ssh_hosts')
+    if (item.envKey === 'GIT_SSH_PRIVATE_KEY') return kindById('ssh_key')
+  }
+  return undefined
+}
+
+export function defaultGitCredentialHost(provider: string): string {
+  return provider === 'github' ? 'github.com' : provider === 'gitlab' ? 'gitlab.com' : ''
+}
+
+/** A Git credential identifies one HTTP(S) origin, never a repository path. */
+export function normalizeGitCredentialHost(raw: string): string | null {
+  const value = raw.trim()
+  if (!value || /[\\\s]/.test(value) || !/^(?:https?:\/\/)?[^/?#]+\/?$/i.test(value)) return null
+  try {
+    const url = new URL(value.includes('://') ? value : `https://${value}`)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.pathname !== '/' || url.search || url.hash || url.port === '0') return null
+    if (!url.hostname.startsWith('[') && !url.hostname.split('.').every(label => /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label))) return null
+    return url.origin
+  } catch { return null }
+}
+
 /** Existing display alias when this kind already uses the name, otherwise empty. */
 export function conflictingAlias(items: KindItem[], kind: CredentialKind, alias: string, exceptId = ''): string {
   const want = aliasKey(alias)

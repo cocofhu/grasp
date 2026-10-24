@@ -146,7 +146,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 	if p := opts.Project; p != nil {
 		extra.Env = p.Env
 		extra.Bindings = p.CredentialBindings
-		extra.RepoCredentials = runtime.RepoCredentialsFor([]models.Project{*p}, s.selectedCredential)
+		extra.RepoCredentials = runtime.RepoCredentialsFor([]models.Project{*p}, s.gitCredential)
 	}
 	id := row.ID
 	if opts.OnReady != nil {
