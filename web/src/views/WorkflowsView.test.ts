@@ -10,7 +10,7 @@ import pages from '@/locales/zh-CN/pages.json'
 const mocks = vi.hoisted(() => {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { ref } = require('vue') as typeof import('vue')
-  return { workspace: ref({ name: 'Workspace', description: '', variables: [] }), isMobile: ref(false), listWorkflows: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
+  return { workspace: ref({ name: 'Workspace', description: '', variables: [] }), isMobile: ref(false), listWorkflows: vi.fn(), listAgents: vi.fn(), getWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), triggerImport: vi.fn(), error: vi.fn() }
 })
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 vi.mock('@/lib/composables/useWorkspaceContext', () => ({ useWorkspaceContext: () => ({ workspace: mocks.workspace, ensureLoaded: async () => mocks.workspace.value }) }))
@@ -29,7 +29,8 @@ async function setup() {
   await flushPromises()
   return { wrapper, router }
 }
-beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.isMobile.value = false; mocks.listWorkflows.mockResolvedValue([head]); mocks.getWorkflow.mockResolvedValue(head) })
+const readyAgents = ['需求澄清', '实现', '测试评审', '交付'].map((name) => ({ name }))
+beforeEach(() => { vi.clearAllMocks(); localStorage.clear(); mocks.isMobile.value = false; mocks.listWorkflows.mockResolvedValue([head]); mocks.listAgents.mockResolvedValue(readyAgents); mocks.getWorkflow.mockResolvedValue(head) })
 describe('workspace workflow management', () => {
   it('searches in the management page while preserving direct editing with a clean URL', async () => {
     const { wrapper, router } = await setup()
