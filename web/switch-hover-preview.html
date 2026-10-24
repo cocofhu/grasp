@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>继承默认配置 · 开关悬停</title>
+    <style>
+      .stage { max-width: 768px; margin: 0 auto; padding: 16px 16px 48px; }
+      .hint { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: rgb(var(--c-txt2)); }
+      .canvas { border-radius: 16px; padding: 16px; }
+      .canvas + .canvas { margin-top: 16px; }
+      .light {
+        --c-base: 250 250 251;
+        --c-surface: 255 255 255;
+        --c-line: 229 229 232;
+        --c-line-strong: 212 212 216;
+        --c-txt: 24 24 27;
+        --c-txt2: 82 82 91;
+        --c-txt3: 113 113 122;
+        --c-accent: 123 97 255;
+        --c-accent-hover: 84 36 216;
+        background: rgb(var(--c-surface));
+        color: rgb(var(--c-txt));
+      }
+      .dark {
+        --c-base: 10 10 11;
+        --c-surface: 20 20 23;
+        --c-line: 38 38 43;
+        --c-line-strong: 54 54 62;
+        --c-txt: 237 237 240;
+        --c-txt2: 161 161 170;
+        --c-txt3: 110 110 120;
+        --c-accent: 123 97 255;
+        --c-accent-hover: 167 139 250;
+        background: rgb(var(--c-surface));
+        color: rgb(var(--c-txt));
+      }
+      .theme-name { margin: 0 0 10px; font-size: 12px; color: rgb(var(--c-txt3)); }
+      .card {
+        display: flex;
+        min-height: 120px;
+        flex-direction: column;
+        border: 1px solid rgb(var(--c-line));
+        border-radius: 16px;
+        background: rgb(var(--c-base));
+        padding: 12px 14px;
+      }
+      .head, .row {
+        display: flex;
+        flex-shrink: 0;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+      }
+      .row { margin-top: 10px; }
+      .label { font-size: 13px; font-weight: 500; color: rgb(var(--c-txt)); }
+      .body {
+        display: flex;
+        min-height: 0;
+        flex: 1;
+        align-items: center;
+        margin-top: 12px;
+        border-top: 1px solid rgb(var(--c-line) / 0.7);
+        padding-top: 8px;
+      }
+      .summary { display: flex; min-width: 0; align-items: center; gap: 10px; color: rgb(var(--c-txt2)); font-size: 13px; }
+      .mark { width: 18px; height: 18px; flex-shrink: 0; fill: rgb(var(--c-txt)); }
+      .name { color: rgb(var(--c-txt)); font-size: 12px; font-weight: 600; }
+      .sub { color: rgb(var(--c-txt3)); font-size: 11px; }
+      .probe {
+        margin-top: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        font-size: 12px;
+        color: rgb(var(--c-txt2));
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, ref } from 'vue'
+      import AppSwitch from './src/components/ui/AppSwitch.vue'
+      import './src/styles/global.css'
+
+      const fit = document.createElement('style')
+      fit.textContent = 'html,body,#app{height:auto!important;overflow:visible!important;}'
+      document.head.appendChild(fit)
+
+      const mark = `<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.2 6.6H21l-5.4 4 2.1 6.4L12 15.8 6.3 19l2.1-6.4L3 8.6h6.8z"/></svg>`
+
+      createApp({
+        components: { AppSwitch },
+        setup() {
+          return {
+            lightOn: ref(true),
+            lightOff: ref(false),
+            lightDisabled: ref(true),
+            darkOn: ref(true),
+            darkOff: ref(false),
+            darkDisabled: ref(true),
+            probeOn: ref(true),
+          }
+        },
+        template: `
+          <main class="stage">
+            <p class="hint">把指针移到已开启的开关上，或用 Tab 聚焦。浅色轨道加深为 rgb(84, 36, 216)，深色变亮为 rgb(167, 139, 250)。关闭和禁用悬停不变紫。</p>
+            <section class="canvas light" aria-label="浅色主题">
+              <p class="theme-name">浅色</p>
+              <section class="card">
+                <div class="head">
+                  <span class="label">继承默认配置</span>
+                  <AppSwitch v-model="lightOn" aria-label="继承默认配置" data-testid="light-on" />
+                </div>
+                <div class="body">
+                  <div class="summary">${mark}<div><div class="name">CodeBuddy</div><div class="sub">工作区默认</div></div></div>
+                </div>
+                <div class="row">
+                  <span class="label">关闭</span>
+                  <AppSwitch v-model="lightOff" aria-label="关闭" data-testid="light-off" />
+                </div>
+                <div class="row">
+                  <span class="label">禁用且开启</span>
+                  <AppSwitch v-model="lightDisabled" disabled aria-label="禁用且开启" data-testid="light-disabled" />
+                </div>
+              </section>
+            </section>
+            <section class="canvas dark" aria-label="深色主题">
+              <p class="theme-name">深色</p>
+              <section class="card">
+                <div class="head">
+                  <span class="label">继承默认配置</span>
+                  <AppSwitch v-model="darkOn" aria-label="继承默认配置" data-testid="dark-on" />
+                </div>
+                <div class="body">
+                  <div class="summary">${mark}<div><div class="name">CodeBuddy</div><div class="sub">工作区默认</div></div></div>
+                </div>
+                <div class="row">
+                  <span class="label">关闭</span>
+                  <AppSwitch v-model="darkOff" aria-label="关闭" data-testid="dark-off" />
+                </div>
+                <div class="row">
+                  <span class="label">禁用且开启</span>
+                  <AppSwitch v-model="darkDisabled" disabled aria-label="禁用且开启" data-testid="dark-disabled" />
+                </div>
+              </section>
+            </section>
+            <div class="probe">
+              <span>跟随页面主题（无局部色值覆盖）</span>
+              <AppSwitch v-model="probeOn" aria-label="跟随页面主题" data-testid="probe-on" />
+            </div>
+          </main>
+        `,
+      }).mount('#app')
+    </script>
+  </body>
+</html>
