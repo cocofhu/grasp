@@ -119,8 +119,12 @@ const displays = new WeakMap<HTMLElement, { value: string; priority: string }>()
 const transitions = new WeakMap<HTMLElement, Animation>()
 
 function cancelTransition(el: HTMLElement) {
-  transitions.get(el)?.cancel()
+  const animation = transitions.get(el)
+  if (!animation) return
   transitions.delete(el)
+  // cancel() rejects animation.finished with AbortError.
+  animation.finished?.catch(() => {})
+  animation.cancel()
 }
 
 function fadeCandidate(el: HTMLElement) {
