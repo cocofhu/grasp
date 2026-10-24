@@ -6,7 +6,7 @@ import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
-const mocks = vi.hoisted(() => ({ listWorkflows: vi.fn(), getWorkflow: vi.fn(), createWorkflowFromBaseline: vi.fn(), copyPreviewWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), error: vi.fn(), success: vi.fn() }))
+const mocks = vi.hoisted(() => ({ listWorkflows: vi.fn(), listAgents: vi.fn(), getWorkflow: vi.fn(), createWorkflowFromBaseline: vi.fn(), copyPreviewWorkflow: vi.fn(), deleteWorkflow: vi.fn(), patchWorkflowHomeVisibility: vi.fn(), patchWorkflowNotifyPolicy: vi.fn(), error: vi.fn(), success: vi.fn() }))
 const signedInWorkspace = { name: 'Workspace', description: '', variables: [] }
 const workspace = ref<typeof signedInWorkspace | null>(signedInWorkspace)
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
@@ -16,7 +16,9 @@ vi.mock('@/lib/composables/useBreakpoint', () => ({ useBreakpoint: () => ({ isMo
 vi.mock('@/lib/run/useWorkflowImport', () => ({ useWorkflowImport: () => ({ fileInput: ref(null), triggerImport: vi.fn(), handleFileChange: vi.fn() }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ isFavorite: () => false, toggleFavorite: vi.fn() }) }))
 import { workflowCatalogRevision } from '@/lib/api/workflowCatalogEvents'
+import { onboardingOpen, resetFirstInstallProbe } from '@/lib/pm/firstInstall'
 import { useWorkflows } from './useWorkflows'
+const readyAgents = ['需求澄清', '实现', '测试评审', '交付'].map((name) => ({ name }))
 const item = { id: 'wf-one', name: 'One', description: '', status: 'draft' as const, version: 2, publishedVersion: 1, updatedAt: '', nodes: [], edges: [], showOnHome: false, notifyPolicy: { mode: 'inherit' as const, events: ['failed'] } }
 async function setup() {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }] })
@@ -27,19 +29,19 @@ async function setup() {
   await flushPromises()
   return { logic, router, wrapper }
 }
-beforeEach(() => { vi.clearAllMocks(); workspace.value = signedInWorkspace; mocks.listWorkflows.mockResolvedValue([{ ...item }]); mocks.getWorkflow.mockResolvedValue(item) })
+beforeEach(() => { vi.clearAllMocks(); resetFirstInstallProbe(); workspace.value = signedInWorkspace; mocks.listWorkflows.mockResolvedValue([{ ...item }]); mocks.listAgents.mockResolvedValue(readyAgents); mocks.getWorkflow.mockResolvedValue(item) })
 describe('workspace workflow actions', () => {
   it('creates from baseline in the workspace and opens scratch with a clean URL', async () => {
     const { logic, router, wrapper } = await setup()
     mocks.createWorkflowFromBaseline.mockResolvedValue({ ...item, id: 'new-id', name: 'New' })
-    logic.openBaselineModal()
+    await logic.openBaselineModal()
     logic.baselineName.value = ' New '
     logic.baselineRepos.value = [{ name: 'repo', url: 'https://example.com/repo.git', branch: 'main' }]
     await logic.createFromBaseline()
     expect(mocks.createWorkflowFromBaseline).toHaveBeenCalledWith('New', logic.baselineRepos.value)
     expect(logic.workflows.value.map((row) => row.id)).toEqual(['new-id', 'wf-one'])
     expect(logic.baselineModalOpen.value).toBe(false)
-    logic.newWorkflow()
+    await logic.newWorkflow()
     await flushPromises()
     expect(router.currentRoute.value.fullPath).toBe('/workflows/new/edit')
     wrapper.unmount()
@@ -131,6 +133,34 @@ describe('workspace workflow actions', () => {
     workflowCatalogRevision.value++
     await flushPromises()
     expect(logic.workflows.value.map((row) => row.name)).toEqual(['默认工作流'])
+    wrapper.unmount()
+  })
+  it('stops both create entries when a quartet is incomplete and opens the guide', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: '需求澄清' }, { name: '实现' }])
+    const { logic, router, wrapper } = await setup()
+    await logic.newWorkflow()
+    expect(router.currentRoute.value.fullPath).toBe('/workflows')
+    expect(logic.baselineModalOpen.value).toBe(false)
+    expect(logic.onboardingGateOpen.value).toBe(true)
+    expect(logic.onboardingGateMissing.value).toEqual(['测试评审', '交付'])
+    await logic.openBaselineModal()
+    expect(logic.baselineModalOpen.value).toBe(false)
+    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
+    logic.finishOnboardingFromGate()
+    expect(onboardingOpen.value).toBe(true)
+    expect(logic.onboardingGateOpen.value).toBe(false)
+    wrapper.unmount()
+  })
+  it('allows create when only the English quartet is complete', async () => {
+    mocks.listAgents.mockResolvedValue(['Clarify', 'Implement', 'TestReview', 'Deliver'].map((name) => ({ name })))
+    const { logic, router, wrapper } = await setup()
+    await logic.openBaselineModal()
+    expect(logic.onboardingGateOpen.value).toBe(false)
+    expect(logic.baselineModalOpen.value).toBe(true)
+    logic.closeBaselineModal()
+    await logic.newWorkflow()
+    await flushPromises()
+    expect(router.currentRoute.value.fullPath).toBe('/workflows/new/edit')
     wrapper.unmount()
   })
 })

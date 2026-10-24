@@ -189,6 +189,29 @@ describe('useAgentStudio', () => {
     app.unmount()
   })
 
+  it('locks canonical agents in the list and refuses rename or delete', async () => {
+    mocks.listAgents.mockResolvedValue([
+      { name: '需求澄清', acpBackend: 'cursor' },
+      { name: '自建', acpBackend: 'cursor' },
+    ])
+    const { studio, app } = await withAgentStudio('/agents?agent=自建')
+    await flushPromises()
+    const locked = studio.treeNodes.value.find((row) => row.id === '需求澄清')
+    const custom = studio.treeNodes.value.find((row) => row.id === '自建')
+    expect(locked?.locked).toBe(true)
+    expect(locked?.lockTitle).toContain('不能删除或重命名')
+    expect(custom?.locked).toBeFalsy()
+    studio.openRenameAgent('需求澄清')
+    studio.confirmDeleteAgent('需求澄清')
+    expect(studio.promptCfg.value).toBeNull()
+    expect(studio.confirmCfg.value).toBeNull()
+    expect(mocks.renameAgent).not.toHaveBeenCalled()
+    expect(mocks.deleteAgent).not.toHaveBeenCalled()
+    studio.openRenameAgent('自建')
+    expect(studio.promptCfg.value?.title).toBeTruthy()
+    app.unmount()
+  })
+
   it('lists agents directly and selects by their stable name', async () => {
     const { studio, app } = await withAgentStudio()
     await flushPromises()

@@ -33,6 +33,10 @@ const {
   baselineRepos,
   creatingBaseline,
   baselineCreateError,
+  onboardingGateOpen,
+  onboardingGateMissing,
+  closeOnboardingGate,
+  finishOnboardingFromGate,
   deleteWfTarget,
   deletingWf,
   deleteWfError,
@@ -304,6 +308,27 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
           @click="createFromBaseline"
         >
           {{ creatingBaseline ? t('pages.workspace.newWorkflow.creating') : t('pages.workspace.newWorkflow.create') }}
+        </AppButton>
+      </template>
+    </AppModal>
+
+    <AppModal
+      :open="onboardingGateOpen"
+      :title="t('pages.workspace.newWorkflow.agentsRequiredTitle')"
+      :width="440"
+      close-on-esc
+      data-testid="onboarding-agents-gate"
+      @close="closeOnboardingGate"
+    >
+      <p class="text-[13px] leading-relaxed text-txt2" data-testid="onboarding-agents-gate-body">
+        {{ t('pages.workspace.newWorkflow.agentsRequired', { missing: onboardingGateMissing.join(t('pages.onboarding.team.listSep')) }) }}
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" data-testid="onboarding-agents-gate-dismiss" @click="closeOnboardingGate">
+          {{ t('common.buttons.cancel') }}
+        </AppButton>
+        <AppButton variant="primary" data-testid="onboarding-agents-gate-open" @click="finishOnboardingFromGate">
+          {{ t('pages.workspace.newWorkflow.goOnboarding') }}
         </AppButton>
       </template>
     </AppModal>

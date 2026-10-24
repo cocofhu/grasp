@@ -20,6 +20,14 @@
 
 ## 记录
 
+### 2026-10-25（PR #943 合并初始化四角色保护）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：`server/internal/services/onboarding.go`、默认继承回归与最新 `main` 的初始化四角色保护改动。
+- 做了什么：合并 `main` 的中英文规范角色集合、角色锁定和基线工作流创建前置校验；基线校验先解析 Agent 显式继承的默认模型，Git 初始化继续使用带 Host 的凭据解析器。
+- 为什么：PR #942 改写了基线角色校验，与本 PR 的默认模型继承命中同一函数；同时保留完整角色集合要求与有效模型校验，避免继承配置的角色被误判未配置。
+- 如何验证：合并后 server lint/vet、配置文档检查、全量测试、RunAgent/React 专项及核心覆盖率 90.4% 通过；中英规范四角色与默认继承的 race 回归、重启初始化真实 HTTP 契约含 race/tagged vet 通过。Web 全量 512 文件、5,152 单测通过，Lines 91.02%；lint（0 errors，12 个既有 warnings）、types、生产构建及 223 项完整关键浏览器测试通过。actionlint/shellcheck、docs build/audit 和 diff 检查通过，无未解决冲突。
+
 ### 2026-10-25（凭据 Host 与 Agent 默认模型/Git 继承）
 
 - 日期：2026-10-25（Asia/Hong_Kong）

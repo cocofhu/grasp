@@ -11,10 +11,7 @@ import type { Workflow } from '@/lib/shared/types'
 const mocks = vi.hoisted(() => ({
   push: vi.fn(),
   listWorkflows: vi.fn(),
-  listAgents: vi.fn(async () => [
-    { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
-    { name: 'worker', capabilities: { interaction: 'auto' } },
-  ]),
+  listAgents: vi.fn(async () => [...soloAgents, ...readyOnboardingAgents]),
   patchWorkflowHomeVisibility: vi.fn(),
   startRun: vi.fn(),
   getRun: vi.fn(),
@@ -59,8 +56,20 @@ vi.mock('@/lib/composables/useToast', () => ({
 import { HOME_COMPOSER_DRAFT_KEY } from '@/lib/run/homeComposerDraft'
 import { HOME_PRIORITY_MEMORY_KEY } from '@/lib/run/useHomeApproveChat'
 import { setBrandSettings } from '@/lib/composables/useBrandSettings'
+import { onboardingOpen } from '@/lib/pm/firstInstall'
 import DashboardView from './DashboardView.vue'
 import dashboardSource from './DashboardView.vue?raw'
+
+const soloAgents = [
+  { name: 'clarifier', capabilities: { interaction: 'clarify', tools: ['ask_question'] } },
+  { name: 'worker', capabilities: { interaction: 'auto' } },
+]
+const readyOnboardingAgents = [
+  { name: '需求澄清' },
+  { name: '实现' },
+  { name: '测试评审' },
+  { name: '交付' },
+]
 
 const HomePreviewAppModalStub = {
   props: ['open', 'title', 'width'],
@@ -216,6 +225,9 @@ describe('DashboardView home composer', () => {
     mocks.getRun.mockReset()
     mocks.reactReply.mockReset()
     mocks.createWorkflowFromBaseline.mockReset()
+    mocks.listAgents.mockReset()
+    mocks.listAgents.mockImplementation(async () => [...soloAgents, ...readyOnboardingAgents])
+    onboardingOpen.value = false
     mocks.listWorkflows.mockResolvedValue([approveWf])
     mocks.patchWorkflowHomeVisibility.mockResolvedValue({ ...approveWf, showOnHome: false })
     mocks.startRun.mockResolvedValue({ id: 'run-9', status: 'queued' })
@@ -1450,6 +1462,54 @@ describe('DashboardView home composer', () => {
     expect(wrapper.get('[data-testid="home-create-error"]').text()).toContain('create failed')
     expect(mocks.listWorkflows.mock.calls.length).toBe(callsAfterMount)
     expect(wrapper.find('[data-testid="home-workflow-card-wf-ap"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  // review v1 — incomplete quartet never opens the name/repo form; primary action opens the guide
+  it('stops home baseline create when the quartet is incomplete and opens the guide', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: '需求澄清' }, { name: '实现' }])
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-create-form"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain('还不能新建工作流')
+    expect(document.body.textContent).toContain('测试评审、交付')
+    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
+    await wrapper.get('[data-testid="home-onboarding-agents-gate-open"]').trigger('click')
+    await flushPromises()
+    expect(onboardingOpen.value).toBe(true)
+    expect(wrapper.find('[data-testid="home-onboarding-agents-gate-body"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lists the English canonical names when the home UI is English', async () => {
+    mocks.listAgents.mockResolvedValue([{ name: '需求澄清' }, { name: '实现' }])
+    const wrapper = mountDashboard('en')
+    await flushPromises()
+    await wrapper.get('[data-testid="home-workflow-select-trigger"]').trigger('click')
+    await flushPromises()
+    await teleported('home-workflow-select-create').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(false)
+    expect(document.body.textContent).toContain("Can't create a workflow yet")
+    expect(document.body.textContent).toContain('Clarify, Implement, TestReview, Deliver')
+    expect(document.body.textContent).toContain('Finish the guide')
+    expect(mocks.createWorkflowFromBaseline).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('opens the home baseline form when only the English quartet is complete', async () => {
+    mocks.listAgents.mockResolvedValue(
+      ['Clarify', 'Implement', 'TestReview', 'Deliver'].map((name) => ({ name })),
+    )
+    const wrapper = mountDashboard()
+    await flushPromises()
+    await wrapper.get('[data-testid="home-new-workflow"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-testid="home-onboarding-agents-gate-body"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="home-create-workflow-name"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

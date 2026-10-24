@@ -27,34 +27,48 @@ var (
 	// ErrBaselineReposRequired is returned when no non-empty repository URL is submitted.
 	ErrBaselineReposRequired = errors.New("at least one repository URL is required")
 	// ErrOnboardingInvalidTeam is returned when the chosen templates are unknown,
-	// duplicated, miss a required template, or produce duplicate Agent names.
+	// duplicated, miss a required template, or use a name other than the
+	// language's canonical Agent name.
 	ErrOnboardingInvalidTeam = errors.New("invalid onboarding team")
+	// ErrOnboardingAgentsIncomplete is returned when neither canonical quartet
+	// exists, so a baseline workflow must not be created.
+	ErrOnboardingAgentsIncomplete = errors.New("onboarding agents incomplete")
+	// ErrProtectedOnboardingAgent is returned when a canonical onboarding Agent
+	// would be deleted or renamed. The Agent is required by workflows.
+	ErrProtectedOnboardingAgent = errors.New("该 Agent 被工作流使用，不能删除或重命名")
 )
 
 // OnboardingBootstrapRequest is the body for POST .../bootstrap-onboarding.
 type OnboardingBootstrapRequest struct {
-	ModelConfigurationID string                  `json:"modelConfigurationId"`
-	GitBindings          *models.GitBindings     `json:"gitBindings,omitempty"`
-	Language             string                  `json:"language,omitempty"`
-	Region               string                  `json:"region,omitempty"`
-	RepoURL              string                  `json:"repoUrl,omitempty"`
-	RepoBranch           string                  `json:"repoBranch,omitempty"`
-	GitUserName          string                  `json:"gitUserName,omitempty"`
-	GitUserEmail         string                  `json:"gitUserEmail,omitempty"`
-	VncPreview           *bool                   `json:"vncPreview"`
-	BrowserMcp           *bool                   `json:"browserMcp"`
-	Agents               []OnboardingAgentChoice `json:"agents,omitempty"`
+	ModelConfigurationID string              `json:"modelConfigurationId"`
+	GitBindings          *models.GitBindings `json:"gitBindings,omitempty"`
+	// Language is the wizard's UI language (zh-CN | en); it names the default
+	// workflow and its start/end nodes. Empty means Chinese.
+	Language     string `json:"language,omitempty"`
+	Region       string `json:"region,omitempty"`
+	RepoURL      string `json:"repoUrl,omitempty"`
+	RepoBranch   string `json:"repoBranch,omitempty"`
+	GitUserName  string `json:"gitUserName,omitempty"`
+	GitUserEmail string `json:"gitUserEmail,omitempty"`
+	// VncPreview / BrowserMcp default on when omitted (first-install preview stack).
+	VncPreview *bool `json:"vncPreview"`
+	BrowserMcp *bool `json:"browserMcp"`
+	// Agents picks the built-in templates to create. Empty = all four templates
+	// with the canonical names for Language. Every template is required, and a
+	// non-empty name must equal that language's canonical name.
+	Agents []OnboardingAgentChoice `json:"agents,omitempty"`
 }
 
 // OnboardingAgentChoice chooses a role and optionally a different saved model.
 type OnboardingAgentChoice struct {
-	TemplateID           string `json:"templateId"`
+	TemplateID string `json:"templateId"`
+	// Name must be empty or the canonical name for the wizard language.
 	Name                 string `json:"name,omitempty"`
 	ModelConfigurationID string `json:"modelConfigurationId,omitempty"`
 }
 
-// OnboardingRequiredTemplateIDs must always be part of the onboarding team.
-var OnboardingRequiredTemplateIDs = []string{"clarify", "implement"}
+// OnboardingRequiredTemplateIDs must all be part of the onboarding team.
+var OnboardingRequiredTemplateIDs = []string{"clarify", "implement", "test_review", "deliver"}
 
 // OnboardingBootstrapResult is returned after a successful (idempotent) bootstrap.
 type OnboardingBootstrapResult struct {
@@ -104,11 +118,18 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	if err != nil {
 		return models.WorkflowDef{}, err
 	}
+	set := BaselineOnboardingSet(s.existingAgentNames())
+	if set == "" {
+		return models.WorkflowDef{}, ErrOnboardingAgentsIncomplete
+	}
 	applyBaselineRepos(&envelope.Graph, repos)
+	if set == "en" {
+		rebindBaselineProfilesToEnglish(&envelope.Graph)
+	}
 	if err := envelope.Graph.Validate(); err != nil {
 		return models.WorkflowDef{}, fmt.Errorf("default workflow graph invalid: %w", err)
 	}
-	if err := s.requireBaselineAgents(); err != nil {
+	if err := s.requireBaselineAgents(set); err != nil {
 		return models.WorkflowDef{}, err
 	}
 
@@ -136,15 +157,58 @@ func (s *OnboardingService) CreateFromBaseline(req CreateBaselineWorkflowRequest
 	return published, nil
 }
 
-// requireBaselineAgents rejects a workflow whose built-in roles are not configured.
-func (s *OnboardingService) requireBaselineAgents() error {
-	for _, role := range TeamEngineerTemplates {
-		agent, ok := s.Skills.Get(role.RoleLabelZH)
+func (s *OnboardingService) existingAgentNames() []string {
+	if s.Skills == nil {
+		return nil
+	}
+	list := s.Skills.List()
+	names := make([]string, 0, len(list))
+	for _, a := range list {
+		names = append(names, a.Name)
+	}
+	return names
+}
+
+// rebindBaselineProfilesToEnglish points the embedded Chinese agent_profile
+// refs at the English canonical names. Existing Agent files are not written.
+func rebindBaselineProfilesToEnglish(g *models.Graph) {
+	if g == nil {
+		return
+	}
+	mapping := make(map[string]string, len(OnboardingAgentNames))
+	for i, zh := range OnboardingAgentNames {
+		mapping[zh] = OnboardingAgentNamesEN[i]
+	}
+	for i := range g.Nodes {
+		cfg := g.Nodes[i].Config
+		if cfg == nil {
+			continue
+		}
+		cur := models.AgentProfile(cfg)
+		next, ok := mapping[cur]
+		if !ok {
+			continue
+		}
+		models.SetAgentProfile(cfg, next)
+		if g.Nodes[i].Label == cur {
+			g.Nodes[i].Label = next
+		}
+	}
+}
+
+// requireBaselineAgents rejects a workflow whose selected canonical Agents are not configured.
+func (s *OnboardingService) requireBaselineAgents(set string) error {
+	names := OnboardingAgentNames
+	if set == "en" {
+		names = OnboardingAgentNamesEN
+	}
+	for _, name := range names {
+		agent, ok := s.Skills.Get(name)
 		if ok && s.SharedAgent != nil {
 			agent = ExtendOverlay(s.SharedAgent.Get(), agent)
 		}
 		if !ok || agent.ModelBinding == nil {
-			return fmt.Errorf("Agent %s is not configured; complete onboarding first", role.RoleLabelZH)
+			return fmt.Errorf("Agent %s is not configured; complete onboarding first", name)
 		}
 		if err := modelrouting.ValidateConfigurationReference(agent.ModelBinding); err != nil {
 			return fmt.Errorf("Agent %s: %w", agent.Name, err)
@@ -236,7 +300,7 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 	}
 	loc := onboardingLocaleFor(req.Language)
 	region := strings.TrimSpace(req.Region)
-	team, err := resolveOnboardingTeam(req.Agents)
+	team, err := resolveOnboardingTeam(req.Language, req.Agents)
 	if err != nil {
 		return OnboardingBootstrapResult{}, err
 	}
@@ -295,6 +359,11 @@ func (s *OnboardingService) Bootstrap(req OnboardingBootstrapRequest) (Onboardin
 
 	agentIDs := make([]string, 0, len(templates))
 	for _, tmpl := range templates {
+		if _, ok := s.Skills.Get(tmpl.Name); ok {
+			// Re-entry keeps the saved Agent. Only missing canonical names are created.
+			agentIDs = append(agentIDs, tmpl.Name)
+			continue
+		}
 		if err := s.Skills.Save(tmpl); err != nil {
 			return OnboardingBootstrapResult{}, fmt.Errorf("save agent %s: %w", tmpl.Name, err)
 		}
@@ -330,8 +399,18 @@ type onboardingTeamMember struct {
 }
 
 // resolveOnboardingTeam turns the wizard's choices into the Agents to save, in
-// workflow order. Empty choices keep every template with its template name.
-func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMember, error) {
+// workflow order. Empty choices keep every template under the language's
+// canonical names. A submitted team must include all four, and each name must
+// match that canonical name.
+func resolveOnboardingTeam(lang string, choices []OnboardingAgentChoice) ([]onboardingTeamMember, error) {
+	canonical := canonicalOnboardingNames(lang)
+	if len(choices) == 0 {
+		out := make([]onboardingTeamMember, 0, len(TeamEngineerTemplates))
+		for i, role := range TeamEngineerTemplates {
+			out = append(out, onboardingTeamMember{Role: role, Name: canonical[i]})
+		}
+		return out, nil
+	}
 	picked := map[string]OnboardingAgentChoice{}
 	for _, c := range choices {
 		id := strings.TrimSpace(c.TemplateID)
@@ -343,25 +422,23 @@ func resolveOnboardingTeam(choices []OnboardingAgentChoice) ([]onboardingTeamMem
 		}
 		picked[id] = c
 	}
-	if len(choices) > 0 {
-		for _, id := range OnboardingRequiredTemplateIDs {
-			if _, ok := picked[id]; !ok {
-				return nil, fmt.Errorf("%w: template %q is required", ErrOnboardingInvalidTeam, id)
-			}
+	for _, id := range OnboardingRequiredTemplateIDs {
+		if _, ok := picked[id]; !ok {
+			return nil, fmt.Errorf("%w: template %q is required", ErrOnboardingInvalidTeam, id)
 		}
 	}
 	out := make([]onboardingTeamMember, 0, len(TeamEngineerTemplates))
 	seen := map[string]bool{}
-	for _, role := range TeamEngineerTemplates {
-		c, ok := picked[role.ID]
-		if len(choices) > 0 && !ok {
-			continue
-		}
-		name := role.RoleLabelZH
+	for i, role := range TeamEngineerTemplates {
+		c := picked[role.ID]
+		name := canonical[i]
 		if custom := strings.TrimSpace(c.Name); custom != "" {
 			normalized, err := NormalizeAndValidateAgentName(custom)
 			if err != nil {
 				return nil, err
+			}
+			if normalized != name {
+				return nil, fmt.Errorf("%w: agent name %q must be %q", ErrOnboardingInvalidTeam, normalized, name)
 			}
 			name = normalized
 		}

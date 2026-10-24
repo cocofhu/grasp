@@ -489,7 +489,7 @@
         "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the workspace credentials."
       },
       "team": {
-        "meta": "Four Agents form the default workflow; rename them or pick a model.",
+        "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model for each.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
@@ -506,7 +506,7 @@
         "modelLabel": "Model",
         "modelPlaceholder": "Empty = workspace default",
         "modelInherit": "Empty = {model}",
-        "foot": "Clarify and Implement are required. You can rename any Agent later on the Agents page.",
+        "foot": "All four are created. Names are locked and cannot be deleted or renamed on the Agents page.",
         "toastFixNames": "Fix the Agent names first",
         "nameIssues": {
           "required": "Enter a name",
@@ -631,7 +631,10 @@
         "namePlaceholder": "For example, Requirement alignment",
         "create": "Create",
         "creating": "Creating…",
-        "created": "Created workflow \"{name}\""
+        "created": "Created workflow \"{name}\"",
+        "agentsRequiredTitle": "Can't create a workflow yet",
+        "agentsRequired": "A new workflow needs these four Agents. Still missing: {missing}. Finish the guide first.",
+        "goOnboarding": "Finish the guide"
       },
       "tabRequirementDrafts": "Requirement drafts",
       "requirementDrafts": {
@@ -2138,6 +2141,7 @@
         "manageNoMatchDesc": "Try a different name keyword.",
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
+        "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
         "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
         "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
       },

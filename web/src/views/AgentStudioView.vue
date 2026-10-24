@@ -19,6 +19,7 @@ import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
 import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
 import { api, type CreateAgentTestPayload, type SandboxView } from '@/lib/api/api'
 import { useAgentStudio } from '@/lib/agent/useAgentStudio'
+import { isProtectedOnboardingAgentName } from '@/lib/pm/onboardingWizard'
 
 const props = defineProps<{ embedded?: boolean }>()
 const route = useRoute()
@@ -745,17 +746,22 @@ async function createStudioChatTest(
           "
         >
           <Icon name="robot" :size="14" class="shrink-0 text-accent-2" />
-          <span class="min-w-0 flex-1 truncate text-[13px] text-txt">
-            <template v-if="manageNameHighlight(name).hit">
-              {{ manageNameHighlight(name).before }}<mark class="bg-warn/25 px-0 text-inherit">{{ manageNameHighlight(name).hit }}</mark>{{ manageNameHighlight(name).after }}
-            </template>
-            <template v-else>{{ name }}</template>
-          </span>
+          <div class="min-w-0 flex-1">
+            <span class="block truncate text-[13px] text-txt">
+              <template v-if="manageNameHighlight(name).hit">
+                {{ manageNameHighlight(name).before }}<mark class="bg-warn/25 px-0 text-inherit">{{ manageNameHighlight(name).hit }}</mark>{{ manageNameHighlight(name).after }}
+              </template>
+              <template v-else>{{ name }}</template>
+            </span>
+            <span v-if="isProtectedOnboardingAgentName(name)" class="mt-0.5 block text-[11px] leading-4 text-txt3" data-testid="manage-agent-locked">
+              {{ t('pages.agentStudio.tree.lockedHint') }}
+            </span>
+          </div>
           <div class="flex shrink-0 gap-1.5">
-            <AppButton size="sm" variant="outline" icon="edit" @click="openRenameAgent(name)">
+            <AppButton size="sm" variant="outline" icon="edit" data-testid="manage-rename" :disabled="isProtectedOnboardingAgentName(name)" @click="openRenameAgent(name)">
               {{ t('pages.agentStudio.tree.manageRename') }}
             </AppButton>
-            <AppButton size="sm" variant="danger" icon="trash" @click="confirmDeleteAgent(name)">
+            <AppButton size="sm" variant="danger" icon="trash" data-testid="manage-delete" :disabled="isProtectedOnboardingAgentName(name)" @click="confirmDeleteAgent(name)">
               {{ t('pages.agentStudio.dialogs.delete') }}
             </AppButton>
           </div>

@@ -57,7 +57,8 @@ func (h *Handlers) CreateWorkflowFromBaseline(c *gin.Context) {
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrEmptyWorkflowName),
-			errors.Is(err, services.ErrBaselineReposRequired):
+			errors.Is(err, services.ErrBaselineReposRequired),
+			errors.Is(err, services.ErrOnboardingAgentsIncomplete):
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		case errors.Is(err, services.ErrWorkflowNameExists):
 			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

@@ -149,26 +149,30 @@ func TestSharedDefaultsValidateReferencesBeforeWriting(t *testing.T) {
 }
 
 func TestBaselineReadinessResolvesInheritedModel(t *testing.T) {
-	connections, configurations, _, _, configuration := newModelConfigurationFixture(t)
-	shared, agents := NewSharedAgentService(t.TempDir()), NewAgentService(t.TempDir())
-	wireDefaultBindingServices(t, shared, agents, connections, configurations)
-	if err := shared.Save(SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}}); err != nil {
-		t.Fatal(err)
-	}
-	for _, role := range TeamEngineerTemplates {
-		if err := agents.Save(Agent{Name: role.RoleLabelZH, InheritModel: true}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	onboarding := NewOnboardingService(agents, shared, NewWorkflowService(configurations.db), NewCredentialService(configurations.db))
-	if err := onboarding.requireBaselineAgents(); err != nil {
-		t.Fatalf("inherited baseline roles rejected: %v", err)
-	}
-	if err := shared.Save(SharedAgentConfig{}); err != nil {
-		t.Fatal(err)
-	}
-	if err := onboarding.requireBaselineAgents(); err == nil {
-		t.Fatal("unconfigured inherited baseline roles accepted")
+	for _, set := range []string{"zh", "en"} {
+		t.Run(set, func(t *testing.T) {
+			connections, configurations, _, _, configuration := newModelConfigurationFixture(t)
+			shared, agents := NewSharedAgentService(t.TempDir()), NewAgentService(t.TempDir())
+			wireDefaultBindingServices(t, shared, agents, connections, configurations)
+			if err := shared.Save(SharedAgentConfig{ModelBinding: &modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID}}); err != nil {
+				t.Fatal(err)
+			}
+			for _, name := range canonicalOnboardingNames(set) {
+				if err := agents.Save(Agent{Name: name, InheritModel: true}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			onboarding := NewOnboardingService(agents, shared, NewWorkflowService(configurations.db), NewCredentialService(configurations.db))
+			if err := onboarding.requireBaselineAgents(set); err != nil {
+				t.Fatalf("inherited baseline roles rejected: %v", err)
+			}
+			if err := shared.Save(SharedAgentConfig{}); err != nil {
+				t.Fatal(err)
+			}
+			if err := onboarding.requireBaselineAgents(set); err == nil {
+				t.Fatal("unconfigured inherited baseline roles accepted")
+			}
+		})
 	}
 }
 

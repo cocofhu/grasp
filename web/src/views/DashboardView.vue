@@ -7,9 +7,16 @@ import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import HomeCreateBaselineModal from '@/components/dashboard/HomeCreateBaselineModal.vue'
+import { api } from '@/lib/api/api'
+import { useToast } from '@/lib/composables/useToast'
+import { openRetryOnboarding } from '@/lib/pm/firstInstall'
+import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/pm/onboardingWizard'
+import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
@@ -30,7 +37,8 @@ import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 const router = useRouter()
-const { t, tm } = useI18n()
+const { t, tm, locale } = useI18n()
+const toast = useToast()
 const {
   homeWorkflows,
   unpublishedHomeWorkflows,
@@ -137,6 +145,8 @@ const phCursor = ref(false)
 let phTimer: ReturnType<typeof setTimeout> | null = null
 let phHoldTimer: ReturnType<typeof setTimeout> | null = null
 const createBaselineOpen = ref(false)
+const onboardingGateOpen = ref(false)
+const onboardingGateMissing = ref<string[]>([])
 const workflowMenuOpen = ref(false)
 const workflowMenuX = ref(0)
 const workflowMenuY = ref(0)
@@ -263,11 +273,40 @@ function goEditWorkflow(id: string) {
   void router.push(`/workflows/${id}/edit`)
 }
 
-function openCreateBaseline(e?: Event) {
+function uiOnboardingLang(): AppLocale {
+  return String(locale.value).toLowerCase().startsWith('en') ? 'en' : 'zh-CN'
+}
+
+function closeOnboardingGate() {
+  onboardingGateOpen.value = false
+}
+
+function finishOnboardingFromGate() {
+  onboardingGateOpen.value = false
+  openRetryOnboarding()
+}
+
+/** Home baseline create stops until one canonical quartet exists. */
+async function ensureOnboardingAgents(): Promise<boolean> {
+  try {
+    const agents = await api.listAgents()
+    const names = (agents || []).map((agent) => agent.name || '')
+    if (onboardingAgentsReady(names)) return true
+    onboardingGateMissing.value = missingOnboardingNames(names, uiOnboardingLang())
+    onboardingGateOpen.value = true
+    return false
+  } catch (cause: unknown) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+    return false
+  }
+}
+
+async function openCreateBaseline(e?: Event) {
   e?.preventDefault()
   e?.stopPropagation()
   closeWorkflowMenu()
   clearLongPress()
+  if (!(await ensureOnboardingAgents())) return
   createBaselineOpen.value = true
 }
 
@@ -1056,6 +1095,27 @@ onBeforeUnmount(() => {
       @close="createBaselineOpen = false"
       @created="onBaselineCreated"
     />
+
+    <AppModal
+      :open="onboardingGateOpen"
+      :title="t('pages.workspace.newWorkflow.agentsRequiredTitle')"
+      :width="440"
+      close-on-esc
+      data-testid="home-onboarding-agents-gate"
+      @close="closeOnboardingGate"
+    >
+      <p class="text-[13px] leading-relaxed text-txt2" data-testid="home-onboarding-agents-gate-body">
+        {{ t('pages.workspace.newWorkflow.agentsRequired', { missing: onboardingGateMissing.join(t('pages.onboarding.team.listSep')) }) }}
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" data-testid="home-onboarding-agents-gate-dismiss" @click="closeOnboardingGate">
+          {{ t('common.buttons.cancel') }}
+        </AppButton>
+        <AppButton variant="primary" data-testid="home-onboarding-agents-gate-open" @click="finishOnboardingFromGate">
+          {{ t('pages.workspace.newWorkflow.goOnboarding') }}
+        </AppButton>
+      </template>
+    </AppModal>
 
     <RunLaunchModal
       :open="launchOpen"
