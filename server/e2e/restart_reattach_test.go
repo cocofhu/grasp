@@ -348,17 +348,20 @@ func (s *stack) onboard(apiKey, model string) {
 	}
 	body := map[string]any{
 		"modelConfigurationId": configuration.ID,
+		"language":             "en",
 		"vncPreview":           false, "browserMcp": false,
 		"agents": []map[string]any{
-			{"templateId": "clarify", "name": "e2e-pm"},
-			{"templateId": "implement", "name": "e2e-dev"},
+			{"templateId": "clarify", "name": "Clarify"},
+			{"templateId": "implement", "name": "Implement"},
+			{"templateId": "test_review", "name": "TestReview"},
+			{"templateId": "deliver", "name": "Deliver"},
 		},
 	}
 	s.mustDo(http.MethodPost, "/api/workspace/bootstrap-onboarding", body, nil)
 	// The implement template parks for human review after its run; this test
 	// needs the node to finish on its own.
 	var agent map[string]any
-	s.mustDo(http.MethodGet, "/api/agents/e2e-dev", nil, &agent)
+	s.mustDo(http.MethodGet, "/api/agents/Implement", nil, &agent)
 	binding, _ := agent["modelBinding"].(map[string]any)
 	if agent["acpBackend"] != "opencode" || binding["kind"] != "configuration" || binding["configurationId"] != configuration.ID {
 		s.t.Fatal("onboarding did not bind the Agent to the selected OpenCode model configuration")
@@ -369,7 +372,7 @@ func (s *stack) onboard(apiKey, model string) {
 	}
 	caps["review"] = false
 	agent["capabilities"] = caps
-	s.mustDo(http.MethodPut, "/api/agents/e2e-dev", agent, nil)
+	s.mustDo(http.MethodPut, "/api/agents/Implement", agent, nil)
 }
 
 func (s *stack) createWorkflow() string {
@@ -384,7 +387,7 @@ func (s *stack) createWorkflow() string {
 			{"id": "input", "type": "input", "label": "input"},
 			{"id": "work", "type": "agent", "label": "work",
 				"caps":   map[string]any{"interaction": "auto", "reads": []string{"*"}},
-				"config": map[string]any{"agent_profile": "e2e-dev", "prompt": prompt}},
+				"config": map[string]any{"agent_profile": "Implement", "prompt": prompt}},
 			{"id": "output", "type": "output", "label": "output"},
 		},
 		"edges": []map[string]any{

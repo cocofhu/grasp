@@ -104,7 +104,7 @@ func TestRestartReattachOnboardingContract(t *testing.T) {
 	want := []string{
 		"POST /api/workspace/credentials", "POST /api/workspace/model-connections",
 		"POST /api/workspace/model-configurations", "POST /api/workspace/bootstrap-onboarding",
-		"GET /api/agents/e2e-dev", "PUT /api/agents/e2e-dev",
+		"GET /api/agents/Implement", "PUT /api/agents/Implement",
 	}
 	var actual []string
 	for i, request := range seen {
@@ -144,7 +144,7 @@ func TestRestartReattachOnboardingContract(t *testing.T) {
 	if connection.Protocol != modelrouting.ProtocolChat || connection.ProviderID != "deepseek" || connection.BaseURL != "https://api.deepseek.com/v1" || connection.Auth.Scheme != "bearer" || len(connection.Models) != 1 || connection.Models[0].ID != model {
 		t.Fatal("fixture did not persist the explicit DeepSeek Chat service")
 	}
-	for _, name := range []string{"e2e-pm", "e2e-dev"} {
+	for _, name := range []string{"Clarify", "Implement"} {
 		agent, ok := agents.Get(name)
 		if !ok || agent.ModelBinding == nil {
 			t.Fatalf("Agent %s was not configured", name)
@@ -163,7 +163,7 @@ func TestRestartReattachOnboardingContract(t *testing.T) {
 		if err != nil || bytes.Contains(encoded, []byte(secret)) {
 			t.Fatal("saved model, Agent or resolved JSON exposed the model secret")
 		}
-		if name == "e2e-dev" && (agent.Capabilities == nil || agent.Capabilities.Review) {
+		if name == "Implement" && (agent.Capabilities == nil || agent.Capabilities.Review) {
 			t.Fatal("restart fixture did not disable the implement review gate")
 		}
 	}
