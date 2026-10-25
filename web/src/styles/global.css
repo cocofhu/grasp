@@ -703,6 +703,12 @@ html.light .app-sidebar-card {
 .hover-ink-host.is-leave-ink > .hover-ink {
   transform: translate(-50%, -50%) scale(0);
 }
+/* Disabled / loading: hide any cover that was already open. No fade through the elevated fallback. */
+.hover-ink-host.is-ink-suppressed > .hover-ink {
+  visibility: hidden;
+  transition: none;
+  transform: translate(-50%, -50%) scale(0);
+}
 /* Content / icons / badges stay above the ink layer (plan g1.2). */
 .hover-ink-host > :not(.hover-ink) {
   position: relative;
@@ -712,6 +718,31 @@ html.light .app-sidebar-card {
   .hover-ink-host > .hover-ink {
     transition: none;
   }
+}
+
+/*
+ * Modal footer primary only (drawer footers are not .app-modal-footer).
+ * Light fill #18181B, white label, ink #52525B.
+ * Dark fill #EDEDF0, label #141417, ink #A1A1AA.
+ * Zero --tw-shadow so shadow-glow drops, while the focus ring stays.
+ * Label color is set here so text-white cannot pin icons or the spinner.
+ */
+.app-modal-footer button.bg-accent {
+  background-color: #ededf0;
+  color: #141417;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --hover-ink-color: #a1a1aa !important;
+}
+html.light .app-modal-footer button.bg-accent {
+  background-color: #18181b;
+  color: #ffffff;
+  --hover-ink-color: #52525b !important;
+}
+.app-modal-footer button.bg-accent .app-icon,
+.app-modal-footer button.bg-accent .app-spinner,
+.app-modal-footer button.bg-accent > span {
+  color: currentColor;
 }
 
 /* ---------- Sidebar section tree (正在执行 / 历史执行) ---------- */

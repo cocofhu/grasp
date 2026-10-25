@@ -121,6 +121,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       autoRetryOnResume?: boolean
       dropped?: Record<string, unknown>
       current?: Record<string, unknown>
+      params?: Record<string, unknown>
     } = {}
     try {
       const body = await res.json()
@@ -132,6 +133,7 @@ export async function req<T>(path: string, init?: RequestInit): Promise<T> {
       if (body?.dropped && typeof body.dropped === 'object') extra.dropped = body.dropped
       // Typed 409s (e.g. takeover) carry the server's re-read state.
       if (body?.current && typeof body.current === 'object' && !Array.isArray(body.current)) extra.current = body.current
+      if (body?.params && typeof body.params === 'object' && !Array.isArray(body.params)) extra.params = body.params
     } catch {
       // non-JSON error body; keep the status line
     }

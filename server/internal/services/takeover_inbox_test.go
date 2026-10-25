@@ -8,7 +8,7 @@ import (
 )
 
 // TestPendingInboxTakeoverAsReview: a taken-over auto node parked at
-// waiting_human shows in /api/gates as kind=review with takeover=true, and
+// waiting_human shows in /api/pending-nodes as kind=review with takeover=true, and
 // its state follows the review rule (replying while its session is busy).
 func TestPendingInboxTakeoverAsReview(t *testing.T) {
 	db := newTestDB(t)

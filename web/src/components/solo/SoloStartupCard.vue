@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import { repoShort } from '@/lib/solo/soloPrefs'
+import { sessionRepos } from '@/lib/solo/sessionRepos'
 import type { SoloSession } from '@/lib/api/apiTypes'
 
 /** Boot progress of a session's sandbox: pulling → container → clone → agent. */
@@ -14,8 +15,11 @@ const steps = computed(() => {
     { id: 'pulling', title: t('pages.solo.startup.pulling') },
     { id: 'creating', title: t('pages.solo.startup.creating') },
   ]
-  const repo = props.session.project?.repoUrl
-  if (repo) out.push({ id: 'clone', title: t('pages.solo.startup.clone', { repo: repoShort(repo) }) })
+  sessionRepos(props.session).forEach((repo, index) => {
+    const short = repoShort(repo.repoUrl)
+    if (!short) return
+    out.push({ id: `clone-${index}`, title: t('pages.solo.startup.clone', { repo: short }) })
+  })
   out.push({ id: 'agent', title: t('pages.solo.startup.agent', { agent: props.session.agentName }) })
   return out
 })

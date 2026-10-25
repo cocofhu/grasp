@@ -41,7 +41,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 		},
 	})
 
-	w := h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
@@ -52,7 +52,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 		t.Fatalf("token: %s", token)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview", nil)
+	req := httptest.NewRequest(http.MethodGet, "/public/approvals/preview", nil)
 	req.Header.Set("X-Gate-Share-Token", token)
 	pw := httptest.NewRecorder()
 	h.r.ServeHTTP(pw, req)
@@ -88,7 +88,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 	}
 
 	// Valid token + index streams bytes.
-	imgReq := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/images/0?token="+token, nil)
+	imgReq := httptest.NewRequest(http.MethodGet, "/public/approvals/images/0?token="+token, nil)
 	imgW := httptest.NewRecorder()
 	h.r.ServeHTTP(imgW, imgReq)
 	if imgW.Code != http.StatusOK {
@@ -103,7 +103,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 	}
 
 	// Header auth also works.
-	hdrReq := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/images/1", nil)
+	hdrReq := httptest.NewRequest(http.MethodGet, "/public/approvals/images/1", nil)
 	hdrReq.Header.Set("X-Gate-Share-Token", token)
 	hdrW := httptest.NewRecorder()
 	h.r.ServeHTTP(hdrW, hdrReq)
@@ -112,7 +112,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 	}
 
 	// Invalid token rejected.
-	bad := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/images/0?token=not-a-valid-token", nil)
+	bad := httptest.NewRequest(http.MethodGet, "/public/approvals/images/0?token=not-a-valid-token", nil)
 	badW := httptest.NewRecorder()
 	h.r.ServeHTTP(badW, bad)
 	if badW.Code == http.StatusOK && strings.HasPrefix(badW.Header().Get("Content-Type"), "image/") {
@@ -120,7 +120,7 @@ func TestPublicGateImageByOpaqueIndex(t *testing.T) {
 	}
 
 	// Out-of-range index.
-	miss := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/images/99", nil)
+	miss := httptest.NewRequest(http.MethodGet, "/public/approvals/images/99", nil)
 	miss.Header.Set("X-Gate-Share-Token", token)
 	missW := httptest.NewRecorder()
 	h.r.ServeHTTP(missW, miss)

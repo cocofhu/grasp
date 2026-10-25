@@ -12,10 +12,13 @@ import (
 )
 
 // RunInboxContext returns gate or clarify approval context for a pending inbox
-// item (GET /api/runs/:id/inbox-context?nodeId=&iteration=).
+// item (GET /api/runs/:id/nodes/:nodeId/context?iteration=).
 func (h *Handlers) RunInboxContext(c *gin.Context) {
 	runID := c.Param("id")
-	nodeID := c.Query("nodeId")
+	nodeID := strings.TrimSpace(c.Param("nodeId"))
+	if nodeID == "" {
+		nodeID = strings.TrimSpace(c.Query("nodeId"))
+	}
 	iterStr := c.Query("iteration")
 	if nodeID == "" || iterStr == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "nodeId and iteration are required"})

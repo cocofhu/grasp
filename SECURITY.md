@@ -22,7 +22,7 @@ security fixes until a longer support matrix is published.
 ## Temporary human_gate approval links
 
 Inbox operators can mint a one-shot external approval URL for a single pending
-`human_gate` instance (`/public/gate-approvals#t=…`).
+`human_gate` instance (`/public/approvals#t=…`).
 
 - Token entropy is ≥256-bit CSPRNG. The server stores **only** SHA-256 hex;
   verification uses constant-time compare. Plaintext tokens are never written
@@ -46,7 +46,7 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   iteration all invalidate unused links immediately. ReAct-only links that
   never successfully decide still expire via TTL / revoke / login-side finish.
 - Public responses set `Cache-Control: no-store`, `Referrer-Policy: no-referrer`,
-  and a strict CSP. The `/public/gate-approvals` prefix does **not** emit
+  and a strict CSP. The `/public/approvals` prefix does **not** emit
   `Access-Control-Allow-Origin`. POST decide requires Origin/Referer + custom
   header + one-time nonce, and is per-IP rate limited.
 - Share URLs mint from this request's `Host` (plus TLS /
@@ -66,9 +66,9 @@ Inbox operators can mint a one-shot external approval URL for a single pending
   multiple tabs can submit after refresh.
 - Public app-preview remote desktop uses a **separate** short-lived ticket
   (not the long-lived share token): clients exchange via
-  `POST /public/gate-approvals/preview-ticket` with `X-Gate-Share-Token`, then
-  connect `GET /public/gate-approvals/preview-vnc/ws?ticket=…` or load a
-  same-origin `/public/gate-approvals/preview-api/:ticket/…` iframe. Tickets are
+  `POST /public/approvals/preview-ticket` with `X-Gate-Share-Token`, then
+  connect `GET /public/approvals/preview-vnc/ws?ticket=…` or load a
+  same-origin `/public/approvals/preview-api/:ticket/…` iframe. Tickets are
   ~2 minutes, keyed by token hash + run/node (+ port for `preview-api`; a VNC
   ticket has no port and watches the node's sandbox desktop); share-token
   lifetime rules still apply and revocation/decide kicks live sessions. Preview

@@ -21,15 +21,15 @@ async function bootstrap() {
     routes: [
       { path: '/dashboard', component: DashboardView },
       {
-        path: '/gates',
+        path: '/runs/:runId/nodes/:nodeId',
         component: defineComponent({
           setup() {
             const route = useRoute()
             const seed = takeHomeApproveHandoff()
             return () =>
               h('div', { 'data-testid': 'gates-inbox-page' }, [
-                h('span', { 'data-testid': 'gates-query-run' }, String(route.query.run || '')),
-                h('span', { 'data-testid': 'gates-query-node' }, String(route.query.node || '')),
+                h('span', { 'data-testid': 'gates-query-run' }, String(route.params.runId || '')),
+                h('span', { 'data-testid': 'gates-query-node' }, String(route.params.nodeId || '')),
                 h('span', { 'data-testid': 'gates-handoff-text' }, seed?.text || ''),
                 h('span', { 'data-testid': 'gates-item-status' }, 'waiting_human'),
               ])

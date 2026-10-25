@@ -8,7 +8,6 @@ import RunBoardStatusListModal from '@/components/board/RunBoardStatusListModal.
 import AppButton from '@/components/ui/AppButton.vue'
 import Icon from '@/components/ui/Icon.vue'
 import SlidingTabs from '@/components/ui/SlidingTabs.vue'
-import { serializeStatusQuery } from '@/lib/composables/useStatusFilter'
 import { useRunBoard, type BoardColumnKey } from '@/lib/run/useRunBoard'
 import type { Run } from '@/lib/shared/types'
 
@@ -112,15 +111,6 @@ function openStatusList(status: string) {
 function onListSelect(run: Run) {
   closeListModal()
   router.push('/runs/' + run.id)
-}
-
-function goMoreCompleted() {
-  router.push({
-    path: '/runs',
-    query: {
-      status: serializeStatusQuery(['completed']),
-    },
-  })
 }
 
 let timer: number | undefined
@@ -238,21 +228,7 @@ onUnmounted(() => {
         :status="col.key"
         @select="openPreview"
         @activate-header="openStatusList"
-      >
-        <template v-if="col.key === 'completed'" #footer>
-          <button
-            type="button"
-            class="text-xs text-txt3 hover:text-txt"
-            data-testid="board-view-more-completed"
-            @click="goMoreCompleted"
-          >
-            {{ t('pages.board.viewMoreCompleted') }}
-          </button>
-        </template>
-        <template v-else #footer>
-          <span>{{ t('pages.board.toolbarHint') }}</span>
-        </template>
-      </RunBoardColumn>
+      />
     </div>
     </div>
     </div>

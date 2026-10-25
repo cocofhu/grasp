@@ -259,8 +259,8 @@ function handleLiveEntryApi(req: IncomingMessage, res: ServerResponse, url: URL)
     })
     return true
   }
-  if (!url.pathname.startsWith('/public/gate-approvals/')) return false
-  if (url.pathname === '/public/gate-approvals/reply' && req.method === 'POST') {
+  if (!url.pathname.startsWith('/public/approvals/')) return false
+  if (url.pathname === '/public/approvals/reply' && req.method === 'POST') {
     void readReply(req).then((reply) => {
       const key = entryKey(reply.token)
       if (!key) return json(res, { error: 'unknown token' }, 403)
@@ -297,7 +297,7 @@ function handleLiveEntryApi(req: IncomingMessage, res: ServerResponse, url: URL)
 }
 
 export function handleLiveEntryUpgrade(req: IncomingMessage, socket: Duplex, head: Buffer, wss: WebSocketServer): boolean {
-  if (req.url !== '/public/gate-approvals/events') return false
+  if (req.url !== '/public/approvals/events') return false
   wss.handleUpgrade(req, socket, head, (ws) => {
     let key: string | null = null
     const send = (frame: unknown) => { if (ws.readyState === 1) ws.send(JSON.stringify(frame)) }

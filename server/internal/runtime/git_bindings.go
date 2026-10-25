@@ -42,7 +42,7 @@ func ResolveGitBindings(bindings *models.GitBindings, resolve GitCredentialFunc)
 				return nil, fmt.Errorf("Git authorization %q scope must use the credential host", item.CredentialID)
 			}
 		}
-		credential := sandbox.GitCredential{ID: item.CredentialID, Kind: kind, Scope: effectiveScope, Secret: secret, Preferred: item.CredentialID == selection.PreferredCredentialID}
+		credential := sandbox.GitCredential{ID: item.CredentialID, Kind: kind, Scope: effectiveScope, Secret: secret}
 		if item.SshHostsCredentialID != "" {
 			hosts, ok := resolve(item.SshHostsCredentialID)
 			if kind != sandbox.RepoCredentialSSH || !ok || hosts.EnvKey != envauth.EnvGitSSHKnownHosts || strings.TrimSpace(hosts.Secret) == "" {
@@ -142,9 +142,9 @@ func gitScopeRepoPath(path string) string {
 }
 
 // GitCredentialForRepo mirrors the catalog routing rule: a repository scope
-// beats a host scope, which beats an unscoped SSH default. Within an equally
-// specific scope the preferred row wins, otherwise selection order is stable.
-// It never retries a different account after an authentication failure.
+// beats a host scope, which beats an unscoped SSH default. Equally specific
+// scopes keep the earlier selected row. It never retries a different account
+// after an authentication failure.
 func GitCredentialForRepo(credentials []sandbox.GitCredential, repoURL, kind string) (sandbox.GitCredential, bool) {
 	return gitCredentialForRepo(credentials, repoURL, kind, false)
 }
@@ -184,7 +184,7 @@ func gitCredentialForRepo(credentials []sandbox.GitCredential, repoURL, kind str
 			}
 			candidateScore = 2
 		}
-		if candidateScore > score || candidateScore == score && credential.Preferred && !best.Preferred {
+		if candidateScore > score {
 			best, score = credential, candidateScore
 		}
 	}

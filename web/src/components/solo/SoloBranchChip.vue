@@ -26,7 +26,8 @@ async function edit() {
 function commit() {
   if (!editing.value) return
   editing.value = false
-  emit('update:modelValue', draft.value.trim().replace(/[\s|,]/g, ''))
+  // Keep spaces, "|" and "," so launch can reject them and name the repository.
+  emit('update:modelValue', draft.value.trim())
 }
 
 function cancel() {

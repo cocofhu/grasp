@@ -68,7 +68,8 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
-import { armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome } from '@/lib/inbox/sidebarHandoff'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
@@ -232,7 +233,7 @@ function handoffHoldMs(): number {
  */
 const graphEdgesByRun = new Map<string, NonNullable<Run['edges']>>()
 const graphEdgesMiss = new Set<string>()
-function humanFollowNode(node: { type?: string; caps?: NonNullable<Run['nodes']>[number]['caps'] }): boolean {
+function humanFollowNode(node: NonNullable<Run['nodes']>[number]): boolean {
   return node.type === 'human_gate' || isClarifyNode(node)
 }
 function edgeSuccessor(run: Run, sourceId: string): { id: string; label: string; human: boolean } | null {
@@ -459,7 +460,10 @@ function closeFollowWs() {
 function followWsLive(runId: string): boolean {
   return !!followWs && followWs.readyState === 1 && (followWs as WebSocket & { _runId?: string })._runId === runId
 }
-function openFollowWs(runId: string) {
+/** Graph captured when the handoff socket opens, so a later enter can skip plumbing after the inbox run is cleared. */
+let followGraphNodes: Parameters<typeof applySidebarEnter>[2]
+function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2]) {
+  if (nodes) followGraphNodes = nodes
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
@@ -499,7 +503,10 @@ function openFollowWs(runId: string) {
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
     else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
-    else if (m.type === 'status') kickFollow()
+    else if (m.type === 'status') {
+      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+      kickFollow()
+    }
     else if (m.type === 'acp') onFollowAcp(runId, m)
   }
   ws.onclose = () => {
@@ -523,11 +530,11 @@ function openFollowWs(runId: string) {
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
-  const plumbing = !!m.nodeId && isPlumbingNode(activeRun.value?.nodes, m.nodeId)
-  if (!plumbing && m.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (!plumbing && typeof m.mode === 'string' && m.mode) noteSidebarHandoffOutcome(runId, 'human')
+  const nodes = followGraphNodes ?? activeRun.value?.nodes
+  const plumbing = !!m.nodeId && isPlumbingNode(nodes, m.nodeId)
+  applySidebarEnter(runId, m, nodes)
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
-  if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
+  if (m.nodeId && !plumbing) {
     const label =
       m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
     setFollowTail({
@@ -819,15 +826,12 @@ function noteFollowFromSnapshot(submitted: InboxItem, chain: RunChain, tail: Fol
     noteSidebarHandoffOutcome(submitted.runId, 'human')
   }
 }
-/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. */
+/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. Plumbing does not. */
 function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
-  if (isRunTerminal(chain.status)) {
-    noteSidebarHandoffOutcome(runId, 'ended')
-    return
-  }
-  const mode = chain.current?.mode
-  if (mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (mode) noteSidebarHandoffOutcome(runId, 'human')
+  const mark = readSidebarHandoff(runId)
+  const decision = sidebarChainHandoff(chain, mark?.fromNodeId, followGraphNodes ?? activeRun.value?.nodes)
+  if (!decision) return
+  noteSidebarHandoffOutcome(runId, decision.outcome, decision.target)
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
@@ -1306,11 +1310,20 @@ function restoreListItemLocally(it: InboxItem, prevList: InboxItem[]) {
   restoreItemLocally(it)
 }
 
+function conversationRoute(): { run: string; node: string } {
+  const params = (route.params ?? {}) as Record<string, unknown>
+  const run = queryText(params.runId)
+  const node = queryText(params.nodeId)
+  if (run || node) return { run, node }
+  return { run: queryText(route.query.run), node: queryText(route.query.node) }
+}
+
 function incomingTarget(): { runId: string; nodeId: string } | null {
   if (!incomingArmed.value) return null
+  const id = conversationRoute()
   return resolveIncomingApproval(
-    route.query.run,
-    route.query.node,
+    id.run,
+    id.node,
     peekHomeApproveHandoff() || homeSeed.value,
   )
 }
@@ -1616,7 +1629,8 @@ function startStartingPoll() {
 }
 
 function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
-  const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
+  const id = conversationRoute()
+  const hit = findInboxItemForQuery(listItems.value, id.run, id.node)
   if (!hit) return false
   // Silent auto-apply reload with the same gate already selected: keep the
   // object. A fresh row for the same key would retrigger watch(active) →
@@ -1686,7 +1700,7 @@ function holdsCancelledConversation(): boolean {
   const departing = inboxCancelDepartureRunId()
   if (!departing) return false
   if (active.value?.runId === departing) return true
-  return queryText(route.query.run) === departing
+  return conversationRoute().run === departing
 }
 
 /**
@@ -2913,6 +2927,8 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const submittedItem = g
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
+  const handoffNodes = activeRun.value?.nodes
+  const handoffEdges = activeRun.value?.edges
   // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
   // Positive path: start page-level overlay on click (g1.1); do not await before leave.
   // Page-level host survives selectActiveAfterRemove / shell remount (g1.2).
@@ -2923,11 +2939,17 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
     activeRun.value = null
     activeRunLoadError.value = false
   }
-  if (positive) armSidebarHandoff(g.runId, g.nodeId)
+  if (positive) {
+    armSidebarHandoff(g.runId, g.nodeId, Date.now(), sidebarAutoTarget(handoffNodes, handoffEdges, g.nodeId, action))
+    openFollowWs(g.runId, handoffNodes)
+  }
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
-    if (positive) clearSidebarHandoff(g.runId)
+    if (positive) {
+      clearSidebarHandoff(g.runId)
+      if (!followTail.value) closeFollowWs()
+    }
     confirmFlowDeskHold.value = false
     inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
@@ -2987,8 +3009,7 @@ function shareIntentPending(): boolean {
 }
 
 function activeMatchesShareQuery(it: InboxItem): boolean {
-  const run = queryText(route.query.run)
-  const node = queryText(route.query.node)
+  const { run, node } = conversationRoute()
   return !!run && !!node && it.runId === run && it.nodeId === node
 }
 
@@ -3015,7 +3036,8 @@ function clearShareIntent() {
 let settledShareKey = ''
 function shareIntentKey(): string {
   if (!shareIntentPending()) return ''
-  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+  const { run, node } = conversationRoute()
+  return `${run}\0${node}`
 }
 
 function consumeShareIntent() {
@@ -3044,8 +3066,8 @@ watch(
     active.value ? itemKey(active.value) : '',
     active.value && isStartingInboxItem(active.value) ? 'starting' : '',
     incomingGhost.value ? itemKey(incomingGhost.value) : '',
-    route.query.run,
-    route.query.node,
+    conversationRoute().run,
+    conversationRoute().node,
     route.query[INBOX_SHARE_INTENT_QUERY],
     processingLock.value,
   ],
@@ -3111,10 +3133,15 @@ async function onClarifySend(
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
     handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), ...nextHandoffTarget(it.nodeId) }
-    // The click does not know the next mode. Arm now; fly only after node_enter or the snapshot.
-    armSidebarHandoff(it.runId, it.nodeId)
+    // Move now only when the loaded graph has one automatic destination. No edges: wait for node_enter.
+    armSidebarHandoff(
+      it.runId,
+      it.nodeId,
+      Date.now(),
+      sidebarAutoTarget(activeRun.value?.nodes, activeRun.value?.edges, it.nodeId),
+    )
     // Socket first, then the POST: the next node's node_enter can arrive right after it.
-    openFollowWs(it.runId)
+    openFollowWs(it.runId, activeRun.value?.nodes)
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -3333,7 +3360,10 @@ function onVisible() {
   if (document.visibilityState === 'visible') peek({ source: 'visibility' })
 }
 
-watch(() => [route.query.run, route.query.node], () => {
+watch(() => {
+  const id = conversationRoute()
+  return [id.run, id.node]
+}, () => {
   // Fresh navigation intent: re-arm so the new target can show a loading card.
   incomingArmed.value = true
   void waitForQueryItem()

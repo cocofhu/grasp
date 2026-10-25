@@ -41,8 +41,8 @@ const t = (key: string, values?: Record<string, unknown>) => {
 describe('gateShareLink helpers', () => {
   it('masks fragment token and parses #t= only', () => {
     const token = 'a'.repeat(64)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
-    expect(maskShareUrl(url)).toBe('https://app.example/public/gate-approvals#t=••••••••')
+    const url = `https://app.example/public/approvals#t=${token}`
+    expect(maskShareUrl(url)).toBe('https://app.example/public/approvals#t=••••••••')
     expect(maskShareUrl(url)).not.toContain(token)
     expect(parseShareTokenFromHash(`#t=${token}`)).toBe(token)
     expect(parseShareTokenFromHash('?token=abc')).toBe('')
@@ -50,22 +50,22 @@ describe('gateShareLink helpers', () => {
   })
 
   it('detects loopback share hosts only (not general LAN)', () => {
-    expect(isLoopbackShareHost('http://localhost:8080/public/gate-approvals#t=x')).toBe(true)
-    expect(isLoopbackShareHost('http://127.0.0.1:8080/public/gate-approvals#t=x')).toBe(true)
-    expect(isLoopbackShareHost('http://[::1]:8080/public/gate-approvals#t=x')).toBe(true)
+    expect(isLoopbackShareHost('http://localhost:8080/public/approvals#t=x')).toBe(true)
+    expect(isLoopbackShareHost('http://127.0.0.1:8080/public/approvals#t=x')).toBe(true)
+    expect(isLoopbackShareHost('http://[::1]:8080/public/approvals#t=x')).toBe(true)
     expect(isLoopbackHostname('localhost')).toBe(true)
     expect(isLoopbackHostname('::1')).toBe(true)
-    expect(isLoopbackShareHost('https://approving.example.com/public/gate-approvals#t=x')).toBe(false)
-    expect(isLoopbackShareHost('http://192.168.1.10:8080/public/gate-approvals#t=x')).toBe(false)
-    expect(isLoopbackShareHost('http://10.0.0.5/public/gate-approvals#t=x')).toBe(false)
+    expect(isLoopbackShareHost('https://approving.example.com/public/approvals#t=x')).toBe(false)
+    expect(isLoopbackShareHost('http://192.168.1.10:8080/public/approvals#t=x')).toBe(false)
+    expect(isLoopbackShareHost('http://10.0.0.5/public/approvals#t=x')).toBe(false)
     const token = 'ab'.repeat(8)
-    const minted = `http://localhost:8080/public/gate-approvals#t=${token}`
+    const minted = `http://localhost:8080/public/approvals#t=${token}`
     expect(reachableShareUrl(minted, 'http://21.130.250.101:5173')).toBe(
-      `http://21.130.250.101:5173/public/gate-approvals#t=${token}`,
+      `http://21.130.250.101:5173/public/approvals#t=${token}`,
     )
     expect(reachableShareUrl(minted, 'http://localhost:5173')).toBe(minted)
-    expect(reachableShareUrl('https://approving.example.com/public/gate-approvals#t=x', 'http://21.130.250.101:5173')).toBe(
-      'https://approving.example.com/public/gate-approvals#t=x',
+    expect(reachableShareUrl('https://approving.example.com/public/approvals#t=x', 'http://21.130.250.101:5173')).toBe(
+      'https://approving.example.com/public/approvals#t=x',
     )
   })
 
@@ -132,7 +132,7 @@ describe('gateShareLink helpers', () => {
   })
 
   it('recalls share URL from sessionStorage and maps API error codes', () => {
-    const url = 'https://app.example/public/gate-approvals#t=' + 'ab'.repeat(32)
+    const url = 'https://app.example/public/approvals#t=' + 'ab'.repeat(32)
     rememberShareUrl('run-1', 'hg1', 1, url)
     expect(recallShareUrl('run-1', 'hg1', 1)).toBe(url)
     expect(sessionStorage.getItem('grasp.gateShareUrl.run-1:hg1:1')).toBe(url)
@@ -257,7 +257,7 @@ describe('gateShareLink helpers', () => {
   it('maps opaque image indexes to token image URLs without blob paths (g2.1)', () => {
     const token = 'a'.repeat(64)
     expect(publicGateImageUrl(token, 0)).toBe(
-      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
+      `/public/approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
     )
     expect(publicGateImageUrl('', 0)).toBe('')
     expect(publicGateImageUrl(token, -1)).toBe('')
@@ -266,7 +266,7 @@ describe('gateShareLink helpers', () => {
       { index: 2, mimeType: 'image/jpeg', name: 'b.jpg' },
     ])
     expect(mapped).toHaveLength(2)
-    expect(mapped[0]?.url).toContain('/public/gate-approvals/images/0?token=')
+    expect(mapped[0]?.url).toContain('/public/approvals/images/0?token=')
     expect(mapped[0]?.url).not.toContain('blob:')
     expect(mapped[0]?.url).not.toContain('/api/blobs')
     expect(mapped[1]?.url).toContain('/images/2?')
