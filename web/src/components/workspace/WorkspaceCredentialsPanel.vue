@@ -567,7 +567,7 @@ async function removeAccount(item: CredentialItem) {
     delete hostDrafts[item.id]
     delete clearing[item.id]
     serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
-    await loadServiceConnections()
+    await loadServiceConnections({ keepOnError: true })
     toast.success(t('pages.workspace.credentials.accountDeleted'))
   } catch {
     toast.error(t('pages.workspace.credentials.accountDeleteFailed'))
@@ -576,7 +576,13 @@ async function removeAccount(item: CredentialItem) {
   }
 }
 
-async function loadServiceConnections() { try { serviceConnections.value = (await api.listModelConnections()).items || [] } catch { serviceConnections.value = [] } }
+async function loadServiceConnections(options?: { keepOnError?: boolean }) {
+  try {
+    serviceConnections.value = (await api.listModelConnections()).items || []
+  } catch {
+    if (!options?.keepOnError) serviceConnections.value = []
+  }
+}
 function servicesFor(item: CredentialItem) { return serviceConnections.value.filter((service) => service.credentialId === item.id) }
 async function editService(accountId: string, serviceId: string) { await connectionManager.value?.openForCredential(accountId, serviceId) }
 function addService() { openCreate(); selectKind('model_api'); goNext() }

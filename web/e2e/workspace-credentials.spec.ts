@@ -273,6 +273,68 @@ test('a model API key can be replaced on a narrow screen while its value stays m
   await expect(page.getByTestId('workspace-credentials-panel')).not.toContainText('model-replacement-secret-9999')
 })
 
+test('keyboard moves to the API account delete item, Escape closes it, and Enter confirms deletion', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 })
+  const empty = { id: 'empty-api', purpose: 'model_api', issuer: 'deepseek', secretKind: 'api_key', type: 'ai', name: '1', provider: 'deepseek', configured: false, enabled: true, source: 'workspace' }
+  const kept = { id: 'model-api', purpose: 'model_api', issuer: 'openai', secretKind: 'api_key', type: 'ai', name: 'Shared model key', provider: 'openai', configured: true, enabled: true, masked: 'sk-…9999', source: 'workspace' }
+  const cli = { id: 'cursor-api', purpose: 'tool_auth', toolId: 'cursor', secretKind: 'api_key', issuer: 'cursor', enabled: true, type: 'ai', name: 'Cursor team', provider: 'cursor', envKey: 'GRASP_CURSOR_API_KEY', configured: true, masked: 'cursor-…1234' }
+  const deletes: string[] = []
+  await installWorkspaceApiDefaults(page)
+  await routeApi(page, '**/api/workspace/credentials', async (route) => {
+    if (route.request().method() === 'GET') await route.fulfill({ json: { items: [cli, empty, kept] } })
+    else await route.fallback()
+  })
+  await routeApi(page, '**/api/workspace/credentials/empty-api/account', async (route) => {
+    deletes.push(`${route.request().method()} ${new URL(route.request().url()).pathname}`)
+    await route.fulfill({ json: { status: 'removed' } })
+  })
+  await routeApi(page, '**/api/workspace/model-connections', async (route) => route.fulfill({ json: { items: [] } }))
+  await page.goto('/workspace-config.html?view=/settings/credentials')
+  const accounts = page.getByTestId('workspace-credential-section-api')
+  await expect(accounts).toBeVisible()
+  const alias = accounts.getByTestId('workspace-credential-alias').filter({ hasText: /^1$/ })
+  const trigger = page.getByTestId('api-account-more-empty-api')
+  await trigger.focus()
+  await trigger.press('ArrowDown')
+  const remove = page.getByTestId('api-account-delete-empty-api')
+  await expect(remove).toBeVisible()
+  await expect(remove).toBeFocused()
+  await expect(page.getByTestId('api-account-menu-empty-api')).toHaveCSS('visibility', 'visible')
+
+  await page.keyboard.press('Escape')
+  await expect(remove).toHaveCount(0)
+  await expect(trigger).toBeFocused()
+  expect(deletes).toEqual([])
+  await expect(alias).toBeVisible()
+  await expect(accounts.getByTestId('workspace-credential-row').filter({ hasText: '尚未添加凭据' })).toContainText('1')
+
+  await trigger.focus()
+  await trigger.press('ArrowDown')
+  await expect(page.getByTestId('api-account-delete-empty-api')).toBeFocused()
+  const dismissed = new Promise<string>((resolve) => {
+    page.once('dialog', (dialog) => {
+      const message = dialog.message()
+      void dialog.dismiss().then(() => resolve(message))
+    })
+  })
+  await page.keyboard.press('Enter')
+  expect(await dismissed).toBe('删除 API 账号「1」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？')
+  expect(deletes).toEqual([])
+  await expect(alias).toBeVisible()
+
+  await trigger.focus()
+  await trigger.press('ArrowDown')
+  await expect(page.getByTestId('api-account-delete-empty-api')).toBeFocused()
+  page.once('dialog', (dialog) => { void dialog.accept() })
+  await page.keyboard.press('Enter')
+  await expect.poll(() => deletes).toEqual(['DELETE /api/workspace/credentials/empty-api/account'])
+  await expect(alias).toHaveCount(0)
+  await expect(page.getByTestId('toast-host')).toContainText('API 账号已删除')
+  await expect(accounts.locator('.credentials-section-count')).toHaveText('1')
+  await expect(page.getByTestId('workspace-credential-section-coding')).toBeVisible()
+  await expect(page.getByTestId('api-account-more-model-api')).toBeVisible()
+})
+
 test('an empty Cursor slot does not duplicate the current CursorDefault credential', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await installWorkspaceApiDefaults(page)

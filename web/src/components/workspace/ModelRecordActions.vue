@@ -42,8 +42,16 @@ async function show(last = false) {
   await nextTick()
   if (!open.value) return
   place()
+  // The menu is measured while hidden. Wait until that visibility is gone
+  // before focusing, or the browser drops focus and the trigger keeps it.
+  await nextTick()
+  if (!open.value || !menu.value) return
+  if (menu.value.style.visibility === 'hidden') {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+  if (!open.value || !menu.value || menu.value.style.visibility === 'hidden') return
   const buttons = items()
-  buttons[last ? buttons.length - 1 : 0]?.focus()
+  buttons[last ? buttons.length - 1 : 0]?.focus({ preventScroll: true })
 }
 function activate(action: 'toggle' | 'remove') { close(true); if (action === 'toggle') emit('toggle'); else emit('remove') }
 function onKey(event: KeyboardEvent) {

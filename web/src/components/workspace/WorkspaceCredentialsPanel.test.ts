@@ -1147,6 +1147,33 @@ describe('WorkspaceCredentialsPanel', () => {
     confirm.mockRestore()
   })
 
+  it('keeps other account connections when refreshing them fails after the account is deleted', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const other: CredentialItem = { id: 'other-key', type: 'ai', name: 'Other key', purpose: 'model_api', issuer: 'openai', configured: true, masked: 'sk-…2222' }
+    const bound: ModelConnection = { ...modelService, id: 'bound-service', credentialId: serviceKey.id, baseUrl: 'https://bound.example.test/v1' }
+    const otherService: ModelConnection = { ...modelService, id: 'other-service', name: 'Other service', credentialId: other.id, baseUrl: 'https://other.example.test/v1' }
+    let listed = 0
+    mocks.connections.mockImplementation(async () => {
+      listed += 1
+      if (listed === 1) return { items: [bound, otherService] }
+      throw new Error('refresh failed')
+    })
+    const wrapper = mountPanel({ items: [serviceKey, other] })
+    document.body.appendChild(wrapper.element)
+    await flushPromises()
+    await wrapper.get('[data-testid="workspace-credential-edit-other-key"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-credential-service-other-service"]').text()).toContain('https://other.example.test/v1')
+    await openApiAccountMenu(wrapper, 'model-key')
+    apiAccountDelete(wrapper, 'model-key').click()
+    await flushPromises()
+    expect(mocks.success).toHaveBeenCalledWith('API 账号已删除')
+    expect(wrapper.findAll('[data-testid="workspace-credential-alias"]').map((node) => node.text())).not.toContain('Shared model key')
+    expect(wrapper.find('[data-testid="model-credential-service-bound-service"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="model-credential-service-other-service"]').text()).toContain('https://other.example.test/v1')
+    wrapper.unmount()
+    confirm.mockRestore()
+  })
+
   it('moves to the API account delete item with the keyboard and closes without deleting', async () => {
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
     const empty: CredentialItem = { id: 'empty-api', type: 'ai', name: '1', purpose: 'model_api', issuer: 'deepseek', configured: false }
@@ -1160,6 +1187,9 @@ describe('WorkspaceCredentialsPanel', () => {
     const remove = apiAccountDelete(wrapper, 'empty-api')
     expect(remove.getAttribute('role')).toBe('menuitem')
     expect(remove.getAttribute('aria-label')).toContain('1')
+    const menu = document.querySelector<HTMLElement>('[data-testid="api-account-menu-empty-api"]')
+    expect(menu?.style.visibility).not.toBe('hidden')
+    expect(document.activeElement).toBe(remove)
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }))
     await flushPromises()
     expect(document.querySelector('[data-testid="api-account-delete-empty-api"]')).toBeNull()
