@@ -190,7 +190,7 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (*sandbox.SS
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		return nil, fmt.Errorf("container 不在运行")
 	}
-	return s.mgr.ExecPTY(ctx, row.Name, nil)
+	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, nil)
 }
 
 // List returns all interactive sandboxes with live-derived status.

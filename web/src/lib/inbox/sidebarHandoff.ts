@@ -38,20 +38,28 @@ export interface SidebarFlightInput {
   reducedMotion: boolean
   /** The destination section is folded, so the move ends on its heading. */
   targetCollapsed: boolean
+  /**
+   * The confirm window for this click is still on screen.
+   * Fly-in waits until that window has left. Fly-back does not.
+   */
+  confirmWindowHeld?: boolean
 }
 
 /**
  * When a sidebar row changes group. Fly into「自动过程」only for this click
- * once the next node is confirmed automatic. Fly back when a row that was
- * already in「自动过程」is waiting again. Everything else just lands.
+ * once the next node is confirmed automatic and the confirm window has left.
+ * Fly back when a row that was already in「自动过程」is waiting again.
+ * Everything else just lands.
  */
 export function decideSidebarFlight(input: SidebarFlightInput): SidebarFlightDecision {
-  const { previous, next, handoffArmed, confirmedAuto, reducedMotion, targetCollapsed } = input
+  const { previous, next, handoffArmed, confirmedAuto, reducedMotion, targetCollapsed, confirmWindowHeld } = input
   if (previous === next) return { type: 'stay' }
   if (previous == null) return { type: 'place' }
   if (next == null) return { type: 'leave' }
   const landing: SidebarFlightLanding = targetCollapsed ? 'heading' : 'row'
   if (previous === 'running' && next === 'auto') {
+    // Still covering the page: do not fly and do not place into 自动过程.
+    if (confirmWindowHeld) return { type: 'stay' }
     if (handoffArmed && confirmedAuto && !reducedMotion) return { type: 'fly-in', landing }
     return { type: 'place' }
   }
@@ -81,6 +89,8 @@ const marks = new Map<string, SidebarHandoffMark>()
 const earlyAuto = new Map<string, SidebarEnterTarget & { at: number }>()
 /** Run finished during the handoff: hide it from both unfinished groups until the list drops it. */
 const dismissed = new Set<string>()
+/** Confirm window still visible for this run. The row stays painted in 正在执行. */
+const confirmWindows = new Set<string>()
 
 /** Bumped whenever a mark changes so the sidebar can re-read it. */
 export const sidebarHandoffEpoch = ref(0)
@@ -96,6 +106,23 @@ function freshEarlyDestination(runId: string, fromNodeId: string, now: number) {
   if (!early?.nodeId || early.nodeId === fromNodeId) return undefined
   if (early.at > now || now - early.at > SIDEBAR_EARLY_AUTO_MS) return undefined
   return early
+}
+
+/** Click has committed and the confirm window has not left the screen yet. */
+export function holdSidebarConfirmWindow(runId: string) {
+  if (!runId || confirmWindows.has(runId)) return
+  confirmWindows.add(runId)
+  touch()
+}
+
+/** Confirm window has left. A later automatic confirmation may still fly in. */
+export function releaseSidebarConfirmWindow(runId: string) {
+  if (!runId || !confirmWindows.delete(runId)) return
+  touch()
+}
+
+export function isSidebarConfirmWindowHeld(runId: string): boolean {
+  return confirmWindows.has(runId)
 }
 
 export function armSidebarHandoff(
@@ -263,5 +290,6 @@ export function __resetSidebarHandoffForTests() {
   marks.clear()
   earlyAuto.clear()
   dismissed.clear()
+  confirmWindows.clear()
   sidebarHandoffEpoch.value = 0
 }

@@ -1,7 +1,16 @@
 <script setup lang="ts">
 import Icon from './Icon.vue'
 
-defineProps<{ open: boolean; title?: string; width?: number }>()
+withDefaults(
+  defineProps<{
+    open: boolean
+    title?: string
+    width?: number
+    /** Stick to the viewport top, right, and bottom. Default stays the floating card. */
+    flush?: boolean
+  }>(),
+  { flush: false },
+)
 const emit = defineEmits<{ (e: 'close'): void }>()
 </script>
 
@@ -11,8 +20,13 @@ const emit = defineEmits<{ (e: 'close'): void }>()
       <div v-if="open" class="fixed inset-0 z-40">
         <div class="absolute inset-0 bg-black/50" @click="emit('close')" />
         <div
-          class="app-sidebar-card absolute bottom-3.5 right-3.5 top-3.5 flex flex-col bg-surface"
-          :style="{ width: (width || 420) + 'px', maxWidth: 'calc(100vw - 28px)' }"
+          class="absolute flex flex-col bg-surface"
+          :class="flush
+            ? 'inset-y-0 right-0 overflow-hidden border-l border-line'
+            : 'app-sidebar-card bottom-3.5 right-3.5 top-3.5'"
+          :style="flush
+            ? { width: (width || 420) + 'px', maxWidth: '100vw' }
+            : { width: (width || 420) + 'px', maxWidth: 'calc(100vw - 28px)' }"
         >
           <div class="flex h-14 shrink-0 items-center gap-2 border-b border-line px-4">
             <div class="flex-1 text-sm font-semibold text-txt">{{ title }}</div>

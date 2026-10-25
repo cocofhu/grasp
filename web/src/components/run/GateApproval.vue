@@ -65,6 +65,7 @@ const {
   confirmFlowDiscard,
   acceptConfirmFlow,
   dismissConfirmFlow,
+  releaseConfirmFlowWindow,
 } = useGateApproval(props, emit)
 
 // The gate's editable stage is deliberately narrower than the entire run's artifact store.
@@ -116,6 +117,7 @@ defineExpose({
       :discard="confirmFlowDiscard"
       @cancel="dismissConfirmFlow"
       @confirm="acceptConfirmFlow"
+      @visual-close="releaseConfirmFlowWindow"
     />
   </div>
 </template>

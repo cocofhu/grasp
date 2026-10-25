@@ -8,10 +8,13 @@ import {
   armSidebarHandoff,
   clearSidebarHandoff,
   decideSidebarFlight,
+  holdSidebarConfirmWindow,
+  isSidebarConfirmWindowHeld,
   isSidebarRunDismissed,
   noteSidebarHandoffOutcome,
   noteSidebarRunStatus,
   readSidebarHandoff,
+  releaseSidebarConfirmWindow,
   sidebarChainHandoff,
 } from './sidebarHandoff'
 
@@ -47,6 +50,13 @@ describe('decideSidebarFlight', () => {
     expect(decideSidebarFlight({ ...base, previous: 'auto', next: 'auto' }).type).toBe('stay')
   })
 
+  it('does not fly into 自动过程 while the confirm window is still visible', () => {
+    const held = { ...base, previous: 'running' as const, next: 'auto' as const, handoffArmed: true, confirmedAuto: true, confirmWindowHeld: true }
+    expect(decideSidebarFlight(held)).toEqual({ type: 'stay' })
+    expect(decideSidebarFlight({ ...held, reducedMotion: true })).toEqual({ type: 'stay' })
+    expect(decideSidebarFlight({ ...base, previous: 'auto', next: 'running', confirmWindowHeld: true })).toEqual({ type: 'fly-back', landing: 'row' })
+  })
+
   it('places directly when motion is reduced, and lands on the heading when the target is folded', () => {
     expect(decideSidebarFlight({ ...base, previous: 'running', next: 'auto', handoffArmed: true, confirmedAuto: true, reducedMotion: true }).type).toBe('place')
     expect(decideSidebarFlight({ ...base, previous: 'auto', next: 'running', reducedMotion: true }).type).toBe('place')
@@ -68,6 +78,21 @@ describe('decideSidebarFlight', () => {
 })
 
 describe('sidebar handoff mark', () => {
+  it('keeps the window hold when the handoff is cleared, and drops both on reset', () => {
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    holdSidebarConfirmWindow('run-1')
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    expect(readSidebarHandoff('run-1', 1_000)).toMatchObject({ confirmedAuto: true, autoNodeName: '实现' })
+    clearSidebarHandoff('run-1')
+    expect(readSidebarHandoff('run-1', 1_000)).toBeNull()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    releaseSidebarConfirmWindow('run-1')
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    holdSidebarConfirmWindow('run-1')
+    __resetSidebarHandoffForTests()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+  })
+
   it('drops the mark for a person, the end, or a timeout', () => {
     armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
     noteSidebarHandoffOutcome('run-1', 'human', undefined, 1_100)

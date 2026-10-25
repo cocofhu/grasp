@@ -213,6 +213,131 @@ describe('ChatMessageRail', () => {
     expect(Number.parseFloat(element.style.top)).toBeGreaterThanOrEqual(12)
   })
 
+  function box(top: number, height: number, width = 26) {
+    return { x: 0, y: top, top, bottom: top + height, left: 0, right: width, width, height, toJSON: () => ({}) } as DOMRect
+  }
+  function installScroll(element: HTMLElement, metrics: { clientHeight: number; scrollHeight: number; scrollTop: number }) {
+    Object.defineProperty(element, 'clientHeight', { configurable: true, get: () => metrics.clientHeight })
+    Object.defineProperty(element, 'scrollHeight', { configurable: true, get: () => metrics.scrollHeight })
+    Object.defineProperty(element, 'scrollTop', { configurable: true, get: () => metrics.scrollTop, set: (value: number) => { metrics.scrollTop = Number(value) || 0 } })
+  }
+  function threaded(count: number, metrics: { clientHeight?: number; scrollHeight: number; scrollTop: number }, tops: number[], omit: string[] = []) {
+    const items = Array.from({ length: count }, (_, index) => ({ id: `question-${index + 1}`, title: `提问 ${index + 1}`, preview: `预览 ${index + 1}` }))
+    const scroller = document.createElement('div')
+    const scroll = { clientHeight: metrics.clientHeight ?? 400, scrollHeight: metrics.scrollHeight, scrollTop: metrics.scrollTop }
+    installScroll(scroller, scroll)
+    scroller.getBoundingClientRect = () => box(100, scroll.clientHeight, 600)
+    const missing = new Set(omit)
+    items.forEach((item, index) => {
+      if (missing.has(item.id)) return
+      const target = document.createElement('div')
+      target.dataset.chatMessageId = item.id
+      target.getBoundingClientRect = () => box(tops[index]! - scroll.scrollTop, 40, 600)
+      scroller.append(target)
+    })
+    scroller.scrollTo = vi.fn((options: ScrollToOptions | number) => { scroll.scrollTop = typeof options === 'number' ? options : options.top || 0 })
+    document.body.append(scroller)
+    return { scroller, items, scroll }
+  }
+  const currentId = (wrapper: VueWrapper) => wrapper.get('[aria-current="step"]').attributes('data-message-id')
+
+  it('selects the last loaded question when a long thread is within 4px of the bottom', async () => {
+    // At the bottom the last three tops stay below the reading line (scroller top 100 + 80).
+    const tops = [120, 700, 1500, 1900, 2050, 2200]
+    const { scroller, items, scroll } = threaded(6, { scrollHeight: 2000, scrollTop: 1600 }, tops)
+    const wrapper = render(scroller, { items })
+    await settle()
+    expect(currentId(wrapper)).toBe('question-6')
+    expect(wrapper.get('[data-message-id="question-6"]').classes()).toContain('is-active')
+
+    scroll.scrollTop = 1596
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(currentId(wrapper)).toBe('question-6')
+
+    scroll.scrollTop = 1595
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(currentId(wrapper)).toBe('question-3')
+
+    const missing = threaded(6, { scrollHeight: 2000, scrollTop: 1600 }, tops, ['question-6'])
+    const missingRail = render(missing.scroller, { items: missing.items })
+    await settle()
+    expect(currentId(missingRail)).toBe('question-6')
+  })
+
+  it('follows a question appended while the thread stays at the bottom', async () => {
+    const { scroller, items, scroll } = threaded(3, { scrollHeight: 2000, scrollTop: 1600 }, [120, 1900, 2100])
+    const wrapper = render(scroller, { items })
+    await settle()
+    expect(currentId(wrapper)).toBe('question-3')
+    scroll.scrollTop = 1600
+    await wrapper.setProps({ items: [...items, { id: 'question-4', title: '提问 4', preview: '预览 4' }] })
+    await settle()
+    expect(scroll.scrollTop).toBe(1600)
+    expect(currentId(wrapper)).toBe('question-4')
+  })
+
+  it('keeps the reading line when the thread is too short to scroll', async () => {
+    const { scroller, items, scroll } = threaded(3, { scrollHeight: 404, scrollTop: 0 }, [120, 240, 360])
+    const wrapper = render(scroller, { items })
+    const track = wrapper.get('[data-testid="chat-message-rail-track"]').element as HTMLElement
+    const trackScroll = { clientHeight: 240, scrollHeight: 120, scrollTop: 12 }
+    installScroll(track, trackScroll)
+    await settle()
+    expect(currentId(wrapper)).toBe('question-1')
+    expect(trackScroll.scrollTop).toBe(12)
+    expect(scroll.scrollTop).toBe(0)
+
+    const alone = threaded(1, { scrollHeight: 80, scrollTop: 0 }, [120])
+    const aloneRail = render(alone.scroller, { items: alone.items })
+    await settle()
+    expect(currentId(aloneRail)).toBe('question-1')
+
+    scroll.scrollHeight = 405
+    scroll.scrollTop = 1
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(currentId(wrapper)).toBe('question-3')
+  })
+
+  it('pins the last tick to the bottom of an overflowing rail without moving the conversation', async () => {
+    const tops = Array.from({ length: 30 }, (_, index) => index < 27 ? 200 + index * 288 : 7900 + (index - 27) * 200)
+    const { scroller, items, scroll } = threaded(30, { scrollHeight: 8000, scrollTop: 7595 }, tops)
+    const wrapper = render(scroller, { items })
+    const track = wrapper.get('[data-testid="chat-message-rail-track"]').element as HTMLElement
+    const trackScroll = { clientHeight: 80, scrollHeight: 600, scrollTop: 480 }
+    installScroll(track, trackScroll)
+    track.getBoundingClientRect = () => box(140, trackScroll.clientHeight)
+    const marks = () => wrapper.findAll('[data-testid="chat-message-rail-mark"]').map(mark => mark.element as HTMLElement)
+    marks().forEach((mark, index) => { mark.getBoundingClientRect = () => box(140 + index * 20 - trackScroll.scrollTop, 18) })
+    await settle()
+    expect(currentId(wrapper)).toBe('question-27')
+    expect(trackScroll.scrollTop).toBe(480)
+    expect(scroll.scrollTop).toBe(7595)
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+
+    trackScroll.scrollTop = 0
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(currentId(wrapper)).toBe('question-27')
+    expect(trackScroll.scrollTop).toBe(458)
+    expect(scroll.scrollTop).toBe(7595)
+
+    scroll.scrollTop = 7600
+    scroller.dispatchEvent(new Event('scroll'))
+    await settle()
+    expect(currentId(wrapper)).toBe('question-30')
+    expect(trackScroll.scrollTop).toBe(520)
+    expect(scroll.scrollTop).toBe(7600)
+    const column = track.getBoundingClientRect()
+    const last = marks().at(-1)!.getBoundingClientRect()
+    expect(last.top).toBeGreaterThanOrEqual(column.top)
+    expect(last.bottom).toBeLessThanOrEqual(column.bottom)
+    expect(column.bottom - last.bottom).toBeLessThanOrEqual(20)
+    expect(scroller.scrollTo).not.toHaveBeenCalled()
+  })
+
   it('uses separate card identities for simultaneous conversations', async () => {
     const first = conversation().scroller
     const second = conversation().scroller
