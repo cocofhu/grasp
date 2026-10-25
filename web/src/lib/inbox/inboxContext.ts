@@ -1,8 +1,10 @@
-import type { Artifact, ClarifyTurn, Gate, NodeRun, Run, WFNode } from '../shared/types'
+import type { Artifact, ClarifyTurn, Gate, NodeRun, Run, WFEdge, WFNode } from '../shared/types'
 
 export type GateInboxContext = {
   type: 'gate'
   nodes: WFNode[]
+  /** Run-graph transitions. Absent on older inbox-context payloads. */
+  edges?: WFEdge[]
   artifacts: Artifact[]
   nodeExecutions: Record<string, NodeRun[]>
   /** Every executed node's latest visit (status only), for the workflow outline. */
@@ -18,6 +20,8 @@ export type ClarifyInboxContext = {
   status: Run['status']
   /** Full graph nodes (same shape as gate inbox-context). */
   nodes?: WFNode[]
+  /** Run-graph transitions. Absent on older inbox-context payloads. */
+  edges?: WFEdge[]
   /** Run-level artifact metadata (content loaded on demand). */
   artifacts?: Artifact[]
   /** Slim executions for current node ∪ parseable upstream refs. */
@@ -69,6 +73,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
     return {
       ...base,
       nodes: ctx.nodes,
+      edges: ctx.edges,
       artifacts: ctx.artifacts,
       nodeRuns: ctx.nodeRuns ?? {},
       nodeExecutions: ctx.nodeExecutions,
@@ -81,6 +86,7 @@ export function adaptInboxContextToRun(ctx: InboxContextResponse, runId: string)
     ...base,
     status: ctx.status,
     nodes: ctx.nodes,
+    edges: ctx.edges,
     artifacts: ctx.artifacts ?? [],
     nodeRuns: ctx.nodeRuns ?? {},
     nodeExecutions: ctx.nodeExecutions,

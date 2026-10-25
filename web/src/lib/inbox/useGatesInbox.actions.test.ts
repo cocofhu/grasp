@@ -121,10 +121,17 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     ariaBusy: shared.ariaBusy,
   }),
 }))
-vi.mock('@/lib/inbox/inboxContext', () => ({
-  adaptInboxContextToRun: (ctx: { run?: Run }, runId: string) =>
-    ctx.run || ({ id: runId, status: 'waiting_human', nodes: [], artifacts: [] } as unknown as Run),
-}))
+vi.mock('@/lib/inbox/inboxContext', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/inbox/inboxContext')>('@/lib/inbox/inboxContext')
+  return {
+    ...actual,
+    adaptInboxContextToRun: (ctx: { type?: string; run?: Run }, runId: string) => {
+      // Real adapter for inbox-context payloads. The { run } shortcut stays for older cases.
+      if (ctx?.type === 'clarify' || ctx?.type === 'gate') return actual.adaptInboxContextToRun(ctx as never, runId)
+      return ctx?.run || ({ id: runId, status: 'waiting_human', nodes: [], artifacts: [] } as unknown as Run)
+    },
+  }
+})
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return {
@@ -624,13 +631,26 @@ describe('useGatesInbox actions', () => {
     return contextRun(id, { nodes, edges } as Record<string, unknown>)
   }
 
+  /** Real inbox-context shape: nodes only. Edges stay on GET /runs/:id. */
+  function clarifyContextWithoutEdges(nodes: Run['nodes']) {
+    return {
+      type: 'clarify' as const,
+      status: 'waiting_human' as const,
+      nodes,
+      artifacts: [],
+      clarify: { nodeId: 'react', iteration: 1, turns: [], done: false, label: '需求澄清' },
+    }
+  }
+
   it('confirm while the chain is still on clarify follows the automatic successor, and a stale snapshot cannot put it back', async () => {
     const nodes = [
       { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
       { id: 'implement', type: 'agent' as const, label: '实现', caps: IMPLEMENT_CAPS, config: {}, position: { x: 0, y: 0 } },
     ]
     const edges = [{ id: 'e-impl', source: 'react', target: 'implement' }]
-    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: graphRun(runId, nodes, edges) }))
+    const ctx = clarifyContextWithoutEdges(nodes)
+    expect(ctx).not.toHaveProperty('edges')
+    mocks.inboxContext.mockImplementation(async () => ctx)
     mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
     let currentNode: Record<string, unknown> = {
       id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1,
@@ -644,6 +664,7 @@ describe('useGatesInbox actions', () => {
     const { inbox, app } = await withInbox()
     inbox.selectItem(inbox.listItems.value[1]!)
     await flushPromises()
+    expect(inbox.activeRun.value?.edges).toEqual(edges)
     mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
     await inbox.onClarifySend('done', [], [], true)
     await flushPromises()
@@ -669,13 +690,54 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  it('a hand-off that already names 实现 keeps automatic follow when the chain snaps back and the graph has no edges', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'implement', type: 'agent' as const, label: '实现', caps: IMPLEMENT_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    mocks.inboxContext.mockImplementation(async () => clarifyContextWithoutEdges(nodes))
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, []))
+    let currentNode: Record<string, unknown> = {
+      id: 'implement', name: '实现', kind: 'agent', mode: 'auto', state: 'running', iteration: 1,
+    }
+    mocks.runConversationChain.mockImplementation(async () => ({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode,
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'completed', turns: [] }],
+    }))
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    expect(inbox.activeRun.value?.edges ?? []).toEqual([])
+    currentNode = { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 }
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '实现' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'status' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+    app.unmount()
+  })
+
   it('a human successor still booting is named on the waiting row even while the chain is on the node just left', async () => {
     const nodes = [
       { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
       { id: 'accept', type: 'agent' as const, label: '验收测试', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
     ]
     const edges = [{ id: 'e-acc', source: 'react', target: 'accept' }]
-    mocks.inboxContext.mockImplementation(async (runId: string) => ({ run: graphRun(runId, nodes, edges) }))
+    const ctx = clarifyContextWithoutEdges(nodes)
+    expect(ctx).not.toHaveProperty('edges')
+    mocks.inboxContext.mockImplementation(async () => ctx)
     mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
     mocks.runConversationChain.mockResolvedValue({
       runId: 'run-chat',
@@ -686,6 +748,7 @@ describe('useGatesInbox actions', () => {
     const { inbox, app } = await withInbox()
     inbox.selectItem(inbox.listItems.value[1]!)
     await flushPromises()
+    expect(inbox.activeRun.value?.edges).toEqual(edges)
     mocks.listGates.mockResolvedValue({
       items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试', state: 'starting' })],
       total: 2,

@@ -161,4 +161,35 @@ describe('adaptInboxContextToRun', () => {
     expect(without.clarifyByNode?.impl).not.toHaveProperty('task')
     expect(without.clarifyByNode?.impl).not.toHaveProperty('takeover')
   })
+
+  it('keeps run-graph edges and leaves them absent when the payload has none', () => {
+    const edges = [{ id: 'e-impl', source: 'react', target: 'implement' }]
+    const withEdges = adaptInboxContextToRun(
+      {
+        type: 'clarify',
+        status: 'waiting_human',
+        nodes: [{ id: 'react', type: 'agent', label: '需求澄清', caps: CLARIFY_CAPS, position: { x: 0, y: 0 }, config: {} }],
+        edges,
+        clarify: { nodeId: 'react', turns: [], done: false, label: '需求澄清' },
+      },
+      'r-edges',
+    )
+    expect(withEdges.edges).toEqual(edges)
+    const gate = adaptInboxContextToRun(
+      {
+        type: 'gate',
+        nodes: [{ id: 'gate', type: 'human_gate', label: 'G', position: { x: 0, y: 0 }, config: {} }],
+        edges,
+        artifacts: [],
+        nodeExecutions: {},
+      },
+      'r-edges',
+    )
+    expect(gate.edges).toEqual(edges)
+    const omitted = adaptInboxContextToRun(
+      { type: 'clarify', status: 'waiting_human', nodes: [], clarify: { nodeId: 'react', turns: [], done: false, label: '需求澄清' } },
+      'r-edges',
+    )
+    expect(omitted.edges).toBeUndefined()
+  })
 })

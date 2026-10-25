@@ -208,7 +208,16 @@ const confirmFlowDeskHold = ref(false)
  * the transcript — pending while reactReply(force) runs, done once it returns —
  * then the inbox moves on. Keyed by itemKey so a neighbour never inherits it.
  */
-const handoffState = ref<{ key: string; phase: 'pending' | 'done'; at: string; target: string } | null>(null)
+const handoffState = ref<{
+  key: string
+  phase: 'pending' | 'done'
+  at: string
+  target: string
+  /** Successor recorded with the row, so a stale chain can reuse it. */
+  targetId?: string
+  /** True when that successor runs on its own; false when a person is still starting. */
+  targetAuto?: boolean
+} | null>(null)
 const HANDOFF_HOLD_MS = 900
 const HANDOFF_HOLD_REDUCED_MS = 200
 function handoffHoldMs(): number {
@@ -216,17 +225,80 @@ function handoffHoldMs(): number {
   const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   return reduce ? HANDOFF_HOLD_REDUCED_MS : HANDOFF_HOLD_MS
 }
-/** Label of the node the confirmed one flows into (first outgoing edge), for the status row. */
-function nextNodeLabel(nodeId: string): string {
+/**
+ * Edges inbox-context omitted. The run graph is pinned at start, so one
+ * successful GET /runs/:id is enough; a miss is remembered so chain fallback
+ * stays the only 404 path.
+ */
+const graphEdgesByRun = new Map<string, NonNullable<Run['edges']>>()
+const graphEdgesMiss = new Set<string>()
+function humanFollowNode(node: { type?: string; caps?: NonNullable<Run['nodes']>[number]['caps'] }): boolean {
+  return node.type === 'human_gate' || isClarifyNode(node)
+}
+function edgeSuccessor(run: Run, sourceId: string): { id: string; label: string; human: boolean } | null {
+  const edge = (run.edges ?? []).find((e) => e.source === sourceId)
+  if (!edge) return null
+  const node = (run.nodes ?? []).find((n) => n.id === edge.target)
+  const label = (node?.label || '').trim()
+  if (!node || !label) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
+function applyCachedEdges(run: Run): Run {
+  if (run.edges?.length) return run
+  const cached = graphEdgesByRun.get(run.id)
+  if (!cached?.length) return run
+  return { ...run, edges: cached }
+}
+function mergeGraphNodes(current: Run['nodes'], incoming: Run['nodes']): Run['nodes'] {
+  if (!incoming?.length) return current
+  if (!current?.length) return incoming
+  const seen = new Set(current.map((n) => n.id))
+  const extra = incoming.filter((n) => n.id && !seen.has(n.id))
+  return extra.length ? [...current, ...extra] : current
+}
+async function ensureActiveGraphEdges(run: Run): Promise<Run> {
+  if (run.edges?.length) {
+    graphEdgesByRun.set(run.id, run.edges)
+    graphEdgesMiss.delete(run.id)
+    return run
+  }
+  const cached = applyCachedEdges(run)
+  if (cached.edges?.length) return cached
+  if (graphEdgesMiss.has(run.id)) return run
+  try {
+    const full = await api.getRun(run.id)
+    if (full?.edges?.length) {
+      graphEdgesByRun.set(run.id, full.edges)
+      return { ...run, edges: full.edges, nodes: mergeGraphNodes(run.nodes, full.nodes) }
+    }
+    graphEdgesMiss.add(run.id)
+  } catch {
+    /* a later follow can retry */
+  }
+  return run
+}
+async function attachActiveGraphEdges() {
   const run = activeRun.value
-  if (!run) return ''
-  // inbox-context carries nodes but not edges; the run chain knows the live node.
+  if (!run) return
+  const next = await ensureActiveGraphEdges(run)
+  if (next !== run && activeRun.value?.id === run.id) activeRun.value = next
+}
+/** Name, id, and mode of the node the confirmed one flows into, for the status row. */
+function nextHandoffTarget(nodeId: string): { target: string; targetId?: string; targetAuto?: boolean } {
+  const run = activeRun.value
+  if (!run) return { target: '' }
+  // Chain already moved: the live node is the hand-off target.
   const cur = runChains.value[run.id]?.current
-  if (cur && cur.id !== nodeId && cur.name) return cur.name
-  const edge = (run.edges ?? []).find((e) => e.source === nodeId)
-  if (!edge) return ''
-  const n = (run.nodes ?? []).find((x) => x.id === edge.target)
-  return (n?.label as string | undefined) || ''
+  if (cur && cur.id !== nodeId && cur.name) {
+    return {
+      target: cur.name,
+      targetId: cur.id,
+      ...(cur.mode === 'auto' ? { targetAuto: true } : cur.mode === 'manual' ? { targetAuto: false } : {}),
+    }
+  }
+  const next = edgeSuccessor(applyCachedEdges(run), nodeId)
+  if (!next) return { target: '' }
+  return { target: next.label, targetId: next.id, targetAuto: !next.human }
 }
 const activeHandoff = computed(() =>
   handoffState.value && active.value && handoffState.value.key === itemKey(active.value) ? handoffState.value : null,
@@ -683,19 +755,39 @@ function chainStillOnDeparted(chain: RunChain, submitted: InboxItem): boolean {
   return true
 }
 /**
- * First outgoing edge, the same one the hand-off row names. A clarify node
- * or a human gate is a person still starting; anything else runs on its own.
- * No label → the unnamed「等待下一节点开始」row.
+ * First outgoing edge, else the successor the hand-off row already named.
+ * A clarify node or a human gate is a person still starting; anything else
+ * runs on its own. No label → the unnamed「等待下一节点开始」row.
  */
+function recordedHandoffSuccessor(run: Run, departedId: string): { id: string; label: string; human: boolean } | null {
+  const row = handoffState.value
+  const label = (row?.target || '').trim()
+  if (!row || !label) return null
+  if (row.targetId && row.targetId !== departedId) {
+    if (row.targetAuto === true) return { id: row.targetId, label, human: false }
+    if (row.targetAuto === false) return { id: row.targetId, label, human: true }
+    const node = (run.nodes ?? []).find((n) => n.id === row.targetId)
+    if (node) return { id: node.id, label: (node.label || label).trim() || label, human: humanFollowNode(node) }
+  }
+  const node = (run.nodes ?? []).find((n) => n.id !== departedId && (n.label || '').trim() === label)
+  if (!node) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
 function handoffSuccessor(runId: string, departedId: string): { id: string; label: string; human: boolean } | null {
   const run = activeRun.value
   if (!run || run.id !== runId) return null
-  const edge = (run.edges ?? []).find((e) => e.source === departedId)
-  if (!edge) return null
-  const node = (run.nodes ?? []).find((n) => n.id === edge.target)
-  const label = (node?.label || '').trim()
-  if (!node || !label) return null
-  return { id: node.id, label, human: node.type === 'human_gate' || isClarifyNode(node) }
+  const withEdges = applyCachedEdges(run)
+  if (withEdges !== run) activeRun.value = withEdges
+  // The row already named the successor. Edges fill in only when it has not.
+  return recordedHandoffSuccessor(withEdges, departedId) ?? edgeSuccessor(withEdges, departedId)
+}
+function fillEmptyHandoffTarget(key: string, tail: FollowTail, departedId: string) {
+  if (tail.kind !== 'auto' && tail.kind !== 'waiting') return
+  const label = (tail.label || '').trim()
+  if (!label || !tail.nodeId || tail.nodeId === departedId) return
+  const cur = handoffState.value
+  if (!cur || cur.key !== key || cur.target) return
+  handoffState.value = { ...cur, target: label, targetId: tail.nodeId, targetAuto: tail.kind === 'auto' }
 }
 function tailFromHandoffTarget(key: string, chain: RunChain, submitted: InboxItem): FollowTail {
   const at = new Date().toISOString()
@@ -767,6 +859,7 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
   if (!active.value || itemKey(active.value) !== submittedKey) return stopFollow()
   followInFlight = true
   try {
+    await attachActiveGraphEdges()
     const chain = await loadRunChain(submitted.runId)
     if (!followTail.value || followTail.value.key !== submittedKey) return
     try {
@@ -781,6 +874,7 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
       followFailures = 0
       const tail = resolveFollowTail(submitted, submittedKey, chain)
       setFollowTail(tail)
+      fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
       noteFollowFromSnapshot(submitted, chain, tail)
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
       setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
@@ -822,12 +916,14 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   followItem = submitted
   openFollowWs(submitted.runId)
   followSawNodeEnter = false
+  await attachActiveGraphEdges()
   const chain = await loadRunChain(submitted.runId)
   followFailures = chain ? 0 : 1
   const tail: FollowTail = chain
     ? resolveFollowTail(submitted, submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   setFollowTail(tail)
+  if (chain) fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
   if (chain) noteFollowFromSnapshot(submitted, chain, tail)
   else if (tail.kind === 'ended') noteSidebarHandoffOutcome(submitted.runId, 'ended')
   if (tail.kind === 'auto') void fillFollowFromNodeEvents()
@@ -917,13 +1013,14 @@ async function resumeHandedOff(run: Run, nodeId: string) {
   }
   const key = itemKey(item)
   listItems.value = listItems.value.filter((it) => itemKey(it) !== key)
+  if (run.edges?.length) graphEdgesByRun.set(run.id, run.edges)
   activeRun.value = run
   activeRunLoadError.value = false
   followItem = item
   followStopping.value = false
   followTail.value = { key, runId: run.id, kind: 'waiting', at: new Date().toISOString() }
   active.value = item
-  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), target: nextNodeLabel(nodeId) }
+  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), ...nextHandoffTarget(nodeId) }
   await beginFollow(item, key)
 }
 watch(
@@ -2537,7 +2634,10 @@ async function softRefreshActiveRun() {
       handleLeftInboxContext(target)
       return
     }
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Soft refresh keeps chat mounted — only merge reactSessions onto run; do not
     // re-project live bubbles (would reset stream). Hard-load path restores below.
@@ -2599,7 +2699,10 @@ async function loadActiveRun(hard = true) {
       handleLeftInboxContext(target)
       return
     }
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Context is in. Clear even when a same-key ghost was pending: the finally
     // below used to leave the flag set, so a gate past page 1 never mounted.
@@ -3007,7 +3110,7 @@ async function onClarifySend(
     beginProcessingIntent(it)
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
-    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
+    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), ...nextHandoffTarget(it.nodeId) }
     // The click does not know the next mode. Arm now; fly only after node_enter or the snapshot.
     armSidebarHandoff(it.runId, it.nodeId)
     // Socket first, then the POST: the next node's node_enter can arrive right after it.

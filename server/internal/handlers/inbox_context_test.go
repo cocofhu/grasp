@@ -64,12 +64,15 @@ func TestRunInboxContextClarify(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{
 		ID: "ic-clarify", Status: "waiting_human", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{
-			{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研"},
-			{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清", Config: map[string]any{
-				"prompt": "upstream {{nodes.research.outputs.research}}",
-			}},
-		}},
+		Graph: models.Graph{
+			Nodes: []models.Node{
+				{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研"},
+				{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清", Config: map[string]any{
+					"prompt": "upstream {{nodes.research.outputs.research}}",
+				}},
+			},
+			Edges: []models.Edge{{ID: "e-react-out", Source: "react", Target: "research"}},
+		},
 	})
 	h.db.Create(&models.ReactConversation{
 		RunID: "ic-clarify", NodeID: "react", Iteration: 1, Done: false,
@@ -93,7 +96,7 @@ func TestRunInboxContextClarify(t *testing.T) {
 	body := w.Body.String()
 	for _, want := range []string{
 		`"type":"clarify"`, `"status"`, `"clarify"`, "question?", "需求澄清",
-		`"nodes"`, `"artifacts"`, `"nodeExecutions"`, "research.json",
+		`"nodes"`, `"edges"`, "e-react-out", `"artifacts"`, `"nodeExecutions"`, "research.json",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("clarify response missing %q in %s", want, body)
