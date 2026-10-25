@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   listAgents: vi.fn(),
   saveAgent: vi.fn(),
   renameAgent: vi.fn(),
+  deleteAgent: vi.fn(),
   listRunTags: vi.fn(),
   createSharedAgentTest: vi.fn(),
   exportWorkspaceAgents: vi.fn(),
@@ -43,6 +44,7 @@ vi.mock('@/lib/api/api', async () => {
       listAgents: mocks.listAgents,
       saveAgent: mocks.saveAgent,
       renameAgent: mocks.renameAgent,
+      deleteAgent: mocks.deleteAgent,
       listRunTags: mocks.listRunTags,
       createSharedAgentTest: mocks.createSharedAgentTest,
       exportWorkspaceAgents: mocks.exportWorkspaceAgents,
@@ -151,6 +153,7 @@ beforeEach(() => {
   mocks.listRunTags.mockResolvedValue({ tags: [] })
   mocks.saveAgent.mockImplementation(async (payload: Agent) => payload)
   mocks.createSharedAgentTest.mockResolvedValue({ id: 1 })
+  mocks.deleteAgent.mockResolvedValue({ status: 'ok' })
 })
 
 afterEach(() => {
@@ -546,19 +549,11 @@ describe('AgentStudio MCP config help', () => {
   })
 })
 
-describe('AgentStudio rename entry migration', () => {
+describe('AgentStudio list context actions', () => {
   const ModalStub = defineComponent({
     props: { open: Boolean, title: String },
     emits: ['close'],
     template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
-  })
-  const SidebarStub = defineComponent({
-    emits: ['open-manage', 'select'],
-    template:
-      '<div data-test="sidebar">' +
-      '<button data-test="rename-via-manage" @click="$emit(\'open-manage\', \'legacy\')">rename</button>' +
-      '<button data-test="manage" @click="$emit(\'open-manage\')">manage</button>' +
-      '</div>',
   })
 
   async function mountRenameStudio() {
@@ -582,7 +577,6 @@ describe('AgentStudio rename entry migration', () => {
             AgentChatTester: true,
             AgentGitGuide: true,
             AgentCreateWizard: true,
-            AgentSidebar: SidebarStub,
             AgentDataPanel: true,
           },
         },
@@ -590,124 +584,90 @@ describe('AgentStudio rename entry migration', () => {
     )
   }
 
-  it('disables rename and delete for canonical agents and leaves custom agents editable', async () => {
+  async function openRowAction(wrapper: Awaited<ReturnType<typeof mountRenameStudio>>, name: string, action: 'rename' | 'delete') {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 36, clientY: 48 })
+    wrapper.get(`[data-resource-key="${name}"]`).element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    const item = document.querySelector<HTMLButtonElement>(`[data-testid="agent-row-${action}"]`)
+    expect(item).toBeTruthy()
+    item!.click()
+    await flushPromises()
+  }
+
+  it('does not render Agent management and keeps the header name read-only', async () => {
+    mocks.listAgents.mockResolvedValue([agent('public')])
+    const wrapper = await mountRenameStudio()
+    await flushPromises()
+
+    expect(wrapper.text()).not.toContain('Agent 管理')
+    expect(wrapper.find('[data-test="manage-search"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="agent-tree-manage"]').exists()).toBe(false)
+
+    await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('名称请在 Agent 管理中重命名')
+    expect(wrapper.text()).not.toContain('Rename this agent in Agent management')
+    const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
+    expect(headerName).toBeTruthy()
+  })
+
+  it('keeps a lock on canonical agents and does not open rename or delete for them', async () => {
     mocks.listAgents.mockResolvedValue([
       { ...agent('public'), name: '需求澄清' },
       { ...agent('public'), name: '自建' },
     ])
     const wrapper = await mountRenameStudio()
     await flushPromises()
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    const locked = wrapper.get('[data-manage-agent="需求澄清"]')
-    expect(locked.get('[data-testid="manage-agent-locked"]').text()).toContain('不能删除或重命名')
-    expect(locked.get('[data-testid="manage-rename"]').attributes('disabled')).toBeDefined()
-    expect(locked.get('[data-testid="manage-delete"]').attributes('disabled')).toBeDefined()
-    const custom = wrapper.get('[data-manage-agent="自建"]')
-    expect(custom.find('[data-testid="manage-agent-locked"]').exists()).toBe(false)
-    expect(custom.get('[data-testid="manage-rename"]').attributes('disabled')).toBeUndefined()
-    expect(custom.get('[data-testid="manage-delete"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-resource-key="需求澄清"]').get('[data-testid="resource-lock"]').attributes('title')).toContain('不能删除或重命名')
+    const locked = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 20, clientY: 20 })
+    wrapper.get('[data-resource-key="需求澄清"]').element.dispatchEvent(locked)
+    await flushPromises()
+    expect(locked.defaultPrevented).toBe(true)
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+    expect(wrapper.find('[data-test="modal"]').exists()).toBe(false)
+
+    await openRowAction(wrapper, '自建', 'rename')
+    expect(wrapper.text()).toContain('重命名 Agent')
+    expect(wrapper.find('[data-test="modal"] input').element).toHaveProperty('value', '自建')
   })
 
-  it('agent row rename opens Agent management focused on that agent', async () => {
+  it('rename from the row menu shows the cascade hint and cancel does not rename', async () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
     const wrapper = await mountRenameStudio()
     await flushPromises()
+    expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
 
-    await wrapper.get('[data-test="rename-via-manage"]').trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).toContain('Agent 管理')
-    expect(wrapper.text()).toContain('Rename')
-    const focused = wrapper.find('[data-manage-agent="legacy"]')
-    expect(focused.exists()).toBe(true)
-    expect(focused.classes().join(' ')).toMatch(/accent/)
-    expect((wrapper.get('[data-test="manage-search"]').element as HTMLInputElement).value).toBe('')
-  })
-
-  it('filters managed agents with a case-insensitive trimmed query, count, and safe highlight', async () => {
-    mocks.listAgents.mockResolvedValue([
-      { ...agent('public'), name: 'Grasp Review Engineer' },
-      { ...agent('public'), name: 'HarnessPlugin Reviewer' },
-    ])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await wrapper.get('[data-test="manage-search"]').setValue('  grasp  ')
-    await nextTick()
-
-    expect(wrapper.find('[data-manage-agent="Grasp Review Engineer"]').exists()).toBe(true)
-    expect(wrapper.find('[data-manage-agent="HarnessPlugin Reviewer"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="manage-search-count"]').text()).toBe('匹配 1 / 共 2')
-    expect(wrapper.get('[data-manage-agent="Grasp Review Engineer"] mark').text()).toBe('Grasp')
-  })
-
-  it('shows a distinct no-match state and clears the management search from either entry point', async () => {
-    mocks.listAgents.mockResolvedValue([
-      { ...agent('public'), name: 'Grasp Review Engineer' },
-      { ...agent('public'), name: 'HarnessPlugin Reviewer' },
-    ])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await wrapper.get('[data-test="manage-search"]').setValue('missing')
-    await nextTick()
-    expect(wrapper.text()).toContain('没有匹配的 Agent')
-    expect(wrapper.findAll('[data-manage-agent]')).toHaveLength(0)
-
-    await wrapper.findAll('button').find((button) => button.text() === '清空搜索')!.trigger('click')
-    await nextTick()
-    expect(wrapper.findAll('[data-manage-agent]')).toHaveLength(2)
-
-    await wrapper.get('[data-test="manage-search"]').setValue('review')
-    await wrapper.get('[data-test="manage-search-clear"]').trigger('click')
-    expect((wrapper.get('[data-test="manage-search"]').element as HTMLInputElement).value).toBe('')
-    expect(wrapper.findAll('[data-manage-agent]')).toHaveLength(2)
-  })
-
-  it('resets management search after closing before the next open', async () => {
-    mocks.listAgents.mockResolvedValue([agent('public')])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await wrapper.get('[data-test="manage-search"]').setValue('legacy')
-    await wrapper.findAll('button').find((button) => button.text() === '关闭')!.trigger('click')
-    await wrapper.get('[data-test="manage"]').trigger('click')
-
-    expect((wrapper.get('[data-test="manage-search"]').element as HTMLInputElement).value).toBe('')
-  })
-
-  it('keeps the header name read-only without a metadata rename hint', async () => {
-    mocks.listAgents.mockResolvedValue([agent('public')])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.findAll('button').find((item) => item.text() === '元信息')!.trigger('click')
-    await flushPromises()
-
-    expect(wrapper.text()).not.toContain('名称请在 Agent 管理中重命名')
-    // header name is a span, not an input
-    const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
-    expect(headerName).toBeTruthy()
-  })
-
-  it('management Rename opens dialog with cascade hint; cancel does not rename', async () => {
-    mocks.listAgents.mockResolvedValue([agent('public')])
-    const wrapper = await mountRenameStudio()
-    await flushPromises()
-
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Rename')!.trigger('click')
-    await flushPromises()
-
+    await openRowAction(wrapper, 'legacy', 'rename')
+    expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
     expect(wrapper.text()).not.toContain('工作流引用不会自动更新')
     expect(wrapper.text()).toContain('将同步更新目录、工作区助手，以及工作流中的 Agent 配置引用')
     await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
     await flushPromises()
     expect(mocks.renameAgent).not.toHaveBeenCalled()
+  })
+
+  it('renaming a row that is not selected does not switch the open agent', async () => {
+    mocks.listAgents.mockResolvedValue([
+      { ...agent('public'), name: 'legacy' },
+      { ...agent('public'), name: 'other' },
+    ])
+    mocks.renameAgent.mockResolvedValueOnce({ ...agent('public'), name: 'other2', updatedWorkflowCount: 0 })
+    const wrapper = await mountRenameStudio()
+    await flushPromises()
+    expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
+
+    await openRowAction(wrapper, 'other', 'rename')
+    const input = wrapper.findAll('input').find((el) => (el.element as HTMLInputElement).value === 'other')!
+    await input.setValue('other2')
+    await wrapper.findAll('button').find((b) => b.text() === '确定')!.trigger('click')
+    await flushPromises()
+
+    expect(mocks.renameAgent).toHaveBeenCalledWith('other', 'other2')
+    expect(wrapper.get('[data-resource-key="legacy"]').attributes('aria-current')).toBe('true')
+    expect(wrapper.get('[data-resource-key="other2"]').attributes('aria-current')).toBeUndefined()
+    const headerName = wrapper.findAll('span').find((s) => s.text() === 'legacy' && s.classes().includes('font-medium'))
+    expect(headerName).toBeTruthy()
   })
 
   it('rename success toast shows workflow count when N>0 and omits count when N=0', async () => {
@@ -725,10 +685,7 @@ describe('AgentStudio rename entry migration', () => {
         return node.type !== 'file' && (node.value === 'legacy' || node.value === 'legacy2' || node.value === 'legacy3')
       })!
 
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Rename')!.trigger('click')
-    await flushPromises()
+    await openRowAction(wrapper, 'legacy', 'rename')
     await renameInput().setValue('legacy2')
     await wrapper.findAll('button').find((b) => b.text() === '确定')!.trigger('click')
     await flushPromises()
@@ -736,10 +693,7 @@ describe('AgentStudio rename entry migration', () => {
     expect(document.body.textContent || '').toContain('改名成功，已更新 3 个工作流')
     expect(document.body.textContent || '').not.toContain('已更新 0 个工作流')
 
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await flushPromises()
-    await wrapper.findAll('button').find((b) => b.text() === 'Rename')!.trigger('click')
-    await flushPromises()
+    await openRowAction(wrapper, 'legacy2', 'rename')
     await renameInput().setValue('legacy3')
     await wrapper.findAll('button').find((b) => b.text() === '确定')!.trigger('click')
     await flushPromises()
@@ -748,6 +702,33 @@ describe('AgentStudio rename entry migration', () => {
     expect(body).toContain('改名成功')
     expect(body).not.toContain('已更新 0 个工作流')
     expect(body).not.toContain('已更新 3 个工作流')
+  })
+
+  it('delete confirm names the agent, and deleting the open agent clears selection', async () => {
+    mocks.listAgents.mockResolvedValue([
+      { ...agent('public'), name: 'legacy' },
+      { ...agent('public'), name: 'other' },
+    ])
+    const wrapper = await mountRenameStudio()
+    await flushPromises()
+
+    await openRowAction(wrapper, 'other', 'delete')
+    expect(wrapper.text()).toContain('other')
+    expect(wrapper.text()).toContain('不可恢复')
+    const confirm = wrapper.findAll('button').find((b) => b.text() === '删除')!
+    expect(confirm.attributes('variant')).toBe('danger')
+    await wrapper.findAll('button').find((b) => b.text() === '取消')!.trigger('click')
+    await flushPromises()
+    expect(mocks.deleteAgent).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-resource-key="other"]').exists()).toBe(true)
+
+    await openRowAction(wrapper, 'legacy', 'delete')
+    await wrapper.findAll('button').find((b) => b.text() === '删除')!.trigger('click')
+    await flushPromises()
+    expect(mocks.deleteAgent).toHaveBeenCalledWith('legacy')
+    expect(wrapper.find('[data-resource-key="legacy"]').exists()).toBe(false)
+    expect(wrapper.get('[data-resource-key="other"]').attributes('aria-current')).toBeUndefined()
+    expect(wrapper.text()).toContain('未选中 Agent。从左侧列表选择。')
   })
 })
 
@@ -1251,19 +1232,24 @@ describe('AgentStudio mobile core path', () => {
     wrapper.unmount()
   })
 
-  it('sidebar sheet manage opens existing agent manage modal', async () => {
+  it('sidebar sheet has no manage button and no rename or delete menu', async () => {
     mocks.listAgents.mockResolvedValue([agentWithFiles()])
     const wrapper = await mountMobileStudio()
     await flushPromises()
 
     await wrapper.get('[data-test="sidebar-switch"]').trigger('click')
     await flushPromises()
-    const manageBtn = document.querySelector('[data-test="sidebar-sheet-manage"]') as HTMLButtonElement
-    expect(manageBtn).toBeTruthy()
-    manageBtn.click()
+    const sheet = document.querySelector('[data-test="sidebar-sheet"]')!
+    expect(sheet.querySelector('[data-test="sidebar-sheet-manage"]')).toBeNull()
+    expect(sheet.querySelector('[data-test="sidebar-sheet-import"]')).toBeTruthy()
+    expect(sheet.querySelector('[data-test="sidebar-sheet-create-agent"]')).toBeTruthy()
+    expect(sheet.textContent).not.toContain('Agent 管理')
+    const row = sheet.querySelector('[data-resource-key]')!
+    row.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
     await flushPromises()
-
-    expect(wrapper.text()).toContain('Agent 管理')
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+    expect(sheet.textContent).not.toContain('重命名')
+    expect(sheet.textContent).not.toContain('删除')
     wrapper.unmount()
   })
 
@@ -1659,8 +1645,8 @@ describe('AgentStudio remaining hints', () => {
     template: '<div v-if="open" data-test="modal"><h2>{{ title }}</h2><slot /><slot name="footer" /></div>',
   })
   const SidebarStub = defineComponent({
-    emits: ['open-manage', 'select'],
-    template: '<div data-test="sidebar"><button data-test="manage" @click="$emit(\'open-manage\')">manage</button></div>',
+    emits: ['select'],
+    template: '<div data-test="sidebar"></div>',
   })
 
   async function mountHintStudio() {
@@ -1694,7 +1680,7 @@ describe('AgentStudio remaining hints', () => {
     mocks.listAgents.mockResolvedValue([agent('public')])
   })
 
-  it('keeps MCP hint, manageIntro, and data/meta tabs', async () => {
+  it('keeps MCP hint and data/meta tabs without the management dialog', async () => {
     const wrapper = await mountHintStudio()
     await flushPromises()
 
@@ -1702,16 +1688,14 @@ describe('AgentStudio remaining hints', () => {
     expect(wrapper.text()).toContain('元信息')
     expect(wrapper.text()).not.toContain('可复用 Agent 配置 · 组织与 Agent 配置引用')
     expect(wrapper.text()).not.toMatch(/改前|改后/)
+    expect(wrapper.text()).not.toContain('列出全部 Agent。此处「Rename」修改身份名称')
+    expect(wrapper.text()).not.toContain('Agent 管理')
 
     await wrapper.findAll('button').find((item) => item.text().startsWith('MCP'))!.trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="mcp-help-link"]').text()).toBe('帮助')
     expect(wrapper.text()).not.toContain('整份 mcp.json 由你配置')
     expect(wrapper.text()).not.toContain('/root/.codebuddy/mcp.json')
-
-    await wrapper.get('[data-test="manage"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.text()).toContain('列出全部 Agent。此处「Rename」修改身份名称')
     wrapper.unmount()
   })
 })

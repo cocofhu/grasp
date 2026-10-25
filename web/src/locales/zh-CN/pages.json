@@ -1395,7 +1395,7 @@
         "tabConfig": "配置",
         "tabHelp": "帮助",
         "nodeName": "节点名称",
-        "noAgents": "暂无 Agent,请先在「Agent 管理」创建",
+        "noAgents": "暂无 Agent，请先在智能体页创建",
         "emptyAgent": "（空 · 不指定 Agent）",
         "agentProfileHint": "可选择工作区中的任意 Agent，也可留空。",
         "staleBannerTitle": "stale 引用",
@@ -2134,8 +2134,10 @@
         "manageClearSearch": "清空搜索",
         "renameViaManage": "重命名（前往管理）",
         "lockedHint": "工作流需要此 Agent，不能删除或重命名。",
-        "noSelection": "未选中 Agent。从左侧树选择，或打开 Agent 管理。",
-        "metaRenameHint": "名称请在 Agent 管理中重命名。此处不可编辑身份名称。"
+        "contextRename": "重命名",
+        "contextDelete": "删除",
+        "noSelection": "未选中 Agent。从左侧列表选择。",
+        "metaRenameHint": "名称请在左侧列表右键重命名。此处不可编辑身份名称。"
       },
       "explorer": {
         "title": "资源管理器",

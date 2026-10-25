@@ -2134,8 +2134,10 @@
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",

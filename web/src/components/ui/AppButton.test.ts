@@ -101,12 +101,163 @@ describe('AppButton', () => {
     idle.unmount()
 
     const ghost = mountBtn({ variant: 'ghost' })
-    expect(ghost.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-elevated')
+    expect(ghost.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    expect(ghost.classes().join(' ')).not.toMatch(/hover:bg-/)
+    expect(ghost.classes()).toContain('enabled:hover:text-txt')
+    expect(ghost.classes()).toContain('text-txt2')
     ghost.unmount()
+
+    const outline = mountBtn({ variant: 'outline' })
+    expect(outline.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-elevated')
+    outline.unmount()
 
     const danger = mountBtn({ variant: 'danger' })
     expect(danger.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-err')
     danger.unmount()
+  })
+
+  it('paints an enabled primary cover with the theme accent hover and keeps white text', () => {
+    const idle = mountBtn({ variant: 'primary', icon: 'arrow-right' }, '下一步')
+    expect(idle.classes()).toContain('bg-accent')
+    expect(idle.classes()).toContain('text-white')
+    expect(idle.classes().join(' ')).not.toMatch(/hover:text-/)
+    expect(idle.classes().join(' ')).not.toMatch(/hover:bg-/)
+    const ink = idle.element.style.getPropertyValue('--hover-ink-color')
+    expect(ink).toBe('rgb(var(--c-accent-hover))')
+    expect(ink).not.toContain('--c-elevated')
+    expect(ink).not.toMatch(/5424D8|#5424/)
+    const icon = idle.findComponent({ name: 'Icon' })
+    expect(icon.props('name')).toBe('arrow-right')
+    expect(icon.props('size')).toBe(16)
+    idle.unmount()
+  })
+
+  it('does not let compiled vendor-mark hover paint the button background', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const { compileStyle } = await import('@vue/compiler-sfc')
+
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../agent/VendorMark.vue'),
+      'utf8',
+    )
+    const block = source.match(/<style scoped>([\s\S]*?)<\/style>/)
+    expect(block).not.toBeNull()
+    const scopeId = 'data-v-vendormark'
+    const compiled = compileStyle({
+      source: block![1],
+      filename: 'VendorMark.vue',
+      id: scopeId,
+      scoped: true,
+    })
+    expect(compiled.errors).toEqual([])
+    const css = compiled.code
+    expect(css).toMatch(/button:hover \.vendor-mark\[data-v-vendormark\]/)
+    expect(css).toMatch(/button:focus-visible \.vendor-mark\[data-v-vendormark\]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])button:hover\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])button:focus-visible\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])a:hover\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])\[role="option"\]:hover\s*[,{]/)
+
+    const styleEl = document.createElement('style')
+    styleEl.setAttribute('data-testid', 'vendor-mark-compiled')
+    styleEl.textContent = css
+    document.head.appendChild(styleEl)
+
+    const disabled = mountBtn({ variant: 'primary', disabled: true, icon: 'arrow-right' }, '下一步')
+    const ghost = mountBtn({ variant: 'ghost', icon: 'close' }, '取消')
+    const mark = document.createElement('span')
+    mark.className = 'vendor-mark'
+    mark.setAttribute(scopeId, '')
+    disabled.element.appendChild(mark)
+
+    const sheet = styleEl.sheet
+    expect(sheet).not.toBeNull()
+    const probes: string[] = []
+    for (const rule of Array.from(sheet!.cssRules)) {
+      if (!(rule instanceof CSSStyleRule)) continue
+      if (!rule.style.backgroundColor.includes('var(--c-elevated)')) continue
+      for (const sel of rule.selectorText.split(',')) {
+        const probe = sel.trim().replace(/:(hover|focus-visible)/g, '')
+        probes.push(probe)
+        expect(disabled.element.matches(probe)).toBe(false)
+        expect(ghost.element.matches(probe)).toBe(false)
+      }
+    }
+    expect(probes.length).toBeGreaterThan(0)
+    expect(probes.some((probe) => mark.matches(probe))).toBe(true)
+
+    styleEl.remove()
+    disabled.unmount()
+    ghost.unmount()
+  })
+
+  it('does not paint a hover cover on a disabled or loading primary button', async () => {
+    const { nextTick } = await import('vue')
+    const { vi } = await import('vitest')
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const rect = () => ({
+      left: 0, top: 0, width: 96, height: 36, right: 96, bottom: 36, x: 0, y: 0, toJSON: () => ({}),
+    })
+    const enter = (btn: HTMLElement) => {
+      Object.defineProperty(btn, 'getBoundingClientRect', { configurable: true, value: rect })
+      btn.dispatchEvent(new PointerEvent('pointerenter', { clientX: 12, clientY: 12, pointerType: 'mouse', bubbles: true }))
+    }
+
+    const disabled = mountBtn({ variant: 'primary', disabled: true, icon: 'arrow-right' }, '下一步')
+    await nextTick()
+    enter(disabled.element)
+    expect(disabled.attributes('disabled')).toBeDefined()
+    expect(disabled.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    expect(disabled.element.classList.contains('is-hover-ink')).toBe(false)
+    expect(disabled.classes()).toContain('text-white')
+    expect(disabled.classes()).toContain('disabled:opacity-50')
+    disabled.unmount()
+
+    const ghost = mountBtn({ variant: 'ghost', icon: 'close' }, '取消')
+    await nextTick()
+    enter(ghost.element)
+    expect(ghost.element.classList.contains('is-hover-ink')).toBe(false)
+    expect(ghost.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    expect(ghost.findComponent({ name: 'Icon' }).props()).toMatchObject({ name: 'close', size: 16 })
+    ghost.unmount()
+
+    const live = mountBtn({ variant: 'primary' }, '下一步')
+    await nextTick()
+    enter(live.element)
+    expect(live.element.classList.contains('is-hover-ink')).toBe(true)
+    expect(live.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-hover')
+    await live.setProps({ disabled: true })
+    expect(live.element.classList.contains('is-hover-ink')).toBe(false)
+    expect(live.element.classList.contains('is-ink-suppressed')).toBe(true)
+    expect(live.element.style.getPropertyValue('--ink-d')).toBe('0px')
+    expect(live.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    expect(live.classes()).toContain('text-white')
+    enter(live.element)
+    expect(live.element.classList.contains('is-hover-ink')).toBe(false)
+    live.unmount()
+
+    const loading = mountBtn({ variant: 'primary' }, '下一步')
+    await nextTick()
+    enter(loading.element)
+    expect(loading.element.classList.contains('is-hover-ink')).toBe(true)
+    await loading.setProps({ loading: true })
+    expect(loading.attributes('aria-busy')).toBe('true')
+    expect(loading.element.classList.contains('is-hover-ink')).toBe(false)
+    expect(loading.element.classList.contains('is-ink-suppressed')).toBe(true)
+    expect(loading.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+    loading.unmount()
+
+    vi.unstubAllGlobals()
   })
 
   it('defines --c-accent-hover for both dark and light themes (plan g1.1)', async () => {

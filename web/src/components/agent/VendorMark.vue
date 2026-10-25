@@ -98,11 +98,17 @@ const radius = computed(() => (props.size >= 28 ? 9 : props.size >= 20 ? 6 : 4))
 .vendor-mark {
   transition: border-color 180ms ease, background-color 180ms ease;
 }
-:global(button:hover) .vendor-mark,
-:global(button:focus-visible) .vendor-mark,
-:global(a:hover) .vendor-mark,
-:global(a:focus-visible) .vendor-mark,
-:global([role="option"]:hover) .vendor-mark {
+/*
+ * Keep the scoped attribute on .vendor-mark. Wrapping only the parent in
+ * :global() makes Vue drop the class and emit a bare button:hover rule, which
+ * paints every button (including a disabled Next and ghost Cancel) with the
+ * elevated gray.
+ */
+button:hover .vendor-mark,
+button:focus-visible .vendor-mark,
+a:hover .vendor-mark,
+a:focus-visible .vendor-mark,
+[role="option"]:hover .vendor-mark {
   border-color: rgb(var(--c-accent) / .45);
   background-color: rgb(var(--c-elevated));
 }
