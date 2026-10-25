@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import type { ComponentPublicInstance } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
-import SoloBranchChip from './SoloBranchChip.vue'
 import { repoShort } from '@/lib/solo/soloPrefs'
 import { repoTriggerLabel } from '@/lib/solo/sessionRepos'
-import { repoAccessKey } from '@/lib/solo/projectForm'
 import type { Project } from '@/lib/api/apiTypes'
 
 const props = withDefaults(
   defineProps<{
     projects?: Project[]
     modelValue?: string[]
+    /** Kept so parents can still pass branch overrides. Empty means each repo's default branch at launch. */
     branches?: Record<string, string>
     disabled?: boolean
     loading?: boolean
@@ -27,18 +27,167 @@ const emit = defineEmits<{
 }>()
 const { t } = useI18n()
 
+const shellRef = ref<ComponentPublicInstance | null>(null)
+const stripEl = ref<HTMLElement | null>(null)
 const selected = computed(() => (Array.isArray(props.modelValue) ? props.modelValue : []))
-
-const label = computed(() =>
-  repoTriggerLabel(selected.value, (id) => props.projects.find((p) => p.id === id)?.name || '', t('pages.solo.projectSelect.none')),
+const noneLabel = computed(() => t('pages.solo.projectSelect.none'))
+const nameText = computed(() => {
+  if (!selected.value.length) return noneLabel.value
+  const id = selected.value[0]!
+  return props.projects.find((project) => project.id === id)?.name || id
+})
+const extra = computed(() => Math.max(0, selected.value.length - 1))
+const plainLabel = computed(() =>
+  repoTriggerLabel(selected.value, (id) => props.projects.find((project) => project.id === id)?.name || '', noneLabel.value),
 )
+const triggerTitle = computed(() => {
+  if (!selected.value.length) return noneLabel.value
+  return selected.value.map((id) => props.projects.find((project) => project.id === id)?.name || id).join('、')
+})
+const motionKey = computed(() => `${nameText.value}\0${extra.value}`)
 
-function matches(p: Project, q: string) {
-  return !q || p.name.toLowerCase().includes(q) || repoShort(p.repoUrl).toLowerCase().includes(q)
+let shown = 0
+let ready = false
+let pendingFrom = 0
+let pendingAnimate = false
+let rollArmed = false
+let rollTimer = 0
+let detachRoll: (() => void) | null = null
+
+const ROLL_MS = 220
+
+function triggerButton(): HTMLButtonElement | null {
+  const root = shellRef.value?.$el
+  if (!(root instanceof HTMLElement)) return null
+  return root.querySelector<HTMLButtonElement>('[data-testid="solo-project-select-trigger"]')
 }
 
-function accessLabel(p: Project) {
-  return t(`pages.solo.access.${repoAccessKey(p.gitCredentialType)}`)
+function prefersReducedMotion() {
+  return typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+}
+
+function rollCell(text: string) {
+  const span = document.createElement('span')
+  span.textContent = text
+  span.style.height = '16px'
+  span.style.lineHeight = '16px'
+  return span
+}
+
+function disarmRoll() {
+  rollArmed = false
+  if (rollTimer) {
+    window.clearTimeout(rollTimer)
+    rollTimer = 0
+  }
+  detachRoll?.()
+  detachRoll = null
+}
+
+/** Leave a single digit and drop the translate, so the button name matches the visible count. */
+function parkRoll(strip: HTMLElement, value: number) {
+  strip.style.transition = 'none'
+  strip.replaceChildren(rollCell(String(value)))
+  strip.style.transform = 'none'
+  void strip.offsetWidth
+  strip.style.transition = ''
+}
+
+function finishRoll(strip: HTMLElement, value: number) {
+  if (!rollArmed) return
+  disarmRoll()
+  if (stripEl.value !== strip || shown !== value) return
+  parkRoll(strip, value)
+}
+
+function armRoll(strip: HTMLElement, value: number) {
+  const onEnd = (event: TransitionEvent) => {
+    if (event.target !== strip || event.propertyName !== 'transform') return
+    finishRoll(strip, value)
+  }
+  strip.addEventListener('transitionend', onEnd)
+  detachRoll = () => strip.removeEventListener('transitionend', onEnd)
+  rollArmed = true
+  rollTimer = window.setTimeout(() => finishRoll(strip, value), ROLL_MS + 30)
+}
+
+/** +N rolls only the digit. Larger values enter from below; smaller ones from above. */
+function rollTo(next: number, animate: boolean) {
+  const strip = stripEl.value
+  const midRoll = rollArmed
+  disarmRoll()
+  if (next <= 0 || !strip) {
+    shown = 0
+    return
+  }
+  if (midRoll && strip.childElementCount > 1) parkRoll(strip, shown)
+  const motion = animate && !prefersReducedMotion() && shown !== next
+  if (!motion) {
+    parkRoll(strip, next)
+    shown = next
+    return
+  }
+  const dir = next > shown ? 1 : -1
+  strip.style.transition = 'none'
+  if (dir > 0) {
+    strip.replaceChildren(rollCell(shown > 0 ? String(shown) : ''), rollCell(String(next)))
+    strip.style.transform = 'translateY(0)'
+  } else {
+    strip.replaceChildren(rollCell(String(next)), rollCell(String(shown)))
+    strip.style.transform = 'translateY(-50%)'
+  }
+  shown = next
+  void strip.offsetWidth
+  strip.style.transition = ''
+  armRoll(strip, next)
+  strip.style.transform = dir > 0 ? 'translateY(-50%)' : 'translateY(0)'
+}
+
+/** Lock the button's current width, then ease to the width of the new label. */
+function glide(button: HTMLButtonElement | null, from: number) {
+  if (!button) return
+  if (prefersReducedMotion()) {
+    button.style.transition = ''
+    button.style.width = ''
+    return
+  }
+  if (from < 1) return
+  button.style.transition = 'none'
+  button.style.width = 'max-content'
+  const to = button.getBoundingClientRect().width
+  if (to < 1 || Math.abs(from - to) < 1) {
+    button.style.transition = ''
+    button.style.width = to >= 1 ? `${to}px` : ''
+    return
+  }
+  button.style.width = `${from}px`
+  void button.offsetWidth
+  button.style.transition = 'width 220ms var(--ease-out-expo), border-color 0.18s ease, background-color 0.18s ease'
+  button.style.width = `${to}px`
+}
+
+watch(motionKey, () => {
+  const button = triggerButton()
+  pendingFrom = ready && button ? button.getBoundingClientRect().width : 0
+  pendingAnimate = ready
+}, { flush: 'pre' })
+
+watch(motionKey, () => {
+  const animate = pendingAnimate
+  rollTo(extra.value, animate)
+  if (animate) glide(triggerButton(), pendingFrom)
+  ready = true
+}, { flush: 'post' })
+
+onMounted(() => {
+  rollTo(extra.value, false)
+  ready = true
+})
+
+onBeforeUnmount(disarmRoll)
+
+function matches(project: Project, query: string) {
+  return !query || project.name.toLowerCase().includes(query) || repoShort(project.repoUrl).toLowerCase().includes(query)
 }
 
 function isOn(id: string) {
@@ -47,17 +196,13 @@ function isOn(id: string) {
 
 function toggle(id: string) {
   const current = selected.value
-  emit('update:modelValue', current.includes(id) ? current.filter((x) => x !== id) : [...current, id])
+  emit('update:modelValue', current.includes(id) ? current.filter((item) => item !== id) : [...current, id])
 }
 
-function clear() {
-  emit('update:modelValue', [])
-}
-
-function onRowKeydown(e: KeyboardEvent, id: string) {
-  if (e.target instanceof HTMLInputElement) return
-  if (e.key === 'Enter' || e.key === ' ') {
-    e.preventDefault()
+function onRowKeydown(event: KeyboardEvent, id: string) {
+  if (event.target instanceof HTMLInputElement) return
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault()
     toggle(id)
   }
 }
@@ -65,110 +210,203 @@ function onRowKeydown(e: KeyboardEvent, id: string) {
 
 <template>
   <SoloPickerShell
-    :label="label"
+    ref="shellRef"
+    class="solo-repo-picker"
+    :label="plainLabel"
     :placeholder="!selected.length"
     icon="git"
     multiple
     :disabled="disabled"
     :search-placeholder="projects.length > 5 ? t('pages.solo.projectSelect.search') : ''"
-    :panel-width="360"
+    :panel-width="300"
     test-id="solo-project-select"
   >
-    <template #default="{ query }">
-      <button
-        type="button"
-        role="option"
-        data-picker-opt
-        :aria-selected="!selected.length"
-        data-testid="solo-project-option-none"
-        @click="clear"
-      >
-        <span class="solo-project-box" />
-        <Icon name="folder" :size="15" class="shrink-0 text-txt3" />
-        <span class="min-w-0 flex-1">
-          <span class="block truncate">{{ t('pages.solo.projectSelect.none') }}</span>
-          <span class="block truncate text-[11px] text-txt3">{{ t('pages.solo.projectSelect.noneHint') }}</span>
+    <template #label>
+      <span class="solo-picker__label solo-repo-label" :class="{ 'is-placeholder': !selected.length }" :title="triggerTitle">
+        <span class="solo-repo-name">{{ nameText }}</span>
+        <span v-if="extra > 0" class="solo-repo-count">
+          <span class="solo-repo-plus"> +</span>
+          <span class="solo-repo-roll">
+            <span ref="stripEl" class="solo-repo-roll-strip" />
+          </span>
         </span>
-        <Icon v-if="!selected.length" name="check" :size="14" class="shrink-0 text-accent" />
-      </button>
-      <div v-if="projects.length" class="solo-picker-group">{{ t('pages.solo.projectSelect.group') }}</div>
+      </span>
+    </template>
+    <template #default="{ query }">
       <div
-        v-for="p in projects.filter((x) => matches(x, query))"
-        :key="p.id"
+        v-for="project in projects.filter((item) => matches(item, query))"
+        :key="project.id"
         role="option"
         tabindex="0"
         data-picker-opt
         class="solo-project-opt"
-        :aria-selected="isOn(p.id)"
-        :data-testid="`solo-project-option-${p.id}`"
-        @click="toggle(p.id)"
-        @keydown="onRowKeydown($event, p.id)"
+        :aria-selected="isOn(project.id)"
+        :data-testid="`solo-project-option-${project.id}`"
+        :title="repoShort(project.repoUrl)"
+        @click="toggle(project.id)"
+        @keydown="onRowKeydown($event, project.id)"
       >
-        <span class="solo-project-box" />
-        <Icon name="git" :size="15" class="mt-0.5 shrink-0 text-accent" />
-        <span class="min-w-0 flex-1">
-          <span class="flex items-center gap-1.5">
-            <span class="truncate">{{ p.name }}</span>
-            <span v-if="p.gitCredentialType" class="solo-access-badge">{{ accessLabel(p) }}</span>
-          </span>
-          <span class="block truncate font-mono text-[11px] text-txt3">
-            {{ repoShort(p.repoUrl) }}<template v-if="!isOn(p.id) && p.defaultBranch"> · {{ p.defaultBranch }}</template>
-          </span>
-          <span v-if="isOn(p.id)" class="mt-1.5 inline-flex" @click.stop @keydown.stop>
-            <SoloBranchChip
-              :model-value="branches[p.id] || ''"
-              :default-branch="p.defaultBranch || ''"
-              @update:model-value="emit('update:branch', p.id, $event)"
-            />
-          </span>
+        <Icon name="git" :size="15" class="solo-project-ico" />
+        <span class="solo-project-body">
+          <span class="solo-project-name">{{ project.name }}</span>
+          <span class="solo-project-sub">{{ repoShort(project.repoUrl) }}</span>
         </span>
-        <Icon v-if="isOn(p.id)" name="check" :size="14" class="mt-0.5 shrink-0 text-accent" />
+        <Icon name="check" :size="14" class="solo-project-tick" :class="{ 'is-on': isOn(project.id) }" />
       </div>
       <div v-if="loading && !projects.length" class="solo-picker-empty">
         <Icon name="spinner" :size="14" class="inline" />
       </div>
-      <div v-else-if="projects.length && !projects.some((x) => matches(x, query))" class="solo-picker-empty">
+      <div v-else-if="projects.length && !projects.some((item) => matches(item, query))" class="solo-picker-empty">
         {{ t('pages.solo.projectSelect.empty') }}
       </div>
     </template>
     <template #footer="{ close }">
-      <button type="button" data-picker-opt data-testid="solo-project-create" @click="close(false); emit('create')">
-        <Icon name="plus" :size="14" class="shrink-0 text-txt2" />
-        <span>{{ t('pages.solo.projectSelect.create') }}</span>
-      </button>
-      <RouterLink to="/settings/projects" data-picker-opt class="text-txt2" @click="close(false)">
-        <Icon name="settings" :size="14" class="shrink-0 text-txt3" />
-        <span>{{ t('pages.solo.projectSelect.manage') }}</span>
-      </RouterLink>
+      <div class="solo-project-foot">
+        <button type="button" class="solo-project-act" data-testid="solo-project-create" @click="close(false); emit('create')">
+          {{ t('pages.solo.projectSelect.create') }}
+        </button>
+        <RouterLink to="/settings/projects" class="solo-project-act" @click="close(false)">
+          {{ t('pages.solo.projectSelect.manage') }}
+        </RouterLink>
+      </div>
     </template>
   </SoloPickerShell>
 </template>
 
 <style scoped>
-.solo-project-opt.solo-project-opt {
-  align-items: flex-start;
+.solo-repo-picker {
+  width: max-content;
+  max-width: 15rem;
 }
-.solo-project-box {
-  width: 14px;
-  height: 14px;
-  margin-top: 3px;
-  flex: none;
-  border: 1px solid rgb(var(--c-txt3));
-  border-radius: 3px;
+.solo-repo-picker :deep(.solo-picker__trigger) {
+  width: max-content;
+  max-width: 15rem;
 }
-.solo-project-opt[aria-selected='true'] .solo-project-box,
-[data-testid='solo-project-option-none'][aria-selected='true'] .solo-project-box {
-  border-color: rgb(var(--c-accent));
-  background: rgb(var(--c-accent));
-  box-shadow: inset 0 0 0 2px rgb(var(--c-elevated));
+.solo-repo-label {
+  display: inline-flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
 }
-.solo-access-badge {
-  flex-shrink: 0;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 999px;
-  padding: 0 6px;
+.solo-repo-label.is-placeholder {
   color: rgb(var(--c-txt3));
-  font-size: 10px;
+}
+.solo-repo-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.solo-repo-count {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  height: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.solo-repo-roll {
+  height: 16px;
+  overflow: hidden;
   line-height: 16px;
+}
+.solo-repo-roll-strip {
+  display: flex;
+  flex-direction: column;
+  transition: transform 220ms var(--ease-out-expo);
+}
+.solo-repo-roll-strip :deep(span) {
+  height: 16px;
+  line-height: 16px;
+}
+div.solo-project-opt.solo-project-opt {
+  height: 52px;
+  min-height: 52px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+div.solo-project-opt.solo-project-opt:hover,
+div.solo-project-opt.solo-project-opt:focus-visible {
+  background: rgb(var(--c-accent) / 0.05);
+}
+div.solo-project-opt.solo-project-opt[aria-selected='true'],
+div.solo-project-opt.solo-project-opt[aria-selected='true']:hover,
+div.solo-project-opt.solo-project-opt[aria-selected='true']:focus-visible {
+  border-color: transparent;
+  background: rgb(var(--c-accent) / 0.06);
+}
+.solo-project-ico {
+  flex: none;
+  color: rgb(var(--c-txt3));
+}
+div.solo-project-opt[aria-selected='true'] .solo-project-ico {
+  color: rgb(var(--c-accent));
+}
+.solo-project-body {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+  height: 36px;
+}
+.solo-project-name,
+.solo-project-sub {
+  display: block;
+  height: 16px;
+  min-width: 0;
+  overflow: hidden;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.solo-project-name {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.011em;
+}
+.solo-project-sub {
+  color: rgb(var(--c-txt3));
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+}
+.solo-project-tick {
+  flex: none;
+  color: rgb(var(--c-accent));
+  opacity: 0;
+}
+.solo-project-tick.is-on {
+  opacity: 1;
+}
+.solo-project-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.solo-project-act {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  padding: 0 8px;
+  color: rgb(var(--c-txt2));
+  font-size: 13px;
+  text-decoration: none;
+  cursor: pointer;
+}
+.solo-project-act:hover {
+  background: rgb(var(--c-accent) / 0.05);
+}
+@media (prefers-reduced-motion: reduce) {
+  .solo-repo-roll-strip {
+    transition: none;
+  }
 }
 </style>
