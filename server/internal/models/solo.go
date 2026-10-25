@@ -39,6 +39,23 @@ const (
 	SoloStatusError    = "error"
 )
 
+// SessionRepo is one repository frozen into a Solo session at start. It is
+// stored inside the session, not as its own table. Secret values are never
+// copied: Env holds non-secret keys and CredentialBindings holds credential ids.
+type SessionRepo struct {
+	Position             int                `json:"position"`
+	ProjectID            string             `json:"projectId"`
+	Name                 string             `json:"name"`
+	RepoURL              string             `json:"repoUrl"`
+	RepoDirName          string             `json:"repoDirName"`
+	Branch               string             `json:"branch,omitempty"`
+	GitCredentialType    string             `json:"gitCredentialType,omitempty"`
+	GitCredentialID      string             `json:"gitCredentialId,omitempty"`
+	SshHostsCredentialID string             `json:"sshHostsCredentialId,omitempty"`
+	Env                  map[string]string  `json:"env,omitempty"`
+	CredentialBindings   map[string]*string `json:"credentialBindings,omitempty"`
+}
+
 // SoloSession is a direct CLI chat with one Agent in a resident sandbox. The
 // sandbox has no idle TTL; it lives until the user closes the session.
 type SoloSession struct {
@@ -46,18 +63,23 @@ type SoloSession struct {
 	UserID    string `gorm:"index" json:"userId"`
 	Title     string `json:"title"`
 	AgentName string `gorm:"index" json:"agentName"`
-	// ProjectID is empty when the session runs in an empty workspace.
+	// ProjectID is the single repository of a legacy session. New multi-repo
+	// sessions leave it empty; usage is the Repos list. A new single-repo
+	// session still fills it so older readers keep working.
 	ProjectID string `gorm:"index" json:"projectId,omitempty"`
-	// ProjectSnapshot freezes the project config at start so later edits or
-	// deletion do not affect a live session.
+	// ProjectSnapshot freezes the single project of a legacy session.
 	ProjectSnapshot *Project `gorm:"serializer:json" json:"project,omitempty"`
 	Branch          string   `json:"branch,omitempty"`
 	// InitialModelID is the model chosen for this session's first chat.
 	// Empty follows the Agent configuration's primary model and does not change it.
 	InitialModelID string `json:"initialModelId,omitempty"`
-	SandboxID      uint   `gorm:"index" json:"sandboxId,omitempty"`
-	Status         string `gorm:"index" json:"status"`
-	Error          string `json:"error,omitempty"`
+	// Repos is the ordered repository snapshot. Empty means an empty workspace
+	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
+	// read as a one-element list built from ProjectSnapshot.
+	Repos     []SessionRepo `gorm:"serializer:json" json:"repos,omitempty"`
+	SandboxID uint          `gorm:"index" json:"sandboxId,omitempty"`
+	Status    string        `gorm:"index" json:"status"`
+	Error     string        `json:"error,omitempty"`
 	// EnvSources maps each injected env key to where it came from
 	// (platform | agent | project | credential | system). Values are never stored.
 	EnvSources map[string]string `gorm:"serializer:json" json:"-"`

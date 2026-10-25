@@ -3258,6 +3258,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
@@ -4610,7 +4611,8 @@
         "unknown": "The sandbox failed to start or was destroyed.",
         "retry": "Restart",
         "logs": "Open sandbox",
-        "edit": "Edit repository"
+        "edit": "Edit repository",
+        "editRepo": "Edit {name}"
       },
       "chat": {
         "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
@@ -4624,6 +4626,7 @@
         "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
         "empty": "{agent} is ready. Start chatting.",
+        "reposFrozen": "These repositories were frozen at launch and cannot be added or removed in this session.",
         "imagesOnly": "(attachments)",
         "plan": "Plan"
       },
@@ -4655,7 +4658,8 @@
         "branch": "Branch",
         "access": "Access",
         "remoteDefault": "Remote default branch",
-        "snapshotHint": "Repository settings are frozen when the session starts. Restart the session to pick up later changes.",
+        "dir": "Directory",
+        "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
         "vars": "Environment variables",
         "hint": "Only names and origins are shown, never values.",
         "all": "All",
@@ -4682,6 +4686,9 @@
         "name_taken": "A repository with this name already exists",
         "repo_url_invalid": "Invalid repository URL",
         "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
+        "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
+        "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
+        "env_key_conflict": "Variable {key} conflicts across repositories {repos}. Change it before starting.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "git_type_invalid": "Unsupported access mode",
         "env_key_invalid": "Invalid variable name",

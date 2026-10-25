@@ -278,7 +278,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-y', nodeId: 'clarify', label: '需求澄清', kind: 'clarify', workflowName: 'w', runTitle: '另一个' },
     ]
     gateMocks.activeInboxKey.value = 'run-x:clarify'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     const wrapper = mountNav()
     await flushPromises()
     expect(apiMocks.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'queued,running,waiting_human' }))
@@ -480,7 +480,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-s', nodeId: 'ap', label: '哦哦发哦佛啊', kind: 'clarify', state: 'starting', workflowName: 'w', runTitle: '哦哦发哦佛啊' },
     ]
     gateMocks.activeInboxKey.value = 'run-s:ap'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await flushPromises()
     expect(wrapper.get('[data-key="run-s"]').classes()).toContain('active')
     expect(title()).toBe('启动服务 我来指定需求')
@@ -1082,12 +1082,12 @@ describe('AppSidebarNav', () => {
     expect(rows[0].classes()).not.toContain('active')
 
     gateMocks.activeInboxKey.value = 'run-1:g1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
 
     await rows[1].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'c1' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-2/nodes/c1' })
     expect(routerMocks.push).toHaveBeenCalledTimes(1)
 
     gateMocks.startFailedKeys.value = ['run-2:c1']
@@ -1157,7 +1157,7 @@ describe('AppSidebarNav', () => {
 
     expect(rows[0].classes()).not.toContain('active')
     gateMocks.activeInboxKey.value = 'run-1:g1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[0].classes()).toContain('active')
     expectRowStart(rows[0], 'nav-pending-type-icon')
@@ -1172,7 +1172,7 @@ describe('AppSidebarNav', () => {
     }
 
     await rows[2].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-3', node: 'long' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-3/nodes/long' })
 
     style.remove()
     wrapper.unmount()
@@ -1194,7 +1194,7 @@ describe('AppSidebarNav', () => {
       { type: 'clarify', runId: 'run-1', nodeId: 'c1', label: '需求澄清', kind: 'clarify', state: 'starting', workflowName: 'w' },
     ]
     gateMocks.activeInboxKey.value = 'run-1:c1'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     const wrapper = mountNav()
     await flushPromises()
 
@@ -1302,7 +1302,7 @@ describe('AppSidebarNav', () => {
     expect(rows[5].html()).not.toContain('M8 5h8')
 
     gateMocks.activeInboxKey.value = 'run-c:c'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     await nextTick()
     expect(rows[3].classes()).toContain('active')
     expectTypeIcon(rows[3], 'nav-row-type-icon--hold', 'M3.8 20a6.4')
@@ -1488,7 +1488,7 @@ describe('AppSidebarNav', () => {
     expect(rows[0].attributes('data-motion')).toBeUndefined()
     expect(rows[0].get('[data-testid="nav-pending-type-icon"]').attributes('name')).toBe('arc-spinner')
     await rows[1].trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-2', node: 'clarify' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-2/nodes/clarify' })
     expect(enNav.nav.pendingPin).toBe('Pin')
     expect(enNav.nav.pendingUnpin).toBe('Unpin')
     expect(enNav.nav.pendingRename).toBe('Rename')
@@ -1902,15 +1902,15 @@ describe('AppSidebarNav', () => {
 
     routerMocks.push.mockClear()
     await wrapper.get('[data-key="run-g"]').trigger('click')
-    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-g', node: 'g' } })
+    expect(routerMocks.push).toHaveBeenCalledWith({ path: '/runs/run-g/nodes/g' })
 
     openRow('run-g')
     await nextTick()
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
     expect(routerMocks.push).toHaveBeenLastCalledWith({
-      path: '/gates',
-      query: { run: 'run-g', node: 'g', share: '1' },
+      path: '/runs/run-g/nodes/g',
+      query: { share: '1' },
     })
     expect(document.querySelector('[data-testid="nav-pending-menu"]')).toBeNull()
 
@@ -2160,7 +2160,7 @@ describe('AppSidebarNav cancel run', () => {
   }
 
   it('opens the new-request page when cancelling the inbox conversation on screen', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [
       pendingClarify('run-1', 'a', '把登录做清楚'),
@@ -2195,7 +2195,7 @@ describe('AppSidebarNav cancel run', () => {
 
   it('treats a query-less inbox and an array run query as the open conversation', async () => {
     gateMocks.activeInboxKey.value = 'run-1:a'
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = {}
     gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
     const wrapper = mountNav(true)
@@ -2216,7 +2216,7 @@ describe('AppSidebarNav cancel run', () => {
   })
 
   it('stays on the conversation and keeps the existing error when cancel fails', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [pendingClarify('run-1', 'a', '把登录做清楚')]
     const wrapper = mountNav(true)
@@ -2229,7 +2229,7 @@ describe('AppSidebarNav cancel run', () => {
     ;(document.querySelector('[data-testid="nav-pending-cancel-confirm"]') as HTMLButtonElement).click()
     await flushPromises()
     expect(routerMocks.push).not.toHaveBeenCalled()
-    expect(routeState.path).toBe('/gates')
+    expect(routeState.path).toBe('/runs/run-1/nodes/a')
     expect(routeState.query).toEqual({ run: 'run-1', node: 'a' })
     expect(document.querySelector('[data-testid="nav-pending-cancel-error"]')?.textContent).toContain('当前状态不可取消')
     expect(document.querySelector('[role="dialog"]')).toBeTruthy()
@@ -2252,7 +2252,7 @@ describe('AppSidebarNav cancel run', () => {
       { path: '/runs', query: {} },
       { path: '/runs/run-1', query: {} },
       { path: '/runs/run-1/live', query: { node: 'a' } },
-      { path: '/gates', query: { run: 'run-2', node: 'b' } },
+      { path: '/runs/run-2/nodes/b', query: {} },
     ]
     for (const page of pages) {
       routerMocks.push.mockClear()
@@ -2270,7 +2270,7 @@ describe('AppSidebarNav cancel run', () => {
   })
 
   it('holds the open conversation until the leave finishes, and does not navigate before success', async () => {
-    routeState.path = '/gates'
+    routeState.path = '/runs/run-1/nodes/a'
     routeState.query = { run: 'run-1', node: 'a' }
     gateMocks.displayedItems.value = [
       pendingClarify('run-1', 'a', '把登录做清楚'),
@@ -3104,7 +3104,7 @@ describe('自动过程 grouping and flight', () => {
     ])
     ;(document.querySelector('[data-testid="nav-pending-menu-share"]') as HTMLButtonElement).click()
     await nextTick()
-    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/gates', query: { run: 'run-a', node: 'g', share: '1' } })
+    expect(routerMocks.push).toHaveBeenLastCalledWith({ path: '/runs/run-a/nodes/g', query: { share: '1' } })
 
     open('run-b')
     await nextTick()

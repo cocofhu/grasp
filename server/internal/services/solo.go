@@ -48,11 +48,14 @@ const (
 	SoloPhaseRunning   = "running"
 )
 
-// SoloCreateInput starts a session.
+// SoloCreateInput starts a session. Repos is the ordered selection; an empty
+// list starts an empty workspace. When Repos is omitted, ProjectID and Branch
+// are read as a one-item list.
 type SoloCreateInput struct {
 	AgentName      string               `json:"agentName"`
 	ProjectID      string               `json:"projectId"`
 	Branch         string               `json:"branch"`
+	Repos          []SoloRepoChoice     `json:"repos"`
 	Title          string               `json:"title"`
 	Text           string               `json:"text"`
 	Images         []models.PromptImage `json:"images"`
@@ -212,6 +215,9 @@ func (s *SoloService) agentMeta(name string) (backend, model string) {
 
 func (s *SoloService) view(ctx context.Context, row *models.SoloSession, live bool) SoloSessionView {
 	v := SoloSessionView{SoloSession: *row}
+	if len(v.Repos) == 0 {
+		v.Repos = legacySessionRepos(row)
+	}
 	v.Backend, v.Model = s.agentMeta(row.AgentName)
 	if s.agents != nil {
 		if agent, ok := s.agents.Get(row.AgentName); ok && agent.Capabilities != nil {
@@ -306,22 +312,9 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if strings.TrimSpace(s.sbx.effectiveAgent(agent).AcpBackend) == "" {
 		return nil, soloErr(http.StatusBadRequest, "agent_no_backend", "Agent %q 未配置 CLI 类型", agentName)
 	}
-	branch := strings.TrimSpace(in.Branch)
-	if strings.ContainsAny(branch, " |,") {
-		return nil, soloErr(http.StatusBadRequest, "branch_invalid", "分支名不能包含空格、| 或 ,")
-	}
-	var project *models.Project
-	if pid := strings.TrimSpace(in.ProjectID); pid != "" {
-		p, err := s.projects.Get(pid)
-		if err != nil {
-			return nil, err
-		}
-		project = p
-		if branch == "" {
-			branch = p.DefaultBranch
-		}
-	} else {
-		branch = ""
+	snaps, projects, err := s.resolveSessionRepos(in)
+	if err != nil {
+		return nil, err
 	}
 	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
 		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
@@ -338,10 +331,14 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	now := time.Now()
 	row := &models.SoloSession{
 		ID: uuid.NewString(), UserID: user, Title: soloTitle(in, agentName), AgentName: agentName,
-		ProjectSnapshot: project, Branch: branch, InitialModelID: initialModel, Status: models.SoloStatusStarting, LastActiveAt: &now,
+		Repos: snaps, InitialModelID: initialModel, Status: models.SoloStatusStarting, LastActiveAt: &now,
 	}
-	if project != nil {
-		row.ProjectID = project.ID
+	// One repository keeps the legacy columns so a single-repo session still
+	// reads the same as sessions created before multi-select.
+	if len(snaps) == 1 && len(projects) == 1 {
+		row.ProjectID = projects[0].ID
+		row.ProjectSnapshot = projects[0]
+		row.Branch = snaps[0].Branch
 	}
 	if err := s.db.Create(row).Error; err != nil {
 		return nil, err
@@ -354,8 +351,8 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 		}
 		return nil, err
 	}
-	if project != nil {
-		s.projects.Touch(project.ID)
+	for _, p := range projects {
+		s.projects.Touch(p.ID)
 	}
 	if strings.TrimSpace(in.Text) != "" || len(in.Images) > 0 {
 		if _, err := s.Send(row.ID, user, in.Text, in.Images); err != nil {
@@ -368,7 +365,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
 	sid := row.ID
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
-		Profile: row.AgentName, SessionID: sid, Project: row.ProjectSnapshot, Branch: row.Branch, InitialModelID: row.InitialModelID,
+		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: row.InitialModelID,
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})

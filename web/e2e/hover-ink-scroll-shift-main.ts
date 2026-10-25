@@ -26,7 +26,7 @@ async function bootstrap() {
     history: createMemoryHistory(),
     routes: [
       { path: '/dashboard', component: stub('page-dashboard', '开始页') },
-      { path: '/gates', component: stub('page-gates', '待办页') },
+      { path: '/runs/:runId/nodes/:nodeId', component: stub('page-gates', '待办页') },
       { path: '/runs', component: stub('page-runs', '运行页') },
       { path: '/settings', component: stub('page-settings', '设置页') },
       { path: '/notifications', component: stub('page-notifications', '通知页') },

@@ -3258,6 +3258,7 @@
       "confirmFlowDialogDiscardDraft": "未发送的草稿将被丢弃。",
       "confirmFlowDialogDiscardBoth": "未保存的编辑和未发送的草稿将被丢弃。",
       "confirmFlowDialogConfirm": "确认流转",
+      "confirmFlowDialogDone": "已流转",
       "sandboxBusy": "沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。",
       "abortAndConfirm": "中止当前回合并确认",
       "sandboxOrphanBanner": "沙箱中还有一个平台不再跟踪的回合{op}，沙箱还没结束。",
@@ -4610,7 +4611,8 @@
         "unknown": "沙箱启动失败或已被销毁。",
         "retry": "重新启动",
         "logs": "查看沙箱",
-        "edit": "修改仓库配置"
+        "edit": "修改仓库配置",
+        "editRepo": "修改 {name}"
       },
       "chat": {
         "placeholder": "给 {agent} 发消息，Enter 发送，Shift+Enter 换行",
@@ -4624,6 +4626,7 @@
         "generating": "正在生成…",
         "waitingSandbox": "沙箱就绪后开始执行",
         "empty": "{agent} 已就绪，开始对话吧",
+        "reposFrozen": "这些仓库在启动时已经固定，这次会话里不能增删。",
         "imagesOnly": "（附件）",
         "plan": "计划"
       },
@@ -4655,7 +4658,8 @@
         "branch": "分支",
         "access": "访问方式",
         "remoteDefault": "远端默认分支",
-        "snapshotHint": "仓库配置在会话启动时固定，之后修改需要重新启动会话才会生效。",
+        "dir": "目录名",
+        "snapshotHint": "这些仓库配置在启动时已经固定，这次会话不能增删仓库。重新启动仍使用这份快照；之后修改仓库登记不会写回这次会话，要用新登记请新开一次会话。",
         "vars": "环境变量",
         "hint": "只显示变量名和来源，不显示值。",
         "all": "全部",
@@ -4682,6 +4686,9 @@
         "name_taken": "已有同名仓库",
         "repo_url_invalid": "仓库地址格式不正确",
         "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
+        "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
+        "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
+        "env_key_conflict": "变量 {key} 在仓库 {repos} 中冲突，请修改后再启动。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "git_type_invalid": "不支持的访问方式",
         "env_key_invalid": "变量名格式不正确",

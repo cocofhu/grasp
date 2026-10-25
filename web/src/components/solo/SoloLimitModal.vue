@@ -8,10 +8,11 @@ import SoloStatusDot from './SoloStatusDot.vue'
 import { api } from '@/lib/api/api'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { soloErrorText } from '@/lib/solo/soloErrors'
+import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
 
 defineProps<{ open: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'freed'): void }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const store = useSoloSessions()
 const closing = ref('')
 const error = ref('')
@@ -23,7 +24,7 @@ async function closeOne(id: string) {
     store.upsert(await api.closeSoloSession(id))
     emit('freed')
   } catch (e) {
-    error.value = soloErrorText(e, t, te)
+    error.value = soloErrorText(e, t, te, locale.value)
   } finally {
     closing.value = ''
   }
@@ -39,7 +40,7 @@ async function closeOne(id: string) {
           <SoloStatusDot :status="s.status" :busy="s.busy" />
           <div class="min-w-0 flex-1">
             <div class="truncate text-txt">{{ s.title || t('pages.solo.untitled') }}</div>
-            <div class="truncate text-[11px] text-txt3">{{ s.agentName }}<template v-if="s.project"> · {{ s.project.name }}</template></div>
+            <div class="truncate text-[11px] text-txt3">{{ sessionRepoLabel(s) ? `${s.agentName} · ${sessionRepoLabel(s)}` : s.agentName }}</div>
           </div>
           <AppButton size="sm" variant="outline" :loading="closing === s.id" @click="closeOne(s.id)">
             {{ t('pages.solo.closeSession') }}

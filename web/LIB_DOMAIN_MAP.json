@@ -141,6 +141,7 @@
       "llmTranscriptThread.ts",
       "mergeAcpEvents.ts",
       "mergeRunChrome.ts",
+      "nodeConversation.ts",
       "nodeEventsResponse.ts",
       "outputSourceOptions.ts",
       "pendingAcpBuffer.ts",
@@ -230,6 +231,7 @@
       "acpTurn.ts",
       "configuredModels.ts",
       "projectForm.ts",
+      "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
       "useSoloChat.ts",
@@ -258,9 +260,9 @@
     "icons": 2,
     "inbox": 42,
     "pm": 7,
-    "run": 65,
+    "run": 66,
     "shared": 39,
-    "solo": 8,
+    "solo": 9,
     "workflow": 3,
     "workspace": 5
   }

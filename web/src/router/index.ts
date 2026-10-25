@@ -8,7 +8,7 @@ const routes: RouteRecordRaw[] = [
   // Eager: /login hosts brand LCP; avoid extra async chunk on critical path
   { path: '/login', name: 'login', component: LoginView, meta: { titleKey: 'route.login', public: true, bare: true } },
   {
-    path: '/public/gate-approvals',
+    path: '/public/approvals',
     name: 'public-gate-approval',
     component: () => import('@/views/PublicGateApprovalView.vue'),
     meta: { titleKey: 'route.publicGateApproval', public: true, bare: true },
@@ -60,8 +60,8 @@ const routes: RouteRecordRaw[] = [
   { path: '/workflows/:id/edit', name: 'workflow-editor', component: () => import('@/views/WorkflowEditorView.vue'), meta: { titleKey: 'route.workflowEditor', full: true } },
   { path: '/runs', name: 'runs', component: () => import('@/views/RunListView.vue'), meta: { titleKey: 'route.runs' } },
   { path: '/runs/:id/live', name: 'run-live', component: () => import('@/views/RunLiveView.vue'), meta: { titleKey: 'route.runLive' } },
+  { path: '/runs/:runId/nodes/:nodeId', name: 'gates', component: () => import('@/views/GatesInboxView.vue'), meta: { titleKey: 'route.gates' } },
   { path: '/runs/:id', name: 'run-detail', component: () => import('@/views/RunDetailView.vue'), meta: { titleKey: 'route.runDetail', full: true } },
-  { path: '/gates', name: 'gates', component: () => import('@/views/GatesInboxView.vue'), meta: { titleKey: 'route.gates' } },
   { path: '/artifacts', name: 'artifacts', component: () => import('@/views/ArtifactsView.vue'), meta: { titleKey: 'route.artifacts' } },
   { path: '/notifications', name: 'notifications', component: () => import('@/views/NotificationsView.vue'), meta: { titleKey: 'route.notifications' } },
   { path: '/agents', name: 'agents', component: () => import('@/views/AgentStudioView.vue'), meta: { titleKey: 'route.agents' } },

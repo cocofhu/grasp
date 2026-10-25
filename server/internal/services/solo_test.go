@@ -139,6 +139,9 @@ func TestSoloSessionLifecycle(t *testing.T) {
 	if v.Title != "hello there" || v.Branch != "main" || v.ProjectSnapshot == nil {
 		t.Fatalf("created view: %+v", v.SoloSession)
 	}
+	if len(v.Repos) != 1 || v.Repos[0].Name != "app" || v.Repos[0].Branch != "main" || v.Repos[0].RepoDirName != "app" {
+		t.Fatalf("single repo snapshot: %+v", v.Repos)
+	}
 	id := v.ID
 
 	var msgs []models.SoloMessage
@@ -298,4 +301,300 @@ func TestSoloInitialModelMustBelongToConfiguration(t *testing.T) {
 	if !errors.As(err, &se) || se.Code != "model_not_in_configuration" {
 		t.Fatalf("outside model: %v", err)
 	}
+}
+
+func TestSoloMultiRepoCreate(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, fg, db := newSoloFixture(t, port, 4)
+	ctx := context.Background()
+	ps := solo.Projects()
+	app, err := ps.Create(ProjectInput{
+		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
+		Env: map[string]string{"APP_ENV": "dev"},
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	apiToken := "cred-api"
+	api, err := ps.Create(ProjectInput{
+		Name: "api", RepoURL: "https://github.com/acme/api.git", DefaultBranch: "develop",
+		GitCredentialType: "github_https", GitCredentialID: "missing-cred",
+		CredentialBindings: map[string]*string{"API_TOKEN": &apiToken},
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	v, err := solo.Create(ctx, "alice", SoloCreateInput{
+		AgentName: "agentA",
+		Repos: []SoloRepoChoice{
+			{ProjectID: app.ID},
+			{ProjectID: api.ID, Branch: "feat/pay"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if v.ProjectID != "" || v.ProjectSnapshot != nil || v.Branch != "" {
+		t.Fatalf("multi-repo session should not keep a single project column: %+v", v.SoloSession)
+	}
+	if len(v.Repos) != 2 || v.Repos[0].ProjectID != app.ID || v.Repos[0].Branch != "main" || v.Repos[1].Branch != "feat/pay" {
+		t.Fatalf("snapshot: %+v", v.Repos)
+	}
+	want := "app|https://github.com/acme/app.git|main,api|https://github.com/acme/api.git|feat/pay"
+	waitFor(t, "multi repo running", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning && fg.LastCreateEnv()["GIT_REPOS"] == want
+	})
+	env := fg.LastCreateEnv()
+	if env["APP_ENV"] != "dev" || env["API_TOKEN"] != "" {
+		t.Fatalf("merged env: APP_ENV=%q API_TOKEN=%q", env["APP_ENV"], env["API_TOKEN"])
+	}
+
+	appRow, _ := ps.Get(app.ID)
+	apiRow, _ := ps.Get(api.ID)
+	if appRow.LastUsedAt == nil || apiRow.LastUsedAt == nil {
+		t.Fatal("every selected repository should record last used")
+	}
+
+	active, err := ps.ActiveSessions(api.ID)
+	if err != nil || len(active) != 1 || active[0].ID != v.ID {
+		t.Fatalf("second repo active sessions: %+v %v", active, err)
+	}
+
+	if _, err := ps.Update(app.ID, ProjectInput{
+		Name: "app", RepoURL: app.RepoURL, DefaultBranch: "dev", Env: map[string]string{"APP_ENV": "prod"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Close(ctx, v.ID, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Restart(ctx, v.ID, "alice"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	waitFor(t, "restart snapshot", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	env = fg.LastCreateEnv()
+	if env["GIT_REPOS"] != want || env["APP_ENV"] != "dev" {
+		t.Fatalf("restart should keep the snapshot, GIT_REPOS=%q APP_ENV=%q", env["GIT_REPOS"], env["APP_ENV"])
+	}
+
+	var n int64
+	db.Model(&models.SoloSession{}).Where("id = ?", v.ID).Count(&n)
+	if n != 1 {
+		t.Fatalf("session missing after restart: %d", n)
+	}
+}
+
+func TestSoloCreateRejectsConflicts(t *testing.T) {
+	solo, _, _, db := newSoloFixture(t, 0, 4)
+	ctx := context.Background()
+	ps := solo.Projects()
+	web, err := ps.Create(ProjectInput{
+		Name: "webapp", RepoURL: "https://github.com/acme/webapp.git", RepoDirName: "webapp",
+		Env: map[string]string{"APP_ENV": "dev"},
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkout, err := ps.Create(ProjectInput{
+		Name: "checkout", RepoURL: "https://github.com/acme/checkout.git", RepoDirName: "webapp",
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := "cred-b"
+	billing, err := ps.Create(ProjectInput{
+		Name: "billing", RepoURL: "https://github.com/acme/billing.git", RepoDirName: "billing",
+		CredentialBindings: map[string]*string{"APP_ENV": &token},
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared := "x"
+	one, err := ps.Create(ProjectInput{Name: "one", RepoURL: "https://github.com/acme/one.git", Env: map[string]string{"SHARED": shared}}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	two, err := ps.Create(ProjectInput{Name: "two", RepoURL: "https://github.com/acme/two.git", Env: map[string]string{"SHARED": shared}}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	three, err := ps.Create(ProjectInput{Name: "three", RepoURL: "https://github.com/acme/three.git", Env: map[string]string{"SHARED": shared}}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	upper, err := ps.Create(ProjectInput{
+		Name: "upper", RepoURL: "https://github.com/acme/same.git", RepoDirName: "WebApp",
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lower, err := ps.Create(ProjectInput{
+		Name: "lower", RepoURL: "https://github.com/acme/same.git", RepoDirName: "webapp",
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	assertRejected := func(in SoloCreateInput, code string, parts ...string) {
+		t.Helper()
+		beforeS, beforeB := counts(t, db)
+		_, err := solo.Create(ctx, "alice", in)
+		var se *SoloError
+		if !errors.As(err, &se) || se.Code != code {
+			t.Fatalf("code %s: got %v", code, err)
+		}
+		for _, part := range parts {
+			if !strings.Contains(se.Msg, part) {
+				t.Fatalf("message %q missing %q", se.Msg, part)
+			}
+		}
+		if names, ok := se.Params["repos"].([]string); ok {
+			for _, part := range parts {
+				if part == "webapp" || part == "SHARED" || part == "APP_ENV" {
+					continue
+				}
+				found := false
+				for _, name := range names {
+					if name == part {
+						found = true
+					}
+				}
+				if !found && (part == "checkout" || part == "billing" || part == "one" || part == "two" || part == "three") {
+					t.Fatalf("params repos %+v missing %s", names, part)
+				}
+			}
+		}
+		afterS, afterB := counts(t, db)
+		if afterS != beforeS || afterB != beforeB {
+			t.Fatalf("rejected create left session=%d sandbox=%d (was %d/%d)", afterS, afterB, beforeS, beforeB)
+		}
+	}
+
+	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID}, {ProjectID: checkout.ID}}},
+		"repo_dir_conflict", "webapp", "checkout")
+	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID}, {ProjectID: billing.ID}}},
+		"env_key_conflict", "APP_ENV", "webapp", "billing")
+	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: one.ID}, {ProjectID: two.ID}, {ProjectID: three.ID}}},
+		"env_key_conflict", "SHARED", "one", "two", "three")
+	assertRejected(SoloCreateInput{AgentName: "agentA", Repos: []SoloRepoChoice{{ProjectID: web.ID, Branch: "bad branch"}}},
+		"branch_invalid_repo", "webapp")
+
+	if _, err := solo.Create(ctx, "alice", SoloCreateInput{
+		AgentName: "agentA",
+		Repos:     []SoloRepoChoice{{ProjectID: upper.ID}, {ProjectID: lower.ID}},
+	}); err != nil {
+		t.Fatalf("directory names that differ only by case should start: %v", err)
+	}
+}
+
+func TestSoloLegacySessionRestart(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, fg, db := newSoloFixture(t, port, 3)
+	ctx := context.Background()
+	p, err := solo.Projects().Create(ProjectInput{
+		Name: "app", RepoURL: "https://github.com/acme/app.git", DefaultBranch: "main",
+		Env: map[string]string{"APP_ENV": "dev"},
+	}, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := &models.SoloSession{
+		ID: "old-session", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed,
+		ProjectID: p.ID, ProjectSnapshot: p, Branch: "release",
+	}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Projects().Update(p.ID, ProjectInput{
+		Name: "app", RepoURL: p.RepoURL, DefaultBranch: "dev", Env: map[string]string{"APP_ENV": "prod"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Restart(ctx, row.ID, "alice"); err != nil {
+		t.Fatalf("restart: %v", err)
+	}
+	want := "app|https://github.com/acme/app.git|release"
+	waitFor(t, "legacy clone", func() bool {
+		return fg.LastCreateEnv()["GIT_REPOS"] == want && fg.LastCreateEnv()["APP_ENV"] == "dev"
+	})
+	got, err := solo.Get(ctx, row.ID, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Repos) != 1 || got.Repos[0].Branch != "release" || got.Repos[0].Name != "app" {
+		t.Fatalf("legacy read model: %+v", got.Repos)
+	}
+}
+
+func TestSoloActiveSessionsCountsEverySnapshotRepo(t *testing.T) {
+	db := newTestDB(t)
+	ps := NewProjectService(db)
+	running := []models.SessionRepo{
+		{Position: 0, ProjectID: "first", Name: "first"},
+		{Position: 1, ProjectID: "second", Name: "second"},
+	}
+	if err := db.Create(&models.SoloSession{
+		ID: "multi", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusRunning, Repos: running,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloSession{
+		ID: "legacy", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusStarting, ProjectID: "legacy",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&models.SoloSession{
+		ID: "closed", UserID: "alice", AgentName: "agentA", Status: models.SoloStatusClosed,
+		Repos: []models.SessionRepo{{Position: 0, ProjectID: "second", Name: "second"}},
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	second, err := ps.ActiveSessions("second")
+	if err != nil || len(second) != 1 || second[0].ID != "multi" {
+		t.Fatalf("second: %+v %v", second, err)
+	}
+	legacy, err := ps.ActiveSessions("legacy")
+	if err != nil || len(legacy) != 1 || legacy[0].ID != "legacy" {
+		t.Fatalf("legacy: %+v %v", legacy, err)
+	}
+	if got, err := ps.ActiveSessions("missing"); err != nil || len(got) != 0 {
+		t.Fatalf("missing: %+v %v", got, err)
+	}
+}
+
+func TestSoloEmptyWorkspace(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, fg, _ := newSoloFixture(t, port, 3)
+	v, err := solo.Create(context.Background(), "alice", SoloCreateInput{
+		AgentName: "agentA", Repos: []SoloRepoChoice{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(v.Repos) != 0 || v.ProjectID != "" {
+		t.Fatalf("empty workspace: %+v", v.SoloSession)
+	}
+	waitFor(t, "empty GIT_REPOS", func() bool {
+		env := fg.LastCreateEnv()
+		return env != nil && env["GIT_REPOS"] == ""
+	})
+}
+
+func counts(t *testing.T, db *gorm.DB) (sessions, sandboxes int64) {
+	t.Helper()
+	if err := db.Model(&models.SoloSession{}).Count(&sessions).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Model(&models.Sandbox{}).Count(&sandboxes).Error; err != nil {
+		t.Fatal(err)
+	}
+	return sessions, sandboxes
 }

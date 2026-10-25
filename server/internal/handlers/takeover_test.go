@@ -75,10 +75,10 @@ func TestTakeoverEndpointCodes(t *testing.T) {
 	if impl["mode"] != "manual" {
 		t.Fatalf("nodeRuns.impl.mode = %v", impl["mode"])
 	}
-	// /api/gates lists the takeover as a review entry with takeover=true.
-	gw := h.do("GET", "/api/gates", nil)
+	// /api/pending-nodes lists the takeover as a review entry with takeover=true.
+	gw := h.do("GET", "/api/pending-nodes", nil)
 	if gw.Code != 200 || !strings.Contains(gw.Body.String(), `"takeover":true`) || !strings.Contains(gw.Body.String(), `"kind":"review"`) {
-		t.Fatalf("/api/gates: %d %s", gw.Code, gw.Body)
+		t.Fatalf("/api/pending-nodes: %d %s", gw.Code, gw.Body)
 	}
 	cb, _ := detail["clarifyByNode"].(map[string]any)
 	conv, _ := cb["impl"].(map[string]any)
