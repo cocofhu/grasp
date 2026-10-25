@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cocofhu/grasp/internal/blob"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/rs/zerolog/log"
-	"golang.org/x/crypto/ssh"
 )
 
 // containerPrefix labels approving-managed sandboxes so they can be listed and
@@ -34,22 +32,6 @@ func NewContainerName() string {
 	return containerPrefix + uuid.NewString()[:8]
 }
 
-// sharedSSHKey lazily mints one process-wide ed25519 keypair used for all
-// sandbox data-plane SSH. Every sandbox gets the same public key injected
-// (SSH_KEY env), so any Manager instance can reach any approving sandbox
-// regardless of which one created it.
-var (
-	sshKeyOnce sync.Once
-	sshSigner  ssh.Signer
-	sshAuthKey string
-	sshKeyErr  error
-)
-
-func sharedSSHKey() (ssh.Signer, string, error) {
-	sshKeyOnce.Do(func() { sshSigner, sshAuthKey, sshKeyErr = generateSSHKey() })
-	return sshSigner, sshAuthKey, sshKeyErr
-}
-
 // Manager creates and destroys sandboxes through the sandbox-gateway control
 // plane and reaches them over SSH for data-plane operations (exec/files/
 // terminal). It no longer talks to Docker directly — the gateway owns the
@@ -59,7 +41,10 @@ type Manager struct {
 	Image        string // optional image override; empty = gateway default
 	WorkspaceDir string // default WORKSPACE_DIR inside the sandbox
 	SSHUser      string // ssh login user (default root)
-	SSHPassword  string // optional ssh password fallback (key auth is primary)
+	// dataPlanePassword returns one sandbox's saved token, used only as that
+	// sandbox's SSH password after publickey is refused. It is not a
+	// process-wide password.
+	dataPlanePassword func(sandboxID string) string
 
 	// installHelpers, when set, seeds the artifact-upload CLI into each new
 	// sandbox over SSH (the universal image ships no such CLI). Off by default
@@ -93,7 +78,12 @@ type ManagerOptions struct {
 	Image        string
 	WorkspaceDir string
 	SSHUser      string
-	SSHPassword  string
+	// SSHKeyFile is the persistent data-plane private key. Empty keeps an
+	// in-memory key (tests). The first non-empty path wins for the process.
+	SSHKeyFile string
+	// DataPlanePassword looks up one sandbox's token by gateway id. The token
+	// is that sandbox's SSH password when its authorized key does not match.
+	DataPlanePassword func(sandboxID string) string
 	// InstallHelpers seeds sandbox-side helper CLIs (artifact-upload) over SSH
 	// on Create. Production wiring enables it; tests leave it off.
 	InstallHelpers bool
@@ -323,12 +313,15 @@ func NewManager(gw *GatewayClient, opts ManagerOptions) *Manager {
 	if createTimeout <= 0 {
 		createTimeout = 20 * time.Minute
 	}
+	if path := strings.TrimSpace(opts.SSHKeyFile); path != "" {
+		SetDataPlaneKeyFile(path)
+	}
 	return &Manager{
 		gw:                      gw,
 		Image:                   strings.TrimSpace(opts.Image),
 		WorkspaceDir:            ws,
 		SSHUser:                 opts.SSHUser,
-		SSHPassword:             opts.SSHPassword,
+		dataPlanePassword:       opts.DataPlanePassword,
 		installHelpers:          opts.InstallHelpers,
 		bundles:                 opts.InjectStore,
 		injectAdvertiseFallback: strings.TrimSpace(opts.InjectAdvertise),
@@ -346,7 +339,7 @@ func (m *Manager) Runtime() *RuntimeBundle { return m.runtime }
 func (m *Manager) Gateway() *GatewayClient { return m.gw }
 
 func (m *Manager) creds(host string, port int) sshCreds {
-	signer, _, _ := sharedSSHKey()
+	signer, authKey, _ := sharedSSHKey()
 	user := m.SSHUser
 	if user == "" {
 		user = "root"
@@ -356,7 +349,7 @@ func (m *Manager) creds(host string, port int) sshCreds {
 		keys = newHostKeyCache()
 		m.hostKeys = keys
 	}
-	return sshCreds{host: host, port: port, signer: signer, password: m.SSHPassword, user: user, hostKeys: keys}
+	return sshCreds{host: host, port: port, signer: signer, authKey: authKey, user: user, hostKeys: keys}
 }
 
 // sandboxFromGW maps a gateway record's endpoints onto a Sandbox handle.
@@ -655,19 +648,26 @@ func bundleIDFromURL(u string) string {
 }
 
 // Attach rebuilds a Sandbox handle for an existing gateway sandbox by id.
+// When a per-sandbox token lookup is configured, the handle's password is that
+// token so a later data-plane dial can recover a key mismatch.
 func (m *Manager) Attach(ctx context.Context, id string) (*Sandbox, error) {
-	out, err := m.AttachNoEnsure(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	m.ensureRuntimeAsync(out)
-	return out, nil
+	return m.attach(ctx, id, "", true)
+}
+
+// AttachWithToken is Attach with the sandbox token supplied by the caller.
+// The token is this sandbox's SSH password; it is not shared with other sandboxes.
+func (m *Manager) AttachWithToken(ctx context.Context, id, token string) (*Sandbox, error) {
+	return m.attach(ctx, id, token, true)
 }
 
 // AttachNoEnsure is Attach without the runtime bundle update. Use it for a
 // sandbox whose agent turn may still be running or awaiting collection: the
 // update restarts an idle bridge and drops its session and event log.
 func (m *Manager) AttachNoEnsure(ctx context.Context, id string) (*Sandbox, error) {
+	return m.attach(ctx, id, "", false)
+}
+
+func (m *Manager) attach(ctx context.Context, id, token string, ensure bool) (*Sandbox, error) {
 	if m.gw == nil {
 		return nil, fmt.Errorf("no gateway client")
 	}
@@ -678,7 +678,16 @@ func (m *Manager) AttachNoEnsure(ctx context.Context, id string) (*Sandbox, erro
 	if sb.Endpoint("session") == "" {
 		return nil, fmt.Errorf("sandbox %s has no session endpoint (status=%s)", id, sb.Status)
 	}
-	return m.sandboxFromGW(sb, m.WorkspaceDir), nil
+	out := m.sandboxFromGW(sb, m.WorkspaceDir)
+	if p := strings.TrimSpace(token); p != "" {
+		out.Password = p
+	} else if m.dataPlanePassword != nil {
+		out.Password = m.dataPlanePassword(out.ID)
+	}
+	if ensure {
+		m.ensureRuntimeAsync(out)
+	}
+	return out, nil
 }
 
 // DestroyByName removes a sandbox by gateway id (best effort).
@@ -795,13 +804,19 @@ func (m *Manager) DestroyByCorrelationName(ctx context.Context, corr string) {
 }
 
 // ExecPTY opens an interactive PTY shell on the sandbox over SSH. Caller must
-// Close the returned terminal.
+// Close the returned terminal. The password is the looked-up sandbox token.
 func (m *Manager) ExecPTY(ctx context.Context, id string, command []string) (*SSHTerminal, error) {
-	sb, err := m.Attach(ctx, id)
+	return m.ExecPTYWithToken(ctx, id, "", command)
+}
+
+// ExecPTYWithToken is ExecPTY using the caller-supplied sandbox token as the
+// SSH password when the persistent public key is not accepted.
+func (m *Manager) ExecPTYWithToken(ctx context.Context, id, token string, command []string) (*SSHTerminal, error) {
+	sb, err := m.attach(ctx, id, token, true)
 	if err != nil {
 		return nil, err
 	}
-	return sb.mgr.creds(sb.SSHHost, sb.SSHPort).openTerminal(ctx, command)
+	return sb.creds().openTerminal(ctx, command)
 }
 
 // ContainerIP returns the reachable host of the sandbox's session endpoint.
@@ -917,17 +932,37 @@ func (s *Sandbox) workspaceDir() string {
 	return ""
 }
 
+func (s *Sandbox) dataPlanePassword() string {
+	if s == nil {
+		return ""
+	}
+	if p := strings.TrimSpace(s.Password); p != "" {
+		return p
+	}
+	if s.mgr != nil && s.mgr.dataPlanePassword != nil && strings.TrimSpace(s.ID) != "" {
+		return strings.TrimSpace(s.mgr.dataPlanePassword(s.ID))
+	}
+	return ""
+}
+
 func (s *Sandbox) creds() sshCreds {
+	var c sshCreds
 	if s.mgr != nil {
-		return s.mgr.creds(s.SSHHost, s.SSHPort)
+		c = s.mgr.creds(s.SSHHost, s.SSHPort)
+	} else {
+		// Detached handle (e.g. a test-injected sandbox): fall back to the shared
+		// key and the default login user. The signer is unused when execHook is set.
+		signer, authKey, _ := sharedSSHKey()
+		if s.hostKeys == nil {
+			s.hostKeys = newHostKeyCache()
+		}
+		c = sshCreds{host: s.SSHHost, port: s.SSHPort, signer: signer, authKey: authKey, user: "root", hostKeys: s.hostKeys}
 	}
-	// Detached handle (e.g. a test-injected sandbox): fall back to the shared
-	// key and the default login user. The signer is unused when execHook is set.
-	signer, _, _ := sharedSSHKey()
-	if s.hostKeys == nil {
-		s.hostKeys = newHostKeyCache()
+	c.password = s.dataPlanePassword()
+	if c.authKey == "" {
+		_, c.authKey, _ = sharedSSHKey()
 	}
-	return sshCreds{host: s.SSHHost, port: s.SSHPort, signer: signer, user: "root", hostKeys: s.hostKeys}
+	return c
 }
 
 func (s *Sandbox) resolvePath(path string) string {
