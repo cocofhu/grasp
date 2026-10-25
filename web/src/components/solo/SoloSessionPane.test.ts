@@ -18,6 +18,7 @@ const box = vi.hoisted(() => ({
     repos: Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>
   }>,
   status: undefined as undefined | import('vue').Ref<string>,
+  link: undefined as undefined | import('vue').Ref<string>,
 }))
 
 vi.mock('vue-router', () => ({
@@ -33,7 +34,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
     queued: ref([]),
     busy: ref(false),
     phase: ref(''),
-    link: ref('open'),
+    link: box.link,
     loading: ref(false),
     loadError: ref(''),
     actionError: ref(''),
@@ -47,7 +48,6 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
 }))
 
 import SoloSessionPane from './SoloSessionPane.vue'
-import SoloEnvPanel from './SoloEnvPanel.vue'
 import pages from '@/locales/zh-CN/pages.json'
 
 const turns = (box.turns = ref<SoloTurn[]>([]))
@@ -62,6 +62,27 @@ const sessionState = (box.session = ref({
   repos: [] as Array<{ position: number; projectId: string; name: string; repoUrl: string; repoDirName: string; branch: string }>,
 }))
 const statusState = (box.status = ref('running'))
+const linkState = (box.link = ref('open'))
+
+function mountPane(messages: object = {}) {
+  return mount(SoloSessionPane, {
+    attachTo: document.body,
+    props: { sessionId: 's1' },
+    global: {
+      plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': messages } })],
+      stubs: {
+        Icon: true,
+        ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
+        ReactArtifactStage: true,
+        AgentTimeline: true,
+        SoloStartupCard: true,
+        SoloLimitModal: true,
+        AppModal: true,
+        ChatImagePreviewModal: true,
+      },
+    },
+  })
+}
 
 function turn(id: string, role: SoloTurn['role'], text: string): SoloTurn {
   const steps: SoloTurn['steps'] = role === 'agent' ? [{ kind: 'message', text }] : []
@@ -77,24 +98,7 @@ describe('SoloSessionPane', () => {
       turn('u2', 'user', '再加个测试'),
       turn('a2', 'agent', '已添加'),
     ]
-    const wrapper = mount(SoloSessionPane, {
-      attachTo: document.body,
-      props: { sessionId: 's1' },
-      global: {
-        plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': {} } })],
-        stubs: {
-          Icon: true,
-          ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
-          ReactArtifactStage: true,
-          AgentTimeline: true,
-          SoloStartupCard: true,
-          SoloEnvPanel: true,
-          SoloLimitModal: true,
-          AppModal: true,
-          ChatImagePreviewModal: true,
-        },
-      },
-    })
+    const wrapper = mountPane()
     await flushPromises()
 
     expect(wrapper.find('[data-testid="chat-message-rail"]').exists()).toBe(true)
@@ -105,7 +109,7 @@ describe('SoloSessionPane', () => {
     wrapper.unmount()
   })
 
-  it('opens the environment panel and lists every repository on a sandbox error', async () => {
+  it('lists every repository edit link on a sandbox error without an environment toggle', async () => {
     turns.value = []
     statusState.value = 'error'
     sessionState.value = {
@@ -120,31 +124,11 @@ describe('SoloSessionPane', () => {
         { position: 1, projectId: 'api', name: 'api', repoUrl: 'https://github.com/acme/api.git', repoDirName: 'api', branch: 'main' },
       ],
     }
-    const wrapper = mount(SoloSessionPane, {
-      attachTo: document.body,
-      props: { sessionId: 's1' },
-      global: {
-        plugins: [createI18n({ legacy: false, locale: 'zh-CN', missingWarn: false, fallbackWarn: false, messages: { 'zh-CN': { ...pages } } })],
-        stubs: {
-          Icon: true,
-          ReviewShell: { template: '<div><slot name="actions" /><slot name="sidebar" /></div>' },
-          ReactArtifactStage: true,
-          AgentTimeline: true,
-          SoloStartupCard: true,
-          SoloEnvPanel: true,
-          SoloLimitModal: true,
-          AppModal: true,
-          ChatImagePreviewModal: true,
-        },
-      },
-    })
+    const wrapper = mountPane(pages)
     await flushPromises()
 
-    const toggle = wrapper.get('[data-testid="solo-env-toggle"]')
-    expect(toggle.text()).toContain('会话环境')
-    expect(wrapper.getComponent(SoloEnvPanel).props('open')).toBe(false)
-    await toggle.trigger('click')
-    expect(wrapper.getComponent(SoloEnvPanel).props('open')).toBe(true)
+    expect(wrapper.find('[data-testid="solo-env-toggle"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('会话环境')
 
     const links = wrapper.findAll('[data-testid^="solo-error-edit-"]')
     expect(links.map((link) => link.attributes('href'))).toEqual([
@@ -155,5 +139,32 @@ describe('SoloSessionPane', () => {
     expect(links[1]?.text()).toContain('修改 api')
     wrapper.unmount()
     statusState.value = 'running'
+  })
+
+  it('keeps the environment toggle absent while starting, running, closed, or reconnecting', async () => {
+    turns.value = []
+    const cases = [
+      { status: 'starting', link: 'open', banner: false },
+      { status: 'running', link: 'open', banner: false },
+      { status: 'closed', link: 'open', banner: false },
+      { status: 'running', link: 'reconnecting', banner: true },
+    ]
+    for (const item of cases) {
+      statusState.value = item.status
+      linkState.value = item.link
+      sessionState.value = {
+        ...sessionState.value,
+        status: item.status,
+      }
+      const wrapper = mountPane(pages)
+      await flushPromises()
+      expect(wrapper.find('[data-testid="solo-env-toggle"]').exists()).toBe(false)
+      expect(wrapper.text()).not.toContain('会话环境')
+      if (item.banner) expect(wrapper.text()).toContain('连接已断开，正在重连…')
+      else expect(wrapper.text()).not.toContain('连接已断开，正在重连…')
+      wrapper.unmount()
+    }
+    statusState.value = 'running'
+    linkState.value = 'open'
   })
 })
