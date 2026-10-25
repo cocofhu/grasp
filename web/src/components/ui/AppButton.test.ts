@@ -128,6 +128,67 @@ describe('AppButton', () => {
     idle.unmount()
   })
 
+  it('does not let compiled vendor-mark hover paint the button background', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const { compileStyle } = await import('@vue/compiler-sfc')
+
+    const source = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '../agent/VendorMark.vue'),
+      'utf8',
+    )
+    const block = source.match(/<style scoped>([\s\S]*?)<\/style>/)
+    expect(block).not.toBeNull()
+    const scopeId = 'data-v-vendormark'
+    const compiled = compileStyle({
+      source: block![1],
+      filename: 'VendorMark.vue',
+      id: scopeId,
+      scoped: true,
+    })
+    expect(compiled.errors).toEqual([])
+    const css = compiled.code
+    expect(css).toMatch(/button:hover \.vendor-mark\[data-v-vendormark\]/)
+    expect(css).toMatch(/button:focus-visible \.vendor-mark\[data-v-vendormark\]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])button:hover\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])button:focus-visible\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])a:hover\s*[,{]/)
+    expect(css).not.toMatch(/(?:^|[,{\n\r])\[role="option"\]:hover\s*[,{]/)
+
+    const styleEl = document.createElement('style')
+    styleEl.setAttribute('data-testid', 'vendor-mark-compiled')
+    styleEl.textContent = css
+    document.head.appendChild(styleEl)
+
+    const disabled = mountBtn({ variant: 'primary', disabled: true, icon: 'arrow-right' }, '下一步')
+    const ghost = mountBtn({ variant: 'ghost', icon: 'close' }, '取消')
+    const mark = document.createElement('span')
+    mark.className = 'vendor-mark'
+    mark.setAttribute(scopeId, '')
+    disabled.element.appendChild(mark)
+
+    const sheet = styleEl.sheet
+    expect(sheet).not.toBeNull()
+    const probes: string[] = []
+    for (const rule of Array.from(sheet!.cssRules)) {
+      if (!(rule instanceof CSSStyleRule)) continue
+      if (!rule.style.backgroundColor.includes('var(--c-elevated)')) continue
+      for (const sel of rule.selectorText.split(',')) {
+        const probe = sel.trim().replace(/:(hover|focus-visible)/g, '')
+        probes.push(probe)
+        expect(disabled.element.matches(probe)).toBe(false)
+        expect(ghost.element.matches(probe)).toBe(false)
+      }
+    }
+    expect(probes.length).toBeGreaterThan(0)
+    expect(probes.some((probe) => mark.matches(probe))).toBe(true)
+
+    styleEl.remove()
+    disabled.unmount()
+    ghost.unmount()
+  })
+
   it('does not paint a hover cover on a disabled or loading primary button', async () => {
     const { nextTick } = await import('vue')
     const { vi } = await import('vitest')
