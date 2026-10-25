@@ -108,6 +108,18 @@ func TestChatsCRUD(t *testing.T) {
 	}
 }
 
+func TestCreateAllowsExplicitModelWhenCatalogMissing(t *testing.T) {
+	t.Setenv("GRASP_CONFIGURED_MODELS", "")
+	t.Setenv("PATH", "")
+	t.Setenv("AGENT_PROVIDER", "cursor")
+	chats := service.NewChatManager()
+	r := newChatsEngine(chats)
+	w := do(t, r, http.MethodPost, "/api/chats", `{"title":"tab","model":"m2"}`)
+	if w.Code != http.StatusCreated {
+		t.Fatalf("create code=%d body=%s", w.Code, w.Body)
+	}
+}
+
 func TestConfiguredModelSwitchRejectsOutsiders(t *testing.T) {
 	t.Setenv("AGENT_PROVIDER", "deepseek")
 	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"primary","vendor":"cursor"},{"id":"aux","vendor":"xai"}]`)

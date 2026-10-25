@@ -60,14 +60,20 @@ func ChatModelList() (models []AgentModel, configured bool, err error) {
 }
 
 // ModelSelectable reports whether a chat may switch to id. Empty follows the primary model.
+// With no allow-list, any id is accepted: chat creation must not depend on the provider
+// catalog being readable. An allow-list that fails to parse rejects every explicit id.
 func ModelSelectable(id string) bool {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return true
 	}
-	models, configured, err := ChatModelList()
+	_, configured, err := parseConfiguredModels()
 	if err != nil || !configured {
 		return err == nil
+	}
+	models, _, err := ChatModelList()
+	if err != nil {
+		return false
 	}
 	for _, model := range models {
 		if model.ID == id && !model.Unavailable {
