@@ -308,10 +308,10 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     expect(wrapper.find('[data-testid="home-yume"]').exists()).toBe(true)
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text()).toContain('先说清')
-    expect(copy.text()).toContain('再动手')
+    expect(copy.text()).toContain('我们应该')
+    expect(copy.text()).toContain('做些什么？')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text().replace(/\s+/g, '')).toContain('先说清，再动手')
+    expect(copy.text().replace(/\s+/g, '')).toContain('我们应该做些什么？')
     expect(wrapper.find('[data-testid="home-brand"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-text"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="home-brand-cursor"]').exists()).toBe(false)
@@ -332,7 +332,7 @@ describe('DashboardView home composer', () => {
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.text()).toBe('先聊清楚，再开工')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text()).not.toBe('先说清，再动手')
+    expect(copy.text()).not.toBe('我们应该做些什么？')
     wrapper.unmount()
   })
 
@@ -342,7 +342,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard()
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text().replace(/\s+/g, '')).toBe('先说清，再动手')
+    expect(copy.text().replace(/\s+/g, '')).toBe('我们应该做些什么？')
     wrapper.unmount()
   })
 
@@ -351,8 +351,8 @@ describe('DashboardView home composer', () => {
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
     expect(copy.find('.em').exists()).toBe(false)
-    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
-    expect(copy.text()).not.toMatch(/先说清|再动手/)
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('What should we do?')
+    expect(copy.text()).not.toMatch(/我们应该做些什么/)
     wrapper.unmount()
   })
 
@@ -361,7 +361,7 @@ describe('DashboardView home composer', () => {
     const wrapper = mountDashboard('en')
     await flushPromises()
     const copy = wrapper.get('[data-testid="home-hero-copy"]')
-    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('Clarify first, then act')
+    expect(copy.text().replace(/\s+/g, ' ').trim()).toBe('What should we do?')
     wrapper.unmount()
   })
 
@@ -794,7 +794,7 @@ describe('DashboardView home composer', () => {
       publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
   })
 
@@ -1005,7 +1005,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

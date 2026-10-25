@@ -121,10 +121,17 @@ vi.mock('@/lib/inbox/usePendingGates', () => ({
     ariaBusy: shared.ariaBusy,
   }),
 }))
-vi.mock('@/lib/inbox/inboxContext', () => ({
-  adaptInboxContextToRun: (ctx: { run?: Run }, runId: string) =>
-    ctx.run || ({ id: runId, status: 'waiting_human', nodes: [], artifacts: [] } as unknown as Run),
-}))
+vi.mock('@/lib/inbox/inboxContext', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/inbox/inboxContext')>('@/lib/inbox/inboxContext')
+  return {
+    ...actual,
+    adaptInboxContextToRun: (ctx: { type?: string; run?: Run }, runId: string) => {
+      // Real adapter for inbox-context payloads. The { run } shortcut stays for older cases.
+      if (ctx?.type === 'clarify' || ctx?.type === 'gate') return actual.adaptInboxContextToRun(ctx as never, runId)
+      return ctx?.run || ({ id: runId, status: 'waiting_human', nodes: [], artifacts: [] } as unknown as Run)
+    },
+  }
+})
 vi.mock('@/lib/api/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api/api')>('@/lib/api/api')
   return {
@@ -152,7 +159,7 @@ vi.mock('@/lib/api/api', async () => {
 
 import * as recentRuns from '@/lib/run/recentRuns'
 import { TYPING_IDLE_MS, useGatesInbox } from './useGatesInbox'
-import { CLARIFY_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
+import { CLARIFY_CAPS, IMPLEMENT_CAPS, PREVIEW_REVIEW_CAPS } from '@/test/capsFixtures'
 
 const gateItem = (id = 'run-gate', over: Record<string, unknown> = {}): InboxItem =>
   ({
@@ -620,6 +627,163 @@ describe('useGatesInbox actions', () => {
     app.unmount()
   })
 
+  function graphRun(id: string, nodes: Run['nodes'], edges: Run['edges']) {
+    return contextRun(id, { nodes, edges } as Record<string, unknown>)
+  }
+
+  /** Real inbox-context shape: nodes only. Edges stay on GET /runs/:id. */
+  function clarifyContextWithoutEdges(nodes: Run['nodes']) {
+    return {
+      type: 'clarify' as const,
+      status: 'waiting_human' as const,
+      nodes,
+      artifacts: [],
+      clarify: { nodeId: 'react', iteration: 1, turns: [], done: false, label: '需求澄清' },
+    }
+  }
+
+  it('confirm while the chain is still on clarify follows the automatic successor, and a stale snapshot cannot put it back', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'implement', type: 'agent' as const, label: '实现', caps: IMPLEMENT_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    const edges = [{ id: 'e-impl', source: 'react', target: 'implement' }]
+    const ctx = clarifyContextWithoutEdges(nodes)
+    expect(ctx).not.toHaveProperty('edges')
+    mocks.inboxContext.mockImplementation(async () => ctx)
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
+    let currentNode: Record<string, unknown> = {
+      id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1,
+    }
+    mocks.runConversationChain.mockImplementation(async () => ({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode,
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    }))
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    expect(inbox.activeRun.value?.edges).toEqual(edges)
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '实现' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'node_enter', nodeId: 'implement', iteration: 1, name: '实现', mode: 'auto', kind: 'agent' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+
+    currentNode = { id: 'review', name: '测试评审', kind: 'agent', mode: 'auto', state: 'running', iteration: 1 }
+    socket!.message({ type: 'status' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '测试评审', nodeId: 'review' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+    app.unmount()
+  })
+
+  it('a hand-off that already names 实现 keeps automatic follow when the chain snaps back and the graph has no edges', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'implement', type: 'agent' as const, label: '实现', caps: IMPLEMENT_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    mocks.inboxContext.mockImplementation(async () => clarifyContextWithoutEdges(nodes))
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, []))
+    let currentNode: Record<string, unknown> = {
+      id: 'implement', name: '实现', kind: 'agent', mode: 'auto', state: 'running', iteration: 1,
+    }
+    mocks.runConversationChain.mockImplementation(async () => ({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode,
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'completed', turns: [] }],
+    }))
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    expect(inbox.activeRun.value?.edges ?? []).toEqual([])
+    currentNode = { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 }
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '实现' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(true)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+
+    const socket = [...MockWebSocket.instances].reverse().find((s) => s.url.includes('run-chat'))
+    expect(socket).toBeTruthy()
+    socket!.message({ type: 'status' })
+    await flushPromises()
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'auto', label: '实现', nodeId: 'implement' })
+    expect(inbox.activeHandoff.value?.target).toBe('实现')
+    app.unmount()
+  })
+
+  it('a human successor still booting is named on the waiting row even while the chain is on the node just left', async () => {
+    const nodes = [
+      { id: 'react', type: 'agent' as const, label: '需求澄清', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+      { id: 'accept', type: 'agent' as const, label: '验收测试', caps: CLARIFY_CAPS, config: {}, position: { x: 0, y: 0 } },
+    ]
+    const edges = [{ id: 'e-acc', source: 'react', target: 'accept' }]
+    const ctx = clarifyContextWithoutEdges(nodes)
+    expect(ctx).not.toHaveProperty('edges')
+    mocks.inboxContext.mockImplementation(async () => ctx)
+    mocks.getRun.mockImplementation(async (runId: string) => graphRun(runId, nodes, edges))
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    expect(inbox.activeRun.value?.edges).toEqual(edges)
+    mocks.listGates.mockResolvedValue({
+      items: [gateItem(), clarifyItem('run-chat', { nodeId: 'accept', label: '验收测试', state: 'starting' })],
+      total: 2,
+    })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.active.value).toMatchObject({ runId: 'run-chat', nodeId: 'react' })
+    expect(inbox.activeHandoff.value).toMatchObject({ phase: 'done', target: '验收测试' })
+    expect(inbox.activeFollowTail.value).toMatchObject({ kind: 'waiting', label: '验收测试', nodeId: 'accept' })
+    expect(inbox.activeFollowTail.value?.label ?? '').not.toContain('需求澄清')
+    expect(inbox.followObserving.value).toBe(false)
+    expect(inbox.clarifyComposerLocked.value).toBe(true)
+    app.unmount()
+  })
+
+  it('an unknown successor uses the unnamed waiting row instead of the node just left', async () => {
+    mocks.runConversationChain.mockResolvedValue({
+      runId: 'run-chat',
+      status: 'waiting_human',
+      currentNode: { id: 'react', name: '需求澄清', kind: 'clarify', mode: 'manual', state: 'waiting_human', iteration: 1 },
+      segments: [{ nodeId: 'react', iteration: 1, name: '需求澄清', kind: 'clarify', status: 'waiting_human', turns: [] }],
+    })
+    const { inbox, app } = await withInbox()
+    inbox.selectItem(inbox.listItems.value[1]!)
+    await flushPromises()
+    mocks.listGates.mockResolvedValue({ items: [gateItem()], total: 1 })
+    await inbox.onClarifySend('done', [], [], true)
+    await flushPromises()
+    expect(inbox.activeFollowTail.value?.kind).toBe('waiting')
+    expect(inbox.activeFollowTail.value?.label).toBeFalsy()
+    expect(inbox.activeFollowTail.value?.nodeId).toBeFalsy()
+    expect(inbox.followObserving.value).toBe(false)
+    app.unmount()
+  })
+
   it('confirm failure does not follow, and success settles the finished turn', async () => {
     const { inbox, app } = await withInbox()
     const clarify = inbox.listItems.value[1]!
@@ -896,7 +1060,7 @@ describe('useGatesInbox actions', () => {
     mocks.getRun.mockImplementation(async (runId: string) =>
       contextRun(runId, { status: 'running', currentNode: { id: 'verify', name: 'verify', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } }),
     )
-    const { inbox, app, router } = await withInbox('/gates?run=run-take&node=react')
+    const { inbox, app, router } = await withInbox('/runs/run-take/nodes/react')
     inbox.selectItem(inbox.listItems.value[0]!)
     await flushPromises()
     inbox.reviewChatRef.value = { discardLastQueued: vi.fn(), isSessionBusy: () => false }
@@ -1315,6 +1479,202 @@ describe('useGatesInbox actions', () => {
       relay.mockRestore()
       app.unmount()
     }
+  })
+
+  it('realigns an orphan queue to the refresh snapshot without touching the draft or caret', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    const applyReviewFrame = vi.fn()
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => false }
+    inbox.activeRun.value = contextRun('run-chat', {
+      status: 'waiting_human',
+      nodeRuns: { react: { nodeId: 'react', status: 'running', iteration: 1 } },
+      artifacts: [],
+      clarifyByNode: {
+        react: { nodeId: 'react', iteration: 1, turns: [{ role: 'agent', text: '旧', at: '1' }], done: false },
+      },
+    })
+    shared.draft.value = '未发送草稿'
+    shared.attachments.value = [{ data: 'a', mimeType: 'image/png', name: 'a.png' }] as never
+    const input = document.createElement('textarea')
+    input.value = '未发送草稿'
+    document.body.append(input)
+    input.focus()
+    input.setSelectionRange(1, 3)
+    try {
+      mocks.inboxContext.mockResolvedValueOnce({
+        run: contextRun('run-chat', {
+          status: 'running',
+          nodes: [
+            { id: 'react', type: 'agent', label: '澄清' },
+            { id: 'implement', type: 'agent', label: '实现' },
+          ],
+          artifacts: [{ id: 'page', name: 'page.html', kind: 'html' }],
+          nodeRuns: {
+            react: { nodeId: 'react', status: 'waiting_human', iteration: 1 },
+            implement: { nodeId: 'implement', status: 'running', iteration: 1 },
+          },
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: false, sandboxDesynced: false },
+          },
+          clarifyByNode: {
+            react: {
+              nodeId: 'react',
+              iteration: 1,
+              turns: [
+                { role: 'human', text: '继续', at: '1' },
+                { role: 'agent', text: '已落盘', at: '2' },
+              ],
+              done: false,
+            },
+          },
+        }),
+      })
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+      socket.open()
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxDesynced: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(inbox.clarifyComposerTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘'])
+      expect(inbox.activeRun.value?.nodeRuns.implement?.status).toBe('running')
+      expect(inbox.activeRun.value?.nodeRuns.react?.status).toBe('waiting_human')
+      expect(inbox.activeRun.value?.artifacts?.[0]?.name).toBe('page.html')
+      expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'queue_state',
+        sandboxBusy: false,
+        sandboxDesynced: false,
+      }))
+      expect(shared.draft.value).toBe('未发送草稿')
+      expect(shared.attachments.value).toHaveLength(1)
+      expect(input.value).toBe('未发送草稿')
+      expect(input.selectionStart).toBe(1)
+      expect(input.selectionEnd).toBe(3)
+      expect(document.activeElement).toBe(input)
+    } finally {
+      input.remove()
+      app.unmount()
+    }
+  })
+
+  it('retries orphan realign when the context request is blocked or already in flight', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    let sessionBusy = true
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(), isSessionBusy: () => sessionBusy }
+    const before = mocks.inboxContext.mock.calls.length
+    vi.useFakeTimers()
+    try {
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+      socket.open()
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+
+      sessionBusy = false
+      const stillBusy = {
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: true, sandboxDesynced: false },
+          },
+        }),
+      }
+      let releaseContext: (value: unknown) => void = () => {}
+      mocks.inboxContext.mockImplementationOnce(
+        () => new Promise((resolve) => { releaseContext = resolve }),
+      )
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      releaseContext(stillBusy)
+      await flushPromises()
+      mocks.inboxContext.mockResolvedValueOnce({
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: false, sandboxDesynced: false },
+          },
+        }),
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 2)
+    } finally {
+      vi.useRealTimers()
+      app.unmount()
+    }
+  })
+
+  it('patches workflow status and artifact cards without clearing the open transcript', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    const turns = [{ role: 'agent' as const, text: '还在', at: '1' }]
+    inbox.activeRun.value = contextRun('run-chat', {
+      status: 'waiting_human',
+      nodes: [
+        { id: 'react', type: 'agent', label: '澄清' },
+        { id: 'implement', type: 'agent', label: '实现' },
+      ],
+      nodeRuns: { react: { nodeId: 'react', status: 'running', iteration: 1 } },
+      artifacts: [{ id: 'old', name: 'old.md' }],
+      clarifyByNode: { react: { nodeId: 'react', iteration: 1, turns, done: false } },
+    })
+    const before = mocks.inboxContext.mock.calls.length
+    const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+    socket.open()
+    socket.message({ type: 'status', status: 'running' })
+    socket.message({ type: 'trace', entry: { nodeId: 'react', event: 'pause', iteration: 1 } })
+    socket.message({ type: 'node_enter', nodeId: 'implement', iteration: 1, name: '实现' })
+    mocks.runArtifacts.mockResolvedValueOnce([{ id: 'page', name: 'page.html', kind: 'html' }])
+    socket.message({ type: 'artifact_edit', name: 'page.html', previewArtifact: 'page.html' })
+    await flushPromises()
+    expect(mocks.inboxContext.mock.calls.length).toBe(before)
+    expect(inbox.activeRun.value?.status).toBe('running')
+    expect(inbox.activeRun.value?.nodeRuns.react?.status).toBe('waiting_human')
+    expect(inbox.activeRun.value?.nodeRuns.implement?.status).toBe('running')
+    expect(inbox.activeRun.value?.artifacts?.map((a) => a.name)).toEqual(['page.html'])
+    expect(inbox.activeRun.value?.clarify?.previewArtifact || inbox.activeRun.value?.clarifyByNode?.react?.previewArtifact).toBe('page.html')
+    expect(inbox.clarifyComposerTurns.value.map((t) => t.text)).toEqual(['还在'])
+    app.unmount()
   })
 
   it('routes focus and visibility peeks and reacts to query deep links', async () => {

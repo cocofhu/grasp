@@ -30,11 +30,15 @@ func (e ErrSoloSandboxLimit) Error() string {
 type SoloSandboxOpts struct {
 	Profile   string
 	SessionID string
-	Project   *models.Project
-	Branch    string
-	OnEnv     func(sources map[string]string)
-	OnReady   func(sandboxID uint)
-	OnFail    func(sandboxID uint, err error)
+	// Repos is the frozen snapshot, in clone order. Empty starts an empty workspace.
+	Repos []models.SessionRepo
+	// Project and Branch remain for callers that still open a single repository.
+	Project        *models.Project
+	Branch         string
+	InitialModelID string
+	OnEnv          func(sources map[string]string)
+	OnReady        func(sandboxID uint)
+	OnFail         func(sandboxID uint, err error)
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -113,7 +117,11 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		return nil, ErrSoloSandboxLimit{Max: maxN}
 	}
 
-	repos := SoloRepoSpecs(opts.Project, opts.Branch)
+	snapshots := opts.Repos
+	if len(snapshots) == 0 && opts.Project != nil {
+		snapshots = []models.SessionRepo{sessionRepoFromProject(opts.Project, opts.Branch, 0)}
+	}
+	repos := SoloRepoSpecsList(snapshots)
 	runID := "solo-" + sanitizeID(sessionID) + "-" + randID()
 	token := uuid.NewString()
 	if s.host != nil {
@@ -142,11 +150,10 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		}
 		return nil, err
 	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv}
-	if p := opts.Project; p != nil {
-		extra.Env = p.Env
-		extra.Bindings = p.CredentialBindings
-		extra.RepoCredentials = runtime.RepoCredentialsFor([]models.Project{*p}, s.gitCredential)
+	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID)}
+	if len(snapshots) > 0 {
+		extra.Env, extra.Bindings = mergeSessionRepoConfig(snapshots)
+		extra.RepoCredentials = runtime.RepoCredentialsFor(projectsFromSessionRepos(snapshots), s.gitCredential)
 	}
 	id := row.ID
 	if opts.OnReady != nil {

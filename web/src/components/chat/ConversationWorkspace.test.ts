@@ -16,12 +16,14 @@ let wrapper: VueWrapper | undefined
 let resizeObserver: ResizeObserverCallback
 const i18n = () => createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': pages } })
 function mountWorkspace(open = false, extra: Record<string, unknown> = {}) {
+  let queued: boolean | undefined
   wrapper = mount(ConversationWorkspace, {
     attachTo: document.body,
-    props: { scopeKey: 'run-a/node-a', open, 'onUpdate:open': value => { void wrapper?.setProps({ open: value }) }, ...extra },
+    props: { scopeKey: 'run-a/node-a', open, 'onUpdate:open': (value: boolean) => { if (wrapper) void wrapper.setProps({ open: value }); else queued = value }, ...extra },
     slots: { default: '<textarea aria-label="消息">未发送的问题</textarea>', panel: '<input aria-label="产物内容" value="draft" />' },
     global: { plugins: [i18n()] },
   })
+  if (queued !== undefined) void wrapper.setProps({ open: queued })
   return wrapper
 }
 beforeEach(() => {
@@ -98,14 +100,21 @@ describe('ConversationWorkspace', () => {
 
   it('supports keyboard panel resizing and persists the preference', async () => {
     const w = mountWorkspace(true)
+    resizeObserver([{ contentRect: { width: 1200 } } as ResizeObserverEntry], {} as ResizeObserver)
     await flushPromises()
     const sash = w.get('[role="separator"]')
+    expect(sash.attributes('aria-valuemin')).toBe('0')
+    expect(sash.attributes('aria-valuemax')).toBe('1196')
     const before = Number(sash.attributes('aria-valuenow'))
+    expect(before).toBe(440)
     await sash.trigger('keydown', { key: 'ArrowLeft' })
-    expect(Number(sash.attributes('aria-valuenow'))).toBeGreaterThan(before)
+    expect(Number(sash.attributes('aria-valuenow'))).toBe(before + 24)
     expect(Number(localStorage.getItem('grasp.conversation.panelWidth'))).toBe(Number(sash.attributes('aria-valuenow')))
     await sash.trigger('keydown', { key: 'Home' })
-    expect(sash.attributes('aria-valuenow')).toBe('280')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
   })
 
   it('uses a dismissible modal preview on a narrow canvas and returns focus', async () => {
@@ -124,6 +133,7 @@ describe('ConversationWorkspace', () => {
     expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
     expect(document.activeElement).toBe(trigger.element)
     expect(w.get('[data-testid="conversation-main"]').attributes('aria-hidden')).toBeUndefined()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
   })
 
   it('closes the old preview when switching conversation scope', async () => {
@@ -245,6 +255,248 @@ describe('ConversationWorkspace', () => {
     expect(src).not.toMatch(/--c-err|bg-err/)
     expect(src).not.toMatch(/\shidden\b/)
     expect(src).toMatch(/prefers-reduced-motion:\s*reduce[\s\S]*\.artifact-unread-badge\s*\{[^}]*animation:\s*none/)
+  })
+})
+
+describe('ConversationWorkspace panel sash', () => {
+  function firePointer(el: Element, type: 'pointerdown' | 'pointermove' | 'pointerup', clientX: number) {
+    el.dispatchEvent(new PointerEvent(type, { bubbles: true, cancelable: true, button: 0, clientX, pointerId: 1 }))
+  }
+  async function setCanvas(width: number) {
+    resizeObserver([{ contentRect: { width } } as ResizeObserverEntry], {} as ResizeObserver)
+    await flushPromises()
+  }
+  async function dragTo(w: VueWrapper, target: number) {
+    const sash = w.get('[data-testid="conversation-panel-sash"]')
+    const current = Number(sash.attributes('aria-valuenow'))
+    firePointer(sash.element, 'pointerdown', 0)
+    firePointer(sash.element, 'pointermove', current - target)
+    await flushPromises()
+    if (w.find('[data-testid="conversation-panel-sash"]').exists()) firePointer(sash.element, 'pointerup', current - target)
+    await flushPromises()
+  }
+
+  it('covers the chat when dragged to the left edge and hides the panel at the right edge', async () => {
+    const w = mountWorkspace(true)
+    await w.get('textarea').setValue('保留我的草稿')
+    await setCanvas(1200)
+    const sash = w.get('[data-testid="conversation-panel-sash"]')
+    expect(sash.attributes('aria-valuemin')).toBe('0')
+    expect(sash.attributes('aria-valuemax')).toBe('1196')
+
+    await dragTo(w, 1179)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('1179')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeUndefined()
+
+    await dragTo(w, 1180)
+    const covered = w.get('[data-testid="conversation-panel-sash"]')
+    expect(covered.attributes('aria-valuenow')).toBe('1196')
+    expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('style')).toContain('width: 1196px')
+    expect(w.classes()).toContain('is-covered')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeDefined()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('cover')
+
+    await dragTo(w, 700)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('700')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeUndefined()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+
+    await dragTo(w, 17)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('17')
+    await dragTo(w, 0)
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('保留我的草稿')
+
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    const reopened = w.get('[data-testid="conversation-panel-sash"]')
+    expect(reopened.attributes('aria-valuenow')).toBe('440')
+    expect(reopened.attributes('aria-valuemax')).toBe('1196')
+    expect(w.classes()).not.toContain('is-covered')
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('保留我的草稿')
+
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+  })
+
+  it('keeps a close-button width for the parent and still opens the icon at 440', async () => {
+    const w = mountWorkspace(true)
+    await setCanvas(1200)
+    await dragTo(w, 700)
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+    await w.setProps({ open: true })
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('700')
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+  })
+
+  it('uses End, Home, arrows, and Enter on the open sash', async () => {
+    const w = mountWorkspace(true)
+    await setCanvas(1200)
+    const sash = () => w.get('[data-testid="conversation-panel-sash"]')
+    await sash().trigger('keydown', { key: 'End' })
+    expect(sash().attributes('aria-valuenow')).toBe('1196')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeDefined()
+    await sash().trigger('keydown', { key: 'ArrowRight' })
+    expect(sash().attributes('aria-valuenow')).toBe('1172')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeUndefined()
+    await sash().trigger('keydown', { key: 'Enter' })
+    expect(sash().attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 41)
+    await sash().trigger('keydown', { key: 'ArrowRight' })
+    expect(sash().attributes('aria-valuenow')).toBe('17')
+    await sash().trigger('keydown', { key: 'ArrowLeft' })
+    expect(sash().attributes('aria-valuenow')).toBe('41')
+    await dragTo(w, 1179)
+    await sash().trigger('keydown', { key: 'ArrowLeft' })
+    expect(sash().attributes('aria-valuenow')).toBe('1196')
+    await sash().trigger('keydown', { key: 'Home' })
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+  })
+
+  it('keeps full cover across a wider canvas and a narrow drawer round-trip', async () => {
+    const w = mountWorkspace(true)
+    await setCanvas(1200)
+    await w.get('[data-testid="conversation-panel-sash"]').trigger('keydown', { key: 'End' })
+    await setCanvas(1500)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('1496')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeDefined()
+    await setCanvas(600)
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[role="dialog"]').attributes('aria-modal')).toBe('true')
+    await setCanvas(1200)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('1196')
+    expect(w.get('[data-testid="conversation-main"]').attributes('inert')).toBeDefined()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('cover')
+  })
+
+  it('restores cover after refresh and stays closed after the panel was hidden', async () => {
+    localStorage.setItem('grasp.conversation.panelWidth', 'cover')
+    const covered = mountWorkspace(false)
+    await setCanvas(1200)
+    expect(covered.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(true)
+    expect(covered.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('1196')
+    expect(covered.get('[data-testid="conversation-main"]').attributes('inert')).toBeDefined()
+    covered.unmount()
+
+    localStorage.setItem('grasp.conversation.panelWidth', '440')
+    const hidden = mountWorkspace(false)
+    await setCanvas(1200)
+    expect(hidden.get('[data-testid="conversation-artifact-panel"]').isVisible()).toBe(false)
+    expect(hidden.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+  })
+
+  it('reopens a hidden split drawer at 440 from the artifact icon', async () => {
+    const state = { open: false, mode: null as 'resources' | 'artifacts' | null }
+    wrapper = mount(ConversationWorkspace, {
+      attachTo: document.body,
+      props: {
+        scopeKey: 'run-a',
+        splitModes: true,
+        open: state.open,
+        mode: state.mode,
+        'onUpdate:open': (value: boolean) => { state.open = value; void wrapper?.setProps({ open: value }) },
+        'onUpdate:mode': (value: 'resources' | 'artifacts' | null) => { state.mode = value; void wrapper?.setProps({ mode: value }) },
+      },
+      slots: { default: '<textarea aria-label="消息">未发送的问题</textarea>', panel: '<input aria-label="产物内容" value="draft" />' },
+      global: { plugins: [i18n()] },
+    })
+    const w = wrapper
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    await setCanvas(1200)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 1196)
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('1196')
+    await dragTo(w, -20)
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('false')
+    await w.get('[data-testid="conversation-panel-toggle"]').trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    expect(w.classes()).not.toContain('is-covered')
+    expect(w.get('[data-testid="conversation-panel-toggle"]').attributes('aria-pressed')).toBe('true')
+  })
+
+  it('keeps a masthead artifact button outside the covered chat and reopens at 440', async () => {
+    const state = { open: false }
+    wrapper = mount(ConversationWorkspace, {
+      attachTo: document.body,
+      props: {
+        scopeKey: 'assistant',
+        showToolbar: false,
+        open: state.open,
+        'onUpdate:open': (value: boolean) => { state.open = value; void wrapper?.setProps({ open: value }) },
+      },
+      slots: {
+        masthead: () => h('button', {
+          type: 'button',
+          'data-testid': 'pm-chat-artifacts',
+          onClick: () => (wrapper?.vm as { toggleFromArtifactIcon: () => void }).toggleFromArtifactIcon(),
+        }, '产物'),
+        default: '<textarea aria-label="消息">未发送的问题</textarea>',
+        panel: '<div>预览</div>',
+      },
+      global: { plugins: [i18n()] },
+    })
+    const w = wrapper
+    await setCanvas(1200)
+    const button = () => w.get('[data-testid="pm-chat-artifacts"]')
+    const main = () => w.get('[data-testid="conversation-main"]')
+    expect(main().element.contains(button().element)).toBe(false)
+    expect(w.get('[data-testid="conversation-masthead"]').element.contains(button().element)).toBe(true)
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 700)
+    await w.get('[data-testid="conversation-panel-close"]').trigger('click')
+    await flushPromises()
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('700')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await dragTo(w, 700)
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    await w.get('[data-testid="conversation-panel-sash"]').trigger('keydown', { key: 'End' })
+    expect(w.classes()).toContain('is-covered')
+    expect(main().attributes('inert')).toBeDefined()
+    expect(main().element.contains(button().element)).toBe(false)
+    expect(w.get('[data-testid="conversation-masthead"]').attributes('inert')).toBeUndefined()
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(localStorage.getItem('grasp.conversation.panelWidth')).toBe('440')
+    await button().trigger('click')
+    await flushPromises()
+    expect(w.get('[data-testid="conversation-panel-sash"]').attributes('aria-valuenow')).toBe('440')
+    expect(w.classes()).not.toContain('is-covered')
+    expect((w.get('textarea').element as HTMLTextAreaElement).value).toBe('未发送的问题')
+  })
+
+  it('does not render a sash on a 600px canvas', async () => {
+    const w = mountWorkspace(true)
+    await setCanvas(600)
+    expect(w.classes()).toContain('is-compact')
+    expect(w.find('[data-testid="conversation-panel-sash"]').exists()).toBe(false)
+    expect(w.get('[data-testid="conversation-artifact-panel"]').attributes('role')).toBe('dialog')
   })
 })
 

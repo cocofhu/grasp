@@ -14,7 +14,7 @@ async function mockApi(page: Page) {
       return
     }
     const p = new URL(route.request().url()).pathname
-    if (p.includes('/gates')) {
+    if (p.includes('/pending-nodes')) {
       await route.fulfill({ json: { items: [], total: 0 } })
       return
     }
@@ -50,7 +50,7 @@ async function mockApi(page: Page) {
 async function openGates(page: Page) {
   await mockApi(page)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/desktop-sidebar-hide.html?start=/gates')
+  await page.goto('/desktop-sidebar-hide.html?start=/runs/run-1/nodes/n1')
   await expect(page.getByTestId('page-gates')).toBeVisible({ timeout: PAGE_READY_MS })
 }
 
@@ -214,7 +214,7 @@ test.describe('desktop sidebar hide', () => {
     await expect(page.getByTestId('floating-nav-ball')).toBeVisible()
     await page.screenshot({ path: path.join(shotDir, '05-full-console-hidden-ball.png') })
 
-    await page.goto('/desktop-sidebar-hide.html?start=/gates')
+    await page.goto('/desktop-sidebar-hide.html?start=/runs/run-1/nodes/n1')
     await expect(page.getByTestId('page-gates')).toBeVisible({ timeout: PAGE_READY_MS })
     await expect(page.getByTestId('desktop-nav-edge-open')).toHaveCount(0)
     await expect(page.getByTestId('floating-nav-ball')).toBeVisible()

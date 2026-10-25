@@ -15,7 +15,7 @@ describe('redirectToLogin', () => {
     expect(assign).toHaveBeenCalledWith(`/login?redirect=${encodeURIComponent('/runs/r1?tab=log')}`)
   })
 
-  it.each(['/login', '/public/gate-approvals', '/embed/runs/r1/nodes/n1/chat'])('leaves %s alone', (path) => {
+  it.each(['/login', '/public/approvals', '/embed/runs/r1/nodes/n1/chat'])('leaves %s alone', (path) => {
     const assign = vi.spyOn(window.location, 'assign').mockImplementation(() => {})
     history.replaceState(null, '', path)
     redirectToLogin()

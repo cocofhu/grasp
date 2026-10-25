@@ -68,7 +68,7 @@ describe('onboardingWizard', () => {
   it('submits model configuration and a detached Git selection without secrets', () => {
     const d = freshOnboardingDraft()
     d.modelConfigurationId = 'model-main'
-    d.gitBindings = { items: [{ credentialId: 'git-team', scope: 'github.com' }], preferredCredentialId: 'git-team' }
+    d.gitBindings = { items: [{ credentialId: 'git-team', scope: 'github.com' }] }
     const body = assembleBootstrapBody(d)
     expect(body.modelConfigurationId).toBe('model-main')
     expect(body.gitBindings).toEqual(d.gitBindings)
@@ -126,7 +126,7 @@ describe('onboardingWizard', () => {
   it('skipping Git drops repo and credentials but keeps identity', () => {
     const d = freshOnboardingDraft()
     d.repoUrl = 'https://github.com/org/web.git'
-    d.gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
+    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     d.gitUserName = 'Ada'
     d.gitUserEmail = 'ada@example.com'
     expect(gitConfigured(d)).toBe(true)
@@ -237,7 +237,7 @@ describe('onboardingWizard', () => {
   it('Git availability uses selected credential references and respects skip', () => {
     const d = freshOnboardingDraft()
     expect(gitConfigured(d)).toBe(false)
-    d.gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
+    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     expect(gitConfigured(d)).toBe(true)
     d.gitSkipped = true
     expect(gitConfigured(d)).toBe(false)

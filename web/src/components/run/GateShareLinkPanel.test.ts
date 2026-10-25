@@ -114,7 +114,7 @@ beforeEach(() => {
 describe('GateShareLinkPanel', () => {
   it('creates with default 24h, masks URL, auto-copies full link (plan g1.1 / g2.2)', async () => {
     const token = 'ab'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     mocks.create.mockResolvedValue({ id: 'gsl-1', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
 
     const w = mount(GateShareLinkPanel, {
@@ -145,7 +145,7 @@ describe('GateShareLinkPanel', () => {
 
   it('reveals full URL when clipboard fails (plan g3.1)', async () => {
     const token = 'cd'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     mocks.create.mockResolvedValue({ id: 'gsl-2', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
     mocks.copyToClipboard.mockResolvedValue(false)
 
@@ -162,7 +162,7 @@ describe('GateShareLinkPanel', () => {
 
   it('dedupes clipboardFallback toast on repeated failure (plan g3.2)', async () => {
     const token = 'ff'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
     mocks.copyToClipboard.mockResolvedValue(false)
 
@@ -190,7 +190,7 @@ describe('GateShareLinkPanel', () => {
 
   it('manual copy success uses copied toast (plan g1.2 / g2.2)', async () => {
     const token = 'ef'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
     let resolveCopy!: (v: boolean) => void
     mocks.copyToClipboard.mockImplementation(
@@ -223,7 +223,7 @@ describe('GateShareLinkPanel', () => {
 
   it('createAndCopy shows 创建中… and does not create twice', async () => {
     const token = 'ab'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     let resolveCreate!: (v: unknown) => void
     mocks.create.mockImplementation(
       () =>
@@ -248,7 +248,7 @@ describe('GateShareLinkPanel', () => {
 
   it('manage mode copies remembered URL without regenerating', async () => {
     const token = 'ef'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
 
     const w = mount(GateShareLinkPanel, {
@@ -268,7 +268,7 @@ describe('GateShareLinkPanel', () => {
 
   it('recalls URL from sessionStorage after in-memory miss (refresh)', async () => {
     const token = 'ef'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
     forgetShareUrl('run-1', 'hg1', 1)
     sessionStorage.setItem('grasp.gateShareUrl.run-1:hg1:1', url)
@@ -317,7 +317,7 @@ describe('GateShareLinkPanel', () => {
 
   it('review kind calls reviews API and keeps primary actions at min-h-11', async () => {
     const token = 'ab'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     mocks.createReview.mockResolvedValue({ id: 'gsl-r1', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
     const w = mount(GateShareLinkPanel, {
       props: {
@@ -343,7 +343,7 @@ describe('GateShareLinkPanel', () => {
 
   it('creates react_only preset and shows chip + regen inherit hint when active', async () => {
     const token = 'ro'.repeat(32)
-    const url = `https://app.example/public/gate-approvals#t=${token}`
+    const url = `https://app.example/public/approvals#t=${token}`
     mocks.create.mockResolvedValue({
       id: 'gsl-ro',
       url,
@@ -370,7 +370,7 @@ describe('GateShareLinkPanel', () => {
 
   it('blocks copy and skips auto-copy for loopback share URLs', async () => {
     const token = 'lb'.repeat(32)
-    const url = `http://localhost:8080/public/gate-approvals#t=${token}`
+    const url = `http://localhost:8080/public/approvals#t=${token}`
     mocks.create.mockResolvedValue({ id: 'gsl-lb', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
 
     const w = mount(GateShareLinkPanel, {
@@ -396,8 +396,8 @@ describe('GateShareLinkPanel', () => {
     const prev = window.location.href
     happy?.setURL('http://21.130.250.101:5173/gates')
     const token = 'pb'.repeat(32)
-    const url = `http://localhost:8080/public/gate-approvals#t=${token}`
-    const want = `http://21.130.250.101:5173/public/gate-approvals#t=${token}`
+    const url = `http://localhost:8080/public/approvals#t=${token}`
+    const want = `http://21.130.250.101:5173/public/approvals#t=${token}`
     mocks.create.mockResolvedValue({ id: 'gsl-pb', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
 
     const w = mount(GateShareLinkPanel, {
@@ -414,7 +414,7 @@ describe('GateShareLinkPanel', () => {
 
   it('shows origin-from-access hint and allows copy for non-loopback URLs', async () => {
     const token = 'pub'.repeat(32)
-    const url = `https://approving.example.com/public/gate-approvals#t=${token}`
+    const url = `https://approving.example.com/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
 
     const w = mount(GateShareLinkPanel, {
@@ -434,9 +434,9 @@ describe('GateShareLinkPanel', () => {
 
   it('regen shows regenerated then autoCopied toasts (plan g2.3)', async () => {
     const token = 'rg'.repeat(32)
-    const url = `https://approving.example.com/public/gate-approvals#t=${token}`
+    const url = `https://approving.example.com/public/approvals#t=${token}`
     const nextToken = 'nh'.repeat(32)
-    const nextUrl = `https://approving.example.com/public/gate-approvals#t=${nextToken}`
+    const nextUrl = `https://approving.example.com/public/approvals#t=${nextToken}`
     rememberShareUrl('run-1', 'hg1', 1, url)
     mocks.regen.mockResolvedValue({ id: 'gsl-rg', url: nextUrl, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
 
@@ -461,7 +461,7 @@ describe('GateShareLinkPanel', () => {
 
   it('skips auto-copy after regenerating a loopback URL but still toasts regenerated', async () => {
     const token = 'rg'.repeat(32)
-    const url = `http://127.0.0.1:8080/public/gate-approvals#t=${token}`
+    const url = `http://127.0.0.1:8080/public/approvals#t=${token}`
     rememberShareUrl('run-1', 'hg1', 1, url)
     mocks.regen.mockResolvedValue({ id: 'gsl-rg', url, ttlTier: '24h', expiresAt: '2026-08-10T00:00:00Z', state: 'active' })
 

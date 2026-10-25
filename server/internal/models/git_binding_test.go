@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -17,27 +18,37 @@ func TestNormalizeGitBindingsExplicitSelection(t *testing.T) {
 	}
 	in := &GitBindings{Items: []GitCredentialBinding{{CredentialID: " a ", Scope: " GIT.Example.com:8443 ", SshHostsCredentialID: " hosts "}, {CredentialID: "b"}}, PreferredCredentialID: " b "}
 	out, err := NormalizeGitBindings(in)
-	if err != nil || out.PreferredCredentialID != "b" || out.Items[0].CredentialID != "a" || out.Items[0].Scope != "git.example.com:8443" || out.Items[0].SshHostsCredentialID != "hosts" {
+	if err != nil || out.PreferredCredentialID != "" || out.Items[0].CredentialID != "a" || out.Items[0].Scope != "git.example.com:8443" || out.Items[0].SshHostsCredentialID != "hosts" {
 		t.Fatalf("normalized = %+v, %v", out, err)
 	}
-	if in.Items[0].CredentialID != " a " {
+	if in.Items[0].CredentialID != " a " || in.PreferredCredentialID != " b " {
 		t.Fatal("normalization mutated the caller")
 	}
 	raw, err := json.Marshal(out)
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(string(raw), "preferred") {
+		t.Fatalf("normalized JSON kept a preferred credential: %s", raw)
+	}
 	var roundtrip GitBindings
 	if err := json.Unmarshal(raw, &roundtrip); err != nil || !reflect.DeepEqual(out, &roundtrip) {
 		t.Fatalf("roundtrip = %+v, %v", roundtrip, err)
 	}
-	for _, bad := range []*GitBindings{
+	for _, legacy := range []*GitBindings{
 		{PreferredCredentialID: "a"},
 		{Items: []GitCredentialBinding{{CredentialID: "a"}}},
 		{Items: []GitCredentialBinding{{CredentialID: "a"}}, PreferredCredentialID: "other"},
-		{Items: []GitCredentialBinding{{CredentialID: " "}}, PreferredCredentialID: "a"},
-		{Items: []GitCredentialBinding{{CredentialID: "a"}, {CredentialID: " a "}}, PreferredCredentialID: "a"},
-		{Items: []GitCredentialBinding{{CredentialID: "a", Scope: "https://user:secret@host/repo"}}, PreferredCredentialID: "a"},
+	} {
+		got, err := NormalizeGitBindings(legacy)
+		if err != nil || got.PreferredCredentialID != "" || (len(legacy.Items) == 0 && len(got.Items) != 0) || (len(legacy.Items) > 0 && got.Items[0].CredentialID != "a") {
+			t.Fatalf("legacy preferred selection = %+v, %v", got, err)
+		}
+	}
+	for _, bad := range []*GitBindings{
+		{Items: []GitCredentialBinding{{CredentialID: " "}}},
+		{Items: []GitCredentialBinding{{CredentialID: "a"}, {CredentialID: " a "}}},
+		{Items: []GitCredentialBinding{{CredentialID: "a", Scope: "https://user:secret@host/repo"}}},
 	} {
 		if _, err := NormalizeGitBindings(bad); !errors.Is(err, ErrGitBindings) {
 			t.Fatalf("accepted bad selection %+v: %v", bad, err)

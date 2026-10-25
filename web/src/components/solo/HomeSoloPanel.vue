@@ -6,16 +6,26 @@ import Icon from '@/components/ui/Icon.vue'
 import SoloStatusDot from './SoloStatusDot.vue'
 import { relTime } from '@/lib/shared/format'
 import { repoShort } from '@/lib/solo/soloPrefs'
+import { sessionRepoLabel } from '@/lib/solo/sessionRepos'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import type { Project } from '@/lib/api/apiTypes'
 
-const props = defineProps<{ projects: Project[]; projectId: string }>()
-const emit = defineEmits<{ (e: 'pick-project', id: string): void; (e: 'new-project'): void }>()
+const props = withDefaults(defineProps<{ projects?: Project[]; projectIds?: string[] }>(), {
+  projects: () => [],
+  projectIds: () => [],
+})
+const emit = defineEmits<{ (e: 'toggle-project', id: string): void; (e: 'new-project'): void }>()
 const { t } = useI18n()
 const store = useSoloSessions()
 
 const recent = computed(() => store.active.value.slice(0, 3))
 const cards = computed(() => props.projects.slice(0, 8))
+const selected = computed(() => (Array.isArray(props.projectIds) ? props.projectIds : []))
+
+function repoMeta(session: (typeof recent.value)[number]) {
+  const label = sessionRepoLabel(session)
+  return label ? `${session.agentName} · ${label}` : session.agentName
+}
 </script>
 
 <template>
@@ -37,7 +47,7 @@ const cards = computed(() => props.projects.slice(0, 8))
           <SoloStatusDot :status="s.status" :busy="s.busy" />
           <span class="min-w-0 flex-1 truncate text-[13px] text-txt">{{ s.title || t('pages.solo.untitled') }}</span>
           <span class="hidden min-w-0 max-w-[40%] truncate text-[11.5px] text-txt3 sm:block">
-            {{ s.agentName }}<template v-if="s.project"> · {{ s.project.name }}</template>
+            {{ repoMeta(s) }}
           </span>
           <span class="shrink-0 text-[11px] text-txt3">{{ relTime(s.lastActiveAt || s.createdAt) }}</span>
         </RouterLink>
@@ -55,10 +65,10 @@ const cards = computed(() => props.projects.slice(0, 8))
           :key="p.id"
           type="button"
           class="home-solo__card"
-          :class="{ 'home-solo__card--on': p.id === projectId }"
-          :aria-pressed="p.id === projectId"
+          :class="{ 'home-solo__card--on': selected.includes(p.id) }"
+          :aria-pressed="selected.includes(p.id)"
           :data-testid="`home-solo-project-${p.id}`"
-          @click="emit('pick-project', p.id === projectId ? '' : p.id)"
+          @click="emit('toggle-project', p.id)"
         >
           <span class="flex items-center gap-1.5">
             <Icon name="git" :size="13" class="shrink-0 text-accent" />

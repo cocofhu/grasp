@@ -119,8 +119,22 @@ func (s *ModelConfigurationService) validate(configuration *modelrouting.Configu
 	if configuration.Binding.Kind != "platform" && configuration.Binding.Kind != "connection" {
 		return fmt.Errorf("%w: a concrete platform or connection binding is required", ErrModelConfigurationInvalid)
 	}
-	if _, err := NewModelConnectionService(s.db).Resolve(configuration.Backend, configuration.Binding); err != nil {
+	if err := modelrouting.NormalizeAuxiliaryModels(&configuration.Binding); err != nil {
 		return fmt.Errorf("%w: %w", ErrModelConfigurationInvalid, err)
+	}
+	resolved, err := NewModelConnectionService(s.db).Resolve(configuration.Backend, configuration.Binding)
+	if err != nil {
+		return fmt.Errorf("%w: %w", ErrModelConfigurationInvalid, err)
+	}
+	// Auxiliary models must belong to the same connection at save time. A later
+	// catalog removal does not fail automation: only the primary model is required
+	// to run, and a missing auxiliary is shown as unavailable instead.
+	if resolved.Connection != nil {
+		for _, id := range configuration.Binding.AuxiliaryModelIDs {
+			if !modelrouting.ModelInCatalog(*resolved.Connection, id) {
+				return fmt.Errorf("%w: auxiliary model %s is absent from this connection", ErrModelConfigurationInvalid, id)
+			}
+		}
 	}
 	return nil
 }

@@ -14,6 +14,11 @@ const mocks = vi.hoisted(() => ({
   reactReply: vi.fn(),
   nodeEvents: vi.fn(),
   runArtifacts: vi.fn(),
+  // Inbox context has nodes but no edges; the view asks GET /runs/:id before it
+  // leaves the loading pane. This suite has no run record, same as a refused call.
+  getRun: vi.fn(async () => {
+    throw new Error('no run in this suite')
+  }),
   runEventsWsUrl: vi.fn((id: string) => `ws://test/runs/${id}/events`),
   toastError: vi.fn(),
   toastSuccess: vi.fn(),
@@ -33,6 +38,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       listGates: mocks.listGates,
       inboxContext: mocks.inboxContext,
+      getRun: mocks.getRun,
       resumeGate: mocks.resumeGate,
       reactReply: mocks.reactReply,
       nodeEvents: mocks.nodeEvents,

@@ -297,7 +297,6 @@ export type ReviewSummaryItem = {
 export type WizardReviewNames = {
   model?: string
   gitItems?: Record<string, string>
-  preferredLabel?: string
 }
 
 /** Build confirmation-page summary chips aligned to the 4-step wizard. */
@@ -307,7 +306,7 @@ export function buildReviewSummary(draft: WizardDraft, names: WizardReviewNames 
   const name = draft.name.trim() || '—'
   const authConfigured = !!draft.modelBinding?.configurationId
   const apiKeySkipped = !authConfigured
-  const gitParts = (draft.gitBindings?.items || []).map((item) => `${names.gitItems?.[item.credentialId] || item.credentialId}${item.credentialId === draft.gitBindings?.preferredCredentialId ? ` (${names.preferredLabel || 'Preferred'})` : ''}`)
+  const gitParts = (draft.gitBindings?.items || []).map((item) => names.gitItems?.[item.credentialId] || item.credentialId)
 
   const templateDetail = hasRoleTemplate(draft) ? draft.templateId.trim() : 'blank'
   const items: ReviewSummaryItem[] = [

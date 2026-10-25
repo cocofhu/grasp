@@ -164,7 +164,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
             <p v-if="w.description" class="workflow-description" :title="w.description">{{ w.description }}</p>
           </td>
           <td class="workflow-status-cell">
-            <span class="workflow-status" :data-status="w.status"><span aria-hidden="true" />{{ t(w.status === 'published' ? 'common.status.published' : 'common.status.draft') }}</span>
+            <span class="workflow-status" :data-status="w.status"><span class="workflow-status-dot" aria-hidden="true" /><span class="workflow-status-label">{{ t(w.status === 'published' ? 'common.status.published' : 'common.status.draft') }}</span></span>
           </td>
           <td class="workflow-notify-cell" :data-testid="isMobile ? 'wf-notify-inline' : 'wf-notify-cell'" @click.stop>
             <div class="workflow-notify-controls">
@@ -391,11 +391,17 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
 .workflow-name { display: block; max-width: 100%; overflow: hidden; color: rgb(var(--c-txt)); font-size: 13px; font-weight: 500; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
 .workflow-name:hover { color: rgb(var(--c-accent-2)); }
 .workflow-description { margin-top: 4px; overflow: hidden; color: rgb(var(--c-txt3)); font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
-.workflow-status { display: inline-flex; align-items: center; gap: 6px; color: rgb(var(--c-txt2)); font-size: 11px; white-space: nowrap; }
-.workflow-status > span { width: 5px; height: 5px; border-radius: 50%; background: rgb(var(--c-txt3) / .6); }
-.workflow-status[data-status="published"] > span { background: rgb(var(--c-ok) / .7); }
+.workflow-status { display: inline-flex; align-items: center; gap: 6px; height: 30px; color: rgb(var(--c-txt2)); font-size: 12px; line-height: 18px; white-space: nowrap; }
+.workflow-status-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: rgb(var(--c-txt3) / .6); }
+.workflow-status-label { line-height: 18px; }
+.workflow-status[data-status="published"] > .workflow-status-dot { background: rgb(var(--c-ok) / .7); }
 .workflow-notify-controls { display: flex; min-width: 0; align-items: center; gap: 4px; }
 .workflow-notify-select { min-width: 0; width: 116px; flex: none; }
+/* Directory only: the ghost trigger's own inset would push the name off the column title. */
+.workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm) { height: 30px; min-height: 30px; padding-block: 0; padding-inline-start: 0; border-width: 0; font-size: 12px; line-height: 18px; }
+.workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm > span) { line-height: 18px; }
+.workflow-row:has(.workflow-notify-events) > .workflow-status-cell,
+.workflow-row:has(.workflow-notify-events) > .workflow-notify-cell { vertical-align: top; }
 .workflow-notify-edit { display: flex; width: 24px; height: 28px; flex: none; align-items: center; justify-content: center; border-radius: 6px; color: rgb(var(--c-txt3)); }
 .workflow-notify-edit:hover, .workflow-notify-edit[aria-expanded="true"] { background: rgb(var(--c-txt) / .045); color: rgb(var(--c-txt)); }
 .workflow-notify-events { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 0; border: 0; padding: 0; }
@@ -433,5 +439,7 @@ function onNotifyModeChange(workflow: Workflow, mode: string) {
   .workflow-toolbar-actions { justify-content: flex-end; width: 100%; }
   .workflow-row-actions > button, .workflow-more-action, .workflow-notify-edit, .workflow-menu-action { min-height: 44px; }
   .workflow-notify-edit { width: 32px; }
+  .workflow-status { height: auto; }
+  .workflow-notify-select :deep(.app-select-trigger.app-select-trigger--ghost.app-select-trigger--sm) { height: auto; min-height: 44px; }
 }
 </style>

@@ -18,9 +18,11 @@ import (
 
 // AgentModel 对应模型目录中的一项（provider 目录或 CLI 探测所得）。
 type AgentModel struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	IsDefault bool   `json:"isDefault,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Vendor      string `json:"vendor,omitempty"`
+	IsDefault   bool   `json:"isDefault,omitempty"`
+	Unavailable bool   `json:"unavailable,omitempty"`
 }
 
 // ListAgentModels 返回当前 provider 的模型目录：优先用 provider 声明的目录，

@@ -19,7 +19,7 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
-      "heroSubtitle": "先说清，再动手",
+      "heroSubtitle": "我们应该做些什么？",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -269,7 +269,6 @@
     "board": {
       "title": "运行看板",
       "subtitle": "跟进正在执行的工作，处理等待人工的任务。",
-      "toolbarHint": "点击列标题查看全部运行",
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
       "overviewRecords": "共 {n} 条执行记录",
@@ -277,7 +276,6 @@
       "refresh": "刷新",
       "allRuns": "全部运行",
       "usage": "用量统计",
-      "viewMoreCompleted": "在运行列表中查看更多 →",
       "loading": "加载中…",
       "loadFailed": "看板数据加载失败，请重试",
       "retry": "重试",
@@ -1274,6 +1272,9 @@
         "clear": "清除",
         "saved": "凭据已保存",
         "cleared": "凭据已清除",
+        "accountDeleteConfirm": "删除 API 账号「{alias}」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？",
+        "accountDeleted": "API 账号已删除",
+        "accountDeleteFailed": "删除 API 账号失败",
         "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
         "updatedAt": "最近更新：{time}"
       },
@@ -1403,7 +1404,7 @@
         "tabConfig": "配置",
         "tabHelp": "帮助",
         "nodeName": "节点名称",
-        "noAgents": "暂无 Agent,请先在「Agent 管理」创建",
+        "noAgents": "暂无 Agent，请先在智能体页创建",
         "emptyAgent": "（空 · 不指定 Agent）",
         "agentProfileHint": "可选择工作区中的任意 Agent，也可留空。",
         "staleBannerTitle": "stale 引用",
@@ -1885,7 +1886,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "侧栏与首页打字机共用，最多 40 个字符；留空回退 Grasp。",
         "homeSubtitle": "首页副标题",
-        "homeSubtitlePlaceholder": "先说清，再动手",
+        "homeSubtitlePlaceholder": "我们应该做些什么？",
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
@@ -2109,7 +2110,7 @@
       "unsaved": "未保存",
       "saved": "已保存",
       "tabs": {
-        "files": "Agent 工作目录 ({n})",
+        "files": "工作目录 ({n})",
         "mcp": "MCP ({n})",
         "env": "环境变量 ({n})",
         "test": "对话测试",
@@ -2142,8 +2143,10 @@
         "manageClearSearch": "清空搜索",
         "renameViaManage": "重命名（前往管理）",
         "lockedHint": "工作流需要此 Agent，不能删除或重命名。",
-        "noSelection": "未选中 Agent。从左侧树选择，或打开 Agent 管理。",
-        "metaRenameHint": "名称请在 Agent 管理中重命名。此处不可编辑身份名称。"
+        "contextRename": "重命名",
+        "contextDelete": "删除",
+        "noSelection": "未选中 Agent。从左侧列表选择。",
+        "metaRenameHint": "名称请在左侧列表右键重命名。此处不可编辑身份名称。"
       },
       "explorer": {
         "title": "资源管理器",
@@ -2995,7 +2998,7 @@
         "selected": "已选 {n} 个",
         "manage": "管理仓库",
         "inherit": "沿用默认配置",
-        "inheritHint": "继承「Agent 默认配置」中选中的仓库权限",
+        "inheritHint": "继承「默认配置」中选中的仓库权限",
         "inheritedEmpty": "默认配置还没有选择仓库，当前不会注入任何仓库级凭据。",
         "loadFailed": "仓库列表加载失败",
         "retry": "重试",
@@ -3019,12 +3022,9 @@
       },
       "gitCredentials": {
         "title": "Git 授权",
-        "hint": "可添加多个已保存的授权，并设置首选。",
         "add": "添加 Git 授权",
         "empty": "尚未添加 Git 授权",
         "noneAvailable": "没有可添加的 Git 授权",
-        "preferred": "首选",
-        "setPreferred": "设为首选",
         "remove": "移除",
         "options": "配置范围",
         "scope": "适用站点或仓库",
@@ -3034,14 +3034,12 @@
         "hosts": "SSH 主机校验",
         "hostsNone": "不指定已保存的主机校验",
         "unavailable": "授权不可用，请移除或在凭据页恢复。",
-        "preferredMissing": "请选择一条可用的首选授权。",
         "inherited": "使用工作区默认授权",
         "legacy": "当前使用原有授权",
         "manage": "管理凭据",
         "help": "Git 配置帮助",
         "loading": "正在加载授权…",
-        "retry": "重试",
-        "allStaged": "所选授权均可在沙箱中使用。"
+        "retry": "重试"
       }
     },
     "runLaunch": {
@@ -3269,6 +3267,7 @@
       "confirmFlowDialogDiscardDraft": "未发送的草稿将被丢弃。",
       "confirmFlowDialogDiscardBoth": "未保存的编辑和未发送的草稿将被丢弃。",
       "confirmFlowDialogConfirm": "确认流转",
+      "confirmFlowDialogDone": "已流转",
       "sandboxBusy": "沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。",
       "abortAndConfirm": "中止当前回合并确认",
       "sandboxOrphanBanner": "沙箱中还有一个平台不再跟踪的回合{op}，沙箱还没结束。",
@@ -4540,6 +4539,15 @@
         "gitlab_https": "GitLab 令牌",
         "ssh": "SSH 密钥"
       },
+      "modelSelect": {
+        "label": "模型",
+        "placeholder": "选择模型",
+        "search": "搜索模型",
+        "empty": "当前 Agent 还没有可用模型",
+        "noMatch": "没有匹配的模型",
+        "unavailable": "不可用",
+        "reset": "所选模型已不在配置中，已改回主模型"
+      },
       "agentSelect": {
         "placeholder": "选择 Agent",
         "search": "搜索 Agent 或 CLI",
@@ -4612,7 +4620,8 @@
         "unknown": "沙箱启动失败或已被销毁。",
         "retry": "重新启动",
         "logs": "查看沙箱",
-        "edit": "修改仓库配置"
+        "edit": "修改仓库配置",
+        "editRepo": "修改 {name}"
       },
       "chat": {
         "placeholder": "给 {agent} 发消息，Enter 发送，Shift+Enter 换行",
@@ -4626,6 +4635,7 @@
         "generating": "正在生成…",
         "waitingSandbox": "沙箱就绪后开始执行",
         "empty": "{agent} 已就绪，开始对话吧",
+        "reposFrozen": "这些仓库在启动时已经固定，这次会话里不能增删。",
         "imagesOnly": "（附件）",
         "plan": "计划"
       },
@@ -4657,7 +4667,8 @@
         "branch": "分支",
         "access": "访问方式",
         "remoteDefault": "远端默认分支",
-        "snapshotHint": "仓库配置在会话启动时固定，之后修改需要重新启动会话才会生效。",
+        "dir": "目录名",
+        "snapshotHint": "这些仓库配置在启动时已经固定，这次会话不能增删仓库。重新启动仍使用这份快照；之后修改仓库登记不会写回这次会话，要用新登记请新开一次会话。",
         "vars": "环境变量",
         "hint": "只显示变量名和来源，不显示值。",
         "all": "全部",
@@ -4676,12 +4687,17 @@
         "session_error": "沙箱不可用，请重新启动会话",
         "content_required": "消息不能为空",
         "agent_not_found": "Agent 不存在",
+        "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
+        "model_unavailable": "所选模型已不可用",
         "project_not_found": "仓库不存在",
         "name_required": "请填写仓库名称",
         "name_too_long": "仓库名称最长 80 个字",
         "name_taken": "已有同名仓库",
         "repo_url_invalid": "仓库地址格式不正确",
         "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
+        "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
+        "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
+        "env_key_conflict": "变量 {key} 在仓库 {repos} 中冲突，请修改后再启动。",
         "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
         "git_type_invalid": "不支持的访问方式",
         "env_key_invalid": "变量名格式不正确",

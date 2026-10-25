@@ -4,10 +4,12 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createI18n } from 'vue-i18n'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnectionBody, ToolCapability } from '@/lib/api/api'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 
-const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn() }))
+const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn(), cliModels: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: { listModelConfigurations: mocks.configurations, listModelConnections: mocks.connections, listCredentials: mocks.credentials, listToolCapabilities: mocks.capabilities, createModelConfiguration: mocks.create, updateModelConfiguration: mocks.update, deleteModelConfiguration: mocks.remove, updateModelConnection: mocks.updateConnection } }))
+vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: (...args: unknown[]) => mocks.cliModels(...args) }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ success: mocks.success }) }))
 
 const platformKey: CredentialItem = { id: 'cursor-key', type: 'ai', name: 'Team Cursor account', purpose: 'tool_auth', toolId: 'cursor', configured: true, masked: 'cu-…1234' }
@@ -21,15 +23,16 @@ const capabilities: ToolCapability[] = [
 ]
 let services: ModelConnection[]
 
-function setup() {
+function setup(options: { hoverInk?: boolean } = {}) {
   return mount(ModelConfigurationManager, {
     global: {
       plugins: [createI18n({ legacy: false, locale: 'en', messages: { en: {} } })],
+      ...(options.hoverInk ? { directives: { 'hover-ink': vHoverInk } } : {}),
       stubs: {
         Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
-          props: { modelValue: String, backend: String }, emits: ['update:modelValue'],
-          template: '<select data-testid="platform-model" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option></select>',
+          props: { modelValue: String, backend: String, hideReset: Boolean, excludeIds: { type: Array, default: () => [] } }, emits: ['update:modelValue'],
+          template: '<select data-testid="platform-model" :data-hide-reset="String(!!hideReset)" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option><option value="platform-model-v2">Second</option></select>',
         }),
       },
     },
@@ -75,6 +78,7 @@ beforeEach(() => {
   mocks.create.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'created', ...body, revision: 1 }))
   mocks.update.mockImplementation(async (id: string, body: Record<string, unknown>) => ({ id, ...body, revision: 2 }))
   mocks.remove.mockResolvedValue({ status: 'ok' })
+  mocks.cliModels.mockResolvedValue([])
   mocks.updateConnection.mockImplementation(async (id: string, body: ModelConnectionBody) => {
     const updated = { ...services.find((item) => item.id === id)!, ...body, revision: 2 }
     services = services.map((item) => item.id === id ? updated : item)
@@ -325,5 +329,154 @@ describe('ModelConfigurationManager', () => {
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     confirm.mockRestore()
     wrapper.unmount()
+  })
+
+  it('adds and removes an auxiliary model and rejects a duplicate of the primary', async () => {
+    services = [{ ...service, models: [...service.models, { id: 'vendor/aux', source: 'manual' }] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, service.models[0]!.id)
+    expect(wrapper.text()).toContain('Primary model')
+    expect(wrapper.text()).not.toContain('Set as primary')
+    expect(wrapper.text()).not.toContain('Restore automatic')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-configuration-aux-select-0"] [data-test="app-select-trigger"]').text()).toContain('vendor/aux')
+    expect(wrapper.get('[data-testid="model-configuration-add-model"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="model-configuration-aux-remove-0"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const aux = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    await aux.get('[data-test="app-select-trigger"]').trigger('click')
+    await aux.get('[data-test="app-select-search"]').setValue(service.models[0]!.id)
+    await aux.get('[data-test="app-select-custom"]').trigger('click')
+    expect(wrapper.text()).toContain('Each model can only be selected once')
+    expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="model-configuration-aux-remove-0"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      binding: { kind: 'connection', connectionId: service.id, modelId: 'vendor/original/model', auxiliaryModelIds: ['vendor/aux'] },
+    }))
+    wrapper.unmount()
+  })
+
+  it('clears auxiliary models when the credential changes and does not move a cleared primary into the list', async () => {
+    services = [
+      { ...service, models: [...service.models, { id: 'vendor/aux', source: 'manual' }] },
+      { ...structuredClone(service), id: 'other-service', name: 'Other compatible API', models: [{ id: 'other/model', source: 'manual' }] },
+    ]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, service.models[0]!.id)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await chooseCredential(wrapper, 'connection:other-service')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="model-configuration-model-id"] [data-test="app-select-trigger"]').text()).not.toContain('vendor/original/model')
+    wrapper.unmount()
+  })
+
+  it('selects automatic in the primary slot without moving the previous model into auxiliary', async () => {
+    mocks.cliModels.mockResolvedValue([
+      { id: 'platform-model-v1', name: 'Platform model', vendor: 'cursor' },
+      { id: 'platform-model-v2', name: 'Second', vendor: 'xai' },
+    ])
+    const wrapper = setup()
+    await openStepTwo(wrapper)
+    await chooseCredential(wrapper, `platform:${platformKey.id}`)
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    const picker = wrapper.get('[data-testid="platform-model"]')
+    expect(picker.attributes('data-hide-reset')).toBe('true')
+    await picker.setValue('platform-model-v1')
+    await picker.setValue('')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend: 'cursor', binding: { kind: 'platform', credentialId: platformKey.id }, state: 'active' })
+    wrapper.unmount()
+  })
+
+  it('shows the primary model and the auxiliary count without role marks in the list', async () => {
+    mocks.configurations.mockResolvedValue({ items: [{ ...configuration, binding: { ...configuration.binding, auxiliaryModelIds: ['vendor/a', 'vendor/b'] } }] })
+    const wrapper = setup()
+    await flushPromises()
+    const row = wrapper.get('[data-testid="model-configuration-saved"]')
+    expect(row.text()).toContain('vendor/original/model')
+    expect(row.text()).toContain('2 more auxiliary models')
+    expect(row.text()).not.toContain('Primary model')
+    wrapper.unmount()
+  })
+
+  it('keeps an empty name on step one and does not hover the disabled next button', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const wrapper = setup({ hoverInk: true })
+    try {
+      await flushPromises()
+      await wrapper.get('[data-testid="model-configuration-add"]').trigger('click')
+      const next = wrapper.get('[data-testid="model-configuration-next"]')
+      const cancel = wrapper.get('[data-testid="model-configuration-back"]')
+      expect(next.attributes('disabled')).toBeDefined()
+      expect(next.classes()).toContain('text-white')
+      expect(next.classes()).toContain('bg-accent')
+      expect(next.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(next.findComponent({ name: 'Icon' }).props()).toMatchObject({ name: 'arrow-right', size: 16 })
+      expect(cancel.findComponent({ name: 'Icon' }).props()).toMatchObject({ name: 'close', size: 16 })
+      expect(cancel.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(cancel.classes().join(' ')).not.toMatch(/hover:bg-/)
+      expect(cancel.classes()).toContain('enabled:hover:text-txt')
+
+      next.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 8, clientY: 8, pointerType: 'mouse', bubbles: true }))
+      expect(next.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(next.element.classList.contains('is-leave-ink')).toBe(false)
+      expect(next.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      cancel.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 4, clientY: 4, pointerType: 'mouse', bubbles: true }))
+      expect(cancel.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(cancel.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+
+      await next.trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('   ')
+      expect(wrapper.get('[data-testid="model-configuration-next"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('Named model')
+      const ready = wrapper.get('[data-testid="model-configuration-next"]')
+      expect(ready.attributes('disabled')).toBeUndefined()
+      expect(ready.classes()).toContain('text-white')
+      const ink = ready.element.style.getPropertyValue('--hover-ink-color')
+      expect(ink).toBe('rgb(var(--c-accent-hover))')
+      expect(ink).not.toContain('--c-elevated')
+      Object.defineProperty(ready.element, 'getBoundingClientRect', {
+        configurable: true,
+        value: () => ({ left: 0, top: 0, width: 96, height: 36, right: 96, bottom: 36, x: 0, y: 0, toJSON: () => ({}) }),
+      })
+      ready.element.dispatchEvent(new PointerEvent('pointerenter', { clientX: 10, clientY: 10, pointerType: 'mouse', bubbles: true }))
+      expect(ready.element.classList.contains('is-hover-ink')).toBe(true)
+      expect(ready.classes()).toContain('text-white')
+
+      await wrapper.get('[data-testid="model-configuration-name"]').setValue('  ')
+      const blocked = wrapper.get('[data-testid="model-configuration-next"]')
+      expect(blocked.attributes('disabled')).toBeDefined()
+      expect(blocked.element.classList.contains('is-hover-ink')).toBe(false)
+      expect(blocked.element.classList.contains('is-ink-suppressed')).toBe(true)
+      expect(blocked.element.style.getPropertyValue('--hover-ink-color')).toBe('')
+      expect(blocked.element.style.getPropertyValue('--ink-d')).toBe('0px')
+      await blocked.trigger('click')
+      expect(wrapper.get('[data-testid="model-configuration-form"]').attributes('data-step')).toBe('1')
+    } finally {
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+    }
   })
 })

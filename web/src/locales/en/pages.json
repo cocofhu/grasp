@@ -19,7 +19,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroSubtitle": "Clarify first, then act",
+      "heroSubtitle": "What should we do?",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -269,7 +269,6 @@
     "board": {
       "title": "Run board",
       "subtitle": "Follow active work and handle tasks waiting for human input.",
-      "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
       "overviewRecords": "{n} execution records",
@@ -277,7 +276,6 @@
       "refresh": "Refresh",
       "allRuns": "All runs",
       "usage": "Usage",
-      "viewMoreCompleted": "View more in run list →",
       "loading": "Loading…",
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
@@ -1274,6 +1272,9 @@
         "clear": "Clear",
         "saved": "Credential saved",
         "cleared": "Credential cleared",
+        "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
+        "accountDeleted": "API account deleted",
+        "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
@@ -1885,7 +1886,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Clarify first, then act",
+        "homeSubtitlePlaceholder": "What should we do?",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
@@ -2142,8 +2143,10 @@
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",
@@ -3019,12 +3022,9 @@
       },
       "gitCredentials": {
         "title": "Git access",
-        "hint": "Add saved credentials and choose a preferred one.",
         "add": "Add Git credential",
         "empty": "No Git credentials added",
         "noneAvailable": "No more Git credentials available",
-        "preferred": "Preferred",
-        "setPreferred": "Set preferred",
         "remove": "Remove",
         "options": "Configure scope",
         "scope": "Site or repository",
@@ -3034,14 +3034,12 @@
         "hosts": "SSH host verification",
         "hostsNone": "No saved host verification",
         "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
-        "preferredMissing": "Choose an available preferred credential.",
         "inherited": "Using workspace defaults",
         "legacy": "Using existing authorization",
         "manage": "Manage credentials",
         "help": "Git setup help",
         "loading": "Loading credentials…",
-        "retry": "Retry",
-        "allStaged": "All selected credentials are available in the sandbox."
+        "retry": "Retry"
       }
     },
     "runLaunch": {
@@ -3269,6 +3267,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
@@ -4540,6 +4539,15 @@
         "gitlab_https": "GitLab token",
         "ssh": "SSH key"
       },
+      "modelSelect": {
+        "label": "Model",
+        "placeholder": "Choose a model",
+        "search": "Search models",
+        "empty": "This Agent has no available model",
+        "noMatch": "No matching model",
+        "unavailable": "Unavailable",
+        "reset": "That model is no longer in the configuration. The primary model is selected again."
+      },
       "agentSelect": {
         "placeholder": "Choose Agent",
         "search": "Search Agent or CLI",
@@ -4612,7 +4620,8 @@
         "unknown": "The sandbox failed to start or was destroyed.",
         "retry": "Restart",
         "logs": "Open sandbox",
-        "edit": "Edit repository"
+        "edit": "Edit repository",
+        "editRepo": "Edit {name}"
       },
       "chat": {
         "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
@@ -4626,6 +4635,7 @@
         "generating": "Generating…",
         "waitingSandbox": "Runs once the sandbox is ready",
         "empty": "{agent} is ready. Start chatting.",
+        "reposFrozen": "These repositories were frozen at launch and cannot be added or removed in this session.",
         "imagesOnly": "(attachments)",
         "plan": "Plan"
       },
@@ -4657,7 +4667,8 @@
         "branch": "Branch",
         "access": "Access",
         "remoteDefault": "Remote default branch",
-        "snapshotHint": "Repository settings are frozen when the session starts. Restart the session to pick up later changes.",
+        "dir": "Directory",
+        "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
         "vars": "Environment variables",
         "hint": "Only names and origins are shown, never values.",
         "all": "All",
@@ -4676,12 +4687,17 @@
         "session_error": "The sandbox is unavailable. Restart the session.",
         "content_required": "The message is empty",
         "agent_not_found": "Agent not found",
+        "model_not_in_configuration": "That model is not in this Agent's model configuration",
+        "model_unavailable": "That model is no longer available",
         "project_not_found": "Repository not found",
         "name_required": "Enter a repository name",
         "name_too_long": "Repository names are at most 80 characters",
         "name_taken": "A repository with this name already exists",
         "repo_url_invalid": "Invalid repository URL",
         "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
+        "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
+        "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
+        "env_key_conflict": "Variable {key} conflicts across repositories {repos}. Change it before starting.",
         "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
         "git_type_invalid": "Unsupported access mode",
         "env_key_invalid": "Invalid variable name",

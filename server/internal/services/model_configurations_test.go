@@ -188,6 +188,53 @@ func TestModelConfigurationFailsClosedAfterReferencesChange(t *testing.T) {
 	}
 }
 
+func TestModelConfigurationAuxiliaryModels(t *testing.T) {
+	connections, configurations, _, connection, _ := newModelConfigurationFixture(t)
+	connection.Models = append(connection.Models, modelrouting.Model{ID: "vendor/aux-b", Source: "manual"}, modelrouting.Model{ID: "vendor/aux-a", Source: "manual"})
+	updatedConnection, err := connections.Update(connection.ID, connection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, err := configurations.Create(modelrouting.Configuration{
+		Name: "With auxiliaries", Backend: "opencode",
+		Binding: modelrouting.Binding{Kind: "connection", ConnectionID: updatedConnection.ID, ModelID: " " + updatedConnection.Models[0].ID + " ", AuxiliaryModelIDs: []string{" vendor/aux-a ", "vendor/aux-b"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Binding.ModelID != updatedConnection.Models[0].ID || len(saved.Binding.AuxiliaryModelIDs) != 2 || saved.Binding.AuxiliaryModelIDs[0] != "vendor/aux-a" {
+		t.Fatalf("stored order: %+v", saved.Binding)
+	}
+	stored, err := configurations.Get(saved.ID)
+	if err != nil || len(stored.Binding.AuxiliaryModelIDs) != 2 {
+		t.Fatalf("read: %+v %v", stored.Binding, err)
+	}
+	for _, bad := range []modelrouting.Binding{
+		{Kind: "connection", ConnectionID: updatedConnection.ID, ModelID: updatedConnection.Models[0].ID, AuxiliaryModelIDs: []string{updatedConnection.Models[0].ID}},
+		{Kind: "connection", ConnectionID: updatedConnection.ID, ModelID: updatedConnection.Models[0].ID, AuxiliaryModelIDs: []string{"vendor/aux-a", "vendor/aux-a"}},
+		{Kind: "connection", ConnectionID: updatedConnection.ID, ModelID: updatedConnection.Models[0].ID, AuxiliaryModelIDs: []string{"missing/aux"}},
+		{Kind: "connection", ConnectionID: updatedConnection.ID, AuxiliaryModelIDs: []string{"vendor/aux-a"}},
+		{Kind: "connection", ConnectionID: updatedConnection.ID, ModelID: updatedConnection.Models[0].ID, AuxiliaryModelIDs: []string{" "}},
+	} {
+		if _, err := configurations.Create(modelrouting.Configuration{Name: "Bad", Backend: "opencode", Binding: bad}); !errors.Is(err, ErrModelConfigurationInvalid) {
+			t.Fatalf("accepted %+v: %v", bad, err)
+		}
+	}
+	credentials := NewCredentialService(configurations.db)
+	platform, err := credentials.Create(CredentialInput{Purpose: "tool_auth", ToolID: "cursor", Name: "Cursor", Value: "cursor-key"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	auto, err := configurations.Create(modelrouting.Configuration{Name: "Auto plus aux", Backend: "cursor", Binding: modelrouting.Binding{Kind: "platform", CredentialID: platform.ID, AuxiliaryModelIDs: []string{"composer-2.5"}}})
+	if err != nil || auto.Binding.ModelID != "" || len(auto.Binding.AuxiliaryModelIDs) != 1 {
+		t.Fatalf("platform auto with auxiliary: %+v %v", auto, err)
+	}
+	resolved, err := connections.Resolve("cursor", modelrouting.Binding{Kind: "configuration", ConfigurationID: auto.ID})
+	if err != nil || resolved.Binding.ModelID != "" || len(resolved.Binding.AuxiliaryModelIDs) != 1 || resolved.Binding.AuxiliaryModelIDs[0] != "composer-2.5" {
+		t.Fatalf("resolved primary stayed empty: %+v %v", resolved.Binding, err)
+	}
+}
+
 func TestModelConfigurationStorageErrors(t *testing.T) {
 	_, configurations, _, _, configuration := newModelConfigurationFixture(t)
 	sqlDB, err := configurations.db.DB()

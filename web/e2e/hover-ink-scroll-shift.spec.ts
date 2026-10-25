@@ -15,7 +15,7 @@ async function mockApi(page: Page) {
       return
     }
     const p = new URL(route.request().url()).pathname
-    if (p.includes('/gates')) {
+    if (p.includes('/pending-nodes')) {
       await route.fulfill({ json: { items: [], total: 0 } })
       return
     }

@@ -12,9 +12,10 @@ import (
 
 // GitBindings is the complete set of Git authorizations for an Agent.
 // An omitted or empty set grants no Git authorization.
+// preferredCredentialId from older saves is accepted and then discarded.
 type GitBindings struct {
 	Items                 []GitCredentialBinding `json:"items"`
-	PreferredCredentialID string                 `json:"preferredCredentialId,omitempty"`
+	PreferredCredentialID string                 `json:"-"`
 }
 
 // GitCredentialBinding stores references and a routing scope, never secrets.
@@ -29,11 +30,12 @@ var ErrGitBindings = errors.New("invalid Git bindings")
 
 // NormalizeGitBindings validates and copies the set without changing its order
 // or replacing missing credential references with another account.
+// A legacy preferred credential id is ignored and is not required.
 func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
 	if in == nil {
 		return &GitBindings{Items: []GitCredentialBinding{}}, nil
 	}
-	out := &GitBindings{Items: make([]GitCredentialBinding, 0, len(in.Items)), PreferredCredentialID: strings.TrimSpace(in.PreferredCredentialID)}
+	out := &GitBindings{Items: make([]GitCredentialBinding, 0, len(in.Items))}
 	seen := make(map[string]bool, len(in.Items))
 	for _, item := range in.Items {
 		item.CredentialID = strings.TrimSpace(item.CredentialID)
@@ -48,9 +50,6 @@ func NormalizeGitBindings(in *GitBindings) (*GitBindings, error) {
 		}
 		seen[item.CredentialID] = true
 		out.Items = append(out.Items, item)
-	}
-	if len(out.Items) > 0 && !seen[out.PreferredCredentialID] || len(out.Items) == 0 && out.PreferredCredentialID != "" {
-		return nil, fmt.Errorf("%w: preferred credential must belong to the selected set", ErrGitBindings)
 	}
 	return out, nil
 }

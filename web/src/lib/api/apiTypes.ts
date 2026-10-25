@@ -170,8 +170,8 @@ export interface AgentTemplate {
 export type ModelProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages'
 export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagent' | 'opus' | 'sonnet' | 'haiku', string>>
 export type ConcreteModelBinding =
-  | { kind: 'platform'; credentialId: string; modelId?: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
-  | { kind: 'connection'; connectionId: string; modelId: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
 export type ModelBinding = { kind: 'configuration'; configurationId: string }
 export interface ModelConfiguration {
   id: string
@@ -222,8 +222,6 @@ export interface AgentGitBinding {
 
 export interface AgentGitBindings {
   items: AgentGitBinding[]
-  /** Required for a nonempty list and must refer to one of its items. */
-  preferredCredentialId?: string
 }
 
 export interface Agent {
@@ -663,15 +661,32 @@ export interface SoloSandboxInfo {
   createdAt?: string
 }
 
+/** One repository frozen into a Solo session at launch. */
+export interface SessionRepo {
+  position: number
+  projectId: string
+  name: string
+  repoUrl: string
+  repoDirName: string
+  branch?: string
+  gitCredentialType?: GitCredentialType | string
+  gitCredentialId?: string
+  sshHostsCredentialId?: string
+  env?: Record<string, string>
+  credentialBindings?: Record<string, string | null>
+}
+
 export interface SoloSession {
   id: string
   userId: string
   title: string
   agentName: string
   projectId?: string
-  /** Project config frozen when the session started. */
+  /** Project config frozen when a single-repo session started. */
   project?: Project
   branch?: string
+  /** Ordered repositories frozen at launch. Empty means an empty workspace. */
+  repos?: SessionRepo[]
   sandboxId?: number
   status: SoloStatus
   error?: string
@@ -694,10 +709,19 @@ export interface SoloSessionList {
   maxSandboxes: number
 }
 
+export interface SoloRepoChoice {
+  projectId: string
+  branch?: string
+}
+
 export interface SoloCreateBody {
   agentName: string
   projectId?: string
   branch?: string
+  /** Ordered selection. An empty list starts an empty workspace. */
+  repos?: SoloRepoChoice[]
+  /** Empty follows the Agent configuration's primary model. */
+  initialModelId?: string
   title?: string
   text?: string
   images?: ClarifyImage[]

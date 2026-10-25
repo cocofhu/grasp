@@ -45,7 +45,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	list := h.do(http.MethodGet, "/api/runs/"+runID+"/gates/gate/primary-artifacts", nil)
+	list := h.do(http.MethodGet, "/api/runs/"+runID+"/nodes/gate/primary-artifacts", nil)
 	if list.Code != 200 {
 		t.Fatalf("list: %d %s", list.Code, list.Body.String())
 	}
@@ -59,7 +59,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 	}
 
 	updated := `{"summary":"http-edited","findings":[{"title":"f1","detail":"d2"}]}`
-	w := h.do(http.MethodPut, "/api/runs/"+runID+"/gates/gate/artifacts/research.json", map[string]any{
+	w := h.do(http.MethodPut, "/api/runs/"+runID+"/nodes/gate/artifacts/research.json", map[string]any{
 		"content": updated,
 	})
 	if w.Code != 200 {
@@ -85,7 +85,7 @@ func TestSaveGateArtifactHTTP(t *testing.T) {
 	}
 
 	// Non-primary rejected
-	bad := h.do(http.MethodPut, "/api/runs/"+runID+"/gates/gate/artifacts/secret.md", map[string]any{
+	bad := h.do(http.MethodPut, "/api/runs/"+runID+"/nodes/gate/artifacts/secret.md", map[string]any{
 		"content": "x",
 	})
 	if bad.Code != 400 {
@@ -118,7 +118,7 @@ func TestSaveAnnotationArtifactHTTP(t *testing.T) {
 		Actions: []models.GateAction{{ID: "pass", Label: "通过"}},
 	})
 
-	w := h.do(http.MethodPut, "/api/runs/"+runID+"/gates/gate/annotation-artifact", map[string]any{
+	w := h.do(http.MethodPut, "/api/runs/"+runID+"/nodes/gate/annotation-artifact", map[string]any{
 		"annotations": []map[string]any{
 			{
 				"seq": 1, "selector": "h1.title", "comment": "字号过大",
@@ -150,7 +150,7 @@ func TestSaveAnnotationArtifactHTTP(t *testing.T) {
 	}
 
 	// Empty annotations clears delivery (f4 dirty invalidate).
-	cleared := h.do(http.MethodPut, "/api/runs/"+runID+"/gates/gate/annotation-artifact", map[string]any{
+	cleared := h.do(http.MethodPut, "/api/runs/"+runID+"/nodes/gate/annotation-artifact", map[string]any{
 		"annotations": []any{},
 	})
 	if cleared.Code != 200 {

@@ -13,6 +13,19 @@ mkdirSync(SHOT, { recursive: true })
 
 const NOW = '2026-09-07T02:00:00Z'
 
+function unfinishedRun(item: Record<string, unknown>) {
+  return {
+    id: item.runId,
+    workflowId: item.workflowId,
+    workflowName: item.workflowName,
+    title: item.runTitle,
+    status: 'waiting_human',
+    startedAt: NOW,
+    lastActivityAt: NOW,
+    currentNode: { id: item.nodeId, name: item.label, iteration: item.iteration ?? 1 },
+  }
+}
+
 type PortsState = { ports: Array<Record<string, unknown>> }
 
 function clarifyItem() {
@@ -58,11 +71,18 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
       return
     }
     const req = route.request()
-    const url = new URL(req.url())
-    const path = url.pathname
+    const path = new URL(req.url()).pathname
     const method = req.method()
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/runs' || path === '/api/runs/')) {
+      const status = new URL(req.url()).searchParams.get('status') ?? ''
+      const unfinished = ['queued', 'running', 'waiting_human'].some((s) => status.split(',').includes(s))
+      const items = unfinished ? [unfinishedRun(opts.item)] : []
+      await route.fulfill({ json: { items, total: items.length, page: 1, pageSize: 50, hasMore: false } })
+      return
+    }
+
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -86,9 +106,8 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/inbox-context/)) {
-      const runId = path.split('/')[3]
-      const nodeId = url.searchParams.get('nodeId') || ''
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/)) {
+      const { runId, nodeId } = pathRunNode(path)
       if (runId === 'run-clarify-empty') {
         await route.fulfill({
           json: {
@@ -200,11 +219,25 @@ async function mockApis(page: Page, opts: { item: Record<string, unknown>; ports
   })
 }
 
+/** `/api/runs/:runId/nodes/:nodeId/...` — node id is a path segment. */
+function pathRunNode(pathname: string): { runId: string; nodeId: string } {
+  const parts = pathname.split('/')
+  let nodeId = parts[5] || ''
+  try {
+    nodeId = decodeURIComponent(nodeId)
+  } catch {
+    /* keep the raw segment */
+  }
+  return { runId: parts[3] || '', nodeId }
+}
+
 async function openGates(page: Page, opts: { item: Record<string, unknown>; ports: PortsState }) {
   await installWorkspaceApiDefaults(page)
   await mockApis(page, opts)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/workspace-config.html?view=/gates')
+  const runId = encodeURIComponent(String(opts.item.runId || ''))
+  const nodeId = encodeURIComponent(String(opts.item.nodeId || ''))
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent(`/runs/${runId}/nodes/${nodeId}`)}`)
   await expect(page.getByTestId('nav-pending-row').first()).toBeVisible({ timeout: 15_000 })
 }
 
@@ -214,7 +247,7 @@ test.describe('Clarify empty app preview', () => {
 
     const row = page.getByTestId('nav-pending-row').filter({ hasText: '澄清空预览验收' })
     await expect(row).toHaveAttribute('title', '澄清空预览验收 · 需求澄清')
-    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--chat/)
+    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     await row.click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
     await page.getByTestId('conversation-panel-toggle').click()
@@ -277,7 +310,7 @@ test.describe('Clarify empty app preview', () => {
 
     const row = page.getByTestId('nav-pending-row').filter({ hasText: '预览复审空列表仍显示 Tab' })
     await expect(row).toHaveAttribute('title', '预览复审空列表仍显示 Tab · 实现')
-    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+    await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     await row.click()
     await expect(page.getByTestId('conversation-artifact-panel')).toBeHidden()
     await page.getByTestId('conversation-resource-toggle').click()

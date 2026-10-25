@@ -7,7 +7,7 @@ description: 沙箱内 git clone/push 与合并请求（GitLab glab / GitHub gh�
 
 沙箱使用 Agent 显式选择或开启继承的 Git 授权。GitHub / GitLab 凭据的 Host 与 Token 一起配置，默认是官方站点；自建站点使用凭据中保存的 Host。Token、SSH 私钥与 known_hosts 通过受限文件注入，由 Git credential helper 和 gh/glab 配置按站点或仓库范围选择，不要求全局 Token 环境变量或独立的 GitLab URL。
 
-同一站点的多个账号按仓库范围及首选身份选择；认证失败不会换用另一账号。SSH 必须配置 known_hosts，禁止 accept-new。
+同一站点的多个账号按仓库范围选择，范围同样具体时使用列表里先出现的授权；认证失败不会换用另一账号。SSH 必须配置 known_hosts，禁止 accept-new。
 
 Gitea/Bitbucket 等 HTTPS 不支持 Token 注入,请改用 SSH。
 

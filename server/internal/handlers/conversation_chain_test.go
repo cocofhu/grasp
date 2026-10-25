@@ -370,3 +370,44 @@ func TestConversationChainUntil(t *testing.T) {
 		t.Fatalf("unknown run: %d", w.Code)
 	}
 }
+
+// Confirm can return while the run is still waiting_human and the clarify
+// visit is still waiting_human, after a later implement visit is already
+// running. currentNode follows that running visit.
+func TestConversationChainCurrentPrefersNewerRunning(t *testing.T) {
+	h := newHarness(t)
+	h.h.Eng.Halt()
+	clarify := &models.AgentCapabilities{Interaction: models.InteractionClarify, Tools: []string{models.ToolAskQuestion}}
+	impl := &models.AgentCapabilities{Interaction: models.InteractionAuto, Review: true}
+	g := models.Graph{Nodes: []models.Node{
+		{ID: "clarify", Type: "agent", Label: "需求澄清", Caps: clarify},
+		{ID: "impl", Type: "agent", Label: "实现", Caps: impl},
+	}}
+	now := time.Now()
+	h.db.Create(&models.Run{ID: "gap", Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: now})
+	h.db.Create(&models.StateRun{RunID: "gap", NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+	h.db.Create(&models.StateRun{RunID: "gap", NodeID: "impl", NodeType: "agent", Iteration: 1, Status: "running", StartedAt: &now})
+	h.db.Create(&models.Run{ID: "stay", Status: "waiting_human", WorkflowID: "wf", Graph: g, StartedAt: now})
+	h.db.Create(&models.StateRun{RunID: "stay", NodeID: "clarify", NodeType: "agent", Iteration: 1, Status: "waiting_human", StartedAt: &now})
+
+	get := func(id string) chainResp {
+		t.Helper()
+		w := h.do("GET", "/api/runs/"+id+"/conversation-chain", nil)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", id, w.Code, w.Body.String())
+		}
+		var out chainResp
+		if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	cn := get("gap").CurrentNode
+	if cn["id"] != "impl" || cn["name"] != "实现" || cn["mode"] != "auto" || cn["kind"] != "agent" || cn["state"] != "running" {
+		t.Fatalf("newer running visit: %v", cn)
+	}
+	stay := get("stay").CurrentNode
+	if stay["id"] != "clarify" || stay["name"] != "需求澄清" || stay["mode"] != "manual" || stay["kind"] != "clarify" {
+		t.Fatalf("clarify still waiting: %v", stay)
+	}
+}

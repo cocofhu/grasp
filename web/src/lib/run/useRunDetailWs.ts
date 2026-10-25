@@ -10,6 +10,7 @@ import {
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
+import { applySidebarEnter, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
@@ -124,13 +125,18 @@ export function useRunDetailWs(opts: {
       liveBusy[nodeId] = !!snap.busy
       dialoguePlatformBusy[nodeId] = !!snap.busy
       if (snap.busy) busyNodes.push(nodeId)
-      const frame = {
+      const frame: Record<string, unknown> = {
         event: 'queue_state',
         nodeId,
         waiting: snap.waiting ?? 0,
         items: snap.items ?? [],
         busy: !!snap.busy,
         activeItem: snap.activeItem,
+      }
+      if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+        frame.sandboxBusy = !!snap.sandboxBusy
+        frame.sandboxDesynced = !!snap.sandboxDesynced
+        if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
       }
       if (selClarify.value?.nodeId === nodeId) {
         const ok = reviewChatRef.value?.applyReviewFrame?.(frame)
@@ -425,6 +431,11 @@ export function useRunDetailWs(opts: {
       } catch {
         return
       }
+      if (m.type === 'node_enter') {
+        applySidebarEnter(runId.value, m, run.value?.nodes)
+        return
+      }
+      if (m.type === 'status') noteSidebarRunStatus(runId.value, m.status)
       if (m.type === 'snapshot' && m.run?.reactSessions) {
         run.value = { ...run.value, reactSessions: m.run.reactSessions }
         // queue_state → seed → flush → live (parity with Inbox g4.2).

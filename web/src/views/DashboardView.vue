@@ -27,7 +27,7 @@ import type { Workflow } from '@/lib/shared/types'
 import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
 import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
 import SoloProjectSelect from '@/components/solo/SoloProjectSelect.vue'
-import SoloBranchChip from '@/components/solo/SoloBranchChip.vue'
+import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
 import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
 import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
@@ -85,9 +85,10 @@ const solo = useSoloLauncher()
 const soloAgents = solo.agents
 const soloProjects = solo.projects
 const soloAgentName = solo.agentName
-const soloProjectId = solo.projectId
-const soloBranch = solo.branch
-const soloProject = solo.project
+const soloProjectIds = solo.projectIds
+const soloBranches = solo.branches
+const soloInitialModelId = solo.initialModelId
+const soloModelChoices = solo.modelChoices
 const soloLimitOpen = solo.limitOpen
 const projectDrawerOpen = ref(false)
 let soloLoaded = false
@@ -832,16 +833,17 @@ onBeforeUnmount(() => {
                   :disabled="solo.creating.value"
                 />
                 <SoloProjectSelect
-                  v-model="soloProjectId"
+                  v-model="soloProjectIds"
+                  :branches="soloBranches"
                   :projects="soloProjects"
                   :loading="solo.loading.value"
                   :disabled="solo.creating.value"
+                  @update:branch="solo.setProjectBranch"
                   @create="projectDrawerOpen = true"
                 />
-                <SoloBranchChip
-                  v-if="soloProject"
-                  v-model="soloBranch"
-                  :default-branch="soloProject.defaultBranch"
+                <SoloModelSelect
+                  v-model="soloInitialModelId"
+                  :models="soloModelChoices"
                   :disabled="solo.creating.value"
                 />
               </div>
@@ -867,8 +869,8 @@ onBeforeUnmount(() => {
           v-if="homeMode === 'solo'"
           key="solo"
           :projects="soloProjects"
-          :project-id="soloProjectId"
-          @pick-project="soloProjectId = $event"
+          :project-ids="soloProjectIds"
+          @toggle-project="solo.toggleProject"
           @new-project="projectDrawerOpen = true"
         />
 

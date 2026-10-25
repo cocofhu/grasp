@@ -34,7 +34,7 @@ func TestRunInboxContextGate(t *testing.T) {
 		Content: strings.Repeat("x", 5000), SizeBytes: 5000,
 	})
 
-	w := h.do("GET", "/api/runs/ic-gate/inbox-context?nodeId=gate&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-gate/nodes/gate/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("gate inbox-context: %d %s", w.Code, w.Body)
 	}
@@ -64,12 +64,15 @@ func TestRunInboxContextClarify(t *testing.T) {
 	now := time.Now()
 	h.db.Create(&models.Run{
 		ID: "ic-clarify", Status: "waiting_human", StartedAt: now,
-		Graph: models.Graph{Nodes: []models.Node{
-			{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研"},
-			{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清", Config: map[string]any{
-				"prompt": "upstream {{nodes.research.outputs.research}}",
-			}},
-		}},
+		Graph: models.Graph{
+			Nodes: []models.Node{
+				{ID: "research", Type: "agent", Caps: testReviewCaps, Label: "调研"},
+				{ID: "react", Type: "agent", Caps: testClarifyCaps, Label: "需求澄清", Config: map[string]any{
+					"prompt": "upstream {{nodes.research.outputs.research}}",
+				}},
+			},
+			Edges: []models.Edge{{ID: "e-react-out", Source: "react", Target: "research"}},
+		},
 	})
 	h.db.Create(&models.ReactConversation{
 		RunID: "ic-clarify", NodeID: "react", Iteration: 1, Done: false,
@@ -86,14 +89,14 @@ func TestRunInboxContextClarify(t *testing.T) {
 		Content: strings.Repeat("x", 5000), SizeBytes: 5000,
 	})
 
-	w := h.do("GET", "/api/runs/ic-clarify/inbox-context?nodeId=react&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-clarify/nodes/react/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("clarify inbox-context: %d %s", w.Code, w.Body)
 	}
 	body := w.Body.String()
 	for _, want := range []string{
 		`"type":"clarify"`, `"status"`, `"clarify"`, "question?", "需求澄清",
-		`"nodes"`, `"artifacts"`, `"nodeExecutions"`, "research.json",
+		`"nodes"`, `"edges"`, "e-react-out", `"artifacts"`, `"nodeExecutions"`, "research.json",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("clarify response missing %q in %s", want, body)
@@ -128,7 +131,7 @@ func TestRunInboxContextNodeStatuses(t *testing.T) {
 	h.db.Create(&models.StateRun{RunID: "ic-status", NodeID: "react", Iteration: 1, Status: "completed"})
 	h.db.Create(&models.StateRun{RunID: "ic-status", NodeID: "react", Iteration: 2, Status: "waiting_human"})
 
-	w := h.do("GET", "/api/runs/ic-status/inbox-context?nodeId=react&iteration=2", nil)
+	w := h.do("GET", "/api/runs/ic-status/nodes/react/context?iteration=2", nil)
 	if w.Code != 200 {
 		t.Fatalf("inbox-context: %d %s", w.Code, w.Body)
 	}
@@ -174,7 +177,7 @@ func TestRunInboxContextClarifyResearchReview(t *testing.T) {
 		Content: `{"summary":"root cause"}`, SizeBytes: 24,
 	})
 
-	w := h.do("GET", "/api/runs/ic-research/inbox-context?nodeId=research_1&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-research/nodes/research_1/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("research clarify inbox-context: %d %s", w.Code, w.Body)
 	}
@@ -224,7 +227,7 @@ func TestRunInboxContextKeepsPerExecutionJSON(t *testing.T) {
 		Content: `{"summary":"LIVE"}`, SizeBytes: 18,
 	})
 
-	w := h.do("GET", "/api/runs/ic-iter-json/inbox-context?nodeId=test&iteration=2", nil)
+	w := h.do("GET", "/api/runs/ic-iter-json/nodes/test/context?iteration=2", nil)
 	if w.Code != 200 {
 		t.Fatalf("inbox-context: %d %s", w.Code, w.Body)
 	}
@@ -277,7 +280,7 @@ func TestRunInboxContextStartingClarify(t *testing.T) {
 		RunID: "ic-starting", NodeID: "ap", NodeType: "agent", Iteration: 1, Status: "running",
 	})
 
-	w := h.do("GET", "/api/runs/ic-starting/inbox-context?nodeId=ap&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-starting/nodes/ap/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("starting inbox-context: %d %s", w.Code, w.Body)
 	}
@@ -296,23 +299,23 @@ func TestRunInboxContextNotFound(t *testing.T) {
 	h := newHarness(t)
 	h.db.Create(&models.Run{ID: "ic-none", Status: "waiting_human", StartedAt: time.Now(), Graph: models.Graph{}})
 
-	w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-none/nodes/x/context?iteration=1", nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pending":false`) {
 		t.Fatalf("no pending should leave: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do("GET", "/api/runs/missing-run/inbox-context?nodeId=x&iteration=1", nil); w.Code != 404 {
+	if w := h.do("GET", "/api/runs/missing-run/nodes/x/context?iteration=1", nil); w.Code != 404 {
 		t.Fatalf("missing run: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x", nil); w.Code != 400 {
+	if w := h.do("GET", "/api/runs/ic-none/nodes/x/context", nil); w.Code != 400 {
 		t.Fatalf("missing iteration: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/runs/ic-none/inbox-context?iteration=1", nil); w.Code != 400 {
-		t.Fatalf("missing nodeId: %d", w.Code)
+	if w := h.do("GET", "/api/runs/ic-none/inbox-context?iteration=1", nil); w.Code != 404 {
+		t.Fatalf("retired inbox-context: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=0", nil); w.Code != 400 {
+	if w := h.do("GET", "/api/runs/ic-none/nodes/x/context?iteration=0", nil); w.Code != 400 {
 		t.Fatalf("iteration 0: %d", w.Code)
 	}
-	if w := h.do("GET", "/api/runs/ic-none/inbox-context?nodeId=x&iteration=abc", nil); w.Code != 400 {
+	if w := h.do("GET", "/api/runs/ic-none/nodes/x/context?iteration=abc", nil); w.Code != 400 {
 		t.Fatalf("bad iteration: %d", w.Code)
 	}
 }
@@ -325,7 +328,7 @@ func TestRunInboxContextIterationMismatch(t *testing.T) {
 	}})
 	h.db.Create(&models.Gate{RunID: "ic-iter", NodeID: "gate", Iteration: 2, Resolved: false, RequestedAt: now})
 
-	w := h.do("GET", "/api/runs/ic-iter/inbox-context?nodeId=gate&iteration=1", nil)
+	w := h.do("GET", "/api/runs/ic-iter/nodes/gate/context?iteration=1", nil)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"pending":false`) {
 		t.Fatalf("iteration mismatch should leave: %d %s", w.Code, w.Body.String())
 	}

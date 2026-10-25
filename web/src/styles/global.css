@@ -250,6 +250,18 @@ html:not(.light) *:hover::-webkit-scrollbar,
 html:not(.light) *.is-scrolling::-webkit-scrollbar {
   background: rgb(var(--c-base));
 }
+/* Board columns inherit scrollbar-color from ancestors (the settings scroller
+ * sets it). Chromium >= 121 then ignores every ::-webkit-scrollbar rule and
+ * paints the native wide bar. On engines that support the pseudo, pin the
+ * board root back to the initial values so the 4px rules above apply to the
+ * column body. Do not set these on the column itself. Engines without the
+ * pseudo keep the thin standard bar from the @supports not block above. */
+@supports selector(::-webkit-scrollbar) {
+  .board-workbench {
+    scrollbar-width: initial;
+    scrollbar-color: initial;
+  }
+}
 
 /* A quiet, opaque canvas for every application route.
    Fill #app (height: 100%) rather than 100vh, which can fall short of the
@@ -691,6 +703,12 @@ html.light .app-sidebar-card {
 .hover-ink-host.is-leave-ink > .hover-ink {
   transform: translate(-50%, -50%) scale(0);
 }
+/* Disabled / loading: hide any cover that was already open. No fade through the elevated fallback. */
+.hover-ink-host.is-ink-suppressed > .hover-ink {
+  visibility: hidden;
+  transition: none;
+  transform: translate(-50%, -50%) scale(0);
+}
 /* Content / icons / badges stay above the ink layer (plan g1.2). */
 .hover-ink-host > :not(.hover-ink) {
   position: relative;
@@ -700,6 +718,31 @@ html.light .app-sidebar-card {
   .hover-ink-host > .hover-ink {
     transition: none;
   }
+}
+
+/*
+ * Modal footer primary only (drawer footers are not .app-modal-footer).
+ * Light fill #18181B, white label, ink #52525B.
+ * Dark fill #EDEDF0, label #141417, ink #A1A1AA.
+ * Zero --tw-shadow so shadow-glow drops, while the focus ring stays.
+ * Label color is set here so text-white cannot pin icons or the spinner.
+ */
+.app-modal-footer button.bg-accent {
+  background-color: #ededf0;
+  color: #141417;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --hover-ink-color: #a1a1aa !important;
+}
+html.light .app-modal-footer button.bg-accent {
+  background-color: #18181b;
+  color: #ffffff;
+  --hover-ink-color: #52525b !important;
+}
+.app-modal-footer button.bg-accent .app-icon,
+.app-modal-footer button.bg-accent .app-spinner,
+.app-modal-footer button.bg-accent > span {
+  color: currentColor;
 }
 
 /* ---------- Sidebar section tree (正在执行 / 历史执行) ---------- */

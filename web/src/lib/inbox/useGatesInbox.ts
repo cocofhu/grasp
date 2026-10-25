@@ -47,7 +47,7 @@ import {
 } from '@/lib/inbox/inboxStartingCards'
 import { isAbortError } from '@/lib/run/liveLogRehydrate'
 import { applyPreviewArtifactName, inboxStageRemoteKind, isAppPreviewRemoteNode } from '@/lib/run/reactArtifactPreview'
-import { findGraphNode } from '@/lib/shared/clarifyInteractive'
+import { findGraphNode, isClarifyNode } from '@/lib/shared/clarifyInteractive'
 import { createPendingAcpBuffer, pickAcpRails } from '@/lib/run/pendingAcpBuffer'
 import { deliverOrBufferDialogueAcp } from '@/lib/run/dialogueAcpDelivery'
 import {
@@ -68,7 +68,8 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
-import { armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome } from '@/lib/inbox/sidebarHandoff'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
@@ -208,7 +209,16 @@ const confirmFlowDeskHold = ref(false)
  * the transcript — pending while reactReply(force) runs, done once it returns —
  * then the inbox moves on. Keyed by itemKey so a neighbour never inherits it.
  */
-const handoffState = ref<{ key: string; phase: 'pending' | 'done'; at: string; target: string } | null>(null)
+const handoffState = ref<{
+  key: string
+  phase: 'pending' | 'done'
+  at: string
+  target: string
+  /** Successor recorded with the row, so a stale chain can reuse it. */
+  targetId?: string
+  /** True when that successor runs on its own; false when a person is still starting. */
+  targetAuto?: boolean
+} | null>(null)
 const HANDOFF_HOLD_MS = 900
 const HANDOFF_HOLD_REDUCED_MS = 200
 function handoffHoldMs(): number {
@@ -216,17 +226,80 @@ function handoffHoldMs(): number {
   const reduce = typeof window !== 'undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
   return reduce ? HANDOFF_HOLD_REDUCED_MS : HANDOFF_HOLD_MS
 }
-/** Label of the node the confirmed one flows into (first outgoing edge), for the status row. */
-function nextNodeLabel(nodeId: string): string {
+/**
+ * Edges inbox-context omitted. The run graph is pinned at start, so one
+ * successful GET /runs/:id is enough; a miss is remembered so chain fallback
+ * stays the only 404 path.
+ */
+const graphEdgesByRun = new Map<string, NonNullable<Run['edges']>>()
+const graphEdgesMiss = new Set<string>()
+function humanFollowNode(node: NonNullable<Run['nodes']>[number]): boolean {
+  return node.type === 'human_gate' || isClarifyNode(node)
+}
+function edgeSuccessor(run: Run, sourceId: string): { id: string; label: string; human: boolean } | null {
+  const edge = (run.edges ?? []).find((e) => e.source === sourceId)
+  if (!edge) return null
+  const node = (run.nodes ?? []).find((n) => n.id === edge.target)
+  const label = (node?.label || '').trim()
+  if (!node || !label) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
+function applyCachedEdges(run: Run): Run {
+  if (run.edges?.length) return run
+  const cached = graphEdgesByRun.get(run.id)
+  if (!cached?.length) return run
+  return { ...run, edges: cached }
+}
+function mergeGraphNodes(current: Run['nodes'], incoming: Run['nodes']): Run['nodes'] {
+  if (!incoming?.length) return current
+  if (!current?.length) return incoming
+  const seen = new Set(current.map((n) => n.id))
+  const extra = incoming.filter((n) => n.id && !seen.has(n.id))
+  return extra.length ? [...current, ...extra] : current
+}
+async function ensureActiveGraphEdges(run: Run): Promise<Run> {
+  if (run.edges?.length) {
+    graphEdgesByRun.set(run.id, run.edges)
+    graphEdgesMiss.delete(run.id)
+    return run
+  }
+  const cached = applyCachedEdges(run)
+  if (cached.edges?.length) return cached
+  if (graphEdgesMiss.has(run.id)) return run
+  try {
+    const full = await api.getRun(run.id)
+    if (full?.edges?.length) {
+      graphEdgesByRun.set(run.id, full.edges)
+      return { ...run, edges: full.edges, nodes: mergeGraphNodes(run.nodes, full.nodes) }
+    }
+    graphEdgesMiss.add(run.id)
+  } catch {
+    /* a later follow can retry */
+  }
+  return run
+}
+async function attachActiveGraphEdges() {
   const run = activeRun.value
-  if (!run) return ''
-  // inbox-context carries nodes but not edges; the run chain knows the live node.
+  if (!run) return
+  const next = await ensureActiveGraphEdges(run)
+  if (next !== run && activeRun.value?.id === run.id) activeRun.value = next
+}
+/** Name, id, and mode of the node the confirmed one flows into, for the status row. */
+function nextHandoffTarget(nodeId: string): { target: string; targetId?: string; targetAuto?: boolean } {
+  const run = activeRun.value
+  if (!run) return { target: '' }
+  // Chain already moved: the live node is the hand-off target.
   const cur = runChains.value[run.id]?.current
-  if (cur && cur.id !== nodeId && cur.name) return cur.name
-  const edge = (run.edges ?? []).find((e) => e.source === nodeId)
-  if (!edge) return ''
-  const n = (run.nodes ?? []).find((x) => x.id === edge.target)
-  return (n?.label as string | undefined) || ''
+  if (cur && cur.id !== nodeId && cur.name) {
+    return {
+      target: cur.name,
+      targetId: cur.id,
+      ...(cur.mode === 'auto' ? { targetAuto: true } : cur.mode === 'manual' ? { targetAuto: false } : {}),
+    }
+  }
+  const next = edgeSuccessor(applyCachedEdges(run), nodeId)
+  if (!next) return { target: '' }
+  return { target: next.label, targetId: next.id, targetAuto: !next.human }
 }
 const activeHandoff = computed(() =>
   handoffState.value && active.value && handoffState.value.key === itemKey(active.value) ? handoffState.value : null,
@@ -387,7 +460,10 @@ function closeFollowWs() {
 function followWsLive(runId: string): boolean {
   return !!followWs && followWs.readyState === 1 && (followWs as WebSocket & { _runId?: string })._runId === runId
 }
-function openFollowWs(runId: string) {
+/** Graph captured when the handoff socket opens, so a later enter can skip plumbing after the inbox run is cleared. */
+let followGraphNodes: Parameters<typeof applySidebarEnter>[2]
+function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2]) {
+  if (nodes) followGraphNodes = nodes
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
@@ -427,7 +503,10 @@ function openFollowWs(runId: string) {
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
     else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
-    else if (m.type === 'status') kickFollow()
+    else if (m.type === 'status') {
+      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+      kickFollow()
+    }
     else if (m.type === 'acp') onFollowAcp(runId, m)
   }
   ws.onclose = () => {
@@ -451,11 +530,11 @@ function openFollowWs(runId: string) {
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
-  const plumbing = !!m.nodeId && isPlumbingNode(activeRun.value?.nodes, m.nodeId)
-  if (!plumbing && m.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (!plumbing && typeof m.mode === 'string' && m.mode) noteSidebarHandoffOutcome(runId, 'human')
+  const nodes = followGraphNodes ?? activeRun.value?.nodes
+  const plumbing = !!m.nodeId && isPlumbingNode(nodes, m.nodeId)
+  applySidebarEnter(runId, m, nodes)
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
-  if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
+  if (m.nodeId && !plumbing) {
     const label =
       m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
     setFollowTail({
@@ -671,15 +750,88 @@ function tailFromChain(key: string, chain: RunChain): FollowTail {
   if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
   return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
 }
-/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. */
-function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
-  if (isRunTerminal(chain.status)) {
-    noteSidebarHandoffOutcome(runId, 'ended')
+/**
+ * Chain still names the visit that was just confirmed. A later iteration of
+ * the same node has moved on and is not this snapshot.
+ */
+function chainStillOnDeparted(chain: RunChain, submitted: InboxItem): boolean {
+  const cur = chain.current
+  if (!cur?.id || cur.id !== submitted.nodeId) return false
+  const left = submitted.iteration
+  if (typeof cur.iteration === 'number' && typeof left === 'number' && cur.iteration > left) return false
+  return true
+}
+/**
+ * First outgoing edge, else the successor the hand-off row already named.
+ * A clarify node or a human gate is a person still starting; anything else
+ * runs on its own. No label → the unnamed「等待下一节点开始」row.
+ */
+function recordedHandoffSuccessor(run: Run, departedId: string): { id: string; label: string; human: boolean } | null {
+  const row = handoffState.value
+  const label = (row?.target || '').trim()
+  if (!row || !label) return null
+  if (row.targetId && row.targetId !== departedId) {
+    if (row.targetAuto === true) return { id: row.targetId, label, human: false }
+    if (row.targetAuto === false) return { id: row.targetId, label, human: true }
+    const node = (run.nodes ?? []).find((n) => n.id === row.targetId)
+    if (node) return { id: node.id, label: (node.label || label).trim() || label, human: humanFollowNode(node) }
+  }
+  const node = (run.nodes ?? []).find((n) => n.id !== departedId && (n.label || '').trim() === label)
+  if (!node) return null
+  return { id: node.id, label, human: humanFollowNode(node) }
+}
+function handoffSuccessor(runId: string, departedId: string): { id: string; label: string; human: boolean } | null {
+  const run = activeRun.value
+  if (!run || run.id !== runId) return null
+  const withEdges = applyCachedEdges(run)
+  if (withEdges !== run) activeRun.value = withEdges
+  // The row already named the successor. Edges fill in only when it has not.
+  return recordedHandoffSuccessor(withEdges, departedId) ?? edgeSuccessor(withEdges, departedId)
+}
+function fillEmptyHandoffTarget(key: string, tail: FollowTail, departedId: string) {
+  if (tail.kind !== 'auto' && tail.kind !== 'waiting') return
+  const label = (tail.label || '').trim()
+  if (!label || !tail.nodeId || tail.nodeId === departedId) return
+  const cur = handoffState.value
+  if (!cur || cur.key !== key || cur.target) return
+  handoffState.value = { ...cur, target: label, targetId: tail.nodeId, targetAuto: tail.kind === 'auto' }
+}
+function tailFromHandoffTarget(key: string, chain: RunChain, submitted: InboxItem): FollowTail {
+  const at = new Date().toISOString()
+  const next = handoffSuccessor(chain.runId, submitted.nodeId)
+  if (!next) return { key, runId: chain.runId, kind: 'waiting', at }
+  if (next.human) return { key, runId: chain.runId, kind: 'waiting', label: next.label, nodeId: next.id, at }
+  return { key, runId: chain.runId, kind: 'auto', label: next.label, nodeId: next.id, at }
+}
+/** Follow row already names a node after the one just confirmed. A stale chain must not put it back. */
+function followAlreadyAhead(key: string, submitted: InboxItem): FollowTail | null {
+  const kept = followTail.value
+  if (!kept || kept.key !== key || kept.kind === 'ended' || kept.kind === 'error') return null
+  if (!kept.nodeId || kept.nodeId === submitted.nodeId) return null
+  return kept
+}
+function resolveFollowTail(submitted: InboxItem, key: string, chain: RunChain): FollowTail {
+  if (isRunTerminal(chain.status)) return tailFromChain(key, chain)
+  if (!chainStillOnDeparted(chain, submitted)) return tailFromChain(key, chain)
+  return followAlreadyAhead(key, submitted) ?? tailFromHandoffTarget(key, chain, submitted)
+}
+/** Stale departed snapshot must not cancel an automatic successor the row already chose. */
+function noteFollowFromSnapshot(submitted: InboxItem, chain: RunChain, tail: FollowTail) {
+  if (isRunTerminal(chain.status) || !chainStillOnDeparted(chain, submitted)) {
+    syncSidebarHandoffFromChain(submitted.runId, chain)
     return
   }
-  const mode = chain.current?.mode
-  if (mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (mode) noteSidebarHandoffOutcome(runId, 'human')
+  if (tail.kind === 'auto') noteSidebarHandoffOutcome(submitted.runId, 'auto')
+  else if (tail.kind === 'waiting' && tail.nodeId && tail.nodeId !== submitted.nodeId) {
+    noteSidebarHandoffOutcome(submitted.runId, 'human')
+  }
+}
+/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. Plumbing does not. */
+function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
+  const mark = readSidebarHandoff(runId)
+  const decision = sidebarChainHandoff(chain, mark?.fromNodeId, followGraphNodes ?? activeRun.value?.nodes)
+  if (!decision) return
+  noteSidebarHandoffOutcome(runId, decision.outcome, decision.target)
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
@@ -711,6 +863,7 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
   if (!active.value || itemKey(active.value) !== submittedKey) return stopFollow()
   followInFlight = true
   try {
+    await attachActiveGraphEdges()
     const chain = await loadRunChain(submitted.runId)
     if (!followTail.value || followTail.value.key !== submittedKey) return
     try {
@@ -723,8 +876,10 @@ async function followStep(submitted: InboxItem, submittedKey: string) {
     const prevIter = followTail.value?.iteration
     if (chain) {
       followFailures = 0
-      setFollowTail(tailFromChain(submittedKey, chain))
-      syncSidebarHandoffFromChain(submitted.runId, chain)
+      const tail = resolveFollowTail(submitted, submittedKey, chain)
+      setFollowTail(tail)
+      fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
+      noteFollowFromSnapshot(submitted, chain, tail)
     } else if (++followFailures >= FOLLOW_ERROR_AFTER && followTail.value) {
       setFollowTail({ ...followTail.value, kind: 'error', at: new Date().toISOString() })
     }
@@ -765,13 +920,15 @@ async function beginFollow(submitted: InboxItem, submittedKey: string): Promise<
   followItem = submitted
   openFollowWs(submitted.runId)
   followSawNodeEnter = false
+  await attachActiveGraphEdges()
   const chain = await loadRunChain(submitted.runId)
   followFailures = chain ? 0 : 1
   const tail: FollowTail = chain
-    ? tailFromChain(submittedKey, chain)
+    ? resolveFollowTail(submitted, submittedKey, chain)
     : { key: submittedKey, runId: submitted.runId, kind: 'waiting', at: new Date().toISOString() }
   setFollowTail(tail)
-  if (chain) syncSidebarHandoffFromChain(submitted.runId, chain)
+  if (chain) fillEmptyHandoffTarget(submittedKey, tail, submitted.nodeId)
+  if (chain) noteFollowFromSnapshot(submitted, chain, tail)
   else if (tail.kind === 'ended') noteSidebarHandoffOutcome(submitted.runId, 'ended')
   if (tail.kind === 'auto') void fillFollowFromNodeEvents()
   if (tail.kind === 'ended') closeFollowWs()
@@ -860,13 +1017,14 @@ async function resumeHandedOff(run: Run, nodeId: string) {
   }
   const key = itemKey(item)
   listItems.value = listItems.value.filter((it) => itemKey(it) !== key)
+  if (run.edges?.length) graphEdgesByRun.set(run.id, run.edges)
   activeRun.value = run
   activeRunLoadError.value = false
   followItem = item
   followStopping.value = false
   followTail.value = { key, runId: run.id, kind: 'waiting', at: new Date().toISOString() }
   active.value = item
-  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), target: nextNodeLabel(nodeId) }
+  handoffState.value = { key, phase: 'done', at: new Date().toISOString(), ...nextHandoffTarget(nodeId) }
   await beginFollow(item, key)
 }
 watch(
@@ -1152,11 +1310,20 @@ function restoreListItemLocally(it: InboxItem, prevList: InboxItem[]) {
   restoreItemLocally(it)
 }
 
+function conversationRoute(): { run: string; node: string } {
+  const params = (route.params ?? {}) as Record<string, unknown>
+  const run = queryText(params.runId)
+  const node = queryText(params.nodeId)
+  if (run || node) return { run, node }
+  return { run: queryText(route.query.run), node: queryText(route.query.node) }
+}
+
 function incomingTarget(): { runId: string; nodeId: string } | null {
   if (!incomingArmed.value) return null
+  const id = conversationRoute()
   return resolveIncomingApproval(
-    route.query.run,
-    route.query.node,
+    id.run,
+    id.node,
     peekHomeApproveHandoff() || homeSeed.value,
   )
 }
@@ -1462,7 +1629,8 @@ function startStartingPoll() {
 }
 
 function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
-  const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
+  const id = conversationRoute()
+  const hit = findInboxItemForQuery(listItems.value, id.run, id.node)
   if (!hit) return false
   // Silent auto-apply reload with the same gate already selected: keep the
   // object. A fresh row for the same key would retrigger watch(active) →
@@ -1532,7 +1700,7 @@ function holdsCancelledConversation(): boolean {
   const departing = inboxCancelDepartureRunId()
   if (!departing) return false
   if (active.value?.runId === departing) return true
-  return queryText(route.query.run) === departing
+  return conversationRoute().run === departing
 }
 
 /**
@@ -2050,6 +2218,7 @@ function isClarifySoftRefreshBlocked(): boolean {
 }
 
 function closeActiveRunWs() {
+  stopOrphanRealign()
   busySeedRetry.stop()
   activeRunWsReconnect.markIntentionalClose()
   activeRunWs?.close()
@@ -2200,13 +2369,20 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
   const snap = sessions[nodeId]
   if (!snap || typeof snap !== 'object') return
   clarifyLiveBusy.value = !!snap.busy
-  const frame = {
+  const frame: Record<string, unknown> = {
     event: 'queue_state',
     nodeId,
     waiting: snap.waiting ?? 0,
     items: snap.items ?? [],
     busy: !!snap.busy,
     activeItem: snap.activeItem,
+  }
+  // Only when the snapshot actually carried the bridge view. Omitting the
+  // keys keeps an older payload identical to a frame that never attached.
+  if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+    frame.sandboxBusy = !!snap.sandboxBusy
+    frame.sandboxDesynced = !!snap.sandboxDesynced
+    if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
   }
   let delivered = false
   if (active.value?.type === 'gate' && gateApprovalRef.value?.applyReviewFrame) {
@@ -2327,6 +2503,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       events?: any[]
       busy?: boolean
       waiting?: number
+      sandboxBusy?: boolean
+      sandboxDesynced?: boolean
+      activeItem?: unknown
+      status?: string
+      iteration?: number
+      entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
       run?: { reactSessions?: Run['reactSessions'] }
       previewArtifact?: string
       name?: string
@@ -2396,6 +2578,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         busySeedRetry.stop()
         if (active.value && active.value.runId === runId) void softRefreshActiveRun()
       }
+      // Platform idle while the bridge is still busy: the terminal frame may
+      // never arrive. Re-read the same snapshot a refresh would, without
+      // remounting the composer.
+      if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
+        void realignClarifyToRefresh()
+      }
       return
     }
     if (m.type === 'acp') {
@@ -2404,6 +2592,15 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // Tear-down / stop retry only from review queue_state idle / turn_done / error.
       applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
       return
+    }
+    if (
+      m.type === 'node_enter' &&
+      active.value?.type === 'clarify' &&
+      active.value.runId === runId &&
+      activeRun.value &&
+      m.nodeId
+    ) {
+      patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
     }
     if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
     if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
@@ -2418,6 +2615,16 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         void loadList()
         return
       }
+      // status/trace are noisy and must not softRefresh. Patch the open
+      // snapshot in place so the workflow list moves without clearing dialogue.
+      if (active.value?.type === 'clarify' && activeRun.value) {
+        if (m.type === 'status' && m.status) {
+          activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
+        } else if (m.type === 'trace' && m.entry?.nodeId) {
+          const st = nodeStatusFromTrace(m.entry)
+          if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+        }
+      }
       // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
       // while reviewing — peek/list cover "left pending" awareness instead.
       if (m.type === 'status' || m.type === 'trace') return
@@ -2431,10 +2638,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
       // Soft-refresh semantics unchanged (g2.3).
       if (active.value.type === 'clarify') {
-        if (m.type === 'artifact_edit' || m.type === 'react') {
+        if (m.type === 'artifact_edit') {
+          // Cards only. A full context reload would replace the open transcript.
+          void patchActiveRunArtifacts(m)
+        } else if (m.type === 'react') {
           // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
           if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
-          else if (m.type === 'artifact_edit') void patchActiveRunArtifacts(m)
         }
       }
     }
@@ -2445,6 +2654,143 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     activeRunWs = undefined
     activeRunWsRunId = ''
     activeRunWsReconnect.onClose()
+  }
+}
+
+const ORPHAN_REALIGN_MS = 2000
+let orphanRealignTimer: ReturnType<typeof setTimeout> | null = null
+let realignInflight = false
+
+function stopOrphanRealign() {
+  if (orphanRealignTimer) clearTimeout(orphanRealignTimer)
+  orphanRealignTimer = null
+}
+
+function scheduleOrphanRealign() {
+  if (orphanRealignTimer) return
+  orphanRealignTimer = setTimeout(() => {
+    orphanRealignTimer = null
+    void realignClarifyToRefresh()
+  }, ORPHAN_REALIGN_MS)
+}
+
+function queueStateIsOrphan(m: {
+  event?: string
+  busy?: boolean
+  waiting?: number
+  activeItem?: unknown
+  sandboxBusy?: boolean
+  sandboxDesynced?: boolean
+}): boolean {
+  if (m.event !== 'queue_state') return false
+  if (m.busy === true) return false
+  if ((typeof m.waiting === 'number' ? m.waiting : 0) !== 0) return false
+  if (m.activeItem) return false
+  return m.sandboxBusy === true || m.sandboxDesynced === true
+}
+
+function nodeStatusFromTrace(entry: { event?: string; detail?: string }): Run['nodeRuns'][string]['status'] | null {
+  const detail = entry.detail || ''
+  const failed = /fail|失败/i.test(detail)
+  switch (entry.event) {
+    case 'enter':
+    case 'reattach':
+      return 'running'
+    case 'pause':
+      return 'waiting_human'
+    case 'resume':
+      return failed ? 'failed' : 'running'
+    case 'exit':
+      return failed ? 'failed' : 'completed'
+    default:
+      return null
+  }
+}
+
+function patchActiveRunNodeStatus(
+  nodeId: string,
+  status: Run['nodeRuns'][string]['status'],
+  iteration?: number,
+) {
+  const run = activeRun.value
+  if (!run || !nodeId) return
+  const prev = run.nodeRuns?.[nodeId]
+  const row = {
+    ...(prev || { nodeId, status }),
+    nodeId,
+    status,
+    ...(typeof iteration === 'number' && iteration > 0 ? { iteration } : {}),
+  }
+  const executions = { ...(run.nodeExecutions || {}) }
+  const hist = [...(executions[nodeId] || [])]
+  if (hist.length) hist[hist.length - 1] = { ...hist[hist.length - 1]!, ...row }
+  else hist.push(row)
+  executions[nodeId] = hist
+  activeRun.value = {
+    ...run,
+    nodeRuns: { ...(run.nodeRuns || {}), [nodeId]: row },
+    nodeExecutions: executions,
+  }
+}
+
+/**
+ * Lost terminal frame: load the same inbox snapshot a refresh would, project
+ * the bridge fact onto the banner, and leave the composer draft alone.
+ * While the bridge stays busy, try again so a later idle clears the banner
+ * even if no further queue_state arrives.
+ */
+async function realignClarifyToRefresh() {
+  if (active.value?.type !== 'clarify') return
+  if (realignInflight) return
+  if (!shouldFetchActiveInboxContext()) return
+  if (isClarifySoftRefreshBlocked()) {
+    scheduleOrphanRealign()
+    return
+  }
+  const target = active.value
+  const triple = inboxTripleKey(target)
+  const signal = acquireInboxContextSignal(triple)
+  if (!signal) {
+    scheduleOrphanRealign()
+    return
+  }
+  realignInflight = true
+  try {
+    const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    if (isProcessedTriple(target)) return
+    if (isInboxLeftPending(ctx)) {
+      if (isIncomingContextPending(target)) return
+      handleLeftInboxContext(target)
+      return
+    }
+    const next = adaptInboxContextToRun(ctx, target.runId)
+    activeRun.value = next
+    activeRunLoadError.value = false
+    const nodeId = activeDialogueNodeId(next)
+    const snap = nodeId ? next.reactSessions?.[nodeId] : undefined
+    if (snap) {
+      restoreReactSessions(next)
+    } else if (nodeId && reviewChatRef.value?.applyReviewFrame) {
+      reviewChatRef.value.applyReviewFrame({
+        event: 'queue_state',
+        nodeId,
+        waiting: 0,
+        items: [],
+        busy: false,
+        sandboxBusy: false,
+        sandboxDesynced: false,
+      })
+    }
+    if (snap?.sandboxBusy || snap?.sandboxDesynced) scheduleOrphanRealign()
+    else stopOrphanRealign()
+  } catch (e) {
+    if (isAbortError(e) || signal.aborted) return
+    scheduleOrphanRealign()
+  } finally {
+    realignInflight = false
+    releaseInboxContextSignal(triple, signal)
   }
 }
 
@@ -2480,7 +2826,10 @@ async function softRefreshActiveRun() {
       handleLeftInboxContext(target)
       return
     }
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Soft refresh keeps chat mounted — only merge reactSessions onto run; do not
     // re-project live bubbles (would reset stream). Hard-load path restores below.
@@ -2542,7 +2891,10 @@ async function loadActiveRun(hard = true) {
       handleLeftInboxContext(target)
       return
     }
-    activeRun.value = adaptInboxContextToRun(ctx, target.runId)
+    const adapted = await ensureActiveGraphEdges(adaptInboxContextToRun(ctx, target.runId))
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    activeRun.value = adapted
     activeRunLoadError.value = false
     // Context is in. Clear even when a same-key ghost was pending: the finally
     // below used to leave the flag set, so a gate past page 1 never mounted.
@@ -2753,6 +3105,8 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const submittedItem = g
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
+  const handoffNodes = activeRun.value?.nodes
+  const handoffEdges = activeRun.value?.edges
   // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
   // Positive path: start page-level overlay on click (g1.1); do not await before leave.
   // Page-level host survives selectActiveAfterRemove / shell remount (g1.2).
@@ -2763,11 +3117,17 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
     activeRun.value = null
     activeRunLoadError.value = false
   }
-  if (positive) armSidebarHandoff(g.runId, g.nodeId)
+  if (positive) {
+    armSidebarHandoff(g.runId, g.nodeId, Date.now(), sidebarAutoTarget(handoffNodes, handoffEdges, g.nodeId, action))
+    openFollowWs(g.runId, handoffNodes)
+  }
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
-    if (positive) clearSidebarHandoff(g.runId)
+    if (positive) {
+      clearSidebarHandoff(g.runId)
+      if (!followTail.value) closeFollowWs()
+    }
     confirmFlowDeskHold.value = false
     inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
@@ -2827,8 +3187,7 @@ function shareIntentPending(): boolean {
 }
 
 function activeMatchesShareQuery(it: InboxItem): boolean {
-  const run = queryText(route.query.run)
-  const node = queryText(route.query.node)
+  const { run, node } = conversationRoute()
   return !!run && !!node && it.runId === run && it.nodeId === node
 }
 
@@ -2855,7 +3214,8 @@ function clearShareIntent() {
 let settledShareKey = ''
 function shareIntentKey(): string {
   if (!shareIntentPending()) return ''
-  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+  const { run, node } = conversationRoute()
+  return `${run}\0${node}`
 }
 
 function consumeShareIntent() {
@@ -2884,8 +3244,8 @@ watch(
     active.value ? itemKey(active.value) : '',
     active.value && isStartingInboxItem(active.value) ? 'starting' : '',
     incomingGhost.value ? itemKey(incomingGhost.value) : '',
-    route.query.run,
-    route.query.node,
+    conversationRoute().run,
+    conversationRoute().node,
     route.query[INBOX_SHARE_INTENT_QUERY],
     processingLock.value,
   ],
@@ -2950,11 +3310,16 @@ async function onClarifySend(
     beginProcessingIntent(it)
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
-    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
-    // The click does not know the next mode. Arm now; fly only after node_enter or the snapshot.
-    armSidebarHandoff(it.runId, it.nodeId)
+    handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), ...nextHandoffTarget(it.nodeId) }
+    // Move now only when the loaded graph has one automatic destination. No edges: wait for node_enter.
+    armSidebarHandoff(
+      it.runId,
+      it.nodeId,
+      Date.now(),
+      sidebarAutoTarget(activeRun.value?.nodes, activeRun.value?.edges, it.nodeId),
+    )
     // Socket first, then the POST: the next node's node_enter can arrive right after it.
-    openFollowWs(it.runId)
+    openFollowWs(it.runId, activeRun.value?.nodes)
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =
@@ -3173,7 +3538,10 @@ function onVisible() {
   if (document.visibilityState === 'visible') peek({ source: 'visibility' })
 }
 
-watch(() => [route.query.run, route.query.node], () => {
+watch(() => {
+  const id = conversationRoute()
+  return [id.run, id.node]
+}, () => {
   // Fresh navigation intent: re-arm so the new target can show a loading card.
   incomingArmed.value = true
   void waitForQueryItem()

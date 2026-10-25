@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { ref } from 'vue'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -28,6 +31,9 @@ vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ error: mocks.e
 vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({ useWorkflowRunLaunch: () => ({ openLaunch: mocks.openLaunch }) }))
 vi.mock('@/lib/run/useWorkflowFavorites', () => ({ useWorkflowFavorites: () => ({ entries: mocks.entries, isFavorite: (id: string) => mocks.entries.value.some((item) => item.workflowId === id), toggleFavorite: mocks.toggleFavorite }) }))
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+
+const shellDir = dirname(fileURLToPath(import.meta.url))
+const listSrc = readFileSync(join(shellDir, 'SidebarWorkspaceLists.vue'), 'utf8')
 import { readArtifactPanelOpen, resetConversationDrawers, writeArtifactPanelOpen } from '@/lib/chat/conversationDrawer'
 import { __resetSidebarSectionsForTests } from '@/lib/shared/sidebarSections'
 
@@ -145,5 +151,63 @@ describe('sidebar workspace lists without a workflow directory', () => {
     await wrapper.get('[data-testid="sidebar-recent-run"]').trigger('click')
     expect(readArtifactPanelOpen()).toBe(false)
     wrapper.unmount()
+  })
+
+  it('hovers the history title as one group and keeps the link and toggle clicks apart', async () => {
+    const { wrapper, router } = await setup('/dashboard')
+    const title = wrapper.get('[data-icon-motion-span="history-title"]')
+    const link = title.get('[data-testid="sidebar-recent-heading"]')
+    const toggle = title.get('[data-testid="sidebar-recent-toggle"]')
+    const body = wrapper.get('[data-testid="sidebar-recent-body"]')
+    expect(link.attributes('href')).toBe('/runs')
+    expect(link.classes()).toContain('grasp-status-host')
+    expect(link.element.contains(toggle.element)).toBe(false)
+    expect(title.element.contains(link.element)).toBe(true)
+    expect(title.element.contains(toggle.element)).toBe(true)
+    expect(toggle.element.tagName).toBe('BUTTON')
+    expect(toggle.attributes('type')).toBe('button')
+    expect(link.element.tabIndex).not.toBe(-1)
+    expect(toggle.element.tabIndex).not.toBe(-1)
+    expect(body.element.parentElement).not.toBe(title.element)
+
+    const style = listSrc.slice(listSrc.indexOf('<style scoped>'))
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*font-size:\s*11\.5px/)
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*font-weight:\s*600/)
+    expect(style).toMatch(/\.workspace-list-heading\s*\{[^}]*transition:\s*color 160ms ease/)
+    expect(style).toMatch(/\.workspace-list-heading:hover\s*\{[^}]*color:\s*rgb\(var\(--c-txt\)\)/)
+    expect(style).toMatch(/\.workspace-list-heading:hover \.workspace-list-chevron\s*\{[^}]*opacity:\s*1/)
+    expect(style).toMatch(/\.workspace-list-chevron\s*\{[^}]*opacity:\s*\.7/)
+    expect(style).not.toMatch(/\.workspace-list-toggle:hover/)
+    expect(style).not.toMatch(/\.workspace-list-heading > a:first-child:hover/)
+    expect(style).toMatch(/a:focus-visible,\s*button:focus-visible/)
+    expect(style).toMatch(/@media \(prefers-reduced-motion: reduce\)[\s\S]*transition:\s*none/)
+
+    expect((body.element as HTMLElement).style.display).not.toBe('none')
+    await toggle.trigger('click')
+    expect(router.currentRoute.value.path).toBe('/dashboard')
+    expect(wrapper.emitted('navigate')).toBeFalsy()
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(toggle.get('.workspace-list-chevron').classes()).toContain('is-collapsed')
+    expect((body.element as HTMLElement).style.display).toBe('none')
+
+    await link.trigger('click')
+    await flushPromises()
+    expect(wrapper.emitted('navigate')).toHaveLength(1)
+    expect(router.currentRoute.value.path).toBe('/runs')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect((body.element as HTMLElement).style.display).toBe('none')
+    wrapper.unmount()
+  })
+
+  it('uses the same history title in the desktop sidebar and the narrow drawer', () => {
+    const sidebar = readFileSync(join(shellDir, 'AppSidebar.vue'), 'utf8')
+    const shell = readFileSync(join(shellDir, 'AppShell.vue'), 'utf8')
+    const nav = readFileSync(join(shellDir, 'AppSidebarNav.vue'), 'utf8')
+    expect(sidebar).toMatch(/<AppSidebarNav[^>]*:workspace-lists="!isMobile"/)
+    expect(shell).toMatch(/data-testid="mobile-nav-drawer"[\s\S]*?<AppSidebarNav workspace-lists/)
+    expect(nav).toMatch(/<SidebarWorkspaceLists v-if="workspaceLists"/)
+    expect(listSrc).toContain('data-icon-motion-span="history-title"')
+    expect(listSrc).toContain('data-testid="sidebar-recent-heading"')
+    expect(listSrc).toContain('data-testid="sidebar-recent-toggle"')
   })
 })

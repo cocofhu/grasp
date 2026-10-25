@@ -15,7 +15,11 @@ import (
 func writeSoloErr(c *gin.Context, err error) {
 	var se *services.SoloError
 	if errors.As(err, &se) {
-		c.JSON(se.Status, gin.H{"error": se.Msg, "code": se.Code})
+		body := gin.H{"error": se.Msg, "code": se.Code}
+		if len(se.Params) > 0 {
+			body["params"] = se.Params
+		}
+		c.JSON(se.Status, body)
 		return
 	}
 	_ = c.Error(err)

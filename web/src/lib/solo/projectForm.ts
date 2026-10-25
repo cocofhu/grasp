@@ -19,7 +19,7 @@ export type ProjectDraft = {
 
 const ENV_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]*$/
 const SENSITIVE_MARKERS = ['TOKEN', 'SECRET', 'PASSWORD', 'PASSWD', 'API_KEY', 'APIKEY', 'PRIVATE_KEY', 'ACCESS_KEY', 'CREDENTIAL']
-const RESERVED = new Set(['GIT_REPOS', 'GRASP_THREAD_ID', 'CODEX_HOME', 'ACP_BRIDGE_MODEL'])
+const RESERVED = new Set(['GIT_REPOS', 'GRASP_THREAD_ID', 'CODEX_HOME', 'ACP_BRIDGE_MODEL', 'GRASP_CONFIGURED_MODELS', 'GRASP_INITIAL_CHAT_MODEL'])
 
 /** Env key each git access mode reads its credential from. */
 export const GIT_CREDENTIAL_ENV: Record<Exclude<GitCredentialType, ''>, string> = {

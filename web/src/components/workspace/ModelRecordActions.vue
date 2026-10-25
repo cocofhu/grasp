@@ -9,7 +9,7 @@ import Icon from '@/components/ui/Icon.vue'
 import AppSwitch from '@/components/ui/AppSwitch.vue'
 import { useRoutingCopy } from '@/lib/agent/modelRouting'
 
-const props = defineProps<{ name: string; active: boolean; prefix: string; recordId: string }>()
+const props = withDefaults(defineProps<{ name: string; active?: boolean; prefix: string; recordId: string; showEdit?: boolean; showToggle?: boolean }>(), { active: true, showEdit: true, showToggle: true })
 const emit = defineEmits<{ edit: []; toggle: []; remove: [] }>()
 const c = useRoutingCopy()
 const { t } = useI18n()
@@ -42,8 +42,16 @@ async function show(last = false) {
   await nextTick()
   if (!open.value) return
   place()
+  // The menu is measured while hidden. Wait until that visibility is gone
+  // before focusing, or the browser drops focus and the trigger keeps it.
+  await nextTick()
+  if (!open.value || !menu.value) return
+  if (menu.value.style.visibility === 'hidden') {
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
+  }
+  if (!open.value || !menu.value || menu.value.style.visibility === 'hidden') return
   const buttons = items()
-  buttons[last ? buttons.length - 1 : 0]?.focus()
+  buttons[last ? buttons.length - 1 : 0]?.focus({ preventScroll: true })
 }
 function activate(action: 'toggle' | 'remove') { close(true); if (action === 'toggle') emit('toggle'); else emit('remove') }
 function onKey(event: KeyboardEvent) {
@@ -80,14 +88,14 @@ onBeforeUnmount(() => {
 
 <template>
   <div class="model-record-actions">
-    <button type="button" class="model-record-edit" :aria-label="c.edit" :title="c.edit" :data-testid="testId('edit')" @click="emit('edit')"><Icon name="edit" :size="15" /></button>
+    <button v-if="showEdit" type="button" class="model-record-edit" :aria-label="c.edit" :title="c.edit" :data-testid="testId('edit')" @click="emit('edit')"><Icon name="edit" :size="15" /></button>
     <button ref="trigger" type="button" class="model-record-more" :aria-label="`${t('pages.agentStudio.tree.moreActions')} · ${name}`" aria-haspopup="menu" :aria-expanded="open" :aria-controls="open ? menuId : undefined" :data-testid="testId('more')" @click="open ? close() : show()" @keydown.down.prevent="show()" @keydown.up.prevent="show(true)">
       <Icon name="more" :size="16" />
     </button>
-    <AppSwitch :model-value="active" :aria-label="`${active ? c.disable : c.enable} · ${name}`" :data-testid="testId('toggle')" @update:model-value="emit('toggle')" />
+    <AppSwitch v-if="showToggle" :model-value="active" :aria-label="`${active ? c.disable : c.enable} · ${name}`" :data-testid="testId('toggle')" @update:model-value="emit('toggle')" />
     <Teleport to="body">
       <div v-if="open" :id="menuId" ref="menu" role="menu" :aria-label="name" class="model-record-menu" :data-testid="testId('menu')" :style="position" @keydown="onKey">
-        <button type="button" role="menuitem" tabindex="-1" class="model-record-delete" :data-testid="testId('delete')" @click="activate('remove')"><Icon name="trash" :size="14" />{{ c.remove }}</button>
+        <button type="button" role="menuitem" tabindex="-1" class="model-record-delete" :aria-label="`${c.remove} · ${name}`" :data-testid="testId('delete')" @click="activate('remove')"><Icon name="trash" :size="14" />{{ c.remove }}</button>
       </div>
     </Teleport>
   </div>

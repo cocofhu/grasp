@@ -17,17 +17,18 @@ func ModelsGET(chats *service.ChatManager) gin.HandlerFunc {
 		if bridge == nil {
 			return
 		}
-		models, err := service.ListAgentModels()
+		models, configured, err := service.ChatModelList()
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"models":   models,
-			"current":  bridge.EffectiveModel(),
-			"selected": bridge.Model(),
-			"default":  chats.DefaultModel(),
-			"fixed":    false,
+			"models":     models,
+			"configured": configured,
+			"current":    bridge.EffectiveModel(),
+			"selected":   bridge.Model(),
+			"default":    chats.DefaultModel(),
+			"fixed":      false,
 		})
 	}
 }
@@ -47,6 +48,10 @@ func ModelPOST(chats *service.ChatManager) gin.HandlerFunc {
 			return
 		}
 		model := strings.TrimSpace(body.Model)
+		if !service.ModelSelectable(model) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不在当前配置中"})
+			return
+		}
 		prev := bridge.Model()
 		bridge.SetModel(model)
 		sess, err := bridge.RestartAgent()

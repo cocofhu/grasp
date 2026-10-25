@@ -68,6 +68,15 @@ func graphNodesDTO(g models.Graph) []gin.H {
 	return nodes
 }
 
+// graphEdgesDTO is the run graph's transitions. Nil is an empty list so
+// inbox-context always carries an array, including when the graph has none.
+func graphEdgesDTO(g models.Graph) []models.Edge {
+	if len(g.Edges) == 0 {
+		return []models.Edge{}
+	}
+	return g.Edges
+}
+
 // workflowDTO shapes a workflow for the frontend. nodes/edges stay the latest
 // saved head so the editor is unchanged. When published is the row for
 // wf.PublishedVersion, publishedSnapshot carries that version's name,
