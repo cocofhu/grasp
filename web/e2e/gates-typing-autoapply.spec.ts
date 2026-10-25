@@ -3,7 +3,7 @@
  * Repro (GraspReview r2): type a draft while new gates arrive (update held),
  * clear it with Ctrl+A / Backspace and keep typing → the held update applied,
  * the chat re-rendered, the composer lost focus and the following keys were lost.
- * Real /gates entry (workspace-config harness = full app shell), mocked API.
+ * Real node-conversation entry (workspace-config harness = full app shell), mocked API.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'
@@ -51,7 +51,7 @@ async function mockInbox(page: Page, state: { items: Record<string, unknown>[] }
     const req = route.request()
     const url = new URL(req.url())
     const path = url.pathname
-    if (req.method() === 'GET' && path === '/api/gates') {
+    if (req.method() === 'GET' && path === '/api/pending-nodes') {
       await route.fulfill({ json: { items: state.items, total: state.items.length } })
       return
     }
@@ -63,7 +63,7 @@ async function mockInbox(page: Page, state: { items: Record<string, unknown>[] }
       await route.fulfill({ json: { items, total: items.length, page: 1, pageSize: 50, hasMore: false } })
       return
     }
-    if (req.method() === 'GET' && /\/api\/runs\/[^/]+\/inbox-context/.test(path)) {
+    if (req.method() === 'GET' && /\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/.test(path)) {
       await route.fulfill({
         json: {
           type: 'clarify',
@@ -94,7 +94,7 @@ test('clearing the draft and typing on keeps focus and every character while upd
   const state = { items: [clarifyRow(RUN, '输入保护验收')] }
   await mockInbox(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto(`/workspace-config.html?view=${encodeURIComponent(`/gates?run=${RUN}&node=${NODE}`)}`)
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent(`/runs/${RUN}/nodes/${NODE}`)}`)
 
   const input = page.getByTestId('clarify-input')
   await expect(input).toBeVisible({ timeout: 15_000 })

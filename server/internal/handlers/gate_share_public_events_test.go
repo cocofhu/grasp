@@ -18,7 +18,7 @@ import (
 func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-pub-ws", "research-ws", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-ws/reviews/research-ws/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-ws/nodes/research-ws/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	if !gateshare.ValidTokenShape(token) {
@@ -28,7 +28,7 @@ func TestPublicGateEventsWSStreamsSanitizedAcp(t *testing.T) {
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
 
-	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/gate-approvals/events"), nil)
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/approvals/events"), nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -115,13 +115,13 @@ func TestPublicGateEventsWSSkipsStaleSeedWhenIdle(t *testing.T) {
 	h.h.Eng = eng
 	t.Cleanup(eng.Close)
 	seedInboxReview(t, h, "run-pub-idle", "research-idle", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/reviews/research-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-pub-idle/nodes/research-idle/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
-	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/gate-approvals/events"), nil)
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/approvals/events"), nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestPublicGateEventsWSRejectsBadToken(t *testing.T) {
 	h := newHarness(t)
 	srv := httptest.NewServer(h.r)
 	defer srv.Close()
-	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/gate-approvals/events"), nil)
+	c, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/approvals/events"), nil)
 	if err != nil {
 		t.Fatalf("dial: %v", err)
 	}

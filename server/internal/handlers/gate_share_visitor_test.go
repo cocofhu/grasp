@@ -71,7 +71,7 @@ func newLaneShare(t *testing.T) (*harness, *laneProvider, string) {
 	eng.SetBlobStore(blob.NewMemory())
 	h.h.Eng = eng
 	t.Cleanup(eng.Close)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/reviews/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/"+nodeID+"/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	i := strings.Index(url, "#t=")
 	if i < 0 {
@@ -87,7 +87,7 @@ func visitorReply(h *harness, token, visitor, text string) *httpResponse {
 	if visitor != "" {
 		hdr[headerShareVisitor] = visitor
 	}
-	w := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{"token": token, "text": text}, hdr)
+	w := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{"token": token, "text": text}, hdr)
 	return &httpResponse{code: w.Code, body: w.Body.String()}
 }
 
@@ -98,7 +98,7 @@ type httpResponse struct {
 
 func visitorPreviewTurns(t *testing.T, h *harness, token, visitor string) string {
 	t.Helper()
-	w := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{
+	w := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{
 		headerShareToken: token, headerShareVisitor: visitor,
 	})
 	if w.Code != http.StatusOK {
@@ -189,14 +189,14 @@ func TestPublicShareDecideRetiresVisitorChats(t *testing.T) {
 	}
 	waitPreviewContains(t, h, token, a, "visitor reply: edit please")
 
-	prev := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{
+	prev := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{
 		headerShareToken: token, headerShareVisitor: a,
 	}))
 	nonce, _ := prev["nonce"].(string)
 	if nonce == "" {
 		t.Fatalf("preview issued no nonce: %v", prev)
 	}
-	w := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	w := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost, headerShareVisitor: a})
 	if w.Code != http.StatusOK {

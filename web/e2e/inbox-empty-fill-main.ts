@@ -44,14 +44,14 @@ async function boot() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/gates', component: { render: () => h('div') }, meta: { titleKey: 'route.gates' } },
+      { path: '/inbox-fixture', component: { render: () => h('div') }, meta: { titleKey: 'route.gates' } },
       { path: '/runs/:id', component: { render: () => h('div', { 'data-testid': 'run-page' }, 'run') } },
     ],
   })
 
   const query: Record<string, string> = {}
   if (filterWf) query.wf = filterWf
-  await router.push({ path: '/gates', query })
+  await router.push({ path: '/inbox-fixture', query })
 
   createApp({ render: () => h(Fixture) })
     .use(i18n)

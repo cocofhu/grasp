@@ -67,7 +67,7 @@ vi.mock('@/lib/inbox/gateShareLink', async () => {
       queueRemove: mocks.queueRemove,
       queueReorder: mocks.queueReorder,
       liveSessions: mocks.liveSessions,
-      eventsWsUrl: () => 'ws://test/public/gate-approvals/events',
+      eventsWsUrl: () => 'ws://test/public/approvals/events',
     },
   }
 })
@@ -303,7 +303,7 @@ describe('PublicGateApprovalView workbench', () => {
     expect(human?.images).toHaveLength(1)
     expect(human?.images?.[0]?.name).toBe('shot.png')
     expect(human?.images?.[0]?.url).toBe(
-      `/public/gate-approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
+      `/public/approvals/images/0?token=${encodeURIComponent(token)}&v=${getShareVisitorId()}`,
     )
     expect(human?.images?.[0]?.url).not.toContain('blob:')
     expect(human?.images?.[0]?.url).not.toContain('/api/blobs')

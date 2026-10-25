@@ -133,7 +133,7 @@ describe('gateShareLink additional coverage', () => {
   })
 
   it('builds websocket, preview, and upstream requests and reports failures', async () => {
-    expect(publicGateApi.eventsWsUrl()).toBe('ws://localhost:3000/public/gate-approvals/events')
+    expect(publicGateApi.eventsWsUrl()).toBe('ws://localhost:3000/public/approvals/events')
     const signal = new AbortController().signal
     fetchMock.mockResolvedValueOnce(response({ status: 'active' }))
     await publicGateApi.preview('token', signal, {
@@ -144,7 +144,7 @@ describe('gateShareLink additional coverage', () => {
       silent: true,
       issueNonce: true,
     })
-    expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/preview', {
+    expect(fetchMock).toHaveBeenLastCalledWith('/public/approvals/preview', {
       method: 'GET',
       credentials: 'omit',
       signal,
@@ -168,7 +168,7 @@ describe('gateShareLink additional coverage', () => {
 
     fetchMock.mockResolvedValueOnce(response({ status: 'ok', upstream: { text: 'x' } }))
     await publicGateApi.upstream('token', signal)
-    expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/upstream', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/public/approvals/upstream', expect.objectContaining({
       method: 'GET',
       signal,
       headers: {
@@ -186,7 +186,7 @@ describe('gateShareLink additional coverage', () => {
     await expect(publicGateApi.decide({ token: 't', action: 'approve', nonce: 'n' })).resolves.toMatchObject({
       status: 'used',
     })
-    expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/decide', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/public/approvals/decide', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ token: 't', action: 'approve', nonce: 'n' }),
     }))
@@ -196,12 +196,12 @@ describe('gateShareLink additional coverage', () => {
     const calls: Array<[() => Promise<unknown>, string, unknown]> = [
       [
         () => publicGateApi.reply({ token: 't', text: 'hello', images: [{ data: 'x' }] }),
-        '/public/gate-approvals/reply',
+        '/public/approvals/reply',
         { token: 't', text: 'hello', images: [{ data: 'x' }] },
       ],
-      [() => publicGateApi.cancel('t'), '/public/gate-approvals/cancel', { token: 't' }],
-      [() => publicGateApi.queueRemove('t', 'q1'), '/public/gate-approvals/queue/remove', { token: 't', itemId: 'q1' }],
-      [() => publicGateApi.queueReorder('t', ['q2', 'q1']), '/public/gate-approvals/queue/reorder', { token: 't', itemIds: ['q2', 'q1'] }],
+      [() => publicGateApi.cancel('t'), '/public/approvals/cancel', { token: 't' }],
+      [() => publicGateApi.queueRemove('t', 'q1'), '/public/approvals/queue/remove', { token: 't', itemId: 'q1' }],
+      [() => publicGateApi.queueReorder('t', ['q2', 'q1']), '/public/approvals/queue/reorder', { token: 't', itemIds: ['q2', 'q1'] }],
     ]
     for (const [invoke, url, body] of calls) {
       fetchMock.mockResolvedValueOnce(response({ status: 'ok' }))
@@ -218,7 +218,7 @@ describe('gateShareLink additional coverage', () => {
   it('loads artifacts and preview tickets with exact URLs and error branches', async () => {
     const signal = new AbortController().signal
     await publicGateApi.artifacts('token', signal)
-    expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/artifacts', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/public/approvals/artifacts', expect.objectContaining({
       method: 'GET',
       signal,
     }))
@@ -228,7 +228,7 @@ describe('gateShareLink additional coverage', () => {
     fetchMock.mockResolvedValueOnce(response({ content: 'hello' }))
     await publicGateApi.artifactContent('token', 'a / b.json', signal)
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/public/gate-approvals/artifacts/a%20%2F%20b.json/content',
+      '/public/approvals/artifacts/a%20%2F%20b.json/content',
       expect.objectContaining({ method: 'GET', signal }),
     )
     fetchMock.mockResolvedValueOnce(response({ error: 'missing' }, 404))
@@ -236,7 +236,7 @@ describe('gateShareLink additional coverage', () => {
 
     fetchMock.mockResolvedValueOnce(response({ ticket: 'ticket' }))
     await publicGateApi.previewTicket('token', 8080, undefined, signal)
-    expect(fetchMock).toHaveBeenLastCalledWith('/public/gate-approvals/preview-ticket', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/public/approvals/preview-ticket', expect.objectContaining({
       method: 'POST',
       signal,
       body: JSON.stringify({ port: 8080, purpose: 'vnc' }),
@@ -251,6 +251,6 @@ describe('gateShareLink additional coverage', () => {
 
     expect(publicPreviewVncWsUrl('a b')).toContain('?ticket=a%20b')
     expect(publicPreviewVncWsUrl('x', '/custom/ws?mode=vnc')).toContain('/custom/ws?mode=vnc&ticket=x')
-    expect(publicPreviewVncWsUrl('x', ' ')).toContain('/public/gate-approvals/preview-vnc/ws?ticket=x')
+    expect(publicPreviewVncWsUrl('x', ' ')).toContain('/public/approvals/preview-vnc/ws?ticket=x')
   })
 })

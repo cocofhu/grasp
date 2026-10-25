@@ -1,4 +1,5 @@
 import type { RouteLocationRaw } from 'vue-router'
+import { nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 
 /**
@@ -54,19 +55,25 @@ export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 
 /** Click target: the node's chat (live stream for auto, inbox chat otherwise), else run detail. */
-export function recentRunTarget(run: RecentRun): RouteLocationRaw {
+export function recentRunTarget(
+  run: RecentRun,
+  filters?: { wf?: string; tag?: string },
+): RouteLocationRaw {
   const n = recentCurrentNode(run)
   if (!n) return runDetailPath(run.id)
   if (isObservableNode(n)) return { path: runLivePath(run.id), query: { node: n.id } }
-  return { path: '/gates', query: { run: run.id, node: n.id } }
+  const query: Record<string, string> = {}
+  if (filters?.wf) query.wf = filters.wf
+  if (filters?.tag) query.tag = filters.tag
+  const path = nodeConversationPath(run.id, n.id)
+  return Object.keys(query).length ? { path, query } : { path }
 }
 
 type RouteLike = { path: string; query: Record<string, unknown> }
 
 export function recentRunActive(run: RecentRun, route: RouteLike): boolean {
   if (route.path === runDetailPath(run.id) || route.path === runLivePath(run.id)) return true
-  const q = route.query.run
-  return route.path === '/gates' && (Array.isArray(q) ? q[0] : q) === run.id
+  return nodeConversationRunId(route.path) === run.id
 }
 
 /** Fields the row renders; an unchanged signature skips the reactive write. */

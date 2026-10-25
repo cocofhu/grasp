@@ -30,7 +30,7 @@ func TestLiveSessionsHTTP(t *testing.T) {
 	if d.Code != 200 || parseJSON(t, d)["discarding"] != float64(0) {
 		t.Fatalf("discard all: %d %s", d.Code, d.Body.String())
 	}
-	r := h.do(http.MethodPost, "/api/runs/run-live/react/research1/reply", map[string]any{
+	r := h.do(http.MethodPost, "/api/runs/run-live/nodes/research1/reply", map[string]any{
 		"live": map[string]any{"op": "discard", "sid": "sid001"},
 	})
 	if r.Code != http.StatusBadRequest || !strings.Contains(r.Body.String(), "Live") {
@@ -41,35 +41,35 @@ func TestLiveSessionsHTTP(t *testing.T) {
 func TestPublicLiveSessionsHTTP(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-live-pub", "research1", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-pub/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-pub/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
-	bad := h.doPublic(http.MethodGet, "/public/gate-approvals/live-sessions", nil, map[string]string{headerShareToken: "nope"})
+	bad := h.doPublic(http.MethodGet, "/public/approvals/live-sessions", nil, map[string]string{headerShareToken: "nope"})
 	if parseJSON(t, bad)["status"] != "invalid" {
 		t.Fatalf("bad token: %s", bad.Body.String())
 	}
-	ok := h.doPublic(http.MethodGet, "/public/gate-approvals/live-sessions", nil, map[string]string{headerShareToken: token})
+	ok := h.doPublic(http.MethodGet, "/public/approvals/live-sessions", nil, map[string]string{headerShareToken: token})
 	out := parseJSON(t, ok)
 	if out["status"] != "active" || out["enabled"] != false {
 		t.Fatalf("live sessions: %s", ok.Body.String())
 	}
 	hdr := map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}
-	d := h.doPublic(http.MethodPost, "/public/gate-approvals/live-discard-all", map[string]any{"token": token}, hdr)
+	d := h.doPublic(http.MethodPost, "/public/approvals/live-discard-all", map[string]any{"token": token}, hdr)
 	if d.Code != 200 || parseJSON(t, d)["discarding"] != float64(0) {
 		t.Fatalf("discard all: %d %s", d.Code, d.Body.String())
 	}
-	csrf := h.doPublic(http.MethodPost, "/public/gate-approvals/live-discard-all", map[string]any{"token": token}, nil)
+	csrf := h.doPublic(http.MethodPost, "/public/approvals/live-discard-all", map[string]any{"token": token}, nil)
 	if csrf.Code != http.StatusForbidden {
 		t.Fatalf("csrf: %d", csrf.Code)
 	}
-	reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	reply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "live": map[string]any{"op": "discard", "sid": "sid001"},
 	}, hdr)
 	if reply.Code != http.StatusBadRequest || !strings.Contains(reply.Body.String(), "Live") {
 		t.Fatalf("live reply: %d %s", reply.Code, reply.Body.String())
 	}
-	ctxReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	ctxReply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "text": "标题再大点", "liveCtx": map[string]any{"sid": "sid001", "current": 1},
 	}, hdr)
 	if ctxReply.Code == http.StatusForbidden {
@@ -80,30 +80,30 @@ func TestPublicLiveSessionsHTTP(t *testing.T) {
 func TestPublicLiveReactOnlyDeniesLiveWrites(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-live-ro", "research1", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-ro/reviews/research1/share-link", map[string]any{
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-ro/nodes/research1/share-link", map[string]any{
 		"ttlTier": "24h", "permissionPreset": "react_only",
 	}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	hdr := map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}
 
-	d := h.doPublic(http.MethodPost, "/public/gate-approvals/live-discard-all", map[string]any{"token": token}, hdr)
+	d := h.doPublic(http.MethodPost, "/public/approvals/live-discard-all", map[string]any{"token": token}, hdr)
 	if d.Code != http.StatusForbidden || !strings.Contains(d.Body.String(), "permission_denied") {
 		t.Fatalf("discard all: %d %s", d.Code, d.Body.String())
 	}
-	reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	reply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "live": map[string]any{"op": "discard", "sid": "sid001"},
 	}, hdr)
 	if reply.Code != http.StatusForbidden || !strings.Contains(reply.Body.String(), "permission_denied") {
 		t.Fatalf("live reply: %d %s", reply.Code, reply.Body.String())
 	}
-	pageReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	pageReply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "live": models.LiveEvent{Op: models.LiveOpGenerate, SID: "page01", Scope: "page", Prompt: "给登录弹窗三个方案"},
 	}, hdr)
 	if pageReply.Code != http.StatusForbidden || !strings.Contains(pageReply.Body.String(), "permission_denied") {
 		t.Fatalf("page generation bypassed react_only: %d %s", pageReply.Code, pageReply.Body.String())
 	}
-	ctxReply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	ctxReply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "text": "标题再大点", "liveCtx": map[string]any{"sid": "sid001", "current": 1},
 	}, hdr)
 	if ctxReply.Code == http.StatusForbidden {
@@ -167,7 +167,7 @@ func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
 				provider.eng = eng
 				h.h.Eng = eng
 				t.Cleanup(eng.Close)
-				created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-chat/reviews/preview/share-link", map[string]any{
+				created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-live-chat/nodes/preview/share-link", map[string]any{
 					"ttlTier": "24h", "permissionPreset": permission,
 				}))
 				url, _ := created["url"].(string)
@@ -175,7 +175,7 @@ func TestPublicLiveChatBeginUsesSharePermission(t *testing.T) {
 					t.Fatalf("share link: %v", created)
 				}
 				token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
-				reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+				reply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 					"token": token, "text": "就用这个", "liveCtx": map[string]any{"sid": "chat01", "current": 1, "params": map[string]any{"gap": "24px"}},
 				}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 				if reply.Code != http.StatusOK {
@@ -218,7 +218,7 @@ func TestLiveCapabilityForClarifyEmbedAndAuthenticatedPreview(t *testing.T) {
 			if token == "" {
 				t.Fatal("missing drawer token")
 			}
-			response := h.doPublic(http.MethodGet, "/public/gate-approvals/live-sessions", nil, map[string]string{headerShareToken: token})
+			response := h.doPublic(http.MethodGet, "/public/approvals/live-sessions", nil, map[string]string{headerShareToken: token})
 			body := parseJSON(t, response)
 			if response.Code != http.StatusOK || body["enabled"] != true || body["status"] != "active" {
 				t.Fatalf("drawer Live: %d %s", response.Code, response.Body.String())
@@ -287,10 +287,10 @@ func TestChatLiveGenerateThroughAuthenticatedAndEmbedReplies(t *testing.T) {
 				if entry == "embed" {
 					token, _ := redeem(t, h, issueSessionTicket(t, h, runID, nodeID))["token"].(string)
 					body["token"] = token
-					w := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", body, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
+					w := h.doPublic(http.MethodPost, "/public/approvals/reply", body, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 					code, response = w.Code, w.Body.String()
 				} else {
-					w := h.do(http.MethodPost, "/api/runs/"+runID+"/react/"+nodeID+"/reply", body)
+					w := h.do(http.MethodPost, "/api/runs/"+runID+"/nodes/"+nodeID+"/reply", body)
 					code, response = w.Code, w.Body.String()
 				}
 				if code != http.StatusOK || !strings.Contains(response, `"live"`) {

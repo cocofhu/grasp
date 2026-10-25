@@ -321,9 +321,9 @@
           "signature": "pm_list_runs(workflowId, limit?)",
           "desc": "列出近期 Run"
         },
-        "pm_list_pending_gates": {
-          "signature": "pm_list_pending_gates(limit?)",
-          "desc": "待审批门禁"
+        "pm_list_pending_nodes": {
+          "signature": "pm_list_pending_nodes(limit?)",
+          "desc": "待处理节点"
         },
         "pm_get_artifact": {
           "signature": "pm_get_artifact(artifactId? | runId+name, offset?, limit<=65536?)",
@@ -361,9 +361,9 @@
           "signature": "pm_start_run(workflowId, trigger?, inputs?, priority?, tags?)",
           "desc": "启动 Run"
         },
-        "pm_resume_gate": {
-          "signature": "pm_resume_gate(runId, nodeId, action, form?)",
-          "desc": "审批门禁"
+        "pm_decide_node": {
+          "signature": "pm_decide_node(runId, nodeId, action, form?)",
+          "desc": "决策人工门禁"
         },
         "pm_react_reply": {
           "signature": "pm_react_reply(runId, nodeId, text, force?, annotations?)",

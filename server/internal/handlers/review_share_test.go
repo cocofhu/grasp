@@ -57,13 +57,13 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-1", "research1", true)
 
-	w := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-rev-1/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
 	created := parseJSON(t, w)
 	url, _ := created["url"].(string)
-	if !strings.Contains(url, "/public/gate-approvals#t=") {
+	if !strings.Contains(url, "/public/approvals#t=") {
 		t.Fatalf("url fragment: %s", url)
 	}
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
@@ -85,7 +85,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 		t.Fatalf("review link must not fake GateID: %+v", row.GateID)
 	}
 
-	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-rev-1/reviews/research1/share-link", nil))
+	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-rev-1/nodes/research1/share-link", nil))
 	if st["state"] != models.ShareLinkStateActive {
 		t.Fatalf("status: %+v", st)
 	}
@@ -93,7 +93,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 		t.Fatalf("status leaked url: %+v", st)
 	}
 
-	list := h.do(http.MethodGet, "/api/gates", nil)
+	list := h.do(http.MethodGet, "/api/pending-nodes", nil)
 	if list.Code != 200 {
 		t.Fatalf("list: %d", list.Code)
 	}
@@ -108,7 +108,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 		t.Fatal("inbox leaked plaintext token")
 	}
 
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	p := parseJSON(t, prev)
 	if p["status"] != models.ShareLinkStateActive {
 		t.Fatalf("preview: %s", prev.Body.String())
@@ -140,7 +140,7 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 	}
 
 	nonce := publicPreviewNonce(t, h, token)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	out := parseJSON(t, dec)
@@ -148,12 +148,12 @@ func TestReviewShareCreateLookupConfirmAndInboxStatus(t *testing.T) {
 		t.Fatalf("decide: %d %s", dec.Code, dec.Body.String())
 	}
 
-	prevUsed := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prevUsed := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	stUsed := parseJSON(t, prevUsed)["status"]
 	if stUsed != models.ShareLinkStateUsed {
 		t.Fatalf("after confirm preview=%v body=%s", stUsed, prevUsed.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-rev-1/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-rev-1/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict {
 		t.Fatalf("recreate after confirm: %d %s", re.Code, re.Body.String())
 	}
@@ -163,29 +163,21 @@ func TestReviewShareKindIsolationAndHumanGateUnchanged(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-iso", "research1", true)
 
-	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
-	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
+	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-iso/nodes/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	revURL, _ := rev["url"].(string)
 	gateURL, _ := gate["url"].(string)
 	revTok := strings.TrimPrefix(revURL[strings.Index(revURL, "#t="):], "#t=")
 	gateTok := strings.TrimPrefix(gateURL[strings.Index(gateURL, "#t="):], "#t=")
 
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/gates/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code == 200 {
-		t.Fatalf("gates API on research must not mint a link: %s", w.Body.String())
-	} else if !strings.Contains(w.Body.String(), "not_human_gate") && !strings.Contains(w.Body.String(), "gate_not_pending") {
-		t.Fatalf("gates API on research: %d %s", w.Code, w.Body.String())
-	}
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
-		t.Fatalf("reviews API on human_gate: %d %s", w.Code, w.Body.String())
-	}
-	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/clarify/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); strings.Contains(w.Body.String(), "not_review_session") {
+	if w := h.do(http.MethodPost, "/api/runs/run-rev-iso/nodes/clarify/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); strings.Contains(w.Body.String(), "not_review_session") {
 		t.Fatalf("clarify must be a shareable review session: %d %s", w.Code, w.Body.String())
 	} else if w.Code != http.StatusNotFound && w.Code != http.StatusBadRequest {
 		t.Fatalf("reviews API on react clarify without pending conv: %d %s", w.Code, w.Body.String())
 	}
 
-	revPrev := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: revTok}))
-	gatePrev := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: gateTok}))
+	revPrev := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: revTok}))
+	gatePrev := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: gateTok}))
 	if revPrev["kind"] != models.ShareLinkKindReview {
 		t.Fatalf("review preview kind: %+v", revPrev)
 	}
@@ -203,19 +195,19 @@ func TestReviewShareKindIsolationAndHumanGateUnchanged(t *testing.T) {
 		t.Fatalf("gate preview must keep approve/reject: %+v", gActions)
 	}
 
-	regen := h.do(http.MethodPost, "/api/runs/run-rev-iso/reviews/research1/share-link/regen", nil)
+	regen := h.do(http.MethodPost, "/api/runs/run-rev-iso/nodes/research1/share-link/regen", nil)
 	if regen.Code != 200 {
 		t.Fatalf("regen review: %d %s", regen.Code, regen.Body.String())
 	}
 	newRevURL, _ := parseJSON(t, regen)["url"].(string)
 	newRevTok := strings.TrimPrefix(newRevURL[strings.Index(newRevURL, "#t="):], "#t=")
-	gateStill := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: gateTok}))
+	gateStill := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: gateTok}))
 	if gateStill["status"] != models.ShareLinkStateActive {
 		t.Fatalf("regen review must not revoke gate link: %+v", gateStill)
 	}
 
 	revNonce := publicPreviewNonce(t, h, newRevTok)
-	bad := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	bad := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": newRevTok, "action": "approve", "nonce": revNonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if bad.Code != http.StatusBadRequest || !strings.Contains(bad.Body.String(), "unsupported_action") {
@@ -223,7 +215,7 @@ func TestReviewShareKindIsolationAndHumanGateUnchanged(t *testing.T) {
 	}
 
 	nonce := publicPreviewNonce(t, h, gateTok)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": gateTok, "action": "approve", "comment": "可以流转", "name": "Jordan", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if dec.Code != 200 || parseJSON(t, dec)["status"] != "approved" {
@@ -235,12 +227,12 @@ func TestReviewShareValidationFailureDoesNotBurnLink(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-val", "research1", false)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-val/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-val/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
 	nonce := publicPreviewNonce(t, h, token)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	out := parseJSON(t, dec)
@@ -248,14 +240,14 @@ func TestReviewShareValidationFailureDoesNotBurnLink(t *testing.T) {
 		t.Fatalf("expected validation_failed: %d %s", dec.Code, dec.Body.String())
 	}
 
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	if parseJSON(t, prev)["status"] != models.ShareLinkStateActive {
 		t.Fatalf("link burned after validation failure: %s", prev.Body.String())
 	}
 
 	h.h.Arts.Save("run-rev-val", "research1", "research.json", "json", `{"title":"调研摘要","goals":["g1"]}`)
 	nonce2 := publicPreviewNonce(t, h, token)
-	dec2 := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec2 := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce2,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if dec2.Code != 200 || parseJSON(t, dec2)["status"] != "confirmed" {
@@ -267,22 +259,22 @@ func TestReviewShareLoginConfirmRevokesUnusedLink(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-login", "research1", true)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-login/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
-	w := h.do(http.MethodPost, "/api/runs/run-rev-login/react/research1/reply", map[string]any{
+	w := h.do(http.MethodPost, "/api/runs/run-rev-login/nodes/research1/reply", map[string]any{
 		"text": "确认并流转", "force": true,
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("login review reply: %d %s", w.Code, w.Body.String())
 	}
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	st := parseJSON(t, prev)["status"]
 	if st != models.ShareLinkStateRevoked && st != models.ShareLinkStateUsed {
 		t.Fatalf("after login confirm preview=%v body=%s", st, prev.Body.String())
 	}
-	re := h.do(http.MethodPost, "/api/runs/run-rev-login/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	re := h.do(http.MethodPost, "/api/runs/run-rev-login/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if re.Code != http.StatusConflict {
 		t.Fatalf("recreate after login confirm: %d %s", re.Code, re.Body.String())
 	}
@@ -294,7 +286,7 @@ func TestReviewShareDoneConversationCannotCreate(t *testing.T) {
 	if err := h.db.Model(&models.ReactConversation{}).Where("run_id = ?", "run-rev-done").Update("done", true).Error; err != nil {
 		t.Fatalf("mark done: %v", err)
 	}
-	w := h.do(http.MethodPost, "/api/runs/run-rev-done/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-rev-done/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusConflict && w.Code != http.StatusNotFound {
 		t.Fatalf("create on done conv: %d %s", w.Code, w.Body.String())
 	}
@@ -303,34 +295,34 @@ func TestReviewShareDoneConversationCannotCreate(t *testing.T) {
 func TestReviewShareReplyAndCancelDoNotConsume(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-reply", "research1", true)
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-reply/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-reply/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
-	reply := h.doPublic(http.MethodPost, "/public/gate-approvals/reply", map[string]any{
+	reply := h.doPublic(http.MethodPost, "/public/approvals/reply", map[string]any{
 		"token": token, "text": "请把摘要写短一点",
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if reply.Code == http.StatusForbidden {
 		t.Fatalf("reply csrf: %s", reply.Body.String())
 	}
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	if parseJSON(t, prev)["status"] != models.ShareLinkStateActive {
 		t.Fatalf("reply burned token: %d %s preview=%s", reply.Code, reply.Body.String(), prev.Body.String())
 	}
 
-	cancel := h.doPublic(http.MethodPost, "/public/gate-approvals/cancel", map[string]any{
+	cancel := h.doPublic(http.MethodPost, "/public/approvals/cancel", map[string]any{
 		"token": token,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if cancel.Code == http.StatusForbidden {
 		t.Fatalf("cancel csrf: %s", cancel.Body.String())
 	}
-	prev2 := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev2 := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	if parseJSON(t, prev2)["status"] != models.ShareLinkStateActive {
 		t.Fatalf("cancel burned token: %d %s preview=%s", cancel.Code, cancel.Body.String(), prev2.Body.String())
 	}
 
 	nonce := publicPreviewNonce(t, h, token)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	out := parseJSON(t, dec)
@@ -364,18 +356,18 @@ func seedAppPreviewReview(t *testing.T, h *harness, runID, nodeID string) {
 
 // TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected covers plan g1/g3/g4.2:
 // waiting_human preview review can mint review share links, inbox attaches shareLink,
-// public preview is productKind=app (remote-capable, leak-free), and gates API must fail.
+// and public preview is productKind=app (remote-capable, leak-free).
 func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 	h := newHarness(t)
 	seedAppPreviewReview(t, h, "run-ap-share", "preview1")
 
-	w := h.do(http.MethodPost, "/api/runs/run-ap-share/reviews/preview1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-ap-share/nodes/preview1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create preview review share: %d %s", w.Code, w.Body.String())
 	}
 	created := parseJSON(t, w)
 	url, _ := created["url"].(string)
-	if !strings.Contains(url, "/public/gate-approvals#t=") {
+	if !strings.Contains(url, "/public/approvals#t=") {
 		t.Fatalf("url fragment: %s", url)
 	}
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
@@ -394,12 +386,12 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 		t.Fatalf("preview review link must not fake GateID: %+v", row.GateID)
 	}
 
-	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-ap-share/reviews/preview1/share-link", nil))
+	st := parseJSON(t, h.do(http.MethodGet, "/api/runs/run-ap-share/nodes/preview1/share-link", nil))
 	if st["state"] != models.ShareLinkStateActive {
 		t.Fatalf("status: %+v", st)
 	}
 
-	list := h.do(http.MethodGet, "/api/gates", nil)
+	list := h.do(http.MethodGet, "/api/pending-nodes", nil)
 	if list.Code != 200 {
 		t.Fatalf("list: %d", list.Code)
 	}
@@ -414,7 +406,7 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 		t.Fatal("inbox leaked plaintext token")
 	}
 
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	p := parseJSON(t, prev)
 	if p["status"] != models.ShareLinkStateActive {
 		t.Fatalf("preview: %s", prev.Body.String())
@@ -440,18 +432,8 @@ func TestAppPreviewShareCreateAttachPreviewAndGateAPIRejected(t *testing.T) {
 		t.Fatalf("preview actions: %+v", actions)
 	}
 
-	// g3.3: preview review must not succeed via human_gate share API
-	gateW := h.do(http.MethodPost, "/api/runs/run-ap-share/gates/preview1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
-	if gateW.Code == http.StatusOK {
-		t.Fatalf("gates API on preview review must fail: %s", gateW.Body.String())
-	}
-	gateBody := gateW.Body.String()
-	if !strings.Contains(gateBody, "not_human_gate") && !strings.Contains(gateBody, "gate_not_pending") {
-		t.Fatalf("gates API on preview review: %d %s", gateW.Code, gateBody)
-	}
-
 	nonce := publicPreviewNonce(t, h, token)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	out := parseJSON(t, dec)
@@ -488,11 +470,11 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 	h := newHarness(t)
 	seedInboxClarify(t, h, "run-clarify-share", "clarify1")
 
-	if w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/gate/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code != http.StatusBadRequest || !strings.Contains(w.Body.String(), "not_review_session") {
-		t.Fatalf("human_gate must stay excluded: %d %s", w.Code, w.Body.String())
+	if w := h.do(http.MethodPost, "/api/runs/run-clarify-share/nodes/gate/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}); w.Code != http.StatusNotFound || !strings.Contains(w.Body.String(), "gate_not_pending") {
+		t.Fatalf("human_gate share follows gate rules: %d %s", w.Code, w.Body.String())
 	}
 
-	w := h.do(http.MethodPost, "/api/runs/run-clarify-share/reviews/clarify1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-clarify-share/nodes/clarify1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create clarify share: %d %s", w.Code, w.Body.String())
 	}
@@ -503,7 +485,7 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 		t.Fatalf("token: %s", token)
 	}
 
-	list := h.do(http.MethodGet, "/api/gates", nil)
+	list := h.do(http.MethodGet, "/api/pending-nodes", nil)
 	body := list.Body.String()
 	if !strings.Contains(body, `"kind":"clarify"`) {
 		t.Fatalf("inbox missing clarify item: %s", body)
@@ -515,7 +497,7 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 		t.Fatal("inbox leaked plaintext token")
 	}
 
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	p := parseJSON(t, prev)
 	if p["status"] != models.ShareLinkStateActive {
 		t.Fatalf("preview: %s", prev.Body.String())
@@ -537,13 +519,13 @@ func TestClarifyShareCreatePreviewInboxAndPublicCancel(t *testing.T) {
 		t.Fatalf("first-round empty product expected: %+v", p["structured"])
 	}
 
-	cancel := h.doPublic(http.MethodPost, "/public/gate-approvals/cancel", map[string]any{
+	cancel := h.doPublic(http.MethodPost, "/public/approvals/cancel", map[string]any{
 		"token": token,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if cancel.Code != 200 {
 		t.Fatalf("cancel: %d %s", cancel.Code, cancel.Body.String())
 	}
-	prev3 := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev3 := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	if parseJSON(t, prev3)["status"] != models.ShareLinkStateActive {
 		t.Fatalf("cancel burned token: %s", prev3.Body.String())
 	}
@@ -553,7 +535,7 @@ func TestReviewSharePermissionPresetReactOnly(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-preset", "research-preset", true)
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-preset/reviews/research-preset/share-link", map[string]any{
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-preset/nodes/research-preset/share-link", map[string]any{
 		"ttlTier": "24h", "permissionPreset": "react_only",
 	}))
 	if created["permissionPreset"] != models.SharePermissionReactOnly {
@@ -562,14 +544,14 @@ func TestReviewSharePermissionPresetReactOnly(t *testing.T) {
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
-	prev := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	prev := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token}))
 	actions, _ := prev["actions"].(map[string]any)
 	if _, ok := actions["confirm"]; ok {
 		t.Fatalf("review react_only preview still has confirm: %+v", actions)
 	}
 
 	nonce := publicPreviewNonce(t, h, token)
-	dec := h.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := h.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "confirm", "nonce": nonce,
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost})
 	if dec.Code != http.StatusForbidden || !strings.Contains(dec.Body.String(), "permission_denied") {
@@ -593,11 +575,11 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 		h.h.Arts.Save("run-rev-arts", "research1", name, "json", `{"reviewer":"FEEDBACK-LEAK"}`)
 	}
 
-	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
-	list := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: token}))
+	list := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/artifacts", nil, map[string]string{headerShareToken: token}))
 	if list["status"] != models.ShareLinkStateActive {
 		t.Fatalf("list status: %+v", list)
 	}
@@ -620,7 +602,7 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 		if names[name] {
 			t.Fatalf("public list leaked feedback artifact %q: %+v", name, names)
 		}
-		w := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts/"+name+"/content", nil, map[string]string{headerShareToken: token})
+		w := h.doPublic(http.MethodGet, "/public/approvals/artifacts/"+name+"/content", nil, map[string]string{headerShareToken: token})
 		if w.Code != http.StatusNotFound || strings.Contains(w.Body.String(), "FEEDBACK-LEAK") {
 			t.Fatalf("feedback content %q must be not_found: %d %s", name, w.Code, w.Body.String())
 		}
@@ -655,7 +637,7 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 	h.db.Create(&models.StateRun{
 		RunID: "run-rev-arts", NodeID: "research1", Iteration: 2, Status: "running", NodeType: "agent",
 	})
-	again := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: token}))
+	again := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/artifacts", nil, map[string]string{headerShareToken: token}))
 	againRuns, _ := again["nodeRuns"].(map[string]any)
 	clarify, _ := againRuns["clarify"].(map[string]any)
 	if clarify["status"] != "completed" {
@@ -672,7 +654,7 @@ func TestReviewSharePublicArtifactsListAndContent(t *testing.T) {
 		t.Fatalf("gate node without a state was invented: %+v", againRuns)
 	}
 
-	body := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts/research.json/content", nil, map[string]string{headerShareToken: token})
+	body := h.doPublic(http.MethodGet, "/public/approvals/artifacts/research.json/content", nil, map[string]string{headerShareToken: token})
 	if body.Code != 200 {
 		t.Fatalf("content: %d %s", body.Code, body.Body.String())
 	}
@@ -689,21 +671,21 @@ func TestReviewSharePublicArtifactsInactiveAndHumanGateDenied(t *testing.T) {
 	h := newHarness(t)
 	seedInboxReview(t, h, "run-rev-arts-deny", "research1", true)
 
-	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/reviews/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
-	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/gates/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
+	rev := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/nodes/research1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	gate := parseJSON(t, h.do(http.MethodPost, "/api/runs/run-rev-arts-deny/nodes/hg-r/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "8h"}))
 	revTok := strings.TrimPrefix(rev["url"].(string)[strings.Index(rev["url"].(string), "#t="):], "#t=")
 	gateTok := strings.TrimPrefix(gate["url"].(string)[strings.Index(gate["url"].(string), "#t="):], "#t=")
 
-	if w := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: gateTok}); w.Code != 403 {
+	if w := h.doPublic(http.MethodGet, "/public/approvals/artifacts", nil, map[string]string{headerShareToken: gateTok}); w.Code != 403 {
 		t.Fatalf("human_gate artifacts list: %d %s", w.Code, w.Body.String())
 	}
-	if w := h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts/research.json/content", nil, map[string]string{headerShareToken: gateTok}); w.Code != 403 {
+	if w := h.doPublic(http.MethodGet, "/public/approvals/artifacts/research.json/content", nil, map[string]string{headerShareToken: gateTok}); w.Code != 403 {
 		t.Fatalf("human_gate artifact content: %d %s", w.Code, w.Body.String())
 	}
 
 	h.db.Model(&models.GateShareLink{}).Where("token_hash = ?", gateshare.HashToken(revTok)).
 		Update("expires_at", time.Now().Add(-time.Hour))
-	exp := parseJSON(t, h.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: revTok}))
+	exp := parseJSON(t, h.doPublic(http.MethodGet, "/public/approvals/artifacts", nil, map[string]string{headerShareToken: revTok}))
 	if exp["status"] != models.ShareLinkStateExpired {
 		t.Fatalf("expired list: %+v", exp)
 	}

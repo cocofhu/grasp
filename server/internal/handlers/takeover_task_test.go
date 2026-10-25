@@ -152,7 +152,7 @@ func TestInboxContextTakeoverTask(t *testing.T) {
 	h.db.Create(&models.ReactConversation{RunID: "ib-rev", NodeID: "rev", Iteration: 1,
 		Messages: []models.ReactMessage{{Role: "agent", Text: "请复审"}}})
 
-	w := h.do(http.MethodGet, "/api/runs/ib-to/inbox-context?nodeId=impl&iteration=1", nil)
+	w := h.do(http.MethodGet, "/api/runs/ib-to/nodes/impl/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
@@ -160,7 +160,7 @@ func TestInboxContextTakeoverTask(t *testing.T) {
 	if cl["takeover"] != true || cl["task"] != "部署 •••" {
 		t.Fatalf("takeover clarify: %v", cl)
 	}
-	w = h.do(http.MethodGet, "/api/runs/ib-rev/inbox-context?nodeId=rev&iteration=1", nil)
+	w = h.do(http.MethodGet, "/api/runs/ib-rev/nodes/rev/context?iteration=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}

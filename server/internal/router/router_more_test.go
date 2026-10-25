@@ -94,15 +94,15 @@ func TestPublicGateMiddlewareHeadersAndPreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(cors(), publicGateMiddleware())
-	r.GET("/public/gate-approvals/preview", func(c *gin.Context) {
+	r.GET("/public/approvals/preview", func(c *gin.Context) {
 		c.Status(http.StatusOK)
 	})
-	r.OPTIONS("/public/gate-approvals/preview", func(c *gin.Context) {
+	r.OPTIONS("/public/approvals/preview", func(c *gin.Context) {
 		c.Status(http.StatusTeapot)
 	})
 
 	w := httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/public/approvals/preview", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("GET status=%d", w.Code)
 	}
@@ -123,9 +123,41 @@ func TestPublicGateMiddlewareHeadersAndPreflight(t *testing.T) {
 	}
 
 	w = httptest.NewRecorder()
-	r.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, "/public/gate-approvals/preview", nil))
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, "/public/approvals/preview", nil))
 	if w.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status=%d, want 204", w.Code)
+	}
+}
+
+func TestRetiredGatePathsAre404WithoutWildcardCORS(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := New(&handlers.Handlers{})
+	paths := []struct{ method, path string }{
+		{http.MethodGet, "/api/gates"},
+		{http.MethodGet, "/api/gates?wf=wf-1&tag=urgent"},
+		{http.MethodPost, "/api/runs/r1/gates/n1/resume"},
+		{http.MethodPost, "/api/runs/r1/gates/n1/share-link"},
+		{http.MethodPost, "/api/runs/r1/react/n1/reply"},
+		{http.MethodPost, "/api/runs/r1/react/n1/cancel"},
+		{http.MethodPost, "/api/runs/r1/reviews/n1/share-link"},
+		{http.MethodGet, "/api/runs/r1/inbox-context?nodeId=n1&iteration=1"},
+		{http.MethodGet, "/public/gate-approvals"},
+		{http.MethodGet, "/public/gate-approvals/preview"},
+		{http.MethodOptions, "/public/gate-approvals/preview"},
+		{http.MethodPost, "/public/gate-approvals/decide"},
+		{http.MethodOptions, "/public/gate-approvals/queue/remove"},
+	}
+	for _, tc := range paths {
+		w := httptest.NewRecorder()
+		r.ServeHTTP(w, httptest.NewRequest(tc.method, tc.path, nil))
+		if w.Code != http.StatusNotFound {
+			t.Fatalf("%s %s status=%d body=%s", tc.method, tc.path, w.Code, w.Body.String())
+		}
+		if strings.HasPrefix(tc.path, "/public/gate-approvals") {
+			if got := w.Header().Get("Access-Control-Allow-Origin"); got != "" {
+				t.Fatalf("%s %s CORS=%q", tc.method, tc.path, got)
+			}
+		}
 	}
 }
 
@@ -133,8 +165,8 @@ func TestPublicGateQueuePreflight(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := New(&handlers.Handlers{})
 	for _, path := range []string{
-		"/public/gate-approvals/queue/remove",
-		"/public/gate-approvals/queue/reorder",
+		"/public/approvals/queue/remove",
+		"/public/approvals/queue/reorder",
 	} {
 		w := httptest.NewRecorder()
 		r.ServeHTTP(w, httptest.NewRequest(http.MethodOptions, path, nil))

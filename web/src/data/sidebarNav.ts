@@ -1,3 +1,5 @@
+import { isNodeConversationPath } from '@/lib/run/nodeConversation'
+
 export type SidebarNavItem = { to: string; icon: string; labelKey: string }
 export type SidebarNavGroup = { titleKey?: string; items: SidebarNavItem[] }
 
@@ -14,16 +16,20 @@ export const sidebarNavGroups: SidebarNavGroup[] = [
   },
 ]
 
-/** Kanban plus the run list/detail belong to the Board workspace section. */
+/** Kanban plus the run list/detail/live belong to the Board workspace section. */
 export function isBoardSectionPath(path: string): boolean {
+  if (isNodeConversationPath(path)) return false
   return path === '/board' || path === '/runs' || path.startsWith('/runs/')
 }
 
-/** Solo starts from Home; /solo/:id is just the chat. */
+/**
+ * Solo and a run's node conversation start from Home.
+ * `/runs/{runId}/nodes/{nodeId}` must not be treated as the board.
+ */
 export function isHomeSectionPath(path: string): boolean {
   return (
     path === '/dashboard' ||
-    path.startsWith('/gates') ||
+    isNodeConversationPath(path) ||
     path.startsWith('/solo') ||
     path === '/requirements' ||
     path === '/assistant'

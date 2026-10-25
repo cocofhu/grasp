@@ -471,8 +471,8 @@ func BuildGateAutoPrompt(task GateAutoTask, userPrompt string) string {
 		b.WriteString(task.PathSummary)
 		b.WriteByte('\n')
 	}
-	b.WriteString("tools: pm_list_pending_gates, pm_resume_gate\n")
-	b.WriteString("guidance: 请用 pm_list_pending_gates 核对待处理门禁，再用 pm_resume_gate 决策。")
+	b.WriteString("tools: pm_list_pending_nodes, pm_decide_node\n")
+	b.WriteString("guidance: 请用 pm_list_pending_nodes 核对待处理门禁，再用 pm_decide_node 决策。")
 	b.WriteString("人工收件箱仍可见；若 Gate 已 resolved 请勿重复 Resume。\n")
 	if up := strings.TrimSpace(userPrompt); up != "" {
 		b.WriteString("\n[user prompt]\n")

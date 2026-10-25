@@ -267,7 +267,7 @@ export function shareStatusLabel(
 export type PublicGatePreviewImage = {
   mimeType?: string
   name?: string
-  /** Opaque dialogue-scoped index for GET /public/gate-approvals/images/:index. */
+  /** Opaque dialogue-scoped index for GET /public/approvals/images/:index. */
   index: number
 }
 
@@ -578,7 +578,7 @@ export function publicGateImageUrl(token: string, index: number): string {
   const tok = String(token || '').trim()
   const idx = Number(index)
   if (!tok || !Number.isFinite(idx) || idx < 0) return ''
-  return `/public/gate-approvals/images/${Math.floor(idx)}?token=${encodeURIComponent(tok)}&v=${getShareVisitorId()}`
+  return `/public/approvals/images/${Math.floor(idx)}?token=${encodeURIComponent(tok)}&v=${getShareVisitorId()}`
 }
 
 /** Map leak-free preview image indexes onto ClarifyImage rows with a token URL. */
@@ -603,7 +603,7 @@ export function mapPublicGateImages(
 
 export const publicGateApi = {
   eventsWsUrl(): string {
-    return window.location.origin.replace(/^http/, 'ws') + '/public/gate-approvals/events'
+    return window.location.origin.replace(/^http/, 'ws') + '/public/approvals/events'
   },
   preview(
     token: string,
@@ -621,7 +621,7 @@ export const publicGateApi = {
     if (th) headers['X-Gate-Known-Turns-Hash'] = th
     if (known?.silent) headers['X-Gate-Silent-Poll'] = '1'
     if (known?.issueNonce) headers['X-Gate-Issue-Nonce'] = '1'
-    return fetch('/public/gate-approvals/preview', {
+    return fetch('/public/approvals/preview', {
       method: 'GET',
       credentials: 'omit',
       signal,
@@ -638,7 +638,7 @@ export const publicGateApi = {
     })
   },
   upstream(token: string, signal?: AbortSignal): Promise<PublicGateUpstreamResult> {
-    return fetch('/public/gate-approvals/upstream', {
+    return fetch('/public/approvals/upstream', {
       method: 'GET',
       credentials: 'omit',
       signal,
@@ -665,7 +665,7 @@ export const publicGateApi = {
     },
     signal?: AbortSignal,
   ): Promise<PublicGateDecideResult> {
-    return fetch('/public/gate-approvals/decide', {
+    return fetch('/public/approvals/decide', {
       method: 'POST',
       credentials: 'omit',
       signal,
@@ -699,7 +699,7 @@ export const publicGateApi = {
     live?: LiveEvent
     liveCtx?: LiveCtx | null
   }): Promise<PublicGateReplyResult> {
-    return fetch('/public/gate-approvals/reply', {
+    return fetch('/public/approvals/reply', {
       method: 'POST',
       credentials: 'omit',
       headers: publicShareHeaders(undefined, true),
@@ -716,7 +716,7 @@ export const publicGateApi = {
     })
   },
   liveSessions(token: string): Promise<PublicLiveSessionsResult> {
-    return fetch('/public/gate-approvals/live-sessions', {
+    return fetch('/public/approvals/live-sessions', {
       method: 'GET',
       credentials: 'omit',
       headers: publicShareHeaders(token),
@@ -727,7 +727,7 @@ export const publicGateApi = {
     })
   },
   liveDiscardAll(token: string): Promise<PublicGateReplyResult & { discarding?: number }> {
-    return fetch('/public/gate-approvals/live-discard-all', {
+    return fetch('/public/approvals/live-discard-all', {
       method: 'POST',
       credentials: 'omit',
       headers: publicShareHeaders(undefined, true),
@@ -741,7 +741,7 @@ export const publicGateApi = {
     })
   },
   cancel(token: string): Promise<PublicGateReplyResult> {
-    return fetch('/public/gate-approvals/cancel', {
+    return fetch('/public/approvals/cancel', {
       method: 'POST',
       credentials: 'omit',
       headers: publicShareHeaders(undefined, true),
@@ -758,7 +758,7 @@ export const publicGateApi = {
     })
   },
   queueRemove(token: string, itemId: string): Promise<PublicGateReplyResult> {
-    return fetch('/public/gate-approvals/queue/remove', {
+    return fetch('/public/approvals/queue/remove', {
       method: 'POST',
       credentials: 'omit',
       headers: publicShareHeaders(undefined, true),
@@ -775,7 +775,7 @@ export const publicGateApi = {
     })
   },
   queueReorder(token: string, itemIds: string[]): Promise<PublicGateReplyResult> {
-    return fetch('/public/gate-approvals/queue/reorder', {
+    return fetch('/public/approvals/queue/reorder', {
       method: 'POST',
       credentials: 'omit',
       headers: publicShareHeaders(undefined, true),
@@ -792,7 +792,7 @@ export const publicGateApi = {
     })
   },
   artifacts(token: string, signal?: AbortSignal): Promise<PublicGateArtifactsResult> {
-    return fetch('/public/gate-approvals/artifacts', {
+    return fetch('/public/approvals/artifacts', {
       method: 'GET',
       credentials: 'omit',
       signal,
@@ -814,7 +814,7 @@ export const publicGateApi = {
     signal?: AbortSignal,
   ): Promise<PublicGateArtifactContentResult> {
     const encoded = encodeURIComponent(name)
-    return fetch(`/public/gate-approvals/artifacts/${encoded}/content`, {
+    return fetch(`/public/approvals/artifacts/${encoded}/content`, {
       method: 'GET',
       credentials: 'omit',
       signal,
@@ -841,7 +841,7 @@ export const publicGateApi = {
     purpose?: 'vnc' | 'api' | string,
     signal?: AbortSignal,
   ): Promise<PublicPreviewTicketResult> {
-    return fetch('/public/gate-approvals/preview-ticket', {
+    return fetch('/public/approvals/preview-ticket', {
       method: 'POST',
       credentials: 'omit',
       signal,
@@ -860,7 +860,7 @@ export const publicGateApi = {
   },
   /** One-shot ticket for the direct-preview chat drawer; needs reply permission. */
   embedTicket(token: string, signal?: AbortSignal): Promise<EmbedTicket> {
-    return fetch('/public/gate-approvals/embed-ticket', {
+    return fetch('/public/approvals/embed-ticket', {
       method: 'POST',
       credentials: 'omit',
       signal,
@@ -881,7 +881,7 @@ export const publicGateApi = {
 
 /** Build a site-root ws(s) URL for the public preview-vnc channel. */
 export function publicPreviewVncWsUrl(ticket: string, wsPath?: string): string {
-  const path = (wsPath || '/public/gate-approvals/preview-vnc/ws').trim() || '/public/gate-approvals/preview-vnc/ws'
+  const path = (wsPath || '/public/approvals/preview-vnc/ws').trim() || '/public/approvals/preview-vnc/ws'
   const q = `ticket=${encodeURIComponent(ticket)}`
   const base = path.includes('?') ? `${path}&${q}` : `${path}?${q}`
   return window.location.origin.replace(/^http/, 'ws') + base
