@@ -68,7 +68,8 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
-import { armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome } from '@/lib/inbox/sidebarHandoff'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
   consumeHomeApproveHandoff,
@@ -387,7 +388,10 @@ function closeFollowWs() {
 function followWsLive(runId: string): boolean {
   return !!followWs && followWs.readyState === 1 && (followWs as WebSocket & { _runId?: string })._runId === runId
 }
-function openFollowWs(runId: string) {
+/** Graph captured when the handoff socket opens, so a later enter can skip plumbing after the inbox run is cleared. */
+let followGraphNodes: Parameters<typeof applySidebarEnter>[2]
+function openFollowWs(runId: string, nodes?: Parameters<typeof applySidebarEnter>[2]) {
+  if (nodes) followGraphNodes = nodes
   if (followWsLive(runId)) return
   closeFollowWs()
   if (typeof WebSocket === 'undefined') return
@@ -427,7 +431,10 @@ function openFollowWs(runId: string) {
     }
     if (m.type === 'node_enter') onFollowNodeEnter(runId, m)
     else if (m.type === 'node_takeover') onFollowTakeover(runId, m)
-    else if (m.type === 'status') kickFollow()
+    else if (m.type === 'status') {
+      noteSidebarRunStatus(runId, (m as { status?: unknown }).status)
+      kickFollow()
+    }
     else if (m.type === 'acp') onFollowAcp(runId, m)
   }
   ws.onclose = () => {
@@ -451,11 +458,11 @@ function openFollowWs(runId: string) {
 function onFollowNodeEnter(runId: string, m: { nodeId?: string; iteration?: number; name?: string; kind?: string; mode?: string }) {
   const ft = followTail.value
   if (!ft) followSawNodeEnter = true
-  const plumbing = !!m.nodeId && isPlumbingNode(activeRun.value?.nodes, m.nodeId)
-  if (!plumbing && m.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (!plumbing && typeof m.mode === 'string' && m.mode) noteSidebarHandoffOutcome(runId, 'human')
+  const nodes = followGraphNodes ?? activeRun.value?.nodes
+  const plumbing = !!m.nodeId && isPlumbingNode(nodes, m.nodeId)
+  applySidebarEnter(runId, m, nodes)
   if (!ft || ft.runId !== runId || ft.kind === 'ended' || !active.value || itemKey(active.value) !== ft.key) return
-  if (m.nodeId && !isPlumbingNode(activeRun.value?.nodes, m.nodeId)) {
+  if (m.nodeId && !plumbing) {
     const label =
       m.name || ((activeRun.value?.nodes ?? []).find((n) => n.id === m.nodeId)?.label as string | undefined) || m.nodeId
     setFollowTail({
@@ -677,9 +684,12 @@ function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
     noteSidebarHandoffOutcome(runId, 'ended')
     return
   }
-  const mode = chain.current?.mode
-  if (mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto')
-  else if (mode) noteSidebarHandoffOutcome(runId, 'human')
+  const cur = chain.current
+  const mark = readSidebarHandoff(runId)
+  // The chain has not left the node this click confirmed. That is not a negation.
+  if (mark && cur?.id && cur.id === mark.fromNodeId) return
+  if (cur?.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto', { nodeId: cur.id, name: cur.name })
+  else if (cur?.mode) noteSidebarHandoffOutcome(runId, 'human')
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still
@@ -2753,6 +2763,8 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
   const submittedItem = g
   const prevList = listItems.value.slice()
   const positive = action === 'pass' || action === 'approve'
+  const handoffNodes = activeRun.value?.nodes
+  const handoffEdges = activeRun.value?.edges
   // Leave pending at confirm click — do not wait for resume/network (plan g1.2).
   // Positive path: start page-level overlay on click (g1.1); do not await before leave.
   // Page-level host survives selectActiveAfterRemove / shell remount (g1.2).
@@ -2763,11 +2775,17 @@ async function onResolve(action: string, form: Record<string, any> = {}) {
     activeRun.value = null
     activeRunLoadError.value = false
   }
-  if (positive) armSidebarHandoff(g.runId, g.nodeId)
+  if (positive) {
+    armSidebarHandoff(g.runId, g.nodeId, Date.now(), sidebarAutoTarget(handoffNodes, handoffEdges, g.nodeId, action))
+    openFollowWs(g.runId, handoffNodes)
+  }
   try {
     await api.resumeGate(g.runId, g.nodeId, action, form)
   } catch {
-    if (positive) clearSidebarHandoff(g.runId)
+    if (positive) {
+      clearSidebarHandoff(g.runId)
+      if (!followTail.value) closeFollowWs()
+    }
     confirmFlowDeskHold.value = false
     inboxConfirmFlow.reset()
     restoreListItemLocally(submittedItem, prevList)
@@ -2951,10 +2969,15 @@ async function onClarifySend(
     // Click intent: the conversation stays and shows the inline hand-off row
     // (no full-desk overlay); the inbox leaves once the hand-off is done.
     handoffState.value = { key: submittedKey, phase: 'pending', at: new Date().toISOString(), target: nextNodeLabel(it.nodeId) }
-    // The click does not know the next mode. Arm now; fly only after node_enter or the snapshot.
-    armSidebarHandoff(it.runId, it.nodeId)
+    // Move now only when the loaded graph has one automatic destination. No edges: wait for node_enter.
+    armSidebarHandoff(
+      it.runId,
+      it.nodeId,
+      Date.now(),
+      sidebarAutoTarget(activeRun.value?.nodes, activeRun.value?.edges, it.nodeId),
+    )
     // Socket first, then the POST: the next node's node_enter can arrive right after it.
-    openFollowWs(it.runId)
+    openFollowWs(it.runId, activeRun.value?.nodes)
   }
   // Always merge a staged pick when present (Approve may gain app preview mid-session).
   const mergedAnnotations =

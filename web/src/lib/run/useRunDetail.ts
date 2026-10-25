@@ -38,6 +38,7 @@ import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { armSidebarHandoff, clearSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
@@ -603,7 +604,11 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   // that arrives while it is in flight can still fly; clear if it fails.
   const handoffRunId = runId.value
   const handoffNodeId = run.value.gate.nodeId
-  if (positive && handoffRunId && handoffNodeId) armSidebarHandoff(handoffRunId, handoffNodeId)
+  if (positive && handoffRunId && handoffNodeId) {
+    const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
+    const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+    armSidebarHandoff(handoffRunId, handoffNodeId, Date.now(), sidebarAutoTarget(nodes, edges, handoffNodeId, action))
+  }
   let resumed = false
   try {
     await api.resumeGate(handoffRunId, handoffNodeId, action, form)
@@ -648,7 +653,11 @@ async function onClarifySend(
   const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
   if (force) clarifyForceInFlight = true
   // Same as the inbox: arm 确认并流转 before the request, drop it if the request fails.
-  if (force && runId.value) armSidebarHandoff(runId.value, nodeId)
+  if (force && runId.value) {
+    const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
+    const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+    armSidebarHandoff(runId.value, nodeId, Date.now(), sidebarAutoTarget(nodes, edges, nodeId))
+  }
   let sent = false
   try {
     if (retryLast) {

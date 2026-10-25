@@ -1,4 +1,6 @@
 import { ref } from 'vue'
+import { isPlumbingNode, isRunTerminal, type ChainNodeMeta } from '@/lib/inbox/runConversationChain'
+import type { SidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 
 /** One move from the old row box to the new one. Matches the sidebar ease, under 600ms. */
 export const SIDEBAR_FLIGHT_MS = 480
@@ -56,12 +58,22 @@ export function decideSidebarFlight(input: SidebarFlightInput): SidebarFlightDec
 export interface SidebarHandoffMark {
   fromNodeId: string
   confirmedAuto: boolean
+  /** Automatic node this handoff settled on, when already known. */
+  autoNodeId?: string
+  autoNodeName?: string
   at: number
+}
+
+export interface SidebarEnterTarget {
+  nodeId?: string
+  name?: string
 }
 
 const marks = new Map<string, SidebarHandoffMark>()
 /** node_enter auto that arrived before the click was recorded. */
-const earlyAuto = new Set<string>()
+const earlyAuto = new Map<string, SidebarEnterTarget>()
+/** Run finished during the handoff: hide it from both unfinished groups until the list drops it. */
+const dismissed = new Set<string>()
 
 /** Bumped whenever a mark changes so the sidebar can re-read it. */
 export const sidebarHandoffEpoch = ref(0)
@@ -70,24 +82,52 @@ function touch() {
   sidebarHandoffEpoch.value += 1
 }
 
-export function armSidebarHandoff(runId: string, fromNodeId: string, now = Date.now()) {
+export function armSidebarHandoff(
+  runId: string,
+  fromNodeId: string,
+  now = Date.now(),
+  target?: SidebarAutoTarget | null,
+) {
   if (!runId) return
-  const confirmedAuto = earlyAuto.has(runId)
+  const early = earlyAuto.get(runId)
   earlyAuto.delete(runId)
-  marks.set(runId, { fromNodeId, confirmedAuto, at: now })
+  dismissed.delete(runId)
+  const confirmedAuto = !!early || !!target
+  marks.set(runId, {
+    fromNodeId,
+    confirmedAuto,
+    autoNodeId: early?.nodeId || target?.nodeId,
+    autoNodeName: early?.name || target?.name,
+    at: now,
+  })
   touch()
 }
 
-export function noteSidebarHandoffOutcome(runId: string, outcome: 'auto' | 'human' | 'ended') {
+export function noteSidebarHandoffOutcome(
+  runId: string,
+  outcome: 'auto' | 'human' | 'ended',
+  target?: SidebarEnterTarget,
+) {
   if (!runId) return
+  if (outcome === 'ended') {
+    earlyAuto.delete(runId)
+    const had = marks.delete(runId)
+    const seen = dismissed.has(runId)
+    dismissed.add(runId)
+    if (had || !seen) touch()
+    return
+  }
+  if (dismissed.has(runId)) return
   if (outcome === 'auto') {
     const mark = marks.get(runId)
     if (!mark) {
-      earlyAuto.add(runId)
+      earlyAuto.set(runId, { nodeId: target?.nodeId, name: target?.name })
       return
     }
-    if (mark.confirmedAuto) return
-    marks.set(runId, { ...mark, confirmedAuto: true })
+    const autoNodeId = target?.nodeId || mark.autoNodeId
+    const autoNodeName = target?.name || mark.autoNodeName
+    if (mark.confirmedAuto && mark.autoNodeId === autoNodeId && mark.autoNodeName === autoNodeName) return
+    marks.set(runId, { ...mark, confirmedAuto: true, autoNodeId, autoNodeName })
     touch()
     return
   }
@@ -95,10 +135,40 @@ export function noteSidebarHandoffOutcome(runId: string, outcome: 'auto' | 'huma
   if (marks.delete(runId)) touch()
 }
 
+/** node_enter: plumbing does not move the row; an automatic agent settles it; anything else takes it back. */
+export function applySidebarEnter(
+  runId: string,
+  frame: { nodeId?: string; name?: string; mode?: string },
+  nodes?: ChainNodeMeta,
+) {
+  if (!runId) return
+  if (frame.nodeId && isPlumbingNode(nodes, frame.nodeId)) return
+  if (frame.mode === 'auto') {
+    noteSidebarHandoffOutcome(runId, 'auto', { nodeId: frame.nodeId, name: frame.name })
+    return
+  }
+  if (typeof frame.mode === 'string' && frame.mode) noteSidebarHandoffOutcome(runId, 'human')
+}
+
+/** A finished run leaves both unfinished groups. Other statuses do not. */
+export function noteSidebarRunStatus(runId: string, status: unknown) {
+  if (typeof status === 'string' && isRunTerminal(status)) noteSidebarHandoffOutcome(runId, 'ended')
+}
+
+export function isSidebarRunDismissed(runId: string): boolean {
+  return dismissed.has(runId)
+}
+
+export function sidebarTrackedRunIds(): string[] {
+  return [...new Set([...marks.keys(), ...dismissed])]
+}
+
 export function clearSidebarHandoff(runId: string) {
   earlyAuto.delete(runId)
   if (!runId) return
-  if (marks.delete(runId)) touch()
+  const had = marks.delete(runId)
+  const gone = dismissed.delete(runId)
+  if (had || gone) touch()
 }
 
 export function consumeSidebarHandoff(runId: string) {
@@ -119,5 +189,6 @@ export function readSidebarHandoff(runId: string, now = Date.now()): SidebarHand
 export function __resetSidebarHandoffForTests() {
   marks.clear()
   earlyAuto.clear()
+  dismissed.clear()
   sidebarHandoffEpoch.value = 0
 }

@@ -3,10 +3,13 @@ import {
   SIDEBAR_FLIGHT_MS,
   SIDEBAR_HANDOFF_TTL_MS,
   __resetSidebarHandoffForTests,
+  applySidebarEnter,
   armSidebarHandoff,
   clearSidebarHandoff,
   decideSidebarFlight,
+  isSidebarRunDismissed,
   noteSidebarHandoffOutcome,
+  noteSidebarRunStatus,
   readSidebarHandoff,
 } from './sidebarHandoff'
 
@@ -81,5 +84,43 @@ describe('sidebar handoff mark', () => {
     armSidebarHandoff('run-4', 'clarify', 1_000)
     clearSidebarHandoff('run-4')
     expect(readSidebarHandoff('run-4', 1_000)).toBeNull()
+  })
+
+  it('keeps an early automatic enter, including its name, until the click is recorded', () => {
+    noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'impl', name: '实现' })
+    expect(readSidebarHandoff('run-1', 1_000)).toBeNull()
+    armSidebarHandoff('run-1', 'clarify', 1_000)
+    expect(readSidebarHandoff('run-1', 1_000)).toMatchObject({
+      fromNodeId: 'clarify',
+      confirmedAuto: true,
+      autoNodeId: 'impl',
+      autoNodeName: '实现',
+    })
+  })
+
+  it('settles the click immediately when the destination is already an automatic agent', () => {
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    expect(readSidebarHandoff('run-1', 1_000)).toMatchObject({ confirmedAuto: true, autoNodeName: '实现' })
+    noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'test', name: '测试' })
+    expect(readSidebarHandoff('run-1', 1_000)).toMatchObject({ confirmedAuto: true, autoNodeId: 'test', autoNodeName: '测试' })
+  })
+
+  it('hides a finished run from both groups, and a plumbing enter does not settle anything', () => {
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    noteSidebarRunStatus('run-1', 'completed')
+    expect(readSidebarHandoff('run-1', 1_000)).toBeNull()
+    expect(isSidebarRunDismissed('run-1')).toBe(true)
+    noteSidebarRunStatus('run-1', 'running')
+    expect(isSidebarRunDismissed('run-1')).toBe(true)
+
+    applySidebarEnter('run-2', { nodeId: 'out', name: '输出', mode: 'auto' }, [{ id: 'out', type: 'output' }])
+    armSidebarHandoff('run-2', 'clarify', 1_000)
+    expect(readSidebarHandoff('run-2', 1_000)).toMatchObject({ confirmedAuto: false })
+
+    applySidebarEnter('run-2', { nodeId: 'impl', name: '实现', mode: 'auto' }, [{ id: 'out', type: 'output' }, { id: 'impl', type: 'agent' }])
+    expect(readSidebarHandoff('run-2', 1_000)).toMatchObject({ confirmedAuto: true, autoNodeName: '实现' })
+
+    applySidebarEnter('run-2', { nodeId: 'gate', name: '审批', mode: 'manual' }, [{ id: 'gate', type: 'human_gate' }])
+    expect(readSidebarHandoff('run-2', 1_000)).toBeNull()
   })
 })
