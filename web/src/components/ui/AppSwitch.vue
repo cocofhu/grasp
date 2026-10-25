@@ -59,4 +59,20 @@ function onKeydown(e: KeyboardEvent) {
     left var(--dur-ui) var(--ease-out-expo),
     transform var(--dur-ui) var(--ease-out-expo);
 }
+
+/* On + enabled only. Resting track stays bg-accent (#7B61FF). */
+.app-switch[aria-checked=true]:is(:hover, :focus-visible):not(:disabled) {
+  background-color: rgb(var(--c-accent-hover));
+  border-color: rgb(var(--c-accent-hover));
+}
+
+/* Color still snaps to the hover token; only the color transition is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .app-switch,
+  .app-switch-thumb {
+    transition:
+      left var(--dur-ui) var(--ease-out-expo),
+      transform var(--dur-ui) var(--ease-out-expo);
+  }
+}
 </style>
