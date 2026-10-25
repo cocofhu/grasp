@@ -111,6 +111,66 @@ describe('RunListView status segments', () => {
     wrapper.unmount()
   })
 
+  it('keeps the selected count visible above a transparent button on hover and focus', async () => {
+    mocks.listRuns.mockResolvedValue({ items: [DONE], total: 67 })
+    const rectOf = (el: HTMLElement) => {
+      if (el.classList.contains('sliding-tabs')) return new DOMRect(80, 20, 520, 36)
+      if (el.dataset.testid === 'run-seg-done') return new DOMRect(360, 24, 128, 28)
+      if (el.dataset.testid?.startsWith('run-seg-')) return new DOMRect(90, 24, 72, 28)
+      return new DOMRect(0, 0, 0, 0)
+    }
+    const rects = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return rectOf(this)
+    })
+    const { wrapper } = await setup('/runs?status=completed')
+    try {
+      const selected = wrapper.get('[data-testid="run-seg-done"]')
+      const visible = wrapper.get('[data-testid="moving-run-count"]')
+      const ghost = selected.get('[data-testid="seg-count"]')
+      const layer = visible.element.parentElement as HTMLElement
+      const highlight = wrapper.get<HTMLElement>('.sliding-tabs__indicator')
+
+      expect(visible.text()).toBe('67')
+      expect(ghost.text()).toBe('67')
+      expect(visible.classes()).not.toContain('opacity-0')
+      expect(ghost.classes()).toContain('opacity-0')
+      expect(selected.element.contains(visible.element)).toBe(false)
+      expect(highlight.element.contains(visible.element)).toBe(false)
+      expect(highlight.element.childElementCount).toBe(0)
+      expect(layer.classList.contains('sliding-tabs__count')).toBe(true)
+      expect(layer.style.display).not.toBe('none')
+      expect(layer.style.zIndex).toBe('2')
+      expect(layer.style.width).toBe(highlight.element.style.width)
+      expect(layer.style.transform).toBe(highlight.element.style.transform)
+      expect(highlight.classes()).toEqual(expect.arrayContaining(['bg-surface', 'shadow-sm']))
+      expect(highlight.classes()).not.toContain('bg-elevated')
+      for (const name of ['bg-transparent', 'hover:bg-transparent', 'focus:bg-transparent', 'focus-visible:bg-transparent', 'active:bg-transparent']) {
+        expect(selected.classes()).toContain(name)
+      }
+      expect(selected.classes().some((name) => name.startsWith('hover:bg-') && name !== 'hover:bg-transparent')).toBe(false)
+
+      await selected.trigger('mouseenter')
+      ;(selected.element as HTMLElement).focus()
+      expect(selected.attributes('aria-pressed')).toBe('true')
+      expect(wrapper.get('[data-testid="moving-run-count"]').text()).toBe('67')
+      expect(selected.get('[data-testid="seg-count"]').text()).toBe('67')
+
+      const idle = wrapper.get('[data-testid="run-seg-active"]')
+      expect(idle.classes()).toEqual(expect.arrayContaining(['text-txt3', 'hover:text-txt2', 'hover:bg-transparent']))
+      expect(idle.classes()).not.toContain('hover:text-txt')
+      expect(idle.classes().some((name) => name.startsWith('hover:bg-') && name !== 'hover:bg-transparent')).toBe(false)
+      await idle.trigger('mouseenter')
+      ;(idle.element as HTMLElement).focus()
+      expect(idle.attributes('aria-pressed')).toBe('false')
+      expect(idle.find('[data-testid="seg-count"]').exists()).toBe(false)
+      expect(wrapper.get('[data-testid="run-seg-done"]').attributes('aria-pressed')).toBe('true')
+      expect(wrapper.get('[data-testid="moving-run-count"]').text()).toBe('67')
+    } finally {
+      rects.mockRestore()
+      wrapper.unmount()
+    }
+  })
+
   it('shows the result count on the active segment and the workflow filter, like main', async () => {
     const { wrapper } = await setup()
     const counts = wrapper.findAll('[data-testid="seg-count"]')
@@ -144,6 +204,12 @@ describe('RunListView status segments', () => {
       await flushPromises()
       expect(count()).toBe('…')
       expect(wrapper.get('[data-testid="run-seg-active"] [data-testid="seg-count"]').text()).toBe('…')
+      expect(wrapper.get('[data-testid="moving-run-count"]').classes()).not.toContain('opacity-0')
+      expect(wrapper.get('[data-testid="run-seg-active"] [data-testid="seg-count"]').classes()).toContain('opacity-0')
+      await wrapper.get('[data-testid="run-seg-active"]').trigger('mouseenter')
+      ;(wrapper.get('[data-testid="run-seg-active"]').element as HTMLElement).focus()
+      expect(count()).toBe('…')
+      expect(wrapper.get('[data-testid="run-seg-active"]').attributes('aria-pressed')).toBe('true')
       expect(mocks.listRuns).toHaveBeenCalledTimes(2)
 
       // Both filters can have the same rows and total: the new filter still needs its own count.
@@ -158,6 +224,11 @@ describe('RunListView status segments', () => {
       pending[1]!({ items: [], total: 0 })
       await flushPromises()
       expect(count()).toBe('0')
+      await wrapper.get('[data-testid="run-seg-failed"]').trigger('mouseenter')
+      ;(wrapper.get('[data-testid="run-seg-failed"]').element as HTMLElement).focus()
+      expect(count()).toBe('0')
+      expect(wrapper.get('[data-testid="run-seg-failed"] [data-testid="seg-count"]').text()).toBe('0')
+      expect(wrapper.get('[data-testid="moving-run-count"]').classes()).not.toContain('opacity-0')
 
       await wrapper.get('[data-testid="run-seg-active"]').trigger('click')
       await flushPromises()
