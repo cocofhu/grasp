@@ -164,6 +164,7 @@ func New(h *handlers.Handlers) *gin.Engine {
 		api.POST("/solo/sessions/:id/restart", h.RestartSoloSession)
 		api.GET("/solo/sessions/:id/messages", h.ListSoloMessages)
 		api.GET("/solo/sessions/:id/env", h.GetSoloEnv)
+		api.POST("/solo/sessions/:id/model", h.SetSoloSessionModel)
 		api.POST("/solo/sessions/:id/turns", h.StartSoloTurn)
 		api.POST("/solo/sessions/:id/turns/cancel", h.CancelSoloTurn)
 		api.PUT("/solo/sessions/:id/queue", h.ReorderSoloQueue)

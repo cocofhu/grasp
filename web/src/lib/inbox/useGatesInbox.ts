@@ -2197,6 +2197,8 @@ const pageControlByNode = ref<Record<string, PageControlState>>({})
 let dialogueRailsFilled = false
 /** True once a live WS ACP frame applied content (stops seed retry per f2). */
 let dialogueLiveIncremental = false
+/** Node whose sandbox is still writing after the platform queue went idle. */
+let orphanLiveNodeId = ''
 const busySeedRetry = createBusySeedRetryController()
 const activeRunWsReconnect = createWsReconnectController({
   connect: () => {
@@ -2219,6 +2221,8 @@ function isClarifySoftRefreshBlocked(): boolean {
 
 function closeActiveRunWs() {
   stopOrphanRealign()
+  orphanLiveNodeId = ''
+  stopOrphanLiveSeed()
   busySeedRetry.stop()
   activeRunWsReconnect.markIntentionalClose()
   activeRunWs?.close()
@@ -2451,6 +2455,13 @@ async function projectClarifySessionAfterLoad(r: Run) {
     // Authority not busy (f3): queue_state already tore down empty placeholder.
     busySeedRetry.stop()
     flushPendingAcpFrames()
+    // Platform queue is idle, but the sandbox is still writing. Keep pulling
+    // the same live log a refresh would replay, and paint it on the open page.
+    if (nodeId && active.value?.runId && (snap?.sandboxBusy || snap?.sandboxDesynced)) {
+      orphanLiveNodeId = nodeId
+      await seedClarifyAcpFromNodeEventsOnce(active.value.runId, nodeId)
+      scheduleOrphanLiveSeed(active.value.runId, nodeId)
+    }
   }
 }
 
@@ -2573,6 +2584,19 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         }
       }
       applyOrBufferReviewFrame(m as Record<string, unknown>)
+      if (m.event === 'queue_state') {
+        if (queueStateIsOrphan(m)) {
+          const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
+          if (nid) {
+            orphanLiveNodeId = nid
+            flushPendingAcpFrames()
+            void pullOrphanLive(runId, nid)
+          }
+        } else {
+          orphanLiveNodeId = ''
+          stopOrphanLiveSeed()
+        }
+      }
       if (m.event === 'turn_done' || m.event === 'error') {
         clarifyLiveBusy.value = false
         busySeedRetry.stop()
@@ -2658,12 +2682,41 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
 }
 
 const ORPHAN_REALIGN_MS = 2000
+const ORPHAN_LIVE_MS = 1500
 let orphanRealignTimer: ReturnType<typeof setTimeout> | null = null
+let orphanLiveTimer: ReturnType<typeof setTimeout> | null = null
 let realignInflight = false
 
 function stopOrphanRealign() {
   if (orphanRealignTimer) clearTimeout(orphanRealignTimer)
   orphanRealignTimer = null
+}
+
+function stopOrphanLiveSeed() {
+  if (orphanLiveTimer) clearTimeout(orphanLiveTimer)
+  orphanLiveTimer = null
+}
+
+function scheduleOrphanLiveSeed(runId: string, nodeId: string) {
+  if (orphanLiveTimer || orphanLiveNodeId !== nodeId) return
+  orphanLiveTimer = setTimeout(() => {
+    orphanLiveTimer = null
+    void pullOrphanLive(runId, nodeId)
+  }, ORPHAN_LIVE_MS)
+}
+
+/** Live sandbox log for a turn the platform is no longer tracking. */
+async function pullOrphanLive(runId: string, nodeId: string) {
+  if (orphanLiveNodeId !== nodeId) return
+  if (active.value?.type !== 'clarify' || active.value.runId !== runId) return
+  try {
+    await seedClarifyAcpFromNodeEventsOnce(runId, nodeId)
+  } catch {
+    /* the next tick tries again */
+  }
+  if (orphanLiveNodeId !== nodeId) return
+  if (active.value?.type !== 'clarify' || active.value.runId !== runId) return
+  scheduleOrphanLiveSeed(runId, nodeId)
 }
 
 function scheduleOrphanRealign() {
