@@ -2370,8 +2370,10 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
   if (!nodeId) return
   const sessions = r?.reactSessions ?? pendingSnapshotSessions
   if (!sessions) return
-  const snap = sessions[nodeId]
-  if (!snap || typeof snap !== 'object') return
+  // Finished FIFO sessions are removed from the server registry. An explicit
+  // snapshot without this producer is idle, including after a missed turn_done.
+  const snap = sessions[nodeId] ?? { busy: false, waiting: 0, items: [] }
+  if (typeof snap !== 'object') return
   clarifyLiveBusy.value = !!snap.busy
   const frame: Record<string, unknown> = {
     event: 'queue_state',
@@ -2433,16 +2435,23 @@ function applyOrBufferReviewFrame(m: Record<string, unknown>) {
  * Order: queue_state → seed nodeEvents → flush pendingAcpBuffer → live (g2.1).
  * Covers clarify and gate.
  */
-async function projectClarifySessionAfterLoad(r: Run) {
+async function projectClarifySessionAfterLoad(r: Run, isCurrent = () => true) {
   dialogueRailsFilled = false
   dialogueLiveIncremental = false
   await nextTick()
+  if (!isCurrent()) return
   restoreReactSessions(r)
   await nextTick()
+  if (!isCurrent()) return
   flushPendingReviewFrames()
   await nextTick()
+  if (!isCurrent()) return
   const nodeId = activeDialogueNodeId(r)
   const snap = nodeId ? r.reactSessions?.[nodeId] : null
+  if (snap?.busy || !(snap?.sandboxBusy || snap?.sandboxDesynced)) {
+    orphanLiveNodeId = ''
+    stopOrphanLiveSeed()
+  }
   if (nodeId && snap?.busy && active.value?.runId) {
     // First attempt immediately, then busy-guarded retry (g3).
     await seedClarifyAcpFromNodeEventsOnce(active.value.runId, nodeId)
@@ -2466,10 +2475,10 @@ async function projectClarifySessionAfterLoad(r: Run) {
 }
 
 /** Re-seed after WS reconnect / snapshot — same depth as hard refresh (g4.2). */
-async function reseedAfterWsReconnect(runId: string) {
+async function reseedAfterWsReconnect(runId: string, isCurrent = () => true) {
   if (!active.value || active.value.runId !== runId) return
   if (!activeRun.value) return
-  await projectClarifySessionAfterLoad(activeRun.value)
+  await projectClarifySessionAfterLoad(activeRun.value, isCurrent)
 }
 
 function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
@@ -2489,6 +2498,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   }
   activeRunWsRunId = runId
   let socket: WebSocket
+  let dialogueRevision = 0
   try {
     socket = new WebSocket(api.runEventsWsUrl(runId))
     activeRunWs = socket
@@ -2501,9 +2511,6 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
   socket.onopen = () => {
     if (activeRunWs !== socket) return
     activeRunWsReconnect.markOpened()
-    if (opts?.fromReconnect) {
-      void reseedAfterWsReconnect(runId)
-    }
   }
   socket.onmessage = (ev) => {
     if (activeRunWs !== socket) return
@@ -2520,7 +2527,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       status?: string
       iteration?: number
       entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
-      run?: { reactSessions?: Run['reactSessions'] }
+      run?: { id?: string; reactSessions?: Run['reactSessions'] }
       previewArtifact?: string
       name?: string
     }
@@ -2541,16 +2548,36 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     }
     // WS connect snapshot may carry reactSessions before BroadcastReviewSessions.
     if (m.type === 'snapshot') {
-      const sessions = m.run?.reactSessions
+      // The full run DTO omits reactSessions after its last FIFO is removed.
+      // Only a matching full snapshot makes that omission authoritative idle.
+      const sessions = m.run?.reactSessions ?? (m.run?.id === runId ? {} : undefined)
       const dialogueActive =
         active.value &&
         (active.value.type === 'clarify' || active.value.type === 'gate') &&
         active.value.runId === runId
       if (sessions && dialogueActive) {
+        const revision = ++dialogueRevision
+        const activeKey = inboxTripleKey(active.value!)
+        const sameDialogue = () =>
+          activeRunWs === socket &&
+          !!active.value && inboxTripleKey(active.value) === activeKey
+        const isCurrent = () => sameDialogue() && dialogueRevision === revision
         if (activeRun.value) {
           activeRun.value = { ...activeRun.value, reactSessions: sessions }
           // Same depth as hard refresh: queue_state → seed → flush → live (g4.2).
-          void projectClarifySessionAfterLoad(activeRun.value)
+          void reseedAfterWsReconnect(runId, isCurrent).then(() => {
+            // A turn may have finished while disconnected. Reload its saved
+            // questions once the authoritative snapshot has released busy.
+            if (!sameDialogue() || !opts?.fromReconnect) return
+            const nodeId = activeDialogueNodeId()
+            const snap = nodeId ? sessions[nodeId] : undefined
+            if (
+              nodeId && !snap?.busy && !snap?.waiting && !snap?.activeItem &&
+              !clarifyLiveBusy.value && !isClarifySoftRefreshBlocked()
+            ) {
+              void softRefreshActiveRun()
+            }
+          })
         } else {
           pendingSnapshotSessions = sessions
         }
@@ -2558,6 +2585,8 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       return
     }
     if (m.type === 'review') {
+      const currentDialogue = m.nodeId === activeDialogueNodeId()
+      if (currentDialogue) dialogueRevision++
       // Sidebar「最近」has no channel of its own: relay turn boundaries.
       if (
         m.event === 'turn_begin' ||
@@ -2565,8 +2594,8 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         m.event === 'error' ||
         m.event === 'queue_state'
       ) notifyRecentActivity()
-      if (m.event === 'turn_begin') clarifyLiveBusy.value = true
-      if (m.event === 'queue_state' && typeof m.busy === 'boolean') {
+      if (currentDialogue && m.event === 'turn_begin') clarifyLiveBusy.value = true
+      if (currentDialogue && m.event === 'queue_state' && typeof m.busy === 'boolean') {
         clarifyLiveBusy.value = !!m.busy
         if (!m.busy) busySeedRetry.stop()
       }
@@ -2584,7 +2613,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         }
       }
       applyOrBufferReviewFrame(m as Record<string, unknown>)
-      if (m.event === 'queue_state') {
+      if (currentDialogue && m.event === 'queue_state') {
         if (queueStateIsOrphan(m)) {
           const nid = typeof m.nodeId === 'string' && m.nodeId ? m.nodeId : activeDialogueNodeId(activeRun.value) || ''
           if (nid) {
@@ -2597,7 +2626,7 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
           stopOrphanLiveSeed()
         }
       }
-      if (m.event === 'turn_done' || m.event === 'error') {
+      if (currentDialogue && (m.event === 'turn_done' || m.event === 'error')) {
         clarifyLiveBusy.value = false
         busySeedRetry.stop()
         if (active.value && active.value.runId === runId) void softRefreshActiveRun()
