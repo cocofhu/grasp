@@ -605,8 +605,32 @@ describe('AppSidebarNav', () => {
     expect(wrapper.find('[data-to="/notifications"]').exists()).toBe(true)
     expect(wrapper.find('[data-to="/runs"]').exists()).toBe(false)
     expect(wrapper.find('[data-to="/stats"]').exists()).toBe(false)
-    const settingsTos = categoryLinks.map((link) => link.attributes('data-to'))
-    expect(settingsTos[settingsTos.indexOf('/artifacts') + 1]).toBe('/settings/audit')
+    const settingsTos = categoryLinks.map((link) => (
+      link.attributes('data-testid') === 'nav-settings-integrations'
+        ? '/settings?integrations=1'
+        : link.attributes('data-to')
+    ))
+    expect(settingsTos).toEqual([
+      '/board',
+      '/requirements',
+      '/workflows',
+      '/assistant',
+      '/artifacts',
+      '/notifications',
+      '/settings/schedules',
+      '/settings/audit',
+      '/agents',
+      '/sandboxes',
+      '/settings/projects',
+      '/settings/credentials',
+      '/settings/variables',
+      '/settings/assistant',
+      '/settings/notification-policy',
+      '/settings/external-mcp',
+      '/settings',
+      '/settings?integrations=1',
+      '/settings/workspace',
+    ])
     expect(wrapper.find('[data-testid="nav-settings-integrations"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('返回工作区')

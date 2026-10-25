@@ -10,8 +10,10 @@ import (
 
 	"github.com/cocofhu/grasp/internal/crypto"
 	"github.com/cocofhu/grasp/internal/envauth"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
+	"gorm.io/gorm"
 )
 
 func setCredentialKey(t *testing.T) {
@@ -330,5 +332,112 @@ func TestModelAPIKeyProviderAndMasking(t *testing.T) {
 	key, value, ok := s.ResolveSelectedValue(created.ID)
 	if !ok || key != "" || value != "synthetic-dsh-key" {
 		t.Fatal("DeepSeek credential selection did not resolve")
+	}
+}
+
+func TestRemoveModelAPIDropsBoundConnectionsAndKeepsConfigurationsUnavailable(t *testing.T) {
+	connections, configurations, key, connection, configuration := newModelConfigurationFixture(t)
+	credentials := NewCredentialService(configurations.db)
+	other := newModelKey(t, credentials, "Other account")
+	otherConnection, err := connections.Create(connectionInput(other.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	git, err := credentials.Create(CredentialInput{Purpose: "git", Provider: "github", Name: "GitHub", Value: "ghp-synthetic"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := credentials.RemoveModelAPI(git.ID); !errors.Is(err, ErrCredentialNotRemovable) {
+		t.Fatalf("non API account removed: %v", err)
+	}
+	if _, err := credentials.Get(git.ID); err != nil {
+		t.Fatal("rejected delete changed the git account", err)
+	}
+	if err := credentials.RemoveModelAPI("missing-account"); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("missing account: %v", err)
+	}
+	if err := credentials.Clear(key.ID); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := credentials.Get(key.ID)
+	if err != nil || cleared.Configured || cleared.Name != key.Name {
+		t.Fatalf("clear removed the account row: %+v %v", cleared, err)
+	}
+	if _, _, ok := credentials.ResolveSelectedValue(key.ID); ok {
+		t.Fatal("cleared secret is still readable")
+	}
+	if _, err := connections.Get(connection.ID); err != nil {
+		t.Fatal("clear removed a model connection", err)
+	}
+	if err := credentials.RemoveModelAPI(key.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := credentials.Get(key.ID); !errors.Is(err, ErrCredentialNotFound) {
+		t.Fatalf("removed account still readable: %v", err)
+	}
+	rows, err := credentials.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, row := range rows {
+		if row.ID == key.ID {
+			t.Fatal("list still returns the removed account")
+		}
+	}
+	if _, _, ok := credentials.ResolveSelectedValue(key.ID); ok {
+		t.Fatal("removed secret is still readable")
+	}
+	var stored models.Credential
+	if err := configurations.db.First(&stored, "id = ?", key.ID).Error; !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("credential row remained: %+v %v", stored, err)
+	}
+	if _, err := connections.Get(connection.ID); !errors.Is(err, ErrModelConnectionNotFound) {
+		t.Fatalf("bound connection remained: %v", err)
+	}
+	if got, err := connections.Get(otherConnection.ID); err != nil || got.CredentialID != other.ID {
+		t.Fatalf("unrelated connection changed: %+v %v", got, err)
+	}
+	kept, err := configurations.Get(configuration.ID)
+	if err != nil || kept.Name == "" {
+		t.Fatal("model configuration was deleted", err)
+	}
+	resolved, err := connections.Resolve("opencode", modelrouting.Binding{Kind: "configuration", ConfigurationID: configuration.ID})
+	if err == nil || resolved.Secret != "" {
+		t.Fatalf("configuration did not fail closed: %+v %v", resolved, err)
+	}
+	if err := credentials.RemoveModelAPI(other.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok := credentials.ResolveSelectedValue(other.ID); ok {
+		t.Fatal("configured account secret remained readable")
+	}
+	if _, err := connections.Get(otherConnection.ID); !errors.Is(err, ErrModelConnectionNotFound) {
+		t.Fatal("configured account connection remained", err)
+	}
+}
+
+func TestRemoveModelAPIRollsBackWhenAccountDeleteFails(t *testing.T) {
+	connections, _, key, connection, _ := newModelConfigurationFixture(t)
+	credentials := NewCredentialService(connections.db)
+	const hook = "fail-model-api-account-delete"
+	if err := connections.db.Callback().Delete().Before("gorm:delete").Register(hook, func(tx *gorm.DB) {
+		if tx.Statement != nil && (tx.Statement.Table == "credentials" || (tx.Statement.Schema != nil && tx.Statement.Schema.Table == "credentials")) {
+			_ = tx.AddError(errors.New("forced account delete failure"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = connections.db.Callback().Delete().Remove(hook) })
+	if err := credentials.RemoveModelAPI(key.ID); err == nil {
+		t.Fatal("expected account deletion to fail")
+	}
+	if _, err := credentials.Get(key.ID); err != nil {
+		t.Fatal("account was removed despite the failure", err)
+	}
+	if _, value, ok := credentials.ResolveSelectedValue(key.ID); !ok || value != "private-model-key" {
+		t.Fatalf("secret changed after rollback: ok=%v value=%q", ok, value)
+	}
+	if got, err := connections.Get(connection.ID); err != nil || got.CredentialID != key.ID {
+		t.Fatalf("connection was removed despite the failure: %+v %v", got, err)
 	}
 }
