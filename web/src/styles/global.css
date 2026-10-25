@@ -691,6 +691,12 @@ html.light .app-sidebar-card {
 .hover-ink-host.is-leave-ink > .hover-ink {
   transform: translate(-50%, -50%) scale(0);
 }
+/* Disabled / loading: hide any cover that was already open. No fade through the elevated fallback. */
+.hover-ink-host.is-ink-suppressed > .hover-ink {
+  visibility: hidden;
+  transition: none;
+  transform: translate(-50%, -50%) scale(0);
+}
 /* Content / icons / badges stay above the ink layer (plan g1.2). */
 .hover-ink-host > :not(.hover-ink) {
   position: relative;
