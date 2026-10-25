@@ -19,6 +19,9 @@ import {
   sameRecentRows,
 } from '@/lib/run/recentRuns'
 
+/** Sidebar history asks for and renders the same number of finished runs. */
+const SIDEBAR_HISTORY_RUN_LIMIT = 20
+
 const props = defineProps<{ runTitles?: Record<string, string> }>()
 const emit = defineEmits<{ (e: 'navigate'): void }>()
 const { t } = useI18n()
@@ -44,7 +47,7 @@ async function loadRuns() {
     if (!await ensureLoaded() || runsRequest !== controller) return
     const result = await api.listRuns({
       page: 1,
-      pageSize: 6,
+      pageSize: SIDEBAR_HISTORY_RUN_LIMIT,
       status: HISTORY_RUN_STATUSES,
       sort: 'last_activity',
       order: 'desc',
@@ -52,7 +55,7 @@ async function loadRuns() {
     })
     if (runsRequest !== controller) return
     if (!Array.isArray(result?.items)) throw new Error('Invalid run list')
-    applyRuns(result.items.slice(0, 6))
+    applyRuns(result.items.slice(0, SIDEBAR_HISTORY_RUN_LIMIT))
     runsFailed.value = false
   } catch {
     if (runsRequest === controller) runsFailed.value = true
