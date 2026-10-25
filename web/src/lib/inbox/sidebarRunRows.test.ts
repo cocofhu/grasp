@@ -128,6 +128,30 @@ describe('sidebar handoff group', () => {
     const laterAuto = { id: 'r', currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'busy' } } as never
     expect(sidebarRunGroup(laterAuto, claim)).toBe('auto')
   })
+
+  it('keeps a confirmed automatic handoff on every snapshot that has not landed on a person', () => {
+    const snapshots = [
+      human,
+      { id: 'r' },
+      { id: 'r', currentNode: null },
+      { id: 'r', currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'starting' } },
+      { id: 'r', currentNode: { id: 'impl', name: '实现' } },
+      { id: 'r', currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'manual', state: 'running' } },
+      { id: 'r', currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } },
+    ]
+    for (const snap of snapshots) {
+      expect(sidebarRunGroup(snap as never, claim)).toBe('auto')
+      expect(sidebarAutoNodeName(snap as never, claim)).toBe('实现')
+    }
+    const review = { id: 'r', currentNode: { id: 'review', name: '评审', iteration: 1, kind: 'review', mode: 'manual', state: 'waiting_human' } }
+    const gate = { id: 'r', currentNode: { id: 'gate', name: '审批', iteration: 1, kind: 'gate', mode: 'manual', state: 'waiting_human' } }
+    const clarifyNext = { id: 'r', currentNode: { id: 'ask', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human' } }
+    const takeover = { id: 'r', currentNode: { id: 'impl', name: '实现', iteration: 1, kind: 'takeover', mode: 'manual', state: 'waiting_human' } }
+    for (const snap of [review, gate, clarifyNext, takeover]) {
+      expect(sidebarRunGroup(snap as never, claim)).toBe('running')
+      expect(sidebarAutoNodeName(snap as never, claim)).toBe('')
+    }
+  })
 })
 
 describe('uniqueAutoDestination', () => {

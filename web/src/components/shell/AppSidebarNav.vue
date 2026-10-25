@@ -23,7 +23,7 @@ import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
+import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarLandedOnHuman, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
 import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
@@ -1064,6 +1064,13 @@ function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
   const mark = readSidebarHandoff(runId)
   if (!mark) return
   const node = runningById.value.get(runId)?.currentNode
+  // Confirmed automatic: only a snapshot that has landed on a person ends it.
+  // Still on the old node, missing, or not yet running must not clear the claim.
+  if (mark.confirmedAuto) {
+    if (!sidebarLandedOnHuman(node, mark.fromNodeId)) return
+    clearSidebarHandoff(runId)
+    return
+  }
   if (!node?.id || node.id === mark.fromNodeId) return
   if (node.kind === 'agent' && node.mode === 'auto') return
   if (isAutoProcessNode(node)) return
@@ -1099,7 +1106,12 @@ function headingIsFlightTarget(id: RunSectionId): boolean {
 function settleRunGroups() {
   const listed = new Set(pendingRows.value.map((it) => it.runId))
   for (const runId of sidebarTrackedRunIds()) {
-    if (!listed.has(runId)) clearSidebarHandoff(runId)
+    if (listed.has(runId)) continue
+    const mark = readSidebarHandoff(runId)
+    // A row can vanish for one poll while the run is between the inbox item
+    // and the unfinished list. That gap is not the end of a confirmed automatic handoff.
+    if (mark?.confirmedAuto && !isSidebarRunDismissed(runId)) continue
+    clearSidebarHandoff(runId)
   }
   const next = new Map<string, SidebarRunGroup>()
   for (const it of orderedHumanRows.value) next.set(it.runId, 'running')

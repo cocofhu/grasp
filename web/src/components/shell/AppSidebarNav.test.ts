@@ -2730,6 +2730,114 @@ describe('自动过程 grouping and flight', () => {
     vi.useRealTimers()
   })
 
+  it('stays in 自动过程 across snapshots that have not landed on a person', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    const row = () => wrapper.get('[data-key="run-x"]')
+    expect(row().attributes('data-section')).toBe('auto')
+    expect(row().get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+
+    const other = run('run-y', '等人', 'waiting_human', {
+      id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human',
+    })
+    const steps = [
+      run('run-x', '登录', 'waiting_human', {
+        id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human',
+      }),
+      run('run-x', '登录', 'running'),
+      run('run-x', '登录', 'running', { id: 'impl', name: '实现', iteration: 1, kind: 'agent', mode: 'auto', state: 'starting' }),
+      run('run-x', '登录', 'running', { id: 'impl', name: '实现' }),
+    ]
+    const paths = ['/board', '/runs', '/stats', '/runs/run-1']
+    for (let i = 0; i < steps.length; i++) {
+      apiMocks.listRuns.mockResolvedValue({ items: [steps[i], other], total: 2 })
+      routeState.path = paths[i]
+      await flushPromises()
+      expect(row().attributes('data-section')).toBe('auto')
+      expect(row().get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    }
+
+    const nodes = [
+      { id: 'clarify', type: 'agent' },
+      { id: 'impl', type: 'agent' },
+      { id: 'gate', type: 'human_gate' },
+    ]
+    applySidebarEnter('run-x', { nodeId: 'clarify', name: '澄清', mode: 'manual', kind: 'clarify' }, nodes)
+    applySidebarEnter('run-x', { nodeId: 'impl', name: '实现', mode: 'manual', kind: 'agent' }, nodes)
+    applySidebarEnter('run-x', { nodeId: 'impl', name: '实现', mode: 'starting' }, nodes)
+    await flushPromises()
+    expect(row().attributes('data-section')).toBe('auto')
+    expect(row().get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'running', auto('impl', '实现')), other],
+      total: 2,
+    })
+    routeState.path = '/runs/run-x'
+    await flushPromises()
+    expect(row().attributes('data-section')).toBe('auto')
+    expect(row().get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [run('run-x', '登录', 'waiting_human', {
+        id: 'review', name: '评审', iteration: 1, kind: 'review', mode: 'manual', state: 'waiting_human',
+      }), other],
+      total: 2,
+    })
+    routeState.path = '/dashboard'
+    await flushPromises()
+    expect(row().attributes('data-section')).toBe('running')
+    expect(row().find('[data-testid="nav-auto-node-name"]').exists()).toBe(false)
+    expect(wrapper.get('[data-key="run-y"]').attributes('data-section')).toBe('running')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('keeps a confirmed automatic handoff when the row is missing from one list read', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    armSidebarHandoff('run-x', 'clarify', Date.now(), { nodeId: 'impl', name: '实现' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+
+    let resolveRuns: (value: unknown) => void = () => {}
+    apiMocks.listRuns.mockImplementationOnce(() => new Promise((resolve) => { resolveRuns = resolve }))
+    gateMocks.displayedItems.value = [clarify('run-y', 'clarify', '等人')]
+    await nextTick()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+
+    resolveRuns({
+      items: [run('run-y', '等人', 'waiting_human', {
+        id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human',
+      })],
+      total: 1,
+    })
+    await flushPromises()
+    expect(wrapper.find('[data-key="run-x"]').exists()).toBe(false)
+
+    apiMocks.listRuns.mockResolvedValue({
+      items: [
+        run('run-x', '登录', 'running'),
+        run('run-y', '等人', 'waiting_human', {
+          id: 'clarify', name: '澄清', iteration: 1, kind: 'clarify', mode: 'manual', state: 'waiting_human',
+        }),
+      ],
+      total: 2,
+    })
+    routeState.path = '/board'
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-key="run-x"]').get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
+    expect(wrapper.get('[data-key="run-y"]').attributes('data-section')).toBe('running')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
   it('returns to 正在执行 when the handoff fails, and leaves both groups when the run ends', async () => {
     gateMocks.displayedItems.value = [clarify('run-x', 'clarify', '登录'), clarify('run-y', 'clarify', '等人')]
     const wrapper = mountNav(true)

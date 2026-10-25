@@ -158,6 +158,70 @@ describe('sidebar handoff mark', () => {
     expect(readSidebarHandoff('run-2', 1_000)).toBeNull()
   })
 
+  it('keeps a confirmed automatic handoff when a non-auto signal is not a person', () => {
+    const nodes = [
+      { id: 'clarify', type: 'agent' },
+      { id: 'impl', type: 'agent' },
+      { id: 'gate', type: 'human_gate' },
+    ]
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    applySidebarEnter('run-1', { nodeId: 'clarify', name: '澄清', mode: 'manual', kind: 'clarify' }, nodes, 1_100)
+    applySidebarEnter('run-1', { nodeId: 'impl', name: '实现', mode: 'manual', kind: 'agent' }, nodes, 1_200)
+    applySidebarEnter('run-1', { nodeId: 'impl', name: '实现', mode: 'starting' }, nodes, 1_300)
+    expect(sidebarChainHandoff(
+      { status: 'running', current: { id: 'impl', name: '实现', mode: 'manual', kind: 'agent' } },
+      'clarify',
+      nodes,
+    )).toBeNull()
+    expect(sidebarChainHandoff(
+      { status: 'running', current: { id: 'impl', name: '实现', mode: 'starting' } },
+      'clarify',
+      nodes,
+    )).toBeNull()
+    expect(readSidebarHandoff('run-1', 1_300)).toMatchObject({
+      confirmedAuto: true,
+      autoNodeId: 'impl',
+      autoNodeName: '实现',
+    })
+
+    applySidebarEnter('run-1', { nodeId: 'test', name: '测试', mode: 'auto' }, nodes, 1_400)
+    expect(readSidebarHandoff('run-1', 1_400)).toMatchObject({
+      confirmedAuto: true,
+      autoNodeId: 'test',
+      autoNodeName: '测试',
+    })
+  })
+
+  it('still drops a confirmed automatic handoff for a person, a failure, or the end', () => {
+    const nodes = [
+      { id: 'clarify', type: 'agent' },
+      { id: 'impl', type: 'agent' },
+      { id: 'gate', type: 'human_gate' },
+    ]
+    armSidebarHandoff('run-1', 'clarify', 1_000, { nodeId: 'impl', name: '实现' })
+    const human = sidebarChainHandoff(
+      { status: 'waiting_human', current: { id: 'gate', name: '审批', mode: 'manual' } },
+      'clarify',
+      nodes,
+    )
+    expect(human).toEqual({ outcome: 'human' })
+    noteSidebarHandoffOutcome('run-1', 'human', undefined, 1_100)
+    expect(readSidebarHandoff('run-1', 1_100)).toBeNull()
+
+    armSidebarHandoff('run-1', 'clarify', 1_200, { nodeId: 'impl', name: '实现' })
+    applySidebarEnter('run-1', { nodeId: 'gate', name: '审批', mode: 'manual', kind: 'gate' }, nodes, 1_300)
+    expect(readSidebarHandoff('run-1', 1_300)).toBeNull()
+
+    armSidebarHandoff('run-1', 'clarify', 1_400, { nodeId: 'impl', name: '实现' })
+    clearSidebarHandoff('run-1')
+    expect(readSidebarHandoff('run-1', 1_400)).toBeNull()
+
+    armSidebarHandoff('run-1', 'clarify', 1_500, { nodeId: 'impl', name: '实现' })
+    noteSidebarHandoffOutcome('run-1', 'ended', undefined, 1_600)
+    expect(readSidebarHandoff('run-1', 1_600)).toBeNull()
+    expect(isSidebarRunDismissed('run-1')).toBe(true)
+  })
+
   it('ignores a replay of the node being confirmed, then settles on the next automatic node', () => {
     armSidebarHandoff('run-1', 'review', 1_000, null)
     noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'review', name: '评审' }, 1_100)
