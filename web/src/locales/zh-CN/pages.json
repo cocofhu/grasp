@@ -19,7 +19,7 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
-      "heroSubtitle": "先说清，再动手",
+      "heroSubtitle": "我们应该做些什么？",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -260,7 +260,6 @@
     "board": {
       "title": "运行看板",
       "subtitle": "跟进正在执行的工作，处理等待人工的任务。",
-      "toolbarHint": "点击列标题查看全部运行",
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
       "overviewRecords": "共 {n} 条执行记录",
@@ -268,7 +267,6 @@
       "refresh": "刷新",
       "allRuns": "全部运行",
       "usage": "用量统计",
-      "viewMoreCompleted": "在运行列表中查看更多 →",
       "loading": "加载中…",
       "loadFailed": "看板数据加载失败，请重试",
       "retry": "重试",
@@ -1265,6 +1263,9 @@
         "clear": "清除",
         "saved": "凭据已保存",
         "cleared": "凭据已清除",
+        "accountDeleteConfirm": "删除 API 账号「{alias}」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？",
+        "accountDeleted": "API 账号已删除",
+        "accountDeleteFailed": "删除 API 账号失败",
         "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
         "updatedAt": "最近更新：{time}"
       },
@@ -1876,7 +1877,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "侧栏与首页打字机共用，最多 40 个字符；留空回退 Grasp。",
         "homeSubtitle": "首页副标题",
-        "homeSubtitlePlaceholder": "先说清，再动手",
+        "homeSubtitlePlaceholder": "我们应该做些什么？",
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
@@ -2100,7 +2101,7 @@
       "unsaved": "未保存",
       "saved": "已保存",
       "tabs": {
-        "files": "Agent 工作目录 ({n})",
+        "files": "工作目录 ({n})",
         "mcp": "MCP ({n})",
         "env": "环境变量 ({n})",
         "test": "对话测试",
@@ -2988,7 +2989,7 @@
         "selected": "已选 {n} 个",
         "manage": "管理仓库",
         "inherit": "沿用默认配置",
-        "inheritHint": "继承「Agent 默认配置」中选中的仓库权限",
+        "inheritHint": "继承「默认配置」中选中的仓库权限",
         "inheritedEmpty": "默认配置还没有选择仓库，当前不会注入任何仓库级凭据。",
         "loadFailed": "仓库列表加载失败",
         "retry": "重试",
