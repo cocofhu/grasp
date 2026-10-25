@@ -218,6 +218,20 @@ func main() {
 	})
 	// The catalog provides model choices; saved model configurations determine execution.
 	openCodeCatalog := opencodecatalog.New(cfg.Sandbox.OpenCodeCatalogURL)
+	sshKeyPath := sandbox.DataPlaneKeyPath(cfg.SecretsKeyFile())
+	sandbox.SetDataPlaneKeyFile(sshKeyPath)
+	log.Info().Str("path", sshKeyPath).Msg("data-plane ssh key file")
+	sandboxToken := func(id string) string {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return ""
+		}
+		var row models.Sandbox
+		if err := db.Select("token").Where("name = ?", id).First(&row).Error; err != nil {
+			return ""
+		}
+		return row.Token
+	}
 	provider := runtime.NewProvider(host, runtime.Options{
 		SandboxImage:         cfg.Sandbox.Image,
 		SandboxImages:        cfg.Sandbox.Images,
@@ -233,6 +247,8 @@ func main() {
 		InjectStore:          injectStore,
 		Runtime:              runtimeBundle,
 		Blobs:                blobStore,
+		SSHKeyFile:           sshKeyPath,
+		DataPlanePassword:    sandboxToken,
 		ProfilesRoot:         cfg.Engine.ProfilesRoot,
 		SharedAgent: func() runtime.SharedAgentView {
 			cfg := sharedAgentSvc.Get()
@@ -359,14 +375,16 @@ func main() {
 	eng.SetAgents(agentSvc)
 	sbxGateway := sandbox.NewGatewayClient(cfg.Sandbox.GatewayURL, cfg.Sandbox.GatewayAPIKey)
 	sbxMgr := sandbox.NewManager(sbxGateway, sandbox.ManagerOptions{
-		Image:           cfg.Sandbox.Image,
-		WorkspaceDir:    "/root/workspace",
-		InstallHelpers:  true,
-		InjectStore:     injectStore,
-		InjectAdvertise: cfg.Server.MCPAdvertise,
-		CreateTimeout:   cfg.SandboxCreateTimeout(),
-		Blobs:           blobStore,
-		Runtime:         runtimeBundle,
+		Image:             cfg.Sandbox.Image,
+		WorkspaceDir:      "/root/workspace",
+		InstallHelpers:    true,
+		InjectStore:       injectStore,
+		InjectAdvertise:   cfg.Server.MCPAdvertise,
+		CreateTimeout:     cfg.SandboxCreateTimeout(),
+		Blobs:             blobStore,
+		Runtime:           runtimeBundle,
+		SSHKeyFile:        sshKeyPath,
+		DataPlanePassword: sandboxToken,
 	})
 	log.Info().Str("gateway", cfg.Sandbox.GatewayURL).Msg("sandbox control plane: sandbox-gateway")
 	sbxSvc := services.NewSandboxService(db, sbxMgr, agentSvc, host, services.SandboxOptions{
