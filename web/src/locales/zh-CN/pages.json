@@ -3268,6 +3268,7 @@
       "confirmFlowDialogDiscardDraft": "未发送的草稿将被丢弃。",
       "confirmFlowDialogDiscardBoth": "未保存的编辑和未发送的草稿将被丢弃。",
       "confirmFlowDialogConfirm": "确认流转",
+      "confirmFlowDialogDone": "已流转",
       "sandboxBusy": "沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。",
       "abortAndConfirm": "中止当前回合并确认",
       "sandboxOrphanBanner": "沙箱中还有一个平台不再跟踪的回合{op}，沙箱还没结束。",

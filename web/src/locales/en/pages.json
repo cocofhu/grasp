@@ -3268,6 +3268,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
