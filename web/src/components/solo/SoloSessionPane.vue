@@ -25,12 +25,13 @@ import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { repoShort } from '@/lib/solo/soloPrefs'
+import { branchOfRepo, sessionRepos } from '@/lib/solo/sessionRepos'
 import { isSoloLimitError, soloErrorText } from '@/lib/solo/soloErrors'
 import type { Artifact } from '@/lib/shared/types'
 
 const props = defineProps<{ sessionId: string }>()
 const emit = defineEmits<{ (e: 'back'): void }>()
-const { t, te } = useI18n()
+const { t, te, locale } = useI18n()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
@@ -57,7 +58,8 @@ let artifactPoll: number | undefined
 watch(session, (s) => s && store.upsert(s))
 
 const title = computed(() => session.value?.title || t('pages.solo.untitled'))
-const project = computed(() => session.value?.project ?? null)
+const repos = computed(() => sessionRepos(session.value))
+const editProjectId = computed(() => repos.value.find((repo) => repo.projectId)?.projectId || session.value?.projectId || '')
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
 const sandboxResource = computed(() => {
   const source = session.value?.sandbox
@@ -65,7 +67,6 @@ const sandboxResource = computed(() => {
   return id > 0 ? { id, hasCodeServer: source?.hasCodeServer } : null
 })
 const sandboxResourceLoading = computed(() => status.value === 'starting' && !sandboxResource.value)
-const branchLabel = computed(() => session.value?.branch || project.value?.defaultBranch || '')
 const showStartup = computed(() => status.value === 'starting' && !!session.value)
 
 function avatar(name: string) {
@@ -204,7 +205,7 @@ async function doRestart() {
     if (isSoloLimitError(e)) {
       limitOpen.value = true
       void store.refresh()
-    } else actionError.value = soloErrorText(e, t, te)
+    } else actionError.value = soloErrorText(e, t, te, locale.value)
   } finally {
     restarting.value = false
   }
@@ -217,7 +218,7 @@ async function doDelete() {
     store.remove(props.sessionId)
     void router.push('/dashboard')
   } catch (e) {
-    actionError.value = soloErrorText(e, t, te)
+    actionError.value = soloErrorText(e, t, te, locale.value)
   }
 }
 
@@ -298,7 +299,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
               <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
-              <RouterLink v-if="session.projectId" :to="`/settings/projects?edit=${session.projectId}`" class="solo-error-link">
+              <RouterLink v-if="editProjectId" :to="`/settings/projects?edit=${editProjectId}`" class="solo-error-link">
                 <Icon name="settings" :size="14" />{{ t('pages.solo.errorCard.edit') }}
               </RouterLink>
             </div>
@@ -307,7 +308,13 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           <div v-if="!turns.length && status === 'running'" class="solo-empty">
             <span class="solo-empty__avatar" :style="avatar(session.agentName)">{{ agentInitial(session.agentName) }}</span>
             <p class="text-[13px] text-txt2">{{ t('pages.solo.chat.empty', { agent: session.agentName }) }}</p>
-            <p v-if="project" class="font-mono text-[11.5px] text-txt3">{{ repoShort(project.repoUrl) }}<template v-if="branchLabel"> @ {{ branchLabel }}</template></p>
+            <ul v-if="repos.length" class="solo-empty__repos" data-testid="solo-empty-repos">
+              <li v-for="repo in repos" :key="`${repo.position}-${repo.repoUrl}`">
+                {{ repoShort(repo.repoUrl) }} @ {{ branchOfRepo(repo, t('pages.solo.env.remoteDefault')) }}
+              </li>
+            </ul>
+            <p v-else class="text-[11.5px] text-txt3">{{ t('pages.solo.noProject') }}</p>
+            <p v-if="repos.length" class="max-w-[420px] text-center text-[11.5px] leading-relaxed text-txt3">{{ t('pages.solo.chat.reposFrozen') }}</p>
           </div>
 
           <template v-for="turn in turns" :key="turn.id">
@@ -483,7 +490,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
           </div>
           <p v-if="busy">{{ t('pages.solo.close.busy') }}</p>
           <button
-            v-if="project && status === 'running'"
+            v-if="repos.length && status === 'running'"
             type="button"
             class="solo-push-hint"
             data-testid="solo-close-push"
@@ -606,6 +613,18 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
   gap: 8px;
   padding: 48px 0 12px;
   text-align: center;
+}
+.solo-empty__repos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  text-align: center;
+}
+.solo-empty__repos li {
+  margin-top: 4px;
+  color: rgb(var(--c-txt3));
+  font-family: ui-monospace, monospace;
+  font-size: 11.5px;
 }
 .solo-empty__avatar {
   display: inline-flex;

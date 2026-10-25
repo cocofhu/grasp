@@ -14,7 +14,7 @@ const props = defineProps<{ open: boolean; presetAgent?: string; presetProject?:
 const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useI18n()
 const launcher = useSoloLauncher()
-const { agents, projects, agentName, projectId, branch, project, loading, creating, error, limitOpen } = launcher
+const { agents, projects, agentName, projectIds, branches, loading, creating, error, limitOpen } = launcher
 
 const text = ref('')
 const title = ref('')
@@ -29,7 +29,7 @@ watch(
     error.value = ''
     await launcher.load()
     if (props.presetAgent && agents.value.some((a) => a.name === props.presetAgent)) agentName.value = props.presetAgent
-    if (props.presetProject && projects.value.some((p) => p.id === props.presetProject)) projectId.value = props.presetProject
+    if (props.presetProject && projects.value.some((p) => p.id === props.presetProject)) launcher.selectOnly(props.presetProject)
   },
   { immediate: true },
 )
@@ -55,19 +55,17 @@ function onSaved(p: Project) {
         </div>
         <div>
           <span class="label">{{ t('pages.solo.create.project') }}</span>
-          <SoloProjectSelect v-model="projectId" class="!max-w-none" :projects="projects" :loading="loading" @create="drawerOpen = true" />
+          <SoloProjectSelect
+            v-model="projectIds"
+            class="!max-w-none"
+            :projects="projects"
+            :branches="branches"
+            :loading="loading"
+            @update:branch="launcher.setProjectBranch"
+            @create="drawerOpen = true"
+          />
         </div>
       </div>
-      <label v-if="project" class="block">
-        <span class="label">{{ t('pages.solo.create.branch') }}</span>
-        <input
-          v-model="branch"
-          class="input w-full font-mono"
-          spellcheck="false"
-          :placeholder="project.defaultBranch || t('pages.solo.create.branchPlaceholder')"
-          data-testid="solo-create-branch"
-        />
-      </label>
       <label class="block">
         <span class="label">{{ t('pages.solo.create.titleLabel') }}</span>
         <input v-model="title" class="input w-full" maxlength="80" :placeholder="t('pages.solo.create.titlePlaceholder')" />

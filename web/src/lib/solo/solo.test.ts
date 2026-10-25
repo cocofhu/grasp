@@ -15,6 +15,8 @@ import {
   repoNameFromUrl,
 } from './projectForm'
 import { repoProtocol, repoShort } from './soloPrefs'
+import { soloErrorText } from './soloErrors'
+import { branchOfRepo, repoTriggerLabel, sessionRepoLabel, sessionRepos, soloCreateChoices } from './sessionRepos'
 
 const label = () => ''
 const chunk = (kind: string, text: string) => ({ op: 'event', data: { type: 'session_update', update: { sessionUpdate: kind, content: { type: 'text', text } } } })
@@ -59,6 +61,60 @@ describe('acpTurn', () => {
     expect(turns[3]!.steps).toEqual([{ kind: 'message', text: 'partial' }])
     expect(turns[3]!.status).toBe('stopped')
     expect(turns[4]!.role).toBe('system')
+  })
+})
+
+describe('session repos', () => {
+  it('labels the trigger and recent sessions from selection order', () => {
+    expect(repoTriggerLabel([], () => '', '不绑定仓库')).toBe('不绑定仓库')
+    expect(repoTriggerLabel(['a'], (id) => (id === 'a' ? 'grasp' : ''), '不绑定仓库')).toBe('grasp')
+    expect(repoTriggerLabel(['a', 'b', 'c'], (id) => id, '不绑定仓库')).toBe('a +2')
+    expect(sessionRepoLabel({ repos: [{ position: 0, projectId: 'a', name: 'grasp', repoUrl: 'https://github.com/acme/grasp.git', repoDirName: 'grasp' }] })).toBe('grasp')
+    expect(sessionRepoLabel({
+      repos: [
+        { position: 0, projectId: 'a', name: 'grasp', repoUrl: 'https://github.com/acme/grasp.git', repoDirName: 'grasp' },
+        { position: 1, projectId: 'b', name: 'webapp', repoUrl: 'https://github.com/acme/webapp.git', repoDirName: 'webapp' },
+      ],
+    })).toBe('grasp +1')
+    expect(sessionRepoLabel({})).toBe('')
+  })
+
+  it('reads a legacy single project as one frozen repository', () => {
+    const repos = sessionRepos({
+      projectId: 'p1',
+      branch: 'release',
+      project: { id: 'p1', name: 'app', repoUrl: 'https://github.com/acme/app.git', repoDirName: 'app', defaultBranch: 'main', createdAt: '', updatedAt: '' },
+    })
+    expect(repos).toHaveLength(1)
+    expect(repos[0]).toMatchObject({ name: 'app', branch: 'release', repoDirName: 'app' })
+    expect(branchOfRepo({ branch: '' }, '远端默认分支')).toBe('远端默认分支')
+  })
+
+  it('sends branch overrides only when they are non-empty', () => {
+    expect(soloCreateChoices([' a ', 'b'], { a: ' feat ', b: '  ' })).toEqual([
+      { projectId: 'a', branch: 'feat' },
+      { projectId: 'b' },
+    ])
+    expect(soloCreateChoices([], {})).toEqual([])
+  })
+
+  it('interpolates conflict names in the active language', () => {
+    const dict: Record<string, string> = {
+      'pages.solo.errors.repo_dir_conflict': '目录名 {dir} 被仓库 {repos} 同时使用',
+      'pages.solo.errors.env_key_conflict': 'Variable {key} conflicts across {repos}',
+    }
+    const t = (key: string, params?: Record<string, unknown>) => {
+      let text = dict[key] || key
+      for (const [name, value] of Object.entries(params || {})) text = text.replace(`{${name}}`, String(value))
+      return text
+    }
+    const te = (key: string) => key in dict
+    expect(soloErrorText({ code: 'repo_dir_conflict', params: { dir: 'webapp', repos: ['webapp', 'checkout'] } }, t, te, 'zh-CN')).toBe(
+      '目录名 webapp 被仓库 webapp、checkout 同时使用',
+    )
+    expect(soloErrorText({ code: 'env_key_conflict', params: { key: 'APP_ENV', repos: ['webapp', 'api'] } }, t, te, 'en')).toBe(
+      'Variable APP_ENV conflicts across webapp, api',
+    )
   })
 })
 
