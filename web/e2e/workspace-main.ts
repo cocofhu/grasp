@@ -89,7 +89,7 @@ window.fetch = async (input, init) => {
   else if (/^\/artifacts\/[^/]+\/versions$/.test(path)) data = assistantMode === 'conversation' && path.includes('artifact-3') ? [{ artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 1, kind: 'html', sizeBytes: 2340, createdAt: '2026-10-20T08:00:00Z' }, { artifactId: 'artifact-3', runId: 'run-1', nodeId: 'deliver', revision: 2, kind: 'html', sizeBytes: 2380, createdAt: '2026-10-20T09:00:00Z' }] : []
   else if (/^\/artifacts\/[^/]+\/content$/.test(path)) { const file = artifactFiles.find(file => file.id === path.split('/')[2]); data = { ...file, content: artifactContent(file) } }
   else if (/^\/artifacts\/[^/]+$/.test(path) && method === 'DELETE') { const index = artifactFiles.findIndex(file => file.id === path.split('/')[2]); if (index >= 0) artifactFiles.splice(index, 1); return new Response(null, { status: 204 }) }
-  else if (path === '/gates') data = { items: [], total: 0, page: 1, pageSize: 20 }
+  else if (path === '/pending-nodes') data = { items: [], total: 0, page: 1, pageSize: 20 }
   else if (path === '/agents') data = [{ name: 'manager', description: '协调团队与执行工作流', acpBackend: 'opencode', configRoot: '/config', workspaceDir: '/workspace', env: {}, mcp: [], capabilities: { outlets: [] } }]
   else if (path === '/workspace/requirement-drafts') {
     if (method === 'POST') {

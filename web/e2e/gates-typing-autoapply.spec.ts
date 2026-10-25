@@ -3,7 +3,7 @@
  * Repro (GraspReview r2): type a draft while new gates arrive (update held),
  * clear it with Ctrl+A / Backspace and keep typing → the held update applied,
  * the chat re-rendered, the composer lost focus and the following keys were lost.
- * Real /gates entry (workspace-config harness = full app shell), mocked API.
+ * Real node-conversation entry (workspace-config harness = full app shell), mocked API.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { installWorkspaceApiDefaults } from './helpers/workspaceApiDefaults'

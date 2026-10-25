@@ -16,7 +16,7 @@ async function bootstrap() {
     routes: [
       { path: '/runs/:id/live', component: RunLiveView },
       { path: '/runs/:id', component: stub },
-      { path: '/gates', component: stub },
+      { path: '/runs/:runId/nodes/:nodeId', component: stub },
       { path: '/:rest(.*)*', component: stub },
     ],
   })

@@ -1,7 +1,7 @@
 /**
- * Browser acceptance for plan g1.2 / g1.3 / f1–f4:
- * Confirm initiation must leave Inbox pending immediately (before reactReply/resume returns);
- * failure restores the row; composer must not linger after leave.
+ * Browser acceptance: confirm posts to the node reply or decision path.
+ * A clarify confirm stays on that run and follows the next node; a gate confirm leaves before resume returns.
+ * A failed clarify confirm restores the row so it can be retried.
  */
 import { expect, test, type Page } from '@playwright/test'
 import { mkdirSync } from 'node:fs'
@@ -103,8 +103,7 @@ async function mockApis(page: Page, state: State) {
       return
     }
     const req = route.request()
-    const url = new URL(req.url())
-    const path = url.pathname
+    const path = new URL(req.url()).pathname
     const method = req.method()
 
     if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
@@ -117,8 +116,14 @@ async function mockApis(page: Page, state: State) {
     }
 
     if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/)) {
-      const runId = path.split('/')[3]
-      const nodeId = url.searchParams.get('nodeId') || ''
+      const parts = path.split('/')
+      const runId = parts[3] || ''
+      let nodeId = parts[5] || ''
+      try {
+        nodeId = decodeURIComponent(nodeId)
+      } catch {
+        /* keep the raw segment */
+      }
       if (runId === 'run-approve' || runId === 'run-approve-b') {
         const nid = runId === 'run-approve-b' ? 'approve_7gl7' : 'approve_7gl6'
         await route.fulfill({
@@ -202,7 +207,7 @@ async function mockApis(page: Page, state: State) {
       return
     }
 
-    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/react\/[^/]+\/reply\/?$/)) {
+    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/reply\/?$/)) {
       const parts = path.split('/')
       const runId = parts[3]
       const body = (req.postDataJSON() as { force?: boolean } | null) || {}
@@ -226,7 +231,7 @@ async function mockApis(page: Page, state: State) {
       return
     }
 
-    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/gates\/[^/]+\/resume\/?$/)) {
+    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/decision\/?$/)) {
       if (state.resumeDelayMs > 0) {
         await new Promise((r) => setTimeout(r, state.resumeDelayMs))
       }
@@ -271,7 +276,10 @@ async function mockApis(page: Page, state: State) {
 async function openGates(page: Page, state: State) {
   await mockApis(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/tag-filter-ux.html?page=gates')
+  const first = state.inbox.items[0] as { runId?: string; nodeId?: string } | undefined
+  const run = encodeURIComponent(String(first?.runId || 'run-1'))
+  const node = encodeURIComponent(String(first?.nodeId || 'n1'))
+  await page.goto(`/tag-filter-ux.html?page=gates&run=${run}&node=${node}`)
   await expect(page.getByTestId('gates-inbox-view')).toBeVisible({ timeout: 15_000 })
   await expect(page.getByRole('heading', { name: '待办' })).toHaveCount(0)
 }
@@ -282,10 +290,10 @@ function activeDetail(page: Page, runSuffix: string, nodeId: string) {
 }
 
 test.describe('Inbox 确认发起即离开待办', () => {
-  test('Approve 确认：reactReply 未返回前条目已离开，操作区消失', async ({ page }) => {
+  test('Approve 确认：回复打到节点路径，完成后留在该运行并跟随下一节点', async ({ page }) => {
     const state: State = {
       inbox: { items: [approveItem(), neighborItem()], total: 2 },
-      replyDelayMs: 2500,
+      replyDelayMs: 400,
       replyFail: false,
       resumeDelayMs: 0,
       resumeFail: false,
@@ -304,25 +312,18 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await confirm.first().click()
     await acceptConfirmFlow(page)
 
-    // Must leave before delayed reactReply resolves (plan g1.2 / ~3s SLA).
-    await expect(opened).toHaveCount(0, { timeout: 1500 })
-    expect(state.replyResolved).toBe(false)
-    // Approve composer gone; neighbor gate may still show its own 确认并流转 — that is OK.
-    await expect(page.getByTestId('clarify-confirm-flow')).toHaveCount(0)
-    await expect(page.getByText('确认后应离开待办')).toHaveCount(0)
-    await expect(page.getByText('邻居门禁', { exact: false }).or(page.getByText('邻居条目')).first()).toBeVisible()
-
-    await page.screenshot({ path: `${SHOT}/02-left-before-reply.png`, fullPage: true })
-
-    await expect.poll(() => state.replyResolved, { timeout: 5000 }).toBe(true)
-    await expect(opened).toHaveCount(0)
+    await expect.poll(() => state.replyResolved, { timeout: 8000 }).toBe(true)
+    expect(state.forceReplyCount).toBe(1)
+    await expect(page.getByTestId('thought-summary-state').getByText('已确认并流转')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('等待下一节点开始')).toBeVisible({ timeout: 5000 })
+    await expect(opened).toBeVisible()
     await page.screenshot({ path: `${SHOT}/03-after-reply-ok.png`, fullPage: true })
   })
 
-  test('plan g2.2: 连续两个 Approve，首条 reply 未返回即可确认邻居', async ({ page }) => {
+  test('连续两个 Approve：当前对话的回复打到自己的节点，不串到邻居', async ({ page }) => {
     const state: State = {
       inbox: { items: [approveItem(), approveItemNeighbor()], total: 2 },
-      replyDelayMs: 2500,
+      replyDelayMs: 200,
       replyFail: false,
       resumeDelayMs: 0,
       resumeFail: false,
@@ -330,6 +331,11 @@ test.describe('Inbox 确认发起即离开待办', () => {
       resumeResolved: false,
       forceReplyCount: 0,
     }
+    const replyPaths: string[] = []
+    page.on('request', (req) => {
+      const url = new URL(req.url())
+      if (req.method() === 'POST' && /\/nodes\/[^/]+\/reply$/.test(url.pathname)) replyPaths.push(url.pathname)
+    })
     await openGates(page, state)
 
     const opened = activeDetail(page, 'approve', 'approve_7gl6')
@@ -339,24 +345,11 @@ test.describe('Inbox 确认发起即离开待办', () => {
     await confirm.first().click()
     await acceptConfirmFlow(page)
 
-    // First left; second auto-selected while first reply still pending.
-    await expect(opened).toHaveCount(0, { timeout: 1500 })
-    expect(state.forceReplyCount).toBe(0)
-    const second = activeDetail(page, 'approve-b', 'approve_7gl7')
-    await expect(second).toBeVisible({ timeout: 5000 })
-
-    const confirmB = page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' }))
-    await expect(confirmB.first()).toBeVisible({ timeout: 10_000 })
-    await expect(confirmB.first()).toBeEnabled()
-    await page.screenshot({ path: `${SHOT}/08-neighbor-ready-while-first-pending.png`, fullPage: true })
-    await confirmB.first().click()
-    await acceptConfirmFlow(page)
-
-    // Second must also leave before either delayed reply resolves (no global lock swallow).
-    await expect(second).toHaveCount(0, { timeout: 1500 })
-    expect(state.forceReplyCount).toBeLessThan(2)
-
-    await expect.poll(() => state.forceReplyCount, { timeout: 8000 }).toBe(2)
+    await expect.poll(() => state.forceReplyCount, { timeout: 8000 }).toBe(1)
+    expect(replyPaths.some((p) => p.endsWith('/nodes/approve_7gl6/reply'))).toBe(true)
+    expect(replyPaths.some((p) => p.includes('/nodes/approve_7gl7/'))).toBe(false)
+    await expect(opened).toBeVisible()
+    await expect(page.getByText('等待下一节点开始')).toBeVisible({ timeout: 5000 })
     await page.screenshot({ path: `${SHOT}/09-both-confirmed.png`, fullPage: true })
   })
 
@@ -389,13 +382,16 @@ test.describe('Inbox 确认发起即离开待办', () => {
 
     await page.screenshot({ path: `${SHOT}/04-fail-restored.png`, fullPage: true })
 
-    // Retry path unlocked.
+    // Retry path unlocked and posts to the same node.
     state.replyFail = false
     state.replyResolved = false
     state.replyDelayMs = 100
     await page.getByTestId('clarify-confirm-flow').or(page.getByRole('button', { name: '确认并流转' })).first().click()
     await acceptConfirmFlow(page)
-    await expect(opened).toHaveCount(0, { timeout: 5000 })
+    await expect.poll(() => state.replyResolved, { timeout: 8000 }).toBe(true)
+    await expect(page.getByTestId('thought-summary-state').getByText('已确认并流转')).toBeVisible({ timeout: 5000 })
+    await expect(page.getByText('等待下一节点开始')).toBeVisible({ timeout: 5000 })
+    await expect(opened).toBeVisible()
     await page.screenshot({ path: `${SHOT}/05-retry-left.png`, fullPage: true })
   })
 

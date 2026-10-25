@@ -1,6 +1,6 @@
 /**
  * E2E: Home chat starts an Approve-first workflow and opens the inbox.
- * Harness: dashboard-home-chat.html (DashboardView + gates stub)
+ * Harness: dashboard-home-chat.html (DashboardView + /runs/:runId/nodes/:nodeId stub)
  */
 import { expect, test, type Page } from '@playwright/test'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
