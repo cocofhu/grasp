@@ -74,6 +74,10 @@ func main() {
 	if agentModel != "" {
 		zlog.Info().Str("model", agentModel).Msg("agent default model")
 	}
+	if initial := strings.TrimSpace(os.Getenv("GRASP_INITIAL_CHAT_MODEL")); initial != "" && service.ModelSelectable(initial) {
+		chats.Default().SetModel(initial)
+		zlog.Info().Str("model", initial).Msg("solo initial chat model")
+	}
 	chats.StartDefaultAgent()
 	qqService, err := qqbot.New(chats.Default(), qqbot.NewStore(*qqConfigPath))
 	if err != nil {

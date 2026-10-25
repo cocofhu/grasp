@@ -229,6 +229,7 @@
     ],
     "solo": [
       "acpTurn.ts",
+      "configuredModels.ts",
       "projectForm.ts",
       "sessionRepos.ts",
       "soloErrors.ts",
@@ -261,7 +262,7 @@
     "pm": 7,
     "run": 66,
     "shared": 39,
-    "solo": 8,
+    "solo": 9,
     "workflow": 3,
     "workspace": 5
   }

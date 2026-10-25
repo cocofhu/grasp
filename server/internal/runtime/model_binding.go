@@ -14,6 +14,11 @@ const (
 	EnvModelConnection   = "GRASP_MODEL_CONNECTION"
 	EnvModelAPIKey       = "GRASP_MODEL_API_KEY"
 	EnvModelCredentialID = "GRASP_MODEL_CREDENTIAL_ID"
+	// EnvConfiguredModels is the ordered allow-list for interactive switching.
+	// Index 0 is the primary model and may be empty when the tool should choose.
+	EnvConfiguredModels = "GRASP_CONFIGURED_MODELS"
+	// EnvInitialChatModel pins only the first sandbox chat. Empty follows the primary.
+	EnvInitialChatModel = "GRASP_INITIAL_CHAT_MODEL"
 )
 
 // ModelBindingResolver resolves only selected, active references. The secret is
@@ -72,7 +77,38 @@ func ApplyModelBinding(env map[string]string, backend string, binding *modelrout
 	default:
 		return fmt.Errorf("model binding did not resolve to a concrete source")
 	}
+	// Automation reads only the primary model. An empty primary stays empty
+	// even when auxiliary models exist; the allow-list is a separate env value.
+	configured, err := configuredModelsJSON(resolved)
+	if err != nil {
+		return err
+	}
+	env[EnvConfiguredModels] = configured
 	return nil
+}
+
+func configuredModelsJSON(resolved modelrouting.Resolved) (string, error) {
+	vendor := resolved.Backend
+	if resolved.Connection != nil && strings.TrimSpace(resolved.Connection.ProviderID) != "" {
+		vendor = resolved.Connection.ProviderID
+	}
+	type item struct {
+		ID     string `json:"id"`
+		Vendor string `json:"vendor,omitempty"`
+	}
+	items := []item{{ID: strings.TrimSpace(resolved.Binding.ModelID), Vendor: vendor}}
+	for _, id := range resolved.Binding.AuxiliaryModelIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		items = append(items, item{ID: id, Vendor: vendor})
+	}
+	data, err := json.Marshal(items)
+	if err != nil {
+		return "", fmt.Errorf("encode configured models: %w", err)
+	}
+	return string(data), nil
 }
 
 // ClearModelRoutingEnv removes only coding authentication and derived model
@@ -84,7 +120,7 @@ func ClearModelRoutingEnv(env map[string]string) {
 		"CURSOR_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CODEBUDDY_API_KEY",
 		"TRAECLI_PERSONAL_ACCESS_TOKEN", "OPENCODE_API_KEY", "OPENAI_API_KEY", "CODEX_API_KEY", "DEEPSEEK_API_KEY",
 		"ACP_CURSOR_API_KEY", "ACP_CLAUDE_API_KEY", "ACP_CODEBUDDY_API_KEY", "ACP_CODEX_API_KEY", "ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY",
-		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvACPBridgeModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
+		EnvModelConnection, EnvModelAPIKey, EnvModelCredentialID, EnvACPBridgeModel, EnvConfiguredModels, EnvInitialChatModel, "GRASP_OPENCODE_PROVIDER", "GRASP_OPENCODE_BASE_URL", "GRASP_OPENCODE_MODEL_VISION",
 		"ANTHROPIC_BASE_URL", "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_SUBAGENT_MODEL",
 		"ANTHROPIC_DEFAULT_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_FABLE_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL",
 		"CLAUDE_CODE_SUBAGENT_MODEL_FORCE", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY", "CLAUDE_CODE_USE_CCR",

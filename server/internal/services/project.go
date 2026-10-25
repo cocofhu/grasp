@@ -69,7 +69,7 @@ var (
 	// soloReservedEnvKeys are written by the platform when the sandbox starts.
 	soloReservedEnvKeys = map[string]bool{
 		"GIT_REPOS": true, "GRASP_THREAD_ID": true, "CODEX_HOME": true,
-		"ACP_BRIDGE_MODEL": true,
+		"ACP_BRIDGE_MODEL": true, "GRASP_CONFIGURED_MODELS": true, "GRASP_INITIAL_CHAT_MODEL": true,
 	}
 )
 

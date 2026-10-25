@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/runtime"
 	"github.com/cocofhu/grasp/internal/sandbox"
@@ -283,6 +284,22 @@ func TestSoloCreateValidation(t *testing.T) {
 	}
 	if _, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA", Branch: "a b"}); err == nil {
 		t.Fatal("invalid branch should fail")
+	}
+}
+
+func TestSoloInitialModelMustBelongToConfiguration(t *testing.T) {
+	solo, _, _, db := newSoloFixture(t, 0, 3)
+	row := models.ModelConfiguration{
+		ID: "sandbox-fixture", Name: "Fixture", Backend: "cursor", State: "active",
+		Binding: modelrouting.Binding{Kind: "platform", CredentialID: "k", ModelID: "primary", AuxiliaryModelIDs: []string{"aux"}},
+	}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	_, err := solo.Create(context.Background(), "alice", SoloCreateInput{AgentName: "agentA", InitialModelID: "nope"})
+	var se *SoloError
+	if !errors.As(err, &se) || se.Code != "model_not_in_configuration" {
+		t.Fatalf("outside model: %v", err)
 	}
 }
 

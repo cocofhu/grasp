@@ -43,14 +43,19 @@ const props = withDefaults(
      * Wizards leave it off.
      */
     hideCommand?: boolean
+    /** Hide the separate “restore automatic” button. Automatic stays inside the list. */
+    hideReset?: boolean
+    /** Model ids already used by another slot. The current value stays visible. */
+    excludeIds?: string[]
   }>(),
-  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false },
+  { variant: 'full', disabled: false, hideAutoSub: false, emptyMode: 'auto', hideCommand: false, hideReset: false, excludeIds: () => [] },
 )
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const { t } = useI18n()
 const allowAuto = computed(() => props.emptyMode !== 'required')
-const showReset = computed(() => !!props.modelValue && !props.disabled && allowAuto.value)
+const showReset = computed(() => !props.hideReset && !!props.modelValue && !props.disabled && allowAuto.value)
+const excluded = computed(() => new Set((props.excludeIds || []).map((id) => id.trim()).filter((id) => id && id !== props.modelValue)))
 const showCommandRow = computed(() => (props.hideCommand ? showReset.value : allowAuto.value || !!props.modelValue))
 
 const TAG_ICON: Record<CliModelTag, string> = { vision: 'eye', reasoning: 'brain', fast: 'trigger' }
@@ -107,8 +112,10 @@ type Row = { kind: 'auto' } | { kind: 'model'; model: CliCatalogModel } | { kind
 const rows = computed<Row[]>(() => {
   const out: Row[] = []
   if (allowAuto.value && !query.value.trim()) out.push({ kind: 'auto' })
-  for (const m of view.value.flat) out.push({ kind: 'model', model: m })
-  if (typed.value) out.push({ kind: 'typed', id: typed.value })
+  for (const m of view.value.flat) {
+    if (!excluded.value.has(m.id)) out.push({ kind: 'model', model: m })
+  }
+  if (typed.value && !excluded.value.has(typed.value)) out.push({ kind: 'typed', id: typed.value })
   return out
 })
 const activeRow = computed<Row | null>(() => rows.value[active.value] ?? null)

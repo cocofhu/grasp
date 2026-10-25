@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
     { id: 'api', name: 'api', repoUrl: 'https://github.com/acme/api.git', defaultBranch: 'main', createdAt: '', updatedAt: '' },
   ]),
   listSoloSessions: vi.fn(async () => ({ sessions: [], maxSandboxes: 8 })),
+  listModelConfigurations: vi.fn(async () => ({ items: [] })),
+  listModelConnections: vi.fn(async () => ({ items: [] })),
   createSoloSession: vi.fn(async () => ({ id: 's1', agentName: 'coder', status: 'starting', title: '', restarts: 0, busy: false, waiting: 0, createdAt: '', updatedAt: '', userId: 'u' })),
 }))
 

@@ -170,8 +170,8 @@ export interface AgentTemplate {
 export type ModelProtocol = 'openai-chat-completions' | 'openai-responses' | 'anthropic-messages'
 export type ModelRoles = Partial<Record<'main' | 'fast' | 'reasoning' | 'subagent' | 'opus' | 'sonnet' | 'haiku', string>>
 export type ConcreteModelBinding =
-  | { kind: 'platform'; credentialId: string; modelId?: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
-  | { kind: 'connection'; connectionId: string; modelId: string; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'platform'; credentialId: string; modelId?: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
+  | { kind: 'connection'; connectionId: string; modelId: string; auxiliaryModelIds?: string[]; toolSettings?: { modelRoles?: ModelRoles; routeProfile?: string } }
 export type ModelBinding = { kind: 'configuration'; configurationId: string }
 export interface ModelConfiguration {
   id: string
@@ -720,6 +720,8 @@ export interface SoloCreateBody {
   branch?: string
   /** Ordered selection. An empty list starts an empty workspace. */
   repos?: SoloRepoChoice[]
+  /** Empty follows the Agent configuration's primary model. */
+  initialModelId?: string
   title?: string
   text?: string
   images?: ClarifyImage[]

@@ -70,6 +70,9 @@ type SoloSession struct {
 	// ProjectSnapshot freezes the single project of a legacy session.
 	ProjectSnapshot *Project `gorm:"serializer:json" json:"project,omitempty"`
 	Branch          string   `json:"branch,omitempty"`
+	// InitialModelID is the model chosen for this session's first chat.
+	// Empty follows the Agent configuration's primary model and does not change it.
+	InitialModelID string `json:"initialModelId,omitempty"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace
 	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
 	// read as a one-element list built from ProjectSnapshot.

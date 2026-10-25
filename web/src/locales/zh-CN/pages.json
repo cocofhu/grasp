@@ -4530,6 +4530,15 @@
         "gitlab_https": "GitLab 令牌",
         "ssh": "SSH 密钥"
       },
+      "modelSelect": {
+        "label": "模型",
+        "placeholder": "选择模型",
+        "search": "搜索模型",
+        "empty": "当前 Agent 还没有可用模型",
+        "noMatch": "没有匹配的模型",
+        "unavailable": "不可用",
+        "reset": "所选模型已不在配置中，已改回主模型"
+      },
       "agentSelect": {
         "placeholder": "选择 Agent",
         "search": "搜索 Agent 或 CLI",
@@ -4669,6 +4678,8 @@
         "session_error": "沙箱不可用，请重新启动会话",
         "content_required": "消息不能为空",
         "agent_not_found": "Agent 不存在",
+        "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
+        "model_unavailable": "所选模型已不可用",
         "project_not_found": "仓库不存在",
         "name_required": "请填写仓库名称",
         "name_too_long": "仓库名称最长 80 个字",

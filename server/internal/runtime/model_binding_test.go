@@ -59,6 +59,50 @@ func TestApplyModelBindingFailureDoesNotFallback(t *testing.T) {
 	}
 }
 
+func TestApplyModelBindingUsesPrimaryAndListsAuxiliaryModels(t *testing.T) {
+	env := map[string]string{EnvInitialChatModel: "forged", EnvConfiguredModels: "forged"}
+	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "daily"}
+	resolve := func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+		return modelrouting.Resolved{
+			Backend: "cursor", CredentialID: "cursor-key", Secret: "cursor-secret",
+			Binding: modelrouting.Binding{Kind: "platform", ModelID: "", AuxiliaryModelIDs: []string{"grok-4.7", "composer-2.5"}},
+		}, nil
+	}
+	if err := ApplyModelBinding(env, "cursor", binding, resolve); err != nil {
+		t.Fatal(err)
+	}
+	if env[EnvACPBridgeModel] != "" {
+		t.Fatalf("empty primary fell back to an auxiliary model: %q", env[EnvACPBridgeModel])
+	}
+	if env[EnvInitialChatModel] != "" {
+		t.Fatal("automation injected a chat selection")
+	}
+	if !strings.Contains(env[EnvConfiguredModels], `"id":""`) || !strings.Contains(env[EnvConfiguredModels], "grok-4.7") || !strings.Contains(env[EnvConfiguredModels], "composer-2.5") {
+		t.Fatalf("allow-list: %s", env[EnvConfiguredModels])
+	}
+	if strings.Index(env[EnvConfiguredModels], "grok-4.7") > strings.Index(env[EnvConfiguredModels], "composer-2.5") {
+		t.Fatal("auxiliary order was not preserved")
+	}
+
+	env = map[string]string{}
+	resolve = func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+		return modelrouting.Resolved{
+			Backend: "opencode", CredentialID: "key", Secret: "secret",
+			Binding:    modelrouting.Binding{Kind: "connection", ConnectionID: "c", ModelID: "primary", AuxiliaryModelIDs: []string{"aux"}},
+			Connection: &modelrouting.Connection{ID: "c", ProviderID: "deepseek", Protocol: modelrouting.ProtocolChat, Models: []modelrouting.Model{{ID: "primary"}, {ID: "aux"}, {ID: "unused"}}},
+		}, nil
+	}
+	if err := ApplyModelBinding(env, "opencode", binding, resolve); err != nil {
+		t.Fatal(err)
+	}
+	if env[EnvACPBridgeModel] != "primary" || !strings.Contains(env[EnvModelConnection], `"selectedModelId":"primary"`) || strings.Contains(env[EnvModelConnection], `"selectedModelId":"aux"`) {
+		t.Fatalf("connection automation used a non-primary model: ACP=%q connection=%s", env[EnvACPBridgeModel], env[EnvModelConnection])
+	}
+	if !strings.Contains(env[EnvConfiguredModels], "aux") || !strings.Contains(env[EnvConfiguredModels], "deepseek") {
+		t.Fatalf("connection allow-list: %s", env[EnvConfiguredModels])
+	}
+}
+
 func TestApplyModelBindingPlatformConfiguration(t *testing.T) {
 	env := map[string]string{EnvModelAPIKey: "old", EnvModelConnection: "old", "CURSOR_API_KEY": "other"}
 	binding := &modelrouting.Binding{Kind: "configuration", ConfigurationID: "cursor-daily"}

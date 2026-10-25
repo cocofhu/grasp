@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { api, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConfigurationBody, type ModelConnection, type ModelRoles, type ToolCapability } from '@/lib/api/api'
+import { api, type CliCatalogModel, type ConcreteModelBinding, type CredentialItem, type ModelConfiguration, type ModelConfigurationBody, type ModelConnection, type ModelRoles, type ToolCapability } from '@/lib/api/api'
+import { loadCliModels } from '@/lib/agent/cliCatalog'
 import { bindingProblem, connectionCapabilities, credentialUsable, isModelCredential, isToolCredential, useRoutingCopy } from '@/lib/agent/modelRouting'
 import { ACP_BACKENDS } from '@/lib/shared/regionPolicy'
 import { useToast } from '@/lib/composables/useToast'
@@ -9,6 +10,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppSelect from '@/components/ui/AppSelect.vue'
 import Icon from '@/components/ui/Icon.vue'
 import CliModelSelect from '@/components/agent/CliModelSelect.vue'
+import VendorMark from '@/components/agent/VendorMark.vue'
 import CredentialProviderLogo from './CredentialProviderLogo.vue'
 import ModelRecordActions from './ModelRecordActions.vue'
 
@@ -35,7 +37,10 @@ watch(step, async () => {
 const saving = ref(false)
 const editingId = ref('')
 const awaitingCredential = ref(false)
-const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '' })
+const form = reactive({ name: '', backend: 'cursor', kind: 'platform' as 'platform' | 'connection', credentialId: '', connectionId: '', modelId: '', auxiliaryModelIds: [] as string[], state: 'active' as ModelConfiguration['state'], roles: {} as ModelRoles, routeProfile: '' })
+const cliModels = ref<CliCatalogModel[]>([])
+const cliReady = ref(false)
+const savedModelIds = ref<string[]>([])
 const toolCaps = computed(() => capabilities.value.filter((item) => item.toolId === form.backend && item.adapterState === 'existing'))
 const platformAvailable = computed(() => toolCaps.value.some((item) => item.modes.includes('platform')))
 const connectionAvailable = computed(() => connectionCapabilities(capabilities.value, form.backend).length > 0)
@@ -53,11 +58,16 @@ const credentialChoice = computed<string>({
     form.kind = value.startsWith('platform:') ? 'platform' : 'connection'
     form.credentialId = form.kind === 'platform' ? value.slice('platform:'.length) : ''
     form.connectionId = form.kind === 'connection' ? value.slice('connection:'.length) : ''
-    form.modelId = ''; form.roles = {}; form.routeProfile = ''
+    form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''
   },
 })
 const selectedCredential = computed(() => credentialOptions.value.find((option) => option.value === credentialChoice.value))
-const modelOptions = computed(() => (selectedService.value?.models || []).map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}) })))
+type SlotOption = { value: string; label: string; hint?: string; vendor: string }
+const slotCatalog = computed<SlotOption[]>(() => {
+  if (form.kind === 'platform') return cliModels.value.map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor: model.vendor }))
+  const vendor = selectedService.value?.providerId || ''
+  return (selectedService.value?.models || []).map((model) => ({ value: model.id, label: model.name || model.id, ...(model.name && model.name !== model.id ? { hint: model.id } : {}), vendor }))
+})
 const wizardSteps = computed(() => [c.value.chooseTool, c.value.chooseCredential, c.value.selectModel])
 const roleNames = computed(() => [...new Set(toolCaps.value.flatMap((item) => item.roleNames || []))].filter((role) => role !== 'main') as (keyof ModelRoles)[])
 const nativeRoute = computed(() => {
@@ -66,8 +76,49 @@ const nativeRoute = computed(() => {
   try { const url = new URL(service.baseUrl); return url.protocol === 'https:' && url.hostname === 'api.deepseek.com' && url.pathname.replace(/\/$/, '') === '/anthropic' } catch { return false }
 })
 const sourceValid = computed(() => form.kind === 'platform' ? platformAvailable.value && platformKeys.value.some((item) => item.id === form.credentialId) : connectionAvailable.value && !!selectedService.value)
-const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()))
+const auxiliaryProblem = computed(() => {
+  const ids = form.auxiliaryModelIds.map((id) => id.trim())
+  if (ids.some((id) => !id)) return c.value.duplicateModel
+  const all = [form.modelId.trim(), ...ids].filter(Boolean)
+  return new Set(all).size === all.length ? '' : c.value.duplicateModel
+})
+const modelValid = computed(() => sourceValid.value && (form.kind === 'platform' || !!form.modelId.trim()) && !auxiliaryProblem.value)
 const valid = computed(() => !!form.name.trim() && !!form.backend && modelValid.value)
+function takenIds(except: string) {
+  const skip = except.trim()
+  const ids = new Set<string>()
+  const primary = form.modelId.trim()
+  if (primary && primary !== skip) ids.add(primary)
+  for (const id of form.auxiliaryModelIds) {
+    const trimmed = id.trim()
+    if (trimmed && trimmed !== skip) ids.add(trimmed)
+  }
+  return ids
+}
+function optionsFor(current: string): SlotOption[] {
+  const value = current.trim()
+  const taken = takenIds(value)
+  const options = slotCatalog.value.filter((option) => option.value === value || !taken.has(option.value))
+  if (value && !options.some((option) => option.value === value)) options.unshift({ value, label: value, vendor: form.kind === 'platform' ? '' : (selectedService.value?.providerId || '') })
+  return options
+}
+const canAddModel = computed(() => slotCatalog.value.some((option) => !takenIds('').has(option.value)))
+const primaryExcludeIds = computed(() => form.auxiliaryModelIds.map((id) => id.trim()).filter(Boolean))
+function addAuxiliary() {
+  const next = slotCatalog.value.find((option) => !takenIds('').has(option.value))
+  if (!next) return
+  form.auxiliaryModelIds.push(next.value)
+}
+function removeAuxiliary(index: number) { form.auxiliaryModelIds.splice(index, 1) }
+function slotVendor(id: string) { return optionsFor(id).find((option) => option.value === id)?.vendor || (form.kind === 'connection' ? selectedService.value?.providerId || '' : '') }
+function slotUnavailable(id: string) {
+  const value = id.trim()
+  if (!value || !savedModelIds.value.includes(value)) return false
+  if (form.kind === 'platform' && !cliReady.value) return false
+  return !slotCatalog.value.some((option) => option.value === value)
+}
+function auxiliaryCount(row: ModelConfiguration) { return row.binding.auxiliaryModelIds?.length || 0 }
+function auxiliaryCountLabel(row: ModelConfiguration) { return c.value.auxiliaryCount.replace('{n}', String(auxiliaryCount(row))) }
 function toolLabel(id: string) { return ACP_BACKENDS.find((tool) => tool.id === id)?.label || id }
 function credentialProvider(value: string) { return credentialOptions.value.find((option) => option.value === value)?.provider || '' }
 function problem(row: ModelConfiguration) { return bindingProblem(row.binding, row.backend, connections.value, credentials.value, capabilities.value) }
@@ -83,7 +134,7 @@ async function load() {
 function resetSource() {
   if (form.kind === 'platform' && !platformAvailable.value) form.kind = 'connection'
   if (form.kind === 'connection' && !connectionAvailable.value && platformAvailable.value) form.kind = 'platform'
-  form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.roles = {}; form.routeProfile = ''
+  form.credentialId = ''; form.connectionId = ''; form.modelId = ''; form.auxiliaryModelIds = []; form.roles = {}; form.routeProfile = ''
 }
 function chooseTool(backend: string) {
   if (editingId.value || form.backend === backend) return
@@ -101,7 +152,8 @@ function toolKeydown(event: KeyboardEvent, index: number) {
 }
 function start(row?: ModelConfiguration) {
   editingId.value = row?.id || ''
-  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '' })
+  savedModelIds.value = [row?.binding.modelId || '', ...(row?.binding.auxiliaryModelIds || [])].map((id) => id.trim()).filter(Boolean)
+  Object.assign(form, { name: row?.name || '', backend: row?.backend || 'cursor', kind: row?.binding.kind || 'platform', credentialId: row?.binding.kind === 'platform' ? row.binding.credentialId : '', connectionId: row?.binding.kind === 'connection' ? row.binding.connectionId : '', modelId: row?.binding.modelId || '', auxiliaryModelIds: [...(row?.binding.auxiliaryModelIds || [])], state: row?.state || 'active', roles: { ...row?.binding.toolSettings?.modelRoles }, routeProfile: row?.binding.toolSettings?.routeProfile || '' })
   if (!row) resetSource()
   step.value = 1; error.value = ''; open.value = true
 }
@@ -137,13 +189,15 @@ function concreteBinding(): ConcreteModelBinding {
   if (roles.main) roles.main = form.modelId.trim()
   const toolSettings = { ...(Object.keys(roles).length ? { modelRoles: roles } : {}), ...(form.routeProfile ? { routeProfile: form.routeProfile } : {}) }
   const settings = Object.keys(toolSettings).length ? { toolSettings } : {}
-  return form.kind === 'platform' ? { kind: 'platform', credentialId: form.credentialId, ...(form.modelId ? { modelId: form.modelId } : {}), ...settings } : { kind: 'connection', connectionId: form.connectionId, modelId: form.modelId.trim(), ...settings }
+  const auxiliaryModelIds = form.auxiliaryModelIds.map((id) => id.trim()).filter(Boolean)
+  const aux = auxiliaryModelIds.length ? { auxiliaryModelIds } : {}
+  return form.kind === 'platform' ? { kind: 'platform', credentialId: form.credentialId, ...(form.modelId ? { modelId: form.modelId } : {}), ...aux, ...settings } : { kind: 'connection', connectionId: form.connectionId, modelId: form.modelId.trim(), ...aux, ...settings }
 }
 async function ensureModels(binding: ConcreteModelBinding) {
   if (binding.kind !== 'connection') return
   const latest = (await api.listModelConnections()).items.find((item) => item.id === binding.connectionId)
   if (!latest || latest.state !== 'active' || !connectionCapabilities(capabilities.value, form.backend, latest).length) throw new Error(c.value.missingConnection)
-  const required = [...new Set([binding.modelId, ...Object.values(binding.toolSettings?.modelRoles || {})])].filter(Boolean) as string[]
+  const required = [...new Set([binding.modelId, ...(binding.auxiliaryModelIds || []), ...Object.values(binding.toolSettings?.modelRoles || {})])].filter(Boolean) as string[]
   const missing = required.filter((id) => !latest.models.some((model) => model.id === id))
   if (!missing.length) return
   const updated = await api.updateModelConnection(latest.id, { name: latest.name, providerId: latest.providerId, protocol: latest.protocol, baseUrl: latest.baseUrl, credentialId: latest.credentialId, auth: latest.auth, service: latest.service, state: latest.state, models: [...latest.models, ...missing.map((id) => ({ id, source: 'manual' as const }))] })
@@ -168,6 +222,14 @@ async function remove(row: ModelConfiguration) {
   if (!window.confirm(c.value.configurationDeleteConfirm)) return
   try { await api.deleteModelConfiguration(row.id); await load(); toast.success(c.value.configurationRemoved); emit('changed') } catch (e) { error.value = String((e as Error).message || e) }
 }
+watch(() => [form.backend, open.value] as const, async ([backend, isOpen]) => {
+  if (!isOpen) return
+  cliReady.value = false
+  const list = await loadCliModels(backend)
+  if (backend !== form.backend || !open.value) return
+  cliModels.value = list
+  cliReady.value = true
+})
 onMounted(load)
 defineExpose({ openForTool, resumeWithCredential, openCreate })
 </script>
@@ -201,7 +263,7 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
                 <span class="sr-only">{{ c.configurationUnavailable }}</span>
               </span>
             </div>
-            <p class="configuration-model" :class="row.binding.modelId ? 'font-mono' : ''" :title="row.binding.modelId || c.autoModel">{{ row.binding.modelId || c.autoModel }}</p>
+            <p class="configuration-model" :title="row.binding.modelId || c.autoShort"><span :class="row.binding.modelId ? 'font-mono' : ''">{{ row.binding.modelId || c.autoShort }}</span><span v-if="auxiliaryCount(row)"> · {{ auxiliaryCountLabel(row) }}</span></p>
           </div>
         </div>
         <div class="configuration-actions">
@@ -251,16 +313,29 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
             <CredentialProviderLogo :provider="form.backend" match="provider" />
             <div class="min-w-0"><p class="m-0 truncate text-[13px] font-medium text-txt" :title="form.name">{{ form.name }}</p><p class="mb-0 mt-1 truncate text-xs text-txt3">{{ selectedCredential?.label }}</p></div>
           </div>
-          <template v-if="form.kind === 'platform'"><CliModelSelect v-model="form.modelId" :backend="form.backend" variant="compact" hide-command hide-auto-sub /></template>
-          <template v-else>
-            <div>
-              <span class="label">{{ c.selectModel }}</span>
-              <AppSelect v-model="form.modelId" :options="modelOptions" :aria-label="c.selectModel" :placeholder="c.selectModel" searchable allow-custom data-testid="model-configuration-model-id">
-                <template #leading><CredentialProviderLogo :provider="selectedService?.providerId" match="provider" /></template>
-                <template #option-leading><CredentialProviderLogo :provider="selectedService?.providerId" match="provider" /></template>
-              </AppSelect>
-              <p class="mb-0 mt-2 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
+          <div class="model-slot" data-testid="model-configuration-primary">
+            <div class="model-slot-top"><span>{{ c.primarySlot }}</span></div>
+            <CliModelSelect v-if="form.kind === 'platform'" v-model="form.modelId" :backend="form.backend" :exclude-ids="primaryExcludeIds" variant="compact" hide-command hide-auto-sub hide-reset />
+            <AppSelect v-else v-model="form.modelId" :options="optionsFor(form.modelId)" :aria-label="c.primarySlot" :placeholder="c.selectModel" searchable allow-custom data-testid="model-configuration-model-id">
+              <template #leading><VendorMark :vendor="selectedService?.providerId || ''" :size="28" :unknown="slotUnavailable(form.modelId)" /></template>
+              <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
+            </AppSelect>
+          </div>
+          <div v-for="(modelId, index) in form.auxiliaryModelIds" :key="index" class="model-slot" :data-testid="`model-configuration-aux-${index}`">
+            <div class="model-slot-top">
+              <span>{{ c.auxiliarySlot }}</span>
+              <button type="button" class="model-slot-remove" :aria-label="c.removeModel" :data-testid="`model-configuration-aux-remove-${index}`" @click="removeAuxiliary(index)"><Icon name="close" :size="12" /></button>
             </div>
+            <AppSelect :model-value="modelId" :options="optionsFor(modelId)" :aria-label="c.auxiliarySlot" :placeholder="c.selectModel" searchable allow-custom :data-testid="`model-configuration-aux-select-${index}`" @update:model-value="form.auxiliaryModelIds[index] = $event">
+              <template #leading><VendorMark :vendor="slotVendor(modelId)" :size="28" :unknown="slotUnavailable(modelId)" /></template>
+              <template #option-leading="{ option }"><VendorMark :vendor="slotVendor(option.value)" :size="28" :unknown="slotUnavailable(option.value)" /></template>
+            </AppSelect>
+            <p v-if="slotUnavailable(modelId)" class="mb-0 mt-1 text-xs text-warn">{{ c.modelUnavailable }}</p>
+          </div>
+          <button type="button" class="model-add" data-testid="model-configuration-add-model" :disabled="!canAddModel" :title="canAddModel ? '' : c.noMoreModels" @click="addAuxiliary"><Icon name="plus" :size="14" />{{ c.addModel }}</button>
+          <p v-if="auxiliaryProblem" class="mb-0 text-xs text-err">{{ auxiliaryProblem }}</p>
+          <template v-if="form.kind !== 'platform'">
+            <p class="mb-0 text-xs leading-5 text-txt3">{{ c.manualModelHint }}</p>
             <datalist id="configuration-model-catalog"><option v-for="model in selectedService?.models || []" :key="model.id" :value="model.id">{{ model.name || model.id }}</option></datalist>
             <details v-if="roleNames.length" class="rounded-lg border border-line p-3"><summary class="cursor-pointer text-xs text-txt2">{{ c.auxiliary }}</summary><div class="mt-3 grid gap-3 sm:grid-cols-2"><label v-for="role in roleNames" :key="role" class="block"><span class="label">{{ roleLabel(role) }}</span><input v-model="form.roles[role]" class="input w-full font-mono" list="configuration-model-catalog" :placeholder="c.followMain" :data-testid="`model-configuration-role-${role}`" /></label></div></details>
             <label v-if="nativeRoute" class="block"><span class="label">{{ c.routeProfile }}</span><AppSelect v-model="form.routeProfile" :options="[{ value: '', label: c.standardRoute }, { value: 'deepseek-native', label: 'DeepSeek native' }]" :aria-label="c.routeProfile" searchable data-testid="model-configuration-route-profile" /></label>
@@ -419,6 +494,63 @@ defineExpose({ openForTool, resumeWithCredential, openCreate })
   align-items: center;
   gap: 12px;
   padding: 16px 0;
+}
+.model-slot {
+  margin: 0 0 8px;
+  padding: 10px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+}
+.model-slot-top {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
+  margin-bottom: 8px;
+  color: rgb(var(--c-txt2));
+  font-size: 12px;
+  font-weight: 560;
+}
+.model-slot-remove {
+  margin-left: auto;
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgb(var(--c-txt3));
+}
+.model-slot-remove:hover {
+  border-color: rgb(var(--c-err) / .28);
+  background: rgb(var(--c-err) / .08);
+  color: rgb(var(--c-err));
+}
+.model-add {
+  display: flex;
+  width: 100%;
+  height: 36px;
+  margin: 4px 0 12px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed rgb(var(--c-line-strong));
+  border-radius: 12px;
+  background: transparent;
+  color: rgb(var(--c-txt2));
+  font-size: 13px;
+}
+.model-add:hover:not(:disabled) {
+  border-color: rgb(var(--c-accent) / .55);
+  background: rgb(var(--c-accent) / .08);
+  color: rgb(var(--c-accent-2));
+}
+.model-add:disabled {
+  color: rgb(var(--c-txt3));
+  cursor: not-allowed;
+  opacity: .55;
 }
 @media (max-width: 420px) {
   .configuration-row {

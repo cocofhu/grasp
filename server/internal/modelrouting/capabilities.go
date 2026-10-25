@@ -65,6 +65,9 @@ func CapabilityFor(backend string) (Capability, bool) {
 }
 
 func ValidateBinding(backend string, binding Binding, connection *Connection) error {
+	if err := NormalizeAuxiliaryModels(&binding); err != nil {
+		return err
+	}
 	if binding.ConfigurationID != "" {
 		return fmt.Errorf("concrete bindings cannot reference a model configuration")
 	}
