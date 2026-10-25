@@ -5,7 +5,7 @@ import { assembleCreatePayload, buildReviewSummary, freshDraft } from './agentCr
 
 describe('multiple Git credential payloads', () => {
   it('deep-clones saved bindings and preserves an explicit empty selection', () => {
-    const bindings = { items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'key' }
+    const bindings = { items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'key' } as Parameters<typeof cloneGitBindings>[0] & { preferredCredentialId?: string }
     const draft = toDraft({ name: 'configured', acpBackend: 'opencode', gitBindings: bindings })
     draft.gitBindings!.items[0].scope = 'another-host'
     expect(bindings.items[0].scope).toBe('host')
@@ -15,20 +15,22 @@ describe('multiple Git credential payloads', () => {
     setDraftGitBindings(draft, { items: [] })
     expect(fromDraft(draft).gitBindings).toEqual({ items: [] })
     expect(cloneGitBindings({ items: [] })).toEqual({ items: [] })
+    expect(cloneGitBindings(bindings)).toEqual({ items: [{ credentialId: 'key', scope: 'host', sshHostsCredentialId: 'hosts' }] })
+    expect(cloneGitBindings(bindings)).not.toHaveProperty('preferredCredentialId')
   })
   it('creates with an explicit list, reviews aliases and preference, and never serializes secret material', () => {
     const draft = freshDraft()
     draft.name = 'multi-git'
     expect(assembleCreatePayload(draft).gitBindings).toEqual({ items: [] })
     draft.env = [{ k: 'GITHUB_TOKEN', v: 'old-secret' }, { k: 'GIT_SSH_PRIVATE_KEY', v: 'key-content' }]
-    draft.gitBindings = { items: [{ credentialId: 'gh-1' }, { credentialId: 'gh-2' }], preferredCredentialId: 'gh-2' }
+    draft.gitBindings = { items: [{ credentialId: 'gh-1' }, { credentialId: 'gh-2' }], preferredCredentialId: 'gh-2' } as typeof draft.gitBindings
     const payload = assembleCreatePayload(draft)
-    expect(payload.gitBindings).toEqual(draft.gitBindings)
+    expect(payload.gitBindings).toEqual({ items: [{ credentialId: 'gh-1' }, { credentialId: 'gh-2' }] })
     expect(payload).not.toHaveProperty('gitCredentialId')
     expect(payload.env).toEqual({})
     expect(JSON.stringify(payload)).not.toMatch(/old-secret|key-content/)
-    const review = buildReviewSummary(draft, { gitItems: { 'gh-1': '团队 GitHub', 'gh-2': '个人 GitHub' }, preferredLabel: '首选' }).find((item) => item.key === 'git')
-    expect(review).toMatchObject({ kind: 'ok', detail: '团队 GitHub · 个人 GitHub (首选)' })
+    const review = buildReviewSummary(draft, { gitItems: { 'gh-1': '团队 GitHub', 'gh-2': '个人 GitHub' } }).find((item) => item.key === 'git')
+    expect(review).toMatchObject({ kind: 'ok', detail: '团队 GitHub · 个人 GitHub' })
   })
 })
 

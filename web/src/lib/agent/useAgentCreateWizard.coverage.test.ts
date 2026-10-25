@@ -52,7 +52,7 @@ describe('Agent wizard with explicit saved model', () => {
  })
  it('clones multiple Git authorizations, reviews aliases and supports an explicit skip', async () => {
   const { w } = setup(); await flushPromises()
-  const git = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }], preferredCredentialId: 'gh' }
+  const git = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh' }] }
   w.onGitBindings(git); git.items[0].credentialId = 'changed'
   expect(w.draft.value.inheritGit).toBe(false)
   expect(w.draft.value.gitBindings?.items[0].credentialId).toBe('gh')

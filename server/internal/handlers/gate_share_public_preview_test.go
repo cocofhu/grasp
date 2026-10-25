@@ -18,7 +18,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-ap-api", "preview_api")
 
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/reviews/preview_api/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-api/nodes/preview_api/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
@@ -50,7 +50,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 		Mode: "direct", DirectURL: "http://127.0.0.1:8080/",
 	})
 
-	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{
+	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/preview-ticket", map[string]any{
 		"port": 8080, "purpose": "api",
 	}, map[string]string{
 		headerShareToken:   token,
@@ -66,7 +66,7 @@ func TestPublicPreviewAPIProxyAllowsSameOriginFraming(t *testing.T) {
 	}
 
 	w := &closeNotifyRecorder{ResponseRecorder: httptest.NewRecorder(), notify: make(chan bool)}
-	req := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview-api/"+ticket+"/", nil)
+	req := httptest.NewRequest(http.MethodGet, "/public/approvals/preview-api/"+ticket+"/", nil)
 	req.Host = publicHost
 	hn.r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
@@ -101,7 +101,7 @@ func TestPublicPreviewVNCTicketWatchesNodeSandbox(t *testing.T) {
 	hn.h.Preview = services.NewPreviewService(hn.db, nil)
 	hn.h.Browser = browser.New(nopVNCExec{}, browser.Config{})
 
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-vnc/reviews/preview_vnc/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-ap-vnc/nodes/preview_vnc/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 	headers := map[string]string{
@@ -110,20 +110,20 @@ func TestPublicPreviewVNCTicketWatchesNodeSandbox(t *testing.T) {
 		"Origin":           "http://" + publicHost,
 	}
 
-	apiRes := hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{"purpose": "api"}, headers)
+	apiRes := hn.doPublic(http.MethodPost, "/public/approvals/preview-ticket", map[string]any{"purpose": "api"}, headers)
 	if apiRes.Code != http.StatusBadRequest {
 		t.Fatalf("api ticket without port: %d %s", apiRes.Code, apiRes.Body.String())
 	}
 
-	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/preview-ticket", map[string]any{"purpose": "vnc"}, headers))
-	if ticketRes["status"] != models.ShareLinkStateActive || ticketRes["wsPath"] != "/public/gate-approvals/preview-vnc/ws" {
+	ticketRes := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/preview-ticket", map[string]any{"purpose": "vnc"}, headers))
+	if ticketRes["status"] != models.ShareLinkStateActive || ticketRes["wsPath"] != "/public/approvals/preview-vnc/ws" {
 		t.Fatalf("vnc ticket: %+v", ticketRes)
 	}
 	ticket, _ := ticketRes["ticket"].(string)
 
 	open := func() *httptest.ResponseRecorder {
 		w := httptest.NewRecorder()
-		req := httptest.NewRequest(http.MethodGet, "/public/gate-approvals/preview-vnc/ws?ticket="+ticket, nil)
+		req := httptest.NewRequest(http.MethodGet, "/public/approvals/preview-vnc/ws?ticket="+ticket, nil)
 		req.Host = publicHost
 		hn.r.ServeHTTP(w, req)
 		return w

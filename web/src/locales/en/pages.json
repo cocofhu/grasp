@@ -3013,12 +3013,9 @@
       },
       "gitCredentials": {
         "title": "Git access",
-        "hint": "Add saved credentials and choose a preferred one.",
         "add": "Add Git credential",
         "empty": "No Git credentials added",
         "noneAvailable": "No more Git credentials available",
-        "preferred": "Preferred",
-        "setPreferred": "Set preferred",
         "remove": "Remove",
         "options": "Configure scope",
         "scope": "Site or repository",
@@ -3028,14 +3025,12 @@
         "hosts": "SSH host verification",
         "hostsNone": "No saved host verification",
         "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
-        "preferredMissing": "Choose an available preferred credential.",
         "inherited": "Using workspace defaults",
         "legacy": "Using existing authorization",
         "manage": "Manage credentials",
         "help": "Git setup help",
         "loading": "Loading credentials…",
-        "retry": "Retry",
-        "allStaged": "All selected credentials are available in the sandbox."
+        "retry": "Retry"
       }
     },
     "runLaunch": {
@@ -3263,6 +3258,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",

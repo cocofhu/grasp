@@ -34,7 +34,11 @@ describe('AppButton', () => {
 
   it('applies primary variant classes', () => {
     const wrapper = mountBtn({ variant: 'primary' })
-    expect(wrapper.classes().join(' ')).toContain('bg-accent')
+    const cls = wrapper.classes().join(' ')
+    expect(cls).toContain('bg-accent')
+    expect(cls).toContain('text-white')
+    expect(cls).toContain('shadow-glow')
+    expect(wrapper.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-hover')
     wrapper.unmount()
   })
 

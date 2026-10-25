@@ -896,7 +896,7 @@ describe('useGatesInbox actions', () => {
     mocks.getRun.mockImplementation(async (runId: string) =>
       contextRun(runId, { status: 'running', currentNode: { id: 'verify', name: 'verify', iteration: 1, kind: 'agent', mode: 'auto', state: 'running' } }),
     )
-    const { inbox, app, router } = await withInbox('/gates?run=run-take&node=react')
+    const { inbox, app, router } = await withInbox('/runs/run-take/nodes/react')
     inbox.selectItem(inbox.listItems.value[0]!)
     await flushPromises()
     inbox.reviewChatRef.value = { discardLastQueued: vi.fn(), isSessionBusy: () => false }

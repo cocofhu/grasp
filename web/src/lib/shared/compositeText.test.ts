@@ -44,11 +44,11 @@ describe('imgSrc', () => {
   it('prefers public gate url over blob ref (g2.1)', () => {
     expect(
       imgSrc({
-        url: '/public/gate-approvals/images/0?token=abc',
+        url: '/public/approvals/images/0?token=abc',
         ref: 'blob:abc123',
         mimeType: 'image/png',
       }),
-    ).toBe('/public/gate-approvals/images/0?token=abc')
+    ).toBe('/public/approvals/images/0?token=abc')
   })
 })
 

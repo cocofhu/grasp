@@ -16,7 +16,7 @@ import (
 
 func dialPublicEvents(t *testing.T, srv *httptest.Server, token string) *websocket.Conn {
 	t.Helper()
-	conn, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/gate-approvals/events"), nil)
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL(srv.URL, "/public/approvals/events"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestShareTokenCannotOfferPage(t *testing.T) {
 	hn.h.PageBridge = hub
 	seedAppPreviewReview(t, hn, "run-page-share", "ap1")
 	seedDirectPreview(t, hn, "run-page-share", "ap1")
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-page-share/reviews/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-page-share/nodes/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	share := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 

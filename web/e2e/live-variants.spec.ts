@@ -306,7 +306,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=${nodeType}`)
       const configured = await state(page, key)
       expect(configured.node).toEqual({ type: 'agent', caps: LIVE_CAPS[nodeType] })
-      const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
+      const capability = page.waitForResponse((response) => response.url().endsWith('/public/approvals/live-sessions'))
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('embed-chat-root')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ status: 'active', enabled: true, sessions: [] })
@@ -334,7 +334,7 @@ test.describe('Live entry on Grasp direct previews', () => {
       await overlay(page).locator('[data-input="prompt"]').fill('保留订阅行为，给出三个更清晰的设计')
       await markSelection(page)
       await page.screenshot({ path: testInfo.outputPath(`live-${nodeType}-annotations.png`), animations: 'disabled' })
-      const generated = page.waitForRequest((request) => request.url().endsWith('/public/gate-approvals/reply') && request.postDataJSON()?.live?.op === 'generate')
+      const generated = page.waitForRequest((request) => request.url().endsWith('/public/approvals/reply') && request.postDataJSON()?.live?.op === 'generate')
       await overlay(page).locator('[data-act="go"]').click()
       expect((await generated).postDataJSON()).toMatchObject({
         token: `live-e2e-${key}`, live: { op: 'generate', element: { selector: 'section#newsletter' }, marks: [{ kind: 'draw' }, { kind: 'note' }] },
@@ -372,7 +372,7 @@ test.describe('Live entry on Grasp direct previews', () => {
     test('an Agent without set_preview hides Live while retaining Chat', async ({ page }) => {
       const key = 'entry-disabled-no-preview'
       await page.request.post(`${origin}/__e2e/live/reset?key=${key}&caps=no-preview`)
-      const capability = page.waitForResponse((response) => response.url().endsWith('/public/gate-approvals/live-sessions'))
+      const capability = page.waitForResponse((response) => response.url().endsWith('/public/approvals/live-sessions'))
       await page.goto(`${origin}/live-variants.html?key=${key}`)
       await expect(drawer(page).getByTestId('clarify-input')).toBeVisible({ timeout: 15_000 })
       expect(await (await capability).json()).toMatchObject({ enabled: false })
@@ -427,7 +427,7 @@ test.describe('production Chat composer page candidates', () => {
     await drawer(page).getByTestId('clarify-input').fill('保留订阅交互，生成三个整页设计候选供我挑选')
     await page.screenshot({ path: testInfo.outputPath('chat-page-candidates-switch.png'), animations: 'disabled' })
     await drawer(page).getByTestId('public-gate-chat-host').screenshot({ path: testInfo.outputPath('chat-page-candidates-composer.png'), animations: 'disabled' })
-    const request = page.waitForRequest((item) => item.url().endsWith('/public/gate-approvals/reply') && item.postDataJSON()?.live?.scope === 'page')
+    const request = page.waitForRequest((item) => item.url().endsWith('/public/approvals/reply') && item.postDataJSON()?.live?.scope === 'page')
     await drawer(page).getByTestId('clarify-send-label').click()
     const body = (await request).postDataJSON()
     expect(body).toMatchObject({
@@ -500,7 +500,7 @@ test.describe('production Chat composer page candidates', () => {
     const key = 'entry-composer-retry'
     await entry(page, key)
     let rejectedSid = ''
-    await page.route('**/public/gate-approvals/reply', async (route) => {
+    await page.route('**/public/approvals/reply', async (route) => {
       if (!rejectedSid) {
         rejectedSid = route.request().postDataJSON().live.sid
         await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'temporary outage' }) })

@@ -20,12 +20,12 @@ async function bootstrap() {
   useAuth().setUser({ username: 'admin', expiresAt: '2099-01-01T00:00:00Z', isAdmin: true })
 
   const params = new URLSearchParams(window.location.search)
-  const start = params.get('start') || '/gates'
+  const start = params.get('start') || '/runs/run-1/nodes/n1'
 
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: '/gates', component: stub('page-gates', '待审批页') },
+      { path: '/runs/:runId/nodes/:nodeId', component: stub('page-gates', '待审批页') },
       { path: '/runs/:id', component: stub('page-run', '运行详情'), meta: { full: true } },
       { path: '/workflows/:id/edit', component: stub('page-editor', '工作流编辑器'), meta: { full: true } },
       { path: '/sandboxes/:id/console', component: stub('page-console', '沙箱控制台'), meta: { full: true } },

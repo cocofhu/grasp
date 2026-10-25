@@ -59,8 +59,8 @@ func TestBuildGateAutoPromptAppendsUserPrompt(t *testing.T) {
 		"gateId: 42",
 		"gateType: human_gate",
 		"title: 代码评审确认",
-		"pm_list_pending_gates",
-		"pm_resume_gate",
+		"pm_list_pending_nodes",
+		"pm_decide_node",
 		"path: 实现 → 评审 → 部署",
 		"approve (批准)",
 	} {
@@ -76,7 +76,7 @@ func TestBuildGateAutoPromptAppendsUserPrompt(t *testing.T) {
 	if !strings.Contains(withUser, "[user prompt]\n优先批准低风险\n") {
 		t.Fatalf("user prompt not appended:\n%s", withUser)
 	}
-	if idx := strings.Index(withUser, "tools: pm_list_pending_gates"); idx < 0 {
+	if idx := strings.Index(withUser, "tools: pm_list_pending_nodes"); idx < 0 {
 		t.Fatal("missing tools line")
 	} else if strings.Index(withUser, "[user prompt]") < idx {
 		t.Fatal("user prompt must come after system default")

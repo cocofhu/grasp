@@ -721,7 +721,7 @@ describe('NovncPreviewPanel', () => {
   it('public wsUrl reconnect emits reconnect-request instead of reusing ticket', async () => {
     const before = MockWebSocket.instances.length
     const wrapper = mountNovnc({
-      wsUrl: 'wss://example.test/public/gate-approvals/preview-vnc/ws?ticket=old',
+      wsUrl: 'wss://example.test/public/approvals/preview-vnc/ws?ticket=old',
       sandboxId: undefined,
     })
     await flushPromises()

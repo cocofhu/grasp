@@ -39,7 +39,7 @@ func TestAgentMissingInheritanceSwitchesUseCurrentDefaultsWithoutWriting(t *test
 		t.Fatal("missing switches did not select workspace defaults")
 	}
 	effective := agents.Effective(agent)
-	if effective.AcpBackend != configuration.Backend || effective.ModelBinding.ConfigurationID != configuration.ID || effective.GitBindings.PreferredCredentialID != credential.ID {
+	if effective.AcpBackend != configuration.Backend || effective.ModelBinding.ConfigurationID != configuration.ID || effective.GitBindings == nil || effective.GitBindings.Items[0].CredentialID != credential.ID || effective.GitBindings.PreferredCredentialID != "" {
 		t.Fatal("missing switches selected local values instead of current defaults")
 	}
 	after, err := os.ReadFile(file)

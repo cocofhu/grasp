@@ -104,7 +104,7 @@ describe('runsClient request coverage', () => {
     await runsClient.deleteRun('r1')
     await runsClient.resumeRun('r1')
     await runsClient.resumeGate('r1', 'n1', 'approve', { note: 'ok' })
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r1/gates/n1/resume', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r1/nodes/n1/decision', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ action: 'approve', form: { note: 'ok' } }),
     }))
@@ -114,7 +114,7 @@ describe('runsClient request coverage', () => {
 
   it('issues all share, artifact, react, queue, and preview requests exactly', async () => {
     await runsClient.createGateShareLink('r', 'n', '8h', 'react_only')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r/gates/n/share-link', expect.objectContaining({
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/runs/r/nodes/n/share-link', expect.objectContaining({
       method: 'POST',
       body: JSON.stringify({ ttlTier: '8h', permissionPreset: 'react_only' }),
     }))
@@ -128,7 +128,7 @@ describe('runsClient request coverage', () => {
     await runsClient.listGatePrimaryArtifacts('r', 'n')
     await runsClient.saveGateArtifact('r', 'n', 'report / final.json', '{}', 'etag-1')
     expect(fetchMock).toHaveBeenLastCalledWith(
-      '/api/runs/r/gates/n/artifacts/report%20%2F%20final.json',
+      '/api/runs/r/nodes/n/artifacts/report%20%2F%20final.json',
       expect.objectContaining({
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'If-Match': 'etag-1' },

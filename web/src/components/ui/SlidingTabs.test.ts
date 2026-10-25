@@ -266,6 +266,51 @@ describe('SlidingTabs', () => {
       .toBe('translate3d(80px, 4px, 0)')
   })
 
+  it('paints indicator slot content above the buttons and keeps the highlight empty', async () => {
+    const selected = ref('a')
+    const Host = defineComponent({
+      setup: () => () => h(SlidingTabs, {
+        value: selected.value,
+        indicatorTestid: 'highlight',
+        'data-box': 'track',
+      }, {
+        indicator: () => h('span', { 'data-testid': 'badge' }, '67'),
+        default: () => ['a', 'b'].map(id => h('button', {
+          key: id,
+          type: 'button',
+          'data-box': id,
+          'aria-pressed': selected.value === id ? 'true' : 'false',
+          onClick: () => { selected.value = id },
+        }, id)),
+      }),
+    })
+    const wrapper = mount(Host, { attachTo: document.body })
+    wrappers.push(wrapper)
+    await nextTick()
+
+    const highlight = wrapper.get<HTMLElement>('[data-testid="highlight"]')
+    const badge = wrapper.get<HTMLElement>('[data-testid="badge"]')
+    const layer = badge.element.parentElement as HTMLElement
+    expect(highlight.element.childElementCount).toBe(0)
+    expect(highlight.element.contains(badge.element)).toBe(false)
+    expect(layer.classList.contains('sliding-tabs__count')).toBe(true)
+    expect(layer.style.zIndex).toBe('2')
+    expect(layer.getAttribute('aria-hidden')).toBe('true')
+    expect(layer.style.transform).toBe(highlight.element.style.transform)
+    expect(layer.style.width).toBe(highlight.element.style.width)
+    const button = wrapper.get('button')
+    expect(button.element.contains(badge.element)).toBe(false)
+    expect(button.element.compareDocumentPosition(layer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    bounds.b = rect(180, 204, 140)
+    await wrapper.get('[data-box="b"]').trigger('click')
+    await nextTick()
+    expect(badge.text()).toBe('67')
+    expect(layer.style.transform).toBe(highlight.element.style.transform)
+    expect(layer.style.width).toBe('140px')
+    expect(highlight.element.style.width).toBe('140px')
+  })
+
   it('disconnects resize observation when removed', async () => {
     const { wrapper } = mountTabs()
     await nextTick()

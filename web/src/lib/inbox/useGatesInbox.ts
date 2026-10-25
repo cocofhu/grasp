@@ -1156,11 +1156,20 @@ function restoreListItemLocally(it: InboxItem, prevList: InboxItem[]) {
   restoreItemLocally(it)
 }
 
+function conversationRoute(): { run: string; node: string } {
+  const params = (route.params ?? {}) as Record<string, unknown>
+  const run = queryText(params.runId)
+  const node = queryText(params.nodeId)
+  if (run || node) return { run, node }
+  return { run: queryText(route.query.run), node: queryText(route.query.node) }
+}
+
 function incomingTarget(): { runId: string; nodeId: string } | null {
   if (!incomingArmed.value) return null
+  const id = conversationRoute()
   return resolveIncomingApproval(
-    route.query.run,
-    route.query.node,
+    id.run,
+    id.node,
     peekHomeApproveHandoff() || homeSeed.value,
   )
 }
@@ -1466,7 +1475,8 @@ function startStartingPoll() {
 }
 
 function selectFromQuery({ keepActive = false }: { keepActive?: boolean } = {}): boolean {
-  const hit = findInboxItemForQuery(listItems.value, route.query.run, route.query.node)
+  const id = conversationRoute()
+  const hit = findInboxItemForQuery(listItems.value, id.run, id.node)
   if (!hit) return false
   // Silent auto-apply reload with the same gate already selected: keep the
   // object. A fresh row for the same key would retrigger watch(active) →
@@ -1536,7 +1546,7 @@ function holdsCancelledConversation(): boolean {
   const departing = inboxCancelDepartureRunId()
   if (!departing) return false
   if (active.value?.runId === departing) return true
-  return queryText(route.query.run) === departing
+  return conversationRoute().run === departing
 }
 
 /**
@@ -3017,8 +3027,7 @@ function shareIntentPending(): boolean {
 }
 
 function activeMatchesShareQuery(it: InboxItem): boolean {
-  const run = queryText(route.query.run)
-  const node = queryText(route.query.node)
+  const { run, node } = conversationRoute()
   return !!run && !!node && it.runId === run && it.nodeId === node
 }
 
@@ -3045,7 +3054,8 @@ function clearShareIntent() {
 let settledShareKey = ''
 function shareIntentKey(): string {
   if (!shareIntentPending()) return ''
-  return `${queryText(route.query.run)}\0${queryText(route.query.node)}`
+  const { run, node } = conversationRoute()
+  return `${run}\0${node}`
 }
 
 function consumeShareIntent() {
@@ -3074,8 +3084,8 @@ watch(
     active.value ? itemKey(active.value) : '',
     active.value && isStartingInboxItem(active.value) ? 'starting' : '',
     incomingGhost.value ? itemKey(incomingGhost.value) : '',
-    route.query.run,
-    route.query.node,
+    conversationRoute().run,
+    conversationRoute().node,
     route.query[INBOX_SHARE_INTENT_QUERY],
     processingLock.value,
   ],
@@ -3368,7 +3378,10 @@ function onVisible() {
   if (document.visibilityState === 'visible') peek({ source: 'visibility' })
 }
 
-watch(() => [route.query.run, route.query.node], () => {
+watch(() => {
+  const id = conversationRoute()
+  return [id.run, id.node]
+}, () => {
   // Fresh navigation intent: re-arm so the new target can show a loading card.
   incomingArmed.value = true
   void waitForQueryItem()

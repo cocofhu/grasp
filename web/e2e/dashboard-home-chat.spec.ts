@@ -1,6 +1,6 @@
 /**
  * E2E: Home chat starts an Approve-first workflow and opens the inbox.
- * Harness: dashboard-home-chat.html (DashboardView + gates stub)
+ * Harness: dashboard-home-chat.html (DashboardView + /runs/:runId/nodes/:nodeId stub)
  */
 import { expect, test, type Page } from '@playwright/test'
 import { CLARIFY_CAPS } from '../src/test/capsFixtures'
@@ -53,7 +53,7 @@ async function mockHomeApis(page: Page) {
   await page.route('**/api/runs/**', async (route) => {
     const req = route.request()
     const url = req.url()
-    if (req.method() === 'POST' && url.includes('/react/') && url.includes('/reply')) {
+    if (req.method() === 'POST' && url.includes('/nodes/') && url.includes('/reply')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

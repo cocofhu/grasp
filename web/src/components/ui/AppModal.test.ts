@@ -1,9 +1,14 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { mount } from '@vue/test-utils'
-import { nextTick } from 'vue'
-import { describe, expect, it } from 'vitest'
+import { h, nextTick } from 'vue'
+import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
+import { vHoverInk } from '@/lib/shared/hoverInkDirective'
+import AppButton from './AppButton.vue'
 import AppModal from './AppModal.vue'
 
 function mountModal(props: Record<string, unknown> = {}, body = '<p data-testid="body">内容</p>') {
@@ -225,6 +230,110 @@ describe('AppModal', () => {
     expect(document.activeElement).toBe(enteringField)
     entering.unmount()
     leaving.unmount()
+  })
+
+  it('neutralizes footer primary only, and leaves page primary purple', () => {
+    const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
+    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*background-color:\s*#18181b/i)
+    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*color:\s*#ffffff/i)
+    expect(css).toMatch(/html\.light \.app-modal-footer button\.bg-accent[\s\S]*--hover-ink-color:\s*#52525b/i)
+    expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*background-color:\s*#ededf0/i)
+    expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*color:\s*#141417/i)
+    expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*--hover-ink-color:\s*#a1a1aa/i)
+    expect(css).toMatch(/\.app-modal-footer button\.bg-accent \{[\s\S]*--tw-shadow:\s*0 0 #0000/)
+    expect(css).toMatch(/\.app-modal-footer button\.bg-accent \.app-icon/)
+    const drawer = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppDrawer.vue'), 'utf8')
+    expect(drawer).not.toContain('app-modal-footer')
+    const button = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'AppButton.vue'), 'utf8')
+    expect(button).toContain("primary: 'bg-accent text-white shadow-glow'")
+  })
+
+  it('puts footer primary, ghost, danger, and outline in the footer without adding icons', async () => {
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common } } })
+    const wrapper = mount(AppModal, {
+      props: { open: true, title: '保存' },
+      slots: {
+        footer: () => [
+          h(AppButton, { variant: 'ghost' }, () => '取消'),
+          h(AppButton, { variant: 'outline' }, () => '线框'),
+          h(AppButton, { variant: 'danger' }, () => '删除'),
+          h(AppButton, { variant: 'primary' }, () => '保存'),
+        ],
+      },
+      global: {
+        plugins: [i18n],
+        stubs: { Icon: { props: ['name'], template: '<span :data-icon="name" />' } },
+        directives: { 'hover-ink': vHoverInk },
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+    const footer = document.body.querySelector('.app-modal-footer') as HTMLElement
+    expect(footer).toBeTruthy()
+    const buttons = [...footer.querySelectorAll('button')]
+    expect(buttons).toHaveLength(4)
+    expect(buttons[0].className).toContain('text-txt2')
+    expect(buttons[0].className).not.toContain('bg-accent')
+    expect(buttons[1].className).toContain('border')
+    expect(buttons[1].className).not.toContain('bg-accent')
+    expect(buttons[2].className).toContain('text-err')
+    expect(buttons[2].className).not.toContain('bg-accent')
+    expect(buttons[3].className).toContain('bg-accent')
+    expect(buttons[3].className).toContain('shadow-glow')
+    expect(footer.querySelector('[data-icon]')).toBeNull()
+    const page = document.createElement('div')
+    document.body.append(page)
+    const pageBtn = mount(AppButton, {
+      props: { variant: 'primary' },
+      slots: { default: '新建' },
+      global: { plugins: [i18n], stubs: { Icon: true }, directives: { 'hover-ink': vHoverInk } },
+      attachTo: page,
+    })
+    expect(pageBtn.classes()).toContain('bg-accent')
+    expect(pageBtn.classes()).toContain('shadow-glow')
+    expect(pageBtn.element.closest('.app-modal-footer')).toBeNull()
+    pageBtn.unmount()
+    page.remove()
+    wrapper.unmount()
+  })
+
+  it('does not spread hover ink on a disabled or loading footer primary', async () => {
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn((query: string) => ({
+        matches: query.includes('hover: hover') && query.includes('pointer: fine'),
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    )
+    const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common } } })
+    const wrapper = mount(AppModal, {
+      props: { open: true, title: '保存' },
+      slots: {
+        footer: () => [
+          h(AppButton, { variant: 'primary', disabled: true }, () => '禁用'),
+          h(AppButton, { variant: 'primary', loading: true }, () => '加载'),
+        ],
+      },
+      global: {
+        plugins: [i18n],
+        stubs: { Icon: true },
+        directives: { 'hover-ink': vHoverInk },
+      },
+      attachTo: document.body,
+    })
+    await nextTick()
+    const buttons = [...document.body.querySelectorAll('.app-modal-footer button')] as HTMLButtonElement[]
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) {
+      button.dispatchEvent(new PointerEvent('pointerenter', { clientX: 8, clientY: 8, pointerType: 'mouse', bubbles: true }))
+      expect(button.classList.contains('is-hover-ink')).toBe(false)
+    }
+    expect(buttons[1].getAttribute('aria-busy')).toBe('true')
+    expect(buttons[1].querySelector('.app-spinner, .icon-spinner, [data-icon="spinner"]')).toBeTruthy()
+    wrapper.unmount()
+    vi.unstubAllGlobals()
   })
 })
 
