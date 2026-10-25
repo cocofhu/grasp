@@ -21,7 +21,7 @@ function setup(overrides = {}) {
 }
 beforeEach(() => {
  mocks.listCredentials.mockResolvedValue({ items: [key, { id: 'buddy-key', name: 'Buddy account', purpose: 'tool_auth', toolId: 'codebuddy', configured: true }, { id: 'gh', name: 'GitHub team', purpose: 'git', type: 'git', provider: 'github', configured: true }] }); mocks.listModelConfigurations.mockResolvedValue({ items: [configuration, buddy] })
- mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'buddy' }, gitBindings: { items: [{ credentialId: 'gh' }], preferredCredentialId: 'gh' }, files: [], mcp: [], env: {}, layout: {} })
+ mocks.getSharedAgentConfig.mockResolvedValue({ acpBackend: 'codebuddy', modelBinding: { kind: 'configuration', configurationId: 'buddy' }, gitBindings: { items: [{ credentialId: 'gh' }] }, files: [], mcp: [], env: {}, layout: {} })
  mocks.listModelConnections.mockResolvedValue({ items: [] }); mocks.listToolCapabilities.mockResolvedValue({ items: [] })
 })
 describe('Agent saved configuration editing', () => {
@@ -60,7 +60,7 @@ describe('Agent saved configuration editing', () => {
   expect(fromDraft(draft).env).toEqual({ FEATURE: 'on', GRASP_CODEBUDDY_REGION: 'public' }); w.unmount()
  })
  it('uses one inheritance card and restores local selections when its switch turns off', async () => {
-  const localGit = { items: [{ credentialId: 'gh', scope: 'https://github.com/local/project' }], preferredCredentialId: 'gh' }
+  const localGit = { items: [{ credentialId: 'gh', scope: 'https://github.com/local/project' }] }
   const { w, draft } = setup({ gitBindings: localGit }); await flushPromises()
   expect(w.findAll('[data-testid="agent-inherit-default-switch"]')).toHaveLength(1)
   await w.get('[data-testid="agent-inherit-default-switch"]').trigger('click')
@@ -110,11 +110,11 @@ describe('Agent saved configuration editing', () => {
  it('writes named model and multiple Git references independently', async () => {
   const { w, draft } = setup(); await flushPromises()
   w.getComponent(ModelBindingEditor).vm.$emit('update:modelValue', { kind: 'configuration', configurationId: 'replacement' })
-  w.getComponent(AgentGitCredentialPicker).vm.$emit('update:modelValue', { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'ssh' })
+  w.getComponent(AgentGitCredentialPicker).vm.$emit('update:modelValue', { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] })
   const payload = fromDraft(draft)
   expect(payload.modelBinding).toEqual({ kind: 'configuration', configurationId: 'replacement' })
   expect(payload.gitBindings?.items).toHaveLength(2)
-  expect(payload.gitBindings?.preferredCredentialId).toBe('ssh'); w.unmount()
+  expect(payload.gitBindings?.items).toEqual([{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }]); expect(payload.gitBindings).not.toHaveProperty('preferredCredentialId'); w.unmount()
  })
  it('retains a missing reference with a visible error until a replacement is explicitly selected', async () => {
   const { w, draft } = setup({ modelBinding: { kind: 'configuration', configurationId: 'missing' } }); await flushPromises()

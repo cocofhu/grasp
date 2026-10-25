@@ -12,7 +12,7 @@ const mocks = vi.hoisted(() => ({ getSharedAgentConfig: vi.fn(), listCredentials
 vi.mock('@/lib/api/api', () => ({ api: mocks }))
 const binding = { kind: 'configuration' as const, configurationId: 'local-model' }
 const model = { id: 'local-model', name: 'Local Cursor', backend: 'cursor', state: 'active', binding: { kind: 'platform', credentialId: 'key' } }
-const defaults = { files: [], mcp: [], env: {}, layout: {}, modelBinding: binding, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' } }
+const defaults = { files: [], mcp: [], env: {}, layout: {}, modelBinding: binding, gitBindings: { items: [{ credentialId: 'git' }] } }
 function setup(overrides = {}, inheritance = true) {
   const draft = reactive(toDraft({ name: 'a', inheritModel: false, inheritGit: false, acpBackend: 'cursor', modelBinding: binding, ...overrides }))
   const wrapper = mount(AgentRuntimeBindings, { props: { draft, inheritance }, global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })], stubs: { RouterLink: { template: '<a><slot /></a>' }, Teleport: true } } })
@@ -36,12 +36,13 @@ describe('explicit default binding choices', () => {
     expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([true]); wrapper.unmount()
   })
   it('uses defaults without selection controls and restores local bindings when inheritance is off', async () => {
-    const localGit = { items: [{ credentialId: 'other-git' }], preferredCredentialId: 'other-git' }
+    const localGit = { items: [{ credentialId: 'other-git' }] }
     mocks.listCredentials.mockResolvedValue({ items: [{ id: 'key', purpose: 'tool_auth', toolId: 'cursor', configured: true }, { id: 'git', name: 'Team GitLab', purpose: 'git', provider: 'gitlab', configured: true }, { id: 'other-git', name: 'Local GitHub', purpose: 'git', provider: 'github', configured: true }] })
     const { wrapper, draft } = setup({ inheritModel: true, inheritGit: true, gitBindings: localGit }); await flushPromises()
     expect(wrapper.get('[data-testid="model-binding-inherited-summary"]').text()).toContain('Local Cursor')
-    for (const id of ['model-binding-configuration-select', 'git-credential-add', 'git-preferred-git', 'git-remove-git', 'git-options-git']) expect(wrapper.find(`[data-testid="${id}"]`).exists()).toBe(false)
-    expect(wrapper.get('[data-testid="git-inherited-preferred-git"]').text()).toBe('首选')
+    for (const id of ['model-binding-configuration-select', 'git-credential-add', 'git-preferred-git', 'git-remove-git', 'git-options-git', 'git-inherited-preferred-git']) expect(wrapper.find(`[data-testid="${id}"]`).exists()).toBe(false)
+    expect(wrapper.get('[data-testid="git-credential-row-git"]').text()).toContain('Team GitLab')
+    expect(wrapper.text()).not.toContain('首选')
     expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([true])
     expect(wrapper.emitted('gitValidity')?.at(-1)).toEqual([true])
     expect(draft.modelBinding).toEqual(binding)
@@ -72,7 +73,7 @@ describe('explicit default binding choices', () => {
     expect(draft.gitBindings?.items).toEqual([]); wrapper.unmount()
   })
   it('explains invalid inherited scopes after a Git account changes host without exposing selection controls', async () => {
-    mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, gitBindings: { items: [{ credentialId: 'git', scope: 'git.old.test' }], preferredCredentialId: 'git' } })
+    mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, gitBindings: { items: [{ credentialId: 'git', scope: 'git.old.test' }] } })
     mocks.listCredentials.mockResolvedValue({ items: [{ id: 'git', name: 'Team GitLab', purpose: 'git', provider: 'gitlab', host: 'https://git.new.test', configured: true }] })
     const { wrapper } = setup({ inheritGit: true }); await flushPromises()
     expect(wrapper.emitted('gitValidity')?.at(-1)).toEqual([false])

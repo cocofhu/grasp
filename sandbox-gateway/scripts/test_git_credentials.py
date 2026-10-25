@@ -71,6 +71,15 @@ class CredentialsTest(unittest.TestCase):
         self.assertNotIn("repo-token", (self.home / ".gitconfig").read_text())
         self.assertFalse(self.source.exists())
 
+    def test_equal_scope_keeps_the_earlier_account_when_a_later_one_is_marked_preferred(self):
+        self.install([{"preferred": False, "token": "first-token"},
+                      {"preferred": True, "token": "later-token"}])
+        self.assertIn("password=first-token", self.fill("https://github.com/team/app").stdout)
+        self.assertNotIn("later-token", self.fill("https://github.com/team/app").stdout)
+        gh = (self.home / ".config/gh/hosts.yml").read_text()
+        self.assertIn("first-token", gh)
+        self.assertNotIn("later-token", gh)
+
     def test_reject_does_not_cycle_tokens(self):
         self.install([{}, {"token": "other-same-host-token"}])
         self.git("credential", "reject", body="url=https://github.com/team/repo.git\n\n")
@@ -131,7 +140,7 @@ class CredentialsTest(unittest.TestCase):
 
     def test_invalid_selected_record_fails_whole_catalog(self):
         for mutation in ("missing", "symlink", "newline", "duplicate-id", "duplicate-index",
-                         "invalid-scope", "no-preferred", "two-preferred", "bad-kind", "hosts-symlink"):
+                         "invalid-scope", "preferred-not-bool", "bad-kind", "hosts-symlink"):
             with self.subTest(mutation=mutation):
                 for path in self.source.iterdir():
                     path.unlink()
@@ -149,10 +158,8 @@ class CredentialsTest(unittest.TestCase):
                     records[1]["index"] = 0
                 elif mutation == "invalid-scope":
                     records[0]["scope"] = "github.com\nhelper=malicious"
-                elif mutation == "no-preferred":
-                    records[0]["preferred"] = False
-                elif mutation == "two-preferred":
-                    records[1]["preferred"] = True
+                elif mutation == "preferred-not-bool":
+                    records[0]["preferred"] = "yes"
                 elif mutation == "bad-kind":
                     records[0]["kind"] = "unknown"
                 else:

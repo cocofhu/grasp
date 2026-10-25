@@ -70,7 +70,7 @@ const TEMPLATES = [
 
 type BootstrapBody = {
  modelConfigurationId?: string
- gitBindings?: { items: { credentialId: string }[]; preferredCredentialId?: string }
+ gitBindings?: { items: { credentialId: string }[] }
  agents?: { templateId: string; name: string; modelConfigurationId?: string }[]
  language?: string
 }
@@ -126,7 +126,7 @@ async function walkToTeam(page: Page, lang = 'zh-CN', withGit = false) {
   await page.getByTestId('onboarding-repo-url').fill('https://github.com/example/app.git')
   await page.getByTestId('git-credential-add').locator('[data-test="app-select-trigger"]').click()
   await page.locator('[data-test="app-select-option-github-key"]').click()
-  await expect(page.getByTestId('git-preferred-github-key')).toHaveAttribute('aria-pressed', 'true')
+  await expect(page.getByTestId('git-preferred-github-key')).toHaveCount(0)
  } else await page.getByTestId('onboarding-git-skip').click()
  await next(page)
  await step(page, 'team')
@@ -145,7 +145,7 @@ for (const lang of ['zh-CN', 'en']) {
   await page.screenshot({ path: path.join(OUT, `saved-model-review-${lang}.png`) })
   await next(page)
   await expect(page.getByTestId('onboarding-success')).toBeVisible()
-  expect(state.body).toMatchObject({ modelConfigurationId: model.id, gitBindings: { items: [{ credentialId: gitKey.id }], preferredCredentialId: gitKey.id }, language: lang })
+  expect(state.body).toMatchObject({ modelConfigurationId: model.id, gitBindings: { items: [{ credentialId: gitKey.id }] }, language: lang })
   expect(state.body).not.toHaveProperty('apiKey')
   expect(state.body).not.toHaveProperty('acpBackend')
   expect(state.body?.agents?.find((row) => row.templateId === 'implement')?.name).toBe(lang === 'en' ? 'Implement' : '实现')

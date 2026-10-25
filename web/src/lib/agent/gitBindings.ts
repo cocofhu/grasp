@@ -5,7 +5,7 @@ import { credentialUsable } from './modelRouting'
 export const GIT_AUTH_ENV_KEYS = new Set(['GITHUB_TOKEN', 'GITLAB_TOKEN', 'GIT_SSH_PRIVATE_KEY', 'GIT_SSH_KNOWN_HOSTS', 'GITHUB_URL', 'GITLAB_URL', 'GH_TOKEN', 'GH_ENTERPRISE_TOKEN', 'GITHUB_ENTERPRISE_TOKEN', 'GLAB_TOKEN', 'GITLAB_ACCESS_TOKEN'])
 
 export function cloneGitBindings(value: AgentGitBindings): AgentGitBindings {
-  return { items: value.items.map((item) => ({ ...item })), ...(value.preferredCredentialId ? { preferredCredentialId: value.preferredCredentialId } : {}) }
+  return { items: value.items.map((item) => ({ ...item })) }
 }
 
 export function gitCredentialKind(item?: CredentialItem) {

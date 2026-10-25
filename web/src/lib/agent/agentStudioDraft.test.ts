@@ -61,10 +61,11 @@ describe('credential binding round-trip', () => {
     expect(draft.modelBinding.configurationId).toBe('local-model')
   })
   it('serializes only custom environment credential bindings alongside named model and Git selections', () => {
-    const draft = toDraft({ ...baseAgent, modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' }, credentialBindings: { OPENAI_API_KEY: 'model-key', GITHUB_TOKEN: 'git', SENTRY_TOKEN: 'custom' } })
+    const draft = toDraft({ ...baseAgent, modelBinding: { kind: 'configuration', configurationId: 'cfg' }, gitBindings: { items: [{ credentialId: 'git' }], preferredCredentialId: 'git' } as { items: { credentialId: string }[]; preferredCredentialId?: string }, credentialBindings: { OPENAI_API_KEY: 'model-key', GITHUB_TOKEN: 'git', SENTRY_TOKEN: 'custom' } })
     expect(fromDraft(draft).credentialBindings).toEqual({ SENTRY_TOKEN: 'custom' })
     expect(fromDraft(draft).modelBinding).toEqual({ kind: 'configuration', configurationId: 'cfg' })
-    expect(fromDraft(draft).gitBindings?.preferredCredentialId).toBe('git')
+    expect(fromDraft(draft).gitBindings).toEqual({ items: [{ credentialId: 'git' }] })
+    expect(fromDraft(draft).gitBindings).not.toHaveProperty('preferredCredentialId')
   })
   it('preserves explicit IDs, disabled keys and the distinction from inheritance', () => {
     const bindings = { SENTRY_TOKEN: 'cred-1', CUSTOM_TOKEN: null }

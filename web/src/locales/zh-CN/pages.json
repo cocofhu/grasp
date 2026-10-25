@@ -3013,12 +3013,9 @@
       },
       "gitCredentials": {
         "title": "Git 授权",
-        "hint": "可添加多个已保存的授权，并设置首选。",
         "add": "添加 Git 授权",
         "empty": "尚未添加 Git 授权",
         "noneAvailable": "没有可添加的 Git 授权",
-        "preferred": "首选",
-        "setPreferred": "设为首选",
         "remove": "移除",
         "options": "配置范围",
         "scope": "适用站点或仓库",
@@ -3028,14 +3025,12 @@
         "hosts": "SSH 主机校验",
         "hostsNone": "不指定已保存的主机校验",
         "unavailable": "授权不可用，请移除或在凭据页恢复。",
-        "preferredMissing": "请选择一条可用的首选授权。",
         "inherited": "使用工作区默认授权",
         "legacy": "当前使用原有授权",
         "manage": "管理凭据",
         "help": "Git 配置帮助",
         "loading": "正在加载授权…",
-        "retry": "重试",
-        "allStaged": "所选授权均可在沙箱中使用。"
+        "retry": "重试"
       }
     },
     "runLaunch": {
