@@ -370,6 +370,7 @@ const {
   confirmFlowDiscard,
   acceptConfirmFlow,
   dismissConfirmFlow,
+  releaseConfirmFlowWindow,
   playConfirmCeremony,
   followKeepsComposer,
   showDoneChrome,
@@ -2037,6 +2038,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
     :discard="confirmFlowDiscard"
     @cancel="onFlowDismiss"
     @confirm="onFlowConfirm"
+    @visual-close="releaseConfirmFlowWindow"
   />
 </template>
 

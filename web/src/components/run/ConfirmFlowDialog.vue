@@ -17,6 +17,12 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'cancel'): void
   (e: 'confirm'): void
+  /**
+   * Confirm window has left the document.
+   * Fired from the modal leave transition's after-leave, not when open turns off.
+   * Unmount releases immediately because the page is tearing the window down.
+   */
+  (e: 'visual-close'): void
 }>()
 
 /** Disk, stroke, and label finish around 490ms; keep the settled label readable. */
@@ -26,6 +32,10 @@ const { t } = useI18n()
 const cancelBtn = ref<{ $el?: HTMLElement } | null>(null)
 const done = ref(false)
 const shown = ref(false)
+/** Set on confirm so a later hide — timer, early dismiss, or a following cancel — can notify. */
+let closeAfterDone = false
+/** Confirm committed and the overlay has not finished leaving yet. */
+let notifyWhenLeft = false
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 
 // Parents must wait until this window is gone, not until `open` flips false.
@@ -51,6 +61,21 @@ function clearHideTimer() {
   }
 }
 
+/** Hide the window. The sidebar hears about it only after the overlay has left. */
+function finishShownWindow() {
+  clearHideTimer()
+  if (shown.value && closeAfterDone) notifyWhenLeft = true
+  shown.value = false
+  done.value = false
+  closeAfterDone = false
+}
+
+function onModalAfterLeave() {
+  if (!notifyWhenLeft) return
+  notifyWhenLeft = false
+  emit('visual-close')
+}
+
 watch(
   () => props.open,
   (open) => {
@@ -61,8 +86,10 @@ watch(
       return
     }
     // Cancel, close, Escape, and backdrop never enter the done frame.
+    // A confirm window that was reopened and then cancelled still has to leave.
     if (!done.value) {
-      shown.value = false
+      if (shown.value && closeAfterDone) finishShownWindow()
+      else shown.value = false
       return
     }
     // The parent closes as soon as confirm commits. Keep this window at the
@@ -70,16 +97,20 @@ watch(
     clearHideTimer()
     hideTimer = setTimeout(() => {
       hideTimer = undefined
-      if (!props.open) {
-        shown.value = false
-        done.value = false
-      }
+      if (!props.open) finishShownWindow()
     }, DONE_HOLD_MS)
   },
   { immediate: true },
 )
 
-onBeforeUnmount(clearHideTimer)
+onBeforeUnmount(() => {
+  clearHideTimer()
+  // Navigation tears the window down with the page, so the fade may not finish.
+  const notify = notifyWhenLeft || (shown.value && closeAfterDone)
+  notifyWhenLeft = false
+  closeAfterDone = false
+  if (notify) emit('visual-close')
+})
 
 watch(
   () => props.open,
@@ -98,16 +129,13 @@ function onCancelKeydown(event: KeyboardEvent) {
 }
 
 function onDismiss() {
-  if (done.value) {
-    clearHideTimer()
-    shown.value = false
-    done.value = false
-  }
+  if (done.value) finishShownWindow()
   emit('cancel')
 }
 
 function onConfirm() {
   if (done.value) return
+  closeAfterDone = true
   done.value = true
   emit('confirm')
 }
@@ -121,6 +149,7 @@ function onConfirm() {
     :width="440"
     :dim-content="done"
     @close="onDismiss"
+    @after-leave="onModalAfterLeave"
   >
     <p data-testid="confirm-flow-dialog-body">{{ t('pages.clarify.confirmFlowDialogBody') }}</p>
     <p v-if="discardText" data-testid="confirm-flow-dialog-discard" class="mt-3 text-txt2">{{ discardText }}</p>
