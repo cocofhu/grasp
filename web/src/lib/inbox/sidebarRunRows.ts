@@ -36,10 +36,25 @@ export interface SidebarAutoClaim {
   held?: boolean
 }
 
+const HUMAN_CURRENT_KINDS = new Set(['gate', 'clarify', 'review', 'takeover'])
+
+/**
+ * The list has left the node this click confirmed and landed on a person
+ * (gate, clarify, review, takeover, or any other non-agent manual node).
+ * A missing node, the node just left, or an automatic agent that is not
+ * running yet is not this.
+ */
+export function sidebarLandedOnHuman(node: RunCurrentNode | null | undefined, fromNodeId: string | undefined): boolean {
+  if (!node?.id || !fromNodeId || node.id === fromNodeId) return false
+  if (HUMAN_CURRENT_KINDS.has(node.kind)) return true
+  return node.mode === 'manual' && node.kind !== 'agent'
+}
+
 /**
  * 「自动过程」when the snapshot already shows a running automatic agent, or
- * this handoff has settled on one and the snapshot has not moved on to a
- * different, non-automatic node.
+ * this handoff has settled on one and the snapshot has not clearly landed on
+ * a different human node. Still being on the node just left, having no
+ * current node, or not yet marking the automatic agent as running all stay.
  */
 export function sidebarRunGroup(run: Run | null | undefined, claim: SidebarAutoClaim | null | undefined): 'running' | 'auto' {
   if (claim?.held) {
@@ -50,8 +65,7 @@ export function sidebarRunGroup(run: Run | null | undefined, claim: SidebarAutoC
   }
   if (isAutoProcessRun(run)) return 'auto'
   if (!claim?.confirmedAuto) return 'running'
-  const node = run?.currentNode
-  if (node?.id && node.id !== claim.fromNodeId && !(node.kind === 'agent' && node.mode === 'auto')) return 'running'
+  if (sidebarLandedOnHuman(run?.currentNode, claim.fromNodeId)) return 'running'
   return 'auto'
 }
 

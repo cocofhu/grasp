@@ -200,10 +200,31 @@ export function noteSidebarHandoffOutcome(
   if (marks.delete(runId)) touch()
 }
 
-/** node_enter: plumbing does not move the row; an automatic agent settles it; anything else takes it back. */
+const HUMAN_ENTER_KINDS = new Set(['gate', 'clarify', 'review', 'takeover'])
+
+/**
+ * A non-auto visit is a person only when it says so (gate, clarify, review,
+ * takeover, or a manual node that is not an agent). The node this click is
+ * leaving, an automatic agent that is not labeled auto yet, and any other
+ * non-auto mode are not: they must not drop a handoff already settled on
+ * an automatic node.
+ */
+function explicitHumanVisit(
+  visit: { id?: string; mode?: string; kind?: string },
+  nodes?: ChainNodeMeta,
+): boolean {
+  if (visit.kind && HUMAN_ENTER_KINDS.has(visit.kind)) return true
+  if (visit.kind === 'agent') return false
+  const type = visit.id ? nodes?.find((node) => node.id === visit.id)?.type : undefined
+  if (type === 'human_gate') return true
+  if (type === 'agent') return false
+  return visit.mode === 'manual'
+}
+
+/** node_enter: plumbing does not move the row; an automatic agent settles it; a real person takes it back. */
 export function applySidebarEnter(
   runId: string,
-  frame: { nodeId?: string; name?: string; mode?: string },
+  frame: { nodeId?: string; name?: string; mode?: string; kind?: string },
   nodes?: ChainNodeMeta,
   now = Date.now(),
 ) {
@@ -213,17 +234,24 @@ export function applySidebarEnter(
     noteSidebarHandoffOutcome(runId, 'auto', { nodeId: frame.nodeId, name: frame.name }, now)
     return
   }
-  if (typeof frame.mode === 'string' && frame.mode) noteSidebarHandoffOutcome(runId, 'human', undefined, now)
+  if (typeof frame.mode !== 'string' || !frame.mode) return
+  const mark = readSidebarHandoff(runId, now)
+  // Replaying the node this click is leaving is not the next node.
+  if (mark && frame.nodeId && frame.nodeId === mark.fromNodeId) return
+  // Already confirmed automatic: ignore a mode that is not a person.
+  if (mark?.confirmedAuto && !explicitHumanVisit({ id: frame.nodeId, mode: frame.mode, kind: frame.kind }, nodes)) return
+  noteSidebarHandoffOutcome(runId, 'human', undefined, now)
 }
 
 export interface SidebarChainView {
   status?: unknown
-  current?: { id?: string; name?: string; mode?: string } | null
+  current?: { id?: string; name?: string; mode?: string; kind?: string } | null
 }
 
 /**
  * What a chain snapshot says about the handoff in progress.
  * The node still being confirmed is not a negation. input/output are not a destination.
+ * A non-auto mode is a person only when the visit is one.
  */
 export function sidebarChainHandoff(
   chain: SidebarChainView,
@@ -235,7 +263,7 @@ export function sidebarChainHandoff(
   if (fromNodeId && cur?.id && cur.id === fromNodeId) return null
   if (cur?.id && isPlumbingNode(nodes, cur.id)) return null
   if (cur?.mode === 'auto') return { outcome: 'auto', target: { nodeId: cur.id, name: cur.name } }
-  if (cur?.mode) return { outcome: 'human' }
+  if (cur && explicitHumanVisit(cur, nodes)) return { outcome: 'human' }
   return null
 }
 
