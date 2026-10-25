@@ -1,4 +1,4 @@
-import { getCurrentInstance, onUnmounted, ref, type Ref } from 'vue'
+import { getCurrentInstance, onUnmounted, ref } from 'vue'
 import { api } from '@/lib/api/api'
 import { i18n } from '@/lib/shared/i18n'
 import { isAbortError, createTimeoutController, LoadingTimeoutError } from '@/lib/shared/loadingRequest'
@@ -15,9 +15,6 @@ export type BoardColumnKey =
   | 'running'
   | 'waiting_human'
   | 'completed'
-  | 'queued'
-  | 'failed'
-  | 'cancelled'
 
 export type BoardMode = 'dashboard' | 'full'
 
@@ -49,12 +46,6 @@ const FULL_MAIN_COLUMNS: BoardColumnQuery[] = [
   { key: 'running', status: 'running', pageSize: 100 },
   { key: 'waiting_human', status: 'waiting_human', pageSize: 100 },
   { key: 'completed', status: 'completed', pageSize: 20 },
-]
-
-const EXTRA_COLUMNS: BoardColumnQuery[] = [
-  { key: 'queued', status: 'queued', pageSize: 100 },
-  { key: 'failed', status: 'failed', pageSize: 100 },
-  { key: 'cancelled', status: 'cancelled', pageSize: 100 },
 ]
 
 function emptyColumn(key: BoardColumnKey): BoardColumnState {
@@ -93,8 +84,6 @@ async function fetchColumn(
 
 export interface UseRunBoardOptions {
   mode: BoardMode
-  /** Extra statuses to load on the full board (queued / failed / cancelled). */
-  extraStatuses?: Ref<Set<string>> | (() => Set<string>)
   /** Shared loading-layer timeout; does not change global api defaults. */
   timeoutMs?: number
 }
@@ -109,16 +98,9 @@ export function useRunBoard(options: UseRunBoardOptions) {
   let abortCtrl: AbortController | null = null
   const timeoutMs = options.timeoutMs ?? DEFAULT_LOADING_TIMEOUT_MS
 
-  function resolveExtras(): Set<string> {
-    if (!options.extraStatuses) return new Set()
-    return typeof options.extraStatuses === 'function' ? options.extraStatuses() : options.extraStatuses.value
-  }
-
   function queriesForLoad(): BoardColumnQuery[] {
     if (options.mode === 'dashboard') return DASHBOARD_COLUMNS
-    const extras = resolveExtras()
-    const extraQs = EXTRA_COLUMNS.filter((q) => extras.has(q.key))
-    return [...FULL_MAIN_COLUMNS, ...extraQs]
+    return FULL_MAIN_COLUMNS
   }
 
   function abort() {
@@ -225,7 +207,6 @@ export function useRunBoard(options: UseRunBoardOptions) {
     column,
     DASHBOARD_COLUMNS,
     FULL_MAIN_COLUMNS,
-    EXTRA_COLUMNS,
   }
 }
 
