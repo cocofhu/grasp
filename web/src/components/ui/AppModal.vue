@@ -37,7 +37,11 @@ const props = withDefaults(
   }>(),
   { bodyOverflow: 'auto', closeOnBackdrop: true, closeOnEsc: false, trapFocus: false, closeLabel: 'Close', dimContent: false },
 )
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{
+  (e: 'close'): void
+  /** Leave transition finished and the overlay is no longer in the document. */
+  (e: 'after-leave'): void
+}>()
 const dialogEl = ref<HTMLElement | null>(null)
 const dialogToken = Symbol('app-modal')
 let restoreTarget: HTMLElement | null = null
@@ -105,6 +109,10 @@ function onBackdropClick() {
   if (props.closeOnBackdrop) emit('close')
 }
 
+function onAfterLeave() {
+  emit('after-leave')
+}
+
 function showEnteringOverlay(element: Element) {
   element.removeAttribute('aria-hidden')
   ;(element as HTMLElement).inert = false
@@ -164,7 +172,7 @@ defineExpose({ scrollAreaEl })
 
 <template>
   <Teleport to="body">
-    <Transition name="modal" @before-enter="showEnteringOverlay" @before-leave="hideLeavingOverlay">
+    <Transition name="modal" @before-enter="showEnteringOverlay" @before-leave="hideLeavingOverlay" @after-leave="onAfterLeave">
       <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" @click="onBackdropClick" />
         <div

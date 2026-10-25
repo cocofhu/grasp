@@ -14,7 +14,10 @@ import { vHoverInk } from '@/lib/shared/hoverInkDirective'
 import ConfirmFlowDialog from './ConfirmFlowDialog.vue'
 import type { ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
 
-function mountDialog(locale: 'zh-CN' | 'en', props: { open?: boolean; discard?: ConfirmFlowDiscard } = {}) {
+function mountDialog(
+  locale: 'zh-CN' | 'en',
+  props: { open?: boolean; discard?: ConfirmFlowDiscard; onVisualClose?: () => void } = {},
+) {
   const i18n = createI18n({
     legacy: false,
     locale,
@@ -42,6 +45,13 @@ function mountDialog(locale: 'zh-CN' | 'en', props: { open?: boolean; discard?: 
 
 function dialogEl() {
   return document.body.querySelector('[data-testid="confirm-flow-dialog-body"]')?.closest('[role="dialog"]') as HTMLElement | null
+}
+
+/** Leave completion is scheduled on animation frames; fake timers must run them. */
+async function flushOverlayLeave() {
+  await vi.advanceTimersByTimeAsync(400)
+  await nextTick()
+  await flushPromises()
 }
 
 describe('ConfirmFlowDialog', () => {
@@ -180,7 +190,10 @@ describe('ConfirmFlowDialog', () => {
 
   it('stays the same size after the parent closes, then leaves without a desk overlay', async () => {
     vi.useFakeTimers()
-    const wrapper = mountDialog('zh-CN')
+    const connectedAtEmit: boolean[] = []
+    const wrapper = mountDialog('zh-CN', {
+      onVisualClose: () => connectedAtEmit.push(!!dialogEl()?.isConnected),
+    })
     try {
       await flushPromises()
       const dialog = dialogEl()!
@@ -198,17 +211,62 @@ describe('ConfirmFlowDialog', () => {
       expect(wrapper.emitted('confirm')).toHaveLength(1)
       const pending = vi.getTimerCount()
       expect(pending, `expected a hold timer, saw ${pending}`).toBeGreaterThan(0)
-      await vi.advanceTimersByTimeAsync(1000)
+      await vi.advanceTimersByTimeAsync(1200)
       await nextTick()
       expect(dialogEl()).toBeFalsy()
       expect(wrapper.emitted('visual-close')).toHaveLength(1)
+      expect(connectedAtEmit).toEqual([false])
     } finally {
       wrapper.unmount()
       vi.useRealTimers()
     }
   })
 
-  it('emits visual close as soon as Escape or the close button dismisses the done window', async () => {
+  it('emits visual close only after the done window has left', async () => {
+    async function dismissDuringDone(dismiss: 'escape' | 'close' | 'backdrop') {
+      vi.useFakeTimers()
+      const connectedAtEmit: boolean[] = []
+      const wrapper = mountDialog('zh-CN', {
+        onVisualClose: () => connectedAtEmit.push(!!dialogEl()?.isConnected),
+      })
+      try {
+        await flushPromises()
+        const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
+        accept.click()
+        await wrapper.setProps({ open: false })
+        await nextTick()
+        expect(dialogEl()?.isConnected).toBe(true)
+        expect(wrapper.emitted('visual-close')).toBeUndefined()
+        if (dismiss === 'escape') {
+          window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+        } else if (dismiss === 'close') {
+          ;(dialogEl()!.querySelector('button') as HTMLButtonElement).click()
+        } else {
+          ;(dialogEl()!.parentElement!.querySelector('.absolute') as HTMLElement).click()
+        }
+        await nextTick()
+        expect(wrapper.emitted('cancel')).toHaveLength(1)
+        expect(wrapper.emitted('visual-close')).toBeUndefined()
+        expect(dialogEl()?.isConnected).toBe(true)
+        await flushOverlayLeave()
+        expect(dialogEl()).toBeFalsy()
+        expect(wrapper.emitted('visual-close')).toHaveLength(1)
+        expect(connectedAtEmit).toEqual([false])
+        await vi.advanceTimersByTimeAsync(1000)
+        await nextTick()
+        expect(wrapper.emitted('visual-close')).toHaveLength(1)
+      } finally {
+        wrapper.unmount()
+        vi.useRealTimers()
+      }
+    }
+
+    await dismissDuringDone('escape')
+    await dismissDuringDone('close')
+    await dismissDuringDone('backdrop')
+  })
+
+  it('releases on unmount if the confirm window has not left yet', async () => {
     vi.useFakeTimers()
     const wrapper = mountDialog('zh-CN')
     try {
@@ -217,40 +275,10 @@ describe('ConfirmFlowDialog', () => {
       accept.click()
       await wrapper.setProps({ open: false })
       await nextTick()
-      expect(dialogEl()).toBeTruthy()
       expect(wrapper.emitted('visual-close')).toBeUndefined()
-      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
-      await nextTick()
-      expect(wrapper.emitted('visual-close')).toHaveLength(1)
-      expect(wrapper.emitted('cancel')).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(1000)
-      await nextTick()
-      expect(dialogEl()).toBeFalsy()
-      expect(wrapper.emitted('visual-close')).toHaveLength(1)
-    } finally {
       wrapper.unmount()
-      vi.useRealTimers()
-    }
-
-    vi.useFakeTimers()
-    const again = mountDialog('zh-CN')
-    try {
-      await flushPromises()
-      const accept = document.body.querySelector('[data-testid="confirm-flow-dialog-accept"]') as HTMLButtonElement
-      accept.click()
-      await again.setProps({ open: false })
-      await nextTick()
-      const close = dialogEl()!.querySelector('button') as HTMLButtonElement
-      close.click()
-      await nextTick()
-      expect(again.emitted('visual-close')).toHaveLength(1)
-      expect(again.emitted('cancel')).toHaveLength(1)
-      await vi.advanceTimersByTimeAsync(1000)
-      await nextTick()
-      expect(dialogEl()).toBeFalsy()
-      expect(again.emitted('visual-close')).toHaveLength(1)
+      expect(wrapper.emitted('visual-close')).toHaveLength(1)
     } finally {
-      again.unmount()
       vi.useRealTimers()
     }
   })

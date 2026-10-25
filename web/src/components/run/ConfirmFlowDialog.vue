@@ -16,7 +16,11 @@ const props = withDefaults(
 const emit = defineEmits<{
   (e: 'cancel'): void
   (e: 'confirm'): void
-  /** Window has left the screen after confirm. Not emitted while it is still visible. */
+  /**
+   * Confirm window has left the document.
+   * Fired from the modal leave transition's after-leave, not when open turns off.
+   * Unmount releases immediately because the page is tearing the window down.
+   */
   (e: 'visual-close'): void
 }>()
 
@@ -29,6 +33,8 @@ const done = ref(false)
 const shown = ref(false)
 /** Set on confirm so a later hide — timer, early dismiss, or a following cancel — can notify. */
 let closeAfterDone = false
+/** Confirm committed and the overlay has not finished leaving yet. */
+let notifyWhenLeft = false
 let hideTimer: ReturnType<typeof setTimeout> | undefined
 
 const discardText = computed(() => {
@@ -51,14 +57,19 @@ function clearHideTimer() {
   }
 }
 
-/** Hide the window. Notify only after confirm, and only once it is actually gone. */
+/** Hide the window. The sidebar hears about it only after the overlay has left. */
 function finishShownWindow() {
   clearHideTimer()
-  const notify = shown.value && closeAfterDone
+  if (shown.value && closeAfterDone) notifyWhenLeft = true
   shown.value = false
   done.value = false
   closeAfterDone = false
-  if (notify) emit('visual-close')
+}
+
+function onModalAfterLeave() {
+  if (!notifyWhenLeft) return
+  notifyWhenLeft = false
+  emit('visual-close')
 }
 
 watch(
@@ -90,7 +101,11 @@ watch(
 
 onBeforeUnmount(() => {
   clearHideTimer()
-  if (shown.value && closeAfterDone) finishShownWindow()
+  // Navigation tears the window down with the page, so the fade may not finish.
+  const notify = notifyWhenLeft || (shown.value && closeAfterDone)
+  notifyWhenLeft = false
+  closeAfterDone = false
+  if (notify) emit('visual-close')
 })
 
 watch(
@@ -130,6 +145,7 @@ function onConfirm() {
     :width="440"
     :dim-content="done"
     @close="onDismiss"
+    @after-leave="onModalAfterLeave"
   >
     <p data-testid="confirm-flow-dialog-body">{{ t('pages.clarify.confirmFlowDialogBody') }}</p>
     <p v-if="discardText" data-testid="confirm-flow-dialog-discard" class="mt-3 text-txt2">{{ discardText }}</p>
