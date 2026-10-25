@@ -11,8 +11,10 @@ const props = withDefaults(
     block?: boolean
     disabled?: boolean
     loading?: boolean
+    /** Primary shadow-glow. The run-summary footer passes false; other primaries keep it. */
+    glow?: boolean
   }>(),
-  { variant: 'outline', size: 'md', disabled: false, loading: false },
+  { variant: 'outline', size: 'md', disabled: false, loading: false, glow: true },
 )
 
 const cls = computed(() => {
@@ -29,9 +31,11 @@ const cls = computed(() => {
     danger: 'border border-err/40 bg-err/10 text-err',
     subtle: 'bg-elevated text-txt2 hover:text-txt',
   }
+  const variantClass =
+    props.variant === 'primary' && !props.glow ? 'bg-accent text-white' : variants[props.variant]
   const press =
     props.disabled || props.loading ? '' : 'ui-pressable'
-  return [base, sizes, variants[props.variant], press, props.block ? 'w-full' : '']
+  return [base, sizes, variantClass, press, props.block ? 'w-full' : '']
 })
 
 const inkColor = computed(() => {

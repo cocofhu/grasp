@@ -1364,44 +1364,33 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
                         <span class="clarify-question-kind text-[11px] font-normal leading-5 text-txt2">{{ curQuestion.allowMultiple ? translate('pages.clarify.multiple') : translate('pages.clarify.single') }}</span>
                       </div>
                       <div class="space-y-1.5">
-                        <div v-for="o in curQuestion.options" :key="o.id" class="flex w-full items-stretch gap-1.5">
-                          <button
-                            type="button"
-                            class="chat-choice-option flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
-                            :aria-pressed="isSelected(curQuestion.id, o.id)"
-                            data-testid="clarify-option-btn"
-                            @click="pick(curQuestion, o.id)"
+                        <button
+                          v-for="o in curQuestion.options"
+                          :key="o.id"
+                          type="button"
+                          class="chat-choice-option flex w-full min-w-0 items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"
+                          :aria-pressed="isSelected(curQuestion.id, o.id)"
+                          data-testid="clarify-option-btn"
+                          @click="pick(curQuestion, o.id)"
+                        >
+                          <span
+                            class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
+                            :class="[
+                              curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
+                              isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
+                            ]"
                           >
-                            <span
-                              class="rounded-lg flex h-4 w-4 shrink-0 items-center justify-center border"
-                              :class="[
-                                curQuestion.allowMultiple ? 'rounded' : 'rounded-full',
-                                isSelected(curQuestion.id, o.id) ? 'border-accent bg-accent text-white' : 'border-line-strong',
-                              ]"
-                            >
-                              <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
-                            </span>
-                            <span
-                              class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
-                              data-testid="clarify-option-label"
-                            >{{ o.label }}</span>
-                            <span
-                              v-if="o.recommended"
-                              class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                            >{{ translate('pages.clarify.recommended') }}</span>
-                          </button>
-                          <button
-                            v-if="hasDemoHtml(o)"
-                            type="button"
-                            class="inline-flex shrink-0 items-center self-center rounded border border-line bg-surface px-1.5 py-0.5 text-[10px] text-txt2 transition-colors hover:text-txt"
-                            data-testid="clarify-option-enlarge"
-                            :aria-label="translate('pages.clarify.demoEnlarge')"
-                            :title="translate('pages.clarify.demoEnlarge')"
-                            @click="openPreviewFocus(curQuestion, o.id, false, i)"
-                          >
-                            <Icon name="expand" :size="11" aria-hidden="true" />
-                          </button>
-                        </div>
+                            <Icon v-if="isSelected(curQuestion.id, o.id)" name="check" :size="10" />
+                          </span>
+                          <span
+                            class="min-w-0 flex-1 break-words [overflow-wrap:anywhere]"
+                            data-testid="clarify-option-label"
+                          >{{ o.label }}</span>
+                          <span
+                            v-if="o.recommended"
+                            class="chat-choice-recommendation ml-auto shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                          >{{ translate('pages.clarify.recommended') }}</span>
+                        </button>
                       </div>
                       <div
                         class="chat-choice-other mt-1.5 flex w-full items-center gap-2 rounded-lg border border-line bg-surface px-2.5 py-2 text-left text-[12px] text-txt2 transition-colors"

@@ -5,6 +5,17 @@ export function runIdShort(id: string): string {
   return id.replace(/^run-/, '')
 }
 
+/**
+ * Integer percent for a 0–1 progress ratio.
+ * Finite numbers are clamped to 0–1, multiplied by 100, and rounded.
+ * Missing or non-finite values return null so the summary can show an em dash.
+ */
+export function runProgressPercent(progress: unknown): number | null {
+  if (typeof progress !== 'number' || !Number.isFinite(progress)) return null
+  const clamped = Math.min(1, Math.max(0, progress))
+  return Math.round(clamped * 100)
+}
+
 /** Card / drawer title with stable fallbacks. */
 export function runBoardTitle(run: Pick<Run, 'id' | 'title' | 'workflowName'>): string {
   const title = run.title?.trim()
