@@ -248,7 +248,7 @@ for (const [lang, title] of [['zh-CN', '智能体'], ['en', 'Agents']]) test(`Ag
   await expect(page.getByTestId('agent-tree-manage')).toHaveCount(0)
   const more = sidebar.getByTestId('agent-tree-more')
   await more.click()
-  await expect(page.getByTestId('agent-tree-manage')).toBeVisible()
+  await expect(page.getByTestId('agent-tree-manage')).toHaveCount(0)
   await expect(page.getByTestId('agent-tree-import')).toBeVisible()
   await expect(page.getByTestId('agent-tree-export')).toBeVisible()
   await page.keyboard.press('Escape')

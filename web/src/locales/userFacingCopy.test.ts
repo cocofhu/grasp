@@ -119,13 +119,23 @@ describe('user-facing copy remediation keys', () => {
     expect(en.global.t('pages.gatesInbox.title')).toBe('Needs attention')
   })
 
-  it('uses 智能体 for zh-CN agent nav/route/page title and keeps body Agent 管理 (g1.1)', () => {
+  it('uses 智能体 for zh-CN agent nav/route/page title and points empty copy at the list', () => {
     expect(zhNav.nav.agents).toBe('智能体')
     expect(zhRoute.route.agents).toBe('智能体')
     expect(zh.global.t('pages.agentStudio.title')).toBe('智能体')
+    expect(zh.global.t('pages.agentStudio.tree.title')).toBe('智能体')
     expect(enNav.nav.agents).toBe('Agent studio')
     expect(enRoute.route.agents).toBe('Agent studio')
-    expect(zh.global.t('pages.agentStudio.tree.manageTitle')).toBe('Agent 管理')
+    expect(zh.global.t('pages.agentStudio.tree.noSelection')).toBe('未选中 Agent。从左侧列表选择。')
+    expect(en.global.t('pages.agentStudio.tree.noSelection')).toBe('No agent selected. Pick one from the list.')
+    expect(zh.global.t('pages.agentStudio.tree.noSelection')).not.toContain('Agent 管理')
+    expect(en.global.t('pages.agentStudio.tree.noSelection')).not.toMatch(/agent management/i)
+    expect(zh.global.t('pages.agentStudio.tree.metaRenameHint')).not.toContain('Agent 管理')
+    expect(en.global.t('pages.agentStudio.tree.metaRenameHint')).not.toMatch(/agent management/i)
+    expect(zh.global.t('pages.agentStudio.tree.contextRename')).toBe('重命名')
+    expect(zh.global.t('pages.agentStudio.tree.contextDelete')).toBe('删除')
+    expect(en.global.t('pages.agentStudio.tree.contextRename')).toBe('Rename')
+    expect(en.global.t('pages.agentStudio.tree.contextDelete')).toBe('Delete')
   })
 
   it('human gate canvas subtitle avoids unconditional ReAct promise', () => {
