@@ -25,6 +25,7 @@ import {
   isRetryableFailedAgent,
 } from '@/lib/inbox/clarifyEmptyFail'
 import { relTime as formatRelTime } from '@/lib/shared/format'
+import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
 import {
   demoOptionsOf,
   restoreChoiceAnswers,
@@ -416,6 +417,7 @@ function relTime(iso: string): string {
 }
 
 onBeforeUnmount(() => {
+  releaseConfirmFlowWindow()
   clearInterval(relClockTimer)
   composerResizeObserver?.disconnect()
   composerResizeObserver = null
@@ -1360,8 +1362,23 @@ function finishAbort() {
   requestFlowConfirm('abort')
 }
 
+/** Run whose confirm window is still up. Released when that window leaves or this chat unmounts. */
+let heldConfirmRunId = ''
+
+function holdConfirmWindow() {
+  heldConfirmRunId = props.runId
+  holdSidebarConfirmWindow(props.runId)
+}
+
+function releaseConfirmFlowWindow() {
+  const runId = heldConfirmRunId
+  heldConfirmRunId = ''
+  if (runId) releaseSidebarConfirmWindow(runId)
+}
+
 function commitFinishAbort() {
   if (!canFinishAbort()) return
+  holdConfirmWindow()
   emit('finish-abort')
 }
 
@@ -1373,6 +1390,8 @@ function finishEarly() {
 function commitFinishEarly() {
   if (!canFinishEarly()) return
   // Click intent: play overlay only after the in-app confirm; parent force must not wait for done (g1.1).
+  // The sidebar hold is armed before the parent hears finish, so the row cannot fly while the window is up.
+  holdConfirmWindow()
   validating.value = true
   // Hand-off progress is shown inline in the transcript (no full-desk overlay).
   emit('finish')
@@ -2712,6 +2731,7 @@ function retryLastFailed() {
     confirmFlowDiscard,
     acceptConfirmFlow,
     dismissConfirmFlow,
+    releaseConfirmFlowWindow,
     playConfirmCeremony,
     followKeepsComposer,
     showDoneChrome,

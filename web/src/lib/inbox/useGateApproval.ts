@@ -36,6 +36,7 @@ import { sameTools, toolsFromAcp } from '@/lib/run/acpTools'
 import { previewPickAnnotation, type AppPreviewPickPayload } from '@/lib/shared/previewPickUrl'
 import { REVERT_ACTION_IDS, POSITIVE_ACTION_IDS } from '@/components/run/gateApproval/gateApprovalActions'
 import { confirmFlowDiscardKind, type ConfirmFlowDiscard } from '@/lib/inbox/confirmFlowDiscard'
+import { holdSidebarConfirmWindow, releaseSidebarConfirmWindow } from '@/lib/inbox/sidebarHandoff'
 import { gateApprovalKey, type GateApprovalProductEditorExpose } from '@/components/run/gateApproval/gateApprovalContext'
 import { type PlanDoc } from '@/components/run/PlanView.vue'
 import { isStructuredArtifactName } from '@/components/run/StructuredArtifactView.vue'
@@ -925,6 +926,7 @@ watch(
 )
 
 onUnmounted(() => {
+  releaseConfirmFlowWindow()
   productLoadAbort?.abort()
   productLoadAbort = null
   productLoadGen++
@@ -1043,6 +1045,15 @@ function dismissConfirmFlow() {
   pendingChooseRecheck = null
 }
 
+/** Run whose confirm window is still up. Released when that window leaves or this gate unmounts. */
+let heldConfirmRunId = ''
+
+function releaseConfirmFlowWindow() {
+  const runId = heldConfirmRunId
+  heldConfirmRunId = ''
+  if (runId) releaseSidebarConfirmWindow(runId)
+}
+
 function acceptConfirmFlow() {
   if (!confirmFlowDialogOpen.value || !pendingChooseId) return
   const id = pendingChooseId
@@ -1056,6 +1067,9 @@ function acceptConfirmFlow() {
     productDirty.value = false
   }
   if (hasUnsentReactDraft.value) clearUnifiedDraft()
+  // Before resolve, so the parent can arm the handoff while the window is still covering the row.
+  heldConfirmRunId = props.gate.runId
+  holdSidebarConfirmWindow(props.gate.runId)
   commitChoose(id)
 }
 
@@ -1879,6 +1893,7 @@ provide(gateApprovalKey, {
     confirmFlowDiscard,
     acceptConfirmFlow,
     dismissConfirmFlow,
+    releaseConfirmFlowWindow,
     forceReactAuthoritativeIdle,
     settleReactAfterTurnEnd,
     applyReviewFrame,
