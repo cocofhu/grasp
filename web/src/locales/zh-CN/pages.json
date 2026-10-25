@@ -260,7 +260,6 @@
     "board": {
       "title": "运行看板",
       "subtitle": "跟进正在执行的工作，处理等待人工的任务。",
-      "toolbarHint": "点击列标题查看全部运行",
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
       "overviewRecords": "共 {n} 条执行记录",
@@ -268,7 +267,6 @@
       "refresh": "刷新",
       "allRuns": "全部运行",
       "usage": "用量统计",
-      "viewMoreCompleted": "在运行列表中查看更多 →",
       "loading": "加载中…",
       "loadFailed": "看板数据加载失败，请重试",
       "retry": "重试",

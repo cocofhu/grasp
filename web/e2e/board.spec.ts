@@ -187,7 +187,7 @@ test.describe('工作区进度看板', () => {
     await expect(page.getByTestId('run-detail-page')).toHaveCount(0)
   })
 
-  test('看板不提供附加状态列，查看更多跳转运行列表', async ({ page }) => {
+  test('看板不提供附加状态列，也不再显示列底栏', async ({ page }) => {
     await gotoBoardHarness(page, { width: 1280, start: 'board' })
     await expect(page.getByTestId('board-view')).toBeVisible({ timeout: 10_000 })
 
@@ -202,8 +202,10 @@ test.describe('工作区进度看板', () => {
     await expect(page.getByText('看板需求-失败')).toHaveCount(0)
     await expect(page.getByText('看板需求-已完成')).toBeVisible()
 
-    await page.getByTestId('board-view-more-completed').click()
-    await expect(page.getByTestId('runs-page')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('board-view-more-completed')).toHaveCount(0)
+    await expect(page.getByTestId('run-board-column-footer')).toHaveCount(0)
+    await expect(page.getByText('点击列标题查看全部运行')).toHaveCount(0)
+    await expect(page.getByText('在运行列表中查看更多')).toHaveCount(0)
   })
 
   test('窄屏主列纵向堆叠仍可读', async ({ page }) => {
@@ -346,10 +348,10 @@ test.describe('工作区进度看板', () => {
     await expect(page.getByTestId('run-board-column').nth(0).getByText('没有匹配的任务')).toHaveCount(0)
     await expect(page.getByText('看板运行中-0')).toBeVisible()
 
-    const viewMore = page.getByTestId('board-view-more-completed')
-    await expect(viewMore).toBeVisible()
-    await viewMore.click()
-    await expect(page.getByTestId('runs-page')).toBeVisible({ timeout: 5_000 })
+    await expect(page.getByTestId('board-view-more-completed')).toHaveCount(0)
+    await expect(page.getByTestId('run-board-column-footer')).toHaveCount(0)
+    await expect(page.getByText('点击列标题查看全部运行')).toHaveCount(0)
+    await expect(page.getByText('在运行列表中查看更多')).toHaveCount(0)
   })
 
   test('三主列列头打开状态列表模态：加载更多、关闭三件套、点行进详情、空态', async ({ page }) => {
