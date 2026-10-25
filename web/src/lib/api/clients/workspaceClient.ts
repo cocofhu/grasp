@@ -73,6 +73,12 @@ export const workspaceClient = {
       `/workspace/credentials/${encodeURIComponent(credentialId)}`,
       { method: 'DELETE' },
     ),
+  /** Removes a workspace-owned API account. DELETE without this suffix only clears the secret. */
+  removeCredential: (credentialId: string) =>
+    req<{ status: string }>(
+      `/workspace/credentials/${encodeURIComponent(credentialId)}/account`,
+      { method: 'DELETE' },
+    ),
 
   listRequirementDrafts: (
     params?: { status?: 'open' | 'done' | 'all'; q?: string },
