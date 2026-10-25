@@ -40,13 +40,23 @@ type agentBody struct {
 	Env                map[string]string         `json:"env"`
 	Layout             services.AgentLayout      `json:"layout"`
 	Capabilities       *models.AgentCapabilities `json:"capabilities"`
+	Icon               *services.AgentIcon       `json:"icon,omitempty"`
 	Reason             string                    `json:"reason,omitempty"`
 }
 
 func (b *agentBody) UnmarshalJSON(data []byte) error {
+	if err := services.RejectEmojiIdentity(data); err != nil {
+		return err
+	}
+	if err := services.RejectUnknownIconFields(data); err != nil {
+		return err
+	}
 	type plain agentBody
 	next := plain{InheritModel: true, InheritGit: true}
 	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	if err := services.ValidateAgentIcon(next.Icon); err != nil {
 		return err
 	}
 	*b = agentBody(next)
@@ -59,6 +69,7 @@ func (b agentBody) toAgent(name string) services.Agent {
 		GitBindings: b.GitBindings,
 		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
 		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
+		Icon: b.Icon,
 	}
 }
 

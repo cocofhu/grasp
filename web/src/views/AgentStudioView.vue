@@ -14,6 +14,7 @@ import AgentCapabilitiesPanel from '@/components/agent/AgentCapabilitiesPanel.vu
 import AgentMetaPanel from '@/components/agent/AgentMetaPanel.vue'
 import AgentChatTester from '@/components/agent/AgentChatTester.vue'
 import AgentCreateWizard from '@/components/agent/AgentCreateWizard.vue'
+import AgentIconPicker from '@/components/agent/AgentIconPicker.vue'
 import CreateAgentTeamWizard from '@/components/agent/CreateAgentTeamWizard.vue'
 import TeamBootstrapPanel from '@/components/agent/TeamBootstrapPanel.vue'
 import WorkspaceSharedAgentPanel from '@/components/workspace/WorkspaceSharedAgentPanel.vue'
@@ -445,7 +446,14 @@ async function createStudioChatTest(
           class="toolbar-inline-row flex flex-col gap-2 border-b border-line px-4"
         >
           <div data-test="studio-name-row-top" class="flex min-w-0 items-center gap-2">
-            <Icon name="robot" :size="15" class="shrink-0 text-accent-2" />
+            <AgentIconPicker
+              v-if="draft"
+              :key="activeName"
+              v-model="draft.icon"
+              :name="activeName"
+              size="sm"
+              purpose="change"
+            />
             <button
               ref="agentNameEl"
               type="button"
@@ -512,7 +520,14 @@ async function createStudioChatTest(
           data-test="studio-name-bar"
           class="toolbar-inline-row flex items-center gap-2 border-b border-line px-4"
         >
-          <Icon name="robot" :size="15" class="shrink-0 text-accent-2" />
+          <AgentIconPicker
+            v-if="draft"
+            :key="activeName"
+            v-model="draft.icon"
+            :name="activeName"
+            size="sm"
+            purpose="change"
+          />
           <span class="min-w-0 truncate text-[13px] font-medium text-txt" :title="activeName">{{ activeName }}</span>
           <span class="studio-status-slot">
             <Transition name="studio-feedback">

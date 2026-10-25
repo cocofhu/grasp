@@ -6,6 +6,9 @@ import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
 import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import AgentTemplateSelect from '@/components/agent/AgentTemplateSelect.vue'
 import AgentCapabilitySummary from '@/components/agent/AgentCapabilitySummary.vue'
+import AgentIconPicker from '@/components/agent/AgentIconPicker.vue'
+import AgentIdentityGlyph from '@/components/agent/AgentIdentityGlyph.vue'
+import { identityTint } from '@/lib/agent/identityIcons'
 
 import { useAgentCreateWizard } from '@/lib/agent/useAgentCreateWizard'
 import type { AgentCreateWizardProps, AgentCreateWizardEmit } from '@/lib/agent/useAgentCreateWizard'
@@ -129,20 +132,23 @@ function proceed() {
 
                 <template v-if="currentStep.id === 'basics'">
                   <p class="sec-meta">{{ t('pages.agentStudio.wizard.basics.meta') }}</p>
-                  <label class="mb-4 block">
+                  <div class="mb-4">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
                       {{ t('pages.agentStudio.dialogs.createLabel') }}
                       <span class="text-err">*</span>
                     </span>
-                    <input
-                      id="wiz-name-input"
-                      v-model="draft.name"
-                      class="rounded-md w-full border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
-                      :placeholder="t('pages.agentStudio.dialogs.createPlaceholder')"
-                      @input="nameError = ''"
-                    />
+                    <div class="flex items-center gap-3">
+                      <AgentIconPicker v-model="draft.icon" :name="draft.name" size="lg" purpose="choose" />
+                      <input
+                        id="wiz-name-input"
+                        v-model="draft.name"
+                        class="rounded-md min-w-0 flex-1 border border-line bg-base px-3 py-2 text-[13px] text-txt outline-none focus:border-accent"
+                        :placeholder="t('pages.agentStudio.dialogs.createPlaceholder')"
+                        @input="nameError = ''"
+                      />
+                    </div>
                     <p v-if="nameError" class="mt-1.5 text-[12px] text-err">{{ nameError }}</p>
-                  </label>
+                  </div>
                   <!-- plan g1 — workflow-style template dropdown; name stays independent (g1.4) -->
                   <div class="mb-4 block max-w-[38rem]">
                     <span class="mb-1.5 block text-[12px] font-medium text-txt2">
@@ -200,9 +206,20 @@ function proceed() {
                       :key="item.key"
                       class="rounded-md inline-flex items-center gap-1 border px-2 py-1 text-[11px]"
                       :class="chipClass(item.kind)"
+                      :data-testid="item.key === 'icon' ? 'wizard-identity-review' : undefined"
                     >
+                      <span
+                        v-if="item.key === 'icon' && draft.icon"
+                        class="inline-grid h-4 w-4 place-items-center rounded"
+                        :style="identityTint(draft.icon.color) || undefined"
+                      >
+                        <AgentIdentityGlyph :icon-id="draft.icon.iconId" :size="12" />
+                      </span>
                       {{ t(item.labelKey) }}
-                      <template v-if="item.detail"> · {{ item.detail }}</template>
+                      <template v-if="item.key === 'icon' && draft.icon">
+                        · {{ t(`pages.agentStudio.identityIcon.colors.${draft.icon.color}`) }}
+                      </template>
+                      <template v-else-if="item.detail"> · {{ item.detail }}</template>
                     </span>
                   </div>
                   <div

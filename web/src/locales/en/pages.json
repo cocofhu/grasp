@@ -2847,7 +2847,26 @@
           "modelSource_platform": "Tool platform authorization",
           "defaultModel": "Tool default",
           "modelSource_configuration": "Model configuration",
-          "modelSource_connection": "Model connection"
+          "modelSource_connection": "Model connection",
+          "icon": "Icon selected",
+          "iconNone": "No icon, use the initial"
+        }
+      },
+      "identityIcon": {
+        "search": "Search icons",
+        "clear": "Clear",
+        "empty": "No matching icons",
+        "choose": "Choose an icon",
+        "change": "Change or clear the icon",
+        "colors": {
+          "black": "Black",
+          "red": "Red",
+          "orange": "Orange",
+          "yellow": "Yellow",
+          "green": "Green",
+          "blue": "Blue",
+          "purple": "Purple",
+          "pink": "Pink"
         }
       },
       "data": {

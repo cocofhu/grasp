@@ -2847,7 +2847,26 @@
           "modelSource_platform": "工具平台授权",
           "defaultModel": "工具默认模型",
           "modelSource_configuration": "模型配置",
-          "modelSource_connection": "模型连接"
+          "modelSource_connection": "模型连接",
+          "icon": "已选图标",
+          "iconNone": "不选图标，使用首字母"
+        }
+      },
+      "identityIcon": {
+        "search": "搜索图标",
+        "clear": "清除",
+        "empty": "没有匹配的图标",
+        "choose": "选择图标",
+        "change": "更换或清除图标",
+        "colors": {
+          "black": "黑",
+          "red": "红",
+          "orange": "橙",
+          "yellow": "黄",
+          "green": "绿",
+          "blue": "蓝",
+          "purple": "紫",
+          "pink": "粉"
         }
       },
       "data": {

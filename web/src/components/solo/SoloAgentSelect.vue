@@ -5,6 +5,8 @@ import { RouterLink } from 'vue-router'
 import Icon from '@/components/ui/Icon.vue'
 import SoloPickerShell from './SoloPickerShell.vue'
 import { agentHueVar, agentInitial } from '@/components/canvas/composables/agentAvatar'
+import AgentIdentityGlyph from '@/components/agent/AgentIdentityGlyph.vue'
+import { identityIcon, identityTint } from '@/lib/agent/identityIcons'
 import { backendLabel } from '@/lib/solo/soloPrefs'
 import type { Agent } from '@/lib/api/apiTypes'
 
@@ -34,6 +36,15 @@ function avatar(name: string) {
   return { background: `rgb(var(${v}) / 0.16)`, color: `rgb(var(${v}))` }
 }
 
+function identityOf(agent: Agent) {
+  if (!agent.icon || !identityIcon(agent.icon.iconId)) return null
+  return identityTint(agent.icon.color)
+}
+
+function markStyle(agent: Agent) {
+  return identityOf(agent) ?? avatar(agent.name)
+}
+
 function choose(name: string, close: () => void) {
   emit('update:modelValue', name)
   close()
@@ -50,7 +61,10 @@ function choose(name: string, close: () => void) {
     test-id="solo-agent-select"
   >
     <template #trigger>
-      <span v-if="current" class="solo-agent-avatar" :style="avatar(current.name)">{{ agentInitial(current.name) }}</span>
+      <span v-if="current" class="solo-agent-avatar" :style="markStyle(current)" :data-testid="identityOf(current) ? 'solo-agent-glyph' : 'solo-agent-initial'">
+        <AgentIdentityGlyph v-if="identityOf(current)" :icon-id="current.icon!.iconId" :size="12" />
+        <template v-else>{{ agentInitial(current.name) }}</template>
+      </span>
       <Icon v-else name="robot" :size="14" class="shrink-0 text-accent" />
     </template>
     <template #default="{ query, close }">
@@ -71,7 +85,10 @@ function choose(name: string, close: () => void) {
             :data-testid="`solo-agent-option-${a.name}`"
             @click="choose(a.name, close)"
           >
-            <span class="solo-agent-avatar" :style="avatar(a.name)">{{ agentInitial(a.name) }}</span>
+            <span class="solo-agent-avatar" :style="markStyle(a)" :data-testid="identityOf(a) ? 'solo-agent-glyph' : 'solo-agent-initial'">
+              <AgentIdentityGlyph v-if="identityOf(a)" :icon-id="a.icon!.iconId" :size="12" />
+              <template v-else>{{ agentInitial(a.name) }}</template>
+            </span>
             <span class="min-w-0 flex-1 truncate">{{ a.name }}</span>
             <Icon v-if="a.name === modelValue" name="check" :size="14" class="shrink-0 text-accent" />
           </button>

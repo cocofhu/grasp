@@ -1,4 +1,4 @@
-import type { Agent, AgentCapabilities, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
+import type { Agent, AgentCapabilities, AgentIcon, MCPServer, ModelBinding, AgentGitBindings } from '@/lib/api/api'
 import { MODEL_RUNTIME_ENV_KEYS } from './modelRouting'
 import { isSecretEnvKey } from './secretEnvKeys'
 import { cloneGitBindings, GIT_AUTH_ENV_KEYS } from './gitBindings'
@@ -34,6 +34,8 @@ export type AgentStudioDraft = {
   layout: { configRoot: string; workspaceDir: string }
   /** null = not declared; the Agent cannot run workflow nodes until it is. */
   capabilities: AgentCapabilities | null
+  /** null or omitted = no identity icon; the name bar shows the initial. */
+  icon?: AgentIcon | null
 }
 
 export const DEFAULT_CONFIG_ROOT = '/root/.cursor'
@@ -133,6 +135,7 @@ export function toDraft(a: Agent): AgentStudioDraft {
       workspaceDir: a.layout?.workspaceDir || DEFAULT_WORKSPACE_DIR,
     },
     capabilities: a.capabilities ? cloneCapabilities(a.capabilities) : null,
+    icon: a.icon ? { iconId: a.icon.iconId, color: a.icon.color } : null,
   }
 }
 
@@ -153,6 +156,7 @@ export function fromDraftRaw(d: AgentStudioDraft): Agent {
       workspaceDir: d.layout.workspaceDir.trim() || DEFAULT_WORKSPACE_DIR,
     },
     ...(d.capabilities ? { capabilities: normalizeCapabilities(d.capabilities) } : {}),
+    ...(d.icon ? { icon: { iconId: d.icon.iconId, color: d.icon.color } } : {}),
   }
 }
 

@@ -15,9 +15,18 @@ func (c *agentConfig) UnmarshalJSON(data []byte) error {
 }
 
 func (e *agentExportJSON) UnmarshalJSON(data []byte) error {
+	if err := RejectEmojiIdentity(data); err != nil {
+		return err
+	}
+	if err := RejectUnknownIconFields(data); err != nil {
+		return err
+	}
 	type plain agentExportJSON
 	next := plain{InheritModel: true, InheritGit: true}
 	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	if err := ValidateAgentIcon(next.Icon); err != nil {
 		return err
 	}
 	*e = agentExportJSON(next)

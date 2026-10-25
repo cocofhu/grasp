@@ -76,4 +76,20 @@ describe('credential binding round-trip', () => {
     expect(fromDraftRaw(draft).credentialBindings).toEqual({ SENTRY_TOKEN: 'cred-2', CUSTOM_TOKEN: null })
     expect(fromDraft(toDraft(baseAgent))).not.toHaveProperty('credentialBindings')
   })
+
+  it('round-trips an identity icon and treats a clear as dirty against the saved mark', () => {
+    const saved = { iconId: 'flask', color: 'purple' as const }
+    const draft = toDraft({ ...baseAgent, icon: saved })
+    expect(draft.icon).toEqual(saved)
+    draft.icon!.color = 'red'
+    expect(saved.color).toBe('purple')
+    expect(fromDraft(draft).icon).toEqual({ iconId: 'flask', color: 'red' })
+    const original = draftPayloadJson(toDraft({ ...baseAgent, icon: saved }))
+    expect(draftPayloadJson(draft)).not.toBe(original)
+    draft.icon = null
+    expect(fromDraft(draft)).not.toHaveProperty('icon')
+    expect(draftPayloadJson(draft)).not.toBe(original)
+    expect(fromDraft(toDraft(baseAgent))).not.toHaveProperty('icon')
+    expect(draftPayloadJson(toDraft(baseAgent))).toBe(draftPayloadJson({ ...toDraft(baseAgent), icon: null }))
+  })
 })

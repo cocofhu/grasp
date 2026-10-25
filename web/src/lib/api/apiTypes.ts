@@ -224,6 +224,12 @@ export interface AgentGitBindings {
   items: AgentGitBinding[]
 }
 
+/** One built-in linear identity icon. Absent means the initial-letter mark. */
+export interface AgentIcon {
+  iconId: string
+  color: 'black' | 'red' | 'orange' | 'yellow' | 'green' | 'blue' | 'purple' | 'pink'
+}
+
 export interface Agent {
   inheritModel?: boolean
   inheritGit?: boolean
@@ -242,6 +248,8 @@ export interface Agent {
   layout?: AgentLayout
   /** Absent = the Agent cannot run workflow nodes ("Agent X 未声明能力"). */
   capabilities?: AgentCapabilities
+  /** Optional linear identity icon. Omitted when the Agent uses its initial. */
+  icon?: AgentIcon | null
 }
 
 /** Workspace-level shared Agent baseline (extend layer; Agent overlays on top). */
