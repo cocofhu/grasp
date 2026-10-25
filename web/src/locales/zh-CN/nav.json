@@ -51,7 +51,7 @@
     "assistant": "工作区助手",
     "schedules": "定时任务",
     "audit": "审计",
-    "sharedAgent": "Agent 默认配置",
+    "sharedAgent": "默认配置",
     "credentials": "凭据",
     "variables": "共享变量",
     "assistantSettings": "助手设置",
