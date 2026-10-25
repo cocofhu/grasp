@@ -28,6 +28,7 @@ import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
 import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
 import SoloProjectSelect from '@/components/solo/SoloProjectSelect.vue'
 import SoloBranchChip from '@/components/solo/SoloBranchChip.vue'
+import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
 import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
 import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
 import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
@@ -87,6 +88,8 @@ const soloProjects = solo.projects
 const soloAgentName = solo.agentName
 const soloProjectId = solo.projectId
 const soloBranch = solo.branch
+const soloInitialModelId = solo.initialModelId
+const soloModelChoices = solo.modelChoices
 const soloProject = solo.project
 const soloLimitOpen = solo.limitOpen
 const projectDrawerOpen = ref(false)
@@ -842,6 +845,11 @@ onBeforeUnmount(() => {
                   v-if="soloProject"
                   v-model="soloBranch"
                   :default-branch="soloProject.defaultBranch"
+                  :disabled="solo.creating.value"
+                />
+                <SoloModelSelect
+                  v-model="soloInitialModelId"
+                  :models="soloModelChoices"
                   :disabled="solo.creating.value"
                 />
               </div>

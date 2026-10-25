@@ -52,9 +52,12 @@ type SoloSession struct {
 	// deletion do not affect a live session.
 	ProjectSnapshot *Project `gorm:"serializer:json" json:"project,omitempty"`
 	Branch          string   `json:"branch,omitempty"`
-	SandboxID       uint     `gorm:"index" json:"sandboxId,omitempty"`
-	Status          string   `gorm:"index" json:"status"`
-	Error           string   `json:"error,omitempty"`
+	// InitialModelID is the model chosen for this session's first chat.
+	// Empty follows the Agent configuration's primary model and does not change it.
+	InitialModelID string `json:"initialModelId,omitempty"`
+	SandboxID      uint   `gorm:"index" json:"sandboxId,omitempty"`
+	Status         string `gorm:"index" json:"status"`
+	Error          string `json:"error,omitempty"`
 	// EnvSources maps each injected env key to where it came from
 	// (platform | agent | project | credential | system). Values are never stored.
 	EnvSources map[string]string `gorm:"serializer:json" json:"-"`

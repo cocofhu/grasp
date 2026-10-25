@@ -175,7 +175,7 @@ func (s *ModelConnectionService) modelCredential(id string) (models.Credential, 
 func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Binding) (modelrouting.Resolved, error) {
 	resolved := modelrouting.Resolved{Backend: backend, Binding: binding}
 	if binding.Kind == "configuration" {
-		if binding.ConfigurationID == "" || binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" {
+		if binding.ConfigurationID == "" || binding.CredentialID != "" || binding.ConnectionID != "" || binding.ModelID != "" || len(binding.AuxiliaryModelIDs) != 0 || len(binding.ToolSettings.ModelRoles) != 0 || binding.ToolSettings.RouteProfile != "" {
 			return resolved, fmt.Errorf("%w: configuration binding requires only configurationId", ErrModelBindingInvalid)
 		}
 		configuration, err := NewModelConfigurationService(s.db).Get(binding.ConfigurationID)
@@ -217,6 +217,10 @@ func (s *ModelConnectionService) Resolve(backend string, binding modelrouting.Bi
 	} else {
 		return resolved, fmt.Errorf("%w: concrete binding is required", ErrModelBindingInvalid)
 	}
+	if normErr := modelrouting.NormalizeAuxiliaryModels(&binding); normErr != nil {
+		return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, normErr)
+	}
+	resolved.Binding = binding
 	if err != nil {
 		return resolved, fmt.Errorf("%w: %w", ErrModelBindingInvalid, err)
 	}

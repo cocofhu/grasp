@@ -42,6 +42,10 @@ func ChatsCreate(chats *service.ChatManager) gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid JSON"})
 			return
 		}
+		if !service.ModelSelectable(body.Model) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "该模型不在当前配置中"})
+			return
+		}
 		b, err := chats.Create(body.Title, body.Model)
 		if errors.Is(err, service.ErrTooManyChats) {
 			c.JSON(http.StatusConflict, gin.H{"error": "会话数已达上限", "max": chats.MaxChats()})

@@ -206,6 +206,35 @@ body {
     text-overflow: ellipsis;
 }
 
+.cc-model-logo {
+    width: 20px;
+    height: 20px;
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    overflow: hidden;
+}
+
+.cc-model-logo img {
+    width: 12px;
+    height: 12px;
+    object-fit: contain;
+}
+
+html[data-theme="dark"] .cc-model-logo img {
+    filter: invert(1);
+}
+
+.cc-model-logo-fallback {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+
 .cc-model-btn:hover:not(:disabled),
 .cc-restart-agent-btn:hover:not(:disabled) {
     color: var(--text-primary);
@@ -340,6 +369,11 @@ body {
     background: var(--accent-dim);
     color: var(--text-primary);
     font-weight: 600;
+}
+
+.cc-model-item.is-unavailable {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .cc-model-item-id {

@@ -61,7 +61,10 @@ export function neighborAfterClose(ids, closingId) {
  */
 export function modelDisplayName(modelId, models) {
     const id = String(modelId || '');
-    if (!id || id === 'auto') return 'Auto';
+    if (!id || id === 'auto') {
+        const auto = (models || []).find((m) => !m.id);
+        return (auto && auto.name) || '自动';
+    }
     const found = (models || []).find((m) => m.id === id);
     return (found && found.name) || id;
 }
@@ -72,7 +75,10 @@ export function modelDisplayName(modelId, models) {
  * @param {string} defaultModel
  * @returns {{ id: string, name: string, isDefault?: boolean, followDefault?: boolean }[]}
  */
-export function modelPickerItems(models, defaultModel) {
+export function modelPickerItems(models, defaultModel, configured = false) {
+    if (configured) {
+        return (models || []).map((m) => ({...m, name: m.name || m.id || '自动'}));
+    }
     const def = modelDisplayName(defaultModel, models);
     return [
         {id: '', name: `默认（${def}）`, followDefault: true},

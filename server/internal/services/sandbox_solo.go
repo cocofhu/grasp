@@ -28,13 +28,14 @@ func (e ErrSoloSandboxLimit) Error() string {
 
 // SoloSandboxOpts configures OpenSoloSandbox.
 type SoloSandboxOpts struct {
-	Profile   string
-	SessionID string
-	Project   *models.Project
-	Branch    string
-	OnEnv     func(sources map[string]string)
-	OnReady   func(sandboxID uint)
-	OnFail    func(sandboxID uint, err error)
+	Profile        string
+	SessionID      string
+	Project        *models.Project
+	Branch         string
+	InitialModelID string
+	OnEnv          func(sources map[string]string)
+	OnReady        func(sandboxID uint)
+	OnFail         func(sandboxID uint, err error)
 }
 
 // MaxSoloSandboxes returns the resident Solo sandbox cap.
@@ -142,7 +143,7 @@ func (s *SandboxService) OpenSoloSandbox(ctx context.Context, opts SoloSandboxOp
 		}
 		return nil, err
 	}
-	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv}
+	extra := agentContainerExtra{Repos: repos, Resident: true, OnEnv: opts.OnEnv, InitialChatModel: strings.TrimSpace(opts.InitialModelID)}
 	if p := opts.Project; p != nil {
 		extra.Env = p.Env
 		extra.Bindings = p.CredentialBindings

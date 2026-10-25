@@ -6,8 +6,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { CredentialItem, ModelConfiguration, ModelConnection, ModelConnectionBody, ToolCapability } from '@/lib/api/api'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
 
-const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn() }))
+const mocks = vi.hoisted(() => ({ configurations: vi.fn(), connections: vi.fn(), credentials: vi.fn(), capabilities: vi.fn(), create: vi.fn(), update: vi.fn(), remove: vi.fn(), updateConnection: vi.fn(), success: vi.fn(), cliModels: vi.fn() }))
 vi.mock('@/lib/api/api', () => ({ api: { listModelConfigurations: mocks.configurations, listModelConnections: mocks.connections, listCredentials: mocks.credentials, listToolCapabilities: mocks.capabilities, createModelConfiguration: mocks.create, updateModelConfiguration: mocks.update, deleteModelConfiguration: mocks.remove, updateModelConnection: mocks.updateConnection } }))
+vi.mock('@/lib/agent/cliCatalog', () => ({ loadCliModels: (...args: unknown[]) => mocks.cliModels(...args) }))
 vi.mock('@/lib/composables/useToast', () => ({ useToast: () => ({ success: mocks.success }) }))
 
 const platformKey: CredentialItem = { id: 'cursor-key', type: 'ai', name: 'Team Cursor account', purpose: 'tool_auth', toolId: 'cursor', configured: true, masked: 'cu-…1234' }
@@ -28,8 +29,8 @@ function setup() {
       stubs: {
         Teleport: true, Icon: true,
         CliModelSelect: defineComponent({
-          props: { modelValue: String, backend: String }, emits: ['update:modelValue'],
-          template: '<select data-testid="platform-model" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option></select>',
+          props: { modelValue: String, backend: String, hideReset: Boolean, excludeIds: { type: Array, default: () => [] } }, emits: ['update:modelValue'],
+          template: '<select data-testid="platform-model" :data-hide-reset="String(!!hideReset)" :value="modelValue" @change="$emit(\'update:modelValue\', $event.target.value)"><option value="">Tool default</option><option value="platform-model-v1">Platform model</option><option value="platform-model-v2">Second</option></select>',
         }),
       },
     },
@@ -75,6 +76,7 @@ beforeEach(() => {
   mocks.create.mockImplementation(async (body: Record<string, unknown>) => ({ id: 'created', ...body, revision: 1 }))
   mocks.update.mockImplementation(async (id: string, body: Record<string, unknown>) => ({ id, ...body, revision: 2 }))
   mocks.remove.mockResolvedValue({ status: 'ok' })
+  mocks.cliModels.mockResolvedValue([])
   mocks.updateConnection.mockImplementation(async (id: string, body: ModelConnectionBody) => {
     const updated = { ...services.find((item) => item.id === id)!, ...body, revision: 2 }
     services = services.map((item) => item.id === id ? updated : item)
@@ -324,6 +326,84 @@ describe('ModelConfigurationManager', () => {
     expect(mocks.remove).toHaveBeenCalledWith(configuration.id)
     expect(mocks.updateConnection).not.toHaveBeenCalled()
     confirm.mockRestore()
+    wrapper.unmount()
+  })
+
+  it('adds and removes an auxiliary model and rejects a duplicate of the primary', async () => {
+    services = [{ ...service, models: [...service.models, { id: 'vendor/aux', source: 'manual' }] }]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, service.models[0]!.id)
+    expect(wrapper.text()).toContain('Primary model')
+    expect(wrapper.text()).not.toContain('Set as primary')
+    expect(wrapper.text()).not.toContain('Restore automatic')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    expect(wrapper.get('[data-testid="model-configuration-aux-select-0"] [data-test="app-select-trigger"]').text()).toContain('vendor/aux')
+    expect(wrapper.get('[data-testid="model-configuration-add-model"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="model-configuration-aux-remove-0"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    const aux = wrapper.get('[data-testid="model-configuration-aux-select-0"]')
+    await aux.get('[data-test="app-select-trigger"]').trigger('click')
+    await aux.get('[data-test="app-select-search"]').setValue(service.models[0]!.id)
+    await aux.get('[data-test="app-select-custom"]').trigger('click')
+    expect(wrapper.text()).toContain('Each model can only be selected once')
+    expect(wrapper.get('[data-testid="model-configuration-save"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-testid="model-configuration-aux-remove-0"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith(expect.objectContaining({
+      binding: { kind: 'connection', connectionId: service.id, modelId: 'vendor/original/model', auxiliaryModelIds: ['vendor/aux'] },
+    }))
+    wrapper.unmount()
+  })
+
+  it('clears auxiliary models when the credential changes and does not move a cleared primary into the list', async () => {
+    services = [
+      { ...service, models: [...service.models, { id: 'vendor/aux', source: 'manual' }] },
+      { ...structuredClone(service), id: 'other-service', name: 'Other compatible API', models: [{ id: 'other/model', source: 'manual' }] },
+    ]
+    const wrapper = setup()
+    await openConnectionModelStep(wrapper)
+    await chooseModel(wrapper, service.models[0]!.id)
+    await wrapper.get('[data-testid="model-configuration-add-model"]').trigger('click')
+    await wrapper.get('[data-testid="model-configuration-back"]').trigger('click')
+    await chooseCredential(wrapper, 'connection:other-service')
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="model-configuration-model-id"] [data-test="app-select-trigger"]').text()).not.toContain('vendor/original/model')
+    wrapper.unmount()
+  })
+
+  it('selects automatic in the primary slot without moving the previous model into auxiliary', async () => {
+    mocks.cliModels.mockResolvedValue([
+      { id: 'platform-model-v1', name: 'Platform model', vendor: 'cursor' },
+      { id: 'platform-model-v2', name: 'Second', vendor: 'xai' },
+    ])
+    const wrapper = setup()
+    await openStepTwo(wrapper)
+    await chooseCredential(wrapper, `platform:${platformKey.id}`)
+    await wrapper.get('[data-testid="model-configuration-next"]').trigger('click')
+    const picker = wrapper.get('[data-testid="platform-model"]')
+    expect(picker.attributes('data-hide-reset')).toBe('true')
+    await picker.setValue('platform-model-v1')
+    await picker.setValue('')
+    expect(wrapper.find('[data-testid="model-configuration-aux-0"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="model-configuration-save"]').trigger('click')
+    await flushPromises()
+    expect(mocks.create).toHaveBeenCalledWith({ name: 'Team configuration', backend: 'cursor', binding: { kind: 'platform', credentialId: platformKey.id }, state: 'active' })
+    wrapper.unmount()
+  })
+
+  it('shows the primary model and the auxiliary count without role marks in the list', async () => {
+    mocks.configurations.mockResolvedValue({ items: [{ ...configuration, binding: { ...configuration.binding, auxiliaryModelIds: ['vendor/a', 'vendor/b'] } }] })
+    const wrapper = setup()
+    await flushPromises()
+    const row = wrapper.get('[data-testid="model-configuration-saved"]')
+    expect(row.text()).toContain('vendor/original/model')
+    expect(row.text()).toContain('2 more auxiliary models')
+    expect(row.text()).not.toContain('Primary model')
     wrapper.unmount()
   })
 })

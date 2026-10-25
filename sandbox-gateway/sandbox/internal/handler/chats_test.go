@@ -108,6 +108,32 @@ func TestChatsCRUD(t *testing.T) {
 	}
 }
 
+func TestConfiguredModelSwitchRejectsOutsiders(t *testing.T) {
+	t.Setenv("AGENT_PROVIDER", "deepseek")
+	t.Setenv("GRASP_CONFIGURED_MODELS", `[{"id":"primary","vendor":"cursor"},{"id":"aux","vendor":"xai"}]`)
+	chats := service.NewChatManager()
+	chats.Default().SetModel("primary")
+	r := newChatsEngine(chats)
+	w := do(t, r, http.MethodPost, "/api/model?chat=default", `{"model":"nope"}`)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("reject code=%d body=%s", w.Code, w.Body)
+	}
+	if chats.Default().Model() != "primary" {
+		t.Fatalf("rejected switch changed the chat model to %q", chats.Default().Model())
+	}
+	w = do(t, r, http.MethodGet, "/api/models?chat=default", "")
+	if w.Code != http.StatusOK || strings.Contains(w.Body.String(), "主模型") || strings.Contains(w.Body.String(), "辅助模型") {
+		t.Fatalf("list code=%d body=%s", w.Code, w.Body)
+	}
+	var body struct {
+		Configured bool                 `json:"configured"`
+		Models     []service.AgentModel `json:"models"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil || !body.Configured || len(body.Models) != 2 || body.Models[0].ID != "primary" || body.Models[1].ID != "aux" {
+		t.Fatalf("configured list: %+v %v", body, err)
+	}
+}
+
 func TestChatQueryRouting(t *testing.T) {
 	chats := service.NewChatManager()
 	tab, err := chats.Create("", "")

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cocofhu/grasp/internal/chatsession"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/tokenledger"
 
@@ -49,12 +50,13 @@ const (
 
 // SoloCreateInput starts a session.
 type SoloCreateInput struct {
-	AgentName string               `json:"agentName"`
-	ProjectID string               `json:"projectId"`
-	Branch    string               `json:"branch"`
-	Title     string               `json:"title"`
-	Text      string               `json:"text"`
-	Images    []models.PromptImage `json:"images"`
+	AgentName      string               `json:"agentName"`
+	ProjectID      string               `json:"projectId"`
+	Branch         string               `json:"branch"`
+	Title          string               `json:"title"`
+	Text           string               `json:"text"`
+	Images         []models.PromptImage `json:"images"`
+	InitialModelID string               `json:"initialModelId,omitempty"`
 }
 
 // SoloSandboxInfo is the sandbox state shown on a session.
@@ -162,6 +164,36 @@ func (s *SoloService) Require(id, user string) (*models.SoloSession, error) {
 		return nil, soloErr(http.StatusNotFound, "session_not_found", "Solo 会话不存在")
 	}
 	return row, nil
+}
+
+// acceptInitialModel checks a Solo start selection against the Agent's current
+// model configuration. Empty means the primary model. The configuration itself
+// is never updated.
+func (s *SoloService) acceptInitialModel(agent Agent, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", nil
+	}
+	if agent.ModelBinding == nil || agent.ModelBinding.Kind != "configuration" || strings.TrimSpace(agent.ModelBinding.ConfigurationID) == "" {
+		return "", soloErr(http.StatusBadRequest, "model_not_in_configuration", "所选模型不在该 Agent 的模型配置中")
+	}
+	configuration, err := NewModelConfigurationService(s.db).Get(agent.ModelBinding.ConfigurationID)
+	if err != nil || configuration.State != "active" || configuration.Backend != strings.TrimSpace(agent.AcpBackend) {
+		return "", soloErr(http.StatusBadRequest, "model_not_in_configuration", "所选模型不在该 Agent 的模型配置中")
+	}
+	if !modelrouting.AcceptsConfiguredModel(configuration.Binding, requested) {
+		return "", soloErr(http.StatusBadRequest, "model_not_in_configuration", "所选模型不在该 Agent 的模型配置中")
+	}
+	if configuration.Binding.Kind == "connection" {
+		connection, connErr := NewModelConnectionService(s.db).Get(configuration.Binding.ConnectionID)
+		if connErr != nil || !modelrouting.ModelInCatalog(connection, requested) {
+			return "", soloErr(http.StatusBadRequest, "model_unavailable", "所选模型已不可用")
+		}
+	}
+	if requested == strings.TrimSpace(configuration.Binding.ModelID) {
+		return "", nil
+	}
+	return requested, nil
 }
 
 func (s *SoloService) agentMeta(name string) (backend, model string) {
@@ -294,11 +326,19 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	if s.sbx.activeSoloSandboxCount() >= s.sbx.MaxSoloSandboxes() {
 		return nil, &SoloError{Status: http.StatusConflict, Code: "solo_limit", Msg: ErrSoloSandboxLimit{Max: s.sbx.MaxSoloSandboxes()}.Error()}
 	}
+	effective := agent
+	if s.sbx != nil {
+		effective = s.sbx.effectiveAgent(agent)
+	}
+	initialModel, err := s.acceptInitialModel(effective, in.InitialModelID)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now()
 	row := &models.SoloSession{
 		ID: uuid.NewString(), UserID: user, Title: soloTitle(in, agentName), AgentName: agentName,
-		ProjectSnapshot: project, Branch: branch, Status: models.SoloStatusStarting, LastActiveAt: &now,
+		ProjectSnapshot: project, Branch: branch, InitialModelID: initialModel, Status: models.SoloStatusStarting, LastActiveAt: &now,
 	}
 	if project != nil {
 		row.ProjectID = project.ID
@@ -328,7 +368,7 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
 	sid := row.ID
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
-		Profile: row.AgentName, SessionID: sid, Project: row.ProjectSnapshot, Branch: row.Branch,
+		Profile: row.AgentName, SessionID: sid, Project: row.ProjectSnapshot, Branch: row.Branch, InitialModelID: row.InitialModelID,
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})

@@ -4,6 +4,7 @@ import { useI18n } from 'vue-i18n'
 import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import SoloAgentSelect from './SoloAgentSelect.vue'
+import SoloModelSelect from './SoloModelSelect.vue'
 import SoloProjectSelect from './SoloProjectSelect.vue'
 import ProjectDrawer from './ProjectDrawer.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
@@ -14,7 +15,7 @@ const props = defineProps<{ open: boolean; presetAgent?: string; presetProject?:
 const emit = defineEmits<{ (e: 'close'): void }>()
 const { t } = useI18n()
 const launcher = useSoloLauncher()
-const { agents, projects, agentName, projectId, branch, project, loading, creating, error, limitOpen } = launcher
+const { agents, projects, agentName, projectId, branch, initialModelId, modelChoices, project, loading, creating, error, limitOpen } = launcher
 
 const text = ref('')
 const title = ref('')
@@ -57,6 +58,10 @@ function onSaved(p: Project) {
           <span class="label">{{ t('pages.solo.create.project') }}</span>
           <SoloProjectSelect v-model="projectId" class="!max-w-none" :projects="projects" :loading="loading" @create="drawerOpen = true" />
         </div>
+      </div>
+      <div>
+        <span class="label">{{ t('pages.solo.modelSelect.label') }}</span>
+        <SoloModelSelect v-model="initialModelId" class="!max-w-none" :models="modelChoices" :disabled="creating" />
       </div>
       <label v-if="project" class="block">
         <span class="label">{{ t('pages.solo.create.branch') }}</span>
