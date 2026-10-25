@@ -45,8 +45,14 @@ export default defineConfig({
       configureServer(server) {
         server.middlewares.use((req, res, next) => {
           const url = req.url || ''
+          // Rewriting req.url still leaves the browser on `/`. board-main.ts
+          // reads window.location.search and defaults to the dashboard without
+          // start=board, so the preview root must redirect.
           if (url === '/' || url.startsWith('/?')) {
-            req.url = '/board.html?start=board'
+            res.statusCode = 302
+            res.setHeader('Location', '/board.html?start=board')
+            res.end()
+            return
           }
           if (!url.startsWith('/api/')) return next()
           res.setHeader('Content-Type', 'application/json; charset=utf-8')
