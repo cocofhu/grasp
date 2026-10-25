@@ -108,7 +108,7 @@ describe('SettingsView brand copy', () => {
     await flushPromises()
     expect(w.get('[data-testid="brand-product-name"]').element).toHaveProperty('value', 'Acme Flow')
     expect(w.get('[data-testid="brand-home-subtitle"]').element).toHaveProperty('value', 'Clarify together')
-    expect(w.get('[data-testid="brand-home-subtitle"]').attributes('placeholder')).toBe('先说清，再动手')
+    expect(w.get('[data-testid="brand-home-subtitle"]').attributes('placeholder')).toBe('我们应该做些什么？')
     await w.get('[data-testid="brand-product-name"]').setValue('New Name')
     await w.get('[data-testid="brand-home-subtitle"]').setValue('New subtitle')
     const saveButton = w.findAll('button').find((button) => button.text().includes('保存'))
