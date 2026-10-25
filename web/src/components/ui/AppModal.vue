@@ -22,6 +22,11 @@ const props = withDefaults(
      */
     closeOnBackdrop?: boolean
     /**
+     * Fade the body and footer in place (they keep their layout size) and
+     * let the cover slot paint over that area.
+     */
+    dimContent?: boolean
+    /**
      * Opt-in Escape-to-close. Default false so existing closeOnBackdrop=false
      * callers (and other modals) are not surprised by a new Esc path.
      */
@@ -30,7 +35,7 @@ const props = withDefaults(
     trapFocus?: boolean
     closeLabel?: string
   }>(),
-  { bodyOverflow: 'auto', closeOnBackdrop: true, closeOnEsc: false, trapFocus: false, closeLabel: 'Close' },
+  { bodyOverflow: 'auto', closeOnBackdrop: true, closeOnEsc: false, trapFocus: false, closeLabel: 'Close', dimContent: false },
 )
 const emit = defineEmits<{ (e: 'close'): void }>()
 const dialogEl = ref<HTMLElement | null>(null)
@@ -180,17 +185,28 @@ defineExpose({ scrollAreaEl })
               <Icon name="close" :size="18" />
             </button>
           </div>
-          <div
-            v-if="!hideBody"
-            ref="scrollAreaEl"
-            class="scroll-area modal-scroll-area min-h-0 flex-1 p-5"
-            :class="bodyOverflow === 'hidden' ? 'overflow-hidden' : 'overflow-y-auto'"
-            :style="bodyMinHeight ? { minHeight: `${bodyMinHeight}px` } : undefined"
-          >
-            <slot />
-          </div>
-          <div v-if="$slots.footer" class="flex shrink-0 items-center justify-end gap-2 border-t border-line p-4">
-            <slot name="footer" />
+          <div class="app-modal-stage relative flex min-h-0 flex-1 flex-col">
+            <div
+              v-if="!hideBody"
+              ref="scrollAreaEl"
+              class="scroll-area modal-scroll-area min-h-0 flex-1 p-5"
+              :class="[bodyOverflow === 'hidden' ? 'overflow-hidden' : 'overflow-y-auto', dimContent ? 'app-modal-dim' : '']"
+              :inert="dimContent ? true : undefined"
+              :style="bodyMinHeight ? { minHeight: `${bodyMinHeight}px` } : undefined"
+            >
+              <slot />
+            </div>
+            <div
+              v-if="$slots.footer"
+              class="app-modal-footer flex shrink-0 items-center justify-end gap-2 border-t border-line p-4"
+              :class="dimContent ? 'app-modal-dim' : ''"
+              :inert="dimContent ? true : undefined"
+            >
+              <slot name="footer" />
+            </div>
+            <div v-if="$slots.cover" class="app-modal-cover">
+              <slot name="cover" />
+            </div>
           </div>
         </div>
       </div>
@@ -214,5 +230,27 @@ defineExpose({ scrollAreaEl })
 .modal-enter-from > div:last-child,
 .modal-leave-to > div:last-child {
   transform: translateY(12px) scale(0.98);
+}
+.app-modal-stage {
+  position: relative;
+}
+.app-modal-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+.app-modal-dim {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms var(--ease-out-expo);
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-modal-dim {
+    transition: none;
+  }
 }
 </style>
