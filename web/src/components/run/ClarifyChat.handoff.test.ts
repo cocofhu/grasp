@@ -504,6 +504,73 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+  const originalAsk = '选项 右侧的放大感觉不需要 用选中后的下面放大就好了 优化下'
+  const laterConfirm = '请基于目前已确认的信息给出最终结论并结束澄清(如声明了产物请写入),无需再提问。'
+  const clarifyPrompt = '和我对齐本次要做的事:澄清需求、写出实施计划;是缺陷时查清根因。'
+
+  it('a same-node rerun opens with the earliest user message, not the node prompt', async () => {
+    const first = {
+      nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat' as const, status: 'cancelled',
+      at: '2026-10-25T00:00:00Z', endedAt: '2026-10-25T00:00:29Z', open: true,
+      turns: [
+        { role: 'human' as const, text: '   ', at: '2026-10-25T00:00:00Z' },
+        { role: 'human' as const, text: originalAsk, at: '2026-10-25T00:00:01Z' },
+        { role: 'agent' as const, text: '已整理', at: '2026-10-25T00:00:10Z' },
+        { role: 'human' as const, text: laterConfirm, at: '2026-10-25T00:00:20Z' },
+      ],
+    }
+    const second = {
+      ...first,
+      iteration: 2,
+      status: 'completed',
+      at: '2026-10-25T00:01:00Z',
+      endedAt: '2026-10-25T00:01:20Z',
+      turns: [{ role: 'human' as const, text: laterConfirm, at: '2026-10-25T00:01:00Z' }],
+    }
+    const w = mountChat({
+      nodeId: 'clarify',
+      iteration: 3,
+      nodeLabel: '需求澄清',
+      nodeTask: clarifyPrompt,
+      turns: [],
+      priorSegments: [first, second],
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-segment-divider"]').text()).toContain('已流转到「需求澄清」')
+    const bubbles = w.findAll('[data-testid="clarify-node-task"] .chat-user-message')
+    expect(bubbles.map((b) => b.text())).toEqual([originalAsk, originalAsk])
+    const html = w.html()
+    expect(html.lastIndexOf('clarify-node-task')).toBeGreaterThan(html.indexOf('clarify-segment-divider'))
+    expect(w.text()).not.toContain('和我对齐本次要做的事')
+    expect(w.find('[data-testid="clarify-incoming-handoff"]').exists()).toBe(false)
+    const priors = w.findAll('[data-testid="clarify-prior-segment"]')
+    expect(priors[0].text()).toContain(originalAsk)
+    expect(priors[0].text()).toContain('「需求澄清」· 4 条消息')
+    expect(priors[0].text()).toContain('用时 29s')
+    expect(priors[0].find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('a same-node rerun with no user message does not open on the node prompt', async () => {
+    const w = mountChat({
+      nodeId: 'clarify',
+      nodeLabel: '需求澄清',
+      nodeTask: clarifyPrompt,
+      turns: [],
+      priorSegments: [{
+        nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'cancelled',
+        at: '2026-10-25T00:00:00Z', open: true,
+        turns: [{ role: 'agent', text: '还没有用户原话', at: '2026-10-25T00:00:00Z' }],
+      }],
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-segment-divider"]').text()).toContain('已流转到「需求澄清」')
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-incoming-handoff"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('和我对齐本次要做的事')
+    w.unmount()
+  })
+
   it('opens an auto row and shows each node record', async () => {
     nodeEvents.mockImplementation(async (_run: string, nodeId: string) => {
       if (nodeId === 'implement') {

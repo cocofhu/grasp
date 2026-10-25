@@ -32,6 +32,17 @@ describe('AppButton', () => {
     wrapper.unmount()
   })
 
+  it('drops primary shadow-glow when glow is false and keeps hover ink', () => {
+    const wrapper = mountBtn({ variant: 'primary', glow: false }, '进入运行详情')
+    const cls = wrapper.classes().join(' ')
+    expect(cls).toContain('bg-accent')
+    expect(cls).toContain('text-white')
+    expect(cls).not.toMatch(/\bshadow-glow\b/)
+    expect(wrapper.classes()).toContain('hover-ink-host')
+    expect(wrapper.element.style.getPropertyValue('--hover-ink-color')).toContain('--c-accent-hover')
+    wrapper.unmount()
+  })
+
   it('applies primary variant classes', () => {
     const wrapper = mountBtn({ variant: 'primary' })
     const cls = wrapper.classes().join(' ')

@@ -28,6 +28,7 @@ import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
   decideSidebarFlight,
+  isSidebarConfirmWindowHeld,
   isSidebarRunDismissed,
   readSidebarHandoff,
   SIDEBAR_FLIGHT_MS,
@@ -185,6 +186,8 @@ async function loadRunningRuns(opts?: { follow?: boolean }) {
 
 /** Run order last shown; see keepRowOrder. */
 let shownRunOrder: string[] = []
+/** Group last painted for each run. A confirm window freezes a row that was in 正在执行. */
+let paintedGroups = new Map<string, SidebarRunGroup>()
 const pendingRows = computed(() => {
   const rows = mergeRunRows(pendingItems.value, runningRuns.value, activeInboxKey.value)
   const listed = new Set(rows.map((r) => r.runId))
@@ -234,7 +237,12 @@ const soloPins = computed(() => pins.value.filter((p) => p.itemKey.startsWith('s
 const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
 function rowGroup(runId: string): 'running' | 'auto' | 'left' {
   if (isSidebarRunDismissed(runId)) return 'left'
-  return sidebarRunGroup(runningById.value.get(runId), readSidebarHandoff(runId))
+  const natural = sidebarRunGroup(runningById.value.get(runId), readSidebarHandoff(runId))
+  // This confirm's window is still up. Keep the row where it was painted in 正在执行,
+  // even when the handoff or the snapshot already says 自动过程. A row already
+  // painted in 自动过程 is not this handoff and must not be pulled back.
+  if (isSidebarConfirmWindowHeld(runId) && paintedGroups.get(runId) !== 'auto') return 'running'
+  return natural
 }
 const rowGroups = computed(() => {
   void sidebarHandoffEpoch.value
@@ -243,6 +251,7 @@ const rowGroups = computed(() => {
   return groups
 })
 function autoNodeName(it: InboxItem): string {
+  if (rowGroup(it.runId) !== 'auto') return ''
   return sidebarAutoNodeName(runningById.value.get(it.runId), readSidebarHandoff(it.runId))
 }
 const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
@@ -933,7 +942,6 @@ function prefersReducedMotion(): boolean {
 }
 
 const rowRects = new Map<string, DOMRect>()
-let paintedGroups = new Map<string, SidebarRunGroup>()
 const flights = ref<Record<string, { kind: 'in' | 'back'; landing: 'row' | 'heading' }>>({})
 const flightGhost = ref<{
   runId: string
@@ -1078,7 +1086,7 @@ function cancelFlight(runId: string) {
   takeFlightMotion()
 }
 
-/** Move a row when its group changes. A settled automatic handoff changes the group before the list does. */
+/** Move a row when its visible group changes. A confirm window still on screen keeps that run in 正在执行. */
 function navIsShown(): boolean {
   const root = navRoot.value
   if (!root?.isConnected) return false
@@ -1125,6 +1133,7 @@ function settleRunGroups() {
       confirmedAuto: !!mark && (mark.confirmedAuto || isAutoProcessNode(run?.currentNode)),
       reducedMotion: reduced,
       targetCollapsed: isSectionCollapsed(group),
+      confirmWindowHeld: isSidebarConfirmWindowHeld(runId),
     })
     if (!retractingFlyIn && (decision.type === 'fly-in' || decision.type === 'fly-back')) {
       beginFlight(runId, decision.type === 'fly-in' ? 'in' : 'back', decision.landing)
