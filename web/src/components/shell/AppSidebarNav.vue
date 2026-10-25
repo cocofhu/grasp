@@ -22,14 +22,16 @@ import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { autoProcessNodeName, isAutoProcessNode, isAutoProcessRun, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
+import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
 import {
   clearSidebarHandoff,
   consumeSidebarHandoff,
   decideSidebarFlight,
+  isSidebarRunDismissed,
   readSidebarHandoff,
   SIDEBAR_FLIGHT_MS,
   sidebarHandoffEpoch,
+  sidebarTrackedRunIds,
   type SidebarRunGroup,
 } from '@/lib/inbox/sidebarHandoff'
 import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
@@ -229,11 +231,21 @@ const pendingRunTitles = computed(() => {
 const runPins = computed(() => pins.value.filter((p) => !p.itemKey.startsWith('solo:')).map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
 const soloPins = computed(() => pins.value.filter((p) => p.itemKey.startsWith('solo:')))
 const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
-function autoNodeName(it: InboxItem): string {
-  return autoProcessNodeName(runningById.value.get(it.runId))
+function rowGroup(runId: string): 'running' | 'auto' | 'left' {
+  if (isSidebarRunDismissed(runId)) return 'left'
+  return sidebarRunGroup(runningById.value.get(runId), readSidebarHandoff(runId))
 }
-const humanPendingRows = computed(() => pendingRows.value.filter((it) => !isAutoProcessRun(runningById.value.get(it.runId))))
-const autoPendingRows = computed(() => pendingRows.value.filter((it) => isAutoProcessRun(runningById.value.get(it.runId))))
+const rowGroups = computed(() => {
+  void sidebarHandoffEpoch.value
+  const groups = new Map<string, 'running' | 'auto' | 'left'>()
+  for (const it of pendingRows.value) groups.set(it.runId, rowGroup(it.runId))
+  return groups
+})
+function autoNodeName(it: InboxItem): string {
+  return sidebarAutoNodeName(runningById.value.get(it.runId), readSidebarHandoff(it.runId))
+}
+const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
+const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
 const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
 const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
 /** Active Solo sandboxes share the same running section as workflow runs. */
@@ -1046,11 +1058,21 @@ function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
   const mark = readSidebarHandoff(runId)
   if (!mark) return
   const node = runningById.value.get(runId)?.currentNode
-  if (!node?.id || node.id === mark.fromNodeId || isAutoProcessNode(node)) return
+  if (!node?.id || node.id === mark.fromNodeId) return
+  if (node.kind === 'agent' && node.mode === 'auto') return
+  if (isAutoProcessNode(node)) return
   clearSidebarHandoff(runId)
 }
 
-/** Move a row only after its group actually changes. The click mark alone does not. */
+function cancelFlight(runId: string) {
+  const timer = flightTimers.get(runId)
+  if (timer) window.clearTimeout(timer)
+  flightTimers.delete(runId)
+  clearFlightVisual(runId)
+  takeFlightMotion()
+}
+
+/** Move a row when its group changes. A settled automatic handoff changes the group before the list does. */
 function navIsShown(): boolean {
   const root = navRoot.value
   if (!root?.isConnected) return false
@@ -1069,6 +1091,10 @@ function headingIsFlightTarget(id: RunSectionId): boolean {
 }
 
 function settleRunGroups() {
+  const listed = new Set(pendingRows.value.map((it) => it.runId))
+  for (const runId of sidebarTrackedRunIds()) {
+    if (!listed.has(runId)) clearSidebarHandoff(runId)
+  }
   const next = new Map<string, SidebarRunGroup>()
   for (const it of orderedHumanRows.value) next.set(it.runId, 'running')
   for (const it of orderedAutoRows.value) next.set(it.runId, 'auto')
@@ -1082,6 +1108,10 @@ function settleRunGroups() {
     releaseHandoffIfHuman(runId, group)
     const mark = readSidebarHandoff(runId)
     const run = runningById.value.get(runId)
+    // A fly-in that has not finished is cancelled when the handoff is taken back.
+    // A finished automatic row that later waits still flies back.
+    const retractingFlyIn = previous === 'auto' && group === 'running' && flights.value[runId]?.kind === 'in'
+    if (retractingFlyIn) cancelFlight(runId)
     const decision = decideSidebarFlight({
       previous,
       next: group,
@@ -1090,13 +1120,14 @@ function settleRunGroups() {
       reducedMotion: reduced,
       targetCollapsed: isSectionCollapsed(group),
     })
-    if (decision.type === 'fly-in' || decision.type === 'fly-back') {
+    if (!retractingFlyIn && (decision.type === 'fly-in' || decision.type === 'fly-back')) {
       beginFlight(runId, decision.type === 'fly-in' ? 'in' : 'back', decision.landing)
     }
-    if (group === 'auto' && mark) consumeSidebarHandoff(runId)
+    // Keep the claim until the list itself shows the automatic node, so the row does not jump back.
+    if (group === 'auto' && mark && isAutoProcessNode(run?.currentNode)) consumeSidebarHandoff(runId)
   }
   for (const runId of paintedGroups.keys()) {
-    if (!next.has(runId) && readSidebarHandoff(runId)) clearSidebarHandoff(runId)
+    if (!next.has(runId) && flights.value[runId]) cancelFlight(runId)
   }
   paintedGroups = next
 }
@@ -1277,6 +1308,7 @@ const settingsItems = settingsNavItems
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
@@ -1325,6 +1357,7 @@ const settingsItems = settingsNavItems
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
@@ -1714,6 +1747,54 @@ const settingsItems = settingsNavItems
 .nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
 .nav-row-type-icon--accent { color: rgb(var(--c-accent-2)); }
 .nav-row-type-icon--hold { color: rgb(var(--c-warn)); }
+
+/* Row-tail breath only. The extra nav-row-type-icon class beats the shared
+   busy rules in icon-motion.css. The hover ring is its own circle, so a
+   pointer or keyboard focus does not restart or pause the 1.6s loop.
+   Peak scale 3.2 keeps a 3.4-radius stroke inside the 24 viewBox; non-scaling
+   stroke stays a hairline so the row's overflow:clip never cuts a half ring. */
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core) {
+  transform-origin: 12px 12px;
+  animation: navRowBreathCore 1.6s ease-in-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  animation: navRowBreathRing 1.6s ease-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  pointer-events: none;
+}
+.nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+.nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  animation: navRowBreathPing 700ms ease-out 1;
+}
+@keyframes navRowBreathCore {
+  0%, 16%, 100% { transform: scale(1); }
+  7% { transform: scale(0.86); }
+}
+@keyframes navRowBreathRing {
+  0% { transform: scale(0.75); opacity: 0; }
+  12% { opacity: 0.62; }
+  46%, 100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes navRowBreathPing {
+  0% { transform: scale(0.7); opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core),
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring),
+  .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+    animation: none !important;
+  }
+}
 
 .pending-row-menu__item {
   display: flex;

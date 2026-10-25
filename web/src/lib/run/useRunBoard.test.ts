@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ref } from 'vue'
 import type { Run } from '../shared/types'
 
 const listRuns = vi.fn()
@@ -69,14 +68,13 @@ describe('useRunBoard', () => {
     expect(board.column('completed').items).toHaveLength(1)
   })
 
-  it('loads full board main columns and optional extras', async () => {
+  it('loads only the three full-board main columns', async () => {
     listRuns.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100, hasMore: false })
-    const extras = ref(new Set<string>(['failed']))
-    const board = useRunBoard({ mode: 'full', extraStatuses: extras })
+    const board = useRunBoard({ mode: 'full' })
     await board.load()
 
     const statuses = listRuns.mock.calls.map((c) => c[0].status).sort()
-    expect(statuses).toEqual(['completed', 'failed', 'running', 'waiting_human'])
+    expect(statuses).toEqual(['completed', 'running', 'waiting_human'])
     expect(listRuns).toHaveBeenCalledWith(
       expect.objectContaining({
         status: 'running',

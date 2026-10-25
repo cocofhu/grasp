@@ -4,14 +4,15 @@ export type SettingsNavItem = SidebarNavItem & { exact?: boolean; query?: Record
 
 export const settingsNavItems: SettingsNavItem[] = [
   { to: '/board', icon: 'board', labelKey: 'nav.board', groupKey: 'nav.groupWorkspaceTools' },
-  { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
   { to: '/requirements', icon: 'doc', labelKey: 'nav.requirements' },
+  { to: '/workflows', icon: 'workflow', labelKey: 'nav.workflows' },
   { to: '/assistant', icon: 'chat', labelKey: 'nav.assistant' },
-  { to: '/settings/schedules', icon: 'clock', labelKey: 'nav.schedules' },
   { to: '/artifacts', icon: 'artifact', labelKey: 'nav.artifacts' },
-  { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
   { to: '/notifications', icon: 'bell', labelKey: 'nav.notifications' },
+  { to: '/settings/schedules', icon: 'clock', labelKey: 'nav.schedules' },
+  { to: '/settings/audit', icon: 'history', labelKey: 'nav.audit' },
   { to: '/agents', icon: 'robot', labelKey: 'nav.agents', groupKey: 'nav.groupExecution' },
+  { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
   { to: '/settings/projects', icon: 'git', labelKey: 'nav.projects' },
   { to: '/settings/credentials', icon: 'key', labelKey: 'nav.credentials' },
   { to: '/settings/variables', icon: 'variable', labelKey: 'nav.variables' },
@@ -21,7 +22,6 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/settings', icon: 'settings', labelKey: 'nav.general', exact: true, groupKey: 'nav.groupPlatform' },
   { to: '/settings', icon: 'integration', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
   { to: '/settings/workspace', icon: 'folder', labelKey: 'nav.workspaceInfo' },
-  { to: '/sandboxes', icon: 'terminal', labelKey: 'nav.sandboxes' },
 ]
 
 export const SETTINGS_CHROME_PREFIXES = [
