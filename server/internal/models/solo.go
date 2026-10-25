@@ -72,7 +72,20 @@ type SoloSession struct {
 	Branch          string   `json:"branch,omitempty"`
 	// InitialModelID is the model chosen for this session's first chat.
 	// Empty follows the Agent configuration's primary model and does not change it.
+	// Switching models later does not rewrite this value.
 	InitialModelID string `json:"initialModelId,omitempty"`
+	// CurrentModelID is the model later turns use. Empty means the primary model.
+	// It is independent of InitialModelID. CurrentModelSet distinguishes that
+	// explicit primary from an old row that never stored a current model.
+	CurrentModelID  string `json:"currentModelId,omitempty"`
+	CurrentModelSet bool   `json:"currentModelSet,omitempty"`
+	// AppliedModelID is the model last given to the sandbox chat. It is not
+	// part of the API. AppliedModelSet false means the sandbox still has the
+	// opening model (or has not been aligned yet).
+	AppliedModelID  string `json:"-"`
+	AppliedModelSet bool   `json:"-"`
+	// ModelNotice is a stable error code shown after a switch is rolled back.
+	ModelNotice string `json:"modelNotice,omitempty"`
 	// Repos is the ordered repository snapshot. Empty means an empty workspace
 	// when ProjectSnapshot is also empty. Legacy rows leave this empty and are
 	// read as a one-element list built from ProjectSnapshot.

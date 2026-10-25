@@ -121,15 +121,18 @@ describe('mergePersistedAndLiveTurns', () => {
     expect(merged.some((t) => t.text === '短')).toBe(false)
   })
 
-  it('does not let a different same-length live cover the persisted reply', () => {
+  it('keeps one in-progress bubble when the live text matches the persisted reply', () => {
     const persisted: ClarifyTurn[] = [
       { role: 'human', text: '继续', at: 't1' },
-      { role: 'agent', text: '已落盘正文', at: 't2' },
+      { role: 'agent', text: '短回复', at: 't2', thought: '旧思考' },
     ]
     const live: ClarifyTurn[] = [
       { role: 'human', text: '继续', at: 't1-live' },
-      { role: 'agent', text: '另一段正文', at: 't3', streaming: true },
+      { role: 'agent', text: '短回复', at: 't3', thought: '旧思考', streaming: true },
     ]
-    expect(mergePersistedAndLiveTurns(persisted, live)).toEqual(persisted)
+    const merged = mergePersistedAndLiveTurns(persisted, live)
+    expect(merged.filter((t) => t.text === '短回复')).toHaveLength(1)
+    expect(merged[merged.length - 1]?.streaming).toBe(true)
+    expect(merged.some((t) => t.role === 'human')).toBe(true)
   })
 })

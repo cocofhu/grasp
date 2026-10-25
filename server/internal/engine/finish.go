@@ -31,8 +31,18 @@ func (e *Engine) appendTrace(c *execCtx, te models.TraceEntry) {
 	te.At = time.Now().Format(time.RFC3339)
 	c.run.Trace = append(c.run.Trace, te)
 
+	// A transition names the next node. Store that resume position in the same
+	// write as the trace, and do not touch run status: the live driver is the
+	// one that enters the node. Queuing here would race it and start a second.
+	row := &models.Run{Trace: c.run.Trace}
+	cols := []string{"Trace"}
+	if te.Event == "transition" && te.To != "" {
+		e.setAdmissionTarget(c, te.To)
+		row.Checkpoints = c.run.Checkpoints
+		cols = append(cols, "Checkpoints")
+	}
 	logDB(e.db.Model(&models.Run{}).Where("id = ?", c.run.ID).
-		Select("Trace").Updates(&models.Run{Trace: c.run.Trace}), c.run.ID, "append trace")
+		Select(cols).Updates(row), c.run.ID, "append trace")
 	msg, _ := json.Marshal(map[string]any{"type": "trace", "runId": c.run.ID, "entry": te})
 	e.broker.Publish(c.run.ID, msg)
 }

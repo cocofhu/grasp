@@ -24,9 +24,16 @@ type reattachInfo struct {
 //   - any other node caught mid-flight is instantaneous (input / output /
 //     set_var / branch / gate entry) or has no sandbox left, so its visit is
 //     closed and the run is requeued to re-enter that node;
-//   - a running run with no in-flight node has no known position and fails.
+//   - a run whose latest transition source has finished, and whose target
+//     visit has not started, is queued at that target. The trace wins when an
+//     older resume checkpoint names an earlier node;
+//   - a confirm that only marked the dialogue done, while the visit is still
+//     waiting and no target was written, reopens the dialogue into the inbox;
+//   - a running run with no in-flight visit and no such transition fails.
+//     A run that never started a visit still fails.
 //
-// Queued runs and runs paused at a human gate / react dialogue are untouched.
+// Queued runs, unfinished human dialogues, and terminal runs are left as they
+// are. Admission still goes through the existing queue.
 func (e *Engine) reconcileInterrupted() {
 	var running []models.StateRun
 	if err := e.db.Where("status = ?", "running").Order("id asc").Find(&running).Error; err != nil {
@@ -78,11 +85,34 @@ func (e *Engine) reconcileInterrupted() {
 	if err := e.db.Where("status = ?", "running").Find(&runs).Error; err != nil {
 		log.Error().Err(err).Msg("startup reconciliation: query running runs failed")
 	}
-	for _, r := range runs {
-		if !handled[r.ID] {
-			orphans[r.ID] = true
+	for i := range runs {
+		r := &runs[i]
+		if handled[r.ID] {
+			continue
+		}
+		if e.settlePendingHandoff(r) {
+			handled[r.ID] = true
+			delete(orphans, r.ID)
+			continue
+		}
+		orphans[r.ID] = true
+	}
+
+	var paused []models.Run
+	if err := e.db.Where("status = ?", "waiting_human").Find(&paused).Error; err != nil {
+		log.Error().Err(err).Msg("startup reconciliation: query waiting runs failed")
+	}
+	for i := range paused {
+		r := &paused[i]
+		if handled[r.ID] {
+			continue
+		}
+		if e.settlePendingHandoff(r) {
+			handled[r.ID] = true
+			delete(orphans, r.ID)
 		}
 	}
+
 	for id := range orphans {
 		if handled[id] {
 			continue
@@ -91,13 +121,122 @@ func (e *Engine) reconcileInterrupted() {
 		if e.db.First(&r, "id = ?", id).Error != nil {
 			continue
 		}
-		if r.Status == "completed" || r.Status == "failed" || r.Status == "cancelled" {
+		if r.Status == "completed" || r.Status == "failed" || r.Status == "cancelled" || r.Status == "queued" {
 			continue
 		}
 		logDB(e.db.Model(&models.Run{}).Where("id = ?", id).UpdateColumn("status", "failed"), id, "reconcile run")
 		e.host.UnregisterRun(id)
 		log.Warn().Str("run_id", id).Msg("reconciled interrupted run on startup -> failed")
 	}
+}
+
+// settlePendingHandoff queues a run at the latest transition whose target
+// visit has not started, or reopens a confirm that left the inbox before a
+// target was written. It reports whether the run was settled.
+func (e *Engine) settlePendingHandoff(run *models.Run) bool {
+	if target, ok := e.pendingTransitionTarget(run); ok {
+		if run.Graph.FindNode(target) == nil {
+			e.failRun(run.ID, "流转目标不在图上: "+target)
+			log.Warn().Str("run_id", run.ID).Str("node_id", target).
+				Msg("startup reconciliation: transition target missing, run failed")
+			return true
+		}
+		if !e.enqueueAdmission(run.ID, target, run.Status == "running") {
+			return false
+		}
+		e.signalDispatch()
+		log.Info().Str("run_id", run.ID).Str("node_id", target).
+			Msg("startup reconciliation: queued at recorded transition")
+		return true
+	}
+	if e.reopenAbandonedConfirm(run) {
+		log.Info().Str("run_id", run.ID).Msg("startup reconciliation: confirm reopened into inbox")
+		return true
+	}
+	return false
+}
+
+// pendingTransitionTarget returns the latest transition whose source visit has
+// ended and whose target visit has not started. An older resume checkpoint is
+// ignored: the trace is the position a restart continues from.
+func (e *Engine) pendingTransitionTarget(run *models.Run) (string, bool) {
+	if run == nil || len(run.Trace) == 0 {
+		return "", false
+	}
+	idx := -1
+	for i := len(run.Trace) - 1; i >= 0; i-- {
+		if run.Trace[i].Event == "transition" && run.Trace[i].To != "" {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return "", false
+	}
+	te := run.Trace[idx]
+	var inflight int64
+	if err := e.db.Model(&models.StateRun{}).
+		Where("run_id = ? AND status = ?", run.ID, "running").Count(&inflight).Error; err != nil || inflight > 0 {
+		return "", false
+	}
+	var src models.StateRun
+	if err := e.db.Where("run_id = ? AND node_id = ?", run.ID, te.NodeID).
+		Order("iteration desc, id desc").First(&src).Error; err != nil {
+		return "", false
+	}
+	switch src.Status {
+	case "completed", "failed", "cancelled", "skipped":
+	default:
+		return "", false
+	}
+	for _, later := range run.Trace[idx+1:] {
+		if later.NodeID == te.To && (later.Event == "enter" || later.Event == "reattach") {
+			return "", false
+		}
+	}
+	var tgt models.StateRun
+	if err := e.db.Where("run_id = ? AND node_id = ?", run.ID, te.To).
+		Order("iteration desc, id desc").First(&tgt).Error; err == nil {
+		if tgt.Status == "running" || tgt.Status == "waiting_human" {
+			return "", false
+		}
+	}
+	return te.To, true
+}
+
+// reopenAbandonedConfirm puts a half-finished confirm back in the inbox.
+// The dialogue was marked done so it would leave the inbox, but the visit is
+// still waiting and no next node was written. The model wrap-up is not replayed.
+func (e *Engine) reopenAbandonedConfirm(run *models.Run) bool {
+	if run == nil || (run.Status != "waiting_human" && run.Status != "running") {
+		return false
+	}
+	var convs []models.ReactConversation
+	if err := e.db.Where("run_id = ? AND done = ?", run.ID, true).
+		Order("iteration desc, id desc").Find(&convs).Error; err != nil || len(convs) == 0 {
+		return false
+	}
+	reopened := false
+	for _, conv := range convs {
+		var sr models.StateRun
+		if err := e.db.Where("run_id = ? AND node_id = ? AND iteration = ?", run.ID, conv.NodeID, conv.Iteration).
+			Order("id desc").First(&sr).Error; err != nil || sr.Status != "waiting_human" {
+			continue
+		}
+		res := e.db.Model(&models.ReactConversation{}).Where("id = ? AND done = ?", conv.ID, true).Update("done", false)
+		if res.Error != nil || res.RowsAffected == 0 {
+			continue
+		}
+		reopened = true
+	}
+	if !reopened {
+		return false
+	}
+	if run.Status == "running" {
+		logDB(e.db.Model(&models.Run{}).Where("id = ? AND status = ?", run.ID, "running").
+			Update("status", "waiting_human"), run.ID, "reopen confirm")
+	}
+	return true
 }
 
 func (e *Engine) failStateRun(id uint, runID string) {
