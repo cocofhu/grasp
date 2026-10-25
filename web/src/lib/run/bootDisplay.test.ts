@@ -21,6 +21,15 @@ describe('resolveBootDisplay', () => {
     })).toEqual({ showStarting: false, showReady: true, holdMessages: false })
   })
 
+  it('holds this boot’s messages and skips the checklist while the next process is still unknown', () => {
+    expect(resolveBootDisplay({
+      windowVisible: false, seal: false, committed: true, nextAuto: null, ...pending,
+    })).toEqual({ showStarting: false, showReady: false, holdMessages: true })
+    expect(resolveBootDisplay({
+      windowVisible: false, seal: false, committed: true, nextAuto: null, ...live,
+    })).toEqual({ showStarting: false, showReady: true, holdMessages: false })
+  })
+
   it('plays the real in-progress checklist only for an automatic next process', () => {
     expect(resolveBootDisplay({
       windowVisible: false, seal: false, committed: true, nextAuto: true, ...pending,

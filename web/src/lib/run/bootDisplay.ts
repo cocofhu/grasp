@@ -14,7 +14,11 @@ export interface BootDisplayInput {
   seal: boolean
   /** User confirmed this dialog (cancel leaves this false). */
   committed: boolean
-  /** Next process is automatic. Null when this is not a post-confirm choice. */
+  /**
+   * Next process is automatic.
+   * True: automatic. False: already known not to be. Null: not a post-confirm
+   * choice, or confirmed but the next process is still unknown.
+   */
   nextAuto: boolean | null
   hasBoot: boolean
   live: boolean
@@ -45,6 +49,7 @@ export function resolveBootDisplay(input: BootDisplayInput): BootDisplay {
     return { showStarting: false, showReady: ready, holdMessages: false }
   }
   // Confirmed, but the next process is not known to be automatic yet.
+  // Keep holding this boot's messages. Do not treat unknown as a person waiting.
   if (input.committed && input.nextAuto !== true) {
     return { showStarting: false, showReady: ready, holdMessages: pending }
   }

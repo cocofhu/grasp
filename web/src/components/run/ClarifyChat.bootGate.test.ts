@@ -9,7 +9,7 @@ import { i18n as appI18n } from '@/lib/shared/i18n'
 import { loadLocaleMessages } from '@/lib/shared/loadLocaleMessages'
 import { confirmFlowCeremonyKey } from '@/lib/inbox/confirmFlowCeremony'
 import { __resetConfirmFlowWindowForTests } from '@/lib/inbox/confirmFlowWindow'
-import { __resetSidebarHandoffForTests } from '@/lib/inbox/sidebarHandoff'
+import { __resetSidebarHandoffForTests, armSidebarHandoff, noteSidebarHandoffOutcome } from '@/lib/inbox/sidebarHandoff'
 import { beginBoot, bootKey, clearBootRecords, markBootLive, observeBootSandbox } from '@/lib/run/bootRecord'
 import type { ClarifyTurn } from '@/lib/shared/types'
 import { ref } from 'vue'
@@ -30,7 +30,7 @@ const turns: ClarifyTurn[] = [
   { role: 'agent', text: reply, at: '2026-10-21T05:00:01Z' },
 ]
 
-function mountChat(props: Record<string, unknown> = {}) {
+function mountChat(props: Record<string, unknown> = {}, hooks?: { onFinish?: () => void }) {
   const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
   const ceremony = {
     phase: ref('idle'),
@@ -51,6 +51,7 @@ function mountChat(props: Record<string, unknown> = {}) {
       reviewMode: true,
       nodeTask: '上游交接说明',
       ...props,
+      onFinish: hooks?.onFinish,
     },
     attachTo: document.body,
     global: {
@@ -176,6 +177,32 @@ describe('ClarifyChat confirm-window boot gate', () => {
     expect(html.indexOf('clarify-node-task')).toBeLessThan(html.indexOf('clarify-agent-message'))
     expect(w.text()).toContain(reply)
     expect(w.text()).toContain(human)
+    w.unmount()
+  })
+
+  it('keeps this boot’s messages hidden when the next process is not known yet', async () => {
+    vi.useFakeTimers()
+    clearBootRecords()
+    beginBoot(KEY, '2026-10-21T05:00:00Z')
+    const w = mountChat({}, {
+      onFinish: () => armSidebarHandoff('run-1', 'implement', Date.now(), null),
+    })
+    await flushPromises()
+    await openDialog(w)
+    acceptDialog()
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    expect(document.body.querySelector('[data-testid="confirm-flow-dialog-body"]')).toBeNull()
+    expect(w.find('[data-testid="clarify-boot-loader"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-boot-done"]').exists()).toBe(false)
+    expect(w.text()).not.toContain(reply)
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    expect(w.text()).toContain(human)
+    noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'next', name: '实现' })
+    await nextTick()
+    expect(bootStates()).toEqual(['running', 'pending', 'pending'])
+    expect(w.text()).not.toContain(reply)
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
     w.unmount()
   })
 

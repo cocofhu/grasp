@@ -193,8 +193,16 @@ const bootLive = computed(() => !!bootRecord.value?.live)
 const sealBootMessages = ref(false)
 /** This dialog was confirmed, as opposed to cancelled. */
 const flowCommitted = ref(false)
-/** Latched from the sidebar mark at confirm time, before followTail catches up. */
+/**
+ * Latched only after the sidebar mark confirms an automatic successor.
+ * A mark that is still unconfirmed is unknown, not “the next process is a person”.
+ */
 const enteredAuto = ref<boolean | null>(null)
+
+function latchEnteredAuto() {
+  const mark = readSidebarHandoff(props.runId)
+  if (mark?.confirmedAuto) enteredAuto.value = true
+}
 
 watch(confirmFlowWindowVisible, (visible, was) => {
   if (visible && !was) sealBootMessages.value = bootPending.value
@@ -216,8 +224,7 @@ watch(
 )
 watch(sidebarHandoffEpoch, () => {
   if (!flowCommitted.value) return
-  const mark = readSidebarHandoff(props.runId)
-  if (mark) enteredAuto.value = mark.confirmedAuto
+  latchEnteredAuto()
 })
 
 const nextAuto = computed<boolean | null>(() => {
@@ -226,7 +233,8 @@ const nextAuto = computed<boolean | null>(() => {
   if (tail === 'waiting' || tail === 'ended' || tail === 'error') return false
   if (typeof props.handoff?.targetAuto === 'boolean') return props.handoff.targetAuto
   if (!flowCommitted.value) return null
-  return enteredAuto.value
+  // False is reserved for an explicit non-automatic successor. Unknown stays null.
+  return enteredAuto.value === true ? true : null
 })
 
 const bootView = computed(() => resolveBootDisplay({
@@ -970,8 +978,7 @@ const showAskAbove = computed(() => !!currentAsk.value && !holdBootMessages.valu
 function onFlowConfirm() {
   flowCommitted.value = true
   acceptConfirmFlow()
-  const mark = readSidebarHandoff(props.runId)
-  if (mark) enteredAuto.value = mark.confirmedAuto
+  latchEnteredAuto()
 }
 
 function onFlowDismiss() {

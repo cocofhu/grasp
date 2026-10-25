@@ -482,6 +482,46 @@ describe('useRunDetail actions', () => {
     app.unmount()
   })
 
+  it('confirm tells the chat whether the next process is automatic, not automatic, or still unknown', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toMatchObject({ phase: 'pending', targetAuto: true })
+
+    detail.run.value = {
+      ...detail.run.value,
+      nodes: [
+        stubNode({ id: 'n1', type: 'agent', caps: ASK_CAPS }),
+        stubNode({ id: 'gate', type: 'human_gate', label: '审批' }),
+      ],
+      edges: [{ id: 'e-gate', source: 'n1', target: 'gate' }],
+    } as Run
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toMatchObject({ phase: 'pending', targetAuto: false })
+
+    detail.run.value = {
+      ...detail.run.value,
+      edges: [
+        { id: 'e-a', source: 'n1', target: 'n2', when: 'vars.ready' },
+        { id: 'e-b', source: 'n1', target: 'gate' },
+      ],
+    } as Run
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value?.phase).toBe('pending')
+    expect(detail.clarifyFlowHandoff.value?.targetAuto).toBeUndefined()
+
+    const { noteSidebarHandoffOutcome } = await import('@/lib/inbox/sidebarHandoff')
+    noteSidebarHandoffOutcome('run-1', 'auto', { nodeId: 'n2', name: '实现' })
+    await nextTick()
+    expect(detail.clarifyFlowHandoff.value?.targetAuto).toBe(true)
+
+    mocks.reactReply.mockRejectedValueOnce(new Error('react already done'))
+    await detail.onClarifySend('done', [], [], true)
+    expect(detail.clarifyFlowHandoff.value).toBeNull()
+    app.unmount()
+  })
+
   it('an ordinary reply refused during confirm does not unlock the spinner', async () => {
     const { detail, app } = await withRunDetail()
     detail.selectNode('n1')
