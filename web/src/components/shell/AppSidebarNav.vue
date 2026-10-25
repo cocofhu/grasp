@@ -1313,10 +1313,9 @@ const settingsItems = settingsNavItems
           >
             <Icon name="pin" :size="12" />
           </span>
-          <span v-if="rowTitle(it)" class="nav-row-title min-w-0 truncate text-start" :class="autoNodeName(it) ? 'max-w-[62%] shrink' : 'flex-1'">{{ rowTitle(it) }}</span>
+          <span v-if="rowTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
           <span v-if="autoNodeName(it)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(it) }}</span>
-          <span v-if="autoNodeName(it)" class="min-w-0 flex-1" aria-hidden="true" />
           <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
           <template v-else>
