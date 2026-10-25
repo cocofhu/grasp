@@ -111,6 +111,8 @@ describe('RunBoardColumn', () => {
     expect(src).toMatch(/overscroll-behavior:\s*contain/)
     const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../styles/global.css'), 'utf8')
     expect(css).toMatch(/::-webkit-scrollbar\s*\{[^}]*width:\s*4px/s)
+    expect(src).not.toMatch(/scrollbar-width\s*:/)
+    expect(src).not.toMatch(/scrollbar-color\s*:/)
 
     const titleEl = wrapper.find('[data-testid="run-board-column"] > div')
     expect(titleEl.exists()).toBe(true)
@@ -214,6 +216,15 @@ describe('RunBoardColumn', () => {
     const wrapper = mountColumn({ items: items.slice(0, 1), listedCount: 2, total: 9 })
     expect(wrapper.get('[data-testid="run-board-column-count"]').text()).toBe('2/9')
     wrapper.unmount()
+  })
+
+  it('keeps a narrow board from scrolling inside the column', () => {
+    const board = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '../../views/BoardView.vue'), 'utf8')
+    expect(board).toMatch(
+      /@container board-workbench \(max-width:\s*799px\)[\s\S]*run-board-column-body[\s\S]*?overflow:\s*visible/,
+    )
+    expect(board).not.toMatch(/scrollbar-width\s*:/)
+    expect(board).not.toMatch(/scrollbar-color\s*:/)
   })
 
   it('keeps non-activatable header as a plain div (Dashboard default)', () => {
