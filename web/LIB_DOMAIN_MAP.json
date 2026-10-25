@@ -13,6 +13,7 @@
       "cliModelView.ts",
       "gitBindings.ts",
       "gitCredentialType.ts",
+      "identityIcons.ts",
       "modelRouting.ts",
       "openCodeCatalog.ts",
       "openCodeProvider.ts",
@@ -255,7 +256,7 @@
     ]
   },
   "totals": {
-    "agent": 21,
+    "agent": 22,
     "api": 4,
     "artifacts": 1,
     "chat": 5,
