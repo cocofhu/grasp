@@ -234,6 +234,7 @@
       "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
+      "useSessionModelCatalog.ts",
       "useSoloChat.ts",
       "useSoloLauncher.ts",
       "useSoloSessions.ts"
