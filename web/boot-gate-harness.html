@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>启动时序验收</title>
+    <script>
+      try {
+        localStorage.setItem('grasp-theme', 'light')
+        localStorage.setItem('grasp-locale', 'zh-CN')
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/boot-gate-harness/main.ts"></script>
+  </body>
+</html>

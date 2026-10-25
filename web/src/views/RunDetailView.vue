@@ -96,6 +96,7 @@ const {
   gateSubmitting,
   clarifyConfirmError,
   clarifyConfirmCanAbort,
+  clarifyFlowHandoff,
   onGateResolve,
   onClarifySend,
   onClarifyRetryLast,
@@ -825,6 +826,7 @@ onMounted(() => {
               :input-active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
               :confirm-can-abort="clarifyConfirmCanAbort"
+              :handoff="clarifyFlowHandoff"
               :sel-status="selStatus"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"
@@ -848,6 +850,7 @@ onMounted(() => {
               :input-active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
               :confirm-can-abort="clarifyConfirmCanAbort"
+              :handoff="clarifyFlowHandoff"
               :sel-status="selStatus"
               @send="onClarifySend"
               @retry-last="onClarifyRetryLast"

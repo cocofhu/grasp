@@ -29,6 +29,11 @@ export interface SidebarAutoClaim {
   confirmedAuto: boolean
   autoNodeId?: string
   autoNodeName?: string
+  /**
+   * Confirm window is still on screen. The row stays where it was so the
+   * fly into「自动过程」cannot start before the window leaves.
+   */
+  held?: boolean
 }
 
 /**
@@ -37,6 +42,12 @@ export interface SidebarAutoClaim {
  * different, non-automatic node.
  */
 export function sidebarRunGroup(run: Run | null | undefined, claim: SidebarAutoClaim | null | undefined): 'running' | 'auto' {
+  if (claim?.held) {
+    // Already inside「自动过程」on the node being confirmed: stay there.
+    // A snapshot that jumped to the next automatic node waits until release.
+    if (isAutoProcessRun(run) && run?.currentNode?.id && run.currentNode.id === claim.fromNodeId) return 'auto'
+    return 'running'
+  }
   if (isAutoProcessRun(run)) return 'auto'
   if (!claim?.confirmedAuto) return 'running'
   const node = run?.currentNode
@@ -141,6 +152,62 @@ export function sidebarAutoTarget(
 ): SidebarAutoTarget | null {
   const node = nodes?.find((item) => item.id === fromNodeId)
   return uniqueAutoDestination(nodes, edges, fromNodeId, positiveHandoffHandle(node, action))
+}
+
+/**
+ * Whether this confirmation enters an automatic process.
+ * True when the one settled destination is an automatic agent.
+ * False when that destination is not (a person, a branch, or the graph ends after plumbing).
+ * Null when the loaded graph does not settle one destination — still unknown, not “not automatic”.
+ */
+export function handoffProcessAuto(
+  nodes: readonly WFNode[] | undefined,
+  edges: readonly WFEdge[] | undefined,
+  fromNodeId: string,
+  action?: string,
+): boolean | null {
+  const from = nodes?.find((item) => item.id === fromNodeId)
+  const handle = positiveHandoffHandle(from, action)
+  if (!fromNodeId || handle == null || !nodes?.length || !edges?.length) return null
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  let cursor = fromNodeId
+  let hopHandle = handle
+  const seen = new Set<string>()
+  for (let hop = 0; hop <= nodes.length; hop++) {
+    const key = `${cursor}\0${hopHandle}`
+    if (seen.has(key)) return null
+    seen.add(key)
+    const targetId = certainSuccessTarget(edges, cursor, hopHandle)
+    if (!targetId) return cursor === fromNodeId ? null : false
+    const node = byId.get(targetId)
+    if (!node) return null
+    if (PLUMBING_NODE_TYPES.has(node.type)) {
+      cursor = node.id
+      hopHandle = ''
+      continue
+    }
+    return node.type === 'agent' && node.caps?.interaction === 'auto'
+  }
+  return null
+}
+
+/**
+ * Click-time three-state for the boot gate.
+ * A snapshot that has already left this node wins; otherwise the loaded graph.
+ */
+export function resolveHandoffProcessAuto(input: {
+  nodes?: readonly WFNode[]
+  edges?: readonly WFEdge[]
+  fromNodeId: string
+  action?: string
+  current?: { id?: string; mode?: string } | null
+}): boolean | null {
+  const cur = input.current
+  if (cur?.id && input.fromNodeId && cur.id !== input.fromNodeId) {
+    if (cur.mode === 'auto') return true
+    if (cur.mode === 'manual') return false
+  }
+  return handoffProcessAuto(input.nodes, input.edges, input.fromNodeId, input.action)
 }
 
 const itemKeyOf = (it: InboxItem) => `${it.runId}:${it.nodeId}`
