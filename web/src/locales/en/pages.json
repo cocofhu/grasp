@@ -19,7 +19,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroSubtitle": "Clarify first, then act",
+      "heroSubtitle": "What should we do?",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -260,7 +260,6 @@
     "board": {
       "title": "Run board",
       "subtitle": "Follow active work and handle tasks waiting for human input.",
-      "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
       "overviewRecords": "{n} execution records",
@@ -268,7 +267,6 @@
       "refresh": "Refresh",
       "allRuns": "All runs",
       "usage": "Usage",
-      "viewMoreCompleted": "View more in run list →",
       "loading": "Loading…",
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
@@ -1879,7 +1877,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Clarify first, then act",
+        "homeSubtitlePlaceholder": "What should we do?",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
@@ -2136,8 +2134,10 @@
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",

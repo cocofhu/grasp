@@ -56,7 +56,7 @@ describe('explicit default binding choices', () => {
   it('blocks a missing default model instead of using the available local selection', async () => {
     mocks.getSharedAgentConfig.mockResolvedValue({ ...defaults, modelBinding: undefined })
     const { wrapper, draft } = setup({ inheritModel: true }); await flushPromises()
-    expect(wrapper.text()).toContain('请先在 Agent 默认配置中选择模型')
+    expect(wrapper.text()).toContain('请先在默认配置中选择模型')
     expect(wrapper.emitted('modelValidity')?.at(-1)).toEqual([false])
     expect(draft.modelBinding).toEqual(binding)
     expect(wrapper.find('[data-testid="model-binding-configuration-select"]').exists()).toBe(false); wrapper.unmount()

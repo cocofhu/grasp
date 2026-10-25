@@ -28,6 +28,7 @@ afterEach(() => {
   document.body.replaceChildren()
   vi.useRealTimers()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 describe('Icon geometry and compatibility', () => {
@@ -209,6 +210,74 @@ describe('Icon motion policy', () => {
     await enter(inner, innerIcon.get('svg').element)
     expect(innerIcon.attributes('data-icon-motion')).toBe('once')
     expect(outerIcon.attributes('data-icon-motion')).toBe('idle')
+  })
+
+  it('wakes the history title once from the link or the sibling toggle', async () => {
+    vi.useFakeTimers()
+    const title = document.createElement('h3')
+    title.setAttribute('data-icon-motion-span', 'history-title')
+    title.className = 'grasp-status-host'
+    const link = document.createElement('a')
+    link.href = '/runs'
+    link.className = 'grasp-status-host'
+    const toggle = document.createElement('button')
+    title.append(link, toggle)
+    document.body.append(title)
+    const clock = render('history-back', {}, link)
+    const chevron = render('chevron-down', { interactive: false }, toggle)
+
+    await enter(toggle, chevron.get('svg').element)
+    expect(clock.attributes('data-icon-motion')).toBe('once')
+    expect(chevron.attributes('data-icon-motion')).not.toBe('once')
+    await vi.advanceTimersByTimeAsync(iconDefinitions['history-back'].duration + 40)
+    expect(clock.attributes('data-icon-motion')).toBe('idle')
+
+    toggle.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: link }))
+    link.dispatchEvent(new PointerEvent('pointerover', { bubbles: true, relatedTarget: toggle }))
+    await nextTick()
+    await nextTick()
+    expect(clock.attributes('data-icon-motion')).toBe('idle')
+
+    const outside = document.createElement('div')
+    document.body.append(outside)
+    link.dispatchEvent(new PointerEvent('pointerout', { bubbles: true, relatedTarget: outside }))
+    await nextTick()
+    await enter(link, clock.get('svg').element)
+    expect(clock.attributes('data-icon-motion')).toBe('once')
+
+    const plain = document.createElement('div')
+    plain.className = 'grasp-status-host'
+    const plainLink = document.createElement('a')
+    plainLink.href = '/elsewhere'
+    plainLink.className = 'grasp-status-host'
+    const plainToggle = document.createElement('button')
+    plain.append(plainLink, plainToggle)
+    document.body.append(plain)
+    const plainClock = render('history-back', {}, plainLink)
+    await enter(plainToggle)
+    expect(plainClock.attributes('data-icon-motion')).toBe('idle')
+    await enter(plainLink, plainClock.get('svg').element)
+    expect(plainClock.attributes('data-icon-motion')).toBe('once')
+  })
+
+  it('keeps the history title still when reduced motion is on', async () => {
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: query === '(prefers-reduced-motion: reduce)',
+      media: query,
+      addEventListener() {},
+      removeEventListener() {},
+      dispatchEvent() { return false },
+    }))
+    const title = document.createElement('h3')
+    title.setAttribute('data-icon-motion-span', 'history-title')
+    const link = document.createElement('a')
+    link.href = '/runs'
+    title.append(link)
+    document.body.append(title)
+    const clock = render('history-back', {}, link)
+    await enter(link, clock.get('svg').element)
+    expect(clock.attributes('data-icon-motion')).toBe('idle')
+    vi.unstubAllGlobals()
   })
 
   it('suppresses disabled decoration while allowing a real loader inside a disabled button', async () => {

@@ -10,6 +10,7 @@ import {
   runBusySeedRetry,
 } from '@/lib/run/busySeedRetry'
 import { notifyRunArtifactEdit } from '@/lib/chat/artifactUnread'
+import { applySidebarEnter, noteSidebarRunStatus } from '@/lib/inbox/sidebarHandoff'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import type { AcpEvent, Run } from '@/lib/shared/types'
 import type { EventPageState } from '@/lib/run/useRunDetailLiveLog'
@@ -425,6 +426,11 @@ export function useRunDetailWs(opts: {
       } catch {
         return
       }
+      if (m.type === 'node_enter') {
+        applySidebarEnter(runId.value, m, run.value?.nodes)
+        return
+      }
+      if (m.type === 'status') noteSidebarRunStatus(runId.value, m.status)
       if (m.type === 'snapshot' && m.run?.reactSessions) {
         run.value = { ...run.value, reactSessions: m.run.reactSessions }
         // queue_state → seed → flush → live (parity with Inbox g4.2).
