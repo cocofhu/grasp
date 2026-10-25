@@ -1,6 +1,12 @@
 <script lang="ts">
 /** Host-owned inline hand-off after 确认并流转 (see useGatesInbox.activeHandoff). */
-export type ClarifyHandoff = { phase: 'pending' | 'done'; at: string; target?: string }
+export type ClarifyHandoff = {
+  phase: 'pending' | 'done'
+  at: string
+  target?: string
+  /** Successor runs on its own. False when a person is next. Absent when unknown. */
+  targetAuto?: boolean
+}
 /** Earlier node of the same run shown above this conversation (useGatesInbox.activeChainSegments). */
 export type ClarifyPriorSegment = {
   nodeId: string
@@ -56,7 +62,10 @@ import ComposerShell from './ComposerShell.vue'
 import ClarifyDemoFrame from './ClarifyDemoFrame.vue'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 import ClarifyBootLoader from './ClarifyBootLoader.vue'
+import { readSidebarHandoff, sidebarHandoffEpoch } from '@/lib/inbox/sidebarHandoff'
+import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
+import { resolveBootDisplay } from '@/lib/run/bootDisplay'
 import { emptyFailHeadline, turnProcessParts } from '@/lib/inbox/clarifyEmptyFail'
 import AgentToolGroup from './AgentToolGroup.vue'
 import AgentTimeline from './AgentTimeline.vue'
@@ -174,12 +183,74 @@ const props = withDefaults(
 
 // This node visit's boot (connecting checklist) → one folded row above the first reply.
 const bootRecordKey = computed(() => makeBootKey(props.runId, props.nodeId, props.iteration))
-const bootSummary = computed(() => !!getBootRecord(bootRecordKey.value)?.live)
-/** Sandbox still starting: the three boot steps stand in for the Agent's reply. */
-const bootStarting = computed(() => {
-  const rec = getBootRecord(bootRecordKey.value)
-  return !!rec && !rec.live
+const bootRecord = computed(() => getBootRecord(bootRecordKey.value))
+const bootPending = computed(() => !!bootRecord.value && !bootRecord.value.live)
+const bootLive = computed(() => !!bootRecord.value?.live)
+/**
+ * Window opened while this visit had not connected. Its new handoff and agent
+ * replies stay hidden until the window is actually gone.
+ */
+const sealBootMessages = ref(false)
+/** This dialog was confirmed, as opposed to cancelled. */
+const flowCommitted = ref(false)
+/**
+ * Latched only after the sidebar mark confirms an automatic successor.
+ * A mark that is still unconfirmed is unknown, not “the next process is a person”.
+ */
+const enteredAuto = ref<boolean | null>(null)
+
+function latchEnteredAuto() {
+  const mark = readSidebarHandoff(props.runId)
+  if (mark?.confirmedAuto) enteredAuto.value = true
+}
+
+watch(confirmFlowWindowVisible, (visible, was) => {
+  if (visible && !was) sealBootMessages.value = bootPending.value
+  if (!visible && was) {
+    sealBootMessages.value = false
+    if (!flowCommitted.value) enteredAuto.value = null
+  }
 })
+watch(bootRecordKey, () => {
+  if (confirmFlowWindowVisible.value && bootPending.value) sealBootMessages.value = true
+})
+watch(
+  () => `${props.nodeId}\0${props.iteration}`,
+  (now, prev) => {
+    if (!prev || now === prev || confirmFlowWindowVisible.value) return
+    flowCommitted.value = false
+    enteredAuto.value = null
+  },
+)
+watch(sidebarHandoffEpoch, () => {
+  if (!flowCommitted.value) return
+  latchEnteredAuto()
+})
+
+const nextAuto = computed<boolean | null>(() => {
+  const tail = props.followTail?.kind
+  if (tail === 'auto') return true
+  if (tail === 'waiting' || tail === 'ended' || tail === 'error') return false
+  if (typeof props.handoff?.targetAuto === 'boolean') return props.handoff.targetAuto
+  if (!flowCommitted.value) return null
+  // False is reserved for an explicit non-automatic successor. Unknown stays null.
+  return enteredAuto.value === true ? true : null
+})
+
+const bootView = computed(() => resolveBootDisplay({
+  windowVisible: confirmFlowWindowVisible.value,
+  seal: sealBootMessages.value,
+  committed: flowCommitted.value,
+  nextAuto: nextAuto.value,
+  hasBoot: !!bootRecord.value,
+  live: bootLive.value,
+}))
+/** Folded「环境已就绪」, or merged into the divider when earlier nodes are on screen. */
+const bootSummary = computed(() => bootView.value.showReady)
+/** In-progress checklist. Hidden while the confirm window is still painted. */
+const bootStarting = computed(() => bootView.value.showStarting)
+/** This boot's handoff bubble and agent replies wait until「连接 Agent」. */
+const holdBootMessages = computed(() => bootView.value.holdMessages)
 /** A reply placeholder with nothing in it yet (思考中). */
 function isWaitingAgentTurn(t: ClarifyTurn): boolean {
   return t.role === 'agent' && !!t.streaming && !String(t.text || '').trim() && !t.parts?.length && !t.tools?.length
@@ -899,6 +970,31 @@ const followTailView = computed<FollowTailView | null>(() => {
   return { ...base, completed: true, title: translate('pages.clarify.followEnded') }
 })
 const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask, props.nodeId))
+/** Ready row sits in this transcript (not on the divider), so the handoff goes under it. */
+const askUnderReady = computed(() =>
+  !!currentAsk.value && !holdBootMessages.value && bootSummary.value && !bootOnDivider.value,
+)
+const showAskAbove = computed(() => !!currentAsk.value && !holdBootMessages.value && !askUnderReady.value)
+
+function onFlowConfirm() {
+  flowCommitted.value = true
+  acceptConfirmFlow()
+  latchEnteredAuto()
+}
+
+function onFlowDismiss() {
+  if (!flowCommitted.value) {
+    enteredAuto.value = null
+  }
+  dismissConfirmFlow()
+}
+
+function showTurn(t: ClarifyTurn): boolean {
+  if (isEmptyLiveTurn(t) || (props.observe && isBlankHumanTurn(t))) return false
+  if (holdBootMessages.value && t.role === 'agent') return false
+  if (bootStarting.value && isWaitingAgentTurn(t)) return false
+  return true
+}
 
 
 /** A legacy (timeline-less) reply with a failed tool call keeps its completion footnote. */
@@ -980,7 +1076,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         what this node is doing (the chain segment's / taken-over node's task),
         as its first User Message.
       -->
-      <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
+      <ClarifyHandoffBubble v-if="showAskAbove && currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader v-if="bootStarting" phase="starting" variant="inline" :boot-key="bootRecordKey" />
       <LlmSystemRow
         v-for="note in notesBesideTurn(systemNotes, -1, displayTurns.length)"
@@ -997,8 +1093,13 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         variant="inline"
         :boot-key="bootRecordKey"
       />
+      <ClarifyHandoffBubble
+        v-if="askUnderReady && currentAsk && bootSummaryAt >= 0 && i === bootSummaryAt"
+        class="clarify-turn"
+        :ask="currentAsk"
+      />
       <div
-        v-if="!isEmptyLiveTurn(t) && !(observe && isBlankHumanTurn(t)) && !(bootStarting && isWaitingAgentTurn(t))"
+        v-if="showTurn(t)"
         class="clarify-turn flex"
         :class="t.role === 'human' ? 'justify-end' : ''"
         :data-turn-role="t.role"
@@ -1574,6 +1675,11 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         variant="inline"
         :boot-key="bootRecordKey"
       />
+      <ClarifyHandoffBubble
+        v-if="askUnderReady && currentAsk && bootSummaryAt < 0"
+        class="clarify-turn"
+        :ask="currentAsk"
+      />
       <!-- Inline hand-off (方案 B): one more step row in the「思考过程」style — ⟳ 流转到下一节点 · 校验中… → ✓ 已确认并流转 · 已完成. -->
       <Transition name="clarify-row">
       <div
@@ -1616,7 +1722,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
         </div>
       </Transition>
       <div
-        v-if="handoffRow && followTail && followProcessRows.length"
+        v-if="handoffRow && followTail && followProcessRows.length && !holdBootMessages"
         class="clarify-follow-process mt-1 flex w-full min-w-0 flex-col"
         data-testid="clarify-follow-process"
       >
@@ -1644,7 +1750,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           />
         </div>
       </div>
-      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
+      <div v-if="thinking && !validating && liveAgentIdx < 0 && !bootPending && !bootStarting" class="chat-meta grasp-status-host flex items-center gap-2 pl-9">
         <Icon name="breath-dot" busy :size="16" class="shrink-0 text-accent-2" aria-hidden="true" />
         {{ translate('pages.clarify.thinking') }}
       </div>
@@ -1930,8 +2036,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
   <ConfirmFlowDialog
     :open="confirmFlowDialogOpen"
     :discard="confirmFlowDiscard"
-    @cancel="dismissConfirmFlow"
-    @confirm="acceptConfirmFlow"
+    @cancel="onFlowDismiss"
+    @confirm="onFlowConfirm"
     @visual-close="releaseConfirmFlowWindow"
   />
 </template>

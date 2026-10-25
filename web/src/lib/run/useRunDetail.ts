@@ -37,8 +37,8 @@ import { useRunDetailLiveLog } from '@/lib/run/useRunDetailLiveLog'
 import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
-import { armSidebarHandoff, clearSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
-import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
+import { armSidebarHandoff, clearSidebarHandoff, readSidebarHandoff, sidebarHandoffEpoch } from '@/lib/inbox/sidebarHandoff'
+import { resolveHandoffProcessAuto, sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
@@ -448,6 +448,7 @@ function resetRunState(id: string) {
   gateError.value = null
   clarifyConfirmError.value = null
   clarifyConfirmCanAbort.value = false
+  clearClarifyFlowHandoff()
   resumeError.value = null
   resetDialogueState()
 }
@@ -590,6 +591,71 @@ const gateError = ref<string | null>(null)
 const gateSubmitting = ref(false)
 const clarifyConfirmError = ref<string | null>(null)
 const clarifyConfirmCanAbort = ref(false)
+/**
+ * Boot-gate three-state for the confirm still on screen.
+ * targetAuto true / false / absent = automatic / not automatic / still unknown.
+ * Phase stays pending until this visit is done, so the local hand-off row does not flip early.
+ */
+const clarifyFlowHandoff = ref<{ phase: 'pending' | 'done'; at: string; targetAuto?: boolean } | null>(null)
+const clarifyFlowNodeId = ref('')
+/** Graph did not settle the successor; a later sidebar outcome may. */
+let clarifyFlowAwaiting = false
+
+function clearClarifyFlowHandoff() {
+  clarifyFlowAwaiting = false
+  clarifyFlowNodeId.value = ''
+  clarifyFlowHandoff.value = null
+}
+
+function beginClarifyFlowHandoff(nodeId: string) {
+  const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
+  const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+  const current = run.value.currentNode
+  const auto = resolveHandoffProcessAuto({
+    nodes,
+    edges,
+    fromNodeId: nodeId,
+    current: current?.id && current.id !== nodeId ? current : null,
+  })
+  clarifyFlowNodeId.value = nodeId
+  clarifyFlowAwaiting = auto == null
+  clarifyFlowHandoff.value = {
+    phase: 'pending',
+    at: new Date().toISOString(),
+    ...(typeof auto === 'boolean' ? { targetAuto: auto } : {}),
+  }
+}
+
+watch(sidebarHandoffEpoch, () => {
+  const h = clarifyFlowHandoff.value
+  if (!h || !clarifyFlowAwaiting || typeof h.targetAuto === 'boolean') return
+  const mark = readSidebarHandoff(runId.value)
+  if (mark?.confirmedAuto) {
+    clarifyFlowAwaiting = false
+    clarifyFlowHandoff.value = { ...h, targetAuto: true }
+    return
+  }
+  // Human or ended removed the mark. A failed confirm clears the handoff first, so this is an outcome.
+  if (!mark) {
+    clarifyFlowAwaiting = false
+    clarifyFlowHandoff.value = { ...h, targetAuto: false }
+  }
+})
+watch(
+  () => [selClarify.value?.nodeId ?? '', !!selClarify.value?.done] as const,
+  ([id, done]) => {
+    const h = clarifyFlowHandoff.value
+    if (!h) return
+    // A refresh can drop the conversation row for a moment. Only a different node ends this handoff.
+    if (id && id !== clarifyFlowNodeId.value) {
+      clearClarifyFlowHandoff()
+      return
+    }
+    if (id && done && h.phase !== 'done') {
+      clarifyFlowHandoff.value = { ...h, phase: 'done', at: new Date().toISOString() }
+    }
+  },
+)
 // True while reactReply(force) has not returned. A parallel ordinary reply
 // must not surface "react already done" and unlock 确认并流转.
 let clarifyForceInFlight = false
@@ -656,6 +722,7 @@ async function onClarifySend(
   if (force && runId.value) {
     const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
     const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+    beginClarifyFlowHandoff(nodeId)
     armSidebarHandoff(runId.value, nodeId, Date.now(), sidebarAutoTarget(nodes, edges, nodeId))
   }
   let sent = false
@@ -677,7 +744,10 @@ async function onClarifySend(
     }
     sent = true
   } catch (e: any) {
-    if (force && runId.value) clearSidebarHandoff(runId.value)
+    if (force && runId.value) {
+      clearClarifyFlowHandoff()
+      clearSidebarHandoff(runId.value)
+    }
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
     console.warn('reactReply failed', e?.message || e)
@@ -1446,6 +1516,7 @@ function locateExecution(nodeId: string, idx: number) {
   gateSubmitting,
   clarifyConfirmError,
   clarifyConfirmCanAbort,
+  clarifyFlowHandoff,
   onGateResolve,
   onClarifySend,
   onClarifyRetryLast,

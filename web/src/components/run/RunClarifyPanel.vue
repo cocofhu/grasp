@@ -10,7 +10,7 @@ import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTi
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import StatusPill from '@/components/ui/StatusPill.vue'
-import ClarifyChat from '@/components/run/ClarifyChat.vue'
+import ClarifyChat, { type ClarifyHandoff } from '@/components/run/ClarifyChat.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
@@ -49,6 +49,11 @@ const props = defineProps<{
   /** Rejected「确认并流转」reason, surfaced so the chat can release its spinner. */
   confirmError?: string | null
   confirmCanAbort?: boolean
+  /**
+   * Host three-state for the boot gate. Absent targetAuto means the next
+   * process is still unknown; false means it is already not automatic.
+   */
+  handoff?: ClarifyHandoff | null
 }>()
 
 const emit = defineEmits<{
@@ -185,6 +190,7 @@ defineExpose({
         :active="inputActive"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"
+        :handoff="handoff ?? null"
         annotate-enabled
         v-model:annotations="annotations"
         @update:draft="emit('update:draft', $event)"
