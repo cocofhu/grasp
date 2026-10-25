@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -1474,5 +1475,78 @@ func TestSandboxServiceSettersAndShutdownAll(t *testing.T) {
 	db.Create(&models.Sandbox{Name: "grasp-sb-shutdown", Purpose: "test", Status: "stopped"})
 	if n := svc.ShutdownAllTestSandboxes(context.Background(), true); n != 1 {
 		t.Fatalf("shutdown: %d", n)
+	}
+}
+
+func TestAlignChatModelDoesNotRestartWhenUnread(t *testing.T) {
+	db := newTestDB(t)
+	svc := newSandboxService(t, db, &dockerState{})
+	selected := "aux"
+	posts := 0
+	gets := 0
+	failGet := true
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/api/login" && r.Method == http.MethodPost:
+			http.SetCookie(w, &http.Cookie{Name: "agentchat_session", Value: "test-cookie", Path: "/"})
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":true}`))
+		case r.URL.Path == "/api/models" && r.Method == http.MethodGet:
+			gets++
+			if failGet {
+				w.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			_ = json.NewEncoder(w).Encode(map[string]string{"selected": selected})
+		case r.URL.Path == "/api/model" && r.Method == http.MethodPost:
+			posts++
+			var body struct {
+				Model string `json:"model"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			selected = body.Model
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"selected":"` + body.Model + `"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	host, portStr, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := &models.Sandbox{Name: "grasp-sb-align", Host: host, ACPPort: port, Token: "secret", Status: "running"}
+	if err := db.Create(row).Error; err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	changed, err := svc.AlignChatModel(ctx, row.ID, "aux2")
+	if err == nil || !errors.Is(err, ErrChatModelUnknown) {
+		t.Fatalf("unread: changed=%v err=%v", changed, err)
+	}
+	if posts != 0 {
+		t.Fatalf("unread model restarted the agent: posts=%d", posts)
+	}
+
+	failGet = false
+	changed, err = svc.AlignChatModel(ctx, row.ID, "aux")
+	if err != nil || changed {
+		t.Fatalf("matching model: changed=%v err=%v", changed, err)
+	}
+	if posts != 0 {
+		t.Fatalf("matching model posted: %d", posts)
+	}
+
+	changed, err = svc.AlignChatModel(ctx, row.ID, "aux2")
+	if err != nil || !changed || posts != 1 || selected != "aux2" {
+		t.Fatalf("switch: changed=%v posts=%d selected=%q err=%v", changed, posts, selected, err)
+	}
+	if gets < 2 {
+		t.Fatalf("gets=%d", gets)
 	}
 }

@@ -54,6 +54,35 @@ func (s *SandboxService) acpConnection(ctx context.Context, id uint) (string, in
 	return host, port, password, nil
 }
 
+// ErrChatModelUnknown means the sandbox did not report its current chat model.
+// AlignChatModel must not call POST /api/model in that case: that call restarts
+// the coding agent. The caller keeps the already applied model for this turn
+// and retries on a later one.
+var ErrChatModelUnknown = errors.New("chat model unknown")
+
+// AlignChatModel makes the sandbox default chat use model. Empty follows the
+// primary model. A match does not restart the coding agent. A change calls
+// POST /api/model, which restarts that agent, so callers must wait until the
+// current turn has finished. A failed read does not restart it either.
+func (s *SandboxService) AlignChatModel(ctx context.Context, id uint, model string) (bool, error) {
+	host, port, password, err := s.acpConnection(ctx, id)
+	if err != nil {
+		return false, err
+	}
+	model = strings.TrimSpace(model)
+	selected, getErr := sandbox.GetChatModel(ctx, host, port, password)
+	if getErr != nil {
+		return false, fmt.Errorf("%w: %w", ErrChatModelUnknown, getErr)
+	}
+	if selected == model {
+		return false, nil
+	}
+	if err := sandbox.SetChatModel(ctx, host, port, password, model); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // ACPUpstream returns the reachable "host:port" for the sandbox ACP bridge
 // (session endpoint). Aligns iframe reverse-proxy dialing with chat/events.
 func (s *SandboxService) ACPUpstream(ctx context.Context, id uint) (string, error) {
@@ -161,7 +190,7 @@ func (s *SandboxService) OpenTerminal(ctx context.Context, id uint) (*sandbox.SS
 	if s.mgr.Status(ctx, row.Name) != "running" {
 		return nil, fmt.Errorf("container 不在运行")
 	}
-	return s.mgr.ExecPTY(ctx, row.Name, nil)
+	return s.mgr.ExecPTYWithToken(ctx, row.Name, row.Token, nil)
 }
 
 // List returns all interactive sandboxes with live-derived status.

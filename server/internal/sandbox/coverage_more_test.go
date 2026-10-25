@@ -101,17 +101,22 @@ func TestConfigHomePresentWithoutHelpers(t *testing.T) {
 }
 
 func TestSandboxFromGWAndCreds(t *testing.T) {
-	m := NewManager(nil, ManagerOptions{WorkspaceDir: "/ws", SSHUser: "u", SSHPassword: "p"})
+	m := NewManager(nil, ManagerOptions{WorkspaceDir: "/ws", SSHUser: "u"})
 	gw := &GWSandbox{
 		ID: "id1", Status: "running",
 		Endpoints: map[string]string{"session": "1.2.3.4:9", "ssh": "1.2.3.4:22"},
 	}
 	sb := m.sandboxFromGW(gw, "/custom")
 	if sb == nil || sb.ID != "id1" || sb.WorkspaceDir != "/custom" {
-		t.Fatalf("%+v", sb)
+		t.Fatal("sandbox handle mismatch")
 	}
 	c := m.creds("h", 22)
-	if c.user != "u" || c.password != "p" || c.host != "h" || c.port != 22 {
-		t.Fatalf("%+v", c)
+	if c.user != "u" || c.password != "" || c.host != "h" || c.port != 22 {
+		t.Fatalf("user=%s host=%s port=%d passwordSet=%t", c.user, c.host, c.port, c.password != "")
+	}
+	sb.Password = "sandbox-token-value"
+	withToken := sb.creds()
+	if withToken.password != "sandbox-token-value" || withToken.user != "u" {
+		t.Fatal("data-plane password was not the sandbox token")
 	}
 }
