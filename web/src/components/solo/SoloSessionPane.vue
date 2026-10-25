@@ -59,7 +59,21 @@ watch(session, (s) => s && store.upsert(s))
 
 const title = computed(() => session.value?.title || t('pages.solo.untitled'))
 const repos = computed(() => sessionRepos(session.value))
-const editProjectId = computed(() => repos.value.find((repo) => repo.projectId)?.projectId || session.value?.projectId || '')
+const editTargets = computed(() => {
+  const seen = new Set<string>()
+  const out: { id: string; name: string }[] = []
+  for (const repo of repos.value) {
+    const id = repo.projectId?.trim()
+    if (!id || seen.has(id)) continue
+    seen.add(id)
+    out.push({ id, name: repo.name })
+  }
+  if (!out.length) {
+    const id = session.value?.projectId?.trim()
+    if (id) out.push({ id, name: session.value?.project?.name || '' })
+  }
+  return out
+})
 const sandboxId = computed(() => session.value?.sandboxId || session.value?.sandbox?.id || 0)
 const sandboxResource = computed(() => {
   const source = session.value?.sandbox
@@ -258,6 +272,12 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       split-drawer
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
+      <template #actions>
+        <button type="button" class="solo-env-toggle" data-testid="solo-env-toggle" @click="envOpen = true">
+          <Icon name="variable" :size="15" />
+          {{ t('pages.solo.env.title') }}
+        </button>
+      </template>
       <template #stage>
         <ReactArtifactStage
           :artifacts="soloArtifacts"
@@ -299,8 +319,15 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
               <RouterLink v-if="sandboxId" :to="`/sandboxes/${sandboxId}/console`" class="solo-error-link">
                 <Icon name="terminal" :size="14" />{{ t('pages.solo.errorCard.logs') }}
               </RouterLink>
-              <RouterLink v-if="editProjectId" :to="`/settings/projects?edit=${editProjectId}`" class="solo-error-link">
-                <Icon name="settings" :size="14" />{{ t('pages.solo.errorCard.edit') }}
+              <RouterLink
+                v-for="target in editTargets"
+                :key="target.id"
+                :to="`/settings/projects?edit=${target.id}`"
+                class="solo-error-link"
+                :data-testid="`solo-error-edit-${target.id}`"
+              >
+                <Icon name="settings" :size="14" />
+                {{ editTargets.length > 1 && target.name ? t('pages.solo.errorCard.editRepo', { name: target.name }) : t('pages.solo.errorCard.edit') }}
               </RouterLink>
             </div>
           </div>
@@ -566,6 +593,21 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 }
 .solo-menu__item--danger {
   color: rgb(var(--c-err));
+}
+.solo-env-toggle {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 8px;
+  padding: 0 10px;
+  color: rgb(var(--c-txt2));
+  font-size: 12px;
+}
+.solo-env-toggle:hover {
+  border-color: rgb(var(--c-accent) / 0.35);
+  color: rgb(var(--c-txt));
 }
 .solo-error-link {
   display: inline-flex;

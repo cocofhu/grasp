@@ -28,13 +28,15 @@ export function useSoloLauncher() {
   const creating = ref(false)
   const error = ref('')
   const limitOpen = ref(false)
+  // Deep-link dialogs turn this off so a preselect does not overwrite the home page's ids.
+  let persistProjects = true
 
   const agent = computed(() => agents.value.find((a) => a.name === agentName.value) ?? null)
   const canStart = computed(() => !!agent.value && !creating.value)
 
   watch(agentName, (v) => soloPrefs.setLastAgent(v))
   watch(projectIds, (ids) => {
-    soloPrefs.setLastProjects(ids)
+    if (persistProjects) soloPrefs.setLastProjects(ids)
     const keep = new Set(ids)
     const next: Record<string, string> = {}
     for (const [id, branch] of Object.entries(branches.value)) {
@@ -76,6 +78,10 @@ export function useSoloLauncher() {
     branches.value = {}
   }
 
+  function setPersistProjects(next: boolean) {
+    persistProjects = next
+  }
+
   function setProjectBranch(id: string, branch: string) {
     branches.value = { ...branches.value, [id]: branch }
   }
@@ -103,6 +109,7 @@ export function useSoloLauncher() {
         text: text.trim() || undefined,
         images: images.length ? images : undefined,
       })
+      soloPrefs.setLastProjects(projectIds.value)
       store.upsert(s)
       void router.push(`/solo/${s.id}`)
       return s
@@ -136,6 +143,7 @@ export function useSoloLauncher() {
     toggleProject,
     clearProjects,
     selectOnly,
+    setPersistProjects,
     setProjectBranch,
     onProjectSaved,
   }

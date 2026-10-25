@@ -98,4 +98,37 @@ describe('useSoloLauncher', () => {
     expect(launcher.error.value).toContain('checkout')
     expect(launcher.error.value).toContain('目录名')
   })
+
+  it('sends an illegal branch unchanged and names the repository', async () => {
+    mocks.createSoloSession.mockRejectedValueOnce({
+      code: 'branch_invalid_repo',
+      message: 'server',
+      params: { repo: 'webapp' },
+    })
+    const launcher = mountLauncher()
+    await launcher.load()
+    launcher.selectOnly('web')
+    launcher.setProjectBranch('web', 'bad branch')
+    const started = await launcher.start('go')
+    expect(started).toBeNull()
+    expect(mocks.createSoloSession).toHaveBeenCalledWith(expect.objectContaining({
+      repos: [{ projectId: 'web', branch: 'bad branch' }],
+    }))
+    expect(launcher.error.value).toContain('webapp')
+    expect(launcher.error.value).toContain('空格')
+  })
+
+  it('does not overwrite remembered repositories while persistence is paused', async () => {
+    soloPrefs.setLastProjects(['web', 'api'])
+    const launcher = mountLauncher()
+    await launcher.load()
+    launcher.setPersistProjects(false)
+    launcher.selectOnly('web')
+    expect(launcher.projectIds.value).toEqual(['web'])
+    expect(soloPrefs.lastProjects()).toEqual(['web', 'api'])
+
+    const started = await launcher.start('')
+    expect(started?.id).toBe('s1')
+    expect(soloPrefs.lastProjects()).toEqual(['web'])
+  })
 })

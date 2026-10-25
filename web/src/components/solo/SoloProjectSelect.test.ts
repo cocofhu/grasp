@@ -41,4 +41,18 @@ describe('SoloProjectSelect', () => {
     expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([[]])
     wrapper.unmount()
   })
+
+  it('keeps spaces and separators in a branch override', async () => {
+    const wrapper = mountSelect(['web'])
+    await wrapper.get('[data-testid="solo-project-select-trigger"]').trigger('click')
+    await wrapper.get('[data-testid="solo-branch-chip"] button').trigger('click')
+    await flushPromises()
+    const input = wrapper.get('[data-testid="solo-branch-input"]')
+    await input.setValue('bad branch')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('update:branch')?.at(-1)).toEqual(['web', 'bad branch'])
+    await wrapper.setProps({ branches: { web: 'bad branch' } })
+    expect(wrapper.get('[data-testid="solo-branch-chip"]').text()).toContain('bad branch')
+    wrapper.unmount()
+  })
 })
