@@ -4547,7 +4547,8 @@
         "noMatch": "No matching model",
         "unavailable": "Unavailable",
         "reset": "That model is no longer in the configuration. The primary model is selected again.",
-        "pending": "This reply still uses the previous model. The next message uses the new one."
+        "pending": "This reply still uses the previous model. The next message uses the new one.",
+        "catalogFailed": "The model list did not load. The saved model stays selected."
       },
       "agentSelect": {
         "placeholder": "Choose Agent",

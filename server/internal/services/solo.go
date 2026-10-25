@@ -773,8 +773,9 @@ func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandbo
 	}
 	changed, err := aligner.AlignChatModel(ctx, sandboxID, desired)
 	if err != nil {
-		// Stopping the turn must not undo the selection. The next turn retries.
-		if ctx.Err() != nil {
+		// Stopping the turn, or failing to read the current model, must not
+		// undo the selection or restart the coding agent. The next turn retries.
+		if ctx.Err() != nil || errors.Is(err, ErrChatModelUnknown) {
 			return false, err
 		}
 		_ = s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
@@ -988,7 +989,8 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	c.mu.Unlock()
 	c.setPhase(SoloPhaseRunning)
 
-	switched, _ := s.alignSessionModel(ctx, c, sandboxID, row)
+	noticeBefore := strings.TrimSpace(row.ModelNotice)
+	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
 
 	prompt := q.Text
 	if prompt == "" {
@@ -1041,6 +1043,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	}
 	if usedPreamble && status == "ok" {
 		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("needs_preamble", false)
+	}
+	// A switch that failed on an earlier turn leaves model_notice set. Once a
+	// later turn succeeds on the model that is already applied, the banner is
+	// stale. A failure from this turn's own alignment is left in place.
+	if status == "ok" && alignErr == nil && noticeBefore != "" {
+		s.db.Model(&models.SoloSession{}).Where("id = ? AND model_notice = ?", c.id, noticeBefore).Update("model_notice", "")
 	}
 	now := time.Now()
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &now)

@@ -68,6 +68,7 @@ vi.mock('@/lib/solo/useSoloChat', () => ({
 
 import SoloSessionPane from './SoloSessionPane.vue'
 import pages from '@/locales/zh-CN/pages.json'
+import { resetCliCatalog } from '@/lib/agent/cliCatalog'
 
 const turns = (box.turns = ref<SoloTurn[]>([]))
 const sessionState = (box.session = ref({
@@ -229,6 +230,7 @@ describe('SoloSessionPane', () => {
   })
 
   it('asks to fall back when the saved model is no longer available', async () => {
+    resetCliCatalog()
     const { api } = await import('@/lib/api/api')
     vi.mocked(api.listAgents).mockResolvedValueOnce([
       { name: 'Coder', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'c1' } },
@@ -254,5 +256,61 @@ describe('SoloSessionPane', () => {
     expect(actionError.value).toContain('已改回主模型')
     wrapper.unmount()
     currentModelId.value = ''
+    resetCliCatalog()
+  })
+
+  it('keeps the saved model when the directory requests fail', async () => {
+    resetCliCatalog()
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockRejectedValueOnce(new Error('agents down'))
+    vi.mocked(api.listModelConfigurations).mockRejectedValueOnce(new Error('configs down'))
+    vi.mocked(api.listModelConnections).mockRejectedValueOnce(new Error('connections down'))
+    currentModelId.value = 'aux2'
+    setCurrentModel.mockClear()
+    actionError.value = ''
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    expect(setCurrentModel).not.toHaveBeenCalled()
+    expect(actionError.value).not.toContain('已改回主模型')
+    expect(wrapper.text()).not.toContain('当前 Agent 还没有可用模型')
+    expect(wrapper.get('[data-testid="solo-model-catalog-notice"]').text()).toContain('模型目录没有加载出来')
+    expect(wrapper.get('[data-testid="solo-model-select"]').text()).toContain('aux2')
+    expect(wrapper.get('[data-testid="solo-model-select"] button').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    currentModelId.value = ''
+    resetCliCatalog()
+  })
+
+  it('keeps a configured model when the CLI catalog request fails', async () => {
+    resetCliCatalog()
+    const { api } = await import('@/lib/api/api')
+    vi.mocked(api.listAgents).mockResolvedValueOnce([
+      { name: 'Coder', acpBackend: 'cursor', modelBinding: { kind: 'configuration', configurationId: 'c1' } },
+    ] as never)
+    vi.mocked(api.listModelConfigurations).mockResolvedValueOnce({
+      items: [{
+        id: 'c1',
+        name: 'cfg',
+        backend: 'cursor',
+        state: 'active',
+        revision: 1,
+        binding: { kind: 'platform', credentialId: 'k', modelId: 'primary', auxiliaryModelIds: ['aux2'] },
+      }],
+    })
+    vi.mocked(api.cliModels).mockRejectedValueOnce(new Error('catalog down'))
+    currentModelId.value = 'aux2'
+    setCurrentModel.mockClear()
+    actionError.value = ''
+    const wrapper = mountPane(pages)
+    await flushPromises()
+    expect(setCurrentModel).not.toHaveBeenCalled()
+    expect(actionError.value).not.toContain('已改回主模型')
+    expect(wrapper.get('[data-testid="solo-model-catalog-notice"]').text()).toContain('模型目录没有加载出来')
+    expect(wrapper.get('[data-testid="solo-model-select"]').text()).toContain('aux2')
+    expect(wrapper.get('[data-testid="solo-model-select"] button').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    currentModelId.value = ''
+    vi.mocked(api.cliModels).mockResolvedValue({ models: [] } as never)
+    resetCliCatalog()
   })
 })

@@ -216,6 +216,92 @@ func TestSoloModelSwitchFailureRollsBack(t *testing.T) {
 	}
 }
 
+func TestSoloUnreadableModelRetriesWithoutRollback(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	insertSoloModelConfig(t, db)
+	ctx := context.Background()
+	v, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA", InitialModelID: "aux"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "sandbox ready", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	gate := newGateChat(false)
+	align := &recordAligner{err: ErrChatModelUnknown}
+	solo.SetChatterForTest(gate)
+	solo.SetModelAlignerForTest(align)
+	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "first attempt", func() bool {
+		c := solo.lookup(v.ID)
+		return gate.count() >= 1 && c != nil && c.sess.Ready()
+	})
+	row, _ := solo.Require(v.ID, "alice")
+	if row.CurrentModelID != "aux2" || row.ModelNotice != "" || row.AppliedModelID != "aux" {
+		t.Fatalf("unread switch rolled back: current=%q applied=%q notice=%q", row.CurrentModelID, row.AppliedModelID, row.ModelNotice)
+	}
+	if prompt := gate.snapshot()[0]; prompt != "next" || strings.Contains(prompt, "编码模型已更换") {
+		t.Fatalf("unread turn changed the prompt: %q", prompt)
+	}
+	if _, err := solo.Send(v.ID, "alice", "again", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "retry", func() bool { return align.count() >= 2 && gate.count() >= 2 })
+	got := align.snapshot()
+	if len(got) != 2 || got[0] != "aux2" || got[1] != "aux2" {
+		t.Fatalf("retries: %+v", got)
+	}
+	row, _ = solo.Require(v.ID, "alice")
+	if row.CurrentModelID != "aux2" {
+		t.Fatalf("retry changed the selection: %q", row.CurrentModelID)
+	}
+}
+
+func TestSoloModelNoticeClearsAfterLaterTurn(t *testing.T) {
+	acp, port := fakeACPServer(t)
+	defer acp.Close()
+	solo, _, _, db := newSoloFixture(t, port, 3)
+	insertSoloModelConfig(t, db)
+	ctx := context.Background()
+	v, err := solo.Create(ctx, "alice", SoloCreateInput{AgentName: "agentA", InitialModelID: "aux"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "sandbox ready", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.Status == models.SoloStatusRunning
+	})
+	gate := newGateChat(false)
+	solo.SetChatterForTest(gate)
+	solo.SetModelAlignerForTest(&recordAligner{err: errors.New("bridge refused")})
+	if _, err := solo.SetCurrentModel(ctx, v.ID, "alice", "aux2"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := solo.Send(v.ID, "alice", "next", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "rolled back", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		c := solo.lookup(v.ID)
+		return err == nil && row.ModelNotice == soloModelSwitchFailed && c != nil && c.sess.Ready()
+	})
+	if _, err := solo.Send(v.ID, "alice", "later", nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "notice cleared", func() bool {
+		row, err := solo.Require(v.ID, "alice")
+		return err == nil && row.ModelNotice == "" && row.CurrentModelID == "aux"
+	})
+}
+
 func TestSoloOldSessionRestartKeepsOpeningModel(t *testing.T) {
 	acp, port := fakeACPServer(t)
 	defer acp.Close()

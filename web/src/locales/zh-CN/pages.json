@@ -4547,7 +4547,8 @@
         "noMatch": "没有匹配的模型",
         "unavailable": "不可用",
         "reset": "所选模型已不在配置中，已改回主模型",
-        "pending": "当前回复仍使用原来的模型，从下一条开始使用新模型。"
+        "pending": "当前回复仍使用原来的模型，从下一条开始使用新模型。",
+        "catalogFailed": "模型目录没有加载出来，仍使用已选模型"
       },
       "agentSelect": {
         "placeholder": "选择 Agent",

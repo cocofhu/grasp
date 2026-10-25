@@ -40,13 +40,23 @@ const { session, turns, queued, busy, phase, link, loading, loadError, actionErr
 const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''))
 const modelChoices = modelCatalog.choices
 const modelCatalogReady = modelCatalog.ready
+const modelCatalogBlocked = modelCatalog.blocked
+const shownModels = computed(() => {
+  if (modelChoices.value.length || !modelCatalogBlocked.value || !currentModelId.value) return modelChoices.value
+  const id = currentModelId.value
+  return [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+})
 let modelResetFor = ''
-watch([modelChoices, modelCatalogReady, currentModelId, canSend], async () => {
-  if (!modelCatalogReady.value || !canSend.value) return
+watch([modelChoices, modelCatalog.configLoaded, modelCatalog.catalogConfirmed, currentModelId, canSend], async () => {
+  if (!canSend.value) return
   const id = currentModelId.value
   if (!id || modelResetFor === id) return
+  // A failed directory read must not be stored as "back to the primary model".
+  const inConfig = modelCatalog.modelInConfiguration(id)
+  if (inConfig === null) return
+  if (inConfig && !modelCatalog.catalogConfirmed.value) return
   const hit = modelChoices.value.find((choice) => choice.id === id)
-  if (hit && !hit.unavailable) return
+  if (inConfig && hit && !hit.unavailable) return
   modelResetFor = id
   const ok = await setCurrentModel('')
   if (ok) actionError.value = t('pages.solo.modelSelect.reset')
@@ -441,6 +451,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div v-else class="solo-bottom shrink-0 py-3">
         <div class="solo-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
           <p v-if="modelSwitchNotice" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-switch-notice">{{ modelSwitchNotice }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
           <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
@@ -488,7 +499,7 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <SoloModelSelect
                   class="min-w-0"
                   :model-value="currentModelId"
-                  :models="modelChoices"
+                  :models="shownModels"
                   :disabled="!canSend || !modelCatalogReady"
                   :empty-as-label="modelCatalogReady && !modelChoices.length"
                   @update:model-value="setCurrentModel"
