@@ -477,6 +477,207 @@ describe('ShellChromeControls theme icon (g2.1)', () => {
   })
 })
 
+describe('ShellChromeControls theme hover (g3)', () => {
+  function mountLive(layout: 'bar' | 'sidebar' = 'sidebar') {
+    const i18n = createI18n({
+      legacy: false,
+      locale: 'zh-CN',
+      messages: { 'zh-CN': { ...common, ...pages, ...shell } },
+    })
+    return mount(ShellChromeControls, {
+      props: { layout },
+      global: {
+        plugins: [i18n],
+        stubs: {
+          LangSelect: { template: '<button type="button" data-testid="lang-select-trigger" class="transition hover:bg-elevated hover:text-txt" />' },
+          StatusMetrics: { template: '<div data-testid="status-metrics" />' },
+          Transition: false,
+          Teleport: true,
+        },
+      },
+      attachTo: document.body,
+    })
+  }
+
+  function glyph(wrapper: ReturnType<typeof mountLive>, id: 'shell-theme-icon-moon' | 'shell-theme-icon-sun') {
+    return wrapper.get(`[data-testid="${id}"] svg`)
+  }
+
+  async function pointerEnter(wrapper: ReturnType<typeof mountLive>) {
+    wrapper.get('[data-testid="shell-theme-toggle"]').element.dispatchEvent(
+      new PointerEvent('pointerover', { bubbles: true }),
+    )
+    await nextTick()
+    await nextTick()
+  }
+
+  async function pointerLeave(wrapper: ReturnType<typeof mountLive>) {
+    wrapper.get('[data-testid="shell-theme-toggle"]').element.dispatchEvent(
+      new PointerEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+    )
+    await nextTick()
+  }
+
+  beforeEach(() => {
+    localStorage.clear()
+    setTheme('dark')
+    __resetRunTerminalNotificationsForTests()
+    __resetNotificationsPageEntryForTests()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.documentElement.classList.remove('light', 'theme-vt-capture', 'theme-color-motion')
+  })
+
+  it('lifts the theme button like the language trigger in sidebar and bar', async () => {
+    const { readFileSync } = await import('node:fs')
+    const { dirname, join } = await import('node:path')
+    const { fileURLToPath } = await import('node:url')
+    const here = dirname(fileURLToPath(import.meta.url))
+    const src = readFileSync(join(here, 'ShellChromeControls.vue'), 'utf8')
+    const sidebarSrc = readFileSync(join(here, 'AppSidebar.vue'), 'utf8')
+    const readme = readFileSync(join(here, '../../lib/icons/README.md'), 'utf8')
+    const motion = readFileSync(join(here, '../../styles/icon-motion.css'), 'utf8')
+
+    expect(src).toMatch(/name="moon" :interactive="theme !== 'dark'"/)
+    expect(src).toMatch(/name="sun" :interactive="theme === 'dark'"/)
+    expect(src).toMatch(/html\.theme-vt-capture \.shell-theme-icon :deep\(\.app-icon path\)\s*\{[^}]*animation:\s*none/)
+    expect(src).toMatch(/280ms ease/)
+    expect(sidebarSrc).toMatch(/\[data-testid="shell-theme-toggle"\]:is\(:hover, :focus-visible\)\)\s*\{[^}]*color:\s*rgb\(var\(--c-txt\)\)/)
+    expect(sidebarSrc).not.toMatch(/\[data-testid="lang-select-trigger"\]:is\(:hover/)
+    expect(sidebarSrc).not.toMatch(/\[data-testid="run-notifications-bell"\]:is\(:hover/)
+    expect(readme).not.toMatch(/theme controls/)
+    expect(readme).toMatch(/hidden sun or moon/)
+    expect(readme).toMatch(/visible icon still plays one hover or keyboard/)
+    expect(motion).toMatch(/data-icon="moon"\]\[data-icon-motion="once"\] path\{animation:[^}]*550ms/)
+    expect(motion).toMatch(/rotate\(-10deg\)/)
+    expect(motion).toMatch(/data-icon="sun"\]\[data-icon-motion="once"\] path\{animation:[^}]*550ms/)
+    expect(motion).toMatch(/rotate\(24deg\)/)
+
+    for (const layout of ['sidebar', 'bar'] as const) {
+      const wrapper = mountLive(layout)
+      await flushPromises()
+      const button = wrapper.get('[data-testid="shell-theme-toggle"]')
+      expect(button.classes()).toEqual(expect.arrayContaining([
+        'rounded-md',
+        'transition',
+        'hover:bg-elevated',
+        'hover:text-txt',
+        'focus-visible:bg-elevated',
+        'focus-visible:text-txt',
+        'motion-reduce:transition-none',
+      ]))
+      const bell = wrapper.get('[data-testid="run-notifications-bell"]')
+      expect(bell.classes()).not.toContain('focus-visible:bg-elevated')
+      expect(bell.classes()).not.toContain('rounded-md')
+      wrapper.unmount()
+    }
+  })
+
+  it('plays hover motion on the visible glyph only, in sidebar and bar', async () => {
+    for (const layout of ['sidebar', 'bar'] as const) {
+      setTheme('light')
+      const light = mountLive(layout)
+      await flushPromises()
+      expect(glyph(light, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+      expect(glyph(light, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+      await pointerEnter(light)
+      expect(glyph(light, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('once')
+      expect(glyph(light, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+      await pointerLeave(light)
+      expect(glyph(light, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+      await pointerEnter(light)
+      expect(glyph(light, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('once')
+      light.unmount()
+
+      setTheme('dark')
+      const dark = mountLive(layout)
+      await flushPromises()
+      await pointerEnter(dark)
+      expect(glyph(dark, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('once')
+      expect(glyph(dark, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+      dark.unmount()
+    }
+  })
+
+  it('plays the visible glyph on keyboard focus and not on a plain click focus', async () => {
+    setTheme('light')
+    const wrapper = mountLive('sidebar')
+    await flushPromises()
+    const button = wrapper.get('[data-testid="shell-theme-toggle"]').element as HTMLButtonElement
+    const matches = button.matches.bind(button)
+    const spy = vi.spyOn(button, 'matches').mockImplementation((selector) => (
+      selector === ':focus-visible' ? false : matches(selector)
+    ))
+    button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(glyph(wrapper, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+
+    button.dispatchEvent(new FocusEvent('focusout', { bubbles: true }))
+    await nextTick()
+    spy.mockImplementation((selector) => selector === ':focus-visible' || matches(selector))
+    button.dispatchEvent(new FocusEvent('focusin', { bubbles: true }))
+    await nextTick()
+    await nextTick()
+    expect(glyph(wrapper, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('once')
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+    wrapper.unmount()
+  })
+
+  it('settles on the last clicked icon at rest, without carrying the hover tilt', async () => {
+    setTheme('dark')
+    const wrapper = mountLive('sidebar')
+    await flushPromises()
+    await pointerEnter(wrapper)
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('once')
+
+    const button = wrapper.get('[data-testid="shell-theme-toggle"]')
+    await button.trigger('click')
+    await button.trigger('click')
+    await button.trigger('click')
+    await nextTick()
+    expect(localStorage.getItem('grasp-theme')).toBe('light')
+    expect(wrapper.get('[data-testid="shell-theme-icon-moon"]').classes()).toContain('is-active')
+    expect(wrapper.get('[data-testid="shell-theme-icon-sun"]').classes()).not.toContain('is-active')
+    expect(glyph(wrapper, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+    wrapper.unmount()
+  })
+
+  it('keeps the lifted background and skips the glyph when motion is reduced', async () => {
+    vi.spyOn(window, 'matchMedia').mockImplementation((query: string) => ({
+      matches: query.includes('prefers-reduced-motion'),
+      media: query,
+      onchange: null,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      addListener: () => {},
+      removeListener: () => {},
+      dispatchEvent: () => false,
+    }) as MediaQueryList)
+
+    setTheme('light')
+    const wrapper = mountLive('sidebar')
+    await flushPromises()
+    const button = wrapper.get('[data-testid="shell-theme-toggle"]')
+    expect(button.classes()).toContain('hover:bg-elevated')
+    expect(button.classes()).toContain('focus-visible:bg-elevated')
+    await pointerEnter(wrapper)
+    expect(glyph(wrapper, 'shell-theme-icon-moon').attributes('data-icon-motion')).toBe('idle')
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+
+    await button.trigger('click')
+    await nextTick()
+    expect(localStorage.getItem('grasp-theme')).toBe('dark')
+    expect(wrapper.get('[data-testid="shell-theme-icon-sun"]').classes()).toContain('is-active')
+    expect(glyph(wrapper, 'shell-theme-icon-sun').attributes('data-icon-motion')).toBe('idle')
+    wrapper.unmount()
+  })
+})
+
 describe('ShellChromeControls unread badge pop', () => {
   function mockUnread(
     unreadCount: number,
