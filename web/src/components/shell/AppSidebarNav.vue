@@ -1308,6 +1308,7 @@ const settingsItems = settingsNavItems
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
@@ -1356,6 +1357,7 @@ const settingsItems = settingsNavItems
               :key="mark.name"
               :name="mark.name"
               :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
               :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
@@ -1745,6 +1747,54 @@ const settingsItems = settingsNavItems
 .nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
 .nav-row-type-icon--accent { color: rgb(var(--c-accent-2)); }
 .nav-row-type-icon--hold { color: rgb(var(--c-warn)); }
+
+/* Row-tail breath only. The extra nav-row-type-icon class beats the shared
+   busy rules in icon-motion.css. The hover ring is its own circle, so a
+   pointer or keyboard focus does not restart or pause the 1.6s loop.
+   Peak scale 3.2 keeps a 3.4-radius stroke inside the 24 viewBox; non-scaling
+   stroke stays a hairline so the row's overflow:clip never cuts a half ring. */
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core) {
+  transform-origin: 12px 12px;
+  animation: navRowBreathCore 1.6s ease-in-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  animation: navRowBreathRing 1.6s ease-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  pointer-events: none;
+}
+.nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+.nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  animation: navRowBreathPing 700ms ease-out 1;
+}
+@keyframes navRowBreathCore {
+  0%, 16%, 100% { transform: scale(1); }
+  7% { transform: scale(0.86); }
+}
+@keyframes navRowBreathRing {
+  0% { transform: scale(0.75); opacity: 0; }
+  12% { opacity: 0.62; }
+  46%, 100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes navRowBreathPing {
+  0% { transform: scale(0.7); opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core),
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring),
+  .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+    animation: none !important;
+  }
+}
 
 .pending-row-menu__item {
   display: flex;
