@@ -293,14 +293,16 @@ func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecPr
 	image := resolveProviderImage(opts, backend)
 	gw := sandbox.NewGatewayClient(opts.GatewayURL, opts.GatewayAPIKey)
 	mgr := sandbox.NewManager(gw, sandbox.ManagerOptions{
-		Image:           image,
-		WorkspaceDir:    "/root/workspace",
-		InstallHelpers:  true,
-		InjectStore:     opts.InjectStore,
-		InjectAdvertise: opts.MCPEndpoint,
-		CreateTimeout:   opts.SandboxCreateTimeout,
-		Blobs:           opts.Blobs,
-		Runtime:         opts.Runtime,
+		Image:             image,
+		WorkspaceDir:      "/root/workspace",
+		InstallHelpers:    true,
+		InjectStore:       opts.InjectStore,
+		InjectAdvertise:   opts.MCPEndpoint,
+		CreateTimeout:     opts.SandboxCreateTimeout,
+		Blobs:             opts.Blobs,
+		Runtime:           opts.Runtime,
+		SSHKeyFile:        opts.SSHKeyFile,
+		DataPlanePassword: opts.DataPlanePassword,
 	})
 	log.Info().Str("image", mgr.Image).Str("gateway", opts.GatewayURL).Str("acpBackend", string(backend)).
 		Str("bridge", AgentRuntimeLabel(backend)).Msg("sandbox exec provider ready")

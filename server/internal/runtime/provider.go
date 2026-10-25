@@ -58,6 +58,11 @@ type Options struct {
 	InjectStore *sandbox.BundleStore
 	// Runtime is the sandbox runtime bundle shared with the sandbox service.
 	Runtime *sandbox.RuntimeBundle
+	// SSHKeyFile is the persistent data-plane private key shared by sandboxes.
+	SSHKeyFile string
+	// DataPlanePassword returns one sandbox's token for SSH password recovery.
+	// Empty means that sandbox has no password fallback.
+	DataPlanePassword func(sandboxID string) string
 	// Blobs resolves blob:{id} attachments for ACP chat turns.
 	Blobs blob.Store
 	// ProfilesRoot is where agent_profile rules live (<root>/<profile>/rules.md),

@@ -63,6 +63,8 @@ let frame = 0
 let highlighted: HTMLElement | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | undefined
 let resize: ResizeObserver | null = null
+// Subpixel and rounding slack. Only a thread that actually overflows may snap to the last question.
+const BOTTOM_SLACK_PX = 4
 
 function messageTargets(): Map<string, HTMLElement> {
   const targets = new Map<string, HTMLElement>()
@@ -82,20 +84,49 @@ function clearHighlight() {
   highlighted = null
 }
 
-function updateActive() {
-  frame = 0
-  const scroller = props.scroller
-  if (!scroller || !props.items.length) return
-  const top = scroller.getBoundingClientRect().top + Math.min(80, scroller.clientHeight * .2)
+function distanceFromBottom(scroller: HTMLElement) {
+  return scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop
+}
+
+function readingLineActiveId(scroller: HTMLElement) {
+  const line = scroller.getBoundingClientRect().top + Math.min(80, scroller.clientHeight * .2)
   let found = props.items[0]!.id
   const targets = messageTargets()
   for (const item of props.items) {
     const target = targets.get(item.id)
     if (!target) continue
-    if (target.getBoundingClientRect().top <= top) found = item.id
+    if (target.getBoundingClientRect().top <= line) found = item.id
     else break
   }
-  activeId.value = found
+  return found
+}
+
+/** Bring the active tick into the rail column. Scrolling the column never moves the conversation. */
+function revealActiveTick(pinToBottom: boolean) {
+  const column = track.value
+  if (!column) return
+  const hidden = column.scrollHeight - column.clientHeight
+  if (hidden <= 0) return
+  if (pinToBottom) {
+    column.scrollTop = hidden
+    return
+  }
+  const button = buttons.get(activeId.value)
+  if (!button) return
+  const columnRect = column.getBoundingClientRect()
+  const buttonRect = button.getBoundingClientRect()
+  if (buttonRect.top < columnRect.top - 1) column.scrollTop += buttonRect.top - columnRect.top
+  else if (buttonRect.bottom > columnRect.bottom + 1) column.scrollTop += buttonRect.bottom - columnRect.bottom
+}
+
+function updateActive() {
+  frame = 0
+  const scroller = props.scroller
+  if (!scroller || !props.items.length) return
+  const overflows = scroller.scrollHeight > scroller.clientHeight + BOTTOM_SLACK_PX
+  const atBottom = overflows && distanceFromBottom(scroller) <= BOTTOM_SLACK_PX
+  activeId.value = atBottom ? props.items[props.items.length - 1]!.id : readingLineActiveId(scroller)
+  revealActiveTick(atBottom)
 }
 
 function scheduleActive() {

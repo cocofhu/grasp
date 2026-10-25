@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareRunsByStartedAtDesc, runBoardTitle, runIdShort, sortRunsByStartedAtDesc } from './runBoard'
+import { compareRunsByStartedAtDesc, runBoardTitle, runIdShort, runProgressPercent, sortRunsByStartedAtDesc } from './runBoard'
 import type { Run } from '../shared/types'
 
 function stubRun(partial: Partial<Run> & Pick<Run, 'id'>): Run {
@@ -24,6 +24,26 @@ describe('runIdShort', () => {
 
   it('keeps ids without prefix', () => {
     expect(runIdShort('abc123')).toBe('abc123')
+  })
+})
+
+describe('runProgressPercent', () => {
+  it('rounds a 0–1 ratio to an integer percent', () => {
+    expect(runProgressPercent(0.16666666666666666)).toBe(17)
+    expect(runProgressPercent(0)).toBe(0)
+    expect(runProgressPercent(1)).toBe(100)
+  })
+
+  it('clamps out-of-range ratios before rounding', () => {
+    expect(runProgressPercent(1.4)).toBe(100)
+    expect(runProgressPercent(-0.2)).toBe(0)
+  })
+
+  it('returns null for missing or non-finite values', () => {
+    expect(runProgressPercent(null)).toBeNull()
+    expect(runProgressPercent(undefined)).toBeNull()
+    expect(runProgressPercent(Number.NaN)).toBeNull()
+    expect(runProgressPercent('0.5')).toBeNull()
   })
 })
 

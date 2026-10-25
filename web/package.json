@@ -46,7 +46,7 @@
     "@page-agent/page-controller": "1.12.4",
     "@playwright/test": "^1.61.1",
     "@vitejs/plugin-vue": "^5.2.1",
-    "@vitest/coverage-v8": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
     "@vue/eslint-config-typescript": "^14.9.0",
     "@vue/test-utils": "^2.5.1",
     "autoprefixer": "^10.4.20",
@@ -58,7 +58,7 @@
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2",
     "vite": "^6.4.4",
-    "vitest": "^4.1.11",
+    "vitest": "^4.1.12",
     "vue-tsc": "^2.2.0",
     "ws": "^8.18.0"
   },
