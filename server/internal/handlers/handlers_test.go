@@ -22,6 +22,7 @@ import (
 	"github.com/cocofhu/grasp/internal/gateshare"
 	"github.com/cocofhu/grasp/internal/handlers"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/router"
 	"github.com/cocofhu/grasp/internal/runtime"
@@ -72,8 +73,11 @@ func newHarness(t *testing.T) *harness {
 	mgr := sandbox.NewManager(fg.Client(), sandbox.ManagerOptions{WorkspaceDir: "/root/workspace"})
 	sbx := services.NewSandboxService(db, mgr, skills, host, services.SandboxOptions{
 		Max: 2, TTL: time.Minute,
-		Credentials: func() map[string]string {
-			return map[string]string{"GRASP_CURSOR_API_KEY": "test-key"}
+		ModelBinding: func(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
+			if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+				return modelrouting.Resolved{}, err
+			}
+			return modelrouting.Resolved{Backend: backend, Binding: modelrouting.Binding{Kind: "platform", CredentialID: "handler-model-key", ModelID: "auto"}, CredentialID: "handler-model-key", Secret: "test-key"}, nil
 		},
 	})
 	eng := engine.New(db, fakeProvider{}, host, arts, 5)
@@ -431,16 +435,16 @@ func TestRunEndpoints(t *testing.T) {
 		t.Fatalf("cancel unknown run: %d", w.Code)
 	}
 	// Resume gate: bad body, then unknown run.
-	if w := h.do("POST", "/api/runs/r1/gates/g/resume", "bad"); w.Code != 400 {
+	if w := h.do("POST", "/api/runs/r1/nodes/g/decision", "bad"); w.Code != 400 {
 		t.Fatalf("resume bad body: %d", w.Code)
 	}
-	if w := h.do("POST", "/api/runs/ghost/gates/g/resume", map[string]any{"action": "approve"}); w.Code != 400 {
+	if w := h.do("POST", "/api/runs/ghost/nodes/g/decision", map[string]any{"action": "approve"}); w.Code != 400 {
 		t.Fatalf("resume unknown: %d", w.Code)
 	}
-	if w := h.do("POST", "/api/runs/r1/react/n/reply", "bad"); w.Code != 400 {
+	if w := h.do("POST", "/api/runs/r1/nodes/n/reply", "bad"); w.Code != 400 {
 		t.Fatalf("react bad body: %d", w.Code)
 	}
-	if w := h.do("POST", "/api/runs/ghost/react/n/reply", map[string]any{"text": "hi"}); w.Code != 400 {
+	if w := h.do("POST", "/api/runs/ghost/nodes/n/reply", map[string]any{"text": "hi"}); w.Code != 400 {
 		t.Fatalf("react unknown: %d", w.Code)
 	}
 }
@@ -527,7 +531,7 @@ func TestGateAndArtifactEndpoints(t *testing.T) {
 	h.db.Create(&models.StateRun{RunID: "r1", NodeID: "react", Iteration: 1, Status: "waiting_human"})
 	h.db.Create(&models.Artifact{ID: "art1", RunID: "r1", Name: "doc", Content: "hello", Kind: "markdown"})
 
-	w := h.do("GET", "/api/gates", nil)
+	w := h.do("GET", "/api/pending-nodes", nil)
 	if w.Code != 200 {
 		t.Fatalf("gates: %d", w.Code)
 	}
@@ -741,20 +745,20 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("create bad: %d", w.Code)
 	}
 	// Create no name.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": ""}); w.Code != 400 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": ""}); w.Code != 400 {
 		t.Fatalf("create no name: %d", w.Code)
 	}
 	// Create ok.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 201 {
 		t.Fatalf("create: %d %s", w.Code, w.Body)
 	}
 	// Conflict.
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 409 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 409 {
 		t.Fatalf("conflict: %d", w.Code)
 	}
 	// optional templateId copies a built-in Agent's workspace and capabilities
 	if w := h.do("POST", "/api/agents", map[string]any{
-		"name": "qa-test", "templateId": "test_review", "acpBackend": "cursor",
+		"name": "qa-test", "templateId": "test_review", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 	}); w.Code != 201 {
 		t.Fatalf("create test_review template: %d %s", w.Code, w.Body)
 	}
@@ -771,13 +775,13 @@ func TestAgentEndpoints(t *testing.T) {
 			t.Fatal("qa-test should inherit template capabilities")
 		}
 	}
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 		"name": "bad-tpl", "templateId": "nope",
 	}); w.Code != 400 {
 		t.Fatalf("unknown templateId: %d", w.Code)
 	}
 	// Blank regression: no templateId still works
-	if w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "blank-ok"}); w.Code != 201 {
+	if w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "blank-ok"}); w.Code != 201 {
 		t.Fatalf("blank create: %d %s", w.Code, w.Body)
 	}
 	// Templates list exposes the four built-in Agents
@@ -805,7 +809,7 @@ func TestAgentEndpoints(t *testing.T) {
 		t.Fatalf("get missing: %d", w.Code)
 	}
 	// Save (PUT).
-	if w := h.do("PUT", "/api/agents/a1", map[string]any{"acpBackend": "cursor", "name": "a1"}); w.Code != 200 {
+	if w := h.do("PUT", "/api/agents/a1", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "a1"}); w.Code != 200 {
 		t.Fatalf("save: %d", w.Code)
 	}
 	if w := h.do("PUT", "/api/agents/a1", "bad"); w.Code != 400 {
@@ -1775,7 +1779,7 @@ func TestListGatesPagination(t *testing.T) {
 	h.db.Create(&models.Gate{RunID: "run-g2", NodeID: "gate2", Title: "G2", RequestedAt: now.Add(time.Second)})
 	h.db.Create(&models.StateRun{RunID: "run-g2", NodeID: "gate2", Iteration: 0, Status: "waiting_human"})
 
-	w := h.do("GET", "/api/gates?page=1&pageSize=1", nil)
+	w := h.do("GET", "/api/pending-nodes?page=1&pageSize=1", nil)
 	if w.Code != 200 {
 		t.Fatalf("paged gates: %d", w.Code)
 	}

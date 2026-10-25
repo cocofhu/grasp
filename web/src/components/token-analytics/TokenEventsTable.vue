@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { useI18n } from 'vue-i18n'
 import type { TokenUsageEventRow } from '@/lib/shared/types'
 import { fmtCompactTokenCount, fmtTokenCount } from '@/lib/run/tokenUsage'
@@ -37,20 +38,21 @@ const SORTS = ['time', 'total', 'cost'] as const
 
 <template>
   <div class="flex min-h-0 flex-col" data-testid="token-events-table">
-    <div class="mb-2 flex items-center gap-1 text-xs text-txt3">
+    <SlidingTabs :value="sort" indicator-class="rounded-md bg-elevated" class="mb-2 flex items-center gap-1 text-xs text-txt3">
       <span>{{ t('pages.tokenAnalytics.events.sortBy') }}</span>
       <button
         v-for="s in SORTS"
         :key="s"
         type="button"
         class="rounded-md px-2 py-0.5"
-        :class="sort === s ? 'bg-elevated font-semibold text-txt' : 'hover:text-txt2'"
+        :class="sort === s ? 'font-semibold text-txt' : 'hover:text-txt2'"
+        :data-active="sort === s"
         :data-testid="`token-events-sort-${s}`"
         @click="emit('update:sort', s)"
       >
         {{ t(`pages.tokenAnalytics.events.sort.${s}`) }}
       </button>
-    </div>
+    </SlidingTabs>
     <div class="token-analytics-table-scroll min-h-0 overflow-auto" :class="loading ? 'opacity-60' : ''">
       <table class="w-full min-w-[960px] border-collapse text-xs">
         <thead class="sticky top-0 bg-surface">

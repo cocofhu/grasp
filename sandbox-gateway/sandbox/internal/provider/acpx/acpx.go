@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"sync"
 
 	"backend/internal/acp"
 	"backend/internal/provider"
@@ -15,11 +16,27 @@ import (
 
 // session wraps *acp.Panel to satisfy provider.Session.
 type session struct {
-	p *acp.Panel
+	p           *acp.Panel
+	cleanup     func()
+	cleanupOnce sync.Once
 }
 
 // Wrap adapts an ACP panel into a provider.Session.
 func Wrap(p *acp.Panel) provider.Session { return &session{p: p} }
+
+func wrapWithCleanup(p *acp.Panel, cleanup func()) provider.Session {
+	s := &session{p: p, cleanup: cleanup}
+	go func() { <-s.Done(); s.clean() }()
+	return s
+}
+
+func (s *session) clean() {
+	s.cleanupOnce.Do(func() {
+		if s.cleanup != nil {
+			s.cleanup()
+		}
+	})
+}
 
 func (s *session) SessionID() string { return s.p.SessionID }
 func (s *session) CWD() string       { return s.p.CWD }
@@ -48,7 +65,7 @@ func (s *session) CumulativeUsage() map[string]provider.TokenUsage { return nil 
 func (s *session) AgentPIDs() []int { return s.p.ProcessPIDs() }
 
 func (s *session) Cancel() error { return s.p.Cancel() }
-func (s *session) Close() error  { return s.p.Close() }
+func (s *session) Close() error  { err := s.p.Close(); s.clean(); return err }
 
 var closedCh = func() chan struct{} {
 	c := make(chan struct{})

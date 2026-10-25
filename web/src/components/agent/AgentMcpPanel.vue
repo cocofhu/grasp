@@ -3,6 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
+import AppSelect from '@/components/ui/AppSelect.vue'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
 import McpConfigHelpModal from '@/components/agent/McpConfigHelpModal.vue'
 import type { MCPServer } from '@/lib/api/api'
@@ -26,6 +27,7 @@ const mcpRaw = ref(false)
 const mcpRawText = ref('')
 const rawError = ref('')
 const mcpHelpOpen = ref(false)
+const transportOptions = computed(() => [{ value: 'url', label: 'HTTP (url)' }, { value: 'command', label: t('pages.agentStudio.mcp.transportCommand') }])
 
 const hasArtifactStore = computed(() => !!props.draft.mcp.some((m) => m.name.trim() === ARTIFACT_STORE))
 
@@ -171,10 +173,7 @@ watch(
             class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt outline-none focus:border-accent"
             data-test="mcp-custom-name"
           />
-          <select v-model="m.transport" class="rounded border border-line bg-surface px-2 py-1 text-[12px] text-txt2 outline-none">
-            <option value="url">HTTP (url)</option>
-            <option value="command">{{ t('pages.agentStudio.mcp.transportCommand') }}</option>
-          </select>
+          <AppSelect :model-value="m.transport" :options="transportOptions" :aria-label="`MCP ${m.name || i + 1}`" class="w-40 max-w-[50%] shrink-0" size="sm" searchable :data-testid="`mcp-transport-${i}`" @update:model-value="value => { if (value === 'url' || value === 'command') m.transport = value }" />
           <button class="text-txt3 hover:text-err" :title="t('pages.agentStudio.mcp.remove')" data-test="mcp-remove" @click="removeMcp(i)"><Icon name="close" :size="14" /></button>
         </div>
 

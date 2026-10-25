@@ -41,17 +41,18 @@ describe('Agent list sidebar', () => {
     expect(wrapper.emitted('select')).toEqual([['beta']])
     wrapper.unmount()
   })
-  it('keeps management, import, export and team creation for the workspace', async () => {
+  it('keeps import, export and team creation, without an Agent management entry', async () => {
     const wrapper = mountSidebar()
     expect(document.querySelector('[data-testid="agent-tree-manage"]')).toBeNull()
     await wrapper.get('[data-testid="agent-tree-create-agent"]').trigger('click')
-    for (const action of ['manage', 'import', 'export', 'create-team']) {
+    for (const action of ['import', 'export', 'create-team']) {
       await wrapper.get('[data-testid="agent-tree-more"]').trigger('click')
+      expect(document.querySelector('[data-testid="agent-tree-manage"]')).toBeNull()
       menuAction(action).click()
       await flushPromises()
       expect(document.querySelector('[role="menu"]')).toBeNull()
     }
-    expect(wrapper.emitted('open-manage')).toEqual([[]])
+    expect(wrapper.emitted('open-manage')).toBeUndefined()
     expect(wrapper.emitted('import')).toHaveLength(1)
     expect(wrapper.emitted('export-workspace')).toEqual([[]])
     expect(wrapper.emitted('create-agent')).toEqual([[]])
@@ -62,7 +63,8 @@ describe('Agent list sidebar', () => {
     const wrapper = mountSidebar({ hideCreateTeam: true })
     await wrapper.get('[data-testid="agent-tree-more"]').trigger('click')
     expect(document.querySelector('[data-testid="agent-tree-create-team"]')).toBeNull()
-    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(3)
+    expect(document.querySelector('[data-testid="agent-tree-manage"]')).toBeNull()
+    expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(2)
     await wrapper.get('[data-testid="agent-tree-collapse"]').trigger('click')
     expect(wrapper.emitted('toggle-collapsed')).toEqual([[]])
     await wrapper.setProps({ collapsed: true })
@@ -85,21 +87,21 @@ describe('Agent list sidebar', () => {
     expect(menu.getAttribute('aria-labelledby')).toBe(trigger.attributes('id'))
     expect(trigger.attributes('aria-controls')).toBe(menu.id)
     expect(trigger.attributes('aria-expanded')).toBe('true')
-    expect(document.activeElement).toBe(menuAction('manage'))
+    expect(document.activeElement).toBe(menuAction('import'))
     const key = async (value: string) => {
       document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true }))
       await flushPromises()
     }
     await key('ArrowDown')
-    expect(document.activeElement).toBe(menuAction('import'))
+    expect(document.activeElement).toBe(menuAction('export'))
     await key('End')
     expect(document.activeElement).toBe(menuAction('create-team'))
     await key('ArrowDown')
-    expect(document.activeElement).toBe(menuAction('manage'))
+    expect(document.activeElement).toBe(menuAction('import'))
     await key('ArrowUp')
     expect(document.activeElement).toBe(menuAction('create-team'))
     await key('Home')
-    expect(document.activeElement).toBe(menuAction('manage'))
+    expect(document.activeElement).toBe(menuAction('import'))
     await key('Escape')
     expect(document.querySelector('[role="menu"]')).toBeNull()
     expect(document.activeElement).toBe(trigger.element)
@@ -130,7 +132,7 @@ describe('Agent list sidebar', () => {
     expect(menu.style.left).toBe('8px')
     expect(menu.style.top).toBe('8px')
     expect(menu.style.width).toBe('208px')
-    menuAction('manage').dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    menuAction('import').dispatchEvent(new Event('pointerdown', { bubbles: true }))
     await flushPromises()
     expect(document.querySelector('[role="menu"]')).not.toBeNull()
     document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
@@ -138,13 +140,110 @@ describe('Agent list sidebar', () => {
     expect(document.querySelector('[role="menu"]')).toBeNull()
     expect(trigger.attributes('aria-expanded')).toBe('false')
   })
-  it('opens management for the chosen Agent from its context menu', async () => {
-    const wrapper = mountSidebar()
-    await wrapper.get('[data-resource-key="beta"]').trigger('contextmenu')
-    const rename = Array.from(document.body.querySelectorAll('button')).find((button) => button.textContent?.includes(pages.pages.agentStudio.tree.renameViaManage))!
-    rename.click()
+  it('shows a lock and no menu for a canonical Agent', async () => {
+    const wrapper = mountSidebar({
+      nodes: [
+        { id: '需求澄清', label: '需求澄清', icon: 'robot', locked: true, lockTitle: '工作流需要此 Agent，不能删除或重命名。' },
+        { id: '自建', label: '自建', icon: 'robot' },
+      ],
+    })
+    expect(wrapper.get('[data-resource-key="需求澄清"]').find('[data-testid="resource-lock"]').attributes('title')).toBe('工作流需要此 Agent，不能删除或重命名。')
+    expect(wrapper.get('[data-resource-key="自建"]').find('[data-testid="resource-lock"]').exists()).toBe(false)
+    const lockedEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 40, clientY: 40 })
+    wrapper.get('[data-resource-key="需求澄清"]').element.dispatchEvent(lockedEvent)
     await flushPromises()
-    expect(wrapper.emitted('open-manage')).toEqual([['beta']])
+    expect(lockedEvent.defaultPrevented).toBe(true)
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+    expect(wrapper.emitted('rename')).toBeUndefined()
+    expect(wrapper.emitted('delete')).toBeUndefined()
+    expect(wrapper.emitted('select')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('right-click on an operable row offers only rename and delete without changing selection', async () => {
+    const wrapper = mountSidebar({ pinned: [{ id: '__workspace_defaults__', label: 'Agent 默认配置' }] })
+    const pinnedEvent = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 12, clientY: 12 })
+    wrapper.get('[data-resource-key="__workspace_defaults__"]').element.dispatchEvent(pinnedEvent)
+    await flushPromises()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 48, clientY: 64 })
+    wrapper.get('[data-resource-key="beta"]').element.dispatchEvent(event)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.emitted('select')).toBeUndefined()
+    const menu = document.querySelector<HTMLElement>('[data-testid="agent-row-menu"]')!
+    expect(menu).toBeTruthy()
+    expect(menu.className).toContain('rounded-lg')
+    expect(menu.className).toContain('border-line')
+    expect(menu.className).toContain('bg-elevated')
+    const items = Array.from(menu.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'))
+    expect(items.map((item) => item.textContent?.trim())).toEqual(['重命名', '删除'])
+    expect(items[1]?.className).toContain('agent-row-menu__item--danger')
+    expect(document.body.textContent).not.toContain('重命名（前往管理）')
+    expect(document.body.textContent).not.toContain('Agent 管理')
+    wrapper.unmount()
+  })
+
+  it('emits rename or delete for the row that was right-clicked', async () => {
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-resource-key="beta"]').trigger('contextmenu', { clientX: 30, clientY: 40 })
+    document.querySelector<HTMLButtonElement>('[data-testid="agent-row-rename"]')!.click()
+    await flushPromises()
+    expect(wrapper.emitted('rename')).toEqual([['beta']])
+    expect(wrapper.emitted('select')).toBeUndefined()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+
+    await wrapper.get('[data-resource-key="alpha"]').trigger('contextmenu', { clientX: 30, clientY: 40 })
+    document.querySelector<HTMLButtonElement>('[data-testid="agent-row-delete"]')!.click()
+    await flushPromises()
+    expect(wrapper.emitted('delete')).toEqual([['alpha']])
+    expect(wrapper.emitted('select')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('closes the row menu on outside press, Escape, opening more, or scrolling the list', async () => {
+    const wrapper = mountSidebar()
+    const open = async () => {
+      await wrapper.get('[data-resource-key="beta"]').trigger('contextmenu', { clientX: 30, clientY: 40 })
+      await flushPromises()
+      expect(document.querySelector('[data-testid="agent-row-menu"]')).not.toBeNull()
+    }
+    await open()
+    document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+
+    await open()
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+    await flushPromises()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+
+    await open()
+    await wrapper.get('[data-testid="agent-tree-more"]').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+    expect(document.querySelector('[data-testid="agent-tree-more-menu"]')).not.toBeNull()
+
+    await open()
+    wrapper.get('.scroll-area').element.dispatchEvent(new Event('scroll'))
+    await flushPromises()
+    expect(document.querySelector('[data-testid="agent-row-menu"]')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('clamps the row menu inside the viewport', async () => {
+    vi.stubGlobal('innerWidth', 224)
+    vi.stubGlobal('innerHeight', 160)
+    const wrapper = mountSidebar()
+    await wrapper.get('[data-resource-key="beta"]').trigger('contextmenu', { clientX: 210, clientY: 150 })
+    await flushPromises()
+    const menu = document.querySelector<HTMLElement>('[data-testid="agent-row-menu"]')!
+    vi.spyOn(menu, 'getBoundingClientRect').mockReturnValue(new DOMRect(0, 0, 148, 72))
+    window.dispatchEvent(new Event('resize'))
+    await flushPromises()
+    expect(menu.style.left).toBe('68px')
+    expect(menu.style.top).toBe('80px')
     wrapper.unmount()
   })
 })

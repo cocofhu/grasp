@@ -5,14 +5,9 @@ description: 沙箱内 git clone/push 与合并请求（GitLab glab / GitHub gh�
 
 # Git 操作指引
 
-沙箱 startup.sh 按 `repo_url` scheme 注入凭据:
+沙箱使用 Agent 显式选择或开启继承的 Git 授权。GitHub / GitLab 凭据的 Host 与 Token 一起配置，默认是官方站点；自建站点使用凭据中保存的 Host。Token、SSH 私钥与 known_hosts 通过受限文件注入，由 Git credential helper 和 gh/glab 配置按站点或仓库范围选择，不要求全局 Token 环境变量或独立的 GitLab URL。
 
-| 场景 | 环境变量 | 说明 |
-|------|----------|------|
-| GitHub HTTPS | `GITHUB_TOKEN` | `https://github.com/...` |
-| 自建 GitHub/GHE | `GITHUB_TOKEN` + `GITHUB_URL` | URL 的 scheme+host 须与 repo 主机一致 |
-| GitLab / 自建 GitLab | `GITLAB_TOKEN` + `GITLAB_URL` | 例: `GITLAB_URL=https://git.example.com`; 未配时从 repo_url 推导 |
-| 任意 SSH 托管商 | `GIT_SSH_PRIVATE_KEY` + `GIT_SSH_KNOWN_HOSTS` | 必填 known_hosts,禁止 accept-new |
+同一站点的多个账号按仓库范围选择，范围同样具体时使用列表里先出现的授权；认证失败不会换用另一账号。SSH 必须配置 known_hosts，禁止 accept-new。
 
 Gitea/Bitbucket 等 HTTPS 不支持 Token 注入,请改用 SSH。
 
@@ -33,10 +28,10 @@ git push -u origin HEAD
 
 `submit_mr` 步骤顺序与 DefaultMRContract 一致:**解决冲突 → 推送源分支 → list open → create（仅当无 open）→ 解析幂等错误 → list merged/view → `node_complete(outputs.mr_url)`**。
 
-选型规则（按远端主机与环境变量,不按 Token 有无或 CLI 轮询）:
+选型规则（按远端主机与已选凭据的 Host，不按 Token 有无或 CLI 轮询）:
 
-- **GitLab**（gitlab.com,或与 `GITLAB_URL` 主机一致）→ `glab`
-- **GitHub**（github.com,或与 `GITHUB_URL` 主机一致,含 GHE）→ `gh pr`
+- **GitLab**（gitlab.com，或与所选 GitLab 凭据的 Host 一致）→ `glab`
+- **GitHub**（github.com，或与所选 GitHub 凭据的 Host 一致，含 GHE）→ `gh pr`
 - **匹配不上**（如 Gitea）→ 不支持自动建单:仍须完成冲突解决与 `git push`,再 `node_complete(status=failed)`;摘要须含「冲突已解决」「源分支已推送」及建单/CLI/托管商原因
 
 ### 幂等闭环（gh / glab 对称）
@@ -65,7 +60,7 @@ gh pr list --base <target> --head "$(git rev-parse --abbrev-ref HEAD)" --state m
 # or: gh pr view <n> --json url,state
 ```
 
-成功时合并请求 Web URL（含 GitHub PR）写入 `outputs.mr_url`（字段名不变）。幂等成功路径下允许空 `mr_url`(已合入查不到 / 无历史单已同步)。需预装对应 CLI（`glab` / `gh`）及凭据（`GITLAB_*` / `GITHUB_*`）。
+成功时合并请求 Web URL（含 GitHub PR）写入 `outputs.mr_url`（字段名不变）。幂等成功路径下允许空 `mr_url`(已合入查不到 / 无历史单已同步)。需预装对应 CLI（`glab` / `gh`）并在 Agent 绑定与远端 Host 匹配的授权。
 
 > 平台可选路径 `detect_push` + `create_mr` 本迭代仍仅 GitLab；GitHub 依赖 Agent 侧 `gh`，平台不代建 PR。
 

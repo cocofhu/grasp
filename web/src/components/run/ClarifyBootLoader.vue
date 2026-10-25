@@ -151,16 +151,16 @@ const doneMeta = computed(() => {
     <span class="sr-only" role="status" aria-live="polite" data-testid="clarify-boot-status">{{ currentTitle }}</span>
     <button
       type="button"
-      class="agent-tools-head"
+      class="agent-tools-head grasp-status-host"
       :aria-expanded="checklistOpen"
       data-testid="clarify-boot-head"
       @click="checklistOpen = !checklistOpen"
     >
-      <Icon name="spinner" :size="12" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
+      <Icon name="arc-spinner" busy :size="16" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
       <span class="agent-tools-count" data-testid="clarify-boot-title">{{ t('pages.clarifyBootLoader.checklist.title') }}</span>
       <span v-if="elapsedLabel" class="tabular-nums text-txt3" data-testid="clarify-boot-elapsed">{{ elapsedLabel }}</span>
       <span class="agent-tools-context text-txt3" data-testid="clarify-boot-context">{{ currentTitle }}</span>
-      <Icon name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
+      <Icon :interactive="false" name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': checklistOpen }" aria-hidden="true" />
     </button>
     <ul v-if="checklistOpen" class="agent-tool-list" data-testid="clarify-boot-checklist">
       <li
@@ -172,8 +172,8 @@ const doneMeta = computed(() => {
       >
         <!-- type=transition: the spinner's infinite spin must not hold the swap to ✓. -->
         <Transition name="startfade" mode="out-in" type="transition">
-          <Icon v-if="c.state === 'running'" key="r" name="spinner" :size="16" class="agent-tool-icon agent-tool-running animate-spin" aria-hidden="true" />
-          <Icon v-else-if="c.state === 'done'" key="d" name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+          <Icon v-if="c.state === 'running'" key="r" name="arc-spinner" busy :size="16" class="agent-tool-icon agent-tool-running" aria-hidden="true" />
+          <Icon v-else-if="c.state === 'done'" key="d" name="check-draw" :size="16" class="agent-tool-icon text-ok" aria-hidden="true" />
           <Icon v-else key="p" name="dot" :size="16" class="agent-tool-icon text-txt3/60" aria-hidden="true" />
         </Transition>
         <span class="agent-tool-label" :class="c.state === 'pending' ? 'text-txt3' : ''">{{ c.label }}</span>
@@ -184,23 +184,23 @@ const doneMeta = computed(() => {
   </div>
   <!-- Done (inside ClarifyChat): same row, folded, check icon. -->
   <Transition v-else-if="variant === 'inline' && phase === 'done'" name="startfade" appear>
-    <div v-if="doneReady" class="agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
+    <div v-if="doneReady" class="clarify-boot-done agent-tools chat-meta w-full min-w-0" :class="title ? '' : 'mb-2'" data-testid="clarify-boot-done">
       <button
         type="button"
-        class="agent-tools-head"
+        class="agent-tools-head grasp-status-host"
         :aria-expanded="doneOpen"
         data-testid="clarify-boot-done-head"
         @click="doneOpen = !doneOpen"
       >
-        <Icon name="check" :size="12" class="agent-tool-icon" aria-hidden="true" />
+        <Icon name="check-draw" :size="16" class="agent-tool-icon text-ok" aria-hidden="true" />
         <span class="agent-tools-count" data-testid="clarify-boot-done-title">{{ title || t('pages.clarifyBootLoader.checklist.done') }}</span>
         <span class="tabular-nums text-txt3" data-testid="clarify-boot-done-meta">{{ doneMeta }}</span>
         <span class="agent-tools-context text-txt3" />
-        <Icon name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
+        <Icon :interactive="false" name="chevron-down" :size="12" class="agent-tool-chevron" :class="{ 'rotate-180': doneOpen }" aria-hidden="true" />
       </button>
       <ul v-if="doneOpen" class="agent-tool-list">
         <li v-for="c in checklist" :key="c.id" class="agent-tool-row-main" data-state="done" data-testid="clarify-boot-done-step">
-          <Icon name="check" :size="16" class="agent-tool-icon" aria-hidden="true" />
+          <Icon name="check-draw" :size="16" class="agent-tool-icon text-ok" aria-hidden="true" />
           <span class="agent-tool-label">{{ c.label }}</span>
           <span v-if="c.sec" class="tabular-nums text-[11px] text-txt3">{{ c.sec }}</span>
         </li>
@@ -214,12 +214,12 @@ const doneMeta = computed(() => {
     :data-sandbox-phase="sandboxPhase || ''"
   >
     <template v-if="phase === 'pending'">
-      <Icon name="dot" :size="22" class="animate-pulseglow text-n-clarify" />
+      <Icon name="user-hold" :size="22" :interactive="false" class="text-n-clarify" />
       <p class="text-[13px] text-txt2">{{ t('pages.clarifyBootLoader.pending') }}</p>
       <p class="max-w-md text-[11px] text-txt3/70">{{ t('pages.clarifyBootLoader.pendingHint') }}</p>
     </template>
     <template v-else>
-      <Icon name="spinner" :size="30" class="animate-spin text-n-clarify" />
+      <Icon name="spinner" :size="30" class="text-n-clarify" />
       <Transition name="startfade" mode="out-in">
         <p :key="step" class="text-[13px] text-txt2" data-testid="clarify-boot-title">{{ STARTING_STEPS[step].title }}</p>
       </Transition>

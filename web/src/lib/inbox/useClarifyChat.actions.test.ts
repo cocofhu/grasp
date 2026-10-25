@@ -324,6 +324,153 @@ describe('useClarifyChat actions', () => {
     )
     expect(chat.parseChoiceSummary('plain')).toBeNull()
     expect(chat.parseChoiceSummary('我的选择:\n- bad')).toBeNull()
+    const sentMulti = String(emit.mock.calls.at(-1)![1])
+    expect(sentMulti).toContain('美国')
+    expect(sentMulti).toContain('其他地区')
+    app.unmount()
+  })
+
+  it('single-select keeps one source, ignores blank or residual other text, and does not restore the other source', async () => {
+    const q = question()
+    const q2 = question({
+      id: 'q2',
+      prompt: '选择区域',
+      options: [
+        { id: 'cn', label: '中国' },
+        { id: 'us', label: '美国' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'questions', at: '1', questions: [q, q2] }],
+    })
+    await nextTick()
+    expect(chat.isSelected('q1', 'dev')).toBe(true)
+
+    chat.toggleOther(q)
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    expect(chat.isSelected('q1', 'dev')).toBe(false)
+    expect(chat.sel.value.q1 ?? []).toEqual([])
+    expect(chat.isOtherSelected('q2')).toBe(false)
+    chat.other.value.q1 = '   '
+    expect(chat.otherAnswered(q)).toBe(false)
+    expect(chat.someAnswered.value).toBe(false)
+    chat.submitChoices()
+    expect(emit).not.toHaveBeenCalled()
+
+    chat.other.value.q1 = '只要这句'
+    chat.pick(q2, 'cn')
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    chat.pick(q, 'prod')
+    expect(chat.isSelected('q1', 'prod')).toBe(true)
+    expect(chat.isSelected('q1', 'dev')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    expect(chat.other.value.q1).toBe('只要这句')
+    chat.pick(q, 'prod')
+    expect(chat.isSelected('q1', 'prod')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.other.value.q1).toBe('只要这句')
+    expect(chat.someAnswered.value).toBe(true)
+
+    chat.toggleOther(q)
+    chat.toggleOther(q)
+    expect(chat.isOtherSelected('q1')).toBe(false)
+    expect(chat.sel.value.q1 ?? []).toEqual([])
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择区域 → 中国')
+    app.unmount()
+  })
+
+  it('single-select apply recommended clears other and submits only that label', async () => {
+    const q = question()
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggleOther(q)
+    chat.other.value.q1 = '不要带上'
+    expect(chat.someAnswered.value).toBe(true)
+    chat.submitRecommended()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 开发')
+    app.unmount()
+
+    const plain = question({
+      id: 'plain',
+      options: [
+        { id: 'a', label: '甲' },
+        { id: 'b', label: '乙' },
+      ],
+    })
+    const bare = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [plain] }],
+    })
+    await nextTick()
+    bare.chat.toggleOther(plain)
+    bare.chat.other.value.plain = '   '
+    expect(bare.chat.someAnswered.value).toBe(false)
+    bare.chat.submitChoices()
+    expect(bare.emit).not.toHaveBeenCalled()
+    bare.chat.other.value.plain = '补充'
+    bare.chat.applyRecommended()
+    expect(bare.chat.isSelected('plain', 'a')).toBe(true)
+    expect(bare.chat.isOtherSelected('plain')).toBe(false)
+    expect(bare.chat.other.value.plain).toBe('补充')
+    bare.chat.submitChoices()
+    expect(String(bare.emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 甲')
+    bare.app.unmount()
+  })
+
+  it('multi-select still submits several presets together with other text', async () => {
+    const q = question({
+      id: 'q2',
+      prompt: '选择区域',
+      allowMultiple: true,
+      options: [
+        { id: 'cn', label: '中国' },
+        { id: 'us', label: '美国' },
+        { id: 'eu', label: '欧洲' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'questions', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggle(q, 'cn')
+    chat.toggle(q, 'us')
+    chat.toggleOther(q)
+    chat.other.value.q2 = '其他地区'
+    expect(chat.isSelected('q2', 'cn')).toBe(true)
+    expect(chat.isSelected('q2', 'us')).toBe(true)
+    expect(chat.isSelected('q2', 'eu')).toBe(false)
+    expect(chat.isOtherSelected('q2')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择区域 → 中国、美国、其他地区')
+    app.unmount()
+  })
+
+  it('multi-select apply recommended still fills one preset and keeps other', async () => {
+    const q = question({
+      allowMultiple: true,
+      options: [
+        { id: 'dev', label: '开发', recommended: true },
+        { id: 'prod', label: '生产' },
+      ],
+    })
+    const { chat, app, emit } = withChat({
+      turns: [{ role: 'agent', text: 'q', at: '1', questions: [q] }],
+    })
+    await nextTick()
+    chat.toggle(q, 'prod')
+    chat.toggleOther(q)
+    chat.other.value.q1 = '其他环境'
+    chat.applyRecommended()
+    expect(chat.isSelected('q1', 'dev')).toBe(true)
+    expect(chat.isSelected('q1', 'prod')).toBe(false)
+    expect(chat.isOtherSelected('q1')).toBe(true)
+    chat.submitChoices()
+    expect(String(emit.mock.calls.at(-1)![1])).toBe('我的选择:\n- 选择环境 → 开发、其他环境')
     app.unmount()
   })
 
@@ -669,6 +816,181 @@ describe('useClarifyChat actions', () => {
     expect(chat.showSandboxOrphanBanner.value).toBe(false)
     chat.finishAbort()
     expect(emit).not.toHaveBeenCalledWith('finish-abort')
+    app.unmount()
+  })
+
+  it('paints thought, tools and body after the slot closes without forcing scroll', async () => {
+    const { chat, app, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(20)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    expect(chat.stickToBottom.value).toBe(false)
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 2)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+    models.attachments.value = [image()]
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文' },
+    ])).toBe(true)
+    await flushPromises()
+
+    const agent = [...chat.liveTurns.value].reverse().find((t) => t.role === 'agent')
+    expect(agent?.thought).toBe('还在想')
+    expect(agent?.text).toBe('新的正文')
+    expect(agent?.streaming).toBe(false)
+    expect(agent?.tools).toEqual([{ title: 'read_file', status: 'completed' }])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.stickToBottom.value).toBe(false)
+    expect(el.scrollTop).toBe(20)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(models.attachments.value).toHaveLength(1)
+    expect(ta.selectionStart).toBe(2)
+    expect(document.activeElement).toBe(ta)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    ta.remove()
+    app.unmount()
+  })
+
+  it('drops the idle narrative once the bridge is idle and the refresh snapshot arrives', async () => {
+    const { chat, app, props, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(0)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 5)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想滚动条以外的事' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])).toBe(true)
+    expect(chat.liveTurns.value.at(-1)?.streaming).toBe(false)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '半截', at: '2' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '半截'])
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(el.scrollTop).toBe(0)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(ta.selectionStart).toBe(2)
+    expect(ta.selectionEnd).toBe(5)
+    expect(document.activeElement).toBe(ta)
+    ta.remove()
+    app.unmount()
+  })
+
+  it('replaces an idle narrative when the snapshot arrives after the bridge is already idle', async () => {
+    const { chat, app, props } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.liveTurns.value).toEqual([])
     app.unmount()
   })
 

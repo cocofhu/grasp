@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"strings"
 	"time"
 
@@ -13,6 +13,11 @@ import (
 	"github.com/rs/zerolog/log"
 	"gorm.io/gorm"
 )
+
+// ErrSandboxAbsent means this run node has no sandbox row, or the container is
+// not running and the row is not still creating or pulling. Handlers answer
+// HTTP 200 with found:false so the browser does not log a failed fetch.
+var ErrSandboxAbsent = errors.New("not found")
 
 // BeginRunSandbox records a per-run node sandbox as "creating" BEFORE the (slow)
 // gateway provisioning completes, so it shows up in the sandbox list and the
@@ -42,6 +47,9 @@ func (s *SandboxService) BeginRunSandbox(info runtime.RunSandboxInfo) {
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
+	}
+	if info.Shared {
+		fields["shared"] = true
 	}
 	if err := s.db.Where(models.Sandbox{RunID: info.RunID, NodeID: info.NodeID, Purpose: "run"}).
 		Assign(fields).FirstOrCreate(&models.Sandbox{}).Error; err != nil {
@@ -83,6 +91,9 @@ func (s *SandboxService) RegisterRunSandbox(info runtime.RunSandboxInfo) {
 	}
 	if info.Token != "" {
 		fields["token"] = info.Token
+	}
+	if info.Shared {
+		fields["shared"] = true
 	}
 	s.markVisitSandboxReady(info.RunID, info.NodeID, fields["updated_at"].(time.Time))
 	// Adopt the pre-registered creating/pulling placeholder row (by run+node) in place,
@@ -284,19 +295,19 @@ func (s *SandboxService) archiveLog(ctx context.Context, name string) {
 
 // SandboxViewForRunNode returns the sandbox view for a workflow run's node,
 // using the same DB lookup as PreviewService.SandboxForRunNode (latest by
-// updated_at). Returns an error when no record exists or the container is not
-// running.
+// updated_at). ErrSandboxAbsent means there is no record, or the container is
+// not running and the row is not creating or pulling. creating and pulling
+// are returned as views so the UI can keep waiting.
 func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeID string) (*SandboxView, error) {
-	var row models.Sandbox
-	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
-		Order("updated_at desc").First(&row).Error; err != nil {
-		return nil, fmt.Errorf("not found")
+	row, err := runNodeSandboxRow(s.db, runID, nodeID)
+	if err != nil {
+		return nil, ErrSandboxAbsent
 	}
 	// A sandbox still provisioning (pulling image / creating container) is
-	// surfaced as-is so the UI can render pull/create loading instead of 404.
+	// surfaced as-is so the UI can render pull/create loading instead of absence.
 	// Running rows require a live container.
 	if row.Status != "creating" && row.Status != "pulling" && s.mgr.Status(ctx, row.Name) != "running" {
-		return nil, fmt.Errorf("not found")
+		return nil, ErrSandboxAbsent
 	}
 	v := s.view(ctx, &row)
 	return &v, nil
@@ -309,11 +320,13 @@ func (s *SandboxService) SandboxViewForRunNode(ctx context.Context, runID, nodeI
 // to the caller and must not be disguised as "no log source".
 func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID string) (content string, live bool, err error) {
 	var row models.Sandbox
-	q := s.db.Where("run_id = ? AND purpose = ?", runID, "run")
+	var e error
 	if nodeID != "" {
-		q = q.Where("node_id = ?", nodeID)
+		row, e = runNodeSandboxRow(s.db, runID, nodeID)
+	} else {
+		e = s.db.Where("run_id = ? AND purpose = ?", runID, "run").Order("updated_at desc").First(&row).Error
 	}
-	if e := q.Order("updated_at desc").First(&row).Error; e == nil {
+	if e == nil {
 		if s.mgr.Status(ctx, row.Name) == "running" {
 			out, lerr := s.mgr.Logs(ctx, row.Name, 5000)
 			if lerr != nil {
@@ -328,6 +341,9 @@ func (s *SandboxService) NodeSandboxLog(ctx context.Context, runID, nodeID strin
 		rq = rq.Where("node_id = ?", nodeID)
 	}
 	if e := rq.Order("updated_at desc").First(&rec).Error; e != nil {
+		if row.Shared && row.Name != "" && s.db.Where("name = ?", row.Name).First(&rec).Error == nil {
+			return rec.Content, false, nil
+		}
 		return "", false, gorm.ErrRecordNotFound
 	}
 	return rec.Content, false, nil

@@ -36,19 +36,25 @@ type WorkspaceVariable struct {
 // Hash-based credentials (external MCP/workflow keys) keep their existing
 // dedicated models; this model is for reusable runtime secrets.
 type Credential struct {
-	ID          string         `gorm:"primaryKey" json:"id"`
-	Type        string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
-	Provider    string         `json:"provider,omitempty"`
-	Name        string         `json:"name"`
-	Target      string         `json:"target,omitempty"`
-	EnvKey      string         `gorm:"index" json:"envKey,omitempty"`
-	ValueEnc    string         `json:"-"`
-	BuiltinSlot string         `json:"builtinSlot,omitempty"`
-	Metadata    map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
-	Enabled     bool           `json:"enabled"`
-	RevokedAt   *time.Time     `json:"revokedAt,omitempty"`
-	CreatedAt   time.Time      `json:"createdAt"`
-	UpdatedAt   time.Time      `json:"updatedAt"`
+	ID             string         `gorm:"primaryKey" json:"id"`
+	Purpose        string         `gorm:"index" json:"purpose,omitempty"`
+	Issuer         string         `json:"issuer,omitempty"`
+	ToolID         string         `json:"toolId,omitempty"`
+	SecretKind     string         `json:"secretKind,omitempty"`
+	Host           string         `json:"host,omitempty"`
+	SecretRevision uint64         `json:"secretRevision"`
+	Type           string         `json:"type"` // ai | git | ssh | mcp | custom | channel | external_mcp | workflow
+	Provider       string         `json:"provider,omitempty"`
+	Name           string         `json:"name"`
+	Target         string         `json:"target,omitempty"`
+	EnvKey         string         `gorm:"index" json:"envKey,omitempty"`
+	ValueEnc       string         `json:"-"`
+	BuiltinSlot    string         `json:"-"`
+	Metadata       map[string]any `gorm:"serializer:json" json:"metadata,omitempty"`
+	Enabled        bool           `json:"enabled"`
+	RevokedAt      *time.Time     `json:"revokedAt,omitempty"`
+	CreatedAt      time.Time      `json:"createdAt"`
+	UpdatedAt      time.Time      `json:"updatedAt"`
 }
 
 // Workspace is a workspace that owns workflows and holds workflow variable
@@ -95,7 +101,26 @@ type WorkflowDefaults struct {
 	Variables        []WorkspaceVariable     `json:"variables"`
 	NotifyPolicy     *WorkspaceNotifyPolicy  `json:"notifyPolicy,omitempty"`
 	GateAuto         *WorkflowGateAutoPolicy `json:"gateAuto,omitempty"`
+	Sandbox          *WorkflowSandboxPolicy  `json:"sandbox,omitempty"`
 }
+
+// Run sandbox modes. Per-node is the default: every node visit gets its own
+// sandbox. Shared lets compatible node visits reuse one sandbox within a run.
+const (
+	SandboxModePerNode = "per_node"
+	SandboxModeShared  = "shared"
+)
+
+// WorkflowSandboxPolicy is the workflow-level sandbox choice.
+type WorkflowSandboxPolicy struct {
+	Mode string `json:"mode"`
+}
+
+// ValidSandboxMode reports whether mode is empty or a known sandbox mode.
+func ValidSandboxMode(mode string) bool {
+	return mode == "" || mode == SandboxModePerNode || mode == SandboxModeShared
+}
+
 type WorkflowGateAutoPolicy struct {
 	Enabled     bool     `json:"enabled"`
 	AgentName   string   `json:"agentName"`
@@ -189,6 +214,8 @@ type Run struct {
 	// after Agent env and before platform reserved/auth write-backs. Plaintext
 	// in DB for injection; GET/audit must mask Secret entries.
 	SandboxEnv []EnvEntry `gorm:"serializer:json" json:"sandboxEnv,omitempty"`
+	// SandboxMode is the sandbox mode snapshotted at StartRun ("" = per_node).
+	SandboxMode string `json:"sandboxMode,omitempty"`
 	// FirstMessage is the launcher's opening message (text + attachments) for an
 	// clarify-first workflow. The engine delivers it into the clarify node's
 	// sandbox once the node parks, so the caller does not have to poll for the
@@ -837,15 +864,19 @@ type PromptImage struct {
 //     so it shows in the sandbox UI; the runtime provider owns its lifecycle.
 //   - "agent": thread-bound agent session sandbox (consult / cron / future roles).
 type Sandbox struct {
-	ID             uint   `gorm:"primaryKey" json:"id"`
-	Name           string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
-	Profile        string `json:"profile"`                          // bound Agent name
-	Purpose        string `json:"purpose"`                          // "test" | "run" | "agent"
-	Status         string `json:"status"`                           // pulling|creating|running|stopped|error
-	Host           string `json:"-"`
-	ACPPort        int    `json:"-"`
-	CodeServerPort int    `json:"-"`
-	RepoURL        string `json:"repoUrl,omitempty"`
+	// Binding fingerprints retain only hashes, so reconnect can validate the
+	// exact applied authorization even after a control-plane restart.
+	ModelBindingFingerprint string `json:"-"`
+	GitBindingsFingerprint  string `json:"-"`
+	ID                      uint   `gorm:"primaryKey" json:"id"`
+	Name                    string `gorm:"size:191;uniqueIndex" json:"name"` // docker container name
+	Profile                 string `json:"profile"`                          // bound Agent name
+	Purpose                 string `json:"purpose"`                          // "test" | "run" | "agent" | "solo"
+	Status                  string `json:"status"`                           // pulling|creating|running|stopped|error
+	Host                    string `json:"-"`
+	ACPPort                 int    `json:"-"`
+	CodeServerPort          int    `json:"-"`
+	RepoURL                 string `json:"repoUrl,omitempty"`
 	// Origin attribution (populated for purpose="run"): which run/workflow/node
 	// produced this sandbox. RunID for test sandboxes is a synthetic id used by
 	// the artifact-store MCP. For purpose="agent", RunID is a synthetic
@@ -856,7 +887,10 @@ type Sandbox struct {
 	WorkflowName string `json:"workflowName,omitempty"`
 	NodeID       string `json:"nodeId,omitempty"`
 	ThreadID     string `json:"threadId,omitempty"`
-	Token        string `json:"-"`
+	// Shared marks a run sandbox that serves every node of its run (sandbox
+	// mode "shared"). NodeID then names the node that last used it.
+	Shared bool   `json:"shared,omitempty"`
+	Token  string `json:"-"`
 	// HomeDir is the host cursor-home dir bind-mounted at /root/.cursor (run
 	// sandboxes only). Retained while the container lives so it can be cleaned
 	// up when the sandbox is finally destroyed.
@@ -995,6 +1029,8 @@ func AllModels() []any {
 		&AgentCronJob{}, &AgentCronRun{}, &ChannelConfig{},
 		&AuditEvent{},
 		&Credential{},
+		&ModelConnection{},
+		&ModelConfiguration{},
 		&NotifyDeliveryReceipt{},
 		&GateShareLink{},
 		&GateShareVisitorConversation{},
@@ -1009,6 +1045,7 @@ func AllModels() []any {
 		&WorkspaceMcpApiKey{},
 		&LiveSession{},
 		&TokenUsageEvent{},
+		&Project{}, &SoloSession{}, &SoloMessage{},
 	}
 }
 

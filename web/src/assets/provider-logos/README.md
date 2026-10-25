@@ -17,6 +17,26 @@ requests to an image host.
 - `xai.svg` is the xAI mark published from the brand source at
   [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:XAI-Logo.svg),
   whose file identifies x.ai as the source.
+- The following marks come from [Lobe Icons](https://github.com/lobehub/lobe-icons)
+  at commit `7d7d0379f18b114a4009dc5cb85a7c375284f31b`. The SVGs are unmodified;
+  their MIT notice is included in [LICENSE.lobe-icons](LICENSE.lobe-icons).
+
+  | Local asset | Upstream asset |
+  | --- | --- |
+  | `qwen.svg` | [qwen-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/qwen-color.svg) |
+  | `doubao.svg` | [doubao-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/doubao-color.svg) |
+  | `siliconflow.svg` | [siliconcloud-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/siliconcloud-color.svg) |
+  | `minimax.svg` | [minimax-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/minimax-color.svg) |
+  | `zhipu.svg` | [zhipu-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/zhipu-color.svg) |
+  | `zai.svg` | [zai.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/zai.svg) |
+  | `gemini.svg` | [gemini-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/gemini-color.svg) |
+  | `hunyuan.svg` | [hunyuan-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/hunyuan-color.svg) |
+  | `qianfan.svg` | [baiducloud-color.svg](https://github.com/lobehub/lobe-icons/blob/7d7d0379f18b114a4009dc5cb85a7c375284f31b/packages/static-svg/icons/baiducloud-color.svg) |
+
+  SiliconFlow uses its SiliconCloud service mark. Baidu Qianfan uses the
+  Baidu AI Cloud provider mark. Color fills and gradients are retained in
+  both themes. Color marks keep a white tile in the dark theme for contrast;
+  only monochrome marks are inverted.
 
 The marks remain trademarks of their respective owners. They are shown only
 to identify the credential provider.

@@ -250,12 +250,6 @@
       "reason": "board-internal column set"
     },
     {
-      "symbol": "EXTRA_COLUMNS",
-      "file": "run/useRunBoard.ts",
-      "decision": "converge",
-      "reason": "board-internal column set"
-    },
-    {
       "symbol": "FULL_MAIN_COLUMNS",
       "file": "run/useRunBoard.ts",
       "decision": "converge",

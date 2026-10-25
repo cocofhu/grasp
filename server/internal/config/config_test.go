@@ -237,3 +237,25 @@ func TestParseRejectsSecretSandboxEnv(t *testing.T) {
 		t.Fatal("expected error for secret key in GRASP_SANDBOX_ENV, got nil")
 	}
 }
+
+func TestParseRejectsDeepSeekSecretAliases(t *testing.T) {
+	for _, key := range []string{"ACP_DEEPSEEK_API_KEY", "ACP_DEEPSEEK_HARNESS_API_KEY"} {
+		t.Run(key, func(t *testing.T) {
+			t.Setenv("GRASP_SANDBOX_ENV", "")
+			dir := t.TempDir()
+			path := filepath.Join(dir, "config.yaml")
+			for _, field := range []string{"env", "acp_env"} {
+				if err := os.WriteFile(path, []byte("sandbox:\n  "+field+":\n    "+key+": synthetic-key\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := parse(path); err == nil {
+					t.Fatalf("sandbox.%s accepted %s outside workspace credentials", field, key)
+				}
+			}
+			t.Setenv("GRASP_SANDBOX_ENV", key+"=synthetic-key")
+			if _, err := parse(filepath.Join(dir, "missing.yaml")); err == nil {
+				t.Fatalf("GRASP_SANDBOX_ENV accepted %s outside workspace credentials", key)
+			}
+		})
+	}
+}

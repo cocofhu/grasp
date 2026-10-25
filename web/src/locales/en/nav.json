@@ -3,7 +3,10 @@
     "dashboard": "New request",
     "workspace": "Workspace navigation",
     "runningRuns": "Running",
+    "autoProcess": "Automatic",
     "runHistory": "History",
+    "sectionCollapse": "Collapse {name}",
+    "sectionExpand": "Expand {name}",
     "workspaceLoading": "Loading…",
     "workspaceNoRuns": "No finished runs yet",
     "workspaceLoadFailed": "Unable to load",
@@ -62,6 +65,8 @@
     "noMatchingWorkflows": "No matching workflows",
     "pinWorkflow": "Pin {name}",
     "unpinWorkflow": "Unpin {name}",
-    "runWorkflow": "Run {name}"
+    "runWorkflow": "Run {name}",
+    "solo": "Solo chats",
+    "projects": "Repositories"
   }
 }

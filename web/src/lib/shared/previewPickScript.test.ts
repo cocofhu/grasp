@@ -778,7 +778,44 @@ describe('preview-pick.js floating chat window', () => {
     expect(title.textContent).toBe('Page Harness CoCo')
     expect(title.getAttribute('title')).toBe('Page Harness CoCo')
     expect(grip).not.toBeNull()
-    expect(mark?.textContent).toBe('PH')
+    const markHtml = mark?.innerHTML || ''
+    const markRule = css.match(/\.dhead \.mark\{([^}]+)\}/)?.[1] || ''
+    expect(mark?.textContent ?? '').not.toContain('PH')
+    expect(mark?.querySelector('svg')?.getAttribute('viewBox')).toBe('0 0 72 88')
+    expect(mark?.querySelectorAll('circle')).toHaveLength(2)
+    expect(mark?.querySelectorAll('path')).toHaveLength(3)
+    const outline = mark?.querySelector('path')?.getAttribute('d') || ''
+    const head = outline.split(/[cC]/)[0] || ''
+    const nums = head.match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
+    const pts: { x: number; y: number }[] = []
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push({ x: nums[i]!, y: nums[i + 1]! })
+    const peaks: number[] = []
+    for (let i = 1; i < pts.length - 1; i++) {
+      if (pts[i]!.y < pts[i - 1]!.y && pts[i]!.y < pts[i + 1]!.y) peaks.push(i)
+    }
+    // Two ear tips only. A third crown spike (the rejected y=16 point between y=12 tips)
+    // is another local high. The valley between the tips must sit well below them:
+    // 12 viewBox units is about 4px on the 30px-tall mark.
+    expect(peaks).toHaveLength(2)
+    const earY = Math.max(pts[peaks[0]!]!.y, pts[peaks[1]!]!.y)
+    for (let i = peaks[0]! + 1; i < peaks[1]!; i++) {
+      expect(pts[i]!.y).toBeGreaterThanOrEqual(earY + 12)
+    }
+    expect(markHtml).toContain('currentColor')
+    expect(markHtml).toContain('M6 47h14')
+    expect(markRule).toContain('width:24px')
+    expect(markRule).toContain('height:30px')
+    expect(markRule).not.toContain('color:')
+    expect(markRule).not.toContain('linear-gradient')
+    expect(markRule).not.toContain('#6366f1')
+    expect(markRule).not.toContain('#8b5cf6')
+    expect(markRule).not.toContain('#fff')
+    expect(css).toMatch(/\.drawer\{[^}]*color:#e5e7eb/)
+    expect(css).toContain('.drawer.light{color:#18181b')
+    const drawer = p.shadow.querySelector('[data-role="drawer"]') as HTMLElement
+    expect(drawer.classList.contains('light')).toBe(false)
+    expect(p.win.getComputedStyle(mark as Element).color).toBe('#e5e7eb')
+    expect(p.win.getComputedStyle(title).color).toBe('#e5e7eb')
     expect(buttons.length).toBe(2)
     expect(css).toContain('.dhead{display:flex;align-items:center;gap:9px;height:48px')
     expect(css).toContain('.dhead [data-role="drawer-title"]{flex:1;min-width:0;font-size:14px;font-weight:600')
@@ -799,6 +836,10 @@ describe('preview-pick.js floating chat window', () => {
     const css = p.shadow.querySelector('style')?.textContent || ''
     const rule = css.match(/\.dhead \[data-role="drawer-title"\]\{([^}]+)\}/)?.[1] || ''
     expect(drawer.classList.contains('light')).toBe(true)
+    const mark = p.shadow.querySelector('.mark') as HTMLElement
+    expect(mark.querySelector('svg')).not.toBeNull()
+    expect(p.win.getComputedStyle(mark).color).toBe('#18181b')
+    expect(p.win.getComputedStyle(title).color).toBe('#18181b')
     expect(title.textContent).toBe('Page Harness CoCo')
     expect(title.getAttribute('title')).toBe('Page Harness CoCo')
     expect(rule).toContain('font-size:14px')

@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -221,11 +222,31 @@ func PackConfigHomeTarGz(hostDir string) ([]byte, error) {
 // known_hosts entries for extraction into SSHInjectStagingDir. Returns
 // (nil, nil) when both inputs are empty after trim.
 func PackSSHInjectTarGz(privateKey, knownHosts string) ([]byte, error) {
+	return PackSSHInjectBundle(privateKey, knownHosts, nil)
+}
+
+// RepoCredentialsDir is the bundle subdirectory startup.sh reads per-repository
+// credentials from: a tab-separated "index kind url" manifest plus
+// <index>.secret and optional <index>.known_hosts files.
+const RepoCredentialsDir = "repos"
+
+// PackSSHInjectBundle is PackSSHInjectTarGz plus per-repository credentials.
+// Entries with an unknown kind, an empty secret or a URL containing whitespace
+// are dropped. Returns (nil, nil) when nothing is left to inject.
+func PackSSHInjectBundle(privateKey, knownHosts string, repos []RepoCredential) ([]byte, error) {
+	return packGitInjectBundle(privateKey, knownHosts, repos, false, nil)
+}
+
+// packGitInjectBundle preserves legacy injection while carrying an explicit
+// catalog (including an empty selection) entirely as root-only files.
+func packGitInjectBundle(privateKey, knownHosts string, repos []RepoCredential, configured bool, credentials []GitCredential) ([]byte, error) {
+	if configured {
+		privateKey, knownHosts = "", ""
+	}
 	key := strings.TrimSpace(privateKey)
 	hosts := strings.TrimSpace(knownHosts)
-	// Preserve trailing newline conventions for PEM / known_hosts bodies when
-	// the caller provided non-whitespace content (use original for write).
-	if key == "" && hosts == "" {
+	repos = validRepoCredentials(repos)
+	if key == "" && hosts == "" && len(repos) == 0 && !configured {
 		return nil, nil
 	}
 	var buf bytes.Buffer
@@ -246,15 +267,70 @@ func PackSSHInjectTarGz(privateKey, knownHosts string) ([]byte, error) {
 		_, err := io.WriteString(tw, body)
 		return err
 	}
-	if key != "" {
-		if err := writeFile("id_rsa", privateKey, 0o600); err != nil {
-			_ = tw.Close()
-			_ = gz.Close()
+	type entry struct {
+		name, body string
+		mode       int64
+	}
+	var files []entry
+	if configured {
+		type catalogEntry struct {
+			Index     int    `json:"index"`
+			ID        string `json:"id"`
+			Name      string `json:"name,omitempty"`
+			Kind      string `json:"kind"`
+			Scope     string `json:"scope"`
+			Preferred bool   `json:"preferred"`
+		}
+		catalog := make([]catalogEntry, 0, len(credentials))
+		for i, credential := range credentials {
+			switch credential.Kind {
+			case RepoCredentialGitHubHTTPS, RepoCredentialGitLabHTTPS, RepoCredentialSSH:
+			default:
+				return nil, fmt.Errorf("invalid git credential kind at index %d", i)
+			}
+			if strings.TrimSpace(credential.Secret) == "" {
+				return nil, fmt.Errorf("empty git credential at index %d", i)
+			}
+			catalog = append(catalog, catalogEntry{i, credential.ID, credential.Name, credential.Kind, credential.Scope, credential.Preferred})
+			secret := credential.Secret
+			if credential.Kind != RepoCredentialSSH {
+				secret = strings.TrimSpace(secret)
+			}
+			files = append(files, entry{fmt.Sprintf("git/%d.secret", i), secret, 0o600})
+			if strings.TrimSpace(credential.KnownHosts) != "" {
+				files = append(files, entry{fmt.Sprintf("git/%d.known_hosts", i), credential.KnownHosts, 0o600})
+			}
+		}
+		body, err := json.Marshal(catalog)
+		if err != nil {
 			return nil, err
 		}
+		files = append(files, entry{"git/manifest.json", string(body), 0o600})
+	}
+	// Preserve the caller's PEM / known_hosts body (not the trimmed copy).
+	if key != "" {
+		files = append(files, entry{"id_rsa", privateKey, 0o600})
 	}
 	if hosts != "" {
-		if err := writeFile("known_hosts", knownHosts, 0o644); err != nil {
+		files = append(files, entry{"known_hosts", knownHosts, 0o644})
+	}
+	if len(repos) > 0 {
+		var manifest strings.Builder
+		for i, r := range repos {
+			fmt.Fprintf(&manifest, "%d\t%s\t%s\n", i, r.Kind, r.URL)
+			secret := r.Secret
+			if r.Kind != RepoCredentialSSH {
+				secret = strings.TrimSpace(secret)
+			}
+			files = append(files, entry{fmt.Sprintf("%s/%d.secret", RepoCredentialsDir, i), secret, 0o600})
+			if strings.TrimSpace(r.KnownHosts) != "" {
+				files = append(files, entry{fmt.Sprintf("%s/%d.known_hosts", RepoCredentialsDir, i), r.KnownHosts, 0o644})
+			}
+		}
+		files = append(files, entry{RepoCredentialsDir + "/manifest", manifest.String(), 0o600})
+	}
+	for _, f := range files {
+		if err := writeFile(f.name, f.body, f.mode); err != nil {
 			_ = tw.Close()
 			_ = gz.Close()
 			return nil, err
@@ -268,4 +344,19 @@ func PackSSHInjectTarGz(privateKey, knownHosts string) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+func validRepoCredentials(in []RepoCredential) []RepoCredential {
+	out := make([]RepoCredential, 0, len(in))
+	for _, r := range in {
+		r.URL = strings.TrimSpace(r.URL)
+		if r.URL == "" || strings.ContainsAny(r.URL, " \t\r\n") || strings.TrimSpace(r.Secret) == "" {
+			continue
+		}
+		switch r.Kind {
+		case RepoCredentialGitHubHTTPS, RepoCredentialGitLabHTTPS, RepoCredentialSSH:
+			out = append(out, r)
+		}
+	}
+	return out
 }

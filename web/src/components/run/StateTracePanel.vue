@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
+import { llmTraceMark } from './llm/LlmSystemRow.vue'
 import { fmtTime } from '@/lib/shared/format'
 import type { StateTraceEntry } from '@/lib/shared/types'
 
@@ -14,14 +15,24 @@ const META: Record<string, { icon: string; cls: string; labelKey: string }> = {
   exit: { icon: 'check', cls: 'text-ok border-ok/40 bg-ok/10', labelKey: 'pages.stateTrace.event.exit' },
   transition: { icon: 'branch', cls: 'text-txt2 border-line bg-elevated', labelKey: 'pages.stateTrace.event.transition' },
   rollback: { icon: 'history', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.rollback' },
-  pause: { icon: 'gate', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.pause' },
+  pause: { icon: 'user-hold', cls: 'text-warn border-warn/40 bg-warn/10', labelKey: 'pages.stateTrace.event.pause' },
   resume: { icon: 'play', cls: 'text-accent-2 border-accent/40 bg-accent-dim', labelKey: 'pages.stateTrace.event.resume' },
   artifact_edit: { icon: 'edit', cls: 'text-accent-2 border-accent/40 bg-accent-dim', labelKey: 'pages.stateTrace.event.artifact_edit' },
 }
 const items = computed(() => props.trace || [])
 
-function eventMeta(event: string) {
-  return META[event] || META.transition
+function eventMeta(entry: StateTraceEntry) {
+  const base = META[entry.event] || META.transition
+  const mark = llmTraceMark(entry.event, entry.kind)
+  if (!mark) return base
+  const tone = mark.tone === 'err'
+    ? 'text-err border-err/40 bg-err/10'
+    : mark.tone === 'warn'
+      ? 'text-warn border-warn/40 bg-warn/10'
+      : mark.tone === 'accent'
+        ? 'text-accent-2 border-accent/40 bg-accent-dim'
+        : 'text-txt2 border-line bg-elevated'
+  return { ...base, icon: mark.name, cls: tone }
 }
 </script>
 
@@ -35,14 +46,14 @@ function eventMeta(event: string) {
       <ol class="relative space-y-3 border-l border-line pl-5">
         <li v-for="(e, i) in items" :key="i" class="relative">
           <span
-            class="absolute -left-[27px] flex h-5 w-5 items-center justify-center rounded-full border"
-            :class="eventMeta(e.event).cls"
+            class="grasp-status-host absolute -left-[30px] flex h-6 w-6 items-center justify-center rounded-full border"
+            :class="eventMeta(e).cls"
           >
-            <Icon :name="eventMeta(e.event).icon" :size="11" />
+            <Icon :name="eventMeta(e).icon" :size="16" />
           </span>
           <div class="flex items-center gap-2">
-            <span class="text-[10px] font-medium uppercase tracking-wide" :class="eventMeta(e.event).cls.split(' ')[0]">
-              {{ t(eventMeta(e.event).labelKey) }}
+            <span class="text-[10px] font-medium uppercase tracking-wide" :class="eventMeta(e).cls.split(' ')[0]">
+              {{ t(eventMeta(e).labelKey) }}
             </span>
             <code class="font-mono text-[12px] text-txt">{{ e.nodeId }}</code>
             <span

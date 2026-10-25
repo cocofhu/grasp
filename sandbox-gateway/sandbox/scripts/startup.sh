@@ -62,13 +62,14 @@ WORKSPACE_DIR=${WORKSPACE_DIR:-/root/workspace}
 CODE_SERVER_PORT=${CODE_SERVER_PORT:-8744}
 
 # 提前解析 agent provider 与配置根：契约注入（默认落到 CONFIG_ROOT）与 backend 都要用。
-# 未设置时回落 cursor。五类 CLI 已预装，运行时 AGENT_PROVIDER 单活。
+# 未设置时回落 cursor。运行时 AGENT_PROVIDER 单活。
 AGENT_PROVIDER=${AGENT_PROVIDER:-cursor}
 case "$AGENT_PROVIDER" in
   cursor|cursor_acp)                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.cursor} ;;
   claude_code|claude_code_acp)                    CONFIG_ROOT=${CONFIG_ROOT:-/root/.claude} ;;
   codebuddy|codebuddy_acp)                        CONFIG_ROOT=${CONFIG_ROOT:-/root/.codebuddy} ;;
   opencode)                                       CONFIG_ROOT=${CONFIG_ROOT:-/root/.config/opencode} ;;
+  deepseek_harness)                               CONFIG_ROOT=${CONFIG_ROOT:-/root/.dsh} ;;
   *)                                              CONFIG_ROOT=${CONFIG_ROOT:-/root/.$AGENT_PROVIDER} ;;
 esac
 export AGENT_PROVIDER CONFIG_ROOT
@@ -279,6 +280,10 @@ setup_bare_github_credentials() {
 
 setup_repo_credentials() {
     local url="$1"
+    if repo_has_own_credential "$url"; then
+        echo "Git 仓库 ${url} 使用仓库级凭据"
+        return 0
+    fi
     case "$(repo_scheme "$url")" in
         https) setup_https_credentials "$url" || true ;;
         # SSH: 缺私钥/known_hosts 必须 fail-fast（验收 f4），不可 || true 软吞。
@@ -297,6 +302,9 @@ setup_repo_credentials() {
 # 末尾必须 return 0：set -e 下函数最后一行若是 `[ -n "$empty" ] && ...` 会以 1 退出，
 # 导致 startup.sh 在 glab 配置后直接崩掉（remote-dev 只注入 GITLAB_TOKEN 时必现）。
 configure_git_credentials() {
+    # The explicit catalog owns both Git transport and per-host CLI defaults.
+    # Never reintroduce legacy host-wide env or try another account on failure.
+    [ "${_GIT_CATALOG_CONFIGURED:-0}" = "1" ] && return 0
     if [ -n "$GIT_REPOS" ]; then
         IFS=',' read -ra _entries <<< "$GIT_REPOS"
         for _entry in "${_entries[@]}"; do
@@ -314,6 +322,172 @@ configure_git_credentials() {
     if [ -n "$GITHUB_TOKEN" ]; then
         setup_bare_github_credentials
     fi
+    return 0
+}
+
+# --- 仓库级凭据（服务端「仓库权限」，叠加在上面的主机级凭据之上）------------
+# 来源：SSH staging 包里的 repos/manifest（每行 "序号<TAB>类型<TAB>URL"）
+# 与 repos/<序号>.secret、repos/<序号>.known_hosts。密钥不经过 env。
+# HTTPS：仓库路径专属的 credential helper；先写一个空 helper 清掉更早的 store，
+#        同主机的其它仓库仍走主机级 token。git 匹配 credential.<url> 时带路径，
+#        不要开 useHttpPath：store 里的主机级条目不带路径，开了反而匹配不上。
+# SSH：  每个仓库一个 ssh Host 别名（独立私钥 + IdentitiesOnly），用 url.insteadOf
+#        把该仓库地址改写到别名；HostKeyAlias 让 known_hosts 仍按真实主机校验。
+#        insteadOf 是前缀匹配，只登记带 .git 的完整地址和原样地址，避免误伤同前缀仓库。
+REPO_CRED_DIR=/root/.grasp/repo-credentials
+REPO_SSH_CONFIG=/root/.ssh/grasp_repos_config
+_REPO_CRED_URLS=""
+
+repo_url_key() {
+    local u="${1%/}"
+    printf '%s' "${u%.git}"
+}
+
+repo_has_own_credential() {
+    [ -n "$_REPO_CRED_URLS" ] || return 1
+    printf '%s\n' "$_REPO_CRED_URLS" | grep -qxF "$(repo_url_key "$1")"
+}
+
+setup_repo_https_credential() {
+    local src="$1" idx="$2" kind="$3" url="$4"
+    case "$url" in
+        http://*|https://*) ;;
+        *) echo "startup.sh: 仓库凭据类型 ${kind} 需要 HTTPS 地址，跳过 ${url}" >&2; return 1 ;;
+    esac
+    local scheme="${url%%://*}" rest="${url#*://}"
+    local authority="${rest%%/*}"
+    local path="${rest#"$authority"}"
+    authority="${authority##*@}"
+    path="${path#/}"; path="$(repo_url_key "$path")"
+    if [ -z "$authority" ] || [ -z "$path" ]; then
+        echo "startup.sh: 无法解析仓库地址，跳过 ${url}" >&2
+        return 1
+    fi
+    local user="x-access-token"
+    [ "$kind" = "gitlab_https" ] && user="oauth2"
+    local token_file="$REPO_CRED_DIR/${idx}.token"
+    install -m 600 "$src/${idx}.secret" "$token_file"
+    local helper="!f() { test \"\$1\" = get || exit 0; echo username=${user}; printf 'password=%s\\n' \"\$(head -n1 ${token_file})\"; }; f"
+    local p key
+    for p in "$path" "${path}.git"; do
+        key="credential.${scheme}://${authority}/${p}.helper"
+        git config --global --unset-all "$key" 2>/dev/null || true
+        git config --global --add "$key" ""
+        git config --global --add "$key" "$helper"
+    done
+    echo "Git 仓库级 HTTPS 凭据已配置: ${scheme}://${authority}/${path}"
+}
+
+setup_repo_ssh_credential() {
+    local src="$1" idx="$2" url="$3"
+    local user="" host="" port="" path="" authority
+    case "$url" in
+        ssh://*)
+            authority="${url#ssh://}"; authority="${authority%%/*}"
+            path="${url#ssh://"$authority"}"; path="${path#/}"
+            case "$authority" in *@*) user="${authority%%@*}"; authority="${authority#*@}" ;; esac
+            host="${authority%%:*}"
+            [ "$authority" != "$host" ] && port="${authority#*:}"
+            ;;
+        *@*:*)
+            user="${url%%@*}"; authority="${url#*@}"
+            host="${authority%%:*}"; path="${authority#*:}"; authority="$host"
+            ;;
+        *) echo "startup.sh: 仓库凭据类型 ssh 需要 SSH 地址，跳过 ${url}" >&2; return 1 ;;
+    esac
+    path="$(repo_url_key "$path")"
+    if [ -z "$host" ] || [ -z "$path" ]; then
+        echo "startup.sh: 无法解析仓库地址，跳过 ${url}" >&2
+        return 1
+    fi
+    local alias="grasp-repo-${idx}"
+    install -m 600 "$src/${idx}.secret" "/root/.ssh/${alias}"
+    local strict="accept-new"
+    if [ -s "$src/${idx}.known_hosts" ]; then
+        strict="yes"
+        touch /root/.ssh/known_hosts
+        while IFS= read -r _kh_line || [ -n "$_kh_line" ]; do
+            [ -n "$_kh_line" ] || continue
+            grep -qxF "$_kh_line" /root/.ssh/known_hosts 2>/dev/null || printf '%s\n' "$_kh_line" >> /root/.ssh/known_hosts
+        done < "$src/${idx}.known_hosts"
+        unset _kh_line
+        chmod 644 /root/.ssh/known_hosts
+    fi
+    {
+        printf 'Host %s\n' "$alias"
+        printf '    HostName %s\n' "$host"
+        [ -n "$port" ] && printf '    Port %s\n' "$port"
+        [ -n "$user" ] && printf '    User %s\n' "$user"
+        printf '    IdentityFile /root/.ssh/%s\n' "$alias"
+        printf '    IdentitiesOnly yes\n'
+        printf '    HostKeyAlias %s\n' "$host"
+        printf '    StrictHostKeyChecking %s\n\n' "$strict"
+    } >> "$REPO_SSH_CONFIG"
+    local u="${user:+${user}@}"
+    local target="ssh://${u}${alias}/${path}.git" orig
+    for orig in "$url" "ssh://${u}${authority}/${path}.git"; do
+        git config --global --add "url.${target}.insteadOf" "$orig"
+    done
+    if [ -z "$port" ]; then
+        git config --global --add "url.${target}.insteadOf" "${u}${host}:${path}.git"
+    fi
+    echo "Git 仓库级 SSH 凭据已配置: ${host}:${path}"
+}
+
+configure_repo_credentials() {
+    local src="${1:-/tmp/grasp-ssh-inject/repos}"
+    [ -f "$src/manifest" ] || return 0
+    mkdir -p "$REPO_CRED_DIR" /root/.ssh
+    chmod 700 "$REPO_CRED_DIR" /root/.ssh
+    install -m 600 "$src/manifest" "$REPO_CRED_DIR/manifest"
+    : > "$REPO_SSH_CONFIG"
+    chmod 600 "$REPO_SSH_CONFIG"
+    touch /root/.ssh/config
+    if ! grep -qxF "Include ${REPO_SSH_CONFIG}" /root/.ssh/config; then
+        { printf 'Include %s\n\n' "$REPO_SSH_CONFIG"; cat /root/.ssh/config; } > /root/.ssh/config.tmp
+        mv -f /root/.ssh/config.tmp /root/.ssh/config
+    fi
+    chmod 600 /root/.ssh/config
+    local idx kind url ok
+    while IFS=$'\t' read -r idx kind url || [ -n "$idx" ]; do
+        [ -n "$idx" ] && [ -n "$url" ] || continue
+        case "$idx" in *[!0-9]*) continue ;; esac
+        [ -s "$src/${idx}.secret" ] || continue
+        ok=1
+        case "$kind" in
+            github_https|gitlab_https) setup_repo_https_credential "$src" "$idx" "$kind" "$url" || ok=0 ;;
+            ssh) setup_repo_ssh_credential "$src" "$idx" "$url" || ok=0 ;;
+            *) echo "startup.sh: 未知仓库凭据类型 ${kind}，跳过 ${url}" >&2; ok=0 ;;
+        esac
+        if [ "$ok" = "1" ]; then
+            _REPO_CRED_URLS="${_REPO_CRED_URLS}$(repo_url_key "$url")
+"
+        fi
+    done < "$src/manifest"
+    rm -rf "$src"
+    return 0
+}
+
+# New selections are file-only, including an empty manifest used to explicitly
+# remove all Git permissions. A helper resolves every HTTPS/SSH request once.
+configure_git_catalog() {
+    local src="${1:-/tmp/grasp-ssh-inject/git}"
+    [ -f "$src/manifest.json" ] || return 0
+    local credential_home="${GIT_CREDENTIAL_HOME:-/root}"
+    local helper="${GRASP_GIT_CREDENTIAL_HELPER:-$(dirname "${BASH_SOURCE[0]}")/git-credentials.py}"
+    unset GITHUB_TOKEN GH_TOKEN GITHUB_ENTERPRISE_TOKEN GH_ENTERPRISE_TOKEN GITLAB_TOKEN GLAB_TOKEN GITLAB_ACCESS_TOKEN
+    unset GITHUB_URL GITLAB_URL GIT_SSH_PRIVATE_KEY GIT_SSH_KNOWN_HOSTS GIT_SSH_COMMAND GIT_SSH SSH_AUTH_SOCK
+    rm -rf "$credential_home/.git-credentials" "$credential_home/.grasp/repo-credentials" \
+      "$credential_home/.ssh/id_rsa" "$credential_home/.ssh/known_hosts" "$credential_home/.ssh/grasp_repos_config" \
+      "$credential_home/.config/gh/hosts.yml" "$credential_home/.config/glab-cli/config.yml"
+    rm -f "$credential_home"/.ssh/grasp-repo-*
+    git config --global --remove-section credential 2>/dev/null || true
+    git config --global --get-regexp '^credential\..*\.helper$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r key; do git config --global --unset-all "$key" 2>/dev/null || true; done
+    git config --global --get-regexp '^url\..*grasp-repo-.*\.insteadof$' 2>/dev/null | awk '{print $1}' | sort -u |
+      while IFS= read -r key; do git config --global --unset-all "$key" 2>/dev/null || true; done
+    python3 "$helper" install "$src" "$credential_home" || return 1
+    _GIT_CATALOG_CONFIGURED=1
     return 0
 }
 
@@ -439,10 +613,16 @@ apply_ssh_file_inject() {
     fi
     return 0
 }
-apply_ssh_file_inject /tmp/grasp-ssh-inject
+if [ ! -f /tmp/grasp-ssh-inject/git/manifest.json ]; then
+    apply_ssh_file_inject /tmp/grasp-ssh-inject
+fi
 
 # --- 凭据配置（clone 前；此时 SSH 文件与 Token env 均已就绪）----------------
+# 仓库级凭据先行：GIT_REPOS 里已有仓库级凭据的仓库跳过主机级校验。
+configure_git_catalog /tmp/grasp-ssh-inject/git
+configure_repo_credentials /tmp/grasp-ssh-inject/repos
 configure_git_credentials
+rm -rf /tmp/grasp-ssh-inject
 
 # 配置 Git 用户信息（通用中性默认，可由环境变量覆盖）
 GIT_USER_EMAIL=${GIT_USER_EMAIL:-sandbox@localhost}

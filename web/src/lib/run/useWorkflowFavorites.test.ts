@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createI18n } from 'vue-i18n'
 import { createApp, defineComponent, nextTick } from 'vue'
 import common from '@/locales/zh-CN/common.json'
+import enCommon from '@/locales/en/common.json'
 import {
   WORKFLOW_FAVORITES_MAX,
   favoritesKeyForUser,
@@ -11,6 +12,7 @@ import {
   useWorkflowFavorites,
 } from './useWorkflowFavorites'
 import { useAuth } from '@/lib/composables/useAuth'
+import { useToast } from '@/lib/composables/useToast'
 
 vi.mock('@/lib/api/api', () => ({
   api: {
@@ -34,12 +36,12 @@ vi.mock('@/lib/api/api', () => ({
   },
 }))
 
-function withSetup<T>(fn: () => T): T {
+function withSetup<T>(fn: () => T, locale: 'zh-CN' | 'en' = 'zh-CN'): T {
   let result!: T
   const i18n = createI18n({
     legacy: false,
-    locale: 'zh-CN',
-    messages: { 'zh-CN': common },
+    locale,
+    messages: locale === 'en' ? { en: enCommon } : { 'zh-CN': common },
   })
   const Comp = defineComponent({
     setup() {
@@ -53,8 +55,14 @@ function withSetup<T>(fn: () => T): T {
   return result
 }
 
+function clearToasts() {
+  const toast = useToast()
+  for (const item of [...toast.toasts.value]) toast.dismiss(item.id)
+}
+
 beforeEach(() => {
   localStorage.clear()
+  clearToasts()
   const auth = useAuth()
   auth.setUser({ username: 'dev.li', expiresAt: '' })
   hydrateFromStorage()
@@ -74,7 +82,7 @@ describe('useWorkflowFavorites', () => {
     expect(fav2.isFavorite('wf-a')).toBe(false)
   })
 
-  it('uses persisted array order, puts new favorites first, and persists reorder', async () => {
+  it('keeps new favorites first in the local record and persists that order', async () => {
     vi.useFakeTimers()
     const fav = withSetup(() => useWorkflowFavorites())
     vi.setSystemTime(1000)
@@ -144,5 +152,56 @@ describe('useWorkflowFavorites', () => {
     localStorage.clear()
     hydrateFromStorage()
     expect(fav.listSorted.value).toHaveLength(0)
+  })
+
+  it('toasts Chinese favorite, unfavorite, and full-limit copy without sidebar wording', () => {
+    const fav = withSetup(() => useWorkflowFavorites())
+    const toast = useToast()
+
+    expect(fav.toggleFavorite('wf-a', { name: '自我迭代' })).toBe(true)
+    expect(toast.toasts.value.at(-1)).toMatchObject({
+      type: 'success',
+      message: '已收藏「自我迭代」',
+    })
+    expect(toast.toasts.value.at(-1)?.message).not.toMatch(/置顶|侧栏/)
+
+    expect(fav.toggleFavorite('wf-a', { name: '自我迭代' })).toBe(false)
+    expect(toast.toasts.value.at(-1)).toMatchObject({
+      type: 'success',
+      message: '已取消收藏「自我迭代」',
+    })
+    expect(toast.toasts.value.at(-1)?.message).not.toMatch(/置顶|侧栏/)
+
+    for (let i = 0; i < WORKFLOW_FAVORITES_MAX; i++) {
+      expect(fav.toggleFavorite(`wf-${i}`, { silent: true })).toBe(true)
+    }
+    expect(fav.toggleFavorite('wf-extra', { name: '第九个' })).toBe(false)
+    expect(fav.isFavorite('wf-extra')).toBe(false)
+    expect(fav.listSorted.value).toHaveLength(WORKFLOW_FAVORITES_MAX)
+    expect(toast.toasts.value.at(-1)).toMatchObject({
+      type: 'warn',
+      message: '已达 8 条上限，请先取消其它收藏',
+    })
+    expect(toast.toasts.value.at(-1)?.message).not.toMatch(/快捷|置顶|侧栏/)
+  })
+
+  it('toasts English favorite and full-limit copy without pinned or sidebar', () => {
+    const fav = withSetup(() => useWorkflowFavorites(), 'en')
+    const toast = useToast()
+
+    fav.toggleFavorite('wf-a', { name: '自我迭代' })
+    expect(toast.toasts.value.at(-1)?.message).toBe('Favorited "自我迭代"')
+    expect(toast.toasts.value.at(-1)?.message).not.toMatch(/pinned|sidebar/i)
+
+    fav.toggleFavorite('wf-a', { name: '自我迭代' })
+    expect(toast.toasts.value.at(-1)?.message).toBe('Removed "自我迭代" from favorites')
+
+    for (let i = 0; i < WORKFLOW_FAVORITES_MAX; i++) {
+      fav.toggleFavorite(`wf-${i}`, { silent: true })
+    }
+    fav.toggleFavorite('wf-extra', { name: 'ninth' })
+    expect(toast.toasts.value.at(-1)?.message).toBe('Limit of 8 reached — unfavorite another one first')
+    expect(toast.toasts.value.at(-1)?.message).not.toMatch(/shortcut|pinned|sidebar/i)
+    expect(fav.isFavorite('wf-extra')).toBe(false)
   })
 })

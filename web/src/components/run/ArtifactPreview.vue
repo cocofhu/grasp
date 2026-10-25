@@ -27,6 +27,7 @@ const props = withDefaults(defineProps<ArtifactPreviewProps>(), {
   hideZoom: false,
   hideExport: false,
   hideVersionChip: false,
+  hideFileRow: false,
   annotatable: false,
   shareToken: '',
   previewActive: true,
@@ -108,6 +109,11 @@ const friendlyName = computed(() => {
 })
 const technicalName = computed(() => artifactTechnicalDisplayName(displayArtifact.value?.name))
 const displayName = computed(() => friendlyName.value || technicalName.value)
+/** The file name already carries its extension, so the kind label would just repeat it. */
+const fileMeta = computed(() => {
+  if (friendlyName.value) return technicalName.value
+  return /\.[a-z0-9]+$/i.test(technicalName.value) ? '' : displayArtifact.value?.kind || ''
+})
 const modalTitle = computed(() =>
   friendlyName.value ? `${friendlyName.value} · ${technicalName.value}` : technicalName.value,
 )
@@ -120,11 +126,11 @@ const htmlCanvasOverlay = computed(
 <template>
   <div class="artifact-preview flex h-full min-h-0 min-w-0 flex-1 flex-col" data-testid="artifact-preview">
     <div v-if="displayArtifact && !activeIsHtml" class="artifact-preview-header" data-testid="artifact-preview-identity-bar">
-      <div class="artifact-preview-file-row">
+      <div v-if="!hideFileRow" class="artifact-preview-file-row" data-testid="artifact-preview-file-row">
         <Icon name="doc" :size="17" class="shrink-0 text-txt3" />
         <div class="min-w-0 flex-1">
           <p class="artifact-preview-file-name" :title="technicalName">{{ displayName }}</p>
-          <p class="artifact-preview-file-meta"><span class="uppercase">{{ displayArtifact.kind }}</span><span v-if="friendlyName" class="ml-2" :title="technicalName">{{ technicalName }}</span></p>
+          <p v-if="fileMeta" class="artifact-preview-file-meta" data-testid="artifact-preview-file-meta"><span :class="{ uppercase: !friendlyName }" :title="technicalName">{{ fileMeta }}</span></p>
         </div>
         <div class="artifact-preview-revisions" data-testid="artifact-preview-revisions">
           <ArtifactVersionSelect
@@ -150,7 +156,7 @@ const htmlCanvasOverlay = computed(
         </div>
         <div class="artifact-preview-actions" data-testid="artifact-preview-actions" role="group" :aria-label="t('common.table.actions')">
           <button v-if="!hideZoom" type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.enlarge')" :aria-label="t('pages.artifactPreview.enlarge')" data-testid="artifact-preview-zoom" @click="zoom = true"><Icon name="expand" :size="15" /></button>
-          <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+          <button v-if="!hideCopy" type="button" class="artifact-preview-icon-action" :title="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :aria-label="copying ? t('common.buttons.copying') : t('pages.artifactPreview.copy')" :disabled="copying" :aria-busy="copying ? 'true' : undefined" data-testid="artifact-preview-copy" @click="copyContent"><Icon :name="copying ? 'spinner' : 'copy'" :size="15" aria-hidden="true" /></button>
           <button type="button" class="artifact-preview-icon-action" :title="t('pages.artifactPreview.downloadRawTitle')" :aria-label="t('pages.artifactPreview.downloadRawTitle')" data-testid="artifact-preview-download-raw" @click="download"><Icon name="download" :size="15" /></button>
           <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-png" :disabled="exportDisabled" @click="downloadPng">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPng') }}</button>
           <button v-if="!hideExport && isStructuredPreview" type="button" class="artifact-preview-text-action" data-testid="artifact-preview-download-pdf" :disabled="exportDisabled" @click="downloadPdf">{{ exporting ? t('pages.artifactPreview.exporting') : t('pages.artifactPreview.downloadPdf') }}</button>
@@ -270,7 +276,7 @@ const htmlCanvasOverlay = computed(
               :aria-busy="copying ? 'true' : undefined"
               data-testid="artifact-preview-copy"
               @click="copyContent"
-            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" :class="copying ? 'animate-spin' : ''" aria-hidden="true" /></button>
+            ><Icon :name="copying ? 'spinner' : 'copy'" :size="15" aria-hidden="true" /></button>
             <button
               type="button"
               class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-overlay hover:text-txt"
@@ -500,6 +506,8 @@ const htmlCanvasOverlay = computed(
 .artifact-preview-revisions :deep(button) { min-height: 26px; border-color: transparent; background: rgb(var(--c-txt) / .04); padding-inline: 7px; }
 .artifact-preview-readonly { color: rgb(var(--c-txt3)); font-size: 10px; white-space: nowrap; }
 .artifact-preview-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; padding: 0 12px 8px; }
+/* Without the file row (hideFileRow) the toolbar leads the header. */
+.artifact-preview-toolbar:first-child { padding-top: 8px; }
 .artifact-preview-view-options { display: inline-flex; flex: none; align-items: center; gap: 2px; }
 .artifact-preview-view-options > button { min-height: 30px; border-radius: 6px; padding: 4px 8px; color: rgb(var(--c-txt3)); font-size: 11px; white-space: nowrap; }
 .artifact-preview-view-options > button.is-selected { background: rgb(var(--c-txt) / .055); color: rgb(var(--c-txt)); }

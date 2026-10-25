@@ -48,7 +48,7 @@ In the pending-gates inbox, only **human_gate** cards (and the visual preview to
 
 ### Temporary review links (Inbox kind=review)
 
-Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/reviews/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. When the node registered an app preview, the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; pending clarify stays out of scope.
+Inbox **pending review** and **app preview** cards reuse the same management panel and token rules (`ShareLinkKindReview`, including TTL and permission presets), but authenticated APIs live under `/api/runs/:id/nodes/:nodeId/share-link*` — not `/gates/...`, and no fake Gate row is created. In-product entries: card **Copy temp link** and the mobile detail top bar button with the same label. The public page is labeled **External review**; hot sessions support multi-turn ReAct. When the node registered an app preview, the public page defaults to remote desktop and picking via a short-lived ticket channel (desensitized ports; API ports use a same-origin iframe); mobile shows a degrade hint only. The only footer action is **Confirm and advance**. Per-visitor conversations, the shared workspace, and first-decision-wins apply as above. Run-detail review tabs and the logged-in review composer do not add a temp-link entry; pending clarify stays out of scope.
 
 ### App preview: noVNC and direct IP
 
@@ -83,9 +83,27 @@ The page and chat card share the current candidate. "Use this one" keeps the ver
 
 ## Real Docker sandboxes
 
+Open Workflow defaults in the workflow editor, enable Shared sandbox, and save. It is off by default, so each node gets its own sandbox. When enabled, nodes in the same run reuse the workspace, installed dependencies, and uncommitted changes; separate runs remain isolated. The selection applies to newly started runs without a platform-wide enable flag. Model and Git authorization are refreshed for each Agent; a node gets its own sandbox when another session holds the shared sandbox or reuse is incompatible.
+
 Agents are not black-box prompts on a laptop. They execute in Docker containers through the in-repo [sandbox-gateway](https://github.com/cocofhu/approving/tree/main/sandbox-gateway), talking over ACP.
 
-Supported backends: **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, and **OpenCode**. Configure `acpBackend` per agent; backend keys are saved only in Settings → Credentials; non-secret options such as sites may go in Agent meta env (OpenCode also takes vendor, optional API Base, and model).
+Supported coding tools are **Cursor**, **Claude Code**, **CodeBuddy**, **Trae**, **OpenCode**, **Codex**, and **DeepSeek Harness**. Settings → Credentials separates Agent CLI platform authorizations from model service API accounts, both with provider logos. Configure the provider, API base and key on the API account.
+
+Agents reference only named model configurations: a coding tool, a credential and an upstream model. Creation, editing, onboarding and execution use that same reference. Unavailable model configurations or accounts fail explicitly without selecting another secret.
+
+| Coding tool | Model sources and connection protocols |
+| --- | --- |
+| Cursor, Trae | Tool platform authorization; direct third-party connections are unavailable |
+| Claude Code | Platform authorization or Anthropic Messages (CLI ≥ 2.1.257 for connections) |
+| CodeBuddy | Platform authorization or Chat Completions connections |
+| OpenCode, DeepSeek Harness | Chat Completions, Responses or Anthropic Messages; DSH targets 0.2.1-rc.2 |
+| Codex | ChatGPT login file or a Responses connection |
+
+First configure a preset or custom service’s API base and key in Credentials, or save only the key. In Models, save a named configuration combining a coding tool, an existing credential and the selected model. Agents bind that configuration to reuse the combination. Platform authorization continues to use the tool’s own key. The configuration’s tool is fixed after creation. Disabling or deleting a configuration, or clearing its key, fails explicitly without switching to another authorization. When adding a model, select an existing model or enter its original provider ID, including any `/` characters. There is no separate model catalog or connections list. Claude Code and CodeBuddy support separate auxiliary model roles. DSH’s DeepSeek native route requires the official service. “Not verified” means no live model execution has been recorded; adapter and mock tests do not establish provider compatibility.
+
+The workspace lists and uses only credentials explicitly created with the current data structure. It does not generate empty credential slots. Close and reopen long-lived sandboxes after changing their model or authorization.
+
+Model configurations are shared references: changing a configuration's credential, model or role settings affects every Agent that references it. Its CLI is fixed after creation; changing the CLI requires creating and selecting another configuration. Agent drafts may remain unconfigured, but execution requires a selected model or explicit inheritance from Agent defaults. New Agents inherit by default. In Agent metadata, enabling inheritance uses the default model and Git settings and shows one compact inheritance card. Disabling it restores local selections. Git supports multiple saved authorizations with optional site or repository scopes. An omitted list grants no Git access unless inheritance is enabled. Shared workflow sandboxes replace authorizations when nodes change.
 
 ## Artifact contract and MCP
 

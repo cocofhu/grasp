@@ -697,10 +697,11 @@ onUnmounted(() => {
             v-if="ch.clearable"
             type="button"
             class="x"
+            :aria-label="`${t('common.buttons.close')} ${ch.label}`"
             :data-testid="`workspace-audit-chip-clear-${ch.key}`"
             @click="clearChip(ch.key)"
           >
-            ×
+            <Icon name="close" :size="12" />
           </button>
         </span>
         <button
@@ -771,7 +772,7 @@ onUnmounted(() => {
         >
           <div class="ec-top">
             <span class="ec-time mono" :title="ev.occurredAt">{{ fmtTime(ev.occurredAt) }}</span>
-            <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
+            <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon :interactive="false" name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
           </div>
           <div class="ec-sum" :class="{ open: openId === ev.id }">{{ ev.summary }}</div>
           <div class="ec-row">
@@ -877,7 +878,7 @@ onUnmounted(() => {
                       <div v-if="resourceAux(ev)" class="summary-aux" :title="resourceAux(ev)">{{ resourceAux(ev) }}</div>
                     </td>
                     <td>
-                      <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
+                      <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon :interactive="false" name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
                     </td>
                   </tr>
                   <tr v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="detail">
@@ -939,7 +940,7 @@ onUnmounted(() => {
                   <div v-if="resourceAux(ev)" class="summary-aux" :title="resourceAux(ev)">{{ resourceAux(ev) }}</div>
                 </td>
                 <td>
-                  <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
+                  <span class="outcome" :class="ev.outcome === 'fail' ? 'bad' : 'ok'"><i aria-hidden="true" />{{ outcomeLabel(ev) }}<Icon :interactive="false" name="chevron-down" :size="12" class="event-chevron" :class="{ expanded: openId === ev.id }" /></span>
                 </td>
               </tr>
               <tr v-if="openId === ev.id" :id="`${detailId}-${ev.id}`" class="detail">
@@ -1021,8 +1022,8 @@ onUnmounted(() => {
   cursor: pointer;
 }
 
-.seg button:hover {
-  color: rgb(var(--c-txt));
+.seg button:hover:not(.on) {
+  color: rgb(var(--c-txt2));
 }
 
 .seg button.on {

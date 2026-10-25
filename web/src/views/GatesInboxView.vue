@@ -17,6 +17,7 @@ import AppInlineError from '@/components/ui/AppInlineError.vue'
 import Pagination from '@/components/ui/Pagination.vue'
 import { computed } from 'vue'
 import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
+import { isInboxCancelDeparture } from '@/lib/inbox/inboxCancelDeparture'
 import { useGatesInbox } from '@/lib/inbox/useGatesInbox'
 
 const {
@@ -175,6 +176,10 @@ const {
   activeChainSegments,
   clarifyComposerLocked,
   activeFollowTail,
+  activeFollowProcess,
+  followObserving,
+  followStopping,
+  takeoverFollow,
   inboxClarifyStageKind,
   inboxReviewState,
   reviewActive,
@@ -206,6 +211,14 @@ const {
   pageControlByNode,
 } = useGatesInbox()
 
+/**
+ * Sidebar is cancelling this conversation and will open the new-request page.
+ * Keep the conversation on screen so the pending-empty state cannot flash.
+ */
+const holdingCancelledConversation = computed(
+  () => !!active.value && isInboxCancelDeparture(active.value.runId),
+)
+
 /** Page-control state for the chat in view; empty until this user has turned it on in a drawer. */
 const inboxPageControl = computed(() => {
   const map = pageControlByNode.value
@@ -232,7 +245,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     :aria-busy="listPanelBusy ? 'true' : 'false'"
   >
     <!-- Mobile detail header -->
-    <div v-if="isMobile && mobileView === 'detail'" class="mb-3 flex shrink-0 items-center gap-2">
+    <div v-if="isMobile && mobileView === 'detail' && !showClarifyReviewShell" class="mb-3 flex shrink-0 items-center gap-2" data-testid="inbox-mobile-detail-header">
       <button
         class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
         :aria-label="t('shell.aria.backToList')"
@@ -258,7 +271,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     </div>
 
     <!-- Mobile list view -->
-    <template v-if="isMobile && mobileView === 'list'">
+    <template v-if="isMobile && mobileView === 'list' && !holdingCancelledConversation">
       <RefreshStrip v-if="showListRefresh" data-testid="gates-inbox-refresh-strip" />
       <div
         v-if="showListSkeleton"
@@ -331,9 +344,9 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
     </template>
 
     <!-- Mobile detail view -->
-    <div v-else-if="isMobile && mobileView === 'detail' && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
+    <div v-else-if="isMobile && (mobileView === 'detail' || holdingCancelledConversation) && (active || confirmFlowDeskHold)" class="relative flex min-h-0 flex-1 flex-col overflow-hidden bg-surface"
       data-testid="inbox-active-detail" :data-run-id="active?.runId || ''" :data-node-id="active?.nodeId || ''">
-      <div v-if="active && isShareableInboxItem(active)" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
+      <div v-if="active && isShareableInboxItem(active) && !showClarifyReviewShell" class="flex shrink-0 items-center justify-end gap-3 border-b border-line px-4 py-2">
         <button
           type="button"
           class="inline-flex min-h-11 items-center text-xs text-accent-2 hover:underline"
@@ -372,6 +385,29 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
           split-drawer
           remember-artifact-panel
         >
+          <template #leading>
+            <button
+              type="button"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt2 hover:bg-elevated hover:text-txt"
+              :aria-label="t('shell.aria.backToList')"
+              data-testid="inbox-mobile-chat-back"
+              @click="backToList"
+            >
+              <Icon name="arrow-left" :size="18" />
+            </button>
+          </template>
+          <template v-if="isShareableInboxItem(active)" #actions>
+            <button
+              type="button"
+              class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-txt3 hover:bg-elevated hover:text-txt focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent/50"
+              data-testid="gate-share-copy-btn-detail"
+              :aria-label="t('pages.gatesInbox.share.copyLinkAria')"
+              :title="t('pages.gatesInbox.share.copyLink')"
+              @click="openSharePanel(active)"
+            >
+              <Icon name="copy" :size="16" aria-hidden="true" />
+            </button>
+          </template>
           <template #stage>
             <ReactConnectingState
               v-if="activeStarting"
@@ -423,6 +459,9 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               :prior-segments="activeChainSegments"
               :node-label="active?.type === 'clarify' ? active.label : undefined"
               :follow-tail="activeFollowTail"
+              :follow-process="activeFollowProcess"
+              :observe="followObserving"
+              :stopping="followStopping"
               :composer-locked="clarifyComposerLocked"
               :active="clarifyInputActive"
               :confirm-error="clarifyConfirmError"
@@ -433,6 +472,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
               @finish="onClarifyFinish"
               @finish-abort="onClarifyFinishAbort"
               @cancel="onClarifyCancel"
+              @takeover="takeoverFollow"
               @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
               @queue-reorder="onClarifyQueueReorder"
             />
@@ -460,7 +500,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
 
     <!-- Desktop: existing panel only. Pending rows live in the sidebar. -->
     <div
-      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail)"
+      v-else-if="!isMobile && (listItems.length || confirmFlowDeskHold || activeHandoff || activeFollowTail || holdingCancelledConversation)"
       class="flex min-h-0 flex-1 items-stretch"
       :class="showListRefresh ? 'opacity-[0.55]' : ''"
     >
@@ -548,6 +588,9 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   :prior-segments="activeChainSegments"
                   :node-label="active?.type === 'clarify' ? active.label : undefined"
                   :follow-tail="activeFollowTail"
+                  :follow-process="activeFollowProcess"
+                  :observe="followObserving"
+                  :stopping="followStopping"
                   :composer-locked="clarifyComposerLocked"
                   :active="clarifyInputActive"
                   :confirm-error="clarifyConfirmError"
@@ -558,6 +601,7 @@ const inboxConversationRunName = useConversationToolbarRunName(() => {
                   @finish="onClarifyFinish"
                   @finish-abort="onClarifyFinishAbort"
                   @cancel="onClarifyCancel"
+                  @takeover="takeoverFollow"
                   @queue-remove="(itemId) => onClarifyQueueRemove(itemId)"
                   @queue-reorder="onClarifyQueueReorder"
                 />

@@ -1,11 +1,12 @@
 // @vitest-environment happy-dom
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 import {
   RECENT_RELAY_DEBOUNCE_MS,
   createRecentHold,
   notifyRecentActivity,
   onRecentActivity,
+  resetRecentActivityRelayForTests,
   recentRunActive,
   recentRunMark,
   recentRunTarget,
@@ -16,16 +17,16 @@ const cur = (kind: RunCurrentNode['kind'], state: RunCurrentNode['state'], mode:
   ({ id: 'n1', name: 'N', iteration: 1, kind, mode, state })
 const run = (currentNode?: RunCurrentNode, status: Run['status'] = 'running') => ({ id: 'r1', status, currentNode }) as unknown as Run
 
-describe('recentRunMark reuses the 待审批 row icons', () => {
+describe('recentRunMark uses the status primitives', () => {
   it.each([
-    [cur('agent', 'running'), { motion: 'pulse' }],
-    [cur('review', 'busy', 'manual'), { motion: 'pulse' }],
-    [cur('agent', 'stopping', 'manual'), { motion: 'spin' }],
-    [cur('clarify', 'running', 'clarify'), { motion: 'spin' }],
-    [cur('gate', 'waiting_human', 'gate'), { icon: { name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' } }],
-    [cur('review', 'waiting_human', 'review'), { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }],
-    [cur('takeover', 'waiting_human', 'manual'), { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }],
-    [cur('clarify', 'waiting_human', 'clarify'), { icon: { name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' } }],
+    [cur('agent', 'running'), { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('review', 'busy', 'manual'), { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('agent', 'stopping', 'manual'), { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('clarify', 'running', 'clarify'), { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }],
+    [cur('gate', 'waiting_human', 'gate'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('review', 'waiting_human', 'review'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('takeover', 'waiting_human', 'manual'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
+    [cur('clarify', 'waiting_human', 'clarify'), { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }],
   ])('%o', (node, mark) => {
     expect(recentRunMark(run(node, node.state === 'waiting_human' ? 'waiting_human' : 'running'))).toEqual(mark)
   })
@@ -38,8 +39,8 @@ describe('recentRunMark reuses the 待审批 row icons', () => {
 describe('recentRunTarget goes straight into the chat', () => {
   it('auto node → live stream; waiting/taken-over → inbox chat; else detail', () => {
     expect(recentRunTarget(run(cur('agent', 'running')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
-    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
-    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/gates', query: { run: 'r1', node: 'n1' } })
+    expect(recentRunTarget(run(cur('takeover', 'waiting_human', 'manual'), 'waiting_human'))).toEqual({ path: '/runs/r1/nodes/n1' })
+    expect(recentRunTarget(run(cur('agent', 'running', 'manual')))).toEqual({ path: '/runs/r1/nodes/n1' })
     expect(recentRunTarget(run(undefined, 'completed'))).toBe('/runs/r1')
     // Just taken over, auto call still unwinding: keep the stream (the chat opens once it waits).
     expect(recentRunTarget(run(cur('takeover', 'stopping', 'manual')))).toEqual({ path: '/runs/r1/live', query: { node: 'n1' } })
@@ -48,8 +49,8 @@ describe('recentRunTarget goes straight into the chat', () => {
     const r = run(undefined)
     expect(recentRunActive(r, { path: '/runs/r1', query: {} })).toBe(true)
     expect(recentRunActive(r, { path: '/runs/r1/live', query: {} })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r1' } })).toBe(true)
-    expect(recentRunActive(r, { path: '/gates', query: { run: 'r2' } })).toBe(false)
+    expect(recentRunActive(r, { path: '/runs/r1/nodes/n1', query: {} })).toBe(true)
+    expect(recentRunActive(r, { path: '/runs/r2/nodes/n1', query: {} })).toBe(false)
   })
 })
 
@@ -107,6 +108,12 @@ describe('createRecentHold', () => {
 })
 
 describe('local activity relay', () => {
+  beforeEach(() => { resetRecentActivityRelayForTests() })
+  afterEach(() => {
+    resetRecentActivityRelayForTests()
+    vi.useRealTimers()
+  })
+
   it('debounces bursts into one refresh', () => {
     vi.useFakeTimers()
     const fn = vi.fn()
@@ -118,6 +125,25 @@ describe('local activity relay', () => {
     notifyRecentActivity()
     vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
     expect(fn).toHaveBeenCalledTimes(1)
+    vi.clearAllTimers()
+    vi.useRealTimers()
+  })
+
+  it('reads the latest state when a second notice arrives inside the window', () => {
+    vi.useFakeTimers()
+    let state = 'busy'
+    const seen: string[] = []
+    const off = onRecentActivity(() => { seen.push(state) })
+    notifyRecentActivity()
+    vi.advanceTimersByTime(100)
+    state = 'idle'
+    notifyRecentActivity()
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen.at(-1)).toBe('idle')
+    vi.advanceTimersByTime(RECENT_RELAY_DEBOUNCE_MS)
+    expect(seen).toEqual(['idle', 'idle'])
+    off()
+    vi.clearAllTimers()
     vi.useRealTimers()
   })
 })

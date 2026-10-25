@@ -13,7 +13,7 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 	h := newHarness(t)
 
 	// Create with screenshot sample Chinese name → 201.
-	w := h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor",
+	w := h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor",
 		"name":  "Approve需求澄清视觉研发",
 		"files": []any{},
 	})
@@ -32,7 +32,7 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 	}
 
 	// Illegal write name (contains '.') → 400 business error, not 500.
-	w = h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "clarify.v1", "files": []any{}})
+	w = h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "clarify.v1", "files": []any{}})
 	if w.Code != 400 {
 		t.Fatalf("create dotted: want 400 got %d %s", w.Code, w.Body.String())
 	}
@@ -40,7 +40,7 @@ func TestCreateAndRenameAgent_unicodeNameAndInvalid400(t *testing.T) {
 		t.Fatalf("expected invalid agent name error, got %s", w.Body.String())
 	}
 
-	w = h.do("POST", "/api/agents", map[string]any{"acpBackend": "cursor", "name": "Approve 需求", "files": []any{}})
+	w = h.do("POST", "/api/agents", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "name": "Approve 需求", "files": []any{}})
 	if w.Code != 400 {
 		t.Fatalf("create space: want 400 got %d %s", w.Code, w.Body.String())
 	}

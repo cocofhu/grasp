@@ -1,6 +1,7 @@
 package provider
 
 import (
+	"bytes"
 	"encoding/base64"
 	"os"
 	"path/filepath"
@@ -61,5 +62,125 @@ func TestMaterializeAttachmentsImageAndFile(t *testing.T) {
 	got := AppendAttachmentRefs("看一下", paths)
 	if !strings.Contains(got, "看一下") || !strings.Contains(got, "a.png") || !strings.Contains(got, "b.txt") {
 		t.Fatalf("refs=%q", got)
+	}
+}
+
+func TestMaterializeAttachmentsKeepsSingleImageName(t *testing.T) {
+	raw := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d}
+	dir, paths, err := MaterializeAttachments([]PromptImage{
+		{Data: base64.StdEncoding.EncodeToString(raw), MimeType: "image/png", Name: "image.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	if len(paths) != 1 || filepath.Base(paths[0]) != "image.png" {
+		t.Fatalf("paths=%v", paths)
+	}
+	got, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(got, raw) {
+		t.Fatalf("bytes=%v", got)
+	}
+	assertInside(t, dir, paths[0])
+}
+
+func TestMaterializeAttachmentsDuplicateImagePNG(t *testing.T) {
+	first := []byte{0x89, 0x50, 0x4e, 0x47, 0x01}
+	second := []byte{0x89, 0x50, 0x4e, 0x47, 0x02}
+	third := []byte{0x89, 0x50, 0x4e, 0x47, 0x03}
+	dir, paths, err := MaterializeAttachments([]PromptImage{
+		{Data: base64.StdEncoding.EncodeToString(first), MimeType: "image/png", Name: "image.png"},
+		{Data: base64.StdEncoding.EncodeToString(second), MimeType: "image/png", Name: "image.png"},
+		{Data: base64.StdEncoding.EncodeToString(third), MimeType: "image/png", Name: "image.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	wantNames := []string{"image.png", "image-2.png", "image-3.png"}
+	wantBytes := [][]byte{first, second, third}
+	if len(paths) != len(wantNames) {
+		t.Fatalf("paths=%v", paths)
+	}
+	for i, p := range paths {
+		if filepath.Base(p) != wantNames[i] {
+			t.Fatalf("path %d = %q, want %s", i, p, wantNames[i])
+		}
+		assertInside(t, dir, p)
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, wantBytes[i]) {
+			t.Fatalf("file %s bytes = %v, want %v", wantNames[i], got, wantBytes[i])
+		}
+	}
+	if paths[0] == paths[1] || paths[1] == paths[2] {
+		t.Fatalf("paths collided: %v", paths)
+	}
+	refs := AppendAttachmentRefs("图一和图二", paths)
+	if !strings.Contains(refs, "用户上传了以下附件，请直接读取这些本地文件路径：") {
+		t.Fatalf("refs=%q", refs)
+	}
+	prev := -1
+	for _, p := range paths {
+		idx := strings.Index(refs, p)
+		if idx < 0 || idx <= prev {
+			t.Fatalf("path %q missing or out of order in %q", p, refs)
+		}
+		prev = idx
+	}
+	if strings.Contains(refs, base64.StdEncoding.EncodeToString(first)) {
+		t.Fatalf("refs inlined image bytes: %q", refs)
+	}
+}
+
+func TestMaterializeAttachmentsDuplicateSkipsTakenSuffix(t *testing.T) {
+	taken := []byte("taken")
+	first := []byte("first-image")
+	second := []byte("second-image")
+	dir, paths, err := MaterializeAttachments([]PromptImage{
+		{Data: base64.StdEncoding.EncodeToString(taken), MimeType: "image/png", Name: "image-2.png"},
+		{Data: base64.StdEncoding.EncodeToString(first), MimeType: "image/png", Name: "image.png"},
+		{Data: base64.StdEncoding.EncodeToString(second), MimeType: "image/png", Name: "image.png"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir)
+	want := []struct {
+		name string
+		raw  []byte
+	}{
+		{"image-2.png", taken},
+		{"image.png", first},
+		{"image-3.png", second},
+	}
+	if len(paths) != len(want) {
+		t.Fatalf("paths=%v", paths)
+	}
+	for i, p := range paths {
+		if filepath.Base(p) != want[i].name {
+			t.Fatalf("path %d = %q, want %s", i, p, want[i].name)
+		}
+		assertInside(t, dir, p)
+		got, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want[i].raw) {
+			t.Fatalf("file %s bytes = %q, want %q", want[i].name, got, want[i].raw)
+		}
+	}
+}
+
+func assertInside(t *testing.T, dir, path string) {
+	t.Helper()
+	rel, err := filepath.Rel(dir, path)
+	if err != nil || !filepath.IsLocal(rel) {
+		t.Fatalf("path escaped temp dir: %q (rel=%q err=%v)", path, rel, err)
 	}
 }

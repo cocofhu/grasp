@@ -1,8 +1,10 @@
 <script setup lang="ts">
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
 import Icon from '@/components/ui/Icon.vue'
+import MarkdownViewToggle, { type MarkdownViewMode } from '@/components/agent/MarkdownViewToggle.vue'
 import { renderMarkdown } from '@/lib/shared/markdown'
 import {
   parseFrontmatter,
@@ -21,7 +23,7 @@ const props = withDefaults(
     readonly?: boolean
     /** split = desktop FM form + side-by-side; stack = mobile unified source + edit/preview toggle */
     variant?: 'split' | 'stack'
-    /** Host renders the preview toggle in its own toolbar (no in-pane header/rail). */
+    /** Host renders the edit/split/preview toggle in its own toolbar (no in-pane header). */
     externalToolbar?: boolean
   }>(),
   { variant: 'split' },
@@ -34,11 +36,8 @@ const isStack = computed(() => props.variant === 'stack')
 const stackMode = ref<'edit' | 'preview'>('edit')
 
 const SPLIT_KEY = 'agent-md-split-ratio'
-const PREVIEW_COLLAPSED_KEY = 'agent-md-preview-collapsed'
-/** Align with AgentStudioView SIDEBAR_COLLAPSED_W */
-const PREVIEW_RAIL_W = '28px'
-const collapseBtnClass =
-  'flex shrink-0 items-center justify-center rounded w-[22px] h-[22px] text-txt3 transition hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none'
+const VIEW_MODE_KEY = 'agent-md-view-mode'
+const VIEW_MODES: MarkdownViewMode[] = ['edit', 'split', 'preview']
 
 const splitRatio = ref(0.5)
 const fmCollapsed = ref(true)
@@ -82,27 +81,18 @@ function saveSplitRatio() {
   }
 }
 
-/** Sync read so first paint matches stored preference (avoid expand→collapse flash). */
-function loadPreviewCollapsed(): boolean {
+/** Sync read so first paint matches stored preference (avoid layout flash). */
+function loadViewMode(): MarkdownViewMode {
   try {
-    const v = localStorage.getItem(PREVIEW_COLLAPSED_KEY)
-    if (v === null) return false
-    return v === 'true'
+    const v = localStorage.getItem(VIEW_MODE_KEY) as MarkdownViewMode | null
+    return v && VIEW_MODES.includes(v) ? v : 'edit'
   } catch {
-    return false
+    return 'edit'
   }
 }
 
-/** Desktop split only: false = preview expanded (default). */
-const previewCollapsed = ref(loadPreviewCollapsed())
-
-function savePreviewCollapsed() {
-  try {
-    localStorage.setItem(PREVIEW_COLLAPSED_KEY, String(previewCollapsed.value))
-  } catch {
-    /* ignore quota / private mode */
-  }
-}
+/** Desktop split variant only; single-column editing by default. */
+const viewMode = ref<MarkdownViewMode>(loadViewMode())
 
 function relayoutEditor() {
   nextTick(() => {
@@ -114,19 +104,15 @@ function relayoutEditor() {
   })
 }
 
-function setPreviewCollapsed(next: boolean) {
-  previewCollapsed.value = next
-  savePreviewCollapsed()
-  // Do not rewrite SPLIT_KEY on collapse; expand reuses in-memory/local splitRatio.
+function setViewMode(next: MarkdownViewMode) {
+  viewMode.value = next
+  try {
+    localStorage.setItem(VIEW_MODE_KEY, next)
+  } catch {
+    /* ignore quota / private mode */
+  }
+  // Do not rewrite SPLIT_KEY on mode change; split reuses in-memory/local splitRatio.
   relayoutEditor()
-}
-
-function collapsePreview() {
-  setPreviewCollapsed(true)
-}
-
-function expandPreview() {
-  setPreviewCollapsed(false)
 }
 
 function syncFormFromContent() {
@@ -183,13 +169,13 @@ function onEditorReady(editor: monaco.editor.IStandaloneCodeEditor) {
 }
 
 function onSashMouseDown(e: MouseEvent) {
-  if (previewCollapsed.value) return
+  if (viewMode.value !== 'split') return
   dragging.value = true
   e.preventDefault()
 }
 
 function onMouseMove(e: MouseEvent) {
-  if (!dragging.value || !splitBody.value || previewCollapsed.value) return
+  if (!dragging.value || !splitBody.value || viewMode.value !== 'split') return
   const rect = splitBody.value.getBoundingClientRect()
   // Clamp only — never auto-collapse at ratio extremes.
   splitRatio.value = Math.min(0.72, Math.max(0.28, (e.clientX - rect.left) / rect.width))
@@ -206,7 +192,7 @@ watch(() => props.modelValue, () => syncFormFromContent(), { immediate: true })
 watch(() => props.filePath, () => {
   fmCollapsed.value = true
   stackMode.value = 'edit'
-  // Keep previewCollapsed across file switches (shared preference, not per-file).
+  // Keep viewMode across file switches (shared preference, not per-file).
   syncFormFromContent()
 })
 watch(showFmPanel, (visible, wasVisible) => {
@@ -222,7 +208,7 @@ onMounted(() => {
   document.addEventListener('mouseup', onMouseUp)
 })
 
-defineExpose({ previewCollapsed, collapsePreview, expandPreview })
+defineExpose({ viewMode, setViewMode })
 
 onBeforeUnmount(() => {
   document.removeEventListener('mousemove', onMouseMove)
@@ -240,7 +226,7 @@ onBeforeUnmount(() => {
         class="flex w-full items-center gap-1.5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-txt2 hover:bg-elevated"
         @click="fmCollapsed = !fmCollapsed"
       >
-        <Icon
+        <Icon :interactive="false"
           name="chevron-down"
           :size="12"
           class="text-txt3 transition-transform"
@@ -310,11 +296,11 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- stack: edit / preview toggle -->
-    <div v-if="isStack" class="rounded-md overflow-hidden mx-2.5 mb-2.5 mt-2 flex shrink-0 border border-line" role="tablist">
+    <SlidingTabs v-if="isStack" :value="stackMode" indicator-class="bg-accent-dim shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]" class="rounded-md overflow-hidden mx-2.5 mb-2.5 mt-2 flex shrink-0 border border-line bg-base" role="tablist">
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'edit' ? 'bg-accent-dim text-txt shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]' : 'bg-base text-txt3'"
+        :class="stackMode === 'edit' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'edit'"
         @click="stackMode = 'edit'"
@@ -324,14 +310,14 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="min-h-11 flex-1 text-[12px] transition"
-        :class="stackMode === 'preview' ? 'bg-accent-dim text-txt shadow-[inset_0_-2px_0_var(--color-accent,#7B61FF)]' : 'bg-base text-txt3'"
+        :class="stackMode === 'preview' ? 'text-txt' : 'text-txt3 hover:text-txt2'"
         role="tab"
         :aria-selected="stackMode === 'preview'"
         @click="stackMode = 'preview'"
       >
         {{ t('pages.markdownEditor.preview') }}
       </button>
-    </div>
+    </SlidingTabs>
 
     <!-- stack body: single-column editor or preview -->
     <div v-if="isStack" class="flex min-h-0 flex-1 flex-col">
@@ -358,79 +344,48 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
-    <!-- split body (desktop) -->
-    <div v-else ref="splitBody" class="flex min-h-0 flex-1">
-      <div
-        class="flex h-full min-h-0 min-w-0 flex-col"
-        :style="previewCollapsed ? { flex: '1 1 auto' } : { flex: `0 0 ${splitRatio * 100}%` }"
-      >
-        <CodeEditor
-          ref="editorRef"
-          :model-value="modelValue"
-          language="markdown"
-          :minimap="true"
-          :readonly="readonly"
-          @update:model-value="onEditorInput"
-          @scroll="onEditorScroll"
-          @ready="onEditorReady"
-        />
+    <!-- split body (desktop): edit / split / preview -->
+    <template v-else>
+      <div v-if="!externalToolbar" class="flex shrink-0 justify-end border-b border-line px-2 py-1">
+        <MarkdownViewToggle :model-value="viewMode" @update:model-value="setViewMode" />
       </div>
-      <div
-        v-if="!previewCollapsed"
-        class="w-1 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-accent"
-        :class="dragging ? 'bg-accent' : ''"
-        :title="t('pages.markdownEditor.resizeSash')"
-        data-testid="md-preview-sash"
-        @mousedown="onSashMouseDown"
-      />
-      <div
-        v-if="!previewCollapsed"
-        class="flex min-w-0 flex-1 flex-col bg-surface"
-        data-testid="md-preview-panel"
-      >
-        <div v-if="!externalToolbar" class="flex shrink-0 items-center justify-between gap-2 border-b border-line bg-base/35 px-3 py-1 text-[10.5px] uppercase tracking-wider text-txt3">
-          <span>{{ t('pages.markdownEditor.preview') }}</span>
-          <span class="flex items-center gap-1.5">
-            <span class="flex items-center gap-1 text-[10px] normal-case text-ok">
-              <span class="h-1.5 w-1.5 rounded-full bg-ok" />{{ t('pages.markdownEditor.live') }}
-            </span>
-            <button
-              type="button"
-              :class="collapseBtnClass"
-              :title="t('pages.markdownEditor.collapsePreview')"
-              :aria-label="t('pages.markdownEditor.collapsePreview')"
-              :aria-expanded="true"
-              data-testid="md-preview-collapse"
-              @click="collapsePreview"
-            >
-              <Icon name="chevron-right" :size="14" />
-            </button>
-          </span>
+      <div ref="splitBody" class="flex min-h-0 flex-1">
+        <div
+          v-show="viewMode !== 'preview'"
+          class="flex h-full min-h-0 min-w-0 flex-col"
+          :style="viewMode === 'split' ? { flex: `0 0 ${splitRatio * 100}%` } : { flex: '1 1 auto' }"
+        >
+          <CodeEditor
+            ref="editorRef"
+            :model-value="modelValue"
+            language="markdown"
+            :minimap="false"
+            :readonly="readonly"
+            @update:model-value="onEditorInput"
+            @scroll="onEditorScroll"
+            @ready="onEditorReady"
+          />
         </div>
         <div
+          v-if="viewMode === 'split'"
+          class="w-1 shrink-0 cursor-col-resize bg-line transition-colors hover:bg-accent"
+          :class="dragging ? 'bg-accent' : ''"
+          :title="t('pages.markdownEditor.resizeSash')"
+          data-testid="md-preview-sash"
+          @mousedown="onSashMouseDown"
+        />
+        <div
+          v-if="viewMode !== 'edit'"
           ref="previewScroll"
-          class="scroll-area min-h-0 flex-1 overflow-auto px-5 py-4"
+          class="scroll-area min-w-0 flex-1 overflow-auto bg-surface"
+          data-testid="md-preview-panel"
           @wheel="onPreviewWheel"
           @scroll="onPreviewScroll"
         >
-          <div class="md" v-html="previewHtml" />
+          <div class="md" :class="viewMode === 'preview' ? 'mx-auto max-w-[780px] px-8 py-6' : 'px-5 py-4'" v-html="previewHtml" />
         </div>
       </div>
-      <button
-        v-if="previewCollapsed && !externalToolbar"
-        type="button"
-        class="flex shrink-0 select-none items-center justify-center gap-2 border-l border-line bg-base py-2.5 text-[10.5px] font-semibold uppercase tracking-[0.12em] text-txt3 transition hover:bg-elevated hover:text-accent-2 focus-visible:shadow-[inset_0_0_0_2px_rgba(99,102,241,0.35)] outline-none"
-        :style="{ width: PREVIEW_RAIL_W, writingMode: 'vertical-rl', textOrientation: 'mixed' }"
-        :title="t('pages.markdownEditor.expandPreview')"
-        :aria-label="t('pages.markdownEditor.expandPreview')"
-        :aria-expanded="false"
-        data-testid="md-preview-expand-rail"
-        @click="expandPreview"
-      >
-        <Icon name="chevron-right" :size="12" class="shrink-0 rotate-180" style="writing-mode: horizontal-tb" />
-        <span>{{ t('pages.markdownEditor.preview') }}</span>
-      </button>
-    </div>
+    </template>
   </div>
 </template>
 

@@ -181,7 +181,7 @@ watch(visible, (isVisible) => {
         :aria-expanded="expanded"
         @click="expanded = !expanded"
       >
-        <Icon
+        <Icon :interactive="false"
           name="chevron-right"
           :size="14"
           class="shrink-0 text-txt3 transition-transform duration-150"

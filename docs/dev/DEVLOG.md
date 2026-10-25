@@ -20,6 +20,375 @@
 
 ## 记录
 
+### 2026-10-25（工作流共享沙箱单开关）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：工作流默认配置面板、前端类型与中英文文案、画布浏览器回归、`server/internal/{config,handlers,services,sandbox,engine,models}/`、沙箱 README 与帮助。
+- 做了什么：工作流默认配置顶部新增「共享沙箱」开关，保存到 `defaults.sandbox.mode`；沙箱、变量、通知与自动审批统一分组、开关和间距，变量类型与 Agent 选择复用可搜索组件，收起冗余说明；删除平台级共享沙箱设置、配置项与全局开关状态，启动运行仅按工作流配置快照。关闭时仍为每节点独立沙箱；已有运行继续使用启动时的选择。
+- 为什么：用户可以在前端一次选择完成配置，消除隐藏的第二层启用条件。
+- 如何验证：server lint/vet、配置文档检查、全量测试、RunAgent/React 专项通过，核心覆盖率 90.4%；Web lint/types/build 与 511 文件、5,151 单测通过，Lines 91.01%；完整 227 项关键浏览器测试通过，覆盖共享模式开关保存/刷新、1440px 浅色与 1024px 深色统一表单及搜索选择；只读 review 确认通知/审批显式关闭、空值默认语义和密钥遮罩保留。docs build/audit、actionlint/shellcheck 通过；沙箱 README 同步后语法/smoke/lint/vet/preview 与核心覆盖率 96.6% 通过。本地前端与更新后控制面均返回 200，无沙箱镜像改动。
+
+### 2026-10-25（API 账号与默认继承交互收口）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：Agent 元信息/创建/默认配置、工作区凭据与模型组件、Studio 保存反馈、`server/internal/handlers/`、`services/`、`runtime/` 及当前配置合同回归、模型配置帮助。
+- 做了什么：工具授权归入「Agent CLI」、模型服务凭据归入「API 账号」，两类显示厂商图标；移除独立模型连接列表、新增连接入口和模型目录，API 地址只在账号向导或账号编辑中维护。Agent 缺省使用默认配置，显式关闭状态原样持久化；元信息恢复单张继承卡片，开关前后保持固定尺寸，开启时收起模型/Git/路径明细，关闭后恢复本地配置；Agent 与默认配置的元信息均移除目录路径和管理凭据链接，Agent 另移除通用凭据绑定和底部能力实现说明；保存状态、按钮文字及底部反馈增加 200ms 过渡并尊重减少动态效果偏好；保留当前模型/Git 引用合同，不自动改写部分继承状态。后端删除自动内置空槽和旧格式推断，仅接受当前显式凭据合同，读取不转换旧行或写入空槽。
+- 为什么：让页面遵循「先建账号、再建模型、Agent 选择模型与 Git」的流程；继承无需重复配置，避免无效旧占位和独立连接/目录混淆。
+- 如何验证：server lint/vet、配置文档检查、全量测试、核心覆盖率 90.4%、RunAgent/React 专项、当前凭据与默认继承 race、重启初始化 HTTP 契约 race 均通过。Web 511 文件、5,147 单测通过，Lines 91.01%；lint（0 errors、12 个既有 warnings）、types、生产构建及完整 224 项关键浏览器测试通过。桌面继承卡片开关前后宽高一致（高度 120px），凭据与向导的 1440/390px 布局已核对。docs build/audit、actionlint、error-level shellcheck 和 diff 检查通过；本地前端及更新后控制面均返回 200，无沙箱镜像或引导契约变更。
+
+### 2026-10-25（PR #943 合并初始化四角色保护）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：`server/internal/services/onboarding.go`、默认继承回归与最新 `main` 的初始化四角色保护改动。
+- 做了什么：合并 `main` 的中英文规范角色集合、角色锁定和基线工作流创建前置校验；基线校验先解析 Agent 显式继承的默认模型，Git 初始化继续使用带 Host 的凭据解析器。
+- 为什么：PR #942 改写了基线角色校验，与本 PR 的默认模型继承命中同一函数；同时保留完整角色集合要求与有效模型校验，避免继承配置的角色被误判未配置。
+- 如何验证：合并后 server lint/vet、配置文档检查、全量测试、RunAgent/React 专项及核心覆盖率 90.4% 通过；中英规范四角色与默认继承的 race 回归、重启初始化真实 HTTP 契约含 race/tagged vet 通过。Web 全量 512 文件、5,152 单测通过，Lines 91.02%；lint（0 errors，12 个既有 warnings）、types、生产构建及 223 项完整关键浏览器测试通过。actionlint/shellcheck、docs build/audit 和 diff 检查通过，无未解决冲突。
+
+### 2026-10-25（凭据 Host 与 Agent 默认模型/Git 继承）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：工作区凭据 API/列表/向导、Git 授权解析与沙箱调用链、Agent 默认配置和编辑/创建、相关回归、配置帮助与 Git 技能说明。
+- 做了什么：GitHub/GitLab 凭据保存 Host（默认官方），移除独立 GitLab URL 列表项；凭据按编码工具和 Git 分类。默认配置可选择具名模型及多个 Git 授权，Agent 以独立开关明确继承模型或 Git；模型配置确定 CLI，元信息不再重复选择编码工具。
+- 为什么：自建站点应与授权一起保存；Agent scope 只能细化同一站点，避免跨站转发。可复用的默认配置需要显式继承规则，与单独配置、空授权和失效处理保持一致。
+- 如何验证：server lint/vet、配置文档、全量测试、RunAgent/React 专项及核心覆盖率 90.4% 通过；Host/API/继承/长会话/冷重连/共享沙箱回归含 race 通过。Web 全量 512 文件、5,143 单测通过，Lines 91.02%，lint（0 errors，12 个既有 warnings）、types、build、audit 通过；完整关键浏览器 223 项全过（4.3 分钟），含默认模型与多 Git 保存、首选、继承创建及刷新回读。重启初始化契约含 race/tagged vet、actionlint/shellcheck、docs build/audit 通过。桌面及 390px 页面已核对，本地前端与更新后的控制面健康检查均为 200；无线上数据写入，无沙箱镜像或引导契约变更。
+
+### 2026-10-25（PR #940 重启端到端测试使用当前模型合同）
+
+- 日期：2026-10-25（Asia/Hong_Kong）
+- 范围：`server/e2e/restart_reattach_test.go`、对应初始化接口契约回归。
+- 做了什么：重启 E2E 通过当前 API 依次创建模型服务凭据、连接及 OpenCode 具名模型配置，再将模型配置 ID 交给初始化向导；读回 Agent 验证 CLI 与模型引用。新增不依赖 Docker 或外部模型的真实 API 契约回归，密钥仅出现在创建凭据请求中。
+- 为什么：PR #940 移除旧初始化字段后，独立的真实模型重启 E2E 仍发送旧字段，两个 CI 任务均在创建运行前以 400 退出。修复测试准备流程，继续验证真实的运行保留、排队和重启接回语义，不恢复旧字段兼容。
+- 如何验证：服务端 lint、vet、配置文档检查、全量测试及 RunAgent/React 专项通过；核心覆盖率 90.3%。新增契约回归含 race 及 tagged vet 通过；actionlint、shellcheck、docs 构建和审计通过。真实模型与 Docker 重启接回继续由现有 `restart-reattach` CI 验证。
+
+### 2026-10-24（PR #940 统一新配置模型与 CI 修复）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：server 模型/凭据、Agent、初始化与团队服务及运行入口；sandbox 模型连接路径校验与 go.mod；Web 凭据/模型/Agent/初始化向导和测试；中英概念与快速开始、设计说明及 CHANGELOG。
+- 做了什么：按用户最终确认统一为 Agent → 具名模型配置（CLI + 凭据 + 上游模型）以及显式多个 Git 授权。删除旧 Agent 单槽字段、工作区模型默认、直接来源/继承、读取映射与自动迁移；创建、编辑、初始化/团队向导和运行入口使用同一结构。草稿可未配置，运行必须配置；缺少基线角色时提示完成配置。CodeBuddy 配置读取用 os.OpenRoot 限制 FSRoot 内访问；yaml.v3 改为直接依赖；happy-dom 升至 21.0.4 并适配测试模拟差异。 浏览器图标短动效验收在首帧暂停后观察，避免遍历所有图标时被 RPC 与机器耗时影响。
+- 为什么：用户明确不要求强行兼容旧结构；隐式派生可能把旧模型变成默认值。CI 另外发现路径边界、依赖分类漂移与测试库安全公告，需在本 PR 收尾。
+- 如何验证：server 六项门禁全过，core coverage 90.3%；sandbox 语法/注入/Git/bootstrap/预览 smoke、Go lint/vet/全测与 core coverage 96.6% 通过；Web 最终全量 511 文件/5085 单测、Lines 90.98%、lint（0 errors，12 既有 warnings）、types、audit、build 通过。向导复核发现的 Git 跳过与模型失效回退另加 10 项回归，定向 62 项通过；完整关键浏览器套件最终 220/220 全过（4.1 分钟）。docs build/audit、actionlint/shellcheck、Go tidy/gofmt、runtime bundle 与控制面构建通过；远端检查以 PR 最新提交为准。
+
+### 2026-10-24（凭据与模型改造提交前 review）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：模型与凭据服务、Agent/共享配置与长驻沙箱生命周期、模型 CLI 适配器、Git helper、Web 配置向导与相关测试、公开概念说明及 `CHANGELOG.md`。
+- 做了什么：修复切工具及切页签后旧授权/模型草稿丢失，所有新增表单下拉统一为可搜索 AppSelect；自定义服务商名称写入 issuer，保留 provider 机器身份，轮换密钥不再串入旧工具验证/迁移。长驻沙箱在复用和每次聊天前重新校验当前模型/Git 授权，将不可逆指纹持久化但不暴露到 API，兼容正常重连及服务重启；失效模型配置仍可在不改内容时停用。Git SSH 兼容 Git 传入的未加方括号 IPv6 地址。Messages 原生适配器只规范化末尾 API 版本，保留网关前缀及保存原值。固定官方 CodeBuddy CLI 实测仅走 Chat Completions，故关闭未实现的 Responses/Messages 连接能力。旧 OpenCode 保留原生供应商 SDK 和显式选择，不强转通用连接，不在原授权失效后换用其他 Key。
+- 为什么：review 发现旧数据切换、长驻会话复用、供应商名称与机器标识混用、协议模拟与真实 CLI 行为不一致等回归；新增结构必须保住存量配置和明确授权边界。
+- 如何验证：已同步 main 4b38890a 并完成三路 review 及关键修复交叉复核。Web 全量 519 文件、5,247 单测通过，Lines 90.85%；完整 critical E2E 220 项通过（4.7 分钟、零重试），类型检查、lint（0 errors、12 个已有 warnings）及生产构建通过。Server lint/vet、配置文档检查、全测、runtime 专项及核心覆盖率 90.3% 通过；sandbox 全语法/smoke、Python 19 项、Git/reprime、preview-inject、Go 全测/lint/vet 与核心覆盖率 96.6% 通过。固定官方 CodeBuddy 2.162.0 以干净配置对本地 mock 的请求验证协议边界，Anthropic SDK 0.129.0 验证实际路径拼接，无付费模型调用。actionlint、shellcheck、docs 构建与官方源审计通过，运行时包及 server 二进制构建成功，本地前端/控制面/网关健康检查均为 200。旧 OpenCode 8 类供应商、原 Key 失效不回落、长驻会话轮换/撤销/正常重连/服务重启，以及自定义名称创建/轮换不触发旧迁移均有回归。升级前旧沙箱可能需要关闭后重开，公开文档与 PR 明确列出此边界；未发布到线上。
+
+### 2026-10-24（Solo 顶部栏与工作流会话对齐）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/router/index.ts`、`web/src/components/chat/ConversationWorkspace.vue`、`web/src/components/run/ReviewShell.vue`、`web/src/views/GatesInboxView.vue` 及相关测试、`CHANGELOG.md`。
+- 做了什么：移除 Solo 入口与会话路由的独立全屏标记，使用与工作流启动后会话相同的 AppShell 内容布局。三处继续复用 ReviewShell 与 ConversationWorkspace，统一顶部栏外部间距、宽度及资源/产物按钮对齐。审批中心的移动聊天分支将原返回与分享入口放进共同顶部栏，去掉重复标题及独立分享行；普通审批与启动失败页面保留原有返回区域，返回列表仍恢复原滚动位置。
+- 为什么：在线登录核对发现两页内部都是 44px 顶部栏，但 Solo 从 y=0 开始、工作流从 y=12 开始，左右也相差 24px；差异来自路由跳过统一外层间距，而不是顶部栏本身。
+- 如何验证：Web 全量 515 个文件、5,148 项单测通过，Lines 90.76%；类型检查、生产构建及 lint（0 errors、12 个已有 warnings）通过。完整 critical E2E 219 项通过，最后合并移动分享入口后再跑分享、移动审批、会话面板与澄清产物专项 33 项，全过；回归覆盖唯一标题、分享目标、面板操作及返回列表恢复滚动。使用线上只读数据在本地新版核对深浅主题及 1895/1024/390/320px：Solo 与工作流审批会话顶部栏位置、宽高完全一致，长标题省略，按钮不溢出，零页面异常及零业务写请求。actionlint、shellcheck、docs 构建及官方源依赖审计通过；线上只读查看，未发布或修改线上会话。
+
+### 2026-10-24（Agent 多 Git 授权与工作流沙箱隔离）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：Agent API、持久化和 ZIP、共享配置与工作流/交互/测试运行入口、沙箱授权 staging/reprime、运行时脚本与打包、Web Git 选择组件及创建/编辑/共享草稿、相关测试、配置帮助与内部设计文档。
+- 做了什么：Agent 以 `modelBinding` 引用模型，以 `gitBindings.items` 引用多个 Git 授权，通过 `preferredCredentialId` 指定首选；界面复用可搜索选择器与 Logo，支持移除、可选站点或仓库范围和 SSH 已知主机。所选秘密通过受限文件完整注入沙箱，按仓库、站点和首选匹配，不在失败时轮换账号。工作流节点应用各自 Agent 的绑定，共享沙箱切换授权时清理上一节点的文件与身份，MR 按同一仓库选择账号。显式空列表禁用默认 Git 注入，独立逐仓库授权保持兼容，新建 Agent 默认 `repoIds: []`；缺省保留旧绑定，Agent 显式旧授权优先于共享默认，失效引用保留并阻止执行。交互会话授权变更后拒绝复用旧沙箱，要求重新打开。
+- 为什么：单个 Git 连接方式和授权槽位不能表达一个 Agent 需要多个 Git 账号，直接合并环境变量会覆盖同平台账号；工作流复用沙箱还需防止不同节点串用授权。
+- 如何验证：Web 515 个文件、5,145 项单测通过，Lines 90.76%；完整 critical E2E 219 项通过（4.7 分钟、零重试），类型、lint（0 errors、12 个已有 warnings）和生产构建通过。Server 的 lint v2.12.0、vet、配置文档检查、全量测试与 runtime 专项通过，core coverage 90.3%；覆盖 API/ZIP/shared nil 与 empty、旧客户端保存、legacy 优先级、交互与测试沙箱全量 staging、失效阻止复用、MR 无秘密脚本、同一工作流沙箱 Agent A → B → 空授权的重新初始化。沙箱 Python 19 项及真实 Git credential、SSH 私钥与 gh/glab 离线验证通过；默认端口、协议/路径匹配、损坏首选不回退、具体仓库优先、MR 子进程临时配置清理与多授权 → 空授权均有回归。沙箱模块 lint/vet、smokes 与覆盖率 96.6% 通过；新增 server sandbox 打包/指纹测试核对完整授权集合、私有权限、显式空标记、旧环境清除及所有授权变更触发重建。actionlint、shellcheck、docs 构建/官方源审计通过。真实预览在深浅主题及 1440/390/320px 下使用只读授权元数据样例核对四授权、首选、scope、SSH 已知主机、确认页与返回保留，无写入用户数据、无原生下拉或溢出。运行时包包含新 helper，前端、控制面和网关保持运行。
+
+### 2026-10-24（新建 Agent 显式选择模型与统一新增菜单）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/agent/{AgentCreateWizard,ModelBindingEditor}.vue` 及单测、`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager}.vue` 及单测、`web/src/components/ui/AppSelect.vue`、中英文页面文案、`web/e2e/{agent-create-wizard,model-routing,git-help-run-tags-404}.spec.ts`、`docs/dev/agent-model-routing-design.md` 与 `CHANGELOG.md`。
+- 做了什么：新建 Agent 的“工具与模型”同页只允许显式选择已保存的命名模型配置，移除继承默认、直接来源、高级字段、绑定摘要和凭据管理链接；初始不代选模型，切换工具清空选择，返回保留草稿。该步不再提供跳过，配置为空或引用失效时禁用下一步与创建，并在提交入口再次检查；Git 仍可跳过。已有 Agent 编辑、工作区默认、团队模板与运行时的旧绑定兼容保持原有边界。凭据页两个页签共用右上角新增菜单，“新增凭据”和“添加模型”分别打开对应向导；模型页隐藏重复的新增按钮。内部设计文档区分当前创建流程与原始设计、兼容编辑行为。
+- 为什么：用户只需要在创建 Agent 时选择工具及已保存的模型，原来的默认继承、直接配置与底部说明增加理解成本；凭据与模型的新增入口分散在不同页签，也不易发现。
+- 如何验证：Web 全量 513 个文件、5,100 项单测通过，Lines 90.72%；完整 critical E2E 219 项通过（4.3 分钟、零重试），Git 帮助专项另行通过。类型检查、生产构建、lint（0 errors、12 个已有 warnings）、actionlint、shellcheck、docs 构建及官方源依赖审计通过。覆盖必选配置、空值和失效引用阻止前进、切工具清空、返回保留、站点保存、命名引用提交，以及两个页签共享新增入口。真实页面核对 1440/390/320px 和深浅主题：7 个工具 Logo、模型搜索和键盘选择正常，空模型禁用下一步，无继承、高级或管理入口；新增菜单的 12 种主题、尺寸和页签组合均可打开两个向导并取消，菜单无越界和重复模型按钮，未写入用户数据。前端、控制面与网关健康检查通过。
+
+### 2026-10-24（Agent 工具与模型同页配置、搜索控件统一）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/agent/{CodingToolPicker,AgentCreateWizard,AgentMetaPanel,ModelBindingEditor,AgentCredentialBindings,AgentMcpPanel,CreateAgentTeamWizard}.vue`、`web/src/components/workspace/{WorkspaceSharedAgentPanel,WorkspaceModelDefaults}.vue`、`web/src/lib/agent/{agentCreateWizard,useAgentCreateWizard}.ts` 及单测、相关组件单测、`web/src/views/AgentStudioView.test.ts`、`web/e2e/{agent-create-wizard,model-routing,git-help-run-tags-404}.spec.ts`、中英文页面文案与 `CHANGELOG.md`。
+- 做了什么：新建 Agent 收为“基础信息 → 工具与模型 → Git → 确认创建”四步，在同页先选择工具再选择模型配置，桌面并列、窄屏上下排列，右侧始终显示模型搜索框，可直接选择具名配置或工作区默认；跳过该页继承默认模型并清理旧授权输入，返回保留已选配置。创建、编辑及默认 Agent 共用紧凑的工具 Logo 列表，站点选择合并进列表底部；工具步骤使用明确的“编码工具”标题，去掉与现有模型配置流程不符的启动说明。窄屏收起步骤侧栏，内容和页脚可收缩换行。模型配置、平台凭据、连接、主模型、辅助模型、路由、凭据注入、默认工具及两处 MCP 传输选择均复用可搜索 AppSelect；已有模板与仓库选择控件继续复用。工具、厂商在选中值和选项中展示 Logo，装饰图像不重复读屏名称。失效引用保持明确的名称/ID 与错误状态，同值选择保留已有模型和输入；原凭据引用、站点环境键、工具切换确认/取消、特殊 CodeBuddy 站点及保存数据格式继续保持。
+- 为什么：原来的工具大卡片、长说明和分离的高亮站点按钮缺少层次，创建与编辑样式分散；模型绑定中的原生系统下拉与仓库搜索控件不一致，不便定位已有模型。
+- 如何验证：针对工具键盘选择、站点与特殊值、工具切换确认和草稿恢复、失效引用修复、MCP 输入保留的定向单测通过；四步合并页、模型路由及 Git 帮助专项浏览器 13 项通过。实际前端检查 7 个工具 Logo、搜索/高亮/Enter 选择、站点切换与无原生下拉，复核 1440/390/320px 和深浅主题截图，无溢出，未保存 Agent 或模型。Web 全量 513 个文件、5,091 项单测通过，Lines 90.71%；完整 critical E2E 218 项全部通过（4.5 分钟、零重试）；类型检查、lint（0 errors、12 个已有 warnings）、生产构建、actionlint、shellcheck、docs 构建及官方源依赖审计通过。
+
+### 2026-10-24（凭据、模型与连接向导完整交互复核）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConfigurationManager,ModelConnectionManager}.vue` 及单测、`web/src/components/ui/AppModal.vue` 及单测、`web/src/lib/agent/modelRouting.ts`、`web/e2e/model-routing.spec.ts`、`docs/dev/agent-model-routing-design.md`、`CHANGELOG.md`。
+- 做了什么：模型向导改为工具 Logo 卡片、单一带 Logo 的凭据选择和可搜索/手填的模型选择，自动根据真实记录解析平台授权或兼容连接，去掉来源种类的重复选择。恢复 OpenCode CLI、DeepSeek Harness 凭据入口，保存厂商 API Key 与连接后继续对应模型配置。模型内补建凭据保持同一页签与草稿，平台工具打开正确授权入口；保存后选中刚建的兼容记录，取消返回原草稿。返回或重选同一凭据保留模型/角色，实际更换来源才清空；重选同一厂商保留已改 Base、协议和鉴权。连接编辑及启停读取最新模型目录，避免用已缓存的目录覆盖新条目。高级字段收进折叠区，所有凭据选择带 Logo 和搜索，步骤条保持一致。弹窗补充局部焦点循环、步骤聚焦、关闭后焦点恢复，以及离场动画的 aria-hidden/inert，关闭按钮使用独立的本地化语义。
+- 为什么：原生下拉没有品牌标识，模型来源与凭据两次选择难以理解；空态引导会丢失草稿并给 Cursor/Trae 打开不适用的 API 连接；同值选择和陈旧目录还存在误改输入的风险。切换弹窗时旧层留在可访问树中，会干扰键盘与读屏操作。
+- 如何验证：模型与凭据 40 项、连接 17 项、弹窗 14 项针对性单测通过；实际前端与控制面完成 OpenCode 厂商凭据 → 模型配置 → Agent 引用持久化，全程仅用预览占位 Key，未调用付费模型。人工复核桌面与 320/390px、深浅主题截图，并检查 Logo、原始模型 ID、搜索、键盘选择、返回/取消草稿和 Tab/Escape/焦点恢复。Web 511 个文件、5,069 项单测全部通过，Lines 90.67%；完整 critical E2E 最终 217 项全部通过（4.9 分钟、零重试），包括新增的 7 项模型配置用例；类型、lint（0 errors、12 个已有 warnings）、生产构建、actionlint、shellcheck、docs 构建与官方源依赖审计通过。
+
+### 2026-10-24（凭据与模型列表精简、厂商 Logo 选择器）
+
+- 日期：2026-10-24（Asia/Hong_Kong）
+- 范围：`web/src/components/workspace/{WorkspaceCredentialsPanel,ModelConnectionManager,ModelConfigurationManager,ModelRecordActions,ModelProviderSelect,CredentialProviderLogo}.vue`、`web/src/components/ui/AppSelect.vue`、`web/src/lib/agent/modelRouting.ts`、厂商 SVG 与来源说明、相关单测及 `web/e2e/model-routing.spec.ts`。
+- 做了什么：按 Open WebUI 参考将模型和服务列表收为图标、名称与单行副标题，去掉大外框、协议/地址/修订/重复状态与解释段落，编辑中保留完整配置；右侧使用编辑图标、更多删除菜单和启停开关，菜单支持键盘、外部关闭与窄屏定位。凭据页移除统计卡和装饰说明，时间与服务入口收进编辑。厂商选择复用 AppSelect 的搜索、键盘与浮层行为，新增图标插槽；预设从 5 家扩到 15 家，可自定义，默认地址均附官方文档依据，不混用 Coding Plan 地址与通用 API。Logo 使用本地品牌素材并记录固定版本、来源和许可证，支持深浅主题。
+- 为什么：列表中大量实现细节和操作按钮妨碍浏览，原生下拉缺少常见厂商及品牌识别。
+- 如何验证：Web 511 个文件、5,044 项单测通过，Lines 90.65%；完整 critical E2E 213 项通过，相关 89 项组件与厂商选择专项回归通过，类型、lint（0 errors、12 个已有 warnings）与生产构建通过。真实前端核对 15 家预设加自定义、全部 Logo 加载、搜索与预设 Base 联动、深浅主题、320/390px 无横向溢出、浮层不裁切和 Escape 逐层关闭。actionlint、shellcheck、docs 构建与官方源依赖审计通过；文档构建产物保存在仓库外。仅使用占位凭据查看交互，未调用真实模型服务。
+
+### 2026-10-23（凭据、可复用模型配置与 Agent 绑定）
+
+- 日期：2026-10-23（UTC）
+- 范围：`server/cmd/server/main.go`、`server/internal/{modelrouting,models,services,handlers,router,runtime,envauth}`、`sandbox-gateway/sandbox/internal/{provider,agents,service}`、`web/src/components/{workspace,agent,canvas}`、`web/src/lib`、`web/e2e`、`README.md`、配置说明与中英文使用文档。
+- 做了什么：凭据页改为实际记录列表和「凭据 / 模型」两个标签。第一步用向导创建凭据，可选择服务商或自定义 API Base、协议与 Key；第二步把「编码工具 + 凭据 + 所选模型」保存为具名 `ModelConfiguration`，Agent 再通过 `configurationId` 绑定。配置的编码工具保存后固定，支持编辑模型、停用和删除；原始模型 ID 可含 `/`，手动输入会补入服务目录。旧直接绑定、按工具默认与平台授权保持兼容，保存与执行重新检查凭据和配置引用；失效时明确失败，不回退其他 Key。Claude Code、CodeBuddy、OpenCode、Codex Responses 和 DSH 接入对应协议，Cursor/Trae 保留平台授权。旧凭据幂等映射独立服务，目录重排不切换模型、删除服务不复活、空目录不 panic；旧待补全服务可修复后保存。Agent 创建、Studio 与工作流摘要读取同一配置，切换来源清除旧模型路由并保护运行时注入变量。按反馈移除种类选择提示行，中英文别名示例改为团队共享。
+- 为什么：用户要求先保存凭据，再组合编码工具、凭据和模型，形成可复用的一条模型配置。分离秘密、服务地址、工具和 Agent 引用后，同一服务可供多个工具或模型使用，平台授权不会和第三方模型 Key 混用；紧凑列表也减少原有空槽位与重复分区占据的空间。
+- 如何验证：Web 全量 509 个文件、5,034 项单测通过，Lines 90.65%（门禁 85%），类型、生产构建与 lint（0 errors、12 个已有 warnings）通过；完整 critical E2E 213 项通过，兼容性收尾后补跑凭据、模型配置和 Agent 向导 13 项全部通过，覆盖创建、编辑/停用和配置引用。Server 全量测试、lint/vet/配置文档检查、核心覆盖率 90.2% 与指定 runtime 回归通过；sandbox lint/vet/全测、相关 race、核心覆盖率 96.6% 和全部语法/注入/Git/bootstrap/preview/mock smoke 通过。协议验证使用本地 HTTP 模型服务与 CLI 子进程 fixture，含 9 个适配组合、DSH ACP 路由握手、角色固定、原始 ID 含 `/`、秘密分离与失效引用关闭；未调用真实厂商模型服务。真实前端与控制面完整验证「自定义 Base/Key → Codex 模型配置 → Agent 的 configurationId」，并核对掩码、深浅主题和 320/390px 布局。actionlint、shellcheck、文档构建与官方源依赖审计通过；本地跨模块构建产生的文档 public 副本移至临时产物目录后通过品牌门禁，未修改门禁。最新 server 与 runtime bundle 已在独立预览数据库/网关运行，不改沙箱镜像或安装合约。
+
+### 2026-10-24（编码工具、模型连接与凭据解耦设计）
+
+- 日期：2026-10-24
+- 范围：`docs/dev/agent-model-routing-design.md`、会话内交互设计原型。
+- 做了什么：核对 Cursor、Claude Code、CodeBuddy、Trae、OpenCode、Codex 和固定版本 DeepSeek Harness 的官方资料，形成凭据、模型连接与 Agent 模型绑定的数据结构草案及列表/添加向导流程；把文档支持、Grasp 适配状态和实际验证结果分别记录，区分平台多模型与自带第三方服务。
+- 为什么：原有模型凭据特判 OpenCode，DSH 路由限制为 DeepSeek 官方，混淆编码工具、模型厂商和秘密，无法准确表达同一工具使用不同服务或同一 Key 复用多个模型。
+- 如何验证：对照现有凭据/Agent/运行时字段与官方文档，核实固定 dsh 0.2.1-rc.2 的三协议能力；交互原型脚本、模型来源切换、协议过滤、显式绑定、新增凭据/连接向导和窄屏布局通过浏览器检查。本轮仅文档与设计，不新增运行时功能；文档构建、官方源依赖审计、JSON 示例与差异检查通过。
+
+### 2026-10-24（工作区凭据列表与添加向导）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/workspace/WorkspaceCredentialsPanel.vue` 及单测、`web/src/components/agent/OpenCodeCredentialPicker.vue`、`web/src/locales/{zh-CN,en}/pages.json`、`web/e2e/workspace-credentials.spec.ts`、`CHANGELOG.md`。
+- 做了什么：凭据页改为限宽的紧凑列表，按编码工具、模型 API Key、代码仓库、SSH 与其他来源分区，合并重复种类标题；名称、掩码、更新时间、状态与操作按列对齐，窄屏按行流式排布。模型密钥管理使用同样的列表样式，Agent 内的选择模式保持原样。所有添加入口保留两步向导，补充步骤进度与已选类型提示；编辑输入增加关联标签，密钥保存/清除及来源只读契约保持一致。
+- 为什么：原页面单个凭据占用大量空白，名称和操作相隔整屏，逐类重复标题不便扫读；用户要求以列表展示，并用向导添加凭据。
+- 如何验证：Web lint（0 errors、12 个已有 warnings）、类型检查、生产构建与全量单测通过，Lines 90.70%（门禁 85%）；凭据专项浏览器 6 项通过，覆盖桌面纵向列表、320/390px 长别名及登录文件编辑、模型密钥替换遮码、向导前进/返回与取消后清空。人工复核浅/深主题及窄屏截图。完整 critical E2E 首轮 210 项通过，零重试；actionlint、shellcheck、docs 构建与官方源依赖审计均通过。
+
+### 2026-10-23（PR #923 同步 main 并修复合并冲突）
+
+- 日期：2026-10-23
+- 范围：`CHANGELOG.md`、`docs/dev/DEVLOG.md`，以及自动合并的 `AgentCreateWizard.vue`、`CreateAgentTeamWizard.vue`、`VendorMark.vue`、`OnboardingWizard.vue`。
+- 做了什么：合并 main 的 DeepSeek Harness 接入提交（`ad058343`），在发布说明和开发日志中保留双方新增记录；复核向导自动合并结果，同时保留编码工具产品标识、配置路径隐藏和单次图标动效。
+- 为什么：两条分支在相同文档位置追加记录，产生文本冲突，需要保留完整功能说明并验证组合后的行为。
+- 如何验证：Web lint、类型检查和生产构建通过；504 个文件、4986 项单测全部通过，Lines 90.70%；完整 critical E2E 205 项全部通过；server 全套 lint/vet/配置文档校验/测试/runtime 子集通过，核心覆盖率 90.2%；sandbox lint/vet、语法与 smoke 通过，核心覆盖率 96.6%，runtime bundle 的 `min_image=2`，打包图标模块与源码字节一致。actionlint、shellcheck、docs 构建与依赖审计通过。
+
+### 2026-10-23（全系统图标与单次交互动效）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/ui/Icon.vue`、`web/src/lib/icons/`、`web/src/lib/composables/useIconMotion.ts`、`web/src/styles/icon-motion.css`、主站调用组件与语义映射、`web/src/liveoverlay/`、`web/scripts/build-live-overlay.mjs`、沙箱 `web/`、三份注入脚本、`web/e2e/icon-motion*`、`web/LIB_DOMAIN_MAP.json`、`CHANGELOG.md`。
+- 做了什么：将原有 103 个公共图标和独立控件收敛到 141 项可信 SVG 注册表；Vue、沙箱聊天、预览选取和 Live overlay 共用几何与部件动效。默认完整静止，最近交互宿主 hover/focus-visible 播放一次，离开后可重播；动态禁用、忙碌、画布拖拽和减少动态效果均有明确处理。只有实际启动、生成与执行状态持续运动，历史、排队和等待人工静止。完成勾移除起笔点并从左向右绘制；修正标签、退出登录、复制、桶盖、文件夹、终端等，重画技能拼图、流程分支、小地图、token/队列、图片失败和中性审批形状，拆开团队/评审/表单/通知策略语义。通知只对新增未读反馈，首次/同值轮询/重挂载不播放；连续增量合并。品牌路径、插画、图表与确认仪式维持专用体系。
+- 为什么：此前功能图标来源分散，部分形状和状态语义错误，等待/完成状态仍循环，完成勾与多个手写 SVG 不能按一致规则重播；统一来源也避免主站与运行时图形漂移。
+- 如何验证：基于最新 main 的独立分支验证：Web lint（0 errors）、vue-tsc、生产构建通过；503 个测试文件、4965 项单测全部通过，Lines 90.69%（门禁 85%）；完整 critical E2E 203 项全部通过，包含 7 项图标动效浏览器回归。逐项验证 141 个注册图标可见、140 个功能图标确有部件动画、QQ 品牌静止，以及单次结束、重入、键盘、动态禁用祖先、嵌套宿主双向切换、画布拖拽、忙碌生命周期与减少动态效果。检查 141 项图形边界，以及 12/16/20/24px、深浅主题的 64 项尺寸样本和 320px 窄屏。server 全套 lint/vet/配置文档校验/测试/指定 runtime 子集通过，核心覆盖率 90.2%；sandbox lint/vet/覆盖率通过，核心 96.6%；注入、Git、bootstrap、mock 模型、preview-inject smoke 与运行时包构建通过。actionlint、shellcheck、docs 构建与依赖审计通过；重建注入脚本不产生额外差异，三份副本一致，运行时包 icons 模块与源码字节一致。
+
+### 2026-10-24（修复 DSH 镜像与重启 CI 配置）
+
+- 日期：2026-10-24
+- 范围：`.github/workflows/{ci-sandbox,publish-sandbox,e2e-restart}.yml`、`server/e2e/restart_reattach_test.go` 的手动命令说明。
+- 做了什么：CI/发布镜像的显式 `AGENT_PROVIDERS` 列表补入 `deepseek_harness`。重启续接 CI 构建当前提交的沙箱镜像，将同一镜像传给 gateway 与 server，并在运行真实模型测试前检查镜像级别及 OpenCode/DSH 可执行文件；同步手动测试命令。
+- 为什么：旧的显式安装列表覆盖 Dockerfile 新默认值，造成构建镜像缺少 dsh；重启测试使用发布镜像 2.2.0（级别 1），无法安装本次要求 `min_image=2` 的运行时，容器在模型调用前退出。
+- 如何验证：actionlint、shellcheck、diff 检查、runtime bootstrap 回归与 tagged E2E 编译/无 Key 跳过通过。实际运行时包在级别 1 时按约定退出 4、级别 2 安装成功；Compose 验证 gateway/server 均使用当前构建镜像。完整镜像和真实重启测试由推送后的 CI 再验证，未修改超时或放宽门禁。
+
+### 2026-10-24（DSH PR 独立验证）
+
+- 日期：2026-10-24
+- 范围：DSH 的 server、sandbox、web 变更及接入文档。
+- 做了什么：基于最新 main 整理原生 DeepSeek Harness 接入与工具选择区调整，单独验证凭据隔离、模型协商、角色规则、MCP、产品图标和无路径展示；保留其他独立改动原状。
+- 为什么：确保 PR 的改动范围和测试证据对应，便于独立审阅和发布。
+- 如何验证：server 全量测试、vet、golangci v2.12、配置文档校验、指定 runtime 回归通过，核心覆盖率 90.2%；sandbox 全量测试、vet、lint、ACP/provider race、脚本 smoke 通过，核心覆盖率 96.6%。runtime 连续构建两次字节一致，包 hash 与此前 18 项真实 Key 验证一致，`min_image=2`。Web lint、类型和构建通过；全量 503 个文件、4976 项单测通过，Lines 90.67%；首次冷运行的一项聊天时序失败经 62 项定向复测及完整重跑通过；198 项 critical E2E 首轮全部通过，零重试。actionlint、shellcheck、docs 构建和依赖审计通过；未构建/发布完整镜像，保留 PR `sandbox-images` CI 验证。
+
+### 2026-10-24（编码工具选择区隐藏配置路径）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/agent/{WizardAcpStartPathPanel,AgentCreateWizard,CreateAgentTeamWizard}.vue`、`web/e2e/agent-create-wizard.spec.ts`、`CHANGELOG.md`。
+- 做了什么：工具卡片仅展示产品图标与名称，移除名称下方的配置目录、列表末尾 `configRoot` 提示和通用 API 路径附带的目录；清理共享组件的无用属性与调用。后端选择和保存仍使用原有配置目录。
+- 为什么：启动方式选择只需识别产品，内部配置路径占用界面且无助于选择。
+- 如何验证：新建 Agent/团队组件 13 项测试、向导浏览器 9 项、中英文无路径展示及保存 payload 的 `layout.configRoot` 断言通过；lint、类型检查、生产构建、actionlint、shellcheck、docs 构建与依赖审计通过，保留六种工具无路径截图。
+
+### 2026-10-24（编码工具名称前展示产品图标）
+
+- 日期：2026-10-24
+- 范围：`web/src/components/agent/WizardAcpStartPathPanel.vue`、`web/src/components/onboarding/OnboardingWizard.vue`、`CHANGELOG.md`。
+- 做了什么：复用 `VendorMark`，在 Cursor、Claude Code、CodeBuddy、Trae、Codex、DeepSeek Harness 名称前展示对应产品图标；新建 Agent、团队共用的选择面板及首次配置向导同步显示，图标跟随深浅主题并作为装饰隐藏重复读屏标签。首次配置向导在窄屏使用两列，给图标、名称和选中标记留足空间。
+- 为什么：让编码工具列表更容易识别，与现有模型和凭据图标保持一致。
+- 如何验证：Web lint、TypeScript、生产构建通过；向导浏览器 9 项通过，最终窄屏断点调整后 onboarding 5 项重跑通过。Chromium 深浅主题与 1179px/760px 下 36 项检查确认六个真实 SVG 图标已加载、位于名称前且卡片无溢出裁切；保留选择区截图。全量带覆盖率单测命令为 4967 项通过、9 项既有主题断言失败。actionlint、shellcheck、docs 构建与依赖审计通过。
+
+### 2026-10-24（DSH 归入编码工具入口）
+
+- 日期：2026-10-24
+- 范围：`web/src/lib/shared/startPath.ts`、Agent/团队/首次配置向导、相关文案与回归测试、README、`server/README.md`、`CHANGELOG.md`。
+- 做了什么：将 DeepSeek Harness 纳入编码工具列表，右侧接入方式命名为「用编码工具」；模型厂商 API Key 路径保留 OpenCode。DSH 继续使用独立凭据、模型、`/root/.dsh` 配置根和原生 `dsh --profile acp`，切换接入方式后恢复 DSH 选择。
+- 为什么：接入方式应对应选择的编码工具实现，DSH 的 API Key 认证不应改变其编码工具归属。
+- 如何验证：Web lint、TypeScript 与生产构建通过；Agent 创建与 onboarding 浏览器 9 项通过，最终顶部文案更新后 DSH 中英文 2 项再次通过，1179px/760px 截图确认六种工具完整显示、DSH 选中、配置根正确且无横向溢出。全量带覆盖率单测命令为 4967 项通过、9 项既有主题断言失败，DSH 分类、切换记忆、独立凭据及模型 payload 回归通过。actionlint、shellcheck、docs 构建与依赖审计通过。原生 dsh 执行链路此前已使用真实 Key 完成 18 项集成验证。
+
+### 2026-10-23（DeepSeek Harness backend）
+
+- 日期：2026-10-23
+- 范围：`server/internal/{runtime,services,sandbox,envauth,clicatalog,config}`、`sandbox-gateway/sandbox/internal/{provider,agents,acp}`、沙箱安装/启动脚本与 `IMAGE_LEVEL`、`web/` 的 backend/凭据/创建向导及相关测试、README、`CHANGELOG.md`。
+- 做了什么：新增 `deepseek_harness`，通过原生 `dsh --profile acp` 执行；独立工作区 API Key 槽映射到 `DEEPSEEK_API_KEY`，原生键和两种 ACP 别名均纳入密钥过滤，支持 Flash/Pro 和 ACP 分组模型选项。API Key 路径保留默认 OpenCode，并允许选择/记住 DeepSeek Harness；切换后端时清除共享和逐角色模型覆盖。生成配置将角色 AGENTS 与显式 alwaysApply 规则合并，保留完整 skills 和澄清节点完成规则裁剪；stdio MCP 命令解析为绝对路径。启动 patch 不含密钥，关闭 dsh 托管凭据来源以确保所选凭据生效。镜像固定 dsh `0.2.1-rc.2`，能力版本升至 2，startup/reprime 统一配置根为 `.dsh`。
+- 为什么：提供独立 Harness 的工具与会话循环，复用 Grasp 现有工作流和 MCP，同时保持凭据选择、规则、模型路由与能力声明准确。dsh ACP 只提供上下文占用，继续声明不支持计费 token；bridge 重启后的自动持久化恢复不在本次范围。
+- 如何验证：server 全量 Go 测试、vet、golangci v2.12、配置文档生成校验及指定 runtime 子集通过，核心覆盖率 90.2%；sandbox 全量 Go 测试、vet、lint、针对 ACP/provider 的 race 检查及核心覆盖率 96.6% 通过。actionlint、shellcheck、Shell/Node 语法、注入/Git/运行时 bootstrap/preview-inject smoke、mock 模型测试、固定版本安装与失败退出检查通过；Git smoke 设置 `GIT_CONFIG_NOSYSTEM=1` 隔离宿主机凭据 helper。运行时包连续构建两次字节一致，MANIFEST 为 `min_image=2`。Web lint/类型/构建通过，全量 4955 项通过、9 项既有主题测试失败，Lines 90.66%；完整 critical E2E 首轮 194 项通过，修正新增英文布局溢出后重跑 3 项全部通过，共覆盖 197 项；最终向导浏览器 5 项、模型切换 66 项及密钥过滤 24 项针对性测试通过，server 密钥别名保存/运行/配置过滤回归与 lint 通过。docs 构建及依赖审计通过。使用临时进程环境中的真实 API Key，对生产 server 凭据映射与配置生成、实际 sandbox WebSocket/provider、dsh 和真实平台 artifact-store MCP 完成 18 项检查：真实回复、多轮记忆、角色/规则/skill、文件、产物写入、node_complete、取消与后续对话、重连续接、Pro 模型协商全部通过；未将密钥写入仓库或日志。未构建/发布完整沙箱镜像，部署仍须按 server → 新镜像顺序进行。
+
+### 2026-10-23（UI 切换与侧栏 PR 验证）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/ui/SlidingTabs.vue`、分段控件、`web/src/views/DashboardView.vue`、侧栏导航及对应测试。
+- 做了什么：将本轮 UI 调整整理到基于 main 的独立分支；修正首页顶部锁定规则的 CSS 优先级，并新增 390×700 下 Workflow / Solo 双向切换逐帧位置回归。
+- 为什么：窄屏规则原先覆盖锁定的顶部占位，切换时仍会跳动；独立验证本轮改动，避免工作区其他主题修改影响 PR 的验证结果。
+- 如何验证：Web lint（0 errors）、类型检查、生产构建通过；全量 502 个测试文件、4955 项单测通过，Lines 90.66%；完整 critical E2E 加首页工作流回归 201 项通过。真实控制台窄屏双向切换各采样 37 帧，顶部位移 0px。actionlint、shellcheck、docs 构建及依赖审计通过。
+
+### 2026-10-23（设置图标再次点击返回工作区）
+
+- 日期：2026-10-23
+- 范围：`web/src/lib/composables/useSidebarNavigation.ts`、`web/src/components/shell/AppSidebar.vue`、相关单测与 `web/e2e/workspace.spec.ts`
+- 做了什么：设置齿轮在工作区进入设置，在设置模式再次点击返回最后成功访问的工作区完整地址，保留查询和锚点；直接进入设置时回到首页。选中时提示「返回工作区」，成功导航后才切换上下文，账号切换清理返回位置。
+- 为什么：用户希望同一图标能来回切换工作区与设置，避免重复点击仍留在设置。
+- 如何验证：Shell、Sidebar、导航及交互相关单测 95 项通过，涵盖同地址返回、拦截导航、修饰键、账号隔离和设置内编辑器；真实 `/runs` → `/settings` → 工作区浏览器检查保留筛选/锚点、共享工具中返回、键盘回车及直接设置页回首页。Lint、类型检查和构建通过。
+
+### 2026-10-23（统一最左侧导航栏外框）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/shell/AppShell.vue`、`AppSidebar.vue` 及对应测试，`web/e2e/workspace.spec.ts`
+- 做了什么：设置模式与工作区共用侧栏 14px 外留白和 16px 圆角外框，移除设置模式专属的直角、裁切及边框覆盖；浮动状态仅由侧栏隐藏状态决定。保留设置目录、标题及导航上下文。
+- 为什么：切入设置模式时原先外留白消失、侧栏变为通高直角，导致顶部图标和底部头像移动；用户要求最左导航栏跨页面保持一致。
+- 如何验证：Shell、Sidebar、导航上下文和圆角相关单测 59 项通过；设置/工作区切换、深浅主题、长页滚动、侧栏收起恢复和移动抽屉共 13 项 Playwright 测试通过；扩充既有场景比较导航栏、首图标、头像的矩形及背景、圆角、边框。Lint、类型检查及构建通过。
+
+### 2026-10-23（统一分段 Tab 动效与运行计数移动）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/ui/SlidingTabs.vue`、首页/运行/Agent/预览/工作区/用量分段组件，`web/src/views/{RunListView,TokenAnalyticsView,SandboxConsoleView}.vue`，相关单测。
+- 做了什么：提取首页同款 420ms 阻尼弹簧背景，统一运行状态、用量范围和来源、编辑器模式、预览设备、通知模板等单选分段控件；保留各控件颜色、圆角和选择逻辑，选项背景移至唯一滑块。监听内容和按钮尺寸，处理徽标、翻译、换行、滚动及弹窗缩放；无选中项时隐藏背景，减少动态效果时直接定位。运行计数使用同一个可见徽标随背景移动，按钮内透明文字提供尺寸和可访问文本；按筛选缓存成功计数，未访问分类等待接口时显示省略号，避免沿用上一分类数字，不增加请求。
+- 为什么：同类控件原先切换方式不一致；数字立即插入新按钮而背景仍在移动，且接口返回前显示旧计数，造成视觉顿挫。
+- 如何验证：共享组件 13 项测试、页面与组件定向回归通过；Chromium 在独立固定 API 数据下验证真实 `/runs`、`/stats`、`/dashboard` 的逐帧背景和徽标同步、双向切换、快速反向、不同位数、慢请求、缓存、语言/窄屏和减少动态效果，页面无异常。运行取消/删除、Agent 默认配置、运行详情移动端和首页工作流轨道共 21 项 Playwright 测试通过（临时配置指定已有 Chromium 路径）。Lint、类型检查和生产构建通过。全量覆盖率测试 4936 项通过、9 项失败，均为当前已有默认亮色与旧深色断言冲突，覆盖率门禁未通过。新增嵌套 ResizeObserver 后同步修正 AgentFilesPanel 旧测试的单 observer 假设，按观察目标触发父面板回调。
+
+### 2026-10-23（移除首页查看全部工作流入口）
+
+- 日期：2026-10-23
+- 范围：`web/src/views/DashboardView.vue`、Dashboard 相关测试、`web/e2e/home-workflow-rail-enter.spec.ts`
+- 做了什么：移除首页普通空状态的「查看全部工作流」按钮、空容器和专用跳转函数，直接显示「新建工作流」卡片并使用正常间距；未发布工作流提示保留。同步原有单测和浏览器用例断言。
+- 为什么：按用户反馈去掉多余入口，避免删除按钮后仍留下空白行。
+- 如何验证：Dashboard 两组测试 83 项通过；Chromium 在独立固定数据环境中确认按钮和空容器不存在、卡片间距为 40px、切换模式后不恢复按钮，且新建卡片仍能打开创建对话框。
+
+### 2026-10-23（精简首页工作流空状态）
+
+- 日期：2026-10-23
+- 范围：`web/src/views/DashboardView.vue`、`web/src/views/DashboardView.test.ts`
+- 做了什么：去掉首页没有可用工作流时的说明段落和对应按钮多余顶距，保留「查看全部工作流」「新建工作流」入口；同步调整原有空状态断言。
+- 为什么：首页不再展示用户指定删除的说明文案。
+- 如何验证：Dashboard 三组测试共 85 项、Lint、类型检查和构建通过；Chromium 加载 `/dashboard`（测试浏览器内使用固定 API 数据）确认段落消失、两个入口仍可见，并验证「查看全部工作流」可跳转到工作流列表。
+
+### 2026-10-23（工作流 / Solo 共享背景滑块）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/dashboard/HomeModeSwitch.vue`
+- 做了什么：用一块持续复用的浅紫色背景跟随选中按钮的位置和尺寸移动，使用阻尼弹簧采样缓动及兼容回退；按钮本身始终透明。绑定实际容器引用，在选中态更新后测量，并监听按钮尺寸变化；首次加载直接定位，减少动态效果时关闭过渡。
+- 为什么：切换时应看见同一块背景连续移动，离开的选项不能残留色块；避免未绑定容器引用导致背景固定在原位。
+- 如何验证：在 Chromium 中加载真实 `/dashboard` 路由（独立测试浏览器内拦截 API 为固定数据），逐帧确认双向位移、宽度贴合、单背景、无高度跳动，并验证快速反向、中英文尺寸变化、窄视口与减少动态效果。`npm run lint`、`npx vue-tsc --noEmit`、`npm run build` 通过，Dashboard 与聊天相关复查 147 项通过。全量 `npm test -- --coverage` 为 4921 项通过、10 项失败：9 项涉及当前已有的默认主题改动，另 1 项聊天时序断言单独复查通过，因此全量覆盖率门禁未通过。
+
+### 2026-10-23（首页工作流 / Solo 切换保持顶部稳定）
+
+- 日期：2026-10-23
+- 范围：`web/src/views/DashboardView.vue`、`web/src/components/dashboard/HomeWorkflowSelect.vue`
+- 做了什么：切换首页工作流与 Solo 模式时记录当前顶部占位高度，并在模式特有控件与面板更新期间锁定该高度；工具栏和模式面板通过淡入淡出与轻微位移动画切换；工作流选择器改为和 Solo 选择器一致的扁平透明样式。窗口尺寸变化或新增附件时恢复原有自适应占位。
+- 为什么：两种模式下方内容高度不同，原先可收缩的顶部占位会随切换被压缩，导致角色、文案和模式切换控件整体跳动。
+- 如何验证：`npm run lint`、`npx vue-tsc --noEmit`、DashboardView 相关 Vitest（83 项）和 `npm run build` 均通过。
+
+### 2026-10-23（Workflow / Solo 会话顶部栏统一）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/solo/SoloSessionPane.vue`
+- 做了什么：移除 Solo 会话对共享会话工具栏、紧凑模式按钮和面板标题的专属样式覆盖，统一使用工作流 `ConversationWorkspace` 的顶部栏。
+- 为什么：Workflow 与 Solo 启动后的顶部栏高度和紧凑控件表现不一致。
+- 如何验证：`npm run lint`、`npx vue-tsc --noEmit`、Solo / Workflow 相关 Vitest 和 `npm run build` 均通过。
+
+### 2026-10-23（Solo 首页选择器改为扁平控件）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/solo/SoloPickerShell.vue`
+- 做了什么：Solo 首页的 Agent 与仓库选择器去掉渐变填充和悬停时向外扩散的光晕，改为透明底色；打开或悬停时只显示很轻的强调色背景，同时保留键盘焦点轮廓。
+- 为什么：两个选择器在首页底部工具栏中显得像独立的凸起卡片，与工具栏层级不一致。
+- 如何验证：`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`（501 个文件、4923 项测试，Lines 90.57%）和 `npm run build` 均通过。
+
+### 2026-10-23（Agent 工作目录编辑区减栏：5 栏 → 3 栏）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/agent/AgentFilesPanel.vue`、`MarkdownSplitEditor.vue`、新增 `MarkdownViewToggle.vue`；对应测试；`web/src/locales/*/pages.json`（`markdownEditor.split`）
+- 做了什么：桌面端原本横向 5 栏（智能体列表 | 文件树 | 编辑器+minimap | Markdown 预览 | 版本历史竖条）。现在 Markdown 编辑改成工具栏里的「编辑 / 分栏 / 预览」三态切换，默认单栏编辑，偏好存 `agent-md-view-mode`；去掉 Markdown 的 minimap；版本历史不再占右侧一栏，桌面端统一走工具栏「版本历史」按钮弹窗。旧的 `agent-md-preview-collapsed` 不再读取。
+- 为什么：用户反馈分栏太多，编辑区被挤窄。
+- 如何验证：`web/` 下 `vitest run src/components/agent src/views/AgentStudioView.test.ts src/locales`、`eslint`、`vue-tsc --noEmit` 通过；未在浏览器里实测。
+
+### 2026-10-23（单沙箱跑完整个工作流：共享运行沙箱，默认关闭）
+
+- 日期：2026-10-23
+- 范围：`server/internal/runtime/acp_shared.go`、`acp_sandbox.go`、`acp_run_agent.go`、`acp_provider.go`；`server/internal/sandbox/reprime.go`、`resources.go`；`server/internal/services/sandbox_shared.go`、`sandbox_run.go`、`preview.go`、`settings.go`、`workflow.go`；`server/internal/engine/start_run.go`、`node_req.go`；`server/internal/models/models.go`；`server/internal/config/config.go`；`server/internal/handlers/settings.go`；`sandbox-gateway/sandbox/scripts/reprime.sh`、`sandbox-gateway/scripts/test-reprime.sh`、`scripts/build-sandbox-runtime.sh`
+- 做了什么：新增沙箱模式 `shared`，让一次运行的所有节点共用一个沙箱，工作区（包括未提交的改动、依赖和构建缓存）在节点间保留。
+  - 开关有两层，都打开才生效：平台设置 `shared_run_sandbox_enabled`（0/1，默认 0），以及工作流 `defaults.sandbox.mode`。启动运行时把模式快照到 `Run.SandboxMode`。
+  - 第一个节点照常建沙箱，同时记成该运行的共享沙箱。后续节点先比较 spec 指纹（env、配置根内容、SSH/仓库凭据）；不一致就经 SSH 执行 `reprime.sh`，换上新节点的 env、配置根和凭据并重启 backend。之后在默认 chat 上连一个新会话，并按 `vars.branches` 在工作区干净时切到对应分支。
+  - 节点结束只关闭会话，运行结束（`AbortRun`）时才把沙箱交给调试租约。可重试故障只重建会话，沙箱连不上或 reprime 失败才换新容器。
+  - 以下情况该节点回退成自建沙箱，和 per-node 模式一样：别的节点还挂着会话（审核、闸门等待打回、接管），或者需要的镜像或工作目录不同。
+  - `run+node` 的查询（沙箱视图、日志、预览）在节点自己没有沙箱行时，回退到该运行 `shared=true` 的那一行。
+- 为什么：每个节点都冷启动容器、重新克隆、重装依赖，耗时长；上游没提交的产出也带不到下游。
+- 如何验证：
+  - server：`golangci-lint`、`go vet`、`gen-configdoc -check`、`go test ./...`、`cover-check-server.sh 90`（90.2%）、`TestRunAgent|TestReact` 均通过。
+  - 新增单测：`runtime/acp_shared_test.go`（复用、同节点不 reprime、per-node 不变、挂起会话时回退、重试复用容器、reprime 失败换容器、运行结束退役、工作目录不同时回退、重启后接管）；`sandbox/reprime_test.go`；`services/sandbox_shared_test.go`；`engine/sandbox_mode_test.go`。
+  - sandbox：`test-reprime.sh`、`test-inject.sh`、`test-runtime-bootstrap.sh`、`shellcheck-error.sh` 通过；运行时包构建产物里包含 `reprime.sh`。
+  - 未做：真实镜像的端到端验证（三节点、两种 Agent）；前端开关 UI（另开会话做）。
+
+### 2026-10-23（骨架屏 loading 改为中性柔光）
+
+- 日期：2026-10-23
+- 范围：`web/src/styles/global.css`（`.app-skeleton`、`.app-skeleton__block`）
+- 做了什么：扫光从 accent 紫（0.18）改成正文色 4.5% 的中性柔光，光带收窄到中间 60%；周期 1.2s ease-in-out 改为 2s，前 60% 扫过、后 40% 停顿；色块加 6px 圆角；整个骨架延迟 150ms 淡入，快的加载不再闪一下骨架。减少动效模式下淡入也关掉。
+- 为什么：用户反馈骨架屏"感觉卡"：每个色块紫色光带很重、扫得又快，宽行和窄行各扫各的，像在频闪。
+- 如何验证：`loadingReducedMotion.test.ts`、`AppSkeleton.test.ts` 通过；`npm run lint`、`vue-tsc`。
+
+### 2026-10-23（对话时间轴改为悬停展开目录）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/chat/ChatMessageRail.vue`、`ChatMessageRail.test.ts`、`web/src/components/run/ClarifyChat.navigation.test.ts`、`web/e2e/conversation-workspace.spec.ts`
+- 做了什么：左侧刻度改得更细，配色改成中性灰阶（当前项用正文色，不再用 accent）。原来悬停只弹出单条气泡，现在展开一张目录卡片：列出全部提问，当前项加粗并带指示条，悬停的行和对应刻度联动高亮，底部预览悬停项的回复，有更早消息时可以在卡片里加载。鼠标离开后延迟 120ms 再关，从刻度移到卡片上不会断开。触屏（`hover: none`）下不展开卡片，点刻度直接跳转。props 和 emits 不变。
+- 为什么：用户觉得原来的时间轴质感不够，希望做成 Codex 那样的侧边目录。
+- 如何验证：`ChatMessageRail` 单测 11 条、ClarifyChat 导航单测、`e2e/conversation-workspace.spec.ts` 全部通过；用 Playwright 截了亮色和暗色两张图检查。
+
+### 2026-10-23（舞台内产物预览去掉文件名行）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/ArtifactPreview.vue`、`web/src/lib/run/useArtifactPreview.ts`、`web/src/components/run/ReactArtifactStage.vue`、`ArtifactPreview.mode.test.ts`。
+- 做了什么：`ArtifactPreview` 新增 `hideFileRow`，舞台里打开的产物不再显示「图标 + 产物名 + 文件名」那一行，只保留结构化/原文切换和操作按钮；工具栏成为首行时补 8px 顶部间距。产物库等其他入口不受影响。
+- 为什么：舞台页签已经显示产物名，这一行重复。
+- 如何验证：lint 0 error、`vue-tsc`、`npm test -- --coverage`（4916 项，Lines 90.55%）。
+
+### 2026-10-23（产物抽屉工作流列表对齐舞台卡片样式）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/StageWorkflow.vue`、`web/src/components/run/ReactArtifactStage.test.ts`。
+- 做了什么：去掉与状态胶囊重复的左侧状态点轨道，改用节点图标做时间线并用短连线串联；列表包进一张卡片，改用舞台的 `--ra-*` 令牌（面板、描边、阴影、强调色），「当前」标记改成与卡片类型角标同款；当前行只保留浅强调底色，等待中节点只淡化文字和图标。
+- 为什么：原样式状态点贴边、与状态胶囊重复，当前行描边框打断轨道对齐，且用的是全局令牌，与同屏资源/产物卡片不统一。
+- 如何验证：lint 0 error、`vue-tsc`、run/views 1721 项测试；临时 Playwright 页面截取亮/暗两套主题确认（截完已删）。
+
+### 2026-10-23（侧边栏历史执行去时钟图标，参照 Codex）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/shell/SidebarWorkspaceLists.vue`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/components/ui/Icon.vue`、`web/src/styles/global.css`、`web/src/components/run/ArtifactPreview.vue` 及对应测试。
+- 做了什么：「历史执行」去掉每行相同的 `history` 时钟图标，行改为纯文字（13px、行高 32px、左右 10px，与「正在执行」标题和行对齐）；失败改为行尾 14px 红色圆圈感叹号（`<title>` 失败），取消保留行尾灰点；标题字号与「正在执行」统一为 11.5px。随后两个区块标题前加 14px 图标（「正在执行」新增状态图标 `run-live` 圆圈播放，轮廓与「历史执行」`history-back` 一致；先试的 `play-continue` 用户认为不协调），标题挂 `grasp-status-host`，复用 `Icon.vue` 状态图标的 hover（放大、提亮、一次 wake 动效，尊重 reduced-motion）；「历史执行」可点击，hover 时文字同时提亮。行用 `styles/global.css` 的 `.sidebar-tree-item` 包一层，画从标题图标下来的竖线和每行圆角分支（行自身因 hover-ink 的 `overflow: clip` 不能画在外侧），标题文字与行文字对齐。产物预览文件头在文件名已带扩展名时不再重复显示 `JSON` 等类型。
+- 为什么：时钟图标每行重复、不传达信息；参照 Codex 侧边栏：行首不放图标，状态只在需要时出现在行尾。中途试过行首状态列，用户认为不如 Codex 方案，已撤回。
+- 如何验证：`npx vitest run src/components/shell src/components/run/ArtifactPreview`、`npm run lint`、`npx vue-tsc --noEmit`、`npm test -- --coverage`；用 e2e mock（`vite.e2e.config.ts`）截浅色/深色侧边栏确认对齐。
+
+### 2026-10-23（分屏抽屉 `+` 新页签与去掉重复标题行）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/run/ReactArtifactStage.vue`、`web/src/components/chat/ConversationWorkspace.vue` 及对应测试。
+- 做了什么：分屏抽屉里点 `+` 不再整条标签栏消失，而是保留已开标签并新增可关闭的「新页签」显示首页卡片，选卡片后替换该占位；分屏下同一模式的已开标签全部显示，关闭标签切到相邻标签，无剩余才回首页；分屏不再在预览注册时自动挂出应用标签。桌面分屏抽屉去掉「资源 / 产物 ×」标题行（顶栏切换按钮已能命名和关闭），窄屏仍保留「返回对话」。
+- 为什么：原 `+` 只是切回首页，分屏只显示当前标签，于是点 `+` 后看不到任何标签；标题行与顶栏切换按钮重复。
+- 如何验证：`npm run lint`（0 error）、`npx vue-tsc --noEmit`、`npm test -- --coverage`（500 文件 / 4915 测试，Lines 90.55%）。
+
+### 2026-10-23（Solo 资源抽屉对齐工作流启动）
+
+- 日期：2026-10-23
+- 范围：`web/src/components/solo/SoloSessionPane.vue`、`web/src/components/run/ReactArtifactStage.vue`、`web/src/components/run/SandboxStageSurface.vue`。
+- 做了什么：Solo 直接复用工作流的 `ReviewShell → ReactArtifactStage` 组合，统一资源与产物抽屉的状态、卡片网格、行高和预览逻辑；资源卡片包含 IDE、Terminal、浏览器、日志，标签条支持 `+` 返回资源/产物首页，独立 Solo 沙箱日志通过沙箱日志接口加载，产物列表持续刷新，顶栏固定为工作流同款 44px 高度。
+- 为什么：Solo 与工作流启动应提供一致的资源入口和调试面板，避免同一沙箱出现两套交互。
+- 如何验证：相关 ESLint、`npx vue-tsc --noEmit`、ReactArtifactStage/ConversationWorkspace 78 项测试和生产构建通过。
+
+### 2026-10-23（统一 Solo 会话执行入口）
+
+- 日期：2026-10-23
+- 范围：`server/internal/services/{sandbox_solo.go,sandbox_agent.go,sandbox_test_pool.go,solo.go}`、`web/src/components/shell/AppSidebarNav.vue`、`web/src/views/SoloView.vue`、`web/src/components/solo/SoloSessionPane.vue`、`web/src/lib/solo/useSoloChat.ts`、Solo 路由及侧栏回归测试。
+- 做了什么：活动中的 Solo 沙箱现在和工作流启动/运行共用侧栏「正在执行」分组，支持同款右键置顶、重命名和关闭入口。移除 Solo 页内嵌的会话列表和重复筛选入口，聊天路由改为工作流会话同款全屏壳层、顶栏、资源/产物切换和右侧面板；启动 Solo 时注册独立 artifact-store MCP 作用域，继承 Agent 的 `tools/reads/writes` 能力，并在面板中展示 Agent 能力和已写产物。
+- 为什么：Solo 会话与工作流执行被分在两套列表中，启动中的会话无法在统一的执行入口里找到，页面也重复展示活动会话。
+- 如何验证：完整 Web 单测 500 个文件 / 4915 项通过，Lines 90.5%；`npx vue-tsc --noEmit`、相关 ESLint（0 error）、生产构建以及 `AppSidebarNav`、ConversationWorkspace 单测（59 项）通过；当前环境未安装 Go，未执行 Go 编译/测试。
+
+### 2026-10-22（澄清聊天接收父级属性）
+
+- 日期：2026-10-22
+- 范围：`web/src/components/run/ClarifyChat.vue`、`ClarifyChat.footerShrink.test.ts`、CHANGELOG。
+- 做了什么：显式把父级属性绑定到聊天主列，覆盖 class、style、id、ARIA 和原生事件。
+- 为什么：聊天主列与图片预览构成多个根节点，父级属性无法自动继承，审批页面因此持续产生 Vue 警告（#815、#682 后续）。
+- 如何验证：固定基线新增两例因属性丢失失败，修复后通过；完整 Web 单测 494 文件 / 4848 项通过，Lines 91.46%；lint 0 error、vue-tsc、生产构建、docs 构建及 actionlint / shellcheck-error 通过。Windows 关键路径 195/196，首次安装向导团队页高度断言在同一基线也以 21px 溢出失败；聊天底栏几何验收通过。
+
 ### 2026-10-20（聊天操作配色与主次层级统一）
 
 - 日期：2026-10-20

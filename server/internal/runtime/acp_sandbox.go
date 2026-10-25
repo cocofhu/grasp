@@ -298,6 +298,9 @@ func (c *acpProvider) deregisterRunSandbox(name string) {
 // or capability — e.g. tests), it falls back to an immediate destroy so nothing
 // is leaked.
 func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string) {
+	if c.releaseSharedSandbox(sb, acp) {
+		return
+	}
 	if acp != nil {
 		acp.Close()
 	}
@@ -325,6 +328,11 @@ func (c *acpProvider) retireRunSandbox(sb *sandbox.Sandbox, acp *sandbox.ACPClie
 func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandbox.Sandbox, acp *sandbox.ACPClient, home string, fallback []models.AcpEvent) []models.AcpEvent {
 	events := c.snapshotEvents(ctx, sb, fallback)
 	c.deregisterLive(req)
+	// A shared sandbox outlives the fault: the retry opens a fresh session in
+	// it, and replaces the container only if it is no longer reachable.
+	if c.releaseSharedSandbox(sb, acp) {
+		return events
+	}
 	if acp != nil {
 		acp.Close()
 	}
@@ -339,10 +347,22 @@ func (c *acpProvider) discardSandbox(ctx context.Context, req NodeReq, sb *sandb
 }
 
 func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, error) {
+	if req.SandboxMode == models.SandboxModeShared && c.shared != nil {
+		if sb, acp, home, handled, err := c.openSharedSandbox(ctx, req); handled {
+			return sb, acp, home, err
+		}
+	}
+	sb, acp, home, _, err := c.openNodeSandbox(ctx, req)
+	return sb, acp, home, err
+}
+
+// openNodeSandbox creates a fresh sandbox for the node and connects its agent
+// session. It also returns the spec the sandbox was created from.
+func (c *acpProvider) openNodeSandbox(ctx context.Context, req NodeReq) (*sandbox.Sandbox, *sandbox.ACPClient, string, sandbox.Spec, error) {
 	spec, err := c.spec(req)
 	if err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
-		return nil, nil, "", fmt.Errorf("%w: %v", errSandboxConfig, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: %v", errSandboxConfig, err)
 	}
 	home := spec.ConfigHome
 
@@ -354,14 +374,14 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: create sandbox: %v", errSandboxSetup, err)
 	}
 	if err := sandbox.WaitForACPReady(ctx, sb.Host, sb.Port, sb.Password, 120*time.Second); err != nil {
 		c.forgetCodexLogin(codexLoginKey(req))
 		c.deregisterRunSandbox(placeholder)
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp not ready: %v", errSandboxSetup, err)
 	}
 	acp := sb.ACP().
 		WithSession(sb.WorkspaceDir, c.mcpServers(req)).
@@ -373,10 +393,10 @@ func (c *acpProvider) openSandbox(ctx context.Context, req NodeReq) (*sandbox.Sa
 		acp.Close()
 		sb.Destroy(context.Background())
 		removeHome(home)
-		return nil, nil, "", fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
+		return nil, nil, "", spec, fmt.Errorf("%w: acp connect: %v", errSandboxSetup, err)
 	}
 	c.registerRunSandbox(req, sb, home)
-	return sb, acp, home, nil
+	return sb, acp, home, spec, nil
 }
 
 // sandboxAttacher is implemented by managers that can rebuild a handle for a
@@ -420,6 +440,7 @@ func (c *acpProvider) attachSandbox(ctx context.Context, req NodeReq) (*sandbox.
 	}
 	log.Info().Str("run", req.RunID).Str("node", req.NodeID).Str("sandbox", name).
 		Msg("reattached node sandbox after restart")
+	c.adoptSharedSandbox(req, sb)
 	return sb, acp, nil
 }
 
@@ -456,7 +477,6 @@ func removeHome(home string) {
 
 func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 
-	repos := resolveRepos(req)
 	env := map[string]string{}
 
 	// Secrets come only from workspace credentials: platform sandbox.env and
@@ -475,19 +495,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	for k, v := range envauth.StripSecretEnvKeys(agentCfg.Env) {
 		env[k] = substVars(v, vars)
 	}
-	// Workspace credentials are the only secret source. They are never copied
-	// into persisted Agent config.
-	// Platform-reserved keys from mcpVars are re-applied below and still win.
-	var creds map[string]string
-	if c.opts.Credentials != nil {
-		creds = c.opts.Credentials()
-		for k, v := range creds {
-			k = strings.TrimSpace(k)
-			if k != "" {
-				env[k] = v
-			}
-		}
-	}
+	creds := map[string]string{}
 	protectedCredentialKeys := map[string]struct{}{}
 	if c.opts.CredentialKeys != nil {
 		protectedCredentialKeys = c.opts.CredentialKeys()
@@ -498,7 +506,7 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	if c.opts.RunSandboxEnvForRun != nil && req.RunID != "" {
 		for _, e := range c.opts.RunSandboxEnvForRun(req.RunID) {
 			k := strings.TrimSpace(e.Key)
-			if k == "" {
+			if k == "" || envauth.IsSecretEnvKey(k) {
 				continue
 			}
 			if _, protected := protectedCredentialKeys[k]; protected {
@@ -507,52 +515,35 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 			env[k] = e.Value
 		}
 	}
-	// The selected model-vendor credential wins over merged workspace credentials and
-	// over the run snapshot. An empty selection injects nothing.
-	if c.backend == BackendOpenCode && c.opts.OpenCodeCredential != nil {
-		ApplyOpenCodeSelection(env, c.opts.OpenCodeCredential(agentCfg.OpenCodeCredentialID))
-	}
-	ApplyAgentCredentialChoice(env, creds, AgentCredentialChoice{
-		Backend:              string(c.backend),
-		GitCredentialType:    agentCfg.GitCredentialType,
-		AiCredentialID:       agentCfg.AiCredentialID,
-		GitCredentialID:      agentCfg.GitCredentialID,
-		SshHostsCredentialID: agentCfg.SshHostsCredentialID,
-	}, c.opts.SelectedCredential)
 	ApplyCredentialBindings(env, creds, agentCfg.CredentialBindings, c.opts.SelectedCredential)
+	gitCredentials, err := ApplyGitBindings(env, creds, agentCfg.GitBindings, c.opts.GitCredential)
+	if err != nil {
+		return sandbox.Spec{}, err
+	}
+	if err := ApplyModelBinding(env, string(c.backend), agentCfg.ModelBinding, c.opts.ModelBinding); err != nil {
+		return sandbox.Spec{}, err
+	}
 	// Capture the login file before PrepareAuthEnv strips it from the sandbox env.
 	codexLogin := CodexLoginFileFromEnv(c.backend, env)
 	// Align auth gate with buildConfigHome BaseWorkDirSrc (workspace-shared workspace).
-	merged, err := PrepareAuthEnv(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
+	merged, err := PrepareBoundAuth(c.backend, env, c.workDir(profile), c.sharedWorkDir(req))
 	if err != nil {
 		return sandbox.Spec{}, err
 	}
 	env = merged
 	env["AGENT_PROVIDER"] = string(c.backend)
-	if err := RequireOpenCodePlaceholderKey(OpenCodeConfigForEnvWithCatalog(context.Background(), c.backend, env, c.opts.OpenCodeCatalog), env); err != nil {
-		return sandbox.Spec{}, err
-	}
 	applyPreviewEnv(env, req.Caps)
 
 	for k, v := range vars {
 		if strings.HasPrefix(k, "vars.") || v == "" {
 			continue
 		}
+		if IsGitAuthorizationEnvKey(k) {
+			continue
+		}
 		env[k] = v
 	}
 
-	if len(repos) > 0 && env["GITLAB_URL"] == "" {
-		url := repos[0].URL
-		host := gitRepoHost(url)
-		ghe := gitRepoHost(env["GITHUB_URL"])
-		// Do not treat a GitHub / GHE clone URL as GITLAB_URL (would inject
-		// oauth2:GITLAB_TOKEN@github.com when both tokens are configured).
-		if host != "" && host != "github.com" && (ghe == "" || host != ghe) {
-			if base := gitBaseURL(url); base != "" {
-				env["GITLAB_URL"] = base
-			}
-		}
-	}
 	layout := c.agentLayout(profile, agentCfg)
 	env["CONFIG_ROOT"] = layout.ConfigRoot
 	if c.backend == BackendCodex {
@@ -560,22 +551,28 @@ func (c *acpProvider) spec(req NodeReq) (sandbox.Spec, error) {
 	}
 
 	sandbox.ApplyPasswords(env, req.Token)
-	home := c.buildConfigHome(req, env)
-	if err := InstallCodexLoginFile(c.backend, home, codexLogin); err != nil {
+	home, err := c.buildConfigHome(req, env)
+	if err != nil {
+		return sandbox.Spec{}, fmt.Errorf("build backend config home: %w", err)
+	}
+	if err := InstallBoundCodexLoginFile(c.backend, home, codexLogin, env); err != nil {
 		return sandbox.Spec{}, err
 	}
 	if c.backend == BackendCodex && strings.TrimSpace(codexLogin) != "" {
-		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), CredentialIDForWriteBack(envauth.EnvCodexAuthFile, codexLogin, agentCfg.AiCredentialID, agentCfg.CredentialBindings, c.opts.SelectedCredential, c.opts.InjectedCredentialID))
+		c.rememberCodexLogin(codexLoginKey(req), codexLogin, CodexAuthPath(layout.ConfigRoot), ModelCredentialIDForWriteBack(env))
+	}
+	if c.backend == BackendCodex && env[EnvModelConnection] != "" {
+		codexConnectionRuns.Store(c.backendKey(codexLoginKey(req)), true)
 	}
 	spec := sandbox.Spec{
-		Image:        resolveProviderImage(c.opts, c.backend),
-		Env:          env,
-		ConfigHome:   home,
-		ConfigRoot:   layout.ConfigRoot,
-		WorkspaceDir: layout.WorkspaceDir,
+		GitBindingsConfigured: true,
+		GitCredentials:        gitCredentials,
+		Image:                 resolveProviderImage(c.opts, c.backend),
+		Env:                   env,
+		ConfigHome:            home,
+		ConfigRoot:            layout.ConfigRoot,
+		WorkspaceDir:          layout.WorkspaceDir,
 	}
-	// SSH comes only from workspace credentials.
-	sandbox.ApplySSHCredentials(&spec, creds["GIT_SSH_PRIVATE_KEY"], creds["GIT_SSH_KNOWN_HOSTS"])
 	return spec, nil
 }
 
@@ -603,6 +600,10 @@ func applyPreviewEnv(env map[string]string, caps *models.AgentCapabilities) {
 // file leaves the previous credential in place. The file body is not logged.
 func (c *acpProvider) settleCodexLogin(req NodeReq, sb *sandbox.Sandbox, runErr error, events []models.AcpEvent) error {
 	if c.backend != BackendCodex {
+		c.forgetCodexLogin(codexLoginKey(req))
+		return runErr
+	}
+	if _, connection := codexConnectionRuns.LoadAndDelete(c.backendKey(codexLoginKey(req))); connection {
 		c.forgetCodexLogin(codexLoginKey(req))
 		return runErr
 	}

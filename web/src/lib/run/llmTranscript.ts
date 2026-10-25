@@ -394,7 +394,8 @@ export function buildLlmTranscript(input: BuildLlmTranscriptInput): LlmTranscrip
 
   ;(run.trace || []).forEach((tr, i) => {
     const event = String(tr.event)
-    if (event === 'enter' || (event === 'exit' && !tr.detail)) return
+    // enter is the node divider. A normal exit has no detail and still ends the visit.
+    if (event === 'enter') return
     push(ms(tr.at), {
       type: 'trace',
       key: `trace:${i}`,

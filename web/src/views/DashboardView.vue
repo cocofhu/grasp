@@ -7,9 +7,16 @@ import HomeYumeCharacter from '@/components/dashboard/HomeYumeCharacter.vue'
 import HomeWorkflowSelect from '@/components/dashboard/HomeWorkflowSelect.vue'
 import HomePrioritySelect from '@/components/dashboard/HomePrioritySelect.vue'
 import Icon from '@/components/ui/Icon.vue'
+import AppButton from '@/components/ui/AppButton.vue'
+import AppModal from '@/components/ui/AppModal.vue'
 import ChatImageThumb from '@/components/ui/ChatImageThumb.vue'
 import ChatImagePreviewModal from '@/components/ui/ChatImagePreviewModal.vue'
 import HomeCreateBaselineModal from '@/components/dashboard/HomeCreateBaselineModal.vue'
+import { api } from '@/lib/api/api'
+import { useToast } from '@/lib/composables/useToast'
+import { openRetryOnboarding } from '@/lib/pm/firstInstall'
+import { missingOnboardingNames, onboardingAgentsReady } from '@/lib/pm/onboardingWizard'
+import type { AppLocale } from '@/lib/shared/loadLocaleMessages'
 import RunLaunchModal from '@/components/workflow/RunLaunchModal.vue'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { useHomeApproveChat } from '@/lib/run/useHomeApproveChat'
@@ -17,11 +24,21 @@ import { useBrandSettings } from '@/lib/composables/useBrandSettings'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
 import { imgSrc } from '@/lib/shared/compositeText'
 import type { Workflow } from '@/lib/shared/types'
+import HomeModeSwitch from '@/components/dashboard/HomeModeSwitch.vue'
+import SoloAgentSelect from '@/components/solo/SoloAgentSelect.vue'
+import SoloProjectSelect from '@/components/solo/SoloProjectSelect.vue'
+import SoloModelSelect from '@/components/solo/SoloModelSelect.vue'
+import HomeSoloPanel from '@/components/solo/HomeSoloPanel.vue'
+import ProjectDrawer from '@/components/solo/ProjectDrawer.vue'
+import SoloLimitModal from '@/components/solo/SoloLimitModal.vue'
+import { soloPrefs, type HomeMode } from '@/lib/solo/soloPrefs'
+import { useSoloLauncher } from '@/lib/solo/useSoloLauncher'
 
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
 
 const router = useRouter()
-const { t, tm } = useI18n()
+const { t, tm, locale } = useI18n()
+const toast = useToast()
 const {
   homeWorkflows,
   unpublishedHomeWorkflows,
@@ -63,9 +80,57 @@ const {
 const { homeSubtitle } = useBrandSettings()
 const heroCopy = computed(() => homeSubtitle.value || t('pages.dashboard.heroSubtitle'))
 
+const homeMode = ref<HomeMode>(soloPrefs.homeMode())
+const solo = useSoloLauncher()
+const soloAgents = solo.agents
+const soloProjects = solo.projects
+const soloAgentName = solo.agentName
+const soloProjectIds = solo.projectIds
+const soloBranches = solo.branches
+const soloInitialModelId = solo.initialModelId
+const soloModelChoices = solo.modelChoices
+const soloLimitOpen = solo.limitOpen
+const projectDrawerOpen = ref(false)
+let soloLoaded = false
+
+function ensureSoloLoaded() {
+  if (soloLoaded) return
+  soloLoaded = true
+  void solo.load()
+}
+
+watch(homeMode, (m) => {
+  soloPrefs.setHomeMode(m)
+  if (m === 'solo') ensureSoloLoaded()
+  solo.error.value = ''
+})
+
+const composerBusy = computed(() => (homeMode.value === 'solo' ? solo.creating.value : sending.value))
+const composerCanSend = computed(() => (homeMode.value === 'solo' ? solo.canStart.value : canSend.value))
+
+async function submitComposer() {
+  if (homeMode.value !== 'solo') {
+    await send()
+    return
+  }
+  const started = await solo.start(draft.value, attachments.value.map((im) => ({ ...im })))
+  if (started) {
+    draft.value = ''
+    attachments.value = []
+  }
+}
+
+function onProjectSaved(p: Parameters<typeof solo.onProjectSaved>[0]) {
+  projectDrawerOpen.value = false
+  solo.onProjectSaved(p)
+}
+
 const composerFocused = ref(false)
 const composing = ref(false)
 const textareaRef = ref<HTMLTextAreaElement | null>(null)
+const homeContentEl = ref<HTMLDivElement | null>(null)
+const homeBrandBlockEl = ref<HTMLDivElement | null>(null)
+const homeModeTopInset = ref<number | null>(null)
 const overflowScroll = ref(false)
 const workflowCardsEl = ref<HTMLDivElement | null>(null)
 const workflowCanScrollPrev = ref(false)
@@ -81,6 +146,8 @@ const phCursor = ref(false)
 let phTimer: ReturnType<typeof setTimeout> | null = null
 let phHoldTimer: ReturnType<typeof setTimeout> | null = null
 const createBaselineOpen = ref(false)
+const onboardingGateOpen = ref(false)
+const onboardingGateMissing = ref<string[]>([])
 const workflowMenuOpen = ref(false)
 const workflowMenuX = ref(0)
 const workflowMenuY = ref(0)
@@ -96,7 +163,7 @@ const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 10
 
 const placeholderLines = computed(() => {
-  const raw = tm('pages.dashboard.placeholders') as unknown
+  const raw = tm(homeMode.value === 'solo' ? 'pages.solo.home.placeholders' : 'pages.dashboard.placeholders') as unknown
   if (Array.isArray(raw) && raw.length > 0) {
     const lines = raw.filter((s): s is string => typeof s === 'string' && s.trim().length > 0)
     if (lines.length > 0) return lines
@@ -192,7 +259,7 @@ function onComposerKeydown(e: KeyboardEvent) {
   if (composing.value || e.isComposing || e.keyCode === 229) return
   if (!(e.ctrlKey || e.metaKey)) return
   e.preventDefault()
-  void send()
+  void submitComposer()
 }
 
 function onComposerFocus() {
@@ -203,19 +270,44 @@ function onComposerBlur() {
   composerFocused.value = false
 }
 
-function goWorkflows() {
-  void router.push('/workflows')
-}
-
 function goEditWorkflow(id: string) {
   void router.push(`/workflows/${id}/edit`)
 }
 
-function openCreateBaseline(e?: Event) {
+function uiOnboardingLang(): AppLocale {
+  return String(locale.value).toLowerCase().startsWith('en') ? 'en' : 'zh-CN'
+}
+
+function closeOnboardingGate() {
+  onboardingGateOpen.value = false
+}
+
+function finishOnboardingFromGate() {
+  onboardingGateOpen.value = false
+  openRetryOnboarding()
+}
+
+/** Home baseline create stops until one canonical quartet exists. */
+async function ensureOnboardingAgents(): Promise<boolean> {
+  try {
+    const agents = await api.listAgents()
+    const names = (agents || []).map((agent) => agent.name || '')
+    if (onboardingAgentsReady(names)) return true
+    onboardingGateMissing.value = missingOnboardingNames(names, uiOnboardingLang())
+    onboardingGateOpen.value = true
+    return false
+  } catch (cause: unknown) {
+    toast.error(cause instanceof Error ? cause.message : String(cause))
+    return false
+  }
+}
+
+async function openCreateBaseline(e?: Event) {
   e?.preventDefault()
   e?.stopPropagation()
   closeWorkflowMenu()
   clearLongPress()
+  if (!(await ensureOnboardingAgents())) return
   createBaselineOpen.value = true
 }
 
@@ -322,7 +414,7 @@ function onWindowKeydown(e: KeyboardEvent) {
 
 function onComposerSubmit(e: Event) {
   e.preventDefault()
-  void send()
+  void submitComposer()
 }
 
 const WORKFLOW_SCROLL_EPS = 2
@@ -532,13 +624,44 @@ function onWorkflowEnterAnimationEnd(e: AnimationEvent) {
   syncWorkflowNav()
 }
 
+/** Keep the hero's top position stable while switching the mode-specific tail. */
+function lockHomeModeTopInset() {
+  const content = homeContentEl.value
+  const brand = homeBrandBlockEl.value
+  if (!content || !brand) return
+  const inset =
+    brand.getBoundingClientRect().top
+    - content.getBoundingClientRect().top
+    + content.scrollTop
+  if (Number.isFinite(inset) && inset >= 0) homeModeTopInset.value = inset
+}
+
+function onHomeResize() {
+  homeModeTopInset.value = null
+  syncWorkflowNav()
+}
+
+watch(homeMode, () => {
+  lockHomeModeTopInset()
+})
+
+// Attachments intentionally use the existing flexible inset budget so the first
+// thumbnail row can fit without introducing a page scrollbar.
+watch(
+  () => attachments.value.length,
+  () => {
+    homeModeTopInset.value = null
+  },
+)
+
 onMounted(() => {
+  if (homeMode.value === 'solo') ensureSoloLoaded()
   nextTick(() => {
     autoGrow()
     syncWorkflowNav()
     bindWorkflowStripObserver()
   })
-  window.addEventListener('resize', syncWorkflowNav)
+  window.addEventListener('resize', onHomeResize)
   window.addEventListener('pointerdown', onWindowPointerDown)
   window.addEventListener('keydown', onWindowKeydown)
   window.addEventListener('scroll', closeWorkflowMenu, true)
@@ -550,7 +673,7 @@ onBeforeUnmount(() => {
   clearWorkflowNavHold()
   workflowStripObserver?.disconnect()
   workflowStripObserver = null
-  window.removeEventListener('resize', syncWorkflowNav)
+  window.removeEventListener('resize', onHomeResize)
   window.removeEventListener('pointerdown', onWindowPointerDown)
   window.removeEventListener('keydown', onWindowKeydown)
   window.removeEventListener('scroll', closeWorkflowMenu, true)
@@ -561,14 +684,28 @@ onBeforeUnmount(() => {
   <div data-testid="dashboard-view" class="home-shell relative flex h-full min-h-0 flex-col">
     <HomeParticleMeshBackground />
     <div
+      ref="homeContentEl"
       class="home-shell__content relative z-[1] mx-auto flex w-full max-w-3xl min-h-0 flex-1 flex-col items-center justify-start overflow-x-hidden overflow-y-auto px-4"
+      :class="{ 'home-shell__content--mode-locked': homeModeTopInset != null }"
+      :style="homeModeTopInset != null ? { '--home-mode-top-inset': `${homeModeTopInset}px` } : undefined"
     >
-      <div class="home-brand-block" data-testid="home-brand-block">
+      <div ref="homeBrandBlockEl" class="home-brand-block" data-testid="home-brand-block">
         <HomeYumeCharacter />
         <p class="home-hero-copy" data-testid="home-hero-copy">{{ heroCopy }}</p>
       </div>
 
       <div class="home-composer-wrap w-full">
+        <div class="mb-3 flex justify-center">
+          <HomeModeSwitch v-model="homeMode" />
+        </div>
+        <p
+          v-if="homeMode === 'solo' && solo.error.value"
+          class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
+          data-testid="home-solo-error"
+          role="alert"
+        >
+          {{ solo.error.value }}
+        </p>
         <p
           v-if="attachNotice"
           class="mb-2 rounded border border-err/40 bg-err/10 px-3 py-1.5 text-[12px] text-err"
@@ -607,7 +744,7 @@ onBeforeUnmount(() => {
             </div>
             <button
               type="button"
-              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded bg-err text-white"
+              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center rounded pending-attach-remove"
               data-testid="home-attach-remove"
               @click.stop="removeAttachment(ii)"
             >
@@ -638,7 +775,7 @@ onBeforeUnmount(() => {
               :class="overflowScroll ? 'scroll-area max-h-[200px] overflow-y-auto' : 'overflow-y-hidden'"
               data-testid="home-composer-input"
               rows="3"
-              :disabled="sending"
+              :disabled="composerBusy"
               autocomplete="off"
               @input="onTextInput"
               @keydown="onComposerKeydown"
@@ -665,100 +802,125 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="home-composer__plus flex h-8 w-8 shrink-0 items-center justify-center border text-txt2 hover:text-txt disabled:opacity-40"
-              :disabled="sending"
+              :disabled="composerBusy"
               :title="t('pages.clarify.addImage')"
               data-testid="home-composer-plus"
               @click="openFilePicker"
             >
               <Icon name="plus" :size="16" />
             </button>
-            <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
-            <HomeWorkflowSelect
-              :workflows="homeWorkflows"
-              :model-value="selectedId"
-              :disabled="sending"
-              @update:model-value="selectWorkflow"
-              @create="onCreateFromSelect"
-            />
-            <HomePrioritySelect
-              :model-value="launchPriority"
-              :disabled="!homeWorkflows.length || sending"
-              @update:model-value="selectPriority"
-            />
+            <Transition name="home-mode-controls" mode="out-in">
+              <div v-if="homeMode === 'workflow'" key="workflow" class="home-mode-controls flex min-w-0 items-center gap-2">
+                <label class="sr-only" for="home-workflow-select">{{ t('pages.dashboard.pickWorkflow') }}</label>
+                <HomeWorkflowSelect
+                  :workflows="homeWorkflows"
+                  :model-value="selectedId"
+                  :disabled="sending"
+                  @update:model-value="selectWorkflow"
+                  @create="onCreateFromSelect"
+                />
+                <HomePrioritySelect
+                  :model-value="launchPriority"
+                  :disabled="!homeWorkflows.length || sending"
+                  @update:model-value="selectPriority"
+                />
+              </div>
+              <div v-else key="solo" class="home-mode-controls flex min-w-0 flex-wrap items-center gap-2">
+                <SoloAgentSelect
+                  v-model="soloAgentName"
+                  :agents="soloAgents"
+                  :loading="solo.loading.value"
+                  :disabled="solo.creating.value"
+                />
+                <SoloProjectSelect
+                  v-model="soloProjectIds"
+                  :branches="soloBranches"
+                  :projects="soloProjects"
+                  :loading="solo.loading.value"
+                  :disabled="solo.creating.value"
+                  @update:branch="solo.setProjectBranch"
+                  @create="projectDrawerOpen = true"
+                />
+                <SoloModelSelect
+                  v-model="soloInitialModelId"
+                  :models="soloModelChoices"
+                  :disabled="solo.creating.value"
+                />
+              </div>
+            </Transition>
             <div class="flex-1" />
             <button
               type="submit"
               class="home-composer__send flex h-8 w-8 shrink-0 items-center justify-center text-base disabled:opacity-[0.28]"
               data-testid="home-composer-send"
-              :disabled="sending || !canSend"
-              :aria-label="t('pages.dashboard.send')"
+              :disabled="composerBusy || !composerCanSend"
+              :aria-label="homeMode === 'solo' ? t('pages.solo.home.start') : t('pages.dashboard.send')"
               :title="t('pages.dashboard.sendShortcut')"
             >
-              <Icon name="arrow-up" :size="16" />
+              <Icon v-if="composerBusy && homeMode === 'solo'" name="spinner" :size="15" />
+              <Icon v-else name="arrow-up" :size="16" />
             </button>
           </div>
         </form>
       </div>
 
-      <div
-        v-if="loadError"
-        class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
-        data-testid="dashboard-load-error"
-      >
-        <span>{{ t('pages.board.loadFailed') }}</span>
-        <button
-          type="button"
-          class="rounded-md border border-err/40 px-2.5 py-1 text-xs text-err hover:bg-err/10"
-          data-testid="dashboard-retry"
-          @click="load()"
-        >
-          {{ t('pages.board.retry') }}
-        </button>
-      </div>
+      <Transition name="home-mode-tail" mode="out-in">
+        <HomeSoloPanel
+          v-if="homeMode === 'solo'"
+          key="solo"
+          :projects="soloProjects"
+          :project-ids="soloProjectIds"
+          @toggle-project="solo.toggleProject"
+          @new-project="projectDrawerOpen = true"
+        />
 
-      <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
-      <div
-        v-else-if="workflowRailRevealed"
-        class="home-workflow-enter home-workflow-enter--ready w-full"
-        data-testid="home-workflow-enter"
-        @animationend="onWorkflowEnterAnimationEnd"
-      >
+        <div v-else key="workflow" class="home-mode-tail home-mode-tail--workflow w-full">
+          <div
+            v-if="loadError"
+            class="mt-6 flex w-full flex-wrap items-center justify-between gap-2 rounded border border-err/40 bg-err/10 px-3 py-2 text-[13px] text-err"
+            data-testid="dashboard-load-error"
+          >
+            <span>{{ t('pages.board.loadFailed') }}</span>
+            <button
+              type="button"
+              class="rounded-md border border-err/40 px-2.5 py-1 text-xs text-err hover:bg-err/10"
+              data-testid="dashboard-retry"
+              @click="load()"
+            >
+              {{ t('pages.board.retry') }}
+            </button>
+          </div>
+
+          <!-- plan g1: wait blank (no loading copy); reveal whole rail+add together on first success -->
+          <div
+            v-else-if="workflowRailRevealed"
+            class="home-workflow-enter home-workflow-enter--ready w-full"
+            data-testid="home-workflow-enter"
+            @animationend="onWorkflowEnterAnimationEnd"
+          >
         <div
-          v-if="!homeWorkflows.length"
+          v-if="!homeWorkflows.length && unpublishedHomeWorkflows.length"
           class="mt-10 text-center"
           data-testid="home-workflows-empty"
         >
-          <template v-if="unpublishedHomeWorkflows.length">
-            <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
-              {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
-            </p>
-            <button
-              type="button"
-              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-              data-testid="home-go-publish"
-              @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
-            >
-              {{ t('pages.dashboard.goPublish') }}
-            </button>
-          </template>
-          <template v-else>
-            <p class="text-sm text-txt3">{{ t('pages.dashboard.noWorkflows') }}</p>
-            <button
-              type="button"
-              class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
-              data-testid="home-go-workflows"
-              @click="goWorkflows"
-            >
-              {{ t('pages.dashboard.goWorkflows') }}
-            </button>
-          </template>
+          <p class="text-sm text-txt3" data-testid="home-workflows-unpublished">
+            {{ t('pages.dashboard.unpublishedWorkflows', { name: unpublishedHomeWorkflows[0]!.name }) }}
+          </p>
+          <button
+            type="button"
+            class="mt-3 rounded-md border border-line px-3 py-1.5 text-[13px] text-txt2 hover:bg-elevated"
+            data-testid="home-go-publish"
+            @click="goEditWorkflow(unpublishedHomeWorkflows[0]!.id)"
+          >
+            {{ t('pages.dashboard.goPublish') }}
+          </button>
         </div>
 
         <div
           class="home-workflow-rail-wrap w-full"
           :class="{
-            'mt-10': homeWorkflows.length > 0,
-            'mt-4': homeWorkflows.length === 0,
+            'mt-10': homeWorkflows.length > 0 || !unpublishedHomeWorkflows.length,
+            'mt-4': homeWorkflows.length === 0 && unpublishedHomeWorkflows.length > 0,
             'home-workflow-rail-wrap--has-left': workflowFadeLeft,
             'home-workflow-rail-wrap--has-right': workflowFadeRight,
           }"
@@ -887,9 +1049,14 @@ onBeforeUnmount(() => {
           >
             <Icon name="chevron-right" :size="16" />
           </button>
+          </div>
         </div>
-      </div>
+        </div>
+      </Transition>
     </div>
+
+    <ProjectDrawer :open="projectDrawerOpen" @close="projectDrawerOpen = false" @saved="onProjectSaved" />
+    <SoloLimitModal :open="soloLimitOpen" @close="soloLimitOpen = false" />
 
     <Teleport to="body">
       <div
@@ -930,6 +1097,27 @@ onBeforeUnmount(() => {
       @close="createBaselineOpen = false"
       @created="onBaselineCreated"
     />
+
+    <AppModal
+      :open="onboardingGateOpen"
+      :title="t('pages.workspace.newWorkflow.agentsRequiredTitle')"
+      :width="440"
+      close-on-esc
+      data-testid="home-onboarding-agents-gate"
+      @close="closeOnboardingGate"
+    >
+      <p class="text-[13px] leading-relaxed text-txt2" data-testid="home-onboarding-agents-gate-body">
+        {{ t('pages.workspace.newWorkflow.agentsRequired', { missing: onboardingGateMissing.join(t('pages.onboarding.team.listSep')) }) }}
+      </p>
+      <template #footer>
+        <AppButton variant="ghost" data-testid="home-onboarding-agents-gate-dismiss" @click="closeOnboardingGate">
+          {{ t('common.buttons.cancel') }}
+        </AppButton>
+        <AppButton variant="primary" data-testid="home-onboarding-agents-gate-open" @click="finishOnboardingFromGate">
+          {{ t('pages.workspace.newWorkflow.goOnboarding') }}
+        </AppButton>
+      </template>
+    </AppModal>
 
     <RunLaunchModal
       :open="launchOpen"
@@ -993,6 +1181,13 @@ html.light .home-shell {
   min-height: 48px;
 }
 
+/* Mode-specific controls and panels can have very different heights. Freeze
+   the current inset for that switch so the hero stays anchored in place. */
+.home-shell__content.home-shell__content--mode-locked::before {
+  flex: 0 0 var(--home-mode-top-inset);
+  min-height: var(--home-mode-top-inset);
+}
+
 /* brand: fill LOCKED — cropped yume + copy; no wordmark / logo-mark */
 .home-brand-block {
   --yume-w: 240px;
@@ -1047,6 +1242,40 @@ html.light .home-shell {
 .home-composer__toolbar {
   border-color: rgb(var(--c-line) / 0.55);
   background: color-mix(in srgb, rgb(var(--c-base)) 35%, rgb(var(--c-surface)));
+}
+
+.home-mode-controls {
+  flex: 0 1 auto;
+}
+
+.home-mode-controls-enter-active,
+.home-mode-controls-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s var(--ease-out-expo);
+}
+
+.home-mode-controls-enter-from {
+  opacity: 0;
+  transform: translateY(4px);
+}
+
+.home-mode-controls-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+.home-mode-tail-enter-active,
+.home-mode-tail-leave-active {
+  transition: opacity 0.24s ease, transform 0.24s var(--ease-out-expo);
+}
+
+.home-mode-tail-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+.home-mode-tail-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
 }
 
 .home-composer__input {
@@ -1487,6 +1716,8 @@ html.light .home-shell__card--selected .home-shell__card-top {
 @media (prefers-reduced-motion: reduce) {
   .home-composer,
   .home-composer__plus,
+  .home-mode-controls,
+  .home-mode-tail,
   .home-shell__card,
   .home-workflow-more,
   .home-workflow-art__node,
@@ -1510,6 +1741,13 @@ html.light .home-shell__card--selected .home-shell__card-top {
   .home-composer__ph-cursor {
     animation: none;
     opacity: 1;
+  }
+
+  .home-mode-controls-enter-active,
+  .home-mode-controls-leave-active,
+  .home-mode-tail-enter-active,
+  .home-mode-tail-leave-active {
+    transition: none;
   }
 
   .home-workflow-rail {

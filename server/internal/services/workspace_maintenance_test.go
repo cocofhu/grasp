@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/models"
 	"gorm.io/gorm"
 )
@@ -84,16 +83,13 @@ func TestCodexRefreshTargetsSelectedCredentialAndCannotReviveIt(t *testing.T) {
 	svc := NewCredentialService(db)
 	login := `{"auth_mode":"chatgpt","tokens":{"access_token":"original","refresh_token":"refresh"}}`
 	refreshed := `{"auth_mode":"chatgpt","tokens":{"access_token":"refreshed","refresh_token":"refresh"}}`
-	first, err := svc.Create(CredentialInput{Type: "ai", Provider: "codex", Name: "First", Value: login})
+	first, err := svc.Create(CredentialInput{Purpose: "tool_auth", ToolID: "codex", Type: "ai", Provider: "codex", Name: "First", Value: login})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := svc.Create(CredentialInput{Type: "ai", Provider: "codex", Name: "Second", Value: login})
+	second, err := svc.Create(CredentialInput{Purpose: "tool_auth", ToolID: "codex", Type: "ai", Provider: "codex", Name: "Second", Value: login})
 	if err != nil {
 		t.Fatal(err)
-	}
-	if id := svc.InjectedCredentialID(envauth.EnvCodexAuthFile, login); id != "" {
-		t.Fatal("ambiguous inherited credential was selected")
 	}
 	if err = svc.WriteBackCodexLoginCredential(second.ID, refreshed); err != nil {
 		t.Fatal(err)

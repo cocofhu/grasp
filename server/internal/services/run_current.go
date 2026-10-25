@@ -57,6 +57,17 @@ func classifyCurrentNode(cn *CurrentNode, node *models.Node, sr models.StateRun,
 	}
 }
 
+// currentFromVisit is one active StateRun as a CurrentNode. A manual visit
+// that is still running is stopping (takeover unwind), not a live auto agent.
+func currentFromVisit(r models.Run, sr models.StateRun, state string, waiting bool) CurrentNode {
+	cn := CurrentNode{ID: sr.NodeID, Iteration: sr.Iteration, State: state}
+	classifyCurrentNode(&cn, r.Graph.FindNode(sr.NodeID), sr, waiting)
+	if state == "running" && sr.IsManual() {
+		cn.State = "stopping"
+	}
+	return cn
+}
+
 // CurrentNodes returns the current node of every running / waiting_human run
 // in runs, in a fixed number of queries (no per-run N+1).
 func (s *RunService) CurrentNodes(runs []models.Run) map[string]CurrentNode {
@@ -103,19 +114,25 @@ func (s *RunService) CurrentNodes(runs []models.Run) map[string]CurrentNode {
 		var cn CurrentNode
 		switch r.Status {
 		case "waiting_human":
+			// Confirm returns before the run status leaves waiting_human.
+			// resumeAdmitted may already have opened a later running visit;
+			// that visit is current, and the older waiting_human row is the
+			// node just left. A running visit that is not newer stays hidden
+			// so a gate or a still-waiting human node remains current.
+			if sr, ok := running[id]; ok {
+				if wait, hasWait := waiting[id]; hasWait && sr.ID > wait.ID {
+					cn = currentFromVisit(r, sr, "running", false)
+					break
+				}
+			}
 			if g, ok := gateByRun[id]; ok {
 				cn = CurrentNode{ID: g.NodeID, Iteration: g.Iteration, Kind: CurrentKindGate, Mode: models.NodeModeManual, State: "waiting_human"}
 			} else if sr, ok := waiting[id]; ok {
-				cn = CurrentNode{ID: sr.NodeID, Iteration: sr.Iteration, State: "waiting_human"}
-				classifyCurrentNode(&cn, r.Graph.FindNode(sr.NodeID), sr, true)
+				cn = currentFromVisit(r, sr, "waiting_human", true)
 			}
 		case "running":
 			if sr, ok := running[id]; ok {
-				cn = CurrentNode{ID: sr.NodeID, Iteration: sr.Iteration, State: "running"}
-				classifyCurrentNode(&cn, r.Graph.FindNode(sr.NodeID), sr, false)
-				if sr.IsManual() {
-					cn.State = "stopping"
-				}
+				cn = currentFromVisit(r, sr, "running", false)
 			}
 		}
 		if cn.ID == "" {

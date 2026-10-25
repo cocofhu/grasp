@@ -131,11 +131,11 @@ func TestEmbedSessionFlow(t *testing.T) {
 	}
 
 	// The drawer token drives the share-link chat endpoints for this node.
-	prev := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	prev := parseJSON(t, hn.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token}))
 	if prev["status"] != models.ShareLinkStateActive || prev["kind"] != models.ShareLinkKindReview {
 		t.Fatalf("preview with drawer token: %+v", prev)
 	}
-	arts := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/artifacts", nil, map[string]string{headerShareToken: token}))
+	arts := parseJSON(t, hn.doPublic(http.MethodGet, "/public/approvals/artifacts", nil, map[string]string{headerShareToken: token}))
 	if arts["status"] != models.ShareLinkStateActive {
 		t.Fatalf("artifacts with drawer token: %+v", arts)
 	}
@@ -145,7 +145,7 @@ func TestEmbedSessionFlow(t *testing.T) {
 	if w := hn.doEmbed(http.MethodGet, "/api/runs/run-emb", nil, bearerHeader(token)); w.Code != http.StatusUnauthorized {
 		t.Fatalf("api with drawer token: %d", w.Code)
 	}
-	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "approve", "nonce": "x",
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}))
 	if dec["status"] != "invalid" {
@@ -153,7 +153,7 @@ func TestEmbedSessionFlow(t *testing.T) {
 	}
 
 	hn.db.Model(&models.Run{}).Where("id = ?", "run-emb").Update("status", "completed")
-	after := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	after := parseJSON(t, hn.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token}))
 	if after["status"] == models.ShareLinkStateActive {
 		t.Fatalf("finished run still active: %+v", after)
 	}
@@ -235,12 +235,12 @@ func TestPublicEmbedTicketFlow(t *testing.T) {
 	hn := newHarness(t)
 	seedAppPreviewReview(t, hn, "run-emb-pub", "ap1")
 	seedDirectPreview(t, hn, "run-emb-pub", "ap1")
-	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-emb-pub/reviews/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
+	created := parseJSON(t, hn.do(http.MethodPost, "/api/runs/run-emb-pub/nodes/ap1/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"}))
 	url, _ := created["url"].(string)
 	share := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
 
 	pubHeaders := map[string]string{headerShareToken: share, headerShareRequest: "1", "Origin": "http://" + publicHost}
-	res := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/embed-ticket", nil, pubHeaders))
+	res := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/embed-ticket", nil, pubHeaders))
 	ticket, _ := res["ticket"].(string)
 	if res["status"] != models.ShareLinkStateActive || ticket == "" {
 		t.Fatalf("public ticket: %+v", res)
@@ -252,34 +252,34 @@ func TestPublicEmbedTicketFlow(t *testing.T) {
 	}
 
 	// Chat endpoints accept the drawer token in place of the share token.
-	prev := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	prev := parseJSON(t, hn.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token}))
 	if prev["status"] != models.ShareLinkStateActive {
 		t.Fatalf("preview with drawer token: %+v", prev)
 	}
 	// It can neither decide nor mint more credentials.
-	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/decide", map[string]any{
+	dec := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/decide", map[string]any{
 		"token": token, "action": "approve", "nonce": "x",
 	}, map[string]string{headerShareRequest: "1", "Origin": "http://" + publicHost}))
 	if dec["status"] != "invalid" {
 		t.Fatalf("decide with drawer token: %+v", dec)
 	}
-	again := parseJSON(t, hn.doPublic(http.MethodPost, "/public/gate-approvals/embed-ticket", nil, map[string]string{
+	again := parseJSON(t, hn.doPublic(http.MethodPost, "/public/approvals/embed-ticket", nil, map[string]string{
 		headerShareToken: token, headerShareRequest: "1", "Origin": "http://" + publicHost,
 	}))
 	if again["status"] != "invalid" {
 		t.Fatalf("mint with drawer token: %+v", again)
 	}
-	if w := hn.doPublic(http.MethodPost, "/public/gate-approvals/embed-ticket", nil, map[string]string{
+	if w := hn.doPublic(http.MethodPost, "/public/approvals/embed-ticket", nil, map[string]string{
 		headerShareToken: share, headerShareRequest: "1", "Origin": "http://evil.test",
 	}); w.Code != http.StatusForbidden {
 		t.Fatalf("cross-site ticket request: %d", w.Code)
 	}
 
 	// Revoking the link cuts the drawer.
-	if w := hn.do(http.MethodPost, "/api/runs/run-emb-pub/reviews/ap1/share-link/revoke", nil); w.Code != http.StatusOK {
+	if w := hn.do(http.MethodPost, "/api/runs/run-emb-pub/nodes/ap1/share-link/revoke", nil); w.Code != http.StatusOK {
 		t.Fatalf("revoke: %d %s", w.Code, w.Body.String())
 	}
-	after := parseJSON(t, hn.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token}))
+	after := parseJSON(t, hn.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token}))
 	if after["status"] == models.ShareLinkStateActive {
 		t.Fatalf("drawer survived revoke: %+v", after)
 	}
@@ -293,7 +293,7 @@ func TestPublicEventsAcceptDrawerToken(t *testing.T) {
 
 	srv := httptest.NewServer(hn.r)
 	t.Cleanup(srv.Close)
-	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/public/gate-approvals/events"
+	wsURL := "ws" + strings.TrimPrefix(srv.URL, "http") + "/public/approvals/events"
 
 	bad, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
 	if err != nil {

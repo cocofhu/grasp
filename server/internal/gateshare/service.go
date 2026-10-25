@@ -849,13 +849,13 @@ func (s *Service) RecordUseAudit(runID, nodeID, action, externalName, maskedIP, 
 	})
 }
 
-// ShareURL builds /public/gate-approvals#t=… (token only in fragment).
+// ShareURL builds /public/approvals#t=… (token only in fragment).
 func ShareURL(origin, token string) string {
 	origin = strings.TrimRight(strings.TrimSpace(origin), "/")
 	if origin == "" {
 		origin = ""
 	}
-	return origin + "/public/gate-approvals#t=" + token
+	return origin + "/public/approvals#t=" + token
 }
 
 // PublicOriginFromRequest reconstructs scheme+host without query/path.

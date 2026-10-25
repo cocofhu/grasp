@@ -43,6 +43,7 @@ func TestResolveSandboxImage(t *testing.T) {
 func TestApplySandboxImageEnv(t *testing.T) {
 	t.Setenv("GRASP_SANDBOX_IMAGE_CURSOR", "env/cursor:1")
 	t.Setenv("GRASP_SANDBOX_IMAGE_CLAUDE_CODE", "env/claude:1")
+	t.Setenv("GRASP_SANDBOX_IMAGE_DEEPSEEK_HARNESS", "env/dsh:1")
 	c := &Config{}
 	applySandboxImageEnv(c)
 	if c.Sandbox.Images["cursor"] != "env/cursor:1" {
@@ -50,6 +51,9 @@ func TestApplySandboxImageEnv(t *testing.T) {
 	}
 	if c.Sandbox.Images["claude_code"] != "env/claude:1" {
 		t.Fatalf("claude_code env: %v", c.Sandbox.Images)
+	}
+	if got := c.ResolveSandboxImage("deepseek_harness"); got != "env/dsh:1" {
+		t.Fatalf("DeepSeek Harness image = %q", got)
 	}
 }
 

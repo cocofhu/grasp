@@ -25,12 +25,12 @@ describe('DashboardView home chat layout', () => {
     expect(src).toMatch(/home-shell__content[^>]*overflow-y-auto/)
   })
 
-  it('centers composer, workflow cards, and empty states', () => {
+  it('centers composer, workflow cards, and unpublished guidance without empty-state navigation', () => {
     expect(src).toMatch(/data-testid="home-composer"/)
     expect(src).toMatch(/data-testid="home-workflow-cards"/)
     expect(src).toMatch(/data-testid="home-composer-input"/)
     expect(src).toMatch(/data-testid="home-workflows-empty"/)
-    expect(src).toMatch(/data-testid="home-go-workflows"/)
+    expect(src).not.toMatch(/data-testid="home-go-workflows"/)
     expect(src).toMatch(/data-testid="home-new-workflow"/)
     expect(src).toMatch(/HomeCreateBaselineModal/)
     expect(src).toMatch(/@created="onBaselineCreated"/)
@@ -64,7 +64,7 @@ describe('DashboardView home chat layout', () => {
     expect(src).toContain('useBrandSettings')
     expect(src).toContain('homeSubtitle')
     expect(src).toContain("t('pages.dashboard.heroSubtitle')")
-    expect(src).not.toContain('先说清')
+    expect(src).not.toContain('我们应该做些什么')
     expect(src).not.toMatch(/data-testid="home-brand"/)
     expect(src).not.toMatch(/data-testid="home-brand-row"/)
     expect(src).not.toMatch(/data-testid="home-brand-copy"/)
@@ -117,8 +117,9 @@ describe('DashboardView home chat layout', () => {
     expect(src).not.toMatch(/class="[^"]*\bcard\b[^"]*home-shell__card|class="home-shell__card[^"]*\bcard\b/)
     expect(src).toMatch(/\.home-shell__card\s*\{[^}]*border-radius:\s*12px/s)
     expect(src).toMatch(/data-testid="home-workflow-card-name"/)
-    expect(src).toMatch(/rounded bg-err[\s\S]{0,80}data-testid="home-attach-remove"/)
-    expect(src).not.toMatch(/rounded-none bg-err[\s\S]{0,80}data-testid="home-attach-remove"/)
+    expect(src).toMatch(/rounded pending-attach-remove[\s\S]{0,80}data-testid="home-attach-remove"/)
+    expect(src).not.toMatch(/rounded-full[\s\S]{0,80}data-testid="home-attach-remove"/)
+    expect(src).not.toMatch(/rounded-none[\s\S]{0,80}data-testid="home-attach-remove"/)
     expect(src).toMatch(/thumb-class="rounded"/)
     expect(src).not.toMatch(/thumb-class="rounded-none"/)
   })
@@ -200,6 +201,15 @@ describe('DashboardView home chat layout', () => {
     )
   })
 
+  it('anchors and animates the workflow/Solo mode switch', () => {
+    expect(src).toMatch(/home-shell__content--mode-locked/)
+    expect(src).toMatch(/lockHomeModeTopInset/)
+    expect(src).toMatch(/<Transition name="home-mode-controls" mode="out-in">/)
+    expect(src).toMatch(/<Transition name="home-mode-tail" mode="out-in">/)
+    expect(src).toMatch(/\.home-mode-controls-enter-active[\s\S]*transition:/)
+    expect(src).toMatch(/\.home-mode-tail-enter-active[\s\S]*transition:/)
+  })
+
   // plan g1.2 — keep overflow-hidden on composer; priority panel teleports instead
   it('keeps .home-composer overflow-hidden and does not raise other z-index layers', () => {
     expect(src).toMatch(/\.home-composer\s*\{[^}]*overflow:\s*hidden/s)
@@ -235,12 +245,24 @@ describe('DashboardView home chat layout', () => {
   it('loads slogan copy from locale files instead of a hardcoded Chinese line', () => {
     const zh = JSON.parse(
       readFileSync(join(dir, '../locales/zh-CN/pages.json'), 'utf8'),
-    ) as { pages: { dashboard: { heroSubtitle: string } } }
+    ) as {
+      pages: {
+        dashboard: { heroSubtitle: string }
+        settings: { brand: { homeSubtitlePlaceholder: string } }
+      }
+    }
     const en = JSON.parse(
       readFileSync(join(dir, '../locales/en/pages.json'), 'utf8'),
-    ) as { pages: { dashboard: { heroSubtitle: string } } }
-    expect(zh.pages.dashboard.heroSubtitle).toBe('先说清，再动手')
-    expect(en.pages.dashboard.heroSubtitle).toBe('Clarify first, then act')
+    ) as {
+      pages: {
+        dashboard: { heroSubtitle: string }
+        settings: { brand: { homeSubtitlePlaceholder: string } }
+      }
+    }
+    expect(zh.pages.dashboard.heroSubtitle).toBe('我们应该做些什么？')
+    expect(en.pages.dashboard.heroSubtitle).toBe('What should we do?')
+    expect(zh.pages.settings.brand.homeSubtitlePlaceholder).toBe('我们应该做些什么？')
+    expect(en.pages.settings.brand.homeSubtitlePlaceholder).toBe('What should we do?')
     expect(src).toMatch(/\.home-composer:focus-within\s*\{[^}]*rgb\(var\(--c-accent\)/)
     expect(src).toMatch(/0 0 0 3px rgb\(var\(--c-accent\) \/ 0\.07\)/)
     expect(src).toMatch(/\.home-composer__send:hover:not\(:disabled\)\s*\{[^}]*translateY\(-1px\)/)

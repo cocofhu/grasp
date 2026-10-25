@@ -36,7 +36,7 @@ describe('Clarify conversation navigation', () => {
     expect(rail.props('items').map(item => item.preview)).toEqual([final, ''])
     await wrapper.get('[data-testid="chat-message-rail-mark"]').trigger('mouseenter')
     await flushPromises()
-    const tooltip = document.querySelector('[role="tooltip"]')!
+    const tooltip = document.querySelector('[data-testid="chat-message-rail-card"]')!
     expect(tooltip.textContent).toContain('当前输入无法当作有效需求对齐：请确认本次目标。')
     expect(tooltip.textContent).toContain('请补充现象与期望，我再继续澄清。')
     expect(tooltip.textContent).not.toContain('正在检查历史反馈')
@@ -59,8 +59,8 @@ describe('Clarify conversation navigation', () => {
     await flushPromises()
     await wrapper.get('[data-testid="chat-message-rail-mark"]').trigger('mouseenter')
     await flushPromises()
-    const tooltip = document.querySelector('[role="tooltip"]')!
-    expect(tooltip.querySelector('.chat-message-rail-question')?.textContent).toBe('我的选择： 修缺陷')
+    const tooltip = document.querySelector('[data-testid="chat-message-rail-card"]')!
+    expect(tooltip.querySelector('.is-pointed')?.textContent?.trim()).toBe('我的选择： 修缺陷')
     expect(tooltip.querySelector('.chat-message-rail-preview')?.textContent).toBe('已记下：本次是修缺陷。 选择功能模块 查看 feedback_index.json')
     expect(tooltip.textContent).not.toContain('**')
     expect(wrapper.get('[data-turn-role="agent"] strong').text()).toBe('修缺陷')
@@ -109,5 +109,33 @@ describe('Clarify conversation navigation', () => {
     await flushPromises()
     expect(scroller.scrollTop).toBe(200)
     expect(wrapper.get('[data-testid="clarify-scroller"]').attributes()).toHaveProperty('data-conversation-scroll')
+  })
+})
+
+describe('Clarify conversation navigation across earlier nodes', () => {
+  it('shows the rail for earlier visits after a hand-off and opens the fold on navigate', async () => {
+    const wrapper = mount(ClarifyChat, {
+      props: {
+        runId: 'run-1', nodeId: 'test', iteration: 1, done: false, turns: [],
+        priorSegments: [{
+          nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-14T00:00:00Z', open: false,
+          turns: [
+            { role: 'human', text: '做个导出', at: '2026-10-14T00:00:00Z' },
+            { role: 'agent', text: '需求已整理', at: '2026-10-14T00:00:10Z' },
+          ],
+        }],
+      },
+      attachTo: document.body,
+      global: { plugins: [createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })] },
+    })
+    await flushPromises()
+    const rail = wrapper.getComponent(ChatMessageRail)
+    expect(rail.props('items')).toEqual([{ id: 'prior:clarify:1:0', title: '做个导出', preview: '需求已整理' }])
+    expect(wrapper.find('[data-testid="chat-message-rail"]').exists()).toBe(true)
+    const fold = wrapper.get('[data-testid="clarify-prior-segment"]').element as HTMLDetailsElement
+    expect(fold.open).toBe(false)
+    expect(fold.querySelector('[data-chat-message-id="prior:clarify:1:0"]')).not.toBeNull()
+    rail.vm.$emit('navigate', 'prior:clarify:1:0')
+    expect(fold.open).toBe(true)
   })
 })

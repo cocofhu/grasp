@@ -51,6 +51,7 @@ type TokenStatsBucket struct {
 	CacheWriteTokens int64  `json:"cacheWriteTokens"`
 	// StudioTotal / FailedTotal / Cost are populated by global stats only.
 	StudioTotal int64   `json:"studioTotal,omitempty"`
+	SoloTotal   int64   `json:"soloTotal,omitempty"`
 	FailedTotal int64   `json:"failedTotal,omitempty"`
 	Cost        float64 `json:"cost,omitempty"`
 }

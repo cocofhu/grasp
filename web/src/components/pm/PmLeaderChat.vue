@@ -177,6 +177,8 @@ const artifactButtonLabel = computed(() => artifactButtonAriaLabel(artifactOpen.
   unread: (count) => t('pages.conversationWorkspace.openArtifactsUnread', { n: count }),
   cap: t('pages.conversationWorkspace.openArtifactsUnreadCap'),
 }))
+const workspace = ref<InstanceType<typeof ConversationWorkspace> | null>(null)
+function toggleArtifacts() { workspace.value?.toggleFromArtifactIcon() }
 
 const messageNavigation = computed(() => {
   const items: Array<{ id: string; title: string; preview: string }> = []
@@ -193,13 +195,13 @@ const messageNavigation = computed(() => {
   return items
 })
 function onNavigateMessage() { stickToBottom.value = false }
-function showConversationHistory() { artifactOpen.value = false }
+function showConversationHistory() { workspace.value?.close() }
 
 </script>
 
 <template>
   <div v-if="loading && !threads.length" class="flex min-h-0 flex-1 items-start justify-center pt-12" role="status">
-    <Icon name="spinner" :size="20" class="animate-spin text-txt3" />
+    <Icon name="spinner" :size="20" class="text-txt3" />
     <span class="sr-only">{{ t('pages.workspace.pm.loadingHistory') }}</span>
   </div>
 
@@ -282,8 +284,10 @@ function showConversationHistory() { artifactOpen.value = false }
             v-if="!turnBusy && !isChannelThread(th)"
             class="hidden text-xs text-txt3 group-hover:inline"
             data-testid="pm-thread-delete"
+            data-icon-motion-host
+            :title="t('common.buttons.delete')"
             @click.stop="removeThread(th.id)"
-          >×</span>
+          ><Icon name="close" :size="12" /></span>
         </button>
         <p v-if="!threads.length && !loading" class="px-2 py-4 text-xs text-txt3">
           {{ t('pages.workspace.pm.noThreads') }}
@@ -294,17 +298,14 @@ function showConversationHistory() { artifactOpen.value = false }
     <!-- main chat -->
     <ConversationWorkspace
       v-if="!threads.length || showChatSection"
+      ref="workspace"
       v-model:open="artifactOpen"
       :title="t('pages.artifacts.title')"
       :scope-key="conversationScope"
       :show-toolbar="false"
       class="min-h-0 min-w-0 flex-1"
     >
-    <section
-      data-testid="pm-chat-section"
-      class="pm-chat-panel chat-thread flex min-h-0 min-w-0 flex-col"
-      :class="isMobile ? 'w-full flex-1' : 'flex-1'"
-    >
+    <template #masthead>
       <div
         class="flex min-h-12 shrink-0 items-center gap-2 border-b border-line/60 py-2"
         :class="isMobile ? 'min-h-[44px]' : ''"
@@ -351,7 +352,7 @@ function showConversationHistory() { artifactOpen.value = false }
         </div>
         <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</span>
         <AppButton v-if="!isMobile && artifactOpen && threads.length" size="sm" variant="ghost" icon="chat" data-testid="pm-chat-show-threads" @click="showConversationHistory">{{ t('pages.workspace.pm.threads') }}</AppButton>
-        <AppButton class="pm-header-action" size="sm" variant="ghost" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" :aria-label="artifactButtonLabel" @click="artifactOpen = !artifactOpen"><span class="inline-flex items-center gap-[7px]"><ArtifactUnreadMark :count="citationUnread.count" :panel-open="artifactOpen"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.artifacts.title') }}</span></AppButton>
+        <AppButton class="pm-header-action" size="sm" variant="ghost" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" :aria-label="artifactButtonLabel" @click="toggleArtifacts"><span class="inline-flex items-center gap-[7px]"><ArtifactUnreadMark :count="citationUnread.count" :panel-open="artifactOpen"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.artifacts.title') }}</span></AppButton>
         <AppButton
           size="sm"
           variant="ghost"
@@ -364,6 +365,12 @@ function showConversationHistory() { artifactOpen.value = false }
           {{ t('pages.workspace.pm.settings') }}
         </AppButton>
       </div>
+    </template>
+    <section
+      data-testid="pm-chat-section"
+      class="pm-chat-panel chat-thread flex min-h-0 min-w-0 flex-col"
+      :class="isMobile ? 'w-full flex-1' : 'flex-1'"
+    >
       <p v-if="!canCreateThread" class="shrink-0 border-b border-line/60 py-3 text-xs leading-5 text-txt2" data-testid="pm-availability-notice" role="status">
         {{ t(!enabled ? 'pages.workspace.pm.pausedHistoryHint' : 'pages.workspace.pm.defaultUnavailableHint') }}
       </p>
@@ -558,7 +565,7 @@ function showConversationHistory() { artifactOpen.value = false }
           <div class="min-w-0 flex-1">
             <div>
               <div v-if="resuming && !streamText && !finalizing" class="flex items-center gap-1.5 text-txt3">
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.resuming') }}
               </div>
               <div v-else-if="streamText" class="md chat-prose" v-html="streamHtml" />
@@ -567,7 +574,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 <span class="sr-only">{{ t('pages.workspace.pm.generating') }}</span>
               </div>
               <div v-else class="flex items-center gap-1.5 text-txt3">
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.generating') }}
               </div>
               <div
@@ -588,7 +595,7 @@ function showConversationHistory() { artifactOpen.value = false }
                   </button>
                 </template>
                 <template v-else>
-                  <Icon name="spinner" :size="13" class="animate-spin text-warn" />
+                  <Icon name="spinner" :size="13" class="text-warn" />
                   {{ t('pages.workspace.pm.finalizing') }}
                 </template>
               </div>
@@ -597,7 +604,7 @@ function showConversationHistory() { artifactOpen.value = false }
                 class="mt-2 flex items-center gap-1.5 border-t border-line pt-2 text-[11px] text-accent-2"
                 data-testid="pm-stream-resuming-meta"
               >
-                <Icon name="spinner" :size="13" class="animate-spin text-accent-2" />
+                <Icon name="spinner" :size="13" class="text-accent-2" />
                 {{ t('pages.workspace.pm.resuming') }}
               </div>
             </div>
@@ -631,10 +638,7 @@ function showConversationHistory() { artifactOpen.value = false }
             class="rounded-full flex h-7 w-7 shrink-0 items-center justify-center border border-accent-2/35 bg-accent/15 text-accent-2"
             aria-hidden="true"
           >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <rect x="3" y="11" width="18" height="11" />
-              <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-            </svg>
+            <Icon name="lock" :size="14" :interactive="false" />
           </div>
           <div class="min-w-0">
             <strong class="block text-[13px] font-semibold text-txt">
@@ -678,7 +682,7 @@ function showConversationHistory() { artifactOpen.value = false }
             </div>
             <button
               type="button"
-              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center bg-err text-white"
+              class="absolute -right-1.5 -top-1.5 flex h-4 w-4 items-center justify-center pending-attach-remove"
               :disabled="busy"
               @click.stop="removeAttachment(ii)"
             >
@@ -819,7 +823,7 @@ function showConversationHistory() { artifactOpen.value = false }
           :aria-label="t('pages.workspace.pm.channelDetailClose')"
           data-testid="pm-channel-detail-close"
           @click="closeChannelDetail"
-        >×</button>
+        ><Icon name="close" :size="12" /></button>
       </div>
       <div class="flex flex-col gap-3 p-3.5">
         <div>

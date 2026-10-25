@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { defineComponent, h, nextTick } from 'vue'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -841,5 +844,15 @@ describe('RequirementDraftsPanel', () => {
     await nextTick()
     expect(w.get('[data-testid="requirement-drafts-schedule-kind"]').isVisible()).toBe(false)
     w.unmount()
+  })
+
+  it('hovers view, status, and scale tabs one step below the selected text color', () => {
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'RequirementDraftsPanel.vue'), 'utf8')
+    expect(src).toContain('.rd-view-tabs button:hover:not(.on) { color: rgb(var(--c-txt2)); }')
+    expect(src).toContain('.rd-status-filter button:hover:not(.on), .rd-scale button:hover:not(.on) { color: rgb(var(--c-txt2)); }')
+    expect(src).not.toMatch(/\.rd-view-tabs button:hover[^{]*\{[^}]*--c-txt\)/)
+    expect(src).not.toMatch(/\.rd-status-filter button:hover[^{]*\{[^}]*--c-txt\)/)
+    expect(src).toContain('.rd-view-tabs button.on { border-color: rgb(var(--c-accent)); color: rgb(var(--c-txt)); }')
+    expect(src).toContain('.rd-status-filter button.on, .rd-scale button.on { color: rgb(var(--c-txt)); font-weight: 600; }')
   })
 })

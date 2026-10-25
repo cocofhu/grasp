@@ -72,7 +72,7 @@ describe('AgentToolGroup', () => {
     await w.find('[data-testid="agent-tool-group-head"]').trigger('click')
     const spinners = w.findAll('icon-stub[name="spinner"]')
     expect(spinners).toHaveLength(2)
-    for (const s of spinners) expect(s.classes()).toContain('animate-spin')
+    for (const s of spinners) expect(s.attributes('busy')).toBeDefined()
   })
 
   it('a still-running tool no longer spins once the turn ended', () => {

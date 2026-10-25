@@ -85,7 +85,9 @@ describe('AgentFilesPanel interactions', () => {
     await flushPromises()
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(w.text()).toContain('README.md')
-    expect(w.find('[data-testid="history"]').exists()).toBe(true)
+    // explorer + editor only: version history lives behind the toolbar button
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
 
     const src = w.findAll('button').find((b) => b.text().includes('src'))!
     await src.trigger('click')
@@ -142,10 +144,11 @@ describe('AgentFilesPanel interactions', () => {
     const expand = w.findAll('button').find((b) => b.attributes('aria-label')?.includes('展开资源'))!
     await expand.trigger('click')
 
-    await w.get('[data-testid="history"] button').trigger('click')
+    await w.get('[data-testid="compact-history-open"]').trigger('click')
     await w.findAll('[data-testid="history"] button')[1].trigger('click')
     expect(w.emitted('restored')).toBeTruthy()
-    expect(localStorage.getItem('agent-studio-history-collapsed')).toBe('false')
+    await w.get('[data-testid="history"] button').trigger('click')
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
 
     ;(w.vm as any).openPathOrCreate('settings.json', '{}')
     await flushPromises()
@@ -298,21 +301,29 @@ describe('AgentFilesPanel interactions', () => {
   })
 
   it('keeps the active file editable in narrow desktop content and opens history separately', async () => {
-    let resized: (() => void) | undefined
-    const disconnect = vi.fn()
+    const observers: {
+      callback: () => void
+      targets: Set<Element>
+      disconnect: ReturnType<typeof vi.fn>
+    }[] = []
     vi.stubGlobal('ResizeObserver', class {
-      constructor(callback: () => void) { resized = callback }
-      observe() {}
-      disconnect = disconnect
+      targets = new Set<Element>()
+      disconnect = vi.fn()
+      constructor(public callback: () => void) { observers.push(this) }
+      observe(target: Element) { this.targets.add(target) }
+      unobserve(target: Element) { this.targets.delete(target) }
     })
     const d = draft()
     const w = mountPanel({ draft: d })
+    // Nested controls also observe their own layout; resize the file panel only.
+    const panelObserver = observers.find((observer) => observer.targets.has(w.element))!
+    expect(panelObserver).toBeDefined()
     let width = 420
     Object.defineProperty(w.element, 'getBoundingClientRect', { value: () => ({ width }) })
     ;(w.vm as any).selectDefaultFile()
     await flushPromises()
 
-    resized!()
+    panelObserver.callback()
     await flushPromises()
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(w.find('[data-test="file-row-more"]').exists()).toBe(false)
@@ -335,19 +346,19 @@ describe('AgentFilesPanel interactions', () => {
 
     // Hidden tabs briefly report zero width; retain the last usable layout.
     width = 0
-    resized!()
+    panelObserver.callback()
     await flushPromises()
     expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
 
     width = 1100
-    resized!()
+    panelObserver.callback()
     await flushPromises()
-    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(false)
-    expect(w.findAll('[data-testid="history"]')).toHaveLength(1)
+    expect(w.find('[data-testid="compact-history-open"]').exists()).toBe(true)
+    expect(w.find('[data-testid="history"]').exists()).toBe(false)
     expect(w.find('[data-testid="markdown"]').exists()).toBe(true)
     expect(d.files[0]!.content).toBe('# edited without losing the file')
     w.unmount()
-    expect(disconnect).toHaveBeenCalledOnce()
+    expect(panelObserver.disconnect).toHaveBeenCalledOnce()
   })
 
   it('closes compact history when switching Agents and keeps history out of the mobile file flow', async () => {

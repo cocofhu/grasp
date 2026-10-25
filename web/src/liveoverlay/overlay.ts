@@ -1,3 +1,4 @@
+import { installRuntimeIconMotion, runtimeIcon } from '../lib/icons/runtime'
 import { createAnnotations } from './annotations'
 import { describeElement, type LiveElement } from './describe'
 import { fmt, strings, type Strings } from './i18n'
@@ -176,6 +177,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     `<style>${OVERLAY_CSS}</style><div class="root">` +
     '<div data-layer="frames"></div><div data-layer="switchers"></div>' +
     '<div data-layer="annotations"></div><div data-layer="panel"></div><div data-layer="dock"></div></div>'
+  const stopIconMotion = installRuntimeIconMotion(shadow)
   const root = shadow.querySelector('.root') as HTMLElement
   const layer = (name: string) => shadow.querySelector(`[data-layer="${name}"]`) as HTMLElement
   const annotations = createAnnotations(layer('annotations'), T, () => renderPanel())
@@ -432,7 +434,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           '</div>').join('')}</div>`
       : away.length
       ? `<div class="hint" role="status">${esc(fmt(T.pending, { n: away.length, path: pathOf(away[0].url) }))} ` +
-        `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}">→</button></div>`
+        `<button type="button" data-act="goto-url" data-sid="${esc(away[0].sid)}" aria-label="${esc(T.next)}">${runtimeIcon('arrow-right')}</button></div>`
       : ''
   }
 
@@ -445,7 +447,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       `<button type="button" data-act="mode-insert" aria-pressed="${inserting}">${esc(T.modeInsert)}</button></div>` +
       `<span class="label pickhint" role="status">${esc(inserting ? T.insertPicking : T.pickHint)}</span></div>` +
       `<div class="steer"><input type="text" data-input="steer" placeholder="${esc(T.steer)}" aria-label="${esc(T.steer)}" value="${esc(steerText)}" />` +
-      `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">↵</button></div>` +
+      `<button type="button" data-act="steer" aria-label="${esc(T.steerSend)}">${runtimeIcon('chat-send')}</button></div>` +
       '</div>'
     )
   }
@@ -477,7 +479,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
         '<div class="row">' +
         `<button type="button" class="chip" data-act="to-chat">${esc(T.toChat)}</button>` +
         `<button type="button" class="chip go" data-act="to-design"${blocked ? ' disabled' : ''}>${esc(T.toDesign)}</button>` +
-        `<button type="button" data-act="cancel-panel" title="${esc(T.cancel)}" aria-label="${esc(T.cancel)}">✕</button>` +
+        `<button type="button" data-act="cancel-panel" title="${esc(T.cancel)}" aria-label="${esc(T.cancel)}">${runtimeIcon('close')}</button>` +
         '</div>' +
         (blocked ? `<div class="label" role="status">${esc(blocked)}</div>` : '') +
         '</div>'
@@ -500,7 +502,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     const n = annotations.count + (p.notes.trim() ? 1 : 0)
     const marks =
       `<div class="marks"><button type="button" class="disclosure" data-act="marks-toggle" aria-expanded="${open}">` +
-      `<span aria-hidden="true">${open ? '▾' : '▸'}</span> ${esc(T.marks)}${n ? ` (${n})` : ''}</button>` +
+      `${runtimeIcon(open ? 'chevron-down' : 'chevron-right')} ${esc(T.marks)}${n ? ` (${n})` : ''}</button>` +
       (open
         ? `<textarea data-input="notes" rows="1" placeholder="${esc(T.notes)}" aria-label="${esc(T.notes)}">${esc(p.notes)}</textarea>` +
           `<div class="row"><button type="button" class="chip" data-act="mark-draw" aria-pressed="${annotations.mode === 'draw'}"${annotations.count >= 8 ? ' disabled' : ''}>${esc(T.markDraw)}</button>` +
@@ -602,7 +604,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           `<span class="lab">${esc(cur ? fmt(T.selected, { n: cur.label ? `${cur.n} · ${cur.label}` : cur.n }) : T.selectedOriginal)}</span>` +
           status +
           '<span class="sep" aria-hidden="true"></span>' +
-          `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${backN}">${esc(T.backInPlace)}</button>` +
+          `<button type="button" data-act="inplace" data-sid="${esc(w.sid)}" data-n="${backN}">${runtimeIcon('arrow-left')} ${esc(T.backInPlace)}</button>` +
           hideChromeButton() +
           `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>${esc(T.discardAll)}</button>` +
           (canRetryAdoption(s) && !busy
@@ -617,10 +619,10 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
       const single = cycleOf(w).length < 2
       html +=
         `<div class="sw" data-sw="${esc(w.sid)}" role="group" aria-label="${esc(T.title)}">` +
-        `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || single ? ' disabled' : ''}>‹</button>` +
+        `<button type="button" data-act="prev" data-sid="${esc(w.sid)}" aria-label="${esc(T.prev)}"${busy || single ? ' disabled' : ''}>${runtimeIcon('chevron-left')}</button>` +
         `<span class="count" aria-live="polite">${onOriginal ? esc(T.original) : `${idx + 1 || 0} / ${w.variants.length}`}</span>` +
         (cur?.label ? `<span class="lab">${esc(cur.label)}</span>` : '') +
-        `<button type="button" data-act="next" data-sid="${esc(w.sid)}" aria-label="${esc(T.next)}"${busy || single ? ' disabled' : ''}>›</button>` +
+        `<button type="button" data-act="next" data-sid="${esc(w.sid)}" aria-label="${esc(T.next)}"${busy || single ? ' disabled' : ''}>${runtimeIcon('chevron-right')}</button>` +
         status +
         '<span class="sep" aria-hidden="true"></span>' +
         (w.original
@@ -628,7 +630,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
           : '') +
         `<button type="button" data-act="compare" data-sid="${esc(w.sid)}"${busy ? ' disabled' : ''}>${esc(T.sideBySide)}</button>` +
         hideChromeButton() +
-        `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" aria-label="${esc(T.discard)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>✕</button>` +
+        `<button type="button" data-act="discard" data-sid="${esc(w.sid)}" aria-label="${esc(T.discard)}" title="${esc(known ? T.discard : T.viewOnly)}"${busy || !known ? ' disabled' : ''}>${runtimeIcon('close')}</button>` +
         `<button type="button" class="accept" data-act="accept" data-sid="${esc(w.sid)}" data-n="${cur?.n ?? ''}"${busy || !known || !cur || s?.state !== 'ready' ? ' disabled' : ''}>${esc(T.accept)}</button>` +
         (canRetryAdoption(s) && !busy ? `<button type="button" class="accept" data-act="retry-accept" data-sid="${esc(w.sid)}">${esc(T.retryAccept)}</button>` : '') +
         '</div>'
@@ -1424,6 +1426,7 @@ export function createOverlay(opts: HostOpts, initialStrings?: Strings): LiveOve
     setEnabled,
     syncTheme: themeClass,
     dispose() {
+      stopIconMotion()
       observer.disconnect()
       themeObserver.disconnect()
       clearInterval(mountTimer)

@@ -3,7 +3,10 @@
     "dashboard": "新需求",
     "workspace": "工作区导航",
     "runningRuns": "正在执行",
+    "autoProcess": "自动过程",
     "runHistory": "历史执行",
+    "sectionCollapse": "折叠{name}",
+    "sectionExpand": "展开{name}",
     "workspaceLoading": "正在加载…",
     "workspaceNoRuns": "还没有执行完的工作流",
     "workspaceLoadFailed": "暂时无法加载",
@@ -48,7 +51,7 @@
     "assistant": "工作区助手",
     "schedules": "定时任务",
     "audit": "审计",
-    "sharedAgent": "Agent 默认配置",
+    "sharedAgent": "默认配置",
     "credentials": "凭据",
     "variables": "共享变量",
     "assistantSettings": "助手设置",
@@ -62,6 +65,8 @@
     "noMatchingWorkflows": "没有匹配的工作流",
     "pinWorkflow": "置顶 {name}",
     "unpinWorkflow": "取消置顶 {name}",
-    "runWorkflow": "运行 {name}"
+    "runWorkflow": "运行 {name}",
+    "solo": "Solo 对话",
+    "projects": "仓库"
   }
 }

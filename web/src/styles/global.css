@@ -250,6 +250,18 @@ html:not(.light) *:hover::-webkit-scrollbar,
 html:not(.light) *.is-scrolling::-webkit-scrollbar {
   background: rgb(var(--c-base));
 }
+/* Board columns inherit scrollbar-color from ancestors (the settings scroller
+ * sets it). Chromium >= 121 then ignores every ::-webkit-scrollbar rule and
+ * paints the native wide bar. On engines that support the pseudo, pin the
+ * board root back to the initial values so the 4px rules above apply to the
+ * column body. Do not set these on the column itself. Engines without the
+ * pseudo keep the thin standard bar from the @supports not block above. */
+@supports selector(::-webkit-scrollbar) {
+  .board-workbench {
+    scrollbar-width: initial;
+    scrollbar-color: initial;
+  }
+}
 
 /* A quiet, opaque canvas for every application route.
    Fill #app (height: 100%) rather than 100vh, which can fall short of the
@@ -457,12 +469,24 @@ html.light .app-sidebar-card {
   }
 }
 
+/* Sweep across 0–60%, then rest: a calm sheen instead of a constant strobe. */
 @keyframes app-skeleton-shimmer {
   0% {
     transform: translateX(-100%);
   }
+  60%,
   100% {
     transform: translateX(100%);
+  }
+}
+
+/* Delay-in so fast loads never flash a skeleton. */
+@keyframes app-skeleton-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }
 
@@ -482,17 +506,29 @@ html.light .app-sidebar-card {
   flex-shrink: 0;
 }
 
+.app-skeleton {
+  animation: app-skeleton-in var(--dur-overlay) ease-out 150ms both;
+}
 .app-skeleton__block {
   background: rgb(var(--c-elevated));
+  border-radius: 6px;
   position: relative;
   overflow: hidden;
 }
+/* Neutral sheen (not accent): reads as "loading", not as a purple wave. */
 .app-skeleton__block::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent, rgb(var(--c-accent) / 0.18), transparent);
-  animation: app-skeleton-shimmer 1.2s ease-in-out infinite;
+  background: linear-gradient(
+    90deg,
+    transparent 20%,
+    rgb(var(--c-txt) / 0.045) 50%,
+    transparent 80%
+  );
+  transform: translateX(-100%);
+  will-change: transform;
+  animation: app-skeleton-shimmer 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 .app-skeleton__title {
   height: 18px;
@@ -554,6 +590,10 @@ html.light .app-sidebar-card {
 
   .app-skeleton__block::after {
     display: none;
+  }
+
+  .app-skeleton {
+    animation: none;
   }
 
   .app-refresh-bar {
@@ -663,6 +703,12 @@ html.light .app-sidebar-card {
 .hover-ink-host.is-leave-ink > .hover-ink {
   transform: translate(-50%, -50%) scale(0);
 }
+/* Disabled / loading: hide any cover that was already open. No fade through the elevated fallback. */
+.hover-ink-host.is-ink-suppressed > .hover-ink {
+  visibility: hidden;
+  transition: none;
+  transform: translate(-50%, -50%) scale(0);
+}
 /* Content / icons / badges stay above the ink layer (plan g1.2). */
 .hover-ink-host > :not(.hover-ink) {
   position: relative;
@@ -672,6 +718,67 @@ html.light .app-sidebar-card {
   .hover-ink-host > .hover-ink {
     transition: none;
   }
+}
+
+/*
+ * Modal footer primary only (drawer footers are not .app-modal-footer).
+ * Light fill #18181B, white label, ink #52525B.
+ * Dark fill #EDEDF0, label #141417, ink #A1A1AA.
+ * Zero --tw-shadow so shadow-glow drops, while the focus ring stays.
+ * Label color is set here so text-white cannot pin icons or the spinner.
+ */
+.app-modal-footer button.bg-accent {
+  background-color: #ededf0;
+  color: #141417;
+  --tw-shadow: 0 0 #0000;
+  --tw-shadow-colored: 0 0 #0000;
+  --hover-ink-color: #a1a1aa !important;
+}
+html.light .app-modal-footer button.bg-accent {
+  background-color: #18181b;
+  color: #ffffff;
+  --hover-ink-color: #52525b !important;
+}
+.app-modal-footer button.bg-accent .app-icon,
+.app-modal-footer button.bg-accent .app-spinner,
+.app-modal-footer button.bg-accent > span {
+  color: currentColor;
+}
+
+/* ---------- Sidebar section tree (正在执行 / 历史执行) ---------- */
+/*
+ * Each row hangs off its section heading with one rounded ╰ branch. Drawn on a
+ * wrapper because rows clip their own overflow for hover ink.
+ */
+.sidebar-tree-item {
+  --tree-x: 17px;
+  --tree-color: rgb(var(--c-line-strong));
+  position: relative;
+  display: flow-root;
+  padding-left: 28px;
+}
+.sidebar-tree {
+  position: relative;
+}
+.sidebar-tree-item::before {
+  content: '';
+  position: absolute;
+  left: var(--tree-x);
+  top: 0;
+  width: 11px;
+  height: 50%;
+  border-left: 1px solid var(--tree-color);
+  border-bottom: 1px solid var(--tree-color);
+  pointer-events: none;
+}
+.sidebar-tree-item:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  bottom: 0;
+  left: var(--tree-x);
+  border-left: 1px solid var(--tree-color);
+  content: '';
+  pointer-events: none;
 }
 
 /* ---------- Shared micro-interaction utilities (g1–g3) ---------- */
@@ -972,4 +1079,38 @@ html.theme-color-motion .app-sidebar-card {
   .md table {
     overflow-x: auto;
   }
+}
+
+/*
+ * Pending-attachment remove control.
+ * Resting state is neutral; solid #DC2626 and a white cross appear only on
+ * hover or keyboard focus. Light cross #71717A is the selected swatch, not a
+ * named token. Disabled stays on the resting colors.
+ */
+.pending-attach-remove {
+  border: 1px solid #36363E;
+  background-color: #141417;
+  color: #A1A1AA;
+}
+html.light .pending-attach-remove {
+  border-color: #D4D4D8;
+  background-color: #FFFFFF;
+  color: #71717A;
+}
+.pending-attach-remove:is(:hover, :focus-visible):not(:disabled) {
+  border-color: #DC2626;
+  background-color: #DC2626;
+  color: #FFFFFF;
+}
+/* A global button:hover rule is more specific than the resting class. Keep
+   disabled controls on the neutral colors instead of that hover fill. */
+.pending-attach-remove:disabled:is(:hover, :focus-visible) {
+  border-color: #36363E;
+  background-color: #141417;
+  color: #A1A1AA;
+}
+html.light .pending-attach-remove:disabled:is(:hover, :focus-visible) {
+  border-color: #D4D4D8;
+  background-color: #FFFFFF;
+  color: #71717A;
 }

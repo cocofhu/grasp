@@ -16,6 +16,19 @@ const EARLIER = '2026-07-29T11:50:00Z'
 
 type InboxPayload = { items: unknown[]; total: number }
 
+function unfinishedRun(item: Record<string, unknown>) {
+  return {
+    id: item.runId,
+    workflowId: item.workflowId,
+    workflowName: item.workflowName,
+    title: item.runTitle,
+    status: 'waiting_human',
+    startedAt: NOW,
+    lastActivityAt: NOW,
+    currentNode: { id: item.nodeId, name: item.label || item.title, iteration: item.iteration ?? 1 },
+  }
+}
+
 function gateItem() {
   return {
     type: 'gate',
@@ -80,11 +93,18 @@ async function mockInboxApis(
       return
     }
     const req = route.request()
-    const url = new URL(req.url())
-    const path = url.pathname
+    const path = new URL(req.url()).pathname
     const method = req.method()
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/runs' || path === '/api/runs/')) {
+      const status = new URL(req.url()).searchParams.get('status') ?? ''
+      const unfinished = ['queued', 'running', 'waiting_human'].some((s) => status.split(',').includes(s))
+      const items = unfinished ? state.inbox.items.map((it) => unfinishedRun(it as Record<string, unknown>)) : []
+      await route.fulfill({ json: { items, total: items.length, page: 1, pageSize: 50, hasMore: false } })
+      return
+    }
+
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -93,9 +113,8 @@ async function mockInboxApis(
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/inbox-context/)) {
-      const runId = path.split('/')[3]
-      const nodeId = url.searchParams.get('nodeId') || ''
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/)) {
+      const { runId, nodeId } = pathRunNode(path)
       if (runId === 'run-preview' && nodeId === 'implement') {
         await route.fulfill({
           json: {
@@ -153,8 +172,8 @@ async function mockInboxApis(
       return
     }
 
-    // Matches api.reactReply → POST /api/runs/:runId/react/:nodeId/reply
-    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/react\/[^/]+\/reply\/?$/)) {
+    // Matches api.reactReply → POST /api/runs/:runId/nodes/:nodeId/reply
+    if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/reply\/?$/)) {
       const body = req.postDataJSON() as { force?: boolean } | null
       if (body?.force) {
         state.finished = true
@@ -211,11 +230,26 @@ async function mockInboxApis(
   })
 }
 
+/** `/api/runs/:runId/nodes/:nodeId/...` — node id is a path segment. */
+function pathRunNode(pathname: string): { runId: string; nodeId: string } {
+  const parts = pathname.split('/')
+  let nodeId = parts[5] || ''
+  try {
+    nodeId = decodeURIComponent(nodeId)
+  } catch {
+    /* keep the raw segment */
+  }
+  return { runId: parts[3] || '', nodeId }
+}
+
 async function openGates(page: Page, state: { inbox: InboxPayload; finished: boolean }) {
   await installWorkspaceApiDefaults(page)
   await mockInboxApis(page, state)
   await page.setViewportSize({ width: 1280, height: 800 })
-  await page.goto('/workspace-config.html?view=/gates')
+  const first = (state.inbox.items[0] || {}) as { runId?: string; nodeId?: string }
+  const runId = encodeURIComponent(String(first.runId || ''))
+  const nodeId = encodeURIComponent(String(first.nodeId || ''))
+  await page.goto(`/workspace-config.html?view=${encodeURIComponent(`/runs/${runId}/nodes/${nodeId}`)}`)
   await expect(page.getByTestId('nav-pending-row').first()).toBeVisible({ timeout: 15_000 })
 }
 
@@ -232,7 +266,7 @@ test.describe('preview review in Gates Inbox', () => {
     const preview = pendingRow(page, '应用预览验收')
     await expect(preview).toBeVisible()
     await expect(preview).toHaveAttribute('title', '应用预览验收 · 实现')
-    await expect(preview.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+    await expect(preview.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     await preview.click()
 
     // The conversation opens first; artifacts remain mounted behind their pane.
@@ -259,10 +293,10 @@ test.describe('preview review in Gates Inbox', () => {
     const review = pendingRow(page, '视觉复审')
     await expect(page.getByTestId('nav-pending-row')).toHaveCount(3)
     await expect(gate).toHaveAttribute('title', '方案门禁 · 方案评审门禁')
-    await expect(gate.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--approval/)
+    await expect(gate.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     for (const row of [preview, review]) {
       await expect(row).toBeVisible()
-      await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--review/)
+      await expect(row.getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     }
 
     // Open the selected review's artifacts without dropping other list rows.
@@ -296,7 +330,7 @@ test.describe('preview review in Gates Inbox', () => {
       timeout: 10_000,
     })
     await expect(pendingRow(page, '方案门禁')).toBeVisible()
-    await expect(pendingRow(page, '方案门禁').getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--approval/)
+    await expect(pendingRow(page, '方案门禁').getByTestId('nav-pending-type-icon')).toHaveClass(/nav-row-type-icon--hold/)
     expect(state.finished).toBe(true)
 
     await page.screenshot({ path: '/tmp/preview-review-inbox-screenshots/03-after-confirm.png', fullPage: true })

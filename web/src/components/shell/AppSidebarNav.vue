@@ -6,9 +6,14 @@ import Icon from '../ui/Icon.vue'
 import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
-import { isBoardSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
-import { inboxBadgeTone, isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
+import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isNodeConversationPath, nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
+import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
+import {
+  beginInboxCancelDeparture,
+  endInboxCancelDeparture,
+} from '@/lib/inbox/inboxCancelDeparture'
 import {
   INBOX_SHARE_INTENT_QUERY,
   INBOX_SHARE_INTENT_VALUE,
@@ -18,8 +23,19 @@ import { orderWithPins, useSidebarPins } from '@/lib/inbox/sidebarPins'
 import { api } from '@/lib/api/api'
 import { displayRunTitle, RUN_TITLE_MAX } from '@/lib/run/runTitle'
 import type { InboxItem, Run } from '@/lib/shared/types'
-import { keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES } from '@/lib/inbox/sidebarRunRows'
-import { onRecentActivity, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
+import { isAutoProcessNode, keepRowOrder, mergeRunRows, pinRunId, RUNNING_RUN_STATUSES, sidebarAutoNodeName, sidebarRunGroup } from '@/lib/inbox/sidebarRunRows'
+import {
+  clearSidebarHandoff,
+  consumeSidebarHandoff,
+  decideSidebarFlight,
+  isSidebarRunDismissed,
+  readSidebarHandoff,
+  SIDEBAR_FLIGHT_MS,
+  sidebarHandoffEpoch,
+  sidebarTrackedRunIds,
+  type SidebarRunGroup,
+} from '@/lib/inbox/sidebarHandoff'
+import { onRecentActivity, recentCurrentNode, recentRunActive, recentRunMark, recentRunTarget } from '@/lib/run/recentRuns'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import {
   settingsItemActive,
@@ -31,7 +47,10 @@ import { usePendingGates } from '@/lib/inbox/usePendingGates'
 import { useRunTerminalNotifications } from '@/lib/run/useRunTerminalNotifications'
 import { useToast } from '@/lib/composables/useToast'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
+import { useSoloSessions } from '@/lib/solo/useSoloSessions'
+import type { SoloSession } from '@/lib/api/apiTypes'
 import SidebarWorkspaceLists from './SidebarWorkspaceLists.vue'
+import { isSectionCollapsed, toggleSection } from '@/lib/shared/sidebarSections'
 import { useSidebarNavigation } from '@/lib/composables/useSidebarNavigation'
 
 const props = defineProps<{ drawer?: boolean; rail?: boolean; workspaceLists?: boolean }>()
@@ -57,6 +76,10 @@ const { pins, pin: pinRow, unpin: unpinRow } = useSidebarPins()
 // Same unreadCount singleton as shell chrome bell — keep the settings notification badge in sync.
 const { unreadCount } = useRunTerminalNotifications()
 const { isMobile } = useBreakpoint()
+const soloStore = useSoloSessions()
+const runningCollapsed = computed(() => isSectionCollapsed('running'))
+const autoCollapsed = computed(() => isSectionCollapsed('auto'))
+const navRoot = ref<HTMLElement | null>(null)
 
 let timer: number | undefined
 function badgeFor(to: string): number {
@@ -101,13 +124,25 @@ function rowTitle(it: InboxItem): string {
  */
 const carriedRows = ref<InboxItem[]>([])
 let runningRequest: AbortController | null = null
-const { ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+/** An activity notice arrived while a list read was still in flight. */
+let runningFollowUp = false
+let navAlive = true
+const { workspace, ensureLoaded: ensureWorkspaceLoaded } = useWorkspaceContext()
+const workspaceReady = computed(() => !!workspace.value)
 
 function dropCarriedRows(controller: AbortController) {
   if (runningRequest === controller) carriedRows.value = []
 }
 
-async function loadRunningRuns() {
+async function loadRunningRuns(opts?: { follow?: boolean }) {
+  // Execution pages notify about every 300ms. Aborting the read already on
+  // the wire would drop it before it can paint, so remember one follow-up
+  // and let this request land. A failed read still keeps the last success.
+  if (opts?.follow && runningRequest) {
+    runningFollowUp = true
+    return
+  }
+  runningFollowUp = false
   runningRequest?.abort()
   const controller = new AbortController()
   runningRequest = controller
@@ -116,6 +151,9 @@ async function loadRunningRuns() {
       dropCarriedRows(controller)
       return
     }
+    // Solo sessions are resident sandboxes, but active ones belong in the
+    // same「正在执行」section as workflow runs.
+    void soloStore.refresh()
     const result = await api.listRuns({
       page: 1,
       pageSize: 50,
@@ -135,7 +173,13 @@ async function loadRunningRuns() {
     // land must not stay in the count; the next poll retries.
     dropCarriedRows(controller)
   } finally {
-    if (runningRequest === controller) runningRequest = null
+    if (runningRequest === controller) {
+      runningRequest = null
+      if (runningFollowUp && navAlive) {
+        runningFollowUp = false
+        void loadRunningRuns()
+      }
+    }
   }
 }
 
@@ -185,9 +229,105 @@ const pendingRunTitles = computed(() => {
   return titles
 })
 
-const runPins = computed(() => pins.value.map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
+const runPins = computed(() => pins.value.filter((p) => !p.itemKey.startsWith('solo:')).map((p) => ({ ...p, itemKey: pinRunId(p.itemKey) })))
+const soloPins = computed(() => pins.value.filter((p) => p.itemKey.startsWith('solo:')))
 const isRowPinned = (it: InboxItem) => runPins.value.some((p) => p.itemKey === it.runId)
-const orderedPendingRows = computed(() => orderWithPins(pendingRows.value, (it) => it.runId, runPins.value))
+function rowGroup(runId: string): 'running' | 'auto' | 'left' {
+  if (isSidebarRunDismissed(runId)) return 'left'
+  return sidebarRunGroup(runningById.value.get(runId), readSidebarHandoff(runId))
+}
+const rowGroups = computed(() => {
+  void sidebarHandoffEpoch.value
+  const groups = new Map<string, 'running' | 'auto' | 'left'>()
+  for (const it of pendingRows.value) groups.set(it.runId, rowGroup(it.runId))
+  return groups
+})
+function autoNodeName(it: InboxItem): string {
+  return sidebarAutoNodeName(runningById.value.get(it.runId), readSidebarHandoff(it.runId))
+}
+const humanPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'running'))
+const autoPendingRows = computed(() => pendingRows.value.filter((it) => rowGroups.value.get(it.runId) === 'auto'))
+const orderedHumanRows = computed(() => orderWithPins(humanPendingRows.value, (it) => it.runId, runPins.value))
+const orderedAutoRows = computed(() => orderWithPins(autoPendingRows.value, (it) => it.runId, runPins.value))
+/** Active Solo sandboxes share the same running section as workflow runs. */
+const soloRows = computed(() => [...soloStore.active.value].sort((a, b) => {
+  const aAt = Date.parse(a.lastActiveAt || a.updatedAt || a.createdAt)
+  const bAt = Date.parse(b.lastActiveAt || b.updatedAt || b.createdAt)
+  return (Number.isFinite(bAt) ? bAt : 0) - (Number.isFinite(aAt) ? aAt : 0)
+}))
+const orderedSoloRows = computed(() => orderWithPins(soloRows.value, soloRowKey, soloPins.value))
+const runningSectionCount = computed(() => orderedHumanRows.value.length + orderedSoloRows.value.length)
+const autoSectionCount = computed(() => orderedAutoRows.value.length)
+
+type RunSectionId = 'running' | 'auto'
+const runSections = computed(() => {
+  const sections: Array<{
+    id: RunSectionId
+    testId: string
+    headingTestId: string
+    toggleTestId: string
+    rowsTestId: string
+    labelKey: string
+    icon: 'run-live' | 'arrow-flow'
+    count: number
+    collapsed: boolean
+    rows: InboxItem[]
+    solos: SoloSession[]
+  }> = []
+  if (runningSectionCount.value > 0) {
+    sections.push({
+      id: 'running',
+      testId: 'nav-pending-approvals',
+      headingTestId: 'nav-running-heading',
+      toggleTestId: 'nav-running-toggle',
+      rowsTestId: 'nav-running-rows',
+      labelKey: 'nav.runningRuns',
+      icon: 'run-live',
+      count: runningSectionCount.value,
+      collapsed: runningCollapsed.value,
+      rows: orderedHumanRows.value,
+      solos: orderedSoloRows.value,
+    })
+  }
+  if (autoSectionCount.value > 0) {
+    sections.push({
+      id: 'auto',
+      testId: 'nav-auto-process',
+      headingTestId: 'nav-auto-heading',
+      toggleTestId: 'nav-auto-toggle',
+      rowsTestId: 'nav-auto-rows',
+      labelKey: 'nav.autoProcess',
+      icon: 'arrow-flow',
+      count: autoSectionCount.value,
+      collapsed: autoCollapsed.value,
+      rows: orderedAutoRows.value,
+      solos: [],
+    })
+  }
+  return sections
+})
+
+function soloRowKey(session: SoloSession): string {
+  return `solo:${session.id}`
+}
+
+function soloRowTitle(session: SoloSession): string {
+  return session.title?.trim() || t('pages.solo.untitled')
+}
+
+function soloRowMotion(session: SoloSession): 'spin' | 'pulse' | null {
+  if (session.status === 'starting') return 'spin'
+  return session.busy ? 'pulse' : null
+}
+
+function isSoloRowActive(session: SoloSession): boolean {
+  return route.path === `/solo/${encodeURIComponent(session.id)}`
+}
+
+function onSoloRow(session: SoloSession) {
+  void router.push(`/solo/${encodeURIComponent(session.id)}`)
+  onNavigate()
+}
 
 const LONG_PRESS_MS = 500
 const LONG_PRESS_MOVE_PX = 8
@@ -205,7 +345,8 @@ const renameInput = ref<HTMLInputElement | null>(null)
 const saving = ref(false)
 const editEpoch = ref(0)
 const suppressPendingClick = ref(false)
-const menu = ref<{ key: string; x: number; y: number } | null>(null)
+type MenuTarget = { kind: 'run' | 'solo'; key: string; x: number; y: number }
+const menu = ref<MenuTarget | null>(null)
 const menuEl = ref<HTMLElement | null>(null)
 
 type RowPress = { key: string; x: number; y: number; timer: number }
@@ -213,8 +354,17 @@ let rowPress: RowPress | null = null
 
 const menuItem = computed(() => {
   const key = menu.value?.key
-  if (!key) return null
+  if (!key || menu.value?.kind !== 'run') return null
   return pendingRows.value.find((it) => it.runId === key) ?? null
+})
+const menuSolo = computed(() => {
+  const key = menu.value?.key
+  if (!key || menu.value?.kind !== 'solo') return null
+  return soloStore.active.value.find((it) => soloRowKey(it) === key) ?? null
+})
+const menuPinned = computed(() => {
+  if (menuSolo.value) return soloPins.value.some((p) => p.itemKey === soloRowKey(menuSolo.value!))
+  return menuItem.value ? isRowPinned(menuItem.value) : false
 })
 
 function setRenameInput(el: unknown) {
@@ -250,7 +400,16 @@ function openMenu(it: InboxItem, x: number, y: number) {
   const width = !isRunOnlyRow(it) && shareBlockReason(it) ? MENU_WIDTH_BLOCKED : MENU_WIDTH
   const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
   const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
-  menu.value = { key: it.runId, x: left, y: top }
+  menu.value = { kind: 'run', key: it.runId, x: left, y: top }
+}
+
+function openSoloMenu(session: SoloSession, x: number, y: number) {
+  if (editingKey.value) return
+  const width = MENU_WIDTH
+  const height = MENU_CHROME + 3 * MENU_ROW_HEIGHT
+  const left = Math.max(MENU_MARGIN, Math.min(x, window.innerWidth - width))
+  const top = Math.max(MENU_MARGIN, Math.min(y, window.innerHeight - height))
+  menu.value = { kind: 'solo', key: soloRowKey(session), x: left, y: top }
 }
 
 const menuShareVisible = computed(
@@ -323,6 +482,14 @@ function onPendingContextMenu(event: MouseEvent, it: InboxItem) {
   if (editingKey.value) return
   clearRowPress()
   openMenu(it, event.clientX, event.clientY)
+}
+
+function onSoloContextMenu(event: MouseEvent, session: SoloSession) {
+  event.preventDefault()
+  event.stopPropagation()
+  if (editingKey.value) return
+  clearRowPress()
+  openSoloMenu(session, event.clientX, event.clientY)
 }
 
 function onDocMouseDown(event: MouseEvent) {
@@ -419,7 +586,51 @@ function onRenameBlur(it: InboxItem) {
   }, 0)
 }
 
+async function commitSoloRename(session: SoloSession) {
+  const key = soloRowKey(session)
+  if (saving.value || editingKey.value !== key) return
+  const next = renameDraft.value.trim()
+  if (!next) {
+    toast.error(t('nav.pendingNameEmpty'))
+    refocusRename()
+    return
+  }
+  if ([...next].length > RUN_TITLE_MAX) {
+    toast.error(t('nav.pendingNameTooLong'))
+    refocusRename()
+    return
+  }
+  saving.value = true
+  try {
+    const saved = await api.renameSoloSession(session.id, next)
+    soloStore.upsert(saved)
+    editingKey.value = null
+    renameDraft.value = ''
+  } catch {
+    toast.error(t('nav.pendingRenameFailed'))
+    refocusRename()
+  } finally {
+    saving.value = false
+  }
+}
+
+function onSoloRenameBlur(session: SoloSession) {
+  const key = soloRowKey(session)
+  window.setTimeout(() => {
+    if (saving.value || editingKey.value !== key) return
+    if (document.activeElement === renameInput.value) return
+    void commitSoloRename(session)
+  }, 0)
+}
+
 function onMenuPin() {
+  if (menuSolo.value) {
+    const key = soloRowKey(menuSolo.value)
+    if (soloPins.value.some((p) => p.itemKey === key)) unpinRow(key)
+    else pinRow(key)
+    closeMenu()
+    return
+  }
   const it = menuItem.value
   if (!it) return
   if (isRowPinned(it)) {
@@ -429,36 +640,81 @@ function onMenuPin() {
 }
 
 function onMenuRename() {
+  if (menuSolo.value) {
+    const s = menuSolo.value
+    closeMenu()
+    renameDraft.value = s.title || ''
+    editingKey.value = soloRowKey(s)
+    void nextTick(() => renameInput.value?.focus())
+    return
+  }
   const it = menuItem.value
   if (!it) return
   void beginRename(it)
+}
+
+function preservedListFilters(): Record<string, string> {
+  const query: Record<string, string> = {}
+  for (const key of ['wf', 'tag'] as const) {
+    const raw = route.query[key]
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (typeof value === 'string' && value) query[key] = value
+  }
+  return query
+}
+
+function pushConversation(runId: string, nodeId?: string, extra?: Record<string, string>) {
+  const query = { ...preservedListFilters(), ...(extra ?? {}) }
+  const path = nodeConversationPath(runId, nodeId)
+  void router.push(Object.keys(query).length ? { path, query } : { path })
 }
 
 function onMenuShare() {
   const it = menuItem.value
   if (!it || !isShareableInboxItem(it) || shareBlockReason(it)) return
   closeMenu()
-  void router.push({
-    path: '/gates',
-    query: {
-      run: it.runId,
-      node: it.nodeId,
-      [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE,
-    },
-  })
+  pushConversation(it.runId, it.nodeId, { [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE })
   onNavigate()
 }
 
 const cancelTarget = ref<InboxItem | null>(null)
+const soloCloseTarget = ref<SoloSession | null>(null)
 const cancellingRun = ref(false)
 const cancelRunError = ref('')
 
 function onMenuCancel() {
+  if (menuSolo.value) {
+    const s = menuSolo.value
+    closeMenu()
+    soloCloseTarget.value = s
+    return
+  }
   const it = menuItem.value
   if (!it || cancellingRun.value) return
   closeMenu()
   cancelRunError.value = ''
   cancelTarget.value = it
+}
+
+function closeSoloConfirm() {
+  if (cancellingRun.value) return
+  soloCloseTarget.value = null
+}
+
+async function confirmCloseSolo() {
+  const target = soloCloseTarget.value
+  if (!target || cancellingRun.value) return
+  cancellingRun.value = true
+  try {
+    const saved = await api.closeSoloSession(target.id)
+    soloStore.upsert(saved)
+    soloCloseTarget.value = null
+    toast.success(t('pages.solo.header.close'))
+  } catch (e) {
+    toast.error(e instanceof Error ? e.message : t('nav.pendingRenameFailed'))
+  } finally {
+    cancellingRun.value = false
+  }
 }
 
 function closeCancelConfirm() {
@@ -477,26 +733,59 @@ function mapCancelRunError(e: unknown): string {
   return msg || t('pages.runDetail.cancelErrorGeneric')
 }
 
+/** The main area is this run's node conversation, not another page or another run. */
+function isCurrentInboxConversation(it: InboxItem): boolean {
+  if (!isNodeConversationPath(route.path)) return false
+  const runId = nodeConversationRunId(route.path)
+  if (runId) return runId === it.runId
+  return !!activeInboxKey.value?.startsWith(`${it.runId}:`)
+}
+
 async function confirmCancelRun() {
   const target = cancelTarget.value
   if (!target || cancellingRun.value) return
   cancellingRun.value = true
   cancelRunError.value = ''
+  const leavingInbox = isCurrentInboxConversation(target)
+  // Hold the open conversation for the whole request, so a list refresh that
+  // lands before the response cannot paint the empty inbox or open the next row.
+  if (leavingInbox) beginInboxCancelDeparture(target.runId)
+  let cancelled = false
   try {
     await api.cancelRun(target.runId)
-    cancelTarget.value = null
-    toast.success(t('pages.runDetail.cancelSuccess'))
-    await loadRunningRuns()
+    cancelled = true
   } catch (e) {
     cancelRunError.value = mapCancelRunError(e)
+  }
+  if (!cancelled) {
+    if (leavingInbox) endInboxCancelDeparture(target.runId)
+    cancellingRun.value = false
+    return
+  }
+  cancelTarget.value = null
+  toast.success(t('pages.runDetail.cancelSuccess'))
+  // Leave the conversation before the running-list refresh settles. A later refresh must
+  // not pull the new-request page back onto the empty inbox, and must not open
+  // another running row in its place.
+  if (leavingInbox) {
+    try {
+      await router.push({ path: '/dashboard' })
+    } catch {
+      /* navigation aborted; the hold ends after the list refresh */
+    }
+  }
+  try {
+    await loadRunningRuns()
   } finally {
+    if (leavingInbox) endInboxCancelDeparture(target.runId)
     cancellingRun.value = false
   }
 }
 
 watch(pendingRows, (rows) => {
-  if (menu.value && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
+  if (menu.value?.kind === 'run' && !rows.some((it) => it.runId === menu.value?.key)) closeMenu()
   if (!editingKey.value) return
+  if (editingKey.value.startsWith('solo:')) return
   if (rows.some((it) => it.runId === editingKey.value)) return
   editEpoch.value++
   editingKey.value = null
@@ -504,38 +793,54 @@ watch(pendingRows, (rows) => {
   saving.value = false
 })
 
+watch(soloRows, (rows) => {
+  if (menu.value?.kind === 'solo' && !rows.some((s) => soloRowKey(s) === menu.value?.key)) closeMenu()
+  if (!editingKey.value?.startsWith('solo:')) return
+  if (rows.some((s) => soloRowKey(s) === editingKey.value)) return
+  editingKey.value = null
+  renameDraft.value = ''
+  saving.value = false
+})
+
 function rowMotion(it: InboxItem): 'spin' | 'pulse' | null {
-  if (isRunOnlyRow(it)) {
-    const run = runningById.value.get(it.runId)
-    if (!run) return 'pulse'
-    const mark = recentRunMark(run)
-    if (!mark) return run.status === 'queued' ? 'spin' : 'pulse'
-    return 'motion' in mark ? mark.motion : null
+  if (!isRunOnlyRow(it)) return null
+  const run = runningById.value.get(it.runId)
+  if (!run) return null
+  const mark = recentRunMark(run)
+  if (!mark) {
+    const handingOff = carriedRows.value.some((row) => row.runId === it.runId)
+    return run.status === 'running' || handingOff ? 'pulse' : null
   }
-  if (startFailedKeys.value.includes(itemKey(it))) return null
-  if (isStartingInboxItem(it)) return 'spin'
-  if (isReplyingInboxItem(it)) return 'pulse'
   return null
 }
 
-/** Waiting on a person: static type mark. Executing rows keep motion; start-failed rows stay blank. */
+const ARC_MARK = { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' }
+const BREATH_MARK = { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' }
+const HOLD_MARK = { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' }
+const QUEUE_MARK = { name: 'queue', toneClass: 'text-txt3' }
+
+/**
+ * One icon decision for every executing row. Inbox starting still wins. A
+ * current node counts only when this row is that node (or the row has no
+ * pending item); a newer waiting item is not painted with the previous node's mark.
+ */
 function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: string }> {
-  if (isRunOnlyRow(it)) {
-    const run = runningById.value.get(it.runId)
-    const mark = run ? recentRunMark(run) : null
-    return mark && 'icon' in mark ? [mark.icon] : []
-  }
-  if (rowMotion(it) || startFailedKeys.value.includes(itemKey(it))) return []
-  const tone = inboxBadgeTone(it)
-  if (tone === 'replying') return []
-  if (tone === 'gate') return [{ name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' }]
-  if (tone === 'review') return [{ name: 'pending-review', toneClass: 'nav-row-type-icon--review' }]
-  return [{ name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' }]
+  const pending = !isRunOnlyRow(it)
+  if (pending && startFailedKeys.value.includes(itemKey(it))) return []
+  if (isStartingInboxItem(it)) return [ARC_MARK]
+  const run = runningById.value.get(it.runId)
+  const node = run ? recentCurrentNode(run) : null
+  const sameNode = !pending || !node || node.id === it.nodeId
+  const mark = run && sameNode ? recentRunMark(run) : null
+  if (mark?.icon.name === 'arc-spinner') return [mark.icon]
+  if (isReplyingInboxItem(it) || mark?.icon.name === 'breath-dot') return [BREATH_MARK]
+  if (run?.status === 'queued') return [QUEUE_MARK]
+  if (mark || run?.status === 'waiting_human' || pending) return [HOLD_MARK]
+  return []
 }
 
 function isPendingActive(it: InboxItem): boolean {
-  const onInbox = route.path === '/gates' || route.path.startsWith('/gates/')
-  if (onInbox && activeInboxKey.value?.startsWith(`${it.runId}:`)) return true
+  if (isNodeConversationPath(route.path) && activeInboxKey.value?.startsWith(`${it.runId}:`)) return true
   const run = runningById.value.get(it.runId)
   return isRunOnlyRow(it) && !!run && recentRunActive(run, route)
 }
@@ -548,17 +853,32 @@ function onPendingRow(it: InboxItem) {
   }
   if (isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
-    void router.push(run ? recentRunTarget(run) : { path: '/gates', query: { run: it.runId } })
+    if (run) {
+      void router.push(recentRunTarget(run, preservedListFilters()))
+    } else {
+      pushConversation(it.runId)
+    }
   } else {
-    void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
+    pushConversation(it.runId, it.nodeId)
   }
   onNavigate()
 }
 function pollRefresh() {
-  if (!document.hidden) void loadRunningRuns()
+  if (!document.hidden) {
+    void loadRunningRuns()
+  }
   return peek({ source: 'sidebar-poll' })
 }
-const offRunActivity = onRecentActivity(() => void loadRunningRuns())
+function onDocumentVisibility() {
+  if (!document.hidden) void loadRunningRuns()
+}
+const offRunActivity = onRecentActivity(() => void loadRunningRuns({ follow: true }))
+// History already reloads when the workspace appears. Running rows used to
+// skip that moment, so a refresh that mounted the sidebar before login left
+// the section blank until the next poll.
+watch(workspaceReady, (ready) => {
+  if (ready) void loadRunningRuns()
+})
 onMounted(() => {
   refresh({ source: 'mount' })
   void loadRunningRuns()
@@ -566,14 +886,21 @@ onMounted(() => {
   chromeHasMounted.value = true
   document.addEventListener('mousedown', onDocMouseDown)
   document.addEventListener('keydown', onDocKeydown)
+  document.addEventListener('visibilitychange', onDocumentVisibility)
 })
 onBeforeUnmount(() => {
+  navAlive = false
+  runningFollowUp = false
   if (timer) clearInterval(timer)
   offRunActivity()
   runningRequest?.abort()
   clearRowPress()
+  takeFlightMotion()
+  for (const timer of flightTimers.values()) window.clearTimeout(timer)
+  flightTimers.clear()
   document.removeEventListener('mousedown', onDocMouseDown)
   document.removeEventListener('keydown', onDocKeydown)
+  document.removeEventListener('visibilitychange', onDocumentVisibility)
 })
 // Refresh promptly when navigating (e.g. right after approving a gate).
 watch(
@@ -585,6 +912,7 @@ watch(
 )
 
 function isActive(to: string) {
+  if (to === '/dashboard') return isHomeSectionPath(route.path)
   if (to === '/board') return isBoardSectionPath(route.path)
   return route.path === to || route.path.startsWith(to + '/')
 }
@@ -603,6 +931,221 @@ function prefersReducedMotion(): boolean {
     !!window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
   )
 }
+
+const rowRects = new Map<string, DOMRect>()
+let paintedGroups = new Map<string, SidebarRunGroup>()
+const flights = ref<Record<string, { kind: 'in' | 'back'; landing: 'row' | 'heading' }>>({})
+const flightGhost = ref<{
+  runId: string
+  title: string
+  kind: 'in' | 'back'
+  landing: 'row' | 'heading'
+  style: Record<string, string>
+} | null>(null)
+const flightGhostEl = ref<HTMLElement | null>(null)
+const flightTimers = new Map<string, number>()
+/** Bumped to drop a move that was scheduled but not yet painted. */
+let flightMotion = 0
+const flightFrames: number[] = []
+
+function takeFlightMotion() {
+  flightMotion += 1
+  for (const id of flightFrames) cancelAnimationFrame(id)
+  flightFrames.length = 0
+  return flightMotion
+}
+
+function queueFlightFrame(motion: number, cb: () => void) {
+  const id = requestAnimationFrame(() => {
+    const at = flightFrames.indexOf(id)
+    if (at >= 0) flightFrames.splice(at, 1)
+    if (motion !== flightMotion) return
+    cb()
+  })
+  flightFrames.push(id)
+}
+
+function rowFlight(runId: string) {
+  return flights.value[runId]?.kind
+}
+function rowFlightLanding(runId: string) {
+  return flights.value[runId]?.landing
+}
+function rowFlightHidden(runId: string): boolean {
+  return flightGhost.value?.runId === runId && flights.value[runId]?.landing === 'row'
+}
+
+function captureRowRects() {
+  rowRects.clear()
+  const root = navRoot.value
+  if (!root) return
+  for (const el of root.querySelectorAll<HTMLElement>('[data-testid="nav-pending-row"]')) {
+    if (el.dataset.kind === 'solo') continue
+    const key = el.dataset.key
+    if (!key) continue
+    const rect = el.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0) rowRects.set(key, rect)
+  }
+}
+
+function clearFlightVisual(runId: string) {
+  if (!(runId in flights.value) && flightGhost.value?.runId !== runId) return
+  const next = { ...flights.value }
+  delete next[runId]
+  flights.value = next
+  if (flightGhost.value?.runId === runId) flightGhost.value = null
+}
+
+function scheduleFlightClear(runId: string) {
+  const prev = flightTimers.get(runId)
+  if (prev) window.clearTimeout(prev)
+  flightTimers.set(runId, window.setTimeout(() => {
+    flightTimers.delete(runId)
+    clearFlightVisual(runId)
+  }, SIDEBAR_FLIGHT_MS))
+}
+
+function beginFlight(runId: string, kind: 'in' | 'back', landing: 'row' | 'heading') {
+  const motion = takeFlightMotion()
+  flights.value = { ...flights.value, [runId]: { kind, landing } }
+  scheduleFlightClear(runId)
+  const from = rowRects.get(runId)
+  const root = navRoot.value
+  if (!from || !root) return
+  const headingId = kind === 'in' ? 'nav-auto-heading' : 'nav-running-heading'
+  const target = landing === 'heading'
+    ? root.querySelector<HTMLElement>(`[data-testid="${headingId}"]`)
+    : root.querySelector<HTMLElement>(`[data-key="${runId}"]`)
+  const to = target?.getBoundingClientRect()
+  if (!to || to.width < 1 || to.height < 1) return
+  const dx = to.left - from.left
+  const dy = to.top - from.top
+  if (landing === 'row' && Math.abs(dx) < 1 && Math.abs(dy) < 1) return
+  const it = pendingRows.value.find((row) => row.runId === runId)
+  // Position only. Transform stays on the element so a later render cannot
+  // snap it to the destination before the origin has been painted.
+  flightGhost.value = {
+    runId,
+    title: it ? rowTitle(it) : '',
+    kind,
+    landing,
+    style: {
+      left: `${from.left}px`,
+      top: `${from.top}px`,
+      width: `${from.width}px`,
+      height: `${from.height}px`,
+    },
+  }
+  void nextTick(() => {
+    if (motion !== flightMotion) return
+    const el = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+    if (!el || flightGhost.value?.runId !== runId) return
+    // Commit the origin, then let that frame paint before writing the end
+    // transform. A nextTick write still lands before the first paint, so the
+    // transition has nothing to interpolate from.
+    el.style.transition = 'none'
+    el.style.transform = 'translate3d(0px, 0px, 0px)'
+    void el.offsetHeight
+    queueFlightFrame(motion, () => {
+      queueFlightFrame(motion, () => {
+        const live = flightGhostEl.value ?? document.querySelector<HTMLElement>('[data-testid="nav-flight-ghost"]')
+        if (!live || flightGhost.value?.runId !== runId || motion !== flightMotion) return
+        live.style.transition = `transform ${SIDEBAR_FLIGHT_MS}ms var(--ease-out-expo)`
+        void live.offsetHeight
+        live.style.transform = `translate3d(${dx}px, ${dy}px, 0px)`
+        scheduleFlightClear(runId)
+      })
+    })
+  })
+}
+
+function releaseHandoffIfHuman(runId: string, group: SidebarRunGroup) {
+  if (group !== 'running') return
+  const mark = readSidebarHandoff(runId)
+  if (!mark) return
+  const node = runningById.value.get(runId)?.currentNode
+  if (!node?.id || node.id === mark.fromNodeId) return
+  if (node.kind === 'agent' && node.mode === 'auto') return
+  if (isAutoProcessNode(node)) return
+  clearSidebarHandoff(runId)
+}
+
+function cancelFlight(runId: string) {
+  const timer = flightTimers.get(runId)
+  if (timer) window.clearTimeout(timer)
+  flightTimers.delete(runId)
+  clearFlightVisual(runId)
+  takeFlightMotion()
+}
+
+/** Move a row when its group changes. A settled automatic handoff changes the group before the list does. */
+function navIsShown(): boolean {
+  const root = navRoot.value
+  if (!root?.isConnected) return false
+  let el: HTMLElement | null = root
+  while (el) {
+    if (typeof window.getComputedStyle === 'function' && window.getComputedStyle(el).display === 'none') return false
+    el = el.parentElement
+  }
+  return true
+}
+
+function headingIsFlightTarget(id: RunSectionId): boolean {
+  return Object.values(flights.value).some((flight) =>
+    flight.landing === 'heading' && ((id === 'auto' && flight.kind === 'in') || (id === 'running' && flight.kind === 'back')),
+  )
+}
+
+function settleRunGroups() {
+  const listed = new Set(pendingRows.value.map((it) => it.runId))
+  for (const runId of sidebarTrackedRunIds()) {
+    if (!listed.has(runId)) clearSidebarHandoff(runId)
+  }
+  const next = new Map<string, SidebarRunGroup>()
+  for (const it of orderedHumanRows.value) next.set(it.runId, 'running')
+  for (const it of orderedAutoRows.value) next.set(it.runId, 'auto')
+  if (!navIsShown()) {
+    paintedGroups = next
+    return
+  }
+  const reduced = prefersReducedMotion()
+  for (const [runId, group] of next) {
+    const previous = paintedGroups.get(runId) ?? null
+    releaseHandoffIfHuman(runId, group)
+    const mark = readSidebarHandoff(runId)
+    const run = runningById.value.get(runId)
+    // A fly-in that has not finished is cancelled when the handoff is taken back.
+    // A finished automatic row that later waits still flies back.
+    const retractingFlyIn = previous === 'auto' && group === 'running' && flights.value[runId]?.kind === 'in'
+    if (retractingFlyIn) cancelFlight(runId)
+    const decision = decideSidebarFlight({
+      previous,
+      next: group,
+      handoffArmed: !!mark,
+      confirmedAuto: !!mark && (mark.confirmedAuto || isAutoProcessNode(run?.currentNode)),
+      reducedMotion: reduced,
+      targetCollapsed: isSectionCollapsed(group),
+    })
+    if (!retractingFlyIn && (decision.type === 'fly-in' || decision.type === 'fly-back')) {
+      beginFlight(runId, decision.type === 'fly-in' ? 'in' : 'back', decision.landing)
+    }
+    // Keep the claim until the list itself shows the automatic node, so the row does not jump back.
+    if (group === 'auto' && mark && isAutoProcessNode(run?.currentNode)) consumeSidebarHandoff(runId)
+  }
+  for (const runId of paintedGroups.keys()) {
+    if (!next.has(runId) && flights.value[runId]) cancelFlight(runId)
+  }
+  paintedGroups = next
+}
+
+const placementKey = computed(() => {
+  void sidebarHandoffEpoch.value
+  const human = orderedHumanRows.value.map((it) => it.runId).join('\n')
+  const auto = orderedAutoRows.value.map((it) => `${it.runId}\t${autoNodeName(it)}`).join('\n')
+  return `${human}\u0000${auto}`
+})
+watch(placementKey, () => { captureRowRects() }, { flush: 'pre' })
+watch(placementKey, () => { settleRunGroups() }, { flush: 'post', immediate: true })
 
 /** First paint (direct /agents etc.) must not play the push animation. */
 const chromeHasMounted = ref(false)
@@ -640,6 +1183,7 @@ const settingsItems = settingsNavItems
 
 <template>
   <nav
+    ref="navRoot"
     class="sidebar-workspace-nav scroll-area min-h-0 flex-1 overflow-y-auto px-3 py-2"
     data-testid="app-sidebar-nav"
     :data-nav-mode="settingsChrome ? 'settings' : 'workspace'"
@@ -688,7 +1232,7 @@ const settingsItems = settingsNavItems
       </template>
     </div>
 
-    <!-- Workspace primary + quick workflows slide together (plan g2.2) -->
+    <!-- Workspace primary nav. Starred workflows are not listed here. -->
     <div v-else-if="primaryGroup" key="workspace" class="nav-chrome-pane">
     <div class="mb-3" data-testid="nav-workspace-chrome">
       <RouterLink
@@ -710,15 +1254,27 @@ const settingsItems = settingsNavItems
       </RouterLink>
     </div>
 
-    <div v-if="pendingRows.length" class="mb-3" data-testid="nav-pending-approvals">
-      <div class="sidebar-section-heading px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3">
-        <span>{{ t('nav.runningRuns') }}</span>
-        <span class="sidebar-section-count">{{ pendingRows.length }}</span>
+    <div v-for="section in runSections" :key="section.id" class="sidebar-run-section mb-3" :data-testid="section.testId">
+      <div class="sidebar-section-heading grasp-status-host px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-txt3" :data-testid="section.headingTestId" :data-flight-target="headingIsFlightTarget(section.id) ? 'true' : undefined">
+        <button
+          type="button"
+          class="sidebar-section-label"
+          :data-testid="section.toggleTestId"
+          :aria-expanded="!section.collapsed"
+          :aria-label="t(section.collapsed ? 'nav.sectionExpand' : 'nav.sectionCollapse', { name: t(section.labelKey) })"
+          @click="toggleSection(section.id)"
+        >
+          <Icon :name="section.icon" :size="14" class="sidebar-section-icon" aria-hidden="true" />
+          <span>{{ t(section.labelKey) }}</span>
+          <Icon :interactive="false" name="chevron-down" :size="12" class="sidebar-section-chevron" :class="{ 'is-collapsed': section.collapsed }" aria-hidden="true" />
+        </button>
+        <span class="sidebar-section-count">{{ section.count }}</span>
       </div>
-      <template v-for="it in orderedPendingRows" :key="it.runId">
+      <div v-show="!section.collapsed" class="sidebar-tree" :data-testid="section.rowsTestId">
+      <div v-for="it in section.rows" :key="it.runId" class="sidebar-tree-item">
         <div
           v-if="editingKey === it.runId"
-          class="nav-item mb-0.5 w-full min-w-0 cursor-text text-start"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
           :class="{ active: isPendingActive(it) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
@@ -757,7 +1313,9 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
-              :size="14"
+              :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
+              :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
               data-testid="nav-pending-type-icon"
@@ -769,12 +1327,15 @@ const settingsItems = settingsNavItems
           v-else
           v-hover-ink
           type="button"
-          class="nav-item mb-0.5 w-full min-w-0 text-start"
-          :class="{ active: isPendingActive(it) }"
+          class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
+          :class="{ active: isPendingActive(it), 'sidebar-flight-source': rowFlightHidden(it.runId) }"
           data-testid="nav-pending-row"
           :data-key="it.runId"
           :data-node-id="it.nodeId"
+          :data-section="section.id"
           :data-motion="rowMotion(it) || undefined"
+          :data-flight="rowFlight(it.runId)"
+          :data-flight-landing="rowFlightLanding(it.runId)"
           :title="pendingTooltip(it)"
           :aria-current="isPendingActive(it) ? 'true' : undefined"
           @click="onPendingRow(it)"
@@ -792,6 +1353,7 @@ const settingsItems = settingsNavItems
           </span>
           <span v-if="rowTitle(it)" class="nav-row-title min-w-0 flex-1 truncate text-start">{{ rowTitle(it) }}</span>
           <span v-else class="nav-row-title-skeleton min-w-0 flex-1" data-testid="nav-pending-title-skeleton" aria-hidden="true"><span /></span>
+          <span v-if="autoNodeName(it)" class="nav-auto-node-name min-w-0 truncate" data-testid="nav-auto-node-name">{{ autoNodeName(it) }}</span>
           <InboxMotionMark v-if="rowMotion(it) === 'spin'" kind="spin" />
           <InboxMotionMark v-else-if="rowMotion(it) === 'pulse'" kind="pulse" />
           <template v-else>
@@ -799,7 +1361,9 @@ const settingsItems = settingsNavItems
               v-for="mark in pendingTypeMarks(it)"
               :key="mark.name"
               :name="mark.name"
-              :size="14"
+              :busy="mark.name === 'arc-spinner' || mark.name === 'breath-dot'"
+              :breath-ping="mark.name === 'breath-dot'"
+              :size="16"
               class="nav-row-type-icon"
               :class="mark.toneClass"
               data-testid="nav-pending-type-icon"
@@ -807,7 +1371,59 @@ const settingsItems = settingsNavItems
             />
           </template>
         </button>
-      </template>
+      </div>
+      <div v-for="session in section.solos" :key="soloRowKey(session)" class="sidebar-tree-item">
+      <div
+        v-if="editingKey === soloRowKey(session)"
+        class="nav-item grasp-status-host mb-0.5 w-full min-w-0 cursor-text text-start"
+        :class="{ active: isSoloRowActive(session) }"
+        data-testid="nav-pending-row"
+        :data-key="session.id"
+        data-kind="solo"
+        data-editing="true"
+        @click.stop
+        @contextmenu.prevent
+      >
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <input
+          :ref="setRenameInput"
+          v-model="renameDraft"
+          type="text"
+          class="h-[26px] min-w-0 flex-1 rounded-md border border-accent bg-base px-1.5 text-start text-sm font-normal text-txt outline-none"
+          data-testid="nav-pending-rename-input"
+          :aria-label="t('nav.pendingRenameLabel')"
+          :readonly="saving"
+          @click.stop
+          @keydown.enter.prevent="commitSoloRename(session)"
+          @keydown.esc.prevent.stop="onRenameEscape"
+          @blur="onSoloRenameBlur(session)"
+        />
+        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+      </div>
+      <button
+        v-else
+        v-hover-ink
+        type="button"
+        class="nav-item grasp-status-host mb-0.5 w-full min-w-0 text-start"
+        :class="{ active: isSoloRowActive(session) }"
+        data-testid="nav-pending-row"
+        :data-key="session.id"
+        data-kind="solo"
+        :data-status="session.status"
+        :data-motion="soloRowMotion(session) || undefined"
+        :title="soloRowTitle(session)"
+        :aria-current="isSoloRowActive(session) ? 'page' : undefined"
+        @click="onSoloRow(session)"
+        @contextmenu="onSoloContextMenu($event, session)"
+      >
+        <span v-if="soloPins.some((p) => p.itemKey === soloRowKey(session))" class="flex shrink-0 text-accent" data-testid="nav-pending-pin" aria-hidden="true"><Icon name="pin" :size="12" /></span>
+        <span class="nav-row-title min-w-0 flex-1 truncate text-start">{{ soloRowTitle(session) }}</span>
+        <InboxMotionMark v-if="soloRowMotion(session) === 'spin'" kind="spin" />
+        <InboxMotionMark v-else-if="soloRowMotion(session) === 'pulse'" kind="pulse" />
+      </button>
+      </div>
+      </div>
     </div>
     <SidebarWorkspaceLists v-if="workspaceLists" :run-titles="pendingRunTitles" @navigate="onNavigate" />
     </div>
@@ -817,7 +1433,16 @@ const settingsItems = settingsNavItems
   </nav>
   <Teleport to="body">
     <div
-      v-if="menu && menuItem"
+      v-if="flightGhost"
+      ref="flightGhostEl"
+      class="sidebar-flight-ghost"
+      data-testid="nav-flight-ghost"
+      :data-flight="flightGhost.kind"
+      :data-landing="flightGhost.landing"
+      :style="flightGhost.style"
+    >{{ flightGhost.title }}</div>
+    <div
+      v-if="menu && (menuItem || menuSolo)"
       ref="menuEl"
       class="pending-row-menu fixed z-[9999] min-w-[148px] rounded-lg border border-line bg-elevated py-1 shadow-card"
       role="menu"
@@ -834,8 +1459,8 @@ const settingsItems = settingsNavItems
         data-testid="nav-pending-menu-pin"
         @click="onMenuPin"
       >
-        <Icon :name="isRowPinned(menuItem) ? 'close' : 'pin'" :size="14" />
-        <span>{{ isRowPinned(menuItem) ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
+        <Icon :name="menuPinned ? 'close' : 'pin'" :size="14" />
+        <span>{{ menuPinned ? t('nav.pendingUnpin') : t('nav.pendingPin') }}</span>
       </button>
       <button
         type="button"
@@ -914,6 +1539,21 @@ const settingsItems = settingsNavItems
       </AppButton>
     </template>
   </AppModal>
+  <AppModal
+    :open="!!soloCloseTarget"
+    :title="t('pages.solo.close.title')"
+    :width="440"
+    @close="closeSoloConfirm"
+  >
+    <div class="space-y-3 text-sm text-txt2">
+      <p>{{ t('pages.solo.close.body') }}</p>
+      <p v-if="soloCloseTarget?.busy" class="text-[12px] text-warn">{{ t('pages.solo.close.busy') }}</p>
+    </div>
+    <template #footer>
+      <AppButton variant="ghost" :disabled="cancellingRun" @click="closeSoloConfirm">{{ t('common.buttons.cancel') }}</AppButton>
+      <AppButton variant="danger" icon="stop" :disabled="cancellingRun" @click="confirmCloseSolo">{{ t('pages.solo.close.confirm') }}</AppButton>
+    </template>
+  </AppModal>
 </template>
 
 <style scoped>
@@ -925,6 +1565,9 @@ const settingsItems = settingsNavItems
   padding: 8px 10px;
   font-size: 13px;
   --hover-ink-color: rgb(var(--c-txt) / .04);
+}
+.sidebar-workspace-nav .sidebar-tree-item > .nav-item {
+  padding-left: 6px;
 }
 .sidebar-workspace-nav .nav-item.active {
   background: light-dark(#f1f1f1, rgb(var(--c-txt) / .065));
@@ -982,7 +1625,7 @@ const settingsItems = settingsNavItems
   --hover-ink-color: rgb(var(--c-txt) / .045);
 }
 .sidebar-workspace-nav .nav-create-action.active {
-  background: rgb(var(--c-txt) / .055);
+  background: transparent;
   font-weight: 600;
 }
 .nav-create-action > svg {
@@ -991,7 +1634,7 @@ const settingsItems = settingsNavItems
 .sidebar-workspace-nav [data-testid="nav-workspace-chrome"] {
   margin-bottom: 16px;
 }
-.sidebar-workspace-nav [data-testid="nav-pending-approvals"] {
+.sidebar-workspace-nav .sidebar-run-section {
   margin-bottom: 24px;
 }
 .sidebar-workspace-nav .sidebar-section-heading {
@@ -1006,6 +1649,39 @@ const settingsItems = settingsNavItems
   font-weight: 600;
   letter-spacing: 0;
   text-transform: none;
+}
+.sidebar-section-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border-radius: 6px;
+  color: inherit;
+  font: inherit;
+  transition: color 160ms ease;
+}
+.sidebar-section-label:hover {
+  color: rgb(var(--c-txt));
+}
+.sidebar-section-icon {
+  flex: none;
+}
+.sidebar-section-chevron {
+  flex: none;
+  margin-left: -1px;
+  opacity: .7;
+  transition: transform 160ms ease, opacity 160ms ease;
+}
+.sidebar-section-label:hover .sidebar-section-chevron {
+  opacity: 1;
+}
+.sidebar-section-chevron.is-collapsed {
+  transform: rotate(-90deg);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-section-chevron {
+    transition: none;
+  }
 }
 .sidebar-section-count {
   display: inline-flex;
@@ -1025,6 +1701,37 @@ const settingsItems = settingsNavItems
   text-align: start;
   font-weight: 400;
 }
+.nav-auto-node-name {
+  flex: none;
+  max-width: 42%;
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 400;
+}
+.sidebar-flight-source {
+  visibility: hidden;
+  pointer-events: none;
+}
+.sidebar-flight-ghost {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  padding: 0 10px;
+  border-radius: 10px;
+  background: light-dark(#fff, rgb(var(--c-surface)));
+  color: rgb(var(--c-txt));
+  font-size: 13px;
+  font-weight: 400;
+  pointer-events: none;
+  box-shadow: 0 10px 28px rgb(0 0 0 / .14);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sidebar-flight-ghost {
+    display: none;
+  }
+}
 .nav-row-title-skeleton {
   display: flex;
   align-items: center;
@@ -1043,6 +1750,56 @@ const settingsItems = settingsNavItems
   stroke-width: 1.6;
 }
 .nav-row-type-icon--approval { color: light-dark(#947a49, #c8b185); }
+.nav-row-type-icon--accent { color: rgb(var(--c-accent-2)); }
+.nav-row-type-icon--hold { color: rgb(var(--c-warn)); }
+
+/* Row-tail breath only. The extra nav-row-type-icon class beats the shared
+   busy rules in icon-motion.css. The hover ring is its own circle, so a
+   pointer or keyboard focus does not restart or pause the 1.6s loop.
+   Peak scale 3.2 keeps a 3.4-radius stroke inside the 24 viewBox; non-scaling
+   stroke stays a hairline so the row's overflow:clip never cuts a half ring. */
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core) {
+  transform-origin: 12px 12px;
+  animation: navRowBreathCore 1.6s ease-in-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  animation: navRowBreathRing 1.6s ease-out infinite;
+}
+.nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  transform-origin: 12px 12px;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+  pointer-events: none;
+}
+.nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+.nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+  animation: navRowBreathPing 700ms ease-out 1;
+}
+@keyframes navRowBreathCore {
+  0%, 16%, 100% { transform: scale(1); }
+  7% { transform: scale(0.86); }
+}
+@keyframes navRowBreathRing {
+  0% { transform: scale(0.75); opacity: 0; }
+  12% { opacity: 0.62; }
+  46%, 100% { transform: scale(3.2); opacity: 0; }
+}
+@keyframes navRowBreathPing {
+  0% { transform: scale(0.7); opacity: 0; }
+  20% { opacity: 0.95; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-core),
+  .nav-row-type-icon[data-icon="breath-dot"][data-icon-motion="busy"] :deep(.grasp-heart-ring),
+  .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:hover > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping),
+  .nav-item:focus-visible > .nav-row-type-icon[data-icon="breath-dot"] :deep(.nav-breath-ping) {
+    animation: none !important;
+  }
+}
 
 .pending-row-menu__item {
   display: flex;

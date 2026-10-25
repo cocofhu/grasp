@@ -306,7 +306,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
               class="flex items-center justify-center gap-2 py-2 text-xs text-txt3"
               data-testid="content-fit-preview-issues-loading"
             >
-              <Icon name="spinner" :size="14" class="animate-spin text-accent" />
+              <Icon name="spinner" :size="14" class="text-accent" />
               {{ t('pages.gateApproval.loadingPreviewIssues') }}
             </div>
             <div v-else class="flex min-h-0 flex-1 flex-col">

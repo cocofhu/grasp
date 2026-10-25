@@ -100,14 +100,24 @@ const elapsedName = computed(() =>
   [elapsedTime.value || processLabel.value, failedLabel.value, statusLabel.value].filter(Boolean).join(' '),
 )
 
+/**
+ * Settled reply: the last non-empty message sits under the elapsed rule,
+ * even when tools follow it. Earlier messages stay in the fold, once.
+ * Failed-tool counts still come from every tool block, including those after the reply.
+ */
 const tailBlock = computed(() => {
   if (!settled.value) return null
-  const last = blocks.value[blocks.value.length - 1]
-  return last?.kind === 'message' ? last : null
+  for (let i = blocks.value.length - 1; i >= 0; i--) {
+    const block = blocks.value[i]
+    if (block?.kind === 'message') return block
+  }
+  return null
 })
 const workBlocks = computed(() => {
   if (!settled.value) return []
-  return tailBlock.value ? blocks.value.slice(0, -1) : blocks.value
+  const tail = tailBlock.value
+  if (!tail) return blocks.value
+  return blocks.value.filter((block) => block.key !== tail.key)
 })
 
 /** null follows expand-all; a click pins this reply for the rest of the page. */
@@ -304,7 +314,7 @@ function onToggle(index: number, last: boolean, e: Event) {
 .agent-elapsed-thought p:last-child { margin-bottom: 0; }
 .agent-elapsed-thought:last-child,
 .agent-elapsed-note:last-child { margin-bottom: 4px; }
-.agent-elapsed-note { margin-bottom: 18px; }
+.agent-elapsed-note { margin-bottom: 8px; }
 .agent-elapsed-rule {
   height: 1px;
   margin: 4px 0 8px;

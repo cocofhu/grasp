@@ -390,7 +390,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (url.includes('/gates')) {
+  if (url.includes('/pending-nodes')) {
     return new Response(
       JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
@@ -497,7 +497,6 @@ async function bootstrap() {
     '/dashboard',
     '/runs',
     '/notifications',
-    '/gates',
     '/login',
   ])
   const extraRoutes = shellNavPaths()
@@ -514,6 +513,7 @@ async function bootstrap() {
       { path: '/', redirect: '/dashboard' },
       { path: '/dashboard', name: 'dashboard', component: DashboardPage, meta: { titleKey: 'route.dashboard' } },
       { path: '/runs', name: 'runs', component: RunsPage, meta: { titleKey: 'route.runs' } },
+      { path: '/runs/:runId/nodes/:nodeId', name: 'node-conversation', component: GatesPage, meta: { titleKey: 'route.gates' } },
       { path: '/runs/:id', name: 'run-detail', component: RunDetailPage, meta: { titleKey: 'route.runs' } },
       {
         path: '/notifications',
@@ -521,7 +521,6 @@ async function bootstrap() {
         component: NotificationsView,
         meta: { titleKey: 'route.notifications' },
       },
-      { path: '/gates', name: 'gates', component: GatesPage, meta: { titleKey: 'route.gates' } },
       ...extraRoutes,
     ],
   })

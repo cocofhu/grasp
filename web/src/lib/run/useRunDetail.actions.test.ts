@@ -75,6 +75,7 @@ vi.mock('@/lib/api/api', async () => {
 })
 
 import { useRunDetail } from './useRunDetail'
+import { __resetSidebarHandoffForTests, readSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
 
 function stubNode(partial: Partial<WFNode> & Pick<WFNode, 'id' | 'type'>): WFNode {
   return { label: partial.id, position: { x: 0, y: 0 }, config: {}, ...partial }
@@ -245,6 +246,7 @@ describe('useRunDetail actions', () => {
   })
 
   afterEach(() => {
+    __resetSidebarHandoffForTests()
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
   })
@@ -272,6 +274,63 @@ describe('useRunDetail actions', () => {
     mocks.resumeGate.mockClear()
     await detail.onGateResolve('pass')
     expect(mocks.resumeGate).not.toHaveBeenCalled()
+
+    app.unmount()
+  })
+
+  it('arms the sidebar handoff before confirm returns and clears it when the request fails', async () => {
+    const { detail, app } = await withRunDetail()
+    detail.selectNode('n1')
+    await nextTick()
+
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      return { status: 'ok' }
+    })
+    await detail.onGateResolve('pass', { note: 'ok' })
+    expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+
+    __resetSidebarHandoffForTests()
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      throw new Error('field required')
+    })
+    await detail.onGateResolve('pass')
+    expect(readSidebarHandoff('run-1')).toBeNull()
+    expect(detail.gateError.value).toBe('field required')
+
+    mocks.resumeGate.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')).toBeNull()
+      return { status: 'ok' }
+    })
+    await detail.onGateResolve('reject')
+    expect(readSidebarHandoff('run-1')).toBeNull()
+
+    detail.selectNode('n1')
+    await nextTick()
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      return { status: 'queued' }
+    })
+    await detail.onClarifySend('done', [], [], true)
+    expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')?.fromNodeId).toBe('n1')
+      throw new Error('react already done')
+    })
+    await detail.onClarifySend('done', [], [], true)
+    expect(readSidebarHandoff('run-1')).toBeNull()
+
+    __resetSidebarHandoffForTests()
+    mocks.reactReply.mockImplementation(async () => {
+      expect(readSidebarHandoff('run-1')).toBeNull()
+      return { status: 'queued' }
+    })
+    await detail.onClarifySend('hello')
+    expect(readSidebarHandoff('run-1')).toBeNull()
 
     app.unmount()
   })

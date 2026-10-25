@@ -41,11 +41,10 @@ func TestExportImportZIPRoundTrip(t *testing.T) {
 
 	binary := []byte{0x00, 0x01, 0xFF, 0xFE, 0x89, 0x50, 0x4E, 0x47}
 	err := s.Save(Agent{
-		Name:              "trip",
-		AcpBackend:        AcpBackendClaudeCode,
-		GitCredentialType: "gitlab_https",
-		Env:               map[string]string{"GITLAB_URL": "https://gl.example"},
-		MCP:               DefaultPlatformMCP(),
+		Name:       "trip",
+		AcpBackend: AcpBackendClaudeCode,
+		Env:        map[string]string{"APP_URL": "https://gl.example"},
+		MCP:        DefaultPlatformMCP(),
 		Files: []AgentFile{
 			{Path: "rules/trip.md", Content: "# trip"},
 			{Path: "assets/logo.bin", Content: string(binary)},
@@ -68,11 +67,8 @@ func TestExportImportZIPRoundTrip(t *testing.T) {
 	if imported.Name != "trip-copy" {
 		t.Fatalf("name = %q", imported.Name)
 	}
-	if imported.Env["GITLAB_URL"] != "https://gl.example" {
+	if imported.Env["APP_URL"] != "https://gl.example" {
 		t.Fatalf("env not preserved: %+v", imported.Env)
-	}
-	if imported.GitCredentialType != "gitlab_https" {
-		t.Fatalf("gitCredentialType = %q, want gitlab_https", imported.GitCredentialType)
 	}
 	if imported.AcpBackend != AcpBackendClaudeCode {
 		t.Fatalf("acpBackend = %q, want %s", imported.AcpBackend, AcpBackendClaudeCode)
@@ -124,7 +120,7 @@ func TestImportZIPOverwriteClearsOldFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	meta := []byte(`{"name":"target","acpBackend":"cursor","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z","mcp":[]}`)
+	meta := []byte(`{"name":"target","inheritModel":false,"inheritGit":false,"acpBackend":"cursor","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z","mcp":[]}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"rules/new.md": []byte("new")})
 
 	if _, err := s.ImportZIP(raw, "target", ImportZIPOverwrite); err != nil {
@@ -174,7 +170,7 @@ func TestImportZIPAcpBackendCreateAndOverwrite(t *testing.T) {
 
 func TestImportZIPMissingAcpBackendRejected(t *testing.T) {
 	s := NewAgentService(t.TempDir())
-	meta := []byte(`{"name":"nobackend","schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
+	meta := []byte(`{"name":"nobackend","inheritModel":false,"inheritGit":false,"schemaVersion":1,"exportedAt":"2026-01-01T00:00:00Z"}`)
 	raw := buildTestZip(t, meta, map[string][]byte{"rules/a.md": []byte("a")})
 	if _, err := s.ImportZIP(raw, "nobackend", ImportZIPCreate); !errors.Is(err, ErrInvalidAcpBackend) {
 		t.Fatalf("err=%v want ErrInvalidAcpBackend", err)

@@ -26,7 +26,7 @@
 ### 1) 选 Agent —— `AGENT_PROVIDER`
 
 - 选型：**`AGENT_PROVIDER`**，未设置时默认 `cursor`。
-- 发布镜像预装六个对外 CLI（`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex`）。设成镜像里没有的 provider（或本地薄镜像没装的那个）会因找不到可执行文件而失败。
+- 发布镜像预装七个对外 CLI（`cursor` / `claude_code` / `codebuddy` / `trae` / `opencode` / `codex` / `deepseek_harness`）。设成镜像里没有的 provider（或本地薄镜像没装的那个）会因找不到可执行文件而失败。
 - 经网关时只传 `provider`，网关注入 `AGENT_PROVIDER`（默认用同一张 `universal-sandbox`）。
 - 全部取值见文末「默认 transport」表（`cursor` / `claude_code` / `codebuddy` / `gemini` / `codex` /
   `opencode` / `deveco` / `copilot` / `pi` / `openclaw` / `antigravity` / `kimi` / `hermes` / `kiro` /
@@ -45,6 +45,7 @@
 | `gemini` | `GEMINI_API_KEY` | `ACP_GEMINI_API_KEY` / `GOOGLE_API_KEY` |
 | `codex` | `CODEX_HOME/auth.json`（默认 `/root/.codex/auth.json`） | 不接受 API Key；`OPENAI_API_KEY` / `ACP_CODEX_API_KEY` / `CODEX_API_KEY` 会被丢弃 |
 | `opencode` | `OPENCODE_API_KEY` | `ACP_OPENCODE_API_KEY` |
+| `deepseek_harness` | `DEEPSEEK_API_KEY` | `GRASP_DEEPSEEK_API_KEY` / `ACP_DEEPSEEK_API_KEY` |
 | `deveco` | `DEVECO_API_KEY` | `ACP_DEVECO_API_KEY` |
 | `copilot` | `GITHUB_TOKEN` | `ACP_COPILOT_API_KEY` / `COPILOT_API_KEY` |
 | `pi` | `ANTHROPIC_API_KEY` | `ACP_PI_API_KEY` / `PI_API_KEY` |
@@ -76,7 +77,7 @@
 ### 4) 配置根与注入 —— `CONFIG_ROOT` / `SANDBOX_INJECT`
 
 - **`CONFIG_ROOT`**：agent 配置根，按 provider 自动取（`cursor`→`/root/.cursor`、`claude*`→`/root/.claude`、
-  `codebuddy`→`/root/.codebuddy`、`opencode`→`/root/.config/opencode`、其余→`/root/.<provider>`），可用 `CONFIG_ROOT` 覆盖。
+  `codebuddy`→`/root/.codebuddy`、`opencode`→`/root/.config/opencode`、`deepseek_harness`→`/root/.dsh`、其余→`/root/.<provider>`），可用 `CONFIG_ROOT` 覆盖。
   它同时是 `mcp.json` / `rules/` / `skills/` 以及上面「方式 B」登录文件的落点。
 - **`SANDBOX_INJECT`**（服务启动前完成注入）：`"src[|dest],src2[|dest2],…"`。
   - `src` 可为容器内已存在的文件/目录/归档，或 `http(s)://` URL；归档自动解压，其余直接复制；
@@ -287,6 +288,7 @@ web/                  # 前端（ESM + 静态资源）
   | `openclaw` | 整块 JSON 结果文档（one-shot，专用 codec） | `agent --local --json --session-id <id> --message <prompt>`；整块解析 payloads+meta，NDJSON 兜底 |
   | `antigravity` | 纯文本 stdout（one-shot，专用 codec） | `-p <prompt> --dangerously-skip-permissions --log-file <tmp>`；从日志回收 `--conversation` id |
   | `codex` | JSONL（one-shot） | `codex exec --json`（`resume <id>` 续接） |
+  | `deepseek_harness` | 长驻 ACP | `dsh --profile acp`；模型从分组选项解析并通过 `session/set_config_option` 选择 |
   | `kimi` / `hermes` / `kiro` / `qoder` / `grok` / `trae` | 长驻 ACP | CLI 原生 ACP over stdio（`… acp` / `--acp` / `agent … stdio`） |
   | `cursor_acp` / `claude_code_acp` / `codebuddy_acp` | 长驻 ACP（可选回退） | 强制走 stdio 的备选项，默认不单独出镜像 |
 

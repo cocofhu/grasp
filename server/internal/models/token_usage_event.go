@@ -7,6 +7,7 @@ const (
 	TokenLedgerSourceWorkflow = "workflow"
 	TokenLedgerSourcePM       = "pm"
 	TokenLedgerSourceStudio   = "studio"
+	TokenLedgerSourceSolo     = "solo"
 )
 
 // Token ledger statuses.

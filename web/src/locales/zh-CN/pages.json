@@ -19,7 +19,7 @@
       "pickWorkflow": "请先选择一个工作流",
       "noWorkflowShort": "未选择工作流",
       "needText": "请先描述目标或附加文件",
-      "heroSubtitle": "先说清，再动手",
+      "heroSubtitle": "我们应该做些什么？",
       "send": "发送",
       "sendShortcut": "Ctrl/⌘ + Enter 发送",
       "missingRequired": "启动前还需填写必填项",
@@ -260,14 +260,13 @@
     "board": {
       "title": "运行看板",
       "subtitle": "跟进正在执行的工作，处理等待人工的任务。",
-      "toolbarHint": "点击列标题查看全部运行",
       "overview": "当前执行概览",
       "overviewRecent": "最近完成",
+      "overviewRecords": "共 {n} 条执行记录",
       "actionsLabel": "看板操作",
       "refresh": "刷新",
       "allRuns": "全部运行",
       "usage": "用量统计",
-      "viewMoreCompleted": "在运行列表中查看更多 →",
       "loading": "加载中…",
       "loadFailed": "看板数据加载失败，请重试",
       "retry": "重试",
@@ -313,8 +312,12 @@
         "emptyModelCompHint": "暂无按模型构成",
         "emptyModelRankHint": "暂无模型排行"
       },
-      "filters": {
-        "label": "同时显示"
+      "segments": {
+        "label": "筛选任务状态",
+        "all": "全部",
+        "running": "运行中",
+        "waitingHuman": "等待人工",
+        "completed": "已完成"
       },
       "columns": {
         "active": "进行中",
@@ -327,15 +330,13 @@
         "completedOnly": "仅 completed",
         "inProgress": "正在执行",
         "inReview": "需要处理",
-        "doneRecent": "最近 20 条",
-        "extraFilter": "附加状态"
+        "doneRecent": "最近 20 条"
       },
       "empty": {
         "active": "当前没有进行中的需求",
         "running": "没有运行中的需求",
         "waitingHuman": "没有等待人工的需求",
-        "completed": "暂无已完成需求",
-        "extra": "该状态下暂无运行"
+        "completed": "暂无已完成需求"
       },
       "truncated": {
         "showingFirst100": "仅显示前 100 条，可前往运行列表查看全部"
@@ -404,7 +405,7 @@
         "themeLight": "浅色"
       },
       "acp": {
-        "meta": "先选接入方式：用模型厂商的 API Key，或用编码工具的账号。密钥保存在本工作区，所有 Agent 共用。",
+        "meta": "先选接入方式：通用模型 API，或编码工具。密钥保存在本工作区，所有 Agent 共用。",
         "region": "站点",
         "paths": {
           "apiKey": {
@@ -412,8 +413,8 @@
             "desc": "已有 OpenAI、Anthropic、DeepSeek 等厂商的 API Key。可以自选模型，也能接入自建的兼容服务。"
           },
           "cli": {
-            "title": "用编码工具账号",
-            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae 或 Codex 的账号。Codex 粘贴 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
+            "title": "用编码工具",
+            "desc": "使用 Cursor、Claude Code、CodeBuddy、Trae、Codex 或 DeepSeek Harness（DSH）。DSH 使用 DeepSeek API Key，Codex 使用 ChatGPT 登录文件，其余工具使用各自的账号密钥。可以指定模型，也可以留给工具自己决定。"
           }
         },
         "cliLabel": "选择编码工具",
@@ -478,7 +479,7 @@
         "sshSavedToCredentials": "SSH 私钥与可信主机将保存到工作区凭据。"
       },
       "team": {
-        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流，可改名并指定模型。",
+        "meta": "四个 Agent 组成「需求澄清 → 实现 → 测试评审 → 交付」工作流。名称已锁定，可为每个 Agent 指定模型。",
         "loading": "正在读取模板能力…",
         "loadError": "模板能力读取失败，仍可按默认配置创建。",
         "retry": "重试",
@@ -495,7 +496,7 @@
         "modelLabel": "模型",
         "modelPlaceholder": "留空沿用工作区默认",
         "modelInherit": "留空沿用 {model}",
-        "foot": "需求澄清和实现是工作流的骨架，不能取消；名称默认带工作区名前缀，生成后仍可在 Agent 页修改。",
+        "foot": "这四个都会创建，名称已锁定，生成后不能在 Agent 页删除或重命名。",
         "toastFixNames": "请先修正 Agent 名称",
         "nameIssues": {
           "required": "请填写名称",
@@ -582,7 +583,7 @@
       "stepOf": "第 {n} 步，共 {total} 步",
       "railDesc": {
         "prefs": "语言、主题与预览能力",
-        "model": "API Key 或编码工具账号",
+        "model": "API Key 或编码工具",
         "key": "填写模型与密钥",
         "git": "提交署名、仓库与凭据",
         "team": "确认要创建的 Agent",
@@ -620,7 +621,10 @@
         "namePlaceholder": "例如 需求对齐工作流",
         "create": "创建",
         "creating": "正在创建…",
-        "created": "已创建工作流「{name}」"
+        "created": "已创建工作流「{name}」",
+        "agentsRequiredTitle": "还不能新建工作流",
+        "agentsRequired": "新建工作流需要这四个 Agent。当前还缺少：{missing}。请先完成开箱指引。",
+        "goOnboarding": "去完成指引"
       },
       "tabRequirementDrafts": "需求草稿",
       "requirementDrafts": {
@@ -1173,7 +1177,7 @@
       "varsEmptyTitle": "暂无工作流变量",
       "varsEmptyDesc": "添加一行后，即可配置工作区级默认值。",
       "sharedAgent": {
-        "extendHint": "本工作区 Run 与 Agent Studio「对话测试」会先 extend 此共享配置，再由所选 Agent 同名覆盖（Agent 优先）。",
+        "extendHint": "本工作区 Run 与 Agent Studio「对话测试」会先使用共享文件、MCP 和环境变量，再由 Agent 同名覆盖。模型与 Git 授权由 Agent 的继承开关分别决定。",
         "discard": "放弃修改",
         "genericCredentialTitle": "工作区默认授权",
         "genericCredentialHint": "单个 Agent 已选择时用自己的；没选且种类相同则用这里。",
@@ -1181,21 +1185,34 @@
         "modelHint": "工作区默认模型。使用同一 CLI、且未单独选模型的 Agent 会用这里的选择。"
       },
       "credentials": {
+        "stepKind": "选择类型",
+        "stepDetails": "填写信息",
+        "description": "集中管理编码工具、模型服务和代码仓库的授权，密钥仅显示掩码。",
+        "noValue": "尚未添加凭据",
+        "sections": {
+          "coding": "Agent CLI",
+          "api": "API 账号",
+          "git": "代码仓库",
+          "ssh": "SSH 访问",
+          "other": "其他凭据"
+        },
         "eyebrow": "安全凭据中心",
         "title": "工作区凭据",
         "modelApiKeySubtitle": "在这里新增、更换或清除。不会标成某个 Agent 的当前使用，密钥只显示掩码。",
         "empty": "该工作区暂未提供可管理的凭据。",
+        "add": "新增",
+        "addModel": "添加模型",
         "create": "新增凭据",
         "createTitle": "新增工作区凭据",
         "alias": "别名",
-        "aliasPlaceholder": "工作号",
+        "aliasPlaceholder": "例如：团队共享",
+        "invalidHost": "请填写主机或 HTTP(S) 地址，不含路径。",
         "aliasRequired": "请填写别名",
-        "aliasTaken": "这一类里已经有别名「{alias}」。请换一个，例如工作号。",
+        "aliasTaken": "这一类里已经有别名「{alias}」，请使用其他名称。",
         "next": "下一步",
         "back": "上一步",
         "showSecret": "显示",
         "hideSecret": "隐藏",
-        "stepKindHint": "先选择种类。下一步再填写别名和密钥。",
         "secretApiKey": "API Key",
         "secretLoginFile": "登录文件",
         "secretPrivateKey": "私钥",
@@ -1216,7 +1233,8 @@
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH 私钥",
-          "ssh_hosts": "SSH 已知主机"
+          "ssh_hosts": "SSH 已知主机",
+          "deepseek_harness": "DeepSeek Harness"
         },
         "summary": {
           "total": "凭据槽位",
@@ -1245,6 +1263,9 @@
         "clear": "清除",
         "saved": "凭据已保存",
         "cleared": "凭据已清除",
+        "accountDeleteConfirm": "删除 API 账号「{alias}」后，使用此 API 账号的模型配置会失效，绑定这些配置的 Agent 将无法运行。确认删除？",
+        "accountDeleted": "API 账号已删除",
+        "accountDeleteFailed": "删除 API 账号失败",
         "managedByAdapter": "由 {source} 专用设置管理，此处仅用于工作区范围查看。",
         "updatedAt": "最近更新：{time}"
       },
@@ -1374,7 +1395,7 @@
         "tabConfig": "配置",
         "tabHelp": "帮助",
         "nodeName": "节点名称",
-        "noAgents": "暂无 Agent,请先在「Agent 管理」创建",
+        "noAgents": "暂无 Agent，请先在智能体页创建",
         "emptyAgent": "（空 · 不指定 Agent）",
         "agentProfileHint": "可选择工作区中的任意 Agent，也可留空。",
         "staleBannerTitle": "stale 引用",
@@ -1856,7 +1877,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "侧栏与首页打字机共用，最多 40 个字符；留空回退 Grasp。",
         "homeSubtitle": "首页副标题",
-        "homeSubtitlePlaceholder": "先说清，再动手",
+        "homeSubtitlePlaceholder": "我们应该做些什么？",
         "homeSubtitleHint": "最多 80 个字符；留空回退当前语言包默认句。"
       },
       "groups": {
@@ -2063,6 +2084,10 @@
       }
     },
     "agentStudio": {
+      "toolPicker": {
+        "title": "编码工具",
+        "site": "服务站点"
+      },
       "title": "智能体",
       "errorPrefix": "出错:",
       "empty": "暂无 Agent。可「创建 Agent 团队」一键拉起工作区与工作流角色，或「新建 Agent」创建单个。",
@@ -2076,7 +2101,7 @@
       "unsaved": "未保存",
       "saved": "已保存",
       "tabs": {
-        "files": "Agent 工作目录 ({n})",
+        "files": "工作目录 ({n})",
         "mcp": "MCP ({n})",
         "env": "环境变量 ({n})",
         "test": "对话测试",
@@ -2108,8 +2133,11 @@
         "manageNoMatchDesc": "请尝试其他名称关键词。",
         "manageClearSearch": "清空搜索",
         "renameViaManage": "重命名（前往管理）",
-        "noSelection": "未选中 Agent。从左侧树选择，或打开 Agent 管理。",
-        "metaRenameHint": "名称请在 Agent 管理中重命名。此处不可编辑身份名称。"
+        "lockedHint": "工作流需要此 Agent，不能删除或重命名。",
+        "contextRename": "重命名",
+        "contextDelete": "删除",
+        "noSelection": "未选中 Agent。从左侧列表选择。",
+        "metaRenameHint": "名称请在左侧列表右键重命名。此处不可编辑身份名称。"
       },
       "explorer": {
         "title": "资源管理器",
@@ -2294,6 +2322,7 @@
         "repoUrlHint": "在工作流全局变量中配置 repos（每个仓 clone 到 /root/workspace/<name>/）；沙箱 startup.sh 据此 clone 并选择凭据方案",
         "recommendedEnv": "推荐环境变量",
         "applyRecommended": "添加推荐变量",
+        "applyRecommendedDone": "已添加推荐变量",
         "newBadge": "新",
         "statusOk": "配置形态完整",
         "statusErr": "凭据配置形态不完整",
@@ -2403,7 +2432,7 @@
         "credentialCurrent": "当前使用",
         "credentialEmpty": "还没有模型厂商 API Key",
         "credentialName": "别名",
-        "credentialNamePlaceholder": "工作号",
+        "credentialNamePlaceholder": "例如：团队共享",
         "credentialNameRequired": "请填写别名",
         "credentialKey": "API Key",
         "credentialKeyRequired": "请填写 API Key",
@@ -2639,8 +2668,8 @@
         },
         "steps": {
           "basics": "基础信息",
-          "acp": "Agent",
-          "apiKey": "API Key",
+          "acp": "工具与模型",
+          "apiKey": "模型",
           "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
@@ -2663,13 +2692,17 @@
           "templateHintPack": "将套用 {name}。"
         },
         "acp": {
-          "meta": "先选启动方式：用模型厂商的 API Key，或用编码 CLI 的厂商账号。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
+          "meta": "先选启动方式：用模型厂商的 API Key，或用编码工具。CodeBuddy 与 Trae 还需选择国内站或国际站，默认国际站。",
           "remapTitle": "确认更换 Backend？",
           "remapBody": "已配置的 MCP / Skills / Commands / Rules 可能依赖当前路径。更换 Backend 将按新的 configRoot 重映射；取消则保持原 Backend。"
         },
         "apiKey": {
           "meta": "Token 类鉴权请写到「共享Agent配置」；本步可跳过，创建时不会把 API Key 写入单个 Agent。",
+          "metaPick": "当前 Backend 已经有授权时，直接选择这条凭据。本步可跳过，创建时不会把 API Key 写入单个 Agent 的环境变量。",
           "modeGroup": "鉴权方式",
+          "modeSaved": "选择已有授权",
+          "modeSavedHint": "使用工作区里已保存的凭据，不把密钥写入这个 Agent",
+          "emptySkip": "当前 Backend 还没有已保存的授权。请到工作区凭据保存，或直接跳过。",
           "modeApiKey": "粘贴 API Key",
           "modeApiKeyHint": "仅作参考，创建时不会写入单个 Agent；请到共享 Agent 配置保存",
           "modeCustomConfig": "自定义配置",
@@ -2685,7 +2718,8 @@
             "codebuddySite": "Key 与站点绑定；请到与 Agent 步所选站点一致的控制台申请。",
             "traeToken": "官方 CLI 登录令牌须含 trae-lt- 前缀（旗舰版）。",
             "opencode": "用模型厂商的 API Key 启动，可以指定模型和接口地址。",
-            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。"
+            "codex": "Codex 使用 ChatGPT 登录文件，不使用 API Key。用 API Key 接 OpenAI 请改用 OpenCode。运行会更新这份文件，不要和正在使用的本机登录共用同一份。",
+            "deepseek": "使用 DeepSeek 平台的 API Key。密钥保存在工作区凭据中，模型单独选择。"
           },
           "paths": {
             "cursor": {
@@ -2718,6 +2752,11 @@
               "step2": "复制 ~/.codex/auth.json 的全部内容",
               "step3": "如果登录只在系统钥匙串里，先改成文件存储并重新登录，再复制该文件",
               "step4": "把文件内容粘贴到下方"
+            },
+            "deepseek": {
+              "step1": "打开 DeepSeek 开放平台并登录账号。",
+              "step2": "在 API Keys 页面创建一个 API Key。",
+              "step3": "复制密钥并填入下方，或保存为工作区凭据。"
             }
           },
           "links": {
@@ -2732,7 +2771,8 @@
             "codebuddyStaging": "Staging 申请 Key",
             "traeTokenDocs": "Trae CLI 登录令牌文档",
             "opencodeProviders": "支持的模型厂商",
-            "codexAuth": "Codex 登录说明"
+            "codexAuth": "Codex 登录说明",
+            "deepseekKeys": "DeepSeek API Keys"
           },
           "customConfig": {
             "cardTitle": "后端配置文件",
@@ -2750,7 +2790,9 @@
           "howTo": "如何获取"
         },
         "git": {
-          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过，之后在 Studio 再配；Token 在工作区凭据中配置。"
+          "meta": "点选 GitHub / GitLab / SSH 即可，也可跳过。已经配过的凭据可以直接选择。",
+          "emptySkip": "还没有已保存的授权。请先到工作区凭据保存，本步可以跳过。",
+          "hostsEmpty": "还没有已保存的已知主机，可以不选。"
         },
         "env": {
           "meta": "注入沙箱的环境变量。区域保留键由 Agent 步骤统一管理，密钥仅保存在 Agent 配置中。"
@@ -2788,7 +2830,12 @@
           "rulesDefault": "Rules · 将写入默认规则",
           "rulesCustom": "Rules · 已自定义",
           "skills": "Skills",
-          "commands": "Commands"
+          "commands": "Commands",
+          "modelSource_inherit": "继承当前工具的工作区模型来源",
+          "modelSource_platform": "工具平台授权",
+          "defaultModel": "工具默认模型",
+          "modelSource_configuration": "模型配置",
+          "modelSource_connection": "模型连接"
         }
       },
       "data": {
@@ -2934,7 +2981,57 @@
         "inspectorEdit": "在 Agent 配置中修改",
         "wizardHint": "不确定就先用自动，之后可以在 Agent 配置里改。"
       },
-      "pmScopeTag": "工作区助手"
+      "pmScopeTag": "工作区助手",
+      "repoAccess": {
+        "title": "仓库权限",
+        "desc": "选中的仓库会在沙箱启动时注入各自的访问凭据：HTTPS 按仓库路径区分 token，SSH 为每个仓库配置独立私钥，可与上面的 Git 凭据同时生效。只注入权限，不会自动克隆。",
+        "sharedDesc": "所有 Agent 默认继承这里选中的仓库权限，单个 Agent 可以在元信息里改为自定义。每个仓库按自己的访问凭据注入，只注入权限，不会自动克隆。",
+        "selected": "已选 {n} 个",
+        "manage": "管理仓库",
+        "inherit": "沿用默认配置",
+        "inheritHint": "继承「默认配置」中选中的仓库权限",
+        "inheritedEmpty": "默认配置还没有选择仓库，当前不会注入任何仓库级凭据。",
+        "loadFailed": "仓库列表加载失败",
+        "retry": "重试",
+        "empty": "还没有登记仓库",
+        "emptyHint": "在「仓库」设置里添加仓库并选择访问凭据后，就可以在这里勾选。",
+        "add": "添加仓库",
+        "search": "搜索仓库名称或地址",
+        "selectAll": "全选可用",
+        "clear": "清空",
+        "deleted": "仓库已被删除",
+        "remove": "移除",
+        "noCredential": "未配置访问凭据",
+        "mismatch": "地址与访问方式不匹配",
+        "noCredentialHint": "先在仓库设置里为它选择与地址匹配的访问凭据",
+        "noMatch": "没有匹配的仓库",
+        "access": {
+          "github_https": "GitHub HTTPS",
+          "gitlab_https": "GitLab HTTPS",
+          "ssh": "SSH"
+        }
+      },
+      "gitCredentials": {
+        "title": "Git 授权",
+        "add": "添加 Git 授权",
+        "empty": "尚未添加 Git 授权",
+        "noneAvailable": "没有可添加的 Git 授权",
+        "remove": "移除",
+        "options": "配置范围",
+        "scope": "适用站点或仓库",
+        "scopePlaceholder": "例如：git.example.com 或仓库 URL",
+        "scopeHint": "留空使用服务商默认站点。仓库地址优先于站点范围。",
+        "scopeInvalid": "请输入有效的主机或仓库地址，并与凭据的 Host、协议一致。",
+        "hosts": "SSH 主机校验",
+        "hostsNone": "不指定已保存的主机校验",
+        "unavailable": "授权不可用，请移除或在凭据页恢复。",
+        "inherited": "使用工作区默认授权",
+        "legacy": "当前使用原有授权",
+        "manage": "管理凭据",
+        "help": "Git 配置帮助",
+        "loading": "正在加载授权…",
+        "retry": "重试"
+      }
     },
     "runLaunch": {
       "title": "启动运行 · {name}",
@@ -3161,6 +3258,7 @@
       "confirmFlowDialogDiscardDraft": "未发送的草稿将被丢弃。",
       "confirmFlowDialogDiscardBoth": "未保存的编辑和未发送的草稿将被丢弃。",
       "confirmFlowDialogConfirm": "确认流转",
+      "confirmFlowDialogDone": "已流转",
       "sandboxBusy": "沙箱中仍有未结束的 Agent 回合，确认会排在它后面。请先中止该回合再确认。",
       "abortAndConfirm": "中止当前回合并确认",
       "sandboxOrphanBanner": "沙箱中还有一个平台不再跟踪的回合{op}，沙箱还没结束。",
@@ -3219,7 +3317,9 @@
       "workflowTab": "工作流产物",
       "workflowHeading": "工作流",
       "currentMark": "当前",
+      "progressCount": "{done} / {total} 已完成",
       "closeTab": "关闭",
+      "newTab": "新页签",
       "novncTab": "noVNC",
       "novncCardTitle": "远程桌面",
       "novncCardMeta": "沙箱浏览器 · 可取点标注",
@@ -4158,6 +4258,7 @@
       "resizeSash": "拖拽调整宽度",
       "edit": "编辑",
       "preview": "预览",
+      "split": "分栏",
       "live": "实时",
       "collapsePreview": "折叠预览",
       "expandPreview": "展开预览"
@@ -4312,6 +4413,17 @@
     },
     "workspaceDefaults": {
       "title": "工作流默认配置",
+      "sharedSandbox": "共享沙箱",
+      "sharedSandboxHint": "开启后，同次运行的节点共用沙箱和工作区。",
+      "variablesHint": "画布中的同名变量优先。",
+      "notifyTitle": "运行通知",
+      "notifyHint": "开启后单独设置，关闭则继承工作区配置。",
+      "gateTitle": "自动审批",
+      "gateHint": "开启后单独设置，关闭则继承工作区配置。",
+      "eventsLabel": "通知时机",
+      "channelsLabel": "通知渠道",
+      "noChannels": "暂无可用渠道",
+      "mcpPacks": "可用 MCP",
       "hint": "覆盖共享默认值，画布中的同名变量仍优先。设置保存后对后续执行生效。",
       "variables": "默认变量",
       "inheritVariables": "继承工作区共享变量",
@@ -4385,6 +4497,274 @@
       "server_halting": "服务正在停机，请稍后重试",
       "run_not_found": "运行不存在",
       "node_not_found": "节点不存在"
+    },
+    "solo": {
+      "title": "Solo 对话",
+      "capacity": "运行中 {n} / {max} 个沙箱",
+      "newSession": "新建会话",
+      "filterActive": "运行中",
+      "filterAll": "全部",
+      "emptyActive": "没有运行中的会话",
+      "emptyList": "还没有 Solo 会话",
+      "showAll": "查看全部会话",
+      "untitled": "未命名会话",
+      "noProject": "未绑定仓库",
+      "backToList": "返回会话列表",
+      "closeSession": "关闭",
+      "limitTitle": "Solo 沙箱已达上限",
+      "limitHint": "最多同时运行 {max} 个 Solo 沙箱。关闭一个不再使用的会话后再试。",
+      "limitFreed": "已有空位，可以重新启动了",
+      "status": {
+        "starting": "启动中",
+        "running": "运行中",
+        "closed": "已关闭",
+        "error": "异常"
+      },
+      "phase": {
+        "preparing": "等待沙箱就绪…",
+        "running": "Agent 正在处理"
+      },
+      "access": {
+        "none": "未配置凭据",
+        "github_https": "GitHub 令牌",
+        "gitlab_https": "GitLab 令牌",
+        "ssh": "SSH 密钥"
+      },
+      "modelSelect": {
+        "label": "模型",
+        "placeholder": "选择模型",
+        "search": "搜索模型",
+        "empty": "当前 Agent 还没有可用模型",
+        "noMatch": "没有匹配的模型",
+        "unavailable": "不可用",
+        "reset": "所选模型已不在配置中，已改回主模型"
+      },
+      "agentSelect": {
+        "placeholder": "选择 Agent",
+        "search": "搜索 Agent 或 CLI",
+        "empty": "没有匹配的 Agent",
+        "noAgents": "还没有 Agent，先去智能体页创建一个",
+        "manage": "管理 Agent"
+      },
+      "projectSelect": {
+        "none": "不绑定仓库",
+        "noneHint": "空白工作区，不克隆仓库",
+        "group": "仓库",
+        "search": "搜索仓库",
+        "empty": "没有匹配的仓库",
+        "create": "添加仓库",
+        "manage": "管理仓库"
+      },
+      "create": {
+        "title": "新建 Solo 会话",
+        "agent": "Agent",
+        "project": "仓库",
+        "branch": "分支",
+        "branchPlaceholder": "默认分支",
+        "titleLabel": "标题（可选）",
+        "titlePlaceholder": "留空则用第一条消息作为标题",
+        "firstMessage": "第一条消息（可选）",
+        "firstMessagePlaceholder": "告诉 Agent 先做什么；留空则只启动沙箱",
+        "residentHint": "沙箱会一直运行，直到你手动关闭。首条消息会在沙箱就绪后自动执行。",
+        "submit": "启动"
+      },
+      "home": {
+        "modeLabel": "首页模式",
+        "modeWorkflow": "工作流",
+        "modeSolo": "Solo",
+        "placeholders": [
+          "直接和 Agent 对话，比如：帮我看看登录接口为什么偶发 500",
+          "让 Agent 在仓库里改个 bug 并推一个分支",
+          "问问 Agent 这个仓库的模块是怎么组织的"
+        ],
+        "start": "开始 Solo 对话",
+        "noAgent": "请先选择一个 Agent",
+        "recent": "进行中的 Solo",
+        "viewAll": "全部会话",
+        "projects": "仓库",
+        "projectsEmpty": "把常用的 Git 仓库添加进来，下次启动时直接选择。"
+      },
+      "header": {
+        "rename": "重命名",
+        "console": "终端",
+        "vscode": "VS Code",
+        "env": "环境",
+        "more": "更多",
+        "close": "关闭",
+        "restart": "重新启动",
+        "delete": "删除会话",
+        "editProject": "编辑仓库配置"
+      },
+      "link": {
+        "reconnecting": "连接已断开，正在重连…"
+      },
+      "startup": {
+        "title": "正在准备沙箱",
+        "pulling": "拉取镜像",
+        "creating": "创建容器",
+        "clone": "克隆仓库 {repo}",
+        "agent": "启动 {agent}",
+        "hint": "首次拉取镜像可能需要几分钟。你可以先发消息，沙箱就绪后会自动执行。"
+      },
+      "errorCard": {
+        "title": "沙箱不可用",
+        "unknown": "沙箱启动失败或已被销毁。",
+        "retry": "重新启动",
+        "logs": "查看沙箱",
+        "edit": "修改仓库配置",
+        "editRepo": "修改 {name}"
+      },
+      "chat": {
+        "placeholder": "给 {agent} 发消息，Enter 发送，Shift+Enter 换行",
+        "send": "发送",
+        "stop": "停止",
+        "attach": "添加附件",
+        "queue": "排队中 {n} 条",
+        "removeQueued": "移出队列",
+        "turnFailed": "本轮执行失败",
+        "stopped": "已停止",
+        "generating": "正在生成…",
+        "waitingSandbox": "沙箱就绪后开始执行",
+        "empty": "{agent} 已就绪，开始对话吧",
+        "reposFrozen": "这些仓库在启动时已经固定，这次会话里不能增删。",
+        "imagesOnly": "（附件）",
+        "plan": "计划"
+      },
+      "closedBar": {
+        "text": "会话已关闭，沙箱已释放。重新启动会创建新沙箱并重新克隆仓库，之前的对话会作为上下文发给 Agent。",
+        "restart": "重新启动"
+      },
+      "close": {
+        "title": "关闭 Solo 会话",
+        "body": "关闭后沙箱会被销毁，沙箱里未提交或未推送的改动将丢失。",
+        "busy": "Agent 正在执行，关闭会中断当前任务。",
+        "pushFirst": "先让 Agent 提交并推送",
+        "pushFirstHint": "发一条消息让 Agent 把改动推到远端，完成后再关闭",
+        "pushPrompt": "请提交当前所有改动并推送到远端分支，完成后告诉我分支名和提交摘要。",
+        "confirm": "关闭并释放沙箱"
+      },
+      "delete": {
+        "title": "删除会话",
+        "body": "会删除这个会话和全部消息记录，此操作不可撤销。",
+        "bodyActive": "会先关闭沙箱，再删除这个会话和全部消息记录，此操作不可撤销。",
+        "confirm": "删除"
+      },
+      "env": {
+        "title": "会话环境",
+        "agent": "Agent",
+        "backend": "CLI",
+        "model": "模型",
+        "repo": "仓库",
+        "branch": "分支",
+        "access": "访问方式",
+        "remoteDefault": "远端默认分支",
+        "dir": "目录名",
+        "snapshotHint": "这些仓库配置在启动时已经固定，这次会话不能增删仓库。重新启动仍使用这份快照；之后修改仓库登记不会写回这次会话，要用新登记请新开一次会话。",
+        "vars": "环境变量",
+        "hint": "只显示变量名和来源，不显示值。",
+        "all": "全部",
+        "empty": "沙箱启动后可查看",
+        "source": {
+          "platform": "平台",
+          "agent": "Agent",
+          "project": "仓库",
+          "credential": "凭据",
+          "system": "系统"
+        }
+      },
+      "errors": {
+        "solo_limit": "Solo 沙箱已达上限，请先关闭一个会话",
+        "session_closed": "会话已关闭，请先重新启动",
+        "session_error": "沙箱不可用，请重新启动会话",
+        "content_required": "消息不能为空",
+        "agent_not_found": "Agent 不存在",
+        "model_not_in_configuration": "所选模型不在该 Agent 的模型配置中",
+        "model_unavailable": "所选模型已不可用",
+        "project_not_found": "仓库不存在",
+        "name_required": "请填写仓库名称",
+        "name_too_long": "仓库名称最长 80 个字",
+        "name_taken": "已有同名仓库",
+        "repo_url_invalid": "仓库地址格式不正确",
+        "branch_invalid": "分支名不能包含空格、{'|'} 或 ,",
+        "branch_invalid_repo": "分支名不能包含空格、{'|'} 或 ,（{repo}）",
+        "repo_dir_conflict": "目录名 {dir} 被仓库 {repos} 同时使用，请到仓库配置里修改目录名。",
+        "env_key_conflict": "变量 {key} 在仓库 {repos} 中冲突，请修改后再启动。",
+        "repo_dir_invalid": "目录名只能包含字母、数字、点、下划线和连字符",
+        "git_type_invalid": "不支持的访问方式",
+        "env_key_invalid": "变量名格式不正确",
+        "env_key_reserved": "包含平台保留的变量名",
+        "env_key_sensitive": "包含敏感变量，请改用凭据绑定",
+        "binding_key_invalid": "凭据绑定的变量名不可用"
+      }
+    },
+    "projects": {
+      "title": "仓库",
+      "subtitle": "为 Solo 会话登记 Git 仓库。启动会话时自动克隆，并按配置注入访问凭据和环境变量。",
+      "new": "添加仓库",
+      "edit": "编辑仓库",
+      "search": "搜索仓库",
+      "empty": "还没有仓库",
+      "emptyHint": "添加一个 Git 仓库，之后在首页或 Solo 页选择它即可启动带仓库的会话。",
+      "envCount": "{n} 个变量",
+      "bindingCount": "{n} 个凭据绑定",
+      "lastUsed": "{time}使用",
+      "neverUsed": "从未使用",
+      "start": "开始 Solo",
+      "delete": {
+        "title": "删除仓库",
+        "body": "确定删除仓库「{name}」？已启动的会话不受影响，它们保存了启动时的仓库配置。",
+        "active": "仍有 {n} 个运行中的会话使用此仓库。"
+      },
+      "form": {
+        "sectionBasic": "基本信息",
+        "name": "名称",
+        "namePlaceholder": "例如 grasp-web",
+        "description": "描述",
+        "descriptionPlaceholder": "可选，说明这个仓库是做什么的",
+        "sectionRepo": "仓库",
+        "repoUrl": "仓库地址",
+        "repoUrlPlaceholder": "https://github.com/acme/app.git 或 git{'@'}github.com:acme/app.git",
+        "repoUrlRequired": "请填写仓库地址",
+        "repoUrlInvalid": "支持 https://、ssh:// 或 git{'@'}host:path 格式",
+        "defaultBranch": "默认分支",
+        "defaultBranchPlaceholder": "留空使用远端默认分支",
+        "repoDir": "目录名",
+        "repoDirPlaceholder": "默认取仓库名",
+        "repoDirHint": "仓库会克隆到沙箱的 /root/workspace/{dir}",
+        "sectionAccess": "访问方式",
+        "accessHint": {
+          "none": "不给这个仓库注入访问凭据。公开仓库可留空；私有仓库请在这里单独选择。",
+          "github_https": "通过 HTTPS 使用 GitHub 个人令牌",
+          "gitlab_https": "通过 HTTPS 使用 GitLab 访问令牌",
+          "ssh": "使用 SSH 私钥，可附带 known_hosts"
+        },
+        "mismatch": {
+          "https": "仓库地址是 SSH 格式，但访问方式是 HTTPS 令牌，克隆可能失败。",
+          "ssh": "仓库地址是 HTTPS 格式，但访问方式是 SSH 密钥，克隆可能失败。"
+        },
+        "credential": "凭据",
+        "credentialPlaceholder": "选择凭据",
+        "hosts": "SSH known_hosts",
+        "hostsNone": "不使用（跳过主机校验）",
+        "noCredential": "还没有对应类型的凭据。",
+        "manageCredentials": "去凭据页添加",
+        "sectionEnv": "环境变量",
+        "envHint": "注入到沙箱的非敏感变量，会覆盖 Agent 的同名变量。令牌、密码等请改用下方的凭据绑定。",
+        "envKey": "变量名",
+        "envValue": "值",
+        "addEnv": "添加变量",
+        "keyProblem": {
+          "invalid": "只能包含字母、数字和下划线，且不能以数字开头",
+          "reserved": "由平台注入，不能在这里配置",
+          "sensitive": "看起来是敏感值，请改用凭据绑定"
+        },
+        "sectionBindings": "凭据绑定",
+        "bindingsHint": "把工作区凭据按变量名注入沙箱，值不会出现在页面或日志里。",
+        "bindingKey": "变量名",
+        "bindingCred": "选择凭据",
+        "addBinding": "添加绑定",
+        "save": "保存"
+      }
     }
   }
 }

@@ -158,6 +158,25 @@ describe('AgentNode', () => {
     expect(waiting.find('[data-testid="canvas-node-issues"]').exists()).toBe(false)
   })
 
+  it('badges running, waiting, done and failed, and skips pending, skipped and cancelled', () => {
+    const ctx = makeCtx('run')
+    const badge = (status: string) => {
+      const w = mountWith(AgentNode, { id: status, data: nodeData({ mode: 'run', status }) }, ctx)
+      return w.find('[data-testid="canvas-node-badge"]')
+    }
+    expect(badge('running').get('icon-stub').attributes('name')).toBe('breath-dot')
+    expect(badge('running').classes()).toContain('is-info')
+    expect(badge('running').get('icon-stub').attributes('busy')).toBe('true')
+    expect(badge('waiting_human').get('icon-stub').attributes('name')).toBe('bubble-idle')
+    expect(badge('waiting_human').classes()).toContain('is-neutral')
+    expect(badge('waiting_human').get('icon-stub').attributes('busy')).toBe('false')
+    expect(badge('completed').get('icon-stub').attributes('name')).toBe('check-draw')
+    expect(badge('failed').get('icon-stub').attributes('name')).toBe('warn-pulse')
+    for (const status of ['pending', 'skipped', 'cancelled']) {
+      expect(badge(status).exists()).toBe(false)
+    }
+  })
+
   it('marks ports valid / invalid while connecting with the reason', () => {
     const w = mountWith(AgentNode, { id: 'n1', data: nodeData({ connect: { valid: false, reason: '输入节点只能有一个' } }) })
     const port = w.find('[data-testid="canvas-port-in"]')

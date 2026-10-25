@@ -37,6 +37,9 @@ import { useRunDetailLiveLog } from '@/lib/run/useRunDetailLiveLog'
 import { useRunDetailWs } from '@/lib/run/useRunDetailWs'
 import { useRunDetailSelection } from '@/lib/run/useRunDetailSelection'
 import { playConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
+import { armSidebarHandoff, clearSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
+import { notifyRecentActivity } from '@/lib/run/recentRuns'
 import type { AcpEvent, NodeRun, NodeRunStatus, Run, Workflow } from '@/lib/shared/types'
 import { isClearlyInvalidRunRouteId } from '@/lib/pm/pmCitationShape'
 import type { RunPriority } from '@/components/ui/PrioritySegmented.vue'
@@ -597,10 +600,22 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   const positive = action === 'pass' || action === 'approve'
   // Click intent: play overlay before resume returns (plan g1.1).
   if (positive) void playConfirmFlowCeremony(gateApprovalRef.value)
+  // The click does not know the next mode. Arm before the request so a poll
+  // that arrives while it is in flight can still fly; clear if it fails.
+  const handoffRunId = runId.value
+  const handoffNodeId = run.value.gate.nodeId
+  if (positive && handoffRunId && handoffNodeId) {
+    const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
+    const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+    armSidebarHandoff(handoffRunId, handoffNodeId, Date.now(), sidebarAutoTarget(nodes, edges, handoffNodeId, action))
+  }
+  let resumed = false
   try {
-    await api.resumeGate(runId.value, run.value.gate.nodeId, action, form)
+    await api.resumeGate(handoffRunId, handoffNodeId, action, form)
+    resumed = true
     toast.success(positive ? t('pages.gateApproval.approveSuccess') : t('pages.gateApproval.rejectSuccess'))
   } catch (e: any) {
+    if (positive && handoffRunId) clearSidebarHandoff(handoffRunId)
     // Surface the backend rejection (e.g. a required form field, or the run
     // having ended while paused) instead of silently swallowing it and leaving
     // the gate showing an optimistic "已提交".
@@ -608,6 +623,7 @@ async function onGateResolve(action: string, form: Record<string, any> = {}) {
   } finally {
     gateSubmitting.value = false
   }
+  if (resumed && positive && handoffRunId) notifyRecentActivity()
   await loadRun(false)
 }
 async function onClarifySend(
@@ -636,6 +652,13 @@ async function onClarifySend(
   // 确认并流转: progress is the inline hand-off row in ClarifyChat (no overlay).
   const clientMessageId = beginClarifySend(runId.value, nodeId, { text, images, annotations: anns }, { force, retryLast })
   if (force) clarifyForceInFlight = true
+  // Same as the inbox: arm 确认并流转 before the request, drop it if the request fails.
+  if (force && runId.value) {
+    const nodes = run.value.nodes?.length ? run.value.nodes : wf.value.nodes
+    const edges = run.value.nodes?.length ? run.value.edges : wf.value.edges
+    armSidebarHandoff(runId.value, nodeId, Date.now(), sidebarAutoTarget(nodes, edges, nodeId))
+  }
+  let sent = false
   try {
     if (retryLast) {
       await api.reactReply(runId.value, nodeId, text, images, force, anns, true)
@@ -652,7 +675,9 @@ async function onClarifySend(
         ...(clientMessageId ? [clientMessageId] : []),
       )
     }
+    sent = true
   } catch (e: any) {
+    if (force && runId.value) clearSidebarHandoff(runId.value)
     // Re-sync below so the UI reflects the real state (e.g. the dialogue has
     // already completed) instead of leaving the input enabled to re-click.
     console.warn('reactReply failed', e?.message || e)
@@ -689,6 +714,7 @@ async function onClarifySend(
   }
   // Enqueue returns before the turn finishes — avoid wiping live bubbles.
   // Force finish still needs a snapshot refresh.
+  if (force && sent && runId.value) notifyRecentActivity()
   if (force) {
     lastStagedAppPreviewPick.value = null
     await loadRun(false)

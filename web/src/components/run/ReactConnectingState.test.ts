@@ -67,7 +67,7 @@ describe('ReactConnectingState', () => {
     expect(wrapper.find('icon-stub[name="chat"]').exists()).toBe(false)
     // Status sits in the transcript column as the chat's folded tool row (spinner + checklist), not a centered loader.
     expect(wrapper.get('[data-testid="clarify-boot-loader"]').attributes('data-variant')).toBe('inline')
-    expect(wrapper.get('[data-testid="clarify-boot-head"]').find('icon-stub[name="spinner"]').exists()).toBe(true)
+    expect(wrapper.get('[data-testid="clarify-boot-head"]').find('icon-stub[name="arc-spinner"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="hard-load-layer"]').exists()).toBe(false)
     // No boot record: the checklist does not pace itself — only 启动沙箱 is in progress, no times.
     expect(wrapper.text()).toContain('正在准备工作环境…')
@@ -162,7 +162,7 @@ describe('ReactConnectingState', () => {
     const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
     expect(spinner.attributes('name')).toBe('spinner')
     expect(spinner.attributes('size')).toBe('28')
-    expect(spinner.classes()).toContain('animate-spin')
+    expect(spinner.attributes('busy')).toBe('true')
     expect(spinner.classes()).toContain('text-accent')
 
     expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
@@ -217,7 +217,7 @@ describe('ReactConnectingState', () => {
     const wrapper = mountStage('zh-CN')
     await nextTick()
     const spinner = wrapper.get('[data-testid="react-connecting-stage-spinner"]')
-    expect(spinner.classes()).not.toContain('animate-spin')
+    expect(spinner.attributes('busy')).toBe('false')
     expect(wrapper.get('[data-testid="react-connecting-stage-title"]').text()).toBe('正在准备会话')
     expect(wrapper.get('[data-testid="react-connecting-stage-hint"]').text()).toBe(
       '产物会在会话就绪后出现在这里',

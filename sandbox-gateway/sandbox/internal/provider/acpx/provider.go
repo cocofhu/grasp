@@ -8,6 +8,7 @@ import (
 	"backend/internal/acp"
 	"backend/internal/backend/common"
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 )
 
 // Spec configures a long-lived ACP provider (one process, multi-turn via
@@ -78,6 +79,9 @@ func (p *Provider) AuthEnv(env []string) []string {
 }
 
 func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
+	if models, selected, err := modelconnection.Catalog(p.Name(), os.Environ()); selected {
+		return models, err
+	}
 	if p.spec.ModelsFn == nil {
 		return nil, nil
 	}
@@ -88,8 +92,26 @@ func (p *Provider) ListModels(ctx context.Context) ([]provider.Model, error) {
 // panel as a provider.Session.
 func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.OpenOptions,
 	onEvent func(json.RawMessage), perm provider.PermissionChooser) (provider.Session, error) {
-	argv := p.spec.ArgvFn(opts.Model)
-	env := p.AuthEnv(os.Environ())
+	prepared, err := modelconnection.Prepare(p.Name(), p.AuthEnv(os.Environ()), opts.Model, p.DefaultConfigRoot())
+	if err != nil {
+		return nil, err
+	}
+	if err := prepared.ValidateOptions(p.Name(), opts); err != nil {
+		prepared.Cleanup()
+		return nil, err
+	}
+	if prepared.Connection != nil {
+		if err := modelconnection.CheckVersion(handshakeCtx, p.Name(), "claude", prepared.Env); err != nil {
+			prepared.Cleanup()
+			return nil, err
+		}
+	}
+	argv := p.spec.ArgvFn(prepared.Model)
+	if prepared.Connection != nil {
+		argv = append(argv, opts.CustomArgs...)
+		argv = append(argv, prepared.Args...)
+	}
+	env := prepared.Env
 	fsRoot := opts.FSRoot
 	if fsRoot == "" {
 		fsRoot = opts.Cwd
@@ -97,7 +119,8 @@ func (p *Provider) Open(procCtx, handshakeCtx context.Context, opts provider.Ope
 	panel, err := acp.NewPanel(procCtx, handshakeCtx, argv, env, opts.Cwd, fsRoot, opts.McpServers,
 		onEvent, acp.PermissionChooser(perm))
 	if err != nil {
+		prepared.Cleanup()
 		return nil, err
 	}
-	return Wrap(panel), nil
+	return wrapWithCleanup(panel, prepared.Cleanup), nil
 }

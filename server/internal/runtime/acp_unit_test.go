@@ -370,8 +370,8 @@ func TestLiveNodeEventsPageSnapshotFirst(t *testing.T) {
 	}
 }
 
-// profilesRoot writes a minimal agent.json so agentConfig/resolvedMCPSpecs/etc.
-// have something to read.
+// writeAgent writes a local runtime fixture so agentConfig/resolvedMCPSpecs/etc.
+// have something to read. Inheritance tests write their switches explicitly.
 func writeAgent(t *testing.T, profile, agentJSON string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -379,19 +379,35 @@ func writeAgent(t *testing.T, profile, agentJSON string) string {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, "agent.json"), []byte(agentJSON), 0o644); err != nil {
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(agentJSON), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if _, exists := cfg["modelBinding"]; !exists {
+		cfg["modelBinding"] = map[string]string{"kind": "configuration", "configurationId": "test-model"}
+	}
+	for _, key := range []string{"inheritModel", "inheritGit"} {
+		if _, exists := cfg[key]; !exists {
+			cfg[key] = false
+		}
+	}
+	encoded, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "agent.json"), encoded, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root
 }
 
 func TestAgentConfigAndMCP(t *testing.T) {
-	root := writeAgent(t, "dev", `{"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
+	root := writeAgent(t, "dev", `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"},"mcp":[{"name":"artifact-store","url":"${GRASP_ARTIFACT_URL}","headers":{"Authorization":"Bearer ${GRASP_ARTIFACT_TOKEN}"}}],"env":{"GITLAB_TOKEN":"agent-tok"}}`)
 	host := mcp.NewHost(newMemStore())
 	p := newACPProvider(host, Options{
 		ProfilesRoot: root, MCPEndpoint: "http://host.docker.internal:9099",
-		Credentials: func() map[string]string {
-			return map[string]string{"GITLAB_TOKEN": "cred-tok", "GRASP_CURSOR_API_KEY": "test-key"}
+		GitCredential: func(string) (GitCredentialValue, bool) {
+			return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "cred-tok", Host: "https://gitlab.com"}, true
 		},
 	}).(*acpProvider)
 	req := NodeReq{RunID: "run9", NodeID: "n", Token: "tkn", NodeType: "agent", Caps: testPlainCaps,
@@ -419,8 +435,8 @@ func TestAgentConfigAndMCP(t *testing.T) {
 	if err != nil {
 		t.Fatalf("spec: %v", err)
 	}
-	if sp.Env["GITLAB_URL"] != "https://gitlab.com" {
-		t.Errorf("derived GITLAB_URL = %q", sp.Env["GITLAB_URL"])
+	if sp.Env["GITLAB_URL"] != "" || len(sp.GitCredentials) != 1 || p.gitLabURL(req) != "https://gitlab.com" {
+		t.Error("Git authorization must use the selected file catalog, not global environment")
 	}
 	removeHome(sp.ConfigHome)
 }
@@ -465,7 +481,10 @@ func TestWorkspaceWorkDirSrc(t *testing.T) {
 		t.Fatalf("workDir = %q, want %q", wd, workDir)
 	}
 
-	home := p.buildConfigHome(req, nil)
+	home, err := p.buildConfigHome(req, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	defer removeHome(home)
 	if home == "" {
 		t.Fatal("buildConfigHome returned empty home")
@@ -541,7 +560,7 @@ func TestEnsurePushedAndDetectPush(t *testing.T) {
 			return []byte("abc123\n"), nil
 		case strings.Contains(body, "ls-remote"):
 			return []byte("abc123\trefs/heads/feature-x\n"), nil
-		case strings.Contains(body, "glab mr list"):
+		case strings.Contains(body, "glab") && strings.Contains(body, "mr list"):
 			return []byte(`[{"web_url":"https://gitlab.com/g/p/-/merge_requests/1"}]`), nil
 		}
 		return []byte(""), nil
@@ -549,13 +568,14 @@ func TestEnsurePushedAndDetectPush(t *testing.T) {
 	defer restore()
 
 	host := mcp.NewHost(newMemStore())
-	p := newACPProvider(host, Options{Credentials: func() map[string]string {
-		return map[string]string{"GITLAB_TOKEN": "gl-token"}
+	root := writeAgent(t, "git-agent", `{"gitBindings":{"items":[{"credentialId":"gl","scope":"https://gitlab.com"}],"preferredCredentialId":"gl"}}`)
+	p := newACPProvider(host, Options{ProfilesRoot: root, GitCredential: func(string) (GitCredentialValue, bool) {
+		return GitCredentialValue{EnvKey: "GITLAB_TOKEN", Secret: "gl-token", Host: "https://gitlab.com"}, true
 	}}).(*acpProvider)
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 
 	req := NodeReq{
-		Config: map[string]any{"create_mr": true},
+		Config: map[string]any{"create_mr": true, "agent_profile": "git-agent"},
 		Vars:   map[string]any{"repos": `[{"name":"p","url":"https://gitlab.com/g/p.git"}]`},
 	}
 	p.ensurePushed(context.Background(), sb, req) // best-effort, must not panic
@@ -579,7 +599,7 @@ func TestDetectPushNonGitLabSkipsMR(t *testing.T) {
 			return []byte("abc123\n"), nil
 		case strings.Contains(body, "ls-remote"):
 			return []byte("abc123\trefs/heads/feature-x\n"), nil
-		case strings.Contains(body, "glab mr list"):
+		case strings.Contains(body, "glab") && strings.Contains(body, "mr list"):
 			t.Error("glab should not be called for non-GitLab repo")
 		}
 		return []byte(""), nil
@@ -591,7 +611,7 @@ func TestDetectPushNonGitLabSkipsMR(t *testing.T) {
 	sb := &sandbox.Sandbox{Name: "sb", Host: "127.0.0.1", Port: 1, WorkspaceDir: "/root/workspace"}
 
 	info := p.detectPush(context.Background(), sb, NodeReq{
-		Config: map[string]any{"create_mr": true},
+		Config: map[string]any{"create_mr": true, "agent_profile": "git-agent"},
 		Vars:   map[string]any{"repos": `[{"name":"r","url":"https://github.com/o/r.git"}]`},
 	})
 	if info == nil || info.MrURL != "" {

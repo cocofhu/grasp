@@ -165,7 +165,7 @@ window.fetch = async (input: RequestInfo | URL) => {
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (url.includes('/gates')) {
+  if (url.includes('/pending-nodes')) {
     return new Response(JSON.stringify({ items: [], total: 0, page: 1, pageSize: 20, hasMore: false }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -206,7 +206,7 @@ async function bootstrap() {
       const fav = useWorkflowFavorites()
       return () =>
         h('div', { 'data-testid': 'shell-main-dashboard' }, [
-          h('p', '概览 · 快捷区从任意页面可用'),
+          h('p', '概览'),
           h(
             'button',
             {

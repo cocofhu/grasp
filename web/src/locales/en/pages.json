@@ -19,7 +19,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroSubtitle": "Clarify first, then act",
+      "heroSubtitle": "What should we do?",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -260,14 +260,13 @@
     "board": {
       "title": "Run board",
       "subtitle": "Follow active work and handle tasks waiting for human input.",
-      "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
+      "overviewRecords": "{n} execution records",
       "actionsLabel": "Board actions",
       "refresh": "Refresh",
       "allRuns": "All runs",
       "usage": "Usage",
-      "viewMoreCompleted": "View more in run list →",
       "loading": "Loading…",
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
@@ -313,8 +312,12 @@
         "emptyModelCompHint": "No model composition yet",
         "emptyModelRankHint": "No model ranking yet"
       },
-      "filters": {
-        "label": "Also show"
+      "segments": {
+        "label": "Filter by status",
+        "all": "All",
+        "running": "Running",
+        "waitingHuman": "Waiting for human",
+        "completed": "Completed"
       },
       "columns": {
         "active": "In progress",
@@ -327,15 +330,13 @@
         "completedOnly": "completed only",
         "inProgress": "In progress",
         "inReview": "Needs attention",
-        "doneRecent": "Recent 20",
-        "extraFilter": "Additional status"
+        "doneRecent": "Recent 20"
       },
       "empty": {
         "active": "No in-progress requirements",
         "running": "No running requirements",
         "waitingHuman": "No requirements waiting for human",
-        "completed": "No completed requirements yet",
-        "extra": "No runs in this status"
+        "completed": "No completed requirements yet"
       },
       "truncated": {
         "showingFirst100": "Showing the first 100 — open the run list for the full set"
@@ -404,7 +405,7 @@
         "themeLight": "Light"
       },
       "acp": {
-        "meta": "Pick how to connect: a model vendor API key, or a coding tool account. The key is stored in this workspace and shared by all Agents.",
+        "meta": "Choose a general model API or a coding tool. Keys are stored in this workspace and shared by all Agents.",
         "region": "Region",
         "paths": {
           "apiKey": {
@@ -412,8 +413,8 @@
             "desc": "You already have a key from OpenAI, Anthropic, DeepSeek or another vendor. Pick any model, or connect your own compatible service."
           },
           "cli": {
-            "title": "Use a coding tool account",
-            "desc": "Use a Cursor, Claude Code, CodeBuddy, Trae, or Codex account. Codex takes a ChatGPT login file; the others use their account keys. You can specify a model, or leave the choice to the tool."
+            "title": "Use a coding tool",
+            "desc": "Use Cursor, Claude Code, CodeBuddy, Trae, Codex, or DeepSeek Harness (DSH). DSH takes a DeepSeek API key, Codex a ChatGPT login file, and the others their account keys. You can specify a model, or leave the choice to the tool."
           }
         },
         "cliLabel": "Choose a coding tool",
@@ -478,7 +479,7 @@
         "sshSavedToCredentials": "The SSH private key and trusted hosts will be saved to the workspace credentials."
       },
       "team": {
-        "meta": "Four Agents form the default workflow; rename them or pick a model.",
+        "meta": "Four Agents form the default workflow. Their names are locked; you can still pick a model for each.",
         "loading": "Loading template capabilities…",
         "loadError": "Could not load template capabilities. You can still create the default team.",
         "retry": "Retry",
@@ -495,7 +496,7 @@
         "modelLabel": "Model",
         "modelPlaceholder": "Empty = workspace default",
         "modelInherit": "Empty = {model}",
-        "foot": "Clarify and Implement are required. You can rename any Agent later on the Agents page.",
+        "foot": "All four are created. Names are locked and cannot be deleted or renamed on the Agents page.",
         "toastFixNames": "Fix the Agent names first",
         "nameIssues": {
           "required": "Enter a name",
@@ -620,7 +621,10 @@
         "namePlaceholder": "For example, Requirement alignment",
         "create": "Create",
         "creating": "Creating…",
-        "created": "Created workflow \"{name}\""
+        "created": "Created workflow \"{name}\"",
+        "agentsRequiredTitle": "Can't create a workflow yet",
+        "agentsRequired": "A new workflow needs these four Agents. Still missing: {missing}. Finish the guide first.",
+        "goOnboarding": "Finish the guide"
       },
       "tabRequirementDrafts": "Requirement drafts",
       "requirementDrafts": {
@@ -1173,7 +1177,7 @@
       "varsEmptyTitle": "No workflow variables yet",
       "varsEmptyDesc": "Add a row to configure workspace-level defaults.",
       "sharedAgent": {
-        "extendHint": "Workspace Runs and Agent Studio Chat test extend this shared config first, then the chosen Agent overlays same-named keys (Agent wins).",
+        "extendHint": "Workspace Runs and Agent Studio Chat test overlay Agent settings on shared files, MCP and environment variables. Each Agent separately opts into model and Git defaults.",
         "discard": "Discard",
         "genericCredentialTitle": "Workspace default credential",
         "genericCredentialHint": "An Agent that already chose a credential uses its own. One that has not, and uses the same kind, uses this one.",
@@ -1181,21 +1185,34 @@
         "modelHint": "The workspace default model. Agents on the same CLI that have not picked a model use this one."
       },
       "credentials": {
+        "stepKind": "Choose type",
+        "stepDetails": "Add details",
+        "description": "Manage access to coding tools, model providers and repositories. Secret values stay masked.",
+        "noValue": "No credential added",
+        "sections": {
+          "coding": "Agent CLI",
+          "api": "API accounts",
+          "git": "Repositories",
+          "ssh": "SSH access",
+          "other": "Other credentials"
+        },
         "eyebrow": "SECURITY CREDENTIALS",
         "title": "Workspace credentials",
         "modelApiKeySubtitle": "Add, replace, or remove keys here. This list does not mark which Agent is using one, and only a mask is shown.",
         "empty": "This workspace has no managed credentials yet.",
+        "add": "Add",
+        "addModel": "Add model",
         "create": "Add credential",
         "createTitle": "Add workspace credential",
         "alias": "Alias",
-        "aliasPlaceholder": "Work account",
+        "aliasPlaceholder": "e.g. Shared team key",
+        "invalidHost": "Enter a host or HTTP(S) origin without a path.",
         "aliasRequired": "Enter an alias",
-        "aliasTaken": "This kind already has an alias “{alias}”. Use another one, for example a work account.",
+        "aliasTaken": "This kind already has an alias “{alias}”. Use a different name.",
         "next": "Next",
         "back": "Back",
         "showSecret": "Show",
         "hideSecret": "Hide",
-        "stepKindHint": "Choose a kind first. The next step asks for an alias and the secret.",
         "secretApiKey": "API Key",
         "secretLoginFile": "Login file",
         "secretPrivateKey": "Private key",
@@ -1216,7 +1233,8 @@
           "github": "GitHub",
           "gitlab": "GitLab",
           "ssh_key": "SSH private key",
-          "ssh_hosts": "SSH known hosts"
+          "ssh_hosts": "SSH known hosts",
+          "deepseek_harness": "DeepSeek Harness"
         },
         "summary": {
           "total": "Credential slots",
@@ -1245,6 +1263,9 @@
         "clear": "Clear",
         "saved": "Credential saved",
         "cleared": "Credential cleared",
+        "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
+        "accountDeleted": "API account deleted",
+        "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
@@ -1856,7 +1877,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Clarify first, then act",
+        "homeSubtitlePlaceholder": "What should we do?",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
@@ -2063,6 +2084,10 @@
       }
     },
     "agentStudio": {
+      "toolPicker": {
+        "title": "Coding tool",
+        "site": "Service region"
+      },
       "title": "Agent Studio",
       "errorPrefix": "Error:",
       "empty": "No agents yet. Use \"Create Agent team\" for a full roster, or \"New Agent\" for a single one.",
@@ -2108,8 +2133,11 @@
         "manageNoMatchDesc": "Try a different name keyword.",
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",
@@ -2294,6 +2322,7 @@
         "repoUrlHint": "Configure repos in workflow globals (each clones to /root/workspace/<name>/); sandbox startup.sh clones and picks credentials from it",
         "recommendedEnv": "Recommended env vars",
         "applyRecommended": "Add recommended vars",
+        "applyRecommendedDone": "Recommended vars added",
         "newBadge": "new",
         "statusOk": "Configuration shape complete",
         "statusErr": "Credential configuration shape incomplete",
@@ -2403,7 +2432,7 @@
         "credentialCurrent": "In use",
         "credentialEmpty": "No model provider API key yet",
         "credentialName": "Alias",
-        "credentialNamePlaceholder": "Work account",
+        "credentialNamePlaceholder": "e.g. Shared team key",
         "credentialNameRequired": "Enter an alias",
         "credentialKey": "API Key",
         "credentialKeyRequired": "Enter an API key",
@@ -2639,8 +2668,8 @@
         },
         "steps": {
           "basics": "Basics",
-          "acp": "Agent",
-          "apiKey": "API Key",
+          "acp": "Tool & model",
+          "apiKey": "Model",
           "git": "Git",
           "env": "ENV",
           "mcp": "MCP",
@@ -2663,13 +2692,17 @@
           "templateHintPack": "Will apply {name}."
         },
         "acp": {
-          "meta": "Choose how to start: a model-vendor API key, or a coding-CLI vendor account. CodeBuddy and Trae also require a China or International site; International is the default.",
+          "meta": "Choose how to start: a model-vendor API key, or a coding tool. CodeBuddy and Trae also require a China or International site; International is the default.",
           "remapTitle": "Switch Backend?",
           "remapBody": "MCP / Skills / Commands / Rules may depend on the current paths. Switching remaps to the new configRoot; cancel keeps the current Backend."
         },
         "apiKey": {
           "meta": "Put Token auth in Workspace shared Agent config; you can skip this step — create will not write API Keys into a single Agent.",
+          "metaPick": "When this Backend already has a credential, pick it here. You can skip this step. Create does not write the API key into this Agent's environment.",
           "modeGroup": "Auth method",
+          "modeSaved": "Use a saved credential",
+          "modeSavedHint": "Use a credential already saved in the workspace. The secret is not written into this Agent",
+          "emptySkip": "This Backend has no saved credential yet. Save one under workspace credentials, or skip this step.",
           "modeApiKey": "Paste API Key",
           "modeApiKeyHint": "Reference only; it is not written into a single Agent. Save it in the workspace shared Agent config",
           "modeCustomConfig": "Custom config",
@@ -2685,7 +2718,8 @@
             "codebuddySite": "Keys are bound to a site; apply in the console that matches the site chosen in the Agent step.",
             "traeToken": "Official CLI login tokens must start with trae-lt- (Enterprise plan).",
             "opencode": "Starts with a model vendor API key; you can set the model and the service address.",
-            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer."
+            "codex": "Codex uses a ChatGPT login file, not an API key. To call OpenAI with an API key, use OpenCode. A run may update this file; do not share it with a Codex login that is still in use on your computer.",
+            "deepseek": "Use a DeepSeek platform API key. It is stored in workspace credentials; choose the model separately."
           },
           "paths": {
             "cursor": {
@@ -2718,6 +2752,11 @@
               "step2": "Copy the entire contents of ~/.codex/auth.json",
               "step3": "If the login lives only in the system keychain, switch to file storage, log in again, then copy that file",
               "step4": "Paste the file contents below"
+            },
+            "deepseek": {
+              "step1": "Sign in to the DeepSeek platform.",
+              "step2": "Create an API key on the API Keys page.",
+              "step3": "Copy the key below, or save it as a workspace credential."
             }
           },
           "links": {
@@ -2732,7 +2771,8 @@
             "codebuddyStaging": "Apply key (Staging)",
             "traeTokenDocs": "Trae CLI login-token docs",
             "opencodeProviders": "Supported vendors",
-            "codexAuth": "Codex login docs"
+            "codexAuth": "Codex login docs",
+            "deepseekKeys": "DeepSeek API Keys"
           },
           "customConfig": {
             "cardTitle": "Backend config file",
@@ -2750,7 +2790,9 @@
           "howTo": "How to get it"
         },
         "git": {
-          "meta": "Pick GitHub / GitLab / SSH, or skip and configure later in Studio; tokens are configured in workspace credentials."
+          "meta": "Pick GitHub / GitLab / SSH, or skip. Credentials already saved in the workspace can be selected here.",
+          "emptySkip": "No saved credential yet. Save one under workspace credentials, or skip this step.",
+          "hostsEmpty": "No saved known hosts yet. You can leave this unset."
         },
         "env": {
           "meta": "Environment variables injected into the sandbox. Region keys are managed by the Agent step; secrets stay in the Agent config."
@@ -2788,7 +2830,12 @@
           "rulesDefault": "Rules · default will be written",
           "rulesCustom": "Rules · customized",
           "skills": "Skills",
-          "commands": "Commands"
+          "commands": "Commands",
+          "modelSource_inherit": "Inherit this tool’s workspace model source",
+          "modelSource_platform": "Tool platform authorization",
+          "defaultModel": "Tool default",
+          "modelSource_configuration": "Model configuration",
+          "modelSource_connection": "Model connection"
         }
       },
       "data": {
@@ -2934,7 +2981,57 @@
         "inspectorEdit": "Change in Agent settings",
         "wizardHint": "Not sure? Start with auto; you can change it later in Agent settings."
       },
-      "pmScopeTag": "Workspace assistant"
+      "pmScopeTag": "Workspace assistant",
+      "repoAccess": {
+        "title": "Repository access",
+        "desc": "Selected repositories get their own access credentials when a sandbox starts: HTTPS tokens are scoped by repository path and each SSH repository gets its own key, alongside the Git credential above. Only access is injected; nothing is cloned automatically.",
+        "sharedDesc": "Every Agent inherits the repositories selected here unless it customizes them in its own meta tab. Each repository is injected with its own access credential; only access is injected and nothing is cloned automatically.",
+        "selected": "{n} selected",
+        "manage": "Manage repositories",
+        "inherit": "Use workspace default",
+        "inheritHint": "Inherits the repository access selected in Agent defaults",
+        "inheritedEmpty": "Agent defaults select no repositories, so no per-repository credentials are injected.",
+        "loadFailed": "Failed to load repositories",
+        "retry": "Retry",
+        "empty": "No repositories yet",
+        "emptyHint": "Add a repository and pick its access credential in Repositories settings, then select it here.",
+        "add": "Add repository",
+        "search": "Search by name or URL",
+        "selectAll": "Select all available",
+        "clear": "Clear",
+        "deleted": "Repository was deleted",
+        "remove": "Remove",
+        "noCredential": "No access credential",
+        "mismatch": "URL does not match access method",
+        "noCredentialHint": "Pick an access credential that matches the URL in Repositories settings first",
+        "noMatch": "No matching repositories",
+        "access": {
+          "github_https": "GitHub HTTPS",
+          "gitlab_https": "GitLab HTTPS",
+          "ssh": "SSH"
+        }
+      },
+      "gitCredentials": {
+        "title": "Git access",
+        "add": "Add Git credential",
+        "empty": "No Git credentials added",
+        "noneAvailable": "No more Git credentials available",
+        "remove": "Remove",
+        "options": "Configure scope",
+        "scope": "Site or repository",
+        "scopePlaceholder": "e.g. git.example.com or a repository URL",
+        "scopeHint": "Leave empty for the provider’s default site. Repository URLs take precedence over site scopes.",
+        "scopeInvalid": "Use a valid host or repository URL that matches this credential’s host and protocol.",
+        "hosts": "SSH host verification",
+        "hostsNone": "No saved host verification",
+        "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
+        "inherited": "Using workspace defaults",
+        "legacy": "Using existing authorization",
+        "manage": "Manage credentials",
+        "help": "Git setup help",
+        "loading": "Loading credentials…",
+        "retry": "Retry"
+      }
     },
     "runLaunch": {
       "title": "Start run · {name}",
@@ -3161,6 +3258,7 @@
       "confirmFlowDialogDiscardDraft": "The unsent draft will be discarded.",
       "confirmFlowDialogDiscardBoth": "Unsaved edits and the unsent draft will be discarded.",
       "confirmFlowDialogConfirm": "Confirm continuation",
+      "confirmFlowDialogDone": "Handed off",
       "sandboxBusy": "The sandbox still has an Agent turn running. Confirm would queue behind it — abort that turn, then confirm.",
       "abortAndConfirm": "Abort current turn and confirm",
       "sandboxOrphanBanner": "The sandbox still has a turn the platform is no longer tracking{op}, and the sandbox has not finished.",
@@ -3219,7 +3317,9 @@
       "workflowTab": "Workflow artifacts",
       "workflowHeading": "Workflow",
       "currentMark": "Current",
+      "progressCount": "{done} / {total} completed",
       "closeTab": "Close",
+      "newTab": "New tab",
       "novncTab": "noVNC",
       "novncCardTitle": "Remote desktop",
       "novncCardMeta": "Sandbox browser · pick to annotate",
@@ -4158,6 +4258,7 @@
       "resizeSash": "Drag to resize",
       "edit": "Edit",
       "preview": "Preview",
+      "split": "Split",
       "live": "Live",
       "collapsePreview": "Collapse preview",
       "expandPreview": "Expand preview"
@@ -4312,6 +4413,17 @@
     },
     "workspaceDefaults": {
       "title": "Workflow defaults",
+      "sharedSandbox": "Shared sandbox",
+      "sharedSandboxHint": "Nodes in the same run share a sandbox and workspace when enabled.",
+      "variablesHint": "Variables on the canvas take precedence.",
+      "notifyTitle": "Run notifications",
+      "notifyHint": "Enable to customize; disable to inherit workspace settings.",
+      "gateTitle": "Automatic approval",
+      "gateHint": "Enable to customize; disable to inherit workspace settings.",
+      "eventsLabel": "Notify when",
+      "channelsLabel": "Notification channels",
+      "noChannels": "No channels available",
+      "mcpPacks": "Available MCPs",
       "hint": "Override shared defaults. Variables declared on the graph still take precedence. Saved settings apply to subsequent execution.",
       "variables": "Default variables",
       "inheritVariables": "Inherit workspace variables",
@@ -4385,6 +4497,274 @@
       "server_halting": "The server is shutting down. Try again later",
       "run_not_found": "Run not found",
       "node_not_found": "Node not found"
+    },
+    "solo": {
+      "title": "Solo chats",
+      "capacity": "{n} / {max} sandboxes running",
+      "newSession": "New session",
+      "filterActive": "Running",
+      "filterAll": "All",
+      "emptyActive": "No running sessions",
+      "emptyList": "No Solo sessions yet",
+      "showAll": "Show all sessions",
+      "untitled": "Untitled session",
+      "noProject": "No repository",
+      "backToList": "Back to sessions",
+      "closeSession": "Close",
+      "limitTitle": "Solo sandbox limit reached",
+      "limitHint": "Up to {max} Solo sandboxes can run at once. Close a session you no longer need and try again.",
+      "limitFreed": "A slot is free, you can start again",
+      "status": {
+        "starting": "Starting",
+        "running": "Running",
+        "closed": "Closed",
+        "error": "Error"
+      },
+      "phase": {
+        "preparing": "Waiting for the sandbox…",
+        "running": "Agent is working"
+      },
+      "access": {
+        "none": "No credential",
+        "github_https": "GitHub token",
+        "gitlab_https": "GitLab token",
+        "ssh": "SSH key"
+      },
+      "modelSelect": {
+        "label": "Model",
+        "placeholder": "Choose a model",
+        "search": "Search models",
+        "empty": "This Agent has no available model",
+        "noMatch": "No matching model",
+        "unavailable": "Unavailable",
+        "reset": "That model is no longer in the configuration. The primary model is selected again."
+      },
+      "agentSelect": {
+        "placeholder": "Choose Agent",
+        "search": "Search Agent or CLI",
+        "empty": "No matching Agent",
+        "noAgents": "No Agents yet. Create one in Agent Studio first.",
+        "manage": "Manage Agents"
+      },
+      "projectSelect": {
+        "none": "No repository",
+        "noneHint": "Empty workspace, nothing cloned",
+        "group": "Repositories",
+        "search": "Search repositories",
+        "empty": "No matching repository",
+        "create": "Add repository",
+        "manage": "Manage repositories"
+      },
+      "create": {
+        "title": "New Solo session",
+        "agent": "Agent",
+        "project": "Repository",
+        "branch": "Branch",
+        "branchPlaceholder": "Default branch",
+        "titleLabel": "Title (optional)",
+        "titlePlaceholder": "Defaults to the first message",
+        "firstMessage": "First message (optional)",
+        "firstMessagePlaceholder": "Tell the Agent what to do first, or leave empty to only start the sandbox",
+        "residentHint": "The sandbox keeps running until you close it. The first message runs once the sandbox is ready.",
+        "submit": "Start"
+      },
+      "home": {
+        "modeLabel": "Home mode",
+        "modeWorkflow": "Workflow",
+        "modeSolo": "Solo",
+        "placeholders": [
+          "Chat with an Agent, e.g. find out why the login API sometimes returns 500",
+          "Ask the Agent to fix a bug in the repo and push a branch",
+          "Ask the Agent how this repository is organized"
+        ],
+        "start": "Start Solo chat",
+        "noAgent": "Choose an Agent first",
+        "recent": "Running Solo sessions",
+        "viewAll": "All sessions",
+        "projects": "Repositories",
+        "projectsEmpty": "Add Git repositories you use often and pick them at launch."
+      },
+      "header": {
+        "rename": "Rename",
+        "console": "Terminal",
+        "vscode": "VS Code",
+        "env": "Environment",
+        "more": "More",
+        "close": "Close",
+        "restart": "Restart",
+        "delete": "Delete session",
+        "editProject": "Edit repository"
+      },
+      "link": {
+        "reconnecting": "Connection lost, reconnecting…"
+      },
+      "startup": {
+        "title": "Preparing the sandbox",
+        "pulling": "Pulling image",
+        "creating": "Creating container",
+        "clone": "Cloning {repo}",
+        "agent": "Starting {agent}",
+        "hint": "The first image pull can take a few minutes. You can send a message now; it runs once the sandbox is ready."
+      },
+      "errorCard": {
+        "title": "Sandbox unavailable",
+        "unknown": "The sandbox failed to start or was destroyed.",
+        "retry": "Restart",
+        "logs": "Open sandbox",
+        "edit": "Edit repository",
+        "editRepo": "Edit {name}"
+      },
+      "chat": {
+        "placeholder": "Message {agent}. Enter to send, Shift+Enter for a new line",
+        "send": "Send",
+        "stop": "Stop",
+        "attach": "Attach files",
+        "queue": "{n} queued",
+        "removeQueued": "Remove from queue",
+        "turnFailed": "This turn failed",
+        "stopped": "Stopped",
+        "generating": "Generating…",
+        "waitingSandbox": "Runs once the sandbox is ready",
+        "empty": "{agent} is ready. Start chatting.",
+        "reposFrozen": "These repositories were frozen at launch and cannot be added or removed in this session.",
+        "imagesOnly": "(attachments)",
+        "plan": "Plan"
+      },
+      "closedBar": {
+        "text": "Session closed and sandbox released. Restarting creates a new sandbox and clones the repository again; earlier messages are sent to the Agent as context.",
+        "restart": "Restart"
+      },
+      "close": {
+        "title": "Close Solo session",
+        "body": "Closing destroys the sandbox. Uncommitted or unpushed changes in it are lost.",
+        "busy": "The Agent is working; closing interrupts the current task.",
+        "pushFirst": "Have the Agent commit and push first",
+        "pushFirstHint": "Sends a message asking the Agent to push its changes; close afterwards",
+        "pushPrompt": "Please commit all current changes and push them to a remote branch, then tell me the branch name and a summary of the commits.",
+        "confirm": "Close and release sandbox"
+      },
+      "delete": {
+        "title": "Delete session",
+        "body": "This deletes the session and all its messages. It cannot be undone.",
+        "bodyActive": "This closes the sandbox, then deletes the session and all its messages. It cannot be undone.",
+        "confirm": "Delete"
+      },
+      "env": {
+        "title": "Session environment",
+        "agent": "Agent",
+        "backend": "CLI",
+        "model": "Model",
+        "repo": "Repository",
+        "branch": "Branch",
+        "access": "Access",
+        "remoteDefault": "Remote default branch",
+        "dir": "Directory",
+        "snapshotHint": "These repository settings were frozen at launch and cannot be added or removed in this session. Restarting still uses this snapshot. Later changes to repository settings are not applied here; start a new session to use them.",
+        "vars": "Environment variables",
+        "hint": "Only names and origins are shown, never values.",
+        "all": "All",
+        "empty": "Available once the sandbox starts",
+        "source": {
+          "platform": "Platform",
+          "agent": "Agent",
+          "project": "Repository",
+          "credential": "Credential",
+          "system": "System"
+        }
+      },
+      "errors": {
+        "solo_limit": "Solo sandbox limit reached. Close a session first.",
+        "session_closed": "The session is closed. Restart it first.",
+        "session_error": "The sandbox is unavailable. Restart the session.",
+        "content_required": "The message is empty",
+        "agent_not_found": "Agent not found",
+        "model_not_in_configuration": "That model is not in this Agent's model configuration",
+        "model_unavailable": "That model is no longer available",
+        "project_not_found": "Repository not found",
+        "name_required": "Enter a repository name",
+        "name_too_long": "Repository names are at most 80 characters",
+        "name_taken": "A repository with this name already exists",
+        "repo_url_invalid": "Invalid repository URL",
+        "branch_invalid": "Branch names cannot contain spaces, {'|'} or ,",
+        "branch_invalid_repo": "Branch names cannot contain spaces, {'|'} or , ({repo})",
+        "repo_dir_conflict": "Directory name {dir} is used by repositories {repos}. Change the directory name in repository settings.",
+        "env_key_conflict": "Variable {key} conflicts across repositories {repos}. Change it before starting.",
+        "repo_dir_invalid": "Directory names may only contain letters, digits, dots, underscores and hyphens",
+        "git_type_invalid": "Unsupported access mode",
+        "env_key_invalid": "Invalid variable name",
+        "env_key_reserved": "Contains a variable name reserved by the platform",
+        "env_key_sensitive": "Contains a sensitive variable; use a credential binding instead",
+        "binding_key_invalid": "The credential binding variable name is not allowed"
+      }
+    },
+    "projects": {
+      "title": "Repositories",
+      "subtitle": "Register Git repositories for Solo sessions. They are cloned when a session starts, with access credentials and variables injected as configured.",
+      "new": "Add repository",
+      "edit": "Edit repository",
+      "search": "Search repositories",
+      "empty": "No repositories yet",
+      "emptyHint": "Add a Git repository, then pick it on the home page or the Solo page to start a session with it.",
+      "envCount": "{n} variables",
+      "bindingCount": "{n} credential bindings",
+      "lastUsed": "Used {time}",
+      "neverUsed": "Never used",
+      "start": "Start Solo",
+      "delete": {
+        "title": "Delete repository",
+        "body": "Delete repository \"{name}\"? Running sessions are not affected; they keep the settings they started with.",
+        "active": "{n} running sessions still use this repository."
+      },
+      "form": {
+        "sectionBasic": "Basics",
+        "name": "Name",
+        "namePlaceholder": "e.g. grasp-web",
+        "description": "Description",
+        "descriptionPlaceholder": "Optional, what this repository is for",
+        "sectionRepo": "Repository",
+        "repoUrl": "Repository URL",
+        "repoUrlPlaceholder": "https://github.com/acme/app.git or git{'@'}github.com:acme/app.git",
+        "repoUrlRequired": "Enter the repository URL",
+        "repoUrlInvalid": "Use https://, ssh:// or git{'@'}host:path",
+        "defaultBranch": "Default branch",
+        "defaultBranchPlaceholder": "Empty uses the remote default",
+        "repoDir": "Directory",
+        "repoDirPlaceholder": "Defaults to the repository name",
+        "repoDirHint": "Cloned to /root/workspace/{dir} in the sandbox",
+        "sectionAccess": "Access",
+        "accessHint": {
+          "none": "Do not inject access for this repository. Leave empty for a public repo; pick a credential here for a private one.",
+          "github_https": "GitHub personal token over HTTPS",
+          "gitlab_https": "GitLab access token over HTTPS",
+          "ssh": "SSH private key, optionally with known_hosts"
+        },
+        "mismatch": {
+          "https": "The URL is an SSH address but the access mode is an HTTPS token; cloning may fail.",
+          "ssh": "The URL is an HTTPS address but the access mode is an SSH key; cloning may fail."
+        },
+        "credential": "Credential",
+        "credentialPlaceholder": "Choose a credential",
+        "hosts": "SSH known_hosts",
+        "hostsNone": "None (skip host verification)",
+        "noCredential": "No credential of this kind yet.",
+        "manageCredentials": "Add one on the Credentials page",
+        "sectionEnv": "Environment variables",
+        "envHint": "Non-sensitive variables injected into the sandbox; they override the Agent's variables of the same name. Use credential bindings below for tokens and passwords.",
+        "envKey": "Name",
+        "envValue": "Value",
+        "addEnv": "Add variable",
+        "keyProblem": {
+          "invalid": "Letters, digits and underscores only, not starting with a digit",
+          "reserved": "Set by the platform; cannot be configured here",
+          "sensitive": "Looks sensitive; use a credential binding instead"
+        },
+        "sectionBindings": "Credential bindings",
+        "bindingsHint": "Injects workspace credentials into the sandbox under a variable name. Values never appear on the page or in logs.",
+        "bindingKey": "Name",
+        "bindingCred": "Choose a credential",
+        "addBinding": "Add binding",
+        "save": "Save"
+      }
     }
   }
 }

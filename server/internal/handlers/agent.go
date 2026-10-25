@@ -1,11 +1,13 @@
 package handlers
 
 import (
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strings"
 
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 	"github.com/cocofhu/grasp/internal/services"
 	"github.com/gin-gonic/gin"
@@ -25,30 +27,38 @@ func (h *Handlers) GetAgent(c *gin.Context) {
 }
 
 type agentBody struct {
-	Name                 string                    `json:"name"`
-	CredentialBindings   map[string]*string        `json:"credentialBindings,omitempty"`
-	TemplateID           string                    `json:"templateId"`
-	AcpBackend           string                    `json:"acpBackend"`
-	GitCredentialType    string                    `json:"gitCredentialType"`
-	OpenCodeCredentialID string                    `json:"openCodeCredentialId"`
-	AiCredentialID       string                    `json:"aiCredentialId"`
-	GitCredentialID      string                    `json:"gitCredentialId"`
-	SshHostsCredentialID string                    `json:"sshHostsCredentialId"`
-	Files                []services.AgentFile      `json:"files"`
-	MCP                  []services.MCPServer      `json:"mcp"`
-	Env                  map[string]string         `json:"env"`
-	Layout               services.AgentLayout      `json:"layout"`
-	Capabilities         *models.AgentCapabilities `json:"capabilities"`
-	Reason               string                    `json:"reason,omitempty"`
+	InheritModel       bool                      `json:"inheritModel"`
+	InheritGit         bool                      `json:"inheritGit"`
+	GitBindings        *models.GitBindings       `json:"gitBindings"`
+	ModelBinding       *modelrouting.Binding     `json:"modelBinding"`
+	Name               string                    `json:"name"`
+	CredentialBindings map[string]*string        `json:"credentialBindings,omitempty"`
+	TemplateID         string                    `json:"templateId"`
+	AcpBackend         string                    `json:"acpBackend"`
+	Files              []services.AgentFile      `json:"files"`
+	MCP                []services.MCPServer      `json:"mcp"`
+	Env                map[string]string         `json:"env"`
+	Layout             services.AgentLayout      `json:"layout"`
+	Capabilities       *models.AgentCapabilities `json:"capabilities"`
+	Reason             string                    `json:"reason,omitempty"`
+}
+
+func (b *agentBody) UnmarshalJSON(data []byte) error {
+	type plain agentBody
+	next := plain{InheritModel: true, InheritGit: true}
+	if err := json.Unmarshal(data, &next); err != nil {
+		return err
+	}
+	*b = agentBody(next)
+	return nil
 }
 
 func (b agentBody) toAgent(name string) services.Agent {
 	return services.Agent{
-		Name: name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend,
-		GitCredentialType: b.GitCredentialType, OpenCodeCredentialID: strings.TrimSpace(b.OpenCodeCredentialID),
-		AiCredentialID: strings.TrimSpace(b.AiCredentialID), GitCredentialID: strings.TrimSpace(b.GitCredentialID),
-		SshHostsCredentialID: strings.TrimSpace(b.SshHostsCredentialID),
-		Files:                b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
+		InheritModel: b.InheritModel, InheritGit: b.InheritGit,
+		GitBindings: b.GitBindings,
+		Name:        name, CredentialBindings: b.CredentialBindings, AcpBackend: b.AcpBackend, ModelBinding: b.ModelBinding,
+		Files: b.Files, MCP: b.MCP, Env: b.Env, Layout: b.Layout, Capabilities: b.Capabilities,
 	}
 }
 
@@ -79,7 +89,6 @@ func (h *Handlers) CreateAgent(c *gin.Context) {
 		return
 	}
 	agent := b.toAgent(name)
-
 	templateID := strings.TrimSpace(b.TemplateID)
 	if templateID != "" {
 		if err := services.ApplyCreateTemplate(templateID, &agent); err != nil {
@@ -112,10 +121,6 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if _, err := services.ParseAcpBackend(agent.AcpBackend); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
 	reason := strings.TrimSpace(b.Reason)
 	if reason == "" {
 		reason = "Studio 保存"
@@ -130,6 +135,10 @@ func (h *Handlers) SaveAgent(c *gin.Context) {
 
 func (h *Handlers) DeleteAgent(c *gin.Context) {
 	name := c.Param("name")
+	if services.IsProtectedOnboardingAgentName(name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
+		return
+	}
 	if h.Pm != nil {
 		if err := h.Pm.PurgeAgentEverywhere(name); err != nil {
 			_ = c.Error(err)
@@ -162,9 +171,17 @@ func (h *Handlers) RenameAgent(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	if services.IsProtectedOnboardingAgentName(old) || services.IsProtectedOnboardingAgentName(b.Name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
+		return
+	}
 	name, err := services.NormalizeAndValidateAgentName(b.Name)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if services.IsProtectedOnboardingAgentName(name) {
+		c.JSON(http.StatusConflict, gin.H{"error": services.ErrProtectedOnboardingAgent.Error()})
 		return
 	}
 	if !h.Agents.Exists(old) {

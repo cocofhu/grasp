@@ -1,44 +1,22 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import AppButton from '@/components/ui/AppButton.vue'
 import AgentFilesPanel from '@/components/agent/AgentFilesPanel.vue'
 import AgentMcpPanel from '@/components/agent/AgentMcpPanel.vue'
 import AgentEnvPanel from '@/components/agent/AgentEnvPanel.vue'
+import AgentRuntimeBindings from '@/components/agent/AgentRuntimeBindings.vue'
+import EnvCredentialHelpModal from '@/components/agent/EnvCredentialHelpModal.vue'
 import { api, type SharedAgentConfig } from '@/lib/api/api'
 import {
-  DEFAULT_WORKSPACE_DIR,
-  defaultConfigRootFor,
   draftPayloadJson,
   fromDraft,
   hydrateStudioDraft,
-  kvToRec,
-  recToKV,
   type AgentStudioDraft,
 } from '@/lib/agent/agentStudioDraft'
 import {
-  ACP_BACKENDS,
-  getRegionPolicy,
   isManagedRegionKey,
-  normalizeRegions,
-  setRegion,
-  switchBackendRegions,
-  type BackendId,
 } from '@/lib/shared/regionPolicy'
-import {
-  applyOpenCodeFields,
-  openCodeCustomBaseRequired,
-  openCodeFieldsFromEnv,
-  openCodeModelRequired,
-  switchOpenCodeEnv,
-  type OpenCodeProviderId,
-} from '@/lib/agent/openCodeProvider'
-import OpenCodeProviderFields from '@/components/agent/OpenCodeProviderFields.vue'
-import OpenCodeCredentialPicker from '@/components/agent/OpenCodeCredentialPicker.vue'
-import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
-import CliRuntimeCard from '@/components/agent/CliRuntimeCard.vue'
-import { switchCliModelEnv } from '@/lib/agent/cliModelEnv'
-import { backendKind } from '@/lib/workspace/credentialKinds'
 import { agentConfigRelPath } from '@/lib/agent/backendAuthGuide'
 import { useBreakpoint } from '@/lib/composables/useBreakpoint'
 import { useToast } from '@/lib/composables/useToast'
@@ -56,8 +34,8 @@ const draft = ref<AgentStudioDraft | null>(null)
 const originalJson = ref('')
 const subTab = ref<SubTab>('files')
 const justSaved = ref(false)
+const gitHelpOpen = ref(false)
 const filesPanelRef = ref<InstanceType<typeof AgentFilesPanel> | null>(null)
-let configRootTouched = false
 
 const dirty = computed(() => {
   if (!draft.value) return false
@@ -78,45 +56,12 @@ const subTabs = computed(() => {
   ]
 })
 
-const currentRegionPolicy = computed(() =>
-  draft.value ? getRegionPolicy(draft.value.acpBackend) : null,
-)
-const showMetaRegionBlock = computed(() => !!currentRegionPolicy.value)
-const metaRegionOptions = computed(() => currentRegionPolicy.value?.options || [])
-
-const displayRegion = computed(() => {
-  if (!draft.value) return ''
-  const normalized = normalizeRegions(
-    kvToRec(draft.value.env),
-    draft.value.acpBackend,
-    'preserve-special',
-  )
-  return normalized.special ? '' : normalized.region
-})
-
-const specialRegion = computed(() => {
-  if (!draft.value) return ''
-  const normalized = normalizeRegions(
-    kvToRec(draft.value.env),
-    draft.value.acpBackend,
-    'preserve-special',
-  )
-  return normalized.special ? normalized.region : ''
-})
-
-const aiKind = computed(() => {
-  if (!draft.value) return undefined
-  const kind = backendKind(draft.value.acpBackend)
-  return kind && kind.id !== 'opencode' ? kind : undefined
-})
-
 function sharedToDraft(cfg: SharedAgentConfig): AgentStudioDraft {
   return hydrateStudioDraft({
     name: '__workspace_shared__',
-    acpBackend: cfg.acpBackend,
-    aiCredentialId: cfg.aiCredentialId || '',
-    openCodeCredentialId: cfg.openCodeCredentialId || '',
-    gitCredentialType: cfg.gitCredentialType as AgentStudioDraft['gitCredentialType'],
+    acpBackend: cfg.acpBackend || 'cursor',
+    modelBinding: cfg.modelBinding,
+    gitBindings: cfg.gitBindings,
     files: cfg.files || [],
     mcp: cfg.mcp || [],
     env: cfg.env || {},
@@ -128,7 +73,6 @@ function applyLoaded(cfg: SharedAgentConfig) {
   const d = sharedToDraft(cfg)
   draft.value = d
   originalJson.value = draftPayloadJson(d)
-  configRootTouched = false
 }
 
 async function load() {
@@ -151,10 +95,8 @@ async function save(): Promise<boolean> {
   try {
     const payload = fromDraft(draft.value)
     const saved = await api.putSharedAgentConfig({
-      acpBackend: payload.acpBackend,
-      gitCredentialType: payload.gitCredentialType || '',
-      aiCredentialId: draft.value.aiCredentialId || '',
-      openCodeCredentialId: draft.value.openCodeCredentialId || '',
+      ...(payload.modelBinding ? { acpBackend: payload.acpBackend, modelBinding: payload.modelBinding } : {}),
+      ...(payload.gitBindings?.items.length ? { gitBindings: payload.gitBindings } : {}),
       files: payload.files || [],
       mcp: payload.mcp || [],
       env: payload.env || {},
@@ -175,43 +117,6 @@ async function save(): Promise<boolean> {
 function discard() {
   if (!draft.value) return
   void load()
-}
-
-function selectAcpBackend(id: BackendId) {
-  if (!draft.value) return
-  const prev = draft.value.acpBackend
-  draft.value.acpBackend = id
-  if (!configRootTouched) {
-    draft.value.layout.configRoot = defaultConfigRootFor(id)
-  }
-  if (prev !== id) {
-    draft.value.aiCredentialId = ''
-    draft.value.env = recToKV(
-      switchCliModelEnv(switchOpenCodeEnv(switchBackendRegions(kvToRec(draft.value.env), id), id), prev, id).env,
-    )
-  }
-}
-
-function selectRegion(id: string) {
-  if (!draft.value) return
-  draft.value.env = recToKV(setRegion(kvToRec(draft.value.env), draft.value.acpBackend, id))
-}
-
-const openCodeFields = computed(() =>
-  draft.value ? openCodeFieldsFromEnv(kvToRec(draft.value.env)) : openCodeFieldsFromEnv({}),
-)
-
-function patchSharedOpenCode(fields: Parameters<typeof applyOpenCodeFields>[1]) {
-  if (!draft.value) return
-  draft.value.env = recToKV(applyOpenCodeFields(kvToRec(draft.value.env), fields))
-}
-
-const focusModelTick = ref(0)
-async function focusCliModel() {
-  subTab.value = 'meta'
-  focusModelTick.value++
-  await nextTick()
-  focusModelTick.value = 0
 }
 
 function openSettingsInFiles() {
@@ -327,7 +232,6 @@ defineExpose({ dirty, save })
         context="shared"
         @toast="toast.success($event)"
         @open-settings-file="openSettingsInFiles"
-        @edit-model="focusCliModel"
       />
 
       <div
@@ -336,124 +240,10 @@ defineExpose({ dirty, save })
         data-testid="shared-agent-meta"
       >
         <div class="max-w-3xl space-y-4">
-          <div>
-            <div class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.acpBackend') }}</div>
-            <div class="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-              <button
-                v-for="b in ACP_BACKENDS"
-                :key="b.id"
-                type="button"
-                class="flex flex-col items-center gap-2 rounded-lg border px-2 py-3 text-center transition"
-                :class="
-                  draft.acpBackend === b.id
-                    ? 'border-accent bg-accent-dim text-txt'
-                    : 'border-line bg-base text-txt2 hover:border-line-strong'
-                "
-                :data-testid="`acp-backend-${b.id}`"
-                :aria-pressed="draft.acpBackend === b.id"
-                @click="selectAcpBackend(b.id)"
-              >
-                <CredentialProviderLogo :provider="b.id" match="provider" :selected="draft.acpBackend === b.id" />
-                <div class="text-[12px] font-semibold">{{ b.label }}</div>
-              </button>
-            </div>
-          </div>
-
-          <CliRuntimeCard
-            v-if="aiKind"
-            :draft="draft"
-            :credential-title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
-            :focus-tick="focusModelTick"
-            data-testid="shared-generic-credential"
-          />
-          <div
-            v-else-if="draft.acpBackend === 'opencode'"
-            class="border-t border-dashed border-line pt-4"
-            data-testid="shared-generic-credential"
-          >
-            <OpenCodeCredentialPicker
-              mode="select"
-              :allow-add="false"
-              allow-clear
-              :selected-id="draft.openCodeCredentialId"
-              :title="t('pages.workspace.sharedAgent.genericCredentialTitle')"
-              hide-hint
-              @update:selected-id="draft.openCodeCredentialId = $event"
-            />
-          </div>
-
-          <div v-if="showMetaRegionBlock" class="border-t border-dashed border-line pt-4">
-            <div class="text-[12px] font-medium text-txt2">
-              {{ t('pages.agentStudio.meta.regionTitle') }}
-            </div>
-            <p class="mb-2 text-[11px] text-txt3">{{ t('pages.agentStudio.meta.regionDesc') }}</p>
-            <p
-              v-if="specialRegion"
-              class="rounded-md mb-2 border border-warn/35 bg-warn/10 px-2.5 py-2 font-mono text-[11px] text-warn"
-            >
-              {{ t('pages.agentStudio.region.special', { value: specialRegion }) }}
-            </p>
-            <div class="grid max-w-md grid-cols-2 gap-2" role="radiogroup">
-              <button
-                v-for="r in metaRegionOptions"
-                :key="r.id"
-                type="button"
-                class="rounded-lg border px-2 py-3 text-center transition"
-                :class="
-                  displayRegion === r.id
-                    ? 'border-accent bg-accent-dim text-txt'
-                    : 'border-line bg-base text-txt2 hover:border-line-strong'
-                "
-                role="radio"
-                :aria-checked="displayRegion === r.id"
-                @click="selectRegion(r.id)"
-              >
-                <div class="text-[12px] font-semibold">{{ t(r.labelKey) }}</div>
-                <div class="mt-0.5 font-mono text-[10px] text-txt3">{{ r.id }}</div>
-              </button>
-            </div>
-          </div>
-
-          <div v-if="draft.acpBackend === 'opencode'" class="border-t border-dashed border-line pt-4">
-            <div class="mb-2 text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.openCode.title') }}</div>
-            <p class="mb-3 text-[11px] text-txt3">{{ t('pages.agentStudio.openCode.desc') }}</p>
-            <OpenCodeProviderFields
-              :provider="openCodeFields.provider"
-              :base-url="openCodeFields.baseURL"
-              :model="openCodeFields.model"
-              :vision="openCodeFields.vision"
-              :require-base="openCodeCustomBaseRequired(openCodeFields.provider, openCodeFields.baseURL)"
-              :require-model="openCodeModelRequired(openCodeFields.model)"
-              @update:provider="patchSharedOpenCode({ provider: $event })"
-              @update:base-url="patchSharedOpenCode({ baseURL: $event })"
-              @update:model="patchSharedOpenCode({ model: $event })"
-              @update:vision="patchSharedOpenCode({ vision: $event })"
-            />
-          </div>
-
-          <label class="block">
-            <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.configRoot') }}</span>
-            <input
-              v-model="draft.layout.configRoot"
-              :placeholder="defaultConfigRootFor(draft.acpBackend)"
-              spellcheck="false"
-              data-testid="meta-config-root"
-              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-              @input="configRootTouched = true"
-            />
-          </label>
-          <label class="block">
-            <span class="text-[12px] font-medium text-txt2">{{ t('pages.agentStudio.meta.workspaceDir') }}</span>
-            <input
-              v-model="draft.layout.workspaceDir"
-              :placeholder="DEFAULT_WORKSPACE_DIR"
-              spellcheck="false"
-              data-testid="meta-workspace-dir"
-              class="rounded-md mt-1.5 w-full border border-line bg-base px-3 py-2 font-mono text-[12px] text-txt outline-none focus:border-accent"
-            />
-          </label>
+          <AgentRuntimeBindings :draft="draft" hide-manage-link @help="gitHelpOpen = true" />
         </div>
       </div>
+      <EnvCredentialHelpModal :open="gitHelpOpen" section="git" :backend="draft.acpBackend" @close="gitHelpOpen = false" />
     </template>
   </div>
 </template>

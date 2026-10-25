@@ -18,6 +18,7 @@ describe('region policy', () => {
       'trae',
       'opencode',
       'codex',
+      'deepseek_harness',
     ])
   })
 

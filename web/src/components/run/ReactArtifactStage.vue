@@ -12,7 +12,7 @@ import PublicAppPreviewPanel from '@/components/run/PublicAppPreviewPanel.vue'
 import SandboxStageSurface from '@/components/run/SandboxStageSurface.vue'
 import ResourceCardIllustration from '@/components/run/ResourceCardIllustration.vue'
 import StageWorkflow from '@/components/run/StageWorkflow.vue'
-import { api, type SandboxView } from '@/lib/api/api'
+import { api } from '@/lib/api/api'
 import { publicGateApi } from '@/lib/inbox/gateShareLink'
 import type { PublicPreviewPort } from '@/lib/inbox/gateShareLink'
 import { relTime } from '@/lib/shared/format'
@@ -87,6 +87,11 @@ const props = withDefaults(
     ports?: PublicPreviewPort[]
     publicActive?: boolean
     publicMobile?: boolean
+    /** Optional sandbox supplied by a standalone conversation (Solo). */
+    sandbox?: { id: number; hasCodeServer?: boolean } | null
+    sandboxLoading?: boolean
+    /** Log source for a standalone sandbox without a workflow node. */
+    sandboxLogId?: number
     /** Review stage of a non-clarify node: show the app tab once set_preview registers. */
     probeRegisteredPreview?: boolean
   }>(),
@@ -103,6 +108,9 @@ const props = withDefaults(
     ports: () => [],
     publicActive: true,
     publicMobile: false,
+    sandbox: null,
+    sandboxLoading: false,
+    sandboxLogId: 0,
     probeRegisteredPreview: false,
   },
 )
@@ -167,9 +175,11 @@ const summaryThumbs = ref<Record<string, StageCardThumb>>({})
 const novncOpen = ref(!!initialOpen?.novncOpen)
 const fixedOpen = ref<string[]>([...(initialOpen?.fixedOpen || [])])
 const fixedMounted = ref<Record<string, boolean>>({})
+/** Split drawer only: the 「新页签」 placeholder tab is open and shows the home cards. */
+const newTabOpen = ref(false)
 for (const id of fixedOpen.value) fixedMounted.value[id] = true
-const sandboxView = ref<SandboxView | null>(null)
-const sandboxLoading = ref(false)
+const sandboxView = ref<{ id: number; hasCodeServer?: boolean } | null>(null)
+const sandboxLoadingState = ref(false)
 const sandboxId = computed(() => {
   const id = sandboxView.value?.id
   if (typeof id === 'number' && Number.isFinite(id) && id > 0) return id
@@ -491,12 +501,43 @@ function ensurePreviewTab(name: string, unread?: StageTabUnreadKind) {
 
 function openArtifact(a: Artifact) {
   markUserMoved()
+  // Picking a card from the new tab's home replaces the 「新页签」 placeholder.
+  newTabOpen.value = false
   activatePreview(a.name)
 }
 
 function selectGridTab() {
   markUserMoved()
   activeTab.value = REACT_STAGE_TAB_GRID
+}
+
+/** Split drawer: open a blank 「新页签」 next to the existing tabs and show the home cards in it. */
+function openNewTab() {
+  markUserMoved()
+  newTabOpen.value = true
+  activeTab.value = REACT_STAGE_TAB_GRID
+}
+
+function closeNewTab() {
+  markUserMoved()
+  newTabOpen.value = false
+  const ids = splitModeTabIds()
+  activeTab.value = ids[ids.length - 1] ?? REACT_STAGE_TAB_GRID
+}
+
+/** Open tabs of the current split drawer mode, in display order. */
+function splitModeTabIds(): string[] {
+  if (drawerMode.value === 'artifacts') return openNames.value.map((n) => previewTabId(n))
+  if (drawerMode.value !== 'resources') return []
+  const ids: string[] = [...fixedTabsBeforeApp.value]
+  if (novncOpen.value && showAppCard.value) ids.push(REACT_STAGE_TAB_NOVNC)
+  return [...ids, ...fixedTabsAfterApp.value]
+}
+
+/** Split drawer close: move to a neighbor tab of the same mode, else back home. */
+function closeSplitTab(closedId: string, before: string[]) {
+  const wasActive = activeTab.value === closedId
+  if (wasActive) activeTab.value = neighborTab(closedId, before)
 }
 
 function selectPreviewTab(name: string) {
@@ -538,8 +579,9 @@ function neighborTab(closedId: string, ids: string[]): string {
 function closePreview(name: string) {
   markUserMoved()
   if (splitActive.value) {
+    const before = splitModeTabIds()
     openNames.value = closeStagePreviewTab(openNames.value, name)
-    activeTab.value = REACT_STAGE_TAB_GRID
+    closeSplitTab(previewTabId(name), before)
     return
   }
   const closedId = previewTabId(name)
@@ -564,6 +606,7 @@ function openAppTab() {
 }
 
 function onFixedCard(id: string) {
+  newTabOpen.value = false
   if (id === 'app') {
     openAppTab()
     return
@@ -585,8 +628,9 @@ function closeFixed(id: string) {
   if (!isFixedPanel(id)) return
   markUserMoved()
   if (splitActive.value) {
+    const before = splitModeTabIds()
     fixedOpen.value = fixedOpen.value.filter((x) => x !== id)
-    activeTab.value = REACT_STAGE_TAB_GRID
+    closeSplitTab(id, before)
     return
   }
   const before = closableTabIds()
@@ -598,8 +642,9 @@ function closeFixed(id: string) {
 function closeNovnc() {
   markUserMoved()
   if (splitActive.value) {
+    const before = splitModeTabIds()
     novncOpen.value = false
-    activeTab.value = REACT_STAGE_TAB_GRID
+    closeSplitTab(REACT_STAGE_TAB_NOVNC, before)
     return
   }
   const before = closableTabIds({ includeApp: true })
@@ -609,6 +654,7 @@ function closeNovnc() {
 }
 
 function resetSplitHome() {
+  newTabOpen.value = false
   openNames.value = []
   activeTab.value = REACT_STAGE_TAB_GRID
   novncOpen.value = false
@@ -622,6 +668,7 @@ function resetSplitHome() {
 }
 
 function syncDrawerMode(next: 'resources' | 'artifacts') {
+  newTabOpen.value = false
   if (next === 'resources') {
     const view = resourceView.value
     if (view === 'home') {
@@ -664,27 +711,26 @@ const showWorkflow = computed(
 const showSplitArtifactEmpty = computed(
   () => splitActive.value && drawerMode.value === 'artifacts' && showingGrid.value && gridArtifacts.value.length === 0,
 )
-const showStageTabs = computed(() => !splitActive.value || activeTab.value !== REACT_STAGE_TAB_GRID)
+const showNewTab = computed(() => splitActive.value && newTabOpen.value)
+const showStageTabs = computed(
+  () => !splitActive.value || activeTab.value !== REACT_STAGE_TAB_GRID || newTabOpen.value,
+)
 const displayedPreviewNames = computed(() => {
   if (!splitActive.value) return openNames.value
-  if (drawerMode.value !== 'artifacts') return []
-  const name = previewTabName(activeTab.value)
-  return name && openNames.value.includes(name) ? [name] : []
+  return drawerMode.value === 'artifacts' ? openNames.value : []
 })
 const displayedFixedBefore = computed(() => {
   if (!splitActive.value) return fixedTabsBeforeApp.value
-  if (drawerMode.value !== 'resources') return []
-  return fixedTabsBeforeApp.value.filter((id) => id === activeTab.value)
+  return drawerMode.value === 'resources' ? fixedTabsBeforeApp.value : []
 })
 const displayedNovnc = computed(() => {
   if (!novncOpen.value || !showAppCard.value) return false
   if (!splitActive.value) return true
-  return drawerMode.value === 'resources' && activeTab.value === REACT_STAGE_TAB_NOVNC
+  return drawerMode.value === 'resources'
 })
 const displayedFixedAfter = computed(() => {
   if (!splitActive.value) return fixedTabsAfterApp.value
-  if (drawerMode.value !== 'resources') return []
-  return fixedTabsAfterApp.value.filter((id) => id === activeTab.value)
+  return drawerMode.value === 'resources' ? fixedTabsAfterApp.value : []
 })
 
 watch(
@@ -917,9 +963,10 @@ watch(
       }
       return
     }
+    // Split drawer opens the app tab only from its card.
+    if (splitActive.value) return
     // Show the app tab once a preview is registered; never steal focus after the user moved.
     novncOpen.value = true
-    if (splitActive.value) return
     if (userMoved.value) return
     if (activeTab.value === REACT_STAGE_TAB_GRID) {
       activeTab.value = REACT_STAGE_TAB_NOVNC
@@ -966,24 +1013,34 @@ onMounted(() => {
 
 let sandboxGen = 0
 watch(
-  () => `${props.runId}|${props.nodeId}|${props.hideAppPreview ? 1 : 0}`,
+  () => `${props.runId}|${props.nodeId}|${props.hideAppPreview ? 1 : 0}|${props.sandbox?.id || 0}|${props.sandbox?.hasCodeServer ? 1 : 0}|${props.sandboxLoading ? 1 : 0}`,
   async () => {
     const gen = ++sandboxGen
     sandboxView.value = null
-    if (props.hideAppPreview) return
+    sandboxLoadingState.value = !!props.sandboxLoading
+    if (props.hideAppPreview) {
+      sandboxLoadingState.value = false
+      return
+    }
+    if (props.sandbox) {
+      sandboxView.value = props.sandbox
+      sandboxLoadingState.value = false
+      return
+    }
     const rid = String(props.runId || '').trim()
     const nid = String(props.nodeId || '').trim()
     if (!rid || !nid) return
-    sandboxLoading.value = true
+    sandboxLoadingState.value = true
     try {
       const sbx = await api.getRunNodeSandbox(rid, nid)
       if (gen !== sandboxGen) return
+      // null is confirmed absence: leave the stage empty, do not open a desktop.
       sandboxView.value = sbx
     } catch (e) {
       if (gen !== sandboxGen || isAbortError(e)) return
       sandboxView.value = null
     } finally {
-      if (gen === sandboxGen) sandboxLoading.value = false
+      if (gen === sandboxGen) sandboxLoadingState.value = false
     }
   },
   { immediate: true },
@@ -1068,7 +1125,7 @@ onBeforeUnmount(() => {
         :class="
           showingGrid
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
         :aria-selected="showingGrid ? 'true' : 'false'"
         data-testid="react-artifact-tab-grid"
@@ -1084,7 +1141,7 @@ onBeforeUnmount(() => {
         :class="
           activePreviewName === name
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1126,7 +1183,7 @@ onBeforeUnmount(() => {
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1157,7 +1214,7 @@ onBeforeUnmount(() => {
         :class="
           showingNovnc
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1189,7 +1246,7 @@ onBeforeUnmount(() => {
         :class="
           activeTab === id
             ? 'bg-elevated text-txt'
-            : 'text-txt3 hover:bg-elevated/60 hover:text-txt2'
+            : 'text-txt3 hover:text-txt2'
         "
       >
         <button
@@ -1214,6 +1271,44 @@ onBeforeUnmount(() => {
           <Icon name="close" :size="12" />
         </button>
       </div>
+      <div
+        v-if="showNewTab"
+        class="group inline-flex max-w-[220px] items-center gap-1 rounded-md text-[12px] transition max-md:text-[11px]"
+        :class="showingGrid ? 'bg-elevated text-txt' : 'text-txt3 hover:text-txt2'"
+      >
+        <button
+          type="button"
+          role="tab"
+          class="inline-flex min-w-0 items-center gap-1.5 py-1 pl-2.5 pr-1"
+          :aria-selected="showingGrid ? 'true' : 'false'"
+          data-testid="react-artifact-tab-newtab"
+          @click="selectGridTab"
+        >
+          <Icon name="dashboard" :size="13" />
+          <span class="truncate">{{ t('pages.reactArtifactStage.newTab') }}</span>
+        </button>
+        <button
+          type="button"
+          class="mr-1 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-txt3 hover:bg-overlay hover:text-txt"
+          :aria-label="t('pages.reactArtifactStage.closeTab')"
+          :title="t('pages.reactArtifactStage.closeTab')"
+          data-testid="react-artifact-tab-close-newtab"
+          @click.stop="closeNewTab"
+        >
+          <Icon name="close" :size="12" />
+        </button>
+      </div>
+      <button
+        v-if="splitActive && showStageTabs && !showNewTab"
+        type="button"
+        class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-txt3 transition hover:bg-elevated hover:text-txt"
+        :aria-label="t('pages.reactArtifactStage.newTab')"
+        :title="t('pages.reactArtifactStage.newTab')"
+        data-testid="react-artifact-tab-new"
+        @click="openNewTab"
+      >
+        <Icon name="plus" :size="13" />
+      </button>
     </div>
 
     <div v-show="showingGrid" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4" data-testid="react-artifact-grid">
@@ -1363,6 +1458,7 @@ onBeforeUnmount(() => {
         :run-id="runId"
         hide-delete
         hide-version-chip
+        hide-file-row
         :share-token="token"
         :annotatable="artifactAnnotatable(artifactByName(name))"
         :preview-active="activePreviewName === name"
@@ -1379,7 +1475,7 @@ onBeforeUnmount(() => {
       <SandboxStageSurface
         kind="ide"
         :sandbox="sandboxView"
-        :loading="sandboxLoading"
+        :loading="sandboxLoadingState"
         :active="activeTab === 'ide'"
         class="min-h-0 flex-1"
       />
@@ -1393,7 +1489,7 @@ onBeforeUnmount(() => {
       <SandboxStageSurface
         kind="terminal"
         :sandbox="sandboxView"
-        :loading="sandboxLoading"
+        :loading="sandboxLoadingState"
         :active="activeTab === 'terminal'"
         class="min-h-0 flex-1"
       />
@@ -1418,7 +1514,7 @@ onBeforeUnmount(() => {
         data-testid="react-artifact-browser-missing"
       >
         <Icon name="globe" :size="26" class="mb-2 opacity-40" />
-        {{ sandboxLoading ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
+        {{ sandboxLoadingState ? t('pages.appPreview.loading') : t('pages.reactArtifactStage.novncMissing') }}
       </div>
     </div>
     <div
@@ -1455,9 +1551,10 @@ onBeforeUnmount(() => {
     >
       <SandboxStageSurface
         kind="log"
+        :sandbox-id="sandboxLogId"
         :run-id="runId"
         :node-id="nodeId"
-        :loading="sandboxLoading"
+        :loading="sandboxLoadingState"
         :active="activeTab === 'log'"
         class="min-h-0 flex-1"
       />

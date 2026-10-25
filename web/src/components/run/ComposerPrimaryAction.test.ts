@@ -65,9 +65,10 @@ describe('ComposerPrimaryAction icon override', () => {
     expect(back.find('[data-kind="confirm"]').exists()).toBe(true)
     expect(back.html()).toContain('退回修改')
     const spin = mount(C, { props: { kind: 'confirm', label: '批准中…', icon: 'spinner', busy: true } })
-    expect(spin.find('.animate-spin').exists()).toBe(true)
+    await nextTick()
+    expect(spin.get('[data-icon="spinner"]').attributes('data-icon-motion')).toBe('busy')
     const plain = mount(C, { props: { kind: 'confirm', label: '确认并流转' } })
-    expect(plain.find('.animate-spin').exists()).toBe(false)
+    expect(plain.find('[data-icon-motion="busy"]').exists()).toBe(false)
   })
 
   it('secondary confirm uses main\'s chat-action-secondary instead of the filled primary', async () => {

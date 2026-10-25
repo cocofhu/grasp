@@ -36,13 +36,13 @@ const badge = computed(() => {
   if (isRun.value) {
     switch (props.data.status) {
       case 'completed':
-        return { cls: 'is-ok', icon: 'check' }
+        return { cls: 'is-ok', icon: 'check-draw' }
       case 'failed':
-        return { cls: 'is-err', icon: 'alert' }
+        return { cls: 'is-err', icon: 'warn-pulse' }
       case 'waiting_human':
-        return { cls: 'is-warn', icon: 'chat' }
+        return { cls: 'is-neutral', icon: 'bubble-idle' }
       case 'running':
-        return { cls: 'is-info', icon: 'dot' }
+        return { cls: 'is-info', icon: 'breath-dot' }
       default:
         return null
     }
@@ -198,8 +198,8 @@ function pick(action: NodeMenuAction) {
       </button>
     </div>
 
-    <div v-if="badge" class="cnode-badge" :class="badge.cls" :title="statusText" :aria-label="statusText">
-      <Icon :name="badge.icon" :size="11" />
+    <div v-if="badge" class="cnode-badge grasp-status-host" :class="badge.cls" :title="statusText" :aria-label="statusText" data-testid="canvas-node-badge">
+      <Icon :name="badge.icon" :busy="data.status === 'running'" :size="16" />
     </div>
     <template v-else-if="issueCount">
       <div class="cnode-badge is-err" :aria-label="t('canvas.node.issues', { n: issueCount })" data-testid="canvas-node-issues">{{ issueCount }}</div>

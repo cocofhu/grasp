@@ -198,7 +198,7 @@ function selectDiagramTab(index: number) {
       </h3>
       <ul class="space-y-1">
         <li v-for="(r, i) in doc.ruled_out" :key="i" class="flex items-start gap-1.5 text-[13px] text-txt2">
-          <span class="mt-0.5 shrink-0 text-txt3">×</span>
+          <Icon name="close" :size="13" :interactive="false" class="mt-0.5 shrink-0 text-txt3" />
           <span :data-json-path="`ruled_out[${i}]`">{{ r }}</span>
         </li>
       </ul>

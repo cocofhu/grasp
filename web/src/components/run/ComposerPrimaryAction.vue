@@ -102,8 +102,8 @@ onBeforeUnmount(() => {
       <Icon
         :key="shownKind + (busy ? '-busy' : '') + (icon ?? '')"
         :name="iconName"
+        :busy="iconName === 'spinner'"
         :size="shownKind === 'confirm' ? 13 : shownKind === 'stop' ? 16 : 18"
-        :class="iconName === 'spinner' ? 'animate-spin motion-reduce:animate-none' : ''"
       />
     </Transition>
     <span v-if="shownKind === 'confirm'">{{ label }}</span>

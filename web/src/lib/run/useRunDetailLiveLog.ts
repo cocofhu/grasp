@@ -423,6 +423,7 @@ export function useRunDetailLiveLog(opts: {
       return
     }
     try {
+      // null is confirmed absence. This lookup does not schedule its own retry.
       sandboxLookup.value = await api.getRunNodeSandbox(runId.value, id)
     } catch {
       sandboxLookup.value = null

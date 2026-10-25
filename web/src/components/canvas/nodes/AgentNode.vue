@@ -26,7 +26,7 @@ const caps = computed(() => {
   return [
     { key: 'ask', on: !!f?.ask, icon: 'chat', label: t('canvas.caps.ask') },
     { key: 'preview', on: !!f?.preview, icon: 'monitor', label: t('canvas.caps.previewFull') },
-    { key: 'review', on: !!f?.review, icon: 'eye-off', label: t('canvas.caps.reviewFull') },
+    { key: 'review', on: !!f?.review, icon: 'review', label: t('canvas.caps.reviewFull') },
     { key: 'gate', on: !!f?.gate, icon: 'gate', label: t('canvas.caps.gateFull') },
   ].filter((c) => c.on)
 })

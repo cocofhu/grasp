@@ -135,17 +135,17 @@ func TestWorkflowImportRetainsDefaultsAndRejectsMaskedSecretAsValue(t *testing.T
 	db := newTestDB(t)
 	svc := NewWorkflowService(db)
 	env := validEnvelope("Configured")
-	env.Defaults = &models.WorkflowDefaults{InheritWorkspace: false, Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.WorkspaceNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
+	env.Defaults = &models.WorkflowDefaults{Sandbox: &models.WorkflowSandboxPolicy{Mode: models.SandboxModeShared}, InheritWorkspace: false, Variables: []models.WorkspaceVariable{{Name: "TOKEN", Secret: true}, {Name: "REGION", Value: "east"}}, NotifyPolicy: &models.WorkspaceNotifyPolicy{ChannelIDs: []string{"channel"}}, GateAuto: &models.WorkflowGateAutoPolicy{AgentName: "reviewer", Enabled: true, Variable: "approve"}}
 	wf, err := svc.Import(envelopeJSON(env))
 	if err != nil {
 		t.Fatal(err)
 	}
 	stored, ok := svc.Get(wf.ID)
-	if !ok || stored.Defaults == nil || stored.Defaults.InheritWorkspace || stored.Defaults.GateAuto.AgentName != "reviewer" || stored.Defaults.NotifyPolicy.ChannelIDs[0] != "channel" || stored.Defaults.Variables[0].Value != nil {
+	if !ok || stored.Defaults == nil || stored.Defaults.InheritWorkspace || stored.Defaults.Sandbox == nil || stored.Defaults.Sandbox.Mode != models.SandboxModeShared || stored.Defaults.GateAuto.AgentName != "reviewer" || stored.Defaults.NotifyPolicy.ChannelIDs[0] != "channel" || stored.Defaults.Variables[0].Value != nil {
 		t.Fatalf("defaults=%+v", stored.Defaults)
 	}
 	copy, err := svc.Copy(wf.ID, "Configured copy")
-	if err != nil || copy.Defaults == nil || copy.Defaults.GateAuto.AgentName != "reviewer" {
+	if err != nil || copy.Defaults == nil || copy.Defaults.Sandbox == nil || copy.Defaults.Sandbox.Mode != models.SandboxModeShared || copy.Defaults.GateAuto.AgentName != "reviewer" {
 		t.Fatalf("copy defaults=%+v %v", copy.Defaults, err)
 	}
 	env.Defaults.Variables[0].Value = SecretMask

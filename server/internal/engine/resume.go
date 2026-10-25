@@ -564,6 +564,10 @@ func (e *Engine) reactReply(owner, runID, nodeID, humanText string, images []mod
 			why = "reopen react after force chat error"
 		}
 		logDB(e.db.Save(&conv), runID, why)
+		// Early Done made pauseStillPending false, so the opening driver's
+		// finish("waiting_human") may have been skipped and the run left
+		// "running". Restore the pause now that the dialogue is open again.
+		e.finish(runID, "waiting_human")
 		// Persist this turn's MCP tool calls now (the node stays paused without a
 		// saveState) so the timeline reflects every react round, not just the
 		// opening one.

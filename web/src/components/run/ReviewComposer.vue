@@ -3,7 +3,7 @@ import type { RestoreUnsent } from '@/lib/inbox/clarifyVisitEnded'
 import { computed, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '../ui/Icon.vue'
-import ClarifyChat, { type ClarifyFollowTail, type ClarifyHandoff, type ClarifyPriorSegment } from './ClarifyChat.vue'
+import ClarifyChat, { type ClarifyFollowProcess, type ClarifyFollowTail, type ClarifyHandoff, type ClarifyPriorSegment } from './ClarifyChat.vue'
 import ComposerShell from './ComposerShell.vue'
 import ParagraphInput from '../ui/ParagraphInput.vue'
 import GateReactStreamPanel from './GateReactStreamPanel.vue'
@@ -89,6 +89,7 @@ const props = withDefaults(
     /** Specific ended state for the done footer (see ClarifyChat). */
     doneNote?: { text: string; tone: 'ok' | 'muted' | 'wait' } | null
     followTail?: ClarifyFollowTail | null
+    followProcess?: ClarifyFollowProcess[] | null
   }>(),
   {
     iteration: 1,
@@ -151,6 +152,7 @@ const chatRef = ref<{
   cancelReview: () => void
   discardLastQueued: () => void
   releaseConfirmPending?: () => void
+  settleConfirmedTurn?: () => void
   restoreUnsentQueued: RestoreUnsent
   isSessionBusy?: () => boolean
   playConfirmCeremony?: () => Promise<void>
@@ -180,6 +182,7 @@ defineExpose({
   cancelReview: () => chatRef.value?.cancelReview(),
   discardLastQueued: () => chatRef.value?.discardLastQueued(),
   releaseConfirmPending: () => chatRef.value?.releaseConfirmPending?.(),
+  settleConfirmedTurn: () => chatRef.value?.settleConfirmedTurn?.(),
   restoreUnsentQueued: (...args: Parameters<RestoreUnsent>) =>
     chatRef.value?.restoreUnsentQueued(...args),
   isChatReady: () => !!chatRef.value,
@@ -311,6 +314,7 @@ function onConfirm() {
       :composer-locked="!!composerLocked"
       :done-note="doneNote ?? null"
       :follow-tail="followTail ?? null"
+      :follow-process="followProcess ?? null"
       @takeover="emit('takeover')"
       @send="(text, images, anns) => emit('send', text, images, anns)"
       @retry-last="emit('retry-last')"

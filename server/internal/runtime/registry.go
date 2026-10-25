@@ -33,17 +33,18 @@ var (
 type ProviderRegistry struct {
 	providers    map[AcpBackend]ExecProvider
 	profilesRoot string
+	sharedAgent  func() SharedAgentView
 	emit         func(runID, nodeID string, events []models.AcpEvent, busy bool)
 }
 
 // NewProviderRegistry builds one provider per product backend and wires a shared event sink.
 func NewProviderRegistry(host *mcp.Host, opts Options) *ProviderRegistry {
-	backends := []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex}
+	backends := []AcpBackend{BackendCursor, BackendClaudeCode, BackendCodeBuddy, BackendTrae, BackendOpenCode, BackendCodex, BackendDeepSeekHarness}
 	m := map[AcpBackend]ExecProvider{}
 	for _, b := range backends {
 		m[b] = newBaseACPProvider(host, opts, b)
 	}
-	return &ProviderRegistry{providers: m, profilesRoot: opts.ProfilesRoot}
+	return &ProviderRegistry{providers: m, profilesRoot: opts.ProfilesRoot, sharedAgent: opts.SharedAgent}
 }
 
 func (r *ProviderRegistry) Name() string { return "registry" }
@@ -96,11 +97,19 @@ func (r *ProviderRegistry) backendFor(req NodeReq) (AcpBackend, error) {
 	if err != nil {
 		return "", fmt.Errorf("读取 Agent %q 配置失败: %w", profile, err)
 	}
-	var cfg struct {
-		AcpBackend string `json:"acpBackend"`
-	}
+	var cfg agentFile
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		return "", fmt.Errorf("解析 Agent %q 配置失败: %w", profile, err)
+	}
+	if cfg.InheritModel {
+		if r.sharedAgent == nil {
+			return "", errors.New("workspace default model is not configured")
+		}
+		shared := r.sharedAgent()
+		if shared.ModelBinding == nil {
+			return "", errors.New("workspace default model is not configured")
+		}
+		cfg.AcpBackend = shared.AcpBackend
 	}
 	backend, err := ParseBackend(cfg.AcpBackend)
 	if err != nil {

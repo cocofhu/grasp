@@ -1,3 +1,4 @@
+import {runtimeIcon} from '../ui/icons.js';
 import {apiPath} from '../core/paths.js';
 import {deleteOtherSnapshots} from '../ui/chat_persist_db.js';
 import {ChatTab} from './chat_tab.js';
@@ -308,7 +309,8 @@ export class TabManager {
             const close = document.createElement('button');
             close.type = 'button';
             close.className = 'cc-tab-close';
-            close.textContent = '×';
+            close.innerHTML = runtimeIcon('close', 12);
+            close.setAttribute('aria-label', '关闭会话');
             close.title = '关闭会话';
             close.addEventListener('click', (e) => {
                 e.stopPropagation();

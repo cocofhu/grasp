@@ -6,19 +6,23 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
 
 	"backend/internal/agents"
 	"backend/internal/provider"
+	"backend/internal/provider/modelconnection"
 )
 
 // AgentModel 对应模型目录中的一项（provider 目录或 CLI 探测所得）。
 type AgentModel struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	IsDefault bool   `json:"isDefault,omitempty"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Vendor      string `json:"vendor,omitempty"`
+	IsDefault   bool   `json:"isDefault,omitempty"`
+	Unavailable bool   `json:"unavailable,omitempty"`
 }
 
 // ListAgentModels 返回当前 provider 的模型目录：优先用 provider 声明的目录，
@@ -28,6 +32,9 @@ func ListAgentModels() ([]AgentModel, error) {
 	ctxModels, cancelModels := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancelModels()
 	if catalog, err := p.ListModels(ctxModels); err != nil {
+		if strings.TrimSpace(os.Getenv(modelconnection.EnvConfig)) != "" {
+			return nil, err
+		}
 		log.Printf("acp-bridge: provider %s ListModels 失败: %v", p.Name(), err)
 	} else if len(catalog) > 0 {
 		out := make([]AgentModel, 0, len(catalog))

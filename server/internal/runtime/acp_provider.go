@@ -170,6 +170,9 @@ type acpProvider struct {
 	// stuckNotes holds, per node execution being retried after the bridge
 	// stopped a stuck Agent, why it was stopped (string).
 	stuckNotes sync.Map
+	// shared holds the run sandboxes of shared-mode runs (process-wide; nil
+	// in tests that build a provider by hand).
+	shared *sharedSandboxes
 }
 
 // streamChat runs one turn (prompt + optional image attachments), streaming
@@ -304,7 +307,7 @@ func newBaseACPProvider(host *mcp.Host, opts Options, backend AcpBackend) ExecPr
 	return &acpProvider{host: host, opts: opts, mgr: mgr, backend: backend,
 		sessions: map[string]*reactSession{}, live: map[string]*sandbox.Sandbox{},
 		inflightACP: map[string]*sandbox.ACPClient{}, timeline: newAcpTimelineStore(),
-		inflight: map[string]InflightPrompt{}}
+		inflight: map[string]InflightPrompt{}, shared: processSharedSandboxes}
 }
 
 // resolveProviderImage picks the sandbox image for one acpBackend.

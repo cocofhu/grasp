@@ -144,6 +144,7 @@ describe('buildLlmTranscript', () => {
       'trace:pause',
       'trace:resume',
       'turn',
+      'trace:exit',
       'trace:transition',
       'node',
     ])

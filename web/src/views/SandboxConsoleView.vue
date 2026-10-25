@@ -3,6 +3,7 @@ import { ref, onMounted, onBeforeUnmount, nextTick, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import NovncPreviewPanel from '@/components/run/NovncPreviewPanel.vue'
 import RefreshStrip from '@/components/run/RefreshStrip.vue'
 import HardLoadLayer from '@/components/run/HardLoadLayer.vue'
@@ -63,10 +64,10 @@ const acpSrc = computed(() => `${api.sandboxBridgeUrl(id)}#theme=${acpFrameTheme
 
 const tabItems = computed(() => [
   { k: 'terminal', l: t('pages.sandboxConsole.tabs.terminal'), i: 'terminal' },
-  { k: 'ide', l: t('pages.sandboxConsole.tabs.ide'), i: 'doc' },
+  { k: 'ide', l: t('pages.sandboxConsole.tabs.ide'), i: 'stage-ide' },
   { k: 'acp', l: t('pages.sandboxConsole.tabs.acp'), i: 'robot' },
   { k: 'novnc', l: t('pages.sandboxConsole.tabs.novnc'), i: 'globe' },
-  { k: 'log', l: t('pages.sandboxConsole.tabs.log'), i: 'doc' },
+  { k: 'log', l: t('pages.sandboxConsole.tabs.log'), i: 'stage-log' },
 ])
 
 const sandboxTitle = computed(() => sandbox.value?.name || t('pages.sandboxConsole.fallbackName', { id }))
@@ -339,7 +340,7 @@ onBeforeUnmount(() => {
       <span class="truncate text-[13px] font-medium text-txt">{{ sandboxTitle }}</span>
     </div>
     <div class="flex flex-1 flex-col items-center px-5 py-8 text-center">
-      <div class="rounded-lg mb-3 flex h-10 w-10 items-center justify-center border border-info/35 bg-info/10 text-info">⌁</div>
+      <div class="rounded-lg mb-3 flex h-10 w-10 items-center justify-center border border-info/35 bg-info/10 text-info"><Icon name="server-unavailable" :size="22" :interactive="false" /></div>
       <h3 class="text-[14px] font-semibold text-txt">{{ t('pages.sandboxConsole.mobile.title') }}</h3>
       <p class="mt-2 max-w-[32ch] text-[12.5px] leading-relaxed text-txt2">{{ t('pages.sandboxConsole.mobile.desc') }}</p>
       <button
@@ -393,15 +394,16 @@ onBeforeUnmount(() => {
         </button>
       </div>
 
-      <div class="ml-4 flex gap-1">
+      <SlidingTabs :value="tab" class="ml-4 flex gap-1" indicator-class="rounded bg-accent-dim">
         <button
           v-for="item in tabItems"
           :key="item.k"
           class="flex items-center gap-1 rounded px-3 py-1 text-[12px] transition"
-          :class="tab === item.k ? 'bg-accent-dim text-txt' : 'text-txt3 hover:text-txt2'"
+          :class="tab === item.k ? 'text-txt' : 'text-txt3 hover:text-txt2'"
+          :data-active="tab === item.k"
           @click="tab = item.k as any"
         ><Icon :name="item.i" :size="13" />{{ item.l }}</button>
-      </div>
+      </SlidingTabs>
 
       <SandboxRetention v-if="sandbox" :sandbox="sandbox" compact class="ml-4" @updated="sandbox = $event" />
 

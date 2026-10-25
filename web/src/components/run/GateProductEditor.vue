@@ -432,7 +432,7 @@ defineExpose({
         :class="
           p.name === activeName
             ? 'border-accent-2 text-txt'
-            : 'border-transparent text-txt2 hover:text-txt'
+            : 'border-transparent text-txt2'
         "
         @click="selectProduct(p.name)"
       >
@@ -475,7 +475,7 @@ defineExpose({
         <button
           type="button"
           class="px-3 py-1 text-xs"
-          :class="mode === 'edit' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
+          :class="mode === 'edit' ? 'bg-overlay text-txt' : 'text-txt2'"
           :disabled="editTabDisabled"
           data-testid="gate-mode-edit"
           @click="setMode('edit')"
@@ -485,7 +485,7 @@ defineExpose({
         <button
           type="button"
           class="px-3 py-1 text-xs"
-          :class="mode === 'preview' ? 'bg-overlay text-txt' : 'text-txt2 hover:text-txt'"
+          :class="mode === 'preview' ? 'bg-overlay text-txt' : 'text-txt2'"
           data-testid="gate-mode-preview"
           @click="setMode('preview')"
         >
@@ -510,7 +510,7 @@ defineExpose({
           data-testid="gate-artifact-save"
           @click="save"
         >
-          <Icon v-if="saving" name="spinner" :size="12" class="animate-spin" />
+          <Icon v-if="saving" name="spinner" :size="12" />
           {{ t('pages.gateApproval.save') }}
         </button>
       </div>
@@ -696,7 +696,7 @@ defineExpose({
             class="flex min-h-[200px] flex-col items-center justify-center gap-2.5 px-4 py-8 text-center"
             data-testid="gate-preview-loading"
           >
-            <Icon name="spinner" :size="28" class="animate-spin text-accent" />
+            <Icon name="spinner" :size="28" class="text-accent" />
             <p class="text-[12px] text-txt3">{{ t('pages.gateApproval.loadingArtifact') }}</p>
           </div>
           <div

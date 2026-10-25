@@ -51,6 +51,12 @@ func (b *Bridge) BroadcastQueueState() {
 // 须在启动 goroutine **之前**同步占用 activeTurn，否则连续 Chat 会在首条 runPrompt 尚未设 activeTurn 时再次入泵，导致多条 session/prompt 并发（顺序错乱）；须保证每会话单 worker 串行消费。
 func (b *Bridge) pumpPromptQueue() {
 	b.turnMu.Lock()
+	busy := b.activeTurn != nil
+	b.turnMu.Unlock()
+	if !busy {
+		b.ensureSelectableModel()
+	}
+	b.turnMu.Lock()
 	if b.activeTurn != nil {
 		b.turnMu.Unlock()
 		b.BroadcastQueueState()
@@ -381,6 +387,27 @@ func (b *Bridge) removeQueuedPrompt(opID string) bool {
 		}
 	}
 	return false
+}
+
+// ensureSelectableModel returns the chat to the primary model before the next
+// prompt when the explicit selection is outside the configured set or no longer
+// available. An empty selection already follows the primary model.
+func (b *Bridge) ensureSelectableModel() {
+	id := b.Model()
+	if ModelSelectable(id) {
+		return
+	}
+	prev := id
+	b.SetModel("")
+	sess, err := b.RestartAgent()
+	if err != nil {
+		b.SetModel(prev)
+		log.Printf("acp-bridge: 当前模型已不可用，回到主模型失败: %v", err)
+		return
+	}
+	if sess != nil {
+		b.Broadcast(b.ConnectedPayload(sess))
+	}
 }
 
 // ChatWithOpID 与 WebSocket 单次 chat 帧共用 oid（与 InMessage.ID 一致）；action 默认 chat。

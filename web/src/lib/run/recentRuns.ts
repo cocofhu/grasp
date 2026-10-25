@@ -1,4 +1,5 @@
 import type { RouteLocationRaw } from 'vue-router'
+import { nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import type { Run, RunCurrentNode } from '@/lib/shared/types'
 
 /**
@@ -8,10 +9,10 @@ import type { Run, RunCurrentNode } from '@/lib/shared/types'
 
 export type RecentRun = Run
 
-/** Pending-row vocabulary (AppSidebarNav rowMotion / pendingTypeMarks). */
-export type RecentRunMark =
-  | { motion: 'spin' | 'pulse' }
-  | { icon: { name: 'pending-approval' | 'pending-review' | 'pending-chat'; toneClass: string } }
+/** Status primitive on a live sidebar row. */
+export type RecentRunMark = {
+  icon: { name: 'arc-spinner' | 'breath-dot' | 'user-hold'; toneClass: string }
+}
 
 const LIVE_STATES = new Set<RunCurrentNode['state']>(['running', 'stopping', 'waiting_human', 'busy'])
 
@@ -35,38 +36,44 @@ export function isObservableNode(n: RunCurrentNode | null | undefined): boolean 
 }
 
 /**
- * Same marks as 待审批 rows: spin = still starting / stopping, pulse = an agent
- * is working, static type icon = waiting on you. No new glyphs.
+ * Live sidebar row: starting or stopping is the arc, a machine at work is the
+ * breath dot, and anyone waiting (approval included) is the person-hold mark.
  */
 export function recentRunMark(run: RecentRun): RecentRunMark | null {
   const n = recentCurrentNode(run)
   if (!n) return null
-  if (n.state === 'stopping') return { motion: 'spin' }
-  // A clarify session that is still opening is the pending row's「启动中」.
-  if (n.state === 'running' && n.kind === 'clarify') return { motion: 'spin' }
-  if (n.state === 'running' || n.state === 'busy') return { motion: 'pulse' }
-  if (n.kind === 'gate') return { icon: { name: 'pending-approval', toneClass: 'nav-row-type-icon--approval' } }
-  if (n.kind === 'review' || n.kind === 'takeover') return { icon: { name: 'pending-review', toneClass: 'nav-row-type-icon--review' } }
-  return { icon: { name: 'pending-chat', toneClass: 'nav-row-type-icon--chat' } }
+  if (n.state === 'stopping' || (n.state === 'running' && n.kind === 'clarify')) {
+    return { icon: { name: 'arc-spinner', toneClass: 'nav-row-type-icon--accent' } }
+  }
+  if (n.state === 'running' || n.state === 'busy') {
+    return { icon: { name: 'breath-dot', toneClass: 'nav-row-type-icon--accent' } }
+  }
+  return { icon: { name: 'user-hold', toneClass: 'nav-row-type-icon--hold' } }
 }
 
 export const runLivePath = (runId: string) => `/runs/${encodeURIComponent(runId)}/live`
 export const runDetailPath = (runId: string) => `/runs/${encodeURIComponent(runId)}`
 
 /** Click target: the node's chat (live stream for auto, inbox chat otherwise), else run detail. */
-export function recentRunTarget(run: RecentRun): RouteLocationRaw {
+export function recentRunTarget(
+  run: RecentRun,
+  filters?: { wf?: string; tag?: string },
+): RouteLocationRaw {
   const n = recentCurrentNode(run)
   if (!n) return runDetailPath(run.id)
   if (isObservableNode(n)) return { path: runLivePath(run.id), query: { node: n.id } }
-  return { path: '/gates', query: { run: run.id, node: n.id } }
+  const query: Record<string, string> = {}
+  if (filters?.wf) query.wf = filters.wf
+  if (filters?.tag) query.tag = filters.tag
+  const path = nodeConversationPath(run.id, n.id)
+  return Object.keys(query).length ? { path, query } : { path }
 }
 
 type RouteLike = { path: string; query: Record<string, unknown> }
 
 export function recentRunActive(run: RecentRun, route: RouteLike): boolean {
   if (route.path === runDetailPath(run.id) || route.path === runLivePath(run.id)) return true
-  const q = route.query.run
-  return route.path === '/gates' && (Array.isArray(q) ? q[0] : q) === run.id
+  return nodeConversationRunId(route.path) === run.id
 }
 
 /** Fields the row renders; an unchanged signature skips the reactive write. */
@@ -135,15 +142,36 @@ export function createRecentHold(doc: Document = document) {
 type Listener = () => void
 const listeners = new Set<Listener>()
 let relayTimer: ReturnType<typeof setTimeout> | null = null
+/** A notice arrived while a read was already waiting; run once more so it is not dropped. */
+let relayFollowUp = false
 
 export const RECENT_RELAY_DEBOUNCE_MS = 300
 
+function flushRecentActivity() {
+  relayTimer = null
+  const follow = relayFollowUp
+  relayFollowUp = false
+  for (const fn of [...listeners]) fn()
+  if (follow) scheduleRecentActivity()
+}
+
+function scheduleRecentActivity() {
+  relayTimer = setTimeout(flushRecentActivity, RECENT_RELAY_DEBOUNCE_MS)
+}
+
 export function notifyRecentActivity() {
-  if (relayTimer) return
-  relayTimer = setTimeout(() => {
-    relayTimer = null
-    for (const fn of [...listeners]) fn()
-  }, RECENT_RELAY_DEBOUNCE_MS)
+  if (relayTimer) {
+    relayFollowUp = true
+    return
+  }
+  scheduleRecentActivity()
+}
+
+/** Drop a pending relay. Tests use this so a cleared timer cannot stick the module. */
+export function resetRecentActivityRelayForTests(): void {
+  if (relayTimer) clearTimeout(relayTimer)
+  relayTimer = null
+  relayFollowUp = false
 }
 
 export function onRecentActivity(fn: Listener): () => void {

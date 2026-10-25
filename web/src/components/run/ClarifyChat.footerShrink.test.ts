@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createI18n } from 'vue-i18n'
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import ClarifyChat from './ClarifyChat.vue'
@@ -18,13 +18,18 @@ const here = dirname(fileURLToPath(import.meta.url))
 const chatSrc = readFileSync(join(here, 'ClarifyChat.vue'), 'utf8')
 const composerSrc = readFileSync(join(here, 'ReviewComposer.vue'), 'utf8')
 
-function mountChat(extra: Record<string, unknown> = {}) {
+function mountChat(
+  extra: Record<string, unknown> = {},
+  attrs: Record<string, unknown> = {},
+  warnHandler?: (message: string) => void,
+) {
   const i18n = createI18n({
     legacy: false,
     locale: 'zh-CN',
     messages: { 'zh-CN': { ...common, ...pages } },
   })
   return mount(ClarifyChat, {
+    attrs,
     props: {
       runId: 'run-1',
       nodeId: 'approve_1',
@@ -36,6 +41,7 @@ function mountChat(extra: Record<string, unknown> = {}) {
     },
     global: {
       plugins: [i18n],
+      config: warnHandler ? { warnHandler } : {},
       stubs: { Icon: true, ClarifyDemoFrame: true },
     },
   })
@@ -111,6 +117,36 @@ describe('hot-path actions shrink-0 (plan g2.1 / g1.1 / g1.2)', () => {
 })
 
 describe('message list absorbs leftover height (plan g1.3)', () => {
+  it.each([false, true])('forwards parent attributes to the chat column (cold: %s)', async (cold) => {
+    const warn = vi.fn()
+    const onClick = vi.fn()
+    const wrapper = mountChat(
+      { coldSession: cold, active: !cold },
+      {
+        id: 'parent-chat',
+        class: 'parent-layout',
+        style: { maxHeight: '320px' },
+        'aria-label': 'Review conversation',
+        onClick,
+      },
+      warn,
+    )
+    const column = wrapper.get('[data-review-composer]')
+    expect(column.attributes('id')).toBe('parent-chat')
+    expect(column.classes()).toEqual(
+      expect.arrayContaining(['parent-layout', 'flex', 'h-full', 'min-h-0', 'flex-1', 'flex-col']),
+    )
+    expect((column.element as HTMLElement).style.maxHeight).toBe('320px')
+    expect(column.attributes('aria-label')).toBe('Review conversation')
+    expect(wrapper.findAll('#parent-chat')).toHaveLength(1)
+    await column.trigger('click')
+    expect(onClick).toHaveBeenCalledTimes(1)
+    expect(warn.mock.calls.map(([message]) => message)).not.toEqual(
+      expect.arrayContaining([expect.stringContaining('Extraneous non-props attributes')]),
+    )
+    wrapper.unmount()
+  })
+
   it('scroller stays flex-1 overflow-y-auto while footers are shrink-0', () => {
     const scrollerIdx = chatSrc.indexOf('data-testid="clarify-scroller"')
     expect(scrollerIdx).toBeGreaterThanOrEqual(0)
@@ -119,7 +155,7 @@ describe('message list absorbs leftover height (plan g1.3)', () => {
     expect(scrollerBlock).toMatch(/\boverflow-y-auto\b/)
     // Parent of scroller keeps min-h-0 flex-1 so the column can shrink the list.
     expect(chatSrc).toMatch(/class="relative flex min-h-0 flex-1 flex-col"/)
-    // Multi-root: bake min-h-0 flex-1 on chat root (parent fallthrough is ignored).
+    // The chat column keeps its own flex sizing alongside parent attributes.
     const chatRootClasses = chatSrc.match(/ref="chatRoot" class="([^"]+)"/)?.[1].split(/\s+/)
     expect(chatRootClasses).toEqual(expect.arrayContaining(['flex', 'h-full', 'min-h-0', 'flex-1', 'flex-col']))
   })

@@ -7,10 +7,10 @@ const props = defineProps<{ status: string; size?: 'sm' | 'md' }>()
 const { t } = useI18n()
 
 const map: Record<string, { labelKey: string; cls: string; icon: string; spin?: boolean }> = {
-  running: { labelKey: 'common.status.running', cls: 'text-info bg-info/10 border-info/30', icon: 'dot', spin: true },
+  running: { labelKey: 'common.status.running', cls: 'text-info bg-info/10 border-info/30', icon: 'breath-dot', spin: true },
   queued: { labelKey: 'common.status.queued', cls: 'text-txt2 bg-elevated border-line', icon: 'clock' },
   pending: { labelKey: 'common.status.pending', cls: 'text-txt3 bg-elevated border-line', icon: 'dot' },
-  waiting_human: { labelKey: 'common.status.waiting_human', cls: 'text-warn bg-warn/10 border-warn/30', icon: 'gate' },
+  waiting_human: { labelKey: 'common.status.waiting_human', cls: 'text-txt2 bg-elevated border-line', icon: 'user-hold' },
   completed: { labelKey: 'common.status.completed', cls: 'text-ok bg-ok/10 border-ok/30', icon: 'check' },
   success: { labelKey: 'common.status.success', cls: 'text-ok bg-ok/10 border-ok/30', icon: 'check' },
   failed: { labelKey: 'common.status.failed', cls: 'text-err bg-err/10 border-err/30', icon: 'alert' },
@@ -33,7 +33,7 @@ const pad = computed(() => (props.size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'p
     class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border font-medium"
     :class="[cfg.cls, pad]"
   >
-    <Icon :name="cfg.icon" :size="12" :class="cfg.spin ? 'animate-pulseglow' : ''" />
+    <Icon :name="cfg.icon" :size="12" :busy="!!cfg.spin" />
     {{ cfg.label }}
   </span>
 </template>

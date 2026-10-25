@@ -5,7 +5,7 @@
  * history through this component; the run LLM transcript renders the whole
  * thread through it. Do not keep a second copy of these rows.
  */
-import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { AcpEvent, AgentPart, ClarifyImage, ClarifyTurn, ReactQuestion } from '@/lib/shared/types'
 import { api } from '@/lib/api/api'
@@ -15,12 +15,13 @@ import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
 import { replySpan } from '@/lib/inbox/turnSpan'
-import { partsFromAcp } from '@/lib/run/acpTools'
+import { agentPartsFromEvents } from '@/lib/run/acpTools'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
 import { fmtTurnElapsed, relTime as formatRelTime } from '@/lib/shared/format'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import type { ClarifyPriorSegment } from './ClarifyChat.vue'
 import { nodeAsk, priorAsk } from './clarifyPrior'
+import { currentAnchorId, priorAnchorId } from './clarifyChatAnchors'
 import AgentTimeline from './AgentTimeline.vue'
 import AgentToolGroup from './AgentToolGroup.vue'
 import ChatImagePreviewModal from '../ui/ChatImagePreviewModal.vue'
@@ -30,6 +31,8 @@ import ClarifyBootLoader from './ClarifyBootLoader.vue'
 import ClarifyHandoffBubble from './ClarifyHandoffBubble.vue'
 import ClarifyThinkingRow from './ClarifyThinkingRow.vue'
 import Icon from '../ui/Icon.vue'
+import LlmSystemRow from './llm/LlmSystemRow.vue'
+import { notesAfterVisit, notesBesideTurn } from '@/lib/run/llmTranscriptThread'
 import ThoughtSummaryStatus from './ThoughtSummaryStatus.vue'
 
 type ChoiceRows = { q: string; answers: string[] }[] | null
@@ -52,6 +55,8 @@ const props = withDefaults(
     priorsOnly?: boolean
     /** Open conversation under the folds (LLM transcript). */
     turns?: ClarifyTurn[]
+    /** Process rows for the open visit (流转 / 等人 / 结束). */
+    currentNotes?: { key: string; event: string; nodeLabel: string; toLabel?: string; edgeKind?: string; afterTurn?: number }[]
     loadError?: boolean
     showEmpty?: boolean
     parseChoiceSummary?: (text: string) => ChoiceRows
@@ -68,6 +73,7 @@ const props = withDefaults(
     dividerTitle: '',
     priorsOnly: false,
     turns: () => [],
+    currentNotes: () => [],
     loadError: false,
     showEmpty: false,
   },
@@ -103,6 +109,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   if (relClockTimer) clearInterval(relClockTimer)
   autoLoadCtrl?.abort()
+  stopAutoPoll()
 })
 function relTime(iso: string): string {
   void relClock.value
@@ -136,6 +143,7 @@ const priorRows = computed<ClarifyPriorSegment[]>(() => {
         members: [...(last.members?.length ? last.members : [autoMember(last)]), autoMember(seg)],
         endedAt: seg.endedAt,
         nodeId: last.nodeId,
+        notes: [...(last.notes || []), ...(seg.notes || [])],
       }
       continue
     }
@@ -172,10 +180,27 @@ function priorSegmentTitle(seg: ClarifyPriorSegment): string {
   return translate('pages.clarify.segmentAuto', { name: seg.label })
 }
 
-type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[] }
+type AutoRecord = { status: 'loading' | 'ready' | 'error'; parts?: AgentPart[]; live?: boolean }
 const autoOpen = ref<Record<string, boolean>>({})
 const autoRecords = ref<Record<string, AutoRecord>>({})
 let autoLoadCtrl: AbortController | null = null
+const autoInflight = new Set<string>()
+const autoPollTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** While a record is still live, pull the next snapshot on this cadence. */
+const AUTO_RECORD_POLL_MS = 2000
+function stopAutoPoll(key?: string) {
+  if (!key) {
+    for (const timer of autoPollTimers.values()) clearTimeout(timer)
+    autoPollTimers.clear()
+    return
+  }
+  const timer = autoPollTimers.get(key)
+  if (timer) clearTimeout(timer)
+  autoPollTimers.delete(key)
+}
+function isTerminalAutoStatus(status: string | undefined) {
+  return status === 'completed' || status === 'failed' || status === 'cancelled'
+}
 function priorRowKey(seg: ClarifyPriorSegment) {
   return `${seg.nodeId}:${seg.iteration}`
 }
@@ -188,32 +213,64 @@ function autoRecordKey(member: { nodeId: string; iteration: number }) {
 function autoRecord(member: { nodeId: string; iteration: number }): AutoRecord {
   return autoRecords.value[autoRecordKey(member)] ?? { status: 'loading' }
 }
-function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
-  const fromTimeline = partsFromAcp(events)
-  if (fromTimeline?.length) return fromTimeline
-  const parts: AgentPart[] = []
-  for (const ev of events || []) {
-    if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })
-    else if (ev.kind === 'tool_call' && ev.title) parts.push({ kind: 'tool', title: ev.title, status: ev.status })
+/** Full narration of the open row: the last non-empty kind=message before a sealed segment. */
+function openNarration(events: AcpEvent[] | undefined): string {
+  const list = events || []
+  for (let i = list.length - 1; i >= 0; i--) {
+    const ev = list[i]!
+    if (ev.kind === 'segment') break
+    if (ev.kind === 'message' && ev.text?.trim()) return ev.text
   }
-  return parts.length ? parts : undefined
+  return ''
 }
-async function loadAutoRecords(seg: ClarifyPriorSegment) {
+function recordParts(events: AcpEvent[] | undefined): AgentPart[] | undefined {
+  const fromEvents = agentPartsFromEvents(events)
+  if (!fromEvents?.length) return fromEvents
+  const hasMessage = fromEvents.some((part) => part.kind === 'message' && !!part.text?.trim())
+  if (hasMessage) return fromEvents
+  // The step cap can drop the closing message while the same events still carry the full narration.
+  const narration = openNarration(events)
+  if (!narration) return fromEvents
+  return [...fromEvents, { kind: 'message', text: narration }]
+}
+function scheduleAutoPoll(seg: ClarifyPriorSegment, member: { nodeId: string; iteration: number }) {
+  const key = autoRecordKey(member)
+  const rowKey = priorRowKey(seg)
+  stopAutoPoll(key)
+  autoPollTimers.set(key, setTimeout(() => {
+    autoPollTimers.delete(key)
+    if (!autoOpen.value[rowKey]) return
+    void loadAutoRecords(seg, { refresh: true })
+  }, AUTO_RECORD_POLL_MS))
+}
+async function loadAutoRecords(seg: ClarifyPriorSegment, opts?: { refresh?: boolean }) {
   if (!autoLoadCtrl) autoLoadCtrl = new AbortController()
   const signal = autoLoadCtrl.signal
+  // The open row may fold several auto visits. Load each member; do not
+  // look the row back up by its first node or the rest stay on the loading line.
+  const terminal = isTerminalAutoStatus(seg.status)
   await Promise.all(autoMembers(seg).map(async (member) => {
     const key = autoRecordKey(member)
     const cur = autoRecords.value[key]
-    if (cur?.status === 'ready' || cur?.status === 'loading') return
-    autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading' } }
+    if (autoInflight.has(key) || cur?.status === 'loading') return
+    if (cur?.status === 'ready' && !cur.live && !opts?.refresh) return
+    if (cur?.status === 'ready' && !cur.live && terminal) return
+    autoInflight.add(key)
+    if (cur?.status !== 'ready') autoRecords.value = { ...autoRecords.value, [key]: { status: 'loading', parts: cur?.parts } }
     try {
       const res = await api.nodeEvents(props.runId, member.nodeId, { signal })
       if (signal.aborted) return
       if (res.unavailable) throw new Error(res.error || 'unavailable')
-      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events) } }
+      const live = !terminal && res.live === true
+      autoRecords.value = { ...autoRecords.value, [key]: { status: 'ready', parts: recordParts(res.events as AcpEvent[] | undefined), live } }
+      if (live && autoOpen.value[priorRowKey(seg)]) scheduleAutoPoll(seg, member)
+      else stopAutoPoll(key)
     } catch {
       if (signal.aborted) return
+      stopAutoPoll(key)
       autoRecords.value = { ...autoRecords.value, [key]: { status: 'error' } }
+    } finally {
+      autoInflight.delete(key)
     }
   }))
 }
@@ -222,8 +279,26 @@ function onPriorToggle(seg: ClarifyPriorSegment, ev: Event) {
   const open = (ev.currentTarget as HTMLDetailsElement).open
   const key = priorRowKey(seg)
   if (!!autoOpen.value[key] !== open) autoOpen.value = { ...autoOpen.value, [key]: open }
-  if (open && !seg.turns.length) void loadAutoRecords(seg)
+  if (!open) {
+    for (const member of autoMembers(seg)) stopAutoPoll(autoRecordKey(member))
+    return
+  }
+  if (!seg.turns.length) void loadAutoRecords(seg)
 }
+watch(
+  () => (props.priorSegments || []).map((s) => `${s.nodeId}:${s.iteration}:${s.status}`).join('|'),
+  () => {
+    for (const seg of props.priorSegments || []) {
+      if (seg.kind !== 'auto' || !isTerminalAutoStatus(seg.status)) continue
+      for (const member of autoMembers(seg)) {
+        const key = autoRecordKey(member)
+        stopAutoPoll(key)
+        const cur = autoRecords.value[key]
+        if (cur?.live) autoRecords.value = { ...autoRecords.value, [key]: { ...cur, live: false } }
+      }
+    }
+  },
+)
 function choiceRowsOf(text: string): ChoiceRows {
   return props.parseChoiceSummary?.(text) ?? null
 }
@@ -346,7 +421,15 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             />
             <Icon name="chevron-down" :size="12" class="chat-thought-chevron" aria-hidden="true" />
           </summary>
-          <div v-if="seg.kind !== 'auto' || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+          <div v-if="seg.kind !== 'auto' || seg.turns.length || priorDetailsOpen(seg)" class="clarify-prior-body flex flex-col gap-3 pb-1 pt-2">
+            <LlmSystemRow
+              v-for="note in notesBesideTurn(seg.notes, -1, seg.turns.length)"
+              :key="note.key"
+              :event="note.event"
+              :node-label="note.nodeLabel"
+              :to-label="note.toLabel"
+              :edge-kind="note.edgeKind"
+            />
             <template v-if="seg.kind === 'auto' && !seg.turns.length">
               <div
                 v-for="member in autoMembers(seg)"
@@ -374,7 +457,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 <AgentTimeline
                   v-else
                   :parts="autoRecord(member).parts!"
-                  :completed="seg.status === 'completed'"
+                  :streaming="!!autoRecord(member).live"
+                  :completed="seg.status === 'completed' || !autoRecord(member).live"
                   :interrupted="seg.status === 'failed' || seg.status === 'cancelled'"
                   :run-id="runId"
                   :started-at="member.at"
@@ -391,12 +475,12 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                 variant="inline"
                 :boot-key="visitBootKey(seg.nodeId, seg.iteration)"
               />
+              <template v-for="(pt, pi) in seg.turns" :key="pi">
               <div
-                v-for="(pt, pi) in seg.turns"
-                :key="pi"
                 class="flex"
                 :class="pt.role === 'human' ? 'justify-end' : ''"
                 :data-turn-role="pt.role"
+                :data-chat-message-id="pt.role === 'human' ? priorAnchorId(seg, pi) : undefined"
               >
                 <div
                   v-if="pt.role === 'human' && priorChoiceEchoes(seg.turns, pi).length"
@@ -431,7 +515,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   data-testid="clarify-prior-form"
                 >
                   <div class="chat-response-heading flex items-center gap-2 text-txt2">
-                    <Icon name="ci" :size="16" /> {{ translate('pages.clarify.myForm') }}
+                    <Icon name="form" :size="16" /> {{ translate('pages.clarify.myForm') }}
                   </div>
                   <div
                     v-for="(row, ri) in formRowsOf(pt.text)!"
@@ -502,7 +586,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                     data-testid="clarify-prior-forms"
                   >
                     <div class="mb-2 flex items-center gap-2 text-[12px] font-medium text-txt2">
-                      <Icon name="ci" :size="16" />
+                      <Icon name="form" :size="16" />
                       {{ translate('pages.clarify.formsThisRound', { n: pt.forms.length }) }}
                       <span class="ml-auto text-[11px] font-normal text-txt2">{{ translate('pages.clarify.readonly') }}</span>
                     </div>
@@ -517,6 +601,15 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
                   </div>
                 </div>
               </div>
+              <LlmSystemRow
+                v-for="note in notesBesideTurn(seg.notes, pi, seg.turns.length)"
+                :key="note.key"
+                :event="note.event"
+                :node-label="note.nodeLabel"
+                :to-label="note.toLabel"
+                :edge-kind="note.edgeKind"
+              />
+              </template>
             </template>
           </div>
         </details>
@@ -535,6 +628,24 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             :interrupted-label="priorSegmentMeta(seg)"
           />
         </div>
+        <template v-if="!priorExpandable(seg)">
+          <LlmSystemRow
+            v-for="note in notesBesideTurn(seg.notes, -1, seg.turns.length)"
+            :key="note.key"
+            :event="note.event"
+            :node-label="note.nodeLabel"
+            :to-label="note.toLabel"
+            :edge-kind="note.edgeKind"
+          />
+        </template>
+        <LlmSystemRow
+          v-for="note in notesAfterVisit(seg.notes, seg.turns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
       <div
         class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
@@ -566,6 +677,14 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
         variant="inline"
         :boot-key="bootRecordKey"
       />
+      <LlmSystemRow
+        v-for="note in notesBesideTurn(currentNotes, -1, turns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <template v-for="(turn, index) in turns" :key="index">
         <ClarifyBootLoader
           v-if="bootSummary && !hasPriors && index === firstAgentAt"
@@ -577,6 +696,7 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
           class="clarify-turn flex"
           :class="turn.role === 'human' ? 'justify-end' : ''"
           :data-turn-role="turn.role"
+          :data-chat-message-id="turn.role === 'human' ? currentAnchorId(nodeId, index) : undefined"
         >
           <div class="min-w-0" :class="turn.role === 'human' ? 'max-w-[88%]' : 'w-full'">
             <ChatTurnAttachments
@@ -611,7 +731,23 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
             </template>
           </div>
         </div>
+        <LlmSystemRow
+          v-for="note in notesBesideTurn(currentNotes, index, turns.length)"
+          :key="note.key"
+          :event="note.event"
+          :node-label="note.nodeLabel"
+          :to-label="note.toLabel"
+          :edge-kind="note.edgeKind"
+        />
       </template>
+      <LlmSystemRow
+        v-for="note in notesAfterVisit(currentNotes, turns.length)"
+        :key="note.key"
+        :event="note.event"
+        :node-label="note.nodeLabel"
+        :to-label="note.toLabel"
+        :edge-kind="note.edgeKind"
+      />
       <ClarifyBootLoader
         v-if="bootSummary && !hasPriors && firstAgentAt < 0"
         phase="done"
@@ -633,6 +769,8 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
 <style scoped>
 .clarify-transcript { width: 100%; max-width: 760px; margin-inline: auto; }
 .clarify-turn { margin-top: 28px; }
+/* The folded 环境已就绪 row already sits right above the turn it opens. */
+:deep(.clarify-boot-done) + .clarify-turn { margin-top: 4px; }
 .chat-response-heading { margin-bottom: 10px; font-size: 12px; font-weight: 500; }
 .chat-response-row + .chat-response-row {
   margin-top: 10px;

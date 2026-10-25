@@ -13,7 +13,6 @@ import {
     formatToolContent,
     mergeSessionUpdateEnvelope,
     pickRicherParams,
-    statusIcon,
     truncateMiddle,
 } from './chat_payload.js';
 import {
@@ -21,12 +20,10 @@ import {
     getSnapshot,
     putSnapshot,
 } from './chat_persist_db.js';
+import {runtimeIcon} from './icons.js';
 import {sanitizeImageURL} from './safe_image_url.js';
 
-const AVATAR_SVG =
-    '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
-    'stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="3"/>' +
-    '<path d="M12 4v4M9 13v1M15 13v1M9.5 17h5"/></svg>';
+const AVATAR_SVG = runtimeIcon('robot', 16);
 
 const THINKING_LIVE_LABEL = '思考中';
 
@@ -37,12 +34,18 @@ function thoughtDoneLabel(ms) {
 }
 
 /** @param {HTMLElement|null} icon @param {string} st */
-function setToolStatus(icon, st) {
+function setToolStatus(icon, st, live = false) {
     if (!icon) return;
     const done = st === 'completed' || st === 'complete' || st === 'success';
     const failed = st === 'failed' || st === 'error' || st === 'cancelled' || st === 'canceled';
-    icon.className = `cc-tool-status cc-tool-status--${done ? 'ok' : failed ? 'err' : 'run'}`;
-    icon.textContent = statusIcon(st);
+    const running = ['in_progress', 'running', 'executing'].includes(st);
+    const glyph = done ? 'check' : failed ? 'close' : running ? 'arc-spinner' : 'dot';
+    const busy = running && live;
+    const key = `${glyph}:${busy}`;
+    if (icon.dataset.toolIcon === key) return;
+    icon.dataset.toolIcon = key;
+    icon.className = `cc-tool-status cc-tool-status--${done ? 'ok' : failed ? 'err' : running ? 'run' : 'info'}`;
+    icon.innerHTML = runtimeIcon(glyph, 13, {busy});
     icon.removeAttribute('style');
 }
 
@@ -330,13 +333,7 @@ export class ChatView {
             btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'cc-turn-usage';
-            btn.innerHTML =
-                '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
-                '<circle cx="12" cy="12" r="10"/>' +
-                '<line x1="12" y1="16" x2="12" y2="12"/>' +
-                '<line x1="12" y1="8" x2="12.01" y2="8"/>' +
-                '</svg>' +
-                '<span class="cc-turn-usage-tip"></span>';
+            btn.innerHTML = runtimeIcon('info', 16) + '<span class="cc-turn-usage-tip"></span>';
             foot.appendChild(btn);
         }
         const {text, hasData} = this._formatTurnUsage(usage);
@@ -395,12 +392,7 @@ export class ChatView {
         const banner = document.createElement('div');
         banner.className = 'cc-persist-banner';
         banner.setAttribute('role', 'status');
-        banner.innerHTML =
-            '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">' +
-            '<path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>' +
-            '<line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>' +
-            '</svg>' +
-            `<span>${PERSIST_BANNER_TEXT}</span>`;
+        banner.innerHTML = runtimeIcon('warning', 16, {enter: true}) + `<span>${PERSIST_BANNER_TEXT}</span>`;
         const hint = this.logEl.querySelector('.cc-load-more-hint');
         if (hint) {
             this.logEl.insertBefore(banner, hint.nextSibling);
@@ -453,6 +445,16 @@ export class ChatView {
             if (!clean.trim()) return false;
             this.logEl.innerHTML = clean;
             for (const av of this.logEl.querySelectorAll('.cc-avatar')) av.innerHTML = AVATAR_SVG;
+            for (const svg of this.logEl.querySelectorAll('.app-icon[data-icon-motion]')) {
+                svg.removeAttribute('data-icon-motion');
+                svg.removeAttribute('data-icon-busy');
+            }
+            for (const icon of this.logEl.querySelectorAll('.cc-tool-status')) {
+                delete icon.dataset.toolIcon;
+                setToolStatus(icon, icon.classList.contains('cc-tool-status--ok') ? 'completed'
+                    : icon.classList.contains('cc-tool-status--err') ? 'failed'
+                    : icon.classList.contains('cc-tool-status--run') ? 'running' : 'pending');
+            }
             for (const det of this.logEl.querySelectorAll('.cc-thinking[data-live]')) {
                 this._settleThinking(det.querySelector('.cc-thinking-body'), null);
             }
@@ -704,12 +706,25 @@ export class ChatView {
     }
 
     resetToolsForNewTurn() {
+        this._settleToolMotion();
         this._toolById.clear();
         this._stickyToolId = null;
     }
 
+    _settleToolMotion() {
+        for (const entry of this._toolById.values()) {
+            if (!entry.icon) continue;
+            for (const svg of entry.icon.querySelectorAll('[data-icon-busy]')) {
+                svg.removeAttribute('data-icon-motion');
+                svg.removeAttribute('data-icon-busy');
+            }
+            delete entry.icon.dataset.toolIcon;
+        }
+    }
+
     /** 轮次结束：折叠所有工具卡，避免与下轮混在一起 */
     _collapseAllTools() {
+        this._settleToolMotion();
         for (const e of this._toolById.values()) {
             if (e && e.det) e.det.open = false;
         }
@@ -1048,7 +1063,7 @@ export class ChatView {
         /* 这类卡片之后不会再收到状态更新，用中性标记而不是转圈 */
         const icon = document.createElement('span');
         icon.className = 'cc-tool-status cc-tool-status--info';
-        icon.textContent = '◆';
+        icon.innerHTML = runtimeIcon('dot', 13);
         const t = document.createElement('span');
         t.className = 'cc-tool-title';
         t.textContent = humanizeToolTitle(title);
@@ -1196,7 +1211,7 @@ export class ChatView {
             entry.statusChain.push(st);
         }
 
-        setToolStatus(entry.icon, st);
+        setToolStatus(entry.icon, st, !this._replaying);
 
         /*
          * ACP 工具事件分两类：

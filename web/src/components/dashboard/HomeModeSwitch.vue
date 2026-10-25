@@ -1,0 +1,83 @@
+<script setup lang="ts">
+import { useI18n } from 'vue-i18n'
+import Icon from '@/components/ui/Icon.vue'
+import SlidingTabs from '@/components/ui/SlidingTabs.vue'
+import type { HomeMode } from '@/lib/solo/soloPrefs'
+
+defineProps<{ modelValue: HomeMode }>()
+const emit = defineEmits<{ (e: 'update:modelValue', v: HomeMode): void }>()
+const { t } = useI18n()
+
+const MODES: { id: HomeMode; icon: string; key: string }[] = [
+  { id: 'workflow', icon: 'workflow', key: 'pages.solo.home.modeWorkflow' },
+  { id: 'solo', icon: 'terminal', key: 'pages.solo.home.modeSolo' },
+]
+
+</script>
+
+<template>
+  <SlidingTabs :value="modelValue" indicator-class="home-mode__indicator rounded-full" class="home-mode" role="tablist" :aria-label="t('pages.solo.home.modeLabel')" data-testid="home-mode-switch">
+    <button
+      v-for="m in MODES"
+      :key="m.id"
+      type="button"
+      role="tab"
+      class="home-mode__opt"
+      :class="{ 'home-mode__opt--on': modelValue === m.id }"
+      :aria-selected="modelValue === m.id"
+      :data-testid="`home-mode-${m.id}`"
+      @click="emit('update:modelValue', m.id)"
+    >
+      <Icon :name="m.icon" :size="13" />
+      <span>{{ t(m.key) }}</span>
+    </button>
+  </SlidingTabs>
+</template>
+
+<style scoped>
+.home-mode {
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  gap: 2px;
+  border: 1px solid rgb(var(--c-line));
+  border-radius: 999px;
+  background: rgb(var(--c-surface) / 0.7);
+  padding: 3px;
+  backdrop-filter: blur(6px);
+}
+.home-mode :deep(.home-mode__indicator) {
+  background: rgb(var(--c-accent) / 0.12);
+}
+.home-mode__opt {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  height: 26px;
+  align-items: center;
+  gap: 5px;
+  border-radius: 999px;
+  padding: 0 12px;
+  color: rgb(var(--c-txt3));
+  font-size: 12px;
+  font-weight: 500;
+  background: transparent;
+  transition: color 0.2s ease;
+}
+.home-mode__opt:hover:not(.home-mode__opt--on) {
+  color: rgb(var(--c-txt2));
+}
+.home-mode__opt--on {
+  color: rgb(var(--c-accent-2));
+}
+.home-mode__opt:focus-visible {
+  outline: 2px solid rgb(var(--c-accent) / 0.6);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-mode__opt {
+    transition: none;
+  }
+}
+</style>

@@ -31,7 +31,7 @@ async function mockApi(
     }
     const url = new URL(route.request().url())
     const p = url.pathname
-    if (p.includes('/gates')) {
+    if (p.includes('/pending-nodes')) {
       if (opts.failGates?.current) {
         await route.fulfill({ status: 500, json: { error: 'gates boom' } })
         return
@@ -212,7 +212,7 @@ test.describe('Inbox empty fill layout (plan g2.3)', () => {
 })
 
 test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
-  test('delayed GET /gates shows 6 skeletons and never flashes empty copy (g3.3)', async ({ page }) => {
+  test('delayed GET /api/pending-nodes shows 6 skeletons and never flashes empty copy (g3.3)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     await mockApi(page, { gatesDelayMs: 1800 })
     await page.goto('/inbox-empty-fill.html?theme=light')
@@ -230,7 +230,7 @@ test.describe('Inbox first-load skeleton / fail (plan g3.3)', () => {
     await expectEmptyCardClasses(page)
   })
 
-  test('first GET /gates 500 shows load-failed + retry, not empty copy (g3.3)', async ({ page }) => {
+  test('first GET /api/pending-nodes 500 shows load-failed + retry, not empty copy (g3.3)', async ({ page }) => {
     await page.setViewportSize({ width: 1440, height: 900 })
     const failGates = { current: true }
     await mockApi(page, { failGates })

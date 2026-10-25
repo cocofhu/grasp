@@ -49,9 +49,9 @@ class E2ePublicWebSocket {
 
 const TOKEN = 'ab'.repeat(32)
 /** Non-loopback mint: covers auto-copy / clipboard assertions (g2.3 / g3.1). */
-const SHARE_URL_REACHABLE = `https://approving.example.com/public/gate-approvals#t=${TOKEN}`
+const SHARE_URL_REACHABLE = `https://approving.example.com/public/approvals#t=${TOKEN}`
 /** Loopback mint: covers warning + disabled copy (no clipboard write). */
-const SHARE_URL_LOOPBACK = `http://127.0.0.1:5174/public/gate-approvals#t=${TOKEN}`
+const SHARE_URL_LOOPBACK = `http://127.0.0.1:5174/public/approvals#t=${TOKEN}`
 
 function fixtureShareUrl(token = TOKEN): string {
   const host = new URLSearchParams(location.search).get('shareHost')
@@ -129,23 +129,23 @@ const originalFetch = window.fetch.bind(window)
 const sharedBackend = new URLSearchParams(location.search).get('sharedBackend') === '1'
 window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
-  if (sharedBackend && /\/public\/gate-approvals\/(preview|reply)(\?|$)/.test(url)) {
+  if (sharedBackend && /\/public\/approvals\/(preview|reply)(\?|$)/.test(url)) {
     return originalFetch(input, init)
   }
-  if (url.includes('/public/gate-approvals/artifacts') && !url.includes('/content')) {
+  if (url.includes('/public/approvals/artifacts') && !url.includes('/content')) {
     return new Response(JSON.stringify({ status: 'active', artifacts: [], nodes: [] }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (url.includes('/public/gate-approvals/artifacts/') && url.includes('/content')) {
+  if (url.includes('/public/approvals/artifacts/') && url.includes('/content')) {
     return new Response(JSON.stringify({ status: 'active', name: 'research.json', content: '{}' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   }
   if (
-    url.includes('/public/gate-approvals/preview') &&
+    url.includes('/public/approvals/preview') &&
     !url.includes('/preview-ticket') &&
     !url.includes('/preview-vnc') &&
     !url.includes('/preview-api')
@@ -252,7 +252,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/public/gate-approvals/preview-ticket')) {
+  if (url.includes('/public/approvals/preview-ticket')) {
     let port = 0
     try {
       const body = typeof init?.body === 'string' ? JSON.parse(init.body) : {}
@@ -268,12 +268,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
         expiresAt: new Date(Date.now() + 120_000).toISOString(),
         port,
         mode: 'vnc',
-        wsPath: '/public/gate-approvals/preview-vnc/ws',
+        wsPath: '/public/approvals/preview-vnc/ws',
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/public/gate-approvals/upstream')) {
+  if (url.includes('/public/approvals/upstream')) {
     return new Response(
       JSON.stringify({
         status: 'active',
@@ -287,7 +287,7 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       { status: 200, headers: { 'Content-Type': 'application/json' } },
     )
   }
-  if (url.includes('/public/gate-approvals/reply')) {
+  if (url.includes('/public/approvals/reply')) {
     reviewPreviewBusy = true
     const body = init?.body ? JSON.parse(String(init.body)) : {}
     const text = String(body.text || '').trim()
@@ -303,14 +303,14 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (url.includes('/public/gate-approvals/cancel')) {
+  if (url.includes('/public/approvals/cancel')) {
     reviewPreviewBusy = false
     return new Response(JSON.stringify({ status: 'ok' }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     })
   }
-  if (url.includes('/public/gate-approvals/decide')) {
+  if (url.includes('/public/approvals/decide')) {
     if (new URLSearchParams(location.search).get('slowDecide')) {
       await new Promise((r) => setTimeout(r, 800))
     }

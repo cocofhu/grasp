@@ -2,9 +2,11 @@
 import { computed } from 'vue'
 import { useI18n } from 'vue-i18n'
 import Icon from '@/components/ui/Icon.vue'
-import type { AgentCapabilities } from '@/lib/api/apiTypes'
+import AppSelect from '@/components/ui/AppSelect.vue'
+import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
+import type { AgentCapabilities, ModelConfiguration } from '@/lib/api/apiTypes'
 import { summarizeCapabilities } from '@/lib/workflow/agentCapabilities'
-import { isRequiredTemplate, type OnboardingTeamMember, type TeamNameIssue } from '@/lib/pm/onboardingWizard'
+import { type OnboardingTeamMember, type TeamNameIssue } from '@/lib/pm/onboardingWizard'
 
 const props = defineProps<{
   member: OnboardingTeamMember
@@ -13,20 +15,18 @@ const props = defineProps<{
   summary?: string
   namePlaceholder?: string
   modelPlaceholder: string
+  modelConfigurations: ModelConfiguration[]
   issue?: TeamNameIssue
   /** Position in the workflow, 0-based. */
   index: number
 }>()
 
 const emit = defineEmits<{
-  toggle: [enabled: boolean]
-  'update:name': [value: string]
   'update:model': [value: string]
 }>()
 
 const { t, te } = useI18n()
 
-const required = computed(() => isRequiredTemplate(props.member.templateId))
 const caps = computed(() => summarizeCapabilities(props.capabilities))
 const keyBase = computed(() => `pages.onboarding.team.templates.${props.member.templateId}`)
 const title = computed(() => t(`${keyBase.value}.title`))
@@ -48,18 +48,7 @@ function schemaLabel(schema: string, fallback: string) {
         <div class="truncate text-[14.5px] font-semibold leading-5 text-txt" :title="title">{{ title }}</div>
         <div class="mt-0.5 flex items-center gap-1.5 text-[11px] leading-4 text-txt3">
           {{ t('pages.onboarding.team.stage', { n: index + 1 }) }}
-          <span v-if="required" class="team-badge">{{ t('pages.onboarding.team.required') }}</span>
-          <label v-else class="team-switch" :title="t('pages.onboarding.team.optional')">
-            <input
-              type="checkbox"
-              class="team-native"
-              :checked="member.enabled"
-              :aria-label="title"
-              :data-testid="`onboarding-team-toggle-${member.templateId}`"
-              @change="emit('toggle', ($event.target as HTMLInputElement).checked)"
-            />
-            <span class="team-switch-track" aria-hidden="true" />
-          </label>
+          <span class="team-badge">{{ t('pages.onboarding.team.required') }}</span>
         </div>
       </div>
     </header>
@@ -98,10 +87,11 @@ function schemaLabel(schema: string, fallback: string) {
         <input
           :value="member.name"
           type="text"
+          readonly
           autocomplete="off"
           :placeholder="namePlaceholder"
+          :aria-readonly="true"
           :data-testid="`onboarding-team-name-${member.templateId}`"
-          @input="emit('update:name', ($event.target as HTMLInputElement).value)"
         />
       </label>
       <p v-if="issue" class="-mt-1 text-[11px] text-err" :data-testid="`onboarding-team-name-error-${member.templateId}`">
@@ -109,16 +99,7 @@ function schemaLabel(schema: string, fallback: string) {
       </p>
       <label class="team-field">
         <span class="team-field-label">{{ t('pages.onboarding.team.modelLabel') }}</span>
-        <input
-          :value="member.model"
-          type="text"
-          autocomplete="off"
-          class="font-mono"
-          :placeholder="modelPlaceholder"
-          :title="modelPlaceholder"
-          :data-testid="`onboarding-team-model-${member.templateId}`"
-          @input="emit('update:model', ($event.target as HTMLInputElement).value)"
-        />
+        <AppSelect :model-value="member.modelConfigurationId" :options="[{ value: '', label: modelPlaceholder }, ...modelConfigurations.filter((row) => row.state === 'active').map((row) => ({ value: row.id, label: row.name }))]" :aria-label="t('pages.onboarding.team.modelLabel')" searchable :data-testid="`onboarding-team-model-${member.templateId}`" @update:model-value="emit('update:model', $event)"><template #leading><CredentialProviderLogo v-if="member.modelConfigurationId" :provider="modelConfigurations.find((row) => row.id === member.modelConfigurationId)?.backend" match="provider" /></template><template #option-leading="{ option }"><CredentialProviderLogo v-if="option.value" :provider="modelConfigurations.find((row) => row.id === option.value)?.backend" match="provider" /></template></AppSelect>
       </label>
     </div>
     <p v-else class="team-off">{{ t('pages.onboarding.team.offNote') }}</p>

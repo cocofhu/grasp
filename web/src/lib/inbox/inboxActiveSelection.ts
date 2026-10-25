@@ -72,8 +72,9 @@ export function pickNextActiveAfterRemove<T extends Pick<InboxItem, 'runId' | 'n
   return without[idx] || without[idx - 1] || null
 }
 
-/** True when an inbox-context error means the item left pending. */
-export function isInboxLeftPendingError(err: unknown): boolean {
-  const msg = err instanceof Error ? err.message : String(err ?? '')
-  return /no pending inbox item/i.test(msg)
+/** True when inbox-context returned the leave marker (HTTP 200, pending:false). */
+export function isInboxLeftPending(ctx: unknown): ctx is { pending: false } {
+  if (!ctx || typeof ctx !== 'object') return false
+  const rec = ctx as { pending?: unknown; type?: unknown }
+  return rec.pending === false && rec.type == null
 }

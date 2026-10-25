@@ -61,6 +61,10 @@ function sessions(list: unknown[], replace = true) {
 }
 
 beforeEach(() => {
+  // Happy DOM 21 rejects its eagerly created Animation.finished on cancel.
+  // Chromium does not report an unhandled rejection without reading finished;
+  // these overlay interaction tests only need deterministic animation cleanup.
+  vi.spyOn(Element.prototype, 'animate').mockImplementation(() => ({ cancel: vi.fn(), onfinish: null }) as unknown as Animation)
   postOk = true
   sessionStorage.clear()
   history.replaceState(null, '', '/pricing')
@@ -70,6 +74,7 @@ afterEach(() => {
   overlay?.dispose()
   overlay = null
   document.body.innerHTML = ''
+  vi.restoreAllMocks()
 })
 
 describe('Live overlay', () => {

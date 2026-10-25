@@ -5,6 +5,7 @@ import AppModal from '@/components/ui/AppModal.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import CodeEditor from '@/components/ui/CodeEditor.vue'
 import MarkdownSplitEditor from '@/components/agent/MarkdownSplitEditor.vue'
+import MarkdownViewToggle from '@/components/agent/MarkdownViewToggle.vue'
 import ExplorerContextMenu, { type CtxTarget } from '@/components/agent/ExplorerContextMenu.vue'
 import AgentWorkspaceHistoryPanel from '@/components/agent/AgentWorkspaceHistoryPanel.vue'
 export type { FilesStep, FilesOpenSnapshot } from '@/lib/agent/useAgentFilesPanel'
@@ -17,7 +18,8 @@ const emit = defineEmits<AgentFilesPanelEmit>()
 const panelEl = ref<HTMLElement | null>(null)
 const panelWidth = ref(0)
 const compactFiles = computed(() => props.isMobile || (panelWidth.value > 0 && panelWidth.value < 640))
-const modalHistory = computed(() => !props.isMobile && panelWidth.value > 0 && panelWidth.value < 1000)
+// Version history opens as a dialog on desktop so the workspace stays explorer + editor.
+const modalHistory = computed(() => !props.isMobile)
 const showHistory = ref(false)
 const mdEditorRef = ref<InstanceType<typeof MarkdownSplitEditor> | null>(null)
 // Reuse the established list/edit flow when the surrounding directories leave
@@ -51,9 +53,6 @@ const {
   writeCollapsedState,
   explorerCollapsed,
   toggleExplorerCollapsed,
-  historyCollapsed,
-  toggleHistoryCollapsed,
-  workspaceGridStyle,
   collapseBtnClass,
   filesStep,
   activeFile,
@@ -124,10 +123,7 @@ const {
 
 const filesGridStyle = computed(() => {
   if (compactFiles.value) return undefined
-  if (modalHistory.value) {
-    return { gridTemplateColumns: `${explorerCollapsed.value ? '28px' : '240px'} minmax(0, 1fr)` }
-  }
-  return workspaceGridStyle.value
+  return { gridTemplateColumns: `${explorerCollapsed.value ? SIDEBAR_COLLAPSED_W : SIDEBAR_EXPANDED_W} minmax(0, 1fr)` }
 })
 
 defineExpose({
@@ -138,7 +134,7 @@ defineExpose({
 
 <template>
   <div ref="panelEl" class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden" data-testid="agent-files-panel">
-  <!-- compact (<640px) keeps its own row; wider desktop folds 版本历史 into the editor toolbar -->
+  <!-- compact (<640px) keeps its own row; wider desktop puts 版本历史 in the editor toolbar -->
   <div v-if="compactFiles && modalHistory && agentName" class="flex shrink-0 justify-end border-b border-line/60 px-3 py-1">
     <button
       type="button"
@@ -192,7 +188,7 @@ defineExpose({
                 :aria-label="t('pages.agentStudio.explorer.collapse')"
                 @click="toggleExplorerCollapsed"
               >
-                <Icon name="chevron-right" :size="14" class="rotate-180" />
+                <Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" />
               </button>
             </template>
             <button
@@ -352,13 +348,13 @@ defineExpose({
               class="inline-flex min-h-11 items-center gap-1 px-2 text-[12px] text-txt2 hover:text-txt"
               @click="tryBackToList"
             >
-              <Icon name="chevron-right" :size="14" class="rotate-180" />
+              <Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" />
               {{ t('pages.agentStudio.mobile.back') }}
             </button>
             <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-txt">{{ activePath }}</span>
           </div>
 
-          <!-- editor toolbar (desktop): open-file tabs + 版本历史 + 预览 toggle in ONE row -->
+          <!-- editor toolbar (desktop): open-file tabs + 编辑/分栏/预览 + 版本历史 in ONE row -->
           <div
             v-if="!compactFiles"
             data-testid="files-editor-toolbar"
@@ -379,31 +375,24 @@ defineExpose({
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-2 px-2">
+              <MarkdownViewToggle
+                v-if="currentFile && isMdPath(currentFile.path) && mdEditorRef"
+                :model-value="mdEditorRef.viewMode"
+                @update:model-value="mdEditorRef.setViewMode"
+              />
+              <span
+                v-if="currentFile && isMdPath(currentFile.path) && mdEditorRef && modalHistory && agentName"
+                class="h-3.5 w-px bg-line"
+                aria-hidden="true"
+              />
               <button
                 v-if="modalHistory && agentName"
                 type="button"
                 data-testid="compact-history-open"
-                class="text-[12px] text-txt2 hover:text-txt"
+                class="flex items-center gap-1 rounded px-1.5 py-1 text-[12px] text-txt3 transition hover:bg-elevated hover:text-txt"
+                :title="t('pages.agentStudio.workspaceHistory.title')"
                 @click="showHistory = true"
-              >{{ t('pages.agentStudio.workspaceHistory.title') }}</button>
-              <template v-if="currentFile && isMdPath(currentFile.path) && mdEditorRef">
-                <span
-                  v-if="!mdEditorRef.previewCollapsed"
-                  class="flex items-center gap-1 text-[10px] text-ok"
-                ><span class="h-1.5 w-1.5 rounded-full bg-ok" />{{ t('pages.markdownEditor.live') }}</span>
-                <button
-                  type="button"
-                  class="flex items-center gap-1 rounded px-1 py-0.5 text-[10.5px] uppercase tracking-wider text-txt3 transition hover:bg-elevated hover:text-accent-2"
-                  :title="mdEditorRef.previewCollapsed ? t('pages.markdownEditor.expandPreview') : t('pages.markdownEditor.collapsePreview')"
-                  :aria-label="mdEditorRef.previewCollapsed ? t('pages.markdownEditor.expandPreview') : t('pages.markdownEditor.collapsePreview')"
-                  :aria-expanded="!mdEditorRef.previewCollapsed"
-                  :data-testid="mdEditorRef.previewCollapsed ? 'md-preview-expand-rail' : 'md-preview-collapse'"
-                  @click="mdEditorRef.previewCollapsed ? mdEditorRef.expandPreview() : mdEditorRef.collapsePreview()"
-                >
-                  <span>{{ t('pages.markdownEditor.preview') }}</span>
-                  <Icon name="chevron-right" :size="14" :class="mdEditorRef.previewCollapsed ? 'rotate-180' : ''" />
-                </button>
-              </template>
+              ><Icon name="history" :size="13" />{{ t('pages.agentStudio.workspaceHistory.title') }}</button>
             </div>
           </div>
 
@@ -439,16 +428,6 @@ defineExpose({
           </div>
         </div>
 
-        <AgentWorkspaceHistoryPanel
-          v-if="!compactFiles && !modalHistory && agentName"
-          :agent-name="agentName"
-          :is-mobile="compactFiles"
-          :file-path="activePath"
-          :collapsed="historyCollapsed"
-          :refresh-key="historyRefreshKey"
-          @toggle-collapse="toggleHistoryCollapsed"
-          @restored="emit('restored')"
-        />
   </div>
 
     <AppModal

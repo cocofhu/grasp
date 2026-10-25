@@ -73,8 +73,6 @@ const {
   promptCanSubmit,
   refreshPromptFeedback,
   confirmCfg,
-  showAgentManage,
-  manageFocusAgent,
   showUnsavedExport,
   exporting,
   showBundleSecrets,
@@ -100,12 +98,6 @@ const {
   confirmBatchRename,
   confirmBatchOverwrite,
   dirty,
-  agentNames,
-  manageSearch,
-  filteredManageNames,
-  manageSearchActive,
-  manageNameHighlight,
-  clearManageSearch,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -118,7 +110,6 @@ const {
   leaveConfirmCancel,
   load,
   chooseAgentFromSheet,
-  openManageFromSheet,
   save,
   confirmSaveWithReason,
   showSaveReasonModal,
@@ -147,8 +138,6 @@ const {
   onTeamBootstrapSelectPm,
   onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
-  openAgentManage,
-  closeAgentManage,
   openRenameAgent,
   confirmDeleteAgent,
   promptOk,
@@ -364,7 +353,7 @@ async function createStudioChatTest(
         <template v-else>
           <h2 class="m-0 text-[18px] font-semibold text-txt">{{ t('pages.agentStudio.emptyTeamTitle') }}</h2>
           <p class="m-0 max-w-md text-[13px] leading-6 text-txt3">{{ t('pages.agentStudio.emptyTeamDesc') }}</p>
-          <AppButton variant="primary" icon="skills" data-testid="agent-studio-empty-create-team" @click="openCreateTeam">
+          <AppButton variant="primary" icon="users" data-testid="agent-studio-empty-create-team" @click="openCreateTeam">
             {{ t('pages.agentStudio.emptyTeamCta') }}
           </AppButton>
           <button type="button" class="text-[12px] text-accent-2 hover:underline" @click="openCreateAgent()">
@@ -408,7 +397,8 @@ async function createStudioChatTest(
         :collapsed="agentListCollapsed"
         :hide-create-team="hideTeamCreate"
         @select="onSidebarSelect"
-        @open-manage="openAgentManage"
+        @rename="openRenameAgent"
+        @delete="confirmDeleteAgent"
         @import="triggerImport"
         @create-agent="openCreateAgent"
         @create-team="openCreateTeam"
@@ -477,11 +467,16 @@ async function createStudioChatTest(
               <Icon name="menu" :size="14" />
               <span>{{ t('pages.agentStudio.mobile.switch') }}</span>
             </button>
-            <span v-if="dirty" class="chip shrink-0 border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
-            <span
-              v-else-if="justSaved"
-              class="chip shrink-0 border-ok/30 bg-ok/10 text-ok"
-            >{{ t('pages.agentStudio.saved') }}</span>
+            <span class="studio-status-slot">
+              <Transition name="studio-feedback">
+                <span v-if="dirty" key="dirty" class="chip border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
+                <span
+                  v-else-if="justSaved"
+                  key="saved"
+                  class="chip border-ok/30 bg-ok/10 text-ok"
+                >{{ t('pages.agentStudio.saved') }}</span>
+              </Transition>
+            </span>
           </div>
           <div data-test="studio-name-row-bottom" class="flex items-center gap-2">
             <AppButton
@@ -494,16 +489,22 @@ async function createStudioChatTest(
             >
               {{ t('pages.agentStudio.exportImport.export') }}
             </AppButton>
-            <AppButton
-              v-if="dirty"
-              data-test="studio-save"
-              variant="primary"
-              class="min-h-11"
-              :disabled="saving"
-              @click="() => save()"
-            >
-              {{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}
-            </AppButton>
+            <Transition name="studio-feedback">
+              <AppButton
+                v-if="dirty"
+                data-test="studio-save"
+                variant="primary"
+                class="studio-save-button min-h-11"
+                :disabled="saving"
+                @click="() => save()"
+              >
+                <span class="studio-save-label">
+                  <Transition name="studio-feedback">
+                    <span :key="saving ? 'saving' : 'save'">{{ saving ? t('common.buttons.saving') : t('common.buttons.save') }}</span>
+                  </Transition>
+                </span>
+              </AppButton>
+            </Transition>
           </div>
         </div>
         <div
@@ -513,11 +514,16 @@ async function createStudioChatTest(
         >
           <Icon name="robot" :size="15" class="shrink-0 text-accent-2" />
           <span class="min-w-0 truncate text-[13px] font-medium text-txt" :title="activeName">{{ activeName }}</span>
-          <span v-if="dirty" class="chip shrink-0 border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
-          <span
-            v-else-if="justSaved"
-            class="chip shrink-0 border-ok/30 bg-ok/10 text-ok"
-          >{{ t('pages.agentStudio.saved') }}</span>
+          <span class="studio-status-slot">
+            <Transition name="studio-feedback">
+              <span v-if="dirty" key="dirty" class="chip border-warn/30 text-warn">{{ t('pages.agentStudio.unsaved') }}</span>
+              <span
+                v-else-if="justSaved"
+                key="saved"
+                class="chip border-ok/30 bg-ok/10 text-ok"
+              >{{ t('pages.agentStudio.saved') }}</span>
+            </Transition>
+          </span>
           <div class="ml-auto flex shrink-0 items-center gap-2">
             <AppButton
               data-test="studio-export"
@@ -533,10 +539,15 @@ async function createStudioChatTest(
               data-test="studio-save"
               size="sm"
               variant="primary"
+              class="studio-save-button"
               :disabled="!dirty || saving"
               @click="() => save()"
             >
-              {{ saving ? t('common.buttons.saving') : dirty ? t('common.buttons.save') : t('pages.agentStudio.saved') }}
+              <span class="studio-save-label">
+                <Transition name="studio-feedback">
+                  <span :key="saving ? 'saving' : dirty ? 'save' : 'saved'">{{ saving ? t('common.buttons.saving') : dirty ? t('common.buttons.save') : t('pages.agentStudio.saved') }}</span>
+                </Transition>
+              </span>
             </AppButton>
           </div>
         </div>
@@ -686,87 +697,6 @@ async function createStudioChatTest(
     </div>
     </div>
 
-    <!-- Agent management (rename + hard delete) -->
-    <AppModal
-      :open="showAgentManage"
-      :title="t('pages.agentStudio.tree.manageTitle')"
-      :width="520"
-      @close="closeAgentManage"
-    >
-      <p class="mb-3 text-[12.5px] leading-relaxed text-txt2">{{ t('pages.agentStudio.tree.manageIntro') }}</p>
-      <div v-if="!agentNames.length" class="text-[13px] text-txt3">{{ t('pages.agentStudio.tree.manageEmpty') }}</div>
-      <template v-else>
-        <div class="relative mb-2">
-          <Icon name="search" :size="15" class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-txt3" />
-          <input
-            v-model="manageSearch"
-            type="text"
-            autocomplete="off"
-            :placeholder="t('pages.agentStudio.tree.manageSearchPlaceholder')"
-            class="rounded-md w-full border border-line bg-base py-2 pl-8 pr-8 text-[13px] text-txt outline-none transition focus:border-accent"
-            data-test="manage-search"
-          />
-          <button
-            v-if="manageSearch"
-            type="button"
-            class="absolute right-1.5 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center text-txt3 hover:bg-elevated hover:text-txt"
-            :aria-label="t('pages.agentStudio.tree.manageClearSearch')"
-            data-test="manage-search-clear"
-            @click="clearManageSearch"
-          >
-            <Icon name="close" :size="14" />
-          </button>
-        </div>
-        <p class="mb-2 text-[12px] tabular-nums text-txt3" data-test="manage-search-count">
-          {{
-            manageSearchActive
-              ? t('pages.agentStudio.tree.manageSearchCount', { matched: filteredManageNames.length, total: agentNames.length })
-              : t('pages.agentStudio.tree.manageTotalCount', { total: agentNames.length })
-          }}
-        </p>
-        <div v-if="manageSearchActive && !filteredManageNames.length" class="rounded-lg border border-dashed border-line px-4 py-8 text-center">
-          <Icon name="search" :size="20" class="mx-auto mb-2 text-txt3" />
-          <p class="text-[13px] font-medium text-txt">{{ t('pages.agentStudio.tree.manageNoMatchTitle') }}</p>
-          <p class="mt-1 text-[12px] text-txt3">{{ t('pages.agentStudio.tree.manageNoMatchDesc') }}</p>
-          <AppButton class="mt-3" size="sm" variant="outline" @click="clearManageSearch">
-            {{ t('pages.agentStudio.tree.manageClearSearch') }}
-          </AppButton>
-        </div>
-        <div v-else class="flex flex-col gap-0.5">
-        <div
-          v-for="name in filteredManageNames"
-          :key="name"
-          :data-manage-agent="name"
-          class="rounded-lg flex items-center gap-2 border px-2.5 py-2 transition"
-          :class="
-            manageFocusAgent === name
-              ? 'border-accent/40 bg-accent-dim shadow-[inset_0_0_0_1px_rgba(99,102,241,0.35)]'
-              : 'border-transparent hover:bg-elevated'
-          "
-        >
-          <Icon name="robot" :size="14" class="shrink-0 text-accent-2" />
-          <span class="min-w-0 flex-1 truncate text-[13px] text-txt">
-            <template v-if="manageNameHighlight(name).hit">
-              {{ manageNameHighlight(name).before }}<mark class="bg-warn/25 px-0 text-inherit">{{ manageNameHighlight(name).hit }}</mark>{{ manageNameHighlight(name).after }}
-            </template>
-            <template v-else>{{ name }}</template>
-          </span>
-          <div class="flex shrink-0 gap-1.5">
-            <AppButton size="sm" variant="outline" icon="edit" @click="openRenameAgent(name)">
-              {{ t('pages.agentStudio.tree.manageRename') }}
-            </AppButton>
-            <AppButton size="sm" variant="danger" icon="trash" @click="confirmDeleteAgent(name)">
-              {{ t('pages.agentStudio.dialogs.delete') }}
-            </AppButton>
-          </div>
-        </div>
-        </div>
-      </template>
-      <template #footer>
-        <AppButton size="sm" variant="ghost" @click="closeAgentManage">{{ t('common.buttons.close') }}</AppButton>
-      </template>
-    </AppModal>
-
     <!-- prompt modal (create / rename) -->
     <AppModal :open="!!promptCfg" :title="promptCfg?.title" :width="420" @close="promptCfg = null">
       <label class="mb-1 block text-[12px] text-txt2">{{ promptCfg?.label }}</label>
@@ -851,15 +781,8 @@ async function createStudioChatTest(
               :aria-label="t('pages.agentStudio.tree.newTeam')"
               @click="openCreateTeam"
             >
-              <Icon name="skills" :size="14" />
+              <Icon name="users" :size="14" />
             </button>
-            <AppButton
-              size="sm"
-              variant="outline"
-              data-test="sidebar-sheet-manage"
-              class="min-h-9 shrink-0"
-              @click="openManageFromSheet"
-            >{{ t('pages.agentStudio.tree.manage') }}</AppButton>
             <button
               type="button"
               data-test="sidebar-sheet-close"
@@ -1109,13 +1032,15 @@ async function createStudioChatTest(
 
 
     <Teleport to="body">
-      <div
-        v-if="toastMsg"
-        data-test="studio-toast"
-        class="rounded-lg fixed bottom-5 right-5 z-[10000] border border-line bg-elevated px-3.5 py-2 text-[12px] text-txt2 shadow-card"
-      >
-        {{ toastMsg }}
-      </div>
+      <Transition name="studio-toast">
+        <div
+          v-if="toastMsg"
+          data-test="studio-toast"
+          class="rounded-lg fixed bottom-5 right-5 z-[10000] border border-line bg-elevated px-3.5 py-2 text-[12px] text-txt2 shadow-card"
+        >
+          {{ toastMsg }}
+        </div>
+      </Transition>
     </Teleport>
   </div>
 </template>
@@ -1123,6 +1048,67 @@ async function createStudioChatTest(
 <style scoped>
 .agent-studio-document {
   container: agent-studio / inline-size;
+}
+
+.studio-status-slot,
+.studio-save-label {
+  display: inline-grid;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.studio-status-slot {
+  min-inline-size: 4.75em;
+}
+
+.studio-status-slot > .chip,
+.studio-save-label > span {
+  grid-area: 1 / 1;
+}
+
+.studio-status-slot > .chip {
+  justify-self: start;
+}
+
+.studio-save-button {
+  min-inline-size: 6.5em;
+  transition: opacity 200ms ease, background-color 200ms ease, color 200ms ease, box-shadow 200ms ease;
+}
+
+.studio-feedback-enter-active,
+.studio-feedback-leave-active,
+.studio-toast-enter-active,
+.studio-toast-leave-active {
+  transition: opacity 200ms ease, transform 200ms ease;
+}
+
+.studio-feedback-enter-from,
+.studio-feedback-leave-to {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.studio-toast-enter-from,
+.studio-toast-leave-to {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .studio-save-button,
+  .studio-feedback-enter-active,
+  .studio-feedback-leave-active,
+  .studio-toast-enter-active,
+  .studio-toast-leave-active {
+    transition: none;
+  }
+
+  .studio-feedback-enter-from,
+  .studio-feedback-leave-to,
+  .studio-toast-enter-from,
+  .studio-toast-leave-to {
+    transform: none;
+  }
 }
 
 /* Account for the Settings directory as well as the browser width. */

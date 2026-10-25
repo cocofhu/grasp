@@ -21,6 +21,7 @@ import (
 	"backend/internal/provider/antigravity"
 	"backend/internal/provider/codex"
 	"backend/internal/provider/copilot"
+	"backend/internal/provider/deepseek"
 	"backend/internal/provider/openclaw"
 	"backend/internal/provider/opencodejson"
 	"backend/internal/provider/pi"
@@ -178,12 +179,13 @@ var registry = map[Name]provider.Provider{
 	}),
 
 	// --- ACP family (long-lived, JSON-RPC over stdio) ----------------------
-	provider.Trae:   acpx.FromBackend(backend.Get(backend.Trae)),
-	provider.Kimi:   acpSpec(provider.Kimi, "kimi-acp", "/root/.kimi", []string{"kimi", "acp"}, "MOONSHOT_API_KEY"),
-	provider.Hermes: acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
-	provider.Kiro:   acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
-	provider.Qoder:  acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),
-	provider.Grok:   acpSpec(provider.Grok, "grok-acp", "/root/.grok", []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}, "XAI_API_KEY"),
+	provider.DeepSeekHarness: deepseek.New(),
+	provider.Trae:            acpx.FromBackend(backend.Get(backend.Trae)),
+	provider.Kimi:            acpSpec(provider.Kimi, "kimi-acp", "/root/.kimi", []string{"kimi", "acp"}, "MOONSHOT_API_KEY"),
+	provider.Hermes:          acpSpec(provider.Hermes, "hermes-acp", "/root/.hermes", []string{"hermes", "acp"}, "HERMES_API_KEY"),
+	provider.Kiro:            acpSpec(provider.Kiro, "kiro-acp", "/root/.kiro", []string{"kiro-cli", "acp", "--trust-all-tools"}, "KIRO_API_KEY"),
+	provider.Qoder:           acpSpec(provider.Qoder, "qoder-acp", "/root/.qoder", []string{"qodercli", "--yolo", "--acp"}, "QODER_PERSONAL_ACCESS_TOKEN"),
+	provider.Grok:            acpSpec(provider.Grok, "grok-acp", "/root/.grok", []string{"grok", "--no-auto-update", "agent", "--always-approve", "stdio"}, "XAI_API_KEY"),
 
 	// --- opt-in ACP fallbacks for the stream-json CLIs ---------------------
 	provider.CursorACP:     acpx.FromBackend(backend.Get(backend.Cursor)),

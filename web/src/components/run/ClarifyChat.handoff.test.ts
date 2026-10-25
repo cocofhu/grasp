@@ -54,12 +54,14 @@ describe('ClarifyChat inline hand-off step row (方案 B)', () => {
     expect(rows[0].text()).toContain('流转到下一节点')
     expect(rows[0].text()).toContain('校验中')
     expect(rows[0].find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('streaming')
+    expect(rows[0].get('icon-stub').attributes('name')).toBe('arc-spinner')
     await w.setProps({ handoff: { phase: 'done', at: new Date().toISOString() } })
     const done = w.get('[data-testid="clarify-handoff"]')
     expect(done.attributes('data-state')).toBe('done')
     expect(done.text()).toContain('已确认并流转')
     expect(done.text()).toContain('已完成')
     expect(done.find('[data-testid="thought-summary-state"]').attributes('data-state')).toBe('done')
+    expect(done.get('icon-stub').attributes('name')).toBe('check-draw')
     await w.setProps({ handoff: null })
     expect(w.find('[data-testid="clarify-handoff"]').exists()).toBe(false)
     w.unmount()
@@ -223,13 +225,16 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     await flushPromises()
     const tail = () => w.findAll('[data-testid="clarify-follow-tail"]').at(-1)!
     const st = () => tail().find('[data-testid="thought-summary-state"]').attributes('data-state')
+    const icon = () => tail().get('icon-stub').attributes('name')
     expect(tail().text()).toContain('「部署」正在自动执行')
     expect(tail().text()).toContain('完成后在此继续')
     expect(st()).toBe('streaming')
+    expect(icon()).toBe('breath-dot')
     await w.setProps({ followTail: { kind: 'waiting', label: '验收测试', at } })
     await flushPromises()
     expect(tail().text()).toContain('「验收测试」准备中')
     expect(tail().text()).toContain('就绪后可直接输入')
+    expect(icon()).toBe('arc-spinner')
     await w.setProps({ followTail: { kind: 'waiting', at } })
     await flushPromises()
     expect(tail().text()).toContain('等待下一节点开始')
@@ -237,18 +242,22 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     await flushPromises()
     expect(tail().text()).toContain('暂时无法获取运行进度')
     expect(tail().text()).toContain('重试中')
+    expect(icon()).toBe('arc-spinner')
     await w.setProps({ followTail: { kind: 'ended', status: 'completed', at } })
     await flushPromises()
     expect(tail().text()).toContain('运行已完成')
     expect(st()).toBe('done')
+    expect(icon()).toBe('check-draw')
     await w.setProps({ followTail: { kind: 'ended', status: 'failed', at } })
     await flushPromises()
     expect(tail().text()).toContain('运行失败')
     expect(tail().text()).not.toContain('已中断')
     expect(st()).toBe('interrupted')
+    expect(icon()).toBe('warn-pulse')
     await w.setProps({ followTail: { kind: 'ended', status: 'cancelled', at } })
     await flushPromises()
     expect(tail().text()).toContain('运行已取消')
+    expect(icon()).toBe('warn-pulse')
     w.unmount()
   })
 
@@ -356,6 +365,145 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+  const implementTask = '按需求与计划实现,本地测试通过后提交并推送工作分支。若测试评审未通过,先读 test_result 与 review 逐条修复,复用已有工作分支。'
+  const statusIconNote = '状态图标按进行中、完成和等人区分。'
+
+  it('a rerun after an empty failed visit still opens with that upstream note, matching the folded visit', async () => {
+    nodeEvents.mockImplementation(async () => ({
+      events: [{ kind: 'timeline', parts: [{ kind: 'message', text: '中断' }] }],
+      live: false,
+    }))
+    const at = (m: number) => `2026-10-22T09:0${m}:00Z`
+    const w = mountChat({
+      nodeId: 'implement',
+      nodeLabel: '实现',
+      nodeTask: implementTask,
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: at(0), endedAt: at(1), open: true,
+          turns: [{ role: 'human', text: '做导出', at: at(0) }], handoff: statusIconNote, handoffSource: 'agent' },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'failed', at: at(1), endedAt: at(2), turns: [], open: false },
+        { nodeId: 'implement', iteration: 2, label: '实现', kind: 'auto', status: 'failed', at: at(2), endedAt: at(3), turns: [], open: false },
+      ],
+    })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    const current = w.get('[data-testid="clarify-incoming-handoff"]')
+    expect(current.attributes('data-source')).toBe('agent')
+    expect(current.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「需求澄清」的交接说明')
+    expect(current.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(statusIconNote)
+    const rows = w.findAll('[data-testid="clarify-prior-segment"][data-node-id="implement"]')
+    expect(rows).toHaveLength(2)
+    for (const row of rows) {
+      ;(row.element as HTMLDetailsElement).open = true
+      await row.trigger('toggle')
+    }
+    await flushPromises()
+    const folded = w.findAll('[data-testid="clarify-auto-record"] [data-testid="clarify-incoming-handoff"]')
+    expect(folded).toHaveLength(2)
+    for (const bubble of folded) {
+      expect(bubble.attributes('data-source')).toBe('agent')
+      expect(bubble.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「需求澄清」的交接说明')
+      expect(bubble.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(statusIconNote)
+    }
+    w.unmount()
+  })
+
+  it('keeps walking past another node that left an empty note', async () => {
+    const w = mountChat({
+      nodeId: 'implement',
+      nodeLabel: '实现',
+      nodeTask: implementTask,
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-22T09:00:00Z', open: false,
+          turns: [], handoff: statusIconNote },
+        { nodeId: 'design', iteration: 1, label: '方案设计', kind: 'auto', status: 'failed', at: '2026-10-22T09:01:00Z', turns: [], open: false, handoff: '   ' },
+      ],
+    })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「需求澄清」的交接说明')
+    expect(w.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(statusIconNote)
+    w.unmount()
+  })
+
+  it('a rerun ignores its own platform failure note and keeps the upstream that routed it in', async () => {
+    const w = mountChat({
+      nodeId: 'implement',
+      nodeLabel: '实现',
+      nodeTask: implementTask,
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-22T09:00:00Z', open: false,
+          turns: [], handoff: statusIconNote, handoffSource: 'agent' },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'failed', at: '2026-10-22T09:01:00Z', turns: [], open: false,
+          handoff: '上游节点执行失败,未留下交接说明。失败原因:未调用 node_complete 标记完成', handoffSource: 'platform' },
+      ],
+    })
+    await flushPromises()
+    const current = w.get('[data-testid="clarify-incoming-handoff"]')
+    expect(current.attributes('data-source')).toBe('agent')
+    expect(current.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「需求澄清」的交接说明')
+    expect(current.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(statusIconNote)
+    expect(w.text()).not.toContain('上游节点执行失败')
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('a return from test review opens with that review, not an earlier clarify note or this node\'s failed note', async () => {
+    const clarifyNote = '需求澄清更早的交接,关于状态图标。'
+    const reviewNote = '测试未通过:开场气泡仍是任务句,请改选择规则。'
+    const failedNote = '上游节点执行失败,未留下交接说明。失败原因:未调用 node_complete 标记完成'
+    const chain = [
+      { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat' as const, status: 'completed', at: '2026-10-22T09:00:00Z', open: false,
+        turns: [], handoff: clarifyNote, handoffSource: 'agent' as const },
+      { nodeId: 'test_review', iteration: 1, label: '测试评审', kind: 'auto' as const, status: 'completed', at: '2026-10-22T09:02:00Z', turns: [], open: false,
+        handoff: reviewNote, handoffSource: 'agent' as const },
+      { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto' as const, status: 'failed', at: '2026-10-22T09:03:00Z', turns: [], open: false,
+        handoff: failedNote, handoffSource: 'platform' as const },
+    ]
+    const w = mountChat({ nodeId: 'implement', nodeLabel: '实现', nodeTask: implementTask, priorSegments: chain })
+    await flushPromises()
+    const current = w.get('[data-testid="clarify-incoming-handoff"]')
+    expect(current.attributes('data-source')).toBe('agent')
+    expect(current.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「测试评审」的交接说明')
+    expect(current.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(reviewNote)
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    await w.setProps({
+      priorSegments: [
+        chain[0],
+        { ...chain[1], handoff: '上游未写交接,平台按测试结论代写。', handoffSource: 'platform' as const },
+        { ...chain[2], handoff: '' },
+      ],
+    })
+    await flushPromises()
+    const platform = w.get('[data-testid="clarify-incoming-handoff"]')
+    expect(platform.attributes('data-source')).toBe('platform')
+    expect(platform.get('[data-testid="clarify-incoming-handoff-from"]').text()).toBe('「测试评审」未留交接，平台代写')
+    expect(platform.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe('上游未写交接,平台按测试结论代写。')
+    expect(w.text()).not.toContain(clarifyNote)
+    w.unmount()
+  })
+
+  it('shows the node task only when no visit in the chain left a note', async () => {
+    const w = mountChat({
+      nodeId: 'implement',
+      nodeLabel: '实现',
+      nodeTask: implementTask,
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-22T09:00:00Z', open: false, turns: [] },
+        { nodeId: 'design', iteration: 1, label: '方案设计', kind: 'auto', status: 'completed', at: '2026-10-22T09:01:00Z', turns: [], open: false, handoff: '  ' },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'failed', at: '2026-10-22T09:02:00Z', turns: [], open: false },
+      ],
+    })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-incoming-handoff"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-node-task"] .chat-user-message').text()).toBe(implementTask)
+    await w.setProps({ nodeTask: '   ' })
+    await flushPromises()
+    expect(w.find('[data-testid="clarify-incoming-handoff"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-node-task"]').exists()).toBe(false)
+    w.unmount()
+  })
+
   it('opens an auto row and shows each node record', async () => {
     nodeEvents.mockImplementation(async (_run: string, nodeId: string) => {
       if (nodeId === 'implement') {
@@ -421,6 +569,103 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     clearBootRecords()
   })
 
+  it('fills the reply from the narration when the timeline has no message', async () => {
+    const handoff = '交接说明只留在气泡里'
+    const narration = '这次执行的完整回复'
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: narration },
+        { kind: 'timeline', parts: [
+          { kind: 'thought', text: '想过' },
+          { kind: 'tool', title: 'Shell', status: 'completed' },
+          { kind: 'message', text: '   ' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-21T05:00:00Z', open: false,
+          turns: [{ role: 'human', text: '需求', at: '2026-10-21T05:00:00Z' }], handoff },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:10Z', endedAt: '2026-10-21T05:10:34Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"][data-node-id="implement"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(handoff)
+    expect(record.get('[data-testid="clarify-prior-agent-message"]').text()).toBe(narration)
+    expect(record.findAll('[data-testid="clarify-prior-agent-message"]')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('does not invent a reply when the timeline and the narration are both empty', async () => {
+    const handoff = '不要把交接说明当成回复'
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: '上一段的回复' },
+        { kind: 'segment' },
+        { kind: 'message', text: '  \n' },
+        { kind: 'timeline', parts: [
+          { kind: 'tool', title: 'Shell', status: 'failed' },
+          { kind: 'tool', title: 'Read', status: 'completed' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'clarify', iteration: 1, label: '需求澄清', kind: 'chat', status: 'completed', at: '2026-10-21T05:00:00Z', open: false,
+          turns: [], handoff },
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:10Z', endedAt: '2026-10-21T05:10:47Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"][data-node-id="implement"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.get('[data-testid="clarify-incoming-handoff-text"]').text()).toBe(handoff)
+    expect(record.find('[data-testid="clarify-prior-agent-message"]').exists()).toBe(false)
+    expect(record.get('[data-testid="agent-timeline-elapsed-failed"]').text()).toBe('1 个失败')
+    expect(record.text()).not.toContain('上一段的回复')
+    w.unmount()
+  })
+
+  it('does not append the narration again when the timeline already has a message', async () => {
+    nodeEvents.mockResolvedValue({
+      events: [
+        { kind: 'message', text: '完整叙述不该再贴一份' },
+        { kind: 'timeline', parts: [
+          { kind: 'message', text: '时间线里的回复' },
+          { kind: 'tool', title: 'Read', status: 'completed' },
+        ] },
+      ],
+      live: false,
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'completed', at: '2026-10-21T05:00:00Z', endedAt: '2026-10-21T05:00:20Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    await flushPromises()
+    const row = w.get('[data-testid="clarify-prior-segment"]')
+    ;(row.element as HTMLDetailsElement).open = true
+    await row.trigger('toggle')
+    await flushPromises()
+    const record = w.get('[data-testid="clarify-auto-record"]')
+    expect(record.findAll('[data-testid="clarify-prior-agent-message"]').map((m) => m.text())).toEqual(['时间线里的回复'])
+    expect(record.text()).not.toContain('完整叙述不该再贴一份')
+    w.unmount()
+  })
+
   it('says when an auto record cannot be loaded', async () => {
     nodeEvents.mockRejectedValue(new Error('down'))
     const w = mountChat({
@@ -438,6 +683,168 @@ describe('ClarifyChat continuous run transcript (v2)', () => {
     w.unmount()
   })
 
+})
+
+describe('follow process stays on the confirmed conversation', () => {
+  it('draws downstream steps under the follow row and folds them when the node ends', async () => {
+    const at = '2026-10-22T09:00:00Z'
+    const ended = '2026-10-22T09:03:40Z'
+    const w = mountChat({
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+      followProcess: [
+        {
+          nodeId: 'design',
+          iteration: 1,
+          label: '方案设计',
+          live: false,
+          startedAt: at,
+          endedAt: '2026-10-22T09:00:40Z',
+          parts: [{ kind: 'thought', text: '先出方案' }],
+        },
+        {
+          nodeId: 'implement',
+          iteration: 1,
+          label: '实现',
+          live: true,
+          startedAt: at,
+          parts: [{ kind: 'thought', text: '先看导出入口' }, { kind: 'tool', title: 'Read', status: 'completed' }],
+        },
+      ],
+    })
+    await flushPromises()
+    const nodes = w.findAll('[data-testid="clarify-follow-process-node"]')
+    expect(nodes.map((n) => n.attributes('data-node-id'))).toEqual(['design', 'implement'])
+    expect(nodes[0].attributes('data-live')).toBe('false')
+    expect(nodes[0].text()).toContain('用时')
+    expect(nodes[0].text()).not.toContain('生成中')
+    expect(nodes[1].attributes('data-live')).toBe('true')
+    expect(nodes[1].text()).toContain('先看导出入口')
+    expect(nodes[1].text()).toContain('使用了 1 个工具')
+    expect(nodes[1].text()).toMatch(/思考中|生成中/)
+    await w.setProps({
+      followTail: { kind: 'ended', status: 'failed', at },
+      followProcess: [
+        {
+          nodeId: 'implement',
+          iteration: 1,
+          label: '实现',
+          live: false,
+          startedAt: at,
+          endedAt: ended,
+          parts: [
+            { kind: 'thought', text: '先看导出入口' },
+            { kind: 'tool', title: 'Read', status: 'completed' },
+            { kind: 'message', text: '导出已做完' },
+          ],
+        },
+      ],
+    })
+    await flushPromises()
+    const done = w.get('[data-testid="clarify-follow-process"]')
+    expect(done.text()).toContain('用时')
+    expect(done.text()).not.toContain('思考中')
+    expect(done.text()).not.toContain('生成中')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain('运行失败')
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).not.toContain('运行已完成')
+    w.unmount()
+  })
+
+  it('settles 思考中 and 生成中 once the confirmed turn has ended', async () => {
+    const w = mountChat({ turns: [] })
+    await flushPromises()
+    w.vm.applyReviewFrame({ event: 'turn_begin', nodeId: 'implement', item: { text: '请确认' } })
+    w.vm.applyAcpEvents(
+      [{ kind: 'timeline', t: 1, parts: [{ kind: 'thought', text: '还在收尾' }] }],
+      'implement',
+    )
+    await flushPromises()
+    expect(w.text()).toMatch(/思考中|生成中/)
+    w.vm.settleConfirmedTurn()
+    await flushPromises()
+    expect(w.text()).not.toContain('思考中')
+    expect(w.text()).not.toContain('生成中')
+    w.unmount()
+  })
+})
+
+describe('open auto records keep updating while the node runs', () => {
+  it('pulls again while the record is live, then stops and keeps the final steps', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] })
+    let pulls = 0
+    nodeEvents.mockImplementation(async () => {
+      pulls += 1
+      if (pulls === 1) {
+        return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }] }], live: true }
+      }
+      return {
+        events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }, { kind: 'tool', title: 'Read', status: 'completed' }] }],
+        live: false,
+      }
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'running', at: '2026-10-22T09:00:00Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    try {
+      await flushPromises()
+      const row = w.get('[data-testid="clarify-prior-segment"]')
+      ;(row.element as HTMLDetailsElement).open = true
+      await row.trigger('toggle')
+      await flushPromises()
+      expect(w.get('[data-testid="clarify-auto-record"]').text()).toContain('第一步')
+      expect(pulls).toBe(1)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+      const record = w.get('[data-testid="clarify-auto-record"]')
+      expect(record.text()).not.toContain('生成中')
+      expect(record.text()).not.toContain('思考中')
+      await record.get('[data-testid="agent-timeline-elapsed"]').trigger('click')
+      expect(record.text()).toContain('第一步')
+      expect(record.text()).toContain('使用了 1 个工具')
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
+
+  it('still says the record failed to load when a later pull fails', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval', 'clearTimeout', 'clearInterval'] })
+    let pulls = 0
+    nodeEvents.mockImplementation(async () => {
+      pulls += 1
+      if (pulls === 1) return { events: [{ kind: 'timeline', parts: [{ kind: 'thought', text: '第一步' }] }], live: true }
+      throw new Error('down')
+    })
+    const w = mountChat({
+      priorSegments: [
+        { nodeId: 'implement', iteration: 1, label: '实现', kind: 'auto', status: 'running', at: '2026-10-22T09:00:00Z', turns: [], open: false },
+      ],
+      nodeLabel: '交付',
+    })
+    try {
+      await flushPromises()
+      const row = w.get('[data-testid="clarify-prior-segment"]')
+      ;(row.element as HTMLDetailsElement).open = true
+      await row.trigger('toggle')
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(w.get('[data-testid="clarify-auto-record-status"]').text()).toContain('执行记录没有加载出来')
+      await vi.advanceTimersByTimeAsync(4000)
+      await flushPromises()
+      expect(pulls).toBe(2)
+    } finally {
+      w.unmount()
+      vi.useRealTimers()
+    }
+  })
 })
 
 describe('ClarifyChat locked composer while following the run (v3)', () => {
@@ -539,9 +946,9 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     w.unmount()
   })
 
-  it('composerLocked locks the single primary action (确认并流转 and 发送) while following', async () => {
+  it('composerLocked locks the single primary action (确认并流转 and 发送) while the next chat is still starting', async () => {
     const at = new Date().toISOString()
-    const w = mountChat({ handoff: { phase: 'done', at }, followTail: { kind: 'auto', label: '实现', at }, composerLocked: true })
+    const w = mountChat({ handoff: { phase: 'done', at }, followTail: { kind: 'waiting', label: '验收测试', at }, composerLocked: true })
     await flushPromises()
     const confirm = w.get('[data-testid="clarify-confirm-flow"]')
     expect(confirm.attributes('disabled')).toBeDefined()
@@ -560,6 +967,114 @@ describe('ClarifyChat locked composer while following the run (v3)', () => {
     expect(w.get('[data-testid="clarify-send-icon"]').attributes('disabled')).toBeUndefined()
     await w.setProps({ draft: '' })
     expect(w.get('[data-testid="clarify-confirm-flow"]').attributes('disabled')).toBeUndefined()
+    w.unmount()
+  })
+})
+
+describe('done session following the run keeps the right bottom', () => {
+  const at = '2026-10-22T09:00:00Z'
+
+  it('auto follow with the session already done shows the observe bar, not the done footer', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+      followProcess: [{ nodeId: 'implement', iteration: 1, label: '实现', live: true, startedAt: at, parts: [{ kind: 'thought', text: '先看导出' }] }],
+    })
+    await flushPromises()
+    expect(w.text()).toContain('「实现」正在自动执行')
+    expect(w.text()).toContain('思考中')
+    const input = w.get('[data-testid="clarify-input"]')
+    expect((input.element as HTMLTextAreaElement).disabled).toBe(true)
+    expect(input.attributes('placeholder')).toBe('自动运行中，停止后可接管对话')
+    expect((w.get('[data-testid="clarify-attach-btn"]').element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(true)
+    expect(w.find('[data-testid="clarify-confirm-flow"]').exists()).toBe(false)
+    expect(w.find('[data-testid="clarify-send-icon"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it('Stop on that bar emits takeover once and then shows 正在停止', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'auto', label: '实现', at },
+    })
+    await flushPromises()
+    await w.get('[data-testid="clarify-observe-stop"]').trigger('click')
+    expect(w.emitted('takeover')).toHaveLength(1)
+    await w.setProps({ stopping: true })
+    const stop = w.get('[data-testid="clarify-observe-stop"]')
+    expect((stop.element as HTMLButtonElement).disabled).toBe(true)
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toBe('正在停止…')
+    await stop.trigger('click')
+    expect(w.emitted('takeover')).toHaveLength(1)
+    w.unmount()
+  })
+
+  it('a follow tail that is auto shows the observe bar even before the host passes observe', async () => {
+    const w = mountChat({ done: true, handoff: { phase: 'done', at }, followTail: { kind: 'auto', label: '实现', at } })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-input"]').attributes('placeholder')).toBe('自动运行中，停止后可接管对话')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it('a next chat still starting does not show the done footer, then becomes a normal composer when it is ready', async () => {
+    const w = mountChat({
+      done: true,
+      composerLocked: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'waiting', label: '验收测试', at },
+    })
+    await flushPromises()
+    expect(w.text()).toContain('「验收测试」准备中')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.get('[data-testid="clarify-input"]').attributes('disabled')).toBeDefined()
+    await w.setProps({ done: false, composerLocked: false, handoff: null, followTail: null })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-input"]').attributes('disabled')).toBeUndefined()
+    expect(w.find('[data-testid="clarify-hot-actions"]').exists()).toBe(true)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
+    w.unmount()
+  })
+
+  it.each([
+    ['completed', '运行已完成'],
+    ['failed', '运行失败'],
+    ['cancelled', '运行已取消'],
+  ] as const)('ended follow (%s) keeps the existing end copy and not the auto bar', async (status, copy) => {
+    const w = mountChat({
+      done: true,
+      composerLocked: true,
+      handoff: { phase: 'done', at },
+      followTail: { kind: 'ended', status, at },
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-follow-tail"]').text()).toContain(copy)
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.find('[data-testid="clarify-input"]').exists()).toBe(false)
+    w.unmount()
+  })
+
+  it('a gate waiting note still replaces the composer, including when observe was on', async () => {
+    const w = mountChat({
+      done: true,
+      observe: true,
+      doneNote: { text: '「上线审批」人工审批 · 待审批', tone: 'wait' },
+    })
+    await flushPromises()
+    expect(w.get('[data-testid="clarify-done-note"]').text()).toBe('「上线审批」人工审批 · 待审批')
+    expect(w.find('[data-testid="clarify-observe-stop"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('自动运行中，停止后可接管对话')
+    expect(w.text()).not.toContain('交互已完成，进入下一步')
     w.unmount()
   })
 })

@@ -232,7 +232,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
                 class="flex min-h-0 flex-1 items-center justify-center text-[12px] text-txt3"
                 data-testid="mobile-fill-product-loading"
               >
-                <Icon name="spinner" :size="20" class="mr-2 animate-spin text-accent" />
+                <Icon name="spinner" :size="20" class="mr-2 text-accent" />
                 {{ t('pages.gateApproval.loadingArtifact') }}
               </div>
             </div>
@@ -273,7 +273,7 @@ const conversationRunName = useConversationToolbarRunName(() => ({
               class="flex items-center justify-center gap-2 py-2 text-xs text-txt3"
               data-testid="mobile-fill-preview-issues-loading"
             >
-              <Icon name="spinner" :size="14" class="animate-spin text-accent" />
+              <Icon name="spinner" :size="14" class="text-accent" />
               {{ t('pages.gateApproval.loadingPreviewIssues') }}
             </div>
             <div v-else class="flex min-h-0 flex-1 flex-col">

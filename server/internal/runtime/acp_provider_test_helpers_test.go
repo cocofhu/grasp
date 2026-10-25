@@ -1,38 +1,36 @@
 package runtime
 
 import (
-	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 )
 
-// testAuthCredentials holds a fake workspace credential for every ACP backend.
-var testAuthCredentials = map[string]string{
-	envauth.EnvCursorAPIKey:    "fake",
-	envauth.EnvClaudeAPIKey:    "fake",
-	envauth.EnvCodeBuddyAPIKey: "fake",
-	envauth.EnvTraeAPIKey:      "fake",
-	envauth.EnvOpenCodeAPIKey:  "fake",
-}
-
-// withTestCredentials supplies testAuthCredentials as workspace credentials
-// unless the test configured its own.
-func withTestCredentials(opts Options) Options {
-	if opts.Credentials == nil {
-		opts.Credentials = testCredentials
+// withTestModelBinding supplies a named-model resolver for fake CLI tests.
+func withTestModelBinding(opts Options) Options {
+	if opts.ModelBinding == nil {
+		opts.ModelBinding = testModelBinding
 	}
 	return opts
-}
-
-func testCredentials() map[string]string {
-	out := make(map[string]string, len(testAuthCredentials))
-	for k, v := range testAuthCredentials {
-		out[k] = v
-	}
-	return out
 }
 
 // newACPProvider builds a Cursor-backend ACP provider for tests.
 // Production wiring uses NewProviderRegistry → newBaseACPProvider.
 func newACPProvider(host *mcp.Host, opts Options) ExecProvider {
-	return newBaseACPProvider(host, withTestCredentials(opts), BackendCursor)
+	return newBaseACPProvider(host, withTestModelBinding(opts), BackendCursor)
+}
+
+// testModelBinding supplies an explicit saved model fixture for each test CLI.
+func testModelBinding(backend string, binding *modelrouting.Binding) (modelrouting.Resolved, error) {
+	if err := modelrouting.ValidateConfigurationReference(binding); err != nil {
+		return modelrouting.Resolved{}, err
+	}
+	resolved := modelrouting.Resolved{Backend: backend, CredentialID: "test-model-key", Secret: "fake", Binding: modelrouting.Binding{Kind: "platform", CredentialID: "test-model-key", ModelID: "auto"}}
+	switch backend {
+	case "codex":
+		resolved.Secret = chatgptLogin
+	case "opencode", "deepseek_harness":
+		resolved.Binding = modelrouting.Binding{Kind: "connection", ConnectionID: "test-connection", ModelID: "test/model"}
+		resolved.Connection = &modelrouting.Connection{ID: "test-connection", Protocol: modelrouting.ProtocolChat, ProviderID: "test", BaseURL: "https://test.example/v1", Auth: modelrouting.Auth{Scheme: "bearer"}, Models: []modelrouting.Model{{ID: "test/model"}}}
+	}
+	return resolved, nil
 }

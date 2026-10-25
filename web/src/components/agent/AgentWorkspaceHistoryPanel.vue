@@ -151,7 +151,7 @@ defineExpose({ reload: loadHistory })
         data-test="history-expand"
         @click="emit('toggle-collapse')"
       >
-        <Icon name="chevron-right" :size="14" class="rotate-180" />
+        <Icon :interactive="false" name="chevron-right" :size="14" class="rotate-180" />
       </button>
     </div>
   </template>

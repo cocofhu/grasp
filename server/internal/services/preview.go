@@ -149,9 +149,8 @@ func (s *PreviewService) ContainerIP(ctx context.Context, sandboxName string) (s
 
 // SandboxForRunNode returns the docker container name for a run/node sandbox.
 func (s *PreviewService) SandboxForRunNode(runID, nodeID string) (string, bool) {
-	var row models.Sandbox
-	if err := s.db.Where("run_id = ? AND node_id = ? AND purpose = ?", runID, nodeID, "run").
-		Order("updated_at desc").First(&row).Error; err != nil {
+	row, err := runNodeSandboxRow(s.db, runID, nodeID)
+	if err != nil {
 		return "", false
 	}
 	if strings.TrimSpace(row.Name) == "" {

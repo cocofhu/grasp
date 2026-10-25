@@ -39,6 +39,21 @@ export function partsFromAcp(events: ReadonlyArray<Pick<AcpEvent, 'kind' | 'part
   return undefined
 }
 
+/**
+ * Steps already handed over by one node snapshot: the timeline when present,
+ * otherwise thought / message / tool rails in arrival order.
+ */
+export function agentPartsFromEvents(events: ReadonlyArray<AcpEvent> | undefined): AgentPart[] | undefined {
+  const fromTimeline = partsFromAcp(events)
+  if (fromTimeline?.length) return fromTimeline
+  const parts: AgentPart[] = []
+  for (const ev of events || []) {
+    if ((ev.kind === 'thought' || ev.kind === 'message') && ev.text) parts.push({ kind: ev.kind, text: ev.text })
+    else if (ev.kind === 'tool_call' && ev.title) parts.push({ kind: 'tool', title: ev.title, status: ev.status })
+  }
+  return parts.length ? parts : undefined
+}
+
 const partKey = (p: AgentPart) => [p.kind, p.text, p.title, p.status, p.summary, p.input, p.output, p.durationMs].map((x) => String(x || '')).join('\u0000')
 
 /** True when two step lists render identically. */

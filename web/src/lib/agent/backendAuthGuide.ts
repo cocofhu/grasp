@@ -87,6 +87,18 @@ const OPENCODE_GUIDE: BackendAuthGuide = {
   noteKey: 'pages.agentStudio.wizard.apiKey.notes.opencode',
 }
 
+const DEEPSEEK_GUIDE: BackendAuthGuide = {
+  backend: 'deepseek_harness',
+  keys: [{ key: 'GRASP_DEEPSEEK_API_KEY' }],
+  pathStepKeys: [
+    'pages.agentStudio.wizard.apiKey.paths.deepseek.step1',
+    'pages.agentStudio.wizard.apiKey.paths.deepseek.step2',
+    'pages.agentStudio.wizard.apiKey.paths.deepseek.step3',
+  ],
+  links: [{ labelKey: 'pages.agentStudio.wizard.apiKey.links.deepseekKeys', url: 'https://platform.deepseek.com/api_keys' }],
+  noteKey: 'pages.agentStudio.wizard.apiKey.notes.deepseek',
+}
+
 const CODEX_GUIDE: BackendAuthGuide = {
   backend: 'codex',
   keys: [{ key: 'GRASP_CODEX_AUTH_JSON' }],
@@ -163,6 +175,7 @@ export const BACKEND_AUTH_HINTS: Record<
     key: 'GRASP_OPENCODE_API_KEY',
     note: 'OpenCode API Key 鉴权',
   },
+  deepseek_harness: { key: 'GRASP_DEEPSEEK_API_KEY', note: 'DeepSeek Harness API Key 鉴权' },
   codex: {
     key: 'GRASP_CODEX_AUTH_JSON',
     note: 'Codex ChatGPT 登录文件',
@@ -176,6 +189,7 @@ export function authGuideFor(backend: BackendId, region = ''): BackendAuthGuide 
   if (backend === 'trae') return TRAE_GUIDE
   if (backend === 'opencode') return OPENCODE_GUIDE
   if (backend === 'codex') return CODEX_GUIDE
+  if (backend === 'deepseek_harness') return DEEPSEEK_GUIDE
 
   const siteLink = CODEBUDDY_SITE_LINKS[region] || CODEBUDDY_SITE_LINKS.public
   return {

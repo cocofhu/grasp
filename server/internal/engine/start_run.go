@@ -186,6 +186,7 @@ func (e *Engine) startRun(def models.WorkflowDef, graph models.Graph, inputs map
 		Tags:         append([]string{}, tags...),
 		Priority:     priority,
 		SandboxEnv:   sandboxEnv,
+		SandboxMode:  runSandboxMode(def),
 		Trace:        []models.TraceEntry{}, Checkpoints: map[string]map[string]any{},
 	}
 
@@ -559,4 +560,14 @@ func (e *Engine) persistNodeReviewFlag(runID, nodeID string, want bool) {
 	n.Caps.Review = want
 	logDB(e.db.Model(&models.Run{}).Where("id = ?", runID).Select("graph").
 		Updates(&models.Run{Graph: run.Graph}), runID, "refresh review flag")
+}
+
+// runSandboxMode snapshots the workflow's choice onto a new run. Unless shared
+// mode is selected, the run uses the default per-node sandboxes ("").
+func runSandboxMode(def models.WorkflowDef) string {
+	if def.Defaults == nil || def.Defaults.Sandbox == nil ||
+		def.Defaults.Sandbox.Mode != models.SandboxModeShared {
+		return ""
+	}
+	return models.SandboxModeShared
 }

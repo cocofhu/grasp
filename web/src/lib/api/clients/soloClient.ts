@@ -1,0 +1,51 @@
+import type { ClarifyImage } from '../../shared/types'
+import { req, wsUrl } from '../httpCore'
+import type {
+  Project,
+  ProjectInput,
+  SoloCreateBody,
+  SoloEnvEntry,
+  SoloMessage,
+  SoloSession,
+  SoloSessionList,
+} from '../apiTypes'
+
+const enc = encodeURIComponent
+
+export const soloClient = {
+  listProjects: () => req<Project[]>('/projects'),
+  getProject: (id: string) =>
+    req<{ project: Project; activeSessions: number }>(`/projects/${enc(id)}`),
+  createProject: (body: ProjectInput) =>
+    req<Project>('/projects', { method: 'POST', body: JSON.stringify(body) }),
+  updateProject: (id: string, body: ProjectInput) =>
+    req<Project>(`/projects/${enc(id)}`, { method: 'PUT', body: JSON.stringify(body) }),
+  deleteProject: (id: string) =>
+    req<{ ok: boolean }>(`/projects/${enc(id)}`, { method: 'DELETE' }),
+
+  listSoloSessions: (params?: { status?: 'active' }) =>
+    req<SoloSessionList>(`/solo/sessions${params?.status ? `?status=${params.status}` : ''}`),
+  createSoloSession: (body: SoloCreateBody) =>
+    req<SoloSession>('/solo/sessions', { method: 'POST', body: JSON.stringify(body) }),
+  getSoloSession: (id: string) => req<SoloSession>(`/solo/sessions/${enc(id)}`),
+  renameSoloSession: (id: string, title: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}`, { method: 'PATCH', body: JSON.stringify({ title }) }),
+  deleteSoloSession: (id: string) =>
+    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}`, { method: 'DELETE' }),
+  closeSoloSession: (id: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/close`, { method: 'POST' }),
+  restartSoloSession: (id: string) =>
+    req<SoloSession>(`/solo/sessions/${enc(id)}/restart`, { method: 'POST' }),
+  listSoloMessages: (id: string) => req<SoloMessage[]>(`/solo/sessions/${enc(id)}/messages`),
+  getSoloEnv: (id: string) => req<SoloEnvEntry[]>(`/solo/sessions/${enc(id)}/env`),
+  sendSoloTurn: (id: string, body: { text: string; images?: ClarifyImage[] }) =>
+    req<{ waiting: number }>(`/solo/sessions/${enc(id)}/turns`, { method: 'POST', body: JSON.stringify(body) }),
+  cancelSoloTurn: (id: string) =>
+    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/turns/cancel`, { method: 'POST' }),
+  removeSoloQueued: (id: string, turnId: string) =>
+    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/queue/${enc(turnId)}`, { method: 'DELETE' }),
+  reorderSoloQueue: (id: string, ids: string[]) =>
+    req<{ ok: boolean }>(`/solo/sessions/${enc(id)}/queue`, { method: 'PUT', body: JSON.stringify({ ids }) }),
+  soloChatWsUrl: (id: string, afterSeq?: number) =>
+    wsUrl(`/solo/sessions/${enc(id)}/chat${afterSeq != null && afterSeq >= 0 ? `?after=${afterSeq}` : ''}`),
+}

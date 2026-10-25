@@ -33,6 +33,7 @@ function mountPanel(d: AgentStudioDraft) {
     global: {
       plugins: [i18n],
       stubs: {
+        Teleport: true,
         Icon: true,
         AppButton: { template: '<button type="button" v-bind="$attrs"><slot /></button>' },
         McpConfigHelpModal: { props: ['open', 'configRoot'], template: '<div v-if="open" data-test="mcp-help-modal" />' },
@@ -47,6 +48,27 @@ function mountPanel(d: AgentStudioDraft) {
 }
 
 describe('AgentMcpPanel', () => {
+  it('searches transport choices and keeps URL and command drafts when switching', async () => {
+    const d = draft({ mcp: [{ name: 'custom', transport: 'url', url: 'https://mcp.example.test', headers: [{ k: 'Authorization', v: 'Bearer test' }], command: 'npx', args: '-y\nexample', env: [{ k: 'TEST', v: 'value' }] }] })
+    const w = mountPanel(d)
+    const picker = w.get('[data-testid="mcp-transport-0"]')
+    await picker.get('[data-test="app-select-trigger"]').trigger('click')
+    await w.get('[data-test="app-select-search"]').setValue('stdio')
+    expect(w.find('[data-test="app-select-option-url"]').exists()).toBe(false)
+    await w.get('[data-test="app-select-option-command"]').trigger('click')
+    expect(d.mcp[0]!.transport).toBe('command')
+    expect(d.mcp[0]!.url).toBe('https://mcp.example.test')
+    expect(d.mcp[0]!.headers).toEqual([{ k: 'Authorization', v: 'Bearer test' }])
+    expect(w.find('textarea').exists()).toBe(true)
+    await picker.get('[data-test="app-select-trigger"]').trigger('click')
+    await w.get('[data-test="app-select-option-url"]').trigger('click')
+    expect(d.mcp[0]!.transport).toBe('url')
+    expect(d.mcp[0]!.command).toBe('npx')
+    expect(d.mcp[0]!.args).toBe('-y\nexample')
+    expect(d.mcp[0]!.env).toEqual([{ k: 'TEST', v: 'value' }])
+    w.unmount()
+  })
+
   it('adds and removes blank service cards', async () => {
     const d = draft()
     const w = mountPanel(d)

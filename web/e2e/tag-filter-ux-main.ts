@@ -17,7 +17,7 @@ async function bootstrap() {
     history: createWebHashHistory(),
     routes: [
       { path: '/runs', component: RunListView },
-      { path: '/gates', component: GatesInboxView },
+      { path: '/runs/:runId/nodes/:nodeId', component: GatesInboxView },
       {
         path: '/runs/:id',
         component: { render: () => h('div', { 'data-testid': 'run-detail-page' }, 'run-detail') },
@@ -27,7 +27,12 @@ async function bootstrap() {
   })
 
   const params = new URLSearchParams(window.location.search)
-  const page = params.get('page') === 'gates' ? '/gates' : '/runs'
+  let page = '/runs'
+  if (params.get('page') === 'gates') {
+    const run = params.get('run') || 'run-1'
+    const node = params.get('node') || 'hg-1'
+    page = `/runs/${encodeURIComponent(run)}/nodes/${encodeURIComponent(node)}`
+  }
   const startQuery: Record<string, string> = {}
   for (const key of ['tag', 'status', 'wf', 'sort', 'order']) {
     const v = params.get(key)

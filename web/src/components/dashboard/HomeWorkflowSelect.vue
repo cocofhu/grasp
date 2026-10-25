@@ -245,9 +245,7 @@ onBeforeUnmount(() => {
     >
       <Icon name="workflow" :size="14" class="home-workflow-select__glyph" />
       <span class="home-workflow-select__label" :title="selectedName">{{ selectedName }}</span>
-      <svg class="home-workflow-select__chev" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-        <path d="m5 6.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
+      <Icon name="chevron-down" :size="16" :interactive="false" class="home-workflow-select__chev" />
     </button>
 
     <!-- Teleport to body so .home-shell__content overflow-y-auto cannot clip the downward panel (g1.2) -->
@@ -304,9 +302,7 @@ onBeforeUnmount(() => {
                 :title="p.name"
                 v-html="highlightName(p.name, search.trim())"
               />
-              <svg class="home-workflow-select__check" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-                <path d="m4.2 8 2.5 2.5 5.1-5.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
+              <Icon name="check" :size="16" :interactive="false" :motion-key="p.id === modelValue ? 1 : 0" class="home-workflow-select__check" />
             </button>
           </template>
           <div
@@ -326,7 +322,7 @@ onBeforeUnmount(() => {
           :class="{ 'home-workflow-select__create--active': createActive }"
           @click.stop="emitCreate"
         >
-          <span class="home-workflow-select__create-plus" aria-hidden="true">+</span>
+          <Icon name="plus" :size="14" class="home-workflow-select__create-plus" />
           <span>{{ t('pages.dashboard.create.addCard') }}</span>
         </button>
       </div>
@@ -349,21 +345,20 @@ onBeforeUnmount(() => {
   gap: 6px;
   border: 1px solid rgb(var(--c-line));
   border-radius: 8px;
-  background: linear-gradient(180deg, rgb(var(--c-surface)), rgb(var(--c-elevated) / 0.55));
+  background: transparent;
   color: rgb(var(--c-txt));
   padding: 0 8px;
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
   text-align: left;
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.035), 0 1px 2px rgb(0 0 0 / 0.025);
-  transition: border-color 0.18s ease, color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  transition: border-color 0.18s ease, color 0.18s ease, background-color 0.18s ease;
 }
 
 .home-workflow-select__trigger:hover:not(:disabled),
 .home-workflow-select--open .home-workflow-select__trigger {
   border-color: rgb(var(--c-accent) / 0.3);
-  box-shadow: 0 0 0 3px rgb(var(--c-accent) / 0.045);
+  background: rgb(var(--c-accent) / 0.045);
 }
 
 .home-workflow-select__trigger:focus-visible {

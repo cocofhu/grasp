@@ -316,7 +316,7 @@ ENV ACP_BRIDGE_PORT=8765
 # ── Agent 安装层 ──────────────────────────────────────────────────────────
 # 默认预装产品 CLI（含 Codex）；运行时 AGENT_PROVIDER 单活（未设置时回落 cursor）。
 # 本地打薄镜像：--build-arg AGENT_PROVIDERS=cursor
-ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex
+ARG AGENT_PROVIDERS=cursor,claude_code,codebuddy,trae,opencode,codex,deepseek_harness
 ARG AGENT_OPTIONAL_PROVIDERS=
 ARG AGENT_INSTALL_CMD=
 COPY scripts/install-agent.sh /usr/local/bin/install-agent.sh

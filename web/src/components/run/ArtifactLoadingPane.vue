@@ -19,7 +19,7 @@ const displayMessage = computed(() => {
 
 <template>
   <div class="flex h-full min-h-[200px] flex-col items-center justify-center gap-2.5 px-6 py-8 text-center">
-    <Icon name="spinner" :size="28" class="animate-spin text-accent" />
+    <Icon name="spinner" :size="28" class="text-accent" />
     <p class="text-[12px] text-txt3">{{ displayMessage }}</p>
   </div>
 </template>

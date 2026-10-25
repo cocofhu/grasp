@@ -120,27 +120,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick))
               class="status-filter-cb flex h-[15px] w-[15px] shrink-0 items-center justify-center border border-line-strong bg-base transition"
               :class="{ 'status-filter-cb--checked': isChecked(s.id) }"
             >
-              <svg
-                v-if="isChecked(s.id)"
-                width="10"
-                height="10"
-                viewBox="0 0 10 10"
-                fill="none"
-                aria-hidden="true"
-              >
-                <path
-                  d="M2 5l2 2.5L8 3"
-                  stroke="#fff"
-                  stroke-width="1.3"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
+              <Icon name="check" :size="10" :interactive="false" :motion-key="isChecked(s.id) ? 1 : 0" :style="{ opacity: isChecked(s.id) ? 1 : 0 }" class="text-white" />
             </span>
             <Icon
               :name="s.icon"
               :size="14"
-              :class="[s.cls, s.spin ? 'animate-pulseglow' : '']"
+              :class="s.cls"
             />
             <span class="flex-1 truncate">{{ s.label }}</span>
           </button>

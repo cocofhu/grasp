@@ -24,7 +24,7 @@ const value = computed<RunPriority>(() => {
 const cls = computed(() => {
   if (value.value === 'high') return 'text-[#f87171] border-[#f87171]/35 bg-[#f87171]/10'
   if (value.value === 'low') return 'text-txt3 border-line-strong bg-elevated'
-  return 'text-accent-2 border-accent-2/35 bg-accent-dim'
+  return 'text-txt2 border-line bg-surface'
 })
 
 const pad = computed(() => (props.size === 'sm' ? 'px-2 py-0.5 text-[11px]' : 'px-2.5 py-1 text-xs'))

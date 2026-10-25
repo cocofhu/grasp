@@ -29,4 +29,29 @@ describe('StatusPill', () => {
     expect(wrapper.find('span').exists()).toBe(true)
     wrapper.unmount()
   })
+
+  it('renders waiting_human as a neutral pill with the same label', () => {
+    const wrapper = mountPill('waiting_human')
+    const classes = wrapper.classes()
+    expect(classes).toEqual(expect.arrayContaining(['text-txt2', 'bg-elevated', 'border-line']))
+    expect(classes.some((cls) => cls.includes('warn'))).toBe(false)
+    expect(wrapper.text()).toContain('等待人工')
+    expect(wrapper.get('icon-stub').attributes('name')).toBe('user-hold')
+    wrapper.unmount()
+  })
+
+  it('keeps semantic colors for running, completed, failed, and queued', () => {
+    const cases: Array<[string, string[]]> = [
+      ['running', ['text-info', 'bg-info/10', 'border-info/30']],
+      ['completed', ['text-ok', 'bg-ok/10', 'border-ok/30']],
+      ['failed', ['text-err', 'bg-err/10', 'border-err/30']],
+      ['queued', ['text-txt2', 'bg-elevated', 'border-line']],
+    ]
+    for (const [status, expected] of cases) {
+      const wrapper = mountPill(status)
+      expect(wrapper.classes()).toEqual(expect.arrayContaining(expected))
+      expect(wrapper.classes().some((cls) => cls.includes('warn'))).toBe(false)
+      wrapper.unmount()
+    }
+  })
 })

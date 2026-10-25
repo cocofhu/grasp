@@ -9,6 +9,7 @@ import (
 
 	"github.com/cocofhu/grasp/internal/envauth"
 	"github.com/cocofhu/grasp/internal/mcp"
+	"github.com/cocofhu/grasp/internal/modelrouting"
 	"github.com/cocofhu/grasp/internal/models"
 )
 
@@ -36,8 +37,8 @@ func TestValidateCodexLoginFile(t *testing.T) {
 			if !errors.Is(err, tc.wantErr) {
 				t.Fatalf("err=%v want %v", err, tc.wantErr)
 			}
-			if tc.open && (err == nil || !strings.Contains(err.Error(), "OpenCode")) {
-				t.Fatalf("API key error should mention OpenCode: %v", err)
+			if tc.open && (err == nil || !strings.Contains(err.Error(), "Responses 模型连接")) {
+				t.Fatalf("API key error should point to a Responses model connection: %v", err)
 			}
 		})
 	}
@@ -83,7 +84,6 @@ func TestMergeAuthEnvExistingBackendsUnchanged(t *testing.T) {
 		{BackendClaudeCode, envauth.EnvClaudeAPIKey, "ANTHROPIC_API_KEY"},
 		{BackendCodeBuddy, envauth.EnvCodeBuddyAPIKey, "CODEBUDDY_API_KEY"},
 		{BackendTrae, envauth.EnvTraeAPIKey, EnvTraeCLIToken},
-		{BackendOpenCode, envauth.EnvOpenCodeAPIKey, "OPENCODE_API_KEY"},
 	}
 	for _, tc := range cases {
 		out, err := MergeAuthEnv(tc.backend, map[string]string{tc.credKey: "cred"})
@@ -200,9 +200,7 @@ func TestCodexSpecInstallsLoginFile(t *testing.T) {
 	host := mcp.NewHost(newMemStore())
 	p := newBaseACPProvider(host, Options{
 		ProfilesRoot: root,
-		Credentials: func() map[string]string {
-			return map[string]string{envauth.EnvCodexAuthFile: chatgptLogin}
-		},
+		ModelBinding: testModelBinding,
 	}, BackendCodex).(*acpProvider)
 	req := NodeReq{
 		RunID: "run-codex-spec", NodeID: "n", WorkflowID: "wf", Token: "tkn",
@@ -242,11 +240,11 @@ func TestCodexSpecInstallsLoginFile(t *testing.T) {
 
 	missing := newBaseACPProvider(host, Options{
 		ProfilesRoot: root,
-		Credentials: func() map[string]string {
-			return map[string]string{}
+		ModelBinding: func(string, *modelrouting.Binding) (modelrouting.Resolved, error) {
+			return modelrouting.Resolved{}, errors.New("selected model credential is unavailable")
 		},
 	}, BackendCodex).(*acpProvider)
-	if _, err := missing.spec(req); !errors.Is(err, ErrCodexLoginFileMissing) {
+	if _, err := missing.spec(req); err == nil || !strings.Contains(err.Error(), "selected model credential") {
 		t.Fatalf("missing file with settings.json: %v", err)
 	}
 }
