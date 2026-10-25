@@ -69,8 +69,9 @@ export function mergePersistedAndLiveTurns(
   }
 
   if (liveHuman && persistedCompletedLiveHuman(persisted, liveHuman.text || '')) {
-    // The platform slot may already be closed while a newer snapshot is still
-    // arriving. Keep that snapshot instead of the shorter persisted agent.
+    // The slot may already be closed while a longer snapshot is still arriving.
+    // Keep that longer snapshot. A shorter or different live must not cover
+    // the reply already on disk.
     const fresher = replaceWithFresherLiveAgent(persisted, live)
     if (fresher) return fresher
     return persisted
@@ -110,10 +111,26 @@ export function mergePersistedAndLiveTurns(
   return [...persisted, ...live.slice(matched)]
 }
 
+/** True when live carries a strictly longer reply than the persisted agent. */
+function liveAgentRicher(persisted: ClarifyTurn, live: ClarifyTurn): boolean {
+  const pText = (persisted.text || '').trim()
+  const lText = (live.text || '').trim()
+  if (lText.length < pText.length) return false
+  if (lText.length > pText.length) return true
+  if (lText !== pText) return false
+  const pThought = (persisted.thought || '').trim()
+  const lThought = (live.thought || '').trim()
+  if (lThought.length > pThought.length) return true
+  if ((live.tools?.length || 0) > (persisted.tools?.length || 0)) return true
+  if ((live.parts?.length || 0) > (persisted.parts?.length || 0)) return true
+  return false
+}
+
 /**
- * When the same human turn is already persisted, a live agent with different
- * rails is the newer snapshot (idle slot closed, sandbox still producing).
- * Returns null when live has nothing newer to show.
+ * When the same human turn is already persisted, a longer live agent is the
+ * newer snapshot (slot closed, bridge still producing). A shorter or different
+ * live must not cover the reply already on disk. Returns null when live has
+ * nothing longer to show.
  */
 function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn[]): ClarifyTurn[] | null {
   const liveHuman = live.find((t) => t.role === 'human')
@@ -134,7 +151,7 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
       (agent.thought || '').trim() === thought &&
       sameTools(agent.tools, liveAgent.tools) &&
       sameParts(agent.parts, liveAgent.parts)
-    if (same) return null
+    if (same || !liveAgentRicher(agent, liveAgent)) return null
     const replaced: ClarifyTurn = {
       ...agent,
       text: liveAgent.text || '',

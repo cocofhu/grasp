@@ -2575,11 +2575,17 @@ async function realignClarifyToRefresh() {
   if (active.value?.type !== 'clarify') return
   if (realignInflight) return
   if (!shouldFetchActiveInboxContext()) return
-  if (isClarifySoftRefreshBlocked()) return
+  if (isClarifySoftRefreshBlocked()) {
+    scheduleOrphanRealign()
+    return
+  }
   const target = active.value
   const triple = inboxTripleKey(target)
   const signal = acquireInboxContextSignal(triple)
-  if (!signal) return
+  if (!signal) {
+    scheduleOrphanRealign()
+    return
+  }
   realignInflight = true
   try {
     const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })

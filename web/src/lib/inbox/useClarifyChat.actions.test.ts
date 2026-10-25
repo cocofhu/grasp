@@ -859,6 +859,7 @@ describe('useClarifyChat actions', () => {
     const agent = [...chat.liveTurns.value].reverse().find((t) => t.role === 'agent')
     expect(agent?.thought).toBe('还在想')
     expect(agent?.text).toBe('新的正文')
+    expect(agent?.streaming).toBe(false)
     expect(agent?.tools).toEqual([{ title: 'read_file', status: 'completed' }])
     expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
     expect(chat.liveAgentIdx.value).toBe(-1)
@@ -881,6 +882,115 @@ describe('useClarifyChat actions', () => {
     expect(chat.showSandboxOrphanBanner.value).toBe(false)
     expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
     ta.remove()
+    app.unmount()
+  })
+
+  it('drops the idle narrative once the bridge is idle and the refresh snapshot arrives', async () => {
+    const { chat, app, props, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(0)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 5)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想滚动条以外的事' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])).toBe(true)
+    expect(chat.liveTurns.value.at(-1)?.streaming).toBe(false)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '半截', at: '2' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '半截'])
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(false)
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(el.scrollTop).toBe(0)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(ta.selectionStart).toBe(2)
+    expect(ta.selectionEnd).toBe(5)
+    expect(document.activeElement).toBe(ta)
+    ta.remove()
+    app.unmount()
+  })
+
+  it('replaces an idle narrative when the snapshot arrives after the bridge is already idle', async () => {
+    const { chat, app, props } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文已经写进当前对话' },
+    ])
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文已经写进当前对话')).toBe(true)
+
+    props.turns = [
+      { role: 'human', text: '继续', at: '1' },
+      { role: 'agent', text: '已落盘正文', at: '3' },
+    ]
+    await nextTick()
+    expect(chat.displayTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘正文'])
+    expect(chat.liveTurns.value).toEqual([])
     app.unmount()
   })
 

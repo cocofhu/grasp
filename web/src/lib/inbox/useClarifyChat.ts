@@ -241,6 +241,14 @@ const liveAgentIdx = ref(-1)
  * queue_state so a hard-load race still buffers.
  */
 let idleNarrativeOpen = false
+/**
+ * paintIdleNarrative wrote a row after the streaming slot closed. A later
+ * persisted snapshot is the refresh transcript: once the bridge is idle, that
+ * snapshot replaces the idle row. While the bridge is still busy the row stays.
+ */
+let idlePainted = false
+/** Persisted transcript changed after the idle row was painted. */
+let persistedMovedAfterIdlePaint = false
 type OutputClock = { text: string; startedAt: string; endedAt: string }
 /** Page-session wall clocks, kept after the live bubble is replaced by the transcript. */
 const outputClocks = ref<OutputClock[]>([])
@@ -761,18 +769,22 @@ watch(
     // Clear live bubbles once persisted transcript includes them (not while streaming).
     // Empty persisted must not wipe an in-flight / seed-only human bubble.
     const ahead = liveNarrativeAhead(turnList)
+    if (prevKey !== undefined && idlePainted) persistedMovedAfterIdlePaint = true
+    // Bridge idle and a snapshot landed after the idle paint: the snapshot is
+    // the dialogue. While the bridge is still busy, a newer idle row stays.
+    const snapshotWins =
+      idlePainted &&
+      persistedMovedAfterIdlePaint &&
+      !sandboxOrphan.value &&
+      liveAgentIdx.value < 0 &&
+      ahead
     if (
       liveTurns.value.length &&
-      !ahead &&
-      (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))
+      (snapshotWins ||
+        (!ahead &&
+          (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))))
     ) {
-      liveTurns.value = []
-      liveAgentIdx.value = -1
-      messageReveal.reset()
-      thoughtReveal.reset()
-      streamPreview.reset()
-      thoughtPreview.reset()
-      if (queued.value.length === 0) thinking.value = false
+      clearSettledLiveTurns()
     }
     void scrollBottom()
   },
@@ -802,6 +814,8 @@ watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
     idleNarrativeOpen = false
+    idlePainted = false
+    persistedMovedAfterIdlePaint = false
     void enterStickSequence()
   },
 )
@@ -1728,6 +1742,16 @@ function applySandboxOrphan(frame: {
   const busy = !!frame.sandboxBusy || !!frame.sandboxDesynced
   if (!busy) {
     sandboxOrphan.value = null
+    // The refresh snapshot may have landed while the bridge was still busy.
+    // Now that it is idle, drop the idle row the snapshot did not keep.
+    if (
+      idlePainted &&
+      persistedMovedAfterIdlePaint &&
+      liveAgentIdx.value < 0 &&
+      liveNarrativeAhead(persistedTurns.value)
+    ) {
+      clearSettledLiveTurns()
+    }
     return
   }
   sandboxOrphan.value = {
@@ -1790,6 +1814,19 @@ function syncIdleNarrative(
   activeItem?: SessionFrameItem | null,
 ) {
   idleNarrativeOpen = waiting === 0 && !busy && !activeItem
+}
+
+/** Drop idle or settled live rows once the persisted transcript is the dialogue. */
+function clearSettledLiveTurns() {
+  liveTurns.value = []
+  liveAgentIdx.value = -1
+  messageReveal.reset()
+  thoughtReveal.reset()
+  streamPreview.reset()
+  thoughtPreview.reset()
+  if (queued.value.length === 0) thinking.value = false
+  idlePainted = false
+  persistedMovedAfterIdlePaint = false
 }
 
 /** Live rails differ from the persisted tail, so a transcript refresh must not drop them. */
@@ -1957,6 +1994,8 @@ function applyReviewFrame(frame: {
   switch (frame.event) {
     case 'turn_begin': {
       idleNarrativeOpen = false
+      idlePainted = false
+      persistedMovedAfterIdlePaint = false
       // Pump order: queue_state(remaining, no active) → turn_begin(item=active).
       // frame.item is server-authoritative; match-remove by id first, text fallback —
       // never blind-shift (that would bind live human to the next waiter after trim).
@@ -2182,7 +2221,8 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
 /**
  * Platform FIFO is idle and the streaming slot is gone. Write the snapshot
  * onto the closed agent row (or a new one) without reopening the slot, so the
- * orphan banner can stay while the text is visible. Stick-gated scroll only.
+ * orphan banner can stay while the text is visible. The row is settled: the
+ * slot is closed, so it must not keep a streaming tail. Stick-gated scroll only.
  */
 function paintIdleNarrative(events: AcpEvent[]): boolean {
   let idx = -1
@@ -2212,22 +2252,39 @@ function paintIdleNarrative(events: AcpEvent[]): boolean {
   const row = liveTurns.value[idx]
   liveAgentIdx.value = -1
   if (queued.value.length === 0) thinking.value = false
-  if (
+  const emptyCreated =
     created &&
     row &&
     !(row.text || '').trim() &&
     !(row.thought || '').trim() &&
     !row.tools?.length &&
-    !row.parts?.length
-  ) {
+    !row.parts?.length &&
+    liveTurns.value[liveTurns.value.length - 1] === row
+  if (emptyCreated) {
     liveTurns.value.pop()
-  } else if (row?.role === 'agent' && !row.handoff) {
-    // Streaming so the message uses the reveal blocks just written, while the
-    // slot index stays closed and the orphan banner can remain. Segment
-    // handoff rows stay settled; the open segment is already streaming.
-    row.streaming = true
+  } else {
+    settleIdleNarrative()
+    const hasBody = liveTurns.value.some(
+      (t) =>
+        t.role === 'agent' &&
+        (!!(t.text || '').trim() || !!(t.thought || '').trim() || !!t.tools?.length || !!t.parts?.length),
+    )
+    if (hasBody) idlePainted = true
   }
   return applied
+}
+
+/** Slot is closed: show the written snapshot as a settled reply, not a live tail. */
+function settleIdleNarrative() {
+  for (const turn of liveTurns.value) {
+    if (turn.role !== 'agent' || !turn.streaming) continue
+    turn.streaming = false
+    if (!turn.handoff) markOutputEnd(turn)
+  }
+  messageReveal.flush()
+  thoughtReveal.flush()
+  streamPreview.flush()
+  thoughtPreview.flush()
 }
 
 /** Persisted tail already shows this cumulative snapshot — do not add an empty row. */

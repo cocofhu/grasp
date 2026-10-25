@@ -1402,6 +1402,82 @@ describe('useGatesInbox actions', () => {
     }
   })
 
+  it('retries orphan realign when the context request is blocked or already in flight', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    let sessionBusy = true
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(), isSessionBusy: () => sessionBusy }
+    const before = mocks.inboxContext.mock.calls.length
+    vi.useFakeTimers()
+    try {
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+      socket.open()
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+
+      sessionBusy = false
+      const stillBusy = {
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: true, sandboxDesynced: false },
+          },
+        }),
+      }
+      let releaseContext: (value: unknown) => void = () => {}
+      mocks.inboxContext.mockImplementationOnce(
+        () => new Promise((resolve) => { releaseContext = resolve }),
+      )
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      releaseContext(stillBusy)
+      await flushPromises()
+      mocks.inboxContext.mockResolvedValueOnce({
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: false, sandboxDesynced: false },
+          },
+        }),
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 2)
+    } finally {
+      vi.useRealTimers()
+      app.unmount()
+    }
+  })
+
   it('patches workflow status and artifact cards without clearing the open transcript', async () => {
     const { inbox, app } = await withInbox()
     const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
