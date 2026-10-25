@@ -2027,7 +2027,8 @@ describe('ReactArtifactStage split drawer', () => {
     expect(wrapper.text()).not.toContain('工作流产物')
     expect(wrapper.get('[data-testid="stage-workflow-heading"]').text()).toBe('工作流')
     expect(wrapper.get('[data-testid="stage-workflow-progress"]').text()).toBe('1 / 3 已完成')
-    expect(wrapper.get('[data-testid="stage-workflow-index"]').text()).toBe('02 / 03')
+    expect(wrapper.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 03')
     expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('当前查看')
     expect(wrapper.get('[data-testid="react-artifact-grid"]').classes()).toContain('overflow-x-hidden')
     const nodes = wrapper.findAll('[data-testid="stage-workflow-node"]')
@@ -2251,7 +2252,8 @@ describe('ReactArtifactStage split drawer', () => {
     expect(wrapper.get('[data-testid="stage-workflow-heading"]').text()).toBe('Workflow')
     expect(wrapper.get('[data-testid="stage-workflow-current"]').text()).toBe('Current')
     expect(wrapper.get('[data-testid="stage-workflow-progress"]').text()).toBe('1 / 3 completed')
-    expect(wrapper.get('[data-testid="stage-workflow-index"]').text()).toBe('02 / 03')
+    expect(wrapper.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 03')
     expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('当前查看')
     expect(wrapper.get('[data-testid="react-artifact-split-empty"]').text()).toBe('This run has no artifacts yet')
     expect(wrapper.text()).toContain('Waiting for human')
@@ -2276,7 +2278,8 @@ describe('ReactArtifactStage split drawer', () => {
     const wrapper = mountSplit('artifacts', { run })
     await flushPromises()
     expect(wrapper.get('[data-testid="stage-workflow-progress"]').text()).toBe('1 / 4 已完成')
-    expect(wrapper.get('[data-testid="stage-workflow-index"]').text()).toBe('02 / 04')
+    expect(wrapper.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 04')
     const nodes = wrapper.findAll('[data-testid="stage-workflow-node"]')
     const currentMark = nodes[1].get('[data-testid="stage-workflow-mark"]')
     expect(currentMark.attributes('data-mark')).toBe('icon')
@@ -2312,7 +2315,7 @@ describe('ReactArtifactStage split drawer', () => {
     wrapper.unmount()
   })
 
-  it('counts success, pads a single current step, and hides the index when nothing is current', async () => {
+  it('counts success and does not show a padded position counter', async () => {
     const finished = {
       id: 'run-split',
       nodes: [
@@ -2327,7 +2330,8 @@ describe('ReactArtifactStage split drawer', () => {
     const wrapper = mountSplit('artifacts', { run: finished })
     await flushPromises()
     expect(wrapper.get('[data-testid="stage-workflow-progress"]').text()).toBe('2 / 2 已完成')
-    expect(wrapper.get('[data-testid="stage-workflow-index"]').text()).toBe('02 / 02')
+    expect(wrapper.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 02')
     const current = wrapper.findAll('[data-testid="stage-workflow-node"]')[1]
     expect(current.classes()).toContain('is-current')
     expect(current.get('[data-testid="stage-workflow-mark"]').attributes('data-mark')).toBe('icon')
@@ -2345,7 +2349,8 @@ describe('ReactArtifactStage split drawer', () => {
     })
     await flushPromises()
     expect(alone.get('[data-testid="stage-workflow-progress"]').text()).toBe('0 / 1 已完成')
-    expect(alone.get('[data-testid="stage-workflow-index"]').text()).toBe('01 / 01')
+    expect(alone.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(alone.get('[data-testid="stage-workflow"]').text()).not.toContain('01 / 01')
     expect(alone.findAll('.stage-workflow-step')).toHaveLength(1)
     expect(alone.get('[data-testid="stage-workflow-mark"]').attributes('data-glyph')).toBe('arc-spinner')
     alone.unmount()
@@ -2353,6 +2358,7 @@ describe('ReactArtifactStage split drawer', () => {
     const unfocused = mountSplit('artifacts', { nodeId: 'missing' })
     await flushPromises()
     expect(unfocused.find('[data-testid="stage-workflow-index"]').exists()).toBe(false)
+    expect(unfocused.get('[data-testid="stage-workflow"]').text()).not.toContain('02 / 03')
     expect(unfocused.find('.is-current').exists()).toBe(false)
     expect(unfocused.get('[data-testid="stage-workflow-progress"]').text()).toBe('1 / 3 已完成')
     unfocused.unmount()

@@ -242,6 +242,11 @@ async function onHideNav() {
   border-radius: 8px;
   color: rgb(var(--c-txt2));
 }
+/* Resting secondary text above must not cover the theme button's hover
+   and keyboard-focus body color. Language and the bell keep their own rules. */
+.sidebar-footer :deep([data-testid="shell-theme-toggle"]:is(:hover, :focus-visible)) {
+  color: rgb(var(--c-txt));
+}
 @media (prefers-reduced-motion: reduce) {
   .sidebar-app-rail__item { transition: none; }
 }
