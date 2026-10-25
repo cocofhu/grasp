@@ -69,7 +69,7 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 		t.Fatal(err)
 	}
 	local, _ = agents.Get(local.Name)
-	if local.AcpBackend != "codebuddy" || agents.Effective(local).ModelBinding.ConfigurationID != localModel.ID || agents.Effective(local).GitBindings.PreferredCredentialID != localGit.ID {
+	if local.AcpBackend != "codebuddy" || agents.Effective(local).ModelBinding.ConfigurationID != localModel.ID || agents.Effective(local).GitBindings.Items[0].CredentialID != localGit.ID || agents.Effective(local).GitBindings.PreferredCredentialID != "" {
 		t.Fatal("explicit false did not preserve local selections or CLI was not derived")
 	}
 	local.InheritModel, local.InheritGit = true, true
@@ -81,10 +81,10 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if effective.Env[runtime.EnvCodeBuddyRegion] != "public" || stored.Env[runtime.EnvCodeBuddyRegion] != "internal" {
 		t.Fatal("inherited model did not use the default site or overwrote the local site")
 	}
-	if effective.AcpBackend != "opencode" || effective.ModelBinding.ConfigurationID != defaultModel.ID || effective.GitBindings.PreferredCredentialID != defaultGit.ID || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("opencode") {
+	if effective.AcpBackend != "opencode" || effective.ModelBinding.ConfigurationID != defaultModel.ID || effective.GitBindings.Items[0].CredentialID != defaultGit.ID || effective.GitBindings.PreferredCredentialID != "" || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("opencode") {
 		t.Fatal("explicit defaults did not determine the effective route")
 	}
-	if stored.AcpBackend != "codebuddy" || stored.ModelBinding.ConfigurationID != localModel.ID || stored.GitBindings.PreferredCredentialID != localGit.ID || stored.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
+	if stored.AcpBackend != "codebuddy" || stored.ModelBinding.ConfigurationID != localModel.ID || stored.GitBindings.Items[0].CredentialID != localGit.ID || stored.GitBindings.PreferredCredentialID != "" || stored.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
 		t.Fatal("inheritance overwrote local selections")
 	}
 	zip, err := agents.ExportZIP(local.Name)
@@ -104,7 +104,7 @@ func TestExplicitDefaultInheritancePreservesLocalSelectionsAndZIP(t *testing.T) 
 	if effective.Env[runtime.EnvCodeBuddyRegion] != "internal" {
 		t.Fatal("turning inheritance off did not restore the local site")
 	}
-	if effective.AcpBackend != "codebuddy" || effective.GitBindings.PreferredCredentialID != localGit.ID || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
+	if effective.AcpBackend != "codebuddy" || effective.GitBindings.Items[0].CredentialID != localGit.ID || effective.GitBindings.PreferredCredentialID != "" || effective.Layout.ConfigRoot != DefaultConfigRootForBackend("codebuddy") {
 		t.Fatal("turning inheritance off did not restore local configuration")
 	}
 	defaults.ModelBinding = nil

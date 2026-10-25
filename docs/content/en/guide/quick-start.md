@@ -58,7 +58,7 @@ Image tags / digests can be overridden in `.env` — see [`.env.example`](https:
 
 ## Next steps
 
-- After login, the workspace opens first-time setup: save a credential, then create and select a named model configuration combining a coding tool, that credential and an upstream model. Open the credential/model manager from the wizard when needed. Optionally select several Git authorizations and a preferred identity, or skip Git. Runtime uses only the explicitly bound model and authorizations. The sidebar lists all workflows; shared configuration lives in Settings. The setup then creates the default team and publishes **Default Workflow**. Fill the repo URL when starting a Run.
+- After login, the workspace opens first-time setup: save a credential, then create and select a named model configuration combining a coding tool, that credential and an upstream model. Open the credential/model manager from the wizard when needed. Optionally select several Git authorizations, or skip Git. Runtime uses only the explicitly bound model and authorizations. The sidebar lists all workflows; shared configuration lives in Settings. The setup then creates the default team and publishes **Default Workflow**. Fill the repo URL when starting a Run.
 - [Core concepts](../concepts/) — FSM, gates, sandbox, artifacts
 - [Configuration summary](../../help/configuration/) — points to full `CONFIGURATION.md`
 - [Gateway summary](../../help/gateway/) — points to `GATEWAY.md`

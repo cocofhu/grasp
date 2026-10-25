@@ -77,7 +77,14 @@ func TestAgentGitBindingsRoundtripZIP(t *testing.T) {
 			t.Fatal("omitted and empty Git authorizations must both grant none")
 		}
 	}
-	if err := s.Save(Agent{Name: "bad", AcpBackend: "cursor", GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}}}); !errors.Is(err, ErrInvalidAgent) || s.Exists("bad") {
+	if err := s.Save(Agent{Name: "legacy-preferred", AcpBackend: "cursor", ModelBinding: sandboxTestModelBinding(), GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: "gh"}}, PreferredCredentialID: "other"}}); err != nil {
+		t.Fatal(err)
+	}
+	legacy, _ := s.Get("legacy-preferred")
+	if legacy.GitBindings == nil || legacy.GitBindings.PreferredCredentialID != "" || len(legacy.GitBindings.Items) != 1 || legacy.GitBindings.Items[0].CredentialID != "gh" {
+		t.Fatalf("legacy preferred credential was kept: %+v", legacy.GitBindings)
+	}
+	if err := s.Save(Agent{Name: "bad", AcpBackend: "cursor", GitBindings: &models.GitBindings{Items: []models.GitCredentialBinding{{CredentialID: " "}}}}); !errors.Is(err, ErrInvalidAgent) || s.Exists("bad") {
 		t.Fatalf("invalid selection saved: %v", err)
 	}
 }
@@ -210,7 +217,7 @@ func TestGitBindingsInteractiveAndTestStartsStageAllSelectedSecrets(t *testing.T
 				ID        string `json:"id"`
 				Preferred bool   `json:"preferred"`
 			}
-			if err := json.Unmarshal([]byte(files["git/manifest.json"]), &catalog); err != nil || len(catalog) != 2 || catalog[0].ID != "gh" || !catalog[0].Preferred || catalog[1].ID != "gl" || strings.TrimSpace(files["git/0.secret"]) != "selected-gh-token" || strings.TrimSpace(files["git/1.secret"]) != "selected-gl-token" {
+			if err := json.Unmarshal([]byte(files["git/manifest.json"]), &catalog); err != nil || len(catalog) != 2 || catalog[0].ID != "gh" || catalog[0].Preferred || catalog[1].ID != "gl" || catalog[1].Preferred || strings.TrimSpace(files["git/0.secret"]) != "selected-gh-token" || strings.TrimSpace(files["git/1.secret"]) != "selected-gl-token" {
 				t.Fatalf("not all selected authorizations staged: %+v %v", catalog, err)
 			}
 		})
