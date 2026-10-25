@@ -5,6 +5,7 @@ import type { SoloMessage, SoloSession } from '@/lib/api/apiTypes'
 import type { ClarifyImage } from '@/lib/shared/types'
 import { createWsReconnectController } from '@/lib/run/wsReconnect'
 import { applyAcp, emptyAgentTurn, turnsFromMessages, type SoloTurn } from './acpTurn'
+import { soloErrorText } from './soloErrors'
 import { useSoloSessions } from './useSoloSessions'
 
 export type SoloQueueItem = { id: string; text: string; images: ClarifyImage[]; local?: boolean }
@@ -36,7 +37,7 @@ function queueItem(raw: any): SoloQueueItem {
  * turn on reconnect, so a dropped socket only pauses the view).
  */
 export function useSoloChat(sessionId: Ref<string>) {
-  const { t, te } = useI18n()
+  const { t, te, locale } = useI18n()
   const label = (key: string) => {
     const k = `pages.agentChatTester.tools.${key}`
     return te(k) ? t(k) : ''
@@ -72,6 +73,15 @@ export function useSoloChat(sessionId: Ref<string>) {
   const status = computed(() => session.value?.status ?? 'starting')
   const closed = computed(() => status.value === 'closed')
   const canSend = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
+  // An explicit current model wins, including empty (primary). Old sessions
+  // omit the flag and keep the opening model.
+  const currentModelId = computed(() => {
+    const row = session.value
+    if (!row) return ''
+    if (row.currentModelSet) return row.currentModelId || ''
+    return row.initialModelId || ''
+  })
+  const modelSwitchNotice = ref('')
   const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
   function setSession(v: SoloSession) {
@@ -135,6 +145,11 @@ export function useSoloChat(sessionId: Ref<string>) {
     } catch {
       /* keep the current transcript */
     }
+  }
+
+  function showModelNotice(code: string, fallback = '') {
+    if (!code) return
+    actionError.value = soloErrorText({ code, message: fallback || code }, t, te, locale.value)
   }
 
   function endActive(error?: string, interrupted?: boolean) {
@@ -304,14 +319,25 @@ export function useSoloChat(sessionId: Ref<string>) {
       case 'turn_done':
         endActive(undefined, !!frame.interrupted)
         busy.value = queued.value.length > 0
+        modelSwitchNotice.value = ''
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
         break
       case 'error':
+        modelSwitchNotice.value = ''
         endActive(frame.message || t('pages.solo.chat.turnFailed'))
         busy.value = queued.value.length > 0
         patchSession({ busy: busy.value, waiting: queued.value.length })
         void refetchMessages()
+        break
+      case 'model':
+        patchSession({
+          currentModelId: typeof frame.currentModelId === 'string' ? frame.currentModelId : '',
+          currentModelSet: true,
+          modelNotice: typeof frame.modelNotice === 'string' ? frame.modelNotice : '',
+        })
+        modelSwitchNotice.value = ''
+        if (frame.modelNotice) showModelNotice(String(frame.modelNotice), String(frame.error || ''))
         break
       case 'status': {
         const cur = session.value
@@ -396,6 +422,7 @@ export function useSoloChat(sessionId: Ref<string>) {
       const v = await api.getSoloSession(id)
       if (id !== sessionId.value) return
       setSession(v)
+      if (v.modelNotice) showModelNotice(v.modelNotice)
       openWs()
     } catch (e: any) {
       if (id === sessionId.value) loadError.value = String(e?.message || e)
@@ -422,6 +449,35 @@ export function useSoloChat(sessionId: Ref<string>) {
       queued.value = queued.value.filter((q) => q.id !== local.id)
       patchSession({ waiting: queued.value.length, busy: queued.value.length > 0 })
       actionError.value = String(e?.message || e)
+      return false
+    }
+  }
+
+  async function setCurrentModel(modelId: string) {
+    const id = sessionId.value
+    const cur = session.value
+    if (!id || !cur || !canSend.value) return false
+    const next = modelId.trim()
+    if (cur.currentModelSet && (cur.currentModelId || '') === next) return true
+    const prev = {
+      currentModelId: cur.currentModelId,
+      currentModelSet: cur.currentModelSet,
+      modelNotice: cur.modelNotice,
+    }
+    actionError.value = ''
+    const deferNotice = busy.value
+    patchSession({ currentModelId: next, currentModelSet: true, modelNotice: '' })
+    modelSwitchNotice.value = deferNotice ? t('pages.solo.modelSelect.pending') : ''
+    try {
+      const v = await api.setSoloSessionModel(id, next)
+      if (id !== sessionId.value) return false
+      setSession(v)
+      if (!(deferNotice && busy.value)) modelSwitchNotice.value = ''
+      return true
+    } catch (e) {
+      patchSession(prev)
+      modelSwitchNotice.value = ''
+      actionError.value = soloErrorText(e, t, te, locale.value)
       return false
     }
   }
@@ -475,6 +531,10 @@ export function useSoloChat(sessionId: Ref<string>) {
     return !!v
   }
 
+  watch(busy, (now, was) => {
+    if (was && !now) modelSwitchNotice.value = ''
+  })
+
   watch(sessionId, () => void load(), { immediate: true })
 
   onBeforeUnmount(() => {
@@ -496,8 +556,11 @@ export function useSoloChat(sessionId: Ref<string>) {
     status,
     closed,
     canSend,
+    currentModelId,
+    modelSwitchNotice,
     load,
     send,
+    setCurrentModel,
     cancel,
     removeQueued,
     close,

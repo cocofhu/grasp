@@ -13,6 +13,7 @@ import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
+import SoloModelSelect from './SoloModelSelect.vue'
 import { api } from '@/lib/api/api'
 import { agentHueVar, agentInitial } from '@/components/canvas/composables/agentAvatar'
 import { attachmentDisplayName, isImageAttachment } from '@/lib/shared/attachments'
@@ -22,6 +23,7 @@ import { useImageAttachments } from '@/lib/composables/useImageAttachments'
 import { useChatImagePreview } from '@/lib/composables/useChatImagePreview'
 import { partsOf } from '@/lib/solo/acpTurn'
 import { useSoloChat } from '@/lib/solo/useSoloChat'
+import { useSessionModelCatalog } from '@/lib/solo/useSessionModelCatalog'
 import { useSoloSessions } from '@/lib/solo/useSoloSessions'
 import { repoShort } from '@/lib/solo/soloPrefs'
 import { branchOfRepo, sessionRepos } from '@/lib/solo/sessionRepos'
@@ -34,7 +36,32 @@ const { t, te, locale } = useI18n()
 const router = useRouter()
 const store = useSoloSessions()
 const chat = useSoloChat(toRef(props, 'sessionId'))
-const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend } = chat
+const { session, turns, queued, busy, phase, link, loading, loadError, actionError, status, closed, canSend, currentModelId, modelSwitchNotice, setCurrentModel } = chat
+const modelCatalog = useSessionModelCatalog(computed(() => session.value?.agentName || ''))
+const modelChoices = modelCatalog.choices
+const modelCatalogReady = modelCatalog.ready
+const modelCatalogBlocked = modelCatalog.blocked
+const shownModels = computed(() => {
+  if (modelChoices.value.length || !modelCatalogBlocked.value || !currentModelId.value) return modelChoices.value
+  const id = currentModelId.value
+  return [{ id, name: id, hint: id, vendor: '', backend: false, unavailable: false }]
+})
+let modelResetFor = ''
+watch([modelChoices, modelCatalog.configLoaded, modelCatalog.catalogConfirmed, currentModelId, canSend], async () => {
+  if (!canSend.value) return
+  const id = currentModelId.value
+  if (!id || modelResetFor === id) return
+  // A failed directory read must not be stored as "back to the primary model".
+  const inConfig = modelCatalog.modelInConfiguration(id)
+  if (inConfig === null) return
+  if (inConfig && !modelCatalog.catalogConfirmed.value) return
+  const hit = modelChoices.value.find((choice) => choice.id === id)
+  if (inConfig && hit && !hit.unavailable) return
+  modelResetFor = id
+  const ok = await setCurrentModel('')
+  if (ok) actionError.value = t('pages.solo.modelSelect.reset')
+  else modelResetFor = ''
+})
 const attach = useImageAttachments()
 const fileInput = attach.fileInput
 const { preview: imagePreview, openChatImagePreview, closeChatImagePreview } = useChatImagePreview()
@@ -424,6 +451,8 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       <div v-else class="solo-bottom shrink-0 py-3">
         <div class="solo-column">
           <p v-if="actionError" class="mb-2 text-[12px] text-err" role="alert">{{ actionError }}</p>
+          <p v-if="modelCatalogBlocked && canSend" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-catalog-notice">{{ t('pages.solo.modelSelect.catalogFailed') }}</p>
+          <p v-if="modelSwitchNotice" class="mb-2 text-[12px] text-txt2" role="status" data-testid="solo-model-switch-notice">{{ modelSwitchNotice }}</p>
           <p v-if="attach.notice.value" class="mb-2 text-[12px]" :class="attach.notice.value.kind === 'error' ? 'text-err' : 'text-ok'">{{ attach.notice.value.text }}</p>
           <div v-if="attach.attachments.value.length" class="mb-2 flex flex-wrap gap-1.5">
             <div v-for="(im, ii) in attach.attachments.value" :key="ii" class="relative">
@@ -467,6 +496,14 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
                 <button type="button" class="chat-action-button" :disabled="!canSend" :aria-label="t('pages.solo.chat.attach')" :title="t('pages.solo.chat.attach')" @click="fileInput?.click()">
                   <Icon name="plus" :size="18" />
                 </button>
+                <SoloModelSelect
+                  class="min-w-0"
+                  :model-value="currentModelId"
+                  :models="shownModels"
+                  :disabled="!canSend || !modelCatalogReady"
+                  :empty-as-label="modelCatalogReady && !modelChoices.length"
+                  @update:model-value="setCurrentModel"
+                />
                 <span v-if="status === 'starting'" class="truncate text-[11.5px] text-txt3">{{ t('pages.solo.chat.waitingSandbox') }}</span>
               </div>
               <div class="flex items-center gap-2">

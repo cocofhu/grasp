@@ -40,7 +40,12 @@ const (
 const (
 	SoloEventStatus = "status"
 	SoloEventPhase  = "phase"
+	SoloEventModel  = "model"
 )
+
+// soloModelSwitchFailed is stored on the session and localized by the client
+// after a sandbox reject rolls the selection back.
+const soloModelSwitchFailed = "model_switch_failed"
 
 // Solo turn phases reported while busy.
 const (
@@ -104,9 +109,19 @@ type SoloService struct {
 	agents   *AgentService
 	projects *ProjectService
 	chat     pmChatter
+	// modelAlign overrides the sandbox when tests need to record or fail a
+	// switch without calling the bridge. Nil uses the sandbox service.
+	modelAlign soloModelAligner
 
 	mu    sync.Mutex
 	chats map[string]*soloChat
+}
+
+// soloModelAligner applies a model to the sandbox default chat. changed is
+// false when the chat was already on that model. A true result means the
+// coding agent was restarted and the next prompt must carry prior dialogue.
+type soloModelAligner interface {
+	AlignChatModel(ctx context.Context, sandboxID uint, model string) (changed bool, err error)
 }
 
 type soloChat struct {
@@ -142,6 +157,19 @@ func NewSoloService(db *gorm.DB, sbx *SandboxService, agents *AgentService, proj
 
 // SetChatterForTest replaces the sandbox chat backend.
 func (s *SoloService) SetChatterForTest(c pmChatter) { s.chat = c }
+
+// SetModelAlignerForTest replaces the sandbox model switch.
+func (s *SoloService) SetModelAlignerForTest(a soloModelAligner) { s.modelAlign = a }
+
+func (s *SoloService) modelAligner() soloModelAligner {
+	if s.modelAlign != nil {
+		return s.modelAlign
+	}
+	if s.sbx != nil {
+		return s.sbx
+	}
+	return nil
+}
 
 // Projects exposes the project store.
 func (s *SoloService) Projects() *ProjectService { return s.projects }
@@ -332,6 +360,8 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 	row := &models.SoloSession{
 		ID: uuid.NewString(), UserID: user, Title: soloTitle(in, agentName), AgentName: agentName,
 		Repos: snaps, InitialModelID: initialModel, Status: models.SoloStatusStarting, LastActiveAt: &now,
+		CurrentModelID: initialModel, CurrentModelSet: true,
+		AppliedModelID: initialModel, AppliedModelSet: true,
 	}
 	// One repository keeps the legacy columns so a single-repo session still
 	// reads the same as sessions created before multi-select.
@@ -364,8 +394,9 @@ func (s *SoloService) Create(ctx context.Context, user string, in SoloCreateInpu
 
 func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) error {
 	sid := row.ID
+	model := chatModelID(row)
 	sb, err := s.sbx.OpenSoloSandbox(ctx, SoloSandboxOpts{
-		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: row.InitialModelID,
+		Profile: row.AgentName, SessionID: sid, Repos: effectiveSessionRepos(row), InitialModelID: model,
 		OnEnv: func(sources map[string]string) {
 			s.db.Model(&models.SoloSession{ID: sid}).Select("EnvSources").
 				Updates(&models.SoloSession{EnvSources: sources})
@@ -392,8 +423,12 @@ func (s *SoloService) openSandbox(ctx context.Context, row *models.SoloSession) 
 		return err
 	}
 	row.SandboxID = sb.ID
-	return s.db.Model(&models.SoloSession{}).Where("id = ?", sid).
-		Updates(map[string]any{"sandbox_id": sb.ID, "status": models.SoloStatusStarting, "error": ""}).Error
+	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", sid).
+		Updates(map[string]any{"sandbox_id": sb.ID, "status": models.SoloStatusStarting, "error": ""}).Error; err != nil {
+		return err
+	}
+	// The new container is born on this model. Later switches compare against it.
+	return s.rememberApplied(sid, model)
 }
 
 // onSandboxGone marks sessions whose sandbox was destroyed outside Close.
@@ -655,6 +690,111 @@ func (s *SoloService) newChat(id string) *soloChat {
 	return c
 }
 
+// SetCurrentModel stores the model later turns will use. Empty means the
+// primary model. The Agent configuration is not written. A turn that is
+// already generating keeps its model; the sandbox is updated before the next
+// turn starts.
+func (s *SoloService) SetCurrentModel(ctx context.Context, id, user, requested string) (*SoloSessionView, error) {
+	row, err := s.Require(id, user)
+	if err != nil {
+		return nil, err
+	}
+	if row.Status == models.SoloStatusClosed {
+		return nil, soloErr(http.StatusConflict, "session_closed", "会话已关闭，请先重新启动")
+	}
+	if row.Status == models.SoloStatusError {
+		return nil, soloErr(http.StatusConflict, "session_error", "沙箱不可用，请重新启动会话")
+	}
+	if s.agents == nil {
+		return nil, errors.New("solo unavailable")
+	}
+	agent, ok := s.agents.Get(row.AgentName)
+	if !ok {
+		return nil, soloErr(http.StatusBadRequest, "agent_not_found", "Agent %q 不存在", row.AgentName)
+	}
+	effective := agent
+	if s.sbx != nil {
+		effective = s.sbx.effectiveAgent(agent)
+	}
+	stored, err := s.acceptInitialModel(effective, requested)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
+		"current_model_id": stored, "current_model_set": true, "model_notice": "",
+	}).Error; err != nil {
+		return nil, err
+	}
+	return s.Get(ctx, row.ID, user)
+}
+
+func (s *SoloService) rememberApplied(id, model string) error {
+	return s.db.Model(&models.SoloSession{}).Where("id = ?", id).Updates(map[string]any{
+		"applied_model_id": model, "applied_model_set": true, "model_notice": "",
+	}).Error
+}
+
+// chatModelID is the model the next turn should use. An old row that never
+// stored a current model still follows its opening model.
+func chatModelID(row *models.SoloSession) string {
+	if row == nil {
+		return ""
+	}
+	if row.CurrentModelSet {
+		return strings.TrimSpace(row.CurrentModelID)
+	}
+	return strings.TrimSpace(row.InitialModelID)
+}
+
+// appliedChatModelID is the model the sandbox chat was last given.
+func appliedChatModelID(row *models.SoloSession) string {
+	if row == nil {
+		return ""
+	}
+	if row.AppliedModelSet {
+		return strings.TrimSpace(row.AppliedModelID)
+	}
+	return strings.TrimSpace(row.InitialModelID)
+}
+
+// alignSessionModel pushes the session's current model to the sandbox when it
+// differs from the model already applied. Failure restores the previous model
+// and reports it to the open page. The in-flight turn is left alone; this runs
+// only at the start of a turn.
+func (s *SoloService) alignSessionModel(ctx context.Context, c *soloChat, sandboxID uint, row *models.SoloSession) (bool, error) {
+	desired := chatModelID(row)
+	applied := appliedChatModelID(row)
+	if desired == applied {
+		return false, nil
+	}
+	aligner := s.modelAligner()
+	if aligner == nil {
+		return false, nil
+	}
+	changed, err := aligner.AlignChatModel(ctx, sandboxID, desired)
+	if err != nil {
+		// Stopping the turn, or failing to read the current model, must not
+		// undo the selection or restart the coding agent. The next turn retries.
+		if ctx.Err() != nil || errors.Is(err, ErrChatModelUnknown) {
+			return false, err
+		}
+		_ = s.db.Model(&models.SoloSession{}).Where("id = ?", row.ID).Updates(map[string]any{
+			"current_model_id": applied, "current_model_set": true, "model_notice": soloModelSwitchFailed,
+		}).Error
+		c.stream.Session(SoloEventModel, map[string]any{
+			"currentModelId": applied, "currentModelSet": true,
+			"modelNotice": soloModelSwitchFailed,
+			"error":       "切换模型失败，已改回原来的模型",
+		}, chatsession.KeepNone)
+		log.Warn().Err(err).Str("session", row.ID).Str("model", desired).Msg("solo model switch rolled back")
+		return false, err
+	}
+	if err := s.rememberApplied(row.ID, desired); err != nil {
+		log.Warn().Err(err).Str("session", row.ID).Msg("solo applied model persist failed")
+	}
+	return changed, nil
+}
+
 // Send queues a user turn. It returns the number of turns ahead of it.
 func (s *SoloService) Send(id, user, text string, images []models.PromptImage) (int, error) {
 	row, err := s.Require(id, user)
@@ -822,7 +962,7 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &started)
 
 	pctx, pcancel := context.WithTimeout(ctx, soloPrepareTimeout)
-	sandboxID, row, err := c.waitSandbox(pctx)
+	sandboxID, _, err := c.waitSandbox(pctx)
 	pcancel()
 	if err == nil && ctx.Err() != nil {
 		err = ctx.Err()
@@ -836,21 +976,39 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 			Updates(map[string]any{"status": status, "error": truncErr(err)})
 		return false, err
 	}
+	// Read again so a switch made while the sandbox was booting, or while an
+	// earlier turn was still generating, is the one this turn applies.
+	row, err := s.load(c.id)
+	if err != nil {
+		s.db.Model(&models.SoloMessage{}).Where("id = ?", q.ID).
+			Updates(map[string]any{"status": "failed", "error": truncErr(err)})
+		return false, err
+	}
 	c.mu.Lock()
 	c.sandboxID = sandboxID
 	c.mu.Unlock()
 	c.setPhase(SoloPhaseRunning)
+
+	noticeBefore := strings.TrimSpace(row.ModelNotice)
+	switched, alignErr := s.alignSessionModel(ctx, c, sandboxID, row)
 
 	prompt := q.Text
 	if prompt == "" {
 		prompt = "（见附件）"
 	}
 	usedPreamble := false
+	// A recreated sandbox still uses the restart summary. A model switch only
+	// restarts the coding agent, so it must not claim the sandbox or the
+	// repository was rebuilt.
+	var pre string
 	if row.NeedsPreamble {
-		if pre := s.buildPreamble(c.id, q.ID); pre != "" {
-			prompt = pre + "\n\n用户本轮消息：\n" + prompt
-			usedPreamble = true
-		}
+		pre = s.buildPreamble(c.id, q.ID)
+		usedPreamble = pre != ""
+	} else if switched {
+		pre = s.buildModelSwitchPreamble(c.id, q.ID)
+	}
+	if pre != "" {
+		prompt = pre + "\n\n用户本轮消息：\n" + prompt
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, soloTurnTimeout+30*time.Second)
@@ -886,6 +1044,12 @@ func (c *soloChat) execute(ctx context.Context, q *soloTurn) (bool, error) {
 	if usedPreamble && status == "ok" {
 		s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("needs_preamble", false)
 	}
+	// A switch that failed on an earlier turn leaves model_notice set. Once a
+	// later turn succeeds on the model that is already applied, the banner is
+	// stale. A failure from this turn's own alignment is left in place.
+	if status == "ok" && alignErr == nil && noticeBefore != "" {
+		s.db.Model(&models.SoloSession{}).Where("id = ? AND model_notice = ?", c.id, noticeBefore).Update("model_notice", "")
+	}
 	now := time.Now()
 	s.db.Model(&models.SoloSession{}).Where("id = ?", c.id).Update("last_active_at", &now)
 	recordSoloUsage(s.db, c.id, sandboxID, usage, byModel, ledger)
@@ -904,8 +1068,26 @@ func recordSoloUsage(db *gorm.DB, sessionID string, sandboxID uint, usage *model
 	})
 }
 
+const (
+	soloRestartPreambleHeader = "（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n"
+	// A model switch restarts only the coding agent. This header must not say
+	// the sandbox was recreated, the repository was cloned again, or uncommitted
+	// work was lost.
+	soloModelPreambleHeader = "（系统提示）编码模型已更换。仓库和工作区没有重建，已有改动都还在。请接着下面的对话继续：\n\n"
+)
+
 // buildPreamble summarizes persisted history for a restarted session.
 func (s *SoloService) buildPreamble(sessionID, exceptMsgID string) string {
+	return s.preamble(sessionID, exceptMsgID, soloRestartPreambleHeader)
+}
+
+// buildModelSwitchPreamble hands the existing dialogue to the next turn after
+// the coding agent is recreated for a new model.
+func (s *SoloService) buildModelSwitchPreamble(sessionID, exceptMsgID string) string {
+	return s.preamble(sessionID, exceptMsgID, soloModelPreambleHeader)
+}
+
+func (s *SoloService) preamble(sessionID, exceptMsgID, header string) string {
 	var msgs []models.SoloMessage
 	s.db.Where("session_id = ? AND role <> ? AND id <> ?", sessionID, "system", exceptMsgID).
 		Order("created_at desc").Limit(soloPreambleMessages).Find(&msgs)
@@ -913,7 +1095,7 @@ func (s *SoloService) buildPreamble(sessionID, exceptMsgID string) string {
 		return ""
 	}
 	var b strings.Builder
-	b.WriteString("（系统提示）此会话的沙箱已重新创建，之前的 CLI 会话与未提交的改动已丢失，仓库已重新克隆。以下是此前的对话记录，供你恢复上下文：\n\n")
+	b.WriteString(header)
 	for i := len(msgs) - 1; i >= 0; i-- {
 		m := msgs[i]
 		role := "用户"
