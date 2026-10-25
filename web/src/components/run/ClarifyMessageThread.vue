@@ -16,7 +16,9 @@ import { EMBED_IMAGE_PREVIEW_KEY } from '@/lib/inbox/embedImagePreview'
 import { choiceEchoRows, restoreChoiceAnswers } from '@/lib/inbox/clarifyDemo'
 import { replySpan } from '@/lib/inbox/turnSpan'
 import { agentPartsFromEvents } from '@/lib/run/acpTools'
+import { confirmFlowWindowVisible } from '@/lib/inbox/confirmFlowWindow'
 import { bootKey as makeBootKey, getBootRecord } from '@/lib/run/bootRecord'
+import { resolveBootDisplay } from '@/lib/run/bootDisplay'
 import { fmtTurnElapsed, relTime as formatRelTime } from '@/lib/shared/format'
 import { renderChatMarkdown } from '@/lib/shared/markdown'
 import type { ClarifyPriorSegment } from './ClarifyChat.vue'
@@ -350,6 +352,30 @@ const resolvedDividerTitle = computed(() =>
 )
 const currentAsk = computed(() => nodeAsk(props.priorSegments || [], (props.priorSegments || []).length, props.nodeTask, props.nodeId))
 const hasPriors = computed(() => (props.priorSegments?.length || 0) > 0)
+const sealBootMessages = ref(false)
+watch(confirmFlowWindowVisible, (visible, was) => {
+  if (visible && !was) sealBootMessages.value = !!props.bootStarting
+  if (!visible && was) sealBootMessages.value = false
+})
+watch(
+  () => props.bootStarting,
+  (pending) => {
+    if (confirmFlowWindowVisible.value && pending) sealBootMessages.value = true
+  },
+)
+const bootView = computed(() => resolveBootDisplay({
+  windowVisible: confirmFlowWindowVisible.value,
+  seal: sealBootMessages.value,
+  committed: false,
+  nextAuto: null,
+  hasBoot: !!props.bootStarting || !!props.bootSummary,
+  live: !!props.bootSummary,
+}))
+const showBootStarting = computed(() => bootView.value.showStarting && !!props.bootRecordKey && !!getBootRecord(props.bootRecordKey))
+const showBootReady = computed(() => bootView.value.showReady)
+const holdBootMessages = computed(() => bootView.value.holdMessages)
+const askUnderReady = computed(() => !!currentAsk.value && !holdBootMessages.value && showBootReady.value && !hasPriors.value)
+const showAskAbove = computed(() => !!currentAsk.value && !holdBootMessages.value && !askUnderReady.value)
 
 function turnParts(turn: ClarifyTurn): AgentPart[] {
   return turn.parts || []
@@ -650,11 +676,11 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
       <div
         class="clarify-handoff-step clarify-status-row clarify-segment-divider chat-meta flex w-full min-w-0"
         data-testid="clarify-segment-divider"
-        :role="bootSummary ? undefined : 'separator'"
-        :data-boot="bootSummary ? 'merged' : undefined"
+        :role="showBootReady ? undefined : 'separator'"
+        :data-boot="showBootReady ? 'merged' : undefined"
       >
         <ClarifyBootLoader
-          v-if="bootSummary"
+          v-if="showBootReady"
           phase="done"
           variant="inline"
           :boot-key="bootRecordKey"
@@ -670,9 +696,9 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
     </template>
 
     <template v-if="!priorsOnly">
-      <ClarifyHandoffBubble v-if="currentAsk" class="clarify-turn" :ask="currentAsk" />
+      <ClarifyHandoffBubble v-if="showAskAbove && currentAsk" class="clarify-turn" :ask="currentAsk" />
       <ClarifyBootLoader
-        v-if="bootStarting && bootRecordKey && getBootRecord(bootRecordKey)"
+        v-if="showBootStarting"
         phase="starting"
         variant="inline"
         :boot-key="bootRecordKey"
@@ -687,12 +713,18 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
       />
       <template v-for="(turn, index) in turns" :key="index">
         <ClarifyBootLoader
-          v-if="bootSummary && !hasPriors && index === firstAgentAt"
+          v-if="showBootReady && !hasPriors && index === firstAgentAt"
           phase="done"
           variant="inline"
           :boot-key="bootRecordKey"
         />
+        <ClarifyHandoffBubble
+          v-if="askUnderReady && currentAsk && firstAgentAt >= 0 && index === firstAgentAt"
+          class="clarify-turn"
+          :ask="currentAsk"
+        />
         <div
+          v-if="!(holdBootMessages && turn.role === 'agent')"
           class="clarify-turn flex"
           :class="turn.role === 'human' ? 'justify-end' : ''"
           :data-turn-role="turn.role"
@@ -749,10 +781,15 @@ const firstAgentAt = computed(() => props.turns.findIndex((turn) => turn.role ==
         :edge-kind="note.edgeKind"
       />
       <ClarifyBootLoader
-        v-if="bootSummary && !hasPriors && firstAgentAt < 0"
+        v-if="showBootReady && !hasPriors && firstAgentAt < 0"
         phase="done"
         variant="inline"
         :boot-key="bootRecordKey"
+      />
+      <ClarifyHandoffBubble
+        v-if="askUnderReady && currentAsk && firstAgentAt < 0"
+        class="clarify-turn"
+        :ask="currentAsk"
       />
     </template>
     <ChatImagePreviewModal
