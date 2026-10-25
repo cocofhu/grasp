@@ -1167,8 +1167,9 @@
         "copySuccess": "Copied to clipboard",
         "copyFailed": "Copy failed"
       },
-      "metaTitle": "Basic information",
-      "metaHint": "Save after editing the name, description, or unknown-model display name; the header and stats update on success.",
+      "metaTitle": "Workspace information",
+      "metaHint": "Use Save at the bottom of the page after editing the name, description, or unknown-model display name. The header and usage views update after a successful save.",
+      "nameRequired": "Workspace name cannot be empty",
       "metaDescPlaceholder": "Briefly describe this workspace",
       "unknownModelDisplayNameLabel": "Unknown model display name",
       "unknownModelDisplayNamePlaceholder": "e.g. gpt-5; leave blank to keep the default",
@@ -1869,8 +1870,10 @@
     },
     "settings": {
       "title": "General",
-      "subtitle": "Manage brand copy, run concurrency, and sandbox resources.",
+      "subtitle": "Manage workspace information, brand copy, run concurrency, and sandbox resources.",
       "saved": "Saved",
+      "workspaceSaveFailed": "Workspace information failed to save",
+      "platformSaveFailed": "Platform settings failed to save",
       "loadingTitle": "Loading…",
       "loadingDesc": "Loading platform settings…",
       "loadFailed": "Load failed",

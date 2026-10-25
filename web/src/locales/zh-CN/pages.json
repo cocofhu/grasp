@@ -1167,8 +1167,9 @@
         "copySuccess": "已复制到剪贴板",
         "copyFailed": "复制失败"
       },
-      "metaTitle": "基本信息",
-      "metaHint": "修改名称、描述或未知模型显示名后点击保存；保存成功后页头与统计展示将同步。",
+      "metaTitle": "工作区信息",
+      "metaHint": "修改名称、描述或未知模型显示名后使用页底保存；保存成功后页头与用量展示将同步。",
+      "nameRequired": "工作区名称不能为空",
       "metaDescPlaceholder": "简要说明工作区用途",
       "unknownModelDisplayNameLabel": "未知模型显示名",
       "unknownModelDisplayNamePlaceholder": "例如 gpt-5，留空则保持默认名称",
@@ -1869,8 +1870,10 @@
     },
     "settings": {
       "title": "常规",
-      "subtitle": "管理品牌文案、运行并发与沙箱资源。",
+      "subtitle": "管理工作区信息、品牌文案、运行并发与沙箱资源。",
       "saved": "已保存",
+      "workspaceSaveFailed": "工作区信息保存失败",
+      "platformSaveFailed": "平台参数保存失败",
       "loadingTitle": "加载中…",
       "loadingDesc": "正在读取平台调度参数。",
       "loadFailed": "加载失败",

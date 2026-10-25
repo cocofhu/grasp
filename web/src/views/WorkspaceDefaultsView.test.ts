@@ -27,15 +27,11 @@ beforeEach(() => {
   mocks.updateWorkspace.mockImplementation(async (patch) => ({ ...mocks.workspace.value, ...patch }))
 })
 describe('workspace defaults pages', () => {
-  it('edits workspace metadata without exposing a delete action', async () => {
-    const wrapper = await setup('workspaceInfo')
-    expect(wrapper.find('[data-testid="workspace-meta-delete"]').exists()).toBe(false)
-    await wrapper.get('#workspace-meta-name').setValue('New studio')
-    await wrapper.get('#workspace-meta-desc').setValue('A shared workspace')
-    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
-    await flushPromises()
-    expect(mocks.updateWorkspace).toHaveBeenCalledWith(expect.objectContaining({ name: 'New studio', description: 'A shared workspace' }))
-    expect(mocks.workspace.value.name).toBe('New studio')
+  it('does not render workspace identity fields on the shared variables page', async () => {
+    const wrapper = await setup('variables')
+    expect(wrapper.find('#workspace-meta-name').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-meta-unknown-display"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="workspace-meta-footer"]').exists()).toBe(false)
     wrapper.unmount()
   })
   it('preserves hidden variable metadata and masked secrets when editing defaults', async () => {
@@ -55,15 +51,6 @@ describe('workspace defaults pages', () => {
     await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
     await flushPromises()
     expect(mocks.updateWorkspace).toHaveBeenCalledWith({ variables: [expect.objectContaining({ name: 'RELEASE_ENVIRONMENT', value: 'production', type: 'select', options: 'staging,production', editable: true })] })
-    wrapper.unmount()
-  })
-  it('validates the unknown-model display alias before sending metadata', async () => {
-    const wrapper = await setup('workspaceInfo')
-    await wrapper.get('#workspace-meta-unknown-display').setValue('x'.repeat(81))
-    await wrapper.findAll('button').find((button) => button.text() === '保存')!.trigger('click')
-    await flushPromises()
-    expect(mocks.updateWorkspace).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="workspace-meta-unknown-display-error"]').text()).not.toBe('')
     wrapper.unmount()
   })
   it('clears edited secrets on logout and ignores a prior account save response', async () => {

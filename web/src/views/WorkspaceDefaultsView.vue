@@ -6,41 +6,25 @@ import Icon from '@/components/ui/Icon.vue'
 import AppButton from '@/components/ui/AppButton.vue'
 import EmptyState from '@/components/ui/EmptyState.vue'
 import WorkspacePage from '@/components/shell/WorkspacePage.vue'
-import SettingsSection from '@/components/settings/SettingsSection.vue'
-import SettingsRow from '@/components/settings/SettingsRow.vue'
 import { api } from '@/lib/api/api'
 import { useWorkspaceContext } from '@/lib/composables/useWorkspaceContext'
 import { useToast } from '@/lib/composables/useToast'
-import { normalizeUnknownModelDisplayNameInput } from '@/lib/run/tokenUsage'
 import type { WorkspaceVariable } from '@/lib/shared/types'
 const { t } = useI18n()
 const route = useRoute()
 const toast = useToast()
 const { workspace } = useWorkspaceContext()
 const isVariables = computed(() => route.meta.workspaceTool === 'variables')
-const savingMeta = ref(false)
 const savingVars = ref(false)
-const editName = ref('')
-const editDesc = ref('')
-const editUnknownModelDisplayName = ref('')
-const unknownModelDisplayNameError = ref('')
 const varRows = ref<WorkspaceVariable[]>([])
 let workspaceGeneration = 0
 watch(workspace, (p, previous) => {
  if (!p || !previous) workspaceGeneration++
  if (!p) {
-   editName.value = ''
-   editDesc.value = ''
-   editUnknownModelDisplayName.value = ''
-   unknownModelDisplayNameError.value = ''
    varRows.value = []
-   savingMeta.value = false
    savingVars.value = false
    return
  }
- editName.value = p.name
- editDesc.value = p.description || ''
- editUnknownModelDisplayName.value = p.unknownModelDisplayName || ''
  varRows.value = (p.variables || []).map((v) => ({ ...v }))
 }, { immediate: true, flush: 'sync' })
 const VAR_TYPES = computed(() => [
@@ -50,40 +34,6 @@ const VAR_TYPES = computed(() => [
   { value: 'bool', label: t('common.varTypes.bool') },
   { value: 'select', label: t('common.varTypes.select') },
 ])
-
-async function saveMeta() {
-  if (!workspace.value) return
-  const current = workspaceGeneration
-  unknownModelDisplayNameError.value = ''
-  const normalized = normalizeUnknownModelDisplayNameInput(editUnknownModelDisplayName.value)
-  if (normalized.error) {
-    unknownModelDisplayNameError.value = t('pages.workspace.unknownModelDisplayNameTooLong')
-    return
-  }
-  savingMeta.value = true
-  try {
-    const saved = await api.updateWorkspace({
-      name: editName.value.trim(),
-      description: editDesc.value,
-      unknownModelDisplayName: normalized.value,
-    })
-    if (current !== workspaceGeneration) return
-    workspace.value = saved
-    editUnknownModelDisplayName.value = workspace.value.unknownModelDisplayName || ''
-    toast.success(t('pages.workspace.saved'))
-  } catch (e: any) {
-    if (current !== workspaceGeneration) return
-    toast.error(String(e?.message || e))
-  } finally {
-    if (current === workspaceGeneration) savingMeta.value = false
-  }
-}
-
-function clearUnknownModelDisplayName() {
-  editUnknownModelDisplayName.value = ''
-  unknownModelDisplayNameError.value = ''
-  void saveMeta()
-}
 
 async function saveVars() {
   if (!workspace.value) return
@@ -178,9 +128,9 @@ function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) 
 
 </script>
 <template>
-<WorkspacePage :title-key="isVariables ? 'nav.variables' : 'nav.workspaceInfo'" :layout="isVariables ? 'workspace' : 'settings'">
+<WorkspacePage v-if="isVariables" title-key="nav.variables" layout="workspace">
       <!-- Variables tab: fill remaining main area; no varsHint / merge-rules row -->
-      <div v-if="isVariables" class="workspace-variables flex min-h-0 min-w-0 flex-1 flex-col">
+      <div class="workspace-variables flex min-h-0 min-w-0 flex-1 flex-col">
         <!-- Empty: same shell as sandbox tab -->
         <div
           v-if="!varRows.length"
@@ -367,63 +317,6 @@ function onVarValueInput(row: WorkspaceVariable, raw: string, asNumber = false) 
             </AppButton>
           </div>
         </div>
-      </div>
-
-      <div v-else>
-          <SettingsSection :title="t('pages.workspace.metaTitle')" :description="t('pages.workspace.metaHint')">
-            <SettingsRow :label="t('pages.workspace.nameLabel')" for="workspace-meta-name">
-              <input
-                id="workspace-meta-name"
-                v-model="editName"
-                class="input w-full sm:w-[340px]"
-                autocomplete="off"
-              />
-            </SettingsRow>
-            <SettingsRow :label="t('pages.workspace.descLabel')" for="workspace-meta-desc">
-              <textarea
-                id="workspace-meta-desc"
-                v-model="editDesc"
-                rows="3"
-                class="input min-h-[88px] w-full resize-y sm:w-[340px]"
-                :placeholder="t('pages.workspace.metaDescPlaceholder')"
-              />
-            </SettingsRow>
-            <SettingsRow :label="t('pages.workspace.unknownModelDisplayNameLabel')" :description="t('pages.workspace.unknownModelDisplayNameHelp')" for="workspace-meta-unknown-display">
-              <div class="flex w-full flex-col items-end gap-2 sm:w-[340px]">
-              <input
-                id="workspace-meta-unknown-display"
-                v-model="editUnknownModelDisplayName"
-                class="input"
-                maxlength="80"
-                autocomplete="off"
-                data-testid="workspace-meta-unknown-display"
-                :placeholder="t('pages.workspace.unknownModelDisplayNamePlaceholder')"
-                @input="unknownModelDisplayNameError = ''"
-              />
-              <AppButton variant="ghost" size="sm" data-testid="workspace-meta-unknown-display-clear" :disabled="savingMeta" @click="clearUnknownModelDisplayName">{{ t('pages.workspace.unknownModelDisplayNameClear') }}</AppButton>
-              </div>
-              <template #details>
-              <p
-                v-if="unknownModelDisplayNameError"
-                class="m-0 mt-1.5 text-xs text-err"
-                data-testid="workspace-meta-unknown-display-error"
-              >
-                {{ unknownModelDisplayNameError }}
-              </p>
-              </template>
-            </SettingsRow>
-          </SettingsSection>
-
-          <div
-            class="mt-5 flex flex-wrap items-center justify-end gap-2"
-            data-testid="workspace-meta-footer"
-          >
-            <div class="flex flex-wrap items-center gap-2">
-              <AppButton variant="primary" :disabled="savingMeta" @click="saveMeta">
-                {{ savingMeta ? t('common.buttons.saving') : t('common.buttons.save') }}
-              </AppButton>
-            </div>
-          </div>
       </div>
 
 </WorkspacePage>

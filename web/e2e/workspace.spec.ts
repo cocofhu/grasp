@@ -10,8 +10,11 @@ test('settings keeps the app rail and a centered document without search', async
   await expect(page.getByTestId('sidebar-app-rail')).toBeVisible()
   await expect(sidebar.locator('input[type="search"]')).toHaveCount(0)
   await expect(page.locator('.app-shell-dotgrid')).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: '常规', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '工作区信息', exact: true })).toBeVisible()
+  await expect(sidebar.getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   const navBox = await sidebar.boundingBox()
-  const formBox = await page.getByTestId('workspace-page').boundingBox()
+  const formBox = await page.getByTestId('settings-panel').boundingBox()
   const mainBox = await page.getByTestId('shell-page-scroll').boundingBox()
   const mainWidth = await page.getByTestId('shell-page-scroll').evaluate(el => el.clientWidth)
   expect(navBox!.width).toBe(360)
@@ -19,7 +22,7 @@ test('settings keeps the app rail and a centered document without search', async
   expect(Math.abs(formBox!.x + formBox!.width / 2 - (mainBox!.x + mainWidth / 2))).toBeLessThan(2)
   const field = page.locator('#workspace-meta-name')
   await field.fill('清晰的设置布局')
-  await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(() => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('清晰的设置布局')
 })
 
@@ -158,15 +161,17 @@ test('workspace sidebar keeps recent runs without a workflow directory', async (
 })
 
 test('settings lists workspace tools and independent configuration pages', async ({ page }) => {
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   await expect(page.getByTestId('nav-settings-chrome')).toBeVisible()
-  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit', '/settings/workspace']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  for (const path of ['/board', '/workflows', '/requirements', '/assistant', '/settings/schedules', '/settings/notification-policy', '/settings/external-mcp', '/agents', '/settings/credentials', '/settings/variables', '/settings/audit']) await expect(page.getByTestId('nav-settings-chrome').locator(`a[href="${path}"]`)).toBeVisible()
+  await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/workspace"]')).toHaveCount(0)
+  await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
   // Agent 默认配置 moved into the Agent list (pinned first item); no separate settings entry.
   await expect(page.getByTestId('nav-settings-chrome').locator('a[href="/settings/shared-agent"]')).toHaveCount(0)
   await expect(page.locator('.settings-group-heading')).toHaveText(['工作区工具', '执行配置', '平台配置'])
   await expect(page.getByTestId('workspace-meta-delete')).toHaveCount(0)
   await page.locator('#workspace-meta-name').fill('共享研发工作区')
-  await page.getByTestId('workspace-page').getByRole('button', { name: '保存', exact: true }).click()
+  await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
   await expect.poll(async () => page.evaluate(() => (window as any).__workspaceFixture.workspace.name)).toBe('共享研发工作区')
 })
 
@@ -188,7 +193,7 @@ test('390px drawer shows recent runs without a workflow directory', async ({ pag
 })
 
 test('settings tool links keep the settings directory until explicitly leaving it', async ({ page }) => {
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   for (const path of ['/board', '/workflows', '/requirements', '/assistant']) {
     const settings = page.getByTestId('nav-settings-chrome')
     await settings.locator(`a[href="${path}"]`).click()
@@ -218,7 +223,7 @@ test('settings tool links keep the settings directory until explicitly leaving i
 
 test('mobile settings tool navigation survives closing and reopening the drawer', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
-  await page.goto('/workspace.html?view=/settings/workspace')
+  await page.goto('/workspace.html?view=/settings')
   await page.getByTestId('floating-nav-ball').click()
   const drawer = page.getByTestId('mobile-nav-drawer')
   await expect(drawer.getByTestId('mobile-settings-title')).toHaveText('设置')
