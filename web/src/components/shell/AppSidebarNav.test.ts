@@ -629,8 +629,8 @@ describe('AppSidebarNav', () => {
       '/settings/external-mcp',
       '/settings',
       '/settings?integrations=1',
-      '/settings/workspace',
     ])
+    expect(wrapper.text()).not.toContain('工作区信息')
     expect(wrapper.find('[data-testid="nav-settings-integrations"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="nav-quick-workflows"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('返回工作区')

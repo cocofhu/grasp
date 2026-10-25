@@ -21,7 +21,6 @@ export const settingsNavItems: SettingsNavItem[] = [
   { to: '/settings/external-mcp', icon: 'connector', labelKey: 'nav.externalMcp' },
   { to: '/settings', icon: 'settings', labelKey: 'nav.general', exact: true, groupKey: 'nav.groupPlatform' },
   { to: '/settings', icon: 'integration', labelKey: 'nav.integrations', exact: true, query: { integrations: '1' } },
-  { to: '/settings/workspace', icon: 'folder', labelKey: 'nav.workspaceInfo' },
 ]
 
 export const SETTINGS_CHROME_PREFIXES = [

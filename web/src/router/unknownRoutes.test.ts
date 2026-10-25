@@ -35,9 +35,11 @@ describe('unknown routes', () => {
     expect(router.currentRoute.value.name).toBe('public-gate-approval')
   })
 
-  it('keeps existing routes', async () => {
+  it('sends the retired workspace info address to general settings', async () => {
     const router = createAppRouter(createMemoryHistory())
-    await router.push('/settings/workspace')
-    expect(router.currentRoute.value.name).toBe('workspaceInfo')
+    await router.push('/settings/workspace?integrations=1')
+    expect(router.currentRoute.value.name).toBe('settings')
+    expect(router.currentRoute.value.path).toBe('/settings')
+    expect(router.currentRoute.value.query).toEqual({})
   })
 })

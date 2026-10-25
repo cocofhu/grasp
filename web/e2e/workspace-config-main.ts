@@ -18,7 +18,7 @@ async function bootstrap() {
   setTheme(params.get('theme') === 'dark' ? 'dark' : 'light')
   useAuth().setUser({ username: 'workspace-config-test', isAdmin: true, expiresAt: '2099-01-01T00:00:00Z' })
   const router = createAppRouter(createMemoryHistory())
-  await router.push(params.get('view') || '/settings/workspace')
+  await router.push(params.get('view') || '/settings')
   await router.isReady()
   createApp(App).directive('hover-ink', vHoverInk).use(i18n).use(router).mount('#app')
 }

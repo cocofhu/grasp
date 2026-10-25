@@ -129,9 +129,26 @@ test.describe('未知模型显示名', () => {
       await route.continue()
     })
 
+    await routeApi(page, '**/api/settings', async (route) => {
+      await route.fulfill({
+        json: {
+          brand: { product_name: 'Grasp', home_subtitle: '让工作流协调每一次交付' },
+          items: [
+            { key: 'max_concurrent_runs', value: 4, min: 1, source: 'db', locked: false },
+            { key: 'max_test_sandboxes', value: 3, min: 1, source: 'db', locked: false },
+          ],
+        },
+      })
+    })
+    await routeApi(page, '**/api/sandboxes', async (route) => {
+      await route.fulfill({ json: [] })
+    })
+
     await page.goto('/workspace-config.html?view=/settings/workspace')
     await dismissOnboardingIfOpen(page)
-    await expect(page.getByTestId('workspace-meta-footer')).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByRole('heading', { name: '常规', exact: true })).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByTestId('settings-save-actions')).toBeVisible()
+    await expect(page.getByTestId('nav-settings-chrome').getByRole('link', { name: '工作区信息' })).toHaveCount(0)
 
     const input = page.getByTestId('workspace-meta-unknown-display')
     await expect(input).toBeVisible()
@@ -145,13 +162,16 @@ test.describe('未知模型显示名', () => {
     await page.screenshot({ path: path.join(shotDir, '01-meta-empty.png'), fullPage: false })
 
     await input.fill('gpt-5')
-    await page.getByTestId('workspace-meta-footer').getByRole('button', { name: '保存' }).click()
+    await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(() => lastPatch?.unknownModelDisplayName).toBe('gpt-5')
     await expect(input).toHaveValue('gpt-5')
 
     await page.screenshot({ path: path.join(shotDir, '02-meta-saved-gpt5.png'), fullPage: false })
 
     await page.getByTestId('workspace-meta-unknown-display-clear').click()
+    await expect(input).toHaveValue('')
+    expect(lastPatch?.unknownModelDisplayName).toBe('gpt-5')
+    await page.getByTestId('settings-save-actions').getByRole('button', { name: '保存', exact: true }).click()
     await expect.poll(() => lastPatch?.unknownModelDisplayName).toBe('')
     await expect(input).toHaveValue('')
   })
