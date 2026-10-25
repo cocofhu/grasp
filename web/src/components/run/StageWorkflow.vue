@@ -229,8 +229,8 @@ const indexLabel = computed(() => {
   content: '';
   position: absolute;
   left: 20px;
-  top: 29px;
-  bottom: -9px;
+  top: 33px;
+  bottom: -13px;
   z-index: 0;
   width: 2px;
   border-radius: 1px;
@@ -245,7 +245,7 @@ const indexLabel = computed(() => {
   min-height: 46px;
   align-items: flex-start;
   gap: 12px;
-  padding: 8px 10px;
+  padding: 12px 10px;
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
