@@ -801,7 +801,7 @@ describe('GatesInboxView inbox-context lifecycle', () => {
   })
 
   it('gate: irrelevant status/trace/react do not softRefresh; artifact_edit and turn_done do', async () => {
-    const a = gateItem('a')
+    const a = { ...gateItem('a'), reactUpstreamNodeId: 'producer-a' }
     mocks.listGates.mockResolvedValue(paged([a]))
 
     const wrapper = mountInbox()
@@ -823,11 +823,11 @@ describe('GatesInboxView inbox-context lifecycle', () => {
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 1)
 
-    ws.emit('review', { event: 'turn_done' })
+    ws.emit('review', { event: 'turn_done', nodeId: 'producer-a' })
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 2)
 
-    ws.emit('review', { event: 'error' })
+    ws.emit('review', { event: 'error', nodeId: 'producer-a' })
     await flushPromises()
     expect(inboxCallsFor('run-a', 'gate-a', 1).length).toBe(before + 3)
 

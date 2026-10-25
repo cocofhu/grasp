@@ -237,6 +237,8 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   return [seed, ...list]
 }
 const liveAgentIdx = ref(-1)
+/** A delayed queue snapshot must not requeue the turn that just finished. */
+let lastCompletedItemId: string | undefined
 /**
  * Platform FIFO is idle (no waiting item, no active turn). Later ACP is the
  * turn that just lost its streaming slot — paint it, do not ask the host to
@@ -763,6 +765,40 @@ function turnsSemanticKey(turnList: ClarifyTurn[]): string {
   return `${turnList.length}:${last.at}:${last.role}:${last.text}`
 }
 
+/** Later turns make a persisted live prefix historical, even if its rails differ. */
+function prunePersistedLiveHistory(persisted: ClarifyTurn[]) {
+  let keepFrom = 0
+  while (keepFrom < liveTurns.value.length) {
+    const human = liveTurns.value[keepFrom]
+    const text = (human?.text || '').trim()
+    if (human?.role !== 'human' || !text) break
+    let persistedHuman = -1
+    for (let i = persisted.length - 1; i >= 0; i--) {
+      if (persisted[i].role === 'human' && (persisted[i].text || '').trim() === text) {
+        persistedHuman = i
+        break
+      }
+    }
+    if (persistedHuman < 0) break
+    const reply = persisted[persistedHuman + 1]
+    if (
+      reply?.role !== 'agent' || reply.streaming ||
+      (!(reply.text || reply.thought) && !isRetryableFailedAgent(reply))
+    ) break
+    const nextHuman = liveTurns.value.findIndex((turn, i) => i > keepFrom && turn.role === 'human')
+    const persistedAdvanced = persisted.slice(persistedHuman + 2).some((turn) => turn.role === 'human')
+    if (nextHuman < 0 && !persistedAdvanced) break
+    keepFrom = nextHuman < 0 ? liveTurns.value.length : nextHuman
+  }
+  if (!keepFrom) return
+  if (keepFrom === liveTurns.value.length) {
+    clearSettledLiveTurns()
+    return
+  }
+  liveTurns.value = liveTurns.value.slice(keepFrom)
+  liveAgentIdx.value = liveAgentIdx.value >= keepFrom ? liveAgentIdx.value - keepFrom : -1
+}
+
 // Real turns streamed back from the run: drop optimistic choice echo + clear
 // settled live bubbles. Scroll only when stuck to bottom.
 watch(
@@ -806,6 +842,7 @@ watch(
     lastAppliedAcpSig = ''
     platformQueueIdle.value = false
     sandboxOrphan.value = null
+    lastCompletedItemId = undefined
     void enterStickSequence()
   },
 )
@@ -1730,14 +1767,20 @@ function forceAuthoritativeIdle() {
 }
 
 /**
- * After turn_done/error: drop only ghost optimistic rows (no server id).
- * Keep authoritative waiters so multi-turn queue does not briefly unlock
- * confirm before the next queue_state. Empty after filter ⇒ synthesized idle.
+ * After turn_done/error: drop the completed item and ghost optimistic rows.
+ * Keep distinct authoritative waiters so multi-turn queue does not briefly
+ * unlock confirm before the next queue_state. Empty after filter ⇒ idle.
  */
 function settleAfterTurnEnd() {
+  const completedId = liveTurnOrigin?.id
+  if (completedId) {
+    lastCompletedItemId = completedId
+    queued.value = queued.value.filter((q) => q.id !== completedId)
+  }
   if (queued.value.some((q) => !q.id)) {
     queued.value = dropGhostItems(queued.value)
   }
+  liveTurnOrigin = null
   thinking.value = queued.value.length > 0 || liveAgentIdx.value >= 0
 }
 
@@ -1851,6 +1894,7 @@ function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
 function dropSettledLiveIfPersistedWins() {
   if (sandboxOrphan.value) return
   const turnList = persistedTurns.value
+  prunePersistedLiveHistory(turnList)
   const liveHumanText = liveTurns.value[0]?.role === 'human' ? liveTurns.value[0].text || '' : ''
   const persistedCaughtUp = persistedCompletedLiveHuman(turnList, liveHumanText)
   const ahead = liveNarrativeAhead(turnList)
@@ -1876,6 +1920,20 @@ function applyQueueState(
   activeItem?: SessionFrameItem | null,
   sandbox?: { busy?: boolean; desynced?: boolean; runningOpId?: string },
 ) {
+  // A queue snapshot captured before completion can arrive after turn_done.
+  // Its busy bit describes the completed turn, so an otherwise empty snapshot
+  // must not reopen thinking. Distinct waiting items still belong to the queue.
+  if (
+    lastCompletedItemId &&
+    !liveTurnOrigin &&
+    liveAgentIdx.value < 0 &&
+    (activeItem?.id === lastCompletedItemId || items?.some((it) => it.id === lastCompletedItemId))
+  ) {
+    if (activeItem?.id === lastCompletedItemId) activeItem = null
+    if (items) items = items.filter((it) => it.id !== lastCompletedItemId)
+    if (!activeItem && (!items || items.length === 0)) return
+    if (items) waiting = items.length
+  }
   syncIdleNarrative(waiting, busy, activeItem ?? null)
   if (isAuthoritativeIdle(waiting, busy, activeItem)) {
     const row = liveAgentIdx.value >= 0 ? liveTurns.value[liveAgentIdx.value] : undefined
@@ -1899,6 +1957,14 @@ function applyQueueState(
     forceAuthoritativeIdle()
     return
   }
+  // A delayed waiting snapshot may still list the item that turn_begin has
+  // already started. Keep that active item out of the pending queue; only a
+  // distinct server id can represent a waiter, including a same-text reply.
+  const activeId = (busy ? activeItem?.id : undefined) || liveTurnOrigin?.id
+  if (activeId) {
+    queued.value = queued.value.filter((q) => q.id !== activeId)
+    if (items) items = items.filter((it) => it.id !== activeId)
+  }
   if (waiting === 0 && !busy) {
     if (queued.value.length) queued.value = []
     if (liveAgentIdx.value < 0) thinking.value = false
@@ -1915,6 +1981,13 @@ function applyQueueState(
     !persistedCompletedLiveHuman(persistedTurns.value, activeItem.text ?? '')
   ) {
     const text = activeItem.text ?? ''
+    liveTurnOrigin = {
+      id: activeItem.id,
+      text,
+      images: activeItem.images ?? [],
+      annotations: activeItem.annotations ?? [],
+      newHuman: true,
+    }
     const started = new Date().toISOString()
     liveTurns.value = [
       {
@@ -1990,7 +2063,6 @@ function applyVisitEndedFrame(frame: {
     markOutputEnd(agent)
     liveAgentIdx.value = -1
   }
-  liveTurnOrigin = null
   if (auto) {
     // System first message: resume resends it; nothing to put back.
     restoreUnsentQueued({}, visitEndedNotice(true), { autoRetryOnResume: true })
