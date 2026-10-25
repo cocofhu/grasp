@@ -19,6 +19,13 @@ export const iconMotionHostSelector = [
   '[role="menuitem"]', '[role="option"]', '[tabindex]:not([tabindex="-1"])',
 ].join(',')
 
+/**
+ * The history title keeps a link and a sibling toggle. The nearer link would
+ * otherwise own the clock, so this one heading is the hover host. Every other
+ * page still uses the nearest control.
+ */
+const historyTitleHostSelector = '[data-icon-motion-span="history-title"]'
+
 const disabledSelector = '[disabled], [aria-disabled="true"], [inert]'
 const busySelector = '[aria-busy="true"], [data-busy="true"]'
 const draggingSelector = '.vue-flow__node.dragging, [data-icon-dragging="true"]'
@@ -47,9 +54,10 @@ export function useIconMotion(
   const blocked = () => disabled() || reduced.value || busy()
     || !!element.value?.closest(`${busySelector}, ${draggingSelector}`)
   const interactive = () => options.interactive?.() !== false
-  const closestHost = (target: EventTarget | null) => target instanceof Element
-    ? target.closest(iconMotionHostSelector)
-    : null
+  const closestHost = (target: EventTarget | null) => {
+    if (!(target instanceof Element)) return null
+    return target.closest(historyTitleHostSelector) ?? target.closest(iconMotionHostSelector)
+  }
 
   function clearTimer() {
     if (timer !== undefined) clearTimeout(timer)
@@ -120,7 +128,7 @@ export function useIconMotion(
   function bind() {
     detach()
     if (!mounted) return
-    host = element.value?.closest(iconMotionHostSelector) ?? null
+    host = closestHost(element.value)
     host?.addEventListener('pointerover', pointerOver)
     host?.addEventListener('pointerout', pointerOut)
     host?.addEventListener('focusin', focusIn)
@@ -153,7 +161,7 @@ export function useIconMotion(
   })
 
   watch(element, () => {
-    if ((element.value?.closest(iconMotionHostSelector) ?? null) !== host) bind()
+    if (closestHost(element.value) !== host) bind()
   }, { flush: 'post' })
   watch(() => [options.busy?.(), options.disabled?.(), options.interactive?.()], reset)
   watch(() => options.motionKey?.(), (value, previous) => {

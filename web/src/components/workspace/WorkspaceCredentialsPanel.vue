@@ -8,6 +8,7 @@ import Icon from '@/components/ui/Icon.vue'
 import ModelConnectionEditor from './ModelConnectionEditor.vue'
 import ModelProviderSelect from './ModelProviderSelect.vue'
 import ModelConfigurationManager from './ModelConfigurationManager.vue'
+import ModelRecordActions from './ModelRecordActions.vue'
 import { isModelCredential, modelProviderPreset, MODEL_PROTOCOLS, useRoutingCopy } from '@/lib/agent/modelRouting'
 import CredentialProviderLogo from '@/components/workspace/CredentialProviderLogo.vue'
 import { api, type CredentialItem, type ModelConnection, type ModelProtocol } from '@/lib/api/api'
@@ -116,6 +117,7 @@ const drafts = reactive<Record<string, string>>({})
 const editing = reactive<Record<string, boolean>>({})
 const saving = reactive<Record<string, boolean>>({})
 const clearing = reactive<Record<string, boolean>>({})
+const removing = reactive<Record<string, boolean>>({})
 const showCreate = ref(false)
 const creating = ref(false)
 const createStep = ref<1 | 2 | 3>(1)
@@ -548,7 +550,39 @@ async function clear(item: CredentialItem) {
   }
 }
 
-async function loadServiceConnections() { try { serviceConnections.value = (await api.listModelConnections()).items || [] } catch { serviceConnections.value = [] } }
+function canRemoveAccount(item: CredentialItem) {
+  return isWorkspaceOwned(item) && isModelCredential(item)
+}
+
+async function removeAccount(item: CredentialItem) {
+  if (!canRemoveAccount(item) || removing[item.id]) return
+  const alias = itemLabel(item)
+  if (!window.confirm(t('pages.workspace.credentials.accountDeleteConfirm', { alias }))) return
+  removing[item.id] = true
+  try {
+    await api.removeCredential(item.id)
+    items.value = items.value.filter((row) => row.id !== item.id)
+    delete drafts[item.id]
+    delete editing[item.id]
+    delete hostDrafts[item.id]
+    delete clearing[item.id]
+    serviceConnections.value = serviceConnections.value.filter((service) => service.credentialId !== item.id)
+    await loadServiceConnections({ keepOnError: true })
+    toast.success(t('pages.workspace.credentials.accountDeleted'))
+  } catch {
+    toast.error(t('pages.workspace.credentials.accountDeleteFailed'))
+  } finally {
+    removing[item.id] = false
+  }
+}
+
+async function loadServiceConnections(options?: { keepOnError?: boolean }) {
+  try {
+    serviceConnections.value = (await api.listModelConnections()).items || []
+  } catch {
+    if (!options?.keepOnError) serviceConnections.value = []
+  }
+}
 function servicesFor(item: CredentialItem) { return serviceConnections.value.filter((service) => service.credentialId === item.id) }
 async function editService(accountId: string, serviceId: string) { await connectionManager.value?.openForCredential(accountId, serviceId) }
 function addService() { openCreate(); selectKind('model_api'); goNext() }
@@ -737,6 +771,15 @@ watch(showCreate, (open) => {
                             :title="t('pages.workspace.credentials.clear')"
                             @click="clear(item)"
                           ><Icon name="trash" :size="14" /></AppButton>
+                          <ModelRecordActions
+                            v-if="canRemoveAccount(item)"
+                            :name="itemLabel(item)"
+                            prefix="api-account"
+                            :record-id="item.id"
+                            :show-edit="false"
+                            :show-toggle="false"
+                            @remove="removeAccount(item)"
+                          />
                         </div>
                       </div>
                     </div>

@@ -84,6 +84,8 @@ var (
 	ErrCredentialEnvKey     = errors.New("credential env key must be a valid identifier and not a platform-reserved key")
 	ErrCredentialAliasTaken = errors.New("credential alias already exists for this kind")
 	ErrCredentialPurpose    = errors.New("invalid credential purpose, tool or secret kind")
+	// ErrCredentialNotRemovable rejects deleting a row that is not a workspace model API account.
+	ErrCredentialNotRemovable = errors.New("only a workspace model API account can be removed")
 )
 
 // CredentialAliasTakenError is returned when a new alias matches another
@@ -397,6 +399,43 @@ func (s *CredentialService) Clear(id string) error {
 	row.Enabled = true
 	row.UpdatedAt = time.Now()
 	return s.db.Save(&row).Error
+}
+
+// RemoveModelAPI deletes a workspace-owned model_api account and the model
+// connections bound to it. Clear only wipes the secret and keeps the row.
+// Either the account and its connections all go, or a failure leaves both as they were.
+func (s *CredentialService) RemoveModelAPI(id string) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return ErrCredentialNotFound
+	}
+	return s.db.Transaction(func(tx *gorm.DB) error {
+		var row models.Credential
+		if err := tx.Where("id = ?", id).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrCredentialNotFound
+			}
+			return err
+		}
+		if !currentCredential(row) {
+			return ErrCredentialNotFound
+		}
+		purpose, _, _, _ := credentialDomain(row)
+		if purpose != "model_api" {
+			return ErrCredentialNotRemovable
+		}
+		if err := tx.Where("credential_id = ?", id).Delete(&models.ModelConnection{}).Error; err != nil {
+			return err
+		}
+		res := tx.Delete(&models.Credential{}, "id = ?", id)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return ErrCredentialNotFound
+		}
+		return nil
+	})
 }
 
 // Get returns one credential view. The secret is never included.

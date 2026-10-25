@@ -226,9 +226,6 @@ function refreshPromptFeedback() {
 }
 type ConfirmCfg = { title: string; message: string; confirmText?: string; danger?: boolean; ok: () => void | Promise<void> }
 const confirmCfg = ref<ConfirmCfg | null>(null)
-const showAgentManage = ref(false)
-/** Agent management 打开时高亮/滚动到的目标行；关闭时清除 */
-const manageFocusAgent = ref('')
 
 const showUnsavedExport = ref(false)
 const exporting = ref(false)
@@ -310,31 +307,6 @@ watch(isMobile, (mobile) => {
     syncTabFade()
   })
 })
-
-const agentNames = computed(() => agents.value.map((a) => a.name))
-const manageSearch = ref('')
-const manageSearchQuery = computed(() => manageSearch.value.trim().toLowerCase())
-const filteredManageNames = computed(() => {
-  const query = manageSearchQuery.value
-  return query ? agentNames.value.filter((name) => name.toLowerCase().includes(query)) : agentNames.value
-})
-const manageSearchActive = computed(() => !!manageSearchQuery.value)
-
-type ManageNameHighlight = { before: string; hit: string; after: string }
-function manageNameHighlight(name: string): ManageNameHighlight {
-  const query = manageSearchQuery.value
-  const index = query ? name.toLowerCase().indexOf(query) : -1
-  if (index < 0) return { before: name, hit: '', after: '' }
-  return {
-    before: name.slice(0, index),
-    hit: name.slice(index, index + query.length),
-    after: name.slice(index + query.length),
-  }
-}
-
-function clearManageSearch() {
-  manageSearch.value = ''
-}
 
 const treeNodes = computed(() => agents.value.map((agent) => {
   const locked = isProtectedOnboardingAgentName(agent.name)
@@ -582,10 +554,6 @@ function chooseAgentFromSheet(name: string) {
   }
 }
 
-function openManageFromSheet() {
-  openAgentManage()
-}
-
 async function save(reason?: string) {
   if (!dirty.value) return false
   const capsIssue = draft.value?.capabilities ? validateCapabilities(draft.value.capabilities) : null
@@ -801,26 +769,6 @@ function onTeamBootstrapDone() {
   })
 }
 
-function openAgentManage(focusAgentName?: string) {
-  clearManageSearch()
-  manageFocusAgent.value = focusAgentName || ''
-  showAgentManage.value = true
-  if (focusAgentName) {
-    nextTick(() => {
-      const el = Array.from(document.querySelectorAll('[data-manage-agent]')).find(
-        (n) => n.getAttribute('data-manage-agent') === focusAgentName,
-      )
-      el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' })
-    })
-  }
-}
-
-function closeAgentManage() {
-  showAgentManage.value = false
-  clearManageSearch()
-  manageFocusAgent.value = ''
-}
-
 function openRenameAgent(name: string) {
   if (isProtectedOnboardingAgentName(name)) return
   promptValue.value = name
@@ -847,12 +795,13 @@ function openRenameAgent(name: string) {
       const updated = await api.renameAgent(name, normalized)
       const n = updated.updatedWorkflowCount ?? 0
       const { updatedWorkflowCount: _count, ...agent } = updated
+      const wasActive = activeName.value === name
       agents.value = agents.value.filter((a) => a.name !== name)
       agents.value.push(agent)
       agents.value.sort((a, b) => a.name.localeCompare(b.name))
-      // 管理弹窗内改名后同步 focus 到新名（若仍打开）
-      if (manageFocusAgent.value === name) manageFocusAgent.value = agent.name
-      select(agent.name)
+      // Only the agent currently open should follow the new name. Selecting
+      // any other row would replace the open draft.
+      if (wasActive) select(agent.name)
       if (n > 0) showToast(t('pages.agentStudio.dialogs.renameSuccessWithWorkflows', { n }))
       else showToast(t('pages.agentStudio.dialogs.renameSuccess'))
     },
@@ -870,8 +819,7 @@ function confirmDeleteAgent(name: string) {
     ok: async () => {
       await api.deleteAgent(name)
       agents.value = agents.value.filter((a) => a.name !== name)
-      closeAgentManage()
-      // FR-f8: clear selection; do not auto-select the next agent
+      // Clear selection when the open agent is removed; do not auto-select the next one.
       if (activeName.value === name) {
         activeName.value = ''
         draft.value = null
@@ -1069,8 +1017,6 @@ onBeforeUnmount(() => {
   promptCanSubmit,
   refreshPromptFeedback,
   confirmCfg,
-  showAgentManage,
-  manageFocusAgent,
   showUnsavedExport,
   exporting,
   showBundleSecrets,
@@ -1098,13 +1044,6 @@ onBeforeUnmount(() => {
   confirmBatchRename,
   confirmBatchOverwrite,
   dirty,
-  agentNames,
-  manageSearch,
-  manageSearchQuery,
-  filteredManageNames,
-  manageSearchActive,
-  manageNameHighlight,
-  clearManageSearch,
   studioTabs,
   studioTabLabel,
   showToast,
@@ -1119,7 +1058,6 @@ onBeforeUnmount(() => {
   select,
   chooseAgent,
   chooseAgentFromSheet,
-  openManageFromSheet,
   save,
   doExport,
   triggerExport,
@@ -1145,8 +1083,6 @@ onBeforeUnmount(() => {
   onTeamBootstrapSelectPm,
   onTeamBootstrapOpenPm,
   onTeamBootstrapDone,
-  openAgentManage,
-  closeAgentManage,
   openRenameAgent,
   confirmDeleteAgent,
   promptOk,

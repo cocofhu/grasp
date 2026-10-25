@@ -52,7 +52,7 @@ async function openStudio(page: Page, view: string) {
   await dismissOnboardingIfOpen(page)
 }
 
-const pinned = (page: Page) => page.getByTestId('resource-list-pinned').getByRole('button', { name: 'Agent 默认配置' })
+const pinned = (page: Page) => page.getByTestId('resource-list-pinned').getByRole('button', { name: '默认配置', exact: true })
 const agentRow = (page: Page, name: string) => page.getByTestId('agent-resource-sidebar').locator(`[data-resource-key="${name}"]`)
 const studioTab = (page: Page, label: RegExp) => page.locator('[data-test="studio-tab-strip"] button').filter({ hasText: label })
 

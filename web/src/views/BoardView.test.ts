@@ -3,6 +3,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { createI18n } from 'vue-i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import commonEn from '@/locales/en/common.json'
+import pagesEn from '@/locales/en/pages.json'
 import common from '@/locales/zh-CN/common.json'
 import pages from '@/locales/zh-CN/pages.json'
 import type { Run } from '@/lib/shared/types'
@@ -18,10 +20,13 @@ function listResponse({ status, pageSize }: { status: string; pageSize: number }
   return { items: items[status] || [], total: status === 'completed' ? 48 : items[status]?.length || 0, page: 1, pageSize, hasMore: status === 'completed' }
 }
 
-async function setup(props: Record<string, unknown> = {}) {
+async function setup(props: Record<string, unknown> = {}, locale: 'zh-CN' | 'en' = 'zh-CN') {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:pathMatch(.*)*', component: { render: () => null } }] })
   await router.push('/board?window=all&from=2020-01-01')
-  const i18n = createI18n({ legacy: false, locale: 'zh-CN', messages: { 'zh-CN': { ...common, ...pages } } })
+  const messages = locale === 'en'
+    ? { en: { ...commonEn, ...pagesEn } }
+    : { 'zh-CN': { ...common, ...pages } }
+  const i18n = createI18n({ legacy: false, locale, messages })
   const wrapper = mount(BoardView, { props, global: { plugins: [router, i18n], directives: { 'hover-ink': {} }, stubs: { RunBoardPreviewDrawer: { name: 'RunBoardPreviewDrawer', props: ['open', 'run'], template: '<div v-if="open" data-testid="preview"><button @click="$emit(\'close\')">关闭</button></div>' }, RunBoardStatusListModal: { name: 'RunBoardStatusListModal', props: ['open', 'status'], template: '<div v-if="open" data-testid="status-list" />' } } } })
   mounted.push(wrapper)
   await flushPromises()
@@ -44,34 +49,39 @@ describe('execution board', () => {
     expect(api.listRuns).toHaveBeenCalledTimes(3)
     expect(wrapper.get('[data-testid="board-usage-link"]').attributes('href')).toBe('/stats')
     expect(wrapper.get('[data-testid="board-all-runs"]').attributes('href')).toBe('/runs')
+    expect(wrapper.findAll('[data-testid="run-board-column-footer"]')).toHaveLength(0)
+    expect(wrapper.text()).not.toContain('点击列标题查看全部运行')
+    expect(wrapper.text()).not.toContain('在运行列表中查看更多')
     expect(api.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'completed', pageSize: 20 }))
   })
 
-  it('refreshes run columns and preserves optional status filters', async () => {
+  it('refreshes only the three main status columns', async () => {
     const { wrapper } = await setup()
     api.listRuns.mockClear()
     await wrapper.get('[data-testid="board-refresh"]').trigger('click')
     await flushPromises()
     expect(api.listRuns).toHaveBeenCalledTimes(3)
-    await wrapper.get('[data-testid="board-filter-failed"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.findAll('[data-testid="run-board-column"]')).toHaveLength(4)
-    expect(wrapper.text()).toContain('工作 failed')
-    expect(api.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', pageSize: 100 }))
+    const statuses = api.listRuns.mock.calls.map((call) => call[0].status).sort()
+    expect(statuses).toEqual(['completed', 'running', 'waiting_human'])
+    expect(wrapper.find('[data-testid="board-filter-queued"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-filter-failed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-filter-cancelled"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-extra-columns"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="run-board-column"]')).toHaveLength(3)
+    expect(wrapper.text()).not.toContain('同时显示')
+    expect(wrapper.text()).not.toContain('工作 failed')
   })
 
-  it('preserves run preview, status list identity and completed-list navigation', async () => {
-    const { wrapper, router } = await setup()
+  it('opens the status list from a column header and closes the preview', async () => {
+    const { wrapper } = await setup()
     await wrapper.get('.run-board-card').trigger('click')
     expect(wrapper.find('[data-testid="preview"]').exists()).toBe(true)
     await wrapper.get('[data-testid="run-board-column-header"]').trigger('click')
     expect(wrapper.find('[data-testid="preview"]').exists()).toBe(false)
     const modal = wrapper.findComponent({ name: 'RunBoardStatusListModal' })
     expect(modal.props()).toMatchObject({ open: true, status: 'running' })
-    await wrapper.get('[data-testid="board-view-more-completed"]').trigger('click')
-    await flushPromises()
-    expect(router.currentRoute.value.path).toBe('/runs')
-    expect(router.currentRoute.value.query).toEqual({ status: 'completed' })
+    expect(wrapper.find('[data-testid="board-view-more-completed"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-testid="run-board-column-footer"]')).toHaveLength(0)
   })
 
   it('keeps unavailable counts distinct from zero and recovers through retry', async () => {
@@ -87,13 +97,14 @@ describe('execution board', () => {
     expect(wrapper.get('[data-testid="board-overview-running"] [data-testid="board-overview-value"]').text()).toBe('1')
   })
 
-  it('shows the subtitle, keeps the title and actions, and moves the column hint into the column foot', async () => {
+  it('shows the subtitle and actions without a column footer', async () => {
     const { readFileSync } = await import('node:fs')
     const { dirname, join } = await import('node:path')
     const { fileURLToPath } = await import('node:url')
     const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'BoardView.vue'), 'utf8')
     expect(src).toContain('pages.board.subtitle')
-    expect(src).toContain('pages.board.toolbarHint')
+    expect(src).not.toContain('pages.board.toolbarHint')
+    expect(src).not.toContain('pages.board.viewMoreCompleted')
     expect(src).toContain('setInterval(load, 3000)')
     expect(src).not.toMatch(/52vh|420px|任务执行中心/)
     expect(src).toContain('SlidingTabs')
@@ -101,16 +112,21 @@ describe('execution board', () => {
     expect(src).toContain('indicator-testid="board-segment-indicator"')
     expect(src).toMatch(/class="board-segment border-0 bg-transparent/)
     expect(src).toContain("segment === seg.id ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt'")
-    expect(src).toMatch(/\.board-search:focus-within \{ border-color: rgb\(var\(--c-accent\) \/ \.5\); \}/)
-    expect(src).toMatch(/\.board-search input:focus,\s*\.board-search input:focus-visible \{ outline: none; border: 0; box-shadow: none; \}/)
-    expect(src).toMatch(/prefers-reduced-motion:\s*reduce/)
+    expect(src).not.toMatch(/board-search/)
+    expect(src).not.toMatch(/board-filter-/)
+    expect(src).not.toMatch(/pages\.board\.filters/)
     expect(src).not.toMatch(/#fafafb|#f4f4f5/)
     const { wrapper } = await setup()
     expect(wrapper.get('h2').text()).toBe('运行看板')
     expect(wrapper.get('[data-testid="board-subtitle"]').text()).toBe('跟进正在执行的工作，处理等待人工的任务。')
     expect(wrapper.text()).toContain('用量统计')
     expect(wrapper.text()).toContain('全部运行')
-    expect(wrapper.text()).toContain('点击列标题查看全部运行')
+    expect(wrapper.text()).toContain('正在执行')
+    expect(wrapper.text()).toContain('需要处理')
+    expect(wrapper.text()).toContain('最近 20 条')
+    expect(wrapper.text()).not.toContain('点击列标题查看全部运行')
+    expect(wrapper.text()).not.toContain('在运行列表中查看更多')
+    expect(wrapper.findAll('[data-testid="run-board-column-footer"]')).toHaveLength(0)
     expect(wrapper.text()).not.toContain('按等待时间排序')
     expect(wrapper.text()).not.toContain('任务执行中心')
     expect(wrapper.get('[data-testid="board-refresh"]').exists()).toBe(true)
@@ -131,7 +147,7 @@ describe('execution board', () => {
     expect(wrapper.get('[data-testid="board-usage-link"]').exists()).toBe(true)
   })
 
-  it('filters main columns locally with the sliding segment and keeps extra columns below', async () => {
+  it('filters main columns locally with the sliding segment', async () => {
     const { wrapper } = await setup()
     api.listRuns.mockClear()
     await wrapper.get('[data-testid="board-segment-waiting_human"]').trigger('click')
@@ -140,46 +156,49 @@ describe('execution board', () => {
     const visible = wrapper.findAll('[data-testid="run-board-column"]').filter((col) => (col.element as HTMLElement).style.display !== 'none')
     expect(visible).toHaveLength(1)
     expect(visible[0].text()).toContain('等待人工')
-    await wrapper.get('[data-testid="board-filter-failed"]').trigger('click')
-    await flushPromises()
-    const withExtra = wrapper.findAll('[data-testid="run-board-column"]').filter((col) => (col.element as HTMLElement).style.display !== 'none')
-    expect(withExtra.map((col) => col.text())).toEqual([
-      expect.stringContaining('等待人工'),
-      expect.stringContaining('失败'),
-    ])
-    expect(wrapper.get('[data-testid="board-extra-columns"]').exists()).toBe(true)
-    expect(api.listRuns).toHaveBeenCalledTimes(4)
-    expect(api.listRuns).toHaveBeenCalledWith(expect.objectContaining({ status: 'failed', pageSize: 100 }))
+    expect(wrapper.findAll('[data-testid="run-board-column-footer"]')).toHaveLength(0)
+    expect(wrapper.find('[data-testid="board-extra-columns"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-filter-failed"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="board-segment-all"]').trigger('click')
+    const allVisible = wrapper.findAll('[data-testid="run-board-column"]').filter((col) => (col.element as HTMLElement).style.display !== 'none')
+    expect(allVisible).toHaveLength(3)
   })
 
-  it('searches loaded rows without a new request and leaves the status list unfiltered', async () => {
+  it('does not offer task search and shows every loaded card', async () => {
     const { wrapper } = await setup()
-    api.listRuns.mockClear()
-    await wrapper.get('[data-testid="board-search-input"]').setValue('  ACTIVE ')
-    await flushPromises()
-    expect(api.listRuns).not.toHaveBeenCalled()
+    expect(wrapper.find('[data-testid="board-search"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-search-input"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('搜索当前任务')
     expect(wrapper.text()).toContain('工作 active')
-    expect(wrapper.text()).not.toContain('工作 waiting')
-    expect(wrapper.text()).toContain('没有匹配的任务')
+    expect(wrapper.text()).toContain('工作 waiting')
+    expect(wrapper.text()).toContain('工作 done-1')
+    expect(wrapper.text()).not.toContain('没有匹配的任务')
     const running = wrapper.findAll('[data-testid="run-board-column"]')[0]
     expect(running.get('[data-testid="run-board-column-count"]').text()).toBe('1')
     await wrapper.get('[data-testid="run-board-column-header"]').trigger('click')
     expect(wrapper.findComponent({ name: 'RunBoardStatusListModal' }).props()).toMatchObject({ open: true, status: 'running' })
-    await wrapper.get('[data-testid="board-search-input"]').setValue('   ')
-    await flushPromises()
-    expect(wrapper.text()).toContain('工作 waiting')
-    expect(wrapper.text()).not.toContain('没有匹配的任务')
-    await wrapper.get('[data-testid="board-search-input"]').setValue('研发')
-    await flushPromises()
-    expect(wrapper.text()).toContain('工作 active')
-    expect(wrapper.text()).toContain('工作 waiting')
   })
 
-  it('keeps the segment, search, extra columns, and column scroll across refresh', async () => {
+  it('hides extra filters and search in English as well', async () => {
+    const { wrapper } = await setup({}, 'en')
+    expect(wrapper.find('[data-testid="board-filter-queued"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-filter-failed"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-filter-cancelled"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-search-input"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Also show')
+    expect(wrapper.text()).not.toContain('Search loaded tasks')
+    expect(wrapper.text()).not.toContain('No matching tasks')
+    expect(wrapper.text()).not.toContain('Select a column heading to see all runs')
+    expect(wrapper.text()).not.toContain('View more in run list')
+    expect(wrapper.findAll('[data-testid="run-board-column-footer"]')).toHaveLength(0)
+    expect(wrapper.get('[data-testid="board-segment-all"]').text()).toBe('All')
+    expect(wrapper.get('[data-testid="board-segment-running"]').text()).toBe('Running')
+    expect(wrapper.findAll('[data-testid="run-board-column"]')).toHaveLength(3)
+  })
+
+  it('keeps the segment and column scroll across refresh', async () => {
     const { wrapper } = await setup()
     await wrapper.get('[data-testid="board-segment-running"]').trigger('click')
-    await wrapper.get('[data-testid="board-search-input"]').setValue('active')
-    await wrapper.get('[data-testid="board-filter-queued"]').trigger('click')
     await flushPromises()
     const body = wrapper.get('[data-testid="run-board-column-body"]')
     ;(body.element as HTMLElement).scrollTop = 80
@@ -188,10 +207,12 @@ describe('execution board', () => {
     api.listRuns.mockClear()
     await wrapper.get('[data-testid="board-refresh"]').trigger('click')
     await flushPromises()
-    expect(api.listRuns).toHaveBeenCalled()
+    expect(api.listRuns).toHaveBeenCalledTimes(3)
+    const statuses = api.listRuns.mock.calls.map((call) => call[0].status).sort()
+    expect(statuses).toEqual(['completed', 'running', 'waiting_human'])
     expect(wrapper.get('[data-testid="board-segment-running"]').attributes('aria-pressed')).toBe('true')
-    expect((wrapper.get('[data-testid="board-search-input"]').element as HTMLInputElement).value).toBe('active')
-    expect(wrapper.get('[data-testid="board-extra-columns"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="board-search-input"]').exists()).toBe(false)
+    expect(wrapper.find('[data-testid="board-extra-columns"]').exists()).toBe(false)
     expect((wrapper.get('[data-testid="run-board-column-body"]').element as HTMLElement).scrollTop).toBe(80)
   })
 })

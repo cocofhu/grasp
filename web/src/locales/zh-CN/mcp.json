@@ -379,7 +379,7 @@
       "name": "pm-agent-fs",
       "desc": "工作区助手专用 · 列出 Agent 并编辑其工作目录",
       "overview": "列出当前工作区的全部 Agent 成员（self 为当前助手，other 为其他成员），并对同工作区任意 Agent 的 host 侧 workspace/ 做 list/read/write/delete/mkdir/rename。不触及 Run 沙箱，不改 agent.json 元配置。",
-      "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「Agent 工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
+      "convention": "设置 → 助手设置中启用 pm-agent-fs（默认启用；若已保存专用 MCP 列表，需手动勾选）。变更在 Agent Studio「工作目录」刷新或重开后可见（非热更新）。注意：若 Studio 打开同一 Agent 且存在未保存草稿，随后 Save 可能覆盖 MCP 已写入内容——Demo/使用时请刷新并避免并行脏写。",
       "tools": {
         "pm_list_workspace_agents": {
           "signature": "pm_list_workspace_agents()",
