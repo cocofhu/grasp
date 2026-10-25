@@ -8,6 +8,7 @@ import { computed, ref } from 'vue'
 import { useConversationToolbarRunName } from '@/lib/inbox/conversationToolbarTitle'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ReviewComposer from '@/components/run/ReviewComposer.vue'
+import type { ClarifyHandoff } from '@/components/run/ClarifyChat.vue'
 import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReactConnectingState from '@/components/run/ReactConnectingState.vue'
 import type {
@@ -43,6 +44,8 @@ const props = defineProps<{
   confirmError?: string | null
   confirmCanAbort?: boolean
   selStatus?: NodeRunStatus | string | null
+  /** Same boot-gate three-state as the clarify panel. */
+  handoff?: ClarifyHandoff | null
 }>()
 
 const emit = defineEmits<{
@@ -148,6 +151,7 @@ defineExpose({
         :active="inputActive"
         :confirm-error="confirmError"
         :confirm-can-abort="confirmCanAbort"
+        :handoff="handoff ?? null"
         @update:draft="emit('update:draft', $event)"
         @update:attachments="emit('update:attachments', $event)"
         @update:annotations="emit('update:annotations', $event)"

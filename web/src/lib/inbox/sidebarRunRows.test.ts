@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { InboxItem, Run } from '@/lib/shared/types'
 import type { WFEdge, WFNode } from '@/lib/shared/types'
-import { autoProcessNodeName, isAutoProcessNode, isAutoProcessRun, keepRowOrder, mergeRunRows, pinRunId, runRowFromRun, sidebarAutoNodeName, sidebarAutoTarget, sidebarRunGroup, uniqueAutoDestination } from './sidebarRunRows'
+import { autoProcessNodeName, handoffProcessAuto, isAutoProcessNode, isAutoProcessRun, keepRowOrder, mergeRunRows, pinRunId, resolveHandoffProcessAuto, runRowFromRun, sidebarAutoNodeName, sidebarAutoTarget, sidebarRunGroup, uniqueAutoDestination } from './sidebarRunRows'
 
 const item = (runId: string, nodeId: string, runTitle = runId): InboxItem => ({
   type: 'clarify',
@@ -188,6 +188,39 @@ describe('uniqueAutoDestination', () => {
       'gate',
       'approve',
     )).toBeNull()
+  })
+})
+
+describe('handoffProcessAuto', () => {
+  const node = (id: string, type: WFNode['type'], over: Partial<WFNode> = {}): WFNode =>
+    ({ id, type, label: over.label ?? id, position: { x: 0, y: 0 }, config: {}, ...over })
+  const edge = (source: string, target: string, over: Partial<WFEdge> = {}): WFEdge =>
+    ({ id: `${source}-${target}-${over.sourceHandle ?? ''}`, source, target, ...over })
+  const auto = (id: string, label = id) => node(id, 'agent', { label, caps: { interaction: 'auto' } })
+  const clarify = (id: string) => node(id, 'agent', { label: id, caps: { interaction: 'clarify', tools: ['ask_question'] } })
+
+  it('returns true, false, or null for automatic, not automatic, and still unknown', () => {
+    const nodes = [clarify('ask'), auto('impl', '实现'), node('gate', 'human_gate', { label: '审批' }), node('branch', 'branch'), node('out', 'output', { label: '输出' })]
+    expect(handoffProcessAuto(nodes, [edge('ask', 'impl')], 'ask')).toBe(true)
+    expect(handoffProcessAuto(nodes, [edge('ask', 'out'), edge('out', 'impl')], 'ask')).toBe(true)
+    expect(handoffProcessAuto(nodes, [edge('ask', 'gate')], 'ask')).toBe(false)
+    expect(handoffProcessAuto(nodes, [edge('ask', 'branch')], 'ask')).toBe(false)
+    expect(handoffProcessAuto(nodes, [edge('ask', 'out')], 'ask')).toBe(false)
+    expect(handoffProcessAuto(nodes, [edge('ask', 'impl', { when: 'vars.ready' }), edge('ask', 'gate')], 'ask')).toBeNull()
+    expect(handoffProcessAuto(nodes, [], 'ask')).toBeNull()
+    expect(handoffProcessAuto(nodes, undefined, 'ask')).toBeNull()
+    expect(resolveHandoffProcessAuto({
+      nodes,
+      edges: [edge('ask', 'gate')],
+      fromNodeId: 'ask',
+      current: { id: 'impl', mode: 'auto' },
+    })).toBe(true)
+    expect(resolveHandoffProcessAuto({
+      nodes,
+      edges: [edge('ask', 'impl')],
+      fromNodeId: 'ask',
+      current: { id: 'gate', mode: 'manual' },
+    })).toBe(false)
   })
 })
 
