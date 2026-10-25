@@ -234,6 +234,7 @@
       "sessionRepos.ts",
       "soloErrors.ts",
       "soloPrefs.ts",
+      "useSessionModelCatalog.ts",
       "useSoloChat.ts",
       "useSoloLauncher.ts",
       "useSoloSessions.ts"
@@ -262,7 +263,7 @@
     "pm": 7,
     "run": 66,
     "shared": 39,
-    "solo": 9,
+    "solo": 10,
     "workflow": 3,
     "workspace": 5
   }

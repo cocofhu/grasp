@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   closeSoloSession: vi.fn(),
   renameSoloSession: vi.fn(),
   removeSoloQueued: vi.fn(),
+  setSoloSessionModel: vi.fn(),
   soloChatWsUrl: vi.fn(() => 'ws://example.test/solo'),
 }))
 
@@ -184,6 +185,60 @@ describe('useSoloChat', () => {
     app.unmount()
   })
 
+  it('keeps an old session on its opening model and switches the saved model for later turns', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ initialModelId: 'aux' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(chat.currentModelId.value).toBe('aux')
+
+    mocks.getSoloSession.mockResolvedValue(session({ initialModelId: 'aux', currentModelSet: true, currentModelId: 'aux' }))
+    mocks.setSoloSessionModel.mockResolvedValue(session({ initialModelId: 'aux', currentModelSet: true, currentModelId: 'aux2' }))
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({ type: 'session', event: 'turn_begin', item: { id: 'q1', text: 'hi', images: [] }, userMsgId: 'q1' })
+    const pending = chat.setCurrentModel('aux2')
+    expect(chat.currentModelId.value).toBe('aux2')
+    expect(chat.modelSwitchNotice.value).toContain('从下一条开始使用新模型')
+    expect(await pending).toBe(true)
+    expect(mocks.setSoloSessionModel).toHaveBeenCalledWith('s1', 'aux2')
+
+    ws.emit({ type: 'session', event: 'turn_done', interrupted: false })
+    expect(chat.modelSwitchNotice.value).toBe('')
+    app.unmount()
+  })
+
+  it('restores the previous model when saving the selection fails', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'aux', initialModelId: 'primary' }))
+    mocks.setSoloSessionModel.mockRejectedValueOnce(Object.assign(new Error('nope'), { code: 'model_not_in_configuration' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    expect(await chat.setCurrentModel('other')).toBe(false)
+    expect(chat.currentModelId.value).toBe('aux')
+    expect(chat.actionError.value).toContain('不在该 Agent 的模型配置中')
+    expect(chat.modelSwitchNotice.value).toBe('')
+    app.unmount()
+  })
+
+  it('rolls the selector back when the sandbox rejects the switch', async () => {
+    mocks.getSoloSession.mockResolvedValue(session({ currentModelSet: true, currentModelId: 'aux2' }))
+    const { chat, app } = mountChat()
+    await flushPromises()
+    const ws = FakeSocket.all[0]!
+    ws.open()
+    await flushPromises()
+    ws.emit({
+      type: 'session',
+      event: 'model',
+      currentModelId: 'aux',
+      currentModelSet: true,
+      modelNotice: 'model_switch_failed',
+      error: '切换模型失败，已改回原来的模型',
+    })
+    expect(chat.currentModelId.value).toBe('aux')
+    expect(chat.actionError.value).toContain('已改回原来的模型')
+    app.unmount()
+  })
   it('writes a second turn and output that arrives before turn_begin', async () => {
     const { chat, app } = mountChat()
     await flushPromises()
