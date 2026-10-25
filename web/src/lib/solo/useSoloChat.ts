@@ -56,10 +56,13 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   let ws: WebSocket | null = null
   let held: string[] | null = null
-  let activeId = ''
+  const activeId = ref('')
   let disposed = false
   let pollTimer: ReturnType<typeof setTimeout> | undefined
   let refetchSeq = 0
+  let lastSeq = -1
+  let resyncs = 0
+  const seenSeq = new Set<number>()
 
   const reconnect = createWsReconnectController({
     connect: () => openWs(),
@@ -69,7 +72,7 @@ export function useSoloChat(sessionId: Ref<string>) {
   const status = computed(() => session.value?.status ?? 'starting')
   const closed = computed(() => status.value === 'closed')
   const canSend = computed(() => !!session.value && (status.value === 'starting' || status.value === 'running'))
-  const activeTurn = computed(() => (activeId ? turns.value.find((x) => x.id === `live:${activeId}`) ?? null : null))
+  const activeTurn = computed(() => (activeId.value ? turns.value.find((x) => x.id === `live:${activeId.value}`) ?? null : null))
 
   function setSession(v: SoloSession) {
     if (v.id !== sessionId.value) return
@@ -86,14 +89,20 @@ export function useSoloChat(sessionId: Ref<string>) {
     sessions.upsert(next)
   }
 
-  /** Polls while the sandbox boots so the startup card shows real stages. */
+  /** Polls while the sandbox boots, and again while a running session has no live socket. */
   function schedulePoll() {
     if (pollTimer) clearTimeout(pollTimer)
     pollTimer = undefined
-    if (disposed || session.value?.status !== 'starting') return
+    if (disposed) return
+    const st = session.value?.status
+    const boot = st === 'starting'
+    const catchUp = st === 'running' && link.value !== 'open'
+    if (!boot && !catchUp) return
     pollTimer = setTimeout(() => {
       pollTimer = undefined
-      void refreshSession()
+      if (session.value?.status === 'starting') void refreshSession()
+      else void refetchMessages()
+      schedulePoll()
     }, SANDBOX_POLL_MS)
   }
 
@@ -109,12 +118,12 @@ export function useSoloChat(sessionId: Ref<string>) {
 
   function applyMessages(messages: SoloMessage[]) {
     const history = turnsFromMessages(messages, label, toolFallback())
-    if (!activeId) {
+    if (!activeId.value) {
       turns.value = history
       return
     }
-    const live = turns.value.filter((x) => x.id === `u:${activeId}` || x.id === `live:${activeId}`)
-    turns.value = [...history.filter((x) => x.id !== `u:${activeId}`), ...live]
+    const live = turns.value.filter((x) => x.id === `u:${activeId.value}` || x.id === `live:${activeId.value}`)
+    turns.value = [...history.filter((x) => x.id !== `u:${activeId.value}`), ...live]
   }
 
   async function refetchMessages() {
@@ -136,7 +145,7 @@ export function useSoloChat(sessionId: Ref<string>) {
       if (error) turn.error = error
       if (interrupted) turn.status = 'stopped'
     }
-    activeId = ''
+    activeId.value = ''
     phase.value = ''
   }
 
@@ -144,23 +153,132 @@ export function useSoloChat(sessionId: Ref<string>) {
     const item = queueItem(frame.item)
     const id = item.id || String(frame.userMsgId ?? '')
     queued.value = queued.value.filter((q) => q.id !== id && !q.local)
-    if (activeId && activeId !== id) endActive()
+    if (activeId.value && activeId.value !== id) endActive()
+    const existing = turns.value.find((x) => x.id === `live:${id}`)
+    const hasOutput = !!existing && (!!existing.text || existing.steps.length > 0 || existing.tools.length > 0)
+    if (hasOutput && existing) {
+      activeId.value = id
+      if (!turns.value.some((x) => x.id === `u:${id}`)) {
+        const started = existing.startedAt || new Date().toISOString()
+        const user = {
+          id: `u:${id}`,
+          role: 'user' as const,
+          text: item.text,
+          tools: [],
+          steps: [],
+          plan: [],
+          streaming: false,
+          images: item.images.length ? item.images : undefined,
+          createdAt: started,
+        }
+        const idx = turns.value.findIndex((x) => x.id === existing.id)
+        const next = turns.value.slice()
+        next.splice(idx < 0 ? next.length : idx, 0, user)
+        turns.value = next
+      }
+      existing.streaming = true
+      busy.value = true
+      if (!phase.value) phase.value = 'preparing'
+      return
+    }
     const started = new Date().toISOString()
+    activeId.value = id
     turns.value = [
       ...turns.value.filter((x) => x.id !== `u:${id}` && x.id !== `live:${id}`),
       { id: `u:${id}`, role: 'user', text: item.text, tools: [], steps: [], plan: [], streaming: false, images: item.images.length ? item.images : undefined, createdAt: started },
       emptyAgentTurn(`live:${id}`, true, started),
     ]
-    activeId = id
     busy.value = true
     if (!phase.value) phase.value = 'preparing'
+  }
+
+  /** Output arrived without turn_begin. Attach it to the transcript's current user turn. */
+  function adoptTurnForOutput() {
+    const queuedItem = queued.value.find((q) => !q.local) ?? queued.value[0]
+    let userId = ''
+    for (let i = turns.value.length - 1; i >= 0; i--) {
+      const row = turns.value[i]
+      if (row?.role === 'user') {
+        userId = row.id.startsWith('u:') ? row.id.slice(2) : row.id
+        break
+      }
+    }
+    const id = queuedItem?.id || userId
+    if (!id) {
+      const started = new Date().toISOString()
+      const live = emptyAgentTurn('live:pending', true, started)
+      turns.value = [...turns.value, live]
+      activeId.value = 'pending'
+      busy.value = true
+      return live
+    }
+    const existing = turns.value.find((x) => x.id === `live:${id}`)
+    if (existing) {
+      existing.streaming = true
+      activeId.value = id
+      busy.value = true
+      return existing
+    }
+    const fromQueue = queuedItem && queuedItem.id === id ? queuedItem : undefined
+    const fromUser = turns.value.find((x) => x.id === `u:${id}`)
+    beginTurn({
+      item: {
+        id,
+        text: fromQueue?.text || fromUser?.text || '',
+        images: fromQueue?.images || fromUser?.images || [],
+      },
+      userMsgId: id,
+    })
+    return turns.value.find((x) => x.id === `live:${id}`) ?? null
+  }
+
+  function noteSeq(frame: any): 'ok' | 'dup' | 'gap' {
+    const seq = frame?.seq
+    if (typeof seq !== 'number' || seq < 0) return 'ok'
+    if (seenSeq.has(seq)) return 'dup'
+    if (lastSeq >= 0 && seq > lastSeq + 1) {
+      if (resyncs >= 3) {
+        seenSeq.add(seq)
+        lastSeq = seq
+        return 'ok'
+      }
+      return 'gap'
+    }
+    seenSeq.add(seq)
+    if (seq === lastSeq + 1 || lastSeq < 0) resyncs = 0
+    if (seq > lastSeq) lastSeq = seq
+    if (seenSeq.size > 4096) {
+      for (const n of seenSeq) {
+        if (n < lastSeq - 2048) seenSeq.delete(n)
+      }
+    }
+    return 'ok'
+  }
+
+  function requestResync() {
+    if (disposed || resyncs >= 3) return
+    resyncs += 1
+    const sock = ws
+    ws = null
+    held = null
+    link.value = 'reconnecting'
+    sock?.close()
+    void refetchMessages()
+    schedulePoll()
+    reconnect.onClose()
   }
 
   function onFrame(raw: string) {
     const frame = parseFrame(raw)
     if (!frame || typeof frame !== 'object') return
+    const seqState = noteSeq(frame)
+    if (seqState === 'dup') return
+    if (seqState === 'gap') {
+      requestResync()
+      return
+    }
     if (frame.type === 'acp') {
-      const turn = activeTurn.value
+      const turn = activeTurn.value ?? adoptTurnForOutput()
       if (turn) applyAcp(frame.data, turn, label, toolFallback())
       return
     }
@@ -171,7 +289,7 @@ export function useSoloChat(sessionId: Ref<string>) {
         busy.value = !!frame.busy
         patchSession({ busy: busy.value, waiting: queued.value.length })
         if (frame.busy && frame.phase) phase.value = frame.phase
-        if (!frame.busy && activeId) {
+        if (!frame.busy && activeId.value) {
           endActive()
           void refetchMessages()
         }
@@ -212,13 +330,14 @@ export function useSoloChat(sessionId: Ref<string>) {
     const id = sessionId.value
     if (!id || disposed) return
     link.value = link.value === 'idle' ? 'connecting' : 'reconnecting'
-    const sock = new WebSocket(api.soloChatWsUrl(id))
+    const sock = new WebSocket(api.soloChatWsUrl(id, lastSeq >= 0 ? lastSeq : undefined))
     ws = sock
     held = []
     sock.onopen = async () => {
       if (ws !== sock) return
       reconnect.markOpened()
       link.value = 'open'
+      schedulePoll()
       try {
         const messages = await api.listSoloMessages(id)
         if (ws === sock) applyMessages(messages)
@@ -241,6 +360,8 @@ export function useSoloChat(sessionId: Ref<string>) {
       held = null
       if (disposed) return
       link.value = 'reconnecting'
+      void refetchMessages()
+      schedulePoll()
       reconnect.onClose()
     }
   }
@@ -261,7 +382,10 @@ export function useSoloChat(sessionId: Ref<string>) {
     queued.value = []
     busy.value = false
     phase.value = ''
-    activeId = ''
+    activeId.value = ''
+    lastSeq = -1
+    resyncs = 0
+    seenSeq.clear()
     link.value = 'idle'
     loadError.value = ''
     actionError.value = ''

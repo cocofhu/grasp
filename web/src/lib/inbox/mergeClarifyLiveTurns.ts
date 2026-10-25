@@ -151,7 +151,15 @@ function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn
       (agent.thought || '').trim() === thought &&
       sameTools(agent.tools, liveAgent.tools) &&
       sameParts(agent.parts, liveAgent.parts)
-    if (same || !liveAgentRicher(agent, liveAgent)) return null
+    // Same body still in progress: keep one bubble and the running tail.
+    // A settled duplicate must not be drawn again.
+    if (same) {
+      if (!liveAgent.streaming) return null
+      const replaced: ClarifyTurn = { ...agent, streaming: true }
+      delete replaced.endedAt
+      return [...persisted.slice(0, i + 1), replaced]
+    }
+    if (!liveAgentRicher(agent, liveAgent)) return null
     const replaced: ClarifyTurn = {
       ...agent,
       text: liveAgent.text || '',
