@@ -69,7 +69,7 @@ beforeEach(() => {
 
 describe('sidebar workspace lists without a workflow directory', () => {
   it('shows recent runs and does not request or render the workflow directory', async () => {
-    const items = Array.from({ length: 8 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    const items = Array.from({ length: 24 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
     mocks.listRuns.mockResolvedValue({ items, total: items.length })
     const { wrapper } = await setup('/runs/r0')
     expectNoWorkflowDirectory(wrapper)
@@ -80,8 +80,10 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(headingIcon.classes()).toContain('grasp-status')
     expect(headingIcon.attributes('width')).toBe('14')
     const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
-    expect(rows).toHaveLength(6)
+    expect(rows).toHaveLength(20)
     expect(rows[0].text()).toBe('运行 0')
+    expect(rows[19].attributes('data-run-id')).toBe('r19')
+    expect(wrapper.find('[data-run-id="r20"]').exists()).toBe(false)
     expect(rows[0].attributes('href')).toBe('/runs/r0')
     expect(rows[0].classes()).toContain('is-active')
     expect(rows[0].attributes('aria-current')).toBe('page')
@@ -90,11 +92,33 @@ describe('sidebar workspace lists without a workflow directory', () => {
     expect(rows[0].find('[data-testid="sidebar-recent-ended"]').exists()).toBe(false)
     expect(wrapper.find('[data-icon="chat"]').exists()).toBe(false)
     expect(wrapper.find('[data-testid="sidebar-recent-type-icon"]').exists()).toBe(false)
-    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 6, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 20, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
     expect(mocks.listWorkflowCatalog).not.toHaveBeenCalled()
     expect(mocks.getWorkflow).not.toHaveBeenCalled()
     expect(mocks.openLaunch).not.toHaveBeenCalled()
     expect(mocks.toggleFavorite).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('renders every finished run when fewer than twenty are returned', async () => {
+    const items = Array.from({ length: 8 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    mocks.listRuns.mockResolvedValue({ items, total: items.length })
+    const { wrapper } = await setup()
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(rows).toHaveLength(items.length)
+    expect(rows.map((row) => row.attributes('data-run-id'))).toEqual(items.map((item) => item.id))
+    expect(wrapper.get('[data-testid="sidebar-recent"]').text()).not.toContain('还没有执行完的工作流')
+    expect(mocks.listRuns).toHaveBeenCalledWith({ page: 1, pageSize: 20, status: 'completed,failed,cancelled', sort: 'last_activity', order: 'desc', signal: expect.any(AbortSignal) })
+    wrapper.unmount()
+  })
+
+  it('renders all twenty finished runs when the page is exactly full', async () => {
+    const items = Array.from({ length: 20 }, (_, index) => ({ id: `r${index}`, title: `运行 ${index}`, workflowName: '工作流' }))
+    mocks.listRuns.mockResolvedValue({ items, total: items.length })
+    const { wrapper } = await setup()
+    const rows = wrapper.findAll('[data-testid="sidebar-recent-run"]')
+    expect(rows).toHaveLength(20)
+    expect(rows[19].attributes('data-run-id')).toBe('r19')
     wrapper.unmount()
   })
 
