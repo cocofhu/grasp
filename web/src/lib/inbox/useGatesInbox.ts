@@ -68,7 +68,7 @@ import {
 } from '@/lib/inbox/inboxShareIntent'
 import { createConfirmFlowCeremony } from '@/lib/inbox/confirmFlowCeremony'
 import { notifyRecentActivity } from '@/lib/run/recentRuns'
-import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
+import { applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, readSidebarHandoff, sidebarChainHandoff } from '@/lib/inbox/sidebarHandoff'
 import { sidebarAutoTarget } from '@/lib/inbox/sidebarRunRows'
 import { clipRunTitle, displayRunTitle } from '@/lib/run/runTitle'
 import {
@@ -678,18 +678,12 @@ function tailFromChain(key: string, chain: RunChain): FollowTail {
   if (cur && cur.mode === 'auto') return { key, runId: chain.runId, kind: 'auto', label, nodeId, iteration, at }
   return { key, runId: chain.runId, kind: 'waiting', label, nodeId, iteration, at }
 }
-/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. */
+/** Snapshot after 确认并流转: automatic confirms the fly; a person or a finished run cancels it. Plumbing does not. */
 function syncSidebarHandoffFromChain(runId: string, chain: RunChain) {
-  if (isRunTerminal(chain.status)) {
-    noteSidebarHandoffOutcome(runId, 'ended')
-    return
-  }
-  const cur = chain.current
   const mark = readSidebarHandoff(runId)
-  // The chain has not left the node this click confirmed. That is not a negation.
-  if (mark && cur?.id && cur.id === mark.fromNodeId) return
-  if (cur?.mode === 'auto') noteSidebarHandoffOutcome(runId, 'auto', { nodeId: cur.id, name: cur.name })
-  else if (cur?.mode) noteSidebarHandoffOutcome(runId, 'human')
+  const decision = sidebarChainHandoff(chain, mark?.fromNodeId, followGraphNodes ?? activeRun.value?.nodes)
+  if (!decision) return
+  noteSidebarHandoffOutcome(runId, decision.outcome, decision.target)
 }
 /**
  * Same-run waiting node in the list → open it under the chain. A row still

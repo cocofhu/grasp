@@ -153,7 +153,7 @@ vi.mock('@/lib/run/useWorkflowRunLaunch', () => ({
 
 import enNav from '@/locales/en/nav.json'
 import { endInboxCancelDeparture, inboxCancelDepartureRunId } from '@/lib/inbox/inboxCancelDeparture'
-import { __resetSidebarHandoffForTests, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, SIDEBAR_FLIGHT_MS } from '@/lib/inbox/sidebarHandoff'
+import { __resetSidebarHandoffForTests, applySidebarEnter, armSidebarHandoff, clearSidebarHandoff, noteSidebarHandoffOutcome, noteSidebarRunStatus, SIDEBAR_FLIGHT_MS } from '@/lib/inbox/sidebarHandoff'
 import { __resetSidebarSectionsForTests, toggleSection } from '@/lib/shared/sidebarSections'
 import { knownInboxProcessingLock } from '@/lib/inbox/inboxShareIntent'
 import { useAuth } from '@/lib/composables/useAuth'
@@ -2565,6 +2565,35 @@ describe('自动过程 grouping and flight', () => {
     expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
     expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('实现')
     expect(wrapper.find('[data-testid="nav-pending-approvals"]').exists()).toBe(false)
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('stays in 正在执行 when only the node being confirmed has entered', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'review', '把登录做清楚'), clarify('run-y', 'clarify', '等人')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const now = Date.now()
+    applySidebarEnter('run-x', { nodeId: 'review', name: '评审', mode: 'auto' }, [{ id: 'review', type: 'agent' }], now)
+    armSidebarHandoff('run-x', 'review', now, null)
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('running')
+    expect(wrapper.find('[data-testid="nav-auto-process"]').exists()).toBe(false)
+    expect(wrapper.get('[data-testid="nav-pending-approvals"] .sidebar-section-count').text()).toBe('2')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('uses the graph target name when an earlier automatic enter is still remembered', async () => {
+    gateMocks.displayedItems.value = [clarify('run-x', 'review', '把登录做清楚')]
+    const wrapper = mountNav(true)
+    await flushPromises()
+    const now = Date.now()
+    applySidebarEnter('run-x', { nodeId: 'impl', name: '实现', mode: 'auto' }, [{ id: 'impl', type: 'agent' }], now)
+    armSidebarHandoff('run-x', 'review', now, { nodeId: 'test', name: '测试' })
+    await flushPromises()
+    expect(wrapper.get('[data-key="run-x"]').attributes('data-section')).toBe('auto')
+    expect(wrapper.get('[data-testid="nav-auto-node-name"]').text()).toBe('测试')
     wrapper.unmount()
     vi.useRealTimers()
   })

@@ -8,6 +8,13 @@ export const SIDEBAR_FLIGHT_MS = 480
 /** Drop a click mark that never resolved so a later, unrelated enter does not fly. */
 export const SIDEBAR_HANDOFF_TTL_MS = 60_000
 
+/**
+ * How long an automatic enter may sit before the click is recorded and still
+ * count as this handoff's next node. The node being confirmed publishes its
+ * own enter as auto; anything older than this is a previous visit.
+ */
+export const SIDEBAR_EARLY_AUTO_MS = 2_000
+
 export type SidebarRunGroup = 'running' | 'auto'
 
 export type SidebarFlightLanding = 'row' | 'heading'
@@ -70,8 +77,8 @@ export interface SidebarEnterTarget {
 }
 
 const marks = new Map<string, SidebarHandoffMark>()
-/** node_enter auto that arrived before the click was recorded. */
-const earlyAuto = new Map<string, SidebarEnterTarget>()
+/** Next-node enter that raced ahead of the click. Not the visit already on screen. */
+const earlyAuto = new Map<string, SidebarEnterTarget & { at: number }>()
 /** Run finished during the handoff: hide it from both unfinished groups until the list drops it. */
 const dismissed = new Set<string>()
 
@@ -82,6 +89,15 @@ function touch() {
   sidebarHandoffEpoch.value += 1
 }
 
+/** A different node's enter that arrived just before this click. The graph target wins when both exist. */
+function freshEarlyDestination(runId: string, fromNodeId: string, now: number) {
+  const early = earlyAuto.get(runId)
+  earlyAuto.delete(runId)
+  if (!early?.nodeId || early.nodeId === fromNodeId) return undefined
+  if (early.at > now || now - early.at > SIDEBAR_EARLY_AUTO_MS) return undefined
+  return early
+}
+
 export function armSidebarHandoff(
   runId: string,
   fromNodeId: string,
@@ -89,15 +105,14 @@ export function armSidebarHandoff(
   target?: SidebarAutoTarget | null,
 ) {
   if (!runId) return
-  const early = earlyAuto.get(runId)
-  earlyAuto.delete(runId)
+  const early = freshEarlyDestination(runId, fromNodeId, now)
   dismissed.delete(runId)
-  const confirmedAuto = !!early || !!target
+  const confirmedAuto = !!target || !!early
   marks.set(runId, {
     fromNodeId,
     confirmedAuto,
-    autoNodeId: early?.nodeId || target?.nodeId,
-    autoNodeName: early?.name || target?.name,
+    autoNodeId: target?.nodeId || early?.nodeId,
+    autoNodeName: target ? target.name : early?.name,
     at: now,
   })
   touch()
@@ -107,6 +122,7 @@ export function noteSidebarHandoffOutcome(
   runId: string,
   outcome: 'auto' | 'human' | 'ended',
   target?: SidebarEnterTarget,
+  now = Date.now(),
 ) {
   if (!runId) return
   if (outcome === 'ended') {
@@ -121,9 +137,14 @@ export function noteSidebarHandoffOutcome(
   if (outcome === 'auto') {
     const mark = marks.get(runId)
     if (!mark) {
-      earlyAuto.set(runId, { nodeId: target?.nodeId, name: target?.name })
+      // No click in progress. Remember only a named enter, briefly, so the
+      // node already on screen cannot confirm the next click.
+      if (!target?.nodeId) return
+      earlyAuto.set(runId, { nodeId: target.nodeId, name: target.name, at: now })
       return
     }
+    // Replaying the node this click is leaving is not the next real node.
+    if (target?.nodeId && target.nodeId === mark.fromNodeId) return
     const autoNodeId = target?.nodeId || mark.autoNodeId
     const autoNodeName = target?.name || mark.autoNodeName
     if (mark.confirmedAuto && mark.autoNodeId === autoNodeId && mark.autoNodeName === autoNodeName) return
@@ -140,14 +161,38 @@ export function applySidebarEnter(
   runId: string,
   frame: { nodeId?: string; name?: string; mode?: string },
   nodes?: ChainNodeMeta,
+  now = Date.now(),
 ) {
   if (!runId) return
   if (frame.nodeId && isPlumbingNode(nodes, frame.nodeId)) return
   if (frame.mode === 'auto') {
-    noteSidebarHandoffOutcome(runId, 'auto', { nodeId: frame.nodeId, name: frame.name })
+    noteSidebarHandoffOutcome(runId, 'auto', { nodeId: frame.nodeId, name: frame.name }, now)
     return
   }
-  if (typeof frame.mode === 'string' && frame.mode) noteSidebarHandoffOutcome(runId, 'human')
+  if (typeof frame.mode === 'string' && frame.mode) noteSidebarHandoffOutcome(runId, 'human', undefined, now)
+}
+
+export interface SidebarChainView {
+  status?: unknown
+  current?: { id?: string; name?: string; mode?: string } | null
+}
+
+/**
+ * What a chain snapshot says about the handoff in progress.
+ * The node still being confirmed is not a negation. input/output are not a destination.
+ */
+export function sidebarChainHandoff(
+  chain: SidebarChainView,
+  fromNodeId?: string,
+  nodes?: ChainNodeMeta,
+): { outcome: 'auto' | 'human' | 'ended'; target?: SidebarEnterTarget } | null {
+  if (typeof chain.status === 'string' && isRunTerminal(chain.status)) return { outcome: 'ended' }
+  const cur = chain.current
+  if (fromNodeId && cur?.id && cur.id === fromNodeId) return null
+  if (cur?.id && isPlumbingNode(nodes, cur.id)) return null
+  if (cur?.mode === 'auto') return { outcome: 'auto', target: { nodeId: cur.id, name: cur.name } }
+  if (cur?.mode) return { outcome: 'human' }
+  return null
 }
 
 /** A finished run leaves both unfinished groups. Other statuses do not. */
