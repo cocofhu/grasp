@@ -1103,7 +1103,7 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           </div>
           <!-- Agent busy / thought / message (Demo: four-phase + restrained done) -->
           <template v-else-if="t.role === 'agent'">
-            <!-- Waiting first token: pulse + 思考中… inside bubble -->
+            <!-- Waiting first token: lamp + 思考中… inside bubble -->
             <ClarifyThinkingRow v-if="t.streaming && !t.thought && !agentHasMessage(t)" />
             <!-- Steps in arrival order (thought / tools / message), like the persisted timeline -->
             <AgentTimeline
@@ -1544,8 +1544,8 @@ function humanLiveCardLoading(live: NonNullable<ClarifyTurn['live']>, i: number)
           <!-- Keep footer time; hide bottom time when completion footnote is shown (keep_footer_hide_bottom) -->
           <!--
             Turn still running: the live status sits at the end of the reply (where
-            the next step will appear), never only at the top. Same pulse +
-            思考中… / shimmer 输出中 styles as before.
+            the next step will appear), never only at the top. Same lamp +
+            思考中… / plain 输出中 styles as before.
           -->
           <ClarifyThinkingRow
             v-if="t.role === 'agent' && t.streaming && (t.thought || agentHasMessage(t) || t.parts?.length)"
