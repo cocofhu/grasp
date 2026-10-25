@@ -177,6 +177,8 @@ const artifactButtonLabel = computed(() => artifactButtonAriaLabel(artifactOpen.
   unread: (count) => t('pages.conversationWorkspace.openArtifactsUnread', { n: count }),
   cap: t('pages.conversationWorkspace.openArtifactsUnreadCap'),
 }))
+const workspace = ref<InstanceType<typeof ConversationWorkspace> | null>(null)
+function toggleArtifacts() { workspace.value?.toggleFromArtifactIcon() }
 
 const messageNavigation = computed(() => {
   const items: Array<{ id: string; title: string; preview: string }> = []
@@ -193,7 +195,7 @@ const messageNavigation = computed(() => {
   return items
 })
 function onNavigateMessage() { stickToBottom.value = false }
-function showConversationHistory() { artifactOpen.value = false }
+function showConversationHistory() { workspace.value?.close() }
 
 </script>
 
@@ -296,17 +298,14 @@ function showConversationHistory() { artifactOpen.value = false }
     <!-- main chat -->
     <ConversationWorkspace
       v-if="!threads.length || showChatSection"
+      ref="workspace"
       v-model:open="artifactOpen"
       :title="t('pages.artifacts.title')"
       :scope-key="conversationScope"
       :show-toolbar="false"
       class="min-h-0 min-w-0 flex-1"
     >
-    <section
-      data-testid="pm-chat-section"
-      class="pm-chat-panel chat-thread flex min-h-0 min-w-0 flex-col"
-      :class="isMobile ? 'w-full flex-1' : 'flex-1'"
-    >
+    <template #masthead>
       <div
         class="flex min-h-12 shrink-0 items-center gap-2 border-b border-line/60 py-2"
         :class="isMobile ? 'min-h-[44px]' : ''"
@@ -353,7 +352,7 @@ function showConversationHistory() { artifactOpen.value = false }
         </div>
         <span v-else class="min-w-0 flex-1 text-xs text-txt3">{{ t('pages.workspace.pm.scopeLabel') }}</span>
         <AppButton v-if="!isMobile && artifactOpen && threads.length" size="sm" variant="ghost" icon="chat" data-testid="pm-chat-show-threads" @click="showConversationHistory">{{ t('pages.workspace.pm.threads') }}</AppButton>
-        <AppButton class="pm-header-action" size="sm" variant="ghost" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" :aria-label="artifactButtonLabel" @click="artifactOpen = !artifactOpen"><span class="inline-flex items-center gap-[7px]"><ArtifactUnreadMark :count="citationUnread.count" :panel-open="artifactOpen"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.artifacts.title') }}</span></AppButton>
+        <AppButton class="pm-header-action" size="sm" variant="ghost" data-testid="pm-chat-artifacts" :aria-expanded="artifactOpen" :aria-label="artifactButtonLabel" @click="toggleArtifacts"><span class="inline-flex items-center gap-[7px]"><ArtifactUnreadMark :count="citationUnread.count" :panel-open="artifactOpen"><Icon name="chat-artifacts" :size="16" aria-hidden="true" /></ArtifactUnreadMark>{{ t('pages.artifacts.title') }}</span></AppButton>
         <AppButton
           size="sm"
           variant="ghost"
@@ -366,6 +365,12 @@ function showConversationHistory() { artifactOpen.value = false }
           {{ t('pages.workspace.pm.settings') }}
         </AppButton>
       </div>
+    </template>
+    <section
+      data-testid="pm-chat-section"
+      class="pm-chat-panel chat-thread flex min-h-0 min-w-0 flex-col"
+      :class="isMobile ? 'w-full flex-1' : 'flex-1'"
+    >
       <p v-if="!canCreateThread" class="shrink-0 border-b border-line/60 py-3 text-xs leading-5 text-txt2" data-testid="pm-availability-notice" role="status">
         {{ t(!enabled ? 'pages.workspace.pm.pausedHistoryHint' : 'pages.workspace.pm.defaultUnavailableHint') }}
       </p>
