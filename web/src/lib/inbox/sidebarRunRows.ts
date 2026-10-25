@@ -1,4 +1,5 @@
-import type { ClarifyInboxItem, InboxItem, Run, RunCurrentNode } from '@/lib/shared/types'
+import type { ClarifyInboxItem, InboxItem, Run, RunCurrentNode, WFEdge, WFNode } from '@/lib/shared/types'
+import { isGated } from '@/lib/workflow/agentCapabilities'
 
 /** Run statuses listed under「正在执行」; everything else is history. */
 export const RUNNING_RUN_STATUSES = 'queued,running,waiting_human'
@@ -20,6 +21,126 @@ export function isAutoProcessRun(run: Run | null | undefined): boolean {
 export function autoProcessNodeName(run: Run | null | undefined): string {
   if (!isAutoProcessRun(run)) return ''
   return run?.currentNode?.name?.trim() || ''
+}
+
+/** Automatic node this handoff already settled on, before the run list catches up. */
+export interface SidebarAutoClaim {
+  fromNodeId: string
+  confirmedAuto: boolean
+  autoNodeId?: string
+  autoNodeName?: string
+}
+
+/**
+ * 「自动过程」when the snapshot already shows a running automatic agent, or
+ * this handoff has settled on one and the snapshot has not moved on to a
+ * different, non-automatic node.
+ */
+export function sidebarRunGroup(run: Run | null | undefined, claim: SidebarAutoClaim | null | undefined): 'running' | 'auto' {
+  if (isAutoProcessRun(run)) return 'auto'
+  if (!claim?.confirmedAuto) return 'running'
+  const node = run?.currentNode
+  if (node?.id && node.id !== claim.fromNodeId && !(node.kind === 'agent' && node.mode === 'auto')) return 'running'
+  return 'auto'
+}
+
+/** Node name for an automatic row: the snapshot once it has caught up, otherwise the settled handoff. */
+export function sidebarAutoNodeName(run: Run | null | undefined, claim: SidebarAutoClaim | null | undefined): string {
+  if (isAutoProcessRun(run)) return autoProcessNodeName(run)
+  if (sidebarRunGroup(run, claim) !== 'auto') return ''
+  return claim?.autoNodeName?.trim() || ''
+}
+
+export interface SidebarAutoTarget {
+  nodeId: string
+  name: string
+}
+
+/**
+ * Outlet this positive confirmation leaves through.
+ * A human gate leaves through the action. An agent leaves through the plain
+ * outlet, unless a verdict product chooses pass or fail from this confirm's
+ * model output — then the outlet is not known yet.
+ */
+export function positiveHandoffHandle(node: Pick<WFNode, 'type' | 'caps'> | null | undefined, action?: string): string | null {
+  if (!node?.type) return null
+  if (node.type === 'human_gate') return action ?? ''
+  if (node.type !== 'agent') return null
+  if (isGated(node.caps)) return null
+  return ''
+}
+
+function guardCertainty(when: string | undefined): 'pass' | 'fail' | 'unknown' {
+  const w = (when ?? '').trim()
+  if (w === '' || w === 'default' || w === 'true') return 'pass'
+  if (w === 'false') return 'fail'
+  return 'unknown'
+}
+
+/**
+ * First success edge on `handle` that this confirmation cannot rule out.
+ * An unknown guard, or a rollback, means the destination is not settled.
+ * A guard that is certainly false is skipped. Later edges do not matter
+ * once an earlier one always passes — that is the edge the engine takes.
+ */
+function certainSuccessTarget(edges: readonly WFEdge[], from: string, handle: string): string | null {
+  for (const edge of edges) {
+    if (edge.source !== from || (edge.sourceHandle ?? '') !== handle || edge.kind === 'failure') continue
+    const guard = guardCertainty(edge.when)
+    if (guard === 'fail') continue
+    if (guard === 'unknown' || edge.kind === 'rollback') return null
+    return edge.target
+  }
+  return null
+}
+
+const PLUMBING_NODE_TYPES = new Set(['input', 'output'])
+
+/**
+ * The one automatic agent this positive handoff enters, when the loaded graph
+ * already says so. Null when the graph has no edges, several destinations
+ * stay possible, or the one destination is not an automatic agent.
+ * input/output are skipped; they do not count as the next real node.
+ */
+export function uniqueAutoDestination(
+  nodes: readonly WFNode[] | undefined,
+  edges: readonly WFEdge[] | undefined,
+  fromNodeId: string,
+  handle: string | null,
+): SidebarAutoTarget | null {
+  if (!fromNodeId || handle == null || !nodes?.length || !edges?.length) return null
+  const byId = new Map(nodes.map((node) => [node.id, node]))
+  let cursor = fromNodeId
+  let hopHandle = handle
+  const seen = new Set<string>()
+  for (let hop = 0; hop <= nodes.length; hop++) {
+    const key = `${cursor}\0${hopHandle}`
+    if (seen.has(key)) return null
+    seen.add(key)
+    const targetId = certainSuccessTarget(edges, cursor, hopHandle)
+    if (!targetId) return null
+    const node = byId.get(targetId)
+    if (!node) return null
+    if (PLUMBING_NODE_TYPES.has(node.type)) {
+      cursor = node.id
+      hopHandle = ''
+      continue
+    }
+    if (node.type !== 'agent' || node.caps?.interaction !== 'auto') return null
+    return { nodeId: node.id, name: node.label?.trim() || '' }
+  }
+  return null
+}
+
+/** Click-time destination for one positive handoff. No edges, or more than one possible target: null. */
+export function sidebarAutoTarget(
+  nodes: readonly WFNode[] | undefined,
+  edges: readonly WFEdge[] | undefined,
+  fromNodeId: string,
+  action?: string,
+): SidebarAutoTarget | null {
+  const node = nodes?.find((item) => item.id === fromNodeId)
+  return uniqueAutoDestination(nodes, edges, fromNodeId, positiveHandoffHandle(node, action))
 }
 
 const itemKeyOf = (it: InboxItem) => `${it.runId}:${it.nodeId}`
