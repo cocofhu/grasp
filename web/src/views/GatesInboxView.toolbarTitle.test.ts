@@ -30,6 +30,7 @@ vi.mock('@/lib/api/api', async () => {
       ...actual.api,
       listGates: mocks.listGates,
       inboxContext: mocks.inboxContext,
+      getRun: vi.fn(async (id: string) => ({ id, nodes: [], edges: [] })),
       nodeEvents: vi.fn().mockResolvedValue({ events: [], live: false }),
       runArtifacts: vi.fn().mockResolvedValue([]),
       resumeGate: vi.fn(),

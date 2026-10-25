@@ -79,6 +79,7 @@ func (h *Handlers) inboxContextGate(c *gin.Context, runID, gateNodeID string, it
 	out := gin.H{
 		"type":           "gate",
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
 		"nodeRuns":       h.Runs.NodeStatuses(runID),
@@ -129,6 +130,7 @@ func (h *Handlers) inboxContextStarting(c *gin.Context, run models.Run, nodeID s
 		"type":           "clarify",
 		"status":         run.Status,
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      []gin.H{},
 		"nodeExecutions": map[string][]map[string]any{},
 		"nodeRuns":       h.Runs.NodeStatuses(run.ID),
@@ -174,6 +176,7 @@ func (h *Handlers) inboxContextClarify(c *gin.Context, runID, nodeID string, ite
 		"type":           "clarify",
 		"status":         run.Status,
 		"nodes":          graphNodesDTO(run.Graph),
+		"edges":          graphEdgesDTO(run.Graph),
 		"artifacts":      artsDTO,
 		"nodeExecutions": slimExecs,
 		"nodeRuns":       h.Runs.NodeStatuses(runID),
