@@ -4,6 +4,8 @@ All notable public-release changes are documented here.
 
 ## Unreleased
 
+- **Clarify conversation recovery:** delayed queue snapshots and old temporary replies no longer leave later questions read-only after submitting choices. Reconnecting after a completed turn restores the saved questions and releases the stale busy state without reloading the page.
+
 - **Clearer token analytics:** usage structure now uses readable ranked rows with drill-down details. Model and workflow breakdowns share a full-width tabbed table with usage bars, and the busiest runs show eight rows by default with an option to expand; CSV exports still include the complete list.
 
 - **Home default subtitle:** when the home subtitle is left blank, the line under the mascot and the settings placeholder now read 「我们应该做些什么？」 in Chinese and “What should we do?” in English. Saved subtitles stay as written.

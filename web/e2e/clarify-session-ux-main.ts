@@ -32,6 +32,42 @@ const App = defineComponent({
     let lastSent = ''
     /** Run open for input (false = run cancelled / ended, true = resumed). */
     const runActive = ref(true)
+    let choiceRound = 0
+
+    function choiceQuestion(round: number): ClarifyTurn {
+      return {
+        role: 'agent',
+        text: `第 ${round} 轮：请选择图标显示位置。`,
+        at: new Date().toISOString(),
+        questions: [{
+          id: `icon-scope-${round}`,
+          prompt: `第 ${round} 轮图标显示范围`,
+          options: [
+            { id: 'solo', label: '仅在 Solo 选择器显示', recommended: true },
+            { id: 'all', label: '所有 Agent 列表均显示' },
+          ],
+        }],
+      }
+    }
+
+    /** An enqueue snapshot can arrive after the pump has already begun its item. */
+    async function completeChoiceRound(text: string) {
+      const c = chatRef.value
+      if (!c?.applyReviewFrame) return
+      const item = { id: `choice-reply-${choiceRound}`, text }
+      c.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', waiting: 0, items: [], busy: true })
+      c.applyReviewFrame({ event: 'turn_begin', nodeId: 'clarify', item })
+      c.applyAcpEvents?.([{ kind: 'message', text: '已收到选择，继续确认下一项。' }])
+      await nextTick()
+      c.applyReviewFrame({ event: 'queue_state', nodeId: 'clarify', waiting: 1, items: [item], busy: true })
+      turns.value = [
+        ...turns.value,
+        { role: 'human', text, at: new Date().toISOString() },
+        choiceQuestion(++choiceRound),
+      ]
+      await nextTick()
+      c.applyReviewFrame({ event: 'turn_done', nodeId: 'clarify' })
+    }
 
     /** Host got 409 clarify_visit_ended for the last send (run ended). */
     function simVisitEnded() {
@@ -198,6 +234,15 @@ const App = defineComponent({
     return () =>
       h('div', { class: 'min-h-screen p-4 max-w-3xl mx-auto', 'data-testid': 'clarify-ux-root' }, [
         h('div', { class: 'flex gap-2 mb-3 flex-wrap' }, [
+          h('button', {
+            type: 'button',
+            'data-testid': 'sim-choice-rounds',
+            class: 'px-3 py-1.5 rounded border text-sm',
+            onClick: () => {
+              choiceRound = 1
+              turns.value = [choiceQuestion(choiceRound)]
+            },
+          }, '模拟连续选择'),
           h(
             'button',
             {
@@ -313,6 +358,7 @@ const App = defineComponent({
           sendLabel: '发送澄清回复',
           onSend: (text: string) => {
             lastSent = text
+            if (choiceRound > 0) void completeChoiceRound(text)
           },
         }),
       ])

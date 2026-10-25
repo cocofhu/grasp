@@ -191,6 +191,98 @@ describe('useRunDetailWs coverage', () => {
     h.api.teardownRealtime()
   })
 
+  it.each([{}, { other: { busy: true, waiting: 0, items: [] } }])(
+    'releases omitted current and gate sessions only for an authoritative map: %j',
+    async (sessions) => {
+      const h = harness({ gateNode: 'producer' })
+      h.liveBusy.n1 = true
+      h.liveBusy.producer = true
+      await h.api.projectDialogueAfterLoad({})
+      expect(h.liveBusy.n1).toBe(true)
+      expect(h.liveBusy.producer).toBe(true)
+      expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
+      expect(h.gate.applyReviewFrame).not.toHaveBeenCalled()
+
+      await h.api.projectDialogueAfterLoad({ reactSessions: sessions })
+      expect(h.liveBusy.n1).toBe(false)
+      expect(h.liveBusy.producer).toBe(false)
+      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+        event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
+      }))
+      expect(h.gate.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+        event: 'queue_state', nodeId: 'producer', busy: false, waiting: 0, items: [],
+      }))
+      if ('other' in sessions) expect(h.liveBusy.other).toBe(true)
+      h.api.teardownRealtime()
+    },
+  )
+
+  it.each([undefined, {}, { other: { busy: true, waiting: 0, items: [] } }])(
+    'refreshes saved dialogue after reconnect omits a finished session: %j',
+    async (sessions) => {
+      const h = harness({
+        sessions: { n1: { busy: true, waiting: 0, items: [], activeItem: { text: '我的选择' } } },
+        eventPages: { n1: { events: rails } },
+      })
+      h.liveBusy.n1 = true
+      h.api.connectWs({ fromReconnect: true })
+      const socket = MockWebSocket.instances.at(-1)!
+      socket.open()
+      await nextTick()
+      await nextTick()
+      expect(h.liveBusy.n1).toBe(true)
+      expect(h.loadRun).not.toHaveBeenCalled()
+      h.review.applyReviewFrame.mockClear()
+
+      socket.message({ type: 'snapshot', run: {} })
+      await nextTick()
+      expect(h.liveBusy.n1).toBe(true)
+      expect(h.loadRun).not.toHaveBeenCalled()
+      socket.message({
+        type: 'snapshot',
+        run: sessions === undefined
+          ? { id: 'run-1', status: 'waiting_human' }
+          : { id: 'run-1', reactSessions: sessions },
+      })
+      if (sessions && 'other' in sessions) {
+        socket.message({ type: 'review', event: 'queue_state', nodeId: 'other', busy: true, waiting: 0 })
+      }
+      await nextTick()
+      await nextTick()
+      await nextTick()
+      expect(h.liveBusy.n1).toBe(false)
+      expect(h.review.applyReviewFrame).toHaveBeenLastCalledWith(expect.objectContaining({
+        event: 'queue_state', nodeId: 'n1', busy: false, waiting: 0, items: [],
+      }))
+      expect(h.loadRun).toHaveBeenCalledExactlyOnceWith(false, true)
+      h.api.teardownRealtime()
+    },
+  )
+
+  it('keeps live turn boundaries newer than a reconnect snapshot', async () => {
+    const h = harness()
+    h.liveBusy.n1 = true
+    h.api.connectWs({ fromReconnect: true })
+    const socket = MockWebSocket.instances.at(-1)!
+    socket.open()
+    await nextTick()
+    await nextTick()
+    // An empty cached map cannot clear the active turn before the server snapshot.
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalled()
+    h.review.applyReviewFrame.mockClear()
+
+    socket.message({ type: 'snapshot', run: { reactSessions: {} } })
+    socket.message({ type: 'review', event: 'turn_begin', nodeId: 'n1', item: { text: '新消息' } })
+    await nextTick()
+    await nextTick()
+    await nextTick()
+    expect(h.liveBusy.n1).toBe(true)
+    expect(h.review.applyReviewFrame).not.toHaveBeenCalledWith(expect.objectContaining({ event: 'queue_state', busy: false }))
+    expect(h.loadRun).not.toHaveBeenCalled()
+    h.api.teardownRealtime()
+  })
+
   it('handles empty, non-rail, failed, and unready seed paths', async () => {
     const h = harness({ eventPages: { empty: { events: [] }, meta: { events: [{ kind: 'tool', t: 1 }] } } })
     h.fetchNodeEvents.mockRejectedValueOnce(new Error('offline'))
