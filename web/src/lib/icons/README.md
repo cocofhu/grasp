@@ -14,8 +14,10 @@ focus and can replay after leaving. A nested control owns its own feedback.
 - `busy` enables a real ongoing state. Only loading glyphs have repeating busy
   motion; `spinner` defaults to busy. Pass the business state explicitly for
   other loading indicators.
-- `:interactive="false"` suppresses hover/focus feedback for stateful chevrons,
-  theme controls and metadata inside a larger control.
+- `:interactive="false"` suppresses hover/focus feedback for stateful chevrons
+  and metadata inside a larger control. The shell theme button uses it only on
+  the hidden sun or moon; the visible icon still plays one hover or keyboard
+  focus motion.
 - `motionKey` changing after mount requests one event animation. Keep the initial
   server snapshot quiet and update the key only for a new event. `check-draw`
   deliberately ignores event triggers and stays complete until hover/focus.
