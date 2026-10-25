@@ -13,6 +13,7 @@ import (
 	"sandbox-gateway/internal/database"
 	"sandbox-gateway/internal/driver"
 	"sandbox-gateway/internal/driver/fake"
+	"sandbox-gateway/internal/models"
 	"sandbox-gateway/internal/service"
 	"sandbox-gateway/internal/store"
 
@@ -49,6 +50,9 @@ func testRouter(t *testing.T, apiKeys []string) (*gin.Engine, *fake.Driver, *ser
 			MaxCPUCores: 8, MaxMemoryMB: 16384, MaxDiskGi: 500,
 		},
 	})
+	// Create/Reinstall return before the driver finishes. A still-running
+	// provision writes sqlite (WAL) into TempDir while RemoveAll runs.
+	t.Cleanup(func() { waitSettled(t, svc) })
 	ports := config.PortsConfig{Session: 8765, CodeServer: 8744, SSH: 22, CDP: 9222, NoVNC: 6080}
 	h := NewHandler(svc, ports)
 	cfg := config.Default()
@@ -158,6 +162,37 @@ func TestBearerToken(t *testing.T) {
 	}
 }
 
+// waitSettled blocks until no sandbox is still provisioning, so TempDir
+// cleanup does not race a sqlite writer. Registered after drv.Close, so it
+// runs first (cleanups are LIFO): settle, close the driver, close sqlite, then
+// remove the temp dir.
+func waitSettled(t *testing.T, svc *service.SandboxService) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		list, err := svc.List(service.ListFilter{})
+		if err != nil {
+			t.Errorf("list during cleanup: %v", err)
+			return
+		}
+		if !provisioning(list) {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Errorf("sandboxes still provisioning at cleanup")
+}
+
+func provisioning(list []models.Sandbox) bool {
+	for _, sb := range list {
+		switch sb.Status {
+		case models.StatusCreating, models.StatusPulling:
+			return true
+		}
+	}
+	return false
+}
+
 func waitRunning(t *testing.T, svc *service.SandboxService, id string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
@@ -227,13 +262,23 @@ func TestListLabelFilter(t *testing.T) {
 	id, _ := created["id"].(string)
 	waitRunning(t, svc, id)
 
-	// second sandbox with different labels
+	// second sandbox with different labels. Wait for it: Create returns 202
+	// before the background provision stops writing sqlite.
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodPost, "/api/v1/sandboxes",
 		bytes.NewBufferString(`{"labels":{"owner":"team-b","env":"prod"}}`)))
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("create2=%d %s", w.Code, w.Body.String())
 	}
+	var created2 map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &created2); err != nil {
+		t.Fatal(err)
+	}
+	id2, _ := created2["id"].(string)
+	if id2 == "" {
+		t.Fatalf("no second id: %v", created2)
+	}
+	waitRunning(t, svc, id2)
 
 	w = httptest.NewRecorder()
 	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/sandboxes?label=owner:team-a", nil))
