@@ -48,6 +48,7 @@ describe('API clients (Vitest 4 coverage: exercise request builders)', () => {
       value: 'rotated',
     })
     await workspaceClient.deleteCredential('cred-1')
+    await workspaceClient.removeCredential('cred-1')
     await workspaceClient.listRequirementDrafts({ status: 'open', q: 'x' })
     await workspaceClient.getRequirementDraft('d1')
     await workspaceClient.createRequirementDraft({ title: 't' })

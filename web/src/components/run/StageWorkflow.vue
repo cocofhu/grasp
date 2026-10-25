@@ -83,13 +83,6 @@ const progressLabel = computed(() => t('pages.reactArtifactStage.progressCount',
   done: rows.value.filter((row) => row.done).length,
   total: rows.value.length,
 }))
-
-const indexLabel = computed(() => {
-  const total = rows.value.length
-  const position = rows.value.findIndex((row) => row.current)
-  if (position < 0 || !total) return ''
-  return `${padPosition(position + 1, total)} / ${padPosition(total, total)}`
-})
 </script>
 
 <template>
@@ -101,7 +94,6 @@ const indexLabel = computed(() => {
         </p>
         <span class="stage-workflow-progress" data-testid="stage-workflow-progress">{{ progressLabel }}</span>
       </div>
-      <p v-if="indexLabel" class="stage-workflow-index" data-testid="stage-workflow-index">{{ indexLabel }}</p>
       <ol class="stage-workflow-list" :aria-label="t('pages.reactArtifactStage.workflowHeading')">
         <li
           v-for="(row, index) in rows"
@@ -193,18 +185,13 @@ const indexLabel = computed(() => {
   font-weight: 500;
   line-height: 20px;
 }
-.stage-workflow-progress,
-.stage-workflow-index {
+.stage-workflow-progress {
+  flex: none;
   color: var(--wf-muted);
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   line-height: 20px;
   white-space: nowrap;
-}
-.stage-workflow-progress { flex: none; }
-.stage-workflow-index {
-  margin: 0 4px 10px;
-  text-align: right;
 }
 .stage-workflow-list {
   min-width: 0;
@@ -229,8 +216,8 @@ const indexLabel = computed(() => {
   content: '';
   position: absolute;
   left: 20px;
-  top: 29px;
-  bottom: -9px;
+  top: 33px;
+  bottom: -13px;
   z-index: 0;
   width: 2px;
   border-radius: 1px;
@@ -245,7 +232,7 @@ const indexLabel = computed(() => {
   min-height: 46px;
   align-items: flex-start;
   gap: 12px;
-  padding: 8px 10px;
+  padding: 12px 10px;
   border-radius: 8px;
   background: transparent;
   box-shadow: none;
