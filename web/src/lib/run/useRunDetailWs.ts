@@ -125,13 +125,18 @@ export function useRunDetailWs(opts: {
       liveBusy[nodeId] = !!snap.busy
       dialoguePlatformBusy[nodeId] = !!snap.busy
       if (snap.busy) busyNodes.push(nodeId)
-      const frame = {
+      const frame: Record<string, unknown> = {
         event: 'queue_state',
         nodeId,
         waiting: snap.waiting ?? 0,
         items: snap.items ?? [],
         busy: !!snap.busy,
         activeItem: snap.activeItem,
+      }
+      if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+        frame.sandboxBusy = !!snap.sandboxBusy
+        frame.sandboxDesynced = !!snap.sandboxDesynced
+        if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
       }
       if (selClarify.value?.nodeId === nodeId) {
         const ok = reviewChatRef.value?.applyReviewFrame?.(frame)

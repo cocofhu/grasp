@@ -1317,6 +1317,202 @@ describe('useGatesInbox actions', () => {
     }
   })
 
+  it('realigns an orphan queue to the refresh snapshot without touching the draft or caret', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    const applyReviewFrame = vi.fn()
+    inbox.reviewChatRef.value = { applyReviewFrame, isSessionBusy: () => false }
+    inbox.activeRun.value = contextRun('run-chat', {
+      status: 'waiting_human',
+      nodeRuns: { react: { nodeId: 'react', status: 'running', iteration: 1 } },
+      artifacts: [],
+      clarifyByNode: {
+        react: { nodeId: 'react', iteration: 1, turns: [{ role: 'agent', text: '旧', at: '1' }], done: false },
+      },
+    })
+    shared.draft.value = '未发送草稿'
+    shared.attachments.value = [{ data: 'a', mimeType: 'image/png', name: 'a.png' }] as never
+    const input = document.createElement('textarea')
+    input.value = '未发送草稿'
+    document.body.append(input)
+    input.focus()
+    input.setSelectionRange(1, 3)
+    try {
+      mocks.inboxContext.mockResolvedValueOnce({
+        run: contextRun('run-chat', {
+          status: 'running',
+          nodes: [
+            { id: 'react', type: 'agent', label: '澄清' },
+            { id: 'implement', type: 'agent', label: '实现' },
+          ],
+          artifacts: [{ id: 'page', name: 'page.html', kind: 'html' }],
+          nodeRuns: {
+            react: { nodeId: 'react', status: 'waiting_human', iteration: 1 },
+            implement: { nodeId: 'implement', status: 'running', iteration: 1 },
+          },
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: false, sandboxDesynced: false },
+          },
+          clarifyByNode: {
+            react: {
+              nodeId: 'react',
+              iteration: 1,
+              turns: [
+                { role: 'human', text: '继续', at: '1' },
+                { role: 'agent', text: '已落盘', at: '2' },
+              ],
+              done: false,
+            },
+          },
+        }),
+      })
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+      socket.open()
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxDesynced: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(inbox.clarifyComposerTurns.value.map((t) => t.text)).toEqual(['继续', '已落盘'])
+      expect(inbox.activeRun.value?.nodeRuns.implement?.status).toBe('running')
+      expect(inbox.activeRun.value?.nodeRuns.react?.status).toBe('waiting_human')
+      expect(inbox.activeRun.value?.artifacts?.[0]?.name).toBe('page.html')
+      expect(applyReviewFrame).toHaveBeenCalledWith(expect.objectContaining({
+        event: 'queue_state',
+        sandboxBusy: false,
+        sandboxDesynced: false,
+      }))
+      expect(shared.draft.value).toBe('未发送草稿')
+      expect(shared.attachments.value).toHaveLength(1)
+      expect(input.value).toBe('未发送草稿')
+      expect(input.selectionStart).toBe(1)
+      expect(input.selectionEnd).toBe(3)
+      expect(document.activeElement).toBe(input)
+    } finally {
+      input.remove()
+      app.unmount()
+    }
+  })
+
+  it('retries orphan realign when the context request is blocked or already in flight', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    let sessionBusy = true
+    inbox.reviewChatRef.value = { applyReviewFrame: vi.fn(), isSessionBusy: () => sessionBusy }
+    const before = mocks.inboxContext.mock.calls.length
+    vi.useFakeTimers()
+    try {
+      const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+      socket.open()
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before)
+
+      sessionBusy = false
+      const stillBusy = {
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: true, sandboxDesynced: false },
+          },
+        }),
+      }
+      let releaseContext: (value: unknown) => void = () => {}
+      mocks.inboxContext.mockImplementationOnce(
+        () => new Promise((resolve) => { releaseContext = resolve }),
+      )
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      socket.message({
+        type: 'review',
+        event: 'queue_state',
+        nodeId: 'react',
+        busy: false,
+        waiting: 0,
+        sandboxBusy: true,
+        sandboxRunningOpId: 'g-sess4c0e-8x8t',
+      })
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 1)
+
+      releaseContext(stillBusy)
+      await flushPromises()
+      mocks.inboxContext.mockResolvedValueOnce({
+        run: contextRun('run-chat', {
+          reactSessions: {
+            react: { kind: 'clarify', busy: false, waiting: 0, items: [], sandboxBusy: false, sandboxDesynced: false },
+          },
+        }),
+      })
+      await vi.advanceTimersByTimeAsync(2000)
+      await flushPromises()
+      expect(mocks.inboxContext.mock.calls.length).toBe(before + 2)
+    } finally {
+      vi.useRealTimers()
+      app.unmount()
+    }
+  })
+
+  it('patches workflow status and artifact cards without clearing the open transcript', async () => {
+    const { inbox, app } = await withInbox()
+    const clarify = inbox.listItems.value.find((it) => it.runId === 'run-chat')!
+    inbox.active.value = clarify
+    await flushPromises()
+    const turns = [{ role: 'agent' as const, text: '还在', at: '1' }]
+    inbox.activeRun.value = contextRun('run-chat', {
+      status: 'waiting_human',
+      nodes: [
+        { id: 'react', type: 'agent', label: '澄清' },
+        { id: 'implement', type: 'agent', label: '实现' },
+      ],
+      nodeRuns: { react: { nodeId: 'react', status: 'running', iteration: 1 } },
+      artifacts: [{ id: 'old', name: 'old.md' }],
+      clarifyByNode: { react: { nodeId: 'react', iteration: 1, turns, done: false } },
+    })
+    const before = mocks.inboxContext.mock.calls.length
+    const socket = MockWebSocket.instances.find((sock) => sock.url.includes('run-chat'))!
+    socket.open()
+    socket.message({ type: 'status', status: 'running' })
+    socket.message({ type: 'trace', entry: { nodeId: 'react', event: 'pause', iteration: 1 } })
+    socket.message({ type: 'node_enter', nodeId: 'implement', iteration: 1, name: '实现' })
+    mocks.runArtifacts.mockResolvedValueOnce([{ id: 'page', name: 'page.html', kind: 'html' }])
+    socket.message({ type: 'artifact_edit', name: 'page.html', previewArtifact: 'page.html' })
+    await flushPromises()
+    expect(mocks.inboxContext.mock.calls.length).toBe(before)
+    expect(inbox.activeRun.value?.status).toBe('running')
+    expect(inbox.activeRun.value?.nodeRuns.react?.status).toBe('waiting_human')
+    expect(inbox.activeRun.value?.nodeRuns.implement?.status).toBe('running')
+    expect(inbox.activeRun.value?.artifacts?.map((a) => a.name)).toEqual(['page.html'])
+    expect(inbox.activeRun.value?.clarify?.previewArtifact || inbox.activeRun.value?.clarifyByNode?.react?.previewArtifact).toBe('page.html')
+    expect(inbox.clarifyComposerTurns.value.map((t) => t.text)).toEqual(['还在'])
+    app.unmount()
+  })
+
   it('routes focus and visibility peeks and reacts to query deep links', async () => {
     const { inbox, app, router } = await withInbox('/inbox?run=run-chat&node=react')
     expect(inbox.active.value?.runId).toBe('run-chat')
