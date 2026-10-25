@@ -59,7 +59,7 @@ const regionOptions = computed(() => policy.value?.options.map((option) => ({ va
 const unavailable = computed(() => locale.value.startsWith('en') ? 'Default configuration is unavailable.' : '默认配置不可用。')
 const customConfiguration = computed(() => locale.value.startsWith('en') ? 'Custom configuration' : '自定义配置')
 const customConfigurationHint = computed(() => locale.value.startsWith('en') ? 'Settings for this Agent' : '仅用于当前 Agent')
-const missingDefaultModel = computed(() => locale.value.startsWith('en') ? 'Select a model in Agent defaults first.' : '请先在 Agent 默认配置中选择模型。')
+const missingDefaultModel = computed(() => locale.value.startsWith('en') ? 'Select a model in Agent defaults first.' : '请先在默认配置中选择模型。')
 
 async function loadDefaults() {
   if (!props.inheritance || props.defaults) return
