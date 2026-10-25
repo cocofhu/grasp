@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, onUpdated, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, onUpdated, ref, useSlots, watch } from 'vue'
 
 const props = withDefaults(
   defineProps<{
@@ -19,8 +19,15 @@ const props = withDefaults(
   },
 )
 
+const slots = useSlots()
 const track = ref<HTMLElement | null>(null)
 const indicatorStyle = ref<{ transform: string; width: string; height: string } | null>(null)
+// The highlight itself stays under the buttons (its transform is a stacking
+// context, so a child cannot climb above them). Slot content, such as a count,
+// is painted in a sibling with the same geometry and a higher z-index.
+const countStyle = computed(() => (
+  indicatorStyle.value ? { ...indicatorStyle.value, zIndex: '2' } : undefined
+))
 let observer: ResizeObserver | undefined
 const observed = new Set<Element>()
 
@@ -92,10 +99,17 @@ onBeforeUnmount(() => {
       :style="indicatorStyle"
       :data-testid="indicatorTestid"
       aria-hidden="true"
+    />
+    <slot />
+    <span
+      v-if="slots.indicator"
+      v-show="indicatorStyle"
+      class="sliding-tabs__count"
+      :style="countStyle"
+      aria-hidden="true"
     >
       <slot name="indicator" />
     </span>
-    <slot />
   </component>
 </template>
 
@@ -105,17 +119,33 @@ onBeforeUnmount(() => {
   position: relative;
   isolation: isolate;
 }
-.sliding-tabs__indicator {
+.sliding-tabs__indicator,
+.sliding-tabs__count {
   position: absolute;
-  z-index: 0;
   top: 0;
   left: 0;
   pointer-events: none;
   transition:
     transform 420ms var(--sliding-tabs-ease),
     width 420ms var(--sliding-tabs-ease),
+    height 420ms var(--sliding-tabs-ease);
+}
+.sliding-tabs__indicator {
+  z-index: 0;
+  transition:
+    transform 420ms var(--sliding-tabs-ease),
+    width 420ms var(--sliding-tabs-ease),
     height 420ms var(--sliding-tabs-ease),
     background-color 200ms ease;
+}
+/* Above the buttons (z-index 1) so a hover fill cannot cover slot content.
+   Descendants need pointer-events: none too: the initial value would
+   otherwise let the count swallow clicks meant for the button underneath. */
+.sliding-tabs__count {
+  z-index: 2;
+}
+.sliding-tabs__count :deep(*) {
+  pointer-events: none;
 }
 .sliding-tabs :deep(> button) {
   position: relative;
@@ -128,7 +158,8 @@ onBeforeUnmount(() => {
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .sliding-tabs__indicator {
+  .sliding-tabs__indicator,
+  .sliding-tabs__count {
     transition: none;
   }
 }

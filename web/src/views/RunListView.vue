@@ -508,10 +508,11 @@ onUnmounted(() => {
     </div>
 
     <div v-if="!isMobile" class="run-toolbar" data-testid="run-list-toolbar">
-      <SlidingTabs :value="selectedStatuses.join(',')" class="flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
+      <SlidingTabs :value="selectedStatuses.join(',')" class="run-status-tabs flex gap-1 rounded-lg bg-elevated p-1" role="group" :aria-label="t('pages.runList.filterStatus')">
         <template #indicator>
+          <!-- Visible count rides the highlight, but above the button fill. -->
           <span
-            class="chip absolute right-3 top-1/2 h-5 min-w-[2em] -translate-y-1/2 justify-center py-0 font-normal leading-none tabular-nums"
+            class="chip pointer-events-none absolute right-3 top-1/2 h-5 min-w-[2em] -translate-y-1/2 justify-center py-0 font-normal leading-none tabular-nums"
             data-testid="moving-run-count"
           >{{ segmentCountText }}</span>
         </template>
@@ -519,14 +520,14 @@ onUnmounted(() => {
           v-for="seg in STATUS_SEGMENTS"
           :key="seg.id"
           type="button"
-          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md px-3 py-1 text-[12px] leading-5 transition"
+          class="inline-flex items-center gap-1.5 whitespace-nowrap rounded-md bg-transparent px-3 py-1 text-[12px] leading-5 transition hover:bg-transparent focus:bg-transparent focus-visible:bg-transparent active:bg-transparent"
           :class="segActive(seg) ? 'font-semibold text-txt' : 'text-txt3 hover:text-txt2'"
           :aria-pressed="segActive(seg)"
           :data-testid="`run-seg-${seg.id}`"
           @click="selectedStatuses = seg.statuses"
         >
           <span data-testid="seg-label">{{ t(seg.labelKey) }}</span>
-          <!-- Same result count main's StatusFilter trigger shows, on the active segment. -->
+          <!-- Transparent copy: width and accessible name only. Not the visible glyph. -->
           <span
             v-if="segActive(seg)"
             class="chip h-5 min-w-[2em] shrink-0 justify-center py-0 font-normal leading-none tabular-nums opacity-0"
@@ -918,6 +919,16 @@ onUnmounted(() => {
 </template>
 
 <style scoped>
+/* The white selection is the sliding highlight under these buttons. A filled
+   hover or focus background would paint the track color over it. */
+.run-status-tabs :deep(> button),
+.run-status-tabs :deep(> button:hover),
+.run-status-tabs :deep(> button:focus),
+.run-status-tabs :deep(> button:focus-visible),
+.run-status-tabs :deep(> button:active) {
+  background-color: transparent;
+  background-image: none;
+}
 /* No hover on touch screens: keep the row ⋯ visible (as NotificationsView does for its row action). */
 @media (hover: none) {
   .run-more { opacity: 1; }
