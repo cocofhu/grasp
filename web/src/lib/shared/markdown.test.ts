@@ -132,3 +132,143 @@ describe('renderChatMarkdown', () => {
     expect(blocks.join('')).not.toContain('<script')
   })
 })
+
+const SCREENSHOT_URL = 'http://127.0.0.1:18080/solo/s-running'
+const SCREENSHOT_SENTENCE =
+  `${SCREENSHOT_URL}（中文）。这是模拟会话，不是真实后端。交付时不要把会话环境入口加回更多菜单、错误卡或空态。`
+
+function anchors(html: string): { href: string; text: string }[] {
+  return [...html.matchAll(/<a href="([^"]*)">([^<]*)<\/a>/g)].map((match) => ({
+    href: match[1].replace(/&amp;/g, '&'),
+    text: match[2].replace(/&amp;/g, '&'),
+  }))
+}
+
+describe('bare URL boundary', () => {
+  const renders = [renderChatMarkdown, renderMarkdown]
+
+  it('keeps the screenshot sentence link on the URL for every renderer', () => {
+    const htmls = [
+      renderChatMarkdown(SCREENSHOT_SENTENCE),
+      renderMarkdown(SCREENSHOT_SENTENCE),
+      renderChatMarkdownBlocks(SCREENSHOT_SENTENCE, new Map()).join(''),
+      renderMarkdownBlocks(SCREENSHOT_SENTENCE, new Map()).join(''),
+    ]
+    for (const html of htmls) {
+      expect(anchors(html)).toEqual([{ href: SCREENSHOT_URL, text: SCREENSHOT_URL }])
+      expect(html).toContain(`${SCREENSHOT_URL}</a>（中文）。这是模拟会话`)
+      expect(html).not.toContain('s-running（')
+    }
+  })
+
+  it('leaves a newline before the URL outside the anchor', () => {
+    const src = `桌面浏览器停在\n${SCREENSHOT_SENTENCE}`
+    for (const render of renders) {
+      const html = render(src)
+      expect(html).toContain('停在<br>')
+      expect(anchors(html)).toEqual([{ href: SCREENSHOT_URL, text: SCREENSHOT_URL }])
+      expect(html).toContain(`${SCREENSHOT_URL}</a>（中文）`)
+    }
+  })
+
+  it('stops before fullwidth punctuation', () => {
+    for (const punct of ['。', '，', '、', '；', '：', '（', '）', '！', '？']) {
+      for (const render of renders) {
+        const html = render(`https://example.com/a${punct}尾`)
+        expect(anchors(html)).toEqual([{ href: 'https://example.com/a', text: 'https://example.com/a' }])
+        expect(html).toContain(`</a>${punct}尾`)
+      }
+    }
+  })
+
+  it('keeps a query string and leaves the following Chinese comma outside', () => {
+    const url = 'https://example.com/a?q=1&x=2'
+    for (const render of renders) {
+      const html = render(`${url}，然后继续`)
+      expect(anchors(html)).toEqual([{ href: url, text: url }])
+      expect(html).toContain('</a>，然后继续')
+    }
+  })
+
+  it('keeps balanced parentheses, percent-encoding, and IPv6 inside the link', () => {
+    const wiki = 'https://en.wikipedia.org/wiki/URL_(disambiguation)'
+    const encoded = 'https://example.com/%E4%B8%AD'
+    const ipv6 = 'http://[::1]:8080/solo'
+    for (const render of renders) {
+      expect(anchors(render(`${wiki}（说明）`))).toEqual([{ href: wiki, text: wiki }])
+      expect(anchors(render(`${encoded}文`))).toEqual([{ href: encoded, text: encoded }])
+      const ipv6Html = render(`${ipv6}（中文）`)
+      const [link] = anchors(ipv6Html)
+      expect(link.text).toBe(ipv6)
+      expect(decodeURI(link.href)).toBe(ipv6)
+      expect(ipv6Html).toContain('</a>（中文）')
+    }
+  })
+
+  it('drops trailing ASCII punctuation but not a balanced closing paren', () => {
+    for (const punct of ['.', ',', '!', '?', ')']) {
+      for (const render of renders) {
+        const html = render(`https://example.com/path${punct}`)
+        expect(anchors(html)).toEqual([
+          { href: 'https://example.com/path', text: 'https://example.com/path' },
+        ])
+        expect(html).toContain(`</a>${punct}`)
+      }
+    }
+    const wiki = 'https://en.wikipedia.org/wiki/URL_(disambiguation)'
+    expect(anchors(renderChatMarkdown(`${wiki}.`))).toEqual([{ href: wiki, text: wiki }])
+    expect(renderChatMarkdown(`${wiki}.`)).toContain('</a>.')
+  })
+
+  it('links each bare URL on its own', () => {
+    const first = 'http://a.example/one'
+    const second = 'https://b.example/two'
+    for (const render of renders) {
+      expect(anchors(render(`${first} ${second}`))).toEqual([
+        { href: first, text: first },
+        { href: second, text: second },
+      ])
+      expect(anchors(render(`${first}和${second}`))).toEqual([
+        { href: first, text: first },
+        { href: second, text: second },
+      ])
+    }
+  })
+
+  it('leaves explicit links, code, and spaced Chinese alone', () => {
+    for (const render of renders) {
+      expect(anchors(render('[中文说明](https://example.com)'))).toEqual([
+        { href: 'https://example.com', text: '中文说明' },
+      ])
+      expect(anchors(render('http://example.com/a 然后'))).toEqual([
+        { href: 'http://example.com/a', text: 'http://example.com/a' },
+      ])
+      const inline = render('`http://127.0.0.1:18080/solo/s-running（中文）`')
+      const fenced = render('```\nhttp://127.0.0.1:18080/solo/s-running（中文）。\n```')
+      expect(inline).not.toContain('<a ')
+      expect(inline).toContain('s-running（中文）')
+      expect(fenced).not.toContain('<a ')
+      expect(fenced).toContain('s-running（中文）')
+    }
+  })
+
+  it('still links www. and ftp without adopting host:port or a bare scheme', () => {
+    for (const render of renders) {
+      expect(anchors(render('www.example.com/docs（说明）'))).toEqual([
+        { href: 'http://www.example.com/docs', text: 'www.example.com/docs' },
+      ])
+      expect(anchors(render('ftp://files.example.com/a（中文）'))).toEqual([
+        { href: 'ftp://files.example.com/a', text: 'ftp://files.example.com/a' },
+      ])
+      expect(anchors(render('写给 user@example.com。'))).toEqual([
+        { href: 'mailto:user@example.com', text: 'user@example.com' },
+      ])
+      expect(anchors(render('<https://example.com/a>'))).toEqual([
+        { href: 'https://example.com/a', text: 'https://example.com/a' },
+      ])
+      for (const src of ['http://', 'http://（中文）', 'http://.', '127.0.0.1:8080', '0.0.0.0:18080', 'javascript:alert(1)']) {
+        expect(render(src)).not.toContain('<a ')
+      }
+    }
+  })
+})

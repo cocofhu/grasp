@@ -3,6 +3,60 @@ import DOMPurify from 'dompurify'
 
 marked.setOptions({ breaks: true, gfm: true })
 
+/**
+ * RFC 3986 unreserved + reserved + "%". GFM bare links otherwise consume
+ * every non-space after the host, so CJK and fullwidth punctuation stick
+ * to the anchor. `]` is first so it stays literal inside the class.
+ */
+const BARE_URL_CHAR = /[[\]A-Za-z0-9._~:/?#@!$&'()*+,;=%-]/
+const BARE_URL_SCHEME = /^(?:(?:ftp|https?):\/\/|www\.)/i
+/** marked 15 GFM `_backpedal`: drop trailing ASCII punctuation, keep balanced parens. */
+const BARE_URL_BACKPEDAL =
+  /(?:[^?!.,:;*_'"~()&]+|\([^)]*\)|&(?![a-zA-Z0-9]+;$)|[?!.,:;*_'"~)]+(?!$))+/
+/** marked's host shape, plus an IPv6 literal such as `[::1]`. */
+const BARE_URL_HOST = /^(?:\[[0-9A-Fa-f:.]+\]|(?:[A-Za-z0-9-]+\.?)+)/
+
+/**
+ * Truncate a bare URL at the first non-URL character, then apply marked's
+ * trailing-punctuation backpedal. Returns false so email autolinks still
+ * use marked's own `url` tokenizer.
+ */
+function truncateBareUrl(src: string) {
+  const scheme = BARE_URL_SCHEME.exec(src)
+  if (!scheme) return false
+  let end = scheme[0].length
+  while (end < src.length && BARE_URL_CHAR.test(src.charAt(end))) end++
+  if (end === scheme[0].length) return false
+
+  let raw = src.slice(0, end)
+  let prev = ''
+  do {
+    prev = raw
+    raw = BARE_URL_BACKPEDAL.exec(raw)?.[0] ?? ''
+  } while (raw !== prev)
+
+  const trimmed = BARE_URL_SCHEME.exec(raw)
+  if (!trimmed || !BARE_URL_HOST.test(raw.slice(trimmed[0].length))) return false
+
+  // `www.` keeps marked's existing href prefix; the visible text stays as written.
+  const href = trimmed[0] === 'www.' ? `http://${raw}` : raw
+  return {
+    type: 'link' as const,
+    raw,
+    text: raw,
+    href,
+    tokens: [{ type: 'text' as const, raw, text: raw }],
+  }
+}
+
+marked.use({
+  tokenizer: {
+    url(src: string) {
+      return truncateBareUrl(src)
+    },
+  },
+})
+
 /** Max distinct source strings retained (LRU via Map insertion order). */
 const CACHE_MAX = 64
 
@@ -104,6 +158,11 @@ function escapeHtmlText(src: string): string {
  */
 const chatMarked = new Marked({ breaks: true, gfm: true })
 chatMarked.use({
+  tokenizer: {
+    url(src: string) {
+      return truncateBareUrl(src)
+    },
+  },
   renderer: {
     html({ text }) {
       return escapeHtmlText(text)
