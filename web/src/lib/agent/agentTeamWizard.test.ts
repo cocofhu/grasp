@@ -27,7 +27,7 @@ describe('agentTeamWizard', () => {
     expect(d.modelConfigurationId).toBe('')
     expect(d.gitBindings).toEqual({ items: [] })
     d.modelConfigurationId = 'model-team'
-    d.gitBindings = { items: [{ credentialId: 'git-team' }], preferredCredentialId: 'git-team' }
+    d.gitBindings = { items: [{ credentialId: 'git-team' }] }
     const payload = assembleTeamBootstrapPayload(d)
     expect(payload.modelConfigurationId).toBe('model-team')
     expect(payload.gitBindings).toEqual(d.gitBindings)

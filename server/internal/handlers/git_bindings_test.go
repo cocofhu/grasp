@@ -20,8 +20,8 @@ func TestGitBindingsAgentHTTPContract(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got["gitBindings"].(map[string]any)["preferredCredentialId"] != "gh" {
-		t.Fatal("preferred authorization was lost")
+	if _, exists := got["gitBindings"].(map[string]any)["preferredCredentialId"]; exists {
+		t.Fatal("preferred credential was stored")
 	}
 	if _, exists := got["repoIds"]; exists {
 		t.Fatal("Agent response exposed an obsolete repository authorization source")
@@ -34,9 +34,17 @@ func TestGitBindingsAgentHTTPContract(t *testing.T) {
 	if agent.GitBindings == nil || agent.GitBindings.Items[0].Scope != "https://git.example.com" {
 		t.Fatal("Agent selection was not normalized and saved")
 	}
-	w = h.do("POST", "/api/agents", map[string]any{"name": "bad-git-http", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": "gh"}}}})
+	w = h.do("POST", "/api/agents", map[string]any{"name": "plain-git-http", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": "gh"}}}})
+	if w.Code != 201 || !h.h.Agents.Exists("plain-git-http") {
+		t.Fatalf("selection without a preferred credential rejected: %d %s", w.Code, w.Body.String())
+	}
+	agent, _ = h.h.Agents.Get("plain-git-http")
+	if agent.GitBindings == nil || agent.GitBindings.PreferredCredentialID != "" || len(agent.GitBindings.Items) != 1 {
+		t.Fatal("selection without a preferred credential was not saved")
+	}
+	w = h.do("POST", "/api/agents", map[string]any{"name": "bad-git-http", "inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{map[string]any{"credentialId": " "}}}})
 	if w.Code != 400 || h.h.Agents.Exists("bad-git-http") {
-		t.Fatalf("invalid preferred selection saved: %d %s", w.Code, w.Body.String())
+		t.Fatalf("invalid selection saved: %d %s", w.Code, w.Body.String())
 	}
 	w = h.do("PUT", "/api/agents/git-http", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "gitBindings": map[string]any{"items": []any{}}})
 	if w.Code != 200 {
@@ -99,7 +107,7 @@ func TestSharedConfigurationExposesExplicitModelAndGitDefaults(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &saved); err != nil {
 		t.Fatal(err)
 	}
-	if saved.AcpBackend != "cursor" || saved.ModelBinding == nil || saved.ModelBinding.ConfigurationID != "model-onboarding" || saved.GitBindings.PreferredCredentialID != git.ID {
+	if saved.AcpBackend != "cursor" || saved.ModelBinding == nil || saved.ModelBinding.ConfigurationID != "model-onboarding" || saved.GitBindings == nil || len(saved.GitBindings.Items) != 1 || saved.GitBindings.Items[0].CredentialID != git.ID || saved.GitBindings.PreferredCredentialID != "" {
 		t.Fatal("defaults lost references or accepted an independent CLI")
 	}
 	w = h.do("PUT", "/api/workspace/shared-agent-config", map[string]any{"modelBinding": map[string]any{"kind": "configuration", "configurationId": "missing"}})
@@ -115,7 +123,7 @@ func TestSharedConfigurationExposesExplicitModelAndGitDefaults(t *testing.T) {
 		t.Fatal("missing switches did not use defaults or copied the default model")
 	}
 	effective := h.h.Agents.Effective(agent)
-	if effective.AcpBackend != "cursor" || effective.ModelBinding.ConfigurationID != "model-onboarding" || effective.GitBindings.PreferredCredentialID != git.ID {
+	if effective.AcpBackend != "cursor" || effective.ModelBinding.ConfigurationID != "model-onboarding" || effective.GitBindings == nil || len(effective.GitBindings.Items) != 1 || effective.GitBindings.Items[0].CredentialID != git.ID || effective.GitBindings.PreferredCredentialID != "" {
 		t.Fatal("inherited Agent did not resolve defaults")
 	}
 	w = h.do("PUT", "/api/agents/inherit-defaults", map[string]any{"inheritModel": false, "inheritGit": false, "acpBackend": "cursor", "modelBinding": map[string]any{"kind": "configuration", "configurationId": "model-onboarding"}, "gitBindings": map[string]any{"items": []any{}}})
@@ -131,7 +139,7 @@ func TestSharedConfigurationExposesExplicitModelAndGitDefaults(t *testing.T) {
 		t.Fatalf("reset to omitted defaults = %d %s", w.Code, w.Body.String())
 	}
 	agent, _ = h.h.Agents.Get("inherit-defaults")
-	if !agent.InheritModel || !agent.InheritGit || h.h.Agents.Effective(agent).GitBindings.PreferredCredentialID != git.ID {
+	if !agent.InheritModel || !agent.InheritGit || h.h.Agents.Effective(agent).GitBindings == nil || h.h.Agents.Effective(agent).GitBindings.Items[0].CredentialID != git.ID {
 		t.Fatal("save with omitted switches did not use current defaults")
 	}
 }

@@ -250,6 +250,18 @@ html:not(.light) *:hover::-webkit-scrollbar,
 html:not(.light) *.is-scrolling::-webkit-scrollbar {
   background: rgb(var(--c-base));
 }
+/* Board columns inherit scrollbar-color from ancestors (the settings scroller
+ * sets it). Chromium >= 121 then ignores every ::-webkit-scrollbar rule and
+ * paints the native wide bar. On engines that support the pseudo, pin the
+ * board root back to the initial values so the 4px rules above apply to the
+ * column body. Do not set these on the column itself. Engines without the
+ * pseudo keep the thin standard bar from the @supports not block above. */
+@supports selector(::-webkit-scrollbar) {
+  .board-workbench {
+    scrollbar-width: initial;
+    scrollbar-color: initial;
+  }
+}
 
 /* A quiet, opaque canvas for every application route.
    Fill #app (height: 100%) rather than 100vh, which can fall short of the
@@ -689,6 +701,12 @@ html.light .app-sidebar-card {
   transform: translate(-50%, -50%) scale(1);
 }
 .hover-ink-host.is-leave-ink > .hover-ink {
+  transform: translate(-50%, -50%) scale(0);
+}
+/* Disabled / loading: hide any cover that was already open. No fade through the elevated fallback. */
+.hover-ink-host.is-ink-suppressed > .hover-ink {
+  visibility: hidden;
+  transition: none;
   transform: translate(-50%, -50%) scale(0);
 }
 /* Content / icons / badges stay above the ink layer (plan g1.2). */

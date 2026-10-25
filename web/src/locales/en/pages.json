@@ -19,7 +19,7 @@
       "pickWorkflow": "Select a workflow first",
       "noWorkflowShort": "No workflow",
       "needText": "Describe the goal or attach a file first",
-      "heroSubtitle": "Clarify first, then act",
+      "heroSubtitle": "What should we do?",
       "send": "Send",
       "sendShortcut": "Ctrl/⌘ + Enter to send",
       "missingRequired": "Fill required launch fields before starting",
@@ -260,17 +260,13 @@
     "board": {
       "title": "Run board",
       "subtitle": "Follow active work and handle tasks waiting for human input.",
-      "toolbarHint": "Select a column heading to see all runs",
       "overview": "Current activity",
       "overviewRecent": "Recently completed",
       "overviewRecords": "{n} execution records",
-      "searchLabel": "Search loaded tasks",
-      "searchPlaceholder": "Search loaded tasks",
       "actionsLabel": "Board actions",
       "refresh": "Refresh",
       "allRuns": "All runs",
       "usage": "Usage",
-      "viewMoreCompleted": "View more in run list →",
       "loading": "Loading…",
       "loadFailed": "Failed to load board data. Please retry.",
       "retry": "Retry",
@@ -316,9 +312,6 @@
         "emptyModelCompHint": "No model composition yet",
         "emptyModelRankHint": "No model ranking yet"
       },
-      "filters": {
-        "label": "Also show"
-      },
       "segments": {
         "label": "Filter by status",
         "all": "All",
@@ -337,16 +330,13 @@
         "completedOnly": "completed only",
         "inProgress": "In progress",
         "inReview": "Needs attention",
-        "doneRecent": "Recent 20",
-        "extraFilter": "Additional status"
+        "doneRecent": "Recent 20"
       },
       "empty": {
         "active": "No in-progress requirements",
         "running": "No running requirements",
         "waitingHuman": "No requirements waiting for human",
-        "completed": "No completed requirements yet",
-        "extra": "No runs in this status",
-        "noMatch": "No matching tasks"
+        "completed": "No completed requirements yet"
       },
       "truncated": {
         "showingFirst100": "Showing the first 100 — open the run list for the full set"
@@ -1273,6 +1263,9 @@
         "clear": "Clear",
         "saved": "Credential saved",
         "cleared": "Credential cleared",
+        "accountDeleteConfirm": "After deleting API account \"{alias}\", model configurations using this API account will stop working, and Agents bound to those configurations will no longer run. Delete it?",
+        "accountDeleted": "API account deleted",
+        "accountDeleteFailed": "Could not delete the API account",
         "managedByAdapter": "Managed by the {source} settings and shown here for workspace visibility.",
         "updatedAt": "Last updated: {time}"
       },
@@ -1884,7 +1877,7 @@
         "productNamePlaceholder": "Grasp",
         "productNameHint": "Shared by the sidebar and Home typewriter, up to 40 characters. Blank uses Grasp.",
         "homeSubtitle": "Home subtitle",
-        "homeSubtitlePlaceholder": "Clarify first, then act",
+        "homeSubtitlePlaceholder": "What should we do?",
         "homeSubtitleHint": "Up to 80 characters. Blank uses the current locale default."
       },
       "groups": {
@@ -2141,8 +2134,10 @@
         "manageClearSearch": "Clear search",
         "renameViaManage": "Rename (open management)",
         "lockedHint": "Workflows need this Agent. It cannot be deleted or renamed.",
-        "noSelection": "No agent selected. Pick one from the tree, or open Agent management.",
-        "metaRenameHint": "Rename this agent in Agent management. The identity name is not editable here."
+        "contextRename": "Rename",
+        "contextDelete": "Delete",
+        "noSelection": "No agent selected. Pick one from the list.",
+        "metaRenameHint": "Right-click the agent in the list to rename it. The identity name is not editable here."
       },
       "explorer": {
         "title": "Explorer",
@@ -3018,12 +3013,9 @@
       },
       "gitCredentials": {
         "title": "Git access",
-        "hint": "Add saved credentials and choose a preferred one.",
         "add": "Add Git credential",
         "empty": "No Git credentials added",
         "noneAvailable": "No more Git credentials available",
-        "preferred": "Preferred",
-        "setPreferred": "Set preferred",
         "remove": "Remove",
         "options": "Configure scope",
         "scope": "Site or repository",
@@ -3033,14 +3025,12 @@
         "hosts": "SSH host verification",
         "hostsNone": "No saved host verification",
         "unavailable": "Credential unavailable. Remove it or restore it in Credentials.",
-        "preferredMissing": "Choose an available preferred credential.",
         "inherited": "Using workspace defaults",
         "legacy": "Using existing authorization",
         "manage": "Manage credentials",
         "help": "Git setup help",
         "loading": "Loading credentials…",
-        "retry": "Retry",
-        "allStaged": "All selected credentials are available in the sandbox."
+        "retry": "Retry"
       }
     },
     "runLaunch": {

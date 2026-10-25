@@ -38,7 +38,7 @@ describe('Agent creation data contract', () => {
  })
  it('serializes only a named model and explicit multi-Git references, excluding derived model and auth env', () => {
   const d = freshDraft(); d.name = 'configured'; d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
-  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }], preferredCredentialId: 'ssh' }
+  d.gitBindings = { items: [{ credentialId: 'gh' }, { credentialId: 'ssh', sshHostsCredentialId: 'hosts' }] }
   d.env = [{ k: 'GITHUB_TOKEN', v: 'secret' }, { k: 'OPENAI_API_KEY', v: 'secret' }, { k: 'ACP_BRIDGE_MODEL', v: 'derived' }, { k: 'FEATURE', v: 'on' }]
   const p = assembleCreatePayload(d)
   expect(p.modelBinding).toEqual(d.modelBinding); expect(p.gitBindings).toEqual(d.gitBindings); expect(p.gitBindings).not.toBe(d.gitBindings)
@@ -61,10 +61,10 @@ describe('Agent creation data contract', () => {
  })
  it('normalizes only the selected tool region and reviews configured aliases', () => {
   const d = freshDraft(); applyAcpBackend(d, 'codebuddy'); d.modelBinding = { kind: 'configuration', configurationId: 'cfg' }
-  d.gitBindings = { items: [{ credentialId: 'gh' }], preferredCredentialId: 'gh' }
-  const summary = buildReviewSummary(d, { model: 'Team model', gitItems: { gh: 'GitHub team' }, preferredLabel: 'Preferred' })
+  d.gitBindings = { items: [{ credentialId: 'gh' }] }
+  const summary = buildReviewSummary(d, { model: 'Team model', gitItems: { gh: 'GitHub team' } })
   expect(summary.find(row => row.key === 'apiKey')?.detail).toBe('Team model')
-  expect(summary.find(row => row.key === 'git')?.detail).toBe('GitHub team (Preferred)')
+  expect(summary.find(row => row.key === 'git')?.detail).toBe('GitHub team')
   d.env.push({ k: 'FEATURE', v: 'on' }, { k: '', v: '' })
   expect(envConfiguredCount(d)).toBe(1)
  })

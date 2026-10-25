@@ -36,7 +36,7 @@ export function useAgentCreateWizard(props: AgentCreateWizardProps, emit: AgentC
   const reviewItems = computed(() => {
     const configuration = modelConfigurations.value.find((row) => row.id === effectiveModel.value?.configurationId)
     const effectiveDraft = { ...draft.value, ...(draft.value.inheritModel ? { modelBinding: effectiveModel.value, acpBackend: ACP_BACKENDS.find((row) => row.id === configuration?.backend)?.id || draft.value.acpBackend } : {}), ...(draft.value.inheritGit ? { gitBindings: sharedConfig.value?.gitBindings || { items: [] } } : {}) }
-    return buildReviewSummary(effectiveDraft, { model: configuration?.name || effectiveModel.value?.configurationId, gitItems: Object.fromEntries((effectiveDraft.gitBindings?.items || []).map((row) => [row.credentialId, alias(row.credentialId)])), preferredLabel: t('pages.agentStudio.gitCredentials.preferred') })
+    return buildReviewSummary(effectiveDraft, { model: configuration?.name || effectiveModel.value?.configurationId, gitItems: Object.fromEntries((effectiveDraft.gitBindings?.items || []).map((row) => [row.credentialId, alias(row.credentialId)])) })
   })
   async function loadOptions() {
     sharedConfig.value = undefined
