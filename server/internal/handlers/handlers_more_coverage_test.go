@@ -143,7 +143,7 @@ func TestArtifactVersionListAndContent(t *testing.T) {
 
 func TestListGatePrimaryArtifactsBadRun(t *testing.T) {
 	hn := newHarness(t)
-	w := hn.do(http.MethodGet, "/api/runs/missing/gates/gate/primary-artifacts", nil)
+	w := hn.do(http.MethodGet, "/api/runs/missing/nodes/gate/primary-artifacts", nil)
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("bad run: %d %s", w.Code, w.Body.String())
 	}

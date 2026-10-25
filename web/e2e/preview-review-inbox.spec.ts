@@ -84,7 +84,7 @@ async function mockInboxApis(
     const path = url.pathname
     const method = req.method()
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -93,7 +93,7 @@ async function mockInboxApis(
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/inbox-context/)) {
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/)) {
       const runId = path.split('/')[3]
       const nodeId = url.searchParams.get('nodeId') || ''
       if (runId === 'run-preview' && nodeId === 'implement') {
@@ -153,7 +153,7 @@ async function mockInboxApis(
       return
     }
 
-    // Matches api.reactReply → POST /api/runs/:runId/react/:nodeId/reply
+    // Matches api.reactReply → POST /api/runs/:runId/nodes/:nodeId/reply
     if (method === 'POST' && path.match(/\/api\/runs\/[^/]+\/react\/[^/]+\/reply\/?$/)) {
       const body = req.postDataJSON() as { force?: boolean } | null
       if (body?.force) {

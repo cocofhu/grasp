@@ -794,7 +794,7 @@ describe('DashboardView home composer', () => {
       publishedSnapshot: true,
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
   })
 
@@ -1005,7 +1005,7 @@ describe('DashboardView home composer', () => {
       },
     })
     expect(mocks.reactReply).not.toHaveBeenCalled()
-    expect(mocks.push).toHaveBeenCalledWith({ path: '/gates', query: { run: 'run-9', node: 'ap' } })
+    expect(mocks.push).toHaveBeenCalledWith({ path: '/runs/run-9/nodes/ap' })
     wrapper.unmount()
     vi.unstubAllGlobals()
   })

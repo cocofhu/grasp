@@ -125,7 +125,7 @@ func (h *Handlers) CreateEmbedTicket(c *gin.Context) {
 }
 
 // PublicEmbedTicket mints a drawer ticket for a review share link.
-// POST /public/gate-approvals/embed-ticket (share token in X-Gate-Share-Token)
+// POST /public/approvals/embed-ticket (share token in X-Gate-Share-Token)
 func (h *Handlers) PublicEmbedTicket(c *gin.Context) {
 	applyPublicSecurityHeaders(c)
 	if !h.publicRateLimit(c, gateshare.RateBucketTicket) {

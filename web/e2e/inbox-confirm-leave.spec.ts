@@ -107,7 +107,7 @@ async function mockApis(page: Page, state: State) {
     const path = url.pathname
     const method = req.method()
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -116,7 +116,7 @@ async function mockApis(page: Page, state: State) {
       return
     }
 
-    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/inbox-context/)) {
+    if (method === 'GET' && path.match(/\/api\/runs\/[^/]+\/nodes\/[^/]+\/context/)) {
       const runId = path.split('/')[3]
       const nodeId = url.searchParams.get('nodeId') || ''
       if (runId === 'run-approve' || runId === 'run-approve-b') {

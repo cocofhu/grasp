@@ -1,9 +1,10 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { api } from '@/lib/api/api'
 import { useToast } from '@/lib/composables/useToast'
 import { isNodeEventsUnavailable } from '@/lib/run/nodeEventsResponse'
+import { nodeConversationPath } from '@/lib/run/nodeConversation'
 import { notifyRecentActivity, recentCurrentNode, runDetailPath, runLivePath } from '@/lib/run/recentRuns'
 import { armSidebarHandoff, clearSidebarHandoff } from '@/lib/inbox/sidebarHandoff'
 import { bootKey, markBootLive } from '@/lib/run/bootRecord'
@@ -52,6 +53,7 @@ export type LiveHandoff = { phase: 'pending' | 'done'; at: string; target?: stri
  */
 export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat: Ref<LiveChatSurface | null>) {
   const router = useRouter()
+  const route = useRoute()
   const toast = useToast()
   const { t } = useI18n()
 
@@ -121,7 +123,14 @@ export function useRunLive(runId: Ref<string>, requestedNode: Ref<string>, chat:
 
   function goToChat(node: string) {
     notifyRecentActivity()
-    leaveTo({ path: '/gates', query: { run: runId.value, node } })
+    const query: Record<string, string> = {}
+    for (const key of ['wf', 'tag'] as const) {
+      const raw = route.query[key]
+      const value = Array.isArray(raw) ? raw[0] : raw
+      if (typeof value === 'string' && value) query[key] = value
+    }
+    const path = nodeConversationPath(runId.value, node)
+    leaveTo(Object.keys(query).length ? { path, query } : { path })
   }
 
   /** The node on screen finished: stop streaming and stay on this page. */

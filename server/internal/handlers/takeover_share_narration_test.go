@@ -31,13 +31,13 @@ func TestTakeoverSharePreviewNarration(t *testing.T) {
 			},
 		}}})
 
-	w := h.do(http.MethodPost, "/api/runs/run-to/reviews/impl/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
+	w := h.do(http.MethodPost, "/api/runs/run-to/nodes/impl/share-link", map[string]any{"permissionPreset": "full", "ttlTier": "24h"})
 	if w.Code != http.StatusOK {
 		t.Fatalf("create share link for takeover: %d %s", w.Code, w.Body.String())
 	}
 	url, _ := parseJSON(t, w)["url"].(string)
 	token := strings.TrimPrefix(url[strings.Index(url, "#t="):], "#t=")
-	prev := h.doPublic(http.MethodGet, "/public/gate-approvals/preview", nil, map[string]string{headerShareToken: token})
+	prev := h.doPublic(http.MethodGet, "/public/approvals/preview", nil, map[string]string{headerShareToken: token})
 	body := prev.Body.String()
 	if prev.Code != http.StatusOK {
 		t.Fatalf("preview: %d %s", prev.Code, body)

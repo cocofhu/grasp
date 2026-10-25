@@ -7,6 +7,7 @@ import AppButton from '../ui/AppButton.vue'
 import AppModal from '../ui/AppModal.vue'
 import InboxMotionMark from '@/components/inbox/InboxMotionMark.vue'
 import { isBoardSectionPath, isHomeSectionPath, sidebarNavGroups } from '@/data/sidebarNav'
+import { isNodeConversationPath, nodeConversationPath, nodeConversationRunId } from '@/lib/run/nodeConversation'
 import { isReplyingInboxItem, isStartingInboxItem, sidebarRunTitle } from '@/lib/inbox/inboxDisplay'
 import { isShareableInboxItem } from '@/lib/inbox/gateShareLink'
 import {
@@ -640,18 +641,27 @@ function onMenuRename() {
   void beginRename(it)
 }
 
+function preservedListFilters(): Record<string, string> {
+  const query: Record<string, string> = {}
+  for (const key of ['wf', 'tag'] as const) {
+    const raw = route.query[key]
+    const value = Array.isArray(raw) ? raw[0] : raw
+    if (typeof value === 'string' && value) query[key] = value
+  }
+  return query
+}
+
+function pushConversation(runId: string, nodeId?: string, extra?: Record<string, string>) {
+  const query = { ...preservedListFilters(), ...(extra ?? {}) }
+  const path = nodeConversationPath(runId, nodeId)
+  void router.push(Object.keys(query).length ? { path, query } : { path })
+}
+
 function onMenuShare() {
   const it = menuItem.value
   if (!it || !isShareableInboxItem(it) || shareBlockReason(it)) return
   closeMenu()
-  void router.push({
-    path: '/gates',
-    query: {
-      run: it.runId,
-      node: it.nodeId,
-      [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE,
-    },
-  })
+  pushConversation(it.runId, it.nodeId, { [INBOX_SHARE_INTENT_QUERY]: INBOX_SHARE_INTENT_VALUE })
   onNavigate()
 }
 
@@ -711,18 +721,11 @@ function mapCancelRunError(e: unknown): string {
   return msg || t('pages.runDetail.cancelErrorGeneric')
 }
 
-function routeQueryRunId(): string {
-  const q = route.query.run
-  if (Array.isArray(q)) return String(q[0] ?? '')
-  return typeof q === 'string' ? q : ''
-}
-
-/** The main area is this run's inbox conversation, not another page or another run. */
+/** The main area is this run's node conversation, not another page or another run. */
 function isCurrentInboxConversation(it: InboxItem): boolean {
-  const onInbox = route.path === '/gates' || route.path.startsWith('/gates/')
-  if (!onInbox) return false
-  const qRun = routeQueryRunId()
-  if (qRun) return qRun === it.runId
+  if (!isNodeConversationPath(route.path)) return false
+  const runId = nodeConversationRunId(route.path)
+  if (runId) return runId === it.runId
   return !!activeInboxKey.value?.startsWith(`${it.runId}:`)
 }
 
@@ -749,7 +752,7 @@ async function confirmCancelRun() {
   }
   cancelTarget.value = null
   toast.success(t('pages.runDetail.cancelSuccess'))
-  // Leave /gates before the running-list refresh settles. A later refresh must
+  // Leave the conversation before the running-list refresh settles. A later refresh must
   // not pull the new-request page back onto the empty inbox, and must not open
   // another running row in its place.
   if (leavingInbox) {
@@ -825,8 +828,7 @@ function pendingTypeMarks(it: InboxItem): Array<{ name: string; toneClass: strin
 }
 
 function isPendingActive(it: InboxItem): boolean {
-  const onInbox = route.path === '/gates' || route.path.startsWith('/gates/')
-  if (onInbox && activeInboxKey.value?.startsWith(`${it.runId}:`)) return true
+  if (isNodeConversationPath(route.path) && activeInboxKey.value?.startsWith(`${it.runId}:`)) return true
   const run = runningById.value.get(it.runId)
   return isRunOnlyRow(it) && !!run && recentRunActive(run, route)
 }
@@ -839,9 +841,13 @@ function onPendingRow(it: InboxItem) {
   }
   if (isRunOnlyRow(it)) {
     const run = runningById.value.get(it.runId)
-    void router.push(run ? recentRunTarget(run) : { path: '/gates', query: { run: it.runId } })
+    if (run) {
+      void router.push(recentRunTarget(run, preservedListFilters()))
+    } else {
+      pushConversation(it.runId)
+    }
   } else {
-    void router.push({ path: '/gates', query: { run: it.runId, node: it.nodeId } })
+    pushConversation(it.runId, it.nodeId)
   }
   onNavigate()
 }

@@ -28,7 +28,7 @@ describe('embed image preview channel', () => {
     const seen: unknown[] = []
     frame.onmessage = (ev) => seen.push(ev.data)
 
-    const secret = 'https://grasp.example/public/gate-approvals/images/0?token=s3cret'
+    const secret = 'https://grasp.example/public/approvals/images/0?token=s3cret'
     api.open(secret, 'image.png')
     api.open('data:image/png;base64,BBB', 'other.png')
     expect(post.mock.calls.map((c) => c[0])).toEqual([

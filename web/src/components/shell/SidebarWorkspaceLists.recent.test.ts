@@ -187,7 +187,7 @@ describe('sidebar 历史执行 (finished runs, activity order, targets)', () => 
   it('a poll reorders the list without touching focus, text or selection in the composer', async () => {
     const composer = document.createElement('textarea')
     document.body.append(composer)
-    const { wrapper } = await setup('/gates?run=b&node=gate')
+    const { wrapper } = await setup('/runs/b/nodes/gate')
     composer.focus()
     composer.value = '正在输入的草稿'
     composer.setSelectionRange(2, 4)

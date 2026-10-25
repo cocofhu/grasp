@@ -53,7 +53,7 @@ async function mockHomeApis(page: Page) {
   await page.route('**/api/runs/**', async (route) => {
     const req = route.request()
     const url = req.url()
-    if (req.method() === 'POST' && url.includes('/react/') && url.includes('/reply')) {
+    if (req.method() === 'POST' && url.includes('/nodes/') && url.includes('/reply')) {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

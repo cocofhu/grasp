@@ -70,7 +70,7 @@ async function mockApis(page: Page, capture: { runRequests: Request[] }) {
       return
     }
 
-    if (method === 'GET' && (path === '/api/gates' || path.endsWith('/api/gates'))) {
+    if (method === 'GET' && (path === '/api/pending-nodes' || path.endsWith('/api/pending-nodes'))) {
       const tag = url.searchParams.get('tag')
       const items = filterByTags(ALL_RUNS, tag).map((r) => ({
         runId: r.id,

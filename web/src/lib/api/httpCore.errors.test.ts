@@ -27,7 +27,7 @@ describe('req error mapping', () => {
 
   it.each([true, false])('passes clarify_visit_ended autoRetryOnResume=%s through', async (autoRetryOnResume) => {
     respond(409, { error: '运行已结束，这条消息没有发送', code: 'clarify_visit_ended', autoRetryOnResume })
-    const err = await req('/runs/r/react/n/reply', { method: 'POST', body: '{}' }).catch((e) => e)
+    const err = await req('/runs/r/nodes/n/reply', { method: 'POST', body: '{}' }).catch((e) => e)
     expect(err).toMatchObject({ status: 409, code: 'clarify_visit_ended', autoRetryOnResume })
     expect(err.message).toBe('运行已结束，这条消息没有发送')
     expect(isClarifyVisitEndedError(err)).toBe(true)
