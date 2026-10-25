@@ -2050,6 +2050,7 @@ function isClarifySoftRefreshBlocked(): boolean {
 }
 
 function closeActiveRunWs() {
+  stopOrphanRealign()
   busySeedRetry.stop()
   activeRunWsReconnect.markIntentionalClose()
   activeRunWs?.close()
@@ -2200,13 +2201,20 @@ function restoreReactSessions(r: { reactSessions?: Run['reactSessions']; gate?: 
   const snap = sessions[nodeId]
   if (!snap || typeof snap !== 'object') return
   clarifyLiveBusy.value = !!snap.busy
-  const frame = {
+  const frame: Record<string, unknown> = {
     event: 'queue_state',
     nodeId,
     waiting: snap.waiting ?? 0,
     items: snap.items ?? [],
     busy: !!snap.busy,
     activeItem: snap.activeItem,
+  }
+  // Only when the snapshot actually carried the bridge view. Omitting the
+  // keys keeps an older payload identical to a frame that never attached.
+  if (typeof snap.sandboxBusy === 'boolean' || typeof snap.sandboxDesynced === 'boolean') {
+    frame.sandboxBusy = !!snap.sandboxBusy
+    frame.sandboxDesynced = !!snap.sandboxDesynced
+    if (snap.sandboxRunningOpId) frame.sandboxRunningOpId = snap.sandboxRunningOpId
   }
   let delivered = false
   if (active.value?.type === 'gate' && gateApprovalRef.value?.applyReviewFrame) {
@@ -2327,6 +2335,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       events?: any[]
       busy?: boolean
       waiting?: number
+      sandboxBusy?: boolean
+      sandboxDesynced?: boolean
+      activeItem?: unknown
+      status?: string
+      iteration?: number
+      entry?: { nodeId?: string; event?: string; iteration?: number; detail?: string }
       run?: { reactSessions?: Run['reactSessions'] }
       previewArtifact?: string
       name?: string
@@ -2396,6 +2410,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         busySeedRetry.stop()
         if (active.value && active.value.runId === runId) void softRefreshActiveRun()
       }
+      // Platform idle while the bridge is still busy: the terminal frame may
+      // never arrive. Re-read the same snapshot a refresh would, without
+      // remounting the composer.
+      if (active.value?.type === 'clarify' && active.value.runId === runId && queueStateIsOrphan(m)) {
+        void realignClarifyToRefresh()
+      }
       return
     }
     if (m.type === 'acp') {
@@ -2404,6 +2424,15 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // Tear-down / stop retry only from review queue_state idle / turn_done / error.
       applyOrBufferAcpFrame(m as { nodeId?: string; events?: AcpEvent[]; busy?: boolean })
       return
+    }
+    if (
+      m.type === 'node_enter' &&
+      active.value?.type === 'clarify' &&
+      active.value.runId === runId &&
+      activeRun.value &&
+      m.nodeId
+    ) {
+      patchActiveRunNodeStatus(m.nodeId, 'running', m.iteration)
     }
     if (m.type === 'node_takeover' || m.type === 'status') notifyRecentActivity()
     if (m.type === 'artifact_edit' || m.type === 'react' || m.type === 'trace' || m.type === 'status') {
@@ -2418,6 +2447,16 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
         void loadList()
         return
       }
+      // status/trace are noisy and must not softRefresh. Patch the open
+      // snapshot in place so the workflow list moves without clearing dialogue.
+      if (active.value?.type === 'clarify' && activeRun.value) {
+        if (m.type === 'status' && m.status) {
+          activeRun.value = { ...activeRun.value, status: m.status as Run['status'] }
+        } else if (m.type === 'trace' && m.entry?.nodeId) {
+          const st = nodeStatusFromTrace(m.entry)
+          if (st) patchActiveRunNodeStatus(m.entry.nodeId, st, m.entry.iteration)
+        }
+      }
       // status/trace are noisy (run transitions / appendTrace) and must not softRefresh
       // while reviewing — peek/list cover "left pending" awareness instead.
       if (m.type === 'status' || m.type === 'trace') return
@@ -2431,10 +2470,12 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
       // softRefresh while busy so we do not wipe busy/queue/stream (g3.2 / review v4).
       // Soft-refresh semantics unchanged (g2.3).
       if (active.value.type === 'clarify') {
-        if (m.type === 'artifact_edit' || m.type === 'react') {
+        if (m.type === 'artifact_edit') {
+          // Cards only. A full context reload would replace the open transcript.
+          void patchActiveRunArtifacts(m)
+        } else if (m.type === 'react') {
           // Gate on live WS busy / sessionBusy — not stale reactSessions snapshot.
           if (!isClarifySoftRefreshBlocked()) void softRefreshActiveRun()
-          else if (m.type === 'artifact_edit') void patchActiveRunArtifacts(m)
         }
       }
     }
@@ -2445,6 +2486,137 @@ function connectActiveRunWs(runId: string, opts?: { fromReconnect?: boolean }) {
     activeRunWs = undefined
     activeRunWsRunId = ''
     activeRunWsReconnect.onClose()
+  }
+}
+
+const ORPHAN_REALIGN_MS = 2000
+let orphanRealignTimer: ReturnType<typeof setTimeout> | null = null
+let realignInflight = false
+
+function stopOrphanRealign() {
+  if (orphanRealignTimer) clearTimeout(orphanRealignTimer)
+  orphanRealignTimer = null
+}
+
+function scheduleOrphanRealign() {
+  if (orphanRealignTimer) return
+  orphanRealignTimer = setTimeout(() => {
+    orphanRealignTimer = null
+    void realignClarifyToRefresh()
+  }, ORPHAN_REALIGN_MS)
+}
+
+function queueStateIsOrphan(m: {
+  event?: string
+  busy?: boolean
+  waiting?: number
+  activeItem?: unknown
+  sandboxBusy?: boolean
+  sandboxDesynced?: boolean
+}): boolean {
+  if (m.event !== 'queue_state') return false
+  if (m.busy === true) return false
+  if ((typeof m.waiting === 'number' ? m.waiting : 0) !== 0) return false
+  if (m.activeItem) return false
+  return m.sandboxBusy === true || m.sandboxDesynced === true
+}
+
+function nodeStatusFromTrace(entry: { event?: string; detail?: string }): Run['nodeRuns'][string]['status'] | null {
+  const detail = entry.detail || ''
+  const failed = /fail|失败/i.test(detail)
+  switch (entry.event) {
+    case 'enter':
+    case 'reattach':
+      return 'running'
+    case 'pause':
+      return 'waiting_human'
+    case 'resume':
+      return failed ? 'failed' : 'running'
+    case 'exit':
+      return failed ? 'failed' : 'completed'
+    default:
+      return null
+  }
+}
+
+function patchActiveRunNodeStatus(
+  nodeId: string,
+  status: Run['nodeRuns'][string]['status'],
+  iteration?: number,
+) {
+  const run = activeRun.value
+  if (!run || !nodeId) return
+  const prev = run.nodeRuns?.[nodeId]
+  const row = {
+    ...(prev || { nodeId, status }),
+    nodeId,
+    status,
+    ...(typeof iteration === 'number' && iteration > 0 ? { iteration } : {}),
+  }
+  const executions = { ...(run.nodeExecutions || {}) }
+  const hist = [...(executions[nodeId] || [])]
+  if (hist.length) hist[hist.length - 1] = { ...hist[hist.length - 1]!, ...row }
+  else hist.push(row)
+  executions[nodeId] = hist
+  activeRun.value = {
+    ...run,
+    nodeRuns: { ...(run.nodeRuns || {}), [nodeId]: row },
+    nodeExecutions: executions,
+  }
+}
+
+/**
+ * Lost terminal frame: load the same inbox snapshot a refresh would, project
+ * the bridge fact onto the banner, and leave the composer draft alone.
+ * While the bridge stays busy, try again so a later idle clears the banner
+ * even if no further queue_state arrives.
+ */
+async function realignClarifyToRefresh() {
+  if (active.value?.type !== 'clarify') return
+  if (realignInflight) return
+  if (!shouldFetchActiveInboxContext()) return
+  if (isClarifySoftRefreshBlocked()) return
+  const target = active.value
+  const triple = inboxTripleKey(target)
+  const signal = acquireInboxContextSignal(triple)
+  if (!signal) return
+  realignInflight = true
+  try {
+    const ctx = await api.inboxContext(target.runId, target.nodeId, target.iteration ?? 1, { signal })
+    if (!active.value || inboxTripleKey(active.value) !== triple) return
+    if (signal.aborted) return
+    if (isProcessedTriple(target)) return
+    if (isInboxLeftPending(ctx)) {
+      if (isIncomingContextPending(target)) return
+      handleLeftInboxContext(target)
+      return
+    }
+    const next = adaptInboxContextToRun(ctx, target.runId)
+    activeRun.value = next
+    activeRunLoadError.value = false
+    const nodeId = activeDialogueNodeId(next)
+    const snap = nodeId ? next.reactSessions?.[nodeId] : undefined
+    if (snap) {
+      restoreReactSessions(next)
+    } else if (nodeId && reviewChatRef.value?.applyReviewFrame) {
+      reviewChatRef.value.applyReviewFrame({
+        event: 'queue_state',
+        nodeId,
+        waiting: 0,
+        items: [],
+        busy: false,
+        sandboxBusy: false,
+        sandboxDesynced: false,
+      })
+    }
+    if (snap?.sandboxBusy || snap?.sandboxDesynced) scheduleOrphanRealign()
+    else stopOrphanRealign()
+  } catch (e) {
+    if (isAbortError(e) || signal.aborted) return
+    scheduleOrphanRealign()
+  } finally {
+    realignInflight = false
+    releaseInboxContextSignal(triple, signal)
   }
 }
 

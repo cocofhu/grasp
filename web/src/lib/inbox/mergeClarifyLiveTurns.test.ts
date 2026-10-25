@@ -80,4 +80,30 @@ describe('mergePersistedAndLiveTurns', () => {
     expect(merged.filter((t) => t.role === 'agent')).toHaveLength(1)
     expect(merged[merged.length - 1].streaming).toBe(true)
   })
+
+  it('keeps a newer idle snapshot when persisted already completed the same human', () => {
+    const persisted: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1' },
+      { role: 'agent', text: '半截', at: 't2', thought: '旧思考' },
+    ]
+    const live: ClarifyTurn[] = [
+      { role: 'human', text: '继续', at: 't1-live' },
+      {
+        role: 'agent',
+        text: '已经写完',
+        thought: '新思考',
+        at: 't3',
+        streaming: true,
+        tools: [{ title: 'read_file', status: 'completed' }],
+      },
+    ]
+    const merged = mergePersistedAndLiveTurns(persisted, live)
+    expect(merged.filter((t) => t.role === 'human')).toHaveLength(1)
+    expect(merged[merged.length - 1]).toMatchObject({
+      text: '已经写完',
+      thought: '新思考',
+      streaming: true,
+      tools: [{ title: 'read_file', status: 'completed' }],
+    })
+  })
 })

@@ -1,5 +1,6 @@
 import type { ClarifyTurn } from '@/lib/shared/types'
 import { isEmptyFailedAgent, isRetryableFailedAgent } from '@/lib/inbox/clarifyEmptyFail'
+import { sameParts, sameTools } from '@/lib/run/acpTools'
 
 /**
  * True when `persisted` already has a completed agent reply after the in-flight
@@ -68,6 +69,10 @@ export function mergePersistedAndLiveTurns(
   }
 
   if (liveHuman && persistedCompletedLiveHuman(persisted, liveHuman.text || '')) {
+    // The platform slot may already be closed while a newer snapshot is still
+    // arriving. Keep that snapshot instead of the shorter persisted agent.
+    const fresher = replaceWithFresherLiveAgent(persisted, live)
+    if (fresher) return fresher
     return persisted
   }
 
@@ -103,4 +108,44 @@ export function mergePersistedAndLiveTurns(
   }
   if (matched === 0) return [...persisted, ...live]
   return [...persisted, ...live.slice(matched)]
+}
+
+/**
+ * When the same human turn is already persisted, a live agent with different
+ * rails is the newer snapshot (idle slot closed, sandbox still producing).
+ * Returns null when live has nothing newer to show.
+ */
+function replaceWithFresherLiveAgent(persisted: ClarifyTurn[], live: ClarifyTurn[]): ClarifyTurn[] | null {
+  const liveHuman = live.find((t) => t.role === 'human')
+  const liveAgent = [...live].reverse().find((t) => t.role === 'agent')
+  if (!liveHuman || !liveAgent) return null
+  const text = (liveAgent.text || '').trim()
+  const thought = (liveAgent.thought || '').trim()
+  if (!text && !thought && !liveAgent.tools?.length && !liveAgent.parts?.length) return null
+  const want = (liveHuman.text || '').trim()
+  for (let i = persisted.length - 2; i >= 0; i--) {
+    const human = persisted[i]
+    const agent = persisted[i + 1]
+    if (!human || !agent) continue
+    if (human.role !== 'human' || (human.text || '').trim() !== want || agent.role !== 'agent') continue
+    if (persisted.slice(i + 2).some((t) => t.role === 'human')) return null
+    const same =
+      (agent.text || '').trim() === text &&
+      (agent.thought || '').trim() === thought &&
+      sameTools(agent.tools, liveAgent.tools) &&
+      sameParts(agent.parts, liveAgent.parts)
+    if (same) return null
+    const replaced: ClarifyTurn = {
+      ...agent,
+      text: liveAgent.text || '',
+      thought: liveAgent.thought,
+      streaming: !!liveAgent.streaming,
+    }
+    if (liveAgent.tools?.length) replaced.tools = liveAgent.tools
+    else delete replaced.tools
+    if (liveAgent.parts?.length) replaced.parts = liveAgent.parts
+    else delete replaced.parts
+    return [...persisted.slice(0, i + 1), replaced]
+  }
+  return null
 }

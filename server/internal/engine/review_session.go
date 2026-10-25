@@ -217,13 +217,21 @@ func (e *Engine) laneSnapshot(s *reviewSession) (ReviewSessionSnapshot, bool) {
 }
 
 // ReviewSessionSnapshot is the refresh-resume DTO for one parked session.
+// Sandbox* mirrors attachSandboxState on the live queue_state frame so a
+// refresh and the open page share one orphan-banner fact. SandboxKnown is
+// false when the bridge has no view; the DTO then omits the sandbox fields.
 type ReviewSessionSnapshot struct {
-	NodeID     string           `json:"nodeId"`
-	Kind       string           `json:"kind"`
-	Waiting    int              `json:"waiting"`
-	Busy       bool             `json:"busy"`
-	Items      []map[string]any `json:"items"`
-	ActiveItem map[string]any   `json:"activeItem,omitempty"`
+	NodeID             string           `json:"nodeId"`
+	Kind               string           `json:"kind"`
+	Waiting            int              `json:"waiting"`
+	Busy               bool             `json:"busy"`
+	Items              []map[string]any `json:"items"`
+	ActiveItem         map[string]any   `json:"activeItem,omitempty"`
+	SandboxKnown       bool             `json:"-"`
+	SandboxBusy        bool             `json:"sandboxBusy"`
+	SandboxDesynced    bool             `json:"sandboxDesynced"`
+	SandboxWaiting     int              `json:"sandboxWaiting,omitempty"`
+	SandboxRunningOpID string           `json:"sandboxRunningOpId,omitempty"`
 }
 
 // ReviewSessionsForRun returns authoritative busy/queue snapshots for refresh resume.
@@ -238,9 +246,43 @@ func (e *Engine) ReviewSessionsForRun(runID string) []ReviewSessionSnapshot {
 	out := make([]ReviewSessionSnapshot, 0, len(sessions))
 	for _, s := range sessions {
 		snap, _ := e.laneSnapshot(s)
-		out = append(out, snap)
+		out = append(out, e.decorateSessionSnapshot(s.runID, snap))
 	}
 	return out
+}
+
+// decorateSessionSnapshot copies the same bridge view attachSandboxState puts
+// on a live queue_state frame. Platform-idle echoes of a completed turn are
+// cleared the same way, so refresh does not disagree with the open page.
+func (e *Engine) decorateSessionSnapshot(runID string, snap ReviewSessionSnapshot) ReviewSessionSnapshot {
+	payload := map[string]any{
+		"waiting": snap.Waiting,
+		"busy":    snap.Busy,
+	}
+	if snap.ActiveItem != nil {
+		payload["activeItem"] = snap.ActiveItem
+	}
+	e.attachSandboxState(runID, snap.NodeID, payload)
+	if _, ok := payload["sandboxBusy"]; !ok {
+		return snap
+	}
+	snap.SandboxKnown = true
+	if busy, ok := payload["sandboxBusy"].(bool); ok {
+		snap.SandboxBusy = busy
+	}
+	if des, ok := payload["sandboxDesynced"].(bool); ok {
+		snap.SandboxDesynced = des
+	}
+	switch w := payload["sandboxWaiting"].(type) {
+	case int:
+		snap.SandboxWaiting = w
+	case int64:
+		snap.SandboxWaiting = int(w)
+	}
+	if id, ok := payload["sandboxRunningOpId"].(string); ok {
+		snap.SandboxRunningOpID = id
+	}
+	return snap
 }
 
 // BroadcastReviewSessions re-emits queue_state (+ active hint) for every session

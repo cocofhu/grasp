@@ -1139,6 +1139,10 @@ export interface Run {
       kind?: string
       waiting?: number
       busy?: boolean
+      /** Bridge view, same keys as a live queue_state frame. Absent when the bridge has no session. */
+      sandboxBusy?: boolean
+      sandboxDesynced?: boolean
+      sandboxRunningOpId?: string
       items?: { id?: string; text?: string }[]
       activeItem?: {
         id?: string

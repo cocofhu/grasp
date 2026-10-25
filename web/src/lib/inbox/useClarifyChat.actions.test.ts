@@ -819,6 +819,71 @@ describe('useClarifyChat actions', () => {
     app.unmount()
   })
 
+  it('paints thought, tools and body after the slot closes without forcing scroll', async () => {
+    const { chat, app, models } = withChat({
+      turns: [
+        { role: 'human', text: '继续', at: '1' },
+        { role: 'agent', text: '上一句', at: '2' },
+      ],
+    })
+    const el = scroller(20)
+    chat.scroller.value = el
+    chat.onScrollerScroll()
+    expect(chat.stickToBottom.value).toBe(false)
+    const ta = document.createElement('textarea')
+    ta.value = '未发送草稿'
+    document.body.append(ta)
+    ta.focus()
+    ta.setSelectionRange(2, 2)
+    chat.textareaRef.value = ta
+    models.draft.value = '未发送草稿'
+    models.attachments.value = [image()]
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: true,
+      sandboxRunningOpId: 'g-sess4c0e-8x8t',
+    })
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.applyAcpEvents([
+      { kind: 'thought', text: '还在想' },
+      { kind: 'tool_call', title: 'read_file', status: 'completed' },
+      { kind: 'message', text: '新的正文' },
+    ])).toBe(true)
+    await flushPromises()
+
+    const agent = [...chat.liveTurns.value].reverse().find((t) => t.role === 'agent')
+    expect(agent?.thought).toBe('还在想')
+    expect(agent?.text).toBe('新的正文')
+    expect(agent?.tools).toEqual([{ title: 'read_file', status: 'completed' }])
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    expect(chat.liveAgentIdx.value).toBe(-1)
+    expect(chat.showSandboxOrphanBanner.value).toBe(true)
+    expect(chat.stickToBottom.value).toBe(false)
+    expect(el.scrollTop).toBe(20)
+    expect(models.draft.value).toBe('未发送草稿')
+    expect(models.attachments.value).toHaveLength(1)
+    expect(ta.selectionStart).toBe(2)
+    expect(document.activeElement).toBe(ta)
+
+    chat.applyReviewFrame({
+      event: 'queue_state',
+      waiting: 0,
+      items: [],
+      busy: false,
+      sandboxBusy: false,
+      sandboxDesynced: false,
+    })
+    expect(chat.showSandboxOrphanBanner.value).toBe(false)
+    expect(chat.displayTurns.value.some((t) => t.text === '新的正文')).toBe(true)
+    ta.remove()
+    app.unmount()
+  })
+
   it('emits finish-abort when the host allows it', () => {
     const { chat, app, emit, props } = withChat({ confirmCanAbort: true })
     chat.finishAbort()

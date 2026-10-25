@@ -265,6 +265,12 @@ func TestAttachSandboxStateKeepsOtherOrphanTurn(t *testing.T) {
 	if err := eng.ensureSandboxIdleForConfirm(run.ID, "clarify", false); !errors.Is(err, ErrSandboxBusy) {
 		t.Fatalf("plan g2.2: other op must still block confirm, got %v", err)
 	}
+	snap := eng.decorateSessionSnapshot(run.ID, ReviewSessionSnapshot{
+		NodeID: "clarify", Waiting: 0, Busy: false,
+	})
+	if !snap.SandboxKnown || !snap.SandboxBusy || snap.SandboxRunningOpID != "g-other" {
+		t.Fatalf("refresh snapshot must keep the same orphan fact: %+v", snap)
+	}
 }
 
 func TestAttachSandboxStateKeepsLiveAndInterrupted(t *testing.T) {

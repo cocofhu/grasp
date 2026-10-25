@@ -234,6 +234,13 @@ function prependSeedHuman(list: ClarifyTurn[]): ClarifyTurn[] {
   return [seed, ...list]
 }
 const liveAgentIdx = ref(-1)
+/**
+ * Platform FIFO is idle (no waiting item, no active turn). Later ACP is the
+ * turn that just lost its streaming slot — paint it, do not ask the host to
+ * buffer until the next hard load. Stays false until the first idle
+ * queue_state so a hard-load race still buffers.
+ */
+let idleNarrativeOpen = false
 type OutputClock = { text: string; startedAt: string; endedAt: string }
 /** Page-session wall clocks, kept after the live bubble is replaced by the transcript. */
 const outputClocks = ref<OutputClock[]>([])
@@ -753,8 +760,10 @@ watch(
     const persistedCaughtUp = persistedCompletedLiveHuman(turnList, liveHumanText)
     // Clear live bubbles once persisted transcript includes them (not while streaming).
     // Empty persisted must not wipe an in-flight / seed-only human bubble.
+    const ahead = liveNarrativeAhead(turnList)
     if (
       liveTurns.value.length &&
+      !ahead &&
       (persistedCaughtUp || (turnList.length > 0 && !liveTurns.value.some((t) => t.streaming)))
     ) {
       liveTurns.value = []
@@ -792,6 +801,7 @@ watch(
 watch(
   () => `${props.runId}.${props.nodeId}.${props.iteration}`,
   () => {
+    idleNarrativeOpen = false
     void enterStickSequence()
   },
 )
@@ -1774,12 +1784,37 @@ const sandboxOrphanOpLabel = computed(() => {
  * while allowing at most one local-ahead item when no live turn (HTTP ack /
  * turn_begin in flight). busy+activeItem restores live bubble after refresh.
  */
+function syncIdleNarrative(
+  waiting: number,
+  busy?: boolean,
+  activeItem?: SessionFrameItem | null,
+) {
+  idleNarrativeOpen = waiting === 0 && !busy && !activeItem
+}
+
+/** Live rails differ from the persisted tail, so a transcript refresh must not drop them. */
+function liveNarrativeAhead(persisted: ClarifyTurn[]): boolean {
+  const liveAgent = [...liveTurns.value].reverse().find((t) => t.role === 'agent')
+  if (!liveAgent) return false
+  const liveText = (liveAgent.text || '').trim()
+  const liveThought = (liveAgent.thought || '').trim()
+  if (!liveText && !liveThought && !liveAgent.tools?.length && !liveAgent.parts?.length) return false
+  const last = [...persisted].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  if (!last) return true
+  if ((last.text || '').trim() !== liveText) return true
+  if ((last.thought || '').trim() !== liveThought) return true
+  if (!sameTools(last.tools, liveAgent.tools)) return true
+  if (!sameParts(last.parts, liveAgent.parts)) return true
+  return false
+}
+
 function applyQueueState(
   waiting: number,
   items: SessionFrameItem[] | null,
   busy?: boolean,
   activeItem?: SessionFrameItem | null,
 ) {
+  syncIdleNarrative(waiting, busy, activeItem ?? null)
   if (isAuthoritativeIdle(waiting, busy, activeItem)) {
     forceAuthoritativeIdle()
     return
@@ -1921,6 +1956,7 @@ function applyReviewFrame(frame: {
   if (frame.nodeId && frame.nodeId !== props.nodeId) return
   switch (frame.event) {
     case 'turn_begin': {
+      idleNarrativeOpen = false
       // Pump order: queue_state(remaining, no active) → turn_begin(item=active).
       // frame.item is server-authoritative; match-remove by id first, text fallback —
       // never blind-shift (that would bind live human to the next waiter after trim).
@@ -2144,16 +2180,92 @@ function applyAgentSegments(segs: { thought: string; message: string }[], tools:
 }
 
 /**
+ * Platform FIFO is idle and the streaming slot is gone. Write the snapshot
+ * onto the closed agent row (or a new one) without reopening the slot, so the
+ * orphan banner can stay while the text is visible. Stick-gated scroll only.
+ */
+function paintIdleNarrative(events: AcpEvent[]): boolean {
+  let idx = -1
+  for (let i = liveTurns.value.length - 1; i >= 0; i--) {
+    if (liveTurns.value[i]?.role === 'agent') {
+      idx = i
+      break
+    }
+  }
+  let created = false
+  if (idx < 0) {
+    if (idleSnapshotAlreadyVisible(events)) return true
+    const started = new Date().toISOString()
+    idx =
+      liveTurns.value.push({
+        role: 'agent',
+        text: '',
+        thought: '',
+        at: started,
+        startedAt: started,
+        streaming: false,
+      }) - 1
+    created = true
+  }
+  liveAgentIdx.value = idx
+  const applied = applyAcpEventsToSlot(events)
+  const row = liveTurns.value[idx]
+  liveAgentIdx.value = -1
+  if (queued.value.length === 0) thinking.value = false
+  if (
+    created &&
+    row &&
+    !(row.text || '').trim() &&
+    !(row.thought || '').trim() &&
+    !row.tools?.length &&
+    !row.parts?.length
+  ) {
+    liveTurns.value.pop()
+  } else if (row?.role === 'agent' && !row.handoff) {
+    // Streaming so the message uses the reveal blocks just written, while the
+    // slot index stays closed and the orphan banner can remain. Segment
+    // handoff rows stay settled; the open segment is already streaming.
+    row.streaming = true
+  }
+  return applied
+}
+
+/** Persisted tail already shows this cumulative snapshot — do not add an empty row. */
+function idleSnapshotAlreadyVisible(events: AcpEvent[]): boolean {
+  const last = [...persistedTurns.value].reverse().find((t) => t.role === 'agent' && !t.handoff)
+  if (!last) return false
+  let msg = ''
+  let thought = ''
+  for (const ev of events) {
+    if (ev.kind === 'message' && ev.text) msg = ev.text
+    if (ev.kind === 'thought' && ev.text) thought = ev.text
+  }
+  return (
+    (last.text || '') === msg &&
+    (last.thought || '') === thought &&
+    sameTools(last.tools, toolsFromAcp(events)) &&
+    sameParts(last.parts, partsFromAcp(events))
+  )
+}
+
+/**
  * Consume publishAcp events for the streaming agent bubble (dialogue surface).
  * Returns false when mounted but streaming slot is not ready — host must buffer
  * (hard-load / remount race; never silent-noop as applied).
+ * After an idle queue_state, the missing slot is intentional: paint anyway.
  */
 function applyAcpEvents(events: AcpEvent[] | undefined, nodeId?: string): boolean {
   if (!events?.length) return true
   // Wrong node: not a readiness failure — do not buffer for another surface.
   if (nodeId && nodeId !== props.nodeId) return true
-  // Slot not rebuilt yet (queue_state pending) — buffer at host.
-  if (liveAgentIdx.value < 0) return false
+  if (liveAgentIdx.value < 0) {
+    if (!idleNarrativeOpen) return false
+    return paintIdleNarrative(events)
+  }
+  return applyAcpEventsToSlot(events)
+}
+
+function applyAcpEventsToSlot(events: AcpEvent[]): boolean {
   const agent = liveTurns.value[liveAgentIdx.value]
   if (!agent) return false
   const tools = toolsFromAcp(events)
