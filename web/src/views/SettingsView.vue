@@ -362,7 +362,6 @@ watch(workspace, (next, prev) => {
     clearWorkspaceDraft()
     return
   }
-  if (prev && next.id !== prev.id) formEpoch++
   if (saving.value) return
   if (prev && workspaceDirty.value) return
   hydrateWorkspace(next)
