@@ -22,6 +22,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 const workspaceState = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- vi.hoisted runs before ESM imports
   const { ref } = require('vue') as typeof import('vue')
   const workspace = ref<any>({ id: 'ws-1', name: 'Studio', description: 'Our studio', unknownModelDisplayName: '' })
   return {
