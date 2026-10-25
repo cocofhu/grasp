@@ -1247,6 +1247,12 @@ describe('AppSidebarNav', () => {
     }
     expectStatusIcon(rows[0], 'arc-spinner', 'nav-row-type-icon--accent', 'M12 3A9 9 0 1 1 3 12')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('[data-testid="nav-pending-type-icon"]').attributes('data-icon-motion')).toBe('busy')
+    expect(rows[1].get('.nav-breath-ping').attributes('vector-effect')).toBe('non-scaling-stroke')
+    expect(rows[1].findAll('svg')).toHaveLength(1)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[3].find('.nav-breath-ping').exists()).toBe(false)
+    expect(rows[5].find('.nav-breath-ping').exists()).toBe(false)
 
     expect(rows[2].attributes('data-motion')).toBeUndefined()
     expect(rows[2].findAll('svg')).toHaveLength(0)
@@ -1286,6 +1292,8 @@ describe('AppSidebarNav', () => {
     await nextTick()
     expect(rows[1].classes()).toContain('active')
     expectStatusIcon(rows[1], 'breath-dot', 'nav-row-type-icon--accent', 'grasp-heart-ring')
+    expect(rows[1].get('.nav-breath-ping').exists()).toBe(true)
+    expect(rows[0].find('.nav-breath-ping').exists()).toBe(false)
 
     wrapper.unmount()
     vi.useRealTimers()
