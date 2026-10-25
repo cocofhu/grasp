@@ -9,6 +9,7 @@ import type { ClarifyImage, ReactAnnotation, ReactQuestion } from '@/lib/shared/
 
 import { useClarifyChat } from './useClarifyChat'
 import { confirmFlowCeremonyKey, type ConfirmFlowCeremony } from './confirmFlowCeremony'
+import { __resetSidebarHandoffForTests, isSidebarConfirmWindowHeld } from './sidebarHandoff'
 
 const image = (name = 'shot.png', over: Partial<ClarifyImage> = {}): ClarifyImage => ({
   data: 'aGVsbG8=',
@@ -1215,6 +1216,33 @@ describe('useClarifyChat actions', () => {
     review.chat.finishEarly()
     expect(review.emit).toHaveBeenCalledTimes(1)
     review.app.unmount()
+  })
+
+  it('holds the sidebar on confirm click and releases when the window leaves', () => {
+    __resetSidebarHandoffForTests()
+    const dismissed = withChat()
+    dismissed.chat.finishEarly()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    dismissed.chat.dismissConfirmFlow()
+    expect(dismissed.emit).not.toHaveBeenCalled()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    dismissed.app.unmount()
+
+    const accepted = withChat()
+    accepted.chat.finishEarly()
+    accepted.chat.acceptConfirmFlow()
+    expect(accepted.emit).toHaveBeenCalledWith('finish')
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    accepted.chat.releaseConfirmFlowWindow()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
+    accepted.app.unmount()
+
+    const leftMounted = withChat()
+    leftMounted.chat.finishEarly()
+    leftMounted.chat.acceptConfirmFlow()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(true)
+    leftMounted.app.unmount()
+    expect(isSidebarConfirmWindowHeld('run-1')).toBe(false)
   })
 
   it.each(['text', 'image', 'annotation'])('keeps an unsent %s when confirmation is requested', (kind) => {
