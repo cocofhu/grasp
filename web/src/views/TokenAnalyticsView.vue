@@ -23,6 +23,7 @@ import AppSelect from '@/components/ui/AppSelect.vue'
 import SlidingTabs from '@/components/ui/SlidingTabs.vue'
 import Icon from '@/components/ui/Icon.vue'
 import TokenChartCard from '@/components/token-analytics/TokenChartCard.vue'
+import TokenUsageStructure from '@/components/token-analytics/TokenUsageStructure.vue'
 import TokenDrillDownModal from '@/components/token-analytics/TokenDrillDownModal.vue'
 import TokenPricingModal from '@/components/token-analytics/TokenPricingModal.vue'
 import {
@@ -53,7 +54,6 @@ import {
   sourceLabel,
   stackedBarOption,
   statusLabel,
-  treemapOption,
   trendChartOption,
   weekHourHeatmapOption,
   type AreaMode,
@@ -409,12 +409,11 @@ const costOption = computed(() => {
   return costBarOption(costRowsFor(costDimension.value), currency.value, t)
 })
 
-// ---------- Trend / area / heat / tree ----------
+// ---------- Trend / area / heat ----------
 
 const lineOption = computed(() => trendChartOption(data.value, lineMode.value, t))
 const areaOption = computed(() => areaChartOption(data.value, areaMode.value, t))
 const weekHourOption = computed(() => weekHourHeatmapOption(data.value?.weekHour, t))
-const treeOption = computed(() => treemapOption(data.value?.tree, currency.value, t))
 
 const lineModes = computed(() =>
   (['total', 'model', 'cost'] as const).map((m) => ({
@@ -502,6 +501,14 @@ function goRun(runId: string) {
 // ---------- Tables ----------
 
 const modelRows = computed(() => (data.value?.modelRanking ?? []).filter((m) => m.total > 0))
+const detailTable = ref<'models' | 'workflows'>('models')
+const runsExpanded = ref(false)
+const RUNS_PREVIEW_COUNT = 8
+const visibleRuns = computed(() => runsExpanded.value ? data.value?.topRuns ?? [] : (data.value?.topRuns ?? []).slice(0, RUNS_PREVIEW_COUNT))
+
+function shareWidth(total: number): string {
+  return `${Math.min(100, Math.max(0, data.value?.kpi.total ? total / data.value.kpi.total * 100 : 0))}%`
+}
 
 function share(total: number): string {
   const all = data.value?.kpi.total || 0
@@ -608,7 +615,10 @@ onBeforeUnmount(() => {
   runsColDragging.value = null
 })
 
-watch(() => JSON.stringify(filters.value), () => void load())
+watch(() => JSON.stringify(filters.value), () => {
+  runsExpanded.value = false
+  void load()
+})
 
 /* ── redesign: filter popover + chips, workflow table (restores the old 项目明细表 slot) ── */
 const fxOpen = ref(false)
@@ -1106,116 +1116,125 @@ const fxCount = computed(() => fxChips.value.length)
               </div>
             </TokenChartCard>
             <TokenChartCard
+              v-if="data.tree?.some((node) => node.value > 0)"
               :heading-level="3"
-              v-if="treeOption"
-              class="usage-detail-card"
-              data-testid="token-analytics-treemap"
-              :title="t('pages.tokenAnalytics.charts.treemap')"
-              :hint="t('pages.tokenAnalytics.charts.treemapHint')"
+              class="usage-structure-card"
+              data-testid="token-analytics-structure-card"
+              :title="t('pages.tokenAnalytics.structure.title')"
+              :hint="t('pages.tokenAnalytics.structure.hint')"
             >
-              <div class="token-analytics-plot mt-2 h-[320px] overflow-visible" data-testid="token-analytics-plot-treemap">
-                <VChart :option="treeOption" autoresize class="h-full w-full" @click="onChartClick" />
-              </div>
+              <TokenUsageStructure :tree="data.tree" :total="data.kpi.total" @drill="openDrill" />
             </TokenChartCard>
           </section>
           <section id="tables" :aria-label="t('pages.tokenAnalytics.sections.details')" data-testid="token-analytics-details">
-            <div class="usage-table-grid grid grid-cols-1 gap-x-8 2xl:grid-cols-2">
-              <TokenChartCard :heading-level="3" data-testid="token-analytics-models-table" :title="t('pages.tokenAnalytics.tables.models')">
-                <template #actions>
-                  <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-models" @click="exportModels">
-                    {{ t('pages.tokenAnalytics.exportCsv') }}
-                  </button>
-                </template>
-                <div class="token-analytics-table-scroll mt-2 min-w-0 max-w-full overflow-x-auto">
-                  <table class="w-full border-collapse text-xs">
-                    <thead class="sticky top-0 bg-surface">
-                      <tr class="text-txt3">
-                        <th class="border-b border-line py-1.5 text-left font-semibold">{{ t('pages.tokenAnalytics.tables.colModel') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colShare') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colInput') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colOutput') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCache') }}</th>
-                        <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCost') }}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(m, index) in modelRows" :key="m.modelKey || m.name" class="hover:bg-accent-dim/40" :data-model-key="m.modelKey" :data-unknown="m.unknown ? '1' : undefined">
-                        <td class="border-b border-line/60 py-1.5" :title="modelLabel(m)">
-                          <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
-                            <span class="token-model-swatch h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: isUnnamedModel(m) ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
-                            <button
-                              v-if="m.modelKey && !m.other"
-                              type="button"
-                              class="min-w-0 truncate text-left hover:text-accent-2 hover:underline"
-                              :class="isUnnamedModel(m) ? 'text-txt3' : ''"
-                              @click="openDrill([{ dim: 'model', key: m.modelKey!, name: modelLabel(m) }])"
-                            >{{ modelLabel(m) }}</button>
-                            <span v-else class="min-w-0 truncate text-txt3">{{ modelLabel(m) }}</span>
-                            <span v-if="isUnnamedModel(m)" class="shrink-0 rounded bg-elevated px-1 py-px text-[10px] text-txt3" data-testid="unknown-model-badge">{{ t('pages.tokenAnalytics.unknownBadge') }}</span>
-                          </div>
-                        </td>
-                        <td class="border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(m.total)">{{ fmtCompactTokenCount(m.total) }}</td>
-                        <td class="border-b border-line/60 py-1.5 text-right tabular-nums text-txt3">{{ share(m.total) }}</td>
-                        <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(m.inputTokens || 0) }}</td>
-                        <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(m.outputTokens || 0) }}</td>
-                        <td class="border-b border-line/60 py-1.5 text-right tabular-nums">
-                          {{ fmtCompactTokenCount(m.cacheReadTokens || 0) }} / {{ fmtCompactTokenCount(m.cacheWriteTokens || 0) }}
-                        </td>
-                        <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ m.cost ? fmtCost(m.cost, currency) : '—' }}</td>
-                      </tr>
-                    </tbody>
-                  </table>
+            <div class="usage-table-panel">
+              <div class="usage-table-toolbar">
+                <h3 class="m-0 text-sm font-semibold">{{ t('pages.tokenAnalytics.tables.breakdown') }}</h3>
+                <button v-show="detailTable === 'models'" type="button" class="usage-export" data-testid="token-analytics-export-models" @click="exportModels">
+                  <Icon name="download" :size="14" />{{ t('pages.tokenAnalytics.exportCsv') }}
+                </button>
+                <button v-show="detailTable === 'workflows'" type="button" class="usage-export" data-testid="token-analytics-export-workflows" @click="exportWorkflows">
+                  <Icon name="download" :size="14" />{{ t('pages.tokenAnalytics.exportCsv') }}
+                </button>
+              </div>
+              <SlidingTabs :value="detailTable" class="usage-detail-tabs" indicator-class="rounded-md bg-surface shadow-sm" role="group" :aria-label="t('pages.tokenAnalytics.tables.breakdown')">
+                <button v-for="tab in (['models', 'workflows'] as const)" :key="tab" type="button" class="usage-detail-tab" :class="detailTable === tab ? 'font-semibold text-txt' : 'text-txt3'" :aria-pressed="detailTable === tab" :data-testid="`token-analytics-detail-tab-${tab}`" @click="detailTable = tab">
+                  {{ t(`pages.tokenAnalytics.tables.${tab}Tab`) }}<span class="usage-tab-count">{{ tab === 'models' ? modelRows.length : workflowRows.length }}</span>
+                </button>
+              </SlidingTabs>
+              <div class="usage-table-grid">
+                <div v-show="detailTable === 'models'" data-testid="token-analytics-models-table" role="region" :aria-label="t('pages.tokenAnalytics.tables.models')">
+                  <div class="token-analytics-table-scroll mt-2 min-w-0 max-w-full overflow-x-auto">
+                    <table class="w-full border-collapse text-xs">
+                      <thead class="sticky top-0 bg-surface">
+                        <tr class="text-txt3">
+                          <th class="border-b border-line py-1.5 text-left font-semibold">{{ t('pages.tokenAnalytics.tables.colModel') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colShare') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colInput') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colOutput') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCache') }}</th>
+                          <th class="border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCost') }}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="!modelRows.length"><td colspan="7" class="usage-table-empty text-center text-txt3">{{ t('pages.tokenAnalytics.noData') }}</td></tr>
+                        <tr v-for="(m, index) in modelRows" :key="m.modelKey || m.name" class="hover:bg-accent-dim/40" :data-model-key="m.modelKey" :data-unknown="m.unknown ? '1' : undefined">
+                          <td class="border-b border-line/60 py-1.5" :title="modelLabel(m)">
+                            <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
+                              <span class="token-model-swatch h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: isUnnamedModel(m) ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
+                              <button
+                                v-if="m.modelKey && !m.other"
+                                type="button"
+                                class="min-w-0 truncate text-left hover:text-accent-2 hover:underline"
+                                :class="isUnnamedModel(m) ? 'text-txt3' : ''"
+                                @click="openDrill([{ dim: 'model', key: m.modelKey!, name: modelLabel(m) }])"
+                              >{{ modelLabel(m) }}</button>
+                              <span v-else class="min-w-0 truncate text-txt3">{{ modelLabel(m) }}</span>
+                              <span v-if="isUnnamedModel(m)" class="shrink-0 rounded bg-elevated px-1 py-px text-[10px] text-txt3" data-testid="unknown-model-badge">{{ t('pages.tokenAnalytics.unknownBadge') }}</span>
+                            </div>
+                          </td>
+                          <td class="border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(m.total)">{{ fmtCompactTokenCount(m.total) }}</td>
+                          <td class="border-b border-line/60 py-1.5 text-right tabular-nums text-txt3"><div class="usage-share"><span class="usage-share-track" aria-hidden="true"><span :style="{ width: shareWidth(m.total) }" /></span><span>{{ share(m.total) }}</span></div></td>
+                          <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(m.inputTokens || 0) }}</td>
+                          <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(m.outputTokens || 0) }}</td>
+                          <td class="border-b border-line/60 py-1.5 text-right tabular-nums">
+                            {{ fmtCompactTokenCount(m.cacheReadTokens || 0) }} / {{ fmtCompactTokenCount(m.cacheWriteTokens || 0) }}
+                          </td>
+                          <td class="border-b border-line/60 py-1.5 text-right tabular-nums">{{ m.cost ? fmtCost(m.cost, currency) : '—' }}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </TokenChartCard>
-              <TokenChartCard :heading-level="3" data-testid="token-analytics-workflows-table" :title="t('pages.tokenAnalytics.workflowsTable')">
-                <template #actions>
-                  <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-workflows" @click="exportWorkflows">
-                    {{ t('pages.tokenAnalytics.exportCsv') }}
-                  </button>
-                </template>
-                <div class="token-analytics-table-scroll mt-2 min-w-0 max-w-full overflow-x-auto">
-                  <table class="w-full border-collapse text-xs">
-                    <thead class="sticky top-0 bg-surface">
-                      <tr class="text-txt3">
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-left font-semibold">{{ t('pages.tokenAnalytics.colWorkflow') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colShare') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colInput') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colOutput') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCache') }}</th>
-                        <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCost') }}</th>
-                        <th class="w-12 border-b border-line" />
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="(w, index) in workflowRows" :key="(w.kind || '') + (w.workflowId || w.name)" class="hover:bg-accent-dim/40" data-testid="token-analytics-workflow-row">
-                        <td class="border-b border-line/60 py-1.5">
-                          <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
-                            <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: w.other ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
-                            <span class="min-w-0 truncate" :class="w.other ? 'text-txt3' : ''" :title="w.name">{{ w.kind === 'pm' ? sourceName('pm') : w.name }}</span>
-                          </div>
-                        </td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(w.total)">{{ fmtCompactTokenCount(w.total) }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums text-txt3">{{ share(w.total) }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.inputTokens || 0) }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.outputTokens || 0) }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.cacheReadTokens || 0) }} / {{ fmtCompactTokenCount(w.cacheWriteTokens || 0) }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ w.cost ? fmtCost(w.cost, currency) : '—' }}</td>
-                        <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right">
-                          <button v-if="workflowDrill(w)" type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-workflow-detail" @click="openDrill([workflowDrill(w)!])">{{ t('pages.tokenAnalytics.tables.details') }}</button>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+                <div v-show="detailTable === 'workflows'" data-testid="token-analytics-workflows-table" role="region" :aria-label="t('pages.tokenAnalytics.workflowsTable')">
+                  <div class="token-analytics-table-scroll mt-2 min-w-0 max-w-full overflow-x-auto">
+                    <table class="w-full border-collapse text-xs">
+                      <thead class="sticky top-0 bg-surface">
+                        <tr class="text-txt3">
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-left font-semibold">{{ t('pages.tokenAnalytics.colWorkflow') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colTotal') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colShare') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colInput') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colOutput') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCache') }}</th>
+                          <th class="whitespace-nowrap border-b border-line py-1.5 text-right font-semibold">{{ t('pages.tokenAnalytics.tables.colCost') }}</th>
+                          <th class="w-12 border-b border-line" />
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr v-if="!workflowRows.length"><td colspan="8" class="usage-table-empty text-center text-txt3">{{ t('pages.tokenAnalytics.noData') }}</td></tr>
+                        <tr v-for="(w, index) in workflowRows" :key="(w.kind || '') + (w.workflowId || w.name)" class="hover:bg-accent-dim/40" data-testid="token-analytics-workflow-row">
+                          <td class="border-b border-line/60 py-1.5">
+                            <div class="flex min-w-0 max-w-[320px] items-center gap-2 pr-3">
+                              <span class="h-1.5 w-1.5 shrink-0 rounded-full" :style="{ backgroundColor: w.other ? '#71717a' : paletteColor(index) }" aria-hidden="true" />
+                              <span class="min-w-0 truncate" :class="w.other ? 'text-txt3' : ''" :title="w.name">{{ w.kind === 'pm' ? sourceName('pm') : w.name }}</span>
+                            </div>
+                          </td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right font-semibold tabular-nums" :title="fmtTokenCount(w.total)">{{ fmtCompactTokenCount(w.total) }}</td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums text-txt3"><div class="usage-share"><span class="usage-share-track" aria-hidden="true"><span :style="{ width: shareWidth(w.total) }" /></span><span>{{ share(w.total) }}</span></div></td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.inputTokens || 0) }}</td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.outputTokens || 0) }}</td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ fmtCompactTokenCount(w.cacheReadTokens || 0) }} / {{ fmtCompactTokenCount(w.cacheWriteTokens || 0) }}</td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right tabular-nums">{{ w.cost ? fmtCost(w.cost, currency) : '—' }}</td>
+                          <td class="whitespace-nowrap border-b border-line/60 py-1.5 text-right">
+                            <button v-if="workflowDrill(w)" type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-workflow-detail" @click="openDrill([workflowDrill(w)!])">{{ t('pages.tokenAnalytics.tables.details') }}</button>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </TokenChartCard>
+              </div>
             </div>
-            <div class="min-w-0 py-4" data-testid="token-analytics-runs-table">
-              <div class="mb-2 flex shrink-0 items-center justify-between gap-2">
-                <h3 class="m-0 text-sm font-semibold">{{ t('pages.tokenAnalytics.tables.runs') }}</h3>
-                <button type="button" class="text-[11px] text-txt3 hover:text-accent-2" data-testid="token-analytics-export-runs" @click="exportRuns">
-                  {{ t('pages.tokenAnalytics.exportCsv') }}
+            <div class="usage-table-panel usage-runs-panel" data-testid="token-analytics-runs-table">
+              <div class="usage-table-toolbar">
+                <div class="flex min-w-0 flex-wrap items-center gap-2">
+                  <h3 class="m-0 text-sm font-semibold">{{ t('pages.tokenAnalytics.tables.runs') }}</h3>
+                  <span class="usage-tab-count">{{ data.topRuns.length }}</span>
+                </div>
+                <button type="button" class="usage-export" data-testid="token-analytics-export-runs" @click="exportRuns">
+                  <Icon name="download" :size="14" />{{ t('pages.tokenAnalytics.exportCsv') }}
                 </button>
               </div>
               <div class="token-analytics-table-scroll min-w-0 max-w-full overflow-x-auto">
@@ -1264,14 +1283,18 @@ const fxCount = computed(() => fxChips.value.length)
                     </tr>
                   </thead>
                   <tbody>
-                    <tr v-for="r in data.topRuns" :key="r.runId" class="hover:bg-accent-dim/40">
+                    <tr v-if="!visibleRuns.length"><td colspan="6" class="usage-table-empty text-center text-txt3">{{ t('pages.tokenAnalytics.noData') }}</td></tr>
+                    <tr v-for="(r, index) in visibleRuns" :key="r.runId" class="hover:bg-accent-dim/40" data-testid="token-analytics-run-row">
                       <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5">
-                        <button
-                          type="button"
-                          class="block w-full max-w-full truncate text-left text-accent-2"
-                          :title="runTitleTooltip(r.title)"
-                          @click="goRun(r.runId)"
-                        >{{ runTitleDisplay(r.title) }}</button>
+                        <div class="flex min-w-0 items-center gap-3">
+                          <span class="usage-run-index" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
+                          <button
+                            type="button"
+                            class="usage-run-title block w-full max-w-full truncate text-left text-accent-2"
+                            :title="runTitleTooltip(r.title)"
+                            @click="goRun(r.runId)"
+                          >{{ runTitleDisplay(r.title) }}</button>
+                        </div>
                       </td>
                       <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5" :title="r.workflowName" data-testid="token-analytics-run-workflow">{{ r.workflowName || '—' }}</td>
                       <td class="overflow-hidden text-ellipsis whitespace-nowrap border-b border-line/60 py-1.5" :title="r.modelName || r.modelKey">{{ r.modelName || r.modelKey }}</td>
@@ -1292,6 +1315,13 @@ const fxCount = computed(() => fxChips.value.length)
                     </tr>
                   </tbody>
                 </table>
+              </div>
+              <div v-if="data.topRuns.length > RUNS_PREVIEW_COUNT" class="usage-table-footer">
+                <span>{{ t('pages.tokenAnalytics.tables.visibleRuns', { shown: visibleRuns.length, total: data.topRuns.length }) }}</span>
+                <button type="button" class="usage-expand" data-testid="token-analytics-runs-toggle" :aria-expanded="runsExpanded" @click="runsExpanded = !runsExpanded">
+                  {{ runsExpanded ? t('pages.tokenAnalytics.structure.showLess') : t('pages.tokenAnalytics.structure.showMore', { count: data.topRuns.length }) }}
+                  <Icon name="chevron-down" :size="14" :class="runsExpanded ? 'rotate-180' : ''" />
+                </button>
               </div>
             </div>
           </section>
@@ -1438,12 +1468,110 @@ const fxCount = computed(() => fxChips.value.length)
 .usage-analysis-section > .usage-detail-card:last-child {
   margin-bottom: 0;
 }
-.usage-table-grid table {
-  min-width: 640px;
+.usage-structure-card {
+  margin: 20px 0 28px;
+  padding: 20px 24px;
+  border: 1px solid rgb(var(--c-line) / 0.75);
+  border-radius: 12px;
+}
+.usage-table-panel {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid rgb(var(--c-line) / 0.75);
+  border-radius: 12px;
+  background: rgb(var(--c-surface));
+}
+.usage-table-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 18px 20px 12px;
+}
+.usage-export,
+.usage-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-size: 12px;
+  color: rgb(var(--c-txt2));
+  transition: background-color 150ms, color 150ms;
+}
+.usage-export:hover,
+.usage-expand:hover { background: rgb(var(--c-elevated)); color: rgb(var(--c-txt)); }
+.usage-export:focus-visible,
+.usage-expand:focus-visible,
+.usage-detail-tab:focus-visible,
+.usage-table-panel td button:focus-visible {
+  outline: 2px solid rgb(var(--c-accent));
+  outline-offset: 2px;
+}
+.usage-detail-tabs {
+  display: flex;
+  width: fit-content;
+  max-width: calc(100% - 40px);
+  gap: 4px;
+  margin: 0 20px 14px;
+  padding: 4px;
+  border-radius: 8px;
+  background: rgb(var(--c-elevated) / 0.7);
+}
+.usage-detail-tab {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.usage-tab-count {
+  color: rgb(var(--c-txt3));
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.usage-table-grid table { min-width: 820px; }
+.usage-table-panel table { font-size: 13px; }
+.usage-table-panel thead { background: rgb(var(--c-elevated) / 0.5); }
+.usage-table-panel th {
+  height: 38px;
+  padding: 8px 16px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.usage-table-panel td { height: 46px; padding: 10px 16px; }
+.usage-table-panel th:first-child,
+.usage-table-panel td:first-child { padding-left: 20px; }
+.usage-table-panel th:last-child,
+.usage-table-panel td:last-child { padding-right: 20px; }
+.usage-table-panel tbody tr:last-child td { border-bottom: 0; }
+.usage-table-panel td.usage-table-empty { height: 100px; }
+.usage-table-panel .token-analytics-table-scroll { margin-top: 0; }
+.usage-share { display: flex; justify-content: flex-end; align-items: center; gap: 10px; }
+.usage-share > span:last-child { min-width: 44px; }
+.usage-share-track { display: block; width: 48px; height: 4px; border-radius: 4px; overflow: hidden; background: rgb(var(--c-elevated)); }
+.usage-share-track > span { display: block; height: 100%; border-radius: inherit; background: rgb(var(--c-accent) / 0.6); }
+.usage-runs-panel { margin-top: 24px; }
+.usage-run-index { flex-shrink: 0; width: 18px; color: rgb(var(--c-txt3) / 0.7); font-size: 11px; font-variant-numeric: tabular-nums; }
+.usage-run-title { color: rgb(var(--c-txt)); }
+.usage-run-title:hover { color: rgb(var(--c-accent)); }
+.usage-table-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid rgb(var(--c-line) / 0.6); font-size: 12px; color: rgb(var(--c-txt3)); }
+@media (prefers-reduced-motion: reduce) {
+  .usage-export, .usage-expand { transition: none; }
 }
 /* 1440: keep 3 columns (six columns squeezed 输入/输出 and the cache bar). */
 @media (max-width: 639px) {
   .usage-content { padding-bottom: 8px; }
+  .usage-structure-card { padding: 16px; }
+  .usage-table-toolbar { padding-inline: 16px; }
+  .usage-detail-tabs { margin-inline: 16px; }
+  .usage-table-footer { padding-inline: 16px; }
   .usage-page-header { flex-direction: column; gap: 16px; margin-bottom: 20px; }
   .usage-controls { padding: 16px 0; }
   .usage-control-row { flex-direction: column; align-items: stretch; gap: 8px; }

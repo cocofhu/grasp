@@ -116,11 +116,20 @@
         "costRank": "费用排行",
         "costRankHint": "按已配置单价估算",
         "weekHour": "时段分布",
-        "weekHourHint": "星期 × 小时（本地时区）",
-        "treemap": "用量结构",
-        "treemapHint": "工作流 / 工作区助手 / Studio → 节点类型，点击查看明细"
+        "weekHourHint": "星期 × 小时（本地时区）"
+      },
+      "structure": {
+        "title": "用量结构",
+        "hint": "按用量排序，点击来源或节点类型查看明细。",
+        "showMore": "展开全部（{count}）",
+        "showLess": "收起",
+        "shareLabel": "占比"
       },
       "tables": {
+        "breakdown": "用量明细",
+        "modelsTab": "模型",
+        "workflowsTab": "工作流",
+        "visibleRuns": "显示 {shown} / {total} 条",
         "runs": "消耗最多的运行",
         "colRun": "运行",
         "colModel": "模型",

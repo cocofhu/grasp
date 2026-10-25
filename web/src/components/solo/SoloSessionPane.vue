@@ -12,7 +12,6 @@ import ReactArtifactStage from '@/components/run/ReactArtifactStage.vue'
 import ReviewShell from '@/components/run/ReviewShell.vue'
 import ChatMessageRail from '@/components/chat/ChatMessageRail.vue'
 import SoloStartupCard from './SoloStartupCard.vue'
-import SoloEnvPanel from './SoloEnvPanel.vue'
 import SoloLimitModal from './SoloLimitModal.vue'
 import { api } from '@/lib/api/api'
 import { agentHueVar, agentInitial } from '@/components/canvas/composables/agentAvatar'
@@ -45,7 +44,6 @@ const composing = ref(false)
 const scroller = ref<HTMLElement | null>(null)
 const textarea = ref<HTMLTextAreaElement | null>(null)
 const followBottom = ref(true)
-const envOpen = ref(false)
 const confirmClose = ref(false)
 const confirmDelete = ref(false)
 const moreOpen = ref(false)
@@ -126,7 +124,6 @@ watch(
     followBottom.value = true
     input.value = ''
     attach.clearAttachments()
-    envOpen.value = false
     soloArtifacts.value = []
     scrollDown(true)
   },
@@ -272,12 +269,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
       split-drawer
       class="solo-workspace min-h-0 min-w-0 flex-1"
     >
-      <template #actions>
-        <button type="button" class="solo-env-toggle" data-testid="solo-env-toggle" @click="envOpen = true">
-          <Icon name="variable" :size="15" />
-          {{ t('pages.solo.env.title') }}
-        </button>
-      </template>
       <template #stage>
         <ReactArtifactStage
           :artifacts="soloArtifacts"
@@ -507,8 +498,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
         </div>
       </div>
 
-      <SoloEnvPanel :open="envOpen" :session="session" @close="envOpen = false" />
-
       <AppModal :open="confirmClose" :title="t('pages.solo.close.title')" :width="460" close-on-esc @close="confirmClose = false">
         <div class="space-y-3 text-[13px] text-txt2" data-testid="solo-close-modal">
           <div class="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-3 py-2 text-[12px] text-warn">
@@ -593,21 +582,6 @@ function turnInterrupted(turn: { status?: string; error?: string; streaming: boo
 }
 .solo-menu__item--danger {
   color: rgb(var(--c-err));
-}
-.solo-env-toggle {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid rgb(var(--c-line));
-  border-radius: 8px;
-  padding: 0 10px;
-  color: rgb(var(--c-txt2));
-  font-size: 12px;
-}
-.solo-env-toggle:hover {
-  border-color: rgb(var(--c-accent) / 0.35);
-  color: rgb(var(--c-txt));
 }
 .solo-error-link {
   display: inline-flex;
